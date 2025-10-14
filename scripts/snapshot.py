@@ -371,7 +371,7 @@ async def _expose_standard_ports(
     instance: Instance,
     console: Console,
 ) -> dict[int, str]:
-    ports = [EXEC_HTTP_PORT, 39376, 39377, VSCODE_HTTP_PORT, 39379, VNC_HTTP_PORT, CDP_HTTP_PORT]
+    ports = [EXEC_HTTP_PORT, 39376, 39377, VSCODE_HTTP_PORT, 39379, VNC_HTTP_PORT, CDP_HTTP_PORT, 39382]
     console.info("Exposing standard HTTP services...")
 
     async def _expose(port: int) -> tuple[int, str]:
@@ -1502,6 +1502,7 @@ async def task_install_systemd_units(ctx: TaskContext) -> None:
         install -Dm0644 {repo}/configs/systemd/cmux-openvscode.service /usr/lib/systemd/system/cmux-openvscode.service
         install -Dm0644 {repo}/configs/systemd/cmux-worker.service /usr/lib/systemd/system/cmux-worker.service
         install -Dm0644 {repo}/configs/systemd/cmux-proxy.service /usr/lib/systemd/system/cmux-proxy.service
+        install -Dm0644 {repo}/configs/systemd/cmux-xterm.service /usr/lib/systemd/system/cmux-xterm.service
         install -Dm0644 {repo}/configs/systemd/cmux-dockerd.service /usr/lib/systemd/system/cmux-dockerd.service
         install -Dm0644 {repo}/configs/systemd/cmux-devtools.service /usr/lib/systemd/system/cmux-devtools.service
         install -Dm0644 {repo}/configs/systemd/cmux-xvfb.service /usr/lib/systemd/system/cmux-xvfb.service
@@ -1518,6 +1519,7 @@ async def task_install_systemd_units(ctx: TaskContext) -> None:
         ln -sf /usr/lib/systemd/system/cmux-openvscode.service /etc/systemd/system/cmux.target.wants/cmux-openvscode.service
         ln -sf /usr/lib/systemd/system/cmux-worker.service /etc/systemd/system/cmux.target.wants/cmux-worker.service
         ln -sf /usr/lib/systemd/system/cmux-proxy.service /etc/systemd/system/cmux.target.wants/cmux-proxy.service
+        ln -sf /usr/lib/systemd/system/cmux-xterm.service /etc/systemd/system/cmux.target.wants/cmux-xterm.service
         ln -sf /usr/lib/systemd/system/cmux-dockerd.service /etc/systemd/system/cmux.target.wants/cmux-dockerd.service
         ln -sf /usr/lib/systemd/system/cmux-devtools.service /etc/systemd/system/cmux.target.wants/cmux-devtools.service
         ln -sf /usr/lib/systemd/system/cmux-xvfb.service /etc/systemd/system/cmux.target.wants/cmux-xvfb.service
@@ -1660,8 +1662,27 @@ async def task_build_cmux_proxy(ctx: TaskContext) -> None:
 
 
 @registry.task(
+    name="build-cmux-xterm",
+    deps=("upload-repo", "install-rust-toolchain"),
+    description="Build cmux-xterm binary via cargo install",
+)
+async def task_build_cmux_xterm(ctx: TaskContext) -> None:
+    repo = shlex.quote(ctx.remote_repo_root)
+    cmd = textwrap.dedent(
+        f"""
+        export RUSTUP_HOME=/usr/local/rustup
+        export CARGO_HOME=/usr/local/cargo
+        export PATH="${{CARGO_HOME}}/bin:$PATH"
+        cd {repo}
+        cargo install --path crates/cmux-xterm --locked --force
+        """
+    )
+    await ctx.run("build-cmux-xterm", cmd, timeout=60 * 30)
+
+
+@registry.task(
     name="link-rust-binaries",
-    deps=("build-env-binaries", "build-cmux-proxy"),
+    deps=("build-env-binaries", "build-cmux-proxy", "build-cmux-xterm"),
     description="Symlink built Rust binaries into /usr/local/bin",
 )
 async def task_link_rust_binaries(ctx: TaskContext) -> None:
@@ -1670,6 +1691,7 @@ async def task_link_rust_binaries(ctx: TaskContext) -> None:
         install -m 0755 /usr/local/cargo/bin/envd /usr/local/bin/envd
         install -m 0755 /usr/local/cargo/bin/envctl /usr/local/bin/envctl
         install -m 0755 /usr/local/cargo/bin/cmux-proxy /usr/local/bin/cmux-proxy
+        install -m 0755 /usr/local/cargo/bin/cmux-xterm /usr/local/bin/cmux-xterm
         """
     )
     await ctx.run("link-rust-binaries", cmd)
@@ -1822,6 +1844,15 @@ async def task_check_envctl(ctx: TaskContext) -> None:
 
 
 @registry.task(
+    name="check-cmux-xterm",
+    deps=("link-rust-binaries",),
+    description="Verify cmux-xterm is installed and working",
+)
+async def task_check_cmux_xterm(ctx: TaskContext) -> None:
+    await ctx.run("check-cmux-xterm", "cmux-xterm --help")
+
+
+@registry.task(
     name="check-ssh-service",
     deps=("install-systemd-units",),
     description="Verify SSH service is active",
@@ -1888,6 +1919,30 @@ async def task_check_vscode_via_proxy(ctx: TaskContext) -> None:
         """
     )
     await ctx.run("check-vscode-via-proxy", cmd)
+
+
+@registry.task(
+    name="check-cmux-xterm-service",
+    deps=("install-systemd-units",),
+    description="Verify cmux-xterm service is running and endpoint is accessible",
+)
+async def task_check_cmux_xterm_service(ctx: TaskContext) -> None:
+    cmd = textwrap.dedent(
+        """
+        for attempt in $(seq 1 15); do
+          if curl -fsS -o /dev/null http://127.0.0.1:39382/api/tabs; then
+            echo "cmux-xterm endpoint is reachable"
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "ERROR: cmux-xterm endpoint not reachable after 30s" >&2
+        systemctl status cmux-xterm.service --no-pager || true
+        tail -n 80 /var/log/cmux/cmux-xterm.log || true
+        exit 1
+        """
+    )
+    await ctx.run("check-cmux-xterm-service", cmd)
 
 
 @registry.task(
