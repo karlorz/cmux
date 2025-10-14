@@ -2,44 +2,9 @@ import { cn } from "@/lib/utils";
 import {
   ChevronDown,
   ChevronRight,
-  FileCode,
-  FileEdit,
-  FileMinus,
-  FilePlus,
-  FileText,
 } from "lucide-react";
 import type { ReplaceDiffEntry } from "@cmux/shared/diff-types";
-
-function getStatusColor(status: ReplaceDiffEntry["status"]) {
-  switch (status) {
-    case "added":
-      return "text-green-600 dark:text-green-400";
-    case "deleted":
-      return "text-red-600 dark:text-red-400";
-    case "modified":
-      return "text-yellow-600 dark:text-yellow-400";
-    case "renamed":
-      return "text-blue-600 dark:text-blue-400";
-    default:
-      return "text-neutral-500";
-  }
-}
-
-function getStatusIcon(status: ReplaceDiffEntry["status"]) {
-  const iconClass = "w-3.5 h-3.5 flex-shrink-0";
-  switch (status) {
-    case "added":
-      return <FilePlus className={iconClass} />;
-    case "deleted":
-      return <FileMinus className={iconClass} />;
-    case "modified":
-      return <FileEdit className={iconClass} />;
-    case "renamed":
-      return <FileCode className={iconClass} />;
-    default:
-      return <FileText className={iconClass} />;
-  }
-}
+import { getDiffStatusColor, getDiffStatusIcon } from "./diff-status";
 
 export interface FileDiffHeaderProps {
   filePath: string;
@@ -80,8 +45,8 @@ export function FileDiffHeader({
         </div>
       </div>
       <div className="flex items-center" style={{ width: '20px' }}>
-        <div className={cn("flex-shrink-0", getStatusColor(status))}>
-          {getStatusIcon(status)}
+        <div className={cn("flex-shrink-0", getDiffStatusColor(status))}>
+          {getDiffStatusIcon(status)}
         </div>
       </div>
       <div className="flex-1 min-w-0 flex items-start justify-between gap-3">
