@@ -149,6 +149,10 @@ exit $MAINTENANCE_EXIT_CODE
     } catch (error) {
       maintenanceError = `Maintenance script execution failed: ${error instanceof Error ? error.message : String(error)}`;
     }
+
+    // Add a small delay after maintenance completes to ensure tmux session is stable
+    // before spawning the dev window
+    await new Promise((resolve) => setTimeout(resolve, 1000));
   }
 
   if (devScript && devScript.trim().length > 0) {
