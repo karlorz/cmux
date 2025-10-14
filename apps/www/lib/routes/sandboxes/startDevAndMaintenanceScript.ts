@@ -167,6 +167,13 @@ ${devScriptContent}
 SCRIPT_EOF
 chmod +x ${ids.dev.scriptPath}
 ${waitForTmuxSession}
+# Add a small delay to ensure maintenance window has settled
+sleep 1
+# Verify tmux session is responsive before creating new window
+if ! tmux list-windows -t cmux >/dev/null 2>&1; then
+  echo "[DEV] ERROR: cmux session not responsive" >&2
+  exit 1
+fi
 tmux new-window -t cmux: -n ${ids.dev.windowName} -d
 tmux send-keys -t cmux:${ids.dev.windowName} "zsh ${ids.dev.scriptPath}" C-m
 sleep 2
