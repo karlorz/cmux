@@ -19,6 +19,7 @@ export interface RunDiffSectionProps {
       lastKnownMergeCommitSha?: string;
     }
   >;
+  selectedFile?: string;
 }
 
 function applyRepoPrefix(
@@ -48,6 +49,7 @@ export function RunDiffSection(props: RunDiffSectionProps) {
     additionalRepoFullNames,
     withRepoPrefix,
     metadataByRepo,
+    selectedFile,
   } = props;
 
   const repoFullNames = useMemo(() => {
@@ -138,6 +140,7 @@ export function RunDiffSection(props: RunDiffSectionProps) {
       diffs={combinedDiffs}
       onControlsChange={onControlsChange}
       classNames={classNames}
+      selectedFile={selectedFile}
     />
   );
 }

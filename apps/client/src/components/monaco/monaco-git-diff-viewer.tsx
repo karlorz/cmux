@@ -897,6 +897,7 @@ function MonacoFileDiffRow({
     <div
       ref={rowContainerRef}
       className={cn("bg-white dark:bg-neutral-900", classNames?.container)}
+      data-file-path={file.filePath}
     >
       <FileDiffHeader
         filePath={file.filePath}
@@ -982,7 +983,8 @@ export function MonacoGitDiffViewer({
   onControlsChange,
   classNames,
   onFileToggle,
-}: GitDiffViewerProps) {
+  selectedFile,
+}: GitDiffViewerProps & { selectedFile?: string }) {
   const { theme } = useTheme();
 
   const kitty = useMemo(() => {
@@ -1060,6 +1062,16 @@ export function MonacoGitDiffViewer({
 
   const totalAdditions = diffs.reduce((sum, diff) => sum + diff.additions, 0);
   const totalDeletions = diffs.reduce((sum, diff) => sum + diff.deletions, 0);
+
+  // Scroll to selected file
+  useEffect(() => {
+    if (selectedFile) {
+      const element = document.querySelector(`[data-file-path="${selectedFile}"]`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+  }, [selectedFile]);
 
   const controlsHandlerRef = useRef<
     | ((args: {

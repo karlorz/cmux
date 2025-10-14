@@ -33,6 +33,7 @@ export interface GitDiffViewerProps {
   }) => void;
   classNames?: GitDiffViewerClassNames;
   onFileToggle?: (filePath: string, isExpanded: boolean) => void;
+  selectedFile?: string;
 }
 
 type FileGroup = {
@@ -66,6 +67,7 @@ export function GitDiffViewer({
   onControlsChange,
   classNames,
   onFileToggle,
+  selectedFile,
 }: GitDiffViewerProps) {
   const { theme } = useTheme();
 
@@ -130,6 +132,16 @@ export function GitDiffViewer({
   // Compute totals consistently before any conditional early-returns
   const totalAdditions = diffs.reduce((sum, d) => sum + d.additions, 0);
   const totalDeletions = diffs.reduce((sum, d) => sum + d.deletions, 0);
+
+  // Scroll to selected file
+  useEffect(() => {
+    if (selectedFile) {
+      const element = document.querySelector(`[data-file-path="${selectedFile}"]`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+  }, [selectedFile]);
 
   // Keep a stable ref to the controls handler to avoid effect loops
   const controlsHandlerRef = useRef<
@@ -273,7 +285,7 @@ function FileDiffRow({
   ]);
 
   return (
-    <div className={cn("bg-white dark:bg-neutral-900", classNames?.container)}>
+    <div className={cn("bg-white dark:bg-neutral-900", classNames?.container)} data-file-path={file.filePath}>
       <FileDiffHeader
         filePath={file.filePath}
         oldPath={file.oldPath}

@@ -1,4 +1,5 @@
 import { RunDiffSection } from "@/components/RunDiffSection";
+import { FileTree } from "@/components/file-tree";
 import { Dropdown } from "@/components/ui/dropdown";
 import { normalizeGitRef } from "@/lib/refWithOrigin";
 import { gitDiffQueryOptions } from "@/queries/git-diff";
@@ -464,6 +465,14 @@ export function PullRequestDetailView({
     headSha: currentPR?.headSha,
   });
 
+  const diffsQuery = useRQ(
+    gitDiffQueryOptions({
+      repoFullName: currentPR?.repoFullName || '',
+      baseRef: normalizeGitRef(currentPR?.baseRef || ''),
+      headRef: normalizeGitRef(currentPR?.headRef || ''),
+    })
+  );
+
   const hasAnyFailure = useMemo(() => {
     return workflowData.allRuns.some(
       (run) => run.conclusion === "failure" || run.conclusion === "timed_out" || run.conclusion === "action_required"
@@ -481,6 +490,7 @@ export function PullRequestDetailView({
   const collapseAllChecks = () => setChecksExpandedOverride(false);
 
   const [diffControls, setDiffControls] = useState<DiffControls | null>(null);
+  const [selectedFile, setSelectedFile] = useState<string | undefined>();
 
   const handleDiffControlsChange = (controls: DiffControls | null) => {
     setDiffControls(controls ? {
@@ -705,7 +715,7 @@ export function PullRequestDetailView({
               </div>
             </div>
           </div>
-          <div className="bg-white dark:bg-neutral-950">
+          <div className="bg-white dark:bg-neutral-950 flex flex-1 min-h-0">
             <Suspense fallback={null}>
               <WorkflowRunsSection
                 allRuns={workflowData.allRuns}
@@ -714,31 +724,52 @@ export function PullRequestDetailView({
                 onToggle={handleToggleChecks}
               />
             </Suspense>
-            <Suspense
-              fallback={
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-neutral-500 dark:text-neutral-400 text-sm select-none py-4">
-                    Loading diffs...
-                  </div>
-                </div>
-              }
-            >
-              {currentPR?.repoFullName &&
-                currentPR.baseRef &&
-                currentPR.headRef ? (
-                <RunDiffSection
-                  repoFullName={currentPR.repoFullName}
-                  ref1={normalizeGitRef(currentPR.baseRef)}
-                  ref2={normalizeGitRef(currentPR.headRef)}
-                  onControlsChange={handleDiffControlsChange}
-                  classNames={gitDiffViewerClassNames}
-                />
-              ) : (
-                <div className="px-6 text-sm text-neutral-600 dark:text-neutral-300">
-                  Missing repo or branches to show diff.
-                </div>
-              )}
-            </Suspense>
+            <div className="flex flex-1 min-h-0">
+              <Suspense
+                fallback={
+                  <div className="w-64 border-r border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 animate-pulse" />
+                }
+              >
+                {currentPR?.repoFullName &&
+                  currentPR.baseRef &&
+                  currentPR.headRef ? (
+                  <FileTree
+                    diffs={diffsQuery.data || []}
+                    selectedFile={selectedFile}
+                    onFileSelect={setSelectedFile}
+                    className="w-64 flex-shrink-0"
+                  />
+                ) : null}
+              </Suspense>
+              <div className="flex-1 min-h-0">
+                <Suspense
+                  fallback={
+                    <div className="flex items-center justify-center h-full">
+                      <div className="text-neutral-500 dark:text-neutral-400 text-sm select-none py-4">
+                        Loading diffs...
+                      </div>
+                    </div>
+                  }
+                >
+                  {currentPR?.repoFullName &&
+                    currentPR.baseRef &&
+                    currentPR.headRef ? (
+                    <RunDiffSection
+                      repoFullName={currentPR.repoFullName}
+                      ref1={normalizeGitRef(currentPR.baseRef)}
+                      ref2={normalizeGitRef(currentPR.headRef)}
+                      onControlsChange={handleDiffControlsChange}
+                      classNames={gitDiffViewerClassNames}
+                      selectedFile={selectedFile}
+                    />
+                  ) : (
+                    <div className="px-6 text-sm text-neutral-600 dark:text-neutral-300">
+                      Missing repo or branches to show diff.
+                    </div>
+                  )}
+                </Suspense>
+              </div>
+            </div>
           </div>
         </div>
       </div>

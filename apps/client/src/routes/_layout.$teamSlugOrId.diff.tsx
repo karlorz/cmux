@@ -1,4 +1,5 @@
 import { GitDiffViewer } from "@/components/git-diff-viewer";
+import { FileTree } from "@/components/file-tree";
 import { GitHubIcon } from "@/components/icons/github";
 import {
   SearchableSelect,
@@ -39,6 +40,8 @@ function DashboardDiffPage() {
       return null;
     }
   });
+
+  const [selectedFile, setSelectedFile] = useState<string | undefined>();
 
   useEffect(() => {
     if (selectedProject) return;
@@ -230,17 +233,28 @@ function DashboardDiffPage() {
           loading={branchesQuery.isLoading}
         />
       </div>
-      <div className="flex-1 flex flex-col bg-white dark:bg-neutral-950 overflow-y-auto grow">
-        {/* Smart view: no toggle */}
-        <GitDiffViewer
-          diffs={diffsQuery.data || []}
-          onControlsChange={() => {}}
-        />
-        {!bothSelected ? (
-          <div className="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400">
-            Select a repository and two refs to compare.
-          </div>
-        ) : null}
+      <div className="flex-1 flex bg-white dark:bg-neutral-950 overflow-y-auto grow">
+        {bothSelected && (
+          <FileTree
+            diffs={diffsQuery.data || []}
+            selectedFile={selectedFile}
+            onFileSelect={setSelectedFile}
+            className="w-64 flex-shrink-0"
+          />
+        )}
+        <div className="flex-1 flex flex-col">
+          {/* Smart view: no toggle */}
+          <GitDiffViewer
+            diffs={diffsQuery.data || []}
+            onControlsChange={() => {}}
+            selectedFile={selectedFile}
+          />
+          {!bothSelected ? (
+            <div className="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400">
+              Select a repository and two refs to compare.
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );
