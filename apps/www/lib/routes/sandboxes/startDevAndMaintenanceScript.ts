@@ -126,6 +126,14 @@ else
 fi
 rm -f ${maintenanceExitCodePath}
 echo "[MAINTENANCE] Wait complete with exit code $MAINTENANCE_EXIT_CODE"
+echo "[MAINTENANCE] Ensuring window cleanup..."
+for i in {1..10}; do
+  if ! tmux list-windows -t cmux | grep -q "${ids.maintenance.windowName}"; then
+    echo "[MAINTENANCE] Window successfully closed"
+    break
+  fi
+  sleep 0.5
+done
 exit $MAINTENANCE_EXIT_CODE
 `;
 
@@ -167,7 +175,10 @@ ${devScriptContent}
 SCRIPT_EOF
 chmod +x ${ids.dev.scriptPath}
 ${waitForTmuxSession}
+echo "[DEV] Waiting for tmux to be ready..."
+sleep 1
 tmux new-window -t cmux: -n ${ids.dev.windowName} -d
+sleep 0.5
 tmux send-keys -t cmux:${ids.dev.windowName} "zsh ${ids.dev.scriptPath}" C-m
 sleep 2
 if tmux list-windows -t cmux | grep -q "${ids.dev.windowName}"; then
