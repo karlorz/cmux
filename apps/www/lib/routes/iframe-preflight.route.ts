@@ -1,5 +1,8 @@
 import { getAccessTokenFromRequest } from "@/lib/utils/auth";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { streamText } from "hono/streaming";
+import { MorphCloudClient } from "morphcloud";
+import { env } from "@/lib/utils/www-env";
 
 const ALLOWED_HOST_SUFFIXES = [
   ".cmux.sh",
@@ -44,6 +47,33 @@ function isAllowedHost(hostname: string): boolean {
   return false;
 }
 
+function isMorphUrl(url: string): boolean {
+  try {
+    const { hostname } = new URL(url);
+    return (
+      hostname.endsWith(".http.cloud.morph.so") ||
+      hostname.endsWith(".vm.freestyle.sh")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function getInstanceId(url: string): string | null {
+  try {
+    const { hostname } = new URL(url);
+    if (hostname.endsWith(".http.cloud.morph.so")) {
+      return hostname.replace(".http.cloud.morph.so", "");
+    }
+    if (hostname.endsWith(".vm.freestyle.sh")) {
+      return hostname.replace(".vm.freestyle.sh", "");
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 const QuerySchema = z
   .object({
     url: z
@@ -82,143 +112,141 @@ const ResponseSchema = z
 
 export const iframePreflightRouter = new OpenAPIHono();
 
-iframePreflightRouter.openapi(
-  createRoute({
-    method: "get",
-    path: "/iframe/preflight",
-    tags: ["Iframe"],
-    summary: "Validate iframe target availability via server-side preflight.",
-    request: {
-      query: QuerySchema,
-    },
-    responses: {
-      200: {
-        description:
-          "Result of the preflight check for the requested iframe URL.",
-        content: {
-          "application/json": {
-            schema: ResponseSchema,
-          },
-        },
-      },
-      400: {
-        description: "The provided URL was not an HTTP(S) URL.",
-      },
-      403: {
-        description: "The target host is not permitted for probing.",
-      },
-      401: {
-        description: "Request is missing valid authentication.",
-      },
-    },
-  }),
-  async (c) => {
-    const accessToken = await getAccessTokenFromRequest(c.req.raw);
-    if (!accessToken) {
-      return c.json(
-        {
-          ok: false,
-          status: null,
-          method: null,
-          error: "Unauthorized",
-        },
-        401,
-      );
-    }
+iframePreflightRouter.get("/iframe/preflight", async (c) => {
+  const accessToken = await getAccessTokenFromRequest(c.req.raw);
+  if (!accessToken) {
+    return c.text("Unauthorized", 401);
+  }
 
-    const { url } = c.req.valid("query");
-    const target = new URL(url);
+  const { url } = c.req.query();
+  if (!url) {
+    return c.text("Missing url parameter", 400);
+  }
 
-    if (target.protocol !== "https:" && target.protocol !== "http:") {
-      return c.json(
-        {
-          ok: false,
-          status: null,
-          method: null,
-          error: "Only HTTP(S) URLs are supported.",
-        },
-        400,
-      );
-    }
+  let target: URL;
+  try {
+    target = new URL(url);
+  } catch {
+    return c.text("Invalid URL", 400);
+  }
 
-    if (target.username || target.password) {
-      return c.json(
-        {
-          ok: false,
-          status: null,
-          method: null,
-          error: "Authentication credentials in URL are not supported.",
-        },
-        400,
-      );
-    }
+  if (target.protocol !== "https:" && target.protocol !== "http:") {
+    return c.text("Only HTTP(S) URLs are supported.", 400);
+  }
 
-    if (!isAllowedHost(target.hostname)) {
-      return c.json(
-        {
-          ok: false,
-          status: null,
-          method: null,
-          error: `Requests to ${target.hostname} are not permitted.`,
-        },
-        403,
-      );
-    }
+  if (target.username || target.password) {
+    return c.text("Authentication credentials in URL are not supported.", 400);
+  }
 
-    const probe = async (method: "HEAD" | "GET") => {
-      const response = await fetch(target, {
-        method,
-        redirect: "manual",
-      });
-      await response.body?.cancel().catch(() => undefined);
-      return response;
-    };
+  if (!isAllowedHost(target.hostname)) {
+    return c.text(`Requests to ${target.hostname} are not permitted.`, 403);
+  }
 
-    try {
-      const headResponse = await probe("HEAD");
-
-      if (headResponse.ok) {
-        return c.json({
-          ok: true,
-          status: headResponse.status,
-          method: "HEAD",
-        });
+  return streamText(async (stream) => {
+    if (isMorphUrl(url)) {
+      const instanceId = getInstanceId(url);
+      if (!instanceId) {
+        await stream.writeln(JSON.stringify({ status: "couldn't find instance" }));
+        return;
       }
 
-      if (headResponse.status === 405) {
-        const getResponse = await probe("GET");
-        if (getResponse.ok) {
-          return c.json({
-            ok: true,
-            status: getResponse.status,
-            method: "GET",
-          });
+      const client = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
+      let instance;
+      try {
+        instance = await client.instances.get({ instanceId });
+      } catch (e) {
+        await stream.writeln(JSON.stringify({ status: "couldn't find instance" }));
+        return;
+      }
+
+      await stream.writeln(JSON.stringify({ status: "resuming iframe" }));
+
+      const maxRetries = 3;
+      let success = false;
+      for (let i = 0; i < maxRetries; i++) {
+        try {
+          await instance.resume();
+          success = true;
+          break;
+        } catch (e) {
+          if (i === maxRetries - 1) {
+            await stream.writeln(JSON.stringify({ status: "failed to resume, even after retries" }));
+            return;
+          }
+        }
+      }
+
+      if (!success) {
+        return;
+      }
+
+      // Probe after resume
+      const probe = async (method: "HEAD" | "GET") => {
+        const response = await fetch(target, {
+          method,
+          redirect: "manual",
+        });
+        await response.body?.cancel().catch(() => undefined);
+        return response;
+      };
+
+      try {
+        const headResponse = await probe("HEAD");
+
+        if (headResponse.ok) {
+          await stream.writeln(JSON.stringify({ status: "iframe ready", ok: true, status: headResponse.status, method: "HEAD" }));
+          return;
         }
 
-        return c.json({
-          ok: false,
-          status: getResponse.status,
-          method: "GET",
-          error: `Request failed with status ${getResponse.status}.`,
-        });
-      }
+        if (headResponse.status === 405) {
+          const getResponse = await probe("GET");
+          if (getResponse.ok) {
+            await stream.writeln(JSON.stringify({ status: "iframe ready", ok: true, status: getResponse.status, method: "GET" }));
+            return;
+          }
 
-      return c.json({
-        ok: false,
-        status: headResponse.status,
-        method: "HEAD",
-        error: `Request failed with status ${headResponse.status}.`,
-      });
-    } catch (error) {
-      return c.json({
-        ok: false,
-        status: null,
-        method: null,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unknown error during preflight.",
-      });
+          await stream.writeln(JSON.stringify({ status: "error", ok: false, status: getResponse.status, method: "GET", error: `Request failed with status ${getResponse.status}.` }));
+          return;
+        }
+
+        await stream.writeln(JSON.stringify({ status: "error", ok: false, status: headResponse.status, method: "HEAD", error: `Request failed with status ${headResponse.status}.` }));
+      } catch (error) {
+        await stream.writeln(JSON.stringify({ status: "error", ok: false, status: null, method: null, error: error instanceof Error ? error.message : "Unknown error during preflight." }));
+      }
+    } else {
+      // Normal preflight
+      const probe = async (method: "HEAD" | "GET") => {
+        const response = await fetch(target, {
+          method,
+          redirect: "manual",
+        });
+        await response.body?.cancel().catch(() => undefined);
+        return response;
+      };
+
+      try {
+        const headResponse = await probe("HEAD");
+
+        if (headResponse.ok) {
+          await stream.writeln(JSON.stringify({ status: "iframe ready", ok: true, status: headResponse.status, method: "HEAD" }));
+          return;
+        }
+
+        if (headResponse.status === 405) {
+          const getResponse = await probe("GET");
+          if (getResponse.ok) {
+            await stream.writeln(JSON.stringify({ status: "iframe ready", ok: true, status: getResponse.status, method: "GET" }));
+            return;
+          }
+
+          await stream.writeln(JSON.stringify({ status: "error", ok: false, status: getResponse.status, method: "GET", error: `Request failed with status ${getResponse.status}.` }));
+          return;
+        }
+
+        await stream.writeln(JSON.stringify({ status: "error", ok: false, status: headResponse.status, method: "HEAD", error: `Request failed with status ${headResponse.status}.` }));
+      } catch (error) {
+        await stream.writeln(JSON.stringify({ status: "error", ok: false, status: null, method: null, error: error instanceof Error ? error.message : "Unknown error during preflight." }));
+      }
     }
-  },
-);
+  });
+});
