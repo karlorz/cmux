@@ -9,6 +9,8 @@ import {
 import { createPortal } from "react-dom";
 
 import { usePersistentIframe } from "../hooks/usePersistentIframe";
+import { useMorphInstanceResume } from "../hooks/useMorphInstanceResume";
+import { extractMorphInstanceId, isMorphUrl } from "../lib/toProxyWorkspaceUrl";
 import { cn } from "@/lib/utils";
 
 export type PersistentIframeStatus = "loading" | "loaded" | "error";
@@ -139,6 +141,15 @@ export function PersistentIframe({
   const loadTimeoutRef = useRef<number | null>(null);
   const preflightAbortRef = useRef<AbortController | null>(null);
 
+  // Check if this is a morph URL
+  const isMorph = src ? isMorphUrl(src) : false;
+  const morphInstanceId = src ? extractMorphInstanceId(src) : null;
+
+  // Use resume hook for morph URLs
+  const morphResumeState = useMorphInstanceResume({
+    instanceId: isMorph ? morphInstanceId : null,
+  });
+
   useEffect(() => {
     setStatus("loading");
   }, [persistKey, src]);
@@ -215,9 +226,16 @@ export function PersistentIframe({
 
   const effectiveStatus = forcedStatus ?? status;
 
+  // For morph URLs, override status based on resume state
+  const finalStatus = isMorph
+    ? (morphResumeState.status === "ready" ? effectiveStatus :
+       morphResumeState.status === "not_found" || morphResumeState.status === "failed" ? "error" :
+       "loading")
+    : effectiveStatus;
+
   useEffect(() => {
-    onStatusChange?.(effectiveStatus);
-  }, [effectiveStatus, onStatusChange]);
+    onStatusChange?.(finalStatus);
+  }, [finalStatus, onStatusChange]);
 
   useEffect(() => {
     if (!preflight) {
@@ -227,6 +245,18 @@ export function PersistentIframe({
       return;
     }
     if (typeof window === "undefined" || typeof fetch === "undefined") {
+      return;
+    }
+
+    // For morph URLs, handle resume logic instead of preflight
+    if (isMorph) {
+      if (morphResumeState.status === "not_found") {
+        handleError(new Error("Morph instance not found"));
+      } else if (morphResumeState.status === "failed") {
+        handleError(new Error(`Failed to resume morph instance: ${morphResumeState.message || "Unknown error"}`));
+      }
+      // For "ready" status, we don't need to do anything - the iframe will load normally
+      // For "resuming" and "loading", the iframe loading is blocked by the status check below
       return;
     }
 
@@ -305,10 +335,10 @@ export function PersistentIframe({
         preflightAbortRef.current = null;
       }
     };
-  }, [handleError, persistKey, preflight, src]);
+  }, [handleError, persistKey, preflight, src, isMorph, morphResumeState.status, morphResumeState.message]);
 
-  const showLoadingOverlay = effectiveStatus === "loading" && loadingFallback;
-  const showErrorOverlay = effectiveStatus === "error" && errorFallback;
+  const showLoadingOverlay = finalStatus === "loading" && loadingFallback;
+  const showErrorOverlay = finalStatus === "error" && errorFallback;
   const shouldShowOverlay = Boolean(showLoadingOverlay || showErrorOverlay);
 
   const syncOverlayPosition = useCallback(() => {

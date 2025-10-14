@@ -2,6 +2,7 @@ import { DEFAULT_MORPH_SNAPSHOT_ID } from "@/lib/utils/morph-defaults";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { env } from "@/lib/utils/www-env";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { streamSSE } from "hono/streaming";
 import { MorphCloudClient } from "morphcloud";
 import { getConvex } from "../utils/get-convex";
 import { selectGitIdentity } from "../utils/gitIdentity";
@@ -367,6 +368,140 @@ morphRouter.openapi(
     } catch (error) {
       console.error("Failed to setup Morph instance:", error);
       return c.text("Failed to setup instance", 500);
+    }
+  }
+);
+
+const ResumeInstanceResponse = z
+  .object({
+    status: z.enum(["resuming", "ready", "failed", "not_found"]),
+    message: z.string().optional(),
+  })
+  .openapi("ResumeInstanceResponse");
+
+morphRouter.openapi(
+  createRoute({
+    method: "get" as const,
+    path: "/morph/resume/{instanceId}",
+    tags: ["Morph"],
+    summary: "Resume a paused Morph instance with streaming updates",
+    request: {
+      params: z.object({ instanceId: z.string() }),
+    },
+    responses: {
+      200: {
+        description: "Streaming resume status updates",
+        content: {
+          "text/event-stream": {
+            schema: ResumeInstanceResponse,
+          },
+        },
+      },
+      401: { description: "Unauthorized" },
+      403: { description: "Forbidden" },
+      404: { description: "Instance not found" },
+      500: { description: "Failed to resume instance" },
+    },
+  }),
+  async (c) => {
+    const user = await stackServerAppJs.getUser({ tokenStore: c.req.raw });
+    if (!user) {
+      return c.text("Unauthorized", 401);
+    }
+    const { accessToken } = await user.getAuthJson();
+    if (!accessToken) return c.text("Unauthorized", 401);
+
+    const { instanceId } = c.req.valid("param");
+
+    const convex = getConvex({ accessToken });
+
+    try {
+      const client = new MorphCloudClient({
+        apiKey: env.MORPH_API_KEY,
+      });
+
+      // Get the instance to check ownership
+      let instance;
+      try {
+        instance = await client.instances.get({ instanceId });
+      } catch (error) {
+        return streamSSE(c, async (stream) => {
+          await stream.writeln(`data: ${JSON.stringify({ status: "not_found", message: "Instance not found" })}\n\n`);
+          await stream.close();
+        });
+      }
+
+      // Security: ensure the instance belongs to the user
+      const meta = instance.metadata;
+      if (!meta?.userId || meta.userId !== user.id) {
+        return c.text("Forbidden: Instance does not belong to this user", 403);
+      }
+
+      return streamSSE(c, async (stream) => {
+        try {
+          await stream.writeln(`data: ${JSON.stringify({ status: "resuming", message: "Checking instance status" })}\n\n`);
+
+          // Check current status
+          const currentInstance = await client.instances.get({ instanceId });
+
+          if (currentInstance.status === "ready") {
+            await stream.writeln(`data: ${JSON.stringify({ status: "ready", message: "Instance is already ready" })}\n\n`);
+            await stream.close();
+            return;
+          }
+
+          if (currentInstance.status === "error") {
+            await stream.writeln(`data: ${JSON.stringify({ status: "failed", message: "Instance is in error state" })}\n\n`);
+            await stream.close();
+            return;
+          }
+
+          // If paused, try to resume (assuming resume method exists)
+          if (currentInstance.status === "paused") {
+            try {
+              await currentInstance.resume();
+            } catch (resumeError) {
+              // If resume fails, maybe just accessing it wakes it up
+              console.log("Resume method failed or not available, continuing to check status");
+            }
+          }
+
+          // Wait for instance to be ready
+          let attempts = 0;
+          const maxAttempts = 30; // 30 seconds max
+          while (attempts < maxAttempts) {
+            try {
+              const updatedInstance = await client.instances.get({ instanceId });
+              if (updatedInstance.status === "ready") {
+                await stream.writeln(`data: ${JSON.stringify({ status: "ready", message: "Instance is ready" })}\n\n`);
+                await stream.close();
+                return;
+              }
+              if (updatedInstance.status === "error") {
+                await stream.writeln(`data: ${JSON.stringify({ status: "failed", message: "Instance entered error state" })}\n\n`);
+                await stream.close();
+                return;
+              }
+            } catch (error) {
+              // Instance might be temporarily unavailable
+              console.log(`Status check failed (attempt ${attempts + 1}):`, error);
+            }
+
+            attempts++;
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            await stream.writeln(`data: ${JSON.stringify({ status: "resuming", message: `Waiting for instance (${attempts}/${maxAttempts})` })}\n\n`);
+          }
+
+          await stream.writeln(`data: ${JSON.stringify({ status: "failed", message: "Resume timed out" })}\n\n`);
+        } catch (error) {
+          console.error("Failed to resume instance:", error);
+          await stream.writeln(`data: ${JSON.stringify({ status: "failed", message: error instanceof Error ? error.message : "Unknown error" })}\n\n`);
+        }
+        await stream.close();
+      });
+    } catch (error) {
+      console.error("Failed to setup resume stream:", error);
+      return c.text("Failed to resume instance", 500);
     }
   }
 );

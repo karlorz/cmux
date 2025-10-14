@@ -68,3 +68,12 @@ export function toMorphVncUrl(sourceUrl: string): string | null {
 
   return vncUrl.toString();
 }
+
+export function isMorphUrl(url: string): boolean {
+  return parseMorphUrl(url) !== null;
+}
+
+export function extractMorphInstanceId(url: string): string | null {
+  const components = parseMorphUrl(url);
+  return components ? components.morphId : null;
+}
