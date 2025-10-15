@@ -1,0 +1,30 @@
+{
+  "name": "@cmux/cli",
+  "version": "0.1.0",
+  "module": "index.tsx",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "cmux-cli": "./index.tsx"
+  },
+  "scripts": {
+    "dev": "bun run index.tsx",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "ink": "^5.0.1",
+    "react": "^19.1.0",
+    "zod": "^3.24.1",
+    "@hono/zod-openapi": "^0.18.4",
+    "hono": "^4.7.11",
+    "@cmux/www-openapi-client": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^19.0.12"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
