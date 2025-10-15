@@ -1,0 +1,22 @@
+{
+  "name": "cli",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@cmux/www-openapi-client": "workspace:*",
+    "ink": "^6.3.1",
+    "ink-spinner": "^5.0.0",
+    "ink-text-input": "^6.0.0",
+    "open": "^10.2.0",
+    "react": "^19.1.1"
+  }
+}
