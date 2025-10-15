@@ -385,6 +385,20 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   libxss1 \
   libxtst6
 
+COPY configs/novnc/cmux-auto-clipboard.js /usr/share/novnc/app/cmux-auto-clipboard.js
+
+RUN python3 - <<'PY'
+from pathlib import Path
+
+html_path = Path("/usr/share/novnc/vnc.html")
+snippet = '    <script type="module" src="app/cmux-auto-clipboard.js"></script>\n'
+
+text = html_path.read_text()
+if 'app/cmux-auto-clipboard.js' not in text:
+    text = text.replace('</body>', f"{snippet}</body>")
+    html_path.write_text(text)
+PY
+
 ENV RUSTUP_HOME=/usr/local/rustup \
   CARGO_HOME=/usr/local/cargo \
   NVM_DIR=/root/.nvm \
