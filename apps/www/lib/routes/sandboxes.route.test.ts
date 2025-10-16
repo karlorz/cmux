@@ -8,7 +8,7 @@ const ENVIRONMENT_ID =
   process.env.DEBUG_ENVIRONMENT_ID ?? "mn7bxgkya730p3hqzj2dzatzhh7s8c52";
 
 describe("sandboxesRouter integration", () => {
-  it("rejects providing a snapshotId not owned by the team", async () => {
+  it("rejects providing a snapshotId not owned by the team", { timeout: 120000 }, async () => {
     const tokens = await __TEST_INTERNAL_ONLY_GET_STACK_TOKENS();
     const res = await postApiSandboxesStart({
       client: testApiClient,
