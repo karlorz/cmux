@@ -172,6 +172,7 @@ export const WorkerExecSchema = z.object({
   cwd: z.string().optional(),
   env: z.record(z.string(), z.string()).optional(),
   timeout: z.number().optional(), // Timeout in milliseconds
+  detached: z.boolean().optional(),
 });
 
 // Execute command result schema
@@ -180,6 +181,7 @@ export const WorkerExecResultSchema = z.object({
   stderr: z.string(),
   exitCode: z.number(),
   signal: z.string().optional(),
+  pid: z.number().optional(),
 });
 
 // Server to Worker Events

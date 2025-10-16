@@ -1,17 +1,45 @@
 import { promisify } from "node:util";
-import { exec, type ExecException } from "node:child_process";
+import { exec, spawn, type ExecException } from "node:child_process";
 import type { WorkerExec, WorkerExecResult } from "@cmux/shared";
 
 const execAsync = promisify(exec);
 
 export async function runWorkerExec(validated: WorkerExec): Promise<WorkerExecResult> {
+  const cwd = validated.cwd || process.env.HOME || "/";
+  const env = { ...process.env, ...(validated.env || {}) };
   const execOptions = {
-    cwd: validated.cwd || process.env.HOME || "/",
-    env: { ...process.env, ...(validated.env || {}) },
+    cwd,
+    env,
     timeout: validated.timeout,
   } as const;
 
   try {
+    if (validated.detached) {
+      return await new Promise<WorkerExecResult>((resolve, reject) => {
+        const child = spawn(validated.command, validated.args ?? [], {
+          cwd,
+          env,
+          stdio: "ignore",
+          detached: true,
+        });
+
+        child.once("error", (error) => {
+          reject(error);
+        });
+
+        child.once("spawn", () => {
+          // Allow the worker process to continue running independently
+          child.unref();
+          resolve({
+            stdout: "",
+            stderr: "",
+            exitCode: 0,
+            pid: child.pid ?? undefined,
+          });
+        });
+      });
+    }
+
     // If the caller asked for a specific shell with -c, execute using that shell
     if (
       (validated.command === "/bin/bash" ||
@@ -61,10 +89,13 @@ export async function runWorkerExec(validated: WorkerExec): Promise<WorkerExecRe
     };
 
     const code = typeof err?.code === "number" ? err.code : 1;
+    const stdout = toString(err?.stdout);
+    const stderrOutput = toString(err?.stderr);
+    const message = typeof err?.message === "string" ? err.message : "";
 
     return {
-      stdout: toString(err?.stdout),
-      stderr: toString(err?.stderr),
+      stdout,
+      stderr: stderrOutput || message,
       exitCode: code,
       signal: (err?.signal as string | undefined) ?? undefined,
     };

@@ -739,6 +739,8 @@ managementIO.on("connection", (socket) => {
         exitCode: result.exitCode,
         stdout: result.stdout.slice(0, 200),
         stderr: result.stderr.slice(0, 200),
+        ...(typeof result.pid === "number" ? { pid: result.pid } : {}),
+        ...(typeof result.signal === "string" ? { signal: result.signal } : {}),
       });
 
       callback({

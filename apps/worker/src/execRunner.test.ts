@@ -72,4 +72,37 @@ describe("runWorkerExec", () => {
     });
     expect(kill.exitCode).toBe(0);
   });
+
+  it("runs a command detached and returns its pid", async () => {
+    const result = await runWorkerExec({
+      command: "sleep",
+      args: ["5"],
+      detached: true,
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(typeof result.pid).toBe("number");
+
+    if (typeof result.pid === "number") {
+      expect(result.pid).toBeGreaterThan(0);
+
+      let isRunning = true;
+      try {
+        process.kill(result.pid, 0);
+      } catch (_error) {
+        isRunning = false;
+      }
+
+      expect(isRunning).toBe(true);
+
+      try {
+        process.kill(result.pid, "SIGTERM");
+      } catch (error) {
+        const err = error as NodeJS.ErrnoException;
+        if (err.code !== "ESRCH") {
+          throw err;
+        }
+      }
+    }
+  });
 });

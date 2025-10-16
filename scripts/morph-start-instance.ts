@@ -132,21 +132,27 @@ async function workerExec({
   args,
   cwd,
   env,
+  detached,
 }: {
   workerSocket: Socket<WorkerToServerEvents, ServerToWorkerEvents>;
   command: string;
   args: string[];
   cwd: string;
   env: Record<string, string>;
+  detached?: boolean;
 }) {
   return new Promise((resolve, reject) => {
-    workerSocket.emit("worker:exec", { command, args, cwd, env }, (payload) => {
-      if (payload.error) {
-        reject(payload.error);
-      } else {
-        resolve(payload);
+    workerSocket.emit(
+      "worker:exec",
+      { command, args, cwd, env, detached },
+      (payload) => {
+        if (payload.error) {
+          reject(payload.error);
+        } else {
+          resolve(payload);
+        }
       }
-    });
+    );
   });
 }
 
@@ -157,6 +163,7 @@ await workerExec({
   args: ["-c", "SKIP_DOCKER_BUILD=true SKIP_CONVEX=true ./scripts/dev.sh"],
   cwd: "/root/workspace",
   env: {},
+  detached: true,
 });
 // await workerExec({
 //   workerSocket: clientSocket,
