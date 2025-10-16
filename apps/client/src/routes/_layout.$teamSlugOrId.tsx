@@ -75,7 +75,7 @@ function LayoutComponent() {
       <CommandBar teamSlugOrId={teamSlugOrId} />
 
       <ExpandTasksProvider>
-        <div className="flex flex-row grow min-h-0 bg-white dark:bg-black">
+        <div className="flex flex-row grow min-h-0 h-dvh bg-white dark:bg-black">
           <Sidebar tasks={displayTasks} teamSlugOrId={teamSlugOrId} />
 
           {/* <div className="flex flex-col grow overflow-hidden bg-white dark:bg-neutral-950"> */}

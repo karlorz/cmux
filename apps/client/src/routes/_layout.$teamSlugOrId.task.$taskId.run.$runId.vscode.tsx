@@ -22,7 +22,7 @@ const paramsSchema = z.object({
 });
 
 export const Route = createFileRoute(
-  "/_layout/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+  "/_layout/$teamSlugOrId/task/$taskId/run/$runId/vscode"
 )({
   component: VSCodeComponent,
   params: {
@@ -39,7 +39,7 @@ export const Route = createFileRoute(
       convexQuery(api.taskRuns.get, {
         teamSlugOrId: opts.params.teamSlugOrId,
         id: opts.params.runId,
-      }),
+      })
     );
     if (result) {
       const workspaceUrl = result.vscode?.workspaceUrl;
@@ -59,7 +59,7 @@ function VSCodeComponent() {
     convexQuery(api.taskRuns.get, {
       teamSlugOrId,
       id: taskRunId,
-    }),
+    })
   );
 
   const workspaceUrl = taskRun?.data?.vscode?.workspaceUrl
@@ -82,25 +82,25 @@ function VSCodeComponent() {
     (error: Error) => {
       console.error(
         `Failed to load workspace view for task run ${taskRunId}:`,
-        error,
+        error
       );
     },
-    [taskRunId],
+    [taskRunId]
   );
 
   const loadingFallback = useMemo(
     () => <WorkspaceLoadingIndicator variant="vscode" status="loading" />,
-    [],
+    []
   );
   const errorFallback = useMemo(
     () => <WorkspaceLoadingIndicator variant="vscode" status="error" />,
-    [],
+    []
   );
 
   const isEditorBusy = !hasWorkspace || iframeStatus !== "loaded";
 
   return (
-    <div className="pl-1 flex flex-col grow bg-neutral-50 dark:bg-black">
+    <div className="flex flex-col grow bg-neutral-50 dark:bg-black">
       <div className="flex flex-col grow min-h-0 border-l border-neutral-200 dark:border-neutral-800">
         <div
           className="flex flex-row grow min-h-0 relative"
