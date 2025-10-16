@@ -202,7 +202,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
   useEffect(() => {
     // In Electron, prefer global shortcut from main via cmux event.
     if (isElectron) {
-      const off = window.cmux.on("shortcut:cmd-k", () => {
+      const offCmdK = window.cmux.on("shortcut:cmd-k", () => {
         // Only handle Cmd+K (no shift/ctrl variations)
         setOpenedWithShift(false);
         setActivePage("root");
@@ -213,9 +213,22 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
         }
         setOpen((cur) => !cur);
       });
+      const offSidebarToggle = window.cmux.on("shortcut:sidebar-toggle", () => {
+        // Handle Cmd+B sidebar toggle
+        const currentHidden = localStorage.getItem("sidebarHidden") === "true";
+        localStorage.setItem("sidebarHidden", String(!currentHidden));
+        window.dispatchEvent(new StorageEvent("storage", {
+          key: "sidebarHidden",
+          newValue: String(!currentHidden),
+          oldValue: String(currentHidden),
+          storageArea: localStorage,
+          url: window.location.href,
+        }));
+      });
       return () => {
         // Unsubscribe if available
-        if (typeof off === "function") off();
+        if (typeof offCmdK === "function") offCmdK();
+        if (typeof offSidebarToggle === "function") offSidebarToggle();
       };
     }
 
