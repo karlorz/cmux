@@ -2,6 +2,7 @@ import { FloatingPane } from "@/components/floating-pane";
 import { type GitDiffViewerProps } from "@/components/git-diff-viewer";
 import { RunDiffSection } from "@/components/RunDiffSection";
 import { TaskDetailHeader } from "@/components/task-detail-header";
+import { TaskRunChecks } from "@/components/task-run-checks";
 import { useTheme } from "@/components/theme/use-theme";
 import { Button } from "@/components/ui/button";
 import {
@@ -629,6 +630,7 @@ function RunDiffPage() {
 
   const taskRunId = selectedRun?._id ?? runId;
   const restartTaskPersistenceKey = `restart-task-${taskId}-${runId}`;
+  const pullRequests = selectedRun?.pullRequests ?? null;
 
   // 404 if selected run is missing
   if (!selectedRun) {
@@ -669,6 +671,10 @@ function RunDiffPage() {
             </div>
           )}
           <div className="bg-white dark:bg-neutral-900 grow flex flex-col">
+            <TaskRunChecks
+              teamSlugOrId={teamSlugOrId}
+              pullRequests={pullRequests}
+            />
             <Suspense
               fallback={
                 <div className="flex items-center justify-center h-full">
