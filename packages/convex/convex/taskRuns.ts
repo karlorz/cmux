@@ -154,7 +154,16 @@ async function fetchTaskRunsForTask(
   });
 
   const sortRuns = (items: TaskRunWithChildren[]) => {
-    items.sort((a, b) => a.createdAt - b.createdAt);
+    items.sort((a, b) => {
+      const aCrowned = a.isCrowned === true;
+      const bCrowned = b.isCrowned === true;
+
+      if (aCrowned !== bCrowned) {
+        return aCrowned ? -1 : 1;
+      }
+
+      return a.createdAt - b.createdAt;
+    });
     items.forEach((item) => sortRuns(item.children));
   };
   sortRuns(rootRuns);
