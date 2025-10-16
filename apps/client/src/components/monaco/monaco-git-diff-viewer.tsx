@@ -488,10 +488,15 @@ function createDiffEditorMount({
     const disposables: Array<{ dispose: () => void }> = [];
     const originalVisibility = container.style.visibility;
     const originalTransform = container.style.transform;
-    let isContainerVisible = container.style.visibility !== "hidden";
+    const originalMinHeight = container.style.minHeight;
+    const originalHeightValue = container.style.height;
+    const originalOverflowValue = container.style.overflow;
+    let isContainerVisible = false;
     let collapsedState = false;
     let targetMinHeight = Math.max(editorMinHeight, DEFAULT_EDITOR_MIN_HEIGHT);
     let measuredMinHeight: number | null = null;
+    let initialMeasurementPending = true;
+    let pendingInitialMeasurementHandle: number | null = null;
 
     const getEffectiveMinHeight = () => {
       if (measuredMinHeight !== null) {
@@ -499,6 +504,12 @@ function createDiffEditorMount({
       }
       return Math.max(targetMinHeight, DEFAULT_EDITOR_MIN_HEIGHT);
     };
+
+    container.style.visibility = "hidden";
+    container.style.transform = "translateX(100000px)";
+    container.style.minHeight = "0px";
+    container.style.height = "0px";
+    container.style.overflow = "hidden";
 
     const parentElement = container.parentElement;
     let layoutAnchor: HTMLElement | null = null;
@@ -525,10 +536,17 @@ function createDiffEditorMount({
       });
     }
 
-    const computeHeight = (targetEditor: editor.IStandaloneCodeEditor) => {
+    const computeHeight = (
+      targetEditor: editor.IStandaloneCodeEditor,
+      allowFallback: boolean,
+    ) => {
       const contentHeight = targetEditor.getContentHeight();
       if (contentHeight > 0) {
-        return contentHeight;
+        return { height: contentHeight, hasContentMeasurement: true };
+      }
+
+      if (!allowFallback) {
+        return { height: 0, hasContentMeasurement: false };
       }
 
       const lineHeight = targetEditor.getOption(
@@ -537,17 +555,36 @@ function createDiffEditorMount({
       const model = targetEditor.getModel();
       const lineCount = model ? Math.max(1, model.getLineCount()) : 1;
 
-      return lineCount * lineHeight;
+      return { height: lineCount * lineHeight, hasContentMeasurement: false };
     };
 
-    container.style.minHeight = `${getEffectiveMinHeight()}px`;
+    const scheduleInitialMeasurement = () => {
+      if (!initialMeasurementPending) {
+        return;
+      }
+      if (typeof window === "undefined") {
+        return;
+      }
+      if (pendingInitialMeasurementHandle !== null) {
+        return;
+      }
+      pendingInitialMeasurementHandle = window.requestAnimationFrame(() => {
+        pendingInitialMeasurementHandle = null;
+        applyLayout();
+      });
+    };
 
     const applyLayout = () => {
+      const allowFallback = !initialMeasurementPending;
+      const originalMeasurement = computeHeight(originalEditor, allowFallback);
+      const modifiedMeasurement = computeHeight(modifiedEditor, allowFallback);
       const height = Math.max(
-        computeHeight(originalEditor),
-        computeHeight(modifiedEditor),
+        originalMeasurement.height,
+        modifiedMeasurement.height,
       );
-
+      const hasReliableMeasurement =
+        originalMeasurement.hasContentMeasurement ||
+        modifiedMeasurement.hasContentMeasurement;
       const modifiedInfo = modifiedEditor.getLayoutInfo();
       const originalInfo = originalEditor.getLayoutInfo();
       const containerWidth =
@@ -556,22 +593,50 @@ function createDiffEditorMount({
         modifiedInfo.width ||
         originalInfo.width;
 
-      const measuredHeight = Math.max(DEFAULT_EDITOR_MIN_HEIGHT, height);
-      measuredMinHeight = measuredHeight;
-      const effectiveMinHeight = getEffectiveMinHeight();
-
-      if (!collapsedState) {
-        container.style.minHeight = `${effectiveMinHeight}px`;
+      if (hasReliableMeasurement) {
+        const measuredHeight = Math.max(DEFAULT_EDITOR_MIN_HEIGHT, height);
+        measuredMinHeight = measuredHeight;
+        if (initialMeasurementPending) {
+          initialMeasurementPending = false;
+        }
+        if (
+          pendingInitialMeasurementHandle !== null &&
+          typeof window !== "undefined"
+        ) {
+          window.cancelAnimationFrame(pendingInitialMeasurementHandle);
+          pendingInitialMeasurementHandle = null;
+        }
+      } else if (initialMeasurementPending) {
+        scheduleInitialMeasurement();
       }
 
-      if (containerWidth > 0 && effectiveMinHeight > 0) {
+      const effectiveMinHeight = getEffectiveMinHeight();
+
+      if (!initialMeasurementPending && !collapsedState) {
+        container.style.minHeight = `${effectiveMinHeight}px`;
+        container.style.height = "";
+        container.style.overflow = "";
+      }
+
+      if (
+        !initialMeasurementPending &&
+        containerWidth > 0 &&
+        effectiveMinHeight > 0
+      ) {
         diffEditor.layout({ width: containerWidth, height: effectiveMinHeight });
+      }
+
+      if (!initialMeasurementPending) {
+        showContainer();
       }
 
       scheduleVisibilityEvaluation();
     };
 
     const showContainer = () => {
+      if (initialMeasurementPending) {
+        return;
+      }
       if (isContainerVisible) {
         return;
       }
@@ -595,6 +660,9 @@ function createDiffEditorMount({
       if (collapsedState) {
         return;
       }
+      if (initialMeasurementPending) {
+        return;
+      }
       container.style.minHeight = `${getEffectiveMinHeight()}px`;
       container.style.height = "";
       container.style.overflow = "";
@@ -615,7 +683,7 @@ function createDiffEditorMount({
     const updateTargetMinHeight = (nextTarget: number) => {
       targetMinHeight = Math.max(nextTarget, DEFAULT_EDITOR_MIN_HEIGHT);
       measuredMinHeight = null;
-      if (!collapsedState) {
+      if (!collapsedState && !initialMeasurementPending) {
         applyTargetMinHeight();
         applyLayout();
       }
@@ -760,6 +828,13 @@ function createDiffEditorMount({
         isContainerVisible = true;
         container.style.visibility = originalVisibility || "visible";
         container.style.transform = originalTransform || "";
+        container.style.minHeight = originalMinHeight;
+        container.style.height = originalHeightValue;
+        container.style.overflow = originalOverflowValue;
+        if (pendingInitialMeasurementHandle !== null && typeof window !== "undefined") {
+          window.cancelAnimationFrame(pendingInitialMeasurementHandle);
+        }
+        initialMeasurementPending = false;
       },
     });
 
