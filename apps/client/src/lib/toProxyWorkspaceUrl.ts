@@ -1,4 +1,6 @@
 const MORPH_HOST_REGEX = /^port-(\d+)-morphvm-([^.]+)\.http\.cloud\.morph\.so$/;
+const CMUX_SH_HOST_REGEX = /^port-(\d+)-([^.]+)\.cmux\.sh$/;
+const CMUX_APP_HOST_REGEX = /^cmux-([^-]+)-([^-]+)-(\d+)\.cmux\.app$/;
 
 interface MorphUrlComponents {
   url: URL;
@@ -67,4 +69,61 @@ export function toMorphVncUrl(sourceUrl: string): string | null {
   vncUrl.hash = "";
 
   return vncUrl.toString();
+}
+
+function rewriteHostWithPort(url: URL, targetPort: number): string | null {
+  const clone = new URL(url.toString());
+  const { hostname } = clone;
+
+  const morphMatch = hostname.match(MORPH_HOST_REGEX);
+  if (morphMatch) {
+    const [, , morphId] = morphMatch;
+    clone.hostname = `port-${targetPort}-morphvm-${morphId}.http.cloud.morph.so`;
+    clone.port = "";
+    clone.pathname = "/";
+    clone.search = "";
+    clone.hash = "";
+    return clone.toString();
+  }
+
+  const cmuxShMatch = hostname.match(CMUX_SH_HOST_REGEX);
+  if (cmuxShMatch) {
+    const [, , morphId] = cmuxShMatch;
+    clone.hostname = `port-${targetPort}-${morphId}.cmux.sh`;
+    clone.port = "";
+    clone.pathname = "/";
+    clone.search = "";
+    clone.hash = "";
+    return clone.toString();
+  }
+
+  const cmuxAppMatch = hostname.match(CMUX_APP_HOST_REGEX);
+  if (cmuxAppMatch) {
+    const [, morphId, scope] = cmuxAppMatch;
+    clone.hostname = `cmux-${morphId}-${scope}-${targetPort}.cmux.app`;
+    clone.port = "";
+    clone.pathname = "/";
+    clone.search = "";
+    clone.hash = "";
+    return clone.toString();
+  }
+
+  if (clone.port) {
+    clone.port = `${targetPort}`;
+    clone.pathname = "/";
+    clone.search = "";
+    clone.hash = "";
+    return clone.toString();
+  }
+
+  return null;
+}
+
+export function toDevTerminalUrl(sourceUrl: string): string | null {
+  try {
+    const parsed = new URL(sourceUrl);
+    return rewriteHostWithPort(parsed, 39383);
+  } catch {
+    return null;
+  }
 }
