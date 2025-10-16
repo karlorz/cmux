@@ -39,7 +39,7 @@ export async function startServer({
   });
 
   process.on("uncaughtException", (error) => {
-    serverLogger.error("Uncaught Exception:", error);
+    serverLogger.error("Uncaught Exception:", error.message);
     // Don't exit for file system errors
     if (
       error &&
@@ -52,7 +52,7 @@ export async function startServer({
       if (fsError.errno === 0 || fsError.syscall === "TODO") {
         serverLogger.error(
           "File system watcher error - continuing without watching:",
-          fsError.path,
+          fsError.path
         );
         return;
       }
@@ -67,7 +67,7 @@ export async function startServer({
     const limit = parseInt(stdout.trim(), 10);
     if (limit < 8192) {
       serverLogger.warn(
-        `System file descriptor limit is low: ${limit}. Consider increasing it with 'ulimit -n 8192' to avoid file watcher issues.`,
+        `System file descriptor limit is low: ${limit}. Consider increasing it with 'ulimit -n 8192' to avoid file watcher issues.`
       );
     }
   } catch (error) {
@@ -99,7 +99,7 @@ export async function startServer({
     if (defaultRepo?.remoteName) {
       try {
         serverLogger.info(
-          `Storing default repository: ${defaultRepo.remoteName}`,
+          `Storing default repository: ${defaultRepo.remoteName}`
         );
         await getConvex().mutation(api.github.upsertRepo, {
           teamSlugOrId: "default",
@@ -120,7 +120,7 @@ export async function startServer({
         rt.emit("default-repo", defaultRepoData);
 
         serverLogger.info(
-          `Successfully set default repository: ${defaultRepo.remoteName}`,
+          `Successfully set default repository: ${defaultRepo.remoteName}`
         );
       } catch (error) {
         serverLogger.error("Error storing default repo:", error);
@@ -128,7 +128,7 @@ export async function startServer({
     } else if (defaultRepo) {
       serverLogger.warn(
         `Default repo provided but no remote name found:`,
-        defaultRepo,
+        defaultRepo
       );
     }
 
@@ -141,7 +141,7 @@ export async function startServer({
   async function cleanup() {
     if (isCleaningUp || isCleanedUp) {
       serverLogger.info(
-        "Cleanup already in progress or completed, skipping...",
+        "Cleanup already in progress or completed, skipping..."
       );
       return;
     }
@@ -165,7 +165,7 @@ export async function startServer({
     try {
       // Get all cmux containers
       const { stdout } = await execAsync(
-        'docker ps -a --filter "name=cmux-" --format "{{.Names}}"',
+        'docker ps -a --filter "name=cmux-" --format "{{.Names}}"'
       );
       const containerNames = stdout
         .trim()
@@ -174,7 +174,7 @@ export async function startServer({
 
       if (containerNames.length > 0) {
         serverLogger.info(
-          `Stopping ${containerNames.length} VSCode containers: ${containerNames.join(", ")}`,
+          `Stopping ${containerNames.length} VSCode containers: ${containerNames.join(", ")}`
         );
 
         // Stop all containers in parallel with a single docker command
@@ -193,7 +193,7 @@ export async function startServer({
     } catch (error) {
       serverLogger.error(
         "Error stopping containers via docker command:",
-        error,
+        error
       );
     }
 

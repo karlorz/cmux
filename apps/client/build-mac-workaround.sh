@@ -6,6 +6,7 @@ cd "$SCRIPT_DIR"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # remove existing build artifacts; keep build/ to preserve entitlements between steps
+rm -rf build
 rm -rf dist-electron
 rm -rf out
 # If you need to refresh icons, uncomment the next line to delete only icon outputs.

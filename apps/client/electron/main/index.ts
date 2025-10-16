@@ -66,7 +66,6 @@ type AutoUpdateToastPayload = {
 };
 
 let queuedAutoUpdateToast: AutoUpdateToastPayload | null = null;
-let updateDownloadedAndReady = false;
 
 // Persistent log files
 let logsDir: string | null = null;
@@ -291,7 +290,28 @@ function isUpdateNewerThanCurrent(
     return info.version !== app.getVersion();
   }
 
-  return semver.gt(updateVersion, currentVersion);
+  const updateParsed = semver.parse(updateVersion);
+  const currentParsed = semver.parse(currentVersion);
+
+  if (!updateParsed || !currentParsed) {
+    return semver.gt(updateVersion, currentVersion);
+  }
+
+  const isNewer = semver.gt(updateParsed, currentParsed);
+  if (!isNewer) return false;
+
+  const currentHasPrerelease = currentParsed.prerelease.length > 0;
+  const updateHasPrerelease = updateParsed.prerelease.length > 0;
+  const sameCoreVersion =
+    updateParsed.major === currentParsed.major &&
+    updateParsed.minor === currentParsed.minor &&
+    updateParsed.patch === currentParsed.patch;
+
+  if (currentHasPrerelease && !updateHasPrerelease && sameCoreVersion) {
+    return false;
+  }
+
+  return true;
 }
 
 function logUpdateCheckResult(
@@ -366,7 +386,6 @@ function registerAutoUpdateIpcHandlers(): void {
         ok: true as const,
         updateAvailable: isUpdateNewerThanCurrent(updateInfo),
         version,
-        alreadyDownloaded: updateDownloadedAndReady,
       };
     } catch (error) {
       mainWarn("Renderer-initiated checkForUpdates failed", error);
@@ -493,8 +512,18 @@ function setupAutoUpdates(): void {
         ? info.version
         : null;
 
+    if (!isUpdateNewerThanCurrent(info)) {
+      mainLog(
+        "Ignoring downloaded update that is not newer than current build",
+        {
+          version,
+          currentVersion: app.getVersion(),
+        }
+      );
+      return;
+    }
+
     mainLog("Update downloaded; notifying renderer", { version });
-    updateDownloadedAndReady = true;
     queueAutoUpdateToast({ version });
   });
 
@@ -543,8 +572,6 @@ function createWindow(): void {
       nodeIntegration: false,
       webviewTag: true,
       partition: PARTITION,
-      allowRunningInsecureContent: true, // TODO: remove this
-      webSecurity: false,
     },
   };
 
@@ -715,9 +742,10 @@ app.whenReady().then(async () => {
       }
     });
   });
-  const rendererBaseUrl = is.dev && process.env["ELECTRON_RENDERER_URL"]
-    ? process.env["ELECTRON_RENDERER_URL"]
-    : `https://${APP_HOST}`;
+  const rendererBaseUrl =
+    is.dev && process.env["ELECTRON_RENDERER_URL"]
+      ? process.env["ELECTRON_RENDERER_URL"]
+      : `https://${APP_HOST}`;
 
   registerWebContentsViewHandlers({
     logger: {
@@ -834,7 +862,9 @@ app.whenReady().then(async () => {
           click: () => {
             const dispatched = sendShortcutToFocusedWindow("preview-reload");
             if (!dispatched) {
-              mainWarn("Reload Preview shortcut triggered with no active renderer");
+              mainWarn(
+                "Reload Preview shortcut triggered with no active renderer"
+              );
             }
           },
         },
@@ -925,27 +955,10 @@ app.whenReady().then(async () => {
             try {
               mainLog("Manual update check initiated");
               const result = await autoUpdater.checkForUpdates();
-              const updateInfo = result?.updateInfo;
-              const version =
-                updateInfo && typeof updateInfo.version === "string"
-                  ? updateInfo.version
-                  : null;
-              const versionLabel = version ? ` (${version})` : "";
-
-              if (!isUpdateNewerThanCurrent(updateInfo)) {
+              if (!result?.updateInfo) {
                 await dialog.showMessageBox({
                   type: "info",
-                  message: "You're up to date.",
-                });
-              } else if (updateDownloadedAndReady) {
-                await dialog.showMessageBox({
-                  type: "info",
-                  message: `Update ready to install${versionLabel}. The update will be applied when you restart cmux.`,
-                });
-              } else {
-                await dialog.showMessageBox({
-                  type: "info",
-                  message: `Update available${versionLabel}. Downloading in the background. You'll be notified when it's ready to install.`,
+                  message: "You’re up to date.",
                 });
               }
             } catch (e) {

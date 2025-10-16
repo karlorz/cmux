@@ -13,6 +13,8 @@ import {
   StartTaskSchema,
   type AvailableEditors,
   type FileInfo,
+  isLoopbackHostname,
+  type IframePreflightResult,
 } from "@cmux/shared";
 import {
   type PullRequestActionResult,
@@ -70,6 +72,10 @@ const GitSocketDiffRequestSchema = z.object({
   lastKnownMergeCommitSha: z.string().optional(),
 });
 
+const IframePreflightRequestSchema = z.object({
+  url: z.string().url(),
+});
+
 export function setupSocketHandlers(
   rt: RealtimeServer,
   gitDiffManager: GitDiffManager,
@@ -115,6 +121,89 @@ export function setupSocketHandlers(
         callback({ ok: false, error: msg });
       }
     });
+
+    socket.on(
+      "iframe-preflight",
+      async (
+        rawData: unknown,
+        callback: (result: IframePreflightResult) => void,
+      ) => {
+        const respond = (result: IframePreflightResult) => {
+          callback(result);
+        };
+
+        try {
+          const { url } = IframePreflightRequestSchema.parse(rawData ?? {});
+          const target = new URL(url);
+
+          if (target.protocol !== "http:" && target.protocol !== "https:") {
+            respond({
+              ok: false,
+              status: null,
+              method: null,
+              error: "Only HTTP(S) URLs are supported.",
+            });
+            return;
+          }
+
+          if (!isLoopbackHostname(target.hostname)) {
+            respond({
+              ok: false,
+              status: null,
+              method: null,
+              error:
+                "Only localhost URLs can be validated via the server preflight.",
+            });
+            return;
+          }
+
+          const fetchMethod = "GET";
+
+          const response = await fetch(target, {
+            method: fetchMethod,
+            redirect: "manual",
+          });
+          await response.body?.cancel().catch(() => undefined);
+
+          if (response.ok) {
+            respond({
+              ok: true,
+              status: response.status,
+              method: fetchMethod,
+            });
+            return;
+          }
+
+          respond({
+            ok: false,
+            status: response.status,
+            method: fetchMethod,
+            error: `Request failed with status ${response.status}.`,
+          });
+        } catch (error) {
+          if (error instanceof z.ZodError) {
+            respond({
+              ok: false,
+              status: null,
+              method: null,
+              error: "Invalid preflight request.",
+            });
+            return;
+          }
+
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Unknown error during preflight.";
+          respond({
+            ok: false,
+            status: null,
+            method: null,
+            error: message,
+          });
+        }
+      },
+    );
 
     // Send default repo info to newly connected client if available
     if (defaultRepo?.remoteName) {

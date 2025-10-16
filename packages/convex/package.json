@@ -28,6 +28,7 @@
     "@cmux/shared": "workspace:*",
     "@ai-sdk/anthropic": "^2.0.18",
     "@ai-sdk/gateway": "^1.0.28",
+    "@ai-sdk/openai": "^2.0.19",
     "@ai-sdk/provider-utils": "^3.0.9",
     "@convex-dev/migrations": "^0.2.9",
     "@stackframe/js": "^2.8.41",

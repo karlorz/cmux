@@ -83,7 +83,7 @@ export async function generateCommitMessageFromDiff(
       model,
       system,
       prompt,
-      temperature: 0.2,
+      ...(providerName === "OpenAI" ? {} : { temperature: 0.2 }),
       maxRetries: 2,
     });
     const cleaned = text.trim();

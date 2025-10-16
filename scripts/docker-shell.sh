@@ -41,6 +41,8 @@ docker run -d \
   -p 39379:39379 \
   -p 39380:39380 \
   -p 39381:39381 \
+  -p 39382:39382 \
+  -p 39383:39383 \
   --name "$CONTAINER_NAME" \
   "$IMAGE_NAME"
 container_started=true
@@ -57,6 +59,8 @@ echo "  - VS Code: http://localhost:39378"
 echo "  - cmux-proxy: http://localhost:39379"
 echo "  - noVNC: http://localhost:39380/vnc.html"
 echo "  - DevTools: http://localhost:39381/json/version"
+echo "  - DevTools target: http://localhost:39382/json/version"
+echo "  - cmux-xterm: http://localhost:39383/"
 echo "========================================="
 echo ""
 

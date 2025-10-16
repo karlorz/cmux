@@ -16,6 +16,12 @@ describe("normalizeOrigin", () => {
     );
   });
 
+  it("preserves LAN IPv4 http origins", () => {
+    expect(normalizeOrigin("http://192.168.1.10:9779")).toBe(
+      "http://192.168.1.10:9779"
+    );
+  });
+
   it("preserves numeric loopback hosts", () => {
     expect(normalizeOrigin("http://127.0.0.1:4000")).toBe(
       "http://127.0.0.1:4000"

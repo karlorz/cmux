@@ -4,15 +4,12 @@
  */
 const PERMISSIVE_IFRAME_PERMISSION_TOKENS = [
   "accelerometer",
-  "ambient-light-sensor",
   "autoplay",
-  "battery",
   "camera",
   "clipboard-read",
   "clipboard-write",
   "cross-origin-isolated",
   "display-capture",
-  "document-domain",
   "encrypted-media",
   "fullscreen",
   "gamepad",
@@ -30,16 +27,15 @@ const PERMISSIVE_IFRAME_PERMISSION_TOKENS = [
   "publickey-credentials-get",
   "screen-wake-lock",
   "serial",
-  "speaker-selection",
   "storage-access",
   "sync-xhr",
   "usb",
-  "web-share",
   "window-management",
   "xr-spatial-tracking",
 ] as const;
 
-export const PERMISSIVE_IFRAME_ALLOW = PERMISSIVE_IFRAME_PERMISSION_TOKENS.join("; ");
+export const PERMISSIVE_IFRAME_ALLOW =
+  PERMISSIVE_IFRAME_PERMISSION_TOKENS.join("; ");
 
 const PERMISSIVE_IFRAME_SANDBOX_TOKENS = [
   "allow-downloads",
@@ -57,4 +53,5 @@ const PERMISSIVE_IFRAME_SANDBOX_TOKENS = [
   "allow-top-navigation-by-user-activation",
 ] as const;
 
-export const PERMISSIVE_IFRAME_SANDBOX = PERMISSIVE_IFRAME_SANDBOX_TOKENS.join(" ");
+export const PERMISSIVE_IFRAME_SANDBOX =
+  PERMISSIVE_IFRAME_SANDBOX_TOKENS.join(" ");

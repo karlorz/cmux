@@ -5,6 +5,7 @@ import type {
   AggregatePullRequestSummary,
   PullRequestActionResult,
 } from "./pull-request-state";
+import type { IframePreflightResult } from "./iframe-preflight";
 
 // Client to Server Events
 export const CreateTerminalSchema = z.object({
@@ -499,6 +500,10 @@ export interface ClientToServerEvents {
     callback: (
       response: { ok: true; time: string } | { ok: false; error: string }
     ) => void
+  ) => void;
+  "iframe-preflight": (
+    data: { url: string },
+    callback: (response: IframePreflightResult) => void
   ) => void;
   "check-provider-status": (
     callback: (response: ProviderStatusResponse) => void

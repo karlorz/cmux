@@ -131,13 +131,15 @@ process.on("SIGINT", closeAllLoggers);
 process.on("SIGTERM", closeAllLoggers);
 
 process.on("uncaughtException", (error) => {
-  serverLogger.error("Uncaught exception:", error);
+  serverLogger.error("Uncaught exception:", error.message);
   closeAllLoggers();
   process.exit(1);
 });
 
 process.on("unhandledRejection", (reason, promise) => {
-  serverLogger.error("Unhandled rejection at:", promise, "reason:", reason);
+  const errorText =
+    typeof reason === "string" ? reason : JSON.stringify(reason);
+  serverLogger.error("Unhandled rejection at:", promise, "reason:", errorText);
   closeAllLoggers();
   process.exit(1);
 });

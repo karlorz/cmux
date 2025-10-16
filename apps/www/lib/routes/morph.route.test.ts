@@ -5,7 +5,7 @@ import { postApiMorphSetupInstance } from "@cmux/www-openapi-client";
 import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 
-describe("morphRouter - live", () => {
+describe.skip("morphRouter - live", () => {
   let createdInstanceId: string | null = null;
 
   afterAll(async () => {

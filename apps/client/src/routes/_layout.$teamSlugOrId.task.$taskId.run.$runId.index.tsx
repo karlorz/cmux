@@ -4,8 +4,10 @@ import { convexQuery } from "@convex-dev/react-query";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import clsx from "clsx";
-import { useCallback } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { PersistentWebView } from "@/components/persistent-webview";
+import type { PersistentIframeStatus } from "@/components/persistent-iframe";
+import { WorkspaceLoadingIndicator } from "@/components/workspace-loading-indicator";
 import { getTaskRunPersistKey } from "@/lib/persistent-webview-keys";
 import { toProxyWorkspaceUrl } from "@/lib/toProxyWorkspaceUrl";
 import {
@@ -56,6 +58,12 @@ function TaskRunComponent() {
     : null;
   const persistKey = getTaskRunPersistKey(taskRunId);
   const hasWorkspace = workspaceUrl !== null;
+  const [iframeStatus, setIframeStatus] =
+    useState<PersistentIframeStatus>("loading");
+
+  useEffect(() => {
+    setIframeStatus("loading");
+  }, [workspaceUrl]);
 
   const onLoad = useCallback(() => {
     console.log(`Workspace view loaded for task run ${taskRunId}`);
@@ -71,10 +79,24 @@ function TaskRunComponent() {
     [taskRunId]
   );
 
+  const loadingFallback = useMemo(
+    () => <WorkspaceLoadingIndicator variant="vscode" status="loading" />,
+    []
+  );
+  const errorFallback = useMemo(
+    () => <WorkspaceLoadingIndicator variant="vscode" status="error" />,
+    []
+  );
+
+  const isEditorBusy = !hasWorkspace || iframeStatus !== "loaded";
+
   return (
-    <div className="pl-1 flex flex-col grow bg-neutral-50 dark:bg-black">
+    <div className="flex flex-col grow bg-neutral-50 dark:bg-black">
       <div className="flex flex-col grow min-h-0 border-l border-neutral-200 dark:border-neutral-800">
-        <div className="flex flex-row grow min-h-0 relative">
+        <div
+          className="flex flex-row grow min-h-0 relative"
+          aria-busy={isEditorBusy}
+        >
           {workspaceUrl ? (
             <PersistentWebView
               persistKey={persistKey}
@@ -87,6 +109,12 @@ function TaskRunComponent() {
               suspended={!hasWorkspace}
               onLoad={onLoad}
               onError={onError}
+              fallback={loadingFallback}
+              fallbackClassName="bg-neutral-50 dark:bg-black"
+              errorFallback={errorFallback}
+              errorFallbackClassName="bg-neutral-50/95 dark:bg-black/95"
+              onStatusChange={setIframeStatus}
+              loadTimeoutMs={60_000}
             />
           ) : (
             <div className="grow" />
@@ -100,25 +128,7 @@ function TaskRunComponent() {
               }
             )}
           >
-            <div className="flex flex-col items-center gap-3">
-              <div className="flex gap-1">
-                <div
-                  className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"
-                  style={{ animationDelay: "0ms" }}
-                />
-                <div
-                  className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"
-                  style={{ animationDelay: "150ms" }}
-                />
-                <div
-                  className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"
-                  style={{ animationDelay: "300ms" }}
-                />
-              </div>
-              <span className="text-sm text-neutral-500">
-                Starting VS Code...
-              </span>
-            </div>
+            <WorkspaceLoadingIndicator variant="vscode" status="loading" />
           </div>
         </div>
       </div>

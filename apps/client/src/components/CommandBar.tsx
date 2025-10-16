@@ -23,6 +23,7 @@ import {
   Settings,
   Sun,
   Users,
+  PanelLeftClose,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -427,13 +428,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
             if (!cmux?.autoUpdate?.check) {
               toast.error("Update checks are currently unavailable.");
             } else {
-              // Show loading toast while checking
-              const checkingToastId = toast.loading("Checking for updates...");
-
               const result = await cmux.autoUpdate.check();
-
-              // Dismiss the loading toast
-              toast.dismiss(checkingToastId);
 
               if (!result?.ok) {
                 if (result?.reason === "not-packaged") {
@@ -445,18 +440,9 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
                 const versionLabel = result.version
                   ? ` (${result.version})`
                   : "";
-
-                if (result.alreadyDownloaded) {
-                  // Update is already downloaded and ready to install
-                  toast.success(
-                    `Update ready to install${versionLabel}. Restart to apply.`,
-                  );
-                } else {
-                  // Update is available but needs to download
-                  toast.success(
-                    `Update available${versionLabel}. Downloading in the background.`,
-                  );
-                }
+                toast.success(
+                  `Update available${versionLabel}. Downloading in the background.`,
+                );
               } else {
                 toast.info("You're up to date.");
               }
@@ -486,6 +472,16 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
         setTheme("dark");
       } else if (value === "theme-system") {
         setTheme("system");
+      } else if (value === "sidebar-toggle") {
+        const currentHidden = localStorage.getItem("sidebarHidden") === "true";
+        localStorage.setItem("sidebarHidden", String(!currentHidden));
+        window.dispatchEvent(new StorageEvent("storage", {
+          key: "sidebarHidden",
+          newValue: String(!currentHidden),
+          oldValue: String(currentHidden),
+          storageArea: localStorage,
+          url: window.location.href,
+        }));
       } else if (value === "home") {
         navigate({
           to: "/$teamSlugOrId/dashboard",
@@ -760,6 +756,24 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
                   >
                     <Users className="h-4 w-4 text-neutral-500" />
                     <span className="flex-1 truncate text-sm">Switch team</span>
+                  </Command.Item>
+                </Command.Group>
+
+                <Command.Group>
+                  <div className="px-2 py-1.5 text-xs text-neutral-500 dark:text-neutral-400">
+                    View
+                  </div>
+                  <Command.Item
+                    value="sidebar-toggle"
+                    keywords={["sidebar", "toggle", "hide", "show", "panel"]}
+                    onSelect={() => handleSelect("sidebar-toggle")}
+                    className="flex items-center gap-2 px-3 py-2.5 mx-1 rounded-md cursor-pointer
+                hover:bg-neutral-100 dark:hover:bg-neutral-800
+                data-[selected=true]:bg-neutral-100 dark:data-[selected=true]:bg-neutral-800
+                data-[selected=true]:text-neutral-900 dark:data-[selected=true]:text-neutral-100"
+                  >
+                    <PanelLeftClose className="h-4 w-4 text-neutral-500" />
+                    <span className="text-sm">Toggle Sidebar</span>
                   </Command.Item>
                 </Command.Group>
 

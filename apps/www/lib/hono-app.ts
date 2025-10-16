@@ -18,6 +18,7 @@ import {
   sandboxesRouter,
   teamsRouter,
   usersRouter,
+  iframePreflightRouter,
 } from "@/lib/routes/index";
 import { stackServerApp } from "@/lib/utils/stack";
 import { swaggerUI } from "@hono/swagger-ui";
@@ -108,6 +109,7 @@ app.route("/", githubPrsFilesRouter);
 app.route("/", githubPrsFileContentsRouter);
 app.route("/", githubPrsFileContentsBatchRouter);
 app.route("/", morphRouter);
+app.route("/", iframePreflightRouter);
 app.route("/", environmentsRouter);
 app.route("/", sandboxesRouter);
 app.route("/", teamsRouter);
