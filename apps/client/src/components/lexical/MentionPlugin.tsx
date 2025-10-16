@@ -20,6 +20,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { getIconForFile } from "vscode-icons-js";
 import { useSocket } from "../../contexts/socket/use-socket";
+import { MENTION_MENU_VISIBILITY_COMMAND } from "./mentionCommands";
 
 const MENTION_TRIGGER = "@";
 
@@ -164,6 +165,10 @@ export function MentionPlugin({
   const [isLoading, setIsLoading] = useState(false);
   const triggerNodeRef = useRef<TextNode | null>(null);
   const { socket } = useSocket();
+
+  useEffect(() => {
+    editor.dispatchCommand(MENTION_MENU_VISIBILITY_COMMAND, isShowingMenu);
+  }, [editor, isShowingMenu]);
 
   // Fetch all files once when repository URL is available
   useEffect(() => {

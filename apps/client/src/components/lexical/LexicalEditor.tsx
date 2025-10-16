@@ -38,6 +38,7 @@ import { EditorStatePlugin } from "./EditorStatePlugin";
 import { ImageNode } from "./ImageNode";
 import { ImagePlugin } from "./ImagePlugin";
 import { MentionPlugin } from "./MentionPlugin";
+import { MENTION_MENU_VISIBILITY_COMMAND } from "./mentionCommands";
 
 // Minimal shape of a serialized Lexical node we care about
 interface SerializedNodeLike {
@@ -123,6 +124,20 @@ function onError(error: Error) {
 // Custom plugin to handle keyboard commands
 function KeyboardCommandPlugin({ onSubmit }: { onSubmit?: () => void }) {
   const [editor] = useLexicalComposerContext();
+  const mentionMenuOpenRef = useRef(false);
+
+  useEffect(() => {
+    const unregisterVisibility = editor.registerCommand(
+      MENTION_MENU_VISIBILITY_COMMAND,
+      (isOpen) => {
+        mentionMenuOpenRef.current = isOpen;
+        return false;
+      },
+      COMMAND_PRIORITY_HIGH
+    );
+
+    return unregisterVisibility;
+  }, [editor]);
 
   useEffect(() => {
     // Handle Cmd/Ctrl+Enter for submit
@@ -150,6 +165,9 @@ function KeyboardCommandPlugin({ onSubmit }: { onSubmit?: () => void }) {
           !event.altKey &&
           (event.key === "j" || event.key === "J")
         ) {
+          if (mentionMenuOpenRef.current) {
+            return false;
+          }
           event.preventDefault();
           editor.dispatchCommand(INSERT_LINE_BREAK_COMMAND, false);
           return true;
