@@ -15,6 +15,7 @@ import {
   session,
   shell,
   webFrameMain,
+  globalShortcut,
   type BrowserWindowConstructorOptions,
   type MenuItemConstructorOptions,
 } from "electron";
@@ -48,6 +49,7 @@ import { env } from "./electron-main-env";
 // Use a cookieable HTTPS origin intercepted locally instead of a custom scheme.
 const PARTITION = "persist:cmux";
 const APP_HOST = "cmux.local";
+const SIDEBAR_TOGGLE_SHORTCUT = "CommandOrControl+Shift+S";
 
 function resolveMaxSuspendedWebContents(): number | undefined {
   const raw =
@@ -698,6 +700,30 @@ app.whenReady().then(async () => {
     },
   });
 
+  try {
+    const registered = globalShortcut.register(
+      SIDEBAR_TOGGLE_SHORTCUT,
+      () => {
+        const dispatched = sendShortcutToFocusedWindow("sidebar-toggle");
+        if (!dispatched) {
+          mainWarn(
+            "Sidebar toggle shortcut triggered with no active renderer"
+          );
+        }
+      }
+    );
+    if (!registered) {
+      mainWarn("Failed to register sidebar toggle shortcut", {
+        shortcut: SIDEBAR_TOGGLE_SHORTCUT,
+      });
+    }
+  } catch (error) {
+    mainWarn("Error registering sidebar toggle shortcut", {
+      shortcut: SIDEBAR_TOGGLE_SHORTCUT,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
   // Register before-input-event handlers for preview browser shortcuts
   // These fire before web content sees them, so they work even in WebContentsViews
   app.on("web-contents-created", (_event, contents) => {
@@ -995,6 +1021,17 @@ app.whenReady().then(async () => {
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
+  }
+});
+
+app.on("will-quit", () => {
+  try {
+    globalShortcut.unregister(SIDEBAR_TOGGLE_SHORTCUT);
+    globalShortcut.unregisterAll();
+  } catch (error) {
+    mainWarn("Failed to unregister global shortcuts on quit", {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 });
 
