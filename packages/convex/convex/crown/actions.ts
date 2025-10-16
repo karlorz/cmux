@@ -11,11 +11,16 @@ import {
   type CrownEvaluationResponse,
   type CrownSummarizationResponse,
 } from "../../../shared/src/convex-safe";
+import {
+  CROWN_HARNESS_MAP,
+  DEFAULT_CROWN_HARNESS_ID,
+  DEFAULT_CROWN_SYSTEM_PROMPT,
+  type CrownHarnessConfig,
+  type CrownHarnessId,
+} from "../../../shared/src/crown";
 import { env } from "../../_shared/convex-env";
-import { action } from "../_generated/server";
-
-const OPENAI_CROWN_MODEL = "gpt-5-mini";
-const ANTHROPIC_CROWN_MODEL = "claude-3-5-sonnet-20241022";
+import { api, internal } from "../_generated/api";
+import { action, type ActionCtx } from "../_generated/server";
 
 const CrownEvaluationCandidateValidator = v.object({
   runId: v.optional(v.string()),
@@ -26,35 +31,159 @@ const CrownEvaluationCandidateValidator = v.object({
   index: v.optional(v.number()),
 });
 
-function resolveCrownModel(): {
-  provider: "openai" | "anthropic";
+const DEFAULT_HARNESS = CROWN_HARNESS_MAP[DEFAULT_CROWN_HARNESS_ID];
+
+type ApiKeyMap = Record<string, string>;
+
+interface CrownModelPreferences {
+  harness: CrownHarnessConfig;
+  modelId: string;
+  systemPrompt: string;
+  userApiKeys: ApiKeyMap;
+}
+
+const EMPTY_API_KEY_MAP: ApiKeyMap = Object.freeze({}) as ApiKeyMap;
+
+type CrownModelResolutionOptions = {
+  harness: CrownHarnessConfig;
+  modelId: string;
+  userApiKeys: ApiKeyMap;
+};
+
+function isCrownHarnessId(value: unknown): value is CrownHarnessId {
+  return typeof value === "string" && value in CROWN_HARNESS_MAP;
+}
+
+function resolveCrownModel(
+  options: CrownModelResolutionOptions,
+): {
+  provider: CrownHarnessConfig["provider"];
   model: LanguageModel;
 } {
-  const openaiKey = env.OPENAI_API_KEY;
-  if (openaiKey) {
-    const openai = createOpenAI({ apiKey: openaiKey });
-    return { provider: "openai", model: openai(OPENAI_CROWN_MODEL) };
+  const { harness, modelId, userApiKeys } = options;
+
+  const userApiKey = harness.requiredApiKeyEnvVar
+    ? userApiKeys[harness.requiredApiKeyEnvVar] ?? undefined
+    : undefined;
+
+  const fallbackKey =
+    harness.provider === "openai" ? env.OPENAI_API_KEY : env.ANTHROPIC_API_KEY;
+
+  const apiKey =
+    userApiKey ?? (harness.allowsSystemFallback ? fallbackKey : undefined);
+
+  if (!apiKey) {
+    throw new ConvexError(
+      `Crown evaluation is not configured for ${harness.label} (missing API key)`,
+    );
   }
 
-  const anthropicKey = env.ANTHROPIC_API_KEY;
-  if (anthropicKey) {
-    const anthropic = createAnthropic({ apiKey: anthropicKey });
-    return {
-      provider: "anthropic",
-      model: anthropic(ANTHROPIC_CROWN_MODEL),
-    };
+  if (harness.provider === "openai") {
+    const openai = createOpenAI({ apiKey });
+    return { provider: "openai", model: openai(modelId) };
   }
 
-  throw new ConvexError(
-    "Crown evaluation is not configured (missing OpenAI or Anthropic API key)",
-  );
+  const anthropic = createAnthropic({ apiKey });
+  return { provider: "anthropic", model: anthropic(modelId) };
+}
+
+async function loadCrownPreferences(
+  ctx: ActionCtx,
+  args: {
+    teamSlugOrId: string;
+    teamId?: string;
+    userId?: string | null;
+  },
+): Promise<CrownModelPreferences> {
+  const identity = await ctx.auth.getUserIdentity();
+  const effectiveUserId = args.userId ?? identity?.subject ?? null;
+
+  let teamId = args.teamId;
+  if (!teamId) {
+    const team = await ctx.runQuery(api.teams.get, {
+      teamSlugOrId: args.teamSlugOrId,
+    });
+    teamId = team?.uuid ?? args.teamSlugOrId;
+  }
+
+  let workspaceSettings: {
+    crownHarness?: string | null;
+    crownModel?: string | null;
+    crownSystemPrompt?: string | null;
+  } | null = null;
+
+  if (teamId && effectiveUserId) {
+    workspaceSettings = await ctx.runQuery(
+      internal.workspaceSettings.getByTeamAndUserInternal,
+      {
+        teamId,
+        userId: effectiveUserId,
+      },
+    );
+  }
+
+  const userApiKeys =
+    teamId && effectiveUserId
+      ? (
+          await ctx.runQuery(internal.apiKeys.getByTeamAndUserInternal, {
+            teamId,
+            userId: effectiveUserId,
+          })
+        ).reduce<ApiKeyMap>((map, key) => {
+          map[key.envVar] = key.value;
+          return map;
+        }, Object.create(null) as ApiKeyMap)
+      : EMPTY_API_KEY_MAP;
+
+  const selectedHarnessId = workspaceSettings?.crownHarness ?? undefined;
+  const harnessId = isCrownHarnessId(selectedHarnessId)
+    ? selectedHarnessId
+    : DEFAULT_CROWN_HARNESS_ID;
+  let harness = CROWN_HARNESS_MAP[harnessId] ?? DEFAULT_HARNESS;
+
+  if (
+    harness.requiredApiKeyEnvVar &&
+    !userApiKeys[harness.requiredApiKeyEnvVar] &&
+    !harness.allowsSystemFallback
+  ) {
+    harness = DEFAULT_HARNESS;
+  }
+
+  const trimmedModel = workspaceSettings?.crownModel?.trim() ?? "";
+  const modelId = trimmedModel.length > 0 ? trimmedModel : harness.defaultModel;
+
+  const systemPromptRaw = workspaceSettings?.crownSystemPrompt ?? "";
+  const systemPrompt =
+    systemPromptRaw.trim().length > 0
+      ? systemPromptRaw
+      : DEFAULT_CROWN_SYSTEM_PROMPT;
+
+  return {
+    harness,
+    modelId,
+    systemPrompt,
+    userApiKeys,
+  };
 }
 
 export async function performCrownEvaluation(
   prompt: string,
   candidates: CrownEvaluationCandidate[],
+  preferences?: CrownModelPreferences,
 ): Promise<CrownEvaluationResponse> {
-  const { model, provider } = resolveCrownModel();
+  const effectivePreferences =
+    preferences ?? {
+      harness: DEFAULT_HARNESS,
+      modelId: DEFAULT_HARNESS.defaultModel,
+      systemPrompt: DEFAULT_CROWN_SYSTEM_PROMPT,
+      userApiKeys: EMPTY_API_KEY_MAP,
+    };
+
+  const { model, provider } = resolveCrownModel({
+    harness: effectivePreferences.harness,
+    modelId: effectivePreferences.modelId,
+    userApiKeys: effectivePreferences.userApiKeys,
+  });
 
   const normalizedCandidates = candidates.map((candidate, idx) => {
     const resolvedIndex = candidate.index ?? idx;
@@ -103,8 +232,7 @@ IMPORTANT: Respond ONLY with the JSON object, no other text.`;
     const { object } = await generateObject({
       model,
       schema: CrownEvaluationResponseSchema,
-      system:
-        "You select the best implementation from structured diff inputs and explain briefly why.",
+      system: effectivePreferences.systemPrompt,
       prompt: evaluationPrompt,
       ...(provider === "openai" ? {} : { temperature: 0 }),
       maxRetries: 2,
@@ -120,8 +248,21 @@ IMPORTANT: Respond ONLY with the JSON object, no other text.`;
 export async function performCrownSummarization(
   prompt: string,
   gitDiff: string,
+  preferences?: CrownModelPreferences,
 ): Promise<CrownSummarizationResponse> {
-  const { model, provider } = resolveCrownModel();
+  const effectivePreferences =
+    preferences ?? {
+      harness: DEFAULT_HARNESS,
+      modelId: DEFAULT_HARNESS.defaultModel,
+      systemPrompt: DEFAULT_CROWN_SYSTEM_PROMPT,
+      userApiKeys: EMPTY_API_KEY_MAP,
+    };
+
+  const { model, provider } = resolveCrownModel({
+    harness: effectivePreferences.harness,
+    modelId: effectivePreferences.modelId,
+    userApiKeys: effectivePreferences.userApiKeys,
+  });
 
   const summarizationPrompt = `You are an expert reviewer summarizing a pull request.
 
@@ -173,9 +314,20 @@ export const evaluate = action({
     prompt: v.string(),
     candidates: v.array(CrownEvaluationCandidateValidator),
     teamSlugOrId: v.string(),
+    teamId: v.optional(v.string()),
+    userId: v.optional(v.string()),
   },
-  handler: async (_ctx, args) => {
-    return performCrownEvaluation(args.prompt, args.candidates);
+  handler: async (ctx, args) => {
+    const preferences = await loadCrownPreferences(ctx, {
+      teamSlugOrId: args.teamSlugOrId,
+      teamId: args.teamId ?? undefined,
+      userId: args.userId ?? null,
+    });
+    return performCrownEvaluation(
+      args.prompt,
+      args.candidates,
+      preferences,
+    );
   },
 });
 
@@ -184,8 +336,15 @@ export const summarize = action({
     prompt: v.string(),
     gitDiff: v.string(),
     teamSlugOrId: v.string(),
+    teamId: v.optional(v.string()),
+    userId: v.optional(v.string()),
   },
-  handler: async (_ctx, args) => {
-    return performCrownSummarization(args.prompt, args.gitDiff);
+  handler: async (ctx, args) => {
+    const preferences = await loadCrownPreferences(ctx, {
+      teamSlugOrId: args.teamSlugOrId,
+      teamId: args.teamId ?? undefined,
+      userId: args.userId ?? null,
+    });
+    return performCrownSummarization(args.prompt, args.gitDiff, preferences);
   },
 });

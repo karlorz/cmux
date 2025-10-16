@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { typedZid } from "../utils/typed-zid";
 
+export type CrownHarnessId = "claude-code" | "openai-evals";
+
 export const WorkerRunStatusSchema = z.enum([
   "pending",
   "running",

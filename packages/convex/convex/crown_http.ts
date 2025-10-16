@@ -226,18 +226,30 @@ export const crownEvaluate = httpAction(async (ctx, req) => {
     );
   }
 
-  if (!workerAuth) {
+  let resolvedTeamId: string | undefined;
+  let resolvedUserId: string | undefined;
+
+  if (workerAuth) {
+    resolvedTeamId = workerAuth.payload.teamId;
+    resolvedUserId = workerAuth.payload.userId;
+  } else {
     const membership = await ensureTeamMembership(ctx, teamSlugOrId);
     if (membership instanceof Response) return membership;
+    resolvedTeamId = membership.teamId;
+    const identity = await ctx.auth.getUserIdentity();
+    resolvedUserId = identity?.subject ?? undefined;
   }
 
   try {
     const candidates = data.candidates.map((candidate, index) => ({
+      runId: candidate.runId,
+      agentName: candidate.agentName,
       modelName:
         candidate.agentName ??
         candidate.modelName ??
         `candidate-${candidate.index ?? index}`,
       gitDiff: candidate.gitDiff,
+      newBranch: candidate.newBranch ?? null,
       index: candidate.index ?? index,
     }));
 
@@ -245,6 +257,8 @@ export const crownEvaluate = httpAction(async (ctx, req) => {
       prompt: data.prompt,
       candidates,
       teamSlugOrId,
+      teamId: resolvedTeamId,
+      userId: resolvedUserId,
     });
     return jsonResponse(result);
   } catch (error) {
@@ -290,11 +304,27 @@ export const crownSummarize = httpAction(async (ctx, req) => {
     );
   }
 
+  let resolvedTeamId: string | undefined;
+  let resolvedUserId: string | undefined;
+
+  if (workerAuth) {
+    resolvedTeamId = workerAuth.payload.teamId;
+    resolvedUserId = workerAuth.payload.userId;
+  } else {
+    const membership = await ensureTeamMembership(ctx, teamSlugOrId);
+    if (membership instanceof Response) return membership;
+    resolvedTeamId = membership.teamId;
+    const identity = await ctx.auth.getUserIdentity();
+    resolvedUserId = identity?.subject ?? undefined;
+  }
+
   try {
     const result = await ctx.runAction(api.crown.actions.summarize, {
       prompt: data.prompt,
       gitDiff: data.gitDiff,
       teamSlugOrId,
+      teamId: resolvedTeamId,
+      userId: resolvedUserId,
     });
     return jsonResponse(result);
   } catch (error) {
