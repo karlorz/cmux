@@ -21,13 +21,10 @@ describe("sandboxesRouter integration", () => {
     });
 
     expect([403, 500]).toContain(res.response.status);
-  });
+  }, 120_000);
 
   it(
     "starts sandbox for configured environment",
-    {
-      timeout: 45000,
-    },
     async () => {
       const tokens = await __TEST_INTERNAL_ONLY_GET_STACK_TOKENS();
       const res = await postApiSandboxesStart({
@@ -55,6 +52,7 @@ describe("sandboxesRouter integration", () => {
       });
       const envctlVersion = await instance.exec("envctl --version");
       console.log("envctlVersion", envctlVersion);
-    }
+    },
+    120_000
   );
 });

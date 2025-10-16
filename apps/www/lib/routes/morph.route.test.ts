@@ -5,7 +5,7 @@ import { postApiMorphSetupInstance } from "@cmux/www-openapi-client";
 import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 
-describe.skip("morphRouter - live", () => {
+describe("morphRouter - live", () => {
   let createdInstanceId: string | null = null;
 
   afterAll(async () => {
@@ -25,13 +25,10 @@ describe.skip("morphRouter - live", () => {
       body: { teamSlugOrId: "manaflow", ttlSeconds: 120 },
     });
     expect(res.response.status).toBe(401);
-  });
+  }, 120_000);
 
   it(
     "creates and then reuses an instance with instanceId",
-    {
-      timeout: 20_000,
-    },
     async () => {
       const tokens = await __TEST_INTERNAL_ONLY_GET_STACK_TOKENS();
       // First call: create new instance
@@ -77,7 +74,8 @@ describe.skip("morphRouter - live", () => {
       expect(secondBody.vscodeUrl.includes("/?folder=/root/workspace")).toBe(
         true
       );
-    }
+    },
+    120_000
   );
 
   it("denies reusing an instance with a different team", async () => {
@@ -113,7 +111,7 @@ describe.skip("morphRouter - live", () => {
     });
     // Depending on environment, this may be 403 (mismatch), 404 (unknown team), or 500 (env/verification error)
     expect([403, 404, 500]).toContain(res.response.status);
-  });
+  }, 120_000);
 
   it("clones repos, removes, and re-adds correctly", async () => {
     const tokens = await __TEST_INTERNAL_ONLY_GET_STACK_TOKENS();
@@ -253,5 +251,5 @@ describe.skip("morphRouter - live", () => {
     }
     expect(dBody.clonedRepos).toEqual(expect.arrayContaining([R2]));
     expect(dBody.removedRepos).not.toEqual(expect.arrayContaining([N1, N3]));
-  }, 300_000);
+  }, 120_000);
 });

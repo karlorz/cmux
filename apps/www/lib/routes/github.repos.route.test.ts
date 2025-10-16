@@ -39,7 +39,7 @@ describe("githubReposRouter via SDK", () => {
       expect(body.repos.length).toBeLessThanOrEqual(5);
       // No client-side sorting; server returns sorted by 'updated'.
     }
-  });
+  }, 60_000);
 
   it("can limit to a single installation when specified", async () => {
     const tokens = await __TEST_INTERNAL_ONLY_GET_STACK_TOKENS();
@@ -81,7 +81,7 @@ describe("githubReposRouter via SDK", () => {
       expect(Array.isArray(body.repos)).toBe(true);
       expect(body.repos.length).toBeLessThanOrEqual(5);
     }
-  });
+  }, 60_000);
 
   it("supports paging and still limits to 5", async () => {
     const tokens = await __TEST_INTERNAL_ONLY_GET_STACK_TOKENS();
@@ -114,5 +114,5 @@ describe("githubReposRouter via SDK", () => {
         expect(len2).toBeLessThanOrEqual(5);
       }
     }
-  });
+  }, 60_000);
 });
