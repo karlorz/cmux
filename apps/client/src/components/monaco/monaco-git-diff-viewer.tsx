@@ -491,6 +491,14 @@ function createDiffEditorMount({
     let isContainerVisible = container.style.visibility !== "hidden";
     let collapsedState = false;
     let targetMinHeight = Math.max(editorMinHeight, DEFAULT_EDITOR_MIN_HEIGHT);
+    let measuredMinHeight: number | null = null;
+
+    const getEffectiveMinHeight = () => {
+      if (measuredMinHeight !== null) {
+        return Math.max(measuredMinHeight, DEFAULT_EDITOR_MIN_HEIGHT);
+      }
+      return Math.max(targetMinHeight, DEFAULT_EDITOR_MIN_HEIGHT);
+    };
 
     const parentElement = container.parentElement;
     let layoutAnchor: HTMLElement | null = null;
@@ -532,7 +540,7 @@ function createDiffEditorMount({
       return lineCount * lineHeight;
     };
 
-    container.style.minHeight = `${targetMinHeight}px`;
+    container.style.minHeight = `${getEffectiveMinHeight()}px`;
 
     const applyLayout = () => {
       const height = Math.max(
@@ -548,10 +556,16 @@ function createDiffEditorMount({
         modifiedInfo.width ||
         originalInfo.width;
 
-      const enforcedHeight = Math.max(targetMinHeight, height);
+      const measuredHeight = Math.max(DEFAULT_EDITOR_MIN_HEIGHT, height);
+      measuredMinHeight = measuredHeight;
+      const effectiveMinHeight = getEffectiveMinHeight();
 
-      if (containerWidth > 0 && enforcedHeight > 0) {
-        diffEditor.layout({ width: containerWidth, height: enforcedHeight });
+      if (!collapsedState) {
+        container.style.minHeight = `${effectiveMinHeight}px`;
+      }
+
+      if (containerWidth > 0 && effectiveMinHeight > 0) {
+        diffEditor.layout({ width: containerWidth, height: effectiveMinHeight });
       }
 
       scheduleVisibilityEvaluation();
@@ -581,7 +595,7 @@ function createDiffEditorMount({
       if (collapsedState) {
         return;
       }
-      container.style.minHeight = `${targetMinHeight}px`;
+      container.style.minHeight = `${getEffectiveMinHeight()}px`;
       container.style.height = "";
       container.style.overflow = "";
     };
@@ -600,6 +614,7 @@ function createDiffEditorMount({
 
     const updateTargetMinHeight = (nextTarget: number) => {
       targetMinHeight = Math.max(nextTarget, DEFAULT_EDITOR_MIN_HEIGHT);
+      measuredMinHeight = null;
       if (!collapsedState) {
         applyTargetMinHeight();
         applyLayout();
