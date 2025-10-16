@@ -108,7 +108,7 @@ function BrowserComponent() {
   const isBrowserBusy = !hasBrowserView || iframeStatus !== "loaded";
 
   return (
-    <div className="pl-1 flex flex-col grow bg-neutral-50 dark:bg-black">
+    <div className="flex flex-col grow bg-neutral-50 dark:bg-black">
       <div className="flex flex-col grow min-h-0 border-l border-neutral-200 dark:border-neutral-800">
         <div
           className="flex flex-row grow min-h-0 relative"

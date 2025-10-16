@@ -20,7 +20,7 @@
     },
     "apps/client": {
       "name": "@cmux/client",
-      "version": "1.0.94",
+      "version": "1.0.100",
       "dependencies": {
         "@base-ui-components/react": "1.0.0-beta.2",
         "@cmux/convex": "workspace:*",
@@ -372,6 +372,7 @@
       "dependencies": {
         "@ai-sdk/anthropic": "^2.0.18",
         "@ai-sdk/gateway": "^1.0.28",
+        "@ai-sdk/openai": "^2.0.19",
         "@ai-sdk/provider-utils": "^3.0.9",
         "@cmux/shared": "workspace:*",
         "@convex-dev/migrations": "^0.2.9",

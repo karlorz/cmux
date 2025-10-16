@@ -168,7 +168,7 @@ export async function generatePRInfo(
         "You are a helpful assistant that generates git branch names and PR titles. Generate a VERY SHORT branch name (2-4 words maximum, lowercase, hyphenated) and a concise PR title (5-10 words) that summarize the task. The branch name should be extremely concise and focus on the core action (e.g., 'fix-auth', 'add-logging', 'update-deps', 'refactor-api').",
       prompt: `Task: ${taskDescription}`,
       maxRetries: 2,
-      temperature: 0.3,
+      ...(providerName === "OpenAI" ? {} : { temperature: 0.3 }),
     });
 
     const sanitizedBranch = sanitizeBranchComponent(object.branchName);
