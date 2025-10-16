@@ -5,6 +5,11 @@ import { SCRIPT_COPY } from "@/components/scriptCopy";
 import { ResizableColumns } from "@/components/ResizableColumns";
 import { parseEnvBlock } from "@/lib/parseEnvBlock";
 import {
+  getPendingEnvironmentDraft,
+  removePendingEnvironmentDraft,
+  upsertPendingEnvironmentDraft,
+} from "@/lib/pendingEnvironmentDrafts";
+import {
   TASK_RUN_IFRAME_ALLOW,
   TASK_RUN_IFRAME_SANDBOX,
 } from "@/lib/preloadTaskRunIframes";
@@ -121,6 +126,71 @@ export function EnvironmentConfiguration({
   useEffect(() => {
     setLocalVscodeUrl(vscodeUrl);
   }, [vscodeUrl]);
+
+  const restoreAttemptedRef = useRef(false);
+
+  useEffect(() => {
+    restoreAttemptedRef.current = false;
+  }, [localInstanceId]);
+
+  useEffect(() => {
+    if (!localInstanceId || restoreAttemptedRef.current) {
+      return;
+    }
+    restoreAttemptedRef.current = true;
+    const draft = getPendingEnvironmentDraft(teamSlugOrId, localInstanceId);
+    if (!draft) {
+      return;
+    }
+
+    if (typeof draft.envName === "string") {
+      setEnvName(draft.envName);
+    }
+    if (typeof draft.maintenanceScript === "string") {
+      setMaintenanceScript(draft.maintenanceScript);
+    }
+    if (typeof draft.devScript === "string") {
+      setDevScript(draft.devScript);
+    }
+    if (typeof draft.exposedPorts === "string") {
+      setExposedPorts(draft.exposedPorts);
+    }
+    if (draft.envVars && draft.envVars.length > 0) {
+      setEnvVars(ensureInitialEnvVars(draft.envVars));
+    }
+  }, [localInstanceId, teamSlugOrId]);
+
+  useEffect(() => {
+    if (!localInstanceId) {
+      return;
+    }
+
+    upsertPendingEnvironmentDraft({
+      teamSlugOrId,
+      instanceId: localInstanceId,
+      selectedRepos,
+      snapshotId: search.snapshotId,
+      envName,
+      maintenanceScript,
+      devScript,
+      exposedPorts,
+      envVars: envVars.map((item) => ({
+        name: item.name,
+        value: item.value,
+        isSecret: item.isSecret,
+      })),
+    });
+  }, [
+    devScript,
+    envName,
+    envVars,
+    exposedPorts,
+    localInstanceId,
+    maintenanceScript,
+    search.snapshotId,
+    selectedRepos,
+    teamSlugOrId,
+  ]);
 
   const createEnvironmentMutation = useRQMutation(
     postApiEnvironmentsMutation()
@@ -281,6 +351,9 @@ export function EnvironmentConfiguration({
         },
         {
           onSuccess: async () => {
+            if (localInstanceId) {
+              removePendingEnvironmentDraft(teamSlugOrId, localInstanceId);
+            }
             await navigate({
               to: "/$teamSlugOrId/environments/$environmentId",
               params: {
@@ -320,6 +393,9 @@ export function EnvironmentConfiguration({
         },
         {
           onSuccess: async () => {
+            if (localInstanceId) {
+              removePendingEnvironmentDraft(teamSlugOrId, localInstanceId);
+            }
             await navigate({
               to: "/$teamSlugOrId/environments",
               params: { teamSlugOrId },
