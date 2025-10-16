@@ -2,11 +2,8 @@
 
 import type { Instance } from "morphcloud";
 import { MorphCloudClient } from "morphcloud";
-import { execFile } from "node:child_process";
+import { Octokit } from "octokit";
 import { readFile } from "node:fs/promises";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
 
 const DEFAULT_PR_URL = "https://github.com/manaflow-ai/cmux/pull/653";
 const DEFAULT_MORPH_SNAPSHOT_ID = "snapshot_vb7uqz8o";
@@ -27,16 +24,22 @@ interface PrMetadata extends ParsedPrUrl {
   headRefName: string;
   headRepoOwner: string;
   headRepoName: string;
+  baseRefName: string;
 }
 
-interface GhPrViewResponse {
-  headRefName?: string;
-  headRepository?: {
-    name?: string;
-  } | null;
-  headRepositoryOwner?: {
-    login?: string;
-  } | null;
+type OctokitClient = InstanceType<typeof Octokit>;
+type PullRequestGetResponse = Awaited<
+  ReturnType<OctokitClient["rest"]["pulls"]["get"]>
+>;
+type GithubApiPullResponse = PullRequestGetResponse["data"];
+
+function getGithubToken(): string | null {
+  const token =
+    process.env.GITHUB_TOKEN ??
+    process.env.GH_TOKEN ??
+    process.env.GITHUB_PERSONAL_ACCESS_TOKEN ??
+    null;
+  return token && token.length > 0 ? token : null;
 }
 
 function parsePrUrl(prUrl: string): ParsedPrUrl {
@@ -65,48 +68,64 @@ function parsePrUrl(prUrl: string): ParsedPrUrl {
 
 async function fetchPrMetadata(prUrl: string): Promise<PrMetadata> {
   const parsed = parsePrUrl(prUrl);
+  const token = getGithubToken();
+  const octokit = new Octokit(token ? { auth: token } : {});
 
-  let stdout: string;
+  let data: GithubApiPullResponse;
   try {
-    const result = await execFileAsync("gh", [
-      "pr",
-      "view",
-      prUrl,
-      "--json",
-      "headRefName,headRepositoryOwner,headRepository",
-    ]);
-    stdout = result.stdout;
+    const response = await octokit.rest.pulls.get({
+      owner: parsed.owner,
+      repo: parsed.repo,
+      pull_number: parsed.number,
+    });
+    data = response.data;
   } catch (error) {
-    const stderr =
-      error instanceof Error && "stderr" in error ? String(error.stderr) : "";
+    const message =
+      error instanceof Error ? error.message : String(error ?? "unknown error");
     throw new Error(
-      `Failed to query PR metadata with gh CLI. ${stderr ? `stderr: ${stderr}` : ""}`.trim()
+      `Failed to fetch PR metadata via GitHub API: ${message}`.trim()
     );
   }
 
-  let data: GhPrViewResponse;
-  try {
-    data = JSON.parse(stdout) as GhPrViewResponse;
-  } catch (_error) {
-    throw new Error(
-      `Unable to parse gh CLI response as JSON. Output: ${stdout}`
-    );
-  }
-
-  const headRefName = data.headRefName;
+  const headRefName = data.head?.ref;
   if (typeof headRefName !== "string" || headRefName.length === 0) {
-    throw new Error("PR metadata is missing headRefName.");
+    throw new Error("PR metadata is missing head.ref.");
   }
 
-  const headRepoName = data.headRepository?.name || parsed.repo;
-  const headRepoOwner = data.headRepositoryOwner?.login || parsed.owner;
+  const headRepoName = data.head?.repo?.name;
+  const headRepoOwner = data.head?.repo?.owner?.login;
+  if (
+    typeof headRepoName !== "string" ||
+    headRepoName.length === 0 ||
+    typeof headRepoOwner !== "string" ||
+    headRepoOwner.length === 0
+  ) {
+    throw new Error("PR metadata is missing head repository information.");
+  }
+
+  const baseRefName = data.base?.ref;
+  if (typeof baseRefName !== "string" || baseRefName.length === 0) {
+    throw new Error("PR metadata is missing base.ref.");
+  }
+
+  const baseRepoName = data.base?.repo?.name;
+  const baseRepoOwner = data.base?.repo?.owner?.login;
 
   return {
-    ...parsed,
+    owner:
+      typeof baseRepoOwner === "string" && baseRepoOwner.length > 0
+        ? baseRepoOwner
+        : parsed.owner,
+    repo:
+      typeof baseRepoName === "string" && baseRepoName.length > 0
+        ? baseRepoName
+        : parsed.repo,
+    number: parsed.number,
     prUrl,
     headRefName,
     headRepoName,
     headRepoOwner,
+    baseRefName,
   };
 }
 
@@ -180,6 +199,39 @@ function buildMetadata(pr: PrMetadata): Record<string, string> {
   };
 }
 
+async function fetchPrMetadataTask(prUrl: string): Promise<PrMetadata> {
+  console.log("Fetching PR metadata...");
+  const finishFetchMetadata = startTiming("fetch PR metadata");
+  try {
+    return await fetchPrMetadata(prUrl);
+  } finally {
+    finishFetchMetadata();
+  }
+}
+
+async function startMorphInstanceTask(
+  client: MorphCloudClient,
+  prUrl: string
+): Promise<Instance> {
+  console.log(
+    `Starting Morph instance from snapshot ${DEFAULT_MORPH_SNAPSHOT_ID}...`
+  );
+  const finishStartInstance = startTiming("start Morph instance");
+  try {
+    return await client.instances.start({
+      snapshotId: DEFAULT_MORPH_SNAPSHOT_ID,
+      ttlSeconds: 60 * 60 * 2,
+      ttlAction: "pause",
+      metadata: {
+        purpose: "pr-review",
+        prUrl,
+      },
+    });
+  } finally {
+    finishStartInstance();
+  }
+}
+
 function logOpenVscodeUrl(instance: Instance, workspacePath: string): void {
   const services = instance.networking?.httpServices ?? [];
   const vscodeService = services.find(
@@ -240,61 +292,54 @@ async function main(): Promise<void> {
     prUrlFromCli && prUrlFromCli.length > 0 ? prUrlFromCli : DEFAULT_PR_URL;
 
   console.log(`Preparing Morph review environment for ${prUrl}`);
-  console.log("Fetching PR metadata...");
-  const finishFetchMetadata = startTiming("fetch PR metadata");
-  let prMetadata: PrMetadata;
-  try {
-    prMetadata = await fetchPrMetadata(prUrl);
-  } finally {
-    finishFetchMetadata();
-  }
-
-  console.log(
-    `Targeting ${prMetadata.headRepoOwner}/${prMetadata.headRepoName}@${prMetadata.headRefName}`
-  );
 
   const client = new MorphCloudClient();
   let instance: Instance | null = null;
 
+  const startInstancePromise = startMorphInstanceTask(client, prUrl).then(
+    (startedInstance) => {
+      instance = startedInstance;
+      return startedInstance;
+    }
+  );
+  const prMetadataPromise = fetchPrMetadataTask(prUrl);
+
   try {
+    const [prMetadata, startedInstance] = await Promise.all([
+      prMetadataPromise,
+      startInstancePromise,
+    ]);
+
+    instance = startedInstance;
+
     console.log(
-      `Starting Morph instance from snapshot ${DEFAULT_MORPH_SNAPSHOT_ID}...`
+      `Targeting ${prMetadata.headRepoOwner}/${prMetadata.headRepoName}@${prMetadata.headRefName}`
     );
-    const finishStartInstance = startTiming("start Morph instance");
+
     try {
-      instance = await client.instances.start({
-        snapshotId: DEFAULT_MORPH_SNAPSHOT_ID,
-        ttlSeconds: 60 * 60 * 2,
-        ttlAction: "pause",
-        metadata: buildMetadata(prMetadata),
-      });
-    } finally {
-      finishStartInstance();
+      await startedInstance.setMetadata(buildMetadata(prMetadata));
+    } catch (metadataError) {
+      const message =
+        metadataError instanceof Error
+          ? metadataError.message
+          : String(metadataError ?? "unknown error");
+      console.warn(
+        `Warning: failed to set metadata for instance ${startedInstance.id}: ${message}`
+      );
     }
 
     console.log("Waiting for Morph instance to be ready...");
     const finishWaitReady = startTiming("wait for Morph instance ready");
     try {
-      await instance.waitUntilReady();
+      await startedInstance.waitUntilReady();
     } finally {
       finishWaitReady();
     }
-    console.log(`Instance ${instance.id} is ready.`);
-
-    console.log("Fetching updated instance metadata...");
-    const finishRefreshInstance = startTiming("fetch instance metadata");
-    let refreshedInstance: Instance;
-    try {
-      refreshedInstance = await client.instances.get({
-        instanceId: instance.id,
-      });
-    } finally {
-      finishRefreshInstance();
-    }
+    console.log(`Instance ${startedInstance.id} is ready.`);
 
     const baseDir = "/root/workspace";
-    describeServices(refreshedInstance);
-    logOpenVscodeUrl(refreshedInstance, baseDir);
+    describeServices(startedInstance);
+    logOpenVscodeUrl(startedInstance, baseDir);
 
     const repoDir = baseDir;
     const cloneUrl = `https://github.com/${prMetadata.headRepoOwner}/${prMetadata.headRepoName}.git`;
@@ -303,10 +348,14 @@ async function main(): Promise<void> {
     const finishPrepareRepo = startTiming("prepare repository");
     const remoteScriptPath = "/root/pr-review-inject.ts";
     const injectScriptSource = await injectScriptSourcePromise;
+    const baseRepoUrl = `https://github.com/${prMetadata.owner}/${prMetadata.repo}.git`;
     const envAssignments = [
       ["WORKSPACE_DIR", baseDir],
+      ["PR_URL", prMetadata.prUrl],
       ["GIT_REPO_URL", cloneUrl],
       ["GIT_BRANCH", prMetadata.headRefName],
+      ["BASE_REPO_URL", baseRepoUrl],
+      ["BASE_REF_NAME", prMetadata.baseRefName],
     ]
       .map(([key, value]) => `${key}=${shellQuote(value)}`)
       .join(" ");
@@ -318,16 +367,18 @@ async function main(): Promise<void> {
         `${envAssignments} bun ${shellQuote(remoteScriptPath)}`,
       ].join("\n") + "\n";
     try {
-      await execOrThrow(instance, injectCommand);
+      await execOrThrow(startedInstance, injectCommand);
     } finally {
       finishPrepareRepo();
     }
 
     console.log(`Repository ready at ${repoDir}`);
     console.log(
-      `Morph instance ${instance.id} provisioned for PR ${prMetadata.prUrl}`
+      `Morph instance ${startedInstance.id} provisioned for PR ${prMetadata.prUrl}`
     );
+    logOpenVscodeUrl(startedInstance, baseDir);
   } finally {
+    await startInstancePromise.catch(() => null);
     if (instance) {
       try {
         await waitForUserToConfirmStop();

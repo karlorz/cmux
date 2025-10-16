@@ -18,6 +18,7 @@
     "ignore": "^6.0.2",
     "morphcloud": "^0.0.18",
     "node-ssh": "^13.2.0",
+    "octokit": "^5.0.3",
     "prompts": "^2.4.2",
     "socket.io-client": "^4.8.1"
   },

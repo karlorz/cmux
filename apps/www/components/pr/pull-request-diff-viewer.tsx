@@ -385,8 +385,8 @@ export function PullRequestDiffViewer({
 
   return (
     <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-10">
-      <aside className="lg:sticky lg:top-6 lg:h-[calc(100vh-96px)] lg:w-80 lg:overflow-y-auto">
-        <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
+      <aside className="lg:sticky lg:top-6 lg:h-[calc(100vh-96px)] lg:w-72 lg:overflow-y-auto">
+        <div className="rounded-xl border border-neutral-200 bg-white p-3 shadow-sm">
           <FileTreeNavigator
             nodes={fileTree}
             activePath={activeAnchor}
@@ -428,7 +428,7 @@ function FileTreeNavigator({
   depth = 0,
 }: FileTreeNavigatorProps) {
   return (
-    <div className="space-y-1">
+    <div className="space-y-0.5">
       {nodes.map((node) => {
         const isDirectory = node.children.length > 0;
         const isExpanded = expandedPaths.has(node.path);
@@ -441,10 +441,10 @@ function FileTreeNavigator({
                 type="button"
                 onClick={() => onToggleDirectory(node.path)}
                 className={cn(
-                  "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium transition hover:bg-neutral-100",
+                  "flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-left text-xs font-medium transition hover:bg-neutral-100",
                   isExpanded ? "text-neutral-900" : "text-neutral-700",
                 )}
-                style={{ paddingLeft: depth * 16 + 8 }}
+                style={{ paddingLeft: depth * 14 + 10 }}
               >
                 {isExpanded ? (
                   <ChevronDown className="h-4 w-4 text-neutral-500" />
@@ -455,7 +455,7 @@ function FileTreeNavigator({
                 <span className="truncate">{node.name}</span>
               </button>
               {isExpanded ? (
-                <div className="mt-1">
+                <div className="mt-0.5">
                   <FileTreeNavigator
                     nodes={node.children}
                     activePath={activePath}
@@ -476,10 +476,10 @@ function FileTreeNavigator({
             type="button"
             onClick={() => onSelectFile(node.path)}
             className={cn(
-              "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition hover:bg-neutral-100",
+              "flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-left text-xs transition hover:bg-neutral-100",
               isActive ? "bg-sky-100/80 text-sky-900 shadow-sm" : "text-neutral-700",
             )}
-            style={{ paddingLeft: depth * 16 + 32 }}
+            style={{ paddingLeft: depth * 14 + 26 }}
           >
             <FileText className="h-4 w-4 text-neutral-500" />
             <span className="truncate font-medium">{node.name}</span>
@@ -522,12 +522,7 @@ function FileDiffCard({
   return (
     <article
       id={anchorId}
-      className={cn(
-        "overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm transition focus:outline-none",
-        isActive
-          ? "ring-2 ring-sky-300 ring-offset-2 ring-offset-neutral-50"
-          : "ring-0 ring-offset-0",
-      )}
+      className="overflow-hidden rounded-2xl bg-white shadow-sm transition focus:outline-none"
       tabIndex={-1}
       aria-current={isActive}
     >
