@@ -13,6 +13,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { isElectron } from "@/lib/electron";
+import { clearPendingEnvironment } from "@/lib/pendingEnvironmentStorage";
 import { api } from "@cmux/convex/api";
 import type { ProviderStatus, ProviderStatusResponse } from "@cmux/shared";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
@@ -451,6 +452,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
                   instanceId: undefined,
                   snapshotId: undefined,
                 }}
+                onClick={() => clearPendingEnvironment(teamSlugOrId)}
                 className="w-full px-2 h-8 flex items-center gap-2 text-[13.5px] text-neutral-800 dark:text-neutral-200 rounded-md hover:bg-neutral-50 dark:hover:bg-neutral-900 cursor-default"
               >
                 <Server className="w-4 h-4 text-neutral-600 dark:text-neutral-300" />

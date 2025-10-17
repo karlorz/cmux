@@ -41,13 +41,6 @@ const navItems: SidebarNavItem[] = [
   {
     label: "Environments",
     to: "/$teamSlugOrId/environments",
-    search: {
-      step: undefined,
-      selectedRepos: undefined,
-      connectionLogin: undefined,
-      repoSearch: undefined,
-      instanceId: undefined,
-    },
     exact: true,
     icon: Server,
   },

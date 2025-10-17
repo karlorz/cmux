@@ -4,9 +4,25 @@ import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { api } from "@cmux/convex/api";
 import { convexQuery } from "@convex-dev/react-query";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { formatDistanceToNow } from "date-fns";
-import { Calendar, Eye, GitBranch, Play, Plus, Server } from "lucide-react";
+import {
+  Calendar,
+  Clock,
+  Eye,
+  GitBranch,
+  Play,
+  Plus,
+  Server,
+  X,
+} from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import {
+  clearPendingEnvironment,
+  getPendingEnvironment,
+  setPendingEnvironment,
+  type PendingEnvironmentEntry,
+} from "@/lib/pendingEnvironmentStorage";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/environments/")({
   loader: async ({ params }) => {
@@ -21,12 +37,60 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/environments/")({
 
 function EnvironmentsListPage() {
   const { teamSlugOrId } = Route.useParams();
+  const navigate = useNavigate();
+  const [pendingVersion, setPendingVersion] = useState(0);
+
+  const pendingEnvironment = useMemo<PendingEnvironmentEntry | null>(() => {
+    return getPendingEnvironment(teamSlugOrId);
+  }, [teamSlugOrId, pendingVersion]);
+
+  const handleDiscard = useCallback(() => {
+    clearPendingEnvironment(teamSlugOrId);
+    setPendingVersion((value) => value + 1);
+  }, [teamSlugOrId]);
+
+  const handleResume = useCallback(() => {
+    if (!pendingEnvironment) {
+      return;
+    }
+
+    setPendingEnvironment(teamSlugOrId, {
+      step: pendingEnvironment.step,
+      selectedRepos: pendingEnvironment.selectedRepos,
+      instanceId: pendingEnvironment.instanceId ?? null,
+      snapshotId: pendingEnvironment.snapshotId ?? null,
+      connectionLogin: pendingEnvironment.connectionLogin ?? null,
+      repoSearch: pendingEnvironment.repoSearch ?? null,
+    });
+    setPendingVersion((value) => value + 1);
+
+    void navigate({
+      to: "/$teamSlugOrId/environments/new",
+      params: { teamSlugOrId },
+      search: {
+        step: pendingEnvironment.step,
+        selectedRepos:
+          pendingEnvironment.selectedRepos.length > 0
+            ? Array.from(pendingEnvironment.selectedRepos)
+            : undefined,
+        instanceId: pendingEnvironment.instanceId ?? undefined,
+        connectionLogin: pendingEnvironment.connectionLogin ?? undefined,
+        repoSearch: pendingEnvironment.repoSearch ?? undefined,
+        snapshotId: pendingEnvironment.snapshotId ?? undefined,
+      },
+    });
+  }, [navigate, pendingEnvironment, teamSlugOrId]);
 
   const { data: environments } = useSuspenseQuery(
     convexQuery(api.environments.list, {
       teamSlugOrId,
     })
   );
+
+  const handleStartNew = useCallback(() => {
+    clearPendingEnvironment(teamSlugOrId);
+    setPendingVersion((value) => value + 1);
+  }, [teamSlugOrId]);
 
   return (
     <FloatingPane header={<TitleBar title="Environments" />}>
@@ -46,12 +110,117 @@ function EnvironmentsListPage() {
               instanceId: undefined,
               snapshotId: undefined,
             }}
+            onClick={handleStartNew}
             className="inline-flex items-center gap-2 rounded-md bg-neutral-900 text-white px-4 py-2 text-sm font-medium hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 transition-colors"
           >
             <Plus className="w-4 h-4" />
             New Environment
           </Link>
         </div>
+        {pendingEnvironment ? (
+          <div className="mb-6">
+            <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950/70 p-4">
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-wrap justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-500">
+                      <Clock className="w-3.5 h-3.5" />
+                      Pending environment
+                    </div>
+                    <h3 className="mt-2 text-base font-semibold text-neutral-900 dark:text-neutral-100">
+                      Resume environment setup
+                    </h3>
+                    <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400 max-w-xl">
+                      Continue configuring your workspace without losing progress from your last session.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleDiscard}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-neutral-200 dark:border-neutral-800 px-3 py-1.5 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                      Discard
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleResume}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-neutral-900 text-white px-3 py-1.5 text-sm font-medium hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 transition-colors"
+                    >
+                      <Play className="w-4 h-4" />
+                      Resume
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-500">
+                  <div className="flex items-center gap-1">
+                    <Server className="w-3 h-3" />
+                    Step:
+                    <span className="font-medium text-neutral-700 dark:text-neutral-300">
+                      {pendingEnvironment.step === "configure"
+                        ? "Configure environment"
+                        : "Select repositories"}
+                    </span>
+                  </div>
+                  {pendingEnvironment.instanceId ? (
+                    <div className="flex items-center gap-1">
+                      <Server className="w-3 h-3" />
+                      Instance:
+                      <span className="font-mono text-neutral-700 dark:text-neutral-300">
+                        {pendingEnvironment.instanceId.length > 12
+                          ? `${pendingEnvironment.instanceId.slice(0, 12)}…`
+                          : pendingEnvironment.instanceId}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <Server className="w-3 h-3" />
+                      Instance not provisioned yet
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1">
+                    <Calendar className="w-3 h-3" />
+                    Updated {" "}
+                    {formatDistanceToNow(new Date(pendingEnvironment.updatedAt), {
+                      addSuffix: true,
+                    })}
+                  </div>
+                </div>
+
+                {pendingEnvironment.selectedRepos.length > 0 ? (
+                  <div>
+                    <div className="flex items-center gap-1 text-xs text-neutral-500 dark:text-neutral-500 mb-1">
+                      <GitBranch className="w-3 h-3" />
+                      Selected repositories
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {pendingEnvironment.selectedRepos.slice(0, 3).map((repo) => (
+                        <span
+                          key={repo}
+                          className="inline-flex items-center rounded-full bg-white dark:bg-neutral-950 px-2 py-0.5 text-xs text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-800"
+                        >
+                          {repo.split("/")[1] || repo}
+                        </span>
+                      ))}
+                      {pendingEnvironment.selectedRepos.length > 3 ? (
+                        <span className="inline-flex items-center rounded-full bg-white dark:bg-neutral-950 px-2 py-0.5 text-xs text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-800">
+                          +{pendingEnvironment.selectedRepos.length - 3}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400">
+                    <GitBranch className="w-3 h-3" />
+                    Manual configuration in progress
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : null}
         {environments && environments.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {environments.map((env) => (
@@ -167,6 +336,7 @@ function EnvironmentsListPage() {
                 instanceId: undefined,
                 snapshotId: undefined,
               }}
+              onClick={handleStartNew}
               className="inline-flex items-center gap-2 rounded-md bg-neutral-900 text-white px-4 py-2 text-sm hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
             >
               <Plus className="w-4 h-4" />

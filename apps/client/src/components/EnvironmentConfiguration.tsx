@@ -6,6 +6,10 @@ import { SCRIPT_COPY } from "@/components/scriptCopy";
 import { ResizableColumns } from "@/components/ResizableColumns";
 import { parseEnvBlock } from "@/lib/parseEnvBlock";
 import {
+  clearPendingEnvironment,
+  setPendingEnvironment,
+} from "@/lib/pendingEnvironmentStorage";
+import {
   TASK_RUN_IFRAME_ALLOW,
   TASK_RUN_IFRAME_SANDBOX,
 } from "@/lib/preloadTaskRunIframes";
@@ -321,6 +325,7 @@ export function EnvironmentConfiguration({
         },
         {
           onSuccess: async () => {
+            clearPendingEnvironment(teamSlugOrId);
             await navigate({
               to: "/$teamSlugOrId/environments/$environmentId",
               params: {
@@ -360,6 +365,7 @@ export function EnvironmentConfiguration({
         },
         {
           onSuccess: async () => {
+            clearPendingEnvironment(teamSlugOrId);
             await navigate({
               to: "/$teamSlugOrId/environments",
               params: { teamSlugOrId },
@@ -585,6 +591,13 @@ export function EnvironmentConfiguration({
         {mode === "new" ? (
           <button
             onClick={async () => {
+              setPendingEnvironment(teamSlugOrId, {
+                step: "select",
+                selectedRepos,
+                instanceId: search.instanceId,
+                snapshotId: search.snapshotId,
+                connectionLogin: search.connectionLogin,
+              });
               await navigate({
                 to: "/$teamSlugOrId/environments/new",
                 params: { teamSlugOrId },

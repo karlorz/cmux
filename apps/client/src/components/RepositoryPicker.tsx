@@ -19,6 +19,7 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { api } from "@cmux/convex/api";
 import { DEFAULT_MORPH_SNAPSHOT_ID, type MorphSnapshotId } from "@cmux/shared";
 import { isElectron } from "@/lib/electron";
+import { setPendingEnvironment } from "@/lib/pendingEnvironmentStorage";
 import {
   getApiIntegrationsGithubReposOptions,
   postApiMorphSetupInstanceMutation,
@@ -163,6 +164,20 @@ export function RepositoryPicker({
     window.focus?.();
   }, [router]);
 
+  const handleSelectedConnectionLoginChange = useCallback(
+    (login: string | null) => {
+      setSelectedConnectionLogin(login);
+      setPendingEnvironment(teamSlugOrId, {
+        connectionLogin: login,
+        selectedRepos,
+        instanceId,
+        snapshotId: selectedSnapshotId,
+        step: "select",
+      });
+    },
+    [instanceId, selectedRepos, selectedSnapshotId, teamSlugOrId],
+  );
+
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       const data = event.data as unknown;
@@ -207,8 +222,24 @@ export function RepositoryPicker({
           replace: true,
         });
       }
+      const resolvedInstanceId = maybeInstanceId ?? instanceId;
+      setPendingEnvironment(teamSlugOrId, {
+        step: "configure",
+        selectedRepos: repos,
+        instanceId: resolvedInstanceId,
+        snapshotId: selectedSnapshotId,
+        connectionLogin:
+          selectedConnectionLogin ?? connectionContext.selectedLogin ?? null,
+      });
     },
-    [instanceId, navigate, selectedSnapshotId, teamSlugOrId]
+    [
+      instanceId,
+      navigate,
+      connectionContext.selectedLogin,
+      selectedConnectionLogin,
+      selectedSnapshotId,
+      teamSlugOrId,
+    ]
   );
 
   const handleContinue = useCallback(
@@ -262,22 +293,49 @@ export function RepositoryPicker({
         }),
         replace: true,
       });
+      setPendingEnvironment(teamSlugOrId, {
+        snapshotId: nextSnapshotId,
+        selectedRepos,
+        instanceId,
+        step: "select",
+      });
     },
-    [navigate, teamSlugOrId]
+    [instanceId, navigate, selectedRepos, teamSlugOrId]
   );
 
-  const toggleRepo = useCallback((repo: string) => {
-    setSelectedRepos((prev) => {
-      if (prev.includes(repo)) {
-        return prev.filter((item) => item !== repo);
-      }
-      return [...prev, repo];
-    });
-  }, []);
+  const toggleRepo = useCallback(
+    (repo: string) => {
+      setSelectedRepos((prev) => {
+        const next = prev.includes(repo)
+          ? prev.filter((item) => item !== repo)
+          : [...prev, repo];
+        setPendingEnvironment(teamSlugOrId, {
+          step: "select",
+          selectedRepos: next,
+          instanceId,
+          snapshotId: selectedSnapshotId,
+        });
+        return next;
+      });
+    },
+    [instanceId, selectedSnapshotId, teamSlugOrId],
+  );
 
-  const removeRepo = useCallback((repo: string) => {
-    setSelectedRepos((prev) => prev.filter((item) => item !== repo));
-  }, []);
+  const removeRepo = useCallback(
+    (repo: string) => {
+      setSelectedRepos((prev) => {
+        const next = prev.filter((item) => item !== repo);
+        setPendingEnvironment(teamSlugOrId, {
+          step: "select",
+          selectedRepos: next,
+          instanceId,
+          snapshotId: selectedSnapshotId,
+        });
+        return next;
+      });
+    },
+    [instanceId, selectedSnapshotId, teamSlugOrId],
+  );
 
   const setConnectionContextSafe = useCallback((ctx: ConnectionContext) => {
     setConnectionContext((prev) => {
@@ -312,7 +370,7 @@ export function RepositoryPicker({
         <RepositoryConnectionsSection
           teamSlugOrId={teamSlugOrId}
           selectedLogin={selectedConnectionLogin}
-          onSelectedLoginChange={setSelectedConnectionLogin}
+          onSelectedLoginChange={handleSelectedConnectionLoginChange}
           onContextChange={setConnectionContextSafe}
           onConnectionsInvalidated={handleConnectionsInvalidated}
         />
