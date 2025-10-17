@@ -28,6 +28,7 @@
     "@hono/swagger-ui": "^0.5.2",
     "@hono/zod-openapi": "^1.1.0",
     "@octokit/auth-app": "^6.1.4",
+    "@openai/codex-sdk": "^0.46.0",
     "@radix-ui/react-slot": "^1.2.3",
     "@stackframe/js": "^2.8.41",
     "@stackframe/stack": "^2.8.41",

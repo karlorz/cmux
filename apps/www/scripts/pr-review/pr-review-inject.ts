@@ -82,6 +82,18 @@ function logFileSection(label: string, files: string[]): void {
   });
 }
 
+function logIndentedBlock(header: string, content: string): void {
+  console.log(header);
+  const normalized = content.replace(/\r\n/g, "\n").trim();
+  if (!normalized) {
+    console.log("[inject]   (empty response)");
+    return;
+  }
+  normalized.split("\n").forEach((line) => {
+    console.log(`[inject]   ${line}`);
+  });
+}
+
 interface RepoIdentifier {
   owner: string;
   name: string;
@@ -102,7 +114,9 @@ function parseRepoUrl(repoUrl: string): RepoIdentifier {
   const path = url.pathname.replace(/^\//, "").replace(/\.git$/, "");
   const [owner, name] = path.split("/");
   if (!owner || !name) {
-    throw new Error(`Repository URL must be in the form https://github.com/<owner>/<repo>[.git], received: ${repoUrl}`);
+    throw new Error(
+      `Repository URL must be in the form https://github.com/<owner>/<repo>[.git], received: ${repoUrl}`
+    );
   }
   return { owner, name };
 }
@@ -145,13 +159,7 @@ async function filterTextFiles(
   }
 
   const fileSet = new Set(files);
-  const args = [
-    "diff",
-    "--numstat",
-    `${baseRevision}..HEAD`,
-    "--",
-    ...files,
-  ];
+  const args = ["diff", "--numstat", `${baseRevision}..HEAD`, "--", ...files];
 
   const output = await runCommandCapture("git", args, { cwd: workspaceDir });
   const textFiles = new Set<string>();
@@ -193,6 +201,104 @@ async function filterTextFiles(
   return files.filter((file) => textFiles.has(file));
 }
 
+interface CodexReviewContext {
+  workspaceDir: string;
+  baseRevision: string;
+  files: readonly string[];
+}
+
+async function runCodexReviews({
+  workspaceDir,
+  baseRevision,
+  files,
+}: CodexReviewContext): Promise<void> {
+  if (files.length === 0) {
+    console.log("[inject] No text files require Codex review.");
+    return;
+  }
+
+  const openAiApiKey = requireEnv("OPENAI_API_KEY");
+
+  console.log(
+    `[inject] Launching Codex reviews for ${files.length} file(s)...`
+  );
+
+  const { Codex } = await import("@openai/codex-sdk");
+  const codex = new Codex({ apiKey: openAiApiKey });
+
+  const reviewResults = await Promise.allSettled(
+    files.map(async (file) => {
+      const diff = await runCommandCapture(
+        "git",
+        ["diff", `${baseRevision}..HEAD`, "--", file],
+        { cwd: workspaceDir }
+      );
+      const thread = codex.startThread({ workingDirectory: workspaceDir });
+      // const prompt = [
+      //   "You are a senior engineer performing a focused pull request review.",
+      //   `File path: ${file}`,
+      //   "",
+      //   "Review the diff below and identify bugs, risky changes, missing tests, or regressions.",
+      //   'Respond with a concise bullet list of findings. If there is nothing to flag, respond with a single bullet stating "No issues found."',
+      //   "",
+      //   "Diff:",
+      //   diff || "(no diff output)",
+      // ].join("\n");
+      const prompt = `\
+You are a senior engineer performing a focused pull request review, focusing only on the file provided.
+File path: ${file}
+Return a JSON object of type { lines: { line: string, hasChanged: boolean, shouldBeReviewedScore?: boolean, shouldReviewWhy?: string, mostImportantCharacterIndex: number }[] }.
+You should only have the "post-diff" array of lines in the JSON object, with the hasChanged true or false.
+
+shouldBeReviewedScore and shouldReviewWhy should only be given if hasChanged is true. shouldReviewWhy should only be given if there is something interesting to say that might be non-obvious to the dev.
+
+shouldBeReviewedScore is a number from 0 to 1 that indicates how careful the reviewer should be when reviewing this line of code.
+Anything that feels like it might be off or might warrant a comment should have a high score, even if it's technically correct.
+
+shouldReviewWhy should be a concise (4-10 words) hint on why the reviewer should maybe review this line of code, but it shouldn't state obvious things, instead it should only be a hint for the reviewer as to what exactly you meant when you flagged it.
+In most cases, the reason should follow a template like "<X> <verb> <Y>" (eg. "line is too long" or "code accesses sensitive data").
+It should be understandable by a human and make sense (break the "X is Y" rule if it helps you make it more understandable).
+
+mostImportantCharacterIndex should be the index of the character that you deem most important in the review; if you're not sure or there are multiple, just choose any one of them.
+
+Ugly code should be given a higher score.
+Code that may be hard to read for a human should also be given a higher score.
+Non-clean code too.
+
+DO NOT BE LAZY DO THE ENTIRE FILE. FROM START TO FINISH. DO NOT BE LAZY.
+
+The diff:
+${diff || "(no diff output)"}`;
+
+      const turn = await thread.run(prompt);
+      const response = turn.finalResponse ?? "";
+      logIndentedBlock(`[inject] Codex review for ${file}`, response);
+      return response;
+    })
+  );
+
+  let failureCount = 0;
+  reviewResults.forEach((result, index) => {
+    if (result.status === "rejected") {
+      failureCount += 1;
+      const file = files[index] ?? "(unknown file)";
+      const reason =
+        result.reason instanceof Error
+          ? result.reason.message
+          : String(result.reason);
+      console.error(`[inject] Codex review failed for ${file}: ${reason}`);
+    }
+  });
+
+  if (failureCount > 0) {
+    throw new Error(
+      `[inject] Codex review encountered ${failureCount} failure(s). See logs above.`
+    );
+  }
+
+  console.log("[inject] Codex reviews completed.");
+}
+
 async function main(): Promise<void> {
   const workspaceDir = requireEnv("WORKSPACE_DIR");
   const prUrl = requireEnv("PR_URL");
@@ -200,6 +306,15 @@ async function main(): Promise<void> {
   const headRefName = requireEnv("GIT_BRANCH");
   const baseRepoUrl = requireEnv("BASE_REPO_URL");
   const baseRefName = requireEnv("BASE_REF_NAME");
+  const logFilePath = process.env.LOG_FILE_PATH ?? null;
+  const logSymlinkPath = process.env.LOG_SYMLINK_PATH ?? null;
+
+  if (logFilePath) {
+    console.log(`[inject] Logging output to ${logFilePath}`);
+  }
+  if (logSymlinkPath) {
+    console.log(`[inject] Workspace log symlink will be ${logSymlinkPath}`);
+  }
 
   const headRepo = parseRepoUrl(headRepoUrl);
   const baseRepo = parseRepoUrl(baseRepoUrl);
@@ -226,10 +341,32 @@ async function main(): Promise<void> {
 
   const installCodex = (async () => {
     console.log("[inject] Installing @openai/codex globally...");
-    await runCommand("bun", ["add", "-g", "@openai/codex@latest"]);
+    await runCommand("bun", [
+      "add",
+      "-g",
+      "@openai/codex@latest",
+      "@openai/codex-sdk@latest",
+    ]);
   })();
 
   await Promise.all([cloneAndCheckout, installCodex]);
+
+  if (logFilePath && logSymlinkPath) {
+    try {
+      await runCommand("ln", ["-sf", logFilePath, logSymlinkPath]);
+      console.log(
+        `[inject] Linked ${logSymlinkPath} -> ${logFilePath} for log access`
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : String(error ?? "unknown error");
+      console.warn(
+        `[inject] Failed to create workspace log symlink: ${message}`
+      );
+    }
+  }
 
   const baseRemote =
     headRepo.owner === baseRepo.owner && headRepo.name === baseRepo.name
@@ -249,16 +386,39 @@ async function main(): Promise<void> {
   });
 
   const baseRevision = `${baseRemote}/${baseRefName}`;
-  const changedFilesOutput = await runCommandCapture(
+  const mergeBaseRaw = await runCommandCapture(
     "git",
-    ["diff", "--name-only", `${baseRevision}..HEAD`],
+    ["merge-base", "HEAD", baseRevision],
     { cwd: workspaceDir }
   );
-  const modifiedFilesOutput = await runCommandCapture(
-    "git",
-    ["diff", "--diff-filter=M", "--name-only", `${baseRevision}..HEAD`],
-    { cwd: workspaceDir }
+  const mergeBaseRevision = mergeBaseRaw.split("\n")[0]?.trim();
+  if (!mergeBaseRevision) {
+    throw new Error(
+      `[inject] Unable to determine merge base between HEAD and ${baseRevision}`
+    );
+  }
+  console.log(
+    `[inject] Using merge-base ${mergeBaseRevision} for diff comparisons`
   );
+  const [changedFilesOutput, modifiedFilesOutput] = await Promise.all([
+    runCommandCapture(
+      "git",
+      ["diff", "--name-only", `${mergeBaseRevision}..HEAD`],
+      {
+        cwd: workspaceDir,
+      }
+    ),
+    runCommandCapture(
+      "git",
+      [
+        "diff",
+        "--diff-filter=M",
+        "--name-only",
+        `${mergeBaseRevision}..HEAD`,
+      ],
+      { cwd: workspaceDir }
+    ),
+  ]);
 
   const changedFiles = parseFileList(changedFilesOutput);
   const modifiedFiles = parseFileList(modifiedFilesOutput);
@@ -266,21 +426,21 @@ async function main(): Promise<void> {
   logFileSection("All changed files", changedFiles);
   logFileSection("All modified files", modifiedFiles);
 
-  const textChangedFiles = await filterTextFiles(
-    workspaceDir,
-    baseRevision,
-    changedFiles
-  );
-  const textModifiedFiles = await filterTextFiles(
-    workspaceDir,
-    baseRevision,
-    modifiedFiles
-  );
+  const [textChangedFiles, textModifiedFiles] = await Promise.all([
+    filterTextFiles(workspaceDir, mergeBaseRevision, changedFiles),
+    filterTextFiles(workspaceDir, mergeBaseRevision, modifiedFiles),
+  ]);
 
   logFileSection("Changed text files", textChangedFiles);
   logFileSection("Modified text files", textModifiedFiles);
 
-  console.log("[inject] Repository prepared.");
+  await runCodexReviews({
+    workspaceDir,
+    baseRevision: mergeBaseRevision,
+    files: textChangedFiles,
+  });
+
+  console.log("[inject] Done with PR review.");
 }
 
 await main();

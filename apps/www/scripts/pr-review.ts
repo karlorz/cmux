@@ -8,8 +8,12 @@ import { readFile } from "node:fs/promises";
 const DEFAULT_PR_URL = "https://github.com/manaflow-ai/cmux/pull/653";
 const DEFAULT_MORPH_SNAPSHOT_ID = "snapshot_vb7uqz8o";
 const OPEN_VSCODE_PORT = 39378;
+const REMOTE_WORKSPACE_DIR = "/root/workspace";
+const REMOTE_LOG_FILE_PATH = "/root/pr-review-inject.log";
+const WORKSPACE_LOG_RELATIVE_PATH = "pr-review-inject.log";
+const WORKSPACE_LOG_ABSOLUTE_PATH = `${REMOTE_WORKSPACE_DIR}/${WORKSPACE_LOG_RELATIVE_PATH}`;
 const injectScriptSourcePromise = readFile(
-  new URL("./pr-review-inject.ts", import.meta.url),
+  new URL("./pr-review/pr-review-inject.ts", import.meta.url),
   "utf8"
 );
 
@@ -232,7 +236,10 @@ async function startMorphInstanceTask(
   }
 }
 
-function logOpenVscodeUrl(instance: Instance, workspacePath: string): void {
+function getOpenVscodeBaseUrl(
+  instance: Instance,
+  workspacePath: string
+): URL | null {
   const services = instance.networking?.httpServices ?? [];
   const vscodeService = services.find(
     (service) =>
@@ -244,20 +251,50 @@ function logOpenVscodeUrl(instance: Instance, workspacePath: string): void {
     console.warn(
       `Warning: could not find exposed OpenVSCode service on port ${OPEN_VSCODE_PORT}.`
     );
-    return;
+    return null;
   }
 
   try {
     const vscodeUrl = new URL(vscodeService.url);
     vscodeUrl.searchParams.set("folder", workspacePath);
-    console.log(`OpenVSCode (${OPEN_VSCODE_PORT}): ${vscodeUrl.toString()}`);
+    return vscodeUrl;
   } catch (error) {
     const message =
       error instanceof Error ? error.message : String(error ?? "unknown error");
     console.warn(
       `Warning: unable to format OpenVSCode URL for port ${OPEN_VSCODE_PORT}: ${message}`
     );
+    return null;
   }
+}
+
+function logOpenVscodeUrl(
+  instance: Instance,
+  workspacePath: string
+): URL | null {
+  const baseUrl = getOpenVscodeBaseUrl(instance, workspacePath);
+  if (!baseUrl) {
+    return null;
+  }
+  console.log(`OpenVSCode (${OPEN_VSCODE_PORT}): ${baseUrl.toString()}`);
+  return baseUrl;
+}
+
+function logOpenVscodeFileUrl(
+  instance: Instance,
+  workspacePath: string,
+  relativeFilePath: string
+): void {
+  const baseUrl = getOpenVscodeBaseUrl(instance, workspacePath);
+  if (!baseUrl) {
+    return;
+  }
+
+  const fileUrl = new URL(baseUrl.toString());
+  fileUrl.searchParams.set("path", relativeFilePath);
+  console.log(
+    `OpenVSCode log file (${relativeFilePath}): ${fileUrl.toString()}`
+  );
 }
 
 async function waitForUserToConfirmStop(): Promise<void> {
@@ -337,11 +374,9 @@ async function main(): Promise<void> {
     }
     console.log(`Instance ${startedInstance.id} is ready.`);
 
-    const baseDir = "/root/workspace";
     describeServices(startedInstance);
-    logOpenVscodeUrl(startedInstance, baseDir);
+    logOpenVscodeUrl(startedInstance, REMOTE_WORKSPACE_DIR);
 
-    const repoDir = baseDir;
     const cloneUrl = `https://github.com/${prMetadata.headRepoOwner}/${prMetadata.headRepoName}.git`;
 
     console.log("Preparing repository inside Morph instance...");
@@ -349,14 +384,26 @@ async function main(): Promise<void> {
     const remoteScriptPath = "/root/pr-review-inject.ts";
     const injectScriptSource = await injectScriptSourcePromise;
     const baseRepoUrl = `https://github.com/${prMetadata.owner}/${prMetadata.repo}.git`;
-    const envAssignments = [
-      ["WORKSPACE_DIR", baseDir],
+    const openAiApiKey = process.env.OPENAI_API_KEY;
+    if (!openAiApiKey || openAiApiKey.length === 0) {
+      throw new Error(
+        "OPENAI_API_KEY environment variable is required to run PR review."
+      );
+    }
+
+    const envPairs: Array<[string, string]> = [
+      ["WORKSPACE_DIR", REMOTE_WORKSPACE_DIR],
       ["PR_URL", prMetadata.prUrl],
       ["GIT_REPO_URL", cloneUrl],
       ["GIT_BRANCH", prMetadata.headRefName],
       ["BASE_REPO_URL", baseRepoUrl],
       ["BASE_REF_NAME", prMetadata.baseRefName],
-    ]
+      ["OPENAI_API_KEY", openAiApiKey],
+      ["LOG_FILE_PATH", REMOTE_LOG_FILE_PATH],
+      ["LOG_SYMLINK_PATH", WORKSPACE_LOG_ABSOLUTE_PATH],
+    ];
+
+    const envAssignments = envPairs
       .map(([key, value]) => `${key}=${shellQuote(value)}`)
       .join(" ");
     const injectCommand =
@@ -364,19 +411,41 @@ async function main(): Promise<void> {
         `cat <<'EOF_PR_REVIEW_INJECT' > ${shellQuote(remoteScriptPath)}`,
         injectScriptSource,
         "EOF_PR_REVIEW_INJECT",
-        `${envAssignments} bun ${shellQuote(remoteScriptPath)}`,
+        `chmod +x ${shellQuote(remoteScriptPath)}`,
+        `rm -f ${shellQuote(REMOTE_LOG_FILE_PATH)}`,
+        `nohup env ${envAssignments} bun ${shellQuote(
+          remoteScriptPath
+        )} > ${shellQuote(REMOTE_LOG_FILE_PATH)} 2>&1 &`,
       ].join("\n") + "\n";
     try {
-      await execOrThrow(startedInstance, injectCommand);
+      await execOrThrow(startedInstance, injectCommand).catch((error) => {
+        const message =
+          error instanceof Error
+            ? error.message
+            : String(error ?? "unknown error");
+        console.warn(
+          `Warning: failed to inject script into instance ${startedInstance.id}: ${message}`
+        );
+      });
     } finally {
       finishPrepareRepo();
     }
 
-    console.log(`Repository ready at ${repoDir}`);
+    console.log(
+      `Repository preparation is running in the background. Remote log: ${REMOTE_LOG_FILE_PATH}`
+    );
+    console.log(
+      `Symlinked workspace log (once created): ${WORKSPACE_LOG_ABSOLUTE_PATH}`
+    );
+    logOpenVscodeFileUrl(
+      startedInstance,
+      REMOTE_WORKSPACE_DIR,
+      WORKSPACE_LOG_RELATIVE_PATH
+    );
     console.log(
       `Morph instance ${startedInstance.id} provisioned for PR ${prMetadata.prUrl}`
     );
-    logOpenVscodeUrl(startedInstance, baseDir);
+    logOpenVscodeUrl(startedInstance, REMOTE_WORKSPACE_DIR);
   } finally {
     await startInstancePromise.catch(() => null);
     if (instance) {

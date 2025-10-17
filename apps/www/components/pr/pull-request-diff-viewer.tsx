@@ -7,9 +7,15 @@ import {
   useMemo,
   useState,
 } from "react";
+import type { ReactElement } from "react";
 import {
   ChevronDown,
   ChevronRight,
+  FileCode,
+  FileEdit,
+  FileMinus,
+  FilePlus,
+  FileText,
   Folder,
 } from "lucide-react";
 import {
@@ -205,6 +211,58 @@ type FileTreeNode = {
   children: FileTreeNode[];
   file?: GithubPullRequestFile;
 };
+
+type FileStatusMeta = {
+  icon: ReactElement;
+  colorClassName: string;
+  label: string;
+};
+
+function getFileStatusMeta(
+  status: GithubPullRequestFile["status"] | undefined,
+): FileStatusMeta {
+  const iconClassName = "h-3.5 w-3.5";
+
+  switch (status) {
+    case "added":
+      return {
+        icon: <FilePlus className={iconClassName} />,
+        colorClassName: "text-emerald-600 dark:text-emerald-400",
+        label: "Added file",
+      };
+    case "removed":
+      return {
+        icon: <FileMinus className={iconClassName} />,
+        colorClassName: "text-rose-600 dark:text-rose-400",
+        label: "Removed file",
+      };
+    case "modified":
+    case "changed":
+      return {
+        icon: <FileEdit className={iconClassName} />,
+        colorClassName: "text-amber-600 dark:text-amber-300",
+        label: "Modified file",
+      };
+    case "renamed":
+      return {
+        icon: <FileCode className={iconClassName} />,
+        colorClassName: "text-sky-600 dark:text-sky-400",
+        label: "Renamed file",
+      };
+    case "copied":
+      return {
+        icon: <FileCode className={iconClassName} />,
+        colorClassName: "text-sky-600 dark:text-sky-400",
+        label: "Copied file",
+      };
+    default:
+      return {
+        icon: <FileText className={iconClassName} />,
+        colorClassName: "text-neutral-500 dark:text-neutral-400",
+        label: "File change",
+      };
+  }
+}
 
 export function PullRequestDiffViewer({
   files,
@@ -496,7 +554,19 @@ function FileDiffCard({
   isActive: boolean;
 }) {
   const { file, diff, anchorId, error } = entry;
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const language = useMemo(() => inferLanguage(file.filename), [file.filename]);
+  const statusMeta = useMemo(
+    () => getFileStatusMeta(file.status),
+    [file.status],
+  );
+
+  useEffect(() => {
+    if (isActive) {
+      setIsCollapsed(false);
+    }
+  }, [isActive]);
+
   const tokens = useMemo<HunkTokens | null>(() => {
     if (!diff) {
       return null;
@@ -520,144 +590,118 @@ function FileDiffCard({
   return (
     <article
       id={anchorId}
-      className="overflow-hidden rounded-2xl bg-white shadow-sm transition focus:outline-none"
+      className={cn(
+        "overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm transition focus:outline-none",
+        isActive ? "ring-1 ring-sky-200" : "ring-0",
+      )}
       tabIndex={-1}
       aria-current={isActive}
     >
-      <header className="flex flex-wrap items-center gap-4 border-b border-neutral-200 bg-neutral-100/80 px-4 py-3">
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <div className="flex items-center gap-3">
-            <span className="truncate font-medium text-neutral-900">
-              {file.filename}
-            </span>
-            <StatusBadge status={file.status} />
-          </div>
+      <button
+        type="button"
+        onClick={() => setIsCollapsed((previous) => !previous)}
+        className="flex w-full items-center gap-3 border-b border-neutral-200 bg-neutral-50/80 px-3.5 py-2.5 text-left transition hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+        aria-expanded={!isCollapsed}
+      >
+        <span className="flex h-5 w-5 items-center justify-center text-neutral-400">
+          {isCollapsed ? (
+            <ChevronRight className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronDown className="h-3.5 w-3.5" />
+          )}
+        </span>
+
+        <span
+          className={cn("flex h-5 w-5 items-center justify-center", statusMeta.colorClassName)}
+        >
+          {statusMeta.icon}
+          <span className="sr-only">{statusMeta.label}</span>
+        </span>
+
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="font-mono text-xs text-neutral-700 truncate">
+            {file.filename}
+          </span>
           {file.previous_filename ? (
-            <span className="text-xs text-neutral-500">
+            <span className="font-mono text-[11px] text-neutral-500 truncate">
               Renamed from {file.previous_filename}
             </span>
           ) : null}
         </div>
 
-        <div className="flex flex-wrap items-center gap-4 text-xs font-medium text-neutral-600">
-          <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-emerald-700">
+        <div className="flex items-center gap-2 text-[11px] font-medium text-neutral-600">
+          <span className="text-emerald-600">
             +{file.additions}
           </span>
-          <span className="rounded-md bg-rose-100 px-2 py-0.5 text-rose-700">
+          <span className="text-rose-600">
             -{file.deletions}
           </span>
         </div>
-      </header>
+      </button>
 
-      {diff ? (
-        <Diff
-          diffType={diff.type}
-          hunks={diff.hunks}
-          viewType="split"
-          optimizeSelection
-          className="diff-syntax system-mono overflow-auto bg-white text-xs leading-5 text-neutral-800"
-          gutterClassName="system-mono bg-white text-xs text-neutral-500"
-          codeClassName="system-mono text-xs text-neutral-800"
-          tokens={tokens ?? undefined}
-          generateLineClassName={({ changes, defaultGenerate }) => {
-            const defaultClassName = defaultGenerate();
-            const classNames: string[] = [
-              "system-mono text-xs py-1",
-            ];
-            const normalizedChanges = changes.filter(
-              (change): change is ChangeData => Boolean(change),
-            );
-            const hasInsert = normalizedChanges.some((change) => isInsert(change));
-            const hasDelete = normalizedChanges.some((change) => isDelete(change));
+      {!isCollapsed ? (
+        diff ? (
+          <Diff
+            diffType={diff.type}
+            hunks={diff.hunks}
+            viewType="split"
+            optimizeSelection
+            className="diff-syntax system-mono overflow-auto bg-white text-xs leading-5 text-neutral-800"
+            gutterClassName="system-mono bg-white text-xs text-neutral-500"
+            codeClassName="system-mono text-xs text-neutral-800"
+            tokens={tokens ?? undefined}
+            generateLineClassName={({ changes, defaultGenerate }) => {
+              const defaultClassName = defaultGenerate();
+              const classNames: string[] = ["system-mono text-xs py-1"];
+              const normalizedChanges = changes.filter(
+                (change): change is ChangeData => Boolean(change),
+              );
+              const hasInsert = normalizedChanges.some((change) =>
+                isInsert(change),
+              );
+              const hasDelete = normalizedChanges.some((change) =>
+                isDelete(change),
+              );
 
-            if (hasInsert) {
-              classNames.push(
-                "bg-emerald-50 text-emerald-900",
-              );
-            } else if (hasDelete) {
-              classNames.push(
-                "bg-rose-50 text-rose-900",
-              );
-            } else {
-              classNames.push(
-                "bg-white text-neutral-800",
-              );
+              if (hasInsert) {
+                classNames.push(
+                  "bg-emerald-50 text-emerald-900",
+                );
+              } else if (hasDelete) {
+                classNames.push(
+                  "bg-rose-50 text-rose-900",
+                );
+              } else {
+                classNames.push(
+                  "bg-white text-neutral-800",
+                );
+              }
+
+              return cn(defaultClassName, classNames);
+            }}
+          >
+            {(hunks) =>
+              hunks.map((hunk) => (
+                <Fragment key={hunk.content}>
+                  <Decoration>
+                    <div className="bg-sky-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-sky-700">
+                      {hunk.content}
+                    </div>
+                  </Decoration>
+                  <Hunk hunk={hunk} />
+                </Fragment>
+              ))
             }
-
-            return cn(defaultClassName, classNames);
-          }}
-        >
-          {(hunks) =>
-            hunks.map((hunk) => (
-              <Fragment key={hunk.content}>
-                <Decoration>
-                  <div className="bg-sky-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-sky-700">
-                    {hunk.content}
-                  </div>
-                </Decoration>
-                <Hunk hunk={hunk} />
-              </Fragment>
-            ))
-          }
-        </Diff>
-      ) : (
-        <div className="bg-neutral-50 px-4 py-6 text-sm text-neutral-600">
-          {error ??
-            "Diff content is unavailable for this file. It might be binary or too large to display."}
-        </div>
-      )}
+          </Diff>
+        ) : (
+          <div className="bg-neutral-50 px-4 py-6 text-sm text-neutral-600">
+            {error ??
+              "Diff content is unavailable for this file. It might be binary or too large to display."}
+          </div>
+        )
+      ) : null}
     </article>
   );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const { background, text } = getStatusAppearance(status);
-
-  return (
-    <span
-      className={cn(
-        "rounded-full px-2.5 py-1 text-xs font-medium capitalize",
-        background,
-        text,
-      )}
-    >
-      {status}
-    </span>
-  );
-}
-
-function getStatusAppearance(status: string): {
-  background: string;
-  text: string;
-} {
-  switch (status) {
-    case "added":
-      return {
-        background: "border border-emerald-200 bg-emerald-100",
-        text: "text-emerald-700",
-      };
-    case "removed":
-      return {
-        background: "border border-rose-200 bg-rose-100",
-        text: "text-rose-700",
-      };
-    case "renamed":
-      return {
-        background: "border border-amber-200 bg-amber-100",
-        text: "text-amber-700",
-      };
-    case "modified":
-    case "changed":
-      return {
-        background: "border border-sky-200 bg-sky-100",
-        text: "text-sky-700",
-      };
-    default:
-      return {
-        background: "border border-neutral-300 bg-neutral-200",
-        text: "text-neutral-700",
-      };
-  }
 }
 
 function buildDiffText(file: GithubPullRequestFile): string {

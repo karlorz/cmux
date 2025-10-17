@@ -302,6 +302,7 @@
         "@hono/swagger-ui": "^0.5.2",
         "@hono/zod-openapi": "^1.1.0",
         "@octokit/auth-app": "^6.1.4",
+        "@openai/codex-sdk": "^0.46.0",
         "@radix-ui/react-slot": "^1.2.3",
         "@stackframe/js": "^2.8.41",
         "@stackframe/stack": "^2.8.41",
@@ -457,6 +458,7 @@
         "@cmux/shared": "workspace:*",
         "@cmux/www-openapi-client": "workspace:*",
         "@daytonaio/sdk": "^0.22.1",
+        "@openai/codex-sdk": "^0.46.0",
         "@stackframe/js": "^2.8.41",
         "commander": "^12.1.0",
         "convex": "^1.27.1",
@@ -1415,6 +1417,8 @@
     "@octokit/webhooks-methods": ["@octokit/webhooks-methods@6.0.0", "", {}, "sha512-MFlzzoDJVw/GcbfzVC1RLR36QqkTLUf79vLVO3D+xn7r0QgxnFoLZgtrzxiQErAjFUOdH6fas2KeQJ1yr/qaXQ=="],
 
     "@octokit/webhooks-types": ["@octokit/webhooks-types@7.6.1", "", {}, "sha512-S8u2cJzklBC0FgTwWVLaM8tMrDuDMVE4xiTK4EYXM9GntyvrdbSoxqDQa+Fh57CCNApyIpyeqPhhFEmHPfrXgw=="],
+
+    "@openai/codex-sdk": ["@openai/codex-sdk@0.46.0", "", {}, "sha512-xCjQnuV13rDqVf3EQa/2BD38qzelOofCFVKpexkO6LVnoYaZin/MTwzSNiAR7k8DTF7AHottgqwNOB8hbYVauA=="],
 
     "@opentelemetry/api": ["@opentelemetry/api@1.9.0", "", {}, "sha512-3giAOQvZiH5F9bMlMiv8+GSPMeqg0dbaeo58/0SlA9sxSqZhnUtxzX9/2FzyhS9sWQf5S0GJE0AKBrFqjpeYcg=="],
 
