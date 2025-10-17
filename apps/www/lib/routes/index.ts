@@ -16,3 +16,4 @@ export { sandboxesRouter } from "./sandboxes.route";
 export { teamsRouter } from "./teams.route";
 export { usersRouter } from "./users.route";
 export { branchRouter } from "./branch.route";
+export { cloudAgentsRouter } from "./cloud-agents.route";

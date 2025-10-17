@@ -473,31 +473,64 @@ function DashboardComponent() {
         ? undefined
         : `https://github.com/${projectFullName}.git`;
 
-      // For socket.io, we need to send the content text (which includes image references) and the images
-      socket.emit(
-        "start-task",
-        {
-          ...(repoUrl ? { repoUrl } : {}),
-          ...(envSelected ? {} : { branch }),
-          taskDescription: content?.text || taskDescription, // Use content.text which includes image references
-          projectFullName,
-          taskId,
-          selectedAgents:
-            selectedAgents.length > 0 ? selectedAgents : undefined,
-          isCloudMode: envSelected ? true : isCloudMode,
-          ...(environmentId ? { environmentId } : {}),
-          images: images.length > 0 ? images : undefined,
-          theme,
-        },
-        (response) => {
-          if ("error" in response) {
-            console.error("Task start error:", response.error);
-            toast.error(`Task start error: ${JSON.stringify(response.error)}`);
+      const promptText = content?.text || taskDescription;
+      const payload = {
+        ...(repoUrl ? { repoUrl } : {}),
+        ...(envSelected ? {} : { branch }),
+        taskDescription: promptText,
+        projectFullName,
+        taskId,
+        selectedAgents: selectedAgents.length > 0 ? selectedAgents : undefined,
+        images: images.length > 0 ? images : undefined,
+        theme,
+        ...(environmentId ? { environmentId } : {}),
+      };
+
+      if (envSelected || isCloudMode) {
+        try {
+          const response = await fetch("/api/cloud/spawn-agents", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              teamSlugOrId,
+              ...payload,
+            }),
+          });
+          if (!response.ok) {
+            const errorBody = await response.text();
+            toast.error(
+              `Cloud task failed to start: ${response.status} ${errorBody}`
+            );
+            console.error("Cloud task spawn failed:", response.status, errorBody);
           } else {
-            console.log("Task started:", response);
+            const result = await response.json();
+            console.log("Cloud agents spawned:", result);
           }
+        } catch (spawnError) {
+          console.error("Error calling cloud spawn endpoint:", spawnError);
+          toast.error("Cloud task failed to start due to network error.");
         }
-      );
+      } else {
+        socket.emit(
+          "start-task",
+          {
+            ...payload,
+            taskDescription: promptText,
+            projectFullName,
+            taskId,
+            isCloudMode,
+            ...(environmentId ? { environmentId } : {}),
+          },
+          (response) => {
+            if ("error" in response) {
+              console.error("Task start error:", response.error);
+              toast.error(`Task start error: ${JSON.stringify(response.error)}`);
+            } else {
+              console.log("Task started:", response);
+            }
+          }
+        );
+      }
       console.log("Task created:", taskId);
     } catch (error) {
       console.error("Error starting task:", error);

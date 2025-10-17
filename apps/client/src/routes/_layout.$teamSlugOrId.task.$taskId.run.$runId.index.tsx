@@ -77,8 +77,8 @@ function TaskRunComponent() {
               src={workspaceUrl}
               className="grow flex relative"
               iframeClassName="select-none"
-              allow="*"
-              sandbox="*"
+              sandbox="allow-downloads allow-forms allow-modals allow-orientation-lock allow-pointer-lock allow-popups allow-popups-to-escape-sandbox allow-presentation allow-same-origin allow-scripts allow-storage-access-by-user-activation allow-top-navigation allow-top-navigation-by-user-activation"
+              allow="accelerometer; camera; encrypted-media; fullscreen; geolocation; gyroscope; magnetometer; microphone; midi; payment; usb; xr-spatial-tracking"
               retainOnUnmount
               suspended={!hasWorkspace}
               onLoad={onLoad}

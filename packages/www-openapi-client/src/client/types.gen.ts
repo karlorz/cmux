@@ -506,6 +506,37 @@ export type GenerateBranchesBody = {
     uniqueId?: string;
 };
 
+export type SpawnCloudAgentsResponse = {
+    results: Array<{
+        agentName: string;
+        taskRunId: string;
+        terminalId?: string;
+        vscodeUrl?: string;
+        workerUrl?: string;
+        success: boolean;
+        error?: string;
+    }>;
+    prTitle?: string;
+};
+
+export type AgentImagePayload = {
+    src: string;
+    fileName?: string;
+    altText: string;
+};
+
+export type SpawnCloudAgentsBody = {
+    teamSlugOrId: string;
+    taskId: string;
+    taskDescription: string;
+    repoUrl?: string;
+    branch?: string;
+    selectedAgents?: Array<string>;
+    environmentId?: string;
+    images?: Array<AgentImagePayload>;
+    theme?: 'dark' | 'light' | 'system';
+};
+
 export type GetApiHealthData = {
     body?: never;
     path?: never;
@@ -1917,6 +1948,37 @@ export type PostApiBranchesGenerateResponses = {
 };
 
 export type PostApiBranchesGenerateResponse = PostApiBranchesGenerateResponses[keyof PostApiBranchesGenerateResponses];
+
+export type PostApiCloudSpawnAgentsData = {
+    body: SpawnCloudAgentsBody;
+    path?: never;
+    query?: never;
+    url: '/api/cloud/spawn-agents';
+};
+
+export type PostApiCloudSpawnAgentsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Failed to spawn agents
+     */
+    500: unknown;
+};
+
+export type PostApiCloudSpawnAgentsResponses = {
+    /**
+     * Agents spawned successfully
+     */
+    200: SpawnCloudAgentsResponse;
+};
+
+export type PostApiCloudSpawnAgentsResponse = PostApiCloudSpawnAgentsResponses[keyof PostApiCloudSpawnAgentsResponses];
 
 export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});

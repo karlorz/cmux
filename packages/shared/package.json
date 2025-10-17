@@ -62,6 +62,10 @@
       "import": "./src/utils/validate-exposed-ports.ts",
       "types": "./src/utils/validate-exposed-ports.ts"
     },
+    "./scripts/switch-branch.ts": {
+      "import": "./src/scripts/switch-branch.ts",
+      "types": "./src/scripts/switch-branch.ts"
+    },
     "./node/convex-cache": {
       "import": "./src/node/convex-cache.ts",
       "types": "./src/node/convex-cache.ts"

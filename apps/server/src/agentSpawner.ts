@@ -32,7 +32,7 @@ import { DockerVSCodeInstance } from "./vscode/DockerVSCodeInstance";
 import { VSCodeInstance } from "./vscode/VSCodeInstance";
 import { getWorktreePath, setupProjectWorkspace } from "./workspace";
 import { workerExec } from "./utils/workerExec";
-import rawSwitchBranchScript from "../scripts/switch-branch.ts?raw";
+import rawSwitchBranchScript from "@cmux/shared/scripts/switch-branch.ts?raw";
 
 const SWITCH_BRANCH_BUN_SCRIPT = rawSwitchBranchScript;
 
