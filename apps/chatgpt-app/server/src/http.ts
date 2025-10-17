@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { parse } from "node:url";
 import { randomUUID } from "node:crypto";
 
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/dist/esm/server/streamableHttp.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { mcpServer } from "./index";
