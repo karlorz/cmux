@@ -1,6 +1,4 @@
-import { TaskTree } from "@/components/TaskTree";
-import { TaskTreeSkeleton } from "@/components/TaskTreeSkeleton";
-import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
+
 import { isElectron } from "@/lib/electron";
 import { type Doc } from "@cmux/convex/dataModel";
 import type { LinkProps } from "@tanstack/react-router";
@@ -16,8 +14,7 @@ import {
 } from "react";
 import CmuxLogo from "./logo/cmux-logo";
 import { SidebarNavLink } from "./sidebar/SidebarNavLink";
-import { SidebarPullRequestList } from "./sidebar/SidebarPullRequestList";
-import { SidebarSectionLink } from "./sidebar/SidebarSectionLink";
+import { SidebarListbox, type SidebarListboxRef } from "./sidebar/SidebarListbox";
 
 interface SidebarProps {
   tasks: Doc<"tasks">[] | undefined;
@@ -67,6 +64,7 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const containerLeftRef = useRef<number>(0);
   const rafIdRef = useRef<number | null>(null);
+  const listboxRef = useRef<SidebarListboxRef>(null);
   const [width, setWidth] = useState<number>(() => {
     const stored = localStorage.getItem("sidebarWidth");
     const parsed = stored ? Number.parseInt(stored, 10) : DEFAULT_WIDTH;
@@ -79,7 +77,7 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
     return stored === "true";
   });
 
-  const { expandTaskIds } = useExpandTasks();
+
 
   useEffect(() => {
     localStorage.setItem("sidebarWidth", String(width));
@@ -114,6 +112,36 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
+
+  // Keyboard shortcut to focus sidebar listbox (Ctrl+Shift+E)
+  useEffect(() => {
+    if (isElectron && window.cmux?.on) {
+      const off = window.cmux.on("shortcut:sidebar-focus", () => {
+        if (!isHidden && listboxRef.current) {
+          listboxRef.current.focus();
+        }
+      });
+      return () => {
+        if (typeof off === "function") off();
+      };
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.ctrlKey &&
+        e.shiftKey &&
+        (e.code === "KeyE" || e.key.toLowerCase() === "e")
+      ) {
+        e.preventDefault();
+        if (!isHidden && listboxRef.current) {
+          listboxRef.current.focus();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isHidden]);
 
   // Listen for storage events from command bar
   useEffect(() => {
@@ -268,49 +296,7 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
             ))}
           </ul>
 
-          <div className="mt-4 flex flex-col">
-            <SidebarSectionLink
-              to="/$teamSlugOrId/prs"
-              params={{ teamSlugOrId }}
-              exact
-            >
-              Pull requests
-            </SidebarSectionLink>
-            <div className="ml-2 pt-px">
-              <SidebarPullRequestList teamSlugOrId={teamSlugOrId} />
-            </div>
-          </div>
-
-          <div className="mt-2 flex flex-col gap-0.5">
-            <SidebarSectionLink
-              to="/$teamSlugOrId/workspaces"
-              params={{ teamSlugOrId }}
-              exact
-            >
-              Workspaces
-            </SidebarSectionLink>
-          </div>
-
-          <div className="ml-2 pt-px">
-            <div className="space-y-px">
-              {tasks === undefined ? (
-                <TaskTreeSkeleton count={5} />
-              ) : tasks && tasks.length > 0 ? (
-                tasks.map((task) => (
-                  <TaskTree
-                    key={task._id}
-                    task={task}
-                    defaultExpanded={expandTaskIds?.includes(task._id) ?? false}
-                    teamSlugOrId={teamSlugOrId}
-                  />
-                ))
-              ) : (
-                <p className="pl-2 pr-3 py-1.5 text-xs text-neutral-500 dark:text-neutral-400 select-none">
-                  No recent tasks
-                </p>
-              )}
-            </div>
-          </div>
+           <SidebarListbox ref={listboxRef} tasks={tasks} teamSlugOrId={teamSlugOrId} />
         </div>
       </nav>
 
