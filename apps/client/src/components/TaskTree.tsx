@@ -844,6 +844,14 @@ function TaskRunDetails({
       />
     ) : null}
 
+    <TaskRunDetailLink
+      to="/$teamSlugOrId/task/$taskId/run/$runId/terminal"
+      params={{ teamSlugOrId, taskId, runId: run._id }}
+      icon={<Monitor className="w-3 h-3 mr-2 text-neutral-400" />}
+      label="Terminal"
+      indentLevel={indentLevel}
+    />
+
     {shouldRenderPullRequestLink ? (
       <TaskRunDetailLink
         to="/$teamSlugOrId/task/$taskId/run/$runId/pr"
