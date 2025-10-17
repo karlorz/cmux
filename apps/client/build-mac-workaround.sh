@@ -76,6 +76,8 @@ node ./scripts/generate-icons.mjs
 bash "$ROOT_DIR/scripts/prepare-macos-entitlements.sh" || true
 
 # Build electron bundles using Bun (avoids npm/npx ESM bin issues)
+# Increase Node heap to avoid OOM during Electron renderer build
+export NODE_OPTIONS="--max-old-space-size=4096 ${NODE_OPTIONS:-}"
 bunx electron-vite build -c electron.vite.config.ts
 
 # Create a temporary directory for packaging
