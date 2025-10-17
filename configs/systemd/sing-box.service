@@ -1,0 +1,16 @@
+[Unit]
+Description=sing-box proxy service
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/sing-box run -c /etc/sing-box/config.json
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

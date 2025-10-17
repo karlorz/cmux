@@ -962,6 +962,63 @@ async def task_install_base_packages(ctx: TaskContext) -> None:
 
 
 @registry.task(
+    name="install-sing-box",
+    deps=("install-base-packages",),
+    description="Install sing-box proxy",
+)
+async def task_install_sing_box(ctx: TaskContext) -> None:
+    cmd = textwrap.dedent(
+        """
+        set -eux
+        arch="$(uname -m)"
+        case "${arch}" in
+          x86_64) singbox_arch="linux-amd64" ;;
+          aarch64|arm64) singbox_arch="linux-arm64" ;;
+          *) echo "Unsupported architecture for sing-box: ${arch}" >&2; exit 1 ;;
+        esac
+        version="$(curl -fsSL https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r '.tag_name')"
+        curl -fsSL "https://github.com/SagerNet/sing-box/releases/download/${version}/sing-box-${version#v}-${singbox_arch}.tar.gz" -o /tmp/sing-box.tar.gz
+        tar -xzf /tmp/sing-box.tar.gz -C /tmp
+        install -m 0755 /tmp/sing-box*/sing-box /usr/local/bin/sing-box
+        rm -rf /tmp/sing-box.tar.gz /tmp/sing-box*
+        mkdir -p /etc/sing-box
+        cat > /etc/sing-box/config.json << 'EOF'
+{
+  "log": {
+    "level": "info"
+  },
+  "inbounds": [
+    {
+      "type": "mixed",
+      "tag": "mixed-in",
+      "listen": "::",
+      "listen_port": 39384,
+      "sniff": true,
+      "sniff_override_destination": true
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "inbound": ["mixed-in"],
+        "outbound": "direct"
+      }
+    ]
+  }
+}
+EOF
+        """
+    )
+    await ctx.run("install-sing-box", cmd)
+
+
+@registry.task(
     name="ensure-docker",
     deps=("install-base-packages",),
     description="Install Docker engine and CLI plugins",
@@ -1547,6 +1604,7 @@ async def task_build_cdp_proxy(ctx: TaskContext) -> None:
         "build-cdp-proxy",
         "link-rust-binaries",
         "configure-zsh",
+        "install-sing-box",
     ),
     description="Install cmux systemd units and helpers",
 )
@@ -1569,6 +1627,7 @@ async def task_install_systemd_units(ctx: TaskContext) -> None:
         install -Dm0644 {repo}/configs/systemd/cmux-cdp-proxy.service /usr/lib/systemd/system/cmux-cdp-proxy.service
         install -Dm0644 {repo}/configs/systemd/cmux-xterm.service /usr/lib/systemd/system/cmux-xterm.service
         install -Dm0644 {repo}/configs/systemd/cmux-memory-setup.service /usr/lib/systemd/system/cmux-memory-setup.service
+        install -Dm0644 {repo}/configs/systemd/sing-box.service /usr/lib/systemd/system/sing-box.service
         install -Dm0755 {repo}/configs/systemd/bin/configure-openvscode /usr/local/lib/cmux/configure-openvscode
         touch /usr/local/lib/cmux/dockerd.flag
         mkdir -p /var/log/cmux
@@ -1587,6 +1646,7 @@ async def task_install_systemd_units(ctx: TaskContext) -> None:
         ln -sf /usr/lib/systemd/system/cmux-websockify.service /etc/systemd/system/cmux.target.wants/cmux-websockify.service
         ln -sf /usr/lib/systemd/system/cmux-cdp-proxy.service /etc/systemd/system/cmux.target.wants/cmux-cdp-proxy.service
         ln -sf /usr/lib/systemd/system/cmux-xterm.service /etc/systemd/system/cmux.target.wants/cmux-xterm.service
+        ln -sf /usr/lib/systemd/system/sing-box.service /etc/systemd/system/cmux.target.wants/sing-box.service
         ln -sf /usr/lib/systemd/system/cmux-memory-setup.service /etc/systemd/system/multi-user.target.wants/cmux-memory-setup.service
         ln -sf /usr/lib/systemd/system/cmux-memory-setup.service /etc/systemd/system/swap.target.wants/cmux-memory-setup.service
         systemctl daemon-reload

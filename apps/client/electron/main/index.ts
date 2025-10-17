@@ -814,6 +814,17 @@ app.whenReady().then(async () => {
   // });
 
   const ses = session.fromPartition(PARTITION);
+
+  // Set up proxy for localhost access via devbox
+  const devboxHost = process.env.DEVBOX_HOST || 'localhost';
+  const proxyRules = `http=${devboxHost}:39384;https=${devboxHost}:39384;socks5=${devboxHost}:39384`;
+  await ses.setProxy({
+    mode: "fixed_servers",
+    proxyRules,
+    proxyBypassRules: "<-loopback>"
+  });
+  mainLog("Proxy configured", { devboxHost, proxyRules });
+
   // Intercept HTTPS for our private host and serve local files; pass-through others.
   ses.protocol.handle("https", async (req) => {
     const u = new URL(req.url);

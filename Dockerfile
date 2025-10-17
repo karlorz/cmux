@@ -441,6 +441,21 @@ case "${arch}" in
 esac
 EOF
 
+# Install sing-box proxy
+RUN --mount=type=secret,id=github_token,required=false <<'EOF'
+set -eux
+arch="$(uname -m)"
+case "${arch}" in
+  x86_64) singbox_arch="linux-amd64" ;;
+  aarch64|arm64) singbox_arch="linux-arm64" ;;
+  *) echo "Unsupported architecture for sing-box: ${arch}" >&2; exit 1 ;;
+esac
+version="$(github-curl -fsSL https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r '.tag_name')"
+github-curl -fsSL "https://github.com/SagerNet/sing-box/releases/download/${version}/sing-box-${version#v}-${singbox_arch}.tar.gz" -o /tmp/sing-box.tar.gz
+tar -xzf /tmp/sing-box.tar.gz -C /tmp
+install -m 0755 /tmp/sing-box*/sing-box /usr/local/bin/sing-box
+rm -rf /tmp/sing-box.tar.gz /tmp/sing-box*
+EOF
 
 # Install uv-managed Python runtime (latest by default) and keep pip pinned
 RUN --mount=type=secret,id=github_token,required=false <<'EOF'
@@ -682,6 +697,7 @@ RUN chmod +x /usr/local/bin/envctl /usr/local/bin/envd /usr/local/bin/cmux-proxy
 
 # Install tmux configuration for better mouse scrolling behavior
 COPY configs/tmux.conf /etc/tmux.conf
+COPY configs/sing-box/config.json /etc/sing-box/config.json
 
 # Create workspace and lifecycle directories
 RUN mkdir -p /workspace /root/workspace /root/lifecycle
@@ -703,6 +719,7 @@ COPY configs/systemd/cmux-websockify.service /usr/lib/systemd/system/cmux-websoc
 COPY configs/systemd/cmux-cdp-proxy.service /usr/lib/systemd/system/cmux-cdp-proxy.service
 COPY configs/systemd/cmux-xterm.service /usr/lib/systemd/system/cmux-xterm.service
 COPY configs/systemd/cmux-memory-setup.service /usr/lib/systemd/system/cmux-memory-setup.service
+COPY configs/systemd/sing-box.service /usr/lib/systemd/system/sing-box.service
 COPY configs/systemd/bin/configure-openvscode /usr/local/lib/cmux/configure-openvscode
 COPY configs/systemd/bin/cmux-start-chrome /usr/local/lib/cmux/cmux-start-chrome
 COPY configs/systemd/bin/cmux-manage-dockerd /usr/local/lib/cmux/cmux-manage-dockerd
@@ -728,6 +745,7 @@ RUN chmod +x /usr/local/lib/cmux/configure-openvscode /usr/local/lib/cmux/cmux-s
   ln -sf /usr/lib/systemd/system/cmux-websockify.service /etc/systemd/system/cmux.target.wants/cmux-websockify.service && \
   ln -sf /usr/lib/systemd/system/cmux-cdp-proxy.service /etc/systemd/system/cmux.target.wants/cmux-cdp-proxy.service && \
   ln -sf /usr/lib/systemd/system/cmux-xterm.service /etc/systemd/system/cmux.target.wants/cmux-xterm.service && \
+  ln -sf /usr/lib/systemd/system/sing-box.service /etc/systemd/system/cmux.target.wants/sing-box.service && \
   ln -sf /usr/lib/systemd/system/cmux-memory-setup.service /etc/systemd/system/multi-user.target.wants/cmux-memory-setup.service && \
   ln -sf /usr/lib/systemd/system/cmux-memory-setup.service /etc/systemd/system/swap.target.wants/cmux-memory-setup.service && \
   mkdir -p /opt/app/overlay/upper /opt/app/overlay/work && \
@@ -751,7 +769,10 @@ RUN mkdir -p /root/.openvscode-server/data/User && \
 # 39381: Chrome DevTools (CDP)
 # 39382: Chrome DevTools target
 # 39383: cmux-xterm server
-EXPOSE 39375 39376 39377 39378 39379 39380 39381 39382 39383
+EXPOSE 39375 39376 39377 39378 39379 39380 39381 39382 39383 39384
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:39384/ || exit 1
 
 ENV container=docker
 STOPSIGNAL SIGRTMIN+3
