@@ -27,6 +27,7 @@ interface ElectronPreviewBrowserProps {
   persistKey: string;
   src: string;
   borderRadius?: number;
+  onErrorStateChange?: (isErrorPage: boolean) => void;
 }
 
 interface NativeViewHandle {
@@ -93,6 +94,7 @@ function useLoadingProgress(isLoading: boolean) {
 export function ElectronPreviewBrowser({
   persistKey,
   src,
+  onErrorStateChange,
 }: ElectronPreviewBrowserProps) {
   const [viewHandle, setViewHandle] = useState<NativeViewHandle | null>(null);
   const [addressValue, setAddressValue] = useState(src);
@@ -112,6 +114,7 @@ export function ElectronPreviewBrowser({
   const windowHasFocusRef = useRef(
     typeof document !== "undefined" ? document.hasFocus() : true,
   );
+  const previousErrorRef = useRef<boolean | null>(null);
 
   const { progress, visible } = useLoadingProgress(isLoading);
 
@@ -121,6 +124,13 @@ export function ElectronPreviewBrowser({
     setCanGoBack(false);
     setCanGoForward(false);
   }, [src]);
+
+  useEffect(() => {
+    if (!onErrorStateChange) return;
+    if (previousErrorRef.current === isShowingErrorPage) return;
+    previousErrorRef.current = isShowingErrorPage;
+    onErrorStateChange(isShowingErrorPage);
+  }, [isShowingErrorPage, onErrorStateChange]);
 
   const applyState = useCallback(
     (state: ElectronWebContentsState, reason?: string) => {
