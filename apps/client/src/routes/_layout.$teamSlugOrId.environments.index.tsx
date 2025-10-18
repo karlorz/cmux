@@ -117,7 +117,7 @@ function EnvironmentsListPage() {
               return (
                 <div
                   key={pending.id}
-                  className="flex h-full flex-col rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-950"
+                  className="flex h-full flex-col rounded-lg border border-dashed border-neutral-300 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-950"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2">
@@ -187,6 +187,10 @@ function EnvironmentsListPage() {
               );
             })}
           </div>
+        ) : null}
+
+        {pendingEnvironments.length > 0 && (environments?.length ?? 0) > 0 ? (
+          <div className="my-6 border-t border-neutral-200 dark:border-neutral-800" />
         ) : null}
 
         {environments && environments.length > 0 ? (
