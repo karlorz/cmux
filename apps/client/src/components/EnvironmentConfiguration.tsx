@@ -641,7 +641,14 @@ export function EnvironmentConfiguration({
       <div className="flex items-center gap-4 mb-4">
         {mode === "new" ? (
           <button
+            type="button"
             onClick={async () => {
+              const draftId = pendingEnvironmentId ?? search.pendingId;
+              if (draftId) {
+                updatePendingEnvironment(teamSlugOrId, draftId, {
+                  step: "select",
+                });
+              }
               await navigate({
                 to: "/$teamSlugOrId/environments/new",
                 params: { teamSlugOrId },
@@ -653,7 +660,7 @@ export function EnvironmentConfiguration({
                   connectionLogin: search.connectionLogin,
                   repoSearch: search.repoSearch,
                   snapshotId: search.snapshotId,
-                  pendingId: pendingEnvironmentId ?? search.pendingId,
+                  pendingId: draftId,
                 },
               });
             }}
@@ -664,6 +671,7 @@ export function EnvironmentConfiguration({
           </button>
         ) : sourceEnvironmentId ? (
           <button
+            type="button"
             onClick={async () => {
               await navigate({
                 to: "/$teamSlugOrId/environments/$environmentId",

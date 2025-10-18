@@ -2,7 +2,10 @@ import { EnvironmentConfiguration } from "@/components/EnvironmentConfiguration"
 import { FloatingPane } from "@/components/floating-pane";
 import { RepositoryPicker } from "@/components/RepositoryPicker";
 import { TitleBar } from "@/components/TitleBar";
-import { createPendingEnvironment, usePendingEnvironment } from "@/lib/pendingEnvironmentsStore";
+import {
+  createPendingEnvironment,
+  usePendingEnvironment,
+} from "@/lib/pendingEnvironmentsStore";
 import { toMorphVncUrl } from "@/lib/toProxyWorkspaceUrl";
 import { DEFAULT_MORPH_SNAPSHOT_ID, MORPH_SNAPSHOT_PRESETS, type MorphSnapshotId } from "@cmux/shared";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
