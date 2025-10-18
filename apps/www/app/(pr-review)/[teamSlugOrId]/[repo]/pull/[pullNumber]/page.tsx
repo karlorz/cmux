@@ -1,5 +1,4 @@
 import { Suspense, use } from "react";
-import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -94,11 +93,7 @@ export default async function PullRequestPage({ params }: PageProps) {
     notFound();
   }
 
-  const pullRequestPromise = fetchPullRequest(
-    githubOwner,
-    repo,
-    pullNumber
-  );
+  const pullRequestPromise = fetchPullRequest(githubOwner, repo, pullNumber);
   const pullRequestFilesPromise = fetchPullRequestFiles(
     githubOwner,
     repo,
@@ -199,12 +194,16 @@ function scheduleCodeReviewStart({
           await backgroundTask;
         }
       } catch (error) {
-        console.error("[code-review] Skipping auto-start due to PR fetch error", {
-          teamSlugOrId,
-          githubOwner,
-          repo,
-          pullNumber,
-        }, error);
+        console.error(
+          "[code-review] Skipping auto-start due to PR fetch error",
+          {
+            teamSlugOrId,
+            githubOwner,
+            repo,
+            pullNumber,
+          },
+          error
+        );
       }
     })()
   );
@@ -304,15 +303,12 @@ function PullRequestHeaderContent({
         <aside className="flex flex-wrap items-center gap-3 text-xs">
           <div className="flex items-center gap-2">
             <span className="text-neutral-600">
-              <GitPullRequest className="inline h-3 w-3" /> {pullRequest.changed_files}
+              <GitPullRequest className="inline h-3 w-3" />{" "}
+              {pullRequest.changed_files}
             </span>
             <span className="text-neutral-400">•</span>
-            <span className="text-emerald-700">
-              +{pullRequest.additions}
-            </span>
-            <span className="text-rose-700">
-              -{pullRequest.deletions}
-            </span>
+            <span className="text-emerald-700">+{pullRequest.additions}</span>
+            <span className="text-rose-700">-{pullRequest.deletions}</span>
           </div>
           <a
             className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-1.5 font-medium text-neutral-700 transition hover:border-neutral-400 hover:text-neutral-900"
@@ -397,7 +393,6 @@ function PullRequestDiffSection({
     throw error;
   }
 }
-
 
 function summarizeFiles(files: GithubPullRequestFile[]): {
   fileCount: number;
@@ -542,4 +537,3 @@ function formatRelativeTimeFromNow(date: Date): string {
   const years = Math.round(diffInSeconds / 31_556_952);
   return rtf.format(-years, "year");
 }
-
