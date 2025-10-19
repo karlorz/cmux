@@ -1,6 +1,7 @@
 import { convexAuthReadyPromise } from "@/contexts/convex/convex-auth-ready";
 import { ConvexClientProvider } from "@/contexts/convex/convex-client-provider";
 import { RealSocketProvider } from "@/contexts/socket/real-socket-provider";
+import { useTokenRefresh } from "@/hooks/useTokenRefresh";
 import { cachedGetUser } from "@/lib/cachedGetUser";
 import { stackClientApp } from "@/lib/stack";
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
@@ -25,6 +26,10 @@ export const Route = createFileRoute("/_layout")({
 });
 
 function Layout() {
+  // Automatically refresh authentication token every 25 minutes
+  // to prevent token expiration during long sessions
+  useTokenRefresh();
+
   return (
     <ConvexClientProvider>
       <RealSocketProvider>
