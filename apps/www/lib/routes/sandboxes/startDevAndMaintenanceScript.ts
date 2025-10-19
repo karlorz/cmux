@@ -7,6 +7,9 @@ const MAINTENANCE_WINDOW_NAME = "maintenance";
 const MAINTENANCE_SCRIPT_FILENAME = "maintenance.sh";
 const DEV_WINDOW_NAME = "dev";
 const DEV_SCRIPT_FILENAME = "dev.sh";
+const MAINTENANCE_STATUS_TIMEOUT_SECONDS = 20;
+const DEV_WAIT_FOR_MAINTENANCE_TIMEOUT_SECONDS = 60 * 30;
+const DEV_WAIT_LOG_INTERVAL_SECONDS = 30;
 
 export type ScriptIdentifiers = {
   maintenance: {
@@ -50,10 +53,14 @@ export async function runMaintenanceAndDevScripts({
 }): Promise<ScriptResult> {
   const ids = identifiers ?? allocateScriptIdentifiers();
 
-  if (
-    (!maintenanceScript || maintenanceScript.trim().length === 0) &&
-    (!devScript || devScript.trim().length === 0)
-  ) {
+  const maintenanceScriptBody =
+    maintenanceScript && maintenanceScript.trim().length > 0
+      ? maintenanceScript.trim()
+      : undefined;
+  const devScriptBody =
+    devScript && devScript.trim().length > 0 ? devScript.trim() : undefined;
+
+  if (!maintenanceScriptBody && !devScriptBody) {
     return {
       maintenanceError: "Both maintenance and dev scripts are empty",
       devError: null,
@@ -73,25 +80,35 @@ fi`;
 
   let maintenanceError: string | null = null;
   let devError: string | null = null;
+  let maintenanceStatusPromise: Promise<void> | null = null;
 
-  if (maintenanceScript && maintenanceScript.trim().length > 0) {
-    const maintenanceRunId = `maintenance_${Date.now().toString(36)}_${Math.random()
-      .toString(36)
-      .slice(2, 10)}`;
-    const maintenanceExitCodePath = `${ids.maintenance.scriptPath}.${maintenanceRunId}.exit-code`;
+  const maintenanceRunId =
+    maintenanceScriptBody !== undefined
+      ? `maintenance_${Date.now().toString(36)}_${Math.random()
+          .toString(36)
+          .slice(2, 10)}`
+      : null;
+
+  const maintenanceExitCodePath =
+    maintenanceRunId !== null
+      ? `${ids.maintenance.scriptPath}.${maintenanceRunId}.exit-code`
+      : null;
+
+  if (maintenanceScriptBody) {
+    const exitCodePath = maintenanceExitCodePath!;
 
     const maintenanceScriptContent = `#!/bin/zsh
 set -eux
 cd ${WORKSPACE_ROOT}
 
 echo "=== Maintenance Script Started at \$(date) ==="
-${maintenanceScript}
+${maintenanceScriptBody}
 echo "=== Maintenance Script Completed at \$(date) ==="
 `;
 
     const maintenanceWindowCommand = `zsh "${ids.maintenance.scriptPath}"
 EXIT_CODE=$?
-echo "$EXIT_CODE" > "${maintenanceExitCodePath}"
+echo "$EXIT_CODE" > "${exitCodePath}"
 if [ "$EXIT_CODE" -ne 0 ]; then
   echo "[MAINTENANCE] Script exited with code $EXIT_CODE" >&2
 else
@@ -105,28 +122,16 @@ cat > ${ids.maintenance.scriptPath} <<'SCRIPT_EOF'
 ${maintenanceScriptContent}
 SCRIPT_EOF
 chmod +x ${ids.maintenance.scriptPath}
-rm -f ${maintenanceExitCodePath}
+rm -f ${exitCodePath}
 ${waitForTmuxSession}
 tmux new-window -t cmux: -n ${ids.maintenance.windowName} -d ${singleQuote(maintenanceWindowCommand)}
 sleep 2
 if tmux list-windows -t cmux | grep -q "${ids.maintenance.windowName}"; then
   echo "[MAINTENANCE] Window is running"
 else
-  echo "[MAINTENANCE] Window may have exited (normal if script completed)"
+  echo "[MAINTENANCE] Window failed to stay running" >&2
+  exit 1
 fi
-while [ ! -f ${maintenanceExitCodePath} ]; do
-  sleep 1
-done
-MAINTENANCE_EXIT_CODE=0
-if [ -f ${maintenanceExitCodePath} ]; then
-  MAINTENANCE_EXIT_CODE=$(cat ${maintenanceExitCodePath} || echo 0)
-else
-  echo "[MAINTENANCE] Missing exit code file; assuming failure" >&2
-  MAINTENANCE_EXIT_CODE=1
-fi
-rm -f ${maintenanceExitCodePath}
-echo "[MAINTENANCE] Wait complete with exit code $MAINTENANCE_EXIT_CODE"
-exit $MAINTENANCE_EXIT_CODE
 `;
 
     try {
@@ -138,7 +143,7 @@ exit $MAINTENANCE_EXIT_CODE
         const stderr = result.stderr?.trim() || "";
         const stdout = result.stdout?.trim() || "";
         const messageParts = [
-          `Maintenance script finished with exit code ${result.exit_code}`,
+          `Failed to launch maintenance script (exit code ${result.exit_code})`,
           stderr ? `stderr: ${stderr}` : null,
           stdout ? `stdout: ${stdout}` : null,
         ].filter((part): part is string => part !== null);
@@ -149,15 +154,91 @@ exit $MAINTENANCE_EXIT_CODE
     } catch (error) {
       maintenanceError = `Maintenance script execution failed: ${error instanceof Error ? error.message : String(error)}`;
     }
+
+    if (!maintenanceError) {
+      const maintenanceStatusCommand = `set -eu
+END=$(( $(date +%s) + ${MAINTENANCE_STATUS_TIMEOUT_SECONDS} ))
+while [ ! -f ${exitCodePath} ] && [ $(date +%s) -lt $END ]; do
+  sleep 1
+done
+if [ -f ${exitCodePath} ]; then
+  EXIT_CODE=$(cat ${exitCodePath} 2>/dev/null || echo 0)
+  echo "$EXIT_CODE"
+  exit $EXIT_CODE
+fi
+echo "PENDING"
+`;
+
+      maintenanceStatusPromise = (async () => {
+        try {
+          const statusResult = await instance.exec(
+            `zsh -lc ${singleQuote(maintenanceStatusCommand)}`,
+          );
+
+          const stdout = statusResult.stdout?.trim() ?? "";
+          const stderr = statusResult.stderr?.trim() ?? "";
+
+          if (statusResult.exit_code !== 0) {
+            const messageParts = [
+              `Maintenance script exited with code ${statusResult.exit_code}`,
+              stdout ? `stdout: ${stdout}` : null,
+              stderr ? `stderr: ${stderr}` : null,
+            ].filter((part): part is string => part !== null);
+            maintenanceError = messageParts.join(" | ");
+            return;
+          }
+
+          if (stdout === "PENDING" || stdout.length === 0) {
+            console.log(
+              `[MAINTENANCE] Exit code pending after ${MAINTENANCE_STATUS_TIMEOUT_SECONDS}s; continuing in background`,
+            );
+            return;
+          }
+
+          const parsedExit = Number.parseInt(stdout.split(/\s+/)[0] ?? "", 10);
+          if (!Number.isNaN(parsedExit) && parsedExit !== 0) {
+            maintenanceError = `Maintenance script exited with code ${parsedExit}`;
+          }
+        } catch (statusError) {
+          console.error(
+            "[MAINTENANCE] Failed to poll maintenance exit code",
+            statusError,
+          );
+        }
+      })();
+    }
   }
 
-  if (devScript && devScript.trim().length > 0) {
+  if (devScriptBody) {
+    const maintenanceWaitSnippet =
+      maintenanceScriptBody && maintenanceExitCodePath
+        ? `MAINTENANCE_READY_FILE="${maintenanceExitCodePath}"
+WAIT_LIMIT=${DEV_WAIT_FOR_MAINTENANCE_TIMEOUT_SECONDS}
+WAITED=0
+echo "[DEV] Waiting for maintenance to complete..."
+while [ ! -f "$MAINTENANCE_READY_FILE" ] && [ $WAITED -lt $WAIT_LIMIT ]; do
+  sleep 1
+  WAITED=$((WAITED + 1))
+  if [ $((WAITED % ${DEV_WAIT_LOG_INTERVAL_SECONDS})) -eq 0 ]; then
+    echo "[DEV] Still waiting for maintenance ($WAITED s)"
+  fi
+done
+if [ ! -f "$MAINTENANCE_READY_FILE" ]; then
+  echo "[DEV] Maintenance completion file not found after $WAIT_LIMIT seconds; continuing anyway" >&2
+else
+  MAINTENANCE_EXIT_CODE=$(cat "$MAINTENANCE_READY_FILE" 2>/dev/null || echo 0)
+  echo "[DEV] Maintenance exit code: $MAINTENANCE_EXIT_CODE"
+fi
+
+`
+        : "";
+
     const devScriptContent = `#!/bin/zsh
 set -ux
 cd ${WORKSPACE_ROOT}
 
-echo "=== Dev Script Started at \$(date) ==="
-${devScript}
+${maintenanceWaitSnippet}echo "=== Dev Script Started at \\$(date) ==="
+${devScriptBody}
 `;
 
     const devCommand = `set -eu
@@ -196,6 +277,11 @@ fi
     } catch (error) {
       devError = `Dev script execution failed: ${error instanceof Error ? error.message : String(error)}`;
     }
+  }
+
+
+  if (maintenanceStatusPromise) {
+    await maintenanceStatusPromise;
   }
 
   return {
