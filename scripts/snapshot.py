@@ -387,6 +387,7 @@ async def _expose_standard_ports(
         39377,
         VSCODE_HTTP_PORT,
         39379,
+        SING_BOX_PROXY_PORT,
         XTERM_HTTP_PORT,
         VNC_HTTP_PORT,
         CDP_HTTP_PORT,
@@ -2076,6 +2077,30 @@ async def task_check_vscode_via_proxy(ctx: TaskContext) -> None:
         """
     )
     await ctx.run("check-vscode-via-proxy", cmd)
+
+
+@registry.task(
+    name="check-sing-box-proxy",
+    deps=("install-systemd-units", "cleanup-build-artifacts"),
+    description="Verify sing-box proxy is accepting connections",
+)
+async def task_check_sing_box_proxy(ctx: TaskContext) -> None:
+    cmd = textwrap.dedent(
+        f"""
+        for attempt in $(seq 1 20); do
+          if curl -fsS --proxy socks5h://127.0.0.1:{SING_BOX_PROXY_PORT} https://example.com >/dev/null; then
+            echo "sing-box proxy is reachable"
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "ERROR: sing-box proxy not reachable after 40s" >&2
+        systemctl status cmux-sing-box.service --no-pager || true
+        tail -n 80 /var/log/cmux/sing-box.log || true
+        exit 1
+        """
+    )
+    await ctx.run("check-sing-box-proxy", cmd)
 
 
 @registry.task(
