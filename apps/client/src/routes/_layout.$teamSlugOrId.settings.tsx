@@ -6,13 +6,19 @@ import { TitleBar } from "@/components/TitleBar";
 import { api } from "@cmux/convex/api";
 import type { Doc } from "@cmux/convex/dataModel";
 import { AGENT_CONFIGS, type AgentConfig } from "@cmux/shared/agentConfig";
+import {
+  CROWN_DEFAULT_MODEL_BY_PROVIDER,
+  CROWN_DEFAULT_PROVIDER,
+  CROWN_MODEL_OPTIONS,
+  type CrownModelProvider,
+} from "@cmux/shared";
 import { API_KEY_MODELS_BY_ENV } from "@cmux/shared/model-usage";
 import { convexQuery } from "@convex-dev/react-query";
 import { Switch } from "@heroui/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useConvex } from "convex/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/settings")({
@@ -40,6 +46,20 @@ function SettingsComponent() {
   const [autoPrEnabled, setAutoPrEnabled] = useState<boolean>(false);
   const [originalAutoPrEnabled, setOriginalAutoPrEnabled] =
     useState<boolean>(false);
+  const [crownProvider, setCrownProvider] = useState<CrownModelProvider>(
+    CROWN_DEFAULT_PROVIDER,
+  );
+  const [originalCrownProvider, setOriginalCrownProvider] =
+    useState<CrownModelProvider>(CROWN_DEFAULT_PROVIDER);
+  const [crownModel, setCrownModel] = useState<string>(
+    CROWN_DEFAULT_MODEL_BY_PROVIDER[CROWN_DEFAULT_PROVIDER],
+  );
+  const [originalCrownModel, setOriginalCrownModel] = useState<string>(
+    CROWN_DEFAULT_MODEL_BY_PROVIDER[CROWN_DEFAULT_PROVIDER],
+  );
+  const [crownSystemPrompt, setCrownSystemPrompt] = useState<string>("");
+  const [originalCrownSystemPrompt, setOriginalCrownSystemPrompt] =
+    useState<string>("");
   // const [isSaveButtonVisible, setIsSaveButtonVisible] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const saveButtonRef = useRef<HTMLDivElement>(null);
@@ -71,6 +91,19 @@ function SettingsComponent() {
 
   // Global mapping of envVar -> models (from shared)
   const apiKeyModelsByEnv = API_KEY_MODELS_BY_ENV;
+
+  const combinedApiKeyValues = useMemo(
+    () => ({ ...originalApiKeyValues, ...apiKeyValues }),
+    [apiKeyValues, originalApiKeyValues]
+  );
+
+  const hasApiKeyFor = useCallback(
+    (envVar: string) => {
+      const value = combinedApiKeyValues[envVar];
+      return Boolean(value && value.trim().length > 0);
+    },
+    [combinedApiKeyValues]
+  );
 
   // Query existing API keys
   const { data: existingKeys } = useQuery(
@@ -139,12 +172,40 @@ function SettingsComponent() {
     if (workspaceSettings !== undefined) {
       setWorktreePath(workspaceSettings?.worktreePath || "");
       setOriginalWorktreePath(workspaceSettings?.worktreePath || "");
-      const enabled = (
-        workspaceSettings as unknown as { autoPrEnabled?: boolean }
-      )?.autoPrEnabled;
+      const settings =
+        (workspaceSettings as unknown as {
+          worktreePath?: string;
+          autoPrEnabled?: boolean;
+          crownEvaluatorProvider?: CrownModelProvider;
+          crownEvaluatorModel?: string;
+          crownEvaluatorSystemPrompt?: string;
+        }) ?? null;
+      const enabled = settings?.autoPrEnabled;
       const effective = enabled === undefined ? false : Boolean(enabled);
       setAutoPrEnabled(effective);
       setOriginalAutoPrEnabled(effective);
+
+      const provider: CrownModelProvider =
+        settings?.crownEvaluatorProvider === "openai"
+          ? "openai"
+          : CROWN_DEFAULT_PROVIDER;
+      const storedModel =
+        typeof settings?.crownEvaluatorModel === "string"
+          ? settings.crownEvaluatorModel.trim()
+          : "";
+      const normalizedModel =
+        storedModel || CROWN_DEFAULT_MODEL_BY_PROVIDER[provider];
+      const storedPrompt =
+        typeof settings?.crownEvaluatorSystemPrompt === "string"
+          ? settings.crownEvaluatorSystemPrompt.trim()
+          : "";
+
+      setCrownProvider(provider);
+      setOriginalCrownProvider(provider);
+      setCrownModel(normalizedModel);
+      setOriginalCrownModel(normalizedModel);
+      setCrownSystemPrompt(storedPrompt);
+      setOriginalCrownSystemPrompt(storedPrompt);
     }
   }, [workspaceSettings]);
 
@@ -222,6 +283,64 @@ function SettingsComponent() {
     [originalContainerSettingsData]
   );
 
+  const handleCrownProviderChange = useCallback(
+    (provider: CrownModelProvider) => {
+      setCrownProvider(provider);
+      const optionsForProvider = CROWN_MODEL_OPTIONS.filter(
+        (option) => option.provider === provider
+      );
+      const supportsCurrentModel = optionsForProvider.some(
+        (option) => option.modelId === crownModel
+      );
+      if (!supportsCurrentModel) {
+        setCrownModel(CROWN_DEFAULT_MODEL_BY_PROVIDER[provider]);
+      }
+    },
+    [crownModel]
+  );
+
+  const crownModelOptions = useMemo(() => {
+    const baseOptions = CROWN_MODEL_OPTIONS.filter(
+      (option) => option.provider === crownProvider
+    );
+    const fallbackRequiredEnv =
+      baseOptions[0]?.requiresEnvVars ||
+      (crownProvider === "openai"
+        ? ["OPENAI_API_KEY"]
+        : ["ANTHROPIC_API_KEY"]);
+
+    if (!crownModel) {
+      return baseOptions;
+    }
+
+    const hasSelected = baseOptions.some(
+      (option) => option.modelId === crownModel
+    );
+    if (hasSelected) {
+      return baseOptions;
+    }
+
+    return [
+      ...baseOptions,
+      {
+        provider: crownProvider,
+        modelId: crownModel,
+        label: `${crownModel} (custom)`,
+        requiresEnvVars: fallbackRequiredEnv,
+      },
+    ];
+  }, [crownProvider, crownModel]);
+
+  const selectedCrownModelOption = useMemo(
+    () => crownModelOptions.find((option) => option.modelId === crownModel),
+    [crownModelOptions, crownModel]
+  );
+
+  const missingCrownKeys =
+    selectedCrownModelOption?.requiresEnvVars.filter(
+      (envVar) => !hasApiKeyFor(envVar)
+    ) ?? [];
+
   // Check if there are any changes
   const hasChanges = () => {
     // Check worktree path changes
@@ -244,9 +363,17 @@ function SettingsComponent() {
     // Auto PR toggle changes
     const autoPrChanged = autoPrEnabled !== originalAutoPrEnabled;
 
+    const crownProviderChanged = crownProvider !== originalCrownProvider;
+    const crownModelChanged = crownModel !== originalCrownModel;
+    const systemPromptChanged =
+      crownSystemPrompt.trim() !== originalCrownSystemPrompt.trim();
+
     return (
       worktreePathChanged ||
       autoPrChanged ||
+      crownProviderChanged ||
+      crownModelChanged ||
+      systemPromptChanged ||
       apiKeysChanged ||
       containerSettingsChanged
     );
@@ -258,19 +385,52 @@ function SettingsComponent() {
     try {
       let savedCount = 0;
       let deletedCount = 0;
+      let workspaceSettingsUpdated = false;
+      let containerSettingsUpdated = false;
+
+      const normalizedSystemPrompt = crownSystemPrompt.trim();
+      const normalizedOriginalSystemPrompt = originalCrownSystemPrompt.trim();
+      const systemPromptPayload =
+        normalizedSystemPrompt.length > 0 ? normalizedSystemPrompt : undefined;
+      const normalizedCrownModel = crownModel.trim();
+      const crownModelPayload =
+        normalizedCrownModel.length > 0 ? normalizedCrownModel : undefined;
+
+      const workspaceSettingsChange =
+        worktreePath !== originalWorktreePath ||
+        autoPrEnabled !== originalAutoPrEnabled ||
+        crownProvider !== originalCrownProvider ||
+        normalizedCrownModel !== originalCrownModel ||
+        normalizedSystemPrompt !== normalizedOriginalSystemPrompt;
 
       // Save worktree path / auto PR if changed
-      if (
-        worktreePath !== originalWorktreePath ||
-        autoPrEnabled !== originalAutoPrEnabled
-      ) {
+      if (workspaceSettingsChange) {
         await convex.mutation(api.workspaceSettings.update, {
           teamSlugOrId,
           worktreePath: worktreePath || undefined,
           autoPrEnabled,
+          crownEvaluatorProvider: crownProvider,
+          crownEvaluatorModel: crownModelPayload,
+          crownEvaluatorSystemPrompt: systemPromptPayload,
         });
         setOriginalWorktreePath(worktreePath);
         setOriginalAutoPrEnabled(autoPrEnabled);
+        setOriginalCrownProvider(crownProvider);
+
+        const nextModel =
+          crownModelPayload ?? CROWN_DEFAULT_MODEL_BY_PROVIDER[crownProvider];
+        if (nextModel !== crownModel) {
+          setCrownModel(nextModel);
+        }
+        setOriginalCrownModel(nextModel);
+
+        const nextSystemPrompt = systemPromptPayload ?? "";
+        if (nextSystemPrompt !== crownSystemPrompt) {
+          setCrownSystemPrompt(nextSystemPrompt);
+        }
+        setOriginalCrownSystemPrompt(nextSystemPrompt);
+
+        workspaceSettingsUpdated = true;
       }
 
       // Save container settings if changed
@@ -285,6 +445,7 @@ function SettingsComponent() {
           ...containerSettingsData,
         });
         setOriginalContainerSettingsData(containerSettingsData);
+        containerSettingsUpdated = true;
       }
 
       for (const key of apiKeys) {
@@ -319,16 +480,23 @@ function SettingsComponent() {
       // After successful save, hide all API key inputs
       setShowKeys({});
 
-      if (savedCount > 0 || deletedCount > 0) {
-        const actions = [];
-        if (savedCount > 0) {
-          actions.push(`saved ${savedCount} key${savedCount > 1 ? "s" : ""}`);
-        }
-        if (deletedCount > 0) {
-          actions.push(
-            `removed ${deletedCount} key${deletedCount > 1 ? "s" : ""}`
-          );
-        }
+      const actions: string[] = [];
+      if (workspaceSettingsUpdated) {
+        actions.push("updated workspace settings");
+      }
+      if (containerSettingsUpdated) {
+        actions.push("updated container settings");
+      }
+      if (savedCount > 0) {
+        actions.push(`saved ${savedCount} key${savedCount > 1 ? "s" : ""}`);
+      }
+      if (deletedCount > 0) {
+        actions.push(
+          `removed ${deletedCount} key${deletedCount > 1 ? "s" : ""}`
+        );
+      }
+
+      if (actions.length > 0) {
         toast.success(`Successfully ${actions.join(" and ")}`);
       } else {
         toast.info("No changes to save");
@@ -620,15 +788,14 @@ function SettingsComponent() {
                   Crown Evaluator
                 </h2>
               </div>
-              <div className="p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
+              <div className="p-4 space-y-6">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="max-w-2xl">
                     <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100">
                       Auto pull request for crown winner
                     </label>
                     <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                      When enabled, cmux automatically creates a pull request
-                      for the winning model’s code diff.
+                      When enabled, cmux automatically creates a pull request for the winning model’s code diff.
                     </p>
                   </div>
                   <Switch
@@ -638,6 +805,95 @@ function SettingsComponent() {
                     isSelected={autoPrEnabled}
                     onValueChange={setAutoPrEnabled}
                   />
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label
+                      htmlFor="crownProvider"
+                      className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2"
+                    >
+                      Evaluator provider
+                    </label>
+                    <select
+                      id="crownProvider"
+                      value={crownProvider}
+                      onChange={(event) =>
+                        handleCrownProviderChange(
+                          event.target.value as CrownModelProvider
+                        )
+                      }
+                      className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100"
+                    >
+                      <option value="anthropic">Anthropic (Claude)</option>
+                      <option value="openai">OpenAI</option>
+                    </select>
+                    <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+                      Only Claude and OpenAI models are supported for crown evaluations right now.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="crownModel"
+                      className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2"
+                    >
+                      Evaluator model
+                    </label>
+                    <select
+                      id="crownModel"
+                      value={crownModel}
+                      onChange={(event) => setCrownModel(event.target.value)}
+                      className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100"
+                    >
+                      {crownModelOptions.map((option) => {
+                        const isOptionMissingKeys = option.requiresEnvVars.some(
+                          (envVar) => !hasApiKeyFor(envVar)
+                        );
+                        const optionDisabled =
+                          isOptionMissingKeys && option.modelId !== crownModel;
+                        return (
+                          <option
+                            key={`${option.provider}-${option.modelId}`}
+                            value={option.modelId}
+                            disabled={optionDisabled}
+                          >
+                            {option.label}
+                            {isOptionMissingKeys ? " — requires API key" : ""}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    {missingCrownKeys.length > 0 ? (
+                      <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                        Add {missingCrownKeys.join(", ")} in the API key section above to use this model.
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+                        Models that require keys are disabled until the necessary credentials are configured.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="crownSystemPrompt"
+                    className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2"
+                  >
+                    System prompt override (optional)
+                  </label>
+                  <textarea
+                    id="crownSystemPrompt"
+                    value={crownSystemPrompt}
+                    onChange={(event) => setCrownSystemPrompt(event.target.value)}
+                    rows={4}
+                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100"
+                    placeholder="Provide custom evaluation instructions"
+                  />
+                  <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+                    Leave blank to use cmux’s default crown evaluator instructions. When set, your prompt fully replaces the default system prompt.
+                  </p>
                 </div>
               </div>
             </div>

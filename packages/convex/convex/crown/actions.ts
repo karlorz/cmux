@@ -5,6 +5,11 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { generateObject, type LanguageModel } from "ai";
 import { ConvexError, v } from "convex/values";
 import {
+  CROWN_DEFAULT_MODEL_BY_PROVIDER,
+  CROWN_DEFAULT_PROVIDER,
+  type CrownModelProvider,
+} from "../../../shared/src/crown";
+import {
   CrownEvaluationResponseSchema,
   CrownSummarizationResponseSchema,
   type CrownEvaluationCandidate,
@@ -12,10 +17,13 @@ import {
   type CrownSummarizationResponse,
 } from "../../../shared/src/convex-safe";
 import { env } from "../../_shared/convex-env";
-import { action } from "../_generated/server";
+import { api } from "../_generated/api";
+import { action, type ActionCtx } from "../_generated/server";
 
-const OPENAI_CROWN_MODEL = "gpt-5-mini";
-const ANTHROPIC_CROWN_MODEL = "claude-3-5-sonnet-20241022";
+const DEFAULT_EVALUATION_SYSTEM_PROMPT =
+  "You select the best implementation from structured diff inputs and explain briefly why.";
+const DEFAULT_SUMMARIZATION_SYSTEM_PROMPT =
+  "You are an expert reviewer summarizing pull requests. Provide a clear, concise summary following the requested format.";
 
 const CrownEvaluationCandidateValidator = v.object({
   runId: v.optional(v.string()),
@@ -26,23 +34,123 @@ const CrownEvaluationCandidateValidator = v.object({
   index: v.optional(v.number()),
 });
 
-function resolveCrownModel(): {
-  provider: "openai" | "anthropic";
+type ApiKeyMap = Record<string, string | undefined>;
+
+type CrownSelection = {
+  provider: CrownModelProvider;
+  modelId: string;
+};
+
+type CrownRuntimeConfig = {
   model: LanguageModel;
-} {
-  const openaiKey = env.OPENAI_API_KEY;
-  if (openaiKey) {
-    const openai = createOpenAI({ apiKey: openaiKey });
-    return { provider: "openai", model: openai(OPENAI_CROWN_MODEL) };
+  provider: CrownModelProvider;
+  evaluationSystemPrompt: string;
+  summarizationSystemPrompt: string;
+};
+
+function mergeApiKeysWithEnv(
+  keys: Record<string, string> | null | undefined,
+): ApiKeyMap {
+  const merged: ApiKeyMap = { ...(keys ?? {}) };
+
+  if (!merged.OPENAI_API_KEY && env.OPENAI_API_KEY) {
+    merged.OPENAI_API_KEY = env.OPENAI_API_KEY;
+  }
+  if (!merged.ANTHROPIC_API_KEY && env.ANTHROPIC_API_KEY) {
+    merged.ANTHROPIC_API_KEY = env.ANTHROPIC_API_KEY;
   }
 
-  const anthropicKey = env.ANTHROPIC_API_KEY;
-  if (anthropicKey) {
-    const anthropic = createAnthropic({ apiKey: anthropicKey });
-    return {
-      provider: "anthropic",
-      model: anthropic(ANTHROPIC_CROWN_MODEL),
-    };
+  return merged;
+}
+
+function normalizeProvider(value: unknown): CrownModelProvider {
+  return value === "openai" ? "openai" : "anthropic";
+}
+
+function normalizeModel(
+  provider: CrownModelProvider,
+  value: unknown,
+): string {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+  return CROWN_DEFAULT_MODEL_BY_PROVIDER[provider];
+}
+
+function getEvaluationSystemPrompt(value: unknown): string {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+  return DEFAULT_EVALUATION_SYSTEM_PROMPT;
+}
+
+function createModelFromSelection(
+  selection: CrownSelection,
+  apiKeys: ApiKeyMap,
+): { provider: CrownModelProvider; model: LanguageModel } | null {
+  if (selection.provider === "openai") {
+    const apiKey = apiKeys.OPENAI_API_KEY;
+    if (!apiKey) return null;
+    const openai = createOpenAI({ apiKey });
+    return { provider: "openai", model: openai(selection.modelId) };
+  }
+
+  const apiKey = apiKeys.ANTHROPIC_API_KEY;
+  if (!apiKey) return null;
+  const anthropic = createAnthropic({ apiKey });
+  return { provider: "anthropic", model: anthropic(selection.modelId) };
+}
+
+function resolveModelOrThrow(
+  selection: CrownSelection,
+  apiKeys: ApiKeyMap,
+): { provider: CrownModelProvider; model: LanguageModel } {
+  const attempts: CrownSelection[] = [];
+  const seen = new Set<string>();
+
+  const addAttempt = (candidate: CrownSelection) => {
+    const key = `${candidate.provider}:${candidate.modelId}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    attempts.push(candidate);
+  };
+
+  addAttempt(selection);
+
+  const defaultSelection: CrownSelection = {
+    provider: CROWN_DEFAULT_PROVIDER,
+    modelId: CROWN_DEFAULT_MODEL_BY_PROVIDER[CROWN_DEFAULT_PROVIDER],
+  };
+  addAttempt(defaultSelection);
+
+  (Object.keys(CROWN_DEFAULT_MODEL_BY_PROVIDER) as CrownModelProvider[]).forEach(
+    (provider) => {
+      addAttempt({
+        provider,
+        modelId: CROWN_DEFAULT_MODEL_BY_PROVIDER[provider],
+      });
+    },
+  );
+
+  for (const attempt of attempts) {
+    const resolved = createModelFromSelection(attempt, apiKeys);
+    if (resolved) {
+      if (
+        attempt.provider !== selection.provider ||
+        attempt.modelId !== selection.modelId
+      ) {
+        console.warn(
+          `[convex.crown] Falling back to ${attempt.provider}/${attempt.modelId} for crown evaluation.`,
+        );
+      }
+      return resolved;
+    }
   }
 
   throw new ConvexError(
@@ -50,12 +158,52 @@ function resolveCrownModel(): {
   );
 }
 
+async function resolveRuntimeConfig(
+  ctx: ActionCtx,
+  teamSlugOrId: string,
+): Promise<CrownRuntimeConfig> {
+  const [workspaceSettings, apiKeys] = await Promise.all([
+    ctx.runQuery(api.workspaceSettings.get, { teamSlugOrId }),
+    ctx.runQuery(api.apiKeys.getAllForAgents, { teamSlugOrId }),
+  ]);
+
+  const provider = normalizeProvider(
+    (workspaceSettings as { crownEvaluatorProvider?: CrownModelProvider } | null)
+      ?.crownEvaluatorProvider,
+  );
+  const modelId = normalizeModel(
+    provider,
+    (workspaceSettings as { crownEvaluatorModel?: string } | null)
+      ?.crownEvaluatorModel,
+  );
+  const mergedApiKeys = mergeApiKeysWithEnv(apiKeys);
+  const { provider: resolvedProvider, model } = resolveModelOrThrow(
+    { provider, modelId },
+    mergedApiKeys,
+  );
+
+  const evaluationSystemPrompt = getEvaluationSystemPrompt(
+    (workspaceSettings as { crownEvaluatorSystemPrompt?: string } | null)
+      ?.crownEvaluatorSystemPrompt,
+  );
+
+  return {
+    model,
+    provider: resolvedProvider,
+    evaluationSystemPrompt,
+    summarizationSystemPrompt: DEFAULT_SUMMARIZATION_SYSTEM_PROMPT,
+  };
+}
+
 export async function performCrownEvaluation(
   prompt: string,
   candidates: CrownEvaluationCandidate[],
+  config: {
+    model: LanguageModel;
+    provider: CrownModelProvider;
+    systemPrompt: string;
+  },
 ): Promise<CrownEvaluationResponse> {
-  const { model, provider } = resolveCrownModel();
-
   const normalizedCandidates = candidates.map((candidate, idx) => {
     const resolvedIndex = candidate.index ?? idx;
     return {
@@ -101,12 +249,11 @@ IMPORTANT: Respond ONLY with the JSON object, no other text.`;
 
   try {
     const { object } = await generateObject({
-      model,
+      model: config.model,
       schema: CrownEvaluationResponseSchema,
-      system:
-        "You select the best implementation from structured diff inputs and explain briefly why.",
+      system: config.systemPrompt,
       prompt: evaluationPrompt,
-      ...(provider === "openai" ? {} : { temperature: 0 }),
+      ...(config.provider === "openai" ? {} : { temperature: 0 }),
       maxRetries: 2,
     });
 
@@ -120,9 +267,12 @@ IMPORTANT: Respond ONLY with the JSON object, no other text.`;
 export async function performCrownSummarization(
   prompt: string,
   gitDiff: string,
+  config: {
+    model: LanguageModel;
+    provider: CrownModelProvider;
+    systemPrompt?: string;
+  },
 ): Promise<CrownSummarizationResponse> {
-  const { model, provider } = resolveCrownModel();
-
   const summarizationPrompt = `You are an expert reviewer summarizing a pull request.
 
 GOAL
@@ -152,12 +302,11 @@ OUTPUT FORMAT (Markdown)
 
   try {
     const { object } = await generateObject({
-      model,
+      model: config.model,
       schema: CrownSummarizationResponseSchema,
-      system:
-        "You are an expert reviewer summarizing pull requests. Provide a clear, concise summary following the requested format.",
+      system: config.systemPrompt ?? DEFAULT_SUMMARIZATION_SYSTEM_PROMPT,
       prompt: summarizationPrompt,
-      ...(provider === "openai" ? {} : { temperature: 0 }),
+      ...(config.provider === "openai" ? {} : { temperature: 0 }),
       maxRetries: 2,
     });
 
@@ -174,8 +323,13 @@ export const evaluate = action({
     candidates: v.array(CrownEvaluationCandidateValidator),
     teamSlugOrId: v.string(),
   },
-  handler: async (_ctx, args) => {
-    return performCrownEvaluation(args.prompt, args.candidates);
+  handler: async (ctx, args) => {
+    const runtimeConfig = await resolveRuntimeConfig(ctx, args.teamSlugOrId);
+    return performCrownEvaluation(args.prompt, args.candidates, {
+      model: runtimeConfig.model,
+      provider: runtimeConfig.provider,
+      systemPrompt: runtimeConfig.evaluationSystemPrompt,
+    });
   },
 });
 
@@ -185,7 +339,12 @@ export const summarize = action({
     gitDiff: v.string(),
     teamSlugOrId: v.string(),
   },
-  handler: async (_ctx, args) => {
-    return performCrownSummarization(args.prompt, args.gitDiff);
+  handler: async (ctx, args) => {
+    const runtimeConfig = await resolveRuntimeConfig(ctx, args.teamSlugOrId);
+    return performCrownSummarization(args.prompt, args.gitDiff, {
+      model: runtimeConfig.model,
+      provider: runtimeConfig.provider,
+      systemPrompt: runtimeConfig.summarizationSystemPrompt,
+    });
   },
 });

@@ -23,6 +23,11 @@ export const update = authMutation({
     teamSlugOrId: v.string(),
     worktreePath: v.optional(v.string()),
     autoPrEnabled: v.optional(v.boolean()),
+    crownEvaluatorProvider: v.optional(
+      v.union(v.literal("anthropic"), v.literal("openai")),
+    ),
+    crownEvaluatorModel: v.optional(v.string()),
+    crownEvaluatorSystemPrompt: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
@@ -35,10 +40,22 @@ export const update = authMutation({
       .first();
     const now = Date.now();
 
+    const normalizedModel =
+      args.crownEvaluatorModel === undefined
+        ? undefined
+        : args.crownEvaluatorModel.trim() || undefined;
+    const normalizedSystemPrompt =
+      args.crownEvaluatorSystemPrompt === undefined
+        ? undefined
+        : args.crownEvaluatorSystemPrompt.trim() || undefined;
+
     if (existing) {
       await ctx.db.patch(existing._id, {
         worktreePath: args.worktreePath,
         autoPrEnabled: args.autoPrEnabled,
+        crownEvaluatorProvider: args.crownEvaluatorProvider,
+        crownEvaluatorModel: normalizedModel,
+        crownEvaluatorSystemPrompt: normalizedSystemPrompt,
         userId,
         teamId,
         updatedAt: now,
@@ -47,6 +64,9 @@ export const update = authMutation({
       await ctx.db.insert("workspaceSettings", {
         worktreePath: args.worktreePath,
         autoPrEnabled: args.autoPrEnabled,
+        crownEvaluatorProvider: args.crownEvaluatorProvider,
+        crownEvaluatorModel: normalizedModel,
+        crownEvaluatorSystemPrompt: normalizedSystemPrompt,
         createdAt: now,
         updatedAt: now,
         userId,
