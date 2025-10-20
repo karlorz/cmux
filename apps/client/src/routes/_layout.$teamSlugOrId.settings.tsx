@@ -59,6 +59,20 @@ function SettingsComponent() {
   } | null>(null);
   const [originalContainerSettingsData, setOriginalContainerSettingsData] =
     useState<typeof containerSettingsData>(null);
+  const [crownModelProvider, setCrownModelProvider] = useState<
+    "anthropic" | "openai"
+  >("anthropic");
+  const [originalCrownModelProvider, setOriginalCrownModelProvider] = useState<
+    "anthropic" | "openai"
+  >("anthropic");
+  const [crownModelName, setCrownModelName] = useState<string>("");
+  const [originalCrownModelName, setOriginalCrownModelName] = useState<string>(
+    ""
+  );
+  const [crownCustomSystemPrompt, setCrownCustomSystemPrompt] =
+    useState<string>("");
+  const [originalCrownCustomSystemPrompt, setOriginalCrownCustomSystemPrompt] =
+    useState<string>("");
 
   // Get all required API keys from agent configs
   const apiKeys = Array.from(
@@ -134,7 +148,7 @@ function SettingsComponent() {
     return "";
   };
 
-  // Initialize worktree path when data loads
+  // Initialize worktree path and crown config when data loads
   useEffect(() => {
     if (workspaceSettings !== undefined) {
       setWorktreePath(workspaceSettings?.worktreePath || "");
@@ -145,6 +159,27 @@ function SettingsComponent() {
       const effective = enabled === undefined ? false : Boolean(enabled);
       setAutoPrEnabled(effective);
       setOriginalAutoPrEnabled(effective);
+
+      // Initialize crown settings
+      const provider = (
+        workspaceSettings as unknown as {
+          crownModelProvider?: "anthropic" | "openai";
+        }
+      )?.crownModelProvider || ("anthropic" as const);
+      setCrownModelProvider(provider);
+      setOriginalCrownModelProvider(provider);
+
+      const modelName = (
+        workspaceSettings as unknown as { crownModelName?: string }
+      )?.crownModelName || "";
+      setCrownModelName(modelName);
+      setOriginalCrownModelName(modelName);
+
+      const customPrompt = (
+        workspaceSettings as unknown as { crownCustomSystemPrompt?: string }
+      )?.crownCustomSystemPrompt || "";
+      setCrownCustomSystemPrompt(customPrompt);
+      setOriginalCrownCustomSystemPrompt(customPrompt);
     }
   }, [workspaceSettings]);
 
@@ -244,11 +279,18 @@ function SettingsComponent() {
     // Auto PR toggle changes
     const autoPrChanged = autoPrEnabled !== originalAutoPrEnabled;
 
+    // Crown settings changes
+    const crownChanged =
+      crownModelProvider !== originalCrownModelProvider ||
+      crownModelName !== originalCrownModelName ||
+      crownCustomSystemPrompt !== originalCrownCustomSystemPrompt;
+
     return (
       worktreePathChanged ||
       autoPrChanged ||
       apiKeysChanged ||
-      containerSettingsChanged
+      containerSettingsChanged ||
+      crownChanged
     );
   };
 
@@ -259,18 +301,27 @@ function SettingsComponent() {
       let savedCount = 0;
       let deletedCount = 0;
 
-      // Save worktree path / auto PR if changed
+      // Save workspace settings (worktree path, auto PR, crown settings)
       if (
         worktreePath !== originalWorktreePath ||
-        autoPrEnabled !== originalAutoPrEnabled
+        autoPrEnabled !== originalAutoPrEnabled ||
+        crownModelProvider !== originalCrownModelProvider ||
+        crownModelName !== originalCrownModelName ||
+        crownCustomSystemPrompt !== originalCrownCustomSystemPrompt
       ) {
         await convex.mutation(api.workspaceSettings.update, {
           teamSlugOrId,
           worktreePath: worktreePath || undefined,
           autoPrEnabled,
+          crownModelProvider,
+          crownModelName: crownModelName || undefined,
+          crownCustomSystemPrompt: crownCustomSystemPrompt || undefined,
         });
         setOriginalWorktreePath(worktreePath);
         setOriginalAutoPrEnabled(autoPrEnabled);
+        setOriginalCrownModelProvider(crownModelProvider);
+        setOriginalCrownModelName(crownModelName);
+        setOriginalCrownCustomSystemPrompt(crownCustomSystemPrompt);
       }
 
       // Save container settings if changed
@@ -620,24 +671,113 @@ function SettingsComponent() {
                   Crown Evaluator
                 </h2>
               </div>
-              <div className="p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                      Auto pull request for crown winner
+              <div className="p-4 space-y-4">
+                {/* Model Selection */}
+                <div className="space-y-3">
+                  <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                    Model Provider
+                  </label>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    Select which AI provider to use for crown evaluation.
+                    Currently, only Claude models are available.
+                  </p>
+                  <select
+                    value={crownModelProvider}
+                    onChange={(e) =>
+                      setCrownModelProvider(
+                        e.target.value as "anthropic" | "openai"
+                      )
+                    }
+                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100"
+                  >
+                    <option value="anthropic">Anthropic (Claude)</option>
+                    <option value="openai" disabled>
+                      OpenAI (Coming soon)
+                    </option>
+                  </select>
+                </div>
+
+                {/* Model Name Selection */}
+                {crownModelProvider === "anthropic" && (
+                  <div className="space-y-3">
+                    <label
+                      htmlFor="crownModelName"
+                      className="block text-sm font-medium text-neutral-700 dark:text-neutral-300"
+                    >
+                      Claude Model
                     </label>
-                    <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                      When enabled, cmux automatically creates a pull request
-                      for the winning model’s code diff.
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                      Select a specific Claude model for evaluations. If not set,
+                      the default model will be used.
                     </p>
+                    <select
+                      id="crownModelName"
+                      value={crownModelName}
+                      onChange={(e) => setCrownModelName(e.target.value)}
+                      className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100"
+                    >
+                      <option value="">Use default (claude-3-5-sonnet)</option>
+                      <option value="claude-haiku-4-5-20251001">
+                        Claude Haiku 4.5
+                      </option>
+                      <option value="claude-sonnet-4-5-20250929">
+                        Claude Sonnet 4.5
+                      </option>
+                      <option value="claude-opus-4-1-20250805">
+                        Claude Opus 4.1
+                      </option>
+                      <option value="claude-sonnet-4-20250514">
+                        Claude Sonnet 4
+                      </option>
+                      <option value="claude-opus-4-20250514">
+                        Claude Opus 4
+                      </option>
+                    </select>
                   </div>
-                  <Switch
-                    aria-label="Auto pull request for crown winner"
-                    size="sm"
-                    color="primary"
-                    isSelected={autoPrEnabled}
-                    onValueChange={setAutoPrEnabled}
+                )}
+
+                {/* Custom System Prompt */}
+                <div className="space-y-3">
+                  <label
+                    htmlFor="crownSystemPrompt"
+                    className="block text-sm font-medium text-neutral-700 dark:text-neutral-300"
+                  >
+                    Custom System Prompt (Optional)
+                  </label>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    Add custom instructions to the crown evaluator. This will be
+                    appended to the default evaluation prompt. Leave empty to use
+                    the standard evaluation guidelines.
+                  </p>
+                  <textarea
+                    id="crownSystemPrompt"
+                    value={crownCustomSystemPrompt}
+                    onChange={(e) => setCrownCustomSystemPrompt(e.target.value)}
+                    placeholder="e.g., 'Prioritize code that includes comprehensive error handling.' or 'Focus on performance optimizations.'"
+                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 font-mono text-xs min-h-24 resize-none"
                   />
+                </div>
+
+                {/* Auto PR Toggle */}
+                <div className="pt-2 border-t border-neutral-200 dark:border-neutral-700">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                        Auto pull request for crown winner
+                      </label>
+                      <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                        When enabled, cmux automatically creates a pull request
+                        for the winning model's code diff.
+                      </p>
+                    </div>
+                    <Switch
+                      aria-label="Auto pull request for crown winner"
+                      size="sm"
+                      color="primary"
+                      isSelected={autoPrEnabled}
+                      onValueChange={setAutoPrEnabled}
+                    />
+                  </div>
                 </div>
               </div>
             </div>

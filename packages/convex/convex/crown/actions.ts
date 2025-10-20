@@ -12,10 +12,10 @@ import {
   type CrownSummarizationResponse,
 } from "../../../shared/src/convex-safe";
 import { env } from "../../_shared/convex-env";
-import { action } from "../_generated/server";
+import { action, internal } from "../_generated/server";
 
 const OPENAI_CROWN_MODEL = "gpt-5-mini";
-const ANTHROPIC_CROWN_MODEL = "claude-3-5-sonnet-20241022";
+const ANTHROPIC_CROWN_MODEL_DEFAULT = "claude-3-5-sonnet-20241022";
 
 const CrownEvaluationCandidateValidator = v.object({
   runId: v.optional(v.string()),
@@ -26,35 +26,59 @@ const CrownEvaluationCandidateValidator = v.object({
   index: v.optional(v.number()),
 });
 
-function resolveCrownModel(): {
+interface CrownSettings {
+  crownModelProvider?: "anthropic" | "openai";
+  crownModelName?: string;
+  crownCustomSystemPrompt?: string;
+}
+
+function resolveCrownModel(settings?: CrownSettings): {
   provider: "openai" | "anthropic";
   model: LanguageModel;
+  modelName: string;
 } {
-  const openaiKey = env.OPENAI_API_KEY;
-  if (openaiKey) {
-    const openai = createOpenAI({ apiKey: openaiKey });
-    return { provider: "openai", model: openai(OPENAI_CROWN_MODEL) };
-  }
+  // Determine provider preference (default to anthropic for claude models)
+  const provider = settings?.crownModelProvider || "anthropic";
 
-  const anthropicKey = env.ANTHROPIC_API_KEY;
-  if (anthropicKey) {
-    const anthropic = createAnthropic({ apiKey: anthropicKey });
+  if (provider === "openai") {
+    const openaiKey = env.OPENAI_API_KEY;
+    if (!openaiKey) {
+      throw new ConvexError(
+        "OpenAI API key not configured (OPENAI_API_KEY)",
+      );
+    }
+    const openai = createOpenAI({ apiKey: openaiKey });
     return {
-      provider: "anthropic",
-      model: anthropic(ANTHROPIC_CROWN_MODEL),
+      provider: "openai",
+      model: openai(OPENAI_CROWN_MODEL),
+      modelName: OPENAI_CROWN_MODEL,
     };
   }
 
-  throw new ConvexError(
-    "Crown evaluation is not configured (missing OpenAI or Anthropic API key)",
-  );
+  // Anthropic (default)
+  const anthropicKey = env.ANTHROPIC_API_KEY;
+  if (!anthropicKey) {
+    throw new ConvexError(
+      "Anthropic API key not configured (ANTHROPIC_API_KEY)",
+    );
+  }
+
+  const anthropic = createAnthropic({ apiKey: anthropicKey });
+  const modelName = settings?.crownModelName || ANTHROPIC_CROWN_MODEL_DEFAULT;
+
+  return {
+    provider: "anthropic",
+    model: anthropic(modelName),
+    modelName,
+  };
 }
 
 export async function performCrownEvaluation(
   prompt: string,
   candidates: CrownEvaluationCandidate[],
+  settings?: CrownSettings,
 ): Promise<CrownEvaluationResponse> {
-  const { model, provider } = resolveCrownModel();
+  const { model, provider } = resolveCrownModel(settings);
 
   const normalizedCandidates = candidates.map((candidate, idx) => {
     const resolvedIndex = candidate.index ?? idx;
@@ -77,7 +101,7 @@ export async function performCrownEvaluation(
     candidates: normalizedCandidates,
   };
 
-  const evaluationPrompt = `You are evaluating code implementations from different AI models.
+  const baseEvaluationPrompt = `You are evaluating code implementations from different AI models.
 
 Here are the candidates to evaluate:
 ${JSON.stringify(evaluationData, null, 2)}
@@ -98,6 +122,11 @@ Example response:
 {"winner": 0, "reason": "Model claude/sonnet-4 provided a more complete implementation with better error handling and cleaner code structure."}
 
 IMPORTANT: Respond ONLY with the JSON object, no other text.`;
+
+  // Append custom prompt if provided
+  const evaluationPrompt = settings?.crownCustomSystemPrompt
+    ? `${baseEvaluationPrompt}\n\n### Custom Evaluation Instructions:\n${settings.crownCustomSystemPrompt}`
+    : baseEvaluationPrompt;
 
   try {
     const { object } = await generateObject({
@@ -120,10 +149,11 @@ IMPORTANT: Respond ONLY with the JSON object, no other text.`;
 export async function performCrownSummarization(
   prompt: string,
   gitDiff: string,
+  settings?: CrownSettings,
 ): Promise<CrownSummarizationResponse> {
-  const { model, provider } = resolveCrownModel();
+  const { model, provider } = resolveCrownModel(settings);
 
-  const summarizationPrompt = `You are an expert reviewer summarizing a pull request.
+  const baseSummarizationPrompt = `You are an expert reviewer summarizing a pull request.
 
 GOAL
 - Explain succinctly what changed and why.
@@ -150,6 +180,11 @@ OUTPUT FORMAT (Markdown)
 - Follow-ups: optional bullets if applicable
 `;
 
+  // Append custom prompt if provided
+  const summarizationPrompt = settings?.crownCustomSystemPrompt
+    ? `${baseSummarizationPrompt}\n\n### Custom Instructions:\n${settings.crownCustomSystemPrompt}`
+    : baseSummarizationPrompt;
+
   try {
     const { object } = await generateObject({
       model,
@@ -174,8 +209,23 @@ export const evaluate = action({
     candidates: v.array(CrownEvaluationCandidateValidator),
     teamSlugOrId: v.string(),
   },
-  handler: async (_ctx, args) => {
-    return performCrownEvaluation(args.prompt, args.candidates);
+  handler: async (ctx, args) => {
+    // Fetch workspace settings to get crown configuration
+    const workspaceSettings = await ctx.runQuery(
+      internal.workspaceSettings.getByTeamAndUserInternal,
+      {
+        teamId: args.teamSlugOrId,
+        userId: "system", // Actions don't have userId context; use placeholder
+      },
+    ).catch(() => null);
+
+    const settings: CrownSettings = {
+      crownModelProvider: workspaceSettings?.crownModelProvider,
+      crownModelName: workspaceSettings?.crownModelName,
+      crownCustomSystemPrompt: workspaceSettings?.crownCustomSystemPrompt,
+    };
+
+    return performCrownEvaluation(args.prompt, args.candidates, settings);
   },
 });
 
@@ -185,7 +235,22 @@ export const summarize = action({
     gitDiff: v.string(),
     teamSlugOrId: v.string(),
   },
-  handler: async (_ctx, args) => {
-    return performCrownSummarization(args.prompt, args.gitDiff);
+  handler: async (ctx, args) => {
+    // Fetch workspace settings to get crown configuration
+    const workspaceSettings = await ctx.runQuery(
+      internal.workspaceSettings.getByTeamAndUserInternal,
+      {
+        teamId: args.teamSlugOrId,
+        userId: "system", // Actions don't have userId context; use placeholder
+      },
+    ).catch(() => null);
+
+    const settings: CrownSettings = {
+      crownModelProvider: workspaceSettings?.crownModelProvider,
+      crownModelName: workspaceSettings?.crownModelName,
+      crownCustomSystemPrompt: workspaceSettings?.crownCustomSystemPrompt,
+    };
+
+    return performCrownSummarization(args.prompt, args.gitDiff, settings);
   },
 });
