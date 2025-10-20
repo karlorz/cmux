@@ -923,7 +923,6 @@ async def task_install_base_packages(ctx: TaskContext) -> None:
             build-essential make pkg-config g++ libssl-dev \
             ruby-full perl software-properties-common \
             tigervnc-standalone-server tigervnc-common \
-            python3-websockify websockify \
             xvfb \
             x11-xserver-utils xterm novnc \
             x11vnc \
@@ -2065,11 +2064,11 @@ async def task_check_vnc(ctx: TaskContext) -> None:
         """
         # Verify VNC binaries are installed
         vncserver -version
-        if ! command -v websockify >/dev/null 2>&1; then
-          echo "websockify not installed" >&2
+        if ! command -v cmux-novnc-proxy >/dev/null 2>&1; then
+          echo "cmux-novnc-proxy not installed" >&2
           exit 1
         fi
-        websockify --help >/dev/null
+        cmux-novnc-proxy --help >/dev/null
         
         # Verify VNC endpoint is accessible
         sleep 5
@@ -2088,7 +2087,7 @@ async def task_check_vnc(ctx: TaskContext) -> None:
         tail -n 60 /var/log/cmux/xvfb.log || true
         tail -n 40 /var/log/cmux/chrome.log || true
         tail -n 40 /var/log/cmux/x11vnc.log || true
-        tail -n 40 /var/log/cmux/websockify.log || true
+        tail -n 40 /var/log/cmux/novnc-proxy.log || true
         exit 1
         """
     )

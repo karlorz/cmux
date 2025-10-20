@@ -1,0 +1,19 @@
+[package]
+name = "cmux-novnc-proxy"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "fs", "signal", "sync"] }
+hyper = { version = "0.14", features = ["server", "client", "http1", "tcp", "runtime"] }
+clap = { version = "4", features = ["derive", "env"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+futures-util = "0.3"
+tokio-tungstenite = { version = "0.21" }
+base64 = "0.21"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tokio-tungstenite = "0.21"
+tempfile = "3"

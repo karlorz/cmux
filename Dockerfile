@@ -70,12 +70,14 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
   export CXX_x86_64_unknown_linux_gnu=x86_64-linux-gnu-g++ && \
   cargo install --path crates/cmux-env --target x86_64-unknown-linux-gnu --locked --force && \
   cargo install --path crates/cmux-proxy --target x86_64-unknown-linux-gnu --locked --force && \
-  cargo install --path crates/cmux-xterm --target x86_64-unknown-linux-gnu --locked --force; \
+  cargo install --path crates/cmux-xterm --target x86_64-unknown-linux-gnu --locked --force && \
+  cargo install --path crates/cmux-novnc-proxy --target x86_64-unknown-linux-gnu --locked --force; \
   else \
   # Build natively for the requested platform (e.g., arm64 on Apple Silicon)
   cargo install --path crates/cmux-env --locked --force && \
   cargo install --path crates/cmux-proxy --locked --force && \
-  cargo install --path crates/cmux-xterm --locked --force; \
+  cargo install --path crates/cmux-xterm --locked --force && \
+  cargo install --path crates/cmux-novnc-proxy --locked --force; \
   fi
 
 # Stage 2: Build stage (runs natively on ARM64, cross-compiles to x86_64)
@@ -360,7 +362,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   xvfb \
   x11vnc \
   fluxbox \
-  websockify \
   novnc \
   xauth \
   xdg-utils \
@@ -668,10 +669,11 @@ EOF
 COPY --from=rust-builder /usr/local/cargo/bin/envctl /usr/local/bin/envctl
 COPY --from=rust-builder /usr/local/cargo/bin/envd /usr/local/bin/envd
 COPY --from=rust-builder /usr/local/cargo/bin/cmux-proxy /usr/local/bin/cmux-proxy
+COPY --from=rust-builder /usr/local/cargo/bin/cmux-novnc-proxy /usr/local/bin/cmux-novnc-proxy
 COPY --from=rust-builder /usr/local/cargo/bin/cmux-xterm-server /usr/local/bin/cmux-xterm-server
 
 # Configure envctl/envd runtime defaults
-RUN chmod +x /usr/local/bin/envctl /usr/local/bin/envd /usr/local/bin/cmux-proxy /usr/local/bin/cmux-xterm-server && \
+RUN chmod +x /usr/local/bin/envctl /usr/local/bin/envd /usr/local/bin/cmux-proxy /usr/local/bin/cmux-novnc-proxy /usr/local/bin/cmux-xterm-server && \
   envctl --version && \
   envctl install-hook bash && \
   echo '[ -f ~/.bashrc ] && . ~/.bashrc' > /root/.profile && \
