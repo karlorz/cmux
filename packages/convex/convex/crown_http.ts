@@ -241,10 +241,22 @@ export const crownEvaluate = httpAction(async (ctx, req) => {
       index: candidate.index ?? index,
     }));
 
+    // Fetch workspace settings to get Crown configuration
+    const identity = await ctx.auth.getUserIdentity();
+    const workspaceSettings = identity
+      ? await ctx.runQuery(api.workspaceSettings.get, { teamSlugOrId })
+      : null;
+
     const result = await ctx.runAction(api.crown.actions.evaluate, {
       prompt: data.prompt,
       candidates,
       teamSlugOrId,
+      crownModelId:
+        (workspaceSettings as unknown as { crownModelId?: string })
+          ?.crownModelId || undefined,
+      crownSystemPromptAddition:
+        (workspaceSettings as unknown as { crownSystemPromptAddition?: string })
+          ?.crownSystemPromptAddition || undefined,
     });
     return jsonResponse(result);
   } catch (error) {
@@ -291,10 +303,22 @@ export const crownSummarize = httpAction(async (ctx, req) => {
   }
 
   try {
+    // Fetch workspace settings to get Crown configuration
+    const identity = await ctx.auth.getUserIdentity();
+    const workspaceSettings = identity
+      ? await ctx.runQuery(api.workspaceSettings.get, { teamSlugOrId })
+      : null;
+
     const result = await ctx.runAction(api.crown.actions.summarize, {
       prompt: data.prompt,
       gitDiff: data.gitDiff,
       teamSlugOrId,
+      crownModelId:
+        (workspaceSettings as unknown as { crownModelId?: string })
+          ?.crownModelId || undefined,
+      crownSystemPromptAddition:
+        (workspaceSettings as unknown as { crownSystemPromptAddition?: string })
+          ?.crownSystemPromptAddition || undefined,
     });
     return jsonResponse(result);
   } catch (error) {

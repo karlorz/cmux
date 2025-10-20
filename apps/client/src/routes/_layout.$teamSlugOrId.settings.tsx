@@ -40,6 +40,12 @@ function SettingsComponent() {
   const [autoPrEnabled, setAutoPrEnabled] = useState<boolean>(false);
   const [originalAutoPrEnabled, setOriginalAutoPrEnabled] =
     useState<boolean>(false);
+  const [crownModelId, setCrownModelId] = useState<string>("");
+  const [originalCrownModelId, setOriginalCrownModelId] = useState<string>("");
+  const [crownSystemPromptAddition, setCrownSystemPromptAddition] =
+    useState<string>("");
+  const [originalCrownSystemPromptAddition, setOriginalCrownSystemPromptAddition] =
+    useState<string>("");
   // const [isSaveButtonVisible, setIsSaveButtonVisible] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const saveButtonRef = useRef<HTMLDivElement>(null);
@@ -145,6 +151,18 @@ function SettingsComponent() {
       const effective = enabled === undefined ? false : Boolean(enabled);
       setAutoPrEnabled(effective);
       setOriginalAutoPrEnabled(effective);
+
+      const modelId = (
+        workspaceSettings as unknown as { crownModelId?: string }
+      )?.crownModelId || "";
+      setCrownModelId(modelId);
+      setOriginalCrownModelId(modelId);
+
+      const promptAddition = (
+        workspaceSettings as unknown as { crownSystemPromptAddition?: string }
+      )?.crownSystemPromptAddition || "";
+      setCrownSystemPromptAddition(promptAddition);
+      setOriginalCrownSystemPromptAddition(promptAddition);
     }
   }, [workspaceSettings]);
 
@@ -244,9 +262,16 @@ function SettingsComponent() {
     // Auto PR toggle changes
     const autoPrChanged = autoPrEnabled !== originalAutoPrEnabled;
 
+    // Crown settings changes
+    const crownModelChanged = crownModelId !== originalCrownModelId;
+    const crownPromptChanged =
+      crownSystemPromptAddition !== originalCrownSystemPromptAddition;
+
     return (
       worktreePathChanged ||
       autoPrChanged ||
+      crownModelChanged ||
+      crownPromptChanged ||
       apiKeysChanged ||
       containerSettingsChanged
     );
@@ -259,18 +284,24 @@ function SettingsComponent() {
       let savedCount = 0;
       let deletedCount = 0;
 
-      // Save worktree path / auto PR if changed
+      // Save worktree path / auto PR / crown settings if changed
       if (
         worktreePath !== originalWorktreePath ||
-        autoPrEnabled !== originalAutoPrEnabled
+        autoPrEnabled !== originalAutoPrEnabled ||
+        crownModelId !== originalCrownModelId ||
+        crownSystemPromptAddition !== originalCrownSystemPromptAddition
       ) {
         await convex.mutation(api.workspaceSettings.update, {
           teamSlugOrId,
           worktreePath: worktreePath || undefined,
           autoPrEnabled,
+          crownModelId: crownModelId || undefined,
+          crownSystemPromptAddition: crownSystemPromptAddition || undefined,
         });
         setOriginalWorktreePath(worktreePath);
         setOriginalAutoPrEnabled(autoPrEnabled);
+        setOriginalCrownModelId(crownModelId);
+        setOriginalCrownSystemPromptAddition(crownSystemPromptAddition);
       }
 
       // Save container settings if changed
@@ -620,7 +651,8 @@ function SettingsComponent() {
                   Crown Evaluator
                 </h2>
               </div>
-              <div className="p-4">
+              <div className="p-4 space-y-4">
+                {/* Auto PR Toggle */}
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100">
@@ -628,7 +660,7 @@ function SettingsComponent() {
                     </label>
                     <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
                       When enabled, cmux automatically creates a pull request
-                      for the winning model’s code diff.
+                      for the winning model's code diff.
                     </p>
                   </div>
                   <Switch
@@ -637,6 +669,53 @@ function SettingsComponent() {
                     color="primary"
                     isSelected={autoPrEnabled}
                     onValueChange={setAutoPrEnabled}
+                  />
+                </div>
+
+                {/* Crown Model Selection */}
+                <div>
+                  <label
+                    htmlFor="crownModelId"
+                    className="block text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-2"
+                  >
+                    Evaluation Model
+                  </label>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+                    Select which Claude model Crown should use to evaluate competing implementations.
+                  </p>
+                  <select
+                    id="crownModelId"
+                    value={crownModelId}
+                    onChange={(e) => setCrownModelId(e.target.value)}
+                    className="w-full px-3 py-2 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-lg text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Default (Sonnet 4.5)</option>
+                    <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                    <option value="claude-sonnet-4-5-20250929">Claude Sonnet 4.5</option>
+                    <option value="claude-opus-4-1-20250805">Claude Opus 4.1</option>
+                    <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
+                    <option value="claude-opus-4-20250514">Claude Opus 4</option>
+                  </select>
+                </div>
+
+                {/* System Prompt Addition */}
+                <div>
+                  <label
+                    htmlFor="crownSystemPromptAddition"
+                    className="block text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-2"
+                  >
+                    Additional System Prompt Context (Optional)
+                  </label>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+                    Add custom context or instructions to inject into Crown's evaluation system prompt. This replaces the default system prompt when provided.
+                  </p>
+                  <textarea
+                    id="crownSystemPromptAddition"
+                    value={crownSystemPromptAddition}
+                    onChange={(e) => setCrownSystemPromptAddition(e.target.value)}
+                    rows={4}
+                    placeholder="e.g., Prioritize code readability over performance optimization..."
+                    className="w-full px-3 py-2 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-lg text-sm text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 dark:placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
                   />
                 </div>
               </div>

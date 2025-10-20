@@ -1,7 +1,6 @@
 "use node";
 
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { createOpenAI } from "@ai-sdk/openai";
 import { generateObject, type LanguageModel } from "ai";
 import { ConvexError, v } from "convex/values";
 import {
@@ -14,8 +13,7 @@ import {
 import { env } from "../../_shared/convex-env";
 import { action } from "../_generated/server";
 
-const OPENAI_CROWN_MODEL = "gpt-5-mini";
-const ANTHROPIC_CROWN_MODEL = "claude-3-5-sonnet-20241022";
+const DEFAULT_ANTHROPIC_CROWN_MODEL = "claude-sonnet-4-5-20250929";
 
 const CrownEvaluationCandidateValidator = v.object({
   runId: v.optional(v.string()),
@@ -26,35 +24,47 @@ const CrownEvaluationCandidateValidator = v.object({
   index: v.optional(v.number()),
 });
 
-function resolveCrownModel(): {
-  provider: "openai" | "anthropic";
+// Claude models that are supported for Crown evaluation
+const SUPPORTED_CLAUDE_MODELS = [
+  "claude-haiku-4-5-20251001",
+  "claude-sonnet-4-5-20250929",
+  "claude-opus-4-1-20250805",
+  "claude-sonnet-4-20250514",
+  "claude-opus-4-20250514",
+];
+
+function resolveCrownModel(configuredModelId?: string): {
+  provider: "anthropic";
   model: LanguageModel;
 } {
-  const openaiKey = env.OPENAI_API_KEY;
-  if (openaiKey) {
-    const openai = createOpenAI({ apiKey: openaiKey });
-    return { provider: "openai", model: openai(OPENAI_CROWN_MODEL) };
-  }
-
   const anthropicKey = env.ANTHROPIC_API_KEY;
-  if (anthropicKey) {
-    const anthropic = createAnthropic({ apiKey: anthropicKey });
-    return {
-      provider: "anthropic",
-      model: anthropic(ANTHROPIC_CROWN_MODEL),
-    };
+  if (!anthropicKey) {
+    throw new ConvexError(
+      "Crown evaluation is not configured (missing Anthropic API key)",
+    );
   }
 
-  throw new ConvexError(
-    "Crown evaluation is not configured (missing OpenAI or Anthropic API key)",
-  );
+  const anthropic = createAnthropic({ apiKey: anthropicKey });
+
+  // Use configured model if provided and valid, otherwise use default
+  let modelId = DEFAULT_ANTHROPIC_CROWN_MODEL;
+  if (configuredModelId && SUPPORTED_CLAUDE_MODELS.includes(configuredModelId)) {
+    modelId = configuredModelId;
+  }
+
+  return {
+    provider: "anthropic",
+    model: anthropic(modelId),
+  };
 }
 
 export async function performCrownEvaluation(
   prompt: string,
   candidates: CrownEvaluationCandidate[],
+  configuredModelId?: string,
+  systemPromptAddition?: string,
 ): Promise<CrownEvaluationResponse> {
-  const { model, provider } = resolveCrownModel();
+  const { model, provider } = resolveCrownModel(configuredModelId);
 
   const normalizedCandidates = candidates.map((candidate, idx) => {
     const resolvedIndex = candidate.index ?? idx;
@@ -99,14 +109,18 @@ Example response:
 
 IMPORTANT: Respond ONLY with the JSON object, no other text.`;
 
+  // Use custom system prompt if provided, otherwise use default
+  const systemPrompt = systemPromptAddition
+    ? systemPromptAddition
+    : "You select the best implementation from structured diff inputs and explain briefly why.";
+
   try {
     const { object } = await generateObject({
       model,
       schema: CrownEvaluationResponseSchema,
-      system:
-        "You select the best implementation from structured diff inputs and explain briefly why.",
+      system: systemPrompt,
       prompt: evaluationPrompt,
-      ...(provider === "openai" ? {} : { temperature: 0 }),
+      temperature: 0,
       maxRetries: 2,
     });
 
@@ -120,8 +134,10 @@ IMPORTANT: Respond ONLY with the JSON object, no other text.`;
 export async function performCrownSummarization(
   prompt: string,
   gitDiff: string,
+  configuredModelId?: string,
+  systemPromptAddition?: string,
 ): Promise<CrownSummarizationResponse> {
-  const { model, provider } = resolveCrownModel();
+  const { model, provider } = resolveCrownModel(configuredModelId);
 
   const summarizationPrompt = `You are an expert reviewer summarizing a pull request.
 
@@ -150,14 +166,18 @@ OUTPUT FORMAT (Markdown)
 - Follow-ups: optional bullets if applicable
 `;
 
+  // Use custom system prompt if provided, otherwise use default
+  const systemPrompt = systemPromptAddition
+    ? systemPromptAddition
+    : "You are an expert reviewer summarizing pull requests. Provide a clear, concise summary following the requested format.";
+
   try {
     const { object } = await generateObject({
       model,
       schema: CrownSummarizationResponseSchema,
-      system:
-        "You are an expert reviewer summarizing pull requests. Provide a clear, concise summary following the requested format.",
+      system: systemPrompt,
       prompt: summarizationPrompt,
-      ...(provider === "openai" ? {} : { temperature: 0 }),
+      temperature: 0,
       maxRetries: 2,
     });
 
@@ -173,9 +193,16 @@ export const evaluate = action({
     prompt: v.string(),
     candidates: v.array(CrownEvaluationCandidateValidator),
     teamSlugOrId: v.string(),
+    crownModelId: v.optional(v.string()),
+    crownSystemPromptAddition: v.optional(v.string()),
   },
   handler: async (_ctx, args) => {
-    return performCrownEvaluation(args.prompt, args.candidates);
+    return performCrownEvaluation(
+      args.prompt,
+      args.candidates,
+      args.crownModelId,
+      args.crownSystemPromptAddition,
+    );
   },
 });
 
@@ -184,8 +211,15 @@ export const summarize = action({
     prompt: v.string(),
     gitDiff: v.string(),
     teamSlugOrId: v.string(),
+    crownModelId: v.optional(v.string()),
+    crownSystemPromptAddition: v.optional(v.string()),
   },
   handler: async (_ctx, args) => {
-    return performCrownSummarization(args.prompt, args.gitDiff);
+    return performCrownSummarization(
+      args.prompt,
+      args.gitDiff,
+      args.crownModelId,
+      args.crownSystemPromptAddition,
+    );
   },
 });
