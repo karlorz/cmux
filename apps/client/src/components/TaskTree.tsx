@@ -10,6 +10,7 @@ import { useOpenWithActions } from "@/hooks/useOpenWithActions";
 import { isElectron } from "@/lib/electron";
 import { isFakeConvexId } from "@/lib/fakeConvexId";
 import type { AnnotatedTaskRun, TaskRunWithChildren } from "@/types/task";
+import { TaskRunTerminals } from "./task-run/TaskRunTerminals";
 import { ContextMenu } from "@base-ui-components/react/context-menu";
 import { api } from "@cmux/convex/api";
 import { type Doc, type Id } from "@cmux/convex/dataModel";
@@ -843,6 +844,12 @@ function TaskRunDetails({
         indentLevel={indentLevel}
       />
     ) : null}
+
+    <TaskRunTerminals
+      run={run}
+      teamSlugOrId={teamSlugOrId}
+      indentPx={24 + indentLevel * 8}
+    />
 
     {shouldRenderPullRequestLink ? (
       <TaskRunDetailLink

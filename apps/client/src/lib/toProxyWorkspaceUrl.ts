@@ -68,3 +68,19 @@ export function toMorphVncUrl(sourceUrl: string): string | null {
 
   return vncUrl.toString();
 }
+
+export function toMorphServiceBaseUrl(workspaceUrl: string, port: number): string | null {
+  const components = parseMorphUrl(workspaceUrl);
+
+  if (!components) {
+    return null;
+  }
+
+  const serviceUrl = new URL(components.url.toString());
+  serviceUrl.hostname = `port-${port}-morphvm-${components.morphId}.http.cloud.morph.so`;
+  serviceUrl.pathname = "/";
+  serviceUrl.search = "";
+  serviceUrl.hash = "";
+
+  return serviceUrl.toString();
+}
