@@ -241,10 +241,32 @@ export const crownEvaluate = httpAction(async (ctx, req) => {
       index: candidate.index ?? index,
     }));
 
+    // Load workspace settings to get configured model and system prompt
+    const identity = await ctx.auth.getUserIdentity();
+    let configuredModel: string | undefined;
+    let customSystemPrompt: string | undefined;
+
+    if (identity && workerAuth) {
+      const settings = await ctx.runQuery(
+        internal.workspaceSettings.getByTeamAndUserInternal,
+        {
+          teamId: workerAuth.payload.teamId,
+          userId: identity.subject,
+        },
+      );
+      configuredModel = (settings as unknown as { crownModel?: string })
+        ?.crownModel;
+      customSystemPrompt = (
+        settings as unknown as { crownSystemPrompt?: string }
+      )?.crownSystemPrompt;
+    }
+
     const result = await ctx.runAction(api.crown.actions.evaluate, {
       prompt: data.prompt,
       candidates,
       teamSlugOrId,
+      configuredModel,
+      customSystemPrompt,
     });
     return jsonResponse(result);
   } catch (error) {
@@ -291,10 +313,32 @@ export const crownSummarize = httpAction(async (ctx, req) => {
   }
 
   try {
+    // Load workspace settings to get configured model and system prompt
+    const identity = await ctx.auth.getUserIdentity();
+    let configuredModel: string | undefined;
+    let customSystemPrompt: string | undefined;
+
+    if (identity && workerAuth) {
+      const settings = await ctx.runQuery(
+        internal.workspaceSettings.getByTeamAndUserInternal,
+        {
+          teamId: workerAuth.payload.teamId,
+          userId: identity.subject,
+        },
+      );
+      configuredModel = (settings as unknown as { crownModel?: string })
+        ?.crownModel;
+      customSystemPrompt = (
+        settings as unknown as { crownSystemPrompt?: string }
+      )?.crownSystemPrompt;
+    }
+
     const result = await ctx.runAction(api.crown.actions.summarize, {
       prompt: data.prompt,
       gitDiff: data.gitDiff,
       teamSlugOrId,
+      configuredModel,
+      customSystemPrompt,
     });
     return jsonResponse(result);
   } catch (error) {

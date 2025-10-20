@@ -26,10 +26,27 @@ const CrownEvaluationCandidateValidator = v.object({
   index: v.optional(v.number()),
 });
 
-function resolveCrownModel(): {
+function resolveCrownModel(configuredModel?: string): {
   provider: "openai" | "anthropic";
   model: LanguageModel;
 } {
+  // If a model is configured, use it. Otherwise, fall back to the default logic.
+  // Currently, we only support Claude models from configuration.
+  if (configuredModel) {
+    const anthropicKey = env.ANTHROPIC_API_KEY;
+    if (!anthropicKey) {
+      throw new ConvexError(
+        "Crown evaluation is not configured (missing Anthropic API key for configured model)",
+      );
+    }
+    const anthropic = createAnthropic({ apiKey: anthropicKey });
+    return {
+      provider: "anthropic",
+      model: anthropic(configuredModel),
+    };
+  }
+
+  // Default logic: prefer OpenAI if available, otherwise use Anthropic
   const openaiKey = env.OPENAI_API_KEY;
   if (openaiKey) {
     const openai = createOpenAI({ apiKey: openaiKey });
@@ -53,8 +70,10 @@ function resolveCrownModel(): {
 export async function performCrownEvaluation(
   prompt: string,
   candidates: CrownEvaluationCandidate[],
+  configuredModel?: string,
+  customSystemPrompt?: string,
 ): Promise<CrownEvaluationResponse> {
-  const { model, provider } = resolveCrownModel();
+  const { model, provider } = resolveCrownModel(configuredModel);
 
   const normalizedCandidates = candidates.map((candidate, idx) => {
     const resolvedIndex = candidate.index ?? idx;
@@ -99,12 +118,16 @@ Example response:
 
 IMPORTANT: Respond ONLY with the JSON object, no other text.`;
 
+  // If custom system prompt is provided, replace the default system prompt
+  const systemPrompt = customSystemPrompt
+    ? customSystemPrompt
+    : "You select the best implementation from structured diff inputs and explain briefly why.";
+
   try {
     const { object } = await generateObject({
       model,
       schema: CrownEvaluationResponseSchema,
-      system:
-        "You select the best implementation from structured diff inputs and explain briefly why.",
+      system: systemPrompt,
       prompt: evaluationPrompt,
       ...(provider === "openai" ? {} : { temperature: 0 }),
       maxRetries: 2,
@@ -120,8 +143,10 @@ IMPORTANT: Respond ONLY with the JSON object, no other text.`;
 export async function performCrownSummarization(
   prompt: string,
   gitDiff: string,
+  configuredModel?: string,
+  customSystemPrompt?: string,
 ): Promise<CrownSummarizationResponse> {
-  const { model, provider } = resolveCrownModel();
+  const { model, provider } = resolveCrownModel(configuredModel);
 
   const summarizationPrompt = `You are an expert reviewer summarizing a pull request.
 
@@ -150,12 +175,16 @@ OUTPUT FORMAT (Markdown)
 - Follow-ups: optional bullets if applicable
 `;
 
+  // If custom system prompt is provided, replace the default system prompt
+  const systemPrompt = customSystemPrompt
+    ? customSystemPrompt
+    : "You are an expert reviewer summarizing pull requests. Provide a clear, concise summary following the requested format.";
+
   try {
     const { object } = await generateObject({
       model,
       schema: CrownSummarizationResponseSchema,
-      system:
-        "You are an expert reviewer summarizing pull requests. Provide a clear, concise summary following the requested format.",
+      system: systemPrompt,
       prompt: summarizationPrompt,
       ...(provider === "openai" ? {} : { temperature: 0 }),
       maxRetries: 2,
@@ -173,9 +202,16 @@ export const evaluate = action({
     prompt: v.string(),
     candidates: v.array(CrownEvaluationCandidateValidator),
     teamSlugOrId: v.string(),
+    configuredModel: v.optional(v.string()),
+    customSystemPrompt: v.optional(v.string()),
   },
   handler: async (_ctx, args) => {
-    return performCrownEvaluation(args.prompt, args.candidates);
+    return performCrownEvaluation(
+      args.prompt,
+      args.candidates,
+      args.configuredModel,
+      args.customSystemPrompt,
+    );
   },
 });
 
@@ -184,8 +220,15 @@ export const summarize = action({
     prompt: v.string(),
     gitDiff: v.string(),
     teamSlugOrId: v.string(),
+    configuredModel: v.optional(v.string()),
+    customSystemPrompt: v.optional(v.string()),
   },
   handler: async (_ctx, args) => {
-    return performCrownSummarization(args.prompt, args.gitDiff);
+    return performCrownSummarization(
+      args.prompt,
+      args.gitDiff,
+      args.configuredModel,
+      args.customSystemPrompt,
+    );
   },
 });
