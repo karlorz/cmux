@@ -1,6 +1,7 @@
 import { TaskRunChatPane } from "@/components/TaskRunChatPane";
 import { TaskRunTerminalPane } from "@/components/TaskRunTerminalPane";
 import { FloatingPane } from "@/components/floating-pane";
+import { TaskDetailHeader } from "@/components/task-detail-header";
 import type { PersistentIframeStatus } from "@/components/persistent-iframe";
 import { PersistentWebView } from "@/components/persistent-webview";
 import { WorkspaceLoadingIndicator } from "@/components/workspace-loading-indicator";
@@ -24,7 +25,7 @@ import { convexQuery } from "@convex-dev/react-query";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import clsx from "clsx";
-import { Code2, Crown, GitBranch, Globe2, TerminalSquare } from "lucide-react";
+import { Code2, Crown, Globe2, TerminalSquare } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import z from "zod";
 
@@ -162,58 +163,7 @@ function TaskDetailPage() {
   }, [search.runId, taskRuns]);
 
   const selectedRunId = selectedRun?._id ?? null;
-
-  const taskTitle = useMemo(() => {
-    const prTitle = task?.pullRequestTitle?.trim();
-    if (prTitle) {
-      return prTitle;
-    }
-    const projectName = task?.projectFullName?.trim();
-    if (projectName) {
-      return projectName;
-    }
-    return "Task overview";
-  }, [task?.pullRequestTitle, task?.projectFullName]);
-
-  const branchLabel = useMemo(() => {
-    const candidate = selectedRun?.newBranch ?? task?.baseBranch;
-    if (!candidate) {
-      return null;
-    }
-    const trimmed = candidate.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }, [selectedRun?.newBranch, task?.baseBranch]);
-
-  const repoLabel = useMemo(() => {
-    const taskRepo = task?.projectFullName?.trim();
-    if (taskRepo) {
-      return taskRepo;
-    }
-    const environmentRepo =
-      selectedRun?.environment?.selectedRepos?.find(
-        (repo): repo is string => Boolean(repo && repo.trim()),
-      ) ?? null;
-    return environmentRepo ? environmentRepo.trim() : null;
-  }, [selectedRun?.environment?.selectedRepos, task?.projectFullName]);
-
-  const activeAgentLabel = useMemo(() => {
-    if (!selectedRun) {
-      return null;
-    }
-    const trimmed = selectedRun.agentName?.trim();
-    if (trimmed) {
-      return trimmed;
-    }
-    const trimmedSummary = selectedRun.summary?.trim();
-    if (trimmedSummary) {
-      return trimmedSummary;
-    }
-    const index = runsWithDepth.findIndex((run) => run._id === selectedRun._id);
-    if (index >= 0) {
-      return `Run ${index + 1}`;
-    }
-    return "Run";
-  }, [runsWithDepth, selectedRun]);
+  const headerTaskRunId = selectedRunId ?? taskRuns?.[0]?._id ?? null;
 
   const rawWorkspaceUrl = selectedRun?.vscode?.workspaceUrl ?? null;
   const workspaceUrl = rawWorkspaceUrl ? toProxyWorkspaceUrl(rawWorkspaceUrl) : null;
@@ -324,34 +274,15 @@ function TaskDetailPage() {
 
   return (
     <FloatingPane>
-      <div className="flex h-full min-h-0 flex-col bg-neutral-50 px-3 py-3 dark:bg-black">
-        <div className="mb-3 flex flex-col gap-3">
-          <div className="flex flex-col gap-1 min-w-0">
-            <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-              {repoLabel ? (
-                <span className="font-mono text-neutral-600 dark:text-neutral-300 normal-case">
-                  {repoLabel}
-                </span>
-              ) : null}
-              {branchLabel ? (
-                <span className="inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-white px-2 py-0.5 text-[11px] font-medium text-neutral-700 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">
-                  <GitBranch className="size-3" aria-hidden />
-                  {branchLabel}
-                </span>
-              ) : null}
-              {activeAgentLabel ? (
-                <span className="inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-white px-2 py-0.5 text-[11px] font-medium text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">
-                  {activeAgentLabel}
-                </span>
-              ) : null}
-            </div>
-            <div className="flex items-center gap-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-              <span className="truncate" title={taskTitle}>
-                {taskTitle}
-              </span>
-            </div>
-          </div>
-
+      <div className="flex h-full min-h-0 flex-col bg-neutral-50 dark:bg-black">
+        <TaskDetailHeader
+          task={task ?? null}
+          taskRuns={taskRuns ?? null}
+          selectedRun={selectedRun ?? null}
+          taskRunId={headerTaskRunId ?? ("" as Id<"taskRuns">)}
+          teamSlugOrId={teamSlugOrId}
+        />
+        <div className="flex flex-1 min-h-0 flex-col gap-3 px-3 py-3">
           {runsWithDepth.length > 0 ? (
             <div className="flex flex-col gap-1">
               <span className="text-xs font-medium uppercase tracking-wide text-neutral-600 dark:text-neutral-400">
@@ -398,124 +329,124 @@ function TaskDetailPage() {
               No runs yet — start the task to launch a workspace.
             </div>
           )}
-        </div>
 
-        <div className="grid grow min-h-0 gap-3 md:grid-cols-2 md:grid-rows-2">
-          <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
-            <TaskRunChatPane
-              task={task}
-              taskRuns={taskRuns}
-              crownEvaluation={crownEvaluation}
-            />
-          </div>
+          <div className="grid flex-1 min-h-0 gap-3 md:grid-cols-2 md:grid-rows-2">
+            <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+              <TaskRunChatPane
+                task={task}
+                taskRuns={taskRuns}
+                crownEvaluation={crownEvaluation}
+              />
+            </div>
 
-          <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
-            <div className="flex items-center gap-2 border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
-              <div className="flex size-6 items-center justify-center rounded-full bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
-                <Code2 className="size-3.5" aria-hidden />
+            <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+              <div className="flex items-center gap-2 border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
+                <div className="flex size-6 items-center justify-center rounded-full bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
+                  <Code2 className="size-3.5" aria-hidden />
+                </div>
+                <h2 className="text-sm font-medium text-neutral-800 dark:text-neutral-100">
+                  Workspace
+                </h2>
               </div>
-              <h2 className="text-sm font-medium text-neutral-800 dark:text-neutral-100">
-                Workspace
-              </h2>
-            </div>
-            <div className="relative flex-1" aria-busy={isEditorBusy}>
-              {workspaceUrl && workspacePersistKey ? (
-                <PersistentWebView
-                  persistKey={workspacePersistKey}
-                  src={workspaceUrl}
-                  className="flex h-full"
-                  iframeClassName="select-none"
-                  allow={TASK_RUN_IFRAME_ALLOW}
-                  sandbox={TASK_RUN_IFRAME_SANDBOX}
-                  retainOnUnmount
-                  suspended={!selectedRun}
-                  onLoad={onEditorLoad}
-                  onError={onEditorError}
-                  fallback={editorLoadingFallback}
-                  fallbackClassName="bg-neutral-50 dark:bg-black"
-                  errorFallback={editorErrorFallback}
-                  errorFallbackClassName="bg-neutral-50/95 dark:bg-black/95"
-                  onStatusChange={setEditorStatus}
-                  loadTimeoutMs={60_000}
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center px-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
-                  {workspacePlaceholderMessage}
-                </div>
-              )}
-              {selectedRun && !workspaceUrl ? (
-                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                  <WorkspaceLoadingIndicator variant="vscode" status="loading" />
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
-            <div className="flex items-center gap-2 border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
-              <div className="flex size-6 items-center justify-center rounded-full bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
-                <TerminalSquare className="size-3.5" aria-hidden />
+              <div className="relative flex-1" aria-busy={isEditorBusy}>
+                {workspaceUrl && workspacePersistKey ? (
+                  <PersistentWebView
+                    persistKey={workspacePersistKey}
+                    src={workspaceUrl}
+                    className="flex h-full"
+                    iframeClassName="select-none"
+                    allow={TASK_RUN_IFRAME_ALLOW}
+                    sandbox={TASK_RUN_IFRAME_SANDBOX}
+                    retainOnUnmount
+                    suspended={!selectedRun}
+                    onLoad={onEditorLoad}
+                    onError={onEditorError}
+                    fallback={editorLoadingFallback}
+                    fallbackClassName="bg-neutral-50 dark:bg-black"
+                    errorFallback={editorErrorFallback}
+                    errorFallbackClassName="bg-neutral-50/95 dark:bg-black/95"
+                    onStatusChange={setEditorStatus}
+                    loadTimeoutMs={60_000}
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center px-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
+                    {workspacePlaceholderMessage}
+                  </div>
+                )}
+                {selectedRun && !workspaceUrl ? (
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                    <WorkspaceLoadingIndicator variant="vscode" status="loading" />
+                  </div>
+                ) : null}
               </div>
-              <h2 className="text-sm font-medium text-neutral-800 dark:text-neutral-100">
-                tmux Terminal
-              </h2>
             </div>
-            <div className="flex-1 bg-black">
-              <TaskRunTerminalPane workspaceUrl={rawWorkspaceUrl} />
-            </div>
-          </div>
 
-          <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
-            <div className="flex items-center gap-2 border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
-              <div className="flex size-6 items-center justify-center rounded-full bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
-                <Globe2 className="size-3.5" aria-hidden />
+            <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+              <div className="flex items-center gap-2 border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
+                <div className="flex size-6 items-center justify-center rounded-full bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
+                  <TerminalSquare className="size-3.5" aria-hidden />
+                </div>
+                <h2 className="text-sm font-medium text-neutral-800 dark:text-neutral-100">
+                  tmux Terminal
+                </h2>
               </div>
-              <h2 className="text-sm font-medium text-neutral-800 dark:text-neutral-100">
-                Browser Preview
-              </h2>
+              <div className="flex-1 bg-black">
+                <TaskRunTerminalPane workspaceUrl={rawWorkspaceUrl} />
+              </div>
             </div>
-            <div className="relative flex-1" aria-busy={isBrowserBusy}>
-              {browserUrl && browserPersistKey ? (
-                <PersistentWebView
-                  persistKey={browserPersistKey}
-                  src={browserUrl}
-                  className="flex h-full"
-                  iframeClassName="select-none"
-                  allow={TASK_RUN_IFRAME_ALLOW}
-                  sandbox={TASK_RUN_IFRAME_SANDBOX}
-                  retainOnUnmount
-                  onStatusChange={setBrowserStatus}
-                  fallback={
-                    <WorkspaceLoadingIndicator
-                      variant="browser"
-                      status="loading"
-                    />
-                  }
-                  fallbackClassName="bg-neutral-50 dark:bg-black"
-                  errorFallback={
-                    <WorkspaceLoadingIndicator variant="browser" status="error" />
-                  }
-                  errorFallbackClassName="bg-neutral-50/95 dark:bg-black/95"
-                  loadTimeoutMs={45_000}
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center px-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
-                  {browserOverlayMessage}
+
+            <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+              <div className="flex items-center gap-2 border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
+                <div className="flex size-6 items-center justify-center rounded-full bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
+                  <Globe2 className="size-3.5" aria-hidden />
                 </div>
-              )}
-              {selectedRun && isMorphProvider ? (
-                <div
-                  className={clsx(
-                    "pointer-events-none absolute inset-0 flex items-center justify-center transition-opacity",
-                    {
-                      "opacity-100": isBrowserBusy,
-                      "opacity-0": !isBrowserBusy,
-                    },
-                  )}
-                >
-                  <WorkspaceLoadingIndicator variant="browser" status="loading" />
-                </div>
-              ) : null}
+                <h2 className="text-sm font-medium text-neutral-800 dark:text-neutral-100">
+                  Browser Preview
+                </h2>
+              </div>
+              <div className="relative flex-1" aria-busy={isBrowserBusy}>
+                {browserUrl && browserPersistKey ? (
+                  <PersistentWebView
+                    persistKey={browserPersistKey}
+                    src={browserUrl}
+                    className="flex h-full"
+                    iframeClassName="select-none"
+                    allow={TASK_RUN_IFRAME_ALLOW}
+                    sandbox={TASK_RUN_IFRAME_SANDBOX}
+                    retainOnUnmount
+                    onStatusChange={setBrowserStatus}
+                    fallback={
+                      <WorkspaceLoadingIndicator
+                        variant="browser"
+                        status="loading"
+                      />
+                    }
+                    fallbackClassName="bg-neutral-50 dark:bg-black"
+                    errorFallback={
+                      <WorkspaceLoadingIndicator variant="browser" status="error" />
+                    }
+                    errorFallbackClassName="bg-neutral-50/95 dark:bg-black/95"
+                    loadTimeoutMs={45_000}
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center px-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
+                    {browserOverlayMessage}
+                  </div>
+                )}
+                {selectedRun && isMorphProvider ? (
+                  <div
+                    className={clsx(
+                      "pointer-events-none absolute inset-0 flex items-center justify-center transition-opacity",
+                      {
+                        "opacity-100": isBrowserBusy,
+                        "opacity-0": !isBrowserBusy,
+                      },
+                    )}
+                  >
+                    <WorkspaceLoadingIndicator variant="browser" status="loading" />
+                  </div>
+                ) : null}
+              </div>
             </div>
           </div>
         </div>
