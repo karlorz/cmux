@@ -1,6 +1,6 @@
 import {
-  DMG_SUFFIXES,
   GITHUB_RELEASE_URL,
+  MAC_ARCHITECTURES,
   MacArchitecture,
   MacDownloadUrls,
   RELEASE_PAGE_URL,
@@ -28,7 +28,39 @@ const emptyDownloads: MacDownloadUrls = {
 const normalizeVersion = (tag: string): string =>
   tag.startsWith("v") ? tag.slice(1) : tag;
 
-const deriveReleaseInfo = (data: GithubRelease | null): ReleaseInfo => {
+const isNonEmptyString = (value: unknown): value is string =>
+  typeof value === "string" && value.trim() !== "";
+
+const architectureKeywords: Record<MacArchitecture, readonly string[]> = {
+  arm64: ["arm64", "aarch64"],
+  x64: ["x64", "x86_64", "amd64"],
+};
+
+const resolveArchitectureFromAssetName = (
+  assetName: string,
+): MacArchitecture | null => {
+  const normalized = assetName.toLowerCase();
+
+  if (!normalized.endsWith(".dmg")) {
+    return null;
+  }
+
+  for (const keyword of architectureKeywords.arm64) {
+    if (normalized.includes(keyword)) {
+      return "arm64";
+    }
+  }
+
+  for (const keyword of architectureKeywords.x64) {
+    if (normalized.includes(keyword)) {
+      return "x64";
+    }
+  }
+
+  return "x64";
+};
+
+export const deriveReleaseInfo = (data: GithubRelease | null): ReleaseInfo => {
   if (!data) {
     return {
       latestVersion: null,
@@ -46,23 +78,31 @@ const deriveReleaseInfo = (data: GithubRelease | null): ReleaseInfo => {
 
   if (Array.isArray(data.assets)) {
     for (const asset of data.assets) {
-      const assetName = asset.name?.toLowerCase();
-
-      if (typeof assetName !== "string") {
+      if (!isNonEmptyString(asset.name)) {
         continue;
       }
 
-      for (const architecture of Object.keys(DMG_SUFFIXES) as MacArchitecture[]) {
-        const suffix = DMG_SUFFIXES[architecture];
+      const architecture = resolveArchitectureFromAssetName(asset.name);
 
-        if (assetName.endsWith(suffix)) {
-          const downloadUrl = asset.browser_download_url;
-
-          if (typeof downloadUrl === "string" && downloadUrl.trim() !== "") {
-            macDownloadUrls[architecture] = downloadUrl;
-          }
-        }
+      if (!architecture) {
+        continue;
       }
+
+      if (macDownloadUrls[architecture]) {
+        continue;
+      }
+
+      const downloadUrl = asset.browser_download_url;
+
+      if (isNonEmptyString(downloadUrl)) {
+        macDownloadUrls[architecture] = downloadUrl;
+      }
+    }
+  }
+
+  for (const architecture of MAC_ARCHITECTURES) {
+    if (!macDownloadUrls[architecture]) {
+      macDownloadUrls[architecture] = null;
     }
   }
 

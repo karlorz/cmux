@@ -4,11 +4,8 @@ export const RELEASE_PAGE_URL =
 export const GITHUB_RELEASE_URL =
   "https://api.github.com/repos/manaflow-ai/cmux/releases/latest";
 
-export const DMG_SUFFIXES = {
-  arm64: "-arm64.dmg",
-  x64: "-x64.dmg",
-} as const;
+export const MAC_ARCHITECTURES = ["arm64", "x64"] as const;
 
-export type MacArchitecture = keyof typeof DMG_SUFFIXES;
+export type MacArchitecture = (typeof MAC_ARCHITECTURES)[number];
 
 export type MacDownloadUrls = Record<MacArchitecture, string | null>;

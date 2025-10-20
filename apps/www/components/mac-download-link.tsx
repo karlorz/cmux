@@ -44,6 +44,59 @@ const normalizeArchitecture = (
   return null;
 };
 
+const detectArchitectureFromWebGL = (): MacArchitecture | null => {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  try {
+    const canvas = document.createElement("canvas");
+    const context =
+      canvas.getContext("webgl2") ??
+      canvas.getContext("webgl") ??
+      canvas.getContext("experimental-webgl");
+
+    if (!context) {
+      return null;
+    }
+
+    const debugInfo = context.getExtension(
+      "WEBGL_debug_renderer_info",
+    ) as WEBGL_debug_renderer_info | null;
+
+    if (!debugInfo) {
+      return null;
+    }
+
+    const renderer = context.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+
+    if (typeof renderer !== "string") {
+      return null;
+    }
+
+    const normalizedRenderer = renderer.toLowerCase();
+
+    if (
+      normalizedRenderer.includes("apple m") ||
+      normalizedRenderer.includes("apple gpu")
+    ) {
+      return "arm64";
+    }
+
+    if (
+      normalizedRenderer.includes("intel") ||
+      normalizedRenderer.includes("amd") ||
+      normalizedRenderer.includes("nvidia")
+    ) {
+      return "x64";
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+};
+
 const detectMacArchitecture = async (): Promise<MacArchitecture | null> => {
   if (typeof navigator === "undefined") {
     return null;
@@ -93,7 +146,19 @@ const detectMacArchitecture = async (): Promise<MacArchitecture | null> => {
     return "arm64";
   }
 
-  if (userAgent.includes("x86_64") || userAgent.includes("intel")) {
+  const webglArchitecture = detectArchitectureFromWebGL();
+
+  if (webglArchitecture) {
+    return webglArchitecture;
+  }
+
+  if (
+    userAgent.includes("x86_64") ||
+    userAgent.includes("x86-64") ||
+    userAgent.includes("intel") ||
+    userAgent.includes("amd64") ||
+    userAgent.includes("x64")
+  ) {
     return "x64";
   }
 
