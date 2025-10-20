@@ -52,6 +52,7 @@ import {
 import { VSCodeIcon } from "./icons/VSCodeIcon";
 import { SidebarListItem } from "./sidebar/SidebarListItem";
 import { annotateAgentOrdinals } from "./task-tree/annotateAgentOrdinals";
+import { TaskRunTerminals } from "./task-tree/TaskRunTerminals";
 
 type PreviewService = NonNullable<TaskRunWithChildren["networking"]>[number];
 
@@ -843,6 +844,8 @@ function TaskRunDetails({
         indentLevel={indentLevel}
       />
     ) : null}
+
+    <TaskRunTerminals vscodeInfo={run.vscode} indentLevel={indentLevel} />
 
     {shouldRenderPullRequestLink ? (
       <TaskRunDetailLink
