@@ -52,8 +52,12 @@ const detectMacArchitecture = async (): Promise<MacArchitecture | null> => {
   const platform = navigator.platform?.toLowerCase() ?? "";
   const userAgent = navigator.userAgent.toLowerCase();
   const isMac = platform.includes("mac") || userAgent.includes("macintosh");
+  const isIOS =
+    userAgent.includes("ipad") ||
+    userAgent.includes("iphone") ||
+    userAgent.includes("ipod");
 
-  if (!isMac) {
+  if (!isMac || isIOS) {
     return null;
   }
 
@@ -89,7 +93,17 @@ const detectMacArchitecture = async (): Promise<MacArchitecture | null> => {
     }
   }
 
-  if (userAgent.includes("arm") || userAgent.includes("aarch64")) {
+  const maxTouchPoints = navigator.maxTouchPoints ?? 0;
+
+  if (maxTouchPoints > 1) {
+    return "arm64";
+  }
+
+  if (
+    userAgent.includes("arm") ||
+    userAgent.includes("aarch64") ||
+    platform.includes("arm")
+  ) {
     return "arm64";
   }
 
@@ -109,6 +123,13 @@ const resolveUrl = (
 
   if (typeof candidate === "string" && candidate.trim() !== "") {
     return candidate;
+  }
+  const alternativeArchitecture: MacArchitecture =
+    architecture === "arm64" ? "x64" : "arm64";
+  const alternative = urls[alternativeArchitecture];
+
+  if (typeof alternative === "string" && alternative.trim() !== "") {
+    return alternative;
   }
 
   return fallbackUrl;

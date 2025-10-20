@@ -25,10 +25,38 @@ const emptyDownloads: MacDownloadUrls = {
   x64: null,
 };
 
+export const macArchitectureFromAssetName = (
+  assetName: string,
+): MacArchitecture | null => {
+  if (!assetName.endsWith(".dmg")) {
+    return null;
+  }
+
+  for (const architecture of Object.keys(DMG_SUFFIXES) as MacArchitecture[]) {
+    if (assetName.endsWith(DMG_SUFFIXES[architecture])) {
+      return architecture;
+    }
+  }
+
+  if (assetName.includes("arm64") || assetName.includes("aarch64")) {
+    return "arm64";
+  }
+
+  if (
+    assetName.includes("x64") ||
+    assetName.includes("x86_64") ||
+    assetName.includes("intel")
+  ) {
+    return "x64";
+  }
+
+  return null;
+};
+
 const normalizeVersion = (tag: string): string =>
   tag.startsWith("v") ? tag.slice(1) : tag;
 
-const deriveReleaseInfo = (data: GithubRelease | null): ReleaseInfo => {
+export const deriveReleaseInfo = (data: GithubRelease | null): ReleaseInfo => {
   if (!data) {
     return {
       latestVersion: null,
@@ -43,6 +71,7 @@ const deriveReleaseInfo = (data: GithubRelease | null): ReleaseInfo => {
       : null;
 
   const macDownloadUrls: MacDownloadUrls = { ...emptyDownloads };
+  const unresolvedDmgUrls: string[] = [];
 
   if (Array.isArray(data.assets)) {
     for (const asset of data.assets) {
@@ -52,18 +81,31 @@ const deriveReleaseInfo = (data: GithubRelease | null): ReleaseInfo => {
         continue;
       }
 
-      for (const architecture of Object.keys(DMG_SUFFIXES) as MacArchitecture[]) {
-        const suffix = DMG_SUFFIXES[architecture];
+      const downloadUrl = asset.browser_download_url;
 
-        if (assetName.endsWith(suffix)) {
-          const downloadUrl = asset.browser_download_url;
+      if (typeof downloadUrl !== "string" || downloadUrl.trim() === "") {
+        continue;
+      }
 
-          if (typeof downloadUrl === "string" && downloadUrl.trim() !== "") {
-            macDownloadUrls[architecture] = downloadUrl;
-          }
-        }
+      const architecture = macArchitectureFromAssetName(assetName);
+
+      if (architecture) {
+        macDownloadUrls[architecture] = downloadUrl;
+        continue;
+      }
+
+      if (assetName.endsWith(".dmg")) {
+        unresolvedDmgUrls.push(downloadUrl);
       }
     }
+  }
+
+  if (!macDownloadUrls.x64 && unresolvedDmgUrls.length > 0) {
+    macDownloadUrls.x64 = unresolvedDmgUrls.shift() ?? null;
+  }
+
+  if (!macDownloadUrls.arm64 && unresolvedDmgUrls.length > 0) {
+    macDownloadUrls.arm64 = unresolvedDmgUrls.shift() ?? null;
   }
 
   return {
