@@ -14,6 +14,8 @@ import { useSocket } from "@/contexts/socket/use-socket";
 import { normalizeGitRef } from "@/lib/refWithOrigin";
 import { cn } from "@/lib/utils";
 import { gitDiffQueryOptions } from "@/queries/git-diff";
+import { WorkflowRunsSection } from "@/components/prs/WorkflowRuns";
+import { useCombinedWorkflowData } from "@/components/prs/useCombinedWorkflowData";
 import { api } from "@cmux/convex/api";
 import type { Doc, Id } from "@cmux/convex/dataModel";
 import type { TaskAcknowledged, TaskStarted, TaskError } from "@cmux/shared";
@@ -21,7 +23,7 @@ import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { convexQuery } from "@convex-dev/react-query";
 import { Switch } from "@heroui/react";
-import { useQuery as useRQ } from "@tanstack/react-query";
+import { useQuery as useRQ, useQueries } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { Command } from "lucide-react";
@@ -29,6 +31,7 @@ import {
   Suspense,
   memo,
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -538,6 +541,7 @@ export const Route = createFileRoute(
 function RunDiffPage() {
   const { taskId, teamSlugOrId, runId } = Route.useParams();
   const [diffControls, setDiffControls] = useState<DiffControls | null>(null);
+  const [checksExpandedOverride, setChecksExpandedOverride] = useState<boolean | null>(null);
   const task = useQuery(api.tasks.getById, {
     teamSlugOrId,
     id: taskId,
@@ -580,6 +584,86 @@ function RunDiffPage() {
   }, [task?.projectFullName, environmentRepos]);
 
   const [primaryRepo, ...additionalRepos] = repoFullNames;
+
+  const normalizedRunBranch = useMemo(() => normalizeGitRef(selectedRun?.newBranch), [selectedRun?.newBranch]);
+  const runPullRequests = useMemo(() => selectedRun?.pullRequests ?? [], [selectedRun?.pullRequests]);
+  const prDetailQueries = useQueries({
+    queries: runPullRequests.map((pr) => {
+      const repoFullName = typeof pr.repoFullName === "string" ? pr.repoFullName.trim() : "";
+      const number = typeof pr.number === "number" ? pr.number : undefined;
+      if (!repoFullName || !number) {
+        return {
+          queryKey: ["task-run-pr", teamSlugOrId, pr.repoFullName, pr.number],
+          queryFn: async () => null,
+          enabled: false,
+        };
+      }
+      return {
+        ...convexQuery(api.github_prs.getPullRequest, {
+          teamSlugOrId,
+          repoFullName,
+          number,
+        }),
+        enabled: true,
+      };
+    }),
+  });
+
+  const matchingPullRequest = useMemo(() => {
+    if (!normalizedRunBranch) {
+      return null;
+    }
+    for (let index = 0; index < runPullRequests.length; index += 1) {
+      const detail = prDetailQueries[index]?.data as Doc<"pullRequests"> | null | undefined;
+      if (!detail) {
+        continue;
+      }
+      const headRef = normalizeGitRef(typeof detail.headRef === "string" ? detail.headRef : undefined);
+      if (headRef && headRef === normalizedRunBranch) {
+        return {
+          info: runPullRequests[index],
+          detail,
+        };
+      }
+    }
+    return null;
+  }, [normalizedRunBranch, prDetailQueries, runPullRequests]);
+
+  useEffect(() => {
+    if (!matchingPullRequest) {
+      setChecksExpandedOverride(null);
+    }
+  }, [matchingPullRequest]);
+
+  const workflowData = useCombinedWorkflowData({
+    teamSlugOrId,
+    repoFullName: matchingPullRequest?.detail?.repoFullName ?? null,
+    prNumber: matchingPullRequest?.detail?.number ?? null,
+    headSha: matchingPullRequest?.detail?.headSha ?? null,
+    enabled: Boolean(matchingPullRequest),
+  });
+
+  const hasAnyFailure = useMemo(
+    () =>
+      workflowData.allRuns.some(
+        (run) =>
+          run.conclusion === "failure" ||
+          run.conclusion === "timed_out" ||
+          run.conclusion === "action_required",
+      ),
+    [workflowData.allRuns],
+  );
+
+  const checksExpanded = checksExpandedOverride ?? hasAnyFailure;
+
+  const handleToggleChecks = useCallback(() => {
+    setChecksExpandedOverride((previous) => {
+      if (previous === null) {
+        return !hasAnyFailure;
+      }
+      return !previous;
+    });
+  }, [hasAnyFailure]);
 
   const branchMetadataQuery = useRQ({
     ...convexQuery(api.github.getBranchesByRepo, {
@@ -669,6 +753,14 @@ function RunDiffPage() {
             </div>
           )}
           <div className="bg-white dark:bg-neutral-900 grow flex flex-col">
+            {matchingPullRequest ? (
+              <WorkflowRunsSection
+                allRuns={workflowData.allRuns}
+                isLoading={workflowData.isLoading}
+                isExpanded={checksExpanded}
+                onToggle={handleToggleChecks}
+              />
+            ) : null}
             <Suspense
               fallback={
                 <div className="flex items-center justify-center h-full">
