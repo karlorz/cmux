@@ -1,5 +1,6 @@
 import { FloatingPane } from "@/components/floating-pane";
 import { PersistentWebView } from "@/components/persistent-webview";
+import { TaskRunChecks } from "@/components/TaskRunChecks";
 import { getTaskRunPullRequestPersistKey } from "@/lib/persistent-webview-keys";
 import { api } from "@cmux/convex/api";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
@@ -71,6 +72,7 @@ function RunPullRequestPage() {
   const [activeRepo, setActiveRepo] = useState<string | null>(() =>
     pullRequests[0]?.repoFullName ?? null
   );
+  const [activeTab, setActiveTab] = useState<"checks" | "pr">("checks");
 
   useEffect(() => {
     if (pullRequests.length === 0) {
@@ -144,6 +146,32 @@ function RunPullRequestPage() {
             )}
           </div>
 
+          {/* Tabs */}
+          <div className="flex border-b border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900/30">
+            <button
+              onClick={() => setActiveTab("checks")}
+              className={clsx(
+                "flex-1 px-4 py-2 text-xs font-medium transition-colors",
+                activeTab === "checks"
+                  ? "border-b-2 border-neutral-900 bg-white text-neutral-900 dark:border-neutral-100 dark:bg-neutral-950 dark:text-neutral-100"
+                  : "text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100",
+              )}
+            >
+              Checks
+            </button>
+            <button
+              onClick={() => setActiveTab("pr")}
+              className={clsx(
+                "flex-1 px-4 py-2 text-xs font-medium transition-colors",
+                activeTab === "pr"
+                  ? "border-b-2 border-neutral-900 bg-white text-neutral-900 dark:border-neutral-100 dark:bg-neutral-950 dark:text-neutral-100"
+                  : "text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100",
+              )}
+            >
+              Pull Request
+            </button>
+          </div>
+
           {/* Task description */}
           {task?.text && (
             <div className="px-4 py-2 border-b border-neutral-200 dark:border-neutral-800">
@@ -157,8 +185,12 @@ function RunPullRequestPage() {
           )}
 
           {/* Main content */}
-          <div className="flex-1 bg-white dark:bg-neutral-950">
-            {pullRequests.length > 0 ? (
+          <div className="flex-1 bg-white dark:bg-neutral-950 overflow-y-auto">
+            {activeTab === "checks" ? (
+              <div className="p-4">
+                <TaskRunChecks teamSlugOrId={teamSlugOrId} runId={runId} />
+              </div>
+            ) : pullRequests.length > 0 ? (
               <div className="flex h-full flex-col">
                 <div className="flex flex-wrap border-b border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900/30">
                   {pullRequests.map((pr) => {

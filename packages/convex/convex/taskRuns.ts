@@ -8,6 +8,7 @@ import {
   internalQuery,
   type QueryCtx,
 } from "./_generated/server";
+import { api } from "./_generated/api";
 import { authMutation, authQuery, taskIdWithFake } from "./users/utils";
 import {
   aggregatePullRequestState,
@@ -1322,6 +1323,92 @@ export const getRunningContainersByCleanupPriority = authQuery({
         ...activeContainersWithRewrittenUrls,
       ],
       protectedCount: containersToKeepIds.size,
+    };
+  },
+});
+
+// Get checks and statuses for a taskrun's associated PRs
+export const getChecksForTaskRun = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    runId: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    const run = await ctx.db.get(args.runId);
+    if (!run || run.teamId !== teamId || run.userId !== userId) {
+      return null;
+    }
+
+    if (!run.pullRequests || run.pullRequests.length === 0) {
+      return { checkRuns: [], workflowRuns: [], commitStatuses: [] };
+    }
+
+    // Filter out PRs without numbers
+    const validPrs = run.pullRequests.filter(pr => pr.number !== undefined);
+
+    // Get PR details to get headSha for better filtering and branch matching
+    const prDetails = await Promise.all(
+      validPrs.map(async (pr) => {
+        const prDoc = await ctx.db
+          .query("pullRequests")
+          .withIndex("by_team_repo_number", (q) =>
+            q.eq("teamId", teamId).eq("repoFullName", pr.repoFullName).eq("number", pr.number!)
+          )
+          .first();
+        return { pr, prDoc };
+      })
+    );
+
+    // Filter PRs that match the taskrun's branch
+    const matchingPrDetails = prDetails.filter(({ prDoc }) => {
+      if (!prDoc || !run.newBranch) return false;
+      return prDoc.headRef === run.newBranch;
+    });
+
+    // Aggregate checks from all PRs
+    const allCheckRuns: any[] = [];
+    const allWorkflowRuns: any[] = [];
+    const allCommitStatuses: any[] = [];
+
+    for (const { pr, prDoc } of matchingPrDetails) {
+      if (!pr.number) continue;
+      const headSha = prDoc?.headSha;
+
+      // Get check runs
+      const checkRuns = await ctx.runQuery(api.github_check_runs.getCheckRunsForPr, {
+        teamSlugOrId: args.teamSlugOrId,
+        repoFullName: pr.repoFullName,
+        prNumber: pr.number,
+        headSha,
+      });
+      allCheckRuns.push(...checkRuns);
+
+      // Get workflow runs
+      const workflowRuns = await ctx.runQuery(api.github_workflows.getWorkflowRunsForPr, {
+        teamSlugOrId: args.teamSlugOrId,
+        repoFullName: pr.repoFullName,
+        prNumber: pr.number,
+        headSha,
+      });
+      allWorkflowRuns.push(...workflowRuns);
+
+      // Get commit statuses
+      const commitStatuses = await ctx.runQuery(api.github_commit_statuses.getCommitStatusesForPr, {
+        teamSlugOrId: args.teamSlugOrId,
+        repoFullName: pr.repoFullName,
+        prNumber: pr.number,
+        headSha,
+      });
+      allCommitStatuses.push(...commitStatuses);
+    }
+
+    return {
+      checkRuns: allCheckRuns,
+      workflowRuns: allWorkflowRuns,
+      commitStatuses: allCommitStatuses,
     };
   },
 });
