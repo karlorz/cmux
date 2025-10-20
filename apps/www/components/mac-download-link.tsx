@@ -100,15 +100,23 @@ const detectMacArchitecture = async (): Promise<MacArchitecture | null> => {
   return null;
 };
 
-const resolveUrl = (
+export const resolveMacDownloadUrl = (
   urls: MacDownloadUrls,
   architecture: MacArchitecture,
   fallbackUrl: string,
 ): string => {
   const candidate = urls[architecture];
 
-  if (typeof candidate === "string" && candidate.trim() !== "") {
+  if (candidate) {
     return candidate;
+  }
+
+  const fallbackArchitecture: MacArchitecture =
+    architecture === "arm64" ? "x64" : "arm64";
+  const architectureFallback = urls[fallbackArchitecture];
+
+  if (architectureFallback) {
+    return architectureFallback;
   }
 
   return fallbackUrl;
@@ -149,7 +157,7 @@ export function MacDownloadLink({
 
   const explicitDefaultUrl = useMemo(() => {
     if (architecture) {
-      return resolveUrl(sanitizedUrls, architecture, fallbackUrl);
+      return resolveMacDownloadUrl(sanitizedUrls, architecture, fallbackUrl);
     }
 
     return autoDefaultUrl;
@@ -175,7 +183,9 @@ export function MacDownloadLink({
         return;
       }
 
-      setHref(resolveUrl(sanitizedUrls, detectedArchitecture, fallbackUrl));
+      setHref(
+        resolveMacDownloadUrl(sanitizedUrls, detectedArchitecture, fallbackUrl),
+      );
     };
 
     void run();

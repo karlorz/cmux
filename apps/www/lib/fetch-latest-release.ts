@@ -16,6 +16,7 @@ type GithubRelease = {
   tag_name?: string;
   assets?: Array<{
     name?: string;
+    label?: string | null;
     browser_download_url?: string;
   }>;
 };
@@ -28,7 +29,7 @@ const emptyDownloads: MacDownloadUrls = {
 const normalizeVersion = (tag: string): string =>
   tag.startsWith("v") ? tag.slice(1) : tag;
 
-const deriveReleaseInfo = (data: GithubRelease | null): ReleaseInfo => {
+export const deriveReleaseInfo = (data: GithubRelease | null): ReleaseInfo => {
   if (!data) {
     return {
       latestVersion: null,
@@ -46,21 +47,43 @@ const deriveReleaseInfo = (data: GithubRelease | null): ReleaseInfo => {
 
   if (Array.isArray(data.assets)) {
     for (const asset of data.assets) {
-      const assetName = asset.name?.toLowerCase();
-
-      if (typeof assetName !== "string") {
-        continue;
-      }
+      const normalizedName =
+        typeof asset.name === "string" ? asset.name.toLowerCase() : null;
+      const normalizedLabel =
+        typeof asset.label === "string" ? asset.label.toLowerCase() : null;
+      const candidates = [normalizedName, normalizedLabel];
 
       for (const architecture of Object.keys(DMG_SUFFIXES) as MacArchitecture[]) {
+        if (macDownloadUrls[architecture]) {
+          continue;
+        }
+
         const suffix = DMG_SUFFIXES[architecture];
+        const matchesSuffix = candidates.some(
+          (value) => typeof value === "string" && value.endsWith(suffix),
+        );
 
-        if (assetName.endsWith(suffix)) {
-          const downloadUrl = asset.browser_download_url;
+        if (!matchesSuffix) {
+          continue;
+        }
 
-          if (typeof downloadUrl === "string" && downloadUrl.trim() !== "") {
-            macDownloadUrls[architecture] = downloadUrl;
-          }
+        const downloadUrl = asset.browser_download_url;
+
+        if (typeof downloadUrl === "string" && downloadUrl.trim() !== "") {
+          macDownloadUrls[architecture] = downloadUrl;
+        }
+      }
+
+      if (
+        !macDownloadUrls.x64 &&
+        typeof normalizedName === "string" &&
+        normalizedName.endsWith(".dmg") &&
+        !normalizedName.endsWith(DMG_SUFFIXES.arm64)
+      ) {
+        const downloadUrl = asset.browser_download_url;
+
+        if (typeof downloadUrl === "string" && downloadUrl.trim() !== "") {
+          macDownloadUrls.x64 = downloadUrl;
         }
       }
     }
