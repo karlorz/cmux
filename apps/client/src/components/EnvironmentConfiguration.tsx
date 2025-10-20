@@ -171,19 +171,25 @@ export function EnvironmentConfiguration({
     ]
   );
   const hasSyncedInitialDraft = useRef(false);
-  if (shouldPersistDraft && pendingEnvironmentId && !hasSyncedInitialDraft.current) {
+  useEffect(() => {
+    if (!shouldPersistDraft || !pendingEnvironmentId || hasSyncedInitialDraft.current) {
+      return;
+    }
     syncPendingEnvironment();
     hasSyncedInitialDraft.current = true;
-  }
+  }, [pendingEnvironmentId, shouldPersistDraft, syncPendingEnvironment]);
+
   const previousInstanceId = useRef(instanceId);
-  if (
-    shouldPersistDraft &&
-    pendingEnvironmentId &&
-    previousInstanceId.current !== instanceId
-  ) {
-    syncPendingEnvironment({ instanceId });
+  useEffect(() => {
+    if (previousInstanceId.current === instanceId) {
+      return;
+    }
     previousInstanceId.current = instanceId;
-  }
+    if (!shouldPersistDraft || !pendingEnvironmentId) {
+      return;
+    }
+    syncPendingEnvironment({ instanceId });
+  }, [instanceId, pendingEnvironmentId, shouldPersistDraft, syncPendingEnvironment]);
   useEffect(() => {
     if (!browserUrl && activePreview === "browser") {
       setActivePreview("vscode");
