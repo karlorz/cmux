@@ -2,6 +2,7 @@ import { FloatingPane } from "@/components/floating-pane";
 import { type GitDiffViewerProps } from "@/components/git-diff-viewer";
 import { RunDiffSection } from "@/components/RunDiffSection";
 import { TaskDetailHeader } from "@/components/task-detail-header";
+import { WorkflowRuns, WorkflowRunsSection, useCombinedWorkflowData } from "@/components/prs/workflow-status";
 import { useTheme } from "@/components/theme/use-theme";
 import { Button } from "@/components/ui/button";
 import {
@@ -581,6 +582,54 @@ function RunDiffPage() {
 
   const [primaryRepo, ...additionalRepos] = repoFullNames;
 
+  const findPrArgs = useMemo(() => {
+    if (!primaryRepo || !selectedRun?.newBranch) {
+      return "skip" as const;
+    }
+    return {
+      teamSlugOrId,
+      repoFullName: primaryRepo,
+      branch: selectedRun.newBranch,
+    } as const;
+  }, [primaryRepo, selectedRun?.newBranch, teamSlugOrId]);
+
+  const matchingPullRequest = useQuery(
+    api.github_prs.findPullRequestByBranch,
+    findPrArgs
+  );
+
+  const workflowData = useCombinedWorkflowData({
+    teamSlugOrId,
+    repoFullName: matchingPullRequest?.repoFullName ?? "",
+    prNumber: matchingPullRequest?.number ?? 0,
+    headSha: matchingPullRequest?.headSha ?? undefined,
+  });
+
+  const hasAnyFailure = useMemo(
+    () =>
+      workflowData.allRuns.some(
+        (run) =>
+          run.conclusion === "failure" ||
+          run.conclusion === "timed_out" ||
+          run.conclusion === "action_required"
+      ),
+    [workflowData.allRuns]
+  );
+
+  const [checksExpandedOverride, setChecksExpandedOverride] =
+    useState<boolean | null>(null);
+  const checksExpanded =
+    checksExpandedOverride !== null ? checksExpandedOverride : hasAnyFailure;
+
+  const handleToggleChecks = useCallback(() => {
+    setChecksExpandedOverride(!checksExpanded);
+  }, [checksExpanded]);
+
+  const showChecksSummary =
+    Boolean(matchingPullRequest) &&
+    (workflowData.isLoading || workflowData.allRuns.length > 0);
+  const showChecksSection = Boolean(matchingPullRequest);
+
   const branchMetadataQuery = useRQ({
     ...convexQuery(api.github.getBranchesByRepo, {
       teamSlugOrId,
@@ -658,6 +707,19 @@ function RunDiffPage() {
             onCollapseAll={diffControls?.collapseAll}
             teamSlugOrId={teamSlugOrId}
           />
+          {showChecksSummary ? (
+            <div className="px-3.5 mt-1 flex items-center gap-2">
+              <span className="text-[11px] uppercase tracking-wide text-neutral-500 dark:text-neutral-400 select-none">
+                Checks
+              </span>
+              <Suspense fallback={null}>
+                <WorkflowRuns
+                  allRuns={workflowData.allRuns}
+                  isLoading={workflowData.isLoading}
+                />
+              </Suspense>
+            </div>
+          ) : null}
           {task?.text && (
             <div className="mb-2 px-3.5">
               <div className="text-xs text-neutral-600 dark:text-neutral-300">
@@ -669,6 +731,16 @@ function RunDiffPage() {
             </div>
           )}
           <div className="bg-white dark:bg-neutral-900 grow flex flex-col">
+            {showChecksSection ? (
+              <Suspense fallback={null}>
+                <WorkflowRunsSection
+                  allRuns={workflowData.allRuns}
+                  isLoading={workflowData.isLoading}
+                  isExpanded={checksExpanded}
+                  onToggle={handleToggleChecks}
+                />
+              </Suspense>
+            ) : null}
             <Suspense
               fallback={
                 <div className="flex items-center justify-center h-full">

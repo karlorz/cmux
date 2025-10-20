@@ -54,6 +54,19 @@ type PullRequestWebhookEnvelope = {
   number?: number;
 };
 
+function normalizeBranchName(branch?: string | null): string | null {
+  if (!branch) {
+    return null;
+  }
+  const trimmed = branch.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed
+    .replace(/^refs\/heads\//i, "")
+    .replace(/^origin\//i, "");
+}
+
 async function upsertBranchMetadata(
   ctx: MutationCtx,
   {
@@ -299,6 +312,38 @@ export const getPullRequest = authQuery({
       .first();
 
     return pr ?? null;
+  },
+});
+
+export const findPullRequestByBranch = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    repoFullName: v.string(),
+    branch: v.string(),
+  },
+  handler: async (ctx, { teamSlugOrId, repoFullName, branch }) => {
+    const teamId = await getTeamId(ctx, teamSlugOrId);
+    const target = normalizeBranchName(branch);
+    if (!target) {
+      return null;
+    }
+
+    const rows = await ctx.db
+      .query("pullRequests")
+      .withIndex("by_repo", (q) => q.eq("repoFullName", repoFullName))
+      .order("desc")
+      .filter((q) => q.eq(q.field("teamId"), teamId))
+      .collect();
+
+    const match = rows.find((row) => {
+      const candidate = normalizeBranchName(row.headRef);
+      if (candidate && candidate === target) {
+        return true;
+      }
+      return false;
+    });
+
+    return match ?? null;
   },
 });
 
