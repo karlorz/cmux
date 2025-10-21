@@ -8,6 +8,7 @@ import type {
   ElectronWebContentsSnapshot,
   ElectronWebContentsState,
 } from "./electron-webcontents";
+import type { ElectronTaskCrownNotificationPayload } from "./electron-task-notifications";
 
 interface CmuxSocketAPI {
   connect: (
@@ -30,6 +31,12 @@ interface CmuxLogsAPI {
   onMainLog: (callback: (entry: ElectronMainLogMessage) => void) => () => void;
   readAll: () => Promise<ElectronLogsPayload>;
   copyAll: () => Promise<{ ok: boolean }>;
+}
+
+interface CmuxNotificationsAPI {
+  showTaskCrowned: (
+    payload: ElectronTaskCrownNotificationPayload
+  ) => Promise<{ ok: boolean }>;
 }
 
 interface CmuxRectangle {
@@ -106,6 +113,7 @@ interface CmuxAPI {
   };
   socket: CmuxSocketAPI;
   logs: CmuxLogsAPI;
+  notifications?: CmuxNotificationsAPI;
   webContentsView: CmuxWebContentsViewAPI;
   autoUpdate: {
     check: () =>

@@ -10,6 +10,7 @@ import type {
   ElectronLogsPayload,
   ElectronMainLogMessage,
 } from "../../src/lib/electron-logs/types";
+import type { ElectronTaskCrownNotificationPayload } from "../../src/types/electron-task-notifications";
 
 const api = {};
 
@@ -158,6 +159,12 @@ const cmuxAPI = {
       ipcRenderer.invoke("cmux:auto-update:install") as Promise<{
         ok: boolean;
         reason?: string;
+      }>,
+  },
+  notifications: {
+    showTaskCrowned: (payload: ElectronTaskCrownNotificationPayload) =>
+      ipcRenderer.invoke("cmux:notifications:task-crowned", payload) as Promise<{
+        ok: boolean;
       }>,
   },
   webContentsView: {

@@ -11,6 +11,7 @@ import {
   Menu,
   MenuItem,
   nativeImage,
+  Notification,
   net,
   session,
   shell,
@@ -39,6 +40,7 @@ import {
   appendLogWithRotation,
   type LogRotationOptions,
 } from "./log-management/log-rotation";
+import type { ElectronTaskCrownNotificationPayload } from "../../src/types/electron-task-notifications";
 const { autoUpdater } = electronUpdater;
 
 import util from "node:util";
@@ -82,6 +84,8 @@ let pendingProtocolUrl: string | null = null;
 let mainWindow: BrowserWindow | null = null;
 let previewReloadMenuItem: MenuItem | null = null;
 let previewReloadMenuVisible = false;
+const pendingCrownedDiffNavigations: ElectronTaskCrownNotificationPayload[] = [];
+const activeCrownNotifications = new Set<Notification>();
 
 function getTimestamp(): string {
   return new Date().toISOString();
@@ -557,6 +561,129 @@ async function handleOrQueueProtocolUrl(url: string) {
   }
 }
 
+function sendCrownedDiffNavigation(payload: ElectronTaskCrownNotificationPayload) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    pendingCrownedDiffNavigations.push(payload);
+    return;
+  }
+
+  try {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    if (!mainWindow.isVisible()) {
+      mainWindow.show();
+    }
+    mainWindow.focus();
+  } catch (error) {
+    mainWarn("Failed to focus main window for crown navigation", error);
+  }
+
+  try {
+    if (process.platform === "darwin") {
+      try {
+        app.focus({ steal: true });
+      } catch {
+        // ignore focus failures
+      }
+    }
+  } catch {
+    // app.focus may throw in some environments; ignore
+  }
+
+  try {
+    mainWindow.webContents.send("cmux:event:task:open-diff", payload);
+  } catch (error) {
+    mainWarn("Failed to send crown diff navigation event", error);
+    pendingCrownedDiffNavigations.push(payload);
+  }
+}
+
+function showTaskCrownedNotification(
+  payload: ElectronTaskCrownNotificationPayload
+): { ok: boolean; reason?: string } {
+  if (process.platform !== "darwin") {
+    return { ok: false, reason: "unsupported-platform" };
+  }
+
+  if (!Notification.isSupported()) {
+    mainWarn("Notifications are not supported on this platform");
+    return { ok: false, reason: "not-supported" };
+  }
+
+  const title = payload.agentName
+    ? `${payload.agentName} won the crown`
+    : "Task crowned";
+
+  const subtitle = payload.crownReason
+    ? payload.crownReason.slice(0, 80)
+    : "Diff ready to review";
+
+  const notification = new Notification({
+    title,
+    subtitle,
+    body: payload.taskTitle,
+    silent: false,
+  });
+
+  activeCrownNotifications.add(notification);
+
+  const handleClick = () => {
+    try {
+      notification.close();
+    } catch {
+      // ignore close failures
+    }
+    sendCrownedDiffNavigation(payload);
+  };
+
+  notification.once("click", handleClick);
+  notification.once("action", handleClick);
+
+  notification.once("close", () => {
+    activeCrownNotifications.delete(notification);
+  });
+
+  try {
+    notification.show();
+    if (process.platform === "darwin") {
+      try {
+        app.dock?.bounce?.("informational");
+      } catch {
+        // ignore bounce failures
+      }
+    }
+    mainLog("Displayed crown notification", {
+      taskId: payload.taskId,
+      taskRunId: payload.taskRunId,
+    });
+    return { ok: true };
+  } catch (error) {
+    activeCrownNotifications.delete(notification);
+    mainWarn("Failed to display crown notification", error);
+    return { ok: false, reason: "notification-error" };
+  }
+}
+
+function registerNotificationIpcHandlers(): void {
+  ipcMain.handle(
+    "cmux:notifications:task-crowned",
+    (_event, payload: ElectronTaskCrownNotificationPayload) => {
+      try {
+        if (!payload || typeof payload !== "object") {
+          return { ok: false, reason: "invalid-payload" } as const;
+        }
+        return showTaskCrownedNotification(payload);
+      } catch (error) {
+        mainWarn("Failed to handle task crown notification IPC", error);
+        const err =
+          error instanceof Error ? error : new Error(String(error ?? ""));
+        throw err;
+      }
+    }
+  );
+}
+
 function createWindow(): void {
   const windowOptions: BrowserWindowConstructorOptions = {
     width: 1200,
@@ -617,6 +744,15 @@ function createWindow(): void {
       pendingProtocolUrl = null;
     }
     emitAutoUpdateToastIfPossible();
+    if (pendingCrownedDiffNavigations.length > 0) {
+      const pending = pendingCrownedDiffNavigations.splice(
+        0,
+        pendingCrownedDiffNavigations.length
+      );
+      for (const payload of pending) {
+        sendCrownedDiffNavigation(payload);
+      }
+    }
   });
 
   mainWindow.webContents.on(
@@ -689,6 +825,7 @@ app.whenReady().then(async () => {
   ensureLogFiles();
   setupConsoleFileMirrors();
   registerLogIpcHandlers();
+  registerNotificationIpcHandlers();
   registerAutoUpdateIpcHandlers();
   initCmdK({
     getMainWindow: () => mainWindow,
