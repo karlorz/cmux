@@ -5,6 +5,11 @@ import { TaskDetailHeader } from "@/components/task-detail-header";
 import type { PersistentIframeStatus } from "@/components/persistent-iframe";
 import { PersistentWebView } from "@/components/persistent-webview";
 import { WorkspaceLoadingIndicator } from "@/components/workspace-loading-indicator";
+import { ResizableGrid } from "@/components/ResizableGrid";
+import { TaskRunGitDiffPanel } from "@/components/TaskRunGitDiffPanel";
+import { RenderPanel } from "@/components/TaskPanelFactory";
+import { loadPanelConfig, savePanelConfig } from "@/lib/panel-config";
+import type { PanelConfig } from "@/lib/panel-config";
 import {
   getTaskRunBrowserPersistKey,
   getTaskRunPersistKey,
@@ -24,12 +29,14 @@ import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { convexQuery } from "@convex-dev/react-query";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import clsx from "clsx";
-import { Code2, Globe2, TerminalSquare } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import z from "zod";
 
 type TaskRunListItem = (typeof api.taskRuns.getByTask._returnType)[number];
+type IframeStatusEntry = {
+  status: PersistentIframeStatus;
+  url: string | null;
+};
 
 const paramsSchema = z.object({
   taskId: typedZid("tasks"),
@@ -143,6 +150,24 @@ function TaskDetailPage() {
     }),
   );
 
+  const [panelConfig, setPanelConfig] = useState<PanelConfig>(() => loadPanelConfig());
+  const [iframeStatusByKey, setIframeStatusByKey] = useState<Record<string, IframeStatusEntry>>({});
+
+  const handlePanelSwap = useCallback((fromPosition: "topLeft" | "topRight" | "bottomLeft" | "bottomRight", toPosition: "topLeft" | "topRight" | "bottomLeft" | "bottomRight") => {
+    setPanelConfig(prev => {
+      const newConfig = { ...prev };
+      const temp = newConfig[fromPosition];
+      newConfig[fromPosition] = newConfig[toPosition];
+      newConfig[toPosition] = temp;
+      savePanelConfig(newConfig);
+      return newConfig;
+    });
+    // Trigger resize event to help iframes reposition correctly
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 50);
+  }, []);
+
   const runsWithDepth = useMemo(
     () => flattenRunsWithDepth(taskRuns ?? []),
     [taskRuns],
@@ -181,11 +206,37 @@ function TaskDetailPage() {
     }
   }, [selectedRunId, workspaceUrl]);
 
-  const [editorStatus, setEditorStatus] =
-    useState<PersistentIframeStatus>("loading");
-  useEffect(() => {
-    setEditorStatus("loading");
-  }, [workspaceUrl, workspacePersistKey]);
+  const updateIframeStatus = useCallback(
+    (persistKey: string | null, url: string | null, status: PersistentIframeStatus) => {
+      if (!persistKey) {
+        return;
+      }
+      setIframeStatusByKey((prev) => {
+        const current = prev[persistKey];
+        if (current && current.status === status && current.url === url) {
+          return prev;
+        }
+        if (current && current.status === "loaded" && status === "loading" && current.url === url) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [persistKey]: {
+            status,
+            url,
+          },
+        };
+      });
+    },
+    [],
+  );
+
+  const handleWorkspaceStatusChange = useCallback(
+    (status: PersistentIframeStatus) => {
+      updateIframeStatus(workspacePersistKey, workspaceUrl, status);
+    },
+    [updateIframeStatus, workspacePersistKey, workspaceUrl],
+  );
 
   const onEditorLoad = useCallback(() => {
     if (selectedRunId) {
@@ -221,11 +272,12 @@ function TaskDetailPage() {
   const hasBrowserView = Boolean(browserUrl);
   const isMorphProvider = selectedRun?.vscode?.provider === "morph";
 
-  const [browserStatus, setBrowserStatus] =
-    useState<PersistentIframeStatus>("loading");
-  useEffect(() => {
-    setBrowserStatus("loading");
-  }, [browserUrl, browserPersistKey]);
+  const handleBrowserStatusChange = useCallback(
+    (status: PersistentIframeStatus) => {
+      updateIframeStatus(browserPersistKey, browserUrl, status);
+    },
+    [updateIframeStatus, browserPersistKey, browserUrl],
+  );
 
   const browserOverlayMessage = useMemo(() => {
     if (!selectedRun) {
@@ -241,7 +293,12 @@ function TaskDetailPage() {
     }
     return "Launching browser…";
   }, [selectedRun, runsWithDepth.length, isMorphProvider, hasBrowserView]);
-
+  const editorStatus = workspacePersistKey
+    ? iframeStatusByKey[workspacePersistKey]?.status ?? "loading"
+    : "loading";
+  const browserStatus = browserPersistKey
+    ? iframeStatusByKey[browserPersistKey]?.status ?? "loading"
+    : "loading";
   const isEditorBusy = Boolean(selectedRun) && (!workspaceUrl || editorStatus !== "loaded");
   const isBrowserBusy = Boolean(selectedRun) && (!hasBrowserView || browserStatus !== "loaded");
 
@@ -255,6 +312,63 @@ function TaskDetailPage() {
     return "Workspace is starting…";
   }, [runsWithDepth.length, selectedRun]);
 
+  const panelProps = useMemo(
+    () => ({
+      task: task ?? null,
+      taskRuns: taskRuns ?? null,
+      crownEvaluation,
+      workspaceUrl,
+      workspacePersistKey,
+      selectedRun: selectedRun ?? null,
+      editorStatus,
+      setEditorStatus: handleWorkspaceStatusChange,
+      onEditorLoad,
+      onEditorError,
+      editorLoadingFallback,
+      editorErrorFallback,
+      workspacePlaceholderMessage,
+      isEditorBusy,
+      rawWorkspaceUrl,
+      browserUrl,
+      browserPersistKey,
+      browserStatus,
+      setBrowserStatus: handleBrowserStatusChange,
+      browserOverlayMessage,
+      isMorphProvider,
+      isBrowserBusy,
+      TaskRunChatPane,
+      PersistentWebView,
+      WorkspaceLoadingIndicator,
+      TaskRunTerminalPane,
+      TaskRunGitDiffPanel,
+      TASK_RUN_IFRAME_ALLOW,
+      TASK_RUN_IFRAME_SANDBOX,
+    }), [
+      task,
+      taskRuns,
+      crownEvaluation,
+      workspaceUrl,
+      workspacePersistKey,
+      selectedRun,
+      editorStatus,
+      handleWorkspaceStatusChange,
+      onEditorLoad,
+      onEditorError,
+      editorLoadingFallback,
+      editorErrorFallback,
+      workspacePlaceholderMessage,
+      isEditorBusy,
+      rawWorkspaceUrl,
+      browserUrl,
+      browserPersistKey,
+      browserStatus,
+      handleBrowserStatusChange,
+      browserOverlayMessage,
+      isMorphProvider,
+      isBrowserBusy,
+    ],
+  );
+
   return (
     <FloatingPane>
       <div className="flex h-full min-h-0 flex-col bg-neutral-50 dark:bg-black">
@@ -265,126 +379,24 @@ function TaskDetailPage() {
           taskRunId={headerTaskRunId ?? ("" as Id<"taskRuns">)}
           teamSlugOrId={teamSlugOrId}
         />
-        <div className="flex flex-1 min-h-0 flex-col gap-3 px-3 py-3">
-          <div className="grid flex-1 min-h-0 gap-3 md:grid-cols-[minmax(0,3fr)_minmax(0,5fr)] md:grid-rows-2">
-            <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
-              <TaskRunChatPane
-                task={task}
-                taskRuns={taskRuns}
-                crownEvaluation={crownEvaluation}
-              />
-            </div>
-
-            <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
-              <div className="flex items-center gap-2 border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
-                <div className="flex size-6 items-center justify-center rounded-full bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
-                  <Code2 className="size-3.5" aria-hidden />
-                </div>
-                <h2 className="text-sm font-medium text-neutral-800 dark:text-neutral-100">
-                  Workspace
-                </h2>
-              </div>
-              <div className="relative flex-1" aria-busy={isEditorBusy}>
-                {workspaceUrl && workspacePersistKey ? (
-                  <PersistentWebView
-                    persistKey={workspacePersistKey}
-                    src={workspaceUrl}
-                    className="flex h-full"
-                    iframeClassName="select-none"
-                    allow={TASK_RUN_IFRAME_ALLOW}
-                    sandbox={TASK_RUN_IFRAME_SANDBOX}
-                    retainOnUnmount
-                    suspended={!selectedRun}
-                    onLoad={onEditorLoad}
-                    onError={onEditorError}
-                    fallback={editorLoadingFallback}
-                    fallbackClassName="bg-neutral-50 dark:bg-black"
-                    errorFallback={editorErrorFallback}
-                    errorFallbackClassName="bg-neutral-50/95 dark:bg-black/95"
-                    onStatusChange={setEditorStatus}
-                    loadTimeoutMs={60_000}
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center px-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
-                    {workspacePlaceholderMessage}
-                  </div>
-                )}
-                {selectedRun && !workspaceUrl ? (
-                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                    <WorkspaceLoadingIndicator variant="vscode" status="loading" />
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
-              <div className="flex items-center gap-2 border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
-                <div className="flex size-6 items-center justify-center rounded-full bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
-                  <TerminalSquare className="size-3.5" aria-hidden />
-                </div>
-                <h2 className="text-sm font-medium text-neutral-800 dark:text-neutral-100">
-                  tmux Terminal
-                </h2>
-              </div>
-              <div className="flex-1 bg-black">
-                <TaskRunTerminalPane workspaceUrl={rawWorkspaceUrl} />
-              </div>
-            </div>
-
-            <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
-              <div className="flex items-center gap-2 border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
-                <div className="flex size-6 items-center justify-center rounded-full bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
-                  <Globe2 className="size-3.5" aria-hidden />
-                </div>
-                <h2 className="text-sm font-medium text-neutral-800 dark:text-neutral-100">
-                  Browser Preview
-                </h2>
-              </div>
-              <div className="relative flex-1" aria-busy={isBrowserBusy}>
-                {browserUrl && browserPersistKey ? (
-                  <PersistentWebView
-                    persistKey={browserPersistKey}
-                    src={browserUrl}
-                    className="flex h-full"
-                    iframeClassName="select-none"
-                    allow={TASK_RUN_IFRAME_ALLOW}
-                    sandbox={TASK_RUN_IFRAME_SANDBOX}
-                    retainOnUnmount
-                    onStatusChange={setBrowserStatus}
-                    fallback={
-                      <WorkspaceLoadingIndicator
-                        variant="browser"
-                        status="loading"
-                      />
-                    }
-                    fallbackClassName="bg-neutral-50 dark:bg-black"
-                    errorFallback={
-                      <WorkspaceLoadingIndicator variant="browser" status="error" />
-                    }
-                    errorFallbackClassName="bg-neutral-50/95 dark:bg-black/95"
-                    loadTimeoutMs={45_000}
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center px-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
-                    {browserOverlayMessage}
-                  </div>
-                )}
-                {selectedRun && isMorphProvider ? (
-                  <div
-                    className={clsx(
-                      "pointer-events-none absolute inset-0 flex items-center justify-center transition-opacity",
-                      {
-                        "opacity-100": isBrowserBusy,
-                        "opacity-0": !isBrowserBusy,
-                      },
-                    )}
-                  >
-                    <WorkspaceLoadingIndicator variant="browser" status="loading" />
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          </div>
+        <div className="flex flex-1 min-h-0 px-3 py-3">
+          <ResizableGrid
+            storageKey="taskDetailGrid"
+            defaultLeftWidth={50}
+            defaultTopHeight={50}
+            topLeft={
+              <RenderPanel key={`panel-${panelConfig.topLeft}`} {...panelProps} type={panelConfig.topLeft} position="topLeft" onSwap={handlePanelSwap} />
+            }
+            topRight={
+              <RenderPanel key={`panel-${panelConfig.topRight}`} {...panelProps} type={panelConfig.topRight} position="topRight" onSwap={handlePanelSwap} />
+            }
+            bottomLeft={
+              <RenderPanel key={`panel-${panelConfig.bottomLeft}`} {...panelProps} type={panelConfig.bottomLeft} position="bottomLeft" onSwap={handlePanelSwap} />
+            }
+            bottomRight={
+              <RenderPanel key={`panel-${panelConfig.bottomRight}`} {...panelProps} type={panelConfig.bottomRight} position="bottomRight" onSwap={handlePanelSwap} />
+            }
+          />
         </div>
       </div>
     </FloatingPane>

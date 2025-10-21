@@ -37,6 +37,7 @@ import {
   ExternalLink,
   GitBranch,
   GitMerge,
+  Settings,
   Trash2,
 } from "lucide-react";
 import {
@@ -69,6 +70,7 @@ interface TaskDetailHeaderProps {
   onCollapseAll?: () => void;
   onExpandAllChecks?: () => void;
   onCollapseAllChecks?: () => void;
+  onPanelSettings?: () => void;
   teamSlugOrId: string;
 }
 
@@ -203,6 +205,7 @@ export function TaskDetailHeader({
   onCollapseAll,
   onExpandAllChecks,
   onCollapseAllChecks,
+  onPanelSettings,
   teamSlugOrId,
 }: TaskDetailHeaderProps) {
   const navigate = useNavigate();
@@ -336,6 +339,17 @@ export function TaskDetailHeader({
           </Suspense>
 
           <OpenEditorSplitButton worktreePath={worktreePath} />
+
+          {onPanelSettings && (
+            <button
+              onClick={onPanelSettings}
+              className="p-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-white select-none"
+              aria-label="Panel settings"
+              title="Configure panel layout"
+            >
+              <Settings className="w-3.5 h-3.5" />
+            </button>
+          )}
 
           <button className="p-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-white select-none hidden">
             <ExternalLink className="w-3.5 h-3.5" />
