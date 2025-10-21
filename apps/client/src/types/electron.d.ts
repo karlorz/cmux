@@ -116,6 +116,9 @@ interface CmuxAPI {
         version?: string | null;
       }>;
     install: () => Promise<{ ok: boolean; reason?: string }>;
+    configure: (options: {
+      allowPrerelease: boolean;
+    }) => Promise<{ ok: boolean; reason?: string; allowPrerelease?: boolean }>;
   };
 }
 

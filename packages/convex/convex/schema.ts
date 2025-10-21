@@ -434,6 +434,13 @@ const convexSchema = defineSchema({
     userId: v.string(),
     teamId: v.string(),
   }).index("by_team_user", ["teamId", "userId"]),
+  releaseSettings: defineTable({
+    alwaysUseLatestRelease: v.optional(v.boolean()), // Whether to follow the newest GitHub release (including prereleases)
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    userId: v.string(),
+    teamId: v.string(),
+  }).index("by_team_user", ["teamId", "userId"]),
 
   // System and user comments attached to a task
   taskComments: defineTable({

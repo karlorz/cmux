@@ -3,6 +3,7 @@ import { FloatingPane } from "@/components/floating-pane";
 import { ProviderStatusSettings } from "@/components/provider-status-settings";
 import { useTheme } from "@/components/theme/use-theme";
 import { TitleBar } from "@/components/TitleBar";
+import { isElectron } from "@/lib/electron";
 import { api } from "@cmux/convex/api";
 import type { Doc } from "@cmux/convex/dataModel";
 import { AGENT_CONFIGS, type AgentConfig } from "@cmux/shared/agentConfig";
@@ -40,6 +41,10 @@ function SettingsComponent() {
   const [autoPrEnabled, setAutoPrEnabled] = useState<boolean>(false);
   const [originalAutoPrEnabled, setOriginalAutoPrEnabled] =
     useState<boolean>(false);
+  const [alwaysUseLatestRelease, setAlwaysUseLatestRelease] =
+    useState<boolean>(false);
+  const [originalAlwaysUseLatestRelease, setOriginalAlwaysUseLatestRelease] =
+    useState<boolean>(false);
   // const [isSaveButtonVisible, setIsSaveButtonVisible] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const saveButtonRef = useRef<HTMLDivElement>(null);
@@ -50,6 +55,7 @@ function SettingsComponent() {
   const [overflowUsedList, setOverflowUsedList] = useState<
     Record<string, boolean>
   >({});
+  const releaseSettingsInitialized = useRef(false);
   const [containerSettingsData, setContainerSettingsData] = useState<{
     maxRunningContainers: number;
     reviewPeriodMinutes: number;
@@ -86,6 +92,25 @@ function SettingsComponent() {
   const { data: workspaceSettings } = useQuery(
     convexQuery(api.workspaceSettings.get, { teamSlugOrId })
   );
+
+  // Query release settings
+  const { data: releaseSettings } = useQuery(
+    convexQuery(api.releaseSettings.get, { teamSlugOrId })
+  );
+
+  const applyAutoUpdatePreference = useCallback((value: boolean) => {
+    if (!isElectron) {
+      return;
+    }
+    const maybeWindow = typeof window === "undefined" ? undefined : window;
+    const configure = maybeWindow?.cmux?.autoUpdate?.configure;
+    if (!configure) {
+      return;
+    }
+    void configure({ allowPrerelease: value }).catch((error) => {
+      console.error("Failed to configure auto-update preference", error);
+    });
+  }, []);
 
   // Initialize form values when data loads
   useEffect(() => {
@@ -125,6 +150,21 @@ function SettingsComponent() {
     return "";
   };
 
+  useEffect(() => {
+    return () => {
+      if (
+        alwaysUseLatestRelease !== originalAlwaysUseLatestRelease &&
+        isElectron
+      ) {
+        applyAutoUpdatePreference(originalAlwaysUseLatestRelease);
+      }
+    };
+  }, [
+    alwaysUseLatestRelease,
+    originalAlwaysUseLatestRelease,
+    applyAutoUpdatePreference,
+  ]);
+
   const validateSlug = (val: string): string => {
     const t = val.trim();
     if (t.length === 0) return "Slug is required";
@@ -147,6 +187,32 @@ function SettingsComponent() {
       setOriginalAutoPrEnabled(effective);
     }
   }, [workspaceSettings]);
+
+  useEffect(() => {
+    if (releaseSettings === undefined) {
+      return;
+    }
+    const shouldFollowLatest = Boolean(
+      releaseSettings?.alwaysUseLatestRelease
+    );
+    if (!releaseSettingsInitialized.current) {
+      releaseSettingsInitialized.current = true;
+      setAlwaysUseLatestRelease(shouldFollowLatest);
+      setOriginalAlwaysUseLatestRelease(shouldFollowLatest);
+      applyAutoUpdatePreference(shouldFollowLatest);
+      return;
+    }
+
+    if (shouldFollowLatest !== originalAlwaysUseLatestRelease) {
+      setOriginalAlwaysUseLatestRelease(shouldFollowLatest);
+      setAlwaysUseLatestRelease(shouldFollowLatest);
+      applyAutoUpdatePreference(shouldFollowLatest);
+    }
+  }, [
+    releaseSettings,
+    applyAutoUpdatePreference,
+    originalAlwaysUseLatestRelease,
+  ]);
 
   // Track save button visibility
   // Footer-based save button; no visibility tracking needed
@@ -244,9 +310,13 @@ function SettingsComponent() {
     // Auto PR toggle changes
     const autoPrChanged = autoPrEnabled !== originalAutoPrEnabled;
 
+    const releasePreferenceChanged =
+      alwaysUseLatestRelease !== originalAlwaysUseLatestRelease;
+
     return (
       worktreePathChanged ||
       autoPrChanged ||
+      releasePreferenceChanged ||
       apiKeysChanged ||
       containerSettingsChanged
     );
@@ -258,6 +328,7 @@ function SettingsComponent() {
     try {
       let savedCount = 0;
       let deletedCount = 0;
+      let releasePreferenceUpdated = false;
 
       // Save worktree path / auto PR if changed
       if (
@@ -285,6 +356,15 @@ function SettingsComponent() {
           ...containerSettingsData,
         });
         setOriginalContainerSettingsData(containerSettingsData);
+      }
+
+      if (alwaysUseLatestRelease !== originalAlwaysUseLatestRelease) {
+        await convex.mutation(api.releaseSettings.update, {
+          teamSlugOrId,
+          alwaysUseLatestRelease,
+        });
+        setOriginalAlwaysUseLatestRelease(alwaysUseLatestRelease);
+        releasePreferenceUpdated = true;
       }
 
       for (const key of apiKeys) {
@@ -319,7 +399,7 @@ function SettingsComponent() {
       // After successful save, hide all API key inputs
       setShowKeys({});
 
-      if (savedCount > 0 || deletedCount > 0) {
+      if (savedCount > 0 || deletedCount > 0 || releasePreferenceUpdated) {
         const actions = [];
         if (savedCount > 0) {
           actions.push(`saved ${savedCount} key${savedCount > 1 ? "s" : ""}`);
@@ -328,6 +408,9 @@ function SettingsComponent() {
           actions.push(
             `removed ${deletedCount} key${deletedCount > 1 ? "s" : ""}`
           );
+        }
+        if (releasePreferenceUpdated) {
+          actions.push("updated release preferences");
         }
         toast.success(`Successfully ${actions.join(" and ")}`);
       } else {
@@ -637,6 +720,38 @@ function SettingsComponent() {
                     color="primary"
                     isSelected={autoPrEnabled}
                     onValueChange={setAutoPrEnabled}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Updates */}
+            <div className="bg-white dark:bg-neutral-950 rounded-lg border border-neutral-200 dark:border-neutral-800">
+              <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
+                <h2 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                  Updates
+                </h2>
+              </div>
+              <div className="p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                      Always use the latest GitHub release
+                    </label>
+                    <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                      Follow the newest cmux builds, including prereleases, so
+                      updates ship as soon as they appear on GitHub.
+                    </p>
+                  </div>
+                  <Switch
+                    aria-label="Always use the latest GitHub release"
+                    size="sm"
+                    color="primary"
+                    isSelected={alwaysUseLatestRelease}
+                    onValueChange={(value) => {
+                      setAlwaysUseLatestRelease(value);
+                      applyAutoUpdatePreference(value);
+                    }}
                   />
                 </div>
               </div>

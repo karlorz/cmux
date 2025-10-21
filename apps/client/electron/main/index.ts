@@ -412,6 +412,65 @@ function registerAutoUpdateIpcHandlers(): void {
       throw err;
     }
   });
+
+  ipcMain.handle(
+    "cmux:auto-update:configure",
+    async (
+      _event,
+      options: { allowPrerelease?: unknown } | undefined
+    ) => {
+      if (!app.isPackaged) {
+        mainLog(
+          "Auto-update configure requested while app is not packaged; ignoring request",
+          options
+        );
+        return { ok: false, reason: "not-packaged" as const };
+      }
+
+      const allowPrerelease =
+        options && typeof options === "object" && options !== null
+          ? typeof (options as { allowPrerelease?: unknown }).allowPrerelease ===
+            "boolean"
+            ? (options as { allowPrerelease: boolean }).allowPrerelease
+            : undefined
+          : undefined;
+
+      if (typeof allowPrerelease !== "boolean") {
+        mainWarn("Invalid auto-update configuration payload", options);
+        return { ok: false, reason: "invalid-arguments" as const };
+      }
+
+      try {
+        if (autoUpdater.allowPrerelease !== allowPrerelease) {
+          autoUpdater.allowPrerelease = allowPrerelease;
+          mainLog("Updated autoUpdater allowPrerelease", {
+            allowPrerelease: autoUpdater.allowPrerelease,
+          });
+
+          if (allowPrerelease) {
+            try {
+              const result = await autoUpdater.checkForUpdates();
+              logUpdateCheckResult("Configure-triggered checkForUpdates", result);
+            } catch (error) {
+              mainWarn(
+                "checkForUpdates after auto-update reconfiguration failed",
+                error
+              );
+            }
+          }
+        }
+
+        return {
+          ok: true as const,
+          allowPrerelease: autoUpdater.allowPrerelease,
+        };
+      } catch (error) {
+        mainWarn("Failed to configure autoUpdater", error);
+        const err = error instanceof Error ? error : new Error(String(error));
+        throw err;
+      }
+    }
+  );
 }
 
 // Write critical errors to a file to aid debugging packaged crashes
