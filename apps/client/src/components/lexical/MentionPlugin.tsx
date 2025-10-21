@@ -20,7 +20,12 @@ import {
 import type { EditorState } from "lexical";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { getIconForFile } from "vscode-icons-js";
+import {
+  DEFAULT_FILE,
+  DEFAULT_FOLDER,
+  getIconForFile,
+  getIconForFolder,
+} from "vscode-icons-js";
 import { useSocket } from "../../contexts/socket/use-socket";
 
 const MENTION_TRIGGER = "@";
@@ -95,47 +100,58 @@ function MentionMenu({
               d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
             ></path>
           </svg>
-          Loading files...
+          Loading files and folders...
         </div>
       ) : files.length === 0 ? (
         <div className="px-2.5 py-1.5 text-xs text-neutral-500 dark:text-neutral-400">
           {hasRepository
-            ? "No files found"
-            : "Please select a project to see files"}
+            ? "No files or folders found"
+            : "Please select a project to see files and folders"}
         </div>
       ) : (
         files.map((file, index) => {
           const rel = file.relativePath.replace(/\\/g, "/");
           const lastSlash = rel.lastIndexOf("/");
           const dirPath = lastSlash > -1 ? rel.slice(0, lastSlash) : "";
-          const fileName = file.name || (lastSlash > -1 ? rel.slice(lastSlash + 1) : rel);
+          const fileName =
+            file.name || (lastSlash > -1 ? rel.slice(lastSlash + 1) : rel);
+          const iconName = file.isDirectory
+            ? getIconForFolder(file.name || "") || DEFAULT_FOLDER
+            : file.name === "Dockerfile"
+              ? "file_type_docker.svg"
+              : getIconForFile(file.name) || DEFAULT_FILE;
+          const displayPrimary = file.isDirectory ? `${fileName}/` : fileName;
+
           return (
-          <button
-            key={file.relativePath}
-            onMouseDown={(e) => {
-              e.preventDefault(); // Prevent blur event from firing
-              onSelect(file);
-            }}
-            className={clsx(
-              "w-full text-left px-2.5 py-1 text-xs flex items-center gap-1.5",
-              index === selectedIndex
-                ? "bg-blue-100 dark:bg-blue-900/30 text-blue-900 dark:text-blue-100"
-                : "hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-900 dark:text-neutral-100"
-            )}
-            type="button"
-          >
-            <img
-              src={`https://cdn.jsdelivr.net/gh/vscode-icons/vscode-icons/icons/${file.name === "Dockerfile" ? "file_type_docker.svg" : getIconForFile(file.name)}`}
-              alt=""
-              className="w-3 h-3 flex-shrink-0"
-            />
-            <div className="flex items-center gap-1 min-w-0 whitespace-nowrap">
-              <span className="truncate font-medium">{fileName}</span>
-              {dirPath ? (
-                <span className="truncate text-neutral-500 dark:text-neutral-400">{dirPath}</span>
-              ) : null}
-            </div>
-          </button>
+            <button
+              key={rel}
+              title={rel}
+              onMouseDown={(e) => {
+                e.preventDefault(); // Prevent blur event from firing
+                onSelect(file);
+              }}
+              className={clsx(
+                "w-full text-left px-2.5 py-1 text-xs flex items-center gap-1.5",
+                index === selectedIndex
+                  ? "bg-blue-100 dark:bg-blue-900/30 text-blue-900 dark:text-blue-100"
+                  : "hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-900 dark:text-neutral-100"
+              )}
+              type="button"
+            >
+              <img
+                src={`https://cdn.jsdelivr.net/gh/vscode-icons/vscode-icons/icons/${iconName}`}
+                alt=""
+                className="w-3 h-3 flex-shrink-0"
+              />
+              <div className="flex items-center gap-1 min-w-0 whitespace-nowrap">
+                <span className="truncate font-medium">{displayPrimary}</span>
+                {dirPath ? (
+                  <span className="truncate text-neutral-500 dark:text-neutral-400">
+                    {dirPath}
+                  </span>
+                ) : null}
+              </div>
+            </button>
           );
         })
       )}
@@ -186,8 +202,17 @@ export function MentionPlugin({
       }) => {
         setIsLoading(false);
         if (!data.error) {
-          const fileList = data.files.filter((f) => !f.isDirectory);
-          setFiles(fileList);
+          const normalizedFiles = data.files.map((file) => ({
+            ...file,
+            relativePath: file.relativePath.replace(/\\/g, "/"),
+          }));
+
+          const sortedFiles = [...normalizedFiles].sort((a, b) => {
+            if (a.isDirectory && !b.isDirectory) return -1;
+            if (!a.isDirectory && b.isDirectory) return 1;
+            return a.relativePath.localeCompare(b.relativePath);
+          });
+          setFiles(sortedFiles);
         } else {
           setFiles([]);
         }
@@ -232,6 +257,7 @@ export function MentionPlugin({
 
   const selectFile = useCallback(
     (file: FileInfo) => {
+      const normalizedPath = file.relativePath.replace(/\\/g, "/");
       const currentTriggerNode = triggerNodeRef.current;
 
       editor.update(() => {
@@ -271,7 +297,7 @@ export function MentionPlugin({
           currentTriggerNode.spliceText(
             mentionStartIndex,
             deleteCount,
-            `@${file.relativePath} `,
+            `@${normalizedPath} `,
             true
           );
         }
