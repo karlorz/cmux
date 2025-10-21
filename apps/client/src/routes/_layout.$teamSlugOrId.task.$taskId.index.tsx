@@ -220,9 +220,14 @@ function TaskDetailPage() {
       return newConfig;
     });
     // Trigger resize event to help iframes reposition correctly
-    setTimeout(() => {
+    // Use requestAnimationFrame to ensure React has finished re-rendering
+    requestAnimationFrame(() => {
       window.dispatchEvent(new Event('resize'));
-    }, 50);
+      // Double RAF to ensure layout is complete
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new Event('resize'));
+      });
+    });
   }, []);
 
   const handlePanelClose = useCallback((position: "topLeft" | "topRight" | "bottomLeft" | "bottomRight") => {
@@ -233,9 +238,14 @@ function TaskDetailPage() {
       return newConfig;
     });
     // Trigger resize event to help iframes reposition correctly
-    setTimeout(() => {
+    // Use requestAnimationFrame to ensure React has finished re-rendering
+    requestAnimationFrame(() => {
       window.dispatchEvent(new Event('resize'));
-    }, 50);
+      // Double RAF to ensure layout is complete
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new Event('resize'));
+      });
+    });
   }, []);
 
   const handleAddPanel = useCallback((position: "topLeft" | "topRight" | "bottomLeft" | "bottomRight", panelType: PanelType) => {
@@ -246,9 +256,14 @@ function TaskDetailPage() {
       return newConfig;
     });
     // Trigger resize event to help iframes reposition correctly
-    setTimeout(() => {
+    // Use requestAnimationFrame to ensure React has finished re-rendering
+    requestAnimationFrame(() => {
       window.dispatchEvent(new Event('resize'));
-    }, 50);
+      // Double RAF to ensure layout is complete
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new Event('resize'));
+      });
+    });
   }, []);
 
   const runsWithDepth = useMemo(
@@ -473,28 +488,28 @@ function TaskDetailPage() {
             defaultTopHeight={50}
             topLeft={
               panelConfig.topLeft ? (
-                <RenderPanel key="panel-topLeft" {...panelProps} type={panelConfig.topLeft} position="topLeft" onSwap={handlePanelSwap} />
+                <RenderPanel key={`${panelConfig.topLeft}-topLeft`} {...panelProps} type={panelConfig.topLeft} position="topLeft" onSwap={handlePanelSwap} />
               ) : (
                 <EmptyPanelSlot position="topLeft" availablePanels={availablePanels} onAddPanel={handleAddPanel} />
               )
             }
             topRight={
               panelConfig.topRight ? (
-                <RenderPanel key="panel-topRight" {...panelProps} type={panelConfig.topRight} position="topRight" onSwap={handlePanelSwap} />
+                <RenderPanel key={`${panelConfig.topRight}-topRight`} {...panelProps} type={panelConfig.topRight} position="topRight" onSwap={handlePanelSwap} />
               ) : (
                 <EmptyPanelSlot position="topRight" availablePanels={availablePanels} onAddPanel={handleAddPanel} />
               )
             }
             bottomLeft={
               panelConfig.bottomLeft ? (
-                <RenderPanel key="panel-bottomLeft" {...panelProps} type={panelConfig.bottomLeft} position="bottomLeft" onSwap={handlePanelSwap} />
+                <RenderPanel key={`${panelConfig.bottomLeft}-bottomLeft`} {...panelProps} type={panelConfig.bottomLeft} position="bottomLeft" onSwap={handlePanelSwap} />
               ) : (
                 <EmptyPanelSlot position="bottomLeft" availablePanels={availablePanels} onAddPanel={handleAddPanel} />
               )
             }
             bottomRight={
               panelConfig.bottomRight ? (
-                <RenderPanel key="panel-bottomRight" {...panelProps} type={panelConfig.bottomRight} position="bottomRight" onSwap={handlePanelSwap} />
+                <RenderPanel key={`${panelConfig.bottomRight}-bottomRight`} {...panelProps} type={panelConfig.bottomRight} position="bottomRight" onSwap={handlePanelSwap} />
               ) : (
                 <EmptyPanelSlot position="bottomRight" availablePanels={availablePanels} onAddPanel={handleAddPanel} />
               )

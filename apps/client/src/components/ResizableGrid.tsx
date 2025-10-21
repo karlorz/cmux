@@ -201,7 +201,7 @@ export function ResizableGrid({
         }}
         title="Resize columns"
       >
-        <div className="absolute top-0 bottom-0 w-px bg-transparent group-hover:bg-neutral-400 dark:group-hover:bg-neutral-600 group-active:bg-neutral-500 dark:group-active:bg-neutral-500 transition-colors" style={{ left: "calc(50% + 4px)" }} />
+        <div className="absolute top-0 bottom-0 w-px bg-transparent group-hover:bg-neutral-400 dark:group-hover:bg-neutral-600 group-active:bg-neutral-500 dark:group-active:bg-neutral-500 transition-colors" style={{ left: "calc(50% + 2px)" }} />
       </div>
 
       {/* Vertical resize handle (horizontal separator between rows) */}
@@ -218,7 +218,7 @@ export function ResizableGrid({
         }}
         title="Resize rows"
       >
-        <div className="absolute left-0 right-0 h-px bg-transparent group-hover:bg-neutral-400 dark:group-hover:bg-neutral-600 group-active:bg-neutral-500 dark:group-active:bg-neutral-500 transition-colors" style={{ top: "calc(50% + 4px)" }} />
+        <div className="absolute left-0 right-0 h-px bg-transparent group-hover:bg-neutral-400 dark:group-hover:bg-neutral-600 group-active:bg-neutral-500 dark:group-active:bg-neutral-500 transition-colors" style={{ top: "calc(50% + 2px)" }} />
       </div>
     </div>
   );

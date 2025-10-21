@@ -81,20 +81,8 @@ export function RenderPanel(props: PanelFactoryProps): ReactNode {
     setIsDragOver(true);
   };
 
-  const handleDragLeave = (e: React.DragEvent) => {
-    // Only clear if we're actually leaving the container (not entering a child)
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const x = e.clientX;
-    const y = e.clientY;
-
-    if (
-      x < rect.left ||
-      x >= rect.right ||
-      y < rect.top ||
-      y >= rect.bottom
-    ) {
-      setIsDragOver(false);
-    }
+  const handleDragLeave = () => {
+    setIsDragOver(false);
   };
 
   const handleDrop = (e: React.DragEvent) => {
