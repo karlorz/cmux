@@ -285,6 +285,56 @@ function TaskTreeInner({
     );
   })();
 
+  const crownEvaluationIndicator = (() => {
+    const status = task.crownEvaluationError?.trim();
+    if (!status) {
+      return null;
+    }
+
+    if (status === "pending_evaluation" || status === "in_progress") {
+      const label =
+        status === "in_progress"
+          ? "Crown evaluation in progress"
+          : "Crown evaluation pending";
+      return (
+        <Tooltip delayDuration={0}>
+          <TooltipTrigger asChild>
+            <Loader2 className="w-3 h-3 text-yellow-500 animate-spin" />
+          </TooltipTrigger>
+          <TooltipContent side="right">{label}</TooltipContent>
+        </Tooltip>
+      );
+    }
+
+    return (
+      <Tooltip delayDuration={0}>
+        <TooltipTrigger asChild>
+          <AlertTriangle className="w-3 h-3 text-red-500" />
+        </TooltipTrigger>
+        <TooltipContent
+          side="right"
+          className="max-w-xs whitespace-pre-wrap break-words"
+        >
+          Crown evaluation error: {status}
+        </TooltipContent>
+      </Tooltip>
+    );
+  })();
+
+  const taskMeta =
+    crownEvaluationIndicator || taskLeadingIcon ? (
+      <div className="flex items-center gap-1">
+        {crownEvaluationIndicator ? (
+          <span className="flex items-center">
+            {crownEvaluationIndicator}
+          </span>
+        ) : null}
+        {taskLeadingIcon ? (
+          <span className="flex items-center">{taskLeadingIcon}</span>
+        ) : null}
+      </div>
+    ) : undefined;
+
   return (
     <TaskRunExpansionContext.Provider value={expansionContextValue}>
       <div className="select-none flex flex-col">
@@ -313,16 +363,16 @@ function TaskTreeInner({
             >
               <SidebarListItem
                 paddingLeft={10 + level * 4}
-                toggle={{
-                  expanded: isExpanded,
-                  onToggle: handleToggle,
-                  visible: canExpand,
-                }}
-                title={task.pullRequestTitle || task.text}
-                titleClassName="text-[13px] text-neutral-900 dark:text-neutral-100"
-                secondary={taskSecondary || undefined}
-                meta={taskLeadingIcon || undefined}
-              />
+              toggle={{
+                expanded: isExpanded,
+                onToggle: handleToggle,
+                visible: canExpand,
+              }}
+              title={task.pullRequestTitle || task.text}
+              titleClassName="text-[13px] text-neutral-900 dark:text-neutral-100"
+              secondary={taskSecondary || undefined}
+              meta={taskMeta}
+            />
             </Link>
           </ContextMenu.Trigger>
           <ContextMenu.Portal>
