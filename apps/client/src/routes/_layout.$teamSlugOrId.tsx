@@ -58,6 +58,7 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId")({
 function LayoutComponent() {
   const { teamSlugOrId } = Route.useParams();
   const tasks = useQuery(api.tasks.get, { teamSlugOrId });
+  const releaseSettings = useQuery(api.releaseSettings.get, { teamSlugOrId });
 
   // Sort tasks by creation date (newest first) and take the latest 5
   const recentTasks = useMemo(() => {
@@ -69,6 +70,20 @@ function LayoutComponent() {
   }, [tasks]);
 
   const displayTasks = tasks === undefined ? undefined : recentTasks;
+
+  useEffect(() => {
+    if (releaseSettings === undefined) return;
+    const globalThisWindow = typeof window === "undefined" ? undefined : window;
+    const setPrerelease = globalThisWindow?.cmux?.autoUpdate?.setAllowPrerelease;
+    if (!setPrerelease) return;
+    const allow = Boolean(releaseSettings?.alwaysUseLatestRelease);
+    void setPrerelease(allow).catch((error) => {
+      console.error(
+        "Failed to update auto-update prerelease preference",
+        error
+      );
+    });
+  }, [releaseSettings]);
 
   return (
     <>

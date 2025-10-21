@@ -412,6 +412,24 @@ function registerAutoUpdateIpcHandlers(): void {
       throw err;
     }
   });
+
+  ipcMain.handle(
+    "cmux:auto-update:set-allow-prerelease",
+    async (_event, value: unknown) => {
+      const allow = Boolean(value);
+      try {
+        autoUpdater.allowPrerelease = allow;
+        mainLog("Renderer updated autoUpdater prerelease preference", {
+          allowPrerelease: autoUpdater.allowPrerelease,
+        });
+        return { ok: true as const };
+      } catch (error) {
+        mainWarn("Failed to adjust autoUpdater prerelease preference", error);
+        const err = error instanceof Error ? error : new Error(String(error));
+        throw err;
+      }
+    }
+  );
 }
 
 // Write critical errors to a file to aid debugging packaged crashes

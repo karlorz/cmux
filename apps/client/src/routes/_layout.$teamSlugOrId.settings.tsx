@@ -40,6 +40,10 @@ function SettingsComponent() {
   const [autoPrEnabled, setAutoPrEnabled] = useState<boolean>(false);
   const [originalAutoPrEnabled, setOriginalAutoPrEnabled] =
     useState<boolean>(false);
+  const [alwaysUseLatestRelease, setAlwaysUseLatestRelease] =
+    useState<boolean>(false);
+  const [originalAlwaysUseLatestRelease, setOriginalAlwaysUseLatestRelease] =
+    useState<boolean>(false);
   // const [isSaveButtonVisible, setIsSaveButtonVisible] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const saveButtonRef = useRef<HTMLDivElement>(null);
@@ -85,6 +89,10 @@ function SettingsComponent() {
   // Query workspace settings
   const { data: workspaceSettings } = useQuery(
     convexQuery(api.workspaceSettings.get, { teamSlugOrId })
+  );
+
+  const { data: releaseSettings } = useQuery(
+    convexQuery(api.releaseSettings.get, { teamSlugOrId })
   );
 
   // Initialize form values when data loads
@@ -147,6 +155,14 @@ function SettingsComponent() {
       setOriginalAutoPrEnabled(effective);
     }
   }, [workspaceSettings]);
+
+  useEffect(() => {
+    if (releaseSettings !== undefined) {
+      const optIn = Boolean(releaseSettings?.alwaysUseLatestRelease);
+      setAlwaysUseLatestRelease(optIn);
+      setOriginalAlwaysUseLatestRelease(optIn);
+    }
+  }, [releaseSettings]);
 
   // Track save button visibility
   // Footer-based save button; no visibility tracking needed
@@ -243,10 +259,13 @@ function SettingsComponent() {
 
     // Auto PR toggle changes
     const autoPrChanged = autoPrEnabled !== originalAutoPrEnabled;
+    const releasePreferenceChanged =
+      alwaysUseLatestRelease !== originalAlwaysUseLatestRelease;
 
     return (
       worktreePathChanged ||
       autoPrChanged ||
+      releasePreferenceChanged ||
       apiKeysChanged ||
       containerSettingsChanged
     );
@@ -258,6 +277,7 @@ function SettingsComponent() {
     try {
       let savedCount = 0;
       let deletedCount = 0;
+      let releasePreferenceChanged = false;
 
       // Save worktree path / auto PR if changed
       if (
@@ -271,6 +291,15 @@ function SettingsComponent() {
         });
         setOriginalWorktreePath(worktreePath);
         setOriginalAutoPrEnabled(autoPrEnabled);
+      }
+
+      if (alwaysUseLatestRelease !== originalAlwaysUseLatestRelease) {
+        await convex.mutation(api.releaseSettings.update, {
+          teamSlugOrId,
+          alwaysUseLatestRelease,
+        });
+        setOriginalAlwaysUseLatestRelease(alwaysUseLatestRelease);
+        releasePreferenceChanged = true;
       }
 
       // Save container settings if changed
@@ -329,9 +358,24 @@ function SettingsComponent() {
             `removed ${deletedCount} key${deletedCount > 1 ? "s" : ""}`
           );
         }
+        if (releasePreferenceChanged) {
+          actions.push(
+            alwaysUseLatestRelease
+              ? "enabled prerelease updates"
+              : "disabled prerelease updates"
+          );
+        }
         toast.success(`Successfully ${actions.join(" and ")}`);
       } else {
-        toast.info("No changes to save");
+        if (releasePreferenceChanged) {
+          toast.success(
+            alwaysUseLatestRelease
+              ? "Enabled prerelease updates"
+              : "Disabled prerelease updates"
+          );
+        } else {
+          toast.info("No changes to save");
+        }
       }
     } catch (error) {
       toast.error("Failed to save API keys. Please try again.");
@@ -637,6 +681,35 @@ function SettingsComponent() {
                     color="primary"
                     isSelected={autoPrEnabled}
                     onValueChange={setAutoPrEnabled}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Release Updates */}
+            <div className="bg-white dark:bg-neutral-950 rounded-lg border border-neutral-200 dark:border-neutral-800">
+              <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
+                <h2 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                  Release Updates
+                </h2>
+              </div>
+              <div className="p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                      Always track the latest GitHub release
+                    </label>
+                    <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                      Receive updates as soon as they appear on GitHub, including
+                      prereleases that have not been promoted to stable yet.
+                    </p>
+                  </div>
+                  <Switch
+                    aria-label="Always track the latest GitHub release"
+                    size="sm"
+                    color="primary"
+                    isSelected={alwaysUseLatestRelease}
+                    onValueChange={setAlwaysUseLatestRelease}
                   />
                 </div>
               </div>

@@ -401,6 +401,13 @@ const convexSchema = defineSchema({
   })
     .index("by_envVar", ["envVar"])
     .index("by_team_user", ["teamId", "userId"]),
+  releaseSettings: defineTable({
+    alwaysUseLatestRelease: v.boolean(), // Opt-in to GitHub prereleases
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    userId: v.string(),
+    teamId: v.string(),
+  }).index("by_team_user", ["teamId", "userId"]),
   workspaceSettings: defineTable({
     worktreePath: v.optional(v.string()), // Custom path for git worktrees
     autoPrEnabled: v.optional(v.boolean()), // Auto-create PR for crown winner (default: false)
