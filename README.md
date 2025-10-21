@@ -44,3 +44,9 @@ cmux upgrade
 ```bash
 cmux uninstall
 ```
+
+---
+
+*Code agents dance,*
+*Multiple minds work as one—*
+*Tasks bloom in parallel.*
