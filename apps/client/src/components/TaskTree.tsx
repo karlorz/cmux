@@ -70,12 +70,24 @@ function sanitizeBranchName(input?: string | null): string | null {
   return candidate || trimmed;
 }
 
+function stripCmuxBranchPrefix(branch: string | null): string | null {
+  if (!branch) return branch;
+  const prefix = "cmux/";
+  if (!branch.startsWith(prefix)) {
+    return branch;
+  }
+  const withoutPrefix = branch.slice(prefix.length);
+  return withoutPrefix || branch;
+}
+
 function getTaskBranch(task: TaskWithGeneratedBranch): string | null {
-  const fromGenerated = sanitizeBranchName(task.generatedBranchName);
+  const fromGenerated = stripCmuxBranchPrefix(
+    sanitizeBranchName(task.generatedBranchName),
+  );
   if (fromGenerated) {
     return fromGenerated;
   }
-  return sanitizeBranchName(task.baseBranch);
+  return stripCmuxBranchPrefix(sanitizeBranchName(task.baseBranch));
 }
 
 interface TaskTreeProps {
