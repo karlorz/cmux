@@ -28,6 +28,7 @@ export interface GitDiffViewerProps {
   onControlsChange?: (controls: {
     expandAll: () => void;
     collapseAll: () => void;
+    setFileExpanded: (filePath: string, expanded: boolean) => void;
     totalAdditions: number;
     totalDeletions: number;
   }) => void;
@@ -136,6 +137,7 @@ export function GitDiffViewer({
     | ((args: {
         expandAll: () => void;
         collapseAll: () => void;
+        setFileExpanded: (filePath: string, expanded: boolean) => void;
         totalAdditions: number;
         totalDeletions: number;
       }) => void)
@@ -148,6 +150,9 @@ export function GitDiffViewer({
     controlsHandlerRef.current?.({
       expandAll,
       collapseAll,
+      setFileExpanded: () => {
+        // CodeMirror viewer no longer maintains state externally.
+      },
       totalAdditions,
       totalDeletions,
     });

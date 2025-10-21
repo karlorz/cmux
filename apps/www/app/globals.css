@@ -298,3 +298,88 @@ body {
   display: inline-flex;
   cursor: help;
 }
+
+/* Monaco heatmap support */
+.monaco-editor .cmux-heatmap-tier-1 {
+  background-color: rgba(249, 115, 22, 0.08) !important;
+}
+
+.monaco-editor .cmux-heatmap-tier-2 {
+  background-color: rgba(249, 115, 22, 0.16) !important;
+}
+
+.monaco-editor .cmux-heatmap-tier-3 {
+  background-color: rgba(239, 68, 68, 0.22) !important;
+}
+
+.monaco-editor .cmux-heatmap-tier-4 {
+  background-color: rgba(220, 38, 38, 0.32) !important;
+}
+
+.monaco-editor .margin .cmux-heatmap-gutter {
+  border-left: 3px solid transparent;
+}
+
+.monaco-editor .margin .cmux-heatmap-gutter.cmux-heatmap-tier-1 {
+  border-left-color: rgba(249, 115, 22, 0.35);
+}
+
+.monaco-editor .margin .cmux-heatmap-gutter.cmux-heatmap-tier-2 {
+  border-left-color: rgba(249, 115, 22, 0.48);
+}
+
+.monaco-editor .margin .cmux-heatmap-gutter.cmux-heatmap-tier-3 {
+  border-left-color: rgba(239, 68, 68, 0.54);
+}
+
+.monaco-editor .margin .cmux-heatmap-gutter.cmux-heatmap-tier-4 {
+  border-left-color: rgba(220, 38, 38, 0.65);
+}
+
+.monaco-editor .cmux-heatmap-focus-line {
+  background-color: rgba(56, 189, 248, 0.18) !important;
+}
+
+.monaco-editor .margin .cmux-heatmap-focus-gutter {
+  border-left: 3px solid rgba(56, 189, 248, 0.8);
+}
+
+.dark .monaco-editor .cmux-heatmap-tier-1 {
+  background-color: rgba(249, 115, 22, 0.16) !important;
+}
+
+.dark .monaco-editor .cmux-heatmap-tier-2 {
+  background-color: rgba(249, 115, 22, 0.24) !important;
+}
+
+.dark .monaco-editor .cmux-heatmap-tier-3 {
+  background-color: rgba(239, 68, 68, 0.32) !important;
+}
+
+.dark .monaco-editor .cmux-heatmap-tier-4 {
+  background-color: rgba(220, 38, 38, 0.4) !important;
+}
+
+.dark .monaco-editor .margin .cmux-heatmap-gutter.cmux-heatmap-tier-1 {
+  border-left-color: rgba(249, 115, 22, 0.45);
+}
+
+.dark .monaco-editor .margin .cmux-heatmap-gutter.cmux-heatmap-tier-2 {
+  border-left-color: rgba(249, 115, 22, 0.55);
+}
+
+.dark .monaco-editor .margin .cmux-heatmap-gutter.cmux-heatmap-tier-3 {
+  border-left-color: rgba(239, 68, 68, 0.62);
+}
+
+.dark .monaco-editor .margin .cmux-heatmap-gutter.cmux-heatmap-tier-4 {
+  border-left-color: rgba(220, 38, 38, 0.72);
+}
+
+.dark .monaco-editor .cmux-heatmap-focus-line {
+  background-color: rgba(56, 189, 248, 0.28) !important;
+}
+
+.dark .monaco-editor .margin .cmux-heatmap-focus-gutter {
+  border-left-color: rgba(56, 189, 248, 0.85);
+}
