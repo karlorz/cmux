@@ -1,5 +1,6 @@
 import type { Id } from "@cmux/convex/dataModel";
 import type { FileInfo } from "@cmux/shared";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import clsx from "clsx";
 import fuzzysort from "fuzzysort";
@@ -29,6 +30,7 @@ import {
 import { useSocket } from "../../contexts/socket/use-socket";
 
 const MENTION_TRIGGER = "@";
+const ITEM_HEIGHT_PX = 24;
 
 interface MentionMenuProps {
   files: FileInfo[];
@@ -47,18 +49,25 @@ function MentionMenu({
   hasRepository,
   isLoading,
 }: MentionMenuProps) {
-  const menuRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const fileCount = files.length;
+  const virtualizer = useVirtualizer({
+    count: fileCount,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => ITEM_HEIGHT_PX,
+    overscan: 8,
+  });
 
   useEffect(() => {
-    if (menuRef.current && selectedIndex >= 0) {
-      const selectedElement = menuRef.current.children[
-        selectedIndex
-      ] as HTMLElement;
-      if (selectedElement) {
-        selectedElement.scrollIntoView({ block: "nearest" });
-      }
+    if (isLoading || fileCount === 0) {
+      return;
     }
-  }, [selectedIndex]);
+    const targetIndex = Math.min(selectedIndex, fileCount - 1);
+    if (targetIndex < 0) {
+      return;
+    }
+    virtualizer.scrollToIndex(targetIndex, { align: "auto" });
+  }, [fileCount, isLoading, selectedIndex, virtualizer]);
 
   if (!position) return null;
 
@@ -69,7 +78,7 @@ function MentionMenu({
 
   return createPortal(
     <div
-      ref={menuRef}
+      ref={listRef}
       className="absolute z-[var(--z-modal)] max-h-48 overflow-y-auto bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-md shadow-lg max-w-[580px]"
       style={{
         ...(position.showAbove && bottomOffset !== undefined
@@ -102,54 +111,71 @@ function MentionMenu({
           </svg>
           Loading files...
         </div>
-      ) : files.length === 0 ? (
+      ) : fileCount === 0 ? (
         <div className="px-2.5 py-1.5 text-xs text-neutral-500 dark:text-neutral-400">
           {hasRepository
             ? "No files found"
             : "Please select a project to see files"}
         </div>
       ) : (
-        files.map((file, index) => {
-          const rel = file.relativePath.replace(/\\/g, "/");
-          const lastSlash = rel.lastIndexOf("/");
-          const dirPath = lastSlash > -1 ? rel.slice(0, lastSlash) : "";
-          const rawName = file.name || (lastSlash > -1 ? rel.slice(lastSlash + 1) : rel);
-          const displayName = file.isDirectory ? `${rawName}/` : rawName;
-          const iconName = file.isDirectory
-            ? getIconForFolder(rawName) || DEFAULT_FOLDER
-            : rawName === "Dockerfile"
-              ? "file_type_docker.svg"
-              : getIconForFile(rawName) || DEFAULT_FILE;
-          const iconSrc = `https://cdn.jsdelivr.net/gh/vscode-icons/vscode-icons/icons/${iconName}`;
-          return (
-          <button
-            key={file.relativePath}
-            onMouseDown={(e) => {
-              e.preventDefault(); // Prevent blur event from firing
-              onSelect(file);
-            }}
-            className={clsx(
-              "w-full text-left px-2.5 py-1 text-xs flex items-center gap-1.5",
-              index === selectedIndex
-                ? "bg-blue-100 dark:bg-blue-900/30 text-blue-900 dark:text-blue-100"
-                : "hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-900 dark:text-neutral-100"
-            )}
-            type="button"
-          >
-            <img
-              src={iconSrc}
-              alt=""
-              className="w-3 h-3 flex-shrink-0"
-            />
-            <div className="flex items-center gap-1 min-w-0 whitespace-nowrap">
-              <span className="truncate font-medium">{displayName}</span>
-              {dirPath ? (
-                <span className="truncate text-neutral-500 dark:text-neutral-400">{dirPath}</span>
-              ) : null}
-            </div>
-          </button>
-          );
-        })
+        <div
+          style={{
+            height: `${virtualizer.getTotalSize()}px`,
+            position: "relative",
+          }}
+        >
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const index = virtualRow.index;
+            const file = files[index];
+            const rel = file.relativePath.replace(/\\/g, "/");
+            const lastSlash = rel.lastIndexOf("/");
+            const dirPath = lastSlash > -1 ? rel.slice(0, lastSlash) : "";
+            const rawName = file.name || (lastSlash > -1 ? rel.slice(lastSlash + 1) : rel);
+            const displayName = file.isDirectory ? `${rawName}/` : rawName;
+            const iconName = file.isDirectory
+              ? getIconForFolder(rawName) || DEFAULT_FOLDER
+              : rawName === "Dockerfile"
+                ? "file_type_docker.svg"
+                : getIconForFile(rawName) || DEFAULT_FILE;
+            const iconSrc = `https://cdn.jsdelivr.net/gh/vscode-icons/vscode-icons/icons/${iconName}`;
+
+            return (
+              <button
+                key={file.relativePath}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onSelect(file);
+                }}
+                className={clsx(
+                  "w-full text-left px-2.5 text-xs flex items-center gap-1.5 h-6",
+                  index === selectedIndex
+                    ? "bg-blue-100 dark:bg-blue-900/30 text-blue-900 dark:text-blue-100"
+                    : "hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-900 dark:text-neutral-100"
+                )}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+                type="button"
+              >
+                <img
+                  src={iconSrc}
+                  alt=""
+                  className="w-3 h-3 flex-shrink-0"
+                />
+                <div className="flex items-center gap-1 min-w-0 whitespace-nowrap">
+                  <span className="truncate font-medium">{displayName}</span>
+                  {dirPath ? (
+                    <span className="truncate text-neutral-500 dark:text-neutral-400">{dirPath}</span>
+                  ) : null}
+                </div>
+              </button>
+            );
+          })}
+        </div>
       )}
     </div>,
     document.body
