@@ -8,8 +8,8 @@ import { WorkspaceLoadingIndicator } from "@/components/workspace-loading-indica
 import { ResizableGrid } from "@/components/ResizableGrid";
 import { TaskRunGitDiffPanel } from "@/components/TaskRunGitDiffPanel";
 import { RenderPanel } from "@/components/TaskPanelFactory";
-import { loadPanelConfig, savePanelConfig } from "@/lib/panel-config";
-import type { PanelConfig } from "@/lib/panel-config";
+import { loadPanelConfig, savePanelConfig, getAvailablePanels, PANEL_LABELS } from "@/lib/panel-config";
+import type { PanelConfig, PanelType } from "@/lib/panel-config";
 import {
   getTaskRunBrowserPersistKey,
   getTaskRunPersistKey,
@@ -30,6 +30,7 @@ import { convexQuery } from "@convex-dev/react-query";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Plus, Code2, Globe2, TerminalSquare, GitCompare, MessageCircle } from "lucide-react";
 import z from "zod";
 
 type TaskRunListItem = (typeof api.taskRuns.getByTask._returnType)[number];
@@ -110,6 +111,80 @@ function findRunById(
   return null;
 }
 
+interface EmptyPanelSlotProps {
+  position: "topLeft" | "topRight" | "bottomLeft" | "bottomRight";
+  availablePanels: PanelType[];
+  onAddPanel: (position: "topLeft" | "topRight" | "bottomLeft" | "bottomRight", panelType: PanelType) => void;
+}
+
+function EmptyPanelSlot({ position, availablePanels, onAddPanel }: EmptyPanelSlotProps) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const getPanelIcon = (panelType: PanelType) => {
+    switch (panelType) {
+      case "chat":
+        return <MessageCircle className="size-4" />;
+      case "workspace":
+        return <Code2 className="size-4" />;
+      case "terminal":
+        return <TerminalSquare className="size-4" />;
+      case "browser":
+        return <Globe2 className="size-4" />;
+      case "gitDiff":
+        return <GitCompare className="size-4" />;
+    }
+  };
+
+  return (
+    <div className="flex h-full flex-col overflow-hidden rounded-lg border border-dashed border-neutral-300 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900">
+      <div className="flex h-full items-center justify-center p-4">
+        {availablePanels.length > 0 ? (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsOpen(!isOpen)}
+              className="flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+            >
+              <Plus className="size-4" />
+              Add Panel
+            </button>
+            {isOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => setIsOpen(false)}
+                />
+                <div className="absolute left-0 top-full z-20 mt-2 w-48 rounded-lg border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-800">
+                  {availablePanels.map((panelType) => (
+                    <button
+                      key={panelType}
+                      type="button"
+                      onClick={() => {
+                        onAddPanel(position, panelType);
+                        setIsOpen(false);
+                      }}
+                      className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-neutral-700 first:rounded-t-lg last:rounded-b-lg transition-colors"
+                    >
+                      <div className="flex size-5 items-center justify-center rounded-full bg-neutral-200 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">
+                        {getPanelIcon(panelType)}
+                      </div>
+                      {PANEL_LABELS[panelType]}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">
+            All panels are in use
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function TaskDetailPage() {
   const { taskId, teamSlugOrId } = Route.useParams();
   const search = Route.useSearch();
@@ -141,6 +216,32 @@ function TaskDetailPage() {
       const temp = newConfig[fromPosition];
       newConfig[fromPosition] = newConfig[toPosition];
       newConfig[toPosition] = temp;
+      savePanelConfig(newConfig);
+      return newConfig;
+    });
+    // Trigger resize event to help iframes reposition correctly
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 50);
+  }, []);
+
+  const handlePanelClose = useCallback((position: "topLeft" | "topRight" | "bottomLeft" | "bottomRight") => {
+    setPanelConfig(prev => {
+      const newConfig = { ...prev };
+      newConfig[position] = null;
+      savePanelConfig(newConfig);
+      return newConfig;
+    });
+    // Trigger resize event to help iframes reposition correctly
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 50);
+  }, []);
+
+  const handleAddPanel = useCallback((position: "topLeft" | "topRight" | "bottomLeft" | "bottomRight", panelType: PanelType) => {
+    setPanelConfig(prev => {
+      const newConfig = { ...prev };
+      newConfig[position] = panelType;
       savePanelConfig(newConfig);
       return newConfig;
     });
@@ -294,6 +395,8 @@ function TaskDetailPage() {
     return "Workspace is starting…";
   }, [runsWithDepth.length, selectedRun]);
 
+  const availablePanels = useMemo(() => getAvailablePanels(panelConfig), [panelConfig]);
+
   const panelProps = useMemo(
     () => ({
       task: task ?? null,
@@ -325,6 +428,7 @@ function TaskDetailPage() {
       TaskRunGitDiffPanel,
       TASK_RUN_IFRAME_ALLOW,
       TASK_RUN_IFRAME_SANDBOX,
+      onClose: handlePanelClose,
     }), [
       task,
       taskRuns,
@@ -348,6 +452,7 @@ function TaskDetailPage() {
       browserOverlayMessage,
       isMorphProvider,
       isBrowserBusy,
+      handlePanelClose,
     ],
   );
 
@@ -367,16 +472,32 @@ function TaskDetailPage() {
             defaultLeftWidth={50}
             defaultTopHeight={50}
             topLeft={
-              <RenderPanel key={`panel-${panelConfig.topLeft}`} {...panelProps} type={panelConfig.topLeft} position="topLeft" onSwap={handlePanelSwap} />
+              panelConfig.topLeft ? (
+                <RenderPanel key="panel-topLeft" {...panelProps} type={panelConfig.topLeft} position="topLeft" onSwap={handlePanelSwap} />
+              ) : (
+                <EmptyPanelSlot position="topLeft" availablePanels={availablePanels} onAddPanel={handleAddPanel} />
+              )
             }
             topRight={
-              <RenderPanel key={`panel-${panelConfig.topRight}`} {...panelProps} type={panelConfig.topRight} position="topRight" onSwap={handlePanelSwap} />
+              panelConfig.topRight ? (
+                <RenderPanel key="panel-topRight" {...panelProps} type={panelConfig.topRight} position="topRight" onSwap={handlePanelSwap} />
+              ) : (
+                <EmptyPanelSlot position="topRight" availablePanels={availablePanels} onAddPanel={handleAddPanel} />
+              )
             }
             bottomLeft={
-              <RenderPanel key={`panel-${panelConfig.bottomLeft}`} {...panelProps} type={panelConfig.bottomLeft} position="bottomLeft" onSwap={handlePanelSwap} />
+              panelConfig.bottomLeft ? (
+                <RenderPanel key="panel-bottomLeft" {...panelProps} type={panelConfig.bottomLeft} position="bottomLeft" onSwap={handlePanelSwap} />
+              ) : (
+                <EmptyPanelSlot position="bottomLeft" availablePanels={availablePanels} onAddPanel={handleAddPanel} />
+              )
             }
             bottomRight={
-              <RenderPanel key={`panel-${panelConfig.bottomRight}`} {...panelProps} type={panelConfig.bottomRight} position="bottomRight" onSwap={handlePanelSwap} />
+              panelConfig.bottomRight ? (
+                <RenderPanel key="panel-bottomRight" {...panelProps} type={panelConfig.bottomRight} position="bottomRight" onSwap={handlePanelSwap} />
+              ) : (
+                <EmptyPanelSlot position="bottomRight" availablePanels={availablePanels} onAddPanel={handleAddPanel} />
+              )
             }
           />
         </div>

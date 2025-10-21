@@ -1,10 +1,10 @@
 export type PanelType = "chat" | "workspace" | "terminal" | "browser" | "gitDiff";
 
 export interface PanelConfig {
-  topLeft: PanelType;
-  topRight: PanelType;
-  bottomLeft: PanelType;
-  bottomRight: PanelType;
+  topLeft: PanelType | null;
+  topRight: PanelType | null;
+  bottomLeft: PanelType | null;
+  bottomRight: PanelType | null;
 }
 
 export const DEFAULT_PANEL_CONFIG: PanelConfig = {
@@ -64,4 +64,16 @@ export function resetPanelConfig(): void {
   } catch (error) {
     console.error("Failed to reset panel config:", error);
   }
+}
+
+export function getAvailablePanels(config: PanelConfig): PanelType[] {
+  const allPanels: PanelType[] = ["chat", "workspace", "terminal", "browser", "gitDiff"];
+  const usedPanels = new Set([
+    config.topLeft,
+    config.topRight,
+    config.bottomLeft,
+    config.bottomRight,
+  ].filter((p): p is PanelType => p !== null));
+
+  return allPanels.filter(panel => !usedPanels.has(panel));
 }

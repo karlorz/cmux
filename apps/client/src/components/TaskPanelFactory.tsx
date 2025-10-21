@@ -1,5 +1,5 @@
 import React, { useState, type ReactNode } from "react";
-import { Code2, Globe2, TerminalSquare, GitCompare, GripVertical } from "lucide-react";
+import { Code2, Globe2, TerminalSquare, GitCompare, GripVertical, X } from "lucide-react";
 import clsx from "clsx";
 import type { PanelType } from "@/lib/panel-config";
 import { PANEL_LABELS } from "@/lib/panel-config";
@@ -10,9 +10,10 @@ import type { TaskRunWithChildren } from "@/types/task";
 type PanelPosition = "topLeft" | "topRight" | "bottomLeft" | "bottomRight";
 
 interface PanelFactoryProps {
-  type: PanelType;
+  type: PanelType | null;
   position: PanelPosition;
   onSwap?: (fromPosition: PanelPosition, toPosition: PanelPosition) => void;
+  onClose?: (position: PanelPosition) => void;
   // Chat panel props
   task?: Doc<"tasks"> | null;
   taskRuns?: TaskRunWithChildren[] | null;
@@ -57,7 +58,7 @@ interface PanelFactoryProps {
 }
 
 export function RenderPanel(props: PanelFactoryProps): ReactNode {
-  const { type, position, onSwap } = props;
+  const { type, position, onSwap, onClose } = props;
   const [isDragOver, setIsDragOver] = useState(false);
 
   const handleDragStart = (e: React.DragEvent) => {
@@ -117,19 +118,31 @@ export function RenderPanel(props: PanelFactoryProps): ReactNode {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <div
-        draggable
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        className="flex items-center gap-1.5 border-b border-neutral-200 px-2 py-1 dark:border-neutral-800 cursor-move group transition-opacity"
-      >
-        <GripVertical className="size-3.5 text-neutral-400 dark:text-neutral-500 group-hover:text-neutral-600 dark:group-hover:text-neutral-300 transition-colors" />
-        <div className="flex size-5 items-center justify-center rounded-full bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
-          {icon}
+      <div className="flex items-center gap-1.5 border-b border-neutral-200 px-2 py-1 dark:border-neutral-800">
+        <div
+          draggable
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          className="flex flex-1 items-center gap-1.5 cursor-move group transition-opacity"
+        >
+          <GripVertical className="size-3.5 text-neutral-400 dark:text-neutral-500 group-hover:text-neutral-600 dark:group-hover:text-neutral-300 transition-colors" />
+          <div className="flex size-5 items-center justify-center rounded-full bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
+            {icon}
+          </div>
+          <h2 className="text-xs font-medium text-neutral-800 dark:text-neutral-100">
+            {title}
+          </h2>
         </div>
-        <h2 className="text-xs font-medium text-neutral-800 dark:text-neutral-100">
-          {title}
-        </h2>
+        {onClose && (
+          <button
+            type="button"
+            onClick={() => onClose(position)}
+            className="flex items-center justify-center size-5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors"
+            title="Close panel"
+          >
+            <X className="size-3.5" />
+          </button>
+        )}
       </div>
       {content}
     </div>
@@ -158,6 +171,8 @@ export function RenderPanel(props: PanelFactoryProps): ReactNode {
             hideHeader={false}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
+            onClose={onClose ? () => onClose(position) : undefined}
+            position={position}
           />
         </div>
       );
@@ -308,6 +323,9 @@ export function RenderPanel(props: PanelFactoryProps): ReactNode {
         </div>
       );
     }
+
+    case null:
+      return null;
 
     default:
       return null;
