@@ -1,34 +1,38 @@
+"use client";
+
 import { loader } from "@monaco-editor/react";
 
 import * as monaco from "monaco-editor";
 import "monaco-editor/esm/vs/editor/editor.all";
 import "monaco-editor/esm/vs/editor/browser/services/hoverService/hoverService";
 
-import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
-import cssWorker from "monaco-editor/esm/vs/language/css/css.worker?worker";
-import htmlWorker from "monaco-editor/esm/vs/language/html/html.worker?worker";
-import jsonWorker from "monaco-editor/esm/vs/language/json/json.worker?worker";
-import tsWorker from "monaco-editor/esm/vs/language/typescript/ts.worker?worker";
+function createWorker(url: string): Worker {
+  return new Worker(new URL(url, import.meta.url), { type: "module" });
+}
 
 const monacoEnvironment = {
   getWorker(_: string, label: string): Worker {
     if (label === "json") {
-      return new jsonWorker();
+      return createWorker("monaco-editor/esm/vs/language/json/json.worker.js");
     }
     if (label === "css" || label === "scss" || label === "less") {
-      return new cssWorker();
+      return createWorker("monaco-editor/esm/vs/language/css/css.worker.js");
     }
     if (label === "html" || label === "handlebars" || label === "razor") {
-      return new htmlWorker();
+      return createWorker("monaco-editor/esm/vs/language/html/html.worker.js");
     }
     if (label === "typescript" || label === "javascript") {
-      return new tsWorker();
+      return createWorker("monaco-editor/esm/vs/language/typescript/ts.worker.js");
     }
-    return new editorWorker();
+    return createWorker("monaco-editor/esm/vs/editor/editor.worker.js");
   },
 };
 
-Object.assign(self, { MonacoEnvironment: monacoEnvironment });
+const globalScope = self as typeof self & {
+  MonacoEnvironment?: typeof monacoEnvironment;
+};
+
+Object.assign(globalScope, { MonacoEnvironment: monacoEnvironment });
 
 loader.config({
   monaco,

@@ -1,4 +1,5 @@
 import { GitDiffViewer } from "@/components/git-diff-viewer";
+import { useTheme } from "@/components/theme/use-theme";
 import { GitHubIcon } from "@/components/icons/github";
 import {
   SearchableSelect,
@@ -29,6 +30,7 @@ function DashboardDiffPage() {
   const search = Route.useSearch() as DiffSearch;
   const router = useRouter();
   const { socket } = useSocket();
+  const { theme } = useTheme();
 
   const [selectedProject, setSelectedProject] = useState<string | null>(() => {
     try {
@@ -235,6 +237,7 @@ function DashboardDiffPage() {
         <GitDiffViewer
           diffs={diffsQuery.data || []}
           onControlsChange={() => {}}
+          theme={theme}
         />
         {!bothSelected ? (
           <div className="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400">

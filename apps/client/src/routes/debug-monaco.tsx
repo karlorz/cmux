@@ -2,7 +2,8 @@ import { useMemo } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import type { ReplaceDiffEntry } from "@cmux/shared/diff-types";
 
-import { MonacoGitDiffViewer } from "@/components/monaco/monaco-git-diff-viewer";
+import { useTheme } from "@/components/theme/use-theme";
+import { MonacoGitDiffViewer } from "@cmux/shared/ui/monaco-git-diff-viewer";
 import { debugMonacoDiffSamples } from "@/lib/debug-monaco-samples";
 
 const newlinePattern = /\r?\n/;
@@ -92,6 +93,7 @@ export const Route = createFileRoute("/debug-monaco")({
 });
 
 function DebugMonacoPage() {
+  const { theme } = useTheme();
   const diffs = useMemo<ReplaceDiffEntry[]>(
     () =>
       debugMonacoDiffSamples.map((sample) => {
@@ -120,10 +122,9 @@ function DebugMonacoPage() {
     <div className="min-h-dvh bg-neutral-100 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
       <div className="m-1 h-[calc(100dvh-8px)] overflow-auto rounded-lg border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
         <div className="space-y-4 p-4 sm:p-6">
-          <MonacoGitDiffViewer diffs={diffs} />
+          <MonacoGitDiffViewer diffs={diffs} theme={theme} />
         </div>
       </div>
     </div>
   );
 }
-

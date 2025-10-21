@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { cn } from "../utils/cn";
 import {
   ChevronDown,
   ChevronRight,
@@ -8,7 +8,7 @@ import {
   FilePlus,
   FileText,
 } from "lucide-react";
-import type { ReplaceDiffEntry } from "@cmux/shared/diff-types";
+import type { ReplaceDiffEntry } from "../../diff-types";
 
 function getStatusColor(status: ReplaceDiffEntry["status"]) {
   switch (status) {

@@ -1,25 +1,43 @@
+"use client";
+
 import { DiffEditor, type DiffOnMount } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
 import { memo, use, useEffect, useMemo, useRef, useState } from "react";
 
-import { useTheme } from "@/components/theme/use-theme";
-import { loaderInitPromise } from "@/lib/monaco-environment";
-import { isElectron } from "@/lib/electron";
-import { cn } from "@/lib/utils";
-import type { ReplaceDiffEntry } from "@cmux/shared/diff-types";
-
-import { FileDiffHeader } from "../file-diff-header";
-import { kitties } from "../kitties";
-import type { GitDiffViewerProps } from "../codemirror-git-diff-viewer";
-export type { GitDiffViewerProps } from "../codemirror-git-diff-viewer";
+import type { ReplaceDiffEntry } from "../../diff-types";
+import { cn } from "../utils/cn";
+import { FileDiffHeader } from "./file-diff-header";
+import { kitties } from "./kitties";
+import { loaderInitPromise } from "./monaco-environment";
 
 void loaderInitPromise;
 
-type FileDiffRowClassNames = GitDiffViewerProps["classNames"] extends {
-  fileDiffRow?: infer T;
+export type FileDiffRowClassNames = {
+  button?: string;
+  container?: string;
+};
+
+export type GitDiffViewerClassNames = {
+  fileDiffRow?: FileDiffRowClassNames;
+};
+
+export type GitDiffViewerControls = {
+  expandAll: () => void;
+  collapseAll: () => void;
+  totalAdditions: number;
+  totalDeletions: number;
+};
+
+export interface MonacoGitDiffViewerProps {
+  diffs: ReplaceDiffEntry[];
+  theme: "light" | "dark";
+  onControlsChange?: (controls: GitDiffViewerControls) => void;
+  classNames?: GitDiffViewerClassNames;
+  onFileToggle?: (filePath: string, isExpanded: boolean) => void;
+  debugLoggingEnabled?: boolean;
 }
-  ? T
-  : { button?: string; container?: string };
+
+export type GitDiffViewerProps = MonacoGitDiffViewerProps;
 
 type DiffEditorControls = {
   updateCollapsedState: (collapsed: boolean) => void;
@@ -85,18 +103,45 @@ const DEFAULT_EDITOR_MIN_HEIGHT =
 
 const newlinePattern = /\r?\n/;
 
-function debugGitDiffViewerLog(
-  message: string,
-  payload?: Record<string, unknown>,
-) {
-  if (!isElectron && import.meta.env.PROD) {
-    return;
+function createDebugLogger(allowInProduction: boolean) {
+  const isProd = process.env.NODE_ENV === "production";
+
+  return (message: string, payload?: Record<string, unknown>) => {
+    if (!allowInProduction && isProd) {
+      return;
+    }
+    if (payload) {
+      console.info("[monaco-git-diff-viewer]", message, payload);
+    } else {
+      console.info("[monaco-git-diff-viewer]", message);
+    }
+  };
+}
+
+function detectElectronRuntime(): boolean {
+  if (typeof window !== "undefined") {
+    const w = window as unknown as {
+      cmux?: unknown;
+      electron?: unknown;
+      process?: { type?: string };
+    };
+    if (w.cmux || w.electron) {
+      return true;
+    }
+    if (typeof w.process === "object" && w.process?.type === "renderer") {
+      return true;
+    }
   }
-  if (payload) {
-    console.info("[monaco-git-diff-viewer]", message, payload);
-  } else {
-    console.info("[monaco-git-diff-viewer]", message);
+
+  if (
+    typeof navigator !== "undefined" &&
+    typeof navigator.userAgent === "string" &&
+    navigator.userAgent.includes("Electron")
+  ) {
+    return true;
   }
+
+  return false;
 }
 
 function splitContentIntoLines(content: string): string[] {
@@ -979,15 +1024,22 @@ const MemoMonacoFileDiffRow = memo(MonacoFileDiffRow, (prev, next) => {
 
 export function MonacoGitDiffViewer({
   diffs,
+  theme,
   onControlsChange,
   classNames,
   onFileToggle,
-}: GitDiffViewerProps) {
-  const { theme } = useTheme();
-
+  debugLoggingEnabled,
+}: MonacoGitDiffViewerProps) {
   const kitty = useMemo(() => {
     return kitties[Math.floor(Math.random() * kitties.length)];
   }, []);
+
+  const isElectronRuntime = useMemo(() => detectElectronRuntime(), []);
+  const allowLoggingInProduction = debugLoggingEnabled ?? isElectronRuntime;
+  const log = useMemo(
+    () => createDebugLogger(allowLoggingInProduction),
+    [allowLoggingInProduction],
+  );
 
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(
     () => new Set(diffs.map((diff) => diff.filePath)),
@@ -1027,14 +1079,14 @@ export function MonacoGitDiffViewer({
   );
 
   const expandAll = () => {
-    debugGitDiffViewerLog("expandAll invoked", {
+    log("expandAll invoked", {
       fileCount: fileGroups.length,
     });
     setExpandedFiles(new Set(fileGroups.map((f) => f.filePath)));
   };
 
   const collapseAll = () => {
-    debugGitDiffViewerLog("collapseAll invoked", {
+    log("collapseAll invoked", {
       fileCount: fileGroups.length,
     });
     setExpandedFiles(new Set());
@@ -1062,12 +1114,7 @@ export function MonacoGitDiffViewer({
   const totalDeletions = diffs.reduce((sum, diff) => sum + diff.deletions, 0);
 
   const controlsHandlerRef = useRef<
-    | ((args: {
-        expandAll: () => void;
-        collapseAll: () => void;
-        totalAdditions: number;
-        totalDeletions: number;
-      }) => void)
+    | ((args: GitDiffViewerControls) => void)
     | null
   >(null);
 

@@ -1,4 +1,4 @@
 export {
   MonacoGitDiffViewer as GitDiffViewer,
   type GitDiffViewerProps,
-} from "./monaco/monaco-git-diff-viewer";
+} from "@cmux/shared/ui/monaco-git-diff-viewer";

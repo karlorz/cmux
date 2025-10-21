@@ -11,8 +11,8 @@ import {
   createDiffMergeView,
   type DiffMergeViewInstance,
 } from "@/lib/codemirror/diff-merge-view";
-import { kitties } from "./kitties";
-import { FileDiffHeader } from "./file-diff-header";
+import { kitties } from "@cmux/shared/ui/monaco/kitties";
+import { FileDiffHeader } from "@cmux/shared/ui/monaco/file-diff-header";
 
 type FileDiffRowClassNames = {
   button?: string;

@@ -1,6 +1,7 @@
 import { gitDiffQueryOptions } from "@/queries/git-diff";
 import { useQueries } from "@tanstack/react-query";
 import { useMemo, type ComponentProps } from "react";
+import { useTheme } from "@/components/theme/use-theme";
 import { GitDiffViewer } from "./git-diff-viewer";
 import type { ReplaceDiffEntry } from "@cmux/shared/diff-types";
 
@@ -62,6 +63,8 @@ export function RunDiffSection(props: RunDiffSectionProps) {
     return Array.from(unique);
   }, [repoFullName, additionalRepoFullNames]);
 
+  const { theme } = useTheme();
+
   const canFetch = repoFullNames.length > 0 && Boolean(ref1) && Boolean(ref2);
 
   const queries = useQueries({
@@ -113,7 +116,6 @@ export function RunDiffSection(props: RunDiffSectionProps) {
       </div>
     );
   }
-
   const shouldPrefix = withRepoPrefix ?? repoFullNames.length > 1;
 
   const combinedDiffs = repoFullNames.flatMap((repo, index) => {
@@ -138,6 +140,7 @@ export function RunDiffSection(props: RunDiffSectionProps) {
       diffs={combinedDiffs}
       onControlsChange={onControlsChange}
       classNames={classNames}
+      theme={theme}
     />
   );
 }

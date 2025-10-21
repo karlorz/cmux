@@ -20,6 +20,8 @@ const nextConfig: NextConfig = {
     "@cmux/server",
     "@cmux/shared",
     "@cmux/convex",
+    "@monaco-editor/react",
+    "monaco-editor",
     "refractor",
   ],
 };
