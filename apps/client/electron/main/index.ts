@@ -32,7 +32,7 @@ import {
   jwtVerify,
   type JWTPayload,
 } from "jose";
-import { promises as fs } from "node:fs";
+import { promises as fs, readFileSync, writeFileSync } from "node:fs";
 import { collectAllLogs } from "./log-management/collect-logs";
 import { ensureLogDirectory } from "./log-management/log-paths";
 import {
@@ -208,6 +208,42 @@ export function mainError(...args: unknown[]) {
 
   console.error("[MAIN]", line);
   emitToRenderer("error", `[MAIN] ${line}`);
+}
+
+const AUTO_UPDATE_PREF_FILENAME = "auto-update-preferences.json";
+let allowPrereleaseUpdatesPref = false;
+
+function getAutoUpdatePreferencePath(): string {
+  return path.join(app.getPath("userData"), AUTO_UPDATE_PREF_FILENAME);
+}
+
+function loadAutoUpdatePreference(): boolean {
+  try {
+    const raw = readFileSync(getAutoUpdatePreferencePath(), {
+      encoding: "utf8",
+    });
+    const parsed = JSON.parse(raw) as {
+      allowPrerelease?: unknown;
+    };
+    return Boolean(parsed.allowPrerelease);
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException | undefined;
+    if (err?.code !== "ENOENT") {
+      mainWarn("Failed to load auto-update preference", error);
+    }
+    return false;
+  }
+}
+
+function persistAutoUpdatePreference(value: boolean): void {
+  try {
+    const payload = JSON.stringify({ allowPrerelease: value }, null, 2);
+    writeFileSync(getAutoUpdatePreferencePath(), payload, {
+      encoding: "utf8",
+    });
+  } catch (error) {
+    mainWarn("Failed to persist auto-update preference", error);
+  }
 }
 
 function sendShortcutToFocusedWindow(
@@ -412,6 +448,43 @@ function registerAutoUpdateIpcHandlers(): void {
       throw err;
     }
   });
+
+  ipcMain.handle(
+    "cmux:auto-update:set-allow-prerelease",
+    async (_event, payload: { allowPrerelease?: unknown } | boolean) => {
+      const next =
+        typeof payload === "object" && payload !== null
+          ? Boolean(payload.allowPrerelease)
+          : Boolean(payload);
+      allowPrereleaseUpdatesPref = next;
+      persistAutoUpdatePreference(next);
+
+      if (!app.isPackaged) {
+        mainLog(
+          "Updated allowPrerelease preference while running unpackaged",
+          { allowPrerelease: next }
+        );
+        return { ok: true as const, updateCheckQueued: false };
+      }
+
+      try {
+        autoUpdater.allowPrerelease = next;
+        mainLog("Applied allowPrerelease preference", {
+          allowPrerelease: next,
+        });
+        if (next) {
+          const result = await autoUpdater.checkForUpdates();
+          logUpdateCheckResult("Prerelease-enabled checkForUpdates", result);
+          return { ok: true as const, updateCheckQueued: true };
+        }
+        return { ok: true as const, updateCheckQueued: false };
+      } catch (error) {
+        mainWarn("Failed to apply allowPrerelease preference", error);
+        const err = error instanceof Error ? error : new Error(String(error));
+        throw err;
+      }
+    }
+  );
 }
 
 // Write critical errors to a file to aid debugging packaged crashes
@@ -444,7 +517,7 @@ process.on("unhandledRejection", (reason) => {
   void writeFatalLog("unhandledRejection", reason);
 });
 
-function setupAutoUpdates(): void {
+function setupAutoUpdates(allowPrerelease: boolean): void {
   if (!app.isPackaged) {
     mainLog("Skipping auto-updates in development");
     return;
@@ -454,6 +527,7 @@ function setupAutoUpdates(): void {
     appVersion: app.getVersion(),
     platform: process.platform,
     arch: process.arch,
+    allowPrerelease,
   });
 
   try {
@@ -466,7 +540,7 @@ function setupAutoUpdates(): void {
 
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
-    autoUpdater.allowPrerelease = false;
+    autoUpdater.allowPrerelease = allowPrerelease;
 
     if (process.platform === "darwin") {
       const suffix = process.arch === "arm64" ? "arm64" : "x64";
@@ -605,7 +679,13 @@ function createWindow(): void {
   // Socket bridge not required; renderer connects directly
 
   // Initialize auto-updates
-  setupAutoUpdates();
+  allowPrereleaseUpdatesPref = app.isPackaged
+    ? loadAutoUpdatePreference()
+    : false;
+  mainLog("Loaded auto-update preference", {
+    allowPrerelease: allowPrereleaseUpdatesPref,
+  });
+  setupAutoUpdates(allowPrereleaseUpdatesPref);
 
   // Once the renderer is loaded, process any queued deep-link
   mainWindow.webContents.on("did-finish-load", () => {

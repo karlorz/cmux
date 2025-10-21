@@ -159,6 +159,10 @@ const cmuxAPI = {
         ok: boolean;
         reason?: string;
       }>,
+    setAllowPrerelease: (allowPrerelease: boolean) =>
+      ipcRenderer.invoke("cmux:auto-update:set-allow-prerelease", {
+        allowPrerelease,
+      }) as Promise<{ ok: boolean; updateCheckQueued?: boolean }>,
   },
   webContentsView: {
     create: (options: {

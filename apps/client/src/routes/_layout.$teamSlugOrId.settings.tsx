@@ -40,6 +40,10 @@ function SettingsComponent() {
   const [autoPrEnabled, setAutoPrEnabled] = useState<boolean>(false);
   const [originalAutoPrEnabled, setOriginalAutoPrEnabled] =
     useState<boolean>(false);
+  const [allowPrereleaseUpdates, setAllowPrereleaseUpdates] =
+    useState<boolean>(false);
+  const [originalAllowPrereleaseUpdates, setOriginalAllowPrereleaseUpdates] =
+    useState<boolean>(false);
   // const [isSaveButtonVisible, setIsSaveButtonVisible] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const saveButtonRef = useRef<HTMLDivElement>(null);
@@ -59,6 +63,22 @@ function SettingsComponent() {
   } | null>(null);
   const [originalContainerSettingsData, setOriginalContainerSettingsData] =
     useState<typeof containerSettingsData>(null);
+
+  const updateElectronPrereleasePreference = useCallback((value: boolean) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const setter = window.cmux?.autoUpdate?.setAllowPrerelease;
+    if (!setter) {
+      return;
+    }
+    void setter(value).catch((error: unknown) => {
+      console.error(
+        "Failed to update Electron prerelease preference",
+        error
+      );
+    });
+  }, []);
 
   // Get all required API keys from agent configs
   const apiKeys = Array.from(
@@ -145,8 +165,18 @@ function SettingsComponent() {
       const effective = enabled === undefined ? false : Boolean(enabled);
       setAutoPrEnabled(effective);
       setOriginalAutoPrEnabled(effective);
+      const prereleaseEnabled = (
+        workspaceSettings as unknown as { allowPrereleaseUpdates?: boolean }
+      )?.allowPrereleaseUpdates;
+      const prereleaseEffective =
+        prereleaseEnabled === undefined
+          ? false
+          : Boolean(prereleaseEnabled);
+      setAllowPrereleaseUpdates(prereleaseEffective);
+      setOriginalAllowPrereleaseUpdates(prereleaseEffective);
+      updateElectronPrereleasePreference(prereleaseEffective);
     }
-  }, [workspaceSettings]);
+  }, [workspaceSettings, updateElectronPrereleasePreference]);
 
   // Track save button visibility
   // Footer-based save button; no visibility tracking needed
@@ -243,10 +273,13 @@ function SettingsComponent() {
 
     // Auto PR toggle changes
     const autoPrChanged = autoPrEnabled !== originalAutoPrEnabled;
+    const allowPrereleaseChanged =
+      allowPrereleaseUpdates !== originalAllowPrereleaseUpdates;
 
     return (
       worktreePathChanged ||
       autoPrChanged ||
+      allowPrereleaseChanged ||
       apiKeysChanged ||
       containerSettingsChanged
     );
@@ -262,15 +295,19 @@ function SettingsComponent() {
       // Save worktree path / auto PR if changed
       if (
         worktreePath !== originalWorktreePath ||
-        autoPrEnabled !== originalAutoPrEnabled
+        autoPrEnabled !== originalAutoPrEnabled ||
+        allowPrereleaseUpdates !== originalAllowPrereleaseUpdates
       ) {
         await convex.mutation(api.workspaceSettings.update, {
           teamSlugOrId,
           worktreePath: worktreePath || undefined,
           autoPrEnabled,
+          allowPrereleaseUpdates,
         });
         setOriginalWorktreePath(worktreePath);
         setOriginalAutoPrEnabled(autoPrEnabled);
+        setOriginalAllowPrereleaseUpdates(allowPrereleaseUpdates);
+        updateElectronPrereleasePreference(allowPrereleaseUpdates);
       }
 
       // Save container settings if changed
@@ -639,6 +676,39 @@ function SettingsComponent() {
                     onValueChange={setAutoPrEnabled}
                   />
                 </div>
+              </div>
+            </div>
+
+            {/* Updates */}
+            <div className="bg-white dark:bg-neutral-950 rounded-lg border border-neutral-200 dark:border-neutral-800">
+              <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
+                <h2 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                  Updates
+                </h2>
+              </div>
+              <div className="p-4 space-y-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                      Always install the latest GitHub release
+                    </label>
+                    <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                      Allow cmux to install releases marked "Latest" on GitHub,
+                      including prereleases. You may receive builds ahead of
+                      official stable updates.
+                    </p>
+                  </div>
+                  <Switch
+                    aria-label="Always install the latest GitHub release"
+                    size="sm"
+                    color="primary"
+                    isSelected={allowPrereleaseUpdates}
+                    onValueChange={setAllowPrereleaseUpdates}
+                  />
+                </div>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  cmux restarts after the download finishes to apply updates.
+                </p>
               </div>
             </div>
 
