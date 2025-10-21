@@ -285,6 +285,65 @@ function TaskTreeInner({
     );
   })();
 
+  const crownEvaluationIndicator = (() => {
+    const evaluationState = task.crownEvaluationError;
+
+    if (!evaluationState) {
+      return null;
+    }
+
+    if (
+      evaluationState === "pending_evaluation" ||
+      evaluationState === "in_progress"
+    ) {
+      const message =
+        evaluationState === "in_progress"
+          ? "Crown evaluation running"
+          : "Crown evaluation queued";
+
+      return (
+        <Tooltip delayDuration={0}>
+          <TooltipTrigger asChild>
+            <span className="inline-flex items-center">
+              <Loader2 className="w-3.5 h-3.5 text-neutral-500 animate-spin" />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="right">{message}</TooltipContent>
+        </Tooltip>
+      );
+    }
+
+    return (
+      <Tooltip delayDuration={0}>
+        <TooltipTrigger asChild>
+          <span className="inline-flex items-center">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent
+          side="right"
+          className="max-w-xs whitespace-normal text-left"
+        >
+          <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+            Crown evaluation failed
+          </p>
+          <p className="mt-1 text-[12px] leading-4 text-neutral-700 dark:text-neutral-300">
+            {evaluationState}
+          </p>
+        </TooltipContent>
+      </Tooltip>
+    );
+  })();
+
+  const taskMetaContent = crownEvaluationIndicator ? (
+    <span className="flex items-center gap-1">
+      {taskLeadingIcon}
+      {crownEvaluationIndicator}
+    </span>
+  ) : (
+    taskLeadingIcon
+  );
+
   return (
     <TaskRunExpansionContext.Provider value={expansionContextValue}>
       <div className="select-none flex flex-col">
@@ -321,7 +380,7 @@ function TaskTreeInner({
                 title={task.pullRequestTitle || task.text}
                 titleClassName="text-[13px] text-neutral-900 dark:text-neutral-100"
                 secondary={taskSecondary || undefined}
-                meta={taskLeadingIcon || undefined}
+                meta={taskMetaContent || undefined}
               />
             </Link>
           </ContextMenu.Trigger>
