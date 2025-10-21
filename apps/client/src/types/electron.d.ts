@@ -117,6 +117,15 @@ interface CmuxAPI {
       }>;
     install: () => Promise<{ ok: boolean; reason?: string }>;
   };
+  notifications?: {
+    showTaskComplete: (payload: {
+      teamSlugOrId: string;
+      taskId: string;
+      runId: string;
+      title: string;
+      body: string;
+    }) => Promise<{ ok: boolean; reason?: string }>;
+  };
 }
 
 declare global {

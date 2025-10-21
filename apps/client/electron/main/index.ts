@@ -10,6 +10,7 @@ import {
   ipcMain,
   Menu,
   MenuItem,
+  Notification,
   nativeImage,
   net,
   session,
@@ -82,6 +83,117 @@ let pendingProtocolUrl: string | null = null;
 let mainWindow: BrowserWindow | null = null;
 let previewReloadMenuItem: MenuItem | null = null;
 let previewReloadMenuVisible = false;
+
+type TaskCompletionNotificationPayload = {
+  teamSlugOrId: string;
+  taskId: string;
+  runId: string;
+  title: string;
+  body: string;
+};
+
+type TaskNotificationHandlerResult =
+  | { ok: true }
+  | {
+      ok: false;
+      reason: "invalid-payload" | "unsupported-platform" | "not-supported";
+    };
+
+function isTaskCompletionNotificationPayload(
+  value: unknown
+): value is TaskCompletionNotificationPayload {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<TaskCompletionNotificationPayload>;
+  return (
+    typeof candidate.teamSlugOrId === "string" &&
+    typeof candidate.taskId === "string" &&
+    typeof candidate.runId === "string" &&
+    typeof candidate.title === "string" &&
+    typeof candidate.body === "string"
+  );
+}
+
+const deliveredTaskNotifications = new Set<string>();
+
+function showTaskCompletionNotification(
+  payload: TaskCompletionNotificationPayload
+): boolean {
+  if (!Notification.isSupported()) {
+    return false;
+  }
+
+  const key = `${payload.taskId}:${payload.runId}`;
+  if (deliveredTaskNotifications.has(key)) {
+    return false;
+  }
+
+  deliveredTaskNotifications.add(key);
+
+  const notification = new Notification({
+    title: payload.title,
+    subtitle: payload.teamSlugOrId,
+    body: payload.body,
+    silent: false,
+  });
+
+  notification.on("click", () => {
+    try {
+      if (process.platform === "darwin") {
+        app.focus({ steal: true });
+      } else {
+        app.focus();
+      }
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) {
+          mainWindow.restore();
+        }
+        mainWindow.show();
+        mainWindow.focus();
+        mainWindow.webContents.send("cmux:event:task-run:open-diff", {
+          teamSlugOrId: payload.teamSlugOrId,
+          taskId: payload.taskId,
+          runId: payload.runId,
+        });
+      }
+    } catch (error) {
+      mainWarn("Failed to handle task notification click", {
+        error,
+        taskId: payload.taskId,
+        runId: payload.runId,
+      });
+    }
+  });
+
+  notification.show();
+  return true;
+}
+
+function registerTaskNotificationHandlers(): void {
+  ipcMain.handle(
+    "cmux:notifications:task-complete",
+    async (_event, payload: unknown): Promise<TaskNotificationHandlerResult> => {
+      if (!isTaskCompletionNotificationPayload(payload)) {
+        mainWarn("Received invalid task completion payload", payload);
+        return { ok: false, reason: "invalid-payload" };
+      }
+
+      if (process.platform !== "darwin") {
+        return { ok: false, reason: "unsupported-platform" };
+      }
+
+      const shown = showTaskCompletionNotification(payload);
+      if (!shown) {
+        if (!Notification.isSupported()) {
+          return { ok: false, reason: "not-supported" };
+        }
+        return { ok: true };
+      }
+
+      return { ok: true };
+    }
+  );
+}
 
 function getTimestamp(): string {
   return new Date().toISOString();
@@ -690,6 +802,7 @@ app.whenReady().then(async () => {
   setupConsoleFileMirrors();
   registerLogIpcHandlers();
   registerAutoUpdateIpcHandlers();
+  registerTaskNotificationHandlers();
   initCmdK({
     getMainWindow: () => mainWindow,
     logger: {
