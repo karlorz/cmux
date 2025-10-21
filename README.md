@@ -44,3 +44,9 @@ cmux upgrade
 ```bash
 cmux uninstall
 ```
+
+---
+
+*Agents run in sync*
+*Docker containers alight*
+*Code flows through the mux*
