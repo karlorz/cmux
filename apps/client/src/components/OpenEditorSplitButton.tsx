@@ -1,5 +1,6 @@
 import { editorIcons } from "@/components/ui/dropdown-types";
 import { useSocket } from "@/contexts/socket/use-socket";
+import type { Id } from "@cmux/convex/dataModel";
 import { Menu } from "@base-ui-components/react/menu";
 import clsx from "clsx";
 import { Check, ChevronDown } from "lucide-react";
@@ -22,12 +23,20 @@ interface OpenEditorSplitButtonProps {
   worktreePath?: string | null;
   classNameLeft?: string;
   classNameRight?: string;
+  taskRunId?: Id<"taskRuns"> | null;
+  taskId?: Id<"tasks"> | null;
+  repoFullNames?: string[] | null;
+  environmentId?: Id<"environments"> | null;
 }
 
 export function OpenEditorSplitButton({
   worktreePath,
   classNameLeft,
   classNameRight,
+  taskRunId,
+  taskId,
+  repoFullNames,
+  environmentId,
 }: OpenEditorSplitButtonProps) {
   const { socket, availableEditors } = useSocket();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -147,9 +156,17 @@ export function OpenEditorSplitButton({
           ].includes(editor) &&
           worktreePath
         ) {
+          const repoList = repoFullNames?.filter(Boolean) ?? [];
           socket.emit(
             "open-in-editor",
-            { editor, path: worktreePath },
+            {
+              editor,
+              path: worktreePath,
+              taskRunId: taskRunId ?? undefined,
+              taskId: taskId ?? undefined,
+              environmentId: environmentId ?? undefined,
+              repoFullNames: repoList.length > 0 ? repoList : undefined,
+            },
             (response: { success: boolean; error?: string }) => {
               if (response.success) resolve();
               else reject(new Error(response.error || "Failed to open editor"));
@@ -160,7 +177,14 @@ export function OpenEditorSplitButton({
         }
       });
     },
-    [socket, worktreePath]
+    [
+      socket,
+      worktreePath,
+      taskRunId,
+      taskId,
+      repoFullNames,
+      environmentId,
+    ]
   );
 
   const selected = menuItems.find((m) => m.id === selectedEditor) || null;

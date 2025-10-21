@@ -173,6 +173,10 @@ export const OpenInEditorSchema = z.object({
     "xcode",
   ]),
   path: z.string(),
+  taskRunId: typedZid("taskRuns").optional(),
+  taskId: typedZid("tasks").optional(),
+  environmentId: typedZid("environments").optional(),
+  repoFullNames: z.array(z.string()).optional(),
 });
 
 export const AvailableEditorsSchema = z.object({
@@ -194,6 +198,7 @@ export const OpenInEditorErrorSchema = z.object({
 export const OpenInEditorResponseSchema = z.object({
   success: z.boolean(),
   error: z.string().optional(),
+  resolvedPath: z.string().optional(),
 });
 
 // File listing events

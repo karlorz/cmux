@@ -48,7 +48,7 @@ import { checkAllProvidersStatus } from "./utils/providerStatus";
 import { refreshGitHubData } from "./utils/refreshGitHubData";
 import { runWithAuth, runWithAuthToken } from "./utils/requestContext";
 import { DockerVSCodeInstance } from "./vscode/DockerVSCodeInstance";
-import { getProjectPaths } from "./workspace";
+import { getProjectPaths, getWorktreePath, setupProjectWorkspace } from "./workspace";
 import {
   collectRepoFullNamesForRun,
   EMPTY_AGGREGATE,
@@ -59,6 +59,11 @@ import {
 } from "./pullRequestState";
 
 const execAsync = promisify(exec);
+
+function sanitizeBranchName(name: string | null | undefined): string | null {
+  if (!name) return null;
+  return name.replace(/[^a-zA-Z0-9._/-]/g, "-");
+}
 
 const GitSocketDiffRequestSchema = z.object({
   headRef: z.string(),
@@ -821,56 +826,203 @@ export function setupSocketHandlers(
 
     socket.on("open-in-editor", async (data, callback) => {
       try {
-        const { editor, path } = OpenInEditorSchema.parse(data);
+        const {
+          editor,
+          path,
+          taskRunId,
+          taskId,
+          environmentId: initialEnvironmentId,
+          repoFullNames,
+        } = OpenInEditorSchema.parse(data);
+
+        const repoManager = RepositoryManager.getInstance();
+        const initialRepoCandidates = Array.from(
+          new Set(
+            (repoFullNames ?? [])
+              .map((name) => name.trim())
+              .filter((name) => name.length > 0),
+          ),
+        );
+
+        let resolvedPath = path;
+        let environmentId = initialEnvironmentId ?? null;
+
+        const pathExists = await fs
+          .access(resolvedPath)
+          .then(() => true)
+          .catch(() => false);
+
+        const prepareWorkspace = async (): Promise<
+          { resolvedPath: string; clonedRepos: string[] } | null
+        > => {
+          const repoCandidates = [...initialRepoCandidates];
+          let effectiveTaskId = taskId ?? null;
+          let effectiveEnvironmentId = environmentId ?? null;
+
+          const runDoc = taskRunId
+            ? await getConvex().query(api.taskRuns.get, {
+                teamSlugOrId: safeTeam,
+                id: taskRunId,
+              })
+            : null;
+          if (runDoc) {
+            effectiveTaskId = effectiveTaskId ?? runDoc.taskId;
+            effectiveEnvironmentId =
+              effectiveEnvironmentId ?? runDoc.environmentId ?? null;
+          }
+
+          const taskDoc = effectiveTaskId
+            ? await getConvex().query(api.tasks.getById, {
+                teamSlugOrId: safeTeam,
+                id: effectiveTaskId,
+              })
+            : null;
+
+          if (!repoCandidates.length && effectiveEnvironmentId) {
+            const environmentDoc = await getConvex().query(
+              api.environments.get,
+              {
+                teamSlugOrId: safeTeam,
+                id: effectiveEnvironmentId,
+              },
+            );
+            const envRepos =
+              environmentDoc?.selectedRepos
+                ?.map((repo) => repo?.trim())
+                .filter((repo): repo is string => Boolean(repo)) ?? [];
+            repoCandidates.push(...envRepos);
+          }
+
+          if (!repoCandidates.length && taskDoc?.projectFullName?.trim()) {
+            repoCandidates.push(taskDoc.projectFullName.trim());
+          }
+
+          if (!repoCandidates.length) {
+            return null;
+          }
+
+          const runBranch = sanitizeBranchName(runDoc?.newBranch?.trim() || null);
+          const baseBranch = sanitizeBranchName(taskDoc?.baseBranch?.trim() || null);
+
+          const localWorktreePaths: string[] = [];
+          const clonedRepos: string[] = [];
+          const uniqueCandidates = Array.from(new Set(repoCandidates));
+
+          for (const fullName of uniqueCandidates) {
+            const repoFullName = fullName.trim();
+            if (!repoFullName) continue;
+            const repoUrl = repoFullName.includes("://")
+              ? repoFullName
+              : `https://github.com/${repoFullName}.git`;
+
+            const projectPaths = await getProjectPaths(repoUrl, safeTeam);
+            await fs.mkdir(projectPaths.projectPath, { recursive: true });
+            await fs.mkdir(projectPaths.worktreesPath, { recursive: true });
+
+            await repoManager.ensureRepository(repoUrl, projectPaths.originPath);
+            const defaultBranch = await repoManager.getDefaultBranch(
+              projectPaths.originPath,
+            );
+
+            const baseBranchToUse = baseBranch ?? defaultBranch;
+            const targetBranch = runBranch ?? baseBranchToUse;
+
+            const worktreeInfo = await getWorktreePath(
+              {
+                repoUrl,
+                branch: targetBranch,
+              },
+              safeTeam,
+            );
+
+            const workspaceResult = await setupProjectWorkspace({
+              repoUrl,
+              branch: baseBranchToUse,
+              worktreeInfo,
+            });
+
+            if (!workspaceResult.success || !workspaceResult.worktreePath) {
+              throw new Error(
+                workspaceResult.error ||
+                  `Failed to set up workspace for ${repoFullName}`,
+              );
+            }
+
+            localWorktreePaths.push(workspaceResult.worktreePath);
+            clonedRepos.push(repoFullName);
+          }
+
+          if (!localWorktreePaths.length) {
+            return null;
+          }
+
+          return {
+            resolvedPath: localWorktreePaths[0],
+            clonedRepos,
+          };
+        };
+
+        let clonedRepos: string[] = [];
+        if (!pathExists) {
+          const preparation = await prepareWorkspace();
+          if (!preparation) {
+            throw new Error(
+              "Workspace path is not available locally and repository metadata could not be determined.",
+            );
+          }
+          resolvedPath = preparation.resolvedPath;
+          clonedRepos = preparation.clonedRepos;
+          serverLogger.info(
+            `Resolved workspace path for open-in-editor: ${resolvedPath} (repos: ${clonedRepos.join(", ")})`,
+          );
+        }
 
         let command: string[];
         switch (editor) {
           case "vscode":
-            command = ["code", path];
+            command = ["code", resolvedPath];
             break;
           case "cursor":
-            command = ["cursor", path];
+            command = ["cursor", resolvedPath];
             break;
           case "windsurf":
-            command = ["windsurf", path];
+            command = ["windsurf", resolvedPath];
             break;
           case "finder": {
             if (process.platform !== "darwin") {
               throw new Error("Finder is only supported on macOS");
             }
-            // Use macOS 'open' to open the folder in Finder
-            command = ["open", path];
+            command = ["open", resolvedPath];
             break;
           }
           case "iterm":
-            command = ["open", "-a", "iTerm", path];
+            command = ["open", "-a", "iTerm", resolvedPath];
             break;
           case "terminal":
-            command = ["open", "-a", "Terminal", path];
+            command = ["open", "-a", "Terminal", resolvedPath];
             break;
           case "ghostty":
-            command = ["open", "-a", "Ghostty", path];
+            command = ["open", "-a", "Ghostty", resolvedPath];
             break;
           case "alacritty":
-            command = ["alacritty", "--working-directory", path];
+            command = ["alacritty", "--working-directory", resolvedPath];
             break;
           case "xcode":
-            command = ["open", "-a", "Xcode", path];
+            command = ["open", "-a", "Xcode", resolvedPath];
             break;
           default:
             throw new Error(`Unknown editor: ${editor}`);
         }
 
-        console.log("command", command);
-
         const childProcess = spawn(command[0], command.slice(1));
 
         childProcess.on("close", (code) => {
           if (code === 0) {
-            serverLogger.info(`Successfully opened ${path} in ${editor}`);
-            // Send success callback
+            serverLogger.info(
+              `Successfully opened ${resolvedPath} in ${editor}`,
+            );
             if (callback) {
-              callback({ success: true });
+              callback({ success: true, resolvedPath });
             }
           } else {
             serverLogger.error(
@@ -878,9 +1030,8 @@ export function setupSocketHandlers(
             );
             const error = `Failed to open ${editor}: process exited with code ${code}`;
             socket.emit("open-in-editor-error", { error });
-            // Send error callback
             if (callback) {
-              callback({ success: false, error });
+              callback({ success: false, error, resolvedPath });
             }
           }
         });
@@ -889,9 +1040,8 @@ export function setupSocketHandlers(
           serverLogger.error(`Error opening ${editor}:`, error);
           const errorMessage = `Failed to open ${editor}: ${error.message}`;
           socket.emit("open-in-editor-error", { error: errorMessage });
-          // Send error callback
           if (callback) {
-            callback({ success: false, error: errorMessage });
+            callback({ success: false, error: errorMessage, resolvedPath });
           }
         });
       } catch (error) {
@@ -899,7 +1049,6 @@ export function setupSocketHandlers(
         const errorMessage =
           error instanceof Error ? error.message : "Unknown error";
         socket.emit("open-in-editor-error", { error: errorMessage });
-        // Send error callback
         if (callback) {
           callback({ success: false, error: errorMessage });
         }

@@ -76,6 +76,14 @@ export const TaskItem = memo(function TaskItem({
   );
   const hasActiveVSCode = runWithVSCode?.vscode?.status === "running";
 
+  const environmentRepoFullNames =
+    runWithVSCode?.environment?.selectedRepos ?? null;
+  const derivedRepoFullNames = environmentRepoFullNames?.length
+    ? environmentRepoFullNames
+    : task.projectFullName
+      ? [task.projectFullName]
+      : null;
+
   // Generate the VSCode URL if available
   const vscodeUrl = useMemo(() => {
     if (hasActiveVSCode && runWithVSCode?.vscode?.workspaceUrl) {
@@ -259,6 +267,10 @@ export const TaskItem = memo(function TaskItem({
             vscodeUrl={vscodeUrl}
             worktreePath={runWithVSCode?.worktreePath || task.worktreePath}
             branch={task.baseBranch}
+            taskRunId={runWithVSCode?._id ?? null}
+            taskId={task._id}
+            repoFullNames={derivedRepoFullNames}
+            environmentId={runWithVSCode?.environment?._id ?? runWithVSCode?.environmentId ?? null}
             className="group-hover:opacity-100 aria-expanded:opacity-100 opacity-0"
           />
 

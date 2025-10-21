@@ -1,5 +1,5 @@
 import { useSocket } from "@/contexts/socket/use-socket";
-import type { Doc } from "@cmux/convex/dataModel";
+import type { Doc, Id } from "@cmux/convex/dataModel";
 import { editorIcons, type EditorType } from "@/components/ui/dropdown-types";
 import { useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
@@ -22,6 +22,10 @@ type UseOpenWithActionsArgs = {
   worktreePath?: string | null;
   branch?: string | null;
   networking?: NetworkingInfo;
+  taskRunId?: Id<"taskRuns"> | null;
+  taskId?: Id<"tasks"> | null;
+  repoFullNames?: string[] | null;
+  environmentId?: Id<"environments"> | null;
 };
 
 export function useOpenWithActions({
@@ -29,6 +33,10 @@ export function useOpenWithActions({
   worktreePath,
   branch,
   networking,
+  taskRunId,
+  taskId,
+  repoFullNames,
+  environmentId,
 }: UseOpenWithActionsArgs) {
   const { socket, availableEditors } = useSocket();
 
@@ -68,6 +76,7 @@ export function useOpenWithActions({
           ].includes(editor) &&
           worktreePath
         ) {
+          const repoList = repoFullNames?.filter(Boolean) ?? [];
           socket.emit(
             "open-in-editor",
             {
@@ -82,6 +91,10 @@ export function useOpenWithActions({
                 | "alacritty"
                 | "xcode",
               path: worktreePath,
+              taskRunId: taskRunId ?? undefined,
+              taskId: taskId ?? undefined,
+              environmentId: environmentId ?? undefined,
+              repoFullNames: repoList.length > 0 ? repoList : undefined,
             },
             (response) => {
               if (response.success) {
@@ -96,7 +109,15 @@ export function useOpenWithActions({
         }
       });
     },
-    [socket, worktreePath, vscodeUrl]
+    [
+      socket,
+      worktreePath,
+      vscodeUrl,
+      taskRunId,
+      taskId,
+      repoFullNames,
+      environmentId,
+    ]
   );
 
   const handleCopyBranch = useCallback(() => {

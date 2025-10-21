@@ -549,6 +549,11 @@ function TaskRunTreeInner({
     return run.networking.filter((service) => service.status === "running");
   }, [run.networking]);
 
+  const environmentRepoFullNames = run.environment?.selectedRepos ?? [];
+  const derivedRepoFullNames = environmentRepoFullNames.length > 0
+    ? environmentRepoFullNames
+    : null;
+
   const {
     actions: openWithActions,
     executeOpenAction,
@@ -560,6 +565,10 @@ function TaskRunTreeInner({
     worktreePath: run.worktreePath,
     branch: run.newBranch,
     networking: run.networking,
+    taskRunId: run._id,
+    taskId,
+    repoFullNames: derivedRepoFullNames,
+    environmentId: run.environment?._id ?? run.environmentId ?? null,
   });
 
   const shouldRenderDiffLink = true;

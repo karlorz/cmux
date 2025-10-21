@@ -255,6 +255,15 @@ export function TaskDetailHeader({
     return Array.from(names);
   }, [task?.projectFullName, environmentRepos]);
 
+  const derivedEnvironmentId = useMemo(() => {
+    return (
+      selectedRun?.environment?._id ||
+      selectedRun?.environmentId ||
+      task?.environmentId ||
+      null
+    );
+  }, [selectedRun?.environment?._id, selectedRun?.environmentId, task?.environmentId]);
+
   const repoDiffTargets = useMemo<RepoDiffTarget[]>(() => {
     const baseRef = normalizedBaseBranch || undefined;
     const headRef = normalizedHeadBranch || undefined;
@@ -335,7 +344,13 @@ export function TaskDetailHeader({
             />
           </Suspense>
 
-          <OpenEditorSplitButton worktreePath={worktreePath} />
+          <OpenEditorSplitButton
+            worktreePath={worktreePath}
+            taskRunId={selectedRun?._id ?? taskRunId ?? null}
+            taskId={task?._id ?? null}
+            repoFullNames={repoFullNames.length > 0 ? repoFullNames : null}
+            environmentId={derivedEnvironmentId}
+          />
 
           <button className="p-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-white select-none hidden">
             <ExternalLink className="w-3.5 h-3.5" />
