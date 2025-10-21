@@ -7,6 +7,8 @@ const MAINTENANCE_WINDOW_NAME = "maintenance";
 const MAINTENANCE_SCRIPT_FILENAME = "maintenance.sh";
 const DEV_WINDOW_NAME = "dev";
 const DEV_SCRIPT_FILENAME = "dev.sh";
+const RUNNER_SCRIPT_PATH = `${WORKSPACE_ROOT}/cmux/scripts/run-maintenance-dev.ts`;
+const LOG_FILE_PATH = "/var/log/cmux/dev-maintenance.log";
 
 export type ScriptIdentifiers = {
   maintenance: {
@@ -37,6 +39,64 @@ type ScriptResult = {
   devError: string | null;
 };
 
+type RunnerOutput = {
+  maintenance: {
+    status: "skipped" | "success" | "failed";
+    exitCode: number | null;
+    message: string | null;
+  };
+  dev: {
+    status: "skipped" | "started" | "failed";
+    message: string | null;
+  };
+  fatalError: string | null;
+};
+
+const appendLogHint = (message: string): string => {
+  if (message.includes(LOG_FILE_PATH)) {
+    return message;
+  }
+  return `${message} (see ${LOG_FILE_PATH})`;
+};
+
+const preferMessage = (candidate: string | null | undefined, fallback: string): string => {
+  if (candidate && candidate.trim().length > 0) {
+    return candidate;
+  }
+  return fallback;
+};
+
+const parseRunnerOutput = (stdout: string): RunnerOutput | null => {
+  const trimmed = stdout.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  const lines = trimmed.split("\n");
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const candidate = lines[index].trim();
+    if (candidate.length === 0) {
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        "maintenance" in parsed &&
+        "dev" in parsed
+      ) {
+        return parsed as RunnerOutput;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+};
+
 export async function runMaintenanceAndDevScripts({
   instance,
   maintenanceScript,
@@ -49,37 +109,22 @@ export async function runMaintenanceAndDevScripts({
   identifiers?: ScriptIdentifiers;
 }): Promise<ScriptResult> {
   const ids = identifiers ?? allocateScriptIdentifiers();
+  const hasMaintenance = Boolean(maintenanceScript && maintenanceScript.trim().length > 0);
+  const hasDev = Boolean(devScript && devScript.trim().length > 0);
 
-  if (
-    (!maintenanceScript || maintenanceScript.trim().length === 0) &&
-    (!devScript || devScript.trim().length === 0)
-  ) {
+  if (!hasMaintenance && !hasDev) {
     return {
       maintenanceError: "Both maintenance and dev scripts are empty",
       devError: null,
     };
   }
 
-  const waitForTmuxSession = `for i in {1..20}; do
-  if tmux has-session -t cmux 2>/dev/null; then
-    break
-  fi
-  sleep 0.5
-done
-if ! tmux has-session -t cmux 2>/dev/null; then
-  echo "Error: cmux session does not exist" >&2
-  exit 1
-fi`;
+  const commandParts: string[] = [
+    "set -eu",
+    `mkdir -p ${CMUX_RUNTIME_DIR}`,
+  ];
 
-  let maintenanceError: string | null = null;
-  let devError: string | null = null;
-
-  if (maintenanceScript && maintenanceScript.trim().length > 0) {
-    const maintenanceRunId = `maintenance_${Date.now().toString(36)}_${Math.random()
-      .toString(36)
-      .slice(2, 10)}`;
-    const maintenanceExitCodePath = `${ids.maintenance.scriptPath}.${maintenanceRunId}.exit-code`;
-
+  if (hasMaintenance && maintenanceScript) {
     const maintenanceScriptContent = `#!/bin/zsh
 set -eux
 cd ${WORKSPACE_ROOT}
@@ -89,69 +134,15 @@ ${maintenanceScript}
 echo "=== Maintenance Script Completed at \$(date) ==="
 `;
 
-    const maintenanceWindowCommand = `zsh "${ids.maintenance.scriptPath}"
-EXIT_CODE=$?
-echo "$EXIT_CODE" > "${maintenanceExitCodePath}"
-if [ "$EXIT_CODE" -ne 0 ]; then
-  echo "[MAINTENANCE] Script exited with code $EXIT_CODE" >&2
-else
-  echo "[MAINTENANCE] Script completed successfully"
-fi
-exec zsh`;
-
-    const maintenanceCommand = `set -eu
-mkdir -p ${CMUX_RUNTIME_DIR}
-cat > ${ids.maintenance.scriptPath} <<'SCRIPT_EOF'
+    commandParts.push(
+      `cat > ${ids.maintenance.scriptPath} <<'SCRIPT_EOF'
 ${maintenanceScriptContent}
-SCRIPT_EOF
-chmod +x ${ids.maintenance.scriptPath}
-rm -f ${maintenanceExitCodePath}
-${waitForTmuxSession}
-tmux new-window -t cmux: -n ${ids.maintenance.windowName} -d ${singleQuote(maintenanceWindowCommand)}
-sleep 2
-if tmux list-windows -t cmux | grep -q "${ids.maintenance.windowName}"; then
-  echo "[MAINTENANCE] Window is running"
-else
-  echo "[MAINTENANCE] Window may have exited (normal if script completed)"
-fi
-while [ ! -f ${maintenanceExitCodePath} ]; do
-  sleep 1
-done
-MAINTENANCE_EXIT_CODE=0
-if [ -f ${maintenanceExitCodePath} ]; then
-  MAINTENANCE_EXIT_CODE=$(cat ${maintenanceExitCodePath} || echo 0)
-else
-  echo "[MAINTENANCE] Missing exit code file; assuming failure" >&2
-  MAINTENANCE_EXIT_CODE=1
-fi
-rm -f ${maintenanceExitCodePath}
-echo "[MAINTENANCE] Wait complete with exit code $MAINTENANCE_EXIT_CODE"
-exit $MAINTENANCE_EXIT_CODE
-`;
-
-    try {
-      const result = await instance.exec(
-        `zsh -lc ${singleQuote(maintenanceCommand)}`,
-      );
-
-      if (result.exit_code !== 0) {
-        const stderr = result.stderr?.trim() || "";
-        const stdout = result.stdout?.trim() || "";
-        const messageParts = [
-          `Maintenance script finished with exit code ${result.exit_code}`,
-          stderr ? `stderr: ${stderr}` : null,
-          stdout ? `stdout: ${stdout}` : null,
-        ].filter((part): part is string => part !== null);
-        maintenanceError = messageParts.join(" | ");
-      } else {
-        console.log(`[MAINTENANCE SCRIPT VERIFICATION]\n${result.stdout || ""}`);
-      }
-    } catch (error) {
-      maintenanceError = `Maintenance script execution failed: ${error instanceof Error ? error.message : String(error)}`;
-    }
+SCRIPT_EOF`,
+      `chmod +x ${ids.maintenance.scriptPath}`,
+    );
   }
 
-  if (devScript && devScript.trim().length > 0) {
+  if (hasDev && devScript) {
     const devScriptContent = `#!/bin/zsh
 set -ux
 cd ${WORKSPACE_ROOT}
@@ -160,41 +151,109 @@ echo "=== Dev Script Started at \$(date) ==="
 ${devScript}
 `;
 
-    const devCommand = `set -eu
-mkdir -p ${CMUX_RUNTIME_DIR}
-cat > ${ids.dev.scriptPath} <<'SCRIPT_EOF'
+    commandParts.push(
+      `cat > ${ids.dev.scriptPath} <<'SCRIPT_EOF'
 ${devScriptContent}
-SCRIPT_EOF
-chmod +x ${ids.dev.scriptPath}
-${waitForTmuxSession}
-tmux new-window -t cmux: -n ${ids.dev.windowName} -d
-tmux send-keys -t cmux:${ids.dev.windowName} "zsh ${ids.dev.scriptPath}" C-m
-sleep 2
-if tmux list-windows -t cmux | grep -q "${ids.dev.windowName}"; then
-  echo "[DEV] Window is running"
-else
-  echo "[DEV] ERROR: Window not found" >&2
-  exit 1
-fi
-`;
+SCRIPT_EOF`,
+      `chmod +x ${ids.dev.scriptPath}`,
+    );
+  }
 
-    try {
-      const result = await instance.exec(`zsh -lc ${singleQuote(devCommand)}`);
+  const runnerArgs: string[] = [
+    "bun",
+    singleQuote(RUNNER_SCRIPT_PATH),
+    "--session-name",
+    singleQuote("cmux"),
+    "--runtime-dir",
+    singleQuote(CMUX_RUNTIME_DIR),
+    "--workspace-root",
+    singleQuote(WORKSPACE_ROOT),
+    "--log-file",
+    singleQuote(LOG_FILE_PATH),
+  ];
 
-      if (result.exit_code !== 0) {
-        const stderr = result.stderr?.trim() || "";
-        const stdout = result.stdout?.trim() || "";
-        const messageParts = [
-          `Failed to start dev script with exit code ${result.exit_code}`,
-          stderr ? `stderr: ${stderr}` : null,
-          stdout ? `stdout: ${stdout}` : null,
-        ].filter((part): part is string => part !== null);
-        devError = messageParts.join(" | ");
-      } else {
-        console.log(`[DEV SCRIPT VERIFICATION]\n${result.stdout || ""}`);
+  if (hasMaintenance) {
+    runnerArgs.push("--maintenance-script", singleQuote(ids.maintenance.scriptPath));
+    runnerArgs.push("--maintenance-window", singleQuote(ids.maintenance.windowName));
+  }
+
+  if (hasDev) {
+    runnerArgs.push("--dev-script", singleQuote(ids.dev.scriptPath));
+    runnerArgs.push("--dev-window", singleQuote(ids.dev.windowName));
+  }
+
+  commandParts.push(runnerArgs.join(" "));
+
+  const command = commandParts.join("\n");
+
+  let maintenanceError: string | null = null;
+  let devError: string | null = null;
+
+  try {
+    const result = await instance.exec(`zsh -lc ${singleQuote(command)}`);
+    const stdout = result.stdout ?? "";
+    const stderr = result.stderr ?? "";
+
+    const runnerResult = parseRunnerOutput(stdout);
+
+    if (runnerResult) {
+      if (runnerResult.maintenance.status === "failed" && hasMaintenance) {
+        const exitCode = runnerResult.maintenance.exitCode;
+        const baseMessage = preferMessage(
+          runnerResult.maintenance.message,
+          exitCode !== null
+            ? `Maintenance script exited with code ${exitCode}`
+            : "Maintenance script failed",
+        );
+        maintenanceError = appendLogHint(baseMessage);
       }
-    } catch (error) {
-      devError = `Dev script execution failed: ${error instanceof Error ? error.message : String(error)}`;
+
+      if (runnerResult.dev.status === "failed" && hasDev) {
+        const baseMessage = preferMessage(
+          runnerResult.dev.message,
+          "Dev script failed to start",
+        );
+        devError = appendLogHint(baseMessage);
+      }
+
+      if (runnerResult.fatalError) {
+        const fatalMessage = preferMessage(
+          runnerResult.fatalError,
+          "Maintenance/dev runner encountered a fatal error",
+        );
+        if (!maintenanceError && hasMaintenance) {
+          maintenanceError = appendLogHint(fatalMessage);
+        }
+        if (!devError && hasDev) {
+          devError = appendLogHint(fatalMessage);
+        }
+      }
+    } else {
+      const messageParts = [
+        "Failed to parse runner output",
+        stdout.trim().length > 0 ? `stdout: ${stdout.trim()}` : null,
+        stderr.trim().length > 0 ? `stderr: ${stderr.trim()}` : null,
+        `exit code: ${result.exit_code}`,
+      ].filter((part): part is string => Boolean(part));
+      const fallbackMessage = appendLogHint(messageParts.join(" | "));
+      if (hasMaintenance) {
+        maintenanceError = fallbackMessage;
+      }
+      if (hasDev) {
+        devError = fallbackMessage;
+      }
+    }
+  } catch (error) {
+    const failureMessage = appendLogHint(
+      `Maintenance/dev runner execution failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    if (hasMaintenance) {
+      maintenanceError = failureMessage;
+    }
+    if (hasDev) {
+      devError = failureMessage;
     }
   }
 
