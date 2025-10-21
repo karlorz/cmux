@@ -10,7 +10,7 @@ import { AlertTriangle, MonitorUp, RotateCw } from "lucide-react";
 import { resolveWorkspaceServiceBases } from "@/lib/toProxyWorkspaceUrl";
 
 const REQUIRED_PORT = 39383;
-const TMUX_ATTACH_COMMAND = "tmux attach -t cmux || tmux new -s cmux";
+const TMUX_ATTACH_COMMAND = "tmux attach -t cmux";
 
 type ConnectionStatus = "idle" | "connecting" | "connected" | "error";
 
@@ -150,60 +150,60 @@ export function TaskRunTerminalPane({ workspaceUrl }: TaskRunTerminalPaneProps) 
               return;
             }
 
-          const socketUrl = new URL(baseUrl);
-          socketUrl.protocol = socketUrl.protocol === "https:" ? "wss:" : "ws:";
-          socketUrl.pathname = `/ws/${payload.id}`;
-          socketUrl.search = "";
-          socketUrl.hash = "";
+            const socketUrl = new URL(baseUrl);
+            socketUrl.protocol = socketUrl.protocol === "https:" ? "wss:" : "ws:";
+            socketUrl.pathname = `/ws/${payload.id}`;
+            socketUrl.search = "";
+            socketUrl.hash = "";
 
-          const socket = new WebSocket(socketUrl.toString());
-          socket.binaryType = "arraybuffer";
+            const socket = new WebSocket(socketUrl.toString());
+            socket.binaryType = "arraybuffer";
 
-          socket.addEventListener("open", () => {
-            if (cancelled) return;
-            // Don't mark as connected yet - wait for first message indicating tmux is ready
-            fitAddonRef.current?.fit();
-            sendResize();
-          });
+            socket.addEventListener("open", () => {
+              if (cancelled) return;
+              // Don't mark as connected yet - wait for first message indicating tmux is ready
+              fitAddonRef.current?.fit();
+              sendResize();
+            });
 
-          socket.addEventListener("message", () => {
-            if (cancelled || tmuxReady) return;
-            // First message indicates tmux has attached and is ready
-            tmuxReady = true;
-            setStatus("connected");
-          });
+            socket.addEventListener("message", () => {
+              if (cancelled || tmuxReady) return;
+              // First message indicates tmux has attached and is ready
+              tmuxReady = true;
+              setStatus("connected");
+            });
 
-          socket.addEventListener("close", () => {
-            if (cancelled) return;
-            setStatus("error");
-            setError("Terminal connection closed");
-          });
-
-          socket.addEventListener("error", () => {
-            if (cancelled) return;
-            setStatus("error");
-            setError("Failed to connect to terminal");
-          });
-
-          const attachAddon = new AttachAddon(socket, { bidirectional: true });
-          attachAddonRef.current = attachAddon;
-          terminalRef.current?.loadAddon(attachAddon);
-          wsRef.current = socket;
-          return;
-        } catch (err) {
-          if (cancelled) return;
-
-          if (attempt === maxAttempts) {
-            // Try the next base URL if available
-            if (index === lastIndex) {
+            socket.addEventListener("close", () => {
+              if (cancelled) return;
               setStatus("error");
-              setError(err instanceof Error ? err.message : String(err));
-              return;
+              setError("Terminal connection closed");
+            });
+
+            socket.addEventListener("error", () => {
+              if (cancelled) return;
+              setStatus("error");
+              setError("Failed to connect to terminal");
+            });
+
+            const attachAddon = new AttachAddon(socket, { bidirectional: true });
+            attachAddonRef.current = attachAddon;
+            terminalRef.current?.loadAddon(attachAddon);
+            wsRef.current = socket;
+            return;
+          } catch (err) {
+            if (cancelled) return;
+
+            if (attempt === maxAttempts) {
+              // Try the next base URL if available
+              if (index === lastIndex) {
+                setStatus("error");
+                setError(err instanceof Error ? err.message : String(err));
+                return;
+              }
+            } else {
+              const delay = baseDelayMs * attempt;
+              await new Promise((resolve) => setTimeout(resolve, delay));
             }
-          } else {
-            const delay = baseDelayMs * attempt;
-            await new Promise((resolve) => setTimeout(resolve, delay));
-          }
           }
         }
       }

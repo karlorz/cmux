@@ -193,14 +193,16 @@ export function ResizableGrid({
         aria-orientation="vertical"
         onMouseDown={startResizingHorizontal}
         className={clsx(
-          "absolute top-0 bottom-0 cursor-col-resize bg-transparent hover:bg-neutral-300/50 dark:hover:bg-neutral-700/50 active:bg-neutral-400/50 dark:active:bg-neutral-600/50 transition-colors z-10",
+          "group absolute top-0 bottom-0 cursor-col-resize bg-transparent transition-colors z-10",
         )}
         style={{
           width: "12px",
           left: `calc(${leftWidth}% - 6px)`,
         }}
         title="Resize columns"
-      />
+      >
+        <div className="absolute top-0 bottom-0 w-px bg-transparent group-hover:bg-neutral-400 dark:group-hover:bg-neutral-600 group-active:bg-neutral-500 dark:group-active:bg-neutral-500 transition-colors" style={{ left: "calc(50% + 6px)" }} />
+      </div>
 
       {/* Vertical resize handle (horizontal separator between rows) */}
       <div
@@ -208,14 +210,16 @@ export function ResizableGrid({
         aria-orientation="horizontal"
         onMouseDown={startResizingVertical}
         className={clsx(
-          "absolute left-0 right-0 cursor-row-resize bg-transparent hover:bg-neutral-300/50 dark:hover:bg-neutral-700/50 active:bg-neutral-400/50 dark:active:bg-neutral-600/50 transition-colors z-10",
+          "group absolute left-0 right-0 cursor-row-resize bg-transparent transition-colors z-10",
         )}
         style={{
           height: "12px",
           top: `calc(${topHeight}% - 6px)`,
         }}
         title="Resize rows"
-      />
+      >
+        <div className="absolute left-0 right-0 h-px bg-transparent group-hover:bg-neutral-400 dark:group-hover:bg-neutral-600 group-active:bg-neutral-500 dark:group-active:bg-neutral-500 transition-colors" style={{ top: "calc(50% + 6px)" }} />
+      </div>
     </div>
   );
 }
