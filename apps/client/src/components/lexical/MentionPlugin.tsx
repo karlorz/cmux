@@ -8,9 +8,11 @@ import {
   $isRangeSelection,
   $isTextNode,
   BLUR_COMMAND,
+  COMMAND_PRIORITY_CRITICAL,
   COMMAND_PRIORITY_HIGH,
   KEY_ARROW_DOWN_COMMAND,
   KEY_ARROW_UP_COMMAND,
+  KEY_DOWN_COMMAND,
   KEY_ENTER_COMMAND,
   KEY_ESCAPE_COMMAND,
   TextNode,
@@ -18,7 +20,12 @@ import {
 import type { EditorState } from "lexical";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { getIconForFile } from "vscode-icons-js";
+import {
+  DEFAULT_FILE,
+  DEFAULT_FOLDER,
+  getIconForFile,
+  getIconForFolder,
+} from "vscode-icons-js";
 import { useSocket } from "../../contexts/socket/use-socket";
 
 const MENTION_TRIGGER = "@";
@@ -106,11 +113,21 @@ function MentionMenu({
           const rel = file.relativePath.replace(/\\/g, "/");
           const lastSlash = rel.lastIndexOf("/");
           const dirPath = lastSlash > -1 ? rel.slice(0, lastSlash) : "";
-          const fileName = file.name || (lastSlash > -1 ? rel.slice(lastSlash + 1) : rel);
+          const rawName = file.name || (lastSlash > -1 ? rel.slice(lastSlash + 1) : rel);
+          const displayName = file.isDirectory ? `${rawName}/` : rawName;
+          const iconName = file.isDirectory
+            ? getIconForFolder(rawName) || DEFAULT_FOLDER
+            : rawName === "Dockerfile"
+              ? "file_type_docker.svg"
+              : getIconForFile(rawName) || DEFAULT_FILE;
+          const iconSrc = `https://cdn.jsdelivr.net/gh/vscode-icons/vscode-icons/icons/${iconName}`;
           return (
           <button
             key={file.relativePath}
-            onClick={() => onSelect(file)}
+            onMouseDown={(e) => {
+              e.preventDefault(); // Prevent blur event from firing
+              onSelect(file);
+            }}
             className={clsx(
               "w-full text-left px-2.5 py-1 text-xs flex items-center gap-1.5",
               index === selectedIndex
@@ -120,12 +137,12 @@ function MentionMenu({
             type="button"
           >
             <img
-              src={`https://cdn.jsdelivr.net/gh/vscode-icons/vscode-icons/icons/${file.name === "Dockerfile" ? "file_type_docker.svg" : getIconForFile(file.name)}`}
+              src={iconSrc}
               alt=""
               className="w-3 h-3 flex-shrink-0"
             />
             <div className="flex items-center gap-1 min-w-0 whitespace-nowrap">
-              <span className="truncate font-medium">{fileName}</span>
+              <span className="truncate font-medium">{displayName}</span>
               {dirPath ? (
                 <span className="truncate text-neutral-500 dark:text-neutral-400">{dirPath}</span>
               ) : null}
@@ -181,8 +198,7 @@ export function MentionPlugin({
       }) => {
         setIsLoading(false);
         if (!data.error) {
-          const fileList = data.files.filter((f) => !f.isDirectory);
-          setFiles(fileList);
+          setFiles(data.files);
         } else {
           setFiles([]);
         }
@@ -263,10 +279,20 @@ export function MentionPlugin({
         const deleteCount = Math.max(anchorOffset - mentionStartIndex, 0);
 
         if (deleteCount > 0) {
+          const relativePath = file.relativePath;
+          const hasBackslash = relativePath.includes("\\");
+          const directorySeparator = hasBackslash ? "\\" : "/";
+          const pathWithSeparator =
+            file.isDirectory &&
+            !relativePath.endsWith("/") &&
+            !relativePath.endsWith("\\")
+              ? `${relativePath}${directorySeparator}`
+              : relativePath;
+
           currentTriggerNode.spliceText(
             mentionStartIndex,
             deleteCount,
-            `@${file.relativePath} `,
+            `@${pathWithSeparator} `,
             true
           );
         }
@@ -439,26 +465,6 @@ export function MentionPlugin({
       return true;
     };
 
-    // Handle Ctrl+N/P and Ctrl+J/K
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (!isShowingMenuRef.current) return;
-
-      if (event.ctrlKey) {
-        switch (event.key) {
-          case "n":
-          case "j":
-            event.preventDefault();
-            handleArrowDown();
-            break;
-          case "p":
-          case "k":
-            event.preventDefault();
-            handleArrowUp();
-            break;
-        }
-      }
-    };
-
     const removeArrowDown = editor.registerCommand(
       KEY_ARROW_DOWN_COMMAND,
       (event) => handleArrowDown(event || undefined),
@@ -483,6 +489,31 @@ export function MentionPlugin({
       COMMAND_PRIORITY_HIGH
     );
 
+    // Handle Ctrl+N/P/J/K with critical priority to override other handlers
+    const removeKeyDown = editor.registerCommand(
+      KEY_DOWN_COMMAND,
+      (event: KeyboardEvent) => {
+        if (!isShowingMenuRef.current) return false;
+
+        if (event.ctrlKey) {
+          switch (event.key) {
+            case "n":
+            case "j":
+              event.preventDefault();
+              handleArrowDown();
+              return true;
+            case "p":
+            case "k":
+              event.preventDefault();
+              handleArrowUp();
+              return true;
+          }
+        }
+        return false;
+      },
+      COMMAND_PRIORITY_CRITICAL
+    );
+
     // Hide menu on blur
     const removeBlur = editor.registerCommand(
       BLUR_COMMAND,
@@ -495,15 +526,13 @@ export function MentionPlugin({
       COMMAND_PRIORITY_HIGH
     );
 
-    document.addEventListener("keydown", handleKeyDown);
-
     return () => {
       removeArrowDown();
       removeArrowUp();
       removeEnter();
       removeEscape();
+      removeKeyDown();
       removeBlur();
-      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [editor, selectFile, hideMenu]);
 
