@@ -5,7 +5,7 @@ import { isElectron } from "@/lib/electron";
 import { type Doc } from "@cmux/convex/dataModel";
 import type { LinkProps } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
-import { Home, Plus, Server, Settings } from "lucide-react";
+import { Home, Mail, Plus, Server, Settings } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -13,6 +13,7 @@ import {
   useState,
   type ComponentType,
   type CSSProperties,
+  type SVGProps,
 } from "react";
 import CmuxLogo from "./logo/cmux-logo";
 import { SidebarNavLink } from "./sidebar/SidebarNavLink";
@@ -58,6 +59,26 @@ const navItems: SidebarNavItem[] = [
     icon: Settings,
   },
 ];
+
+const QUICK_LINK_BUTTON_CLASS =
+  "inline-flex h-8 w-8 items-center justify-center rounded-md border border-neutral-200 text-neutral-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-50 hover:bg-neutral-100 dark:border-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-900 dark:focus-visible:ring-neutral-600 dark:focus-visible:ring-offset-black";
+
+function DiscordIcon({ className, ...props }: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      aria-hidden="true"
+      focusable="false"
+      {...props}
+    >
+      <path
+        fill="currentColor"
+        d="M20.317 4.37a19.79 19.79 0 0 0-4.885-1.516.074.074 0 0 0-.079.037 12.31 12.31 0 0 0-.608 1.25 19.507 19.507 0 0 0-5.487 0 12.524 12.524 0 0 0-.618-1.25.077.077 0 0 0-.078-.037 19.736 19.736 0 0 0-4.885 1.515.07.07 0 0 0-.032.028C.533 9.046-.319 13.58.099 18.067a.082.082 0 0 0 .032.056 16.87 16.87 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.873-1.295 1.226-1.994a.076.076 0 0 0-.041-.104 11.825 11.825 0 0 1-1.68-.803.078.078 0 0 1-.008-.13c.113-.084.226-.173.334-.266a.074.074 0 0 1 .077-.01c3.534 1.616 7.366 1.616 10.856 0a.074.074 0 0 1 .077.01c.108.093.221.182.334.266a.078.078 0 0 1-.008.13 11.321 11.321 0 0 1-1.681.803.076.076 0 0 0-.04.105c.353.698.764 1.363 1.226 1.993a.078.078 0 0 0 .084.028 16.752 16.752 0 0 0 6.023-3.03.082.082 0 0 0 .032-.055c.5-5.177-.838-9.673-3.548-13.67a.061.061 0 0 0-.031-.028ZM8.02 15.334c-1.063 0-1.938-.975-1.938-2.17 0-1.195.857-2.17 1.938-2.17 1.092 0 1.955.986 1.938 2.17 0 1.195-.857 2.17-1.938 2.17Zm7.958 0c-1.063 0-1.939-.975-1.939-2.17 0-1.195.857-2.17 1.939-2.17 1.091 0 1.954.986 1.938 2.17 0 1.195-.847 2.17-1.938 2.17Z"
+      />
+    </svg>
+  );
+}
 
 export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
   const DEFAULT_WIDTH = 256;
@@ -313,6 +334,29 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
           </div>
         </div>
       </nav>
+
+      <div className="sticky bottom-0 left-0 right-0 px-3 pb-3 pt-2 border-t border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-black">
+        <div className="flex items-center gap-2">
+          <a
+            href="mailto:founders@manaflow.ai"
+            className={QUICK_LINK_BUTTON_CLASS}
+            title="Send feedback"
+          >
+            <Mail className="h-4 w-4" aria-hidden="true" />
+            <span className="sr-only">Send feedback</span>
+          </a>
+          <a
+            href="https://discord.gg/Qg9fxZ58b8"
+            target="_blank"
+            rel="noreferrer"
+            className={QUICK_LINK_BUTTON_CLASS}
+            title="Join us on Discord"
+          >
+            <DiscordIcon className="h-4 w-4" />
+            <span className="sr-only">Join us on Discord</span>
+          </a>
+        </div>
+      </div>
 
       {/* Resize handle */}
       <div
