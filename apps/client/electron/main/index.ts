@@ -250,6 +250,38 @@ ipcMain.handle(
   }
 );
 
+ipcMain.handle("cmux:ui:show-edit-context-menu", (event) => {
+  try {
+    const targetWindow = BrowserWindow.fromWebContents(event.sender) ?? null;
+    if (!targetWindow || targetWindow.isDestroyed()) {
+      mainWarn("show-edit-context-menu invoked without a usable window", {
+        senderId: event.sender.id,
+      });
+      return { ok: false, reason: "no-window" };
+    }
+
+    const template: MenuItemConstructorOptions[] = [
+      { role: "undo" },
+      { role: "redo" },
+      { type: "separator" },
+      { role: "cut" },
+      { role: "copy" },
+      { role: "paste" },
+      { role: "pasteAndMatchStyle" },
+      { role: "delete" },
+      { type: "separator" },
+      { role: "selectAll" },
+    ];
+
+    const menu = Menu.buildFromTemplate(template);
+    menu.popup({ window: targetWindow });
+    return { ok: true };
+  } catch (error) {
+    mainWarn("Failed to show edit context menu", error);
+    return { ok: false, reason: "error" };
+  }
+});
+
 function emitAutoUpdateToastIfPossible(): void {
   if (!queuedAutoUpdateToast) return;
   if (!mainWindow || mainWindow.isDestroyed() || !rendererLoaded) return;

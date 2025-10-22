@@ -1,4 +1,5 @@
 import LexicalEditor from "@/components/lexical/LexicalEditor";
+import { isElectron } from "@/lib/electron";
 import clsx from "clsx";
 import {
   forwardRef,
@@ -9,6 +10,8 @@ import {
   useRef,
 } from "react";
 import type { Id } from "@cmux/convex/dataModel";
+
+const LEXICAL_ROOT_SELECTOR = ".dashboard-input-editor";
 
 export interface EditorApi {
   getContent: () => {
@@ -81,7 +84,6 @@ export const DashboardInput = memo(
     }));
 
     useEffect(() => {
-      const lexicalRootSelector = ".dashboard-input-editor";
       // const isDev = import.meta.env.DEV;
       const isDev = false;
 
@@ -127,7 +129,7 @@ export const DashboardInput = memo(
 
         const targetElement =
           event.target instanceof Element ? event.target : null;
-        if (!targetElement?.closest(lexicalRootSelector)) {
+        if (!targetElement?.closest(LEXICAL_ROOT_SELECTOR)) {
           return false;
         }
 
@@ -144,7 +146,7 @@ export const DashboardInput = memo(
           recentPointer.ts !== 0 &&
           now - recentPointer.ts < 400 &&
           recentPointer.target instanceof Element &&
-          !recentPointer.target.closest(lexicalRootSelector)
+          !recentPointer.target.closest(LEXICAL_ROOT_SELECTOR)
         ) {
           return false;
         }
@@ -288,6 +290,38 @@ export const DashboardInput = memo(
         document.removeEventListener("pointerup", handlePointerEvent, true);
         document.removeEventListener("keydown", handleKeyEvent, true);
         document.removeEventListener("keyup", handleKeyEvent, true);
+      };
+    }, []);
+
+    useEffect(() => {
+      if (!isElectron) {
+        return;
+      }
+
+      const handleContextMenu = (event: MouseEvent) => {
+        const target = event.target;
+        if (!(target instanceof Element)) {
+          return;
+        }
+
+        if (!target.closest(LEXICAL_ROOT_SELECTOR)) {
+          return;
+        }
+
+        const showEditContextMenu = window.cmux?.ui?.showEditContextMenu;
+        if (!showEditContextMenu) {
+          return;
+        }
+
+        event.preventDefault();
+        void showEditContextMenu().catch((error: unknown) => {
+          console.error("Failed to show edit context menu", error);
+        });
+      };
+
+      document.addEventListener("contextmenu", handleContextMenu, true);
+      return () => {
+        document.removeEventListener("contextmenu", handleContextMenu, true);
       };
     }, []);
 

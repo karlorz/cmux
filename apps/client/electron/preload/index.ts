@@ -127,6 +127,11 @@ const cmuxAPI = {
         Boolean(visible)
       ) as Promise<{ ok: boolean }>;
     },
+    showEditContextMenu: () => {
+      return ipcRenderer.invoke(
+        "cmux:ui:show-edit-context-menu"
+      ) as Promise<{ ok: boolean }>;
+    },
     restoreLastFocus: () => {
       return ipcRenderer.invoke("cmux:ui:restore-last-focus") as Promise<{
         ok: boolean;
