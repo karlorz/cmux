@@ -78,7 +78,6 @@ class PersistentIframeManager {
   private maxIframes = 10;
   private container: HTMLDivElement | null = null;
   private resizeObserver: ResizeObserver;
-  private activeIframeKey: string | null = null;
   private debugMode = false;
   private syncTimeouts = new Map<string, number>();
 
@@ -232,18 +231,6 @@ class PersistentIframeManager {
       throw new Error(`Iframe with key "${key}" not found`);
     }
 
-    // Fix #1: Hide currently active iframe before showing new one
-    if (this.activeIframeKey && this.activeIframeKey !== key) {
-      const activeEntry = this.iframes.get(this.activeIframeKey);
-      if (activeEntry && activeEntry.isVisible) {
-        if (this.debugMode)
-          console.log(`[Mount] Hiding active iframe ${this.activeIframeKey}`);
-        activeEntry.wrapper.style.visibility = "hidden";
-        activeEntry.wrapper.style.pointerEvents = "none";
-        activeEntry.isVisible = false;
-      }
-    }
-
     // Mark target element
     targetElement.setAttribute("data-iframe-target", key);
 
@@ -292,7 +279,6 @@ class PersistentIframeManager {
       this.syncIframePosition(key);
 
       entry.isVisible = true;
-      this.activeIframeKey = key;
       if (this.debugMode) console.log(`[Mount] Iframe ${key} is now visible`);
     });
 
@@ -322,10 +308,6 @@ class PersistentIframeManager {
       entry.wrapper.style.visibility = "hidden";
       entry.wrapper.style.pointerEvents = "none";
       entry.isVisible = false;
-
-      if (this.activeIframeKey === key) {
-        this.activeIframeKey = null;
-      }
 
       this.resizeObserver.unobserve(targetElement);
       scrollableParents.forEach((parent) => {
@@ -430,9 +412,6 @@ class PersistentIframeManager {
     this.moveIframeOffscreen(entry);
     entry.isVisible = false;
 
-    if (this.activeIframeKey === key) {
-      this.activeIframeKey = null;
-    }
   }
 
   /**

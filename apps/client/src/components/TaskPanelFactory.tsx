@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, type ReactNode, useCallback } from "react";
+import React, { useState, useEffect, type ReactNode, useCallback } from "react";
 import { Code2, Globe2, TerminalSquare, GitCompare, GripVertical, X } from "lucide-react";
 import clsx from "clsx";
 import type { PanelType } from "@/lib/panel-config";
@@ -8,6 +8,17 @@ import type { Doc, Id } from "@cmux/convex/dataModel";
 import type { TaskRunWithChildren } from "@/types/task";
 
 type PanelPosition = "topLeft" | "topRight" | "bottomLeft" | "bottomRight";
+
+const PANEL_DRAG_START_EVENT = "cmux:panel-drag-start";
+const PANEL_DRAG_END_EVENT = "cmux:panel-drag-end";
+type PanelDragLifecycleEvent = typeof PANEL_DRAG_START_EVENT | typeof PANEL_DRAG_END_EVENT;
+
+const dispatchPanelDragEvent = (event: PanelDragLifecycleEvent) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.dispatchEvent(new Event(event));
+};
 
 interface PanelFactoryProps {
   type: PanelType | null;
@@ -60,183 +71,131 @@ interface PanelFactoryProps {
 const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
   const { type, position, onSwap, onClose } = props;
   const [isDragOver, setIsDragOver] = useState(false);
-  const dragOverTimeoutRef = useRef<number | null>(null);
-  const isDraggingRef = useRef(false);
-  const restoreTimeoutRef = useRef<number | null>(null);
+  const [isDraggingSelf, setIsDraggingSelf] = useState(false);
+  const [isPanelDragActive, setIsPanelDragActive] = useState(false);
 
-  // Restore iframe pointer events helper - with force flag to always restore
-  const restoreIframePointerEvents = useCallback((force = false) => {
-    const iframes = Array.from(document.querySelectorAll("iframe"));
-    for (const el of iframes) {
-      if (el instanceof HTMLIFrameElement) {
-        if (force) {
-          // Force remove pointer-events restriction
-          el.style.removeProperty("pointer-events");
-          delete el.dataset.prevPointerEvents;
-        } else {
-          const prev = el.dataset.prevPointerEvents;
-          if (prev !== undefined) {
-            if (prev === "__unset__") el.style.removeProperty("pointer-events");
-            else el.style.pointerEvents = prev;
-            delete el.dataset.prevPointerEvents;
-          }
-        }
-      }
-    }
-  }, []);
-
-  // Cleanup drag state on unmount or when drag is abandoned
   useEffect(() => {
-    const handleGlobalDragEnd = () => {
-      if (isDraggingRef.current) {
-        restoreIframePointerEvents();
-        isDraggingRef.current = false;
+    if (typeof window === "undefined") {
+      return;
+    }
 
-        // Clear any existing restore timeout
-        if (restoreTimeoutRef.current !== null) {
-          window.clearTimeout(restoreTimeoutRef.current);
-          restoreTimeoutRef.current = null;
-        }
-      }
+    const handleStart = () => {
+      setIsPanelDragActive(true);
+    };
+    const handleEnd = () => {
+      setIsPanelDragActive(false);
+      setIsDragOver(false);
     };
 
-    // Listen for global drag end events to ensure cleanup
-    window.addEventListener("dragend", handleGlobalDragEnd);
-    window.addEventListener("drop", handleGlobalDragEnd);
+    window.addEventListener(PANEL_DRAG_START_EVENT, handleStart);
+    window.addEventListener(PANEL_DRAG_END_EVENT, handleEnd);
 
     return () => {
-      window.removeEventListener("dragend", handleGlobalDragEnd);
-      window.removeEventListener("drop", handleGlobalDragEnd);
-      if (dragOverTimeoutRef.current !== null) {
-        window.clearTimeout(dragOverTimeoutRef.current);
-      }
-      if (restoreTimeoutRef.current !== null) {
-        window.clearTimeout(restoreTimeoutRef.current);
-      }
-      if (isDraggingRef.current) {
-        restoreIframePointerEvents(true); // Force restore on unmount
-      }
+      window.removeEventListener(PANEL_DRAG_START_EVENT, handleStart);
+      window.removeEventListener(PANEL_DRAG_END_EVENT, handleEnd);
     };
-  }, [restoreIframePointerEvents]);
+  }, []);
 
-  const handleDragStart = (e: React.DragEvent) => {
+  const handleDragStart = useCallback((e: React.DragEvent) => {
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", position);
-    if (e.currentTarget instanceof HTMLElement) {
-      e.currentTarget.style.opacity = "0.5";
-    }
+    setIsDraggingSelf(true);
+    dispatchPanelDragEvent(PANEL_DRAG_START_EVENT);
+  }, [position]);
 
-    isDraggingRef.current = true;
-
-    // Disable pointer events on iframes while dragging to prevent interference
-    const iframes = Array.from(document.querySelectorAll("iframe"));
-    for (const el of iframes) {
-      if (el instanceof HTMLIFrameElement) {
-        const current = el.style.pointerEvents;
-        el.dataset.prevPointerEvents = current ? current : "__unset__";
-        el.style.pointerEvents = "none";
-      }
-    }
-
-    // Failsafe: force restore pointer events after 5 seconds in case drag end events fail
-    restoreTimeoutRef.current = window.setTimeout(() => {
-      if (isDraggingRef.current) {
-        console.warn("Drag operation timeout - forcing iframe pointer-events restore");
-        restoreIframePointerEvents(true);
-        isDraggingRef.current = false;
-      }
-      restoreTimeoutRef.current = null;
-    }, 5000);
-  };
-
-  const handleDragEnd = (e: React.DragEvent) => {
-    if (e.currentTarget instanceof HTMLElement) {
-      e.currentTarget.style.opacity = "1";
-    }
-    // Ensure drag over state is cleared when drag ends
+  const handleDragEnd = useCallback(() => {
+    setIsDraggingSelf(false);
     setIsDragOver(false);
-    if (dragOverTimeoutRef.current !== null) {
-      window.clearTimeout(dragOverTimeoutRef.current);
-      dragOverTimeoutRef.current = null;
-    }
-    if (restoreTimeoutRef.current !== null) {
-      window.clearTimeout(restoreTimeoutRef.current);
-      restoreTimeoutRef.current = null;
-    }
+    dispatchPanelDragEvent(PANEL_DRAG_END_EVENT);
+  }, []);
 
-    isDraggingRef.current = false;
-    restoreIframePointerEvents();
-  };
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  }, []);
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
+  }, []);
 
-    // Only update state if it's not already true to prevent unnecessary re-renders
-    setIsDragOver(prev => {
-      if (!prev) {
-        return true;
-      }
-      return prev;
-    });
-
-    // Clear any existing timeout
-    if (dragOverTimeoutRef.current !== null) {
-      window.clearTimeout(dragOverTimeoutRef.current);
-    }
-
-    // Auto-clear drag over state if drag events stop (in case dragLeave is missed)
-    dragOverTimeoutRef.current = window.setTimeout(() => {
-      setIsDragOver(false);
-      dragOverTimeoutRef.current = null;
-    }, 100);
-  };
-
-  const handleDragLeave = () => {
-    // Clear timeout if it exists
-    if (dragOverTimeoutRef.current !== null) {
-      window.clearTimeout(dragOverTimeoutRef.current);
-      dragOverTimeoutRef.current = null;
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    const nextTarget = e.relatedTarget as Node | null;
+    if (nextTarget && e.currentTarget.contains(nextTarget)) {
+      return;
     }
     setIsDragOver(false);
-  };
+  }, []);
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-
-    // Clear timeout
-    if (dragOverTimeoutRef.current !== null) {
-      window.clearTimeout(dragOverTimeoutRef.current);
-      dragOverTimeoutRef.current = null;
-    }
-
     setIsDragOver(false);
     const fromPosition = e.dataTransfer.getData("text/plain") as PanelPosition;
-    if (fromPosition !== position && onSwap) {
+    if (fromPosition && fromPosition !== position && onSwap) {
       onSwap(fromPosition, position);
     }
+    dispatchPanelDragEvent(PANEL_DRAG_END_EVENT);
+  }, [onSwap, position]);
+
+  const showDropOverlay = isPanelDragActive && !isDraggingSelf;
+
+  const renderDropOverlay = () => {
+    if (!showDropOverlay) {
+      return null;
+    }
+
+    return (
+      <div
+        aria-hidden
+        className={clsx(
+          "pointer-events-auto absolute inset-0 z-10 rounded-lg",
+          isDragOver ? "bg-blue-500/10 dark:bg-blue-400/15" : "bg-transparent"
+        )}
+        onDragEnter={(event) => {
+          handleDragEnter(event);
+          event.stopPropagation();
+        }}
+        onDragOver={(event) => {
+          handleDragOver(event);
+          event.stopPropagation();
+        }}
+        onDragLeave={(event) => {
+          handleDragLeave(event);
+          event.stopPropagation();
+        }}
+        onDrop={(event) => {
+          handleDrop(event);
+          event.stopPropagation();
+        }}
+      />
+    );
   };
 
   const panelWrapper = (icon: ReactNode, title: string, content: ReactNode) => (
     <div
       className={clsx(
-        "flex h-full flex-col overflow-hidden rounded-lg border bg-white shadow-sm dark:bg-neutral-950 transition-all duration-150",
+        "relative flex h-full flex-col overflow-hidden rounded-lg border bg-white shadow-sm transition-all duration-150 dark:bg-neutral-950",
         isDragOver
           ? "border-blue-500 dark:border-blue-400 ring-2 ring-blue-500/30 dark:ring-blue-400/30"
           : "border-neutral-200 dark:border-neutral-800"
       )}
+      onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {renderDropOverlay()}
       <div className="flex items-center gap-1.5 border-b border-neutral-200 px-2 py-1 dark:border-neutral-800">
         <div
           draggable
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
-          className="flex flex-1 items-center gap-1.5 cursor-move group transition-opacity"
+          className={clsx(
+            "flex flex-1 items-center gap-1.5 cursor-move group transition-opacity",
+            isDraggingSelf && "opacity-60"
+          )}
         >
-          <GripVertical className="size-3.5 text-neutral-400 dark:text-neutral-500 group-hover:text-neutral-600 dark:group-hover:text-neutral-300 transition-colors" />
+          <GripVertical className="size-3.5 text-neutral-400 transition-colors group-hover:text-neutral-600 dark:text-neutral-500 dark:group-hover:text-neutral-300" />
           <div className="flex size-5 items-center justify-center rounded-full bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
             {icon}
           </div>
@@ -248,7 +207,7 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
           <button
             type="button"
             onClick={() => onClose(position)}
-            className="flex items-center justify-center size-5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors"
+            className="flex size-5 items-center justify-center rounded text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
             title="Close panel"
           >
             <X className="size-3.5" />
@@ -266,15 +225,17 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
       return (
         <div
           className={clsx(
-            "flex h-full flex-col overflow-hidden rounded-lg border bg-white shadow-sm dark:bg-neutral-950 transition-all duration-150",
+            "relative flex h-full flex-col overflow-hidden rounded-lg border bg-white shadow-sm transition-all duration-150 dark:bg-neutral-950",
             isDragOver
               ? "border-blue-500 dark:border-blue-400 ring-2 ring-blue-500/30 dark:ring-blue-400/30"
               : "border-neutral-200 dark:border-neutral-800"
           )}
+          onDragEnter={handleDragEnter}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
+          {renderDropOverlay()}
           <TaskRunChatPane
             task={task}
             taskRuns={taskRuns}
