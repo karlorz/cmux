@@ -14,7 +14,8 @@ const baseContextMenuOptions: Readonly<ContextMenuOptions> = Object.freeze({
   showSaveVideo: true,
   showSaveVideoAs: true,
   showSaveLinkAs: true,
-  shouldShowMenu: (_event, parameters) => parameters.linkURL.length === 0,
+  shouldShowMenu: (_event, parameters) =>
+    parameters.isEditable || parameters.linkURL.length === 0,
 });
 
 export function registerGlobalContextMenu(): () => void {
