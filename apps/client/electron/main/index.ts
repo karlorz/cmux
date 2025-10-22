@@ -21,6 +21,7 @@ import {
 import { startEmbeddedServer } from "./embedded-server";
 import { registerWebContentsViewHandlers } from "./web-contents-view";
 import { registerGlobalContextMenu } from "./context-menu";
+import { syncEditorSettings, type SyncLogger } from "./editor-settings-sync";
 // Auto-updater
 import electronUpdater, {
   type UpdateCheckResult,
@@ -706,6 +707,41 @@ app.whenReady().then(async () => {
       warn: mainWarn,
     },
   });
+
+  const settingsLogger: SyncLogger = {
+    log(message, meta) {
+      if (typeof meta === "undefined") {
+        mainLog("[settings-sync]", message);
+      } else {
+        mainLog("[settings-sync]", message, meta);
+      }
+    },
+    warn(message, meta) {
+      if (typeof meta === "undefined") {
+        mainWarn("[settings-sync]", message);
+      } else {
+        mainWarn("[settings-sync]", message, meta);
+      }
+    },
+    error(message, meta) {
+      if (typeof meta === "undefined") {
+        mainError("[settings-sync]", message);
+      } else {
+        mainError("[settings-sync]", message, meta);
+      }
+    },
+  };
+
+  try {
+    const exportDir = path.join(app.getPath("userData"), "editor-settings-export");
+    const summary = await syncEditorSettings({ exportDir, logger: settingsLogger });
+    mainLog("[settings-sync]", "completed", {
+      guessedDefaultEditor: summary.guessedDefaultEditor,
+      copiedToOpenVSCode: summary.copiedToOpenVSCode,
+    });
+  } catch (error) {
+    mainError("[settings-sync]", "failed", error);
+  }
 
   // Register before-input-event handlers for preview browser shortcuts
   // These fire before web content sees them, so they work even in WebContentsViews
