@@ -380,7 +380,7 @@ function TaskDetailPage() {
     }
 
     return null;
-  }, [selectedRun, taskRuns?.length]);
+  }, [taskRuns?.length]);
 
   const browserPlaceholder = useMemo(() => {
     if (!selectedRun) {
