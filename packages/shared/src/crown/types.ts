@@ -1,5 +1,14 @@
 import { z } from "zod";
 import { typedZid } from "../utils/typed-zid";
+import {
+  CROWN_EVALUATION_STATUS_VALUES,
+  type CrownEvaluationStatus,
+} from "./status";
+
+export const CrownEvaluationStatusSchema = z.enum(
+  CROWN_EVALUATION_STATUS_VALUES,
+);
+export type { CrownEvaluationStatus };
 
 export const WorkerRunStatusSchema = z.enum([
   "pending",
@@ -34,6 +43,7 @@ export const CrownWorkerCheckResponseSchema = z.object({
     .nullable(),
   task: z.object({
     text: z.string(),
+    crownEvaluationStatus: CrownEvaluationStatusSchema,
     crownEvaluationError: z.string().nullable(),
     isCompleted: z.boolean(),
     baseBranch: z.string().nullable(),

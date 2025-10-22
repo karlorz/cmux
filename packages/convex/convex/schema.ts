@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { crownStatusValidator } from "../_shared/crownStatus";
 
 const convexSchema = defineSchema({
   teams: defineTable({
@@ -107,6 +108,7 @@ const convexSchema = defineSchema({
     userId: v.string(), // Link to user who created the task
     teamId: v.string(),
     environmentId: v.optional(v.id("environments")),
+    crownEvaluationStatus: v.optional(crownStatusValidator),
     crownEvaluationError: v.optional(v.string()), // Error message if crown evaluation failed
     mergeStatus: v.optional(
       v.union(

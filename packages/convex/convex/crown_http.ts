@@ -15,6 +15,7 @@ import {
 import { env } from "../_shared/convex-env";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
+import { resolveCrownStatus } from "../_shared/crownStatus";
 import { httpAction } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
 
@@ -492,6 +493,7 @@ async function handleCrownCheckRequest(
       ? completedRuns[0]._id
       : null;
 
+  const crownStatus = resolveCrownStatus(task);
   const response = {
     ok: true,
     taskId,
@@ -507,7 +509,9 @@ async function handleCrownCheckRequest(
       : null,
     task: {
       text: task.text,
-      crownEvaluationError: task.crownEvaluationError ?? null,
+      crownEvaluationStatus: crownStatus,
+      crownEvaluationError:
+        crownStatus === "error" ? task.crownEvaluationError ?? null : null,
       isCompleted: task.isCompleted,
       baseBranch: task.baseBranch ?? null,
       projectFullName: task.projectFullName ?? null,

@@ -3,6 +3,12 @@ import { resolveTeamIdLoose } from "../_shared/team";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalQuery } from "./_generated/server";
+import {
+  crownStatusValidator,
+  LEGACY_CROWN_PENDING,
+  resolveCrownStatus,
+  type CrownEvaluationStatus,
+} from "../_shared/crownStatus";
 import { authMutation, authQuery, taskIdWithFake } from "./users/utils";
 
 export const get = authQuery({
@@ -285,6 +291,7 @@ export const updateCrownError = authMutation({
     teamSlugOrId: v.string(),
     id: v.id("tasks"),
     crownEvaluationError: v.optional(v.string()),
+    crownEvaluationStatus: v.optional(crownStatusValidator),
   },
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
@@ -294,10 +301,29 @@ export const updateCrownError = authMutation({
     if (!task || task.teamId !== teamId || task.userId !== userId) {
       throw new Error("Task not found or unauthorized");
     }
-    await ctx.db.patch(id, {
-      ...updates,
+    const patch: {
+      crownEvaluationError?: string;
+      crownEvaluationStatus?: CrownEvaluationStatus;
+      updatedAt: number;
+    } = {
       updatedAt: Date.now(),
-    });
+    };
+
+    if ("crownEvaluationError" in updates) {
+      patch.crownEvaluationError = updates.crownEvaluationError;
+    }
+
+    if ("crownEvaluationStatus" in updates) {
+      patch.crownEvaluationStatus = updates.crownEvaluationStatus;
+      if (
+        updates.crownEvaluationStatus !== "error" &&
+        !("crownEvaluationError" in updates)
+      ) {
+        patch.crownEvaluationError = undefined;
+      }
+    }
+
+    await ctx.db.patch(id, patch);
   },
 });
 
@@ -314,11 +340,13 @@ export const tryBeginCrownEvaluation = authMutation({
     if (!task || task.teamId !== teamId || task.userId !== userId) {
       throw new Error("Task not found or unauthorized");
     }
-    if (task.crownEvaluationError === "in_progress") {
+    const status = resolveCrownStatus(task);
+    if (status === "in_progress") {
       return false;
     }
     await ctx.db.patch(args.id, {
-      crownEvaluationError: "in_progress",
+      crownEvaluationStatus: "in_progress",
+      crownEvaluationError: undefined,
       updatedAt: Date.now(),
     });
     return true;
@@ -424,7 +452,10 @@ export const getTasksWithPendingCrownEvaluation = authQuery({
         q.eq("teamId", teamId).eq("userId", userId),
       )
       .filter((q) =>
-        q.eq(q.field("crownEvaluationError"), "pending_evaluation"),
+        q.or(
+          q.eq(q.field("crownEvaluationStatus"), "pending"),
+          q.eq(q.field("crownEvaluationError"), LEGACY_CROWN_PENDING),
+        ),
       )
       .collect();
 
@@ -556,12 +587,10 @@ export const checkAndEvaluateCrown = authMutation({
 
     // Check if crown evaluation is already pending or in progress
     const task = await ctx.db.get(args.taskId);
-    if (
-      task?.crownEvaluationError === "pending_evaluation" ||
-      task?.crownEvaluationError === "in_progress"
-    ) {
+    const crownStatus = task ? resolveCrownStatus(task) : "idle";
+    if (crownStatus === "pending" || crownStatus === "in_progress") {
       console.log(
-        `[CheckCrown] Crown evaluation already ${task.crownEvaluationError} for task ${args.taskId}`,
+        `[CheckCrown] Crown evaluation already ${crownStatus} for task ${args.taskId}`,
       );
       return "pending";
     }
@@ -598,6 +627,7 @@ export const checkAndEvaluateCrown = authMutation({
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       await ctx.db.patch(args.taskId, {
+        crownEvaluationStatus: "error",
         crownEvaluationError: errorMessage,
         updatedAt: Date.now(),
       });
