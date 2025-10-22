@@ -507,6 +507,7 @@ async function handleCrownCheckRequest(
       : null,
     task: {
       text: task.text,
+      crownEvaluationStatus: task.crownEvaluationStatus ?? null,
       crownEvaluationError: task.crownEvaluationError ?? null,
       isCompleted: task.isCompleted,
       baseBranch: task.baseBranch ?? null,

@@ -285,6 +285,14 @@ export const updateCrownError = authMutation({
     teamSlugOrId: v.string(),
     id: v.id("tasks"),
     crownEvaluationError: v.optional(v.string()),
+    crownEvaluationStatus: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("in_progress"),
+        v.literal("completed"),
+        v.literal("failed"),
+      ),
+    ),
   },
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
@@ -314,11 +322,16 @@ export const tryBeginCrownEvaluation = authMutation({
     if (!task || task.teamId !== teamId || task.userId !== userId) {
       throw new Error("Task not found or unauthorized");
     }
-    if (task.crownEvaluationError === "in_progress") {
+    const existingStatus =
+      task.crownEvaluationStatus ??
+      (task.crownEvaluationError === "in_progress" ? "in_progress" : undefined);
+
+    if (existingStatus === "in_progress") {
       return false;
     }
     await ctx.db.patch(args.id, {
-      crownEvaluationError: "in_progress",
+      crownEvaluationStatus: "in_progress",
+      crownEvaluationError: undefined,
       updatedAt: Date.now(),
     });
     return true;
@@ -418,15 +431,19 @@ export const getTasksWithPendingCrownEvaluation = authQuery({
     const userId = ctx.identity.subject;
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
     // Only get tasks that are pending, not already in progress
-    const tasks = await ctx.db
+    const tasksForUser = await ctx.db
       .query("tasks")
       .withIndex("by_team_user", (q) =>
         q.eq("teamId", teamId).eq("userId", userId),
       )
-      .filter((q) =>
-        q.eq(q.field("crownEvaluationError"), "pending_evaluation"),
-      )
       .collect();
+
+    const tasks = tasksForUser.filter((task) => {
+      const status =
+        task.crownEvaluationStatus ??
+        (task.crownEvaluationError === "pending_evaluation" ? "pending" : undefined);
+      return status === "pending";
+    });
 
     // Double-check that no evaluation exists for these tasks
     const tasksToEvaluate = [];
@@ -556,12 +573,17 @@ export const checkAndEvaluateCrown = authMutation({
 
     // Check if crown evaluation is already pending or in progress
     const task = await ctx.db.get(args.taskId);
-    if (
-      task?.crownEvaluationError === "pending_evaluation" ||
-      task?.crownEvaluationError === "in_progress"
-    ) {
+    const crownStatus =
+      task?.crownEvaluationStatus ??
+      (task?.crownEvaluationError === "pending_evaluation"
+        ? "pending"
+        : task?.crownEvaluationError === "in_progress"
+          ? "in_progress"
+          : undefined);
+
+    if (crownStatus === "pending" || crownStatus === "in_progress") {
       console.log(
-        `[CheckCrown] Crown evaluation already ${task.crownEvaluationError} for task ${args.taskId}`,
+        `[CheckCrown] Crown evaluation already ${crownStatus} for task ${args.taskId}`,
       );
       return "pending";
     }
@@ -598,6 +620,7 @@ export const checkAndEvaluateCrown = authMutation({
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       await ctx.db.patch(args.taskId, {
+        crownEvaluationStatus: "failed",
         crownEvaluationError: errorMessage,
         updatedAt: Date.now(),
       });

@@ -31,6 +31,23 @@ export function CrownStatus({ taskId, teamSlugOrId }: CrownStatusProps) {
     isFakeConvexId(taskId) ? "skip" : { teamSlugOrId, taskId }
   );
 
+  const rawStatus = task?.crownEvaluationStatus ?? undefined;
+  const legacyStatus =
+    !rawStatus && task?.crownEvaluationError === "pending_evaluation"
+      ? "pending"
+      : !rawStatus && task?.crownEvaluationError === "in_progress"
+        ? "in_progress"
+        : undefined;
+  const crownStatus = rawStatus ?? legacyStatus;
+  const evaluationError =
+    crownStatus === "failed"
+      ? task?.crownEvaluationError ?? undefined
+      : task?.crownEvaluationError &&
+          task.crownEvaluationError !== "pending_evaluation" &&
+          task.crownEvaluationError !== "in_progress"
+        ? task.crownEvaluationError
+        : undefined;
+
   // BAD STATE
   const [showStatus, setShowStatus] = useState(false);
   // this is bad effect:
@@ -161,10 +178,7 @@ export function CrownStatus({ taskId, teamSlugOrId }: CrownStatusProps) {
 
     pillClassName +=
       " bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300";
-  } else if (
-    task?.crownEvaluationError === "pending_evaluation" ||
-    task?.crownEvaluationError === "in_progress"
-  ) {
+  } else if (crownStatus === "in_progress") {
     const evaluatingContent = (
       <>
         <Loader2 className="w-3 h-3 animate-spin" />
@@ -208,13 +222,74 @@ export function CrownStatus({ taskId, teamSlugOrId }: CrownStatusProps) {
 
     pillClassName +=
       " bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300";
-  } else if (task?.crownEvaluationError) {
+  } else if (crownStatus === "pending") {
+    const queuedContent = (
+      <>
+        <Loader2 className="w-3 h-3" />
+        <span>Queued for evaluation</span>
+      </>
+    );
+
     pillContent = (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="flex items-center gap-1.5 cursor-help">
+            {queuedContent}
+          </div>
+        </TooltipTrigger>
+        <TooltipContent
+          className="max-w-sm p-3 z-[var(--z-overlay)]"
+          side="bottom"
+          sideOffset={5}
+        >
+          <div className="space-y-2">
+            <p className="font-medium text-sm">Waiting for AI Judge</p>
+            <p className="text-xs text-muted-foreground">
+              All competing models are finished. Claude will begin judging as
+              soon as the evaluation window opens.
+            </p>
+            <p className="text-xs text-muted-foreground border-t pt-2 mt-2">
+              Completed implementations: {completedRuns.length}
+            </p>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    );
+
+    pillClassName +=
+      " bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300";
+  } else if (crownStatus === "failed" || evaluationError) {
+    const failedContent = (
       <>
         <AlertCircle className="w-3 h-3" />
         <span>Evaluation failed</span>
       </>
     );
+
+    pillContent = evaluationError ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="flex items-center gap-1.5 cursor-help">
+            {failedContent}
+          </div>
+        </TooltipTrigger>
+        <TooltipContent
+          className="max-w-sm p-3 z-[var(--z-overlay)]"
+          side="bottom"
+          sideOffset={5}
+        >
+          <div className="space-y-1.5 text-xs text-muted-foreground">
+            <p className="font-medium text-sm text-neutral-900 dark:text-neutral-100">
+              Evaluation failed
+            </p>
+            <p>{evaluationError}</p>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    ) : (
+      failedContent
+    );
+
     pillClassName +=
       " bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300";
   } else {

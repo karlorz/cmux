@@ -9,6 +9,16 @@ export const WorkerRunStatusSchema = z.enum([
 ]);
 export type WorkerRunStatus = z.infer<typeof WorkerRunStatusSchema>;
 
+export const CrownEvaluationStatusSchema = z.enum([
+  "pending",
+  "in_progress",
+  "completed",
+  "failed",
+]);
+export type CrownEvaluationStatus = z.infer<
+  typeof CrownEvaluationStatusSchema
+>;
+
 export const WorkerRunContextSchema = z.object({
   token: z.string(),
   prompt: z.string(),
@@ -34,6 +44,7 @@ export const CrownWorkerCheckResponseSchema = z.object({
     .nullable(),
   task: z.object({
     text: z.string(),
+    crownEvaluationStatus: CrownEvaluationStatusSchema.nullable(),
     crownEvaluationError: z.string().nullable(),
     isCompleted: z.boolean(),
     baseBranch: z.string().nullable(),

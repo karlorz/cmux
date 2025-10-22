@@ -11,8 +11,104 @@ import { useNavigate } from "@tanstack/react-router";
 import clsx from "clsx";
 import { useQuery as useConvexQuery, useMutation } from "convex/react";
 // Read team slug from path to avoid route type coupling
-import { Archive, ArchiveRestore, Check, Copy, Pin } from "lucide-react";
-import { memo, useCallback, useMemo } from "react";
+import {
+  AlertCircle,
+  Archive,
+  ArchiveRestore,
+  Check,
+  Clock,
+  Copy,
+  Crown,
+  Loader2,
+  Pin,
+} from "lucide-react";
+import { memo, useCallback, useMemo, type ReactNode } from "react";
+
+function TaskCrownStatus({ task }: { task: Doc<"tasks"> }) {
+  const status = task.crownEvaluationStatus ?? undefined;
+  const error = task.crownEvaluationError ?? undefined;
+
+  const isLegacyPending = !status && error === "pending_evaluation";
+  const isLegacyInProgress = !status && error === "in_progress";
+
+  const resolvedStatus =
+    status ?? (isLegacyPending ? "pending" : isLegacyInProgress ? "in_progress" : undefined);
+
+  const displayError =
+    resolvedStatus === "failed" || (!resolvedStatus && error && !isLegacyPending && !isLegacyInProgress)
+      ? error
+      : undefined;
+
+  const wrap = (node: ReactNode) => (
+    <div className="justify-self-start">{node}</div>
+  );
+
+  const pill = (className: string, icon: ReactNode, label: string, spin = false) => (
+    <span
+      className={clsx(
+        "inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium",
+        className,
+      )}
+    >
+      {icon && (
+        <span className={clsx("flex-shrink-0", spin && "animate-spin")}>{icon}</span>
+      )}
+      <span>{label}</span>
+    </span>
+  );
+
+  if (resolvedStatus === "in_progress") {
+    return wrap(
+      pill(
+        "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+        <Loader2 className="h-3 w-3" />,
+        "Evaluating…",
+        true,
+      ),
+    );
+  }
+
+  if (resolvedStatus === "pending") {
+    return wrap(
+      pill(
+        "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
+        <Clock className="h-3 w-3" />,
+        "Queued",
+      ),
+    );
+  }
+
+  if (resolvedStatus === "completed") {
+    return wrap(
+      pill(
+        "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+        <Crown className="h-3 w-3" />,
+        "Winner picked",
+      ),
+    );
+  }
+
+  if (displayError) {
+    const content = pill(
+      "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
+      <AlertCircle className="h-3 w-3" />,
+      "Evaluation failed",
+    );
+
+    return wrap(
+      <Tooltip>
+        <TooltipTrigger asChild>{content}</TooltipTrigger>
+        <TooltipContent className="max-w-xs whitespace-pre-wrap text-xs">
+          {displayError}
+        </TooltipContent>
+      </Tooltip>,
+    );
+  }
+
+  return wrap(
+    <span className="text-[11px] text-neutral-400 dark:text-neutral-500">—</span>,
+  );
+}
 
 interface TaskItemProps {
   task: Doc<"tasks">;
@@ -150,7 +246,7 @@ export const TaskItem = memo(function TaskItem({
         <ContextMenu.Trigger>
           <div
             className={clsx(
-              "relative flex items-center gap-2.5 px-3 py-2 border rounded-lg transition-all cursor-default select-none",
+              "relative grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2.5 px-3 py-2 border rounded-lg transition-all cursor-default select-none",
               isOptimisticUpdate
                 ? "bg-white/50 dark:bg-neutral-700/30 border-neutral-200 dark:border-neutral-500/15 animate-pulse"
                 : "bg-white dark:bg-neutral-700/50 border-neutral-200 dark:border-neutral-500/15 hover:border-neutral-300 dark:hover:border-neutral-500/30"
@@ -167,7 +263,7 @@ export const TaskItem = memo(function TaskItem({
                     : "bg-blue-500 animate-pulse"
               )}
             />
-            <div className="flex-1 min-w-0 flex items-center gap-2">
+            <div className="min-w-0 flex items-center gap-2">
               <span className="text-[14px] truncate min-w-0">{task.text}</span>
               {(task.projectFullName ||
                 (task.baseBranch && task.baseBranch !== "main")) && (
@@ -185,8 +281,9 @@ export const TaskItem = memo(function TaskItem({
                 </span>
               )}
             </div>
+            <TaskCrownStatus task={task} />
             {task.updatedAt && (
-              <span className="text-[11px] text-neutral-400 dark:text-neutral-500 flex-shrink-0 ml-auto mr-0 tabular-nums">
+              <span className="text-[11px] text-neutral-400 dark:text-neutral-500 justify-self-end tabular-nums">
                 {new Date(task.updatedAt).toLocaleTimeString([], {
                   hour: "2-digit",
                   minute: "2-digit",

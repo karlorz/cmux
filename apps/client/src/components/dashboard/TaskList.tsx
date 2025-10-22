@@ -47,6 +47,16 @@ export const TaskList = memo(function TaskList({
         </div>
       </div>
       <div className="flex flex-col gap-1">
+        {Array.isArray(tasks) && tasks.length > 0 && (
+          <div className="px-3 pt-1 pb-0.5">
+            <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2.5 text-[11px] font-medium uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
+              <span aria-hidden="true" />
+              <span>Task</span>
+              <span>Crown</span>
+              <span className="justify-self-end">Updated</span>
+            </div>
+          </div>
+        )}
         {tasks === undefined ? (
           <div className="text-sm text-neutral-500 dark:text-neutral-400 py-2 select-none">
             Loading...
