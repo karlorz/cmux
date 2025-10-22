@@ -17,6 +17,7 @@ import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { httpAction } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
+import { deriveCrownStatus } from "./crownStatus";
 
 const JSON_HEADERS = {
   "Content-Type": "application/json",
@@ -492,6 +493,14 @@ async function handleCrownCheckRequest(
       ? completedRuns[0]._id
       : null;
 
+  const crownStatus = deriveCrownStatus(task);
+  const crownError =
+    crownStatus === "failed"
+      ? task.crownEvaluationError ?? null
+      : crownStatus === null
+        ? task.crownEvaluationError ?? null
+        : null;
+
   const response = {
     ok: true,
     taskId,
@@ -507,7 +516,8 @@ async function handleCrownCheckRequest(
       : null,
     task: {
       text: task.text,
-      crownEvaluationError: task.crownEvaluationError ?? null,
+      crownEvaluationStatus: crownStatus,
+      crownEvaluationError: crownError,
       isCompleted: task.isCompleted,
       baseBranch: task.baseBranch ?? null,
       projectFullName: task.projectFullName ?? null,

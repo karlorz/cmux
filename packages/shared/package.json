@@ -38,6 +38,10 @@
       "import": "./src/terminal-config.ts",
       "types": "./src/terminal-config.ts"
     },
+    "./crown": {
+      "import": "./src/crown/index.ts",
+      "types": "./src/crown/index.ts"
+    },
     "./worker-schemas": {
       "import": "./src/worker-schemas.ts",
       "types": "./src/worker-schemas.ts"

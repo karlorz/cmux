@@ -1,236 +1,392 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { isFakeConvexId } from "@/lib/fakeConvexId";
-import { api } from "@cmux/convex/api";
-import type { Id } from "@cmux/convex/dataModel";
-import { useQuery } from "convex/react";
-// Read team slug from path to avoid route type coupling
+import clsx from "clsx";
+import type { Doc } from "@cmux/convex/dataModel";
+import type { CrownEvaluationStatus } from "@cmux/shared/crown";
 import { AlertCircle, Crown, Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Fragment } from "react";
 
-interface CrownStatusProps {
-  taskId: Id<"tasks">;
-  teamSlugOrId: string;
+const LEGACY_PENDING_EVALUATION = "pending_evaluation" as const;
+const LEGACY_IN_PROGRESS_EVALUATION = "in_progress" as const;
+
+export type TaskRunSummary = Pick<
+  Doc<"taskRuns">,
+  | "_id"
+  | "status"
+  | "agentName"
+  | "isCrowned"
+  | "crownReason"
+  | "completedAt"
+  | "exitCode"
+>;
+
+interface CrownStatusBadgeProps {
+  task: Doc<"tasks">;
+  runs: TaskRunSummary[];
+  isLoading?: boolean;
+  className?: string;
 }
 
-export function CrownStatus({ taskId, teamSlugOrId }: CrownStatusProps) {
-  // Get task runs
-  const taskRuns = useQuery(
-    api.taskRuns.getByTask,
-    isFakeConvexId(taskId) ? "skip" : { teamSlugOrId, taskId }
-  );
+function deriveStatus(task: Doc<"tasks">): CrownEvaluationStatus | null {
+  const status = task.crownEvaluationStatus;
+  switch (status) {
+    case "pending":
+    case "in_progress":
+    case "succeeded":
+    case "failed":
+      return status;
+    default:
+      break;
+  }
 
-  // Get task with error status
-  const task = useQuery(
-    api.tasks.getById,
-    isFakeConvexId(taskId) ? "skip" : { teamSlugOrId, id: taskId }
-  );
+  if (task.crownEvaluationError === LEGACY_PENDING_EVALUATION) {
+    return "pending";
+  }
 
-  // Get crown evaluation
-  const crownedRun = useQuery(
-    api.crown.getCrownedRun,
-    isFakeConvexId(taskId) ? "skip" : { teamSlugOrId, taskId }
-  );
+  if (task.crownEvaluationError === LEGACY_IN_PROGRESS_EVALUATION) {
+    return "in_progress";
+  }
 
-  // BAD STATE
-  const [showStatus, setShowStatus] = useState(false);
-  // this is bad effect:
-  useEffect(() => {
-    // Show status when we have multiple runs
-    if (taskRuns && taskRuns.length >= 2) {
-      setShowStatus(true);
-    }
-  }, [taskRuns]);
+  return null;
+}
 
-  // instead, showStatus should NOT be a useState. it can just be derived:
-  // const showStatus = taskRuns && taskRuns.length >= 2;
+function deriveError(
+  task: Doc<"tasks">,
+  status: CrownEvaluationStatus | null,
+): string | null {
+  if (status === "failed") {
+    return task.crownEvaluationError ?? "Crown evaluation failed";
+  }
 
-  if (!showStatus || !taskRuns || taskRuns.length < 2) {
+  const legacyError = task.crownEvaluationError;
+  if (
+    !status &&
+    legacyError &&
+    legacyError !== LEGACY_PENDING_EVALUATION &&
+    legacyError !== LEGACY_IN_PROGRESS_EVALUATION
+  ) {
+    return legacyError;
+  }
+
+  return null;
+}
+
+function resolveAgentName(run?: Pick<TaskRunSummary, "agentName"> | null) {
+  const fromRun = run?.agentName?.trim();
+  return fromRun && fromRun.length > 0 ? fromRun : "unknown agent";
+}
+
+function renderRunsList(runs: TaskRunSummary[]) {
+  if (runs.length === 0) {
     return null;
   }
 
-  const completedRuns = taskRuns.filter((run) => run.status === "completed");
-  const allCompleted = taskRuns.every(
-    (run) => run.status === "completed" || run.status === "failed"
+  return (
+    <ul className="text-xs text-muted-foreground space-y-0.5">
+      {runs.map((run) => {
+        let symbol = "•";
+        switch (run.status) {
+          case "completed":
+            symbol = "✓";
+            break;
+          case "running":
+            symbol = "⏳";
+            break;
+          case "failed":
+            symbol = "✗";
+            break;
+          default:
+            break;
+        }
+        return (
+          <li key={run._id}>
+            {symbol} {resolveAgentName(run)}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+const BADGE_BASE_CLASS =
+  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium";
+
+export function CrownStatusBadge({
+  task,
+  runs,
+  isLoading = false,
+  className,
+}: CrownStatusBadgeProps) {
+  const status = deriveStatus(task);
+  const errorMessage = deriveError(task, status);
+  const totalRuns = runs.length;
+  const completedRuns = runs.filter((run) => run.status === "completed");
+  const failedRuns = runs.filter((run) => run.status === "failed");
+  const crownedRun = runs.find((run) => run.isCrowned);
+  const allRunsFinished =
+    totalRuns > 0 && completedRuns.length + failedRuns.length === totalRuns;
+  const waitingForRuns = totalRuns >= 2 && !allRunsFinished;
+
+  const placeholder = (
+    <span className="text-[11px] text-neutral-400 dark:text-neutral-500">—</span>
   );
 
-  // Resolve agent name (prefer stored run.agentName)
-  const resolveAgentName = (run: { agentName?: string | null }) => {
-    const fromRun = run.agentName?.trim();
-    return fromRun && fromRun.length > 0 ? fromRun : "unknown agent";
-  };
-
-  // Determine the status pill content
-  let pillContent;
-  let pillClassName =
-    "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium";
-
-  if (!allCompleted) {
-    const waitingContent = (
-      <>
-        <Loader2 className="w-3 h-3 animate-spin" />
-        <span>
-          Waiting for models ({completedRuns.length}/{taskRuns.length})
-        </span>
-      </>
-    );
-
-    pillContent = (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div className="flex items-center gap-1.5 cursor-help">
-            {waitingContent}
-          </div>
-        </TooltipTrigger>
-        <TooltipContent
-          className="max-w-sm p-3 z-[var(--z-overlay)]"
-          side="bottom"
-          sideOffset={5}
+  if (isLoading) {
+    return (
+      <div className={clsx("flex-shrink-0", className)}>
+        <div
+          className={clsx(
+            BADGE_BASE_CLASS,
+            "bg-neutral-100 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300",
+          )}
         >
-          <div className="space-y-2">
-            <p className="font-medium text-sm">Crown Evaluation System</p>
-            <p className="text-xs text-muted-foreground">
-              Multiple AI models are working on your task in parallel. Once
-              all models complete, Claude will evaluate and select the best
-              implementation.
-            </p>
-            <div className="border-t pt-2 mt-2">
-              <p className="text-xs font-medium mb-1">Competing models:</p>
-              <ul className="text-xs text-muted-foreground space-y-0.5">
-                {taskRuns.map((run, idx) => {
-                  const agentName = resolveAgentName(run);
-                  const status =
-                    run.status === "completed"
-                      ? "✓"
-                      : run.status === "running"
-                        ? "⏳"
-                        : run.status === "failed"
-                          ? "✗"
-                          : "•";
-                  return (
-                    <li key={idx}>
-                      {status} {agentName}
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          </div>
-        </TooltipContent>
-      </Tooltip>
+          <Loader2 className="w-3 h-3 animate-spin" />
+          Loading crown…
+        </div>
+      </div>
+    );
+  }
+
+  if (waitingForRuns) {
+    const waitingContent = (
+      <div
+        className={clsx(
+          BADGE_BASE_CLASS,
+          "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300",
+        )}
+      >
+        <Loader2 className="w-3 h-3 animate-spin" />
+        Waiting ({completedRuns.length}/{totalRuns})
+      </div>
     );
 
-    pillClassName +=
-      " bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300";
-  } else if (crownedRun) {
-    const winnerContent = (
-      <>
-        <Crown className="w-3 h-3" />
-        <span>Winner: {resolveAgentName(crownedRun)}</span>
-      </>
-    );
-
-    // If we have a reason, wrap in tooltip
-    if (crownedRun.crownReason) {
-      pillContent = (
+    return (
+      <div className={clsx("flex-shrink-0", className)}>
         <Tooltip>
-          <TooltipTrigger asChild>
-            <div className="flex items-center gap-1.5 cursor-help">
-              {winnerContent}
-            </div>
-          </TooltipTrigger>
+          <TooltipTrigger asChild>{waitingContent}</TooltipTrigger>
           <TooltipContent
             className="max-w-sm p-3 z-[var(--z-overlay)]"
             side="bottom"
-            sideOffset={5}
+            sideOffset={6}
           >
             <div className="space-y-2">
-              <p className="font-medium text-sm">Evaluation Reason</p>
+              <p className="font-medium text-sm">Models still running</p>
               <p className="text-xs text-muted-foreground">
-                {crownedRun.crownReason}
+                Crown waits for every model to finish before the AI judge runs.
               </p>
-              <p className="text-xs text-muted-foreground border-t pt-2 mt-2">
-                Evaluated against {taskRuns.length} implementations
+              <div className="border-t pt-2 mt-2">
+                <p className="text-xs font-medium mb-1">Current statuses:</p>
+                {renderRunsList(runs)}
+              </div>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    );
+  }
+
+  if (status === "pending") {
+    const pendingContent = (
+      <div
+        className={clsx(
+          BADGE_BASE_CLASS,
+          "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300",
+        )}
+      >
+        <Loader2 className="w-3 h-3 animate-spin" />
+        Queued for judging
+      </div>
+    );
+
+    return (
+      <div className={clsx("flex-shrink-0", className)}>
+        <Tooltip>
+          <TooltipTrigger asChild>{pendingContent}</TooltipTrigger>
+          <TooltipContent
+            className="max-w-sm p-3 z-[var(--z-overlay)]"
+            side="bottom"
+            sideOffset={6}
+          >
+            <div className="space-y-2">
+              <p className="font-medium text-sm">Queued for crown evaluation</p>
+              <p className="text-xs text-muted-foreground">
+                All candidates finished. Crown will ask the AI judge to pick the
+                best implementation shortly.
               </p>
             </div>
           </TooltipContent>
         </Tooltip>
-      );
-    } else {
-      pillContent = winnerContent;
-    }
-
-    pillClassName +=
-      " bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300";
-  } else if (
-    task?.crownEvaluationError === "pending_evaluation" ||
-    task?.crownEvaluationError === "in_progress"
-  ) {
-    const evaluatingContent = (
-      <>
-        <Loader2 className="w-3 h-3 animate-spin" />
-        <span>Evaluating...</span>
-      </>
+      </div>
     );
-
-    pillContent = (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div className="flex items-center gap-1.5 cursor-help">
-            {evaluatingContent}
-          </div>
-        </TooltipTrigger>
-        <TooltipContent
-          className="max-w-sm p-3 z-[var(--z-overlay)]"
-          side="bottom"
-          sideOffset={5}
-        >
-          <div className="space-y-2">
-            <p className="font-medium text-sm">AI Judge in Progress</p>
-            <p className="text-xs text-muted-foreground">
-              Claude is analyzing the code implementations from all models to
-              determine which one best solves your task. The evaluation
-              considers code quality, completeness, best practices, and
-              correctness.
-            </p>
-            <div className="border-t pt-2 mt-2">
-              <p className="text-xs font-medium mb-1">Completed implementations:</p>
-              <ul className="text-xs text-muted-foreground space-y-0.5">
-                {completedRuns.map((run, idx) => {
-                  const agentName = resolveAgentName(run);
-                  return <li key={idx}>• {agentName}</li>;
-                })}
-              </ul>
-            </div>
-          </div>
-        </TooltipContent>
-      </Tooltip>
-    );
-
-    pillClassName +=
-      " bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300";
-  } else if (task?.crownEvaluationError) {
-    pillContent = (
-      <>
-        <AlertCircle className="w-3 h-3" />
-        <span>Evaluation failed</span>
-      </>
-    );
-    pillClassName +=
-      " bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300";
-  } else {
-    pillContent = (
-      <>
-        <Loader2 className="w-3 h-3 animate-spin" />
-        <span>Pending evaluation</span>
-      </>
-    );
-    pillClassName +=
-      " bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300";
   }
 
+  if (status === "in_progress") {
+    const evaluatingContent = (
+      <div
+        className={clsx(
+          BADGE_BASE_CLASS,
+          "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300",
+        )}
+      >
+        <Loader2 className="w-3 h-3 animate-spin" />
+        Evaluating…
+      </div>
+    );
+
+    return (
+      <div className={clsx("flex-shrink-0", className)}>
+        <Tooltip>
+          <TooltipTrigger asChild>{evaluatingContent}</TooltipTrigger>
+          <TooltipContent
+            className="max-w-sm p-3 z-[var(--z-overlay)]"
+            side="bottom"
+            sideOffset={6}
+          >
+            <div className="space-y-2">
+              <p className="font-medium text-sm">AI judge in progress</p>
+              <p className="text-xs text-muted-foreground">
+                Crown is comparing each implementation for quality, completeness,
+                and correctness.
+              </p>
+              <div className="border-t pt-2 mt-2">
+                <p className="text-xs font-medium mb-1">Completed candidates:</p>
+                {renderRunsList(completedRuns)}
+              </div>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    );
+  }
+
+  if (status === "succeeded" || crownedRun) {
+    const winner = crownedRun ?? completedRuns.find((run) => run.status === "completed");
+    const reason = crownedRun?.crownReason;
+    const winnerContent = (
+      <div
+        className={clsx(
+          BADGE_BASE_CLASS,
+          "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
+        )}
+      >
+        <Crown className="w-3 h-3" />
+        Winner: {resolveAgentName(winner)}
+      </div>
+    );
+
+    if (!reason) {
+      return <div className={clsx("flex-shrink-0", className)}>{winnerContent}</div>;
+    }
+
+    return (
+      <div className={clsx("flex-shrink-0", className)}>
+        <Tooltip>
+          <TooltipTrigger asChild>{winnerContent}</TooltipTrigger>
+          <TooltipContent
+            className="max-w-sm p-3 z-[var(--z-overlay)]"
+            side="bottom"
+            sideOffset={6}
+          >
+            <div className="space-y-2">
+              <p className="font-medium text-sm">Why crown picked this run</p>
+              <p className="text-xs text-muted-foreground whitespace-pre-line">
+                {reason}
+              </p>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    );
+  }
+
+  if (status === "failed" || errorMessage) {
+    const message = errorMessage ?? "Crown evaluation failed";
+    const errorContent = (
+      <div
+        className={clsx(
+          BADGE_BASE_CLASS,
+          "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
+        )}
+      >
+        <AlertCircle className="w-3 h-3" />
+        Evaluation failed
+      </div>
+    );
+
+    return (
+      <div className={clsx("flex-shrink-0", className)}>
+        <Tooltip>
+          <TooltipTrigger asChild>{errorContent}</TooltipTrigger>
+          <TooltipContent
+            className="max-w-sm p-3 z-[var(--z-overlay)]"
+            side="bottom"
+            sideOffset={6}
+          >
+            <div className="space-y-2">
+              <p className="font-medium text-sm">Crown evaluation failed</p>
+              <p className="text-xs text-muted-foreground whitespace-pre-line">
+                {message}
+              </p>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    );
+  }
+
+  if (totalRuns >= 2 && allRunsFinished) {
+    const pendingContent = (
+      <div
+        className={clsx(
+          BADGE_BASE_CLASS,
+          "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300",
+        )}
+      >
+        <Loader2 className="w-3 h-3 animate-spin" />
+        Pending evaluation
+      </div>
+    );
+
+    return (
+      <div className={clsx("flex-shrink-0", className)}>
+        <Tooltip>
+          <TooltipTrigger asChild>{pendingContent}</TooltipTrigger>
+          <TooltipContent
+            className="max-w-sm p-3 z-[var(--z-overlay)]"
+            side="bottom"
+            sideOffset={6}
+          >
+            <div className="space-y-2">
+              <p className="font-medium text-sm">Waiting for crown</p>
+              <p className="text-xs text-muted-foreground">
+                All runs are finished. Crown will trigger evaluation soon.
+              </p>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    );
+  }
+
+  if (totalRuns === 0) {
+    return <div className={clsx("flex-shrink-0", className)}>{placeholder}</div>;
+  }
+
+  const defaultContent = (
+    <Fragment>
+      {completedRuns.length > 0 ? `${completedRuns.length} completed` : "No results yet"}
+    </Fragment>
+  );
+
   return (
-    <div className="mt-2 mb-4">
-      <div className={pillClassName}>{pillContent}</div>
+    <div className={clsx("flex-shrink-0", className)}>
+      <div
+        className={clsx(
+          BADGE_BASE_CLASS,
+          "bg-neutral-100 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300",
+        )}
+      >
+        {defaultContent}
+      </div>
     </div>
   );
 }

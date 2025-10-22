@@ -2,6 +2,7 @@ import { OpenWithDropdown } from "@/components/OpenWithDropdown";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useArchiveTask } from "@/hooks/useArchiveTask";
 import { isFakeConvexId } from "@/lib/fakeConvexId";
+import { CrownStatusBadge, type TaskRunSummary } from "./CrownTooltip";
 import { ContextMenu } from "@base-ui-components/react/context-menu";
 import { api } from "@cmux/convex/api";
 import type { Doc } from "@cmux/convex/dataModel";
@@ -19,6 +20,23 @@ interface TaskItemProps {
   teamSlugOrId: string;
 }
 
+type TaskRunWithChildren = Doc<"taskRuns"> & {
+  children?: TaskRunWithChildren[];
+  environment?: RunEnvironmentSummary | null;
+};
+
+function flattenTaskRuns(runs: TaskRunWithChildren[]): TaskRunWithChildren[] {
+  const result: TaskRunWithChildren[] = [];
+
+  const visit = (run: TaskRunWithChildren) => {
+    result.push(run);
+    run.children?.forEach(visit);
+  };
+
+  runs.forEach(visit);
+  return result;
+}
+
 export const TaskItem = memo(function TaskItem({
   task,
   teamSlugOrId,
@@ -33,33 +51,37 @@ export const TaskItem = memo(function TaskItem({
     isFakeConvexId(task._id) ? "skip" : { teamSlugOrId, taskId: task._id }
   );
 
+  const isRunsLoading = taskRunsQuery === undefined;
+  const flattenedRuns = useMemo(
+    () =>
+      taskRunsQuery && taskRunsQuery.length > 0
+        ? flattenTaskRuns(taskRunsQuery as TaskRunWithChildren[])
+        : [],
+    [taskRunsQuery]
+  );
+
+  const runSummaries = useMemo<TaskRunSummary[]>(
+    () =>
+      flattenedRuns.map((run) => ({
+        _id: run._id,
+        status: run.status,
+        agentName: run.agentName,
+        isCrowned: run.isCrowned,
+        crownReason: run.crownReason,
+        completedAt: run.completedAt,
+        exitCode: run.exitCode,
+      })),
+    [flattenedRuns]
+  );
+
   // Mutation for toggling keep-alive status
   const toggleKeepAlive = useMutation(api.taskRuns.toggleKeepAlive);
 
   // Find the latest task run with a VSCode instance
   const getLatestVSCodeInstance = useCallback(() => {
-    if (!taskRunsQuery || taskRunsQuery.length === 0) return null;
+    if (flattenedRuns.length === 0) return null;
 
-    // Define task run type with nested structure
-    interface TaskRunWithChildren extends Doc<"taskRuns"> {
-      children?: TaskRunWithChildren[];
-      environment?: RunEnvironmentSummary | null;
-    }
-
-    // Flatten all task runs (including children)
-    const allRuns: TaskRunWithChildren[] = [];
-    const flattenRuns = (runs: TaskRunWithChildren[]) => {
-      runs.forEach((run) => {
-        allRuns.push(run);
-        if (run.children) {
-          flattenRuns(run.children);
-        }
-      });
-    };
-    flattenRuns(taskRunsQuery);
-
-    // Find the most recent run with VSCode instance that's running or starting
-    const runWithVSCode = allRuns
+    const runWithVSCode = flattenedRuns
       .filter(
         (run) =>
           run.vscode &&
@@ -67,8 +89,8 @@ export const TaskItem = memo(function TaskItem({
       )
       .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
 
-    return runWithVSCode;
-  }, [taskRunsQuery]);
+    return runWithVSCode ?? null;
+  }, [flattenedRuns]);
 
   const runWithVSCode = useMemo(
     () => getLatestVSCodeInstance(),
@@ -167,26 +189,34 @@ export const TaskItem = memo(function TaskItem({
                     : "bg-blue-500 animate-pulse"
               )}
             />
-            <div className="flex-1 min-w-0 flex items-center gap-2">
-              <span className="text-[14px] truncate min-w-0">{task.text}</span>
-              {(task.projectFullName ||
-                (task.baseBranch && task.baseBranch !== "main")) && (
-                <span className="text-[11px] text-neutral-400 dark:text-neutral-500 flex-shrink-0 ml-auto mr-0">
-                  {task.projectFullName && (
-                    <span>{task.projectFullName.split("/")[1]}</span>
-                  )}
-                  {task.projectFullName &&
-                    task.baseBranch &&
-                    task.baseBranch !== "main" &&
-                    "/"}
-                  {task.baseBranch && task.baseBranch !== "main" && (
-                    <span>{task.baseBranch}</span>
-                  )}
-                </span>
-              )}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-[14px] truncate min-w-0">{task.text}</span>
+                {(task.projectFullName ||
+                  (task.baseBranch && task.baseBranch !== "main")) && (
+                  <span className="text-[11px] text-neutral-400 dark:text-neutral-500 flex-shrink-0 ml-auto mr-0">
+                    {task.projectFullName && (
+                      <span>{task.projectFullName.split("/")[1]}</span>
+                    )}
+                    {task.projectFullName &&
+                      task.baseBranch &&
+                      task.baseBranch !== "main" &&
+                      "/"}
+                    {task.baseBranch && task.baseBranch !== "main" && (
+                      <span>{task.baseBranch}</span>
+                    )}
+                  </span>
+                )}
+              </div>
             </div>
+            <CrownStatusBadge
+              task={task}
+              runs={runSummaries}
+              isLoading={isRunsLoading}
+              className="ml-3 flex-shrink-0 max-w-[210px]"
+            />
             {task.updatedAt && (
-              <span className="text-[11px] text-neutral-400 dark:text-neutral-500 flex-shrink-0 ml-auto mr-0 tabular-nums">
+              <span className="text-[11px] text-neutral-400 dark:text-neutral-500 flex-shrink-0 ml-3 tabular-nums">
                 {new Date(task.updatedAt).toLocaleTimeString([], {
                   hour: "2-digit",
                   minute: "2-digit",

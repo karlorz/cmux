@@ -17,6 +17,7 @@ import type * as comments from "../comments.js";
 import type * as containerSettings from "../containerSettings.js";
 import type * as crown_actions from "../crown/actions.js";
 import type * as crown from "../crown.js";
+import type * as crownStatus from "../crownStatus.js";
 import type * as crown_http from "../crown_http.js";
 import type * as environmentSnapshots from "../environmentSnapshots.js";
 import type * as environments from "../environments.js";
@@ -69,6 +70,7 @@ declare const fullApi: ApiFromModules<{
   containerSettings: typeof containerSettings;
   "crown/actions": typeof crown_actions;
   crown: typeof crown;
+  crownStatus: typeof crownStatus;
   crown_http: typeof crown_http;
   environmentSnapshots: typeof environmentSnapshots;
   environments: typeof environments;
