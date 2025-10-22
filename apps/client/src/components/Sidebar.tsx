@@ -5,7 +5,7 @@ import { isElectron } from "@/lib/electron";
 import { type Doc } from "@cmux/convex/dataModel";
 import type { LinkProps } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
-import { Home, Plus, Server, Settings } from "lucide-react";
+import { Home, Mail, MessageCircle, Plus, Server, Settings } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -310,6 +310,27 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
                 </p>
               )}
             </div>
+          </div>
+        </div>
+
+        <div className="sticky bottom-0 left-0 right-0 border-t border-neutral-200 bg-neutral-50 px-3 py-3 dark:border-neutral-800 dark:bg-black">
+          <div className="flex items-center gap-2">
+            <a
+              href="mailto:founders@manaflow.ai"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-neutral-200 text-neutral-500 transition-colors hover:border-neutral-300 hover:text-neutral-900 dark:border-neutral-800 dark:text-neutral-400 dark:hover:border-neutral-700 dark:hover:text-neutral-100"
+              aria-label="Send feedback"
+            >
+              <Mail className="h-4 w-4" aria-hidden="true" />
+            </a>
+            <a
+              href="https://discord.gg/Qg9fxZ58b8"
+              target="_blank"
+              rel="noreferrer noopener"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-neutral-200 text-neutral-500 transition-colors hover:border-neutral-300 hover:text-neutral-900 dark:border-neutral-800 dark:text-neutral-400 dark:hover:border-neutral-700 dark:hover:text-neutral-100"
+              aria-label="Join the Discord"
+            >
+              <MessageCircle className="h-4 w-4" aria-hidden="true" />
+            </a>
           </div>
         </div>
       </nav>
