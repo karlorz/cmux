@@ -4,9 +4,9 @@ import { api } from "@cmux/convex/api";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
-import { useMemo, useState, useCallback, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import z from "zod";
-import { TaskRunTerminalSession, type TerminalConnectionState } from "@/components/task-run-terminal-session";
+import { TaskRunTerminalSession } from "@/components/task-run-terminal-session";
 import { toMorphXtermBaseUrl } from "@/lib/toProxyWorkspaceUrl";
 import { createTerminalTab, terminalTabsQueryKey, terminalTabsQueryOptions, type TerminalTabId } from "@/queries/terminals";
 import { useSuspenseQuery } from "@tanstack/react-query";
@@ -154,18 +154,14 @@ function PreviewPage() {
   const isResizingRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const handleConnectionStateChange = useCallback((_state: TerminalConnectionState) => {
-    // Terminal connection state changes don't affect visibility
-  }, []);
-
-  const toggleTerminal = useCallback(() => {
+  const toggleTerminal = () => {
     setIsTerminalVisible((prev) => !prev);
-  }, []);
+  };
 
-  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+  const handleResizeStart = (e: React.MouseEvent) => {
     e.preventDefault();
     isResizingRef.current = true;
-  }, []);
+  };
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -221,7 +217,6 @@ function PreviewPage() {
                       baseUrl={baseUrl}
                       terminalId={activeTerminalId}
                       isActive={true}
-                      onConnectionStateChange={handleConnectionStateChange}
                     />
                   </div>
                 </div>
