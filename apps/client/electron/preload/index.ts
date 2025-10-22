@@ -134,6 +134,13 @@ const cmuxAPI = {
       }>;
     },
   },
+  contextMenu: {
+    showInputMenu: () =>
+      ipcRenderer.invoke("cmux:context-menu:input") as Promise<{
+        ok: boolean;
+        reason?: string;
+      }>,
+  },
   logs: {
     onMainLog: (callback: LogListener) => {
       mainLogListeners.add(callback);

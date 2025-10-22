@@ -82,6 +82,10 @@ interface CmuxWebContentsViewAPI {
   closeDevTools: (id: number) => Promise<{ ok: boolean }>;
 }
 
+interface CmuxContextMenuAPI {
+  showInputMenu: () => Promise<{ ok: boolean; reason?: string }>;
+}
+
 interface CmuxAPI {
   getCurrentWebContentsId?: () => number | undefined;
   register: (meta: {
@@ -107,6 +111,7 @@ interface CmuxAPI {
   socket: CmuxSocketAPI;
   logs: CmuxLogsAPI;
   webContentsView: CmuxWebContentsViewAPI;
+  contextMenu: CmuxContextMenuAPI;
   autoUpdate: {
     check: () =>
       Promise<{

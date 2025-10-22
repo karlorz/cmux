@@ -243,6 +243,44 @@ ipcMain.on("cmux:get-current-webcontents-id", (event) => {
 });
 
 ipcMain.handle(
+  "cmux:context-menu:input",
+  async (event): Promise<{ ok: boolean; reason?: string }> => {
+    try {
+      const targetWindow = BrowserWindow.fromWebContents(event.sender);
+      if (!targetWindow || targetWindow.isDestroyed()) {
+        return { ok: false, reason: "no-window" };
+      }
+
+      const template: MenuItemConstructorOptions[] = [
+        { role: "undo" },
+        { role: "redo" },
+        { type: "separator" },
+        { role: "cut" },
+        { role: "copy" },
+        { role: "paste" },
+      ];
+
+      if (process.platform === "darwin") {
+        template.push({ role: "pasteAndMatchStyle" });
+      }
+
+      template.push(
+        { role: "delete" },
+        { type: "separator" },
+        { role: "selectAll" }
+      );
+
+      const menu = Menu.buildFromTemplate(template);
+      menu.popup({ window: targetWindow });
+      return { ok: true };
+    } catch (error) {
+      mainWarn("Failed to open context menu", error);
+      return { ok: false, reason: "error" };
+    }
+  }
+);
+
+ipcMain.handle(
   "cmux:ui:set-preview-reload-visible",
   async (_event, visible: unknown) => {
     setPreviewReloadMenuVisibility(Boolean(visible));

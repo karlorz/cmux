@@ -22,6 +22,9 @@ declare global {
         setPreviewReloadVisible: (visible: boolean) => Promise<{ ok: boolean }>;
         restoreLastFocus: () => Promise<{ ok: boolean; queued?: boolean }>;
       };
+      contextMenu: {
+        showInputMenu: () => Promise<{ ok: boolean; reason?: string }>;
+      };
       socket: {
         connect: (query: Record<string, string>) => Promise<unknown>;
         disconnect: (socketId: string) => Promise<unknown>;

@@ -4,6 +4,7 @@ if (typeof globalThis.Prism === "undefined") {
 }
 
 import { editorStorage } from "@/lib/editorStorage";
+import { isElectron } from "@/lib/electron";
 import { CodeNode } from "@lexical/code";
 import { AutoLinkNode, LinkNode } from "@lexical/link";
 import { ListItemNode, ListNode } from "@lexical/list";
@@ -33,7 +34,7 @@ import {
   KEY_ENTER_COMMAND,
   type SerializedEditorState,
 } from "lexical";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, type MouseEvent } from "react";
 import { EditorStatePlugin } from "./EditorStatePlugin";
 import { ImageNode } from "./ImageNode";
 import { ImagePlugin } from "./ImagePlugin";
@@ -576,6 +577,25 @@ export default function LexicalEditor({
     []
   );
 
+  const handleContextMenu = useCallback(
+    (event: MouseEvent) => {
+      if (!isElectron || typeof window === "undefined") {
+        return;
+      }
+
+      const api = window.cmux?.contextMenu;
+      if (!api?.showInputMenu) {
+        return;
+      }
+
+      event.preventDefault();
+      void api.showInputMenu().catch((error) => {
+        console.error("Failed to open context menu", error);
+      });
+    },
+    []
+  );
+
   return (
     <LexicalComposer initialConfig={initialConfig}>
       <div className={clsx("editor-container", className)}>
@@ -603,6 +623,7 @@ export default function LexicalEditor({
                 </div>
               }
               data-cmux-input="true"
+              onContextMenu={handleContextMenu}
             />
           }
           ErrorBoundary={LexicalErrorBoundary}
