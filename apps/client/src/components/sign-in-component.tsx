@@ -9,6 +9,7 @@ import { type CSSProperties } from "react";
 export function SignInComponent() {
   const user = useUser({ or: "return-null" });
   const showSignIn = !user;
+  const isDevelopment = import.meta.env.DEV;
   return (
     <AnimatePresence mode="wait">
       {showSignIn ? (
@@ -43,12 +44,12 @@ export function SignInComponent() {
                 }}
                 className="px-4 py-2 rounded-md bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 hover:opacity-90"
               >
-                Sign in with browser
+                Sign in in browser
               </button>
               <p className="text-xs text-neutral-500 dark:text-neutral-500 text-center">
                 After signing in, you'll be returned automatically.
               </p>
-              <SignIn />
+              {isDevelopment ? <SignIn /> : null}
             </div>
           ) : (
             <SignIn />
