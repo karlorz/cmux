@@ -29,7 +29,7 @@ type ResolvedHeatmapLine = {
 const SCORE_CLAMP_MIN = 0;
 const SCORE_CLAMP_MAX = 1;
 
-const HEATMAP_TIERS = [0.2, 0.4, 0.6, 0.8] as const;
+const HEATMAP_TIERS = [0.1, 0.25, 0.4, 0.55, 0.7, 0.8, 0.9, 0.97] as const;
 
 export function parseReviewHeatmap(raw: unknown): ReviewHeatmapLine[] {
   const payload = unwrapCodexPayload(raw);
@@ -126,30 +126,25 @@ export function buildDiffHeatmap(
       lineClasses.set(lineNumber, `cmux-heatmap-tier-${tier}`);
     }
 
-    if (entry.mostImportantCharacterIndex === null) {
-      continue;
-    }
-
     const content = newLineContent.get(lineNumber);
-    if (!content || content.length === 0) {
-      continue;
+    const highlightLength = (() => {
+      if (!content || content.length === 0) {
+        return 1;
+      }
+      return content.length;
+    })();
+
+    if (highlightLength > 0 && tier > 0) {
+      const charTier = tier > 0 ? tier : 1;
+      const range: HeatmapRangeNode = {
+        type: "span",
+        lineNumber,
+        start: 0,
+        length: highlightLength,
+        className: `cmux-heatmap-char cmux-heatmap-char-tier-${charTier}`,
+      };
+      characterRanges.push(range);
     }
-
-    const highlightIndex = clamp(
-      Math.floor(entry.mostImportantCharacterIndex),
-      0,
-      Math.max(content.length - 1, 0)
-    );
-
-    const charTier = tier > 0 ? tier : 1;
-    const range: HeatmapRangeNode = {
-      type: "span",
-      lineNumber,
-      start: highlightIndex,
-      length: Math.min(1, Math.max(content.length - highlightIndex, 1)),
-      className: `cmux-heatmap-char cmux-heatmap-char-tier-${charTier}`,
-    };
-    characterRanges.push(range);
   }
 
   if (lineClasses.size === 0 && characterRanges.length === 0) {

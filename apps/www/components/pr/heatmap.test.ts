@@ -99,14 +99,19 @@ describe("buildDiffHeatmap", () => {
     }
 
     expect(heatmap.entries.get(2)?.score).toBeCloseTo(0.7, 5);
-    expect(heatmap.lineClasses.get(2)).toBe("cmux-heatmap-tier-3");
-    expect(heatmap.lineClasses.get(4)).toBe("cmux-heatmap-tier-4");
+    expect(heatmap.lineClasses.get(2)).toBe("cmux-heatmap-tier-5");
+    expect(heatmap.lineClasses.get(4)).toBe("cmux-heatmap-tier-7");
 
     const rangeForLine2 = heatmap.newRanges.find(
       (range) => range.lineNumber === 2
     );
-    expect(rangeForLine2?.start).toBe(6);
-    expect(rangeForLine2?.length).toBe(1);
+    const lineTwoChange = file!.hunks[0]?.changes.find(
+      (change) => computeNewLineNumber(change) === 2
+    );
+    expect(rangeForLine2?.start).toBe(0);
+    expect(rangeForLine2?.length).toBe(
+      Math.max(lineTwoChange?.content.length ?? 0, 1)
+    );
 
     const rangeForLine4 = heatmap.newRanges.find(
       (range) => range.lineNumber === 4
@@ -119,11 +124,9 @@ describe("buildDiffHeatmap", () => {
     const lineFourChange = file!.hunks[0]?.changes.find(
       (change) => computeNewLineNumber(change) === 4
     );
-    const expectedStart = Math.max(
-      (lineFourChange?.content.length ?? 1) - 1,
-      0
+    expect(rangeForLine4.start).toBe(0);
+    expect(rangeForLine4.length).toBe(
+      Math.max(lineFourChange?.content.length ?? 0, 1)
     );
-    expect(rangeForLine4.start).toBe(expectedStart);
-    expect(rangeForLine4.length).toBe(1);
   });
 });
