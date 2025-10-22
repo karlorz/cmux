@@ -13,6 +13,7 @@ import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
 import { useSocket } from "@/contexts/socket/use-socket";
 import { normalizeGitRef } from "@/lib/refWithOrigin";
 import { cn } from "@/lib/utils";
+import { branchesQueryOptions } from "@/queries/branches";
 import { gitDiffQueryOptions } from "@/queries/git-diff";
 import { api } from "@cmux/convex/api";
 import type { Doc, Id } from "@cmux/convex/dataModel";
@@ -37,6 +38,7 @@ import {
 import { toast } from "sonner";
 import { attachTaskLifecycleListeners } from "@/lib/socket/taskLifecycleListeners";
 import z from "zod";
+import type { GitHubBranchesResponse } from "@cmux/shared";
 import type { EditorApi } from "@/components/dashboard/DashboardInput";
 import LexicalEditor from "@/components/lexical/LexicalEditor";
 import { useCombinedWorkflowData, WorkflowRunsSection } from "@/components/WorkflowRunsSection";
@@ -55,6 +57,34 @@ const gitDiffViewerClassNames: GitDiffViewerProps["classNames"] = {
 type DiffControls = Parameters<
   NonNullable<GitDiffViewerProps["onControlsChange"]>
 >[0];
+
+function pickDefaultBranch(response?: GitHubBranchesResponse) {
+  if (!response) {
+    return undefined;
+  }
+
+  const names = response.branches?.map((branch) => branch.name) ?? [];
+  if (names.length === 0) {
+    return undefined;
+  }
+
+  const candidate = response.defaultBranch?.trim();
+  if (candidate && names.includes(candidate)) {
+    return candidate;
+  }
+
+  const flagged = response.branches
+    .find((branch) => branch.isDefault)
+    ?.name?.trim();
+  if (flagged && names.includes(flagged)) {
+    return flagged;
+  }
+
+  const fallbackPreferred = ["main", "master"].find((branch) =>
+    names.includes(branch)
+  );
+  return fallbackPreferred ?? names[0];
+}
 
 type RunEnvironmentSummary = Pick<
   Doc<"environments">,
@@ -530,24 +560,65 @@ export const Route = createFileRoute(
         }
 
         const trimmedProjectFullName = task.projectFullName?.trim();
-        const targetRepos = new Set<string>();
-        for (const repo of selectedTaskRun.environment?.selectedRepos ?? []) {
-          const trimmed = repo?.trim();
-          if (trimmed) {
-            targetRepos.add(trimmed);
+        const environmentRepos = (selectedTaskRun.environment?.selectedRepos ?? [])
+          .map((repo) => repo?.trim())
+          .filter((repo): repo is string => Boolean(repo));
+
+        const repoCandidates: string[] = [];
+        const pushUnique = (candidate?: string | null) => {
+          const trimmed = candidate?.trim();
+          if (trimmed && !repoCandidates.includes(trimmed)) {
+            repoCandidates.push(trimmed);
           }
-        }
-        if (trimmedProjectFullName) {
-          targetRepos.add(trimmedProjectFullName);
+        };
+        pushUnique(trimmedProjectFullName);
+        for (const repo of environmentRepos) {
+          pushUnique(repo);
         }
 
-        if (targetRepos.size === 0) {
+        if (repoCandidates.length === 0) {
           return;
         }
 
-        const baseRefForDiff = normalizeGitRef(task.baseBranch || "main");
+        const remoteDefaultByRepo = new Map<string, string>();
+        const fetchRemoteDefault = async (repoFullName: string) => {
+          const response = await opts.context.queryClient
+            .ensureQueryData(
+              branchesQueryOptions({
+                teamSlugOrId: opts.params.teamSlugOrId,
+                repoFullName,
+              }),
+            )
+            .catch(() => undefined);
+
+          const defaultBranch = pickDefaultBranch(response);
+          if (defaultBranch) {
+            remoteDefaultByRepo.set(repoFullName, defaultBranch);
+          }
+        };
+
+        if (!task.baseBranch) {
+          await Promise.all(repoCandidates.map(fetchRemoteDefault));
+        } else if (trimmedProjectFullName) {
+          await fetchRemoteDefault(trimmedProjectFullName);
+        }
+
+        const primaryDefault = trimmedProjectFullName
+          ? remoteDefaultByRepo.get(trimmedProjectFullName)
+          : undefined;
+        const fallbackDefault = repoCandidates
+          .map((repo) => remoteDefaultByRepo.get(repo))
+          .find((branch): branch is string => Boolean(branch));
+
+        const baseBranchForDiff =
+          task.baseBranch?.trim() ?? primaryDefault ?? fallbackDefault;
+
+        const resolvedBaseRef =
+          baseBranchForDiff && baseBranchForDiff.trim()
+            ? normalizeGitRef(baseBranchForDiff)
+            : "origin/HEAD";
         const headRefForDiff = normalizeGitRef(selectedTaskRun.newBranch);
-        if (!headRefForDiff || !baseRefForDiff) {
+        if (!headRefForDiff || !resolvedBaseRef) {
           return;
         }
 
@@ -558,7 +629,7 @@ export const Route = createFileRoute(
           (branch) => branch.name === task.baseBranch,
         );
 
-        const prefetches = Array.from(targetRepos).map(async (repoFullName) => {
+        const prefetches = repoCandidates.map(async (repoFullName) => {
           const metadata =
             trimmedProjectFullName && repoFullName === trimmedProjectFullName
               ? baseBranchMeta
@@ -567,7 +638,7 @@ export const Route = createFileRoute(
           return opts.context.queryClient
             .ensureQueryData(
               gitDiffQueryOptions({
-                baseRef: baseRefForDiff,
+                baseRef: resolvedBaseRef,
                 headRef: headRefForDiff,
                 repoFullName,
                 lastKnownBaseSha: metadata?.lastKnownBaseSha,
@@ -671,6 +742,22 @@ function RunDiffPage() {
     | Doc<"branches">[]
     | undefined;
 
+  const remoteBranchesQuery = useRQ({
+    ...branchesQueryOptions({
+      teamSlugOrId,
+      repoFullName: primaryRepo ?? "",
+    }),
+    enabled: Boolean(primaryRepo),
+  });
+
+  const resolvedBaseBranchName = useMemo(() => {
+    const explicit = task?.baseBranch?.trim();
+    if (explicit) {
+      return explicit;
+    }
+    return pickDefaultBranch(remoteBranchesQuery.data);
+  }, [task?.baseBranch, remoteBranchesQuery.data]);
+
   const baseBranchMetadata = useMemo(() => {
     if (!task?.baseBranch) {
       return undefined;
@@ -717,7 +804,10 @@ function RunDiffPage() {
     );
   }
 
-  const baseRef = normalizeGitRef(task?.baseBranch || "main");
+  const baseRef =
+    resolvedBaseBranchName && resolvedBaseBranchName.trim()
+      ? normalizeGitRef(resolvedBaseBranchName)
+      : "origin/HEAD";
   const headRef = normalizeGitRef(selectedRun.newBranch);
   const hasDiffSources =
     Boolean(primaryRepo) && Boolean(baseRef) && Boolean(headRef);
