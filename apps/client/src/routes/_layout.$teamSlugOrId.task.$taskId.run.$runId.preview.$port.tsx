@@ -66,28 +66,31 @@ export const Route = createFileRoute(
       return;
     }
 
-    try {
-      // Attach to cmux session
-      const created = await createTerminalTab({
-        baseUrl,
-        request: {
-          cmd: "tmux",
-          args: ["attach", "-t", "cmux"],
-        },
-      });
+    // Create terminal in background without blocking
+    (async () => {
+      try {
+        // Attach to cmux session
+        const created = await createTerminalTab({
+          baseUrl,
+          request: {
+            cmd: "tmux",
+            args: ["attach", "-t", "cmux"],
+          },
+        });
 
-      queryClient.setQueryData<TerminalTabId[]>(tabsQueryKey, (current) => {
-        if (!current || current.length === 0) {
-          return [created.id];
-        }
-        if (current.includes(created.id)) {
-          return current;
-        }
-        return [...current, created.id];
-      });
-    } catch (error) {
-      console.error("Failed to auto-create tmux terminal", error);
-    }
+        queryClient.setQueryData<TerminalTabId[]>(tabsQueryKey, (current) => {
+          if (!current || current.length === 0) {
+            return [created.id];
+          }
+          if (current.includes(created.id)) {
+            return current;
+          }
+          return [...current, created.id];
+        });
+      } catch (error) {
+        console.error("Failed to auto-create tmux terminal", error);
+      }
+    })();
   },
 });
 
