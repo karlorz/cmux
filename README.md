@@ -44,3 +44,9 @@ cmux upgrade
 ```bash
 cmux uninstall
 ```
+
+## Haiku
+
+Code flows like a stream  
+Agents weave through digital dreams  
+Innovation gleams
