@@ -1,0 +1,19 @@
+[Unit]
+Description=Cmux noVNC proxy
+After=cmux-x11vnc.service
+Requires=cmux-x11vnc.service
+
+[Service]
+Type=simple
+ExecStartPre=/bin/mkdir -p /var/log/cmux
+Environment=CMUX_NOVNC_PROXY_LISTEN_ADDR=0.0.0.0:39380
+Environment=CMUX_NOVNC_PROXY_BACKEND_ADDR=127.0.0.1:5901
+Environment=CMUX_NOVNC_PROXY_WEB_ROOT=/usr/share/novnc
+ExecStart=/usr/local/lib/cmux/cmux-novnc-proxy
+Restart=always
+RestartSec=3
+StandardOutput=append:/var/log/cmux/novnc-proxy.log
+StandardError=append:/var/log/cmux/novnc-proxy.log
+
+[Install]
+WantedBy=cmux.target
