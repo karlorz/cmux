@@ -260,7 +260,6 @@ githubPrsOpenRouter.openapi(
       );
     }
 
-    const baseBranch = task.baseBranch?.trim() || "main";
     const title = task.pullRequestTitle || task.text || "cmux changes";
     const truncatedTitle =
       title.length > 72 ? `${title.slice(0, 69)}...` : title;
@@ -275,6 +274,39 @@ githubPrsOpenRouter.openapi(
     );
 
     const octokit = createOctokit(githubAccessToken);
+    const detectedBaseBranches = new Map<string, string>();
+    const resolveBaseBranchForRepo = async (
+      repoFullName: string,
+      owner: string,
+      repo: string,
+    ): Promise<string> => {
+      const explicit = task.baseBranch?.trim();
+      if (explicit) {
+        return explicit;
+      }
+
+      const cached = detectedBaseBranches.get(repoFullName);
+      if (cached) {
+        return cached;
+      }
+
+      try {
+        const { data } = await octokit.rest.repos.get({ owner, repo });
+        const detected = data.default_branch?.trim();
+        if (detected) {
+          detectedBaseBranches.set(repoFullName, detected);
+          return detected;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(
+          `Failed to detect default branch for ${repoFullName}: ${message}`,
+        );
+      }
+
+      detectedBaseBranches.set(repoFullName, "main");
+      return "main";
+    };
 
     const results = await Promise.all(
       repoFullNames.map(async (repoFullName) => {
@@ -287,6 +319,11 @@ githubPrsOpenRouter.openapi(
           const { owner, repo } = split;
           const existingRecord = existingByRepo.get(repoFullName);
           const existingNumber = existingRecord?.number;
+          const baseBranchForRepo = await resolveBaseBranchForRepo(
+            repoFullName,
+            owner,
+            repo,
+          );
 
           let detail = await loadPullRequestDetail({
             octokit,
@@ -304,7 +341,7 @@ githubPrsOpenRouter.openapi(
               repo,
               title: truncatedTitle,
               head: branchName,
-              base: baseBranch,
+              base: baseBranchForRepo,
               body: description,
             });
             detail = await fetchPullRequestDetail({

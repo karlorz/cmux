@@ -19,6 +19,7 @@ export interface RunDiffSectionProps {
       lastKnownMergeCommitSha?: string;
     }
   >;
+  baseRefByRepo?: Record<string, string>;
 }
 
 function applyRepoPrefix(
@@ -48,6 +49,7 @@ export function RunDiffSection(props: RunDiffSectionProps) {
     additionalRepoFullNames,
     withRepoPrefix,
     metadataByRepo,
+    baseRefByRepo,
   } = props;
 
   const repoFullNames = useMemo(() => {
@@ -65,17 +67,20 @@ export function RunDiffSection(props: RunDiffSectionProps) {
   const canFetch = repoFullNames.length > 0 && Boolean(ref1) && Boolean(ref2);
 
   const queries = useQueries({
-    queries: repoFullNames.map((repo) => ({
-      ...gitDiffQueryOptions({
-        repoFullName: repo,
-        baseRef: ref1,
-        headRef: ref2,
-        lastKnownBaseSha: metadataByRepo?.[repo]?.lastKnownBaseSha,
-        lastKnownMergeCommitSha:
-          metadataByRepo?.[repo]?.lastKnownMergeCommitSha,
-      }),
-      enabled: canFetch,
-    })),
+    queries: repoFullNames.map((repo) => {
+      const repoBaseRef = baseRefByRepo?.[repo] ?? ref1;
+      return {
+        ...gitDiffQueryOptions({
+          repoFullName: repo,
+          baseRef: repoBaseRef,
+          headRef: ref2,
+          lastKnownBaseSha: metadataByRepo?.[repo]?.lastKnownBaseSha,
+          lastKnownMergeCommitSha:
+            metadataByRepo?.[repo]?.lastKnownMergeCommitSha,
+        }),
+        enabled: canFetch && Boolean(repoBaseRef),
+      };
+    }),
   });
 
   const isPending = queries.some(
@@ -132,9 +137,13 @@ export function RunDiffSection(props: RunDiffSectionProps) {
     );
   }
 
+  const baseKey = repoFullNames
+    .map((repo) => baseRefByRepo?.[repo] ?? ref1)
+    .join("|");
+
   return (
     <GitDiffViewer
-      key={`${repoFullNames.join("|")}:${ref1}:${ref2}`}
+      key={`${repoFullNames.join("|")}:${baseKey}:${ref2}`}
       diffs={combinedDiffs}
       onControlsChange={onControlsChange}
       classNames={classNames}

@@ -1426,7 +1426,40 @@ Please address the issue mentioned in the comment above.`;
           return;
         }
 
-        const baseBranch = task.baseBranch?.trim() || "main";
+        const repoManager = RepositoryManager.getInstance();
+        const detectedBaseBranches = new Map<string, string>();
+        const resolveBaseBranchForRepo = async (
+          repoFullName: string,
+        ): Promise<string> => {
+          const explicit = task.baseBranch?.trim();
+          if (explicit) {
+            return explicit;
+          }
+
+          const cached = detectedBaseBranches.get(repoFullName);
+          if (cached) {
+            return cached;
+          }
+
+          const repoUrl = `https://github.com/${repoFullName}.git`;
+          try {
+            const projectPaths = await getProjectPaths(repoUrl, safeTeam);
+            await repoManager.ensureRepository(repoUrl, projectPaths.originPath);
+            const detected = await repoManager.getDefaultBranch(
+              projectPaths.originPath,
+            );
+            detectedBaseBranches.set(repoFullName, detected);
+            return detected;
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            serverLogger.warn(
+              `Failed to detect default branch for ${repoFullName}: ${message}`,
+            );
+            detectedBaseBranches.set(repoFullName, "main");
+            return "main";
+          }
+        };
+
         const title = task.pullRequestTitle || task.text || "cmux changes";
         const truncatedTitle =
           title.length > 72 ? `${title.slice(0, 69)}...` : title;
@@ -1452,6 +1485,9 @@ ${title}`;
               const { owner, repo } = split;
               const existingRecord = existingByRepo.get(repoFullName);
               const existingNumber = existingRecord?.number;
+              const baseBranchForRepo = await resolveBaseBranchForRepo(
+                repoFullName,
+              );
 
               let detail = await loadPullRequestDetail({
                 token: githubToken,
@@ -1469,7 +1505,7 @@ ${title}`;
                   repo,
                   truncatedTitle,
                   branchName,
-                  baseBranch,
+                  baseBranchForRepo,
                   body,
                 );
                 detail =

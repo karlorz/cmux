@@ -70,6 +70,7 @@ interface TaskDetailHeaderProps {
   onExpandAllChecks?: () => void;
   onCollapseAllChecks?: () => void;
   teamSlugOrId: string;
+  resolvedBaseBranch?: string | null;
 }
 
 const ENABLE_MERGE_BUTTON = false;
@@ -204,6 +205,7 @@ export function TaskDetailHeader({
   onExpandAllChecks,
   onCollapseAllChecks,
   teamSlugOrId,
+  resolvedBaseBranch,
 }: TaskDetailHeaderProps) {
   const navigate = useNavigate();
   const clipboard = useClipboard({ timeout: 2000 });
@@ -225,12 +227,12 @@ export function TaskDetailHeader({
   );
 
   const normalizedBaseBranch = useMemo(() => {
-    const candidate = task?.baseBranch;
+    const candidate = resolvedBaseBranch?.trim() || task?.baseBranch?.trim();
     if (candidate && candidate.trim()) {
       return normalizeGitRef(candidate);
     }
     return normalizeGitRef("main");
-  }, [task?.baseBranch]);
+  }, [resolvedBaseBranch, task?.baseBranch]);
   const normalizedHeadBranch = useMemo(
     () => normalizeGitRef(selectedRun?.newBranch),
     [selectedRun?.newBranch],

@@ -14,14 +14,25 @@ import { useSocket } from "@/contexts/socket/use-socket";
 import { normalizeGitRef } from "@/lib/refWithOrigin";
 import { cn } from "@/lib/utils";
 import { gitDiffQueryOptions } from "@/queries/git-diff";
+import { branchesQueryOptions } from "@/queries/branches";
 import { api } from "@cmux/convex/api";
 import type { Doc, Id } from "@cmux/convex/dataModel";
-import type { TaskAcknowledged, TaskStarted, TaskError } from "@cmux/shared";
+import type {
+  TaskAcknowledged,
+  TaskStarted,
+  TaskError,
+  GitHubBranchesResponse,
+} from "@cmux/shared";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { convexQuery } from "@convex-dev/react-query";
 import { Switch } from "@heroui/react";
-import { useQuery as useRQ } from "@tanstack/react-query";
+import {
+  useQuery as useRQ,
+  useQueries as useRQQueries,
+  type UseQueryOptions,
+  type UseQueryResult,
+} from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { Command } from "lucide-react";
@@ -67,6 +78,29 @@ type TaskRunWithChildren = Doc<"taskRuns"> & {
 };
 
 const AVAILABLE_AGENT_NAMES = new Set(AGENT_CONFIGS.map((agent) => agent.name));
+
+function extractDefaultBranch(
+  response?: GitHubBranchesResponse | null,
+): string | undefined {
+  if (!response) {
+    return undefined;
+  }
+
+  const fromResponse = response.defaultBranch?.trim();
+  if (fromResponse) {
+    return fromResponse;
+  }
+
+  const flagged = response.branches.find((branch) => branch.isDefault);
+  if (flagged) {
+    const trimmed = flagged.name.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+
+  return undefined;
+}
 
 interface RestartTaskFormProps {
   task: Doc<"tasks"> | null | undefined;
@@ -545,24 +579,57 @@ export const Route = createFileRoute(
           return;
         }
 
-        const baseRefForDiff = normalizeGitRef(task.baseBranch || "main");
         const headRefForDiff = normalizeGitRef(selectedTaskRun.newBranch);
-        if (!headRefForDiff || !baseRefForDiff) {
+        if (!headRefForDiff) {
           return;
         }
 
-        const metadataForPrimaryRepo = trimmedProjectFullName
-          ? branchMetadataByRepo?.[trimmedProjectFullName]
-          : undefined;
-        const baseBranchMeta = metadataForPrimaryRepo?.find(
-          (branch) => branch.name === task.baseBranch,
-        );
+        const defaultBranchCache = new Map<string, string>();
+        const resolveBaseBranchForRepo = async (
+          repoFullName: string,
+        ): Promise<string> => {
+          const explicit = task.baseBranch?.trim();
+          if (explicit) {
+            return explicit;
+          }
+
+          const cached = defaultBranchCache.get(repoFullName);
+          if (cached) {
+            return cached;
+          }
+
+          let detected: string | undefined;
+          try {
+            const branchesResponse = await opts.context.queryClient.ensureQueryData(
+              branchesQueryOptions({
+                teamSlugOrId: opts.params.teamSlugOrId,
+                repoFullName,
+              }),
+            );
+            detected = extractDefaultBranch(branchesResponse);
+          } catch {
+            detected = undefined;
+          }
+
+          if (!detected) {
+            detected = "main";
+          }
+
+          defaultBranchCache.set(repoFullName, detected);
+          return detected;
+        };
 
         const prefetches = Array.from(targetRepos).map(async (repoFullName) => {
-          const metadata =
-            trimmedProjectFullName && repoFullName === trimmedProjectFullName
-              ? baseBranchMeta
-              : undefined;
+          const resolvedBaseBranch = await resolveBaseBranchForRepo(repoFullName);
+          const baseRefForDiff = normalizeGitRef(resolvedBaseBranch);
+          if (!baseRefForDiff) {
+            return undefined;
+          }
+
+          const metadataForRepo = branchMetadataByRepo?.[repoFullName];
+          const baseBranchMeta = metadataForRepo?.find(
+            (branch) => branch.name === resolvedBaseBranch,
+          );
 
           return opts.context.queryClient
             .ensureQueryData(
@@ -570,8 +637,8 @@ export const Route = createFileRoute(
                 baseRef: baseRefForDiff,
                 headRef: headRefForDiff,
                 repoFullName,
-                lastKnownBaseSha: metadata?.lastKnownBaseSha,
-                lastKnownMergeCommitSha: metadata?.lastKnownMergeCommitSha,
+                lastKnownBaseSha: baseBranchMeta?.lastKnownBaseSha,
+                lastKnownMergeCommitSha: baseBranchMeta?.lastKnownMergeCommitSha,
               }),
             )
             .catch(() => undefined);
@@ -659,6 +726,69 @@ function RunDiffPage() {
 
   const [primaryRepo, ...additionalRepos] = repoFullNames;
 
+  const remoteBranchesQueries = useRQQueries({
+    queries: repoFullNames.map((repoFullName) =>
+      ({
+        ...branchesQueryOptions({
+          teamSlugOrId,
+          repoFullName,
+        }),
+        enabled: Boolean(repoFullName),
+      }) as UseQueryOptions<GitHubBranchesResponse, Error>,
+    ),
+  }) as UseQueryResult<GitHubBranchesResponse, Error>[];
+
+  const resolveBaseBranch = useCallback(
+    (repoFullName?: string): string | undefined => {
+      const explicit = task?.baseBranch?.trim();
+      if (explicit) {
+        return explicit;
+      }
+
+      if (repoFullName) {
+        const index = repoFullNames.findIndex((name) => name === repoFullName);
+        if (index >= 0) {
+          const detected = extractDefaultBranch(
+            remoteBranchesQueries[index]?.data,
+          );
+          if (detected) {
+            return detected;
+          }
+        }
+      }
+
+      for (const query of remoteBranchesQueries) {
+        const detected = extractDefaultBranch(query?.data);
+        if (detected) {
+          return detected;
+        }
+      }
+
+      return undefined;
+    },
+    [task?.baseBranch, repoFullNames, remoteBranchesQueries],
+  );
+
+  const resolvedBaseBranch = useMemo(() => {
+    const candidateRepo = primaryRepo ?? repoFullNames[0];
+    return resolveBaseBranch(candidateRepo);
+  }, [primaryRepo, repoFullNames, resolveBaseBranch]);
+
+  const baseRefByRepo = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const repo of repoFullNames) {
+      const resolved = resolveBaseBranch(repo);
+      if (!resolved) {
+        continue;
+      }
+      const normalized = normalizeGitRef(resolved) ?? resolved;
+      if (normalized) {
+        map[repo] = normalized;
+      }
+    }
+    return map;
+  }, [repoFullNames, resolveBaseBranch]);
+
   const branchMetadataQuery = useRQ({
     ...convexQuery(api.github.getBranchesByRepo, {
       teamSlugOrId,
@@ -672,11 +802,11 @@ function RunDiffPage() {
     | undefined;
 
   const baseBranchMetadata = useMemo(() => {
-    if (!task?.baseBranch) {
+    if (!resolvedBaseBranch) {
       return undefined;
     }
-    return branchMetadata?.find((branch) => branch.name === task.baseBranch);
-  }, [branchMetadata, task?.baseBranch]);
+    return branchMetadata?.find((branch) => branch.name === resolvedBaseBranch);
+  }, [branchMetadata, resolvedBaseBranch]);
 
   const metadataByRepo = useMemo(() => {
     if (!primaryRepo) return undefined;
@@ -717,7 +847,12 @@ function RunDiffPage() {
     );
   }
 
-  const baseRef = normalizeGitRef(task?.baseBranch || "main");
+  const baseRefCandidate =
+    (primaryRepo ? baseRefByRepo[primaryRepo] : undefined) ??
+    resolvedBaseBranch ??
+    task?.baseBranch ??
+    "main";
+  const baseRef = normalizeGitRef(baseRefCandidate) ?? baseRefCandidate;
   const headRef = normalizeGitRef(selectedRun.newBranch);
   const hasDiffSources =
     Boolean(primaryRepo) && Boolean(baseRef) && Boolean(headRef);
@@ -737,6 +872,7 @@ function RunDiffPage() {
             onExpandAllChecks={expandAllChecks}
             onCollapseAllChecks={collapseAllChecks}
             teamSlugOrId={teamSlugOrId}
+            resolvedBaseBranch={resolvedBaseBranch}
           />
           {task?.text && (
             <div className="mb-2 px-3.5">
@@ -783,6 +919,7 @@ function RunDiffPage() {
                   onControlsChange={setDiffControls}
                   classNames={gitDiffViewerClassNames}
                   metadataByRepo={metadataByRepo}
+                  baseRefByRepo={baseRefByRepo}
                 />
               ) : (
                 <div className="p-6 text-sm text-neutral-600 dark:text-neutral-300">
