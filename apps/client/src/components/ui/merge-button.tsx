@@ -1,3 +1,4 @@
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { ChevronDown, GitMerge, GitPullRequest, Loader2 } from "lucide-react";
@@ -56,8 +57,12 @@ export function MergeButton({
     onMerge(selectedMethod);
   };
 
+  const disabledMessage =
+    typeof disabledReason === "string" ? disabledReason.trim() : "";
+  const shouldShowTooltip = disabled && disabledMessage.length > 0;
+
   if (!isOpen) {
-    return (
+    const button = (
       <button
         onClick={() => onMerge("squash")}
         disabled={disabled}
@@ -75,9 +80,22 @@ export function MergeButton({
         {isLoading ? "Opening..." : prCount === 1 ? "Open PR" : "Open PRs"}
       </button>
     );
+
+    if (!shouldShowTooltip) {
+      return button;
+    }
+
+    return (
+      <Tooltip delayDuration={0}>
+        <TooltipTrigger asChild>{button}</TooltipTrigger>
+        <TooltipContent side="top" sideOffset={8} className="max-w-[260px] leading-relaxed">
+          {disabledMessage}
+        </TooltipContent>
+      </Tooltip>
+    );
   }
 
-  return (
+  const mergeControls = (
     <div className="flex items-stretch">
       <button
         onClick={handleMerge}
@@ -137,5 +155,18 @@ export function MergeButton({
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
     </div>
+  );
+
+  if (!shouldShowTooltip) {
+    return mergeControls;
+  }
+
+  return (
+    <Tooltip delayDuration={0}>
+      <TooltipTrigger asChild>{mergeControls}</TooltipTrigger>
+      <TooltipContent side="top" sideOffset={8} className="max-w-[260px] leading-relaxed">
+        {disabledMessage}
+      </TooltipContent>
+    </Tooltip>
   );
 }
