@@ -1,14 +1,27 @@
 import LexicalEditor from "@/components/lexical/LexicalEditor";
+import { ContextMenu } from "@base-ui-components/react/context-menu";
 import clsx from "clsx";
 import {
   forwardRef,
   memo,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
 } from "react";
+import { ClipboardCopy, ClipboardPaste, Redo2, Scissors, TextSelect, Undo2 } from "lucide-react";
+import { toast } from "sonner";
 import type { Id } from "@cmux/convex/dataModel";
+
+const CONTEXT_MENU_ITEM_CLASS =
+  "flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700";
+const CONTEXT_MENU_POPUP_CLASS =
+  "origin-[var(--transform-origin)] rounded-md bg-white dark:bg-neutral-800 py-1 text-neutral-900 dark:text-neutral-100 shadow-lg shadow-gray-200 outline-1 outline-neutral-200 transition-[opacity] data-[ending-style]:opacity-0 dark:shadow-none dark:-outline-offset-1 dark:outline-neutral-700";
+const CONTEXT_MENU_SEPARATOR_CLASS =
+  "my-1 mx-1 h-px bg-neutral-200 dark:bg-neutral-700";
+const CONTEXT_MENU_ICON_CLASS =
+  "w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300";
 
 export interface EditorApi {
   getContent: () => {
@@ -71,6 +84,7 @@ export const DashboardInput = memo(
       altKey: false,
     });
     const pendingRefocusTimeoutRef = useRef<number | null>(null);
+    const triggerRef = useRef<HTMLDivElement | null>(null);
 
     useImperativeHandle(ref, () => ({
       getContent: () =>
@@ -291,6 +305,110 @@ export const DashboardInput = memo(
       };
     }, []);
 
+    const focusEditor = useCallback(() => {
+      internalApiRef.current?.focus?.();
+    }, []);
+
+    const runDocumentCommand = useCallback((command: string) => {
+      if (typeof document === "undefined") {
+        return false;
+      }
+
+      try {
+        return document.execCommand(command);
+      } catch (error) {
+        console.error(`[DashboardInput] Failed to execute document command: ${command}`, error);
+        return false;
+      }
+    }, []);
+
+    const selectAllWithinEditor = useCallback(() => {
+      if (typeof window === "undefined") {
+        return false;
+      }
+
+      const rootElement = triggerRef.current;
+      if (!rootElement) {
+        return false;
+      }
+
+      const editorElement = rootElement.querySelector("[data-cmux-input=\"true\"]");
+      if (!(editorElement instanceof HTMLElement)) {
+        return false;
+      }
+
+      const selection = window.getSelection();
+      if (!selection) {
+        return false;
+      }
+
+      const range = document.createRange();
+      range.selectNodeContents(editorElement);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return true;
+    }, []);
+
+    const handleUndo = useCallback(() => {
+      focusEditor();
+      runDocumentCommand("undo");
+    }, [focusEditor, runDocumentCommand]);
+
+    const handleRedo = useCallback(() => {
+      focusEditor();
+      runDocumentCommand("redo");
+    }, [focusEditor, runDocumentCommand]);
+
+    const handleCut = useCallback(() => {
+      focusEditor();
+      runDocumentCommand("cut");
+    }, [focusEditor, runDocumentCommand]);
+
+    const handleCopy = useCallback(() => {
+      focusEditor();
+      runDocumentCommand("copy");
+    }, [focusEditor, runDocumentCommand]);
+
+    const handlePaste = useCallback(() => {
+      focusEditor();
+
+      const executed = runDocumentCommand("paste");
+      if (executed) {
+        return;
+      }
+
+      if (
+        typeof navigator === "undefined" ||
+        typeof navigator.clipboard?.readText !== "function"
+      ) {
+        toast.error("Clipboard access is unavailable. Use the keyboard shortcut to paste.");
+        return;
+      }
+
+      void navigator.clipboard
+        .readText()
+        .then((text) => {
+          if (!text) {
+            return;
+          }
+
+          const editor = internalApiRef.current;
+          editor?.focus?.();
+          editor?.insertText?.(text);
+        })
+        .catch((error) => {
+          console.error("[DashboardInput] Failed to read clipboard contents", error);
+          toast.error("Unable to read from the clipboard.");
+        });
+    }, [focusEditor, runDocumentCommand]);
+
+    const handleSelectAll = useCallback(() => {
+      focusEditor();
+      if (!runDocumentCommand("selectAll")) {
+        selectAllWithinEditor();
+      }
+    }, [focusEditor, runDocumentCommand, selectAllWithinEditor]);
+
     const lexicalPlaceholder = useMemo(() => "Describe a task", []);
 
     const lexicalPadding = useMemo(
@@ -316,19 +434,73 @@ export const DashboardInput = memo(
     };
 
     return (
-      <LexicalEditor
-        placeholder={lexicalPlaceholder}
-        onChange={onTaskDescriptionChange}
-        onSubmit={onSubmit}
-        repoUrl={repoUrl}
-        branch={branch}
-        environmentId={environmentId}
-        persistenceKey={persistenceKey}
-        padding={lexicalPadding}
-        contentEditableClassName={lexicalClassName}
-        maxHeight={maxHeight}
-        onEditorReady={handleEditorReady}
-      />
+      <ContextMenu.Root>
+        <ContextMenu.Trigger ref={triggerRef} className="w-full">
+          <LexicalEditor
+            placeholder={lexicalPlaceholder}
+            onChange={onTaskDescriptionChange}
+            onSubmit={onSubmit}
+            repoUrl={repoUrl}
+            branch={branch}
+            environmentId={environmentId}
+            persistenceKey={persistenceKey}
+            padding={lexicalPadding}
+            contentEditableClassName={lexicalClassName}
+            maxHeight={maxHeight}
+            onEditorReady={handleEditorReady}
+          />
+        </ContextMenu.Trigger>
+        <ContextMenu.Portal>
+          <ContextMenu.Positioner className="outline-none z-[var(--z-context-menu)]">
+            <ContextMenu.Popup className={CONTEXT_MENU_POPUP_CLASS}>
+              <ContextMenu.Item
+                className={CONTEXT_MENU_ITEM_CLASS}
+                onClick={handleUndo}
+              >
+                <Undo2 className={CONTEXT_MENU_ICON_CLASS} />
+                <span>Undo</span>
+              </ContextMenu.Item>
+              <ContextMenu.Item
+                className={CONTEXT_MENU_ITEM_CLASS}
+                onClick={handleRedo}
+              >
+                <Redo2 className={CONTEXT_MENU_ICON_CLASS} />
+                <span>Redo</span>
+              </ContextMenu.Item>
+              <ContextMenu.Separator className={CONTEXT_MENU_SEPARATOR_CLASS} />
+              <ContextMenu.Item
+                className={CONTEXT_MENU_ITEM_CLASS}
+                onClick={handleCut}
+              >
+                <Scissors className={CONTEXT_MENU_ICON_CLASS} />
+                <span>Cut</span>
+              </ContextMenu.Item>
+              <ContextMenu.Item
+                className={CONTEXT_MENU_ITEM_CLASS}
+                onClick={handleCopy}
+              >
+                <ClipboardCopy className={CONTEXT_MENU_ICON_CLASS} />
+                <span>Copy</span>
+              </ContextMenu.Item>
+              <ContextMenu.Item
+                className={CONTEXT_MENU_ITEM_CLASS}
+                onClick={handlePaste}
+              >
+                <ClipboardPaste className={CONTEXT_MENU_ICON_CLASS} />
+                <span>Paste</span>
+              </ContextMenu.Item>
+              <ContextMenu.Separator className={CONTEXT_MENU_SEPARATOR_CLASS} />
+              <ContextMenu.Item
+                className={CONTEXT_MENU_ITEM_CLASS}
+                onClick={handleSelectAll}
+              >
+                <TextSelect className={CONTEXT_MENU_ICON_CLASS} />
+                <span>Select All</span>
+              </ContextMenu.Item>
+            </ContextMenu.Popup>
+          </ContextMenu.Positioner>
+        </ContextMenu.Portal>
+      </ContextMenu.Root>
     );
   })
 );
