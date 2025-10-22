@@ -18,6 +18,7 @@ import {
   type BrowserWindowConstructorOptions,
   type MenuItemConstructorOptions,
 } from "electron";
+import contextMenu from "electron-context-menu";
 import { startEmbeddedServer } from "./embedded-server";
 import { registerWebContentsViewHandlers } from "./web-contents-view";
 // Auto-updater
@@ -690,6 +691,10 @@ app.whenReady().then(async () => {
   setupConsoleFileMirrors();
   registerLogIpcHandlers();
   registerAutoUpdateIpcHandlers();
+  contextMenu({
+    // Allow Inspect Element in dev builds while keeping context menus lean in production.
+    showInspectElement: is.dev,
+  });
   initCmdK({
     getMainWindow: () => mainWindow,
     logger: {
