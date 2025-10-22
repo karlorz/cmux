@@ -1,3 +1,4 @@
+import { is } from "@electron-toolkit/utils";
 import {
   BrowserWindow,
   WebContentsView,
@@ -8,6 +9,7 @@ import {
   type Session,
   type WebContents,
 } from "electron";
+import contextMenu from "electron-context-menu";
 import { STATUS_CODES } from "node:http";
 import type {
   ElectronDevToolsMode,
@@ -746,6 +748,17 @@ export function registerWebContentsViewHandlers({
         };
         viewEntries.set(id, entry);
         setupEventForwarders(entry, logger);
+        const disposeContextMenu = contextMenu({
+          window: view.webContents,
+          showInspectElement: is.dev,
+        });
+        entry.eventCleanup.push(() => {
+          try {
+            disposeContextMenu();
+          } catch {
+            // ignore dispose failures
+          }
+        });
         sendState(entry, logger, "created");
 
         if (!windowCleanupRegistered.has(win.id)) {

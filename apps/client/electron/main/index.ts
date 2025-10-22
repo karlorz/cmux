@@ -18,6 +18,7 @@ import {
   type BrowserWindowConstructorOptions,
   type MenuItemConstructorOptions,
 } from "electron";
+import contextMenu from "electron-context-menu";
 import { startEmbeddedServer } from "./embedded-server";
 import { registerWebContentsViewHandlers } from "./web-contents-view";
 // Auto-updater
@@ -690,6 +691,16 @@ app.whenReady().then(async () => {
   setupConsoleFileMirrors();
   registerLogIpcHandlers();
   registerAutoUpdateIpcHandlers();
+  const disposeMainContextMenu = contextMenu({
+    showInspectElement: is.dev,
+  });
+  app.once("will-quit", () => {
+    try {
+      disposeMainContextMenu();
+    } catch {
+      // ignore dispose failures
+    }
+  });
   initCmdK({
     getMainWindow: () => mainWindow,
     logger: {
