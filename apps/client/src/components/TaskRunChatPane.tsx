@@ -2,7 +2,7 @@ import { TaskTimeline } from "@/components/task-timeline";
 import type { Doc, Id } from "@cmux/convex/dataModel";
 import type { TaskRunWithChildren } from "@/types/task";
 import clsx from "clsx";
-import { MessageCircle, GripVertical, X } from "lucide-react";
+import { MessageCircle, GripVertical, X, Maximize2, Minimize2 } from "lucide-react";
 
 export interface TaskRunChatPaneProps {
   task: Doc<"tasks"> | null | undefined;
@@ -17,6 +17,8 @@ export interface TaskRunChatPaneProps {
   onDragStart?: (e: React.DragEvent) => void;
   onDragEnd?: (e: React.DragEvent) => void;
   onClose?: () => void;
+  onToggleExpand?: () => void;
+  isExpanded?: boolean;
   position?: string;
 }
 
@@ -29,6 +31,8 @@ export function TaskRunChatPane({
   onDragStart,
   onDragEnd,
   onClose,
+  onToggleExpand,
+  isExpanded = false,
 }: TaskRunChatPaneProps) {
   return (
     <div className={clsx("flex h-full flex-col", className)}>
@@ -53,6 +57,21 @@ export function TaskRunChatPane({
               Chat &amp; Activity
             </h2>
           </div>
+          {onToggleExpand ? (
+            <button
+              type="button"
+              onClick={onToggleExpand}
+              className="flex size-5 items-center justify-center rounded text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+              title={isExpanded ? "Exit expanded view" : "Expand panel"}
+              aria-pressed={isExpanded}
+            >
+              {isExpanded ? (
+                <Minimize2 className="size-3.5" />
+              ) : (
+                <Maximize2 className="size-3.5" />
+              )}
+            </button>
+          ) : null}
           {onClose && (
             <button
               type="button"

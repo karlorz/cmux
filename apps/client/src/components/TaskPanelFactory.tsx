@@ -1,5 +1,14 @@
 import React, { useState, useEffect, type ReactNode, useCallback } from "react";
-import { Code2, Globe2, TerminalSquare, GitCompare, GripVertical, X } from "lucide-react";
+import {
+  Code2,
+  Globe2,
+  TerminalSquare,
+  GitCompare,
+  GripVertical,
+  X,
+  Maximize2,
+  Minimize2,
+} from "lucide-react";
 import clsx from "clsx";
 import type { PanelType } from "@/lib/panel-config";
 import { PANEL_LABELS } from "@/lib/panel-config";
@@ -30,6 +39,9 @@ interface PanelFactoryProps {
   position: PanelPosition;
   onSwap?: (fromPosition: PanelPosition, toPosition: PanelPosition) => void;
   onClose?: (position: PanelPosition) => void;
+  onToggleExpand?: (position: PanelPosition) => void;
+  isExpanded?: boolean;
+  isAnyPanelExpanded?: boolean;
   // Chat panel props
   task?: Doc<"tasks"> | null;
   taskRuns?: TaskRunWithChildren[] | null;
@@ -78,7 +90,15 @@ interface PanelFactoryProps {
 }
 
 const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
-  const { type, position, onSwap, onClose } = props;
+  const {
+    type,
+    position,
+    onSwap,
+    onClose,
+    onToggleExpand,
+    isExpanded = false,
+    isAnyPanelExpanded = false,
+  } = props;
   const [isDragOver, setIsDragOver] = useState(false);
   const [isDraggingSelf, setIsDraggingSelf] = useState(false);
   const [isPanelDragActive, setIsPanelDragActive] = useState(false);
@@ -146,7 +166,7 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
     dispatchPanelDragEvent(PANEL_DRAG_END_EVENT);
   }, [onSwap, position]);
 
-  const showDropOverlay = isPanelDragActive && !isDraggingSelf;
+  const showDropOverlay = isPanelDragActive && !isDraggingSelf && !isExpanded;
 
   const renderDropOverlay = () => {
     if (!showDropOverlay) {
@@ -180,14 +200,39 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
     );
   };
 
+  const panelClassName = clsx(
+    "flex h-full flex-col overflow-hidden rounded-lg border bg-white shadow-sm transition-all duration-150 dark:bg-neutral-950",
+    isDragOver
+      ? "border-blue-500 dark:border-blue-400 ring-2 ring-blue-500/30 dark:ring-blue-400/30"
+      : "border-neutral-200 dark:border-neutral-800",
+    isExpanded
+      ? "absolute inset-1 sm:inset-2 md:inset-3 lg:inset-4 z-50 pointer-events-auto shadow-2xl ring-2 ring-blue-500/20 backdrop-blur-sm dark:ring-blue-400/20"
+      : "relative pointer-events-auto",
+    isAnyPanelExpanded && !isExpanded ? "pointer-events-none opacity-40" : undefined,
+  );
+
+  const renderExpandButton = () => {
+    if (!onToggleExpand) {
+      return null;
+    }
+    const Icon = isExpanded ? Minimize2 : Maximize2;
+    const label = isExpanded ? "Exit expanded view" : "Expand panel";
+    return (
+      <button
+        type="button"
+        onClick={() => onToggleExpand(position)}
+        className="flex size-5 items-center justify-center rounded text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+        title={label}
+        aria-pressed={isExpanded}
+      >
+        <Icon className="size-3.5" />
+      </button>
+    );
+  };
+
   const panelWrapper = (icon: ReactNode, title: string, content: ReactNode) => (
     <div
-      className={clsx(
-        "relative flex h-full flex-col overflow-hidden rounded-lg border bg-white shadow-sm transition-all duration-150 dark:bg-neutral-950",
-        isDragOver
-          ? "border-blue-500 dark:border-blue-400 ring-2 ring-blue-500/30 dark:ring-blue-400/30"
-          : "border-neutral-200 dark:border-neutral-800"
-      )}
+      className={panelClassName}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -212,6 +257,7 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
             {title}
           </h2>
         </div>
+        {renderExpandButton()}
         {onClose && (
           <button
             type="button"
@@ -233,12 +279,7 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
       if (!TaskRunChatPane) return null;
       return (
         <div
-          className={clsx(
-            "relative flex h-full flex-col overflow-hidden rounded-lg border bg-white shadow-sm transition-all duration-150 dark:bg-neutral-950",
-            isDragOver
-              ? "border-blue-500 dark:border-blue-400 ring-2 ring-blue-500/30 dark:ring-blue-400/30"
-              : "border-neutral-200 dark:border-neutral-800"
-          )}
+          className={panelClassName}
           onDragEnter={handleDragEnter}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -254,6 +295,8 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
             onClose={onClose ? () => onClose(position) : undefined}
+            onToggleExpand={onToggleExpand ? () => onToggleExpand(position) : undefined}
+            isExpanded={isExpanded}
             position={position}
           />
         </div>
@@ -474,6 +517,15 @@ export const RenderPanel = React.memo(RenderPanelComponent, (prevProps, nextProp
 
   // Check if callbacks changed (using reference equality)
   if (prevProps.onSwap !== nextProps.onSwap || prevProps.onClose !== nextProps.onClose) {
+    return false;
+  }
+
+  if (prevProps.onToggleExpand !== nextProps.onToggleExpand) {
+    return false;
+  }
+
+  if (prevProps.isExpanded !== nextProps.isExpanded ||
+    prevProps.isAnyPanelExpanded !== nextProps.isAnyPanelExpanded) {
     return false;
   }
 

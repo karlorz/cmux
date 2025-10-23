@@ -45,6 +45,8 @@ type IframeStatusEntry = {
   url: string | null;
 };
 
+type PanelPosition = "topLeft" | "topRight" | "bottomLeft" | "bottomRight";
+
 const paramsSchema = z.object({
   taskId: typedZid("tasks"),
 });
@@ -134,7 +136,7 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/task/$taskId/")({
           baseUrl,
           request: {
             cmd: "tmux",
-            args: ["attach", "-t", "cmux"],
+            args: ["new-session", "-A", "cmux"],
           },
         });
         tabs = [created.id];
@@ -171,9 +173,9 @@ function buildTaskRunIndex(
 }
 
 interface EmptyPanelSlotProps {
-  position: "topLeft" | "topRight" | "bottomLeft" | "bottomRight";
+  position: PanelPosition;
   availablePanels: PanelType[];
-  onAddPanel: (position: "topLeft" | "topRight" | "bottomLeft" | "bottomRight", panelType: PanelType) => void;
+  onAddPanel: (position: PanelPosition, panelType: PanelType) => void;
 }
 
 function EmptyPanelSlot({ position, availablePanels, onAddPanel }: EmptyPanelSlotProps) {
@@ -267,9 +269,14 @@ function TaskDetailPage() {
   );
 
   const [panelConfig, setPanelConfig] = useState<PanelConfig>(() => loadPanelConfig());
+  const [expandedPanel, setExpandedPanel] = useState<PanelPosition | null>(null);
   const [iframeStatusByKey, setIframeStatusByKey] = useState<Record<string, IframeStatusEntry>>({});
 
-  const handlePanelSwap = useCallback((fromPosition: "topLeft" | "topRight" | "bottomLeft" | "bottomRight", toPosition: "topLeft" | "topRight" | "bottomLeft" | "bottomRight") => {
+  const handleToggleExpand = useCallback((position: PanelPosition) => {
+    setExpandedPanel((current) => (current === position ? null : position));
+  }, []);
+
+  const handlePanelSwap = useCallback((fromPosition: PanelPosition, toPosition: PanelPosition) => {
     // Use startTransition to mark this as a non-urgent update
     // This helps React keep the UI stable during the swap
     setPanelConfig(prev => {
@@ -294,7 +301,8 @@ function TaskDetailPage() {
     });
   }, []);
 
-  const handlePanelClose = useCallback((position: "topLeft" | "topRight" | "bottomLeft" | "bottomRight") => {
+  const handlePanelClose = useCallback((position: PanelPosition) => {
+    setExpandedPanel((current) => (current === position ? null : current));
     setPanelConfig(prev => {
       const newConfig = { ...prev };
       newConfig[position] = null;
@@ -312,7 +320,7 @@ function TaskDetailPage() {
     });
   }, []);
 
-  const handleAddPanel = useCallback((position: "topLeft" | "topRight" | "bottomLeft" | "bottomRight", panelType: PanelType) => {
+  const handleAddPanel = useCallback((position: PanelPosition, panelType: PanelType) => {
     setPanelConfig(prev => {
       const newConfig = { ...prev };
       newConfig[position] = panelType;
@@ -548,35 +556,78 @@ function TaskDetailPage() {
           taskRunId={headerTaskRunId}
           teamSlugOrId={teamSlugOrId}
         />
-        <div className="flex flex-1 min-h-0 px-1 py-1">
+        <div className="relative flex flex-1 min-h-0 px-1 py-1">
+          {expandedPanel ? (
+            <div
+              aria-hidden
+              className="absolute inset-0 z-40 rounded-lg bg-neutral-900/20 backdrop-blur-sm"
+              onClick={() => setExpandedPanel(null)}
+            />
+          ) : null}
           <ResizableGrid
             storageKey="taskDetailGrid"
             defaultLeftWidth={50}
             defaultTopHeight={50}
             topLeft={
               panelConfig.topLeft ? (
-                <RenderPanel key={panelConfig.topLeft} {...panelProps} type={panelConfig.topLeft} position="topLeft" onSwap={handlePanelSwap} />
+                <RenderPanel
+                  key={panelConfig.topLeft}
+                  {...panelProps}
+                  type={panelConfig.topLeft}
+                  position="topLeft"
+                  onSwap={handlePanelSwap}
+                  onToggleExpand={handleToggleExpand}
+                  isExpanded={expandedPanel === "topLeft"}
+                  isAnyPanelExpanded={expandedPanel !== null}
+                />
               ) : (
                 <EmptyPanelSlot position="topLeft" availablePanels={availablePanels} onAddPanel={handleAddPanel} />
               )
             }
             topRight={
               panelConfig.topRight ? (
-                <RenderPanel key={panelConfig.topRight} {...panelProps} type={panelConfig.topRight} position="topRight" onSwap={handlePanelSwap} />
+                <RenderPanel
+                  key={panelConfig.topRight}
+                  {...panelProps}
+                  type={panelConfig.topRight}
+                  position="topRight"
+                  onSwap={handlePanelSwap}
+                  onToggleExpand={handleToggleExpand}
+                  isExpanded={expandedPanel === "topRight"}
+                  isAnyPanelExpanded={expandedPanel !== null}
+                />
               ) : (
                 <EmptyPanelSlot position="topRight" availablePanels={availablePanels} onAddPanel={handleAddPanel} />
               )
             }
             bottomLeft={
               panelConfig.bottomLeft ? (
-                <RenderPanel key={panelConfig.bottomLeft} {...panelProps} type={panelConfig.bottomLeft} position="bottomLeft" onSwap={handlePanelSwap} />
+                <RenderPanel
+                  key={panelConfig.bottomLeft}
+                  {...panelProps}
+                  type={panelConfig.bottomLeft}
+                  position="bottomLeft"
+                  onSwap={handlePanelSwap}
+                  onToggleExpand={handleToggleExpand}
+                  isExpanded={expandedPanel === "bottomLeft"}
+                  isAnyPanelExpanded={expandedPanel !== null}
+                />
               ) : (
                 <EmptyPanelSlot position="bottomLeft" availablePanels={availablePanels} onAddPanel={handleAddPanel} />
               )
             }
             bottomRight={
               panelConfig.bottomRight ? (
-                <RenderPanel key={panelConfig.bottomRight} {...panelProps} type={panelConfig.bottomRight} position="bottomRight" onSwap={handlePanelSwap} />
+                <RenderPanel
+                  key={panelConfig.bottomRight}
+                  {...panelProps}
+                  type={panelConfig.bottomRight}
+                  position="bottomRight"
+                  onSwap={handlePanelSwap}
+                  onToggleExpand={handleToggleExpand}
+                  isExpanded={expandedPanel === "bottomRight"}
+                  isAnyPanelExpanded={expandedPanel !== null}
+                />
               ) : (
                 <EmptyPanelSlot position="bottomRight" availablePanels={availablePanels} onAddPanel={handleAddPanel} />
               )
