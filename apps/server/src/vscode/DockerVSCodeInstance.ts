@@ -15,6 +15,7 @@ import {
   type VSCodeInstanceConfig,
   type VSCodeInstanceInfo,
 } from "./VSCodeInstance";
+import { prepareUserSettingsForMount } from "./vscodeSettingsSync";
 
 // Global port mapping storage
 export interface ContainerMapping {
@@ -371,6 +372,34 @@ export class DockerVSCodeInstance extends VSCodeInstance {
           dockerLogger.info(`  No git config found at ${gitConfigPath}`);
         }
 
+        // Mount user VS Code settings and keybindings
+        try {
+          const userVSCodeSettings =
+            await prepareUserSettingsForMount(this.instanceId);
+
+          if (userVSCodeSettings.settingsPath) {
+            binds.push(
+              `${userVSCodeSettings.settingsPath}:/root/.cmux-user-vscode-settings.json:ro`
+            );
+            dockerLogger.info(
+              `  VS Code settings mount: ${userVSCodeSettings.settingsPath} -> /root/.cmux-user-vscode-settings.json (read-only)`
+            );
+          }
+
+          if (userVSCodeSettings.keybindingsPath) {
+            binds.push(
+              `${userVSCodeSettings.keybindingsPath}:/root/.cmux-user-vscode-keybindings.json:ro`
+            );
+            dockerLogger.info(
+              `  VS Code keybindings mount: ${userVSCodeSettings.keybindingsPath} -> /root/.cmux-user-vscode-keybindings.json (read-only)`
+            );
+          }
+        } catch (error) {
+          dockerLogger.info(
+            `  Could not prepare VS Code settings: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+
         createOptions.HostConfig!.Binds = binds;
 
         dockerLogger.info(
@@ -438,6 +467,34 @@ export class DockerVSCodeInstance extends VSCodeInstance {
         } catch {
           // Git config doesn't exist, which is fine
           dockerLogger.info(`  No git config found at ${gitConfigPath}`);
+        }
+
+        // Mount user VS Code settings and keybindings
+        try {
+          const userVSCodeSettings =
+            await prepareUserSettingsForMount(this.instanceId);
+
+          if (userVSCodeSettings.settingsPath) {
+            binds.push(
+              `${userVSCodeSettings.settingsPath}:/root/.cmux-user-vscode-settings.json:ro`
+            );
+            dockerLogger.info(
+              `  VS Code settings mount: ${userVSCodeSettings.settingsPath} -> /root/.cmux-user-vscode-settings.json (read-only)`
+            );
+          }
+
+          if (userVSCodeSettings.keybindingsPath) {
+            binds.push(
+              `${userVSCodeSettings.keybindingsPath}:/root/.cmux-user-vscode-keybindings.json:ro`
+            );
+            dockerLogger.info(
+              `  VS Code keybindings mount: ${userVSCodeSettings.keybindingsPath} -> /root/.cmux-user-vscode-keybindings.json (read-only)`
+            );
+          }
+        } catch (error) {
+          dockerLogger.info(
+            `  Could not prepare VS Code settings: ${error instanceof Error ? error.message : String(error)}`
+          );
         }
 
         createOptions.HostConfig!.Binds = binds;

@@ -16,7 +16,18 @@ case "${VSCODE_THEME:-}" in
     ;;
 esac
 
-SETTINGS=$(jq -n \
+# Load user settings if available
+USER_SETTINGS_FILE="/root/.cmux-user-vscode-settings.json"
+if [ -f "$USER_SETTINGS_FILE" ]; then
+  echo "Loading user VS Code settings from $USER_SETTINGS_FILE"
+  USER_SETTINGS=$(cat "$USER_SETTINGS_FILE")
+else
+  echo "No user VS Code settings found, using defaults"
+  USER_SETTINGS="{}"
+fi
+
+# Required cmux settings that override user settings
+CMUX_REQUIRED_SETTINGS=$(jq -n \
   --arg theme "$color" \
   '{
     "workbench.startupEditor": "none",
@@ -40,6 +51,19 @@ SETTINGS=$(jq -n \
     "git.branchCompareWith": "main"
   } + (if $theme != "" then {"workbench.colorTheme": $theme} else {} end)')
 
+# Merge user settings with cmux required settings (cmux settings take precedence)
+SETTINGS=$(echo "$USER_SETTINGS" | jq --argjson cmux "$CMUX_REQUIRED_SETTINGS" '. + $cmux')
+
+# Load user keybindings if available
+USER_KEYBINDINGS_FILE="/root/.cmux-user-vscode-keybindings.json"
+if [ -f "$USER_KEYBINDINGS_FILE" ]; then
+  echo "Loading user VS Code keybindings from $USER_KEYBINDINGS_FILE"
+  USER_KEYBINDINGS=$(cat "$USER_KEYBINDINGS_FILE")
+else
+  echo "No user VS Code keybindings found, using defaults"
+  USER_KEYBINDINGS="[]"
+fi
+
 home="${HOME:-/root}"
 user_base="${home}/.openvscode-server"
 user_dir="${user_base}/data/User"
@@ -51,3 +75,7 @@ mkdir -p "${user_dir}" "${default_profile_dir}" "${machine_dir}"
 printf '%s' "$SETTINGS" > "${user_dir}/settings.json"
 printf '%s' "$SETTINGS" > "${default_profile_dir}/settings.json"
 printf '%s' "$SETTINGS" > "${machine_dir}/settings.json"
+
+# Copy keybindings
+printf '%s' "$USER_KEYBINDINGS" > "${user_dir}/keybindings.json"
+printf '%s' "$USER_KEYBINDINGS" > "${default_profile_dir}/keybindings.json"
