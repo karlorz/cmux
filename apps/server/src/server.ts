@@ -1,6 +1,7 @@
 import { api } from "@cmux/convex/api";
-import { exec } from "node:child_process";
+import { exec, spawn } from "node:child_process";
 import { createServer } from "node:http";
+import { createServer as createNetServer } from "node:net";
 import { promisify } from "node:util";
 import { GitDiffManager } from "./gitDiff";
 
@@ -91,6 +92,108 @@ export async function startServer({
   // Set up all socket handlers
   setupSocketHandlers(rt, gitDiffManager, defaultRepo);
 
+  async function isVSCodeInstalled() {
+    const checkCommand = process.platform === "win32" ? "where code" : "command -v code";
+
+    try {
+      await execAsync(checkCommand);
+      return true;
+    } catch (_error) {
+      serverLogger.info("VS Code CLI not found, skipping serve-web launch.");
+      return false;
+    }
+  }
+
+  async function isPortAvailable(checkPort: number) {
+    return new Promise<boolean>((resolve) => {
+      const tester = createNetServer();
+
+      tester.once("error", (error) => {
+        if (
+          error &&
+          typeof error === "object" &&
+          "code" in error &&
+          (error as NodeJS.ErrnoException).code === "EADDRINUSE"
+        ) {
+          serverLogger.warn(`Port ${checkPort} is already in use, skipping VS Code serve-web launch.`);
+        } else {
+          serverLogger.error(`Error while checking port ${checkPort}:`, error);
+        }
+        resolve(false);
+      });
+
+      tester.once("listening", () => {
+        tester.close(() => resolve(true));
+      });
+
+      tester.listen(checkPort, "127.0.0.1");
+    });
+  }
+
+  async function ensureVSCodeServeWeb() {
+    const VSCODE_SERVE_PORT = 39384;
+
+    const hasVSCode = await isVSCodeInstalled();
+    if (!hasVSCode) {
+      return;
+    }
+
+    const portAvailable = await isPortAvailable(VSCODE_SERVE_PORT);
+    if (!portAvailable) {
+      return;
+    }
+
+    try {
+      const child = spawn(
+        "code",
+        [
+          "serve-web",
+          "--accept-server-license-terms",
+          "--without-connection-token",
+          "--port",
+          String(VSCODE_SERVE_PORT),
+        ],
+        {
+          detached: true,
+          stdio: "ignore",
+        }
+      );
+
+      child.on("error", (error) => {
+        serverLogger.error("VS Code serve-web process error:", error);
+      });
+
+      child.unref();
+      serverLogger.info(`Launched VS Code serve-web on port ${VSCODE_SERVE_PORT}.`);
+    } catch (error) {
+      serverLogger.error("Failed to launch VS Code serve-web:", error);
+      return;
+    }
+
+    await warmUpVSCodeServeWeb(VSCODE_SERVE_PORT);
+  }
+
+  async function warmUpVSCodeServeWeb(portToWarm: number) {
+    const warmupDeadline = Date.now() + 10_000;
+    const endpoint = `http://127.0.0.1:${portToWarm}/`;
+
+    while (Date.now() < warmupDeadline) {
+      try {
+        const response = await fetch(endpoint, { redirect: "manual" });
+        if (response.status === 200) {
+          serverLogger.info("VS Code serve-web warm-up succeeded.");
+          return;
+        }
+      } catch (error) {
+        serverLogger.debug?.("VS Code serve-web warm-up attempt failed:", error);
+      }
+
+      await new Promise<void>((resolve) => setTimeout(resolve, 500));
+    }
+
+    serverLogger.warn("VS Code serve-web did not respond with HTTP 200 during warm-up window.");
+  }
+
   const server = httpServer.listen(port, async () => {
     serverLogger.info(`Terminal server listening on port ${port}`);
     serverLogger.info(`Visit http://localhost:${port} to see the app`);
@@ -131,6 +234,8 @@ export async function startServer({
         defaultRepo
       );
     }
+
+    await ensureVSCodeServeWeb();
 
     // Startup refresh moved to first authenticated socket connection
   });
