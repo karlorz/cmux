@@ -78,8 +78,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
   cargo install --path crates/cmux-xterm --locked --force; \
   fi
 
-# Stage 2: Build stage (runs natively on ARM64, cross-compiles to x86_64)
-FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS builder
+# Stage 2: Build base stage (runs natively on ARM64, cross-compiles to x86_64)
+FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS builder-base
 
 ARG GITHUB_TOKEN
 
@@ -296,6 +296,9 @@ RUN bun run package && cp cmux-vscode-extension-0.0.1.vsix /tmp/cmux-vscode-exte
 
 # Install VS Code extensions (keep the .vsix for copying to runtime-base)
 RUN /app/openvscode-server/bin/openvscode-server --install-extension /tmp/cmux-vscode-extension-0.0.1.vsix
+
+# Stage 2b: Worker build stage
+FROM builder-base AS builder
 
 # Return to repo root before copying worker sources
 WORKDIR /cmux
@@ -570,10 +573,6 @@ RUN /root/.local/bin/cursor-agent --version
 # Note: We need to install openvscode-server for the target arch (x86_64), not copy from ARM64 builder
 COPY --from=builder /builtins /builtins
 COPY --from=builder /usr/local/bin/wait-for-docker.sh /usr/local/bin/wait-for-docker.sh
-COPY apps/worker/scripts/collect-relevant-diff.sh /usr/local/bin/cmux-collect-relevant-diff.sh
-COPY apps/worker/scripts/collect-crown-diff.sh /usr/local/bin/cmux-collect-crown-diff.sh
-RUN chmod +x /usr/local/bin/cmux-collect-relevant-diff.sh \
-  && chmod +x /usr/local/bin/cmux-collect-crown-diff.sh
 
 # Install openvscode-server for x86_64 (target platform)
 ARG CODE_RELEASE
@@ -666,6 +665,12 @@ for vsix in "$@"; do
   fi
 done
 EOF
+
+# Copy worker helper scripts
+COPY apps/worker/scripts/collect-relevant-diff.sh /usr/local/bin/cmux-collect-relevant-diff.sh
+COPY apps/worker/scripts/collect-crown-diff.sh /usr/local/bin/cmux-collect-crown-diff.sh
+RUN chmod +x /usr/local/bin/cmux-collect-relevant-diff.sh \
+  && chmod +x /usr/local/bin/cmux-collect-crown-diff.sh
 
 # Copy vendored Rust binaries from rust-builder
 COPY --from=rust-builder /usr/local/cargo/bin/envctl /usr/local/bin/envctl
