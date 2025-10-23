@@ -11,7 +11,6 @@ import {
   fetchPullRequest,
   fetchPullRequestFiles,
   type GithubPullRequest,
-  type GithubPullRequestFile,
 } from "@/lib/github/fetch-pull-request";
 import { isGithubApiError } from "@/lib/github/errors";
 import { cn } from "@/lib/utils";
@@ -20,6 +19,7 @@ import {
   getConvexHttpActionBaseUrl,
   startCodeReviewJob,
 } from "@/lib/services/code-review/start-code-review";
+import type { DiffFile } from "@/components/pr/pull-request-diff-viewer";
 
 type PageParams = {
   teamSlugOrId: string;
@@ -508,7 +508,7 @@ function PullRequestDiffSection({
   }
 }
 
-function summarizeFiles(files: GithubPullRequestFile[]): {
+function summarizeFiles(files: DiffFile[]): {
   fileCount: number;
   additions: number;
   deletions: number;
@@ -534,7 +534,7 @@ function PullRequestDiffContent({
   pullNumber,
   commitRef,
 }: {
-  files: GithubPullRequestFile[];
+  files: DiffFile[];
   fileCount: number;
   additions: number;
   deletions: number;
@@ -592,7 +592,7 @@ function PullRequestDiffViewerWrapper({
   pullNumber,
   commitRef,
 }: {
-  files: GithubPullRequestFile[];
+  files: DiffFile[];
   teamSlugOrId: string;
   repoFullName: string;
   pullNumber: number;

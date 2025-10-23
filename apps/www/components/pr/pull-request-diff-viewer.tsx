@@ -58,8 +58,13 @@ import {
   type ReviewHeatmapLine,
 } from "./heatmap";
 
+export type DiffFile = Pick<
+  GithubPullRequestFile,
+  "filename" | "status" | "previous_filename" | "additions" | "deletions" | "patch"
+>;
+
 type PullRequestDiffViewerProps = {
-  files: GithubPullRequestFile[];
+  files: DiffFile[];
   teamSlugOrId: string;
   repoFullName: string;
   prNumber: number;
@@ -67,7 +72,7 @@ type PullRequestDiffViewerProps = {
 };
 
 type ParsedFileDiff = {
-  file: GithubPullRequestFile;
+  file: DiffFile;
   anchorId: string;
   diff: FileData | null;
   error?: string;
@@ -281,7 +286,7 @@ type FileTreeNode = {
   name: string;
   path: string;
   children: FileTreeNode[];
-  file?: GithubPullRequestFile;
+  file?: DiffFile;
 };
 
 type FileStatusMeta = {
@@ -290,9 +295,7 @@ type FileStatusMeta = {
   label: string;
 };
 
-function getFileStatusMeta(
-  status: GithubPullRequestFile["status"] | undefined
-): FileStatusMeta {
+function getFileStatusMeta(status: DiffFile["status"] | undefined): FileStatusMeta {
   const iconClassName = "h-3.5 w-3.5";
 
   switch (status) {
@@ -1855,7 +1858,7 @@ function buildChangeKeyIndex(diff: FileData | null): Map<number, string> {
   return map;
 }
 
-function buildDiffText(file: GithubPullRequestFile): string {
+function buildDiffText(file: DiffFile): string {
   const oldPath =
     file.status === "added"
       ? "/dev/null"
@@ -1876,7 +1879,7 @@ function buildDiffText(file: GithubPullRequestFile): string {
   ].join("\n");
 }
 
-function buildFileTree(files: GithubPullRequestFile[]): FileTreeNode[] {
+function buildFileTree(files: DiffFile[]): FileTreeNode[] {
   const root: FileTreeNode = {
     name: "",
     path: "",
