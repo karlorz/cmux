@@ -1570,6 +1570,10 @@ async def task_install_systemd_units(ctx: TaskContext) -> None:
         install -Dm0644 {repo}/configs/systemd/cmux-xterm.service /usr/lib/systemd/system/cmux-xterm.service
         install -Dm0644 {repo}/configs/systemd/cmux-memory-setup.service /usr/lib/systemd/system/cmux-memory-setup.service
         install -Dm0755 {repo}/configs/systemd/bin/configure-openvscode /usr/local/lib/cmux/configure-openvscode
+        install -Dm0755 {repo}/cmux/scripts/openvscode-entrypoint.sh /usr/local/lib/cmux/openvscode-entrypoint.sh
+        install -Dm0755 {repo}/cmux/scripts/openvscode-entrypoint.sh /usr/local/bin/openvscode-entrypoint.sh
+        install -d /cmux/scripts
+        install -m0755 {repo}/cmux/scripts/openvscode-entrypoint.sh /cmux/scripts/openvscode-entrypoint.sh
         touch /usr/local/lib/cmux/dockerd.flag
         mkdir -p /var/log/cmux
         mkdir -p /root/workspace

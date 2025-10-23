@@ -352,6 +352,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   tmux \
   htop \
   ripgrep \
+  rsync \
   jq \
   systemd \
   dbus \
@@ -704,12 +705,16 @@ COPY configs/systemd/cmux-cdp-proxy.service /usr/lib/systemd/system/cmux-cdp-pro
 COPY configs/systemd/cmux-xterm.service /usr/lib/systemd/system/cmux-xterm.service
 COPY configs/systemd/cmux-memory-setup.service /usr/lib/systemd/system/cmux-memory-setup.service
 COPY configs/systemd/bin/configure-openvscode /usr/local/lib/cmux/configure-openvscode
+COPY cmux/scripts/openvscode-entrypoint.sh /usr/local/lib/cmux/openvscode-entrypoint.sh
 COPY configs/systemd/bin/cmux-start-chrome /usr/local/lib/cmux/cmux-start-chrome
 COPY configs/systemd/bin/cmux-manage-dockerd /usr/local/lib/cmux/cmux-manage-dockerd
 COPY configs/systemd/bin/cmux-stop-dockerd /usr/local/lib/cmux/cmux-stop-dockerd
 COPY configs/systemd/bin/cmux-configure-memory /usr/local/sbin/cmux-configure-memory
 COPY --from=builder /usr/local/lib/cmux/cmux-cdp-proxy /usr/local/lib/cmux/cmux-cdp-proxy
-RUN chmod +x /usr/local/lib/cmux/configure-openvscode /usr/local/lib/cmux/cmux-start-chrome /usr/local/lib/cmux/cmux-cdp-proxy && \
+RUN chmod +x /usr/local/lib/cmux/configure-openvscode /usr/local/lib/cmux/openvscode-entrypoint.sh /usr/local/lib/cmux/cmux-start-chrome /usr/local/lib/cmux/cmux-cdp-proxy && \
+  install -m 0755 /usr/local/lib/cmux/openvscode-entrypoint.sh /usr/local/bin/openvscode-entrypoint.sh && \
+  mkdir -p /cmux/scripts && \
+  install -m 0755 /usr/local/lib/cmux/openvscode-entrypoint.sh /cmux/scripts/openvscode-entrypoint.sh && \
   chmod +x /usr/local/lib/cmux/cmux-manage-dockerd /usr/local/lib/cmux/cmux-stop-dockerd && \
   chmod +x /usr/local/sbin/cmux-configure-memory && \
   touch /usr/local/lib/cmux/dockerd.flag && \

@@ -74,6 +74,47 @@ export class DockerVSCodeInstance extends VSCodeInstance {
     return DockerVSCodeInstance.dockerInstance;
   }
 
+  private async getSeedDirectory(): Promise<string | null> {
+    const override = process.env.CMUX_VSCODE_SEED_PATH?.trim();
+    const seedPath =
+      override && override.length > 0
+        ? override
+        : path.join(os.homedir(), ".cmux", "vscode-seed");
+
+    try {
+      await fs.promises.mkdir(seedPath, { recursive: true });
+      return seedPath;
+    } catch (error) {
+      dockerLogger.info(
+        `VS Code seed directory unavailable at ${seedPath}: ${String(error)}`
+      );
+      return null;
+    }
+  }
+
+  private addSeedMount(
+    createOptions: Docker.ContainerCreateOptions,
+    seedDir: string | null
+  ): void {
+    if (!seedDir) {
+      return;
+    }
+
+    const binds = createOptions.HostConfig?.Binds;
+    if (!binds) {
+      return;
+    }
+
+    if (binds.some((bind) => bind.startsWith(`${seedDir}:`))) {
+      return;
+    }
+
+    binds.push(`${seedDir}:/cmux/vscode:ro`);
+    dockerLogger.info(
+      `  VS Code seed mount: ${seedDir} -> /cmux/vscode (read-only)`
+    );
+  }
+
   constructor(config: VSCodeInstanceConfig) {
     super(config);
     this.containerName = `cmux-${this.taskRunId}`;
@@ -257,6 +298,7 @@ export class DockerVSCodeInstance extends VSCodeInstance {
     }
 
     const envVars = ["NODE_ENV=production", "WORKER_PORT=39377"];
+    const seedDir = await this.getSeedDirectory();
 
     // Add theme environment variable if provided
     if (this.config.theme) {
@@ -445,6 +487,8 @@ export class DockerVSCodeInstance extends VSCodeInstance {
     }
 
     dockerLogger.info(`Creating container...`);
+
+    this.addSeedMount(createOptions, seedDir);
 
     // Create and start the container
     this.container = await docker.createContainer(createOptions);

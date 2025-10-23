@@ -15,13 +15,21 @@ if [ -x "${CMUX_HOME}/bin/configure-openvscode" ]; then
   "${CMUX_HOME}/bin/configure-openvscode"
 fi
 
-exec "${CMUX_HOME}/openvscode-server/bin/openvscode-server" \
-  --host 0.0.0.0 \
-  --port "${CMUX_OPENVSCODE_PORT}" \
-  --without-connection-token \
-  --disable-workspace-trust \
-  --disable-telemetry \
-  --disable-updates \
-  --profile default-profile \
-  --verbose \
+args=(
+  --host 0.0.0.0
+  --port "${CMUX_OPENVSCODE_PORT}"
+  --without-connection-token
+  --disable-workspace-trust
+  --disable-telemetry
+  --disable-updates
+  --profile default-profile
+  --verbose
   "${CMUX_HOME}/workspace"
+)
+
+ENTRYPOINT_SCRIPT="${CMUX_HOME}/scripts/openvscode-entrypoint.sh"
+if [ -x "${ENTRYPOINT_SCRIPT}" ]; then
+  exec "${ENTRYPOINT_SCRIPT}" "${args[@]}"
+fi
+
+exec "${CMUX_HOME}/openvscode-server/bin/openvscode-server" "${args[@]}"

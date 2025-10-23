@@ -1,6 +1,9 @@
 import type { Id } from "@cmux/convex/dataModel";
 import { spawn } from "node:child_process";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   DockerVSCodeInstance,
   containerMappings,
@@ -26,6 +29,10 @@ vi.mock("../utils/fileLogger.js", () => ({
 }));
 
 describe("DockerVSCodeInstance", () => {
+  afterEach(() => {
+    delete process.env.CMUX_VSCODE_SEED_PATH;
+  });
+
   it("should prefix container names with 'docker-'", () => {
     // Create instance with a test taskRunId
     const taskRunId = "test123456789012345678901234" as Id<"taskRuns">;
@@ -84,6 +91,69 @@ describe("DockerVSCodeInstance", () => {
     // This is what Docker sees as the container name
     const actualDockerContainerName = name.replace("docker-", "");
     expect(actualDockerContainerName).toBe(`cmux-${taskRunId}`);
+  });
+
+  it("adds VS Code seed mount when provided", () => {
+    const taskRunId = "seedmount1234567890123456789" as Id<"taskRuns">;
+    const taskId = "task123456789012345678901234" as Id<"tasks">;
+
+    const instance = new DockerVSCodeInstance({
+      taskRunId,
+      taskId,
+      teamSlugOrId: "default",
+    });
+
+    const tempDir = path.join(os.tmpdir(), "cmux-seed-test");
+    const createOptions = {
+      HostConfig: { Binds: [] as string[] },
+    };
+
+    (instance as unknown as { addSeedMount: Function }).addSeedMount(
+      createOptions,
+      tempDir
+    );
+
+    expect(createOptions.HostConfig?.Binds).toContain(
+      `${tempDir}:/cmux/vscode:ro`
+    );
+
+    (instance as unknown as { addSeedMount: Function }).addSeedMount(
+      createOptions,
+      tempDir
+    );
+
+    const seedMounts = createOptions.HostConfig?.Binds.filter((bind) =>
+      bind.startsWith(tempDir)
+    );
+    expect(seedMounts?.length).toBe(1);
+  });
+
+  it("creates seed directory when CMUX_VSCODE_SEED_PATH is set", async () => {
+    const taskRunId = "seedpath1234567890123456789" as Id<"taskRuns">;
+    const taskId = "task123456789012345678901234" as Id<"tasks">;
+
+    const root = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), "cmux-seed-root-")
+    );
+    const customSeedDir = path.join(root, "seed");
+    process.env.CMUX_VSCODE_SEED_PATH = customSeedDir;
+
+    const instance = new DockerVSCodeInstance({
+      taskRunId,
+      taskId,
+      teamSlugOrId: "default",
+    });
+
+    const seedDir = await (instance as unknown as {
+      getSeedDirectory: () => Promise<string | null>;
+    }).getSeedDirectory();
+
+    expect(seedDir).toBe(customSeedDir);
+
+    const stats = await fs.promises.stat(customSeedDir);
+    expect(stats.isDirectory()).toBe(true);
+
+    await fs.promises.rm(root, { recursive: true, force: true });
   });
 
   describe("docker event syncing", () => {
