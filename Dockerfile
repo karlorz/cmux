@@ -602,6 +602,7 @@ RUN /root/.local/bin/cursor-agent --version
 # Copy only the built artifacts and runtime dependencies from builder
 # Note: We need to install openvscode-server for the target arch (x86_64), not copy from ARM64 builder
 COPY --from=builder /builtins /builtins
+COPY --from=builder /cmux/node_modules/.bun /cmux/node_modules/.bun
 COPY --from=builder /usr/local/bin/wait-for-docker.sh /usr/local/bin/wait-for-docker.sh
 
 # Install openvscode-server for x86_64 (target platform)

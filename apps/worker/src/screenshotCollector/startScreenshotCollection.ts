@@ -11,9 +11,39 @@ import { readPrDescription } from "./context";
 import { buildScreenshotPrompt, formatFileList } from "./prompt";
 import { runScreenshotAnalysis } from "./analysis";
 
+const INTERNAL_CDP_ENDPOINT = "http://127.0.0.1:39382";
+
 export interface StartScreenshotCollectionOptions {
   openAiApiKey?: string | null;
   anthropicApiKey?: string | null;
+}
+
+interface DevtoolsVersionResponse {
+  webSocketDebuggerUrl: string;
+}
+
+async function fetchWebSocketUrl(endpoint: string): Promise<string> {
+  const versionUrl = new URL("/json/version", endpoint);
+  const response = await fetch(versionUrl);
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to load CDP version info (${response.status} ${response.statusText})`
+    );
+  }
+
+  const payload = (await response.json()) as unknown;
+
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    typeof (payload as Partial<DevtoolsVersionResponse>).webSocketDebuggerUrl !==
+      "string"
+  ) {
+    throw new Error("Invalid CDP version response (missing websocket URL)");
+  }
+
+  return (payload as DevtoolsVersionResponse).webSocketDebuggerUrl;
 }
 
 export async function startScreenshotCollection(
@@ -120,9 +150,7 @@ export async function startScreenshotCollection(
         : process.env.OPENAI_API_KEY;
 
     await logToScreenshotCollector(
-      `OPENAI_API_KEY source: ${
-        suppliedOpenAiKey ? "payload" : "environment"
-      }`
+      `OPENAI_API_KEY source: ${suppliedOpenAiKey ? "payload" : "environment"}`
     );
     await logToScreenshotCollector(
       `OPENAI_API_KEY (first 8 chars): ${
@@ -214,11 +242,32 @@ export async function startScreenshotCollection(
     }
 
     await logToScreenshotCollector(
-      `Launching Magnitude computer agent with claude-sonnet-4-5 via CDP at 127.0.0.1:9222`
+      `Launching Magnitude computer agent with claude-sonnet-4-5 via CDP at ${INTERNAL_CDP_ENDPOINT}`
     );
     await logToScreenshotCollector(
       `Computer agent instructions:\n${screenshotInstructions}`
     );
+
+    let cdpWebSocketUrl: string;
+    try {
+      await logToScreenshotCollector("Resolving CDP WebSocket endpoint...");
+      cdpWebSocketUrl = await fetchWebSocketUrl(INTERNAL_CDP_ENDPOINT);
+      await logToScreenshotCollector(
+        `CDP WebSocket endpoint resolved (${cdpWebSocketUrl})`
+      );
+    } catch (cdpError) {
+      const message =
+        cdpError instanceof Error
+          ? cdpError.message
+          : String(cdpError ?? "unknown CDP error");
+      await logToScreenshotCollector(
+        `Failed to resolve CDP WebSocket endpoint: ${message}`
+      );
+      log("ERROR", "Failed to resolve CDP WebSocket endpoint", {
+        error: message,
+      });
+      throw cdpError;
+    }
 
     const agent = await startBrowserAgent({
       llm: {
@@ -229,7 +278,7 @@ export async function startScreenshotCollection(
         },
       },
       browser: {
-        cdp: "http://127.0.0.1:9222",
+        cdp: cdpWebSocketUrl,
       },
     });
 
