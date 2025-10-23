@@ -532,6 +532,8 @@ export type CodeReviewStartResponse = {
         repoUrl: string;
         prNumber: number | null;
         commitRef: string;
+        headCommitRef: string;
+        baseCommitRef: string | null;
         jobType: 'pull_request' | 'comparison';
         comparisonSlug: string | null;
         comparisonBaseOwner: string | null;
@@ -559,6 +561,8 @@ export type CodeReviewStartBody = {
     githubLink: string;
     prNumber?: number;
     commitRef?: string;
+    headCommitRef?: string;
+    baseCommitRef?: string;
     force?: boolean;
     comparison?: {
         slug: string;

@@ -14,6 +14,8 @@ const CodeReviewJobSchema = z.object({
   repoUrl: z.string(),
   prNumber: z.number().nullable(),
   commitRef: z.string(),
+  headCommitRef: z.string(),
+  baseCommitRef: z.string().nullable(),
   jobType: z.enum(["pull_request", "comparison"]),
   comparisonSlug: z.string().nullable(),
   comparisonBaseOwner: z.string().nullable(),
@@ -38,6 +40,8 @@ const StartBodySchema = z
     githubLink: z.string().url(),
     prNumber: z.number().int().positive().optional(),
     commitRef: z.string().optional(),
+    headCommitRef: z.string().optional(),
+    baseCommitRef: z.string().optional(),
     force: z.boolean().optional(),
     comparison: z
       .object({
@@ -120,6 +124,26 @@ codeReviewRouter.openapi(
         400,
       );
     }
+    const jobType = body.comparison ? "comparison" : "pull_request";
+    const headCommitProvided = Boolean(body.headCommitRef ?? body.commitRef);
+    if (!headCommitProvided) {
+      return c.json(
+        { error: "headCommitRef is required to start a code review run" },
+        400,
+      );
+    }
+    if (jobType === "pull_request" && !body.baseCommitRef) {
+      return c.json(
+        { error: "baseCommitRef is required when starting a pull request review" },
+        400,
+      );
+    }
+    if (jobType === "comparison" && !body.baseCommitRef) {
+      return c.json(
+        { error: "baseCommitRef is required when starting a comparison review" },
+        400,
+      );
+    }
 
     const { job, deduplicated, backgroundTask } = await startCodeReviewJob({
       accessToken,
@@ -129,6 +153,8 @@ codeReviewRouter.openapi(
         githubLink: body.githubLink,
         prNumber: body.prNumber,
         commitRef: body.commitRef,
+        headCommitRef: body.headCommitRef,
+        baseCommitRef: body.baseCommitRef,
         force: body.force,
         comparison: body.comparison
           ? {

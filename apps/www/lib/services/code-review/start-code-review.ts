@@ -18,6 +18,8 @@ type StartCodeReviewPayload = {
   githubLink: string;
   prNumber?: number;
   commitRef?: string;
+  headCommitRef?: string;
+  baseCommitRef?: string;
   force?: boolean;
   comparison?: ComparisonJobPayload;
 };
@@ -37,6 +39,8 @@ type StartCodeReviewResult = {
     repoUrl: string;
     prNumber: number | null;
     commitRef: string;
+    headCommitRef: string;
+    baseCommitRef: string | null;
     requestedByUserId: string;
     state: string;
     createdAt: number;
@@ -109,6 +113,22 @@ export async function startCodeReviewJob({
     });
   }
 
+  const rawHeadCommitRef = payload.headCommitRef ?? payload.commitRef ?? null;
+  const rawBaseCommitRef = payload.baseCommitRef ?? null;
+
+  if (!rawHeadCommitRef) {
+    throw new Error("headCommitRef is required to start a code review");
+  }
+  if (jobType === "pull_request" && !rawBaseCommitRef) {
+    throw new Error("baseCommitRef is required for pull request code reviews");
+  }
+  if (jobType === "comparison" && !rawBaseCommitRef) {
+    throw new Error("baseCommitRef is required for comparison code reviews");
+  }
+
+  const headCommitRef = rawHeadCommitRef;
+  const baseCommitRef = rawBaseCommitRef as string;
+
   const convex = getConvex({ accessToken });
   const callbackToken = randomBytes(32).toString("hex");
   const callbackTokenHash = hashCallbackToken(callbackToken);
@@ -121,7 +141,9 @@ export async function startCodeReviewJob({
     teamSlugOrId: payload.teamSlugOrId,
     githubLink: payload.githubLink,
     prNumber: payload.prNumber,
-    commitRef: payload.commitRef,
+    commitRef: headCommitRef,
+    headCommitRef,
+    baseCommitRef,
     callbackTokenHash,
     force: payload.force,
     comparison: payload.comparison
@@ -140,6 +162,8 @@ export async function startCodeReviewJob({
       jobId: reserveResult.job.jobId,
       repoFullName: reserveResult.job.repoFullName,
       prNumber: reserveResult.job.prNumber,
+      commitRef: reserveResult.job.commitRef,
+      baseCommitRef: reserveResult.job.baseCommitRef,
     });
     return {
       job: normalizeJob(reserveResult.job),
@@ -152,6 +176,8 @@ export async function startCodeReviewJob({
     jobId: reserveResult.job.jobId,
     repoFullName: reserveResult.job.repoFullName,
     prNumber: reserveResult.job.prNumber,
+    commitRef: reserveResult.job.commitRef,
+    baseCommitRef: reserveResult.job.baseCommitRef,
   });
 
   const rawJob = reserveResult.job;
@@ -246,6 +272,11 @@ function normalizeJob(job: RawJob): StartCodeReviewResult["job"] {
     ...job,
     teamId: job.teamId ?? null,
     prNumber: (job.prNumber as number | undefined) ?? null,
+    headCommitRef:
+      (job.headCommitRef as string | undefined) ??
+      (job.commitRef as string),
+    baseCommitRef:
+      (job.baseCommitRef as string | null | undefined) ?? null,
     jobType:
       (job.jobType as StartCodeReviewResult["job"]["jobType"]) ?? "pull_request",
     comparisonSlug:

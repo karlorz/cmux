@@ -66,6 +66,7 @@ type PullRequestDiffViewerProps = {
   comparisonSlug?: string | null;
   jobType?: "pull_request" | "comparison";
   commitRef?: string;
+  baseCommitRef?: string;
 };
 
 type ParsedFileDiff = {
@@ -346,6 +347,7 @@ export function PullRequestDiffViewer({
   comparisonSlug,
   jobType,
   commitRef,
+  baseCommitRef,
 }: PullRequestDiffViewerProps) {
   const normalizedJobType: "pull_request" | "comparison" =
     jobType ?? (comparisonSlug ? "comparison" : "pull_request");
@@ -359,8 +361,16 @@ export function PullRequestDiffViewer({
             repoFullName,
             prNumber,
             ...(commitRef ? { commitRef } : {}),
+            ...(baseCommitRef ? { baseCommitRef } : {}),
           },
-    [normalizedJobType, teamSlugOrId, repoFullName, prNumber, commitRef]
+    [
+      normalizedJobType,
+      teamSlugOrId,
+      repoFullName,
+      prNumber,
+      commitRef,
+      baseCommitRef,
+    ]
   );
 
   const comparisonQueryArgs = useMemo(
@@ -372,8 +382,16 @@ export function PullRequestDiffViewer({
             repoFullName,
             comparisonSlug,
             ...(commitRef ? { commitRef } : {}),
+            ...(baseCommitRef ? { baseCommitRef } : {}),
           },
-    [normalizedJobType, teamSlugOrId, repoFullName, comparisonSlug, commitRef]
+    [
+      normalizedJobType,
+      teamSlugOrId,
+      repoFullName,
+      comparisonSlug,
+      commitRef,
+      baseCommitRef,
+    ]
   );
 
   const prFileOutputs = useConvexQuery(

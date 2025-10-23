@@ -177,6 +177,34 @@ function scheduleCodeReviewStart({
           pullRequest.html_url ??
           `https://github.com/${fallbackRepoFullName}/pull/${pullNumber}`;
         const commitRef = pullRequest.head?.sha ?? undefined;
+        const baseCommitRef = pullRequest.base?.sha ?? undefined;
+
+        if (!commitRef) {
+          console.error("[code-review] Missing head commit SHA; skipping schedule", {
+            githubOwner,
+            repo,
+            pullNumber,
+          });
+          return;
+        }
+        if (!baseCommitRef) {
+          console.error("[code-review] Missing base commit SHA; skipping schedule", {
+            githubOwner,
+            repo,
+            pullNumber,
+          });
+          return;
+        }
+
+        const dedupeMetadata = {
+          teamSlugOrId,
+          repoFullName: fallbackRepoFullName,
+          prNumber: pullNumber,
+          commitRef,
+          baseCommitRef,
+          force: false,
+        };
+        console.info("[code-review] Scheduling automated review", dedupeMetadata);
 
         const callbackBaseUrl = getConvexHttpActionBaseUrl();
         if (!callbackBaseUrl) {
@@ -194,7 +222,7 @@ function scheduleCodeReviewStart({
           return;
         }
 
-        const { backgroundTask } = await startCodeReviewJob({
+        const { job, deduplicated, backgroundTask } = await startCodeReviewJob({
           accessToken,
           callbackBaseUrl,
           payload: {
@@ -202,8 +230,20 @@ function scheduleCodeReviewStart({
             githubLink,
             prNumber: pullNumber,
             commitRef,
+            headCommitRef: commitRef,
+            baseCommitRef,
             force: false,
           },
+        });
+        console.info("[code-review] Reservation result", {
+          jobId: job.jobId,
+          deduplicated,
+          jobState: job.state,
+          repoFullName: job.repoFullName,
+          prNumber: job.prNumber,
+          commitRef: job.commitRef,
+          baseCommitRef: job.baseCommitRef,
+          teamId: job.teamId,
         });
 
         if (backgroundTask) {
@@ -446,6 +486,7 @@ function PullRequestDiffSection({
       pullRequest.head?.repo?.full_name ??
       `${githubOwner}/${repo}`;
     const commitRef = pullRequest.head?.sha ?? undefined;
+    const baseCommitRef = pullRequest.base?.sha ?? undefined;
 
     return (
       <ReviewDiffContent
@@ -457,6 +498,7 @@ function PullRequestDiffSection({
         repoFullName={fallbackRepoFullName}
         reviewTarget={{ type: "pull_request", prNumber: pullNumber }}
         commitRef={commitRef}
+        baseCommitRef={baseCommitRef}
       />
     );
   } catch (error) {

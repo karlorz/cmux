@@ -29,6 +29,7 @@ export function ReviewDiffContent({
   repoFullName,
   reviewTarget,
   commitRef,
+  baseCommitRef,
 }: {
   files: GithubFileChange[];
   fileCount: number;
@@ -40,6 +41,7 @@ export function ReviewDiffContent({
     | { type: "pull_request"; prNumber: number }
     | { type: "comparison"; slug: string };
   commitRef?: string;
+  baseCommitRef?: string;
 }) {
   return (
     <section className="flex flex-col gap-4">
@@ -54,6 +56,7 @@ export function ReviewDiffContent({
         repoFullName={repoFullName}
         reviewTarget={reviewTarget}
         commitRef={commitRef}
+        baseCommitRef={baseCommitRef}
       />
     </section>
   );
@@ -124,6 +127,7 @@ export function ReviewDiffViewerWrapper({
   repoFullName,
   reviewTarget,
   commitRef,
+  baseCommitRef,
 }: {
   files: GithubFileChange[];
   teamSlugOrId: string;
@@ -132,6 +136,7 @@ export function ReviewDiffViewerWrapper({
     | { type: "pull_request"; prNumber: number }
     | { type: "comparison"; slug: string };
   commitRef?: string;
+  baseCommitRef?: string;
 }) {
   return (
     <PullRequestDiffViewer
@@ -146,6 +151,7 @@ export function ReviewDiffViewerWrapper({
         reviewTarget.type === "comparison" ? reviewTarget.slug : null
       }
       commitRef={commitRef}
+      baseCommitRef={baseCommitRef}
     />
   );
 }
