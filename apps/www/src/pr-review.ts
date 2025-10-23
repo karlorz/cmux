@@ -178,7 +178,7 @@ export interface PrReviewJobContext {
   teamId?: string;
   repoFullName: string;
   repoUrl: string;
-  prNumber: number;
+  prNumber?: number;
   prUrl: string;
   commitRef: string;
   comparison?: ComparisonReviewContext;
@@ -775,7 +775,7 @@ function buildComparisonMetadata(config: PrReviewJobContext): PrMetadata {
   return {
     owner: baseOwner,
     repo: repoName,
-    number: config.prNumber,
+    number: config.prNumber ?? -1,
     prUrl: config.prUrl,
     headRefName: comparison.headRef,
     headRepoOwner: headOwner,

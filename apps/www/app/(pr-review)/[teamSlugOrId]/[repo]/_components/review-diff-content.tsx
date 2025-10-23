@@ -27,7 +27,7 @@ export function ReviewDiffContent({
   deletions,
   teamSlugOrId,
   repoFullName,
-  pullNumber,
+  reviewTarget,
   commitRef,
 }: {
   files: GithubFileChange[];
@@ -36,7 +36,9 @@ export function ReviewDiffContent({
   deletions: number;
   teamSlugOrId: string;
   repoFullName: string;
-  pullNumber: number | null;
+  reviewTarget:
+    | { type: "pull_request"; prNumber: number }
+    | { type: "comparison"; slug: string };
   commitRef?: string;
 }) {
   return (
@@ -50,7 +52,7 @@ export function ReviewDiffContent({
         files={files}
         teamSlugOrId={teamSlugOrId}
         repoFullName={repoFullName}
-        pullNumber={pullNumber}
+        reviewTarget={reviewTarget}
         commitRef={commitRef}
       />
     </section>
@@ -120,13 +122,15 @@ export function ReviewDiffViewerWrapper({
   files,
   teamSlugOrId,
   repoFullName,
-  pullNumber,
+  reviewTarget,
   commitRef,
 }: {
   files: GithubFileChange[];
   teamSlugOrId: string;
   repoFullName: string;
-  pullNumber: number | null;
+  reviewTarget:
+    | { type: "pull_request"; prNumber: number }
+    | { type: "comparison"; slug: string };
   commitRef?: string;
 }) {
   return (
@@ -134,7 +138,13 @@ export function ReviewDiffViewerWrapper({
       files={files}
       teamSlugOrId={teamSlugOrId}
       repoFullName={repoFullName}
-      prNumber={pullNumber}
+      jobType={reviewTarget.type}
+      prNumber={
+        reviewTarget.type === "pull_request" ? reviewTarget.prNumber : null
+      }
+      comparisonSlug={
+        reviewTarget.type === "comparison" ? reviewTarget.slug : null
+      }
       commitRef={commitRef}
     />
   );

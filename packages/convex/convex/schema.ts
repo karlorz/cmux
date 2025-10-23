@@ -281,7 +281,7 @@ const convexSchema = defineSchema({
     teamId: v.optional(v.string()),
     repoFullName: v.string(),
     repoUrl: v.string(),
-    prNumber: v.number(),
+    prNumber: v.optional(v.number()),
     commitRef: v.string(),
     requestedByUserId: v.string(),
     jobType: v.optional(v.union(v.literal("pull_request"), v.literal("comparison"))),
@@ -314,6 +314,18 @@ const convexSchema = defineSchema({
       "prNumber",
       "updatedAt",
     ])
+    .index("by_team_repo_comparison", [
+      "teamId",
+      "repoFullName",
+      "comparisonSlug",
+      "createdAt",
+    ])
+    .index("by_team_repo_comparison_updated", [
+      "teamId",
+      "repoFullName",
+      "comparisonSlug",
+      "updatedAt",
+    ])
     .index("by_state_updated", ["state", "updatedAt"])
     .index("by_team_created", ["teamId", "createdAt"]),
 
@@ -323,7 +335,7 @@ const convexSchema = defineSchema({
     requestedByUserId: v.string(),
     repoFullName: v.string(),
     repoUrl: v.string(),
-    prNumber: v.number(),
+    prNumber: v.optional(v.number()),
     commitRef: v.string(),
     jobType: v.optional(v.union(v.literal("pull_request"), v.literal("comparison"))),
     comparisonSlug: v.optional(v.string()),
@@ -342,7 +354,7 @@ const convexSchema = defineSchema({
     jobId: v.id("automatedCodeReviewJobs"),
     teamId: v.optional(v.string()),
     repoFullName: v.string(),
-    prNumber: v.number(),
+    prNumber: v.optional(v.number()),
     commitRef: v.string(),
     jobType: v.optional(v.union(v.literal("pull_request"), v.literal("comparison"))),
     comparisonSlug: v.optional(v.string()),
@@ -362,6 +374,13 @@ const convexSchema = defineSchema({
       "teamId",
       "repoFullName",
       "prNumber",
+      "commitRef",
+      "createdAt",
+    ])
+    .index("by_team_repo_comparison_commit", [
+      "teamId",
+      "repoFullName",
+      "comparisonSlug",
       "commitRef",
       "createdAt",
     ]),

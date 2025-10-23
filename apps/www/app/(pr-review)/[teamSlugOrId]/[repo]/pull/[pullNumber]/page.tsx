@@ -455,7 +455,7 @@ function PullRequestDiffSection({
         deletions={totals.deletions}
         teamSlugOrId={teamSlugOrId}
         repoFullName={fallbackRepoFullName}
-        pullNumber={pullNumber}
+        reviewTarget={{ type: "pull_request", prNumber: pullNumber }}
         commitRef={commitRef}
       />
     );

@@ -82,34 +82,58 @@ async function findExistingActiveJob(
   db: MutationCtx["db"],
   teamId: string | undefined,
   repoFullName: string,
-  prNumber: number,
-  jobType: "pull_request" | "comparison"
+  jobType: "pull_request" | "comparison",
+  options: {
+    prNumber?: number;
+    comparisonSlug?: string;
+  }
 ): Promise<JobDoc | null> {
+  if (jobType === "comparison") {
+    if (!options.comparisonSlug) {
+      return null;
+    }
+    const job = await db
+      .query("automatedCodeReviewJobs")
+      .withIndex("by_team_repo_comparison_updated", (q) =>
+        q
+          .eq("teamId", teamId ?? undefined)
+          .eq("repoFullName", repoFullName)
+          .eq("comparisonSlug", options.comparisonSlug)
+      )
+      .order("desc")
+      .filter((q) =>
+        q.and(
+          q.or(q.eq("state", "pending"), q.eq("state", "running")),
+          q.eq("jobType", "comparison")
+        )
+      )
+      .first();
+    return job ?? null;
+  }
+
+  if (!options.prNumber) {
+    return null;
+  }
+
   const job = await db
     .query("automatedCodeReviewJobs")
     .withIndex("by_team_repo_pr_updated", (q) =>
       q
         .eq("teamId", teamId ?? undefined)
         .eq("repoFullName", repoFullName)
-        .eq("prNumber", prNumber)
+        .eq("prNumber", options.prNumber)
     )
     .order("desc")
     .filter((q) =>
-      jobType === "comparison"
-        ? q.and(
-            q.or(q.eq("state", "pending"), q.eq("state", "running")),
-            q.eq("jobType", "comparison")
-          )
-        : q.and(
-            q.or(q.eq("state", "pending"), q.eq("state", "running")),
-            q.or(
-              q.eq("jobType", "pull_request"),
-              q.eq(q.field("jobType"), undefined)
-            )
-          )
+      q.and(
+        q.or(q.eq("state", "pending"), q.eq("state", "running")),
+        q.or(
+          q.eq("jobType", "pull_request"),
+          q.eq(q.field("jobType"), undefined)
+        )
+      )
     )
     .first();
-
   return job ?? null;
 }
 
@@ -130,7 +154,7 @@ export const reserveJob = authMutation({
   args: {
     teamSlugOrId: v.optional(v.string()),
     githubLink: v.string(),
-    prNumber: v.number(),
+    prNumber: v.optional(v.number()),
     commitRef: v.optional(v.string()),
     callbackTokenHash: v.string(),
     force: v.optional(v.boolean()),
@@ -151,6 +175,13 @@ export const reserveJob = authMutation({
     const teamKey = args.teamSlugOrId ?? repoOwner;
     const jobType = args.comparison ? "comparison" : "pull_request";
 
+    if (jobType === "pull_request" && typeof args.prNumber !== "number") {
+      throw new ConvexError("prNumber is required for pull_request jobs");
+    }
+    if (jobType === "comparison" && !args.comparison) {
+      throw new ConvexError("comparison metadata is required for comparison jobs");
+    }
+
     let teamId: string;
     try {
       teamId = await getTeamId(ctx, teamKey);
@@ -169,22 +200,19 @@ export const reserveJob = authMutation({
       });
     }
 
-  let existing = await findExistingActiveJob(
-    ctx.db,
-    teamId,
-    repoFullName,
-    args.prNumber,
-    jobType
-  );
-  if (existing && !existing.jobType) {
-    await ctx.db.patch(existing._id, {
-      jobType: "pull_request",
+    let existing = await findExistingActiveJob(ctx.db, teamId, repoFullName, jobType, {
+      prNumber: args.prNumber ?? undefined,
+      comparisonSlug: args.comparison?.slug,
     });
-    const refreshed = await ctx.db.get(existing._id);
-    if (refreshed) {
-      existing = refreshed;
+    if (existing && existing.jobType !== jobType) {
+      await ctx.db.patch(existing._id, {
+        jobType,
+      });
+      const refreshed = await ctx.db.get(existing._id);
+      if (refreshed) {
+        existing = refreshed;
+      }
     }
-  }
     if (existing && !args.force) {
       if (
         jobType === "comparison" &&
@@ -230,28 +258,33 @@ export const reserveJob = authMutation({
       });
     }
 
-    const pullRequest = await ctx.db
-      .query("pullRequests")
-      .withIndex("by_team_repo_number", (q) =>
-        q
-          .eq("teamId", teamId)
-          .eq("repoFullName", repoFullName)
-          .eq("number", args.prNumber)
-      )
-      .first();
+    let commitRef: string;
+    if (jobType === "pull_request") {
+      const pullRequest = await ctx.db
+        .query("pullRequests")
+        .withIndex("by_team_repo_number", (q) =>
+          q
+            .eq("teamId", teamId)
+            .eq("repoFullName", repoFullName)
+            .eq("number", args.prNumber!)
+        )
+        .first();
 
-    const commitRef =
-      args.commitRef ??
-      pullRequest?.headSha ??
-      pullRequest?.mergeCommitSha ??
-      "unknown";
+      commitRef =
+        args.commitRef ??
+        pullRequest?.headSha ??
+        pullRequest?.mergeCommitSha ??
+        "unknown";
+    } else {
+      commitRef = args.commitRef ?? "unknown";
+    }
 
     const now = Date.now();
     const jobId = await ctx.db.insert("automatedCodeReviewJobs", {
       teamId,
       repoFullName,
       repoUrl,
-      prNumber: args.prNumber,
+      prNumber: jobType === "pull_request" ? args.prNumber : undefined,
       commitRef,
       requestedByUserId: identity.subject,
       jobType,
@@ -591,6 +624,50 @@ export const listFileOutputsForPr = authQuery({
       teamId: output.teamId,
       repoFullName: output.repoFullName,
       prNumber: output.prNumber,
+      commitRef: output.commitRef,
+      sandboxInstanceId: output.sandboxInstanceId ?? null,
+      filePath: output.filePath,
+      codexReviewOutput: output.codexReviewOutput,
+      createdAt: output.createdAt,
+      updatedAt: output.updatedAt,
+    }));
+  },
+});
+
+export const listFileOutputsForComparison = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    repoFullName: v.string(),
+    comparisonSlug: v.string(),
+    commitRef: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+    const limit = Math.min(args.limit ?? 200, 500);
+
+    let query = ctx.db
+      .query("automatedCodeReviewFileOutputs")
+      .withIndex("by_team_repo_comparison_commit", (q) =>
+        q
+          .eq("teamId", teamId)
+          .eq("repoFullName", args.repoFullName)
+          .eq("comparisonSlug", args.comparisonSlug)
+      )
+      .order("desc");
+
+    if (args.commitRef) {
+      query = query.filter((q) => q.eq(q.field("commitRef"), args.commitRef));
+    }
+
+    const outputs = await query.take(limit);
+
+    return outputs.map((output) => ({
+      id: output._id,
+      jobId: output.jobId,
+      teamId: output.teamId,
+      repoFullName: output.repoFullName,
+      prNumber: output.prNumber ?? null,
       commitRef: output.commitRef,
       sandboxInstanceId: output.sandboxInstanceId ?? null,
       filePath: output.filePath,

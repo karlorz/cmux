@@ -530,7 +530,7 @@ export type CodeReviewStartResponse = {
         teamId: string | null;
         repoFullName: string;
         repoUrl: string;
-        prNumber: number;
+        prNumber: number | null;
         commitRef: string;
         jobType: 'pull_request' | 'comparison';
         comparisonSlug: string | null;
@@ -557,7 +557,7 @@ export type CodeReviewStartResponse = {
 export type CodeReviewStartBody = {
     teamSlugOrId?: string;
     githubLink: string;
-    prNumber: number;
+    prNumber?: number;
     commitRef?: string;
     force?: boolean;
     comparison?: {
@@ -574,7 +574,6 @@ export type CodeReviewStartBody = {
             ref: string;
             label: string;
         };
-        virtualPrNumber: number;
     };
 };
 

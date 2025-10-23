@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 type ComparisonRefInput = {
   raw: string;
   defaultOwner: string;
@@ -19,11 +17,7 @@ export type ComparisonJobDetails = {
   head: ComparisonRefDetails;
   repoFullName: string;
   compareUrl: string;
-  virtualPrNumber: number;
 };
-
-const VIRTUAL_PR_NUMBER_OFFSET = 1_000_000_000;
-const HASH_BYTES = 6;
 
 export function parseComparisonRef({
   raw,
@@ -87,53 +81,11 @@ export function buildComparisonJobDetails({
     base.label
   )}...${encodeURIComponent(head.label)}`;
 
-  const virtualPrNumber = computeVirtualPrNumber({
-    repoFullName,
-    baseOwner: base.owner,
-    baseRef: base.ref,
-    headOwner: head.owner,
-    headRef: head.ref,
-  });
-
   return {
     slug,
     base,
     head,
     repoFullName,
     compareUrl,
-    virtualPrNumber,
   };
-}
-
-export function computeVirtualPrNumber({
-  repoFullName,
-  baseOwner,
-  baseRef,
-  headOwner,
-  headRef,
-}: {
-  repoFullName: string;
-  baseOwner: string;
-  baseRef: string;
-  headOwner: string;
-  headRef: string;
-}): number {
-  const hash = createHash("sha256");
-  hash.update(repoFullName);
-  hash.update("\0");
-  hash.update(baseOwner);
-  hash.update("\0");
-  hash.update(baseRef);
-  hash.update("\0");
-  hash.update(headOwner);
-  hash.update("\0");
-  hash.update(headRef);
-
-  const digest = hash.digest();
-  let value = 0;
-  for (let index = 0; index < HASH_BYTES; index += 1) {
-    value = value * 256 + digest[index];
-  }
-
-  return VIRTUAL_PR_NUMBER_OFFSET + value;
 }

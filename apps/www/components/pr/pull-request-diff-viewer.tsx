@@ -62,7 +62,9 @@ type PullRequestDiffViewerProps = {
   files: GithubFileChange[];
   teamSlugOrId: string;
   repoFullName: string;
-  prNumber: number | null;
+  prNumber?: number | null;
+  comparisonSlug?: string | null;
+  jobType?: "pull_request" | "comparison";
   commitRef?: string;
 };
 
@@ -205,9 +207,9 @@ function createRefractorAdapter(base: RefractorLike) {
 
 const refractorAdapter = createRefractorAdapter(refractor);
 
-type FileOutput = FunctionReturnType<
-  typeof api.codeReview.listFileOutputsForPr
->[number];
+type FileOutput =
+  | FunctionReturnType<typeof api.codeReview.listFileOutputsForPr>[number]
+  | FunctionReturnType<typeof api.codeReview.listFileOutputsForComparison>[number];
 
 type HeatmapTooltipMeta = {
   score: number;
@@ -341,11 +343,16 @@ export function PullRequestDiffViewer({
   teamSlugOrId,
   repoFullName,
   prNumber,
+  comparisonSlug,
+  jobType,
   commitRef,
 }: PullRequestDiffViewerProps) {
-  const fileOutputArgs = useMemo(
+  const normalizedJobType: "pull_request" | "comparison" =
+    jobType ?? (comparisonSlug ? "comparison" : "pull_request");
+
+  const prQueryArgs = useMemo(
     () =>
-      prNumber === null
+      normalizedJobType !== "pull_request" || prNumber === null || prNumber === undefined
         ? ("skip" as const)
         : {
             teamSlugOrId,
@@ -353,13 +360,33 @@ export function PullRequestDiffViewer({
             prNumber,
             ...(commitRef ? { commitRef } : {}),
           },
-    [teamSlugOrId, repoFullName, prNumber, commitRef]
+    [normalizedJobType, teamSlugOrId, repoFullName, prNumber, commitRef]
   );
 
-  const fileOutputs = useConvexQuery(
-    api.codeReview.listFileOutputsForPr,
-    fileOutputArgs
+  const comparisonQueryArgs = useMemo(
+    () =>
+      normalizedJobType !== "comparison" || !comparisonSlug
+        ? ("skip" as const)
+        : {
+            teamSlugOrId,
+            repoFullName,
+            comparisonSlug,
+            ...(commitRef ? { commitRef } : {}),
+          },
+    [normalizedJobType, teamSlugOrId, repoFullName, comparisonSlug, commitRef]
   );
+
+  const prFileOutputs = useConvexQuery(
+    api.codeReview.listFileOutputsForPr,
+    prQueryArgs
+  );
+  const comparisonFileOutputs = useConvexQuery(
+    api.codeReview.listFileOutputsForComparison,
+    comparisonQueryArgs
+  );
+
+  const fileOutputs =
+    normalizedJobType === "comparison" ? comparisonFileOutputs : prFileOutputs;
 
   const fileOutputIndex = useMemo(() => {
     if (!fileOutputs) {

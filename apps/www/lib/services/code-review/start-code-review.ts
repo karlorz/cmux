@@ -11,15 +11,12 @@ import {
 } from "@/src/pr-review";
 import type { ComparisonJobDetails } from "./comparison";
 
-type ComparisonJobPayload = Pick<
-  ComparisonJobDetails,
-  "slug" | "base" | "head" | "virtualPrNumber"
->;
+type ComparisonJobPayload = Pick<ComparisonJobDetails, "slug" | "base" | "head">;
 
 type StartCodeReviewPayload = {
   teamSlugOrId?: string;
   githubLink: string;
-  prNumber: number;
+  prNumber?: number;
   commitRef?: string;
   force?: boolean;
   comparison?: ComparisonJobPayload;
@@ -38,7 +35,7 @@ type StartCodeReviewResult = {
     teamId: string | null;
     repoFullName: string;
     repoUrl: string;
-    prNumber: number;
+    prNumber: number | null;
     commitRef: string;
     requestedByUserId: string;
     state: string;
@@ -79,6 +76,17 @@ export async function startCodeReviewJob({
   payload,
   request,
 }: StartCodeReviewOptions): Promise<StartCodeReviewResult> {
+  const jobType: "pull_request" | "comparison" = payload.comparison
+    ? "comparison"
+    : "pull_request";
+
+  if (jobType === "pull_request" && typeof payload.prNumber !== "number") {
+    throw new Error("prNumber is required for pull request code review jobs");
+  }
+  if (jobType === "comparison" && !payload.comparison) {
+    throw new Error("comparison metadata is required for comparison jobs");
+  }
+
   if (payload.teamSlugOrId) {
     try {
       await verifyTeamAccess({
@@ -108,15 +116,6 @@ export async function startCodeReviewJob({
     githubLink: payload.githubLink,
     tokenPreview: callbackToken.slice(0, 8),
   });
-
-  if (
-    payload.comparison &&
-    payload.comparison.virtualPrNumber !== payload.prNumber
-  ) {
-    throw new Error(
-      "Comparison virtual PR number does not match provided prNumber"
-    );
-  }
 
   const reserveResult = await convex.mutation(api.codeReview.reserveJob, {
     teamSlugOrId: payload.teamSlugOrId,
@@ -181,7 +180,7 @@ export async function startCodeReviewJob({
     teamId: job.teamId ?? undefined,
     repoFullName: job.repoFullName,
     repoUrl: job.repoUrl,
-    prNumber: job.prNumber,
+    prNumber: job.prNumber ?? undefined,
     prUrl: payload.githubLink,
     commitRef: job.commitRef,
     comparison: deriveComparisonContext(job),
@@ -246,6 +245,7 @@ function normalizeJob(job: RawJob): StartCodeReviewResult["job"] {
   return {
     ...job,
     teamId: job.teamId ?? null,
+    prNumber: (job.prNumber as number | undefined) ?? null,
     jobType:
       (job.jobType as StartCodeReviewResult["job"]["jobType"]) ?? "pull_request",
     comparisonSlug:

@@ -368,7 +368,7 @@ function ComparisonDiffSection({
         deletions={totals.deletions}
         teamSlugOrId={teamSlugOrId}
         repoFullName={repoFullName}
-        pullNumber={comparisonDetails.virtualPrNumber}
+        reviewTarget={{ type: "comparison", slug: comparisonDetails.slug }}
         commitRef={commitRef}
       />
     );
@@ -439,14 +439,12 @@ function scheduleComparisonCodeReviewStart({
           payload: {
             teamSlugOrId,
             githubLink,
-            prNumber: comparisonDetails.virtualPrNumber,
             commitRef,
             force: false,
             comparison: {
               slug: comparisonDetails.slug,
               base: comparisonDetails.base,
               head: comparisonDetails.head,
-              virtualPrNumber: comparisonDetails.virtualPrNumber,
             },
           },
         });

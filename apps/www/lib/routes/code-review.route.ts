@@ -12,7 +12,7 @@ const CodeReviewJobSchema = z.object({
   teamId: z.string().nullable(),
   repoFullName: z.string(),
   repoUrl: z.string(),
-  prNumber: z.number(),
+  prNumber: z.number().nullable(),
   commitRef: z.string(),
   jobType: z.enum(["pull_request", "comparison"]),
   comparisonSlug: z.string().nullable(),
@@ -36,7 +36,7 @@ const StartBodySchema = z
   .object({
     teamSlugOrId: z.string().optional(),
     githubLink: z.string().url(),
-    prNumber: z.number().int().positive(),
+    prNumber: z.number().int().positive().optional(),
     commitRef: z.string().optional(),
     force: z.boolean().optional(),
     comparison: z
@@ -54,7 +54,6 @@ const StartBodySchema = z
           ref: z.string(),
           label: z.string(),
         }),
-        virtualPrNumber: z.number().int().positive(),
       })
       .optional(),
   })
@@ -115,6 +114,13 @@ codeReviewRouter.openapi(
     if (!convexHttpBase) {
       return c.json({ error: "Convex HTTP base URL is not configured" }, 500);
     }
+    if (!body.prNumber && !body.comparison) {
+      return c.json(
+        { error: "Either prNumber or comparison metadata is required" },
+        400,
+      );
+    }
+
     const { job, deduplicated, backgroundTask } = await startCodeReviewJob({
       accessToken,
       callbackBaseUrl: convexHttpBase,
@@ -129,7 +135,6 @@ codeReviewRouter.openapi(
               slug: body.comparison.slug,
               base: body.comparison.base,
               head: body.comparison.head,
-              virtualPrNumber: body.comparison.virtualPrNumber,
             }
           : undefined,
       },
