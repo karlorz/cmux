@@ -240,6 +240,8 @@ async def run() -> None:
         print(f"Booting snapshot {args.snapshot_id}...")
         instance = await client.instances.aboot(
             args.snapshot_id,
+            ttl_seconds=60 * 30,
+            ttl_action="pause",
         )
         print(f"Instance {instance.id} is starting; waiting for readiness...")
         await instance.await_until_ready()

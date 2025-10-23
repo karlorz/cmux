@@ -2313,8 +2313,8 @@ async def provision_and_snapshot(args: argparse.Namespace) -> None:
         vcpus=args.vcpus,
         memory=args.memory,
         disk_size=args.disk_size,
-        ttl_seconds=args.ttl_seconds,
-        ttl_action=args.ttl_action,
+        ttl_seconds=60 * 30,
+        ttl_action="pause",
     )
     started_instances.append(instance)
     await _await_instance_ready(instance, console=console)
@@ -2474,18 +2474,6 @@ def parse_args() -> argparse.Namespace:
         # 48gb
         default=49_152,
         help="Disk size (MiB) for instance",
-    )
-    parser.add_argument(
-        "--ttl-seconds",
-        type=int,
-        default=3600,
-        help="TTL seconds for created instances",
-    )
-    parser.add_argument(
-        "--ttl-action",
-        default="pause",
-        choices=("pause", "stop"),
-        help="Action when TTL expires",
     )
     parser.add_argument(
         "--print-deps",

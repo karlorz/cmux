@@ -334,7 +334,6 @@ export type SetupInstanceBody = {
     teamSlugOrId: string;
     instanceId?: string;
     selectedRepos?: Array<string>;
-    ttlSeconds?: number;
     snapshotId?: string | ('snapshot_2nwm6jjm' | 'snapshot_a0wb2lw8');
 };
 
@@ -448,7 +447,6 @@ export type StartSandboxBody = {
     teamSlugOrId: string;
     environmentId?: string;
     snapshotId?: string;
-    ttlSeconds?: number;
     metadata?: {
         [key: string]: string;
     };
@@ -881,10 +879,6 @@ export type PostApiDevServerStartData = {
          * Morph snapshot ID to use for the instance
          */
         snapshotId?: string;
-        /**
-         * Time to live in seconds (default 30 minutes)
-         */
-        ttlSeconds?: number;
     };
     path?: never;
     query?: never;

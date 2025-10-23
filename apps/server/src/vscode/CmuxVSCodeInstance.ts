@@ -14,6 +14,7 @@ const {
   postApiSandboxesStart,
 } = await getWwwOpenApiModule();
 
+
 export class CmuxVSCodeInstance extends VSCodeInstance {
   private sandboxId: string | null = null;
   private workerUrl: string | null = null;
@@ -49,7 +50,6 @@ export class CmuxVSCodeInstance extends VSCodeInstance {
       client: getWwwClient(),
       body: {
         teamSlugOrId: this.teamSlugOrId,
-        ttlSeconds: 60 * 60,
         metadata: {
           instance: `cmux-${this.taskRunId}`,
           agentName: this.config.agentName || "",

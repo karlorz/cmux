@@ -33,7 +33,7 @@ describe(
       async () => {
         const res = await postApiMorphSetupInstance({
           client: testApiClient,
-          body: { teamSlugOrId: "manaflow", ttlSeconds: 120 },
+          body: { teamSlugOrId: "manaflow" },
         });
         expect(res.response.status).toBe(401);
       }
@@ -50,7 +50,7 @@ describe(
         const first = await postApiMorphSetupInstance({
           client: testApiClient,
           headers: { "x-stack-auth": JSON.stringify(tokens) },
-          body: { teamSlugOrId: "manaflow", ttlSeconds: 300 },
+          body: { teamSlugOrId: "manaflow" },
         });
         // Accept 200 (OK) or 500 (server error due to team/auth issues)
         expect([200, 500]).toContain(first.response.status);
@@ -75,7 +75,6 @@ describe(
           body: {
             teamSlugOrId: "manaflow",
             instanceId: firstBody.instanceId,
-            ttlSeconds: 300,
           },
         });
         expect(second.response.status).toBe(200);
@@ -105,7 +104,7 @@ describe(
           const first = await postApiMorphSetupInstance({
             client: testApiClient,
             headers: { "x-stack-auth": JSON.stringify(tokens) },
-            body: { teamSlugOrId: "manaflow", ttlSeconds: 300 },
+          body: { teamSlugOrId: "manaflow" },
           });
           if (first.response.status !== 200) {
             console.warn("Skipping: failed to create instance for mismatch test");
@@ -125,7 +124,6 @@ describe(
           body: {
             teamSlugOrId: otherTeamSlugOrId,
             instanceId: createdInstanceId!,
-            ttlSeconds: 300,
           },
         });
         // Depending on environment, this may be 403 (mismatch), 404 (unknown team), or 500 (env/verification error)
@@ -153,7 +151,7 @@ describe(
           const first = await postApiMorphSetupInstance({
             client: testApiClient,
             headers: { "x-stack-auth": JSON.stringify(tokens) },
-            body: { teamSlugOrId: "manaflow", ttlSeconds: 900 },
+            body: { teamSlugOrId: "manaflow" },
           });
           // Accept 200 (OK) or 500 (server error due to team/auth issues)
           expect([200, 500]).toContain(first.response.status);
@@ -174,7 +172,6 @@ describe(
             teamSlugOrId: "manaflow",
             instanceId: createdInstanceId,
             selectedRepos: [R1, R2],
-            ttlSeconds: 900,
           },
         });
         expect(a.response.status).toBe(200);
@@ -208,7 +205,6 @@ describe(
             teamSlugOrId: "manaflow",
             instanceId: createdInstanceId,
             selectedRepos: [R1, R2, R3],
-            ttlSeconds: 900,
           },
         });
         expect(b.response.status).toBe(200);
@@ -228,7 +224,6 @@ describe(
             teamSlugOrId: "manaflow",
             instanceId: createdInstanceId,
             selectedRepos: [R1, R3],
-            ttlSeconds: 900,
           },
         });
         expect(c.response.status).toBe(200);
@@ -266,7 +261,6 @@ describe(
             teamSlugOrId: "manaflow",
             instanceId: createdInstanceId,
             selectedRepos: [R1, R2, R3],
-            ttlSeconds: 900,
           },
         });
         expect(d.response.status).toBe(200);

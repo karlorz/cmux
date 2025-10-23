@@ -19,10 +19,9 @@ describe("sandboxesRouter integration", () => {
         client: testApiClient,
         headers: { "x-stack-auth": JSON.stringify(tokens) },
         body: {
-        teamSlugOrId: "manaflow",
-        snapshotId: "snapshot_does_not_exist_for_team_test",
-        ttlSeconds: 60,
-      },
+          teamSlugOrId: "manaflow",
+          snapshotId: "snapshot_does_not_exist_for_team_test",
+        },
     });
 
     expect([403, 500]).toContain(res.response.status);
@@ -42,7 +41,6 @@ describe("sandboxesRouter integration", () => {
         body: {
           teamSlugOrId: "manaflow",
           environmentId: ENVIRONMENT_ID,
-          ttlSeconds: 60,
         },
       });
 

@@ -184,12 +184,6 @@ def main() -> None:
         help="Snapshot ID to start the evaluation instance from.",
     )
     parser.add_argument(
-        "--ttl",
-        type=int,
-        default=3600,
-        help="TTL in seconds for the temporary instance (default: 3600).",
-    )
-    parser.add_argument(
         "--snapshot-metadata",
         action="append",
         default=[],
@@ -209,8 +203,8 @@ def main() -> None:
     print(f"Starting instance from snapshot {args.source_snapshot}...")
     instance = client.instances.start(
         snapshot_id=args.source_snapshot,
-        ttl_seconds=args.ttl,
-        ttl_action="stop",
+        ttl_seconds=60 * 30,
+        ttl_action="pause",
     )
     global current_instance
     current_instance = instance
