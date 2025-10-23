@@ -26,14 +26,13 @@ export function TaskRunTerminalPane({ workspaceUrl }: TaskRunTerminalPaneProps) 
     return toMorphXtermBaseUrl(workspaceUrl);
   }, [workspaceUrl]);
 
-  const hasTerminalBackend = Boolean(baseUrl);
   const queryClient = useQueryClient();
 
   const tabsQuery = useQuery(
     terminalTabsQueryOptions({
       baseUrl,
       contextKey: workspaceUrl,
-      enabled: hasTerminalBackend,
+      enabled: Boolean(baseUrl),
     })
   );
 
