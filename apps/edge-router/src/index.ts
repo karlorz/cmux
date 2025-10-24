@@ -35,18 +35,18 @@ self.addEventListener('fetch', (event) => {
   if (isLoopbackHostname(url.hostname) && url.port) {
     // Get the morph ID from the current page's subdomain
     const currentHost = self.location.hostname;
-    const morphIdMatch = currentHost.match(/port-\\d+-(.*)\\.cmux\\.sh/);
+    const morphIdMatch = currentHost.match(/cmux-(.*)-base-\\d+\\.cmux\\.app/);
 
     if (morphIdMatch) {
       const morphId = morphIdMatch[1];
-      // Redirect to port-PORT-[morphid].cmux.sh
-      const redirectUrl = \`https://port-\${url.port}-\${morphId}.cmux.sh\${url.pathname}\${url.search}\`;
+      // Redirect to cmux-[morphid]-base-[port].cmux.app
+      const redirectUrl = \`https://cmux-\${morphId}-base-\${url.port}.cmux.app\${url.pathname}\${url.search}\`;
 
       // Create new headers, but let the browser handle Host header
       const headers = new Headers(event.request.headers);
       // Remove headers that might cause issues with proxying
       headers.delete('Host'); // Browser will set this correctly
-      headers.set('Host', 'cmux.sh');
+      headers.set('Host', 'cmux.app');
       headers.delete('X-Forwarded-Host');
       headers.delete('X-Forwarded-For');
       headers.delete('X-Real-IP');
@@ -269,12 +269,12 @@ function replaceLocalhostUrl(url) {
     const urlObj = new URL(url, __realLocation.href);
     if (isLoopbackHostname(urlObj.hostname) && urlObj.port) {
       const currentHost = __realLocation.hostname;
-      const morphIdMatch = currentHost.match(/port-\\d+-(.*)\\.cmux\\.sh/);
+      const morphIdMatch = currentHost.match(/cmux-(.*)-base-\\d+\\.cmux\\.app/);
 
       if (morphIdMatch) {
         const morphId = morphIdMatch[1];
         urlObj.protocol = 'https:';
-        urlObj.hostname = \`port-\${urlObj.port}-\${morphId}.cmux.sh\`;
+        urlObj.hostname = \`cmux-\${morphId}-base-\${urlObj.port}.cmux.app\`;
         urlObj.port = '';
         return urlObj.toString();
       }
@@ -643,14 +643,14 @@ export default {
     const host = url.hostname.toLowerCase();
 
     // Root apex: reply with greeting
-    if (host === "cmux.sh") {
+    if (host === "cmux.app") {
       return new Response("cmux!", {
         status: 200,
         headers: { "content-type": "text/plain; charset=utf-8" },
       });
     }
 
-    const suffix = ".cmux.sh";
+    const suffix = ".cmux.app";
     if (host.endsWith(suffix)) {
       const sub = host.slice(0, -suffix.length);
 
@@ -716,7 +716,7 @@ export default {
             if (!redirectPort || !/^\d+$/.test(redirectPort)) {
               return null;
             }
-            return `port-${redirectPort}-${morphId}.cmux.sh`;
+            return `cmux-${morphId}-base-${redirectPort}.cmux.app`;
           });
 
           const contentType = response.headers.get("content-type") || "";
@@ -846,7 +846,7 @@ export default {
             return null;
           }
           const scopeLabel = isBaseScope ? "base" : scopeRaw;
-          return `cmux-${morphId}-${scopeLabel}-${redirectPort}.cmux.sh`;
+          return `cmux-${morphId}-${scopeLabel}-${redirectPort}.cmux.app`;
         });
 
         const contentType = response.headers.get("content-type") || "";

@@ -28,6 +28,19 @@ describe("extractMorphInstanceInfo", () => {
     });
   });
 
+  it("detects cmux base scope hosts", () => {
+    const info = extractMorphInstanceInfo(
+      "https://cmux-abc123-base-5173.cmux.app/"
+    );
+    expect(info).toEqual({
+      hostname: "cmux-abc123-base-5173.cmux.app",
+      morphId: "abc123",
+      instanceId: "morphvm_abc123",
+      port: 5173,
+      source: "cmux-proxy",
+    });
+  });
+
   it("detects port rewrite hosts", () => {
     const info = extractMorphInstanceInfo(
       "https://port-9000-abc123.cmux.sh/path"
