@@ -1029,9 +1029,13 @@ function ReviewProgressIndicator({
           </span>
         </div>
       </div>
-      <div className="mt-3 h-2 rounded-full bg-neutral-200">
+      <div className="mt-3 h-2 rounded-full bg-neutral-200 overflow-hidden">
         <div
-          className="h-full rounded-full bg-sky-500 transition-[width] duration-300 ease-out"
+          className={cn(
+            "h-full rounded-full bg-sky-500 transition-[width] duration-300 ease-out",
+            isLoading && "animate-pulse-subtle relative overflow-hidden",
+            isLoading && "after:absolute after:inset-0 after:bg-gradient-to-r after:from-transparent after:via-white/20 after:to-transparent after:animate-shimmer"
+          )}
           style={{ width: `${progressPercent}%` }}
           role="progressbar"
           aria-label="Automated review progress"
