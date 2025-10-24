@@ -393,7 +393,7 @@ function SettingsComponent() {
         ref={scrollContainerRef}
         className="flex flex-col grow overflow-auto select-none relative"
       >
-        <div className="p-6 max-w-3xl">
+        <div className="p-6 max-w-3xl pb-24">
           {/* Header */}
           <div className="mb-6">
             <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
@@ -1056,12 +1056,35 @@ function SettingsComponent() {
         </div>
       </div>
 
-      {/* Footer Save bar */}
+      {/* Footer Save bar - Sticky */}
       <div
         ref={saveButtonRef}
-        className="border-t border-neutral-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 supports-[backdrop-filter]:dark:bg-neutral-900/60"
+        className="fixed bottom-0 left-0 right-0 border-t border-neutral-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-900/95 backdrop-blur supports-[backdrop-filter]:bg-white/90 supports-[backdrop-filter]:dark:bg-neutral-900/90 shadow-lg z-50"
       >
-        <div className="max-w-3xl mx-auto px-6 py-3 flex items-center justify-end gap-3">
+        <div className="max-w-3xl mx-auto px-6 py-3 flex items-center justify-between gap-3">
+          {/* Unsaved changes indicator */}
+          {hasChanges() && !isSaving && (
+            <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
+              </svg>
+              <span className="font-medium">Unsaved changes</span>
+            </div>
+          )}
+
+          {/* Spacer when no changes */}
+          {!hasChanges() && <div />}
+
           <button
             onClick={saveApiKeys}
             disabled={!hasChanges() || isSaving}
