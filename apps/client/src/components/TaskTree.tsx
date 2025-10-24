@@ -556,8 +556,10 @@ function TaskRunTreeInner({
     [isDefaultSelected, isRunRoute, run._id, runIdFromSearch]
   );
 
+  const hasExpandedManually = useRef<Id<"taskRuns"> | null>(null);
+
   useEffect(() => {
-    if (isRunSelected && !isExpanded) {
+    if (isRunSelected && !isExpanded && hasExpandedManually.current !== run._id) {
       setRunExpanded(run._id, true);
     }
   }, [isExpanded, isRunSelected, run._id, setRunExpanded]);
@@ -577,6 +579,7 @@ function TaskRunTreeInner({
   // Memoize the toggle handler
   const handleToggle = useCallback(
     (_event?: MouseEvent<HTMLButtonElement | HTMLAnchorElement>) => {
+      hasExpandedManually.current = run._id;
       setRunExpanded(run._id, !isExpanded);
     },
     [isExpanded, run._id, setRunExpanded]
