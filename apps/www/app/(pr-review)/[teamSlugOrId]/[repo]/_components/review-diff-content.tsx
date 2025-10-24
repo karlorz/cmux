@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ExternalLink, GitPullRequest } from "lucide-react";
 
-import { PullRequestDiffViewer } from "@/components/pr/pull-request-diff-viewer";
+import { PullRequestDiffViewer } from "@/components/pr/pull-request-diff-viewer-new";
 import type { GithubFileChange } from "@/lib/github/fetch-pull-request";
 
 export function summarizeFiles(files: GithubFileChange[]): {
