@@ -9,6 +9,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useUser, type Team } from "@stackframe/react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { Command, useCommandState } from "cmdk";
+import fuzzysort from "fuzzysort";
 import { useQuery } from "convex/react";
 import {
   Bug,
@@ -58,6 +59,155 @@ const compactStrings = (values: ReadonlyArray<unknown>): string[] => {
     if (str) out.push(str);
   }
   return out;
+};
+
+const uniqueStrings = (values: ReadonlyArray<string>): string[] => {
+  const seen = new Set<string>();
+  for (const value of values) {
+    if (!seen.has(value)) seen.add(value);
+  }
+  return Array.from(seen);
+};
+
+const mergeKeywords = (...sets: ReadonlyArray<string>[]): string[] => {
+  const seen = new Set<string>();
+  for (const set of sets) {
+    for (const value of set) {
+      if (!seen.has(value)) seen.add(value);
+    }
+  }
+  return Array.from(seen);
+};
+
+type CmdkFilter = (value: string, search: string, keywords?: string[]) => number;
+
+const SEARCH_TOKEN_SPLIT = /\s+/g;
+const PART_BREAK_REGEX = /[\s:/@#._-]+/g;
+
+const normalizeSearchString = (input: string): string =>
+  input
+    .replace(/([a-z\d])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+
+const collectNormalizedParts = (
+  value: string,
+  keywords: ReadonlyArray<string>,
+): string[] => {
+  const parts = new Set<string>();
+  const add = (raw: string | undefined) => {
+    if (!raw) return;
+    const normalized = normalizeSearchString(raw);
+    if (normalized) {
+      parts.add(normalized);
+    }
+    for (const fragment of raw.split(PART_BREAK_REGEX)) {
+      const fragmentNormalized = normalizeSearchString(fragment);
+      if (fragmentNormalized) {
+        parts.add(fragmentNormalized);
+      }
+    }
+  };
+
+  add(value);
+  for (const keyword of keywords) {
+    add(keyword);
+  }
+
+  return Array.from(parts);
+};
+
+const MAX_FILTER_CACHE_SIZE = 250;
+
+const createCommandFilter = (): CmdkFilter => {
+  const cache = new Map<string, Map<string, number>>();
+
+  return (value, search, keywords = []) => {
+    const normalizedSearch = normalizeSearchString(search);
+    if (!normalizedSearch) return 1;
+
+    const cacheKey =
+      keywords.length > 0 ? `${value}::${keywords.join("|")}` : value;
+
+    let searchCache = cache.get(cacheKey);
+    if (!searchCache) {
+      if (cache.size > MAX_FILTER_CACHE_SIZE) {
+        cache.clear();
+      }
+      searchCache = new Map<string, number>();
+      cache.set(cacheKey, searchCache);
+    } else {
+      const cached = searchCache.get(normalizedSearch);
+      if (cached !== undefined) {
+        return cached;
+      }
+    }
+
+    const parts = collectNormalizedParts(value, keywords);
+    if (parts.length === 0) {
+      searchCache.set(normalizedSearch, 0);
+      return 0;
+    }
+
+    if (parts.includes(normalizedSearch)) {
+      searchCache.set(normalizedSearch, 1);
+      return 1;
+    }
+
+    const tokens = normalizedSearch.split(SEARCH_TOKEN_SPLIT).filter(Boolean);
+    if (tokens.length === 0) {
+      searchCache.set(normalizedSearch, 1);
+      return 1;
+    }
+
+    let bestScore = 0;
+
+    if (parts.some((part) => part.startsWith(normalizedSearch))) {
+      bestScore = Math.max(bestScore, 0.93);
+    }
+
+    if (
+      tokens.every((token) =>
+        parts.some((part) => part.startsWith(token)),
+      )
+    ) {
+      bestScore = Math.max(bestScore, 0.91);
+    }
+
+    if (
+      tokens.every((token) => parts.some((part) => part.includes(token)))
+    ) {
+      bestScore = Math.max(bestScore, 0.85);
+    }
+
+    const haystack = parts.slice(0, 32).join(" ").slice(0, 400);
+    if (haystack.length > 0 && normalizedSearch.length > 1) {
+      const result = fuzzysort.single(normalizedSearch, haystack);
+      if (result) {
+        const normalizedScore = 1 / (1 + Math.abs(result.score));
+        let fuzzyScore = 0.65 + normalizedScore * 0.2;
+        if (result.indexes?.[0] === 0) {
+          fuzzyScore += 0.03;
+        }
+        if (result.score === 0) {
+          fuzzyScore = Math.max(fuzzyScore, 0.95);
+        }
+        bestScore = Math.max(bestScore, Math.min(fuzzyScore, 0.92));
+      }
+    }
+
+    if (
+      bestScore === 0 &&
+      /\d/.test(normalizedSearch) &&
+      parts.some((part) => part.includes(normalizedSearch))
+    ) {
+      bestScore = 0.82;
+    }
+
+    searchCache.set(normalizedSearch, bestScore);
+    return bestScore;
+  };
 };
 
 const EMPTY_TEAM_LIST: Team[] = [];
@@ -110,6 +260,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
   const navigate = useNavigate();
   const router = useRouter();
   const { setTheme } = useTheme();
+  const commandFilter = useMemo(createCommandFilter, []);
   const preloadTeamDashboard = useCallback(
     async (targetTeamSlugOrId: string | undefined) => {
       if (!targetTeamSlugOrId) return;
@@ -617,6 +768,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
         label="Command Menu"
         title="Command Menu"
         loop
+        filter={commandFilter}
         className="fixed inset-0 z-[var(--z-commandbar)] flex items-start justify-center pt-[20vh] pointer-events-none"
         onKeyDown={(e) => {
           if (e.key === "Escape") {
@@ -840,10 +992,64 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
                     </div>
                     {allTasks.slice(0, 9).flatMap((task, index) => {
                       const run = task.selectedTaskRun;
+                      const label = task.pullRequestTitle || task.text;
+                      const runKeywords = run
+                        ? compactStrings([
+                            run.agentName,
+                            run.status,
+                            run.newBranch,
+                            run.pullRequestState,
+                            run.pullRequestUrl,
+                            run.pullRequestNumber
+                              ? `pr ${run.pullRequestNumber}`
+                              : undefined,
+                            ...(run.pullRequests ?? []).flatMap((pr) =>
+                              compactStrings([
+                                pr.repoFullName,
+                                pr.url,
+                                pr.number ? `pr ${pr.number}` : undefined,
+                                pr.state,
+                              ]),
+                            ),
+                          ])
+                        : [];
+                      const taskKeywords = uniqueStrings(
+                        compactStrings([
+                          label,
+                          task.text,
+                          task.pullRequestTitle,
+                          task.projectFullName,
+                          task.baseBranch,
+                          task.worktreePath,
+                          task._id,
+                          `task ${index + 1}`,
+                          String(index + 1),
+                          task.isCompleted ? "completed" : "in progress",
+                          ...runKeywords,
+                        ]),
+                      );
+                      const openTaskKeywords = mergeKeywords(taskKeywords, [
+                        "task",
+                        "open",
+                        "view",
+                      ]);
+                      const vsKeywords = mergeKeywords(taskKeywords, [
+                        "vs",
+                        "vs code",
+                        "workspace",
+                        "editor",
+                      ]);
+                      const diffKeywords = mergeKeywords(taskKeywords, [
+                        "git",
+                        "diff",
+                        "git diff",
+                        "compare",
+                      ]);
                       const items = [
                         <Command.Item
                           key={task._id}
                           value={`${index + 1}:task:${task._id}`}
+                          keywords={openTaskKeywords}
                           onSelect={() => handleSelect(`task:${task._id}`)}
                           data-value={`task:${task._id}`}
                           className="flex items-center gap-3 px-3 py-2.5 mx-1 rounded-md cursor-pointer                     hover:bg-neutral-100 dark:hover:bg-neutral-800
@@ -859,7 +1065,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
                             {index + 1}
                           </span>
                           <span className="flex-1 truncate text-sm">
-                            {task.pullRequestTitle || task.text}
+                            {label}
                           </span>
                           {task.isCompleted ? (
                             <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
@@ -878,6 +1084,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
                           <Command.Item
                             key={`${task._id}-vs-${run._id}`}
                             value={`${index + 1} vs:task:${task._id}`}
+                            keywords={vsKeywords}
                             onSelect={() => handleSelect(`task:${task._id}:vs`)}
                             data-value={`task:${task._id}:vs`}
                             className="flex items-center gap-3 px-3 py-2.5 mx-1 rounded-md cursor-pointer                     hover:bg-neutral-100 dark:hover:bg-neutral-800
@@ -893,7 +1100,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
                               {index + 1} VS
                             </span>
                             <span className="flex-1 truncate text-sm">
-                              {task.pullRequestTitle || task.text}
+                              {label}
                             </span>
                             {task.isCompleted ? (
                               <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
@@ -911,6 +1118,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
                           <Command.Item
                             key={`${task._id}-gitdiff-${run._id}`}
                             value={`${index + 1} git diff:task:${task._id}`}
+                            keywords={diffKeywords}
                             onSelect={() =>
                               handleSelect(`task:${task._id}:gitdiff`)
                             }
@@ -928,7 +1136,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
                               {index + 1} git diff
                             </span>
                             <span className="flex-1 truncate text-sm">
-                              {task.pullRequestTitle || task.text}
+                              {label}
                             </span>
                             {task.isCompleted ? (
                               <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
