@@ -563,7 +563,7 @@ const SearchableSelect = forwardRef<
           collisionPadding={{ top: 12, bottom: 12 }}
           onOpenAutoFocus={handleOpenAutoFocus}
           className={clsx(
-            "z-[var(--z-modal)] rounded-md border overflow-hidden border-neutral-200 bg-white p-0 drop-shadow-xs outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 dark:border-neutral-800 dark:bg-neutral-950 w-[300px]",
+            "z-[var(--z-popover)] rounded-md border overflow-hidden border-neutral-200 bg-white p-0 drop-shadow-xs outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 dark:border-neutral-800 dark:bg-neutral-950 w-[300px]",
             classNames.popover
           )}
         >
