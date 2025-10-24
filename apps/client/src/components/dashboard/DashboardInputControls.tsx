@@ -89,6 +89,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       if (lower.startsWith("codex/")) return "openai";
       if (lower.startsWith("claude/")) return "claude";
       if (lower.startsWith("gemini/")) return "gemini";
+      if (lower.startsWith("kimi/")) return "kimi";
       if (lower.startsWith("opencode/")) return "opencode";
       if (lower.startsWith("qwen/")) return "qwen";
       if (lower.startsWith("cursor/")) return "cursor";

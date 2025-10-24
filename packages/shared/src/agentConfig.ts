@@ -21,6 +21,7 @@ import {
   GEMINI_FLASH_CONFIG,
   GEMINI_PRO_CONFIG,
 } from "./providers/gemini/configs";
+import { KIMI_K2_CONFIG } from "./providers/kimi/configs";
 import {
   CODEX_GPT_4_1_CONFIG,
   CODEX_GPT_5_CODEX_HIGH_REASONING_CONFIG,
@@ -128,4 +129,5 @@ export const AGENT_CONFIGS: AgentConfig[] = [
   CURSOR_GPT_5_CONFIG,
   CURSOR_SONNET_4_CONFIG,
   CURSOR_SONNET_4_THINKING_CONFIG,
+  KIMI_K2_CONFIG,
 ];
