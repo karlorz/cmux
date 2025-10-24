@@ -5,6 +5,7 @@ import {
   type ResolvedTheme,
   ThemeProviderContext,
 } from "./theme-context";
+import { useVSCodeSocket } from "@/contexts/vscode-socket/vscode-socket-context";
 
 type DocumentWithStartViewTransition = Document & {
   startViewTransition?: (
@@ -116,6 +117,16 @@ export function ThemeProvider({
         return;
       }
       setThemeState(nextTheme);
+    },
+    syncThemeToVSCode: (vscodeTheme: "dark" | "light") => {
+      const { vscodeSocket, isVSCodeConnected } = useVSCodeSocket();
+      if (vscodeSocket && isVSCodeConnected) {
+        vscodeSocket.emit("vscode:set-theme", { theme: vscodeTheme }, (response) => {
+          if (!response.success) {
+            console.error("Failed to sync theme to VS Code:", response.error);
+          }
+        });
+      }
     },
   };
 

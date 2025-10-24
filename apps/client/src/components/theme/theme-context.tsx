@@ -9,12 +9,14 @@ export type ThemeProviderState = {
   // Effective theme after resolving "system"
   resolvedTheme: ResolvedTheme;
   setTheme: (theme: Theme) => void;
+  syncThemeToVSCode: (theme: "dark" | "light") => void;
 };
 
 export const initialState: ThemeProviderState = {
   theme: "system",
   resolvedTheme: "light",
   setTheme: () => null,
+  syncThemeToVSCode: () => null,
 };
 
 export const ThemeProviderContext =

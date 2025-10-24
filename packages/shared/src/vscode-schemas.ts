@@ -31,6 +31,9 @@ export interface VSCodeServerToClientEvents {
     success: boolean;
     error?: string;
   }) => void;
+
+  // Theme events
+  "vscode:theme-changed": (data: { theme: "dark" | "light" }) => void;
 }
 
 export interface VSCodeClientToServerEvents {
@@ -53,6 +56,16 @@ export interface VSCodeClientToServerEvents {
       workspaceFolders?: string[];
       extensions?: string[];
     }) => void
+  ) => void;
+
+  // Theme operations
+  "vscode:set-theme": (
+    data: { theme: "dark" | "light" },
+    callback: (response: { success: boolean; error?: string }) => void
+  ) => void;
+
+  "vscode:get-theme": (
+    callback: (response: { theme: "dark" | "light" }) => void
   ) => void;
 }
 

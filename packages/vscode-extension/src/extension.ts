@@ -1,4 +1,4 @@
-import type { ClientToServerEvents, ServerToClientEvents } from "@cmux/shared";
+import type { ClientToServerEvents, ServerToClientEvents, VSCodeClientToServerEvents, VSCodeServerToClientEvents } from "@cmux/shared";
 import * as http from "http";
 import { execFile, execSync } from "node:child_process";
 import { Server } from "socket.io";
@@ -15,7 +15,7 @@ console.log("[cmux] Extension module loaded");
 // Socket.IO server instance
 let ioServer: Server | null = null;
 let httpServer: http.Server | null = null;
-let workerSocket: Socket<ServerToClientEvents, ClientToServerEvents> | null =
+let workerSocket: Socket<ServerToClientEvents, VSCodeClientToServerEvents> | null =
   null;
 
 // Track active terminals
@@ -436,6 +436,42 @@ function startSocketServer() {
         }
       });
 
+      // Theme operations
+      socket.on("vscode:set-theme", (data, callback) => {
+        try {
+          const theme = data.theme;
+          const targetTheme = theme === "dark" ? "Default Dark+" : "Default Light+";
+          
+          vscode.workspace.getConfiguration().update('workbench.colorTheme', 
+            targetTheme, 
+            vscode.ConfigurationTarget.Global
+          ).then(() => {
+            callback({ success: true });
+          }, (error) => {
+            callback({ success: false, error: error.message });
+          });
+        } catch (error: unknown) {
+          if (error instanceof Error) {
+            callback({ success: false, error: error.message });
+          } else {
+            callback({ success: false, error: "Unknown error" });
+          }
+        }
+      });
+
+      socket.on("vscode:get-theme", (callback) => {
+        try {
+          const currentTheme = vscode.workspace.getConfiguration().get<string>('workbench.colorTheme');
+          const isDark = currentTheme?.toLowerCase().includes('dark') || false;
+          callback({ theme: isDark ? 'dark' : 'light' });
+        } catch (error: unknown) {
+          if (error instanceof Error) {
+            log("Error getting theme:", error.message);
+          }
+          callback({ theme: 'light' }); // Default to light on error
+        }
+      });
+
       socket.on("disconnect", () => {
         log("Socket client disconnected:", socket.id);
       });
@@ -483,6 +519,23 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Connect to worker immediately and set up handlers
   connectToWorker();
+
+  // Listen for VS Code theme changes
+  const themeChangeListener = vscode.workspace.onDidChangeConfiguration((e) => {
+    if (e.affectsConfiguration('workbench.colorTheme')) {
+      const currentTheme = vscode.workspace.getConfiguration().get<string>('workbench.colorTheme');
+      const isDark = currentTheme?.toLowerCase().includes('dark') || false;
+      
+      log("Theme changed to:", isDark ? 'dark' : 'light');
+      
+      // Notify worker about theme change
+      if (workerSocket && workerSocket.connected) {
+        workerSocket.emit("vscode:theme-changed", { theme: isDark ? 'dark' : 'light' });
+      }
+    }
+  });
+
+  context.subscriptions.push(themeChangeListener);
 
   const disposable = vscode.commands.registerCommand(
     "cmux.helloWorld",
