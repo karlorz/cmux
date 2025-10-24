@@ -29,13 +29,15 @@ function rewriteMorphUrl(url: string): string {
     return url;
   }
 
-  // Transform morph URLs to cmux.sh format
-  // https://port-8101-morphvm-jrtutqa3.http.cloud.morph.so/handler/sign-in -> https://port-8101-jrtutqa3.cmux.sh/handler/sign-in
+  // Transform morph URLs to cmux.app format with new pattern
+  // https://port-8101-morphvm-jrtutqa3.http.cloud.morph.so/handler/sign-in -> https://cmux-jrtutqa3-base-8101.cmux.app/handler/sign-in
   if (url.includes("http.cloud.morph.so")) {
-    const result = url
-      .replace("morphvm-", "")
-      .replace("http.cloud.morph.so", "cmux.sh");
-    return result;
+    const match = url.match(/^https:\/\/port-(\d+)-morphvm-([^.]+)\.http\.cloud\.morph\.so(\/.*)?$/);
+    if (match) {
+      const [, port, morphId, path = ""] = match;
+      return `https://cmux-${morphId}-base-${port}.cmux.app${path}`;
+    }
+    return url;
   }
   return url;
 }
