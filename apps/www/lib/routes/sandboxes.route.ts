@@ -37,8 +37,11 @@ const StartSandboxBody = z
     snapshotId: z.string().optional(),
     ttlSeconds: z
       .number()
+      .int()
+      .min(60)
+      .max(60 * 60 * 12)
       .optional()
-      .default(60 * 60),
+      .default(60 * 30),
     metadata: z.record(z.string(), z.string()).optional(),
     taskRunId: z.string().optional(),
     taskRunJwt: z.string().optional(),
@@ -190,7 +193,7 @@ sandboxesRouter.openapi(
 
       const instance = await client.instances.start({
         snapshotId: resolvedSnapshotId,
-        ttlSeconds: body.ttlSeconds ?? 60 * 60,
+        ttlSeconds: body.ttlSeconds ?? 60 * 30,
         ttlAction: "pause",
         metadata: {
           app: "cmux",

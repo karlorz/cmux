@@ -907,7 +907,7 @@ export type PostApiDevServerStartData = {
          */
         snapshotId?: string;
         /**
-         * Time to live in seconds (default 30 minutes)
+         * Time to live in seconds (default 30 minutes, max 12 hours)
          */
         ttlSeconds?: number;
     };

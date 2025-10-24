@@ -59,10 +59,17 @@ const StartDevServerSchema = z.object({
     example: "snapshot_kco1jqb6",
     description: "Morph snapshot ID to use for the instance",
   }),
-  ttlSeconds: z.number().optional().default(1800).openapi({
-    example: 1800,
-    description: "Time to live in seconds (default 30 minutes)",
-  }),
+  ttlSeconds: z
+    .number()
+    .int()
+    .min(60)
+    .max(60 * 60 * 12)
+    .optional()
+    .default(60 * 30)
+    .openapi({
+      example: 1800,
+      description: "Time to live in seconds (default 30 minutes, max 12 hours)",
+    }),
 });
 
 // Response schema
@@ -160,7 +167,7 @@ devServerRouter.openapi(startDevServerRoute, async (c) => {
     // Start the instance with provided or default snapshot
     const instance = await client.instances.start({
       snapshotId: body.snapshotId || DEFAULT_MORPH_SNAPSHOT_ID,
-      ttlSeconds: body.ttlSeconds || 60 * 30, // Default 30 minutes
+      ttlSeconds: body.ttlSeconds ?? 60 * 30, // Default 30 minutes
       ttlAction: "pause",
       metadata: {
         app: "cmux",
