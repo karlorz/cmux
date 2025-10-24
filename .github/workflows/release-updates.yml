@@ -314,12 +314,14 @@ jobs:
             gh release upload "$release_tag" "$artifact" --repo "$repo" --clobber
           done
 
-  # New: build & publish a macOS Universal app by merging the x64 and arm64 zips
   mac-universal:
     name: macOS universal
     needs: prepare-release
     environment: electron
     runs-on: self-hosted
+    defaults:
+      run:
+        working-directory: ./
     steps:
       - uses: actions/checkout@v4
         with:
@@ -333,6 +335,20 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.2.21
+
+      # x86_64 toolchain for node-gyp and friends
+      - name: Ensure Rosetta (for x64 toolchain)
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/sbin/softwareupdate --install-rosetta --agree-to-license || true
+
+      - name: Install Rust toolchain and mac targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          profile: minimal
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
 
       - name: Install dependencies (bun)
         run: bun install --frozen-lockfile
@@ -355,42 +371,15 @@ jobs:
           NEXT_PUBLIC_GITHUB_APP_SLUG=${{ secrets.NEXT_PUBLIC_GITHUB_APP_SLUG }}
           EOF
 
-      - name: Download x64 & arm64 mac zip artifacts from release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
-          REPO: ${{ github.repository }}
+      # Prebuild the Rust N-API addon for both slices so electron-builder can pick them up.
+      - name: Build native Rust addon (arm64 + x64)
+        working-directory: apps/server/native/core
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p work
-          gh release download "$RELEASE_TAG" --repo "$REPO" --pattern '*-mac.zip' --dir work
-          shopt -s nullglob
-          x64_zip="$(ls work/*-mac.zip | grep -v arm64 | head -n1 || true)"
-          arm64_zip="$(ls work/*-arm64-mac.zip | head -n1 || true)"
-          if [[ -z "$x64_zip" || -z "$arm64_zip" ]]; then
-            echo "Couldn't find both x64 and arm64 mac.zip assets in $RELEASE_TAG" >&2
-            ls -l work || true
-            exit 1
-          fi
-          unzip -q "$x64_zip" -d work/x64
-          unzip -q "$arm64_zip" -d work/arm64
-          x64_app="$(find work/x64 -maxdepth 2 -type d -name '*.app' | head -n1 || true)"
-          arm64_app="$(find work/arm64 -maxdepth 2 -type d -name '*.app' | head -n1 || true)"
-          if [[ -z "$x64_app" || -z "$arm64_app" ]]; then
-            echo "Unzipped zips but could not find .app" >&2; exit 1
-          fi
-          echo "X64_APP=$x64_app" >> "$GITHUB_ENV"
-          echo "ARM64_APP=$arm64_app" >> "$GITHUB_ENV"
-
-      - name: Create universal .app (merge x64+arm64)
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p work/universal
-          OUT_APP="work/universal/$(basename "$X64_APP")"
-          echo "OUT_APP=$OUT_APP" >> "$GITHUB_ENV"
-          npx -y -p @electron/universal node -e "const fs=require('fs');const {makeUniversalApp}=require('@electron/universal');(async()=>{await makeUniversalApp({x64AppPath:process.env.X64_APP,arm64AppPath:process.env.ARM64_APP,outAppPath:process.env.OUT_APP});})().catch(e=>{console.error(e);process.exit(1)})"
+          rustup target add x86_64-apple-darwin aarch64-apple-darwin || true
+          bunx --bun @napi-rs/cli build --platform --release --target x86_64-apple-darwin
+          bunx --bun @napi-rs/cli build --platform --release --target aarch64-apple-darwin
 
       - name: Prepare signing credentials
         env:
@@ -410,11 +399,11 @@ jobs:
           if [[ -n "${APPLE_API_KEY:-}" && ! -f "${APPLE_API_KEY}" ]]; then
             tmpdir_key="$(mktemp -d)"
             key_path="$tmpdir_key/AuthKey_${APPLE_API_KEY_ID:-api}.p8"
-            KEY_PATH="$key_path" node -e "const fs=require('fs');let raw=process.env.APPLE_API_KEY||'';if(!raw){process.stderr.write('APPLE_API_KEY is empty\\n');process.exit(1)};const unesc=s=>s.includes('\\n')&&!s.includes('\n')?s.replace(/\\\\n/g,'\n'):s;const tryB64=s=>{try{const b=s.replace(/\\s+/g,'');const d=Buffer.from(b,'base64').toString('utf8');if(d.includes('-----BEGIN'))return d;}catch{};return null;};let lit=unesc(raw).replace(/\\r\\n?/g,'\n');let out=lit.includes('-----BEGIN')?lit:(tryB64(raw)||lit);if(!out.endsWith('\n'))out+='\n';fs.writeFileSync(process.env.KEY_PATH,out);try{fs.chmodSync(process.env.KEY_PATH,0o600);}catch{};"
+            KEY_PATH="$key_path" node -e "const fs=require('fs');let raw=process.env.APPLE_API_KEY||'';if(!raw){process.stderr.write('APPLE_API_KEY is empty\n');process.exit(1)};const unesc=s=>s.includes('\\n')&&!s.includes('\n')?s.replace(/\\\\n/g,'\n'):s;const tryB64=s=>{try{const b=s.replace(/\\s+/g,'');const d=Buffer.from(b,'base64').toString('utf8');if(d.includes('-----BEGIN'))return d;}catch{};return null;};let lit=unesc(raw).replace(/\\r\\n?/g,'\n');let out=lit.includes('-----BEGIN')?lit:(tryB64(raw)||lit);if(!out.endsWith('\n'))out+='\n';fs.writeFileSync(process.env.KEY_PATH,out);try{fs.chmodSync(process.env.KEY_PATH,0o600);}catch{};"
             echo "APPLE_API_KEY=$key_path" >> "$GITHUB_ENV"
           fi
 
-      - name: Package (signed) prepackaged universal DMG/ZIP
+      - name: Build universal DMG/ZIP with electron-builder
         working-directory: apps/client
         shell: bash
         run: |
@@ -423,15 +412,16 @@ jobs:
           if [[ ! -f "$ENTITLEMENTS" ]]; then
             echo "Entitlements file missing at $ENTITLEMENTS" >&2; exit 1
           fi
+          bunx electron-vite build -c electron.vite.config.ts
           bunx electron-builder \
             --config electron-builder.json \
             --mac dmg zip \
+            --universal \
             --publish never \
             --config.mac.forceCodeSigning=true \
             --config.mac.entitlements="$ENTITLEMENTS" \
             --config.mac.entitlementsInherit="$ENTITLEMENTS" \
-            --config.mac.notarize=false \
-            --prepackaged "$GITHUB_WORKSPACE/$OUT_APP"
+            --config.mac.notarize=false
 
       - name: Notarize universal DMG
         env:
