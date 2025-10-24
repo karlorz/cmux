@@ -386,7 +386,7 @@ function TaskRunTerminals() {
     return (
       <div className="flex flex-col grow min-h-0">
         <div className="flex items-center justify-between gap-3 border-b border-neutral-200 bg-neutral-100/70 px-3 dark:border-neutral-800 dark:bg-neutral-900/40">
-          <div className="flex items-center overflow-x-auto py-0.5">
+          <div className="flex items-center gap-2 overflow-x-auto py-0.5">
             {terminalIds.length > 0 ? (
               terminalIds.map((id, index) => {
                 const state = connectionStates[id] ?? "connecting";
@@ -451,6 +451,23 @@ function TaskRunTerminals() {
               <span className="text-xs text-neutral-500 dark:text-neutral-400">
                 No terminals detected yet.
               </span>
+            )}
+            {terminalIds.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!hasTerminalBackend || isCreatingTerminal) {
+                    return;
+                  }
+                  createTerminalMutation.mutate(undefined);
+                }}
+                disabled={!hasTerminalBackend || isCreatingTerminal}
+                className="flex items-center justify-center rounded-md p-1.5 text-neutral-600 transition hover:bg-neutral-200/70 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-60 dark:text-neutral-400 dark:hover:bg-neutral-800/60 dark:hover:text-neutral-100"
+                aria-label="New terminal"
+                title="New terminal"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
             )}
           </div>
           <div className="flex flex-col items-end gap-1 py-2">
