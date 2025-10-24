@@ -574,6 +574,7 @@ function SocketActions({
   teamSlugOrId: string;
 }) {
   const { socket } = useSocketSuspense();
+  const navigate = useNavigate();
   const pullRequests = useMemo(
     () => selectedRun?.pullRequests ?? [],
     [selectedRun?.pullRequests],
@@ -623,10 +624,21 @@ function SocketActions({
         return (query.data ?? []).length > 0;
       });
 
-  const openUrls = (prs: Array<{ url?: string | null }>) => {
+  const openUrls = (prs: Array<{ url?: string | null; repoFullName?: string | null; number?: number | null }>) => {
     prs.forEach((pr) => {
-      if (pr.url) {
-        window.open(pr.url, "_blank", "noopener,noreferrer");
+      if (pr.repoFullName && pr.number) {
+        const [owner, repo] = pr.repoFullName.split("/", 2);
+        if (owner && repo) {
+          navigate({
+            to: "/$teamSlugOrId/prs/$owner/$repo/$number",
+            params: {
+              teamSlugOrId,
+              owner,
+              repo,
+              number: String(pr.number),
+            },
+          });
+        }
       }
     });
   };
@@ -905,8 +917,19 @@ function SocketActions({
                   key={repoName}
                   disabled={!hasUrl}
                   onClick={() => {
-                    if (pr?.url) {
-                      window.open(pr.url, "_blank", "noopener,noreferrer");
+                    if (pr?.url && pr?.repoFullName && pr?.number) {
+                      const [owner, repo] = pr.repoFullName.split("/", 2);
+                      if (owner && repo) {
+                        navigate({
+                          to: "/$teamSlugOrId/prs/$owner/$repo/$number",
+                          params: {
+                            teamSlugOrId,
+                            owner,
+                            repo,
+                            number: String(pr.number),
+                          },
+                        });
+                      }
                     }
                   }}
                 >
