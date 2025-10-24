@@ -17,6 +17,27 @@ import { useCombinedWorkflowData, WorkflowRunsBadge, WorkflowRunsSection } from 
 
 const RUN_PENDING_STATUSES = new Set(["in_progress", "queued", "waiting", "pending"]);
 const RUN_PASSING_CONCLUSIONS = new Set(["success", "neutral", "skipped"]);
+const MERGE_CONFLICT_SNIPPET = "this branch has conflicts";
+const MERGE_CONFLICT_TOOLTIP =
+  "This branch has conflicts that must be resolved before merging.";
+
+function extractApiErrorMessage(error: unknown): string | undefined {
+  if (error instanceof Error) {
+    return error.message || undefined;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  if (typeof error === "object" && error !== null) {
+    if ("message" in error && typeof (error as { message: unknown }).message === "string") {
+      return (error as { message: string }).message;
+    }
+    if ("error" in error && typeof (error as { error: unknown }).error === "string") {
+      return (error as { error: string }).error;
+    }
+  }
+  return undefined;
+}
 
 type PullRequestDetailViewProps = {
   teamSlugOrId: string;
@@ -145,6 +166,7 @@ export function PullRequestDetailView({
   const collapseAllChecks = () => setChecksExpandedOverride(false);
 
   const [diffControls, setDiffControls] = useState<DiffControls | null>(null);
+  const [mergeBlockedReason, setMergeBlockedReason] = useState<string | null>(null);
 
   const handleDiffControlsChange = (controls: DiffControls | null) => {
     setDiffControls(controls ? {
@@ -153,6 +175,12 @@ export function PullRequestDetailView({
       collapseChecks: collapseAllChecks,
     } : null);
   };
+
+  const headShaForConflictReset = currentPR?.headSha ?? null;
+
+  useEffect(() => {
+    setMergeBlockedReason(null);
+  }, [headShaForConflictReset]);
 
   const closePrMutation = useMutation<
     PostApiIntegrationsGithubPrsCloseResponse,
@@ -175,10 +203,20 @@ export function PullRequestDetailView({
   >({
     ...postApiIntegrationsGithubPrsMergeSimpleMutation(),
     onSuccess: (data) => {
+      setMergeBlockedReason(null);
       toast.success(data.message || `PR #${currentPR?.number} merged successfully`);
     },
     onError: (error) => {
-      toast.error(`Failed to merge PR: ${error instanceof Error ? error.message : String(error)}`);
+      const apiMessage = extractApiErrorMessage(error) ?? (error instanceof Error ? error.message : String(error));
+      const normalized = (apiMessage ?? "").toLowerCase();
+
+      if (normalized.includes(MERGE_CONFLICT_SNIPPET)) {
+        setMergeBlockedReason(MERGE_CONFLICT_TOOLTIP);
+        toast.error(MERGE_CONFLICT_TOOLTIP);
+        return;
+      }
+
+      toast.error(`Failed to merge PR: ${apiMessage}`);
     },
   });
 
@@ -229,13 +267,15 @@ export function PullRequestDetailView({
   }, [workflowData.allRuns, workflowData.isLoading]);
 
   const disabledBecauseOfChecks = !checksAllowMerge;
+  const disabledBecauseOfConflicts = Boolean(mergeBlockedReason);
   const mergeDisabled =
     mergePrMutation.isPending ||
     closePrMutation.isPending ||
-    disabledBecauseOfChecks;
+    disabledBecauseOfChecks ||
+    disabledBecauseOfConflicts;
   const mergeDisabledReason = disabledBecauseOfChecks
     ? checksDisabledReason
-    : undefined;
+    : mergeBlockedReason ?? undefined;
 
   const handleClosePR = () => {
     if (!currentPR) return;
@@ -254,7 +294,8 @@ export function PullRequestDetailView({
       !currentPR ||
       mergePrMutation.isPending ||
       closePrMutation.isPending ||
-      disabledBecauseOfChecks
+      disabledBecauseOfChecks ||
+      disabledBecauseOfConflicts
     ) {
       return;
     }
