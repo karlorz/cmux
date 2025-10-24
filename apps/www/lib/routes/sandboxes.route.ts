@@ -38,7 +38,7 @@ const StartSandboxBody = z
     ttlSeconds: z
       .number()
       .optional()
-      .default(60 * 60),
+      .default(60 * 30),
     metadata: z.record(z.string(), z.string()).optional(),
     taskRunId: z.string().optional(),
     taskRunJwt: z.string().optional(),
