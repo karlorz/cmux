@@ -9,6 +9,7 @@ import { validateExposedPorts } from "@cmux/shared/utils/validate-exposed-ports"
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { MorphCloudClient } from "morphcloud";
+import { PostHog } from "posthog-node";
 import { randomBytes } from "node:crypto";
 import { determineHttpServiceUpdates } from "./determine-http-service-updates";
 
@@ -204,6 +205,9 @@ environmentsRouter.openapi(
     if (!accessToken) return c.text("Unauthorized", 401);
 
     const body = c.req.valid("json");
+    const posthog = new PostHog(env.POSTHOG_KEY, {
+      host: env.POSTHOG_HOST,
+    });
 
     try {
       // Verify team access
@@ -267,6 +271,20 @@ environmentsRouter.openapi(
           exposedPorts: sanitizedPorts.length > 0 ? sanitizedPorts : undefined,
         }
       );
+
+      // Track environment creation
+      posthog.capture({
+        distinctId: accessToken, // Use access token as distinct ID since we don't have user ID here
+        event: 'environment_created',
+        properties: {
+          teamId: team.uuid,
+          environmentId,
+          hasMaintenanceScript: Boolean(body.maintenanceScript),
+          hasDevScript: Boolean(body.devScript),
+          exposedPortsCount: sanitizedPorts.length,
+          hasSelectedRepos: Boolean(body.selectedRepos?.length),
+        },
+      });
 
       return c.json({
         id: environmentId,

@@ -5,6 +5,8 @@ import { Geist } from "next/font/google";
 
 import { stackServerApp } from "@/lib/utils/stack";
 import { StackProvider, StackTheme } from "@stackframe/stack";
+import { ConvexClientProvider } from "@/components/providers/convex-client-provider";
+import { PostHogProvider } from "@/components/providers/posthog-provider";
 
 import clsx from "clsx";
 import "./globals.css";
@@ -67,7 +69,11 @@ export default function RootLayout({
         }}
       >
         <StackTheme>
-          <StackProvider app={stackServerApp}>{children}</StackProvider>
+          <StackProvider app={stackServerApp}>
+            <PostHogProvider>
+              <ConvexClientProvider>{children}</ConvexClientProvider>
+            </PostHogProvider>
+          </StackProvider>
         </StackTheme>
       </body>
     </html>

@@ -4,6 +4,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { generateObject, type LanguageModel } from "ai";
 import { z } from "zod";
 import { env } from "./www-env";
+import { PostHog } from "posthog-node";
 
 export function toKebabCase(input: string): string {
   return (
@@ -177,6 +178,21 @@ export async function generatePRInfo(
     console.info(
       `[BranchNameGenerator] Generated via ${providerName}: branch="${sanitizedBranch}", title="${sanitizedTitle}"`
     );
+
+    // Track model usage
+    const posthog = new PostHog(env.POSTHOG_KEY, {
+      host: env.POSTHOG_HOST,
+    });
+    posthog.capture({
+      distinctId: 'system', // Since this is server-side without user context
+      event: 'model_used',
+      properties: {
+        provider: providerName,
+        model: model.modelId || 'unknown',
+        purpose: 'branch_name_generation',
+        success: true,
+      },
+    });
 
     return {
       branchName: sanitizedBranch,

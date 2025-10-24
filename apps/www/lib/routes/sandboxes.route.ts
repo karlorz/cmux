@@ -10,6 +10,7 @@ import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { MorphCloudClient } from "morphcloud";
+import { PostHog } from "posthog-node";
 import { loadEnvironmentEnvVars } from "./sandboxes/environment";
 import {
   configureGithubAccess,
@@ -132,6 +133,10 @@ sandboxesRouter.openapi(
     })();
 
     const body = c.req.valid("json");
+    const posthog = new PostHog(env.POSTHOG_KEY, {
+      host: env.POSTHOG_HOST,
+    });
+
     try {
       console.log("[sandboxes.start] incoming", {
         teamSlugOrId: body.teamSlugOrId,
@@ -341,14 +346,26 @@ sandboxesRouter.openapi(
         });
       }
 
-      await configureGitIdentityTask;
+       await configureGitIdentityTask;
 
-      return c.json({
-        instanceId: instance.id,
-        vscodeUrl: vscodeService.url,
-        workerUrl: workerService.url,
-        provider: "morph",
-      });
+       // Track sandbox creation
+       posthog.capture({
+         distinctId: user.id,
+         event: 'sandbox_created',
+         properties: {
+           teamId: team.uuid,
+           environmentId: body.environmentId,
+           hasRepo: Boolean(body.repoUrl),
+           provider: 'morph',
+         },
+       });
+
+       return c.json({
+         instanceId: instance.id,
+         vscodeUrl: vscodeService.url,
+         workerUrl: workerService.url,
+         provider: "morph",
+       });
     } catch (error) {
       if (error instanceof HTTPException) {
         const message =
