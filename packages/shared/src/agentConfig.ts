@@ -52,6 +52,7 @@ import {
   QWEN_MODEL_STUDIO_CODER_PLUS_CONFIG,
   QWEN_OPENROUTER_CODER_FREE_CONFIG,
 } from "./providers/qwen/configs";
+import { KIMI_DEFAULT_CONFIG } from "./providers/kimi/configs";
 
 export { checkGitStatus } from "./providers/common/check-git";
 
@@ -124,6 +125,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
   GEMINI_PRO_CONFIG,
   QWEN_OPENROUTER_CODER_FREE_CONFIG,
   QWEN_MODEL_STUDIO_CODER_PLUS_CONFIG,
+  KIMI_DEFAULT_CONFIG,
   CURSOR_OPUS_4_1_CONFIG,
   CURSOR_GPT_5_CONFIG,
   CURSOR_SONNET_4_CONFIG,
