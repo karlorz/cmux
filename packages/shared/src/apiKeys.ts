@@ -41,3 +41,9 @@ export const MODEL_STUDIO_API_KEY: AgentConfigApiKey = {
   displayName: "Alibaba Cloud ModelStudio API Key",
   description: "Alibaba Cloud ModelStudio (DashScope Intl) API key for Qwen",
 };
+
+export const MOONSHOT_API_KEY: AgentConfigApiKey = {
+  envVar: "MOONSHOT_API_KEY",
+  displayName: "Moonshot API Key",
+  description: "API key for Moonshot AI Kimi models",
+};
