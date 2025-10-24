@@ -492,6 +492,15 @@ const convexSchema = defineSchema({
     teamId: v.string(),
   }).index("by_team_user", ["teamId", "userId"]),
 
+  // User settings and preferences
+  userSettings: defineTable({
+    theme: v.optional(v.union(v.literal("dark"), v.literal("light"), v.literal("system"))), // User's preferred theme
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    userId: v.string(),
+    teamId: v.string(),
+  }).index("by_team_user", ["teamId", "userId"]),
+
   // System and user comments attached to a task
   taskComments: defineTable({
     taskId: v.id("tasks"),

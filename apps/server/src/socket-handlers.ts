@@ -1268,6 +1268,17 @@ Please address the issue mentioned in the comment above.`;
 
         serverLogger.info("Created task from comment:", { taskId, content });
 
+        // Get user's theme preference
+        let userTheme = "light"; // default fallback
+        try {
+          const userSettings = await getConvex().query(api.userSettings.getCurrentUserSettings, {
+            teamSlugOrId: safeTeam,
+          });
+          userTheme = userSettings.theme;
+        } catch (error) {
+          serverLogger.warn("Failed to get user theme preference, using default:", error);
+        }
+
         // Spawn agents with the formatted prompt
         const agentResults = await spawnAllAgents(
           taskId,
@@ -1276,7 +1287,7 @@ Please address the issue mentioned in the comment above.`;
             branch: "main",
             taskDescription: formattedPrompt,
             isCloudMode: true,
-            theme: "dark",
+            theme: userTheme as "dark" | "light" | "system",
             // Use provided selectedAgents or default to claude/sonnet-4 and codex/gpt-5
             selectedAgents: selectedAgents || [
               "claude/sonnet-4",

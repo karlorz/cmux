@@ -1,4 +1,5 @@
 import { authQuery } from "./users/utils";
+import { internalQuery } from "./_generated/server";
 
 export const getCurrentBasic = authQuery({
   // No args needed; uses auth context
@@ -44,5 +45,17 @@ export const getCurrentBasic = authQuery({
       primaryEmail,
       githubAccountId,
     };
+  },
+});
+
+// Internal query to get current user ID from auth context (for server-side use)
+export const getCurrentUserIdInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return null;
+    }
+    return identity.subject;
   },
 });
