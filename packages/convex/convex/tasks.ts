@@ -100,6 +100,97 @@ export const getTasksWithTaskRuns = authQuery({
   },
 });
 
+export const getTasksAndPinnedTaskRuns = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    projectFullName: v.optional(v.string()),
+    archived: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    // Get tasks
+    let taskQuery = ctx.db
+      .query("tasks")
+      .withIndex("by_team_user", (idx) =>
+        idx.eq("teamId", teamId).eq("userId", userId),
+      );
+
+    if (args.archived === true) {
+      taskQuery = taskQuery.filter((qq) => qq.eq(qq.field("isArchived"), true));
+    } else {
+      taskQuery = taskQuery.filter((qq) => qq.neq(qq.field("isArchived"), true));
+    }
+
+    if (args.projectFullName) {
+      taskQuery = taskQuery.filter((qq) =>
+        qq.eq(qq.field("projectFullName"), args.projectFullName),
+      );
+    }
+
+    const tasks = await taskQuery.collect();
+
+    // Get pinned task runs
+    let pinnedRunsQuery = ctx.db
+      .query("taskRuns")
+      .withIndex("by_team_user", (idx) =>
+        idx.eq("teamId", teamId).eq("userId", userId),
+      )
+      .filter((q) => q.eq(q.field("isPinned"), true));
+
+    if (args.projectFullName) {
+      // For pinned runs, we need to join with tasks to filter by project
+      const taskIds = tasks.map(t => t._id);
+      pinnedRunsQuery = pinnedRunsQuery.filter((q) =>
+        taskIds.includes(q.field("taskId") as any)
+      );
+    }
+
+    const pinnedRuns = await pinnedRunsQuery.collect();
+
+    // Get the associated tasks for pinned runs to get project info
+    const taskIds = [...new Set(pinnedRuns.map(run => run.taskId))];
+    const associatedTasks = await Promise.all(
+      taskIds.map(taskId => ctx.db.get(taskId))
+    );
+    const taskMap = new Map(associatedTasks.filter(Boolean).map(task => [task!._id, task!]));
+
+    // Combine tasks and pinned runs, treating pinned runs as task-like items
+    const combinedItems = [
+      ...tasks.map(task => ({
+        type: 'task' as const,
+        ...task,
+      })),
+      ...pinnedRuns.map(run => {
+        const associatedTask = taskMap.get(run.taskId);
+        return {
+          type: 'pinnedTaskRun' as const,
+          // Create a task-like object from the pinned run
+          _id: run._id,
+          text: run.summary || run.prompt || 'Pinned Task Run',
+          isCompleted: run.status === 'completed',
+          isArchived: false,
+          isPinned: true,
+          description: run.prompt,
+          projectFullName: associatedTask?.projectFullName,
+          createdAt: run.createdAt,
+          updatedAt: run.updatedAt,
+          userId: run.userId,
+          teamId: run.teamId,
+          // Include the original run data
+          originalRun: run,
+        };
+      }),
+    ];
+
+    // Sort by creation time (newest first)
+    combinedItems.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+
+    return combinedItems;
+  },
+});
+
 export const create = authMutation({
   args: {
     teamSlugOrId: v.string(),
@@ -277,6 +368,32 @@ export const unarchive = authMutation({
       throw new Error("Task not found or unauthorized");
     }
     await ctx.db.patch(args.id, { isArchived: false, updatedAt: Date.now() });
+  },
+});
+
+export const pin = authMutation({
+  args: { teamSlugOrId: v.string(), id: v.id("tasks") },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const task = await ctx.db.get(args.id);
+    if (task === null || task.teamId !== teamId || task.userId !== userId) {
+      throw new Error("Task not found or unauthorized");
+    }
+    await ctx.db.patch(args.id, { isPinned: true, updatedAt: Date.now() });
+  },
+});
+
+export const unpin = authMutation({
+  args: { teamSlugOrId: v.string(), id: v.id("tasks") },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const task = await ctx.db.get(args.id);
+    if (task === null || task.teamId !== teamId || task.userId !== userId) {
+      throw new Error("Task not found or unauthorized");
+    }
+    await ctx.db.patch(args.id, { isPinned: false, updatedAt: Date.now() });
   },
 });
 

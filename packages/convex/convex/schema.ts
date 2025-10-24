@@ -95,6 +95,7 @@ const convexSchema = defineSchema({
     text: v.string(),
     isCompleted: v.boolean(),
     isArchived: v.optional(v.boolean()),
+    isPinned: v.optional(v.boolean()),
     description: v.optional(v.string()),
     pullRequestTitle: v.optional(v.string()),
     pullRequestDescription: v.optional(v.string()),
@@ -172,6 +173,7 @@ const convexSchema = defineSchema({
     teamId: v.string(),
     environmentId: v.optional(v.id("environments")),
     isCrowned: v.optional(v.boolean()), // Whether this run won the crown evaluation
+    isPinned: v.optional(v.boolean()), // Whether this run is pinned
     crownReason: v.optional(v.string()), // LLM's reasoning for why this run was crowned
     pullRequestUrl: v.optional(v.string()), // URL of the PR
     pullRequestIsDraft: v.optional(v.boolean()), // Whether the PR is a draft
