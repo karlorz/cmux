@@ -617,6 +617,13 @@ export async function spawnAgent(
     const unsetCommand =
       unsetEnvVars.length > 0 ? `unset ${unsetEnvVars.join(" ")}; ` : "";
 
+    // Build tmux -e flags to pass environment variables to the session
+    // This is critical for variables like $CMUX_TASK_RUN_ID that need to be expanded in the command
+    const tmuxEnvFlags: string[] = [];
+    for (const envKey of Object.keys(envVars)) {
+      tmuxEnvFlags.push("-e", envKey);
+    }
+
     // For Codex agents, use direct command execution to preserve notify argument
     // The notify command contains complex JSON that gets mangled through shell layers
     const tmuxArgs = agent.name.toLowerCase().includes("codex")
@@ -625,6 +632,7 @@ export async function spawnAgent(
           "-d",
           "-s",
           tmuxSessionName,
+          ...tmuxEnvFlags,
           "-c",
           "/root/workspace",
           actualCommand,
@@ -641,6 +649,7 @@ export async function spawnAgent(
           "-d",
           "-s",
           tmuxSessionName,
+          ...tmuxEnvFlags,
           "bash",
           "-lc",
           `${unsetCommand}exec ${commandString}`,
