@@ -219,12 +219,22 @@ export type GithubOpenPrResponse = {
 export type GithubOpenPrRequest = {
     teamSlugOrId: string;
     taskRunId: string;
+    createAsDraft?: boolean;
 };
 
 export type GithubMergePrRequest = {
     teamSlugOrId: string;
     taskRunId: string;
     method: 'squash' | 'rebase' | 'merge';
+};
+
+export type GithubUpdatePrRequest = {
+    teamSlugOrId: string;
+    owner: string;
+    repo: string;
+    number: number;
+    title?: string;
+    body?: string;
 };
 
 export type GithubClosePrRequest = {
@@ -1241,6 +1251,56 @@ export type PostApiIntegrationsGithubPrsMergeResponses = {
 };
 
 export type PostApiIntegrationsGithubPrsMergeResponse = PostApiIntegrationsGithubPrsMergeResponses[keyof PostApiIntegrationsGithubPrsMergeResponses];
+
+export type PostApiIntegrationsGithubPrsUpdateData = {
+    body: GithubUpdatePrRequest;
+    path?: never;
+    query?: never;
+    url: '/api/integrations/github/prs/update';
+};
+
+export type PostApiIntegrationsGithubPrsUpdateErrors = {
+    /**
+     * Invalid request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * PR not found
+     */
+    404: unknown;
+    /**
+     * Failed to update PR
+     */
+    500: unknown;
+};
+
+export type PostApiIntegrationsGithubPrsUpdateResponses = {
+    /**
+     * PR updated successfully
+     */
+    200: {
+        success: boolean;
+        message: string;
+        pullRequest: {
+            number: number;
+            title: string;
+            body?: string;
+            html_url: string;
+            state: string;
+            draft: boolean;
+        };
+    };
+};
+
+export type PostApiIntegrationsGithubPrsUpdateResponse = PostApiIntegrationsGithubPrsUpdateResponses[keyof PostApiIntegrationsGithubPrsUpdateResponses];
 
 export type PostApiIntegrationsGithubPrsCloseData = {
     body: GithubClosePrRequest;

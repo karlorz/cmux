@@ -73,6 +73,7 @@ const OpenPullRequestBody = z
   .object({
     teamSlugOrId: z.string(),
     taskRunId: typedZid("taskRuns"),
+    createAsDraft: z.boolean().optional(),
   })
   .openapi("GithubOpenPrRequest");
 
@@ -92,6 +93,17 @@ const ClosePullRequestBody = z
     number: z.number(),
   })
   .openapi("GithubClosePrRequest");
+
+const UpdatePullRequestBody = z
+  .object({
+    teamSlugOrId: z.string(),
+    owner: z.string(),
+    repo: z.string(),
+    number: z.number(),
+    title: z.string().optional(),
+    body: z.string().optional(),
+  })
+  .openapi("GithubUpdatePrRequest");
 
 const MergePullRequestSimpleBody = z
   .object({
@@ -188,7 +200,7 @@ githubPrsOpenRouter.openapi(
     }
 
     const body = c.req.valid("json");
-    const { teamSlugOrId, taskRunId } = body;
+    const { teamSlugOrId, taskRunId, createAsDraft = false } = body;
 
     await verifyTeamAccess({ req: c.req.raw, teamSlugOrId });
 
@@ -306,6 +318,7 @@ githubPrsOpenRouter.openapi(
               head: branchName,
               base: baseBranch,
               body: description,
+              createAsDraft,
             });
             detail = await fetchPullRequestDetail({
               octokit,
@@ -313,7 +326,7 @@ githubPrsOpenRouter.openapi(
               repo,
               number: created.number,
             });
-          } else if (detail.draft) {
+          } else if (detail.draft && !createAsDraft) {
             await markPullRequestReady({
               octokit,
               owner,
@@ -327,19 +340,50 @@ githubPrsOpenRouter.openapi(
               repo,
               number: detail.number,
             });
+          } else if (!detail.draft && createAsDraft) {
+            // Convert open PR to draft
+            await convertToDraftPullRequest({
+              octokit,
+              owner,
+              repo,
+              number: detail.number,
+            });
+            detail = await fetchPullRequestDetail({
+              octokit,
+              owner,
+              repo,
+              number: detail.number,
+            });
           }
 
           return toPullRequestActionResult(repoFullName, detail);
         } catch (error) {
           const message =
             error instanceof Error ? error.message : String(error);
+          
+          // Enhanced error handling with specific error types
+          let enhancedMessage = message;
+          if (message.includes("No commits between")) {
+            enhancedMessage = "No changes to commit - branch is identical to base branch";
+          } else if (message.includes("A pull request already exists")) {
+            enhancedMessage = "A pull request for this branch already exists";
+          } else if (message.includes("Branch not found")) {
+            enhancedMessage = "Branch not found - please ensure the branch exists";
+          } else if (message.includes("404")) {
+            enhancedMessage = "Repository or branch not found";
+          } else if (message.includes("403")) {
+            enhancedMessage = "Insufficient permissions to create pull request";
+          } else if (message.includes("422")) {
+            enhancedMessage = "Invalid pull request data - check branch names and title";
+          }
+          
           return {
             repoFullName,
             url: undefined,
             number: undefined,
             state: "none" as const,
             isDraft: undefined,
-            error: message,
+            error: enhancedMessage,
           } satisfies PullRequestActionResult;
         }
       }),
@@ -661,6 +705,190 @@ githubPrsOpenRouter.openapi(
           results,
           aggregate: emptyAggregate(),
           error: message,
+        },
+        500,
+      );
+    }
+  },
+);
+
+githubPrsOpenRouter.openapi(
+  createRoute({
+    method: "post" as const,
+    path: "/integrations/github/prs/update",
+    tags: ["Integrations"],
+    summary: "Update GitHub pull request title or body using the user's GitHub OAuth token",
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: UpdatePullRequestBody,
+          },
+        },
+        required: true,
+      },
+    },
+    responses: {
+      200: {
+        description: "PR updated successfully",
+        content: {
+          "application/json": {
+            schema: z.object({
+              success: z.boolean(),
+              message: z.string(),
+              pullRequest: z.object({
+                number: z.number(),
+                title: z.string(),
+                body: z.string().optional(),
+                html_url: z.string(),
+                state: z.string(),
+                draft: z.boolean(),
+              }),
+            }),
+          },
+        },
+      },
+      400: { description: "Invalid request" },
+      401: { description: "Unauthorized" },
+      403: { description: "Forbidden" },
+      404: { description: "PR not found" },
+      500: { description: "Failed to update PR" },
+    },
+  }),
+  async (c) => {
+    const user = await stackServerAppJs.getUser({ tokenStore: c.req.raw });
+    if (!user) {
+      return c.text("Unauthorized", 401);
+    }
+
+    const [{ accessToken }, githubAccount] = await Promise.all([
+      user.getAuthJson(),
+      user.getConnectedAccount("github"),
+    ]);
+
+    if (!accessToken) {
+      return c.text("Unauthorized", 401);
+    }
+
+    if (!githubAccount) {
+      return c.json(
+        {
+          success: false,
+          message: "GitHub account is not connected",
+        },
+        401,
+      );
+    }
+
+    const { accessToken: githubAccessToken } = await githubAccount.getAccessToken();
+    if (!githubAccessToken) {
+      return c.json(
+        {
+          success: false,
+          message: "GitHub access token unavailable",
+        },
+        401,
+      );
+    }
+
+    const body = c.req.valid("json");
+    const { teamSlugOrId, owner, repo, number, title, body: prBody } = body;
+
+    await verifyTeamAccess({ req: c.req.raw, teamSlugOrId });
+
+    const convex = getConvex({ accessToken });
+    const repoFullName = `${owner}/${repo}`;
+
+    const existingPR = await convex.query(api.github_prs.getPullRequest, {
+      teamSlugOrId,
+      repoFullName,
+      number,
+    });
+
+    if (!existingPR) {
+      return c.json(
+        {
+          success: false,
+          message: `PR #${number} not found in database`,
+        },
+        404,
+      );
+    }
+
+    const octokit = createOctokit(githubAccessToken);
+
+    try {
+      const updateData: {
+        title?: string;
+        body?: string;
+      } = {};
+      if (title) updateData.title = title;
+      if (prBody) updateData.body = prBody;
+
+      if (Object.keys(updateData).length === 0) {
+        return c.json(
+          {
+            success: false,
+            message: "No updates provided - please specify title or body",
+          },
+          400,
+        );
+      }
+
+      const { data } = await octokit.rest.pulls.update({
+        owner,
+        repo,
+        pull_number: number,
+        ...updateData,
+      });
+
+      // Update the PR record in Convex
+      await convex.mutation(api.github_prs.upsertFromServer, {
+        teamSlugOrId,
+        installationId: existingPR.installationId,
+        repoFullName,
+        number,
+        record: {
+          providerPrId: data.number,
+          title: data.title,
+          state: data.state === "open" ? "open" : "closed",
+          merged: Boolean(data.merged_at),
+          draft: data.draft,
+          authorLogin: existingPR.authorLogin,
+          authorId: existingPR.authorId,
+          htmlUrl: data.html_url,
+          baseRef: existingPR.baseRef,
+          headRef: existingPR.headRef,
+          baseSha: existingPR.baseSha,
+          headSha: existingPR.headSha,
+          mergeCommitSha: existingPR.mergeCommitSha,
+          createdAt: existingPR.createdAt,
+          updatedAt: Date.now(),
+          closedAt: existingPR.closedAt,
+          mergedAt: data.merged_at ? new Date(data.merged_at).getTime() : undefined,
+          repositoryId: existingPR.repositoryId,
+        },
+      });
+
+      return c.json({
+        success: true,
+        message: `PR #${number} updated successfully`,
+        pullRequest: {
+          number: data.number,
+          title: data.title,
+          body: data.body,
+          html_url: data.html_url,
+          state: data.state,
+          draft: data.draft ?? false,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("[update PR] Failed to update PR", { error, message });
+      return c.json(
+        {
+          success: false,
+          message: `Failed to update PR: ${message}`,
         },
         500,
       );
@@ -1150,6 +1378,7 @@ async function createReadyPullRequest({
   head,
   base,
   body,
+  createAsDraft = false,
 }: {
   octokit: Octokit;
   owner: string;
@@ -1158,6 +1387,7 @@ async function createReadyPullRequest({
   head: string;
   base: string;
   body: string;
+  createAsDraft?: boolean;
 }): Promise<GitHubPrBasic> {
   const { data } = await octokit.rest.pulls.create({
     owner,
@@ -1166,7 +1396,7 @@ async function createReadyPullRequest({
     head,
     base,
     body,
-    draft: false,
+    draft: createAsDraft,
   });
   return {
     number: data.number,
@@ -1174,6 +1404,33 @@ async function createReadyPullRequest({
     state: data.state,
     draft: data.draft ?? undefined,
   };
+}
+
+async function convertToDraftPullRequest({
+  octokit,
+  owner,
+  repo,
+  number,
+}: {
+  octokit: Octokit;
+  owner: string;
+  repo: string;
+  number: number;
+}): Promise<void> {
+  const mutation = `
+    mutation($pullRequestId: ID!) {
+      convertPullRequestToDraft(input: { pullRequestId: $pullRequestId }) {
+        pullRequest {
+          id
+          isDraft
+        }
+      }
+    }
+  `;
+
+  await octokit.graphql(mutation, {
+    pullRequestId: `PR_${owner}_${repo}_${number}`,
+  });
 }
 
 async function markPullRequestReady({

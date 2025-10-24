@@ -142,6 +142,9 @@ exit $EXIT_CODE
       });
       const autoPrEnabled =
         (ws as unknown as { autoPrEnabled?: boolean })?.autoPrEnabled ?? false;
+      const createDraftPr =
+        (ws as unknown as { createDraftPr?: boolean })?.createDraftPr ?? false;
+      
       if (!autoPrEnabled) {
         serverLogger.info(
           `[AgentSpawner] Branch pushed (auto-PR disabled). Winner: ${agent.name} on ${branchName}`
@@ -149,7 +152,7 @@ exit $EXIT_CODE
         return;
       }
       serverLogger.info(
-        `[AgentSpawner] Auto-commit completed for ${agent.name} on branch ${branchName} (crowned - creating PR)`
+        `[AgentSpawner] Auto-commit completed for ${agent.name} on branch ${branchName} (crowned - creating ${createDraftPr ? 'draft ' : ''}PR)`
       );
 
       // Create PR for crowned run only
@@ -215,7 +218,7 @@ ${taskRun.crownReason || "This implementation was selected as the best solution.
             `cat <<'CMUX_EOF' > "$BODY_FILE"\n` +
             `${prBody}\n` +
             `CMUX_EOF\n` +
-            `gh pr create --title ${JSON.stringify(prTitle)} --body-file "$BODY_FILE"\n` +
+            `gh pr create --title ${JSON.stringify(prTitle)} --body-file "$BODY_FILE"${createDraftPr ? ' --draft' : ''}\n` +
             `rm -f "$BODY_FILE"`;
 
           let prCreateOutput = "";
@@ -252,7 +255,7 @@ ${taskRun.crownReason || "This implementation was selected as the best solution.
               teamSlugOrId,
               id: taskRunId,
               pullRequestUrl: prUrlMatch[0],
-              isDraft: false,
+              isDraft: createDraftPr,
               ...(repoFullName
                 ? {
                     pullRequests: [
@@ -261,7 +264,7 @@ ${taskRun.crownReason || "This implementation was selected as the best solution.
                         url: prUrlMatch[0],
                         number: parsed.number,
                         state: "open" as const,
-                        isDraft: false,
+                        isDraft: createDraftPr,
                       },
                     ],
                   }
