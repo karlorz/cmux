@@ -29,14 +29,22 @@ function rewriteMorphUrl(url: string): string {
     return url;
   }
 
-  // Transform morph URLs to cmux.sh format
-  // https://port-8101-morphvm-jrtutqa3.http.cloud.morph.so/handler/sign-in -> https://port-8101-jrtutqa3.cmux.sh/handler/sign-in
+  // Transform morph URLs to cmux.app format
+  // https://port-8101-morphvm-jrtutqa3.http.cloud.morph.so/handler/sign-in -> https://cmux-jrtutqa3-base-8101.cmux.app/handler/sign-in
   if (url.includes("http.cloud.morph.so")) {
     const result = url
-      .replace("morphvm-", "")
-      .replace("http.cloud.morph.so", "cmux.sh");
+      .replace(/^https:\/\/port-(\d+)-morphvm-([^.]+)\.http\.cloud\.morph\.so/, "https://cmux-$2-base-$1.cmux.app");
     return result;
   }
+
+  // Transform existing cmux.sh URLs to cmux.app format
+  // https://port-5173-g6relr00.cmux.sh/note -> https://cmux-g6relr00-base-5173.cmux.app/note
+  if (url.includes(".cmux.sh")) {
+    const result = url
+      .replace(/^https:\/\/port-(\d+)-([^.]+)\.cmux\.sh/, "https://cmux-$2-base-$1.cmux.app");
+    return result;
+  }
+
   return url;
 }
 
