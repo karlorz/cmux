@@ -58,7 +58,7 @@ export function TaskRunChatPane({
             {onDragStart && (
               <GripVertical className="size-3.5 text-neutral-400 dark:text-neutral-500 group-hover:text-neutral-600 dark:group-hover:text-neutral-300 transition-colors" />
             )}
-            <div className="flex size-5 items-center justify-center rounded-full bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
+            <div className="flex size-5 items-center justify-center rounded-full text-neutral-700 dark:text-neutral-200">
               <MessageCircle className="size-3" aria-hidden />
             </div>
             <h2 className="text-xs font-medium text-neutral-800 dark:text-neutral-100">
