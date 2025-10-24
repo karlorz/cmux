@@ -18,6 +18,25 @@ import cmuxDemo2 from "@/docs/assets/cmux2.png";
 import cmuxDemo3 from "@/docs/assets/cmux3.png";
 import { fetchLatestRelease } from "@/lib/fetch-latest-release";
 
+function YouTubeVideo() {
+  return (
+    <div className="mx-auto max-w-6xl px-4 pb-16 pt-16 sm:px-6 sm:pb-24 sm:pt-12">
+      <div className="relative overflow-hidden rounded-2xl shadow-[0_40px_120px_-40px_rgba(56,189,248,0.35)]">
+        <div className="relative w-full pb-[56.25%]">
+          <iframe
+            className="absolute inset-0 h-full w-full rounded-2xl"
+            src="https://www.youtube.com/embed/YtQTKSM_wsA"
+            title="YouTube video player"
+            frameBorder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const heroHighlights = [
   {
     title: "Run multiple agent CLIs side-by-side",
@@ -166,6 +185,8 @@ export default async function LandingPage() {
         latestVersion={latestVersion}
         macDownloadUrls={macDownloadUrls}
       />
+
+      <YouTubeVideo />
 
       <main className="relative z-10 flex-1">
         <section className="mx-auto max-w-6xl px-4 pb-16 pt-16 sm:px-6 sm:pb-24 sm:pt-12">
