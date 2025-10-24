@@ -17,6 +17,24 @@ import { useCombinedWorkflowData, WorkflowRunsBadge, WorkflowRunsSection } from 
 
 const RUN_PENDING_STATUSES = new Set(["in_progress", "queued", "waiting", "pending"]);
 const RUN_PASSING_CONCLUSIONS = new Set(["success", "neutral", "skipped"]);
+const GITHUB_CONFLICT_MESSAGE = "This branch has conflicts that must be resolved";
+
+function extractMutationErrorMessage(error: unknown): string | undefined {
+  if (!error) return undefined;
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  if (typeof error === "object") {
+    const maybeMessage = (error as { message?: unknown }).message;
+    if (typeof maybeMessage === "string") {
+      return maybeMessage;
+    }
+    const maybeError = (error as { error?: unknown }).error;
+    if (typeof maybeError === "string") {
+      return maybeError;
+    }
+  }
+  return undefined;
+}
 
 type PullRequestDetailViewProps = {
   teamSlugOrId: string;
@@ -145,6 +163,7 @@ export function PullRequestDetailView({
   const collapseAllChecks = () => setChecksExpandedOverride(false);
 
   const [diffControls, setDiffControls] = useState<DiffControls | null>(null);
+  const [mergeConflictDisabledReason, setMergeConflictDisabledReason] = useState<string | undefined>(undefined);
 
   const handleDiffControlsChange = (controls: DiffControls | null) => {
     setDiffControls(controls ? {
@@ -164,7 +183,18 @@ export function PullRequestDetailView({
       toast.success(data.message || `PR #${currentPR?.number} closed successfully`);
     },
     onError: (error) => {
-      toast.error(`Failed to close PR: ${error instanceof Error ? error.message : String(error)}`);
+      const normalizedMessage = extractMutationErrorMessage(error);
+      const fallbackLabel = "Failed to close PR";
+      const toastMessage = (() => {
+        if (!normalizedMessage) {
+          return fallbackLabel;
+        }
+        const trimmed = normalizedMessage.trim();
+        return trimmed.toLowerCase().startsWith(fallbackLabel.toLowerCase())
+          ? trimmed
+          : `${fallbackLabel}: ${trimmed}`;
+      })();
+      toast.error(toastMessage);
     },
   });
 
@@ -175,12 +205,34 @@ export function PullRequestDetailView({
   >({
     ...postApiIntegrationsGithubPrsMergeSimpleMutation(),
     onSuccess: (data) => {
+      setMergeConflictDisabledReason(undefined);
       toast.success(data.message || `PR #${currentPR?.number} merged successfully`);
     },
     onError: (error) => {
-      toast.error(`Failed to merge PR: ${error instanceof Error ? error.message : String(error)}`);
+      const normalizedMessage = extractMutationErrorMessage(error);
+      if (
+        normalizedMessage &&
+        normalizedMessage.toLowerCase().includes(GITHUB_CONFLICT_MESSAGE.toLowerCase())
+      ) {
+        setMergeConflictDisabledReason(GITHUB_CONFLICT_MESSAGE);
+      }
+      const fallbackLabel = "Failed to merge PR";
+      const toastMessage = (() => {
+        if (!normalizedMessage) {
+          return fallbackLabel;
+        }
+        const trimmed = normalizedMessage.trim();
+        return trimmed.toLowerCase().startsWith(fallbackLabel.toLowerCase())
+          ? trimmed
+          : `${fallbackLabel}: ${trimmed}`;
+      })();
+      toast.error(toastMessage);
     },
   });
+
+  useEffect(() => {
+    setMergeConflictDisabledReason(undefined);
+  }, [currentPR?._id, currentPR?.headSha]);
 
   const { checksAllowMerge, checksDisabledReason } = useMemo(() => {
     if (workflowData.isLoading) {
@@ -232,10 +284,11 @@ export function PullRequestDetailView({
   const mergeDisabled =
     mergePrMutation.isPending ||
     closePrMutation.isPending ||
-    disabledBecauseOfChecks;
+    disabledBecauseOfChecks ||
+    Boolean(mergeConflictDisabledReason);
   const mergeDisabledReason = disabledBecauseOfChecks
     ? checksDisabledReason
-    : undefined;
+    : mergeConflictDisabledReason;
 
   const handleClosePR = () => {
     if (!currentPR) return;
@@ -254,7 +307,8 @@ export function PullRequestDetailView({
       !currentPR ||
       mergePrMutation.isPending ||
       closePrMutation.isPending ||
-      disabledBecauseOfChecks
+      disabledBecauseOfChecks ||
+      mergeConflictDisabledReason
     ) {
       return;
     }
