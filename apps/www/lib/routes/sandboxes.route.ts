@@ -711,3 +711,307 @@ sandboxesRouter.openapi(
     }
   },
 );
+
+// Start a new untitled workspace (creates task and environment together)
+sandboxesRouter.openapi(
+  createRoute({
+    method: "post" as const,
+    path: "/sandboxes/start-untitled",
+    tags: ["Sandboxes"],
+    summary: "Start an untitled workspace (ready for task assignment)",
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              teamSlugOrId: z.string(),
+              environmentId: z.string().optional(),
+              snapshotId: z.string().optional(),
+              ttlSeconds: z
+                .number()
+                .optional()
+                .default(60 * 60),
+              metadata: z.record(z.string(), z.string()).optional(),
+              prompt: z.string().optional(),
+              // Optional hydration parameters to clone a repo into the sandbox on start
+              repoUrl: z.string().optional(),
+              branch: z.string().optional(),
+              newBranch: z.string().optional(),
+              depth: z.number().optional().default(1),
+            }),
+          },
+        },
+        required: true,
+      },
+    },
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              instanceId: z.string(),
+              vscodeUrl: z.string(),
+              workerUrl: z.string(),
+              taskId: z.string(),
+              taskRunId: z.string(),
+              provider: z.enum(["morph"]).default("morph"),
+            }),
+          },
+        },
+        description: "Untitled workspace started successfully",
+      },
+      401: { description: "Unauthorized" },
+      500: { description: "Failed to start untitled workspace" },
+    },
+  }),
+  async (c) => {
+    const user = await stackServerAppJs.getUser({ tokenStore: c.req.raw });
+    if (!user) {
+      return c.text("Unauthorized", 401);
+    }
+    const { accessToken } = await user.getAuthJson();
+    if (!accessToken) {
+      return c.text("Unauthorized", 401);
+    }
+
+    const body = c.req.valid("json");
+    try {
+      console.log("[sandboxes.start-untitled] incoming", {
+        teamSlugOrId: body.teamSlugOrId,
+        hasEnvId: Boolean(body.environmentId),
+        hasSnapshotId: Boolean(body.snapshotId),
+        repoUrl: body.repoUrl,
+        branch: body.branch,
+        prompt: body.prompt,
+      });
+    } catch {
+      /* noop */
+    }
+
+    try {
+      const convex = getConvex({ accessToken });
+
+      const {
+        team,
+        resolvedSnapshotId,
+        environmentDataVaultKey,
+        environmentMaintenanceScript,
+        environmentDevScript,
+      } = await resolveTeamAndSnapshot({
+        req: c.req.raw,
+        convex,
+        teamSlugOrId: body.teamSlugOrId,
+        environmentId: body.environmentId,
+        snapshotId: body.snapshotId,
+      });
+
+      // Create untitled task and task run
+      const untitledTask = await convex.mutation(api.taskRuns.createUntitled, {
+        teamSlugOrId: body.teamSlugOrId,
+        prompt: body.prompt || "Untitled workspace - ready for task assignment",
+        ...(body.environmentId && { environmentId: body.environmentId }),
+        metadata: {
+          isUntitled: true,
+          startedVia: "api",
+          ...(body.metadata || {}),
+        },
+      });
+
+      const environmentEnvVarsPromise = environmentDataVaultKey
+        ? loadEnvironmentEnvVars(environmentDataVaultKey)
+        : Promise.resolve<string | null>(null);
+
+      const maintenanceScript = environmentMaintenanceScript ?? null;
+      const devScript = environmentDevScript ?? null;
+
+      const scriptIdentifiers =
+        maintenanceScript || devScript
+          ? allocateScriptIdentifiers()
+          : null;
+
+      const client = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
+
+      const instance = await client.instances.start({
+        snapshotId: resolvedSnapshotId,
+        ttlSeconds: body.ttlSeconds ?? 60 * 60,
+        ttlAction: "pause",
+        metadata: {
+          app: "cmux",
+          teamId: team.uuid,
+          isUntitled: "true",
+          taskRunId: untitledTask.taskRunId,
+          taskId: untitledTask.taskId,
+          ...(body.environmentId ? { environmentId: body.environmentId } : {}),
+          ...(body.metadata || {}),
+        },
+      });
+
+      const exposed = instance.networking.httpServices;
+      const vscodeService = exposed.find((s) => s.port === 39378);
+      const workerService = exposed.find((s) => s.port === 39377);
+      if (!vscodeService || !workerService) {
+        await instance.stop().catch(() => { });
+        return c.text("VSCode or worker service not found", 500);
+      }
+
+      // Get environment variables from the environment if configured
+      const environmentEnvVarsContent = await environmentEnvVarsPromise;
+
+      // Prepare environment variables including task JWT if present
+      let envVarsToApply = environmentEnvVarsContent || "";
+
+      // Add CMUX task-related env vars
+      envVarsToApply += `\nCMUX_TASK_RUN_ID="${untitledTask.taskRunId}"`;
+      envVarsToApply += `\nCMUX_TASK_RUN_JWT="${untitledTask.jwt}"`;
+      envVarsToApply += `\nCMUX_UNTITLED_WORKSPACE="true"`;
+
+      // Apply all environment variables if any
+      if (envVarsToApply.trim().length > 0) {
+        try {
+          const encodedEnv = encodeEnvContentForEnvctl(envVarsToApply);
+          const loadRes = await instance.exec(envctlLoadCommand(encodedEnv));
+          if (loadRes.exit_code === 0) {
+            console.log(
+              `[sandboxes.start-untitled] Applied environment variables via envctl`,
+              {
+                hasEnvironmentVars: Boolean(environmentEnvVarsContent),
+                taskRunId: untitledTask.taskRunId,
+              },
+            );
+          } else {
+            console.error(
+              `[sandboxes.start-untitled] Env var bootstrap failed exit=${loadRes.exit_code} stderr=${(loadRes.stderr || "").slice(0, 200)}`,
+            );
+          }
+        } catch (error) {
+          console.error(
+            "[sandboxes.start-untitled] Failed to apply environment variables",
+            error,
+          );
+        }
+      }
+
+      // Configure git identity and GitHub access
+      const githubAccessTokenPromise = (async () => {
+        const githubAccount = await user.getConnectedAccount("github");
+        if (!githubAccount) {
+          return {
+            githubAccessTokenError: "GitHub account not found",
+            githubAccessToken: null,
+          } as const;
+        }
+        const { accessToken: githubAccessToken } =
+          await githubAccount.getAccessToken();
+        if (!githubAccessToken) {
+          return {
+            githubAccessTokenError: "GitHub access token not found",
+            githubAccessToken: null,
+          } as const;
+        }
+
+        return { githubAccessTokenError: null, githubAccessToken } as const;
+      })();
+
+      const { githubAccessToken, githubAccessTokenError } =
+        await githubAccessTokenPromise;
+      
+      if (githubAccessToken) {
+        try {
+          await configureGithubAccess(instance, githubAccessToken);
+        } catch (error) {
+          console.log(
+            `[sandboxes.start-untitled] Failed to configure GitHub access; continuing...`,
+            error,
+          );
+        }
+      }
+
+      let repoConfig: HydrateRepoConfig | undefined;
+      if (body.repoUrl) {
+        console.log(`[sandboxes.start-untitled] Hydrating repo for ${instance.id}`);
+        const match = body.repoUrl.match(
+          /github\.com\/?([^\s/]+)\/([^\s/.]+)(?:\.git)?/i,
+        );
+        if (!match) {
+          return c.text("Unsupported repo URL; expected GitHub URL", 400);
+        }
+        const owner = match[1]!;
+        const name = match[2]!;
+        const repoFull = `${owner}/${name}`;
+        console.log(`[sandboxes.start-untitled] Parsed owner/repo: ${repoFull}`);
+
+        repoConfig = {
+          owner,
+          name,
+          repoFull,
+          cloneUrl: `https://github.com/${owner}/${name}.git`,
+          maskedCloneUrl: `https://github.com/${owner}/${name}.git`,
+          depth: Math.max(1, Math.floor(body.depth ?? 1)),
+          baseBranch: body.branch || "main",
+          newBranch: body.newBranch ?? "",
+        };
+      }
+
+      try {
+        await hydrateWorkspace({
+          instance,
+          repo: repoConfig,
+        });
+      } catch (error) {
+        console.error(`[sandboxes.start-untitled] Hydration failed:`, error);
+        await instance.stop().catch(() => { });
+        return c.text("Failed to hydrate sandbox", 500);
+      }
+
+      if (maintenanceScript || devScript) {
+        (async () => {
+          const result = await runMaintenanceAndDevScripts({
+            instance,
+            maintenanceScript: maintenanceScript || undefined,
+            devScript: devScript || undefined,
+            identifiers: scriptIdentifiers ?? undefined,
+          });
+          if (result.maintenanceError || result.devError) {
+            try {
+              await convex.mutation(api.taskRuns.updateEnvironmentError, {
+                teamSlugOrId: body.teamSlugOrId,
+                id: untitledTask.taskRunId as unknown as string & { __tableName: "taskRuns" },
+                maintenanceError: result.maintenanceError ?? undefined,
+                devError: result.devError ?? undefined,
+              });
+            } catch (mutationError) {
+              console.error(
+                "[sandboxes.start-untitled] Failed to record environment error to taskRun",
+                mutationError,
+              );
+            }
+          }
+        })().catch((error) => {
+          console.error(
+            "[sandboxes.start-untitled] Background script execution failed:",
+            error,
+          );
+        });
+      }
+
+      return c.json({
+        instanceId: instance.id,
+        vscodeUrl: vscodeService.url,
+        workerUrl: workerService.url,
+        taskId: untitledTask.taskId,
+        taskRunId: untitledTask.taskRunId,
+        provider: "morph",
+      });
+    } catch (error) {
+      if (error instanceof HTTPException) {
+        const message =
+          typeof error.message === "string" && error.message.length > 0
+            ? error.message
+            : "Request failed";
+        return c.text(message, error.status);
+      }
+      console.error("Failed to start untitled workspace:", error);
+      return c.text("Failed to start untitled workspace", 500);
+    }
+  },
+);

@@ -228,6 +228,78 @@ export const create = authMutation({
   },
 });
 
+// Create an untitled task and task run for workspace initialization
+export const createUntitled = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    prompt: v.optional(v.string()),
+    environmentId: v.optional(v.id("environments")),
+    agent: v.optional(v.string()),
+    metadata: v.optional(v.record(v.string(), v.any())),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const now = Date.now();
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    
+    if (args.environmentId) {
+      const environment = await ctx.db.get(args.environmentId);
+      if (!environment || environment.teamId !== teamId) {
+        throw new Error("Environment not found");
+      }
+    }
+
+    // Create an untitled task first
+    const taskId = await ctx.db.insert("tasks", {
+      text: args.prompt || "Untitled Workspace",
+      description: "Workspace initialized and ready for task assignment",
+      projectFullName: undefined,
+      baseBranch: undefined,
+      worktreePath: undefined,
+      isCompleted: false,
+      createdAt: now,
+      updatedAt: now,
+      images: undefined,
+      userId,
+      teamId,
+      environmentId: args.environmentId,
+    });
+
+    // Then create the task run
+    const taskRunId = await ctx.db.insert("taskRuns", {
+      taskId,
+      parentRunId: undefined,
+      prompt: args.prompt || "Untitled workspace - ready for task assignment",
+      agentName: args.agent,
+      newBranch: undefined,
+      status: "pending",
+      createdAt: now,
+      updatedAt: now,
+      userId,
+      teamId,
+      environmentId: args.environmentId,
+      metadata: args.metadata || {},
+    });
+
+    const jwt = await new SignJWT({
+      taskRunId,
+      teamId,
+      userId,
+    })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt()
+      .setExpirationTime("12h")
+      .sign(new TextEncoder().encode(env.CMUX_TASK_RUN_JWT_SECRET));
+
+    return { 
+      taskRunId, 
+      taskId,
+      jwt,
+      prompt: args.prompt || "Untitled workspace - ready for task assignment"
+    };
+  },
+});
+
 // Get all task runs for a task, organized in tree structure
 export const getByTask = authQuery({
   args: { teamSlugOrId: v.string(), taskId: taskIdWithFake },
