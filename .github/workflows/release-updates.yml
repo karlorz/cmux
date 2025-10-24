@@ -96,7 +96,7 @@ jobs:
     name: macOS x64
     needs: prepare-release
     environment: electron
-    runs-on: ${{ (vars.USE_LARGE_RUNNERS == 'true' && 'macos-13-large') || 'macos-13' }}
+    runs-on: cmuxs-Mac-mini
     defaults:
       run:
         working-directory: ./
@@ -214,7 +214,7 @@ jobs:
     name: macOS arm64
     needs: prepare-release
     environment: electron
-    runs-on: ${{ (vars.USE_LARGE_RUNNERS == 'true' && 'macos-14-xlarge') || 'macos-14' }}
+    runs-on: cmuxs-Mac-mini
     defaults:
       run:
         working-directory: ./
@@ -322,7 +322,7 @@ jobs:
       - mac-x64
       - mac-arm64
     environment: electron
-    runs-on: ${{ (vars.USE_LARGE_RUNNERS == 'true' && 'macos-14-xlarge') || 'macos-14' }}
+    runs-on: cmuxs-Mac-mini
     steps:
       - uses: actions/checkout@v4
         with:
