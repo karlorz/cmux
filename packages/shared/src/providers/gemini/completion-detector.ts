@@ -1,13 +1,27 @@
 import type { FSWatcher } from "node:fs";
 
+// How long to wait for telemetry file before giving up (ms)
+const TELEMETRY_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+// How often to poll for the file if watcher doesn't fire (ms)
+const POLL_INTERVAL_MS = 2000; // 2 seconds
+
+const DEBUG = process.env.CMUX_DEBUG_COMPLETION === "1";
+const log = (...args: unknown[]) => {
+  if (DEBUG) {
+    console.error("[gemini-completion-detector]", ...args);
+  }
+};
+
 export function startGeminiCompletionDetector(
   taskRunId: string
 ): Promise<void> {
   const telemetryPath = `/tmp/gemini-telemetry-${taskRunId}.log`;
   let fileWatcher: FSWatcher | null = null;
   let dirWatcher: FSWatcher | null = null;
+  let pollInterval: NodeJS.Timeout | null = null;
+  let timeoutHandle: NodeJS.Timeout | null = null;
 
-  return new Promise<void>((resolve) => {
+  return new Promise<void>((resolve, reject) => {
     void (async () => {
       const path = await import("node:path");
       const fs = await import("node:fs");
@@ -15,9 +29,55 @@ export function startGeminiCompletionDetector(
 
       let stopped = false;
       let lastSize = 0;
+      let eventsProcessed = 0;
 
       const dir = path.dirname(telemetryPath);
       const file = path.basename(telemetryPath);
+
+      log(`Starting completion detector for task ${taskRunId}`);
+      log(`Watching telemetry file: ${telemetryPath}`);
+
+      // Cleanup function to stop all watchers and timers
+      const cleanup = () => {
+        if (stopped) return;
+        stopped = true;
+        log("Cleaning up watchers and timers");
+        try {
+          fileWatcher?.close();
+        } catch (e) {
+          log("Error closing file watcher:", e);
+        }
+        try {
+          dirWatcher?.close();
+        } catch (e) {
+          log("Error closing dir watcher:", e);
+        }
+        if (pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
+        }
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
+          timeoutHandle = null;
+        }
+      };
+
+      // Set up timeout to reject if detection takes too long
+      timeoutHandle = setTimeout(() => {
+        if (!stopped) {
+          log(
+            `Timeout waiting for completion event after ${TELEMETRY_TIMEOUT_MS}ms`
+          );
+          log(`Events processed: ${eventsProcessed}`);
+          log(`File size at timeout: ${lastSize} bytes`);
+          cleanup();
+          reject(
+            new Error(
+              `Gemini completion detection timed out after ${TELEMETRY_TIMEOUT_MS}ms`
+            )
+          );
+        }
+      }, TELEMETRY_TIMEOUT_MS);
 
       // Lightweight JSON object stream parser for concatenated objects
       let buf = "";
@@ -55,8 +115,8 @@ export function startGeminiCompletionDetector(
               try {
                 const obj = JSON.parse(buf);
                 onObject(obj);
-              } catch {
-                // ignore
+              } catch (e) {
+                log("JSON parse error:", e, "Buffer:", buf.slice(0, 200));
               }
               buf = "";
             }
@@ -67,7 +127,9 @@ export function startGeminiCompletionDetector(
       };
 
       const isCompletionEvent = (event: unknown): boolean => {
-        if (!event || typeof event !== "object") return false;
+        if (!event || typeof event !== "object") {
+          return false;
+        }
         const anyEvent = event as Record<string, unknown>;
         const attrs =
           (anyEvent.attributes as Record<string, unknown>) ||
@@ -75,16 +137,28 @@ export function startGeminiCompletionDetector(
             (anyEvent.resource as Record<string, unknown>).attributes) ||
           (anyEvent.body &&
             (anyEvent.body as Record<string, unknown>).attributes);
-        if (!attrs || typeof attrs !== "object") return false;
+
+        if (!attrs || typeof attrs !== "object") {
+          return false;
+        }
+
         const eventName =
           (attrs as Record<string, unknown>)["event.name"] ||
           (attrs as Record<string, unknown>)["event_name"];
         const result = (attrs as Record<string, unknown>).result as
           | string
           | undefined;
-        return (
-          eventName === "gemini_cli.next_speaker_check" && result === "user"
-        );
+
+        const isMatch =
+          eventName === "gemini_cli.next_speaker_check" && result === "user";
+
+        if (DEBUG && eventName) {
+          log(
+            `Event: ${eventName}, result: ${result}, isMatch: ${isMatch}`
+          );
+        }
+
+        return isMatch;
       };
 
       const readNew = async (initial = false) => {
@@ -96,6 +170,11 @@ export function startGeminiCompletionDetector(
             return;
           }
           const end = st.size - 1;
+          const bytesToRead = end - start + 1;
+          log(
+            `Reading ${bytesToRead} bytes from ${start} to ${end} (${initial ? "initial" : "incremental"})`
+          );
+
           await new Promise<void>((r) => {
             const rs = createReadStream(telemetryPath, {
               start,
@@ -106,66 +185,86 @@ export function startGeminiCompletionDetector(
               const text =
                 typeof chunk === "string" ? chunk : chunk.toString("utf-8");
               feed(text, (obj) => {
+                eventsProcessed++;
                 try {
                   if (!stopped && isCompletionEvent(obj)) {
-                    stopped = true;
-                    try {
-                      fileWatcher?.close();
-                    } catch {
-                      // ignore
-                    }
-                    try {
-                      dirWatcher?.close();
-                    } catch {
-                      // ignore
-                    }
+                    log(
+                      `✓ Completion event detected! (processed ${eventsProcessed} events total)`
+                    );
+                    cleanup();
                     resolve();
                   }
-                } catch {
-                  // ignore
+                } catch (e) {
+                  log("Error checking completion event:", e);
                 }
               });
             });
             rs.on("end", () => r());
-            rs.on("error", () => r());
+            rs.on("error", (err) => {
+              log("ReadStream error:", err);
+              r();
+            });
           });
           lastSize = st.size;
-        } catch {
-          // until file exists
+          log(`File size updated to ${lastSize} bytes`);
+        } catch (err) {
+          // File doesn't exist yet - this is expected initially
+          log("Could not read file (may not exist yet):", err);
         }
       };
 
       const attachFileWatcher = async () => {
         try {
           const st = await fsp.stat(telemetryPath);
+          log(`Telemetry file exists! Size: ${st.size} bytes`);
           lastSize = st.size;
           await readNew(true);
-          fileWatcher = watch(
-            telemetryPath,
-            { persistent: false, encoding: "utf8" },
-            (eventType: string) => {
-              if (!stopped && eventType === "change") {
-                void readNew(false);
+
+          if (!stopped) {
+            log("Attaching file watcher for changes");
+            fileWatcher = watch(
+              telemetryPath,
+              { persistent: false, encoding: "utf8" },
+              (eventType: string) => {
+                log(`File watcher event: ${eventType}`);
+                if (!stopped && eventType === "change") {
+                  void readNew(false);
+                }
               }
-            }
-          );
-        } catch {
-          // not created yet
+            );
+          }
+        } catch (err) {
+          log("File not created yet:", err);
         }
       };
 
+      log("Setting up directory watcher");
       dirWatcher = watch(
         dir,
         { persistent: false, encoding: "utf8" },
         (_eventType: string, filename: string | null) => {
           const name = filename;
+          log(`Directory watcher event: ${_eventType}, filename: ${name}`);
           if (!stopped && name === file) {
+            log("Telemetry file detected by directory watcher!");
             void attachFileWatcher();
           }
         }
       );
 
+      // Initial check if file already exists
       void attachFileWatcher();
+
+      // Set up polling as fallback in case watchers don't fire
+      // This is important for reliability across different filesystems
+      pollInterval = setInterval(() => {
+        if (!stopped) {
+          log("Polling for file changes");
+          void attachFileWatcher();
+        }
+      }, POLL_INTERVAL_MS);
+
+      log("Completion detector setup complete");
     })();
   });
 }
