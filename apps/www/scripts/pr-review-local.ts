@@ -155,7 +155,7 @@ function parseCliArgs(argv: readonly string[]): CliOptions {
     }
     if (arg === "--help" || arg === "-h") {
       throw new Error(
-        "Usage: bun run apps/www/scripts/pr-review-local.ts <pr-url> [--rebuild-image] [--image <tag>] [--logs <dir>] [--team <id>] [--diff-line-numbers|--no-diff-line-numbers] [--diff-context-line-numbers|--no-diff-context-line-numbers] [--diff-artifact <single|per-file>] [--strategy <json-lines|line-numbers|inline-comments>]"
+        "Usage: bun run apps/www/scripts/pr-review-local.ts <pr-url> [--rebuild-image] [--image <tag>] [--logs <dir>] [--team <id>] [--diff-line-numbers|--no-diff-line-numbers] [--diff-context-line-numbers|--no-diff-context-line-numbers] [--diff-artifact <single|per-file>] [--strategy <json-lines|line-numbers|inline-phrase|inline-brackets|inline-files>]"
       );
     }
     if (arg.startsWith("-")) {
@@ -243,6 +243,8 @@ async function main(): Promise<void> {
   const jobLogsDir = join(logsRoot, jobId);
 
   await mkdir(jobLogsDir, { recursive: true });
+  const artifactsLogsDir = join(jobLogsDir, "artifacts");
+  await mkdir(artifactsLogsDir, { recursive: true });
 
   const logFileHostPath = join(jobLogsDir, LOG_FILE_NAME);
   const jobContext: JobContext = {
@@ -300,6 +302,7 @@ async function main(): Promise<void> {
     ["SANDBOX_INSTANCE_ID", containerName],
     ["REPO_FULL_NAME", repoFullName],
     ["COMMIT_REF", metadata.headSha],
+    ["CMUX_PR_REVIEW_ARTIFACTS_DIR", "/logs/artifacts"],
   ];
 
   const githubToken = getGithubToken();

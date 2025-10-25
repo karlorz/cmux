@@ -100,6 +100,20 @@ ${annotated}
 \`\`\``;
 }
 
+function buildInlineJsonResponse(diffText: string): string {
+  const annotated = diffText
+    .split("\n")
+    .map((line) => {
+      if (!line) return line;
+      return `${line} // {"score":0.6,"phrase":"pending_badge","comment":"sample"}`;
+    })
+    .join("\n");
+  return `\
+\`\`\`diff
+${annotated}
+\`\`\``;
+}
+
 function diffForPromptPlaceholder(diffText: string): string {
   return `\
 \`\`\`diff
@@ -125,14 +139,20 @@ async function runStrategyDemo(): Promise<void> {
     console.log(`\n=== Strategy: ${strategy.displayName} (${strategy.id}) ===`);
 
     for (const fileDiff of fileDiffs) {
+      const defaultArtifactMode =
+        strategy.id === "inline-files"
+          ? "per-file"
+          : strategy.id.startsWith("inline-")
+          ? "single"
+          : "per-file";
+
       const optionsEnv = {
         ...process.env,
         CMUX_PR_REVIEW_STRATEGY: strategy.id,
         CMUX_PR_REVIEW_SHOW_DIFF_LINE_NUMBERS: "true",
         CMUX_PR_REVIEW_SHOW_CONTEXT_LINE_NUMBERS: "true",
         CMUX_PR_REVIEW_ARTIFACTS_DIR: join(strategyDir, "artifacts"),
-        CMUX_PR_REVIEW_DIFF_ARTIFACT_MODE:
-          strategy.id.startsWith("inline-") ? "single" : "per-file",
+        CMUX_PR_REVIEW_DIFF_ARTIFACT_MODE: defaultArtifactMode,
       } satisfies NodeJS.ProcessEnv;
       const options = loadOptionsFromEnv(optionsEnv);
       const resolvedStrategy = resolveStrategy(options.strategy);
@@ -223,6 +243,34 @@ async function runStrategyDemo(): Promise<void> {
         syntheticResponse = buildInlinePhraseResponse(fileDiff.diffText);
       } else if (strategy.id === "inline-brackets") {
         syntheticResponse = buildInlineBracketResponse(fileDiff.diffText);
+      } else if (strategy.id === "inline-files") {
+        const inlineMetadata = prepareResult.metadata as
+          | Record<string, unknown>
+          | undefined;
+        const inlineRelative =
+          inlineMetadata && typeof inlineMetadata["inlineFileRelativePath"] === "string"
+            ? (inlineMetadata["inlineFileRelativePath"] as string)
+            : (() => {
+                throw new Error(
+                  "inline-files strategy metadata missing inlineFileRelativePath"
+                );
+              })();
+        const absolutePath = join(options.artifactsDir, inlineRelative);
+        const annotated = fileDiff.diffText
+          .split("\n")
+          .map((line) => {
+            if (line.length === 0) return line;
+            return `${line} // review 0.7 "workspace_demo" demo`;
+          })
+          .join("\n");
+        const normalized = annotated.endsWith("\n")
+          ? annotated
+          : `${annotated}\n`;
+        const payload = `# FILE ${fileDiff.filePath}\n${normalized}\n`;
+        await writeFile(absolutePath, payload);
+        syntheticResponse = "Workspace annotations saved.";
+      } else if (strategy.id === "inline-json") {
+        syntheticResponse = buildInlineJsonResponse(fileDiff.diffText);
       } else {
         syntheticResponse = diffForPromptPlaceholder(fileDiff.diffText);
       }

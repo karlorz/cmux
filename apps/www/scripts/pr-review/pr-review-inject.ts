@@ -327,9 +327,25 @@ async function filterTextFiles(
   return files.filter((file) => textFiles.has(file));
 }
 
+interface CodexReviewResultArtifact {
+  label: string;
+  relativePath: string;
+}
+
 interface CodexReviewResult {
   file: string;
   response: string;
+  artifacts?: CodexReviewResultArtifact[];
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+}
+
+interface CodexReviewRunResult {
+  results: CodexReviewResult[];
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
 }
 
 interface CodexReviewContext {
@@ -350,10 +366,16 @@ async function runCodexReviews({
   sandboxInstanceId,
   commitRef,
   fileCallback,
-}: CodexReviewContext): Promise<CodexReviewResult[]> {
+}: CodexReviewContext): Promise<CodexReviewRunResult> {
   if (files.length === 0) {
     console.log("[inject] No text files require Codex review.");
-    return [];
+    const nowIso = new Date().toISOString();
+    return {
+      results: [],
+      startedAt: nowIso,
+      completedAt: nowIso,
+      durationMs: 0,
+    };
   }
 
   const openAiApiKey = requireEnv("OPENAI_API_KEY");
@@ -368,6 +390,8 @@ async function runCodexReviews({
   const { Codex } = await import("@openai/codex-sdk");
   const codex = new Codex({ apiKey: openAiApiKey });
 
+  const reviewStartedAtDate = new Date();
+  const reviewStartedAt = reviewStartedAtDate.toISOString();
   const reviewStart = performance.now();
 
   await rm(reviewOptions.artifactsDir, { recursive: true, force: true });
@@ -388,12 +412,20 @@ async function runCodexReviews({
     return relativePath;
   };
 
+  const sanitizeArtifactStem = (filePath: string): string => {
+    return filePath
+      .replace(/^\.\//, "")
+      .replace(/\.\./g, "__")
+      .replace(/[\\/]/g, "__");
+  };
+
   const strategyLog = (header: string, body: string) => {
     logIndentedBlock(`[inject] ${header}`, body);
   };
 
   const reviewPromises = files.map(async (file) => {
-    const fileStart = performance.now();
+    const fileStartClock = performance.now();
+    const fileStartedAt = new Date().toISOString();
     try {
       const diff = await runCommandCapture(
         "git",
@@ -449,24 +481,41 @@ async function runCodexReviews({
 
       strategyLog(`Codex review for ${file}`, strategyResult.rawResponse);
 
-      if (strategyResult.artifacts) {
-        strategyResult.artifacts.forEach((artifact) => {
-          console.log(
-            `[inject] Saved ${artifact.label} -> ${joinPath(
-              reviewOptions.artifactsDir,
-              artifact.relativePath
-            )}`
-          );
-        });
-      }
+      const perFileResponsePath = await persistArtifact(
+        `responses/${sanitizeArtifactStem(file)}.md`,
+        strategyResult.rawResponse
+      );
+
+      const artifactEntries: CodexReviewResultArtifact[] = [
+        ...(strategyResult.artifacts ?? []),
+        {
+          label: "Review response",
+          relativePath: perFileResponsePath,
+        },
+      ];
+
+      artifactEntries.forEach((artifact) => {
+        console.log(
+          `[inject] Saved ${artifact.label} -> ${joinPath(
+            reviewOptions.artifactsDir,
+            artifact.relativePath
+          )}`
+        );
+      });
+
+      const fileCompletedAt = new Date().toISOString();
+      const fileDurationMs = Math.round(performance.now() - fileStartClock);
 
       const result: CodexReviewResult = {
         file,
         response: strategyResult.rawResponse,
+        artifacts: artifactEntries,
+        startedAt: fileStartedAt,
+        completedAt: fileCompletedAt,
+        durationMs: fileDurationMs,
       };
-      const elapsedMs = performance.now() - fileStart;
       console.log(
-        `[inject] Review completed for ${file} in ${formatDuration(elapsedMs)}`
+        `[inject] Review completed for ${file} in ${formatDuration(fileDurationMs)}`
       );
 
       if (fileCallback) {
@@ -496,7 +545,7 @@ async function runCodexReviews({
         error instanceof Error
           ? error.message
           : String(error ?? "unknown error");
-      const elapsedMs = performance.now() - fileStart;
+      const elapsedMs = performance.now() - fileStartClock;
       console.error(`[inject] Codex review failed for ${file}: ${reason}`);
       console.error(
         `[inject] Review for ${file} failed after ${formatDuration(elapsedMs)}`
@@ -523,12 +572,21 @@ async function runCodexReviews({
     .filter(isFulfilled)
     .map((result) => result.value);
 
+  const reviewCompletedAtDate = new Date();
+  const reviewCompletedAt = reviewCompletedAtDate.toISOString();
+  const reviewDurationMs = Math.round(performance.now() - reviewStart);
+
   console.log(
     `[inject] Codex reviews completed in ${formatDuration(
-      performance.now() - reviewStart
+      reviewDurationMs
     )}.`
   );
-  return collectedResults;
+  return {
+    results: collectedResults,
+    startedAt: reviewStartedAt,
+    completedAt: reviewCompletedAt,
+    durationMs: reviewDurationMs,
+  };
 }
 
 async function main(): Promise<void> {
@@ -666,6 +724,7 @@ async function main(): Promise<void> {
     }
   };
 
+  const jobStartedAt = new Date().toISOString();
   const jobStart = performance.now();
 
   const githubToken = getGithubToken();
@@ -792,7 +851,7 @@ async function main(): Promise<void> {
     logFileSection("Changed text files", textChangedFiles);
     logFileSection("Modified text files", textModifiedFiles);
 
-    const codexReviews = await runCodexReviews({
+    const codexReviewRun = await runCodexReviews({
       workspaceDir,
       baseRevision: mergeBaseRevision,
       files: textChangedFiles,
@@ -801,6 +860,7 @@ async function main(): Promise<void> {
       commitRef,
       fileCallback: fileCallbackContext,
     });
+    const codexReviews = codexReviewRun.results;
 
     console.log("[inject] Done with PR review.");
     console.log(
@@ -809,23 +869,32 @@ async function main(): Promise<void> {
       )}`
     );
 
-  const reviewOutput: Record<string, unknown> = {
-    prUrl,
-    repoFullName: repoFullName ?? `${headRepo.owner}/${headRepo.name}`,
-    headRefName,
-    baseRefName,
-    mergeBaseRevision,
-    changedTextFiles: textChangedFiles,
-    modifiedTextFiles: textModifiedFiles,
-    logFilePath,
-    logSymlinkPath,
-    commitRef,
-    teamId,
-    codexReviews,
-    strategy: reviewStrategy.id,
-    artifactsDir: reviewOptions.artifactsDir,
-    diffArtifactMode: reviewOptions.diffArtifactMode,
-  };
+    const jobCompletedAt = new Date().toISOString();
+    const jobDurationMs = Math.round(performance.now() - jobStart);
+
+    const reviewOutput: Record<string, unknown> = {
+      prUrl,
+      repoFullName: repoFullName ?? `${headRepo.owner}/${headRepo.name}`,
+      headRefName,
+      baseRefName,
+      mergeBaseRevision,
+      changedTextFiles: textChangedFiles,
+      modifiedTextFiles: textModifiedFiles,
+      logFilePath,
+      logSymlinkPath,
+      commitRef,
+      teamId,
+      codexReviews,
+      strategy: reviewStrategy.id,
+      artifactsDir: reviewOptions.artifactsDir,
+      diffArtifactMode: reviewOptions.diffArtifactMode,
+      jobStartedAt,
+      jobCompletedAt,
+      jobDurationMs,
+      codexReviewStartedAt: codexReviewRun.startedAt,
+      codexReviewCompletedAt: codexReviewRun.completedAt,
+      codexReviewDurationMs: codexReviewRun.durationMs,
+    };
 
     await persistCodeReviewOutput(reviewOutput);
 
@@ -843,10 +912,12 @@ async function main(): Promise<void> {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : String(error ?? "unknown error");
+    const jobCompletedAt = new Date().toISOString();
+    const jobDurationMs = Math.round(performance.now() - jobStart);
     console.error(`[inject] Error during review: ${message}`);
     console.error(
       `[inject] Total runtime before failure ${formatDuration(
-        performance.now() - jobStart
+        jobDurationMs
       )}`
     );
     await persistCodeReviewOutput({
@@ -855,6 +926,9 @@ async function main(): Promise<void> {
       sandboxInstanceId,
       prUrl,
       error: message,
+      jobStartedAt,
+      jobCompletedAt,
+      jobDurationMs,
     });
     if (callbackContext) {
       try {

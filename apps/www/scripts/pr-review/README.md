@@ -10,12 +10,14 @@ without rewriting the harness.
 |-----------------|-----------------------------------------------------------------------------------------------|----------------------------------------------------------------------|
 | `json-lines`       | Original flow. The LLM returns JSON objects containing the literal line text plus metadata.   | `lines[].line`, `shouldBeReviewedScore`, `shouldReviewWhy`, `mostImportantCharacterIndex` |
 | `line-numbers`     | Similar to the original, but the model references diff line numbers instead of echoing code. | `lines[].lineNumber` (optional `line`), score/index required         |
-| `inline-phrase`    | Lines end with `// review <score> "phrase_with_underscores" <optional comment>` (lowercase). | Annotated diff plus parsed phrase annotations                        |
+| `inline-phrase`    | Lines end with `// review <score> "verbatim_snippet" <optional comment>` (lowercase).         | Annotated diff plus parsed phrase annotations                        |
 | `inline-brackets`  | Highlights spans with `{| … |}` and appends `// review <score> <optional comment>`.           | Annotated diff plus parsed highlight spans                           |
+| `inline-json`      | Lines end with `// { "score": <0-1>, "phrase": "verbatim_snippet", "comment": "…" }`.         | Annotated diff plus parsed JSON review objects                       |
+| `inline-files`     | Writes the diff to a workspace file that the agent must edit in place with inline review tags. | Annotated on-disk diff harvested after completion                     |
 
 All strategies implement the common interface in `core/types.ts`. The active
 strategy is selected via `CMUX_PR_REVIEW_STRATEGY` or the CLI flag
-`--strategy <json-lines|line-numbers|inline-phrase|inline-brackets>`.
+`--strategy <json-lines|line-numbers|inline-phrase|inline-brackets|inline-json|inline-files>`.
 
 ## Configuration
 
@@ -23,10 +25,10 @@ Environment variables (and matching CLI flags) understood by the inject script:
 
 | Env / Flag                                   | Purpose                                                                                 | Default      |
 |----------------------------------------------|-----------------------------------------------------------------------------------------|--------------|
-| `CMUX_PR_REVIEW_STRATEGY` / `--strategy`      | Strategy ID to use                                                                      | `json-lines` |
+| `CMUX_PR_REVIEW_STRATEGY` / `--strategy`      | Strategy ID to use (`json-lines`, `line-numbers`, `inline-phrase`, `inline-brackets`, `inline-json`) | `json-lines` |
 | `CMUX_PR_REVIEW_SHOW_DIFF_LINE_NUMBERS` / `--diff-line-numbers` | Include formatted line numbers in prompts/logs                              | `false`      |
 | `CMUX_PR_REVIEW_SHOW_CONTEXT_LINE_NUMBERS` / `--diff-context-line-numbers` | Include numbers on unchanged diff lines               | `true`       |
-| `CMUX_PR_REVIEW_DIFF_ARTIFACT_MODE` / `--diff-artifact <single|per-file>` | How to persist diff artifacts (`inline-phrase` / `inline-brackets` often use `single`) | `per-file`   |
+| `CMUX_PR_REVIEW_DIFF_ARTIFACT_MODE` / `--diff-artifact <single|per-file>` | How to persist diff artifacts (`inline-*` strategies often use `single`) | `per-file`   |
 | `CMUX_PR_REVIEW_ARTIFACTS_DIR`                | Root directory for run artifacts                                                        | `${WORKSPACE}/.cmux-pr-review-artifacts` |
 
 See `core/options.ts` for the full option loader.
@@ -51,11 +53,15 @@ changes how each file is evaluated, not the level of parallelism.
 Lines must end with:
 
 ```
-// review <score> "phrase_with_underscores" <optional comment>
+// review <score> "verbatim_snippet" <optional comment>
 ```
 
-Always include the score (0-1). Replace spaces in the phrase with underscores so
-the parser can capture it.
+Always include the score (0-1). Annotate only the changed rows (lines
+beginning with `+` or `-`) and skip diff metadata or context rows. Copy a short
+snippet (roughly 2-6 words) directly from the changed portion of the line and
+trim any leading or trailing whitespace—avoid reprinting the entire line.
+The inline JSON strategy follows the same guidance for which lines to tag and
+how to choose snippets.
 
 ### Bracket strategy
 
@@ -67,6 +73,15 @@ Wrap the critical span inline using `{|` and `|}`, then append:
 
 Scores are mandatory; comments are optional. Parsed annotations capture either
 the phrase or the bracketed highlight.
+
+### Workspace file strategy
+
+The diff is saved to `${CMUX_PR_REVIEW_ARTIFACTS_DIR}/inline-files/*.diff`. The
+agent edits that file directly, appending `// review <score> "<verbatim_snippet>"` tags to
+each changed diff line (only those starting with `+` or `-`). Copy a concise
+snippet from that line, trim surrounding whitespace, and avoid echoing the full
+line. Once the run finishes, the inject script re-reads the file to collect
+annotations instead of relying on the agent's chat response.
 
 ## Demo Harness
 
@@ -81,43 +96,106 @@ bun run apps/www/scripts/pr-review/run-strategy-demo.ts
 
 ## Running the Inject Script
 
-Local Docker (recommended):
+The local Docker runner (`pr-review-local.ts`) is the default path for testing.
+Pass `--strategy` and related flags to choose the approach:
 
 ```
-# JSON (line text)
-bun run apps/www/scripts/pr-review-local.ts --strategy json-lines <PR_URL>
+# JSON (literal line content)
+bun run apps/www/scripts/pr-review-local.ts \
+  --strategy json-lines \
+  <PR_URL>
 
-# JSON (line numbers)
-bun run apps/www/scripts/pr-review-local.ts --strategy line-numbers --diff-line-numbers <PR_URL>
+# JSON (diff line numbers)
+bun run apps/www/scripts/pr-review-local.ts \
+  --strategy line-numbers \
+  --diff-line-numbers \
+  <PR_URL>
 
-# Inline comments with aggregated diff artifacts
+# Inline phrase tags (aggregated artifacts)
 bun run apps/www/scripts/pr-review-local.ts \
   --strategy inline-phrase \
   --diff-line-numbers \
   --diff-context-line-numbers \
   --diff-artifact single \
   <PR_URL>
+
+# Inline bracket highlights (aggregated artifacts)
+bun run apps/www/scripts/pr-review-local.ts \
+  --strategy inline-brackets \
+  --diff-line-numbers \
+  --diff-context-line-numbers \
+  --diff-artifact single \
+  <PR_URL>
+
+# Inline JSON review tags (aggregated artifacts)
+bun run apps/www/scripts/pr-review-local.ts \
+  --strategy inline-json \
+  --diff-line-numbers \
+  --diff-context-line-numbers \
+  --diff-artifact single \
+  <PR_URL>
+
+# Inline workspace file annotations
+bun run apps/www/scripts/pr-review-local.ts \
+  --strategy inline-files \
+  --diff-line-numbers \
+  --diff-context-line-numbers \
+  <PR_URL>
 ```
 
-The direct harness (`pr-review.ts`) should be used only when you explicitly
-need to target a remote Morph instance:
+The direct harness (`pr-review.ts`) targets a remote Morph instance but accepts
+the same flags; use it only when you need a remote run.
 
 ```
-# JSON (line text)
+# JSON (line content)
 bun run apps/www/scripts/pr-review.ts --strategy json-lines <PR_URL>
 
 # JSON (line numbers)
 bun run apps/www/scripts/pr-review.ts --strategy line-numbers --diff-line-numbers <PR_URL>
 
-# Inline comments with aggregated diff artifacts
+# Inline phrase tags
 bun run apps/www/scripts/pr-review.ts \
   --strategy inline-phrase \
   --diff-line-numbers \
   --diff-context-line-numbers \
   --diff-artifact single \
   <PR_URL>
+
+# Inline JSON tags
+bun run apps/www/scripts/pr-review.ts \
+  --strategy inline-json \
+  --diff-line-numbers \
+  --diff-context-line-numbers \
+  --diff-artifact single \
+  <PR_URL>
+
+# Inline bracket highlights
+bun run apps/www/scripts/pr-review.ts \
+  --strategy inline-brackets \
+  --diff-line-numbers \
+  --diff-context-line-numbers \
+  --diff-artifact single \
+  <PR_URL>
+
+# Inline workspace annotations
+bun run apps/www/scripts/pr-review.ts \
+  --strategy inline-files \
+  --diff-line-numbers \
+  --diff-context-line-numbers \
+  <PR_URL>
 ```
 
-Both runners accept identical flags; the local Docker variant is the default
-path for testing. Artifacts are written beneath `CMUX_PR_REVIEW_ARTIFACTS_DIR`
-and referenced in the final `code-review-output.json`.
+## Other Utilities
+
+```
+# Run all strategies against PR #709 and collect sample artifacts
+bun run apps/www/scripts/pr-review/run-strategy-demo.ts
+
+# Bundle the inject script (used by CI/local Docker)
+bun build apps/www/scripts/pr-review/pr-review-inject.ts \
+  --outfile apps/www/scripts/pr-review/pr-review-inject.bundle.js \
+  --target bun
+```
+
+Artifacts live under `CMUX_PR_REVIEW_ARTIFACTS_DIR` and are referenced in the
+final `code-review-output.json`.

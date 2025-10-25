@@ -9,12 +9,12 @@ import type {
 } from "../core/types";
 import type { DiffArtifactMode } from "../core/options";
 
-const REVIEW_MARKER = "// review";
+const JSON_MARKER = "//";
 
-interface ParsedPhrase {
+interface ParsedJsonAnnotation {
   content: string;
   score: number;
-  phrase: string;
+  phrase: string | null;
   comment: string | null;
 }
 
@@ -24,16 +24,17 @@ function sanitizeFilePath(filePath: string): string {
 
 function buildPrompt(context: StrategyPrepareContext, diffIdentifier: string): string {
   const diffText = context.diff || "(no diff output)";
-  return `You are assisting with a code review by annotating every line of the diff shown below.
-For each changed line (only lines that begin with + or -), append a review tag in the format:
-<original line> // review <score:0-1> "<verbatim_snippet_from_line>" <optional comment>
-- Use lowercase "review".
-- Skip metadata/context lines (those that start with space, diff --, index, ---/+++, @@, etc.).
-- Copy a concise snippet directly from the changed portion (no more than 6 words) and avoid leading indentation or the entire line.
-- Always include a score (0-1) even if the line is fine.
-- Keep the phrase short (ideally 1-5 words).
-- Optional comment can be omitted if there's nothing noteworthy.
-Do not remove or reorder diff lines; preserve +/- markers and context.
+  return `You are assisting with a code review by appending JSON review data to every diff line.
+For each changed line (lines that begin with + or -), append a lowercase // followed by a compact JSON object with the shape:
+{ score: <0-1>, phrase: "<verbatim_snippet_or_empty>", comment: "<optional comment>" }
+Rules:
+- Include the score field in every object (0-1).
+- Skip context and metadata lines (those starting with space, diff --, index, ---/+++, @@, etc.).
+- Copy a short snippet directly from the changed portion of the diff line (aim for 2-6 words). Do not echo the entire line or include leading indentation.
+- Trim leading/trailing whitespace from the snippet; use "" when nothing should be highlighted.
+- Do not add underscores or otherwise alter characters inside the snippet.
+- Comments are optional; use "" when unused.
+- Do not remove, reorder, or otherwise alter diff lines; only append the JSON comment.
 Return the fully annotated diff wrapped in a markdown code block tagged as \`\`\`diff.
 Diff identifier: ${diffIdentifier}
 File path: ${context.filePath}
@@ -51,23 +52,32 @@ function formatDiffBody(diff: string): string {
   return `${normalized}\n`;
 }
 
-function parsePhraseLine(line: string): ParsedPhrase | null {
-  const markerIndex = line.toLowerCase().indexOf(REVIEW_MARKER);
+function parseJsonAnnotation(line: string): ParsedJsonAnnotation | null {
+  const markerIndex = line.indexOf(JSON_MARKER);
   if (markerIndex === -1) return null;
   const content = line.slice(0, markerIndex).trimEnd();
-  const remainder = line.slice(markerIndex + REVIEW_MARKER.length).trim();
-  const match = remainder.match(/^([0-1](?:\.\d+)?)\s+"([^"]+)"(?:\s+(.*))?$/);
-  if (!match) return null;
-  const score = Number.parseFloat(match[1]);
-  if (!Number.isFinite(score) || score < 0 || score > 1) return null;
-  const phrase = match[2].trim();
-  const comment = match[3] ?? null;
-  return {
-    content,
-    score,
-    phrase,
-    comment,
-  };
+  const remainder = line.slice(markerIndex + JSON_MARKER.length).trim();
+  if (!remainder.startsWith("{") || !remainder.endsWith("}")) return null;
+  try {
+    const parsed = JSON.parse(remainder);
+    const score = Number(parsed.score);
+    if (!Number.isFinite(score) || score < 0 || score > 1) return null;
+    const rawPhrase =
+      typeof parsed.phrase === "string" ? parsed.phrase.trim() : "";
+    const phrase = rawPhrase.length > 0 ? rawPhrase : null;
+    const comment =
+      typeof parsed.comment === "string" && parsed.comment.length > 0
+        ? parsed.comment
+        : null;
+    return {
+      content,
+      score,
+      phrase,
+      comment,
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function persistDiffArtifact(
@@ -129,8 +139,8 @@ async function process(
 
   const annotations = context.responseText
     .split(/\r?\n/)
-    .map(parsePhraseLine)
-    .filter((entry): entry is ParsedPhrase => entry !== null)
+    .map(parseJsonAnnotation)
+    .filter((entry): entry is ParsedJsonAnnotation => entry !== null)
     .map((entry) => ({
       lineContent: entry.content,
       shouldBeReviewedScore: entry.score,
@@ -151,9 +161,9 @@ async function process(
   };
 }
 
-export const inlinePhraseStrategy: ReviewStrategy = {
-  id: "inline-phrase",
-  displayName: "Inline review (phrase tag)",
+export const inlineJsonStrategy: ReviewStrategy = {
+  id: "inline-json",
+  displayName: "Inline review (JSON tag)",
   prepare,
   process,
 };
