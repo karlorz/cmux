@@ -3,6 +3,8 @@ import { startBrowserAgent } from "magnitude-core";
 import { ACTION_FORMAT_PROMPT } from "./agentActionPrompt";
 
 const DEBUG_AGENT = process.env.DEBUG_BROWSER_AGENT === "1";
+const SKIP_AGENT_STOP = process.env.BROWSER_AGENT_SKIP_STOP === "1";
+const REQUESTED_SCREENSHOT_PATH = process.env.BROWSER_AGENT_SCREENSHOT_PATH?.trim();
 
 const DEFAULT_CDP_ENDPOINT = "http://127.0.0.1:39382";
 
@@ -118,6 +120,31 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+async function captureScreenshotIfRequested(agent: BrowserAgent): Promise<void> {
+  if (!REQUESTED_SCREENSHOT_PATH) {
+    return;
+  }
+
+  try {
+    await agent.page.screenshot({
+      path: REQUESTED_SCREENSHOT_PATH,
+      type: "png",
+      fullPage: true,
+    });
+    console.log(
+      `[runBrowserAgentFromPrompt] Screenshot captured to ${REQUESTED_SCREENSHOT_PATH}`
+    );
+  } catch (screenshotError) {
+    const reason =
+      screenshotError instanceof Error
+        ? screenshotError.message
+        : String(screenshotError ?? "unknown screenshot error");
+    console.error(
+      `[runBrowserAgentFromPrompt] Failed to capture screenshot: ${reason}`
+    );
+  }
 }
 
 async function createAgentWithRetry(
@@ -406,12 +433,18 @@ async function main(): Promise<void> {
 
     try {
       await agent.act(prompt);
-      await agent.stop();
+      await captureScreenshotIfRequested(agent);
+      if (!SKIP_AGENT_STOP) {
+        await agent.stop();
+      }
       return;
     } catch (error) {
-      await agent.stop().catch(() => {
-        // ignore cleanup errors during retries
-      });
+      await captureScreenshotIfRequested(agent);
+      if (!SKIP_AGENT_STOP) {
+        await agent.stop().catch(() => {
+          // ignore cleanup errors during retries
+        });
+      }
       const reason =
         error instanceof Error ? error.message : String(error ?? "unknown error");
       console.error(
