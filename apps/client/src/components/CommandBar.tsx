@@ -121,6 +121,9 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
   >("root");
   const [isCreatingLocalWorkspace, setIsCreatingLocalWorkspace] =
     useState(false);
+  const [commandValue, setCommandValue] = useState<string | undefined>(
+    undefined,
+  );
   const openRef = useRef<boolean>(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   // Used only in non-Electron fallback
@@ -147,7 +150,8 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
     setSearch("");
     setOpenedWithShift(false);
     setActivePage("root");
-  }, [setOpen, setSearch, setOpenedWithShift, setActivePage]);
+    setCommandValue(undefined);
+  }, [setOpen, setSearch, setOpenedWithShift, setActivePage, setCommandValue]);
 
   const stackUser = useUser({ or: "return-null" });
   const stackTeams = stackUser?.useTeams() ?? EMPTY_TEAM_LIST;
@@ -288,14 +292,13 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
         return;
       }
       if (!socket) {
-        toast.error(
+        console.warn(
           "Socket is not connected yet. Please try again momentarily.",
         );
         return;
       }
 
       setIsCreatingLocalWorkspace(true);
-      let loadingToast: ReturnType<typeof toast.loading> | undefined;
       let reservedTaskId: Id<"tasks"> | null = null;
       let reservedTaskRunId: Id<"taskRuns"> | null = null;
 
@@ -314,10 +317,6 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
         reservedTaskRunId = reservation.taskRunId;
 
         addTaskToExpand(reservation.taskId);
-
-        loadingToast = toast.loading(
-          `Workspace ${reservation.workspaceName} is provisioning…`,
-        );
 
         await new Promise<void>((resolve) => {
           socket.emit(
@@ -344,13 +343,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
                       errorMessage: message,
                     }).catch(() => undefined);
                   }
-                  if (loadingToast) {
-                    toast.error(message, { id: loadingToast });
-                  } else {
-                    toast.error("Failed to create workspace", {
-                      description: message,
-                    });
-                  }
+                  console.error(message);
                   return;
                 }
 
@@ -362,15 +355,11 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
                   reservation.workspaceName ??
                   projectFullName;
 
-                if (loadingToast) {
-                  toast.success(
-                    response.pending
-                      ? `${effectiveWorkspaceName} is provisioning…`
-                      : `${effectiveWorkspaceName} is ready`,
-                    { id: loadingToast },
-                  );
-                  loadingToast = undefined;
-                }
+                console.log(
+                  response.pending
+                    ? `${effectiveWorkspaceName} is provisioning…`
+                    : `${effectiveWorkspaceName} is ready`,
+                );
 
                 if (response.workspaceUrl && effectiveTaskRunId) {
                   const proxiedUrl = toProxyWorkspaceUrl(response.workspaceUrl);
@@ -408,13 +397,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
                   callbackError instanceof Error
                     ? callbackError.message
                     : String(callbackError ?? "Unknown");
-                if (loadingToast) {
-                  toast.error(message, { id: loadingToast });
-                } else {
-                  toast.error("Failed to create workspace", {
-                    description: message,
-                  });
-                }
+                console.error("Failed to create workspace", message);
               } finally {
                 resolve();
               }
@@ -431,13 +414,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
             errorMessage: message,
           }).catch(() => undefined);
         }
-        if (loadingToast) {
-          toast.error(message, { id: loadingToast });
-        } else {
-          toast.error("Failed to create workspace", {
-            description: message,
-          });
-        }
+        console.error("Failed to create workspace", message);
       } finally {
         setIsCreatingLocalWorkspace(false);
       }
@@ -545,6 +522,39 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
     }
     return undefined;
   }, [open]);
+
+  useEffect(() => {
+    if (!open || activePage !== "local-workspaces") return;
+    if (isLocalWorkspaceLoading) return;
+
+    if (localWorkspaceOptions.length === 0) {
+      if (commandValue?.startsWith("local-workspace:")) {
+        setCommandValue(undefined);
+      }
+      return;
+    }
+
+    const toLocalWorkspaceValue = (fullName: string) =>
+      `local-workspace:${fullName}`;
+    const currentMatchesSelection = localWorkspaceOptions.some(
+      (option) => toLocalWorkspaceValue(option.fullName) === commandValue,
+    );
+
+    if (!currentMatchesSelection) {
+      setCommandValue(toLocalWorkspaceValue(localWorkspaceOptions[0].fullName));
+    }
+  }, [
+    activePage,
+    commandValue,
+    isLocalWorkspaceLoading,
+    localWorkspaceOptions,
+    open,
+  ]);
+
+  useEffect(() => {
+    if (!open || !openedWithShift) return;
+    setCommandValue("new-task");
+  }, [open, openedWithShift]);
 
   const handleHighlight = useCallback(
     async (value: string) => {
@@ -872,6 +882,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
       />
       <Command.Dialog
         open={open}
+        value={commandValue}
         onOpenChange={(nextOpen) => {
           if (!nextOpen) {
             closeCommand();
@@ -879,6 +890,9 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
             setActivePage("root");
             setOpen(true);
           }
+        }}
+        onValueChange={(value) => {
+          setCommandValue(value || undefined);
         }}
         label="Command Menu"
         title="Command Menu"
@@ -899,7 +913,6 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
             setActivePage("root");
           }
         }}
-        defaultValue={openedWithShift ? "new-task" : undefined}
       >
         <Dialog.Title className="sr-only">Command Menu</Dialog.Title>
 
