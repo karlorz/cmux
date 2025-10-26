@@ -144,27 +144,44 @@ async function runMaintenanceScript(): Promise<{ exitCode: number; error: string
     const exitCodeText = await exitCodeFile.text();
     const exitCode = parseInt(exitCodeText.trim()) || 0;
 
+    console.log(\`[MAINTENANCE] Exit code file content: "\${exitCodeText}"\`);
+    console.log(\`[MAINTENANCE] Parsed exit code: \${exitCode}\`);
+
     await $\`rm -f \${MAINTENANCE_EXIT_CODE_PATH}\`;
 
     console.log(\`[MAINTENANCE] Script completed with exit code \${exitCode}\`);
 
     if (exitCode !== 0) {
+      console.log(\`[MAINTENANCE] Non-zero exit code detected, reading error log...\`);
+
       // Read the error log to get actual error details
       let errorDetails = "";
       try {
         const errorLogFile = Bun.file(MAINTENANCE_ERROR_LOG_PATH);
-        if (await errorLogFile.exists()) {
+        const logExists = await errorLogFile.exists();
+        console.log(\`[MAINTENANCE] Error log exists: \${logExists}\`);
+
+        if (logExists) {
           const logContent = await errorLogFile.text();
+          console.log(\`[MAINTENANCE] Error log size: \${logContent.length} chars\`);
+
           // Get the last 100 lines of output to capture the command and error context
           const lines = logContent.trim().split("\\n");
+          console.log(\`[MAINTENANCE] Total lines in log: \${lines.length}\`);
+
           const relevantLines = lines.slice(-100);
+          console.log(\`[MAINTENANCE] Taking last \${relevantLines.length} lines\`);
+
           errorDetails = relevantLines.join("\\n");
+          console.log(\`[MAINTENANCE] Error details length: \${errorDetails.length} chars\`);
+          console.log(\`[MAINTENANCE] First 500 chars of error: \${errorDetails.substring(0, 500)}\`);
         }
       } catch (logError) {
         console.error("[MAINTENANCE] Failed to read error log:", logError);
       }
 
       const errorMessage = errorDetails || \`Maintenance script failed with exit code \${exitCode}\`;
+      console.log(\`[MAINTENANCE] Final error message length: \${errorMessage.length} chars\`);
 
       return {
         exitCode,
@@ -197,46 +214,17 @@ async function reportErrorToConvex(maintenanceError: string | null, devError: st
   try {
     console.log("[ORCHESTRATOR] Reporting errors to Convex...");
 
-    // Decode JWT to get taskRunId and teamId
-    const jwtParts = TASK_RUN_JWT.split('.');
-    if (jwtParts.length !== 3) {
-      console.error("[ORCHESTRATOR] Invalid JWT format");
-      return;
-    }
-
-    // Decode base64url (Bun doesn't have atob, use Buffer)
-    const base64Payload = jwtParts[1].replace(/-/g, '+').replace(/_/g, '/');
-    const payload = JSON.parse(Buffer.from(base64Payload, 'base64').toString('utf-8'));
-    const taskRunId = payload.taskRunId;
-    const teamId = payload.teamId;
-
-    console.log(\`[ORCHESTRATOR] Decoded JWT - taskRunId: \${taskRunId}, teamId: \${teamId}\`);
-
-    if (!taskRunId || !teamId) {
-      console.error("[ORCHESTRATOR] JWT missing required fields");
-      return;
-    }
-
-    const args: { teamSlugOrId: string; id: string; maintenanceError?: string; devError?: string } = {
-      teamSlugOrId: teamId,
-      id: taskRunId,
-    };
-
+    const requestBody: { maintenanceError?: string; devError?: string } = {};
     if (maintenanceError) {
-      args.maintenanceError = maintenanceError;
+      requestBody.maintenanceError = maintenanceError;
     }
     if (devError) {
-      args.devError = devError;
+      requestBody.devError = devError;
     }
 
-    const requestBody = {
-      path: "taskRuns:updateEnvironmentError",
-      args,
-    };
+    console.log(\`[ORCHESTRATOR] Calling Convex HTTP action with body: \${JSON.stringify(requestBody, null, 2)}\`);
 
-    console.log(\`[ORCHESTRATOR] Calling Convex with body: \${JSON.stringify(requestBody, null, 2)}\`);
-
-    const response = await fetch(\`\${CONVEX_URL}/api/mutation\`, {
+    const response = await fetch(\`\${CONVEX_URL}/taskRuns/updateEnvironmentErrorHttp\`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -283,39 +271,62 @@ async function startDevScript(): Promise<{ error: string | null }> {
 
     console.log("[DEV] Checking for early exit...");
 
-    // Wait a bit for the script to potentially error out
-    await Bun.sleep(5000);
+    // Wait for the script to potentially error out during startup
+    await Bun.sleep(3000);
 
     // Check if an exit code was written (indicating the script finished)
     const exitCodeFile = Bun.file(DEV_EXIT_CODE_PATH);
-    if (await exitCodeFile.exists()) {
+    const exitCodeExists = await exitCodeFile.exists();
+    console.log(\`[DEV] Exit code file exists: \${exitCodeExists}\`);
+
+    if (exitCodeExists) {
       const exitCodeText = await exitCodeFile.text();
       const exitCode = parseInt(exitCodeText.trim()) || 0;
+
+      console.log(\`[DEV] Exit code file content: "\${exitCodeText}"\`);
+      console.log(\`[DEV] Parsed exit code: \${exitCode}\`);
 
       await $\`rm -f \${DEV_EXIT_CODE_PATH}\`;
 
       if (exitCode !== 0) {
         console.error(\`[DEV] Script exited early with code \${exitCode}\`);
+        console.log(\`[DEV] Non-zero exit code detected, reading error log...\`);
 
         // Read the error log to get actual error details
         let errorDetails = "";
         try {
           const errorLogFile = Bun.file(DEV_ERROR_LOG_PATH);
-          if (await errorLogFile.exists()) {
+          const logExists = await errorLogFile.exists();
+          console.log(\`[DEV] Error log exists: \${logExists}\`);
+
+          if (logExists) {
             const logContent = await errorLogFile.text();
+            console.log(\`[DEV] Error log size: \${logContent.length} chars\`);
+
             // Get the last 100 lines of output to capture the command and error context
             const lines = logContent.trim().split("\\n");
+            console.log(\`[DEV] Total lines in log: \${lines.length}\`);
+
             const relevantLines = lines.slice(-100);
+            console.log(\`[DEV] Taking last \${relevantLines.length} lines\`);
+
             errorDetails = relevantLines.join("\\n");
+            console.log(\`[DEV] Error details length: \${errorDetails.length} chars\`);
+            console.log(\`[DEV] First 500 chars of error: \${errorDetails.substring(0, 500)}\`);
           }
         } catch (logError) {
           console.error("[DEV] Failed to read error log:", logError);
         }
 
         const errorMessage = errorDetails || \`Dev script failed with exit code \${exitCode}\`;
+        console.log(\`[DEV] Final error message length: \${errorMessage.length} chars\`);
 
         return { error: errorMessage };
+      } else {
+        console.log(\`[DEV] Exit code is 0, no error to report\`);
       }
+    } else {
+      console.log(\`[DEV] No exit code file found, script is still running\`);
     }
 
     console.log("[DEV] Script started successfully");

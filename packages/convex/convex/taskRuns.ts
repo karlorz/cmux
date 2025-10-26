@@ -2,8 +2,10 @@ import { v } from "convex/values";
 import { SignJWT } from "jose";
 import { env } from "../_shared/convex-env";
 import { resolveTeamIdLoose } from "../_shared/team";
+import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
+  httpAction,
   internalMutation,
   internalQuery,
   type QueryCtx,
@@ -13,6 +15,7 @@ import {
   aggregatePullRequestState,
   type StoredPullRequestInfo,
 } from "@cmux/shared/pull-request-state";
+import { verifyTaskRunToken } from "./_shared/verifyTaskRunToken";
 
 function rewriteMorphUrl(url: string): string {
   // do not rewrite ports 39375 39376 39377 39378 39379 39380 39381
@@ -517,6 +520,57 @@ export const getById = internalQuery({
   args: { id: v.id("taskRuns") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.id);
+  },
+});
+
+// Internal mutation to update environment error
+export const updateEnvironmentErrorInternal = internalMutation({
+  args: {
+    id: v.id("taskRuns"),
+    teamId: v.string(),
+    userId: v.string(),
+    maintenanceError: v.optional(v.string()),
+    devError: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.id);
+
+    if (!run) {
+      return { success: false, error: "Task run not found" };
+    }
+
+    // Verify the JWT claims match the task run
+    if (run.teamId !== args.teamId || run.userId !== args.userId) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    const MAX_ERROR_MESSAGE_CHARS = 2500;
+    const truncate = (msg: string | undefined) => {
+      if (!msg) return undefined;
+      const trimmed = msg.trim();
+      if (!trimmed) return undefined;
+      return trimmed.length > MAX_ERROR_MESSAGE_CHARS
+        ? `${trimmed.slice(0, MAX_ERROR_MESSAGE_CHARS)}…`
+        : trimmed;
+    };
+
+    const maintenanceError = truncate(args.maintenanceError);
+    const devError = truncate(args.devError);
+
+    const environmentError = {
+      ...(maintenanceError ? { maintenanceError } : {}),
+      ...(devError ? { devError } : {}),
+    } as {
+      maintenanceError?: string;
+      devError?: string;
+    };
+
+    await ctx.db.patch(args.id, {
+      environmentError,
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
   },
 });
 
@@ -1113,7 +1167,7 @@ export const updateNetworking = authMutation({
   },
 });
 
-// Update environment error for a task run
+// Update environment error for a task run (for authenticated users via UI)
 export const updateEnvironmentError = authMutation({
   args: {
     teamSlugOrId: v.string(),
@@ -1123,39 +1177,77 @@ export const updateEnvironmentError = authMutation({
   },
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
-    const run = await ctx.db.get(args.id);
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
 
-    if (!run || run.teamId !== teamId || run.userId !== userId) {
-      throw new Error("Task run not found or unauthorized");
-    }
-
-    const MAX_ERROR_MESSAGE_CHARS = 2500;
-    const truncate = (msg: string | undefined) => {
-      if (!msg) return undefined;
-      const trimmed = msg.trim();
-      if (!trimmed) return undefined;
-      return trimmed.length > MAX_ERROR_MESSAGE_CHARS
-        ? `${trimmed.slice(0, MAX_ERROR_MESSAGE_CHARS)}…`
-        : trimmed;
-    };
-
-    const maintenanceError = truncate(args.maintenanceError);
-    const devError = truncate(args.devError);
-
-    const environmentError = {
-      ...(maintenanceError ? { maintenanceError } : {}),
-      ...(devError ? { devError } : {}),
-    } as {
-      maintenanceError?: string;
-      devError?: string;
-    };
-
-    await ctx.db.patch(args.id, {
-      environmentError,
-      updatedAt: Date.now(),
+    // Call internal mutation to reuse logic
+    const result = await ctx.runMutation(internal.taskRuns.updateEnvironmentErrorInternal, {
+      id: args.id,
+      teamId,
+      userId,
+      maintenanceError: args.maintenanceError,
+      devError: args.devError,
     });
+
+    if (!result.success) {
+      throw new Error(result.error || "Failed to update environment error");
+    }
   },
+});
+
+// HTTP action to update environment error using task run JWT
+export const updateEnvironmentErrorHttp = httpAction(async (ctx, req) => {
+  const jsonResponse = (body: unknown, status = 200): Response => {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  // Verify task run JWT from Authorization header
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
+  }
+
+  const token = authHeader.substring(7);
+
+  let payload;
+  try {
+    payload = await verifyTaskRunToken(token, env.CMUX_TASK_RUN_JWT_SECRET);
+  } catch (error) {
+    console.error("[updateEnvironmentErrorHttp] Token verification failed:", error);
+    return jsonResponse({ code: 401, message: "Invalid token" }, 401);
+  }
+
+  // Parse request body
+  let body;
+  try {
+    body = await req.json();
+  } catch (error) {
+    return jsonResponse({ code: 400, message: "Invalid JSON" }, 400);
+  }
+
+  const taskRunId = payload.taskRunId as Id<"taskRuns">;
+  const maintenanceError = body.maintenanceError as string | undefined;
+  const devError = body.devError as string | undefined;
+
+  // Update the database using internal mutation
+  const result = await ctx.runMutation(internal.taskRuns.updateEnvironmentErrorInternal, {
+    id: taskRunId,
+    teamId: payload.teamId,
+    userId: payload.userId,
+    maintenanceError,
+    devError,
+  });
+
+  if (!result.success) {
+    return jsonResponse(
+      { code: result.error === "Unauthorized" ? 401 : 404, message: result.error },
+      result.error === "Unauthorized" ? 401 : 404
+    );
+  }
+
+  return jsonResponse({ ok: true, updated: true });
 });
 
 // Get containers that should be stopped based on TTL and settings

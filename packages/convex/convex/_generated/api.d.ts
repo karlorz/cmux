@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as _shared_verifyTaskRunToken from "../_shared/verifyTaskRunToken.js";
 import type * as apiKeys from "../apiKeys.js";
 import type * as backfill from "../backfill.js";
 import type * as codeReview from "../codeReview.js";
@@ -60,6 +61,7 @@ import type {
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  "_shared/verifyTaskRunToken": typeof _shared_verifyTaskRunToken;
   apiKeys: typeof apiKeys;
   backfill: typeof backfill;
   codeReview: typeof codeReview;
