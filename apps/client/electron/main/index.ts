@@ -503,8 +503,7 @@ function setupAutoUpdates(): void {
       `${p.percent?.toFixed?.(1) ?? 0}% (${p.transferred}/${p.total})`
     )
   );
-  autoUpdater.on("update-downloaded", () => {
-    const info = autoUpdater.updateInfo;
+  autoUpdater.on("update-downloaded", (info: UpdateInfo) => {
     const version =
       info &&
       typeof info === "object" &&
