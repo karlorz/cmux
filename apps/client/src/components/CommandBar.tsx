@@ -204,15 +204,12 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
     // In Electron, prefer global shortcut from main via cmux event.
     if (isElectron) {
       const off = window.cmux.on("shortcut:cmd-k", () => {
-        // Only handle Cmd+K (no shift/ctrl variations)
-        setOpenedWithShift(false);
-        setActivePage("root");
-        if (openRef.current) {
-          // About to CLOSE via toggle: normalize state like Esc path
-          setSearch("");
+        // Only open on Cmd+K keydown, don't toggle if already open
+        if (!openRef.current) {
           setOpenedWithShift(false);
+          setActivePage("root");
+          setOpen(true);
         }
-        setOpen((cur) => !cur);
       });
       return () => {
         // Unsubscribe if available
@@ -231,17 +228,15 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
         !e.ctrlKey
       ) {
         e.preventDefault();
-        setActivePage("root");
-        if (openRef.current) {
-          setOpenedWithShift(false);
-          setSearch("");
-        } else {
+        // Only open on Cmd+K keydown, don't toggle if already open
+        if (!openRef.current) {
+          setActivePage("root");
           setOpenedWithShift(false);
           // Capture the currently focused element before opening (web only)
           prevFocusedElRef.current =
             document.activeElement as HTMLElement | null;
+          setOpen(true);
         }
-        setOpen((cur) => !cur);
       }
     };
     document.addEventListener("keydown", down);
