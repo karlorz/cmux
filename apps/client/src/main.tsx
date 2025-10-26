@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "./app";
+import { clearExpiredStates } from "./lib/environmentStateManager";
 
 import "./antd-overrides.css";
 import "./zindex.css";
@@ -16,6 +17,9 @@ if (typeof window !== "undefined") {
   window.addEventListener("unhandledrejection", (event) => {
     console.error("[UnhandledRejection]", event.reason ?? "Unknown rejection");
   });
+
+  // Clear expired environment working states on app load
+  clearExpiredStates();
 }
 
 const rootElement = document.getElementById("root")!;

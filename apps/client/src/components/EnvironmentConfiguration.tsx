@@ -33,6 +33,8 @@ import {
   type ReactNode,
 } from "react";
 import TextareaAutosize from "react-textarea-autosize";
+import { useEnvironmentState } from "@/hooks/useEnvironmentState";
+import type { EnvironmentWorkingState } from "@/lib/environmentStateManager";
 
 export type EnvVar = { name: string; value: string; isSecret: boolean };
 
@@ -98,6 +100,52 @@ export function EnvironmentConfiguration({
     instanceId?: string;
     snapshotId?: MorphSnapshotId;
   };
+
+  // Determine environment ID for state persistence
+  const environmentStateId = useMemo(() => {
+    if (sourceEnvironmentId) return sourceEnvironmentId;
+    if (instanceId) return instanceId;
+    return "new";
+  }, [sourceEnvironmentId, instanceId]);
+
+  // State restoration callback
+  const handleStateRestored = useCallback(
+    (state: EnvironmentWorkingState) => {
+      // Only restore if we don't have initial values
+      if (!initialEnvName && state.name) {
+        setEnvName(state.name);
+      }
+      if (!initialMaintenanceScript && state.maintenanceScript) {
+        setMaintenanceScript(state.maintenanceScript);
+      }
+      if (!initialDevScript && state.devScript) {
+        setDevScript(state.devScript);
+      }
+      if (!initialExposedPorts && state.exposedPorts) {
+        setExposedPorts(
+          state.exposedPorts.map((p) => p.port).join(", ")
+        );
+      }
+      if (state.activeTab) {
+        // We'll handle tab restoration later if needed
+      }
+    },
+    [
+      initialEnvName,
+      initialMaintenanceScript,
+      initialDevScript,
+      initialExposedPorts,
+    ]
+  );
+
+  // Initialize state persistence hook
+  const { saveState, clearState } = useEnvironmentState({
+    environmentId: environmentStateId,
+    autoSave: true,
+    debounceMs: 1000,
+    onStateRestored: handleStateRestored,
+  });
+
   const [envName, setEnvName] = useState(() => initialEnvName);
   const [envVars, setEnvVars] = useState<EnvVar[]>(() =>
     ensureInitialEnvVars(initialEnvVars)
@@ -260,6 +308,37 @@ export function EnvironmentConfiguration({
     };
   }, [applySandboxEnv, envVars, instanceId, teamSlugOrId]);
 
+  // Auto-save working state to localStorage
+  useEffect(() => {
+    const parsedPorts =
+      exposedPorts
+        .split(",")
+        .map((p) => Number.parseInt(p.trim(), 10))
+        .filter((n) => Number.isFinite(n))
+        .map((port) => ({ port })) ?? [];
+
+    saveState({
+      name: envName || undefined,
+      maintenanceScript: maintenanceScript || undefined,
+      devScript: devScript || undefined,
+      exposedPorts: parsedPorts.length > 0 ? parsedPorts : undefined,
+      selectedRepos: selectedRepos.length > 0 ? selectedRepos : undefined,
+      vscodeUrl: vscodeUrl || undefined,
+      browserUrl: browserUrl || undefined,
+      activeTab: activePreview,
+    });
+  }, [
+    envName,
+    maintenanceScript,
+    devScript,
+    exposedPorts,
+    selectedRepos,
+    vscodeUrl,
+    browserUrl,
+    activePreview,
+    saveState,
+  ]);
+
   const onSnapshot = async (): Promise<void> => {
     if (!instanceId) {
       console.error("Missing instanceId for snapshot");
@@ -321,6 +400,8 @@ export function EnvironmentConfiguration({
         },
         {
           onSuccess: async () => {
+            // Clear saved state after successful snapshot creation
+            clearState();
             await navigate({
               to: "/$teamSlugOrId/environments/$environmentId",
               params: {
@@ -360,6 +441,8 @@ export function EnvironmentConfiguration({
         },
         {
           onSuccess: async () => {
+            // Clear saved state after successful environment creation
+            clearState();
             await navigate({
               to: "/$teamSlugOrId/environments",
               params: { teamSlugOrId },
