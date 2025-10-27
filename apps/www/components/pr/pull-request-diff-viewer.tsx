@@ -438,7 +438,12 @@ export function PullRequestDiffViewer({
   const isLoadingFileOutputs = fileOutputs === undefined;
 
   const parsedDiffs = useMemo<ParsedFileDiff[]>(() => {
-    return files.map((file) => {
+    // Sort files alphabetically to match file tree ordering
+    const sortedFiles = [...files].sort((a, b) =>
+      a.filename.localeCompare(b.filename)
+    );
+
+    return sortedFiles.map((file) => {
       if (!file.patch) {
         return {
           file,
