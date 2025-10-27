@@ -12,6 +12,15 @@ import {
 import { formatEnvVarsContent } from "@cmux/shared/utils/format-env-vars-content";
 import type { MorphSnapshotId } from "@cmux/shared";
 import { validateExposedPorts } from "@cmux/shared/utils/validate-exposed-ports";
+import type {
+  EnvVarEntry,
+  NestedEnvVars,
+  PathEnvVars,
+} from "@cmux/shared/environment-vars";
+import {
+  legacyContentToNestedEnvVars,
+  nestedEnvVarsToLegacyContent,
+} from "@cmux/shared/environment-vars";
 import {
   postApiEnvironmentsMutation,
   postApiSandboxesByIdEnvMutation,
@@ -50,6 +59,31 @@ const ensureInitialEnvVars = (initial?: EnvVar[]): EnvVar[] => {
     base.push({ name: "", value: "", isSecret: true });
   }
   return base;
+};
+
+// Convert legacy EnvVar[] to NestedEnvVars for compatibility
+const convertLegacyToNested = (legacy?: EnvVar[]): NestedEnvVars => {
+  if (!legacy || legacy.length === 0) {
+    return { global: [], paths: [] };
+  }
+  return {
+    global: legacy
+      .filter((v) => v.name.trim().length > 0)
+      .map((v) => ({
+        name: v.name,
+        value: v.value,
+        isSecret: v.isSecret,
+      })),
+    paths: [],
+  };
+};
+
+// Ensure each path has at least one empty row for adding new vars
+const ensureEmptyRow = (vars: EnvVarEntry[]): EnvVarEntry[] => {
+  const filtered = vars.filter(
+    (v) => v.name.trim().length > 0 || v.value.trim().length > 0
+  );
+  return [...filtered, { name: "", value: "", isSecret: true }];
 };
 
 export function EnvironmentConfiguration({
@@ -102,6 +136,11 @@ export function EnvironmentConfiguration({
   const [envVars, setEnvVars] = useState<EnvVar[]>(() =>
     ensureInitialEnvVars(initialEnvVars)
   );
+  // New nested env vars state
+  const [nestedEnvVars, setNestedEnvVars] = useState<NestedEnvVars>(() =>
+    convertLegacyToNested(initialEnvVars)
+  );
+  const [newPathName, setNewPathName] = useState("");
   const [maintenanceScript, setMaintenanceScript] = useState(
     () => initialMaintenanceScript
   );
@@ -350,7 +389,7 @@ export function EnvironmentConfiguration({
             teamSlugOrId,
             name: envName.trim(),
             morphInstanceId: instanceId,
-            envVarsContent,
+            nestedEnvVars, // Use nested format
             selectedRepos,
             maintenanceScript: requestMaintenanceScript,
             devScript: requestDevScript,
@@ -706,142 +745,296 @@ export function EnvironmentConfiguration({
             aria-label="Environment variables"
             title="Environment variables"
           >
-            <div
-              className="pb-2"
-              onPasteCapture={(e) => {
-                const text = e.clipboardData?.getData("text") ?? "";
-                if (text && (/\n/.test(text) || /(=|:)\s*\S/.test(text))) {
-                  e.preventDefault();
-                  const items = parseEnvBlock(text);
-                  if (items.length > 0) {
-                    setEnvVars((prev) => {
-                      const map = new Map(
-                        prev
-                          .filter(
-                            (r) =>
-                              r.name.trim().length > 0 ||
-                              r.value.trim().length > 0
-                          )
-                          .map((r) => [r.name, r] as const)
-                      );
-                      for (const it of items) {
-                        if (!it.name) continue;
-                        const existing = map.get(it.name);
-                        if (existing) {
-                          map.set(it.name, {
-                            ...existing,
-                            value: it.value,
-                          });
-                        } else {
-                          map.set(it.name, {
-                            name: it.name,
-                            value: it.value,
-                            isSecret: true,
-                          });
-                        }
-                      }
-                      const next = Array.from(map.values());
-                      next.push({ name: "", value: "", isSecret: true });
-                      setPendingFocusIndex(next.length - 1);
-                      return next;
-                    });
-                  }
-                }
-              }}
-            >
-              <div
-                className="grid gap-3 text-xs text-neutral-500 dark:text-neutral-500 items-center pb-1"
-                style={{
-                  gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.4fr) 44px",
-                }}
-              >
-                <span>Key</span>
-                <span>Value</span>
-                <span className="w-[44px]" />
-              </div>
+            <div className="pb-2 space-y-5">
+              {/* Global Variables Section */}
+              <div className="bg-neutral-50 dark:bg-neutral-900/50 rounded-lg border border-neutral-200 dark:border-neutral-800 p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                      Global Variables
+                    </h4>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                      Applied to all paths in the workspace
+                    </p>
+                  </div>
+                </div>
 
-              <div className="space-y-2">
-                {envVars.map((row, idx) => (
+                <div className="space-y-3">
                   <div
-                    key={idx}
-                    className="grid gap-3 items-center"
+                    className="grid gap-3 text-xs text-neutral-500 dark:text-neutral-500 items-center pb-1"
                     style={{
-                      gridTemplateColumns:
-                        "minmax(0, 1fr) minmax(0, 1.4fr) 44px",
+                      gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.4fr) 44px",
                     }}
                   >
-                    <input
-                      type="text"
-                      value={row.name}
-                      ref={(el) => {
-                        keyInputRefs.current[idx] = el;
-                      }}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setEnvVars((prev) => {
-                          const next = [...prev];
-                          next[idx] = { ...next[idx]!, name: v };
-                          return next;
-                        });
-                      }}
-                      placeholder="EXAMPLE_NAME"
-                      className="w-full min-w-0 self-start rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700"
-                    />
-                    <TextareaAutosize
-                      value={row.value}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setEnvVars((prev) => {
-                          const next = [...prev];
-                          next[idx] = { ...next[idx]!, value: v };
-                          return next;
-                        });
-                      }}
-                      placeholder="I9JU23NF394R6HH"
-                      minRows={1}
-                      maxRows={10}
-                      className="w-full min-w-0 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 resize-none"
-                    />
-                    <div className="self-start flex items-center justify-end w-[44px]">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEnvVars((prev) => {
-                            const next = prev.filter((_, i) => i !== idx);
-                            return next.length > 0
-                              ? next
-                              : [{ name: "", value: "", isSecret: true }];
-                          });
-                        }}
-                        className="h-10 w-[44px] rounded-md border border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 grid place-items-center hover:bg-neutral-50 dark:hover:bg-neutral-900"
-                        aria-label="Remove variable"
-                      >
-                        <Minus className="w-4 h-4" />
-                      </button>
-                    </div>
+                    <span>Key</span>
+                    <span>Value</span>
+                    <span className="w-[44px]" />
                   </div>
-                ))}
+
+                  <div className="space-y-2">
+                    {ensureEmptyRow(nestedEnvVars.global).map((row, idx) => (
+                      <div
+                        key={idx}
+                        className="grid gap-3 items-center"
+                        style={{
+                          gridTemplateColumns:
+                            "minmax(0, 1fr) minmax(0, 1.4fr) 44px",
+                        }}
+                      >
+                        <input
+                          type="text"
+                          value={row.name}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setNestedEnvVars((prev) => ({
+                              ...prev,
+                              global: prev.global.map((item, i) =>
+                                i === idx ? { ...item, name: v } : item
+                              ).concat(idx === prev.global.length ? [{ name: v, value: "", isSecret: true }] : []).slice(0, idx === prev.global.length ? -1 : undefined),
+                            }));
+                          }}
+                          placeholder="API_KEY"
+                          className="w-full min-w-0 self-start rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700"
+                        />
+                        <TextareaAutosize
+                          value={row.value}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setNestedEnvVars((prev) => {
+                              const updated = [...prev.global];
+                              if (idx < prev.global.length) {
+                                updated[idx] = { ...updated[idx]!, value: v };
+                              } else {
+                                updated.push({ name: "", value: v, isSecret: true });
+                              }
+                              return { ...prev, global: updated };
+                            });
+                          }}
+                          placeholder="value"
+                          minRows={1}
+                          maxRows={10}
+                          className="w-full min-w-0 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 resize-none"
+                        />
+                        <div className="self-start flex items-center justify-end w-[44px]">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNestedEnvVars((prev) => ({
+                                ...prev,
+                                global: prev.global.filter((_, i) => i !== idx),
+                              }));
+                            }}
+                            disabled={idx >= nestedEnvVars.global.length}
+                            className="h-10 w-[44px] rounded-md border border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 grid place-items-center hover:bg-neutral-50 dark:hover:bg-neutral-900 disabled:opacity-30 disabled:cursor-not-allowed"
+                            aria-label="Remove variable"
+                          >
+                            <Minus className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
 
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setEnvVars((prev) => [
-                      ...prev,
-                      { name: "", value: "", isSecret: true },
-                    ])
-                  }
-                  className="inline-flex items-center gap-2 rounded-md border border-neutral-200 dark:border-neutral-800 px-3 py-2 text-sm text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-900"
-                >
-                  <Plus className="w-4 h-4" /> Add More
-                </button>
+              {/* Path-Specific Variables Sections */}
+              {nestedEnvVars.paths.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-3">
+                    Path-Specific Variables
+                  </h4>
+                  <div className="space-y-3">
+                    {nestedEnvVars.paths.map((pathConfig, pathIdx) => (
+                      <div
+                        key={pathIdx}
+                        className="bg-neutral-50 dark:bg-neutral-900/50 rounded-md border border-neutral-200 dark:border-neutral-800 p-3"
+                      >
+                        <div className="mb-2 flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <h5 className="text-xs font-semibold text-neutral-800 dark:text-neutral-200 font-mono">
+                                {pathConfig.path}
+                              </h5>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setNestedEnvVars((prev) => ({
+                                    ...prev,
+                                    paths: prev.paths.filter((_, i) => i !== pathIdx),
+                                  }));
+                                }}
+                                className="text-xs text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            {pathConfig.description && (
+                              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+                                {pathConfig.description}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                  <div className="space-y-2">
+                    {ensureEmptyRow(pathConfig.variables).map((row, idx) => (
+                      <div
+                        key={idx}
+                        className="grid gap-3 items-center"
+                        style={{
+                          gridTemplateColumns:
+                            "minmax(0, 1fr) minmax(0, 1.4fr) 44px",
+                        }}
+                      >
+                        <input
+                          type="text"
+                          value={row.name}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setNestedEnvVars((prev) => {
+                              const updatedPaths = [...prev.paths];
+                              const pathVars = [...updatedPaths[pathIdx]!.variables];
+                              if (idx < pathVars.length) {
+                                pathVars[idx] = { ...pathVars[idx]!, name: v };
+                              } else {
+                                pathVars.push({ name: v, value: "", isSecret: true });
+                              }
+                              updatedPaths[pathIdx] = {
+                                ...updatedPaths[pathIdx]!,
+                                variables: pathVars,
+                              };
+                              return { ...prev, paths: updatedPaths };
+                            });
+                          }}
+                          placeholder="VAR_NAME"
+                          className="w-full min-w-0 self-start rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700"
+                        />
+                        <TextareaAutosize
+                          value={row.value}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setNestedEnvVars((prev) => {
+                              const updatedPaths = [...prev.paths];
+                              const pathVars = [...updatedPaths[pathIdx]!.variables];
+                              if (idx < pathVars.length) {
+                                pathVars[idx] = { ...pathVars[idx]!, value: v };
+                              } else {
+                                pathVars.push({ name: "", value: v, isSecret: true });
+                              }
+                              updatedPaths[pathIdx] = {
+                                ...updatedPaths[pathIdx]!,
+                                variables: pathVars,
+                              };
+                              return { ...prev, paths: updatedPaths };
+                            });
+                          }}
+                          placeholder="value"
+                          minRows={1}
+                          maxRows={10}
+                          className="w-full min-w-0 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 resize-none"
+                        />
+                        <div className="self-start flex items-center justify-end w-[44px]">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNestedEnvVars((prev) => {
+                                const updatedPaths = [...prev.paths];
+                                updatedPaths[pathIdx] = {
+                                  ...updatedPaths[pathIdx]!,
+                                  variables: updatedPaths[pathIdx]!.variables.filter(
+                                    (_, i) => i !== idx
+                                  ),
+                                };
+                                return { ...prev, paths: updatedPaths };
+                              });
+                            }}
+                            disabled={idx >= pathConfig.variables.length}
+                            className="h-10 w-[44px] rounded-md border border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 grid place-items-center hover:bg-neutral-50 dark:hover:bg-neutral-900 disabled:opacity-30 disabled:cursor-not-allowed"
+                            aria-label="Remove variable"
+                          >
+                            <Minus className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Add New Path Section */}
+              <div className="bg-neutral-50 dark:bg-neutral-900/50 rounded-lg border border-neutral-200 dark:border-neutral-800 p-4">
+                <div className="mb-3">
+                  <h4 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                    Add New Path
+                  </h4>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                    Path-specific variables override global ones
+                  </p>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-end gap-2">
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+                        Path name
+                      </label>
+                      <input
+                        type="text"
+                        value={newPathName}
+                        onChange={(e) => setNewPathName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && newPathName.trim()) {
+                            setNestedEnvVars((prev) => ({
+                              ...prev,
+                              paths: [
+                                ...prev.paths,
+                                {
+                                  path: newPathName.trim(),
+                                  variables: [],
+                                },
+                              ],
+                            }));
+                            setNewPathName("");
+                          }
+                        }}
+                        placeholder="apps/frontend"
+                        className="w-full rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-xs font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (newPathName.trim()) {
+                          setNestedEnvVars((prev) => ({
+                            ...prev,
+                            paths: [
+                              ...prev.paths,
+                              {
+                                path: newPathName.trim(),
+                                variables: [],
+                              },
+                            ],
+                          }));
+                          setNewPathName("");
+                        }
+                      }}
+                      disabled={!newPathName.trim()}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-neutral-200 dark:border-neutral-800 px-3 py-2 text-xs text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add
+                    </button>
+                  </div>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">
+                    Examples: <code className="text-[11px] bg-neutral-100 dark:bg-neutral-800 px-1 py-0.5 rounded">apps/frontend</code>, <code className="text-[11px] bg-neutral-100 dark:bg-neutral-800 px-1 py-0.5 rounded">packages/shared</code>
+                  </p>
+                </div>
               </div>
 
-              <p className="text-xs text-neutral-500 dark:text-neutral-500 pt-2">
-                Tip: Paste an .env above to populate the form. Values are
-                encrypted at rest.
-              </p>
+              <div className="text-xs text-neutral-500 dark:text-neutral-400 pt-2 border-t border-neutral-200 dark:border-neutral-800">
+                <p>Values are encrypted at rest. Variables in child paths override parent and global variables.</p>
+              </div>
             </div>
           </AccordionItem>
 

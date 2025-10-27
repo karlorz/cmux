@@ -10,6 +10,7 @@ import type {
   WorkerTerminalFailed,
 } from "@cmux/shared/worker-schemas";
 import { parse as parseDotenv } from "dotenv";
+import { resolveNestedEnvVars } from "@cmux/shared/environment-vars";
 import { sanitizeTmuxSessionName } from "./sanitizeTmuxSessionName";
 import {
   generateNewBranchName,
@@ -217,8 +218,8 @@ export async function spawnAgent(
       );
     }
 
-    // Load global environment variables from environment configuration
-    let globalEnvVars: Record<string, string> = {};
+    // Load environment variables from environment configuration (nested structure)
+    let resolvedEnvVars: Record<string, string> = {};
 
     if (options.environmentId) {
       try {
@@ -227,15 +228,24 @@ export async function spawnAgent(
           path: { id: String(options.environmentId) },
           query: { teamSlugOrId },
         });
-        const envContent = envRes.data?.envVarsContent;
-        if (envContent && envContent.trim().length > 0) {
-          const parsed = parseDotenv(envContent);
-          if (Object.keys(parsed).length > 0) {
-            globalEnvVars = parsed;
+
+        // Use nested env vars structure
+        const nestedEnvVars = envRes.data?.nestedEnvVars;
+        if (nestedEnvVars) {
+          // Resolve env vars for the workspace root
+          // The worker will further resolve based on the actual working directory
+          resolvedEnvVars = resolveNestedEnvVars(nestedEnvVars, "/root/workspace");
+
+          serverLogger.info(
+            `[AgentSpawner] Resolved ${Object.keys(resolvedEnvVars).length} env vars from nested structure for environment ${String(
+              options.environmentId
+            )}`
+          );
+
+          // Log discovered paths for debugging
+          if (nestedEnvVars.paths.length > 0) {
             serverLogger.info(
-              `[AgentSpawner] Loaded ${Object.keys(parsed).length} global env vars from environment ${String(
-                options.environmentId
-              )}`
+              `[AgentSpawner] Environment has path-specific configs: ${nestedEnvVars.paths.map(p => p.path).join(", ")}`
             );
           }
         }
@@ -249,11 +259,6 @@ export async function spawnAgent(
       }
     }
 
-    // Create EnvResolver to handle nested .env files in the workspace
-    // Note: In cloud mode, workspace resolution happens after container is ready
-    // For now, we'll use global vars and add workspace resolution later
-    const envResolver = new EnvResolver("/root/workspace", globalEnvVars);
-
     // Start with CMUX-specific variables (these always take highest priority)
     let envVars: Record<string, string> = {
       CMUX_PROMPT: processedTaskDescription,
@@ -262,9 +267,9 @@ export async function spawnAgent(
       PROMPT: processedTaskDescription,
     };
 
-    // Merge with global vars from environment configuration
+    // Merge with resolved env vars from environment configuration
     envVars = {
-      ...globalEnvVars,
+      ...resolvedEnvVars,
       ...envVars, // CMUX vars override
     };
 
