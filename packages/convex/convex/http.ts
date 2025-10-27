@@ -6,6 +6,7 @@ import {
   crownWorkerFinalize,
   crownWorkerComplete,
 } from "./crown_http";
+import { uploadScreenshot } from "./screenshots_http";
 import {
   codeReviewFileCallback,
   codeReviewJobCallback,
@@ -56,6 +57,12 @@ http.route({
   path: "/api/crown/complete",
   method: "POST",
   handler: crownWorkerComplete,
+});
+
+http.route({
+  path: "/api/screenshots/upload",
+  method: "POST",
+  handler: uploadScreenshot,
 });
 
 http.route({

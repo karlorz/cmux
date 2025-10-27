@@ -491,6 +491,37 @@ export const updateExitCode = internalMutation({
   },
 });
 
+export const updateScreenshotMetadata = internalMutation({
+  args: {
+    id: v.id("taskRuns"),
+    storageId: v.id("_storage"),
+    mimeType: v.optional(v.string()),
+    fileName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      screenshotStorageId: args.storageId,
+      screenshotCapturedAt: Date.now(),
+      screenshotMimeType: args.mimeType,
+      screenshotFileName: args.fileName,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const clearScreenshotMetadata = internalMutation({
+  args: { id: v.id("taskRuns") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      screenshotStorageId: undefined,
+      screenshotCapturedAt: undefined,
+      screenshotMimeType: undefined,
+      screenshotFileName: undefined,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
 // Update worktree path for a task run
 export const updateWorktreePath = authMutation({
   args: {

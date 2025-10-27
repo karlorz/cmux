@@ -137,6 +137,23 @@ const convexSchema = defineSchema({
         })
       )
     ),
+    screenshotStatus: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("running"),
+        v.literal("completed"),
+        v.literal("failed"),
+        v.literal("skipped"),
+      ),
+    ),
+    screenshotRunId: v.optional(v.id("taskRuns")),
+    screenshotRequestId: v.optional(v.string()),
+    screenshotRequestedAt: v.optional(v.number()),
+    screenshotCompletedAt: v.optional(v.number()),
+    screenshotError: v.optional(v.string()),
+    screenshotStorageId: v.optional(v.id("_storage")),
+    screenshotMimeType: v.optional(v.string()),
+    screenshotFileName: v.optional(v.string()),
   })
     .index("by_created", ["createdAt"])
     .index("by_user", ["userId", "createdAt"])
@@ -207,6 +224,10 @@ const convexSchema = defineSchema({
       )
     ),
     diffsLastUpdated: v.optional(v.number()), // Timestamp when diffs were last fetched/updated
+    screenshotStorageId: v.optional(v.id("_storage")),
+    screenshotCapturedAt: v.optional(v.number()),
+    screenshotMimeType: v.optional(v.string()),
+    screenshotFileName: v.optional(v.string()),
     // VSCode instance information
     vscode: v.optional(
       v.object({

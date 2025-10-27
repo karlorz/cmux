@@ -1,6 +1,8 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
+import type { Id } from "@cmux/convex/dataModel";
+
 import { log } from "../logger";
 import { convexRequest } from "./convex";
 import {
@@ -23,6 +25,59 @@ import {
   type WorkerTaskRunResponse,
 } from "./types";
 import { WORKSPACE_ROOT } from "./utils";
+import { runTaskScreenshots } from "../screenshotCollector/runTaskScreenshots";
+import type { RunTaskScreenshotsOptions } from "../screenshotCollector/runTaskScreenshots";
+
+async function uploadScreenshotsWithLogging(
+  options: RunTaskScreenshotsOptions | null,
+  taskRunId: string,
+): Promise<void> {
+  if (!options) {
+    log("WARN", "Skipping screenshot workflow due to missing task id", {
+      taskRunId,
+    });
+    return;
+  }
+
+  try {
+    await runTaskScreenshots(options);
+  } catch (screenshotError) {
+    log(
+      "ERROR",
+      "Automated screenshot workflow encountered an error",
+      {
+        taskRunId,
+        error:
+          screenshotError instanceof Error
+            ? screenshotError.message
+            : String(screenshotError),
+      },
+    );
+  }
+}
+
+function createScreenshotOptions(params: {
+  taskId?: Id<"tasks">;
+  taskRunId: Id<"taskRuns">;
+  token: string;
+  convexUrl?: string;
+}): RunTaskScreenshotsOptions | null {
+  if (!params.taskId) {
+    return null;
+  }
+
+  return {
+    taskId: params.taskId,
+    taskRunId: params.taskRunId,
+    token: params.token,
+    convexUrl: params.convexUrl,
+    openAiApiKey: process.env.OPENAI_API_KEY,
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+    anthropicBaseUrl: process.env.ANTHROPIC_BASE_URL ?? null,
+    customHeaderSource: process.env.ANTHROPIC_CUSTOM_HEADERS ?? null,
+    taskRunJwt: params.token,
+  };
+}
 
 type WorkerCompletionOptions = {
   taskRunId: string;
@@ -77,6 +132,8 @@ export async function handleWorkerTaskCompletion(
     taskId,
     convexUrl,
   };
+
+
 
   const baseUrlOverride = runContext.convexUrl;
 
@@ -383,6 +440,13 @@ async function startCrownEvaluation({
       taskRunId,
       taskId: currentTaskId,
     });
+    const screenshotOptions = createScreenshotOptions({
+      taskId: crownData.taskId as Id<"tasks">,
+      taskRunId: taskRunId as Id<"taskRuns">,
+      token: runContext.token,
+      convexUrl: runContext.convexUrl,
+    });
+    await uploadScreenshotsWithLogging(screenshotOptions, taskRunId);
     return;
   }
 
@@ -506,6 +570,13 @@ async function startCrownEvaluation({
       agentModel: agentModel ?? runContext.agentModel,
       elapsedMs,
     });
+    const screenshotOptions = createScreenshotOptions({
+      taskId: crownData.taskId as Id<"tasks">,
+      taskRunId: taskRunId as Id<"taskRuns">,
+      token: runContext.token,
+      convexUrl: runContext.convexUrl,
+    });
+    await uploadScreenshotsWithLogging(screenshotOptions, taskRunId);
     return;
   }
 
@@ -658,4 +729,11 @@ async function startCrownEvaluation({
     agentModel: agentModel ?? runContext.agentModel,
     elapsedMs,
   });
+  const screenshotOptions = createScreenshotOptions({
+    taskId: crownData.taskId as Id<"tasks">,
+    taskRunId: taskRunId as Id<"taskRuns">,
+    token: runContext.token,
+    convexUrl: runContext.convexUrl,
+  });
+  await uploadScreenshotsWithLogging(screenshotOptions, taskRunId);
 }

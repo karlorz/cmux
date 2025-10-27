@@ -537,6 +537,62 @@ export const updateMergeStatus = authMutation({
   },
 });
 
+export const recordScreenshotResult = internalMutation({
+  args: {
+    taskId: v.id("tasks"),
+    runId: v.id("taskRuns"),
+    status: v.union(
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("skipped"),
+    ),
+    storageId: v.optional(v.id("_storage")),
+    mimeType: v.optional(v.string()),
+    fileName: v.optional(v.string()),
+    error: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.taskId);
+    if (!task) {
+      throw new Error("Task not found");
+    }
+
+    const run = await ctx.db.get(args.runId);
+    if (!run || run.taskId !== args.taskId) {
+      throw new Error("Task run not found for task");
+    }
+
+    const now = Date.now();
+
+    const patch: Record<string, unknown> = {
+      screenshotStatus: args.status,
+      screenshotRunId: args.runId,
+      screenshotRequestedAt: now,
+      updatedAt: now,
+    };
+
+    if (args.status === "completed" && args.storageId) {
+      patch.screenshotStorageId = args.storageId;
+      patch.screenshotMimeType = args.mimeType;
+      patch.screenshotFileName = args.fileName;
+      patch.screenshotCompletedAt = now;
+      patch.screenshotError = undefined;
+    } else {
+      patch.screenshotStorageId = undefined;
+      patch.screenshotMimeType = undefined;
+      patch.screenshotFileName = undefined;
+      patch.screenshotCompletedAt = undefined;
+      patch.screenshotError = args.error ?? undefined;
+    }
+
+    if (args.status === "failed" || args.status === "skipped") {
+      patch.screenshotError = args.error ?? patch.screenshotError;
+    }
+
+    await ctx.db.patch(args.taskId, patch);
+  },
+});
+
 export const checkAndEvaluateCrown = authMutation({
   args: {
     teamSlugOrId: v.string(),

@@ -493,10 +493,22 @@ managementIO.on("connection", (socket) => {
         }
       }
       try {
-        await startScreenshotCollection({
+        const result = await startScreenshotCollection({
           openAiApiKey: config?.openAiApiKey,
           anthropicApiKey: config?.anthropicApiKey,
+          anthropicBaseUrl:
+            config?.anthropicBaseUrl ?? process.env.ANTHROPIC_BASE_URL ?? null,
+          anthropicHeaders: config?.anthropicHeaders,
+          outputPath: config?.outputPath,
         });
+        log(
+          "INFO",
+          "Screenshot collection completed",
+          {
+            result,
+          },
+          WORKER_ID,
+        );
       } catch (error) {
         log(
           "ERROR",
