@@ -26,6 +26,7 @@ import {
   Diff,
   Hunk,
   computeNewLineNumber,
+  isDelete,
   parseDiff,
   pickRanges,
   getChangeKey,
@@ -1895,12 +1896,20 @@ function buildChangeKeyIndex(diff: FileData | null): Map<number, string> {
 
   for (const hunk of diff.hunks) {
     for (const change of hunk.changes) {
+      // Skip deleted lines - they don't exist in the new file
+      if (isDelete(change)) {
+        continue;
+      }
+
       const lineNumber = computeNewLineNumber(change);
       if (lineNumber <= 0) {
         continue;
       }
 
-      map.set(lineNumber, getChangeKey(change));
+      // Only map change keys for the "new" side (additions and unchanged lines)
+      // Deleted lines don't have a representation on the new side
+      const key = getChangeKey(change);
+      map.set(lineNumber, key);
     }
   }
 

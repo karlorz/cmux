@@ -287,12 +287,14 @@ function collectNewLineContent(diff: FileData): Map<number, string> {
 
   for (const hunk of diff.hunks) {
     for (const change of hunk.changes) {
-      const lineNumber = computeNewLineNumber(change);
-      if (lineNumber < 0) {
+      // Skip deleted lines - they don't exist in the new file
+      if (isDelete(change)) {
         continue;
       }
 
-      if (isDelete(change)) {
+      const lineNumber = computeNewLineNumber(change);
+      // Line numbers must be positive (1-indexed)
+      if (lineNumber <= 0) {
         continue;
       }
 
