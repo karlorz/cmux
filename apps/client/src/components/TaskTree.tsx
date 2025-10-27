@@ -85,6 +85,27 @@ function getTaskBranch(task: TaskWithGeneratedBranch): string | null {
   return sanitizeBranchName(task.baseBranch);
 }
 
+function BranchBadge({
+  branch,
+  className,
+}: {
+  branch: string;
+  className?: string;
+}) {
+  return (
+    <span
+      className={clsx(
+        "inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-white/80 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800/70 dark:text-neutral-200 max-w-[160px] min-w-0",
+        className,
+      )}
+      title={branch}
+    >
+      <GitBranch className="w-3 h-3 flex-shrink-0 text-neutral-500 dark:text-neutral-300" />
+      <span className="truncate">{branch}</span>
+    </span>
+  );
+}
+
 interface TaskTreeProps {
   task: TaskWithGeneratedBranch;
   level?: number;
@@ -199,7 +220,7 @@ function TaskTreeInner({
 
   const handleCopyDescription = useCallback(() => {
     if (navigator?.clipboard?.writeText) {
-      navigator.clipboard.writeText(task.text).catch(() => { });
+      navigator.clipboard.writeText(task.text).catch(() => {});
     }
   }, [task.text]);
 
@@ -212,6 +233,7 @@ function TaskTreeInner({
   }, [unarchive, task._id]);
 
   const inferredBranch = getTaskBranch(task);
+  const completedTaskBranch = sanitizeBranchName(task.generatedBranchName);
   const taskSecondaryParts: string[] = [];
   if (inferredBranch) {
     taskSecondaryParts.push(inferredBranch);
@@ -223,6 +245,7 @@ function TaskTreeInner({
 
   const canExpand = true;
   const isCrownEvaluating = task.crownEvaluationStatus === "in_progress";
+  const isLocalWorkspace = task.isLocalWorkspace;
 
   const taskLeadingIcon = (() => {
     if (isCrownEvaluating) {
@@ -309,11 +332,18 @@ function TaskTreeInner({
       }
     }
 
-    return task.isCompleted ? (
-      <CheckCircle className="w-3 h-3 text-green-500" />
-    ) : (
-      <Circle className="w-3 h-3 text-neutral-400 animate-pulse" />
-    );
+    if (isLocalWorkspace) {
+      return null;
+    }
+
+    if (task.isCompleted) {
+      if (completedTaskBranch) {
+        return <BranchBadge branch={completedTaskBranch} />;
+      }
+      return <CheckCircle className="w-3 h-3 text-green-500" />;
+    }
+
+    return <Circle className="w-3 h-3 text-neutral-400 animate-pulse" />;
   })();
 
   return (
@@ -527,6 +557,10 @@ function TaskRunTreeInner({
   const { expandedRuns, setRunExpanded } = useTaskRunExpansionContext();
   const defaultExpanded = Boolean(run.isCrowned);
   const isExpanded = expandedRuns[run._id] ?? defaultExpanded;
+  const runBranchDisplay = useMemo(
+    () => sanitizeBranchName(run.newBranch),
+    [run.newBranch],
+  );
   const runIdFromSearch = useMemo(() => {
     if (
       location.search &&
@@ -559,7 +593,11 @@ function TaskRunTreeInner({
   const hasExpandedManually = useRef<Id<"taskRuns"> | null>(null);
 
   useEffect(() => {
-    if (isRunSelected && !isExpanded && hasExpandedManually.current !== run._id) {
+    if (
+      isRunSelected &&
+      !isExpanded &&
+      hasExpandedManually.current !== run._id
+    ) {
       setRunExpanded(run._id, true);
     }
   }, [isExpanded, isRunSelected, run._id, setRunExpanded]);
@@ -585,17 +623,29 @@ function TaskRunTreeInner({
     [isExpanded, run._id, setRunExpanded]
   );
 
+  const isLocalWorkspaceRunEntry = run.isLocalWorkspace;
+
   const statusIcon = {
     pending: <Circle className="w-3 h-3 text-neutral-400" />,
     running: <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />,
-    completed: <CheckCircle className="w-3 h-3 text-green-500" />,
+    completed: runBranchDisplay ? (
+      <BranchBadge branch={runBranchDisplay} className="max-w-[140px]" />
+    ) : (
+      <CheckCircle className="w-3 h-3 text-green-500" />
+    ),
     failed: <XCircle className="w-3 h-3 text-red-500" />,
   }[run.status];
+
+  const shouldHideStatusIcon =
+    isLocalWorkspaceRunEntry && run.status !== "failed";
+  const resolvedStatusIcon = shouldHideStatusIcon ? null : statusIcon;
 
   const runLeadingIcon =
     run.status === "failed" && run.errorMessage ? (
       <Tooltip>
-        <TooltipTrigger asChild>{statusIcon}</TooltipTrigger>
+        <TooltipTrigger asChild>
+          {resolvedStatusIcon ?? statusIcon}
+        </TooltipTrigger>
         <TooltipContent
           side="right"
           className="max-w-xs whitespace-pre-wrap break-words"
@@ -604,7 +654,7 @@ function TaskRunTreeInner({
         </TooltipContent>
       </Tooltip>
     ) : (
-      statusIcon
+      resolvedStatusIcon
     );
 
   const crownIcon = run.isCrowned ? (
@@ -669,7 +719,7 @@ function TaskRunTreeInner({
   const shouldRenderTerminalLink = shouldRenderBrowserLink;
   const shouldRenderPullRequestLink = Boolean(
     (run.pullRequestUrl && run.pullRequestUrl !== "pending") ||
-    run.pullRequests?.some((pr) => pr.url)
+      run.pullRequests?.some((pr) => pr.url)
   );
   const shouldRenderPreviewLink = previewServices.length > 0;
   const hasOpenWithActions = openWithActions.length > 0;
