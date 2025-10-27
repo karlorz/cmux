@@ -5,6 +5,17 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>cmux</title>
+    <script>
+      // HTTPS on cmux.local breaks iframe loads due to mixed content.
+      if (
+        window.location.protocol === "https:" &&
+        window.location.hostname === "cmux.local"
+      ) {
+        window.location.replace(
+          `http://${window.location.host}${window.location.pathname}${window.location.search}${window.location.hash}`
+        );
+      }
+    </script>
   </head>
   <body class="antialiased">
     <div id="root" class="h-dvh flex flex-col"></div>
