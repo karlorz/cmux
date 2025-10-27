@@ -269,7 +269,20 @@ export function PullRequestDetailView({
     });
   };
 
-  if (!currentPR) {
+  // Show loading state while query is pending (undefined)
+  if (currentPR === undefined) {
+    return (
+      <div className="h-full w-full flex items-center justify-center text-neutral-500 dark:text-neutral-400">
+        <div className="flex flex-col items-center gap-2">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <span className="text-sm">Loading pull request...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Show not found state when query returns null
+  if (currentPR === null) {
     return (
       <div className="h-full w-full flex items-center justify-center text-neutral-500 dark:text-neutral-400">
         PR not found
