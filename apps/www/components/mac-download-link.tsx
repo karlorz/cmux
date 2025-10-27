@@ -102,13 +102,26 @@ const detectMacArchitecture = async (): Promise<MacArchitecture | null> => {
 
 const resolveUrl = (
   urls: MacDownloadUrls,
-  architecture: MacArchitecture,
+  architecture: MacArchitecture | null,
   fallbackUrl: string,
 ): string => {
+  // If no architecture specified, prefer universal
+  if (!architecture) {
+    if (typeof urls.universal === "string" && urls.universal.trim() !== "") {
+      return urls.universal;
+    }
+    return fallbackUrl;
+  }
+
   const candidate = urls[architecture];
 
   if (typeof candidate === "string" && candidate.trim() !== "") {
     return candidate;
+  }
+
+  // Fallback to universal if specific architecture not available
+  if (typeof urls.universal === "string" && urls.universal.trim() !== "") {
+    return urls.universal;
   }
 
   return fallbackUrl;
@@ -123,6 +136,10 @@ export function MacDownloadLink({
 }: MacDownloadLinkProps) {
   const sanitizedUrls = useMemo<MacDownloadUrls>(
     () => ({
+      universal:
+        typeof urls.universal === "string" && urls.universal.trim() !== ""
+          ? urls.universal
+          : null,
       arm64:
         typeof urls.arm64 === "string" && urls.arm64.trim() !== ""
           ? urls.arm64
@@ -132,10 +149,16 @@ export function MacDownloadLink({
           ? urls.x64
           : null,
     }),
-    [urls.arm64, urls.x64],
+    [urls.universal, urls.arm64, urls.x64],
   );
 
   const autoDefaultUrl = useMemo(() => {
+    // Prefer universal DMG if available
+    if (sanitizedUrls.universal) {
+      return sanitizedUrls.universal;
+    }
+
+    // Fallback to architecture-specific DMGs if universal isn't available
     if (sanitizedUrls.arm64) {
       return sanitizedUrls.arm64;
     }
@@ -145,7 +168,7 @@ export function MacDownloadLink({
     }
 
     return fallbackUrl;
-  }, [fallbackUrl, sanitizedUrls.arm64, sanitizedUrls.x64]);
+  }, [fallbackUrl, sanitizedUrls.universal, sanitizedUrls.arm64, sanitizedUrls.x64]);
 
   const explicitDefaultUrl = useMemo(() => {
     if (architecture) {
@@ -161,11 +184,15 @@ export function MacDownloadLink({
     setHref(explicitDefaultUrl);
   }, [explicitDefaultUrl]);
 
+  // Removed auto-detection - now defaults to universal DMG
+  // Architecture-specific downloads can still be used via explicit architecture prop
   useEffect(() => {
     if (!autoDetect) {
       return;
     }
 
+    // Auto-detect is now deprecated since we prefer universal DMG
+    // Kept for backward compatibility but doesn't change the href
     let isMounted = true;
 
     const run = async () => {
@@ -175,7 +202,10 @@ export function MacDownloadLink({
         return;
       }
 
-      setHref(resolveUrl(sanitizedUrls, detectedArchitecture, fallbackUrl));
+      // Only use architecture-specific if universal is not available
+      if (!sanitizedUrls.universal) {
+        setHref(resolveUrl(sanitizedUrls, detectedArchitecture, fallbackUrl));
+      }
     };
 
     void run();
