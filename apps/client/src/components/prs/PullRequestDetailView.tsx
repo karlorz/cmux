@@ -40,6 +40,20 @@ type AdditionsAndDeletionsProps = {
   ref2: string;
 };
 
+function PullRequestLoadingState() {
+  return (
+    <div className="h-full w-full flex items-center justify-center">
+      <div className="flex flex-col items-center gap-3 text-neutral-500 dark:text-neutral-400 text-center">
+        <Loader2 className="w-5 h-5 animate-spin" />
+        <div className="text-sm font-medium">Loading pull request...</div>
+        <p className="text-xs text-neutral-400 dark:text-neutral-500">
+          Hang tight while we fetch the latest data from GitHub.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 
 function AdditionsAndDeletions({
   repoFullName,
@@ -268,6 +282,10 @@ export function PullRequestDetailView({
       },
     });
   };
+
+  if (currentPR === undefined) {
+    return <PullRequestLoadingState />;
+  }
 
   if (!currentPR) {
     return (
