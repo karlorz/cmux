@@ -8,8 +8,13 @@ export const stackServerApp = new StackServerApp({
   secretServerKey: env.STACK_SECRET_SERVER_KEY,
   tokenStore: "nextjs-cookie",
   urls: {
+    // Stack Auth will preserve query parameters from the sign-in URL
+    // and pass them through to the after-sign-in handler.
+    // Query params like ?is_electron=true&return_to=/path will be
+    // automatically forwarded to the after-sign-in page.
     afterSignIn: "/handler/after-sign-in",
     afterSignUp: "/handler/after-sign-in",
+    signIn: "/handler/sign-in",
   },
 });
 

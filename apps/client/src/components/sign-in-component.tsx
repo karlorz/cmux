@@ -38,7 +38,8 @@ export function SignInComponent() {
               </div>
               <button
                 onClick={() => {
-                  const url = `${WWW_ORIGIN}/handler/sign-in/`;
+                  // Pass is_electron flag to indicate this is an Electron context
+                  const url = `${WWW_ORIGIN}/handler/sign-in/?is_electron=true`;
                   // Open in external browser via Electron handler
                   window.open(url, "_blank", "noopener,noreferrer");
                 }}
