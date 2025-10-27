@@ -1080,7 +1080,7 @@ fn normalize_host(value: &str) -> String {
 }
 
 fn parse_cmux_host(host: &str) -> Option<(Option<String>, String)> {
-    if host == "cmux.sh" {
+    if host == "cmux.sh" || host == "cmux.local" {
         return Some((None, "cmux.sh".to_string()));
     }
     if let Some(prefix) = host.strip_suffix(".cmux.sh") {
