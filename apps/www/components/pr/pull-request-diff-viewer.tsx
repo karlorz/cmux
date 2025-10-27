@@ -438,7 +438,33 @@ export function PullRequestDiffViewer({
   const isLoadingFileOutputs = fileOutputs === undefined;
 
   const parsedDiffs = useMemo<ParsedFileDiff[]>(() => {
-    return files.map((file) => {
+    // First, sort files alphabetically to match the file tree sorting
+    const sortedFiles = [...files].sort((a, b) => {
+      // Extract directory and filename for each file
+      const getPathParts = (filename: string) => {
+        const lastSlash = filename.lastIndexOf('/');
+        if (lastSlash === -1) {
+          return { dir: '', name: filename };
+        }
+        return {
+          dir: filename.slice(0, lastSlash),
+          name: filename.slice(lastSlash + 1)
+        };
+      };
+
+      const aParts = getPathParts(a.filename);
+      const bParts = getPathParts(b.filename);
+
+      // First compare directories
+      if (aParts.dir !== bParts.dir) {
+        return aParts.dir.localeCompare(bParts.dir);
+      }
+
+      // Then compare filenames within the same directory
+      return aParts.name.localeCompare(bParts.name);
+    });
+
+    return sortedFiles.map((file) => {
       if (!file.patch) {
         return {
           file,
