@@ -23,7 +23,7 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import type { Id } from "@cmux/convex/dataModel";
 import clsx from "clsx";
 import type { PersistentIframeStatus } from "@/components/persistent-iframe";
-import { ArrowLeft, Code2, Loader2, Minus, Monitor, Plus, Settings, X } from "lucide-react";
+import { ArrowLeft, Code2, Home, Loader2, Minus, Monitor, Plus, Settings, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -33,6 +33,7 @@ import {
   type ReactNode,
 } from "react";
 import TextareaAutosize from "react-textarea-autosize";
+import { useEnvironmentConfigPersistence } from "@/contexts/environment-config-persistence";
 
 export type EnvVar = { name: string; value: string; isSecret: boolean };
 
@@ -84,6 +85,7 @@ export function EnvironmentConfiguration({
   onHeaderControlsChange?: (controls: ReactNode | null) => void;
 }) {
   const navigate = useNavigate();
+  const { getConfig, saveConfig, clearConfig } = useEnvironmentConfigPersistence();
   const searchRoute:
     | "/_layout/$teamSlugOrId/environments/new"
     | "/_layout/$teamSlugOrId/environments/new-version" =
@@ -98,15 +100,25 @@ export function EnvironmentConfiguration({
     instanceId?: string;
     snapshotId?: MorphSnapshotId;
   };
-  const [envName, setEnvName] = useState(() => initialEnvName);
+
+  // Try to restore from persisted config first, fall back to initial props
+  const persistedConfig = mode === "new" ? getConfig(instanceId) : undefined;
+
+  const [envName, setEnvName] = useState(() =>
+    persistedConfig?.envName ?? initialEnvName
+  );
   const [envVars, setEnvVars] = useState<EnvVar[]>(() =>
-    ensureInitialEnvVars(initialEnvVars)
+    persistedConfig?.envVars ?? ensureInitialEnvVars(initialEnvVars)
   );
   const [maintenanceScript, setMaintenanceScript] = useState(
-    () => initialMaintenanceScript
+    () => persistedConfig?.maintenanceScript ?? initialMaintenanceScript
   );
-  const [devScript, setDevScript] = useState(() => initialDevScript);
-  const [exposedPorts, setExposedPorts] = useState(() => initialExposedPorts);
+  const [devScript, setDevScript] = useState(() =>
+    persistedConfig?.devScript ?? initialDevScript
+  );
+  const [exposedPorts, setExposedPorts] = useState(() =>
+    persistedConfig?.exposedPorts ?? initialExposedPorts
+  );
   const [portsError, setPortsError] = useState<string | null>(null);
   const keyInputRefs = useRef<Array<HTMLInputElement | null>>([]);
   const [pendingFocusIndex, setPendingFocusIndex] = useState<number | null>(
@@ -130,6 +142,33 @@ export function EnvironmentConfiguration({
   }, [browserUrl, instanceId, vscodeUrl]);
   const vscodePersistKey = `${basePersistKey}:vscode`;
   const browserPersistKey = `${basePersistKey}:browser`;
+  // Auto-save configuration to memory as user makes changes (only for new environments)
+  useEffect(() => {
+    if (mode === "new") {
+      saveConfig(instanceId, {
+        instanceId,
+        envName,
+        envVars,
+        maintenanceScript,
+        devScript,
+        exposedPorts,
+        selectedRepos,
+        snapshotId: search.snapshotId,
+      });
+    }
+  }, [
+    mode,
+    instanceId,
+    envName,
+    envVars,
+    maintenanceScript,
+    devScript,
+    exposedPorts,
+    selectedRepos,
+    search.snapshotId,
+    saveConfig,
+  ]);
+
   useEffect(() => {
     if (!browserUrl && activePreview === "browser") {
       setActivePreview("vscode");
@@ -360,6 +399,8 @@ export function EnvironmentConfiguration({
         },
         {
           onSuccess: async () => {
+            // Clear the persisted config on successful creation
+            clearConfig(instanceId);
             await navigate({
               to: "/$teamSlugOrId/environments",
               params: { teamSlugOrId },
@@ -581,54 +622,80 @@ export function EnvironmentConfiguration({
 
   const leftPane = (
     <div className="h-full p-6 overflow-y-auto">
-      <div className="flex items-center gap-4 mb-4">
-        {mode === "new" ? (
+      <div className="flex items-center justify-between gap-4 mb-4">
+        <div className="flex items-center gap-4">
+          {mode === "new" ? (
+            <button
+              onClick={async () => {
+                await navigate({
+                  to: "/$teamSlugOrId/environments/new",
+                  params: { teamSlugOrId },
+                  search: {
+                    step: "select",
+                    selectedRepos:
+                      selectedRepos.length > 0 ? selectedRepos : undefined,
+                    instanceId: search.instanceId,
+                    connectionLogin: search.connectionLogin,
+                    repoSearch: search.repoSearch,
+                    snapshotId: search.snapshotId,
+                  },
+                });
+              }}
+              className="inline-flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to repository selection
+            </button>
+          ) : sourceEnvironmentId ? (
+            <button
+              onClick={async () => {
+                await navigate({
+                  to: "/$teamSlugOrId/environments/$environmentId",
+                  params: {
+                    teamSlugOrId,
+                    environmentId: sourceEnvironmentId,
+                  },
+                  search: {
+                    step: search.step,
+                    selectedRepos: search.selectedRepos,
+                    connectionLogin: search.connectionLogin,
+                    repoSearch: search.repoSearch,
+                    instanceId: search.instanceId,
+                    snapshotId: search.snapshotId,
+                  },
+                });
+              }}
+              className="inline-flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to environment
+            </button>
+          ) : null}
+        </div>
+        {mode === "new" && (
           <button
             onClick={async () => {
+              clearConfig(instanceId);
               await navigate({
-                to: "/$teamSlugOrId/environments/new",
+                to: "/$teamSlugOrId/environments",
                 params: { teamSlugOrId },
                 search: {
-                  step: "select",
-                  selectedRepos:
-                    selectedRepos.length > 0 ? selectedRepos : undefined,
-                  instanceId: search.instanceId,
-                  connectionLogin: search.connectionLogin,
-                  repoSearch: search.repoSearch,
-                  snapshotId: search.snapshotId,
+                  step: undefined,
+                  selectedRepos: undefined,
+                  connectionLogin: undefined,
+                  repoSearch: undefined,
+                  instanceId: undefined,
+                  snapshotId: undefined,
                 },
               });
             }}
             className="inline-flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+            title="Discard current work and return to environments list"
           >
-            <ArrowLeft className="w-4 h-4" />
-            Back to repository selection
+            <Home className="w-4 h-4" />
+            Back to Environments
           </button>
-        ) : sourceEnvironmentId ? (
-          <button
-            onClick={async () => {
-              await navigate({
-                to: "/$teamSlugOrId/environments/$environmentId",
-                params: {
-                  teamSlugOrId,
-                  environmentId: sourceEnvironmentId,
-                },
-                search: {
-                  step: search.step,
-                  selectedRepos: search.selectedRepos,
-                  connectionLogin: search.connectionLogin,
-                  repoSearch: search.repoSearch,
-                  instanceId: search.instanceId,
-                  snapshotId: search.snapshotId,
-                },
-              });
-            }}
-            className="inline-flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back to environment
-          </button>
-        ) : null}
+        )}
       </div>
 
       <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
