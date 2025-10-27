@@ -29,10 +29,7 @@ import {
   ExternalLink,
   GitBranch,
   GitCompare,
-  GitMerge,
   GitPullRequest,
-  GitPullRequestClosed,
-  GitPullRequestDraft,
   Globe,
   Monitor,
   TerminalSquare,
@@ -249,65 +246,33 @@ function TaskTreeInner({
       );
     }
 
-    if (task.mergeStatus && task.mergeStatus !== "none") {
-      switch (task.mergeStatus) {
-        case "pr_draft":
-          return (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <GitPullRequestDraft className="w-3 h-3 text-neutral-500" />
-              </TooltipTrigger>
-              <TooltipContent side="right">Draft PR</TooltipContent>
-            </Tooltip>
-          );
-        case "pr_open":
-          return (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <GitPullRequest className="w-3 h-3 text-[#1f883d] dark:text-[#238636]" />
-              </TooltipTrigger>
-              <TooltipContent side="right">PR Open</TooltipContent>
-            </Tooltip>
-          );
-        case "pr_approved":
-          return (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <GitPullRequest className="w-3 h-3 text-[#1f883d] dark:text-[#238636]" />
-              </TooltipTrigger>
-              <TooltipContent side="right">PR Approved</TooltipContent>
-            </Tooltip>
-          );
-        case "pr_changes_requested":
-          return (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <GitPullRequest className="w-3 h-3 text-yellow-500" />
-              </TooltipTrigger>
-              <TooltipContent side="right">Changes Requested</TooltipContent>
-            </Tooltip>
-          );
-        case "pr_merged":
-          return (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <GitMerge className="w-3 h-3 text-purple-500" />
-              </TooltipTrigger>
-              <TooltipContent side="right">Merged</TooltipContent>
-            </Tooltip>
-          );
-        case "pr_closed":
-          return (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <GitPullRequestClosed className="w-3 h-3 text-red-500" />
-              </TooltipTrigger>
-              <TooltipContent side="right">PR Closed</TooltipContent>
-            </Tooltip>
-          );
-        default:
-          return null;
-      }
+    if (task.mergeStatus && task.mergeStatus !== "none" && inferredBranch) {
+      const statusColorMap = {
+        pr_draft: "text-neutral-500",
+        pr_open: "text-[#1f883d] dark:text-[#238636]",
+        pr_approved: "text-[#1f883d] dark:text-[#238636]",
+        pr_changes_requested: "text-yellow-500",
+        pr_merged: "text-purple-500",
+        pr_closed: "text-red-500",
+      };
+      const statusLabelMap = {
+        pr_draft: "Draft PR",
+        pr_open: "PR Open",
+        pr_approved: "PR Approved",
+        pr_changes_requested: "Changes Requested",
+        pr_merged: "Merged",
+        pr_closed: "PR Closed",
+      };
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className={clsx("text-xs font-mono", statusColorMap[task.mergeStatus])}>
+              {inferredBranch}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="right">{statusLabelMap[task.mergeStatus]}</TooltipContent>
+        </Tooltip>
+      );
     }
 
     if (isLocalWorkspace) {
@@ -596,6 +561,12 @@ function TaskRunTreeInner({
 
   const isLocalWorkspaceRunEntry = run.isLocalWorkspace;
 
+  // Check if this run has a PR
+  const hasPullRequest = Boolean(
+    (run.pullRequestUrl && run.pullRequestUrl !== "pending") ||
+      run.pullRequests?.some((pr) => pr.url)
+  );
+
   const statusIcon = {
     pending: <Circle className="w-3 h-3 text-neutral-400" />,
     running: <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />,
@@ -603,26 +574,80 @@ function TaskRunTreeInner({
     failed: <XCircle className="w-3 h-3 text-red-500" />,
   }[run.status];
 
+  // Determine the color based on PR state
+  const getPRBranchColor = () => {
+    if (!run.pullRequestState || run.pullRequestState === "none") {
+      return "text-neutral-500";
+    }
+    switch (run.pullRequestState) {
+      case "draft":
+        return "text-neutral-500";
+      case "open":
+        return "text-[#1f883d] dark:text-[#238636]";
+      case "merged":
+        return "text-purple-500";
+      case "closed":
+        return "text-red-500";
+      default:
+        return "text-neutral-500";
+    }
+  };
+
+  const getPRStateLabel = () => {
+    if (!run.pullRequestState || run.pullRequestState === "none") {
+      return "Branch";
+    }
+    switch (run.pullRequestState) {
+      case "draft":
+        return "Draft PR";
+      case "open":
+        return "PR Open";
+      case "merged":
+        return "Merged";
+      case "closed":
+        return "PR Closed";
+      default:
+        return "Branch";
+    }
+  };
+
   const shouldHideStatusIcon =
     isLocalWorkspaceRunEntry && run.status !== "failed";
   const resolvedStatusIcon = shouldHideStatusIcon ? null : statusIcon;
 
-  const runLeadingIcon =
-    run.status === "failed" && run.errorMessage ? (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          {resolvedStatusIcon ?? statusIcon}
-        </TooltipTrigger>
-        <TooltipContent
-          side="right"
-          className="max-w-xs whitespace-pre-wrap break-words"
-        >
-          {run.errorMessage}
-        </TooltipContent>
-      </Tooltip>
-    ) : (
-      resolvedStatusIcon
-    );
+  // If there's a PR and a branch, show the branch name instead of status icon
+  const runLeadingIcon = (() => {
+    if (hasPullRequest && run.newBranch) {
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className={clsx("text-xs font-mono", getPRBranchColor())}>
+              {run.newBranch}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="right">{getPRStateLabel()}</TooltipContent>
+        </Tooltip>
+      );
+    }
+
+    if (run.status === "failed" && run.errorMessage) {
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            {resolvedStatusIcon ?? statusIcon}
+          </TooltipTrigger>
+          <TooltipContent
+            side="right"
+            className="max-w-xs whitespace-pre-wrap break-words"
+          >
+            {run.errorMessage}
+          </TooltipContent>
+        </Tooltip>
+      );
+    }
+
+    return resolvedStatusIcon;
+  })();
 
   const crownIcon = run.isCrowned ? (
     <Tooltip delayDuration={0}>
