@@ -16,7 +16,7 @@ import { type Doc, type Id } from "@cmux/convex/dataModel";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { Link, useLocation, type LinkProps } from "@tanstack/react-router";
 import clsx from "clsx";
-import { useQuery as useConvexQuery } from "convex/react";
+import { useMutation, useQuery as useConvexQuery } from "convex/react";
 import {
   AlertTriangle,
   Archive as ArchiveIcon,
@@ -35,6 +35,7 @@ import {
   GitPullRequestDraft,
   Globe,
   Monitor,
+  Pencil,
   TerminalSquare,
   Loader2,
   XCircle,
@@ -49,9 +50,12 @@ import {
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
+  type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
 } from "react";
+import { flushSync } from "react-dom";
 import { VSCodeIcon } from "./icons/VSCodeIcon";
 import { SidebarListItem } from "./sidebar/SidebarListItem";
 import { annotateAgentOrdinals } from "./task-tree/annotateAgentOrdinals";
@@ -165,9 +169,11 @@ function TaskTreeInner({
   const [isExpanded, setIsExpanded] = useState<boolean>(
     isTaskSelected || defaultExpanded
   );
+  const isOptimisticTask = isFakeConvexId(task._id);
+  const canRenameTask = !isOptimisticTask;
   const prefetched = useRef(false);
   const prefetchTaskRuns = useCallback(() => {
-    if (prefetched.current || isFakeConvexId(task._id)) {
+    if (prefetched.current || isOptimisticTask) {
       return;
     }
     prefetched.current = true;
@@ -175,7 +181,7 @@ function TaskTreeInner({
       query: api.taskRuns.getByTask,
       args: { teamSlugOrId, taskId: task._id },
     });
-  }, [task._id, teamSlugOrId]);
+  }, [isOptimisticTask, task._id, teamSlugOrId]);
 
   // Memoize the toggle handler
   const handleToggle = useCallback(
