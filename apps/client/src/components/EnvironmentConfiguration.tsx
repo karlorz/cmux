@@ -693,101 +693,12 @@ export function EnvironmentConfiguration({
             title="Environment variables"
           >
             <div className="pb-2 space-y-4">
-              {/* Global Variables Section */}
-              <div>
-                <div className="mb-3">
-                  <h4 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                    Global Variables
-                  </h4>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-                    Applied to all paths in the workspace
-                  </p>
-                </div>
-
-                <div className="bg-neutral-50 dark:bg-neutral-900/50 rounded-lg border border-neutral-200 dark:border-neutral-800 p-3">
-                  <div
-                    className="grid gap-3 text-xs text-neutral-500 dark:text-neutral-400 items-center pb-2"
-                    style={{
-                      gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.4fr) 44px",
-                    }}
-                  >
-                    <span>Key</span>
-                    <span>Value</span>
-                    <span className="w-[44px]" />
-                  </div>
-
-                  <div className="space-y-2">
-                    {ensureEmptyRow(nestedEnvVars.global).map((row, idx) => (
-                      <div
-                        key={idx}
-                        className="grid gap-3 items-center"
-                        style={{
-                          gridTemplateColumns:
-                            "minmax(0, 1fr) minmax(0, 1.4fr) 44px",
-                        }}
-                      >
-                        <input
-                          type="text"
-                          value={row.name}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setNestedEnvVars((prev) => ({
-                              ...prev,
-                              global: prev.global.map((item, i) =>
-                                i === idx ? { ...item, name: v } : item
-                              ).concat(idx === prev.global.length ? [{ name: v, value: "", isSecret: true }] : []).slice(0, idx === prev.global.length ? -1 : undefined),
-                            }));
-                          }}
-                          placeholder="API_KEY"
-                          className="w-full min-w-0 self-start rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700"
-                        />
-                        <TextareaAutosize
-                          value={row.value}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setNestedEnvVars((prev) => {
-                              const updated = [...prev.global];
-                              if (idx < prev.global.length) {
-                                updated[idx] = { ...updated[idx]!, value: v };
-                              } else {
-                                updated.push({ name: "", value: v, isSecret: true });
-                              }
-                              return { ...prev, global: updated };
-                            });
-                          }}
-                          placeholder="value"
-                          minRows={1}
-                          maxRows={10}
-                          className="w-full min-w-0 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 resize-none"
-                        />
-                        <div className="self-start flex items-center justify-end w-[44px]">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setNestedEnvVars((prev) => ({
-                                ...prev,
-                                global: prev.global.filter((_, i) => i !== idx),
-                              }));
-                            }}
-                            disabled={idx >= nestedEnvVars.global.length}
-                            className="h-10 w-[44px] rounded-md border border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 grid place-items-center hover:bg-neutral-50 dark:hover:bg-neutral-900 disabled:opacity-30 disabled:cursor-not-allowed"
-                            aria-label="Remove variable"
-                          >
-                            <Minus className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Path-Specific Variables Sections */}
+              {/* Path Variables Section */}
               {nestedEnvVars.paths.length > 0 && (
                 <div>
                   <div className="mb-3">
                     <h4 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                      Path-Specific Variables
+                      Path Variables
                     </h4>
                     <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
                       Override global variables for specific paths
@@ -910,11 +821,100 @@ export function EnvironmentConfiguration({
                 </div>
               )}
 
+              {/* Global Variables Section */}
+              <div>
+                <div className="mb-3">
+                  <h4 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                    Global Variables
+                  </h4>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+                    Applied to all paths in the workspace
+                  </p>
+                </div>
+
+                <div className="bg-neutral-50 dark:bg-neutral-900/50 rounded-lg border border-neutral-200 dark:border-neutral-800 p-3">
+                  <div
+                    className="grid gap-3 text-xs text-neutral-500 dark:text-neutral-400 items-center pb-2"
+                    style={{
+                      gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.4fr) 44px",
+                    }}
+                  >
+                    <span>Key</span>
+                    <span>Value</span>
+                    <span className="w-[44px]" />
+                  </div>
+
+                  <div className="space-y-2">
+                    {ensureEmptyRow(nestedEnvVars.global).map((row, idx) => (
+                      <div
+                        key={idx}
+                        className="grid gap-3 items-center"
+                        style={{
+                          gridTemplateColumns:
+                            "minmax(0, 1fr) minmax(0, 1.4fr) 44px",
+                        }}
+                      >
+                        <input
+                          type="text"
+                          value={row.name}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setNestedEnvVars((prev) => ({
+                              ...prev,
+                              global: prev.global.map((item, i) =>
+                                i === idx ? { ...item, name: v } : item
+                              ).concat(idx === prev.global.length ? [{ name: v, value: "", isSecret: true }] : []).slice(0, idx === prev.global.length ? -1 : undefined),
+                            }));
+                          }}
+                          placeholder="API_KEY"
+                          className="w-full min-w-0 self-start rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700"
+                        />
+                        <TextareaAutosize
+                          value={row.value}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setNestedEnvVars((prev) => {
+                              const updated = [...prev.global];
+                              if (idx < prev.global.length) {
+                                updated[idx] = { ...updated[idx]!, value: v };
+                              } else {
+                                updated.push({ name: "", value: v, isSecret: true });
+                              }
+                              return { ...prev, global: updated };
+                            });
+                          }}
+                          placeholder="value"
+                          minRows={1}
+                          maxRows={10}
+                          className="w-full min-w-0 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 resize-none"
+                        />
+                        <div className="self-start flex items-center justify-end w-[44px]">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNestedEnvVars((prev) => ({
+                                ...prev,
+                                global: prev.global.filter((_, i) => i !== idx),
+                              }));
+                            }}
+                            disabled={idx >= nestedEnvVars.global.length}
+                            className="h-10 w-[44px] rounded-md border border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 grid place-items-center hover:bg-neutral-50 dark:hover:bg-neutral-900 disabled:opacity-30 disabled:cursor-not-allowed"
+                            aria-label="Remove variable"
+                          >
+                            <Minus className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
               {/* Add New Path Section */}
               <div>
                 <div className="mb-3">
                   <h4 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                    Path Variables
+                    Add New Path
                   </h4>
                   <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
                     Create path-specific variable configurations
