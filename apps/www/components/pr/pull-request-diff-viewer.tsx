@@ -648,6 +648,7 @@ export function PullRequestDiffViewer({
     }
     return defaults;
   });
+  const fileTreeContainerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     setExpandedPaths(() => {
@@ -728,6 +729,50 @@ export function PullRequestDiffViewer({
       observer.disconnect();
     };
   }, [parsedDiffs]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (!window.matchMedia("(min-width: 1024px)").matches) {
+      return;
+    }
+
+    const container = fileTreeContainerRef.current;
+    if (!container) {
+      return;
+    }
+    if (container.scrollHeight <= container.clientHeight + 4) {
+      return;
+    }
+
+    const activeNode = container.querySelector<HTMLElement>(
+      '[data-file-tree-node="file"][data-active="true"]'
+    );
+    if (!activeNode) {
+      return;
+    }
+
+    const containerRect = container.getBoundingClientRect();
+    const nodeRect = activeNode.getBoundingClientRect();
+    const nodeTop =
+      nodeRect.top - containerRect.top + container.scrollTop;
+    const nodeBottom = nodeTop + nodeRect.height;
+    const viewTop = container.scrollTop;
+    const viewBottom = viewTop + container.clientHeight;
+
+    if (nodeTop >= viewTop && nodeBottom <= viewBottom) {
+      return;
+    }
+
+    const nextScrollTop =
+      nodeTop - container.clientHeight / 2 + nodeRect.height / 2;
+
+    container.scrollTo({
+      top: Math.max(nextScrollTop, 0),
+      behavior: "smooth",
+    });
+  }, [activeAnchor]);
 
   const handleNavigate = useCallback((path: string) => {
     setActivePath(path);
@@ -915,7 +960,10 @@ export function PullRequestDiffViewer({
       />
 
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-10">
-        <aside className="lg:sticky lg:top-6 lg:h-[calc(100vh-96px)] lg:w-72 lg:overflow-y-auto">
+        <aside
+          ref={fileTreeContainerRef}
+          className="lg:sticky lg:top-6 lg:h-[calc(100vh-96px)] lg:w-72 lg:overflow-y-auto"
+        >
           {targetCount > 0 ? (
             <div className="mb-4 flex justify-center">
               <ErrorNavigator
@@ -1207,6 +1255,8 @@ function FileTreeNavigator({
             key={node.path}
             type="button"
             onClick={() => onSelectFile(node.path)}
+            data-file-tree-node="file"
+            data-active={isActive ? "true" : undefined}
             className={cn(
               "flex w-full items-center gap-1 rounded-md px-2.5 py-1 text-left text-sm transition hover:bg-neutral-100",
               isActive
