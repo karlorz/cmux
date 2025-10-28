@@ -141,7 +141,7 @@ export default async function PullRequestPage({ params }: PageProps) {
   });
 
   return (
-    <div className="min-h-dvh bg-neutral-50 text-neutral-900">
+    <div className="min-h-dvh bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-50">
       <div className="flex w-full flex-col gap-8 px-6 pb-16 pt-10 sm:px-8 lg:px-12">
         <Suspense fallback={<PullRequestHeaderSkeleton />}>
           <PullRequestHeader
@@ -338,7 +338,7 @@ function PullRequestHeaderContent({
   const authorLogin = pullRequest.user?.login ?? null;
 
   return (
-    <section className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm">
+    <section className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 p-4 shadow-sm">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <PullRequestHeaderSummary
           statusLabel={statusBadge.label}
@@ -391,13 +391,13 @@ function PullRequestHeaderSummary({
           label={statusLabel}
           className={statusClassName}
         />
-        <span className="font-mono text-neutral-500">#{pullNumber}</span>
-        <span className="text-neutral-500">
+        <span className="font-mono text-neutral-500 dark:text-neutral-400">#{pullNumber}</span>
+        <span className="text-neutral-500 dark:text-neutral-400">
           {githubOwner}/{repo}
         </span>
       </div>
 
-      <h1 className="mt-2 text-xl font-semibold leading-tight text-neutral-900">
+      <h1 className="mt-2 text-xl font-semibold leading-tight text-neutral-900 dark:text-neutral-50">
         {title}
       </h1>
 
@@ -439,15 +439,15 @@ function PullRequestHeaderMeta({
   updatedAtLabel: string;
 }) {
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-neutral-600">
+    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400">
       {authorLogin ? (
         <>
-          <span className="font-medium text-neutral-900">@{authorLogin}</span>
-          <span className="text-neutral-400">•</span>
+          <span className="font-medium text-neutral-900 dark:text-neutral-200">@{authorLogin}</span>
+          <span className="text-neutral-400 dark:text-neutral-500">•</span>
         </>
       ) : null}
       <span>{createdAtLabel}</span>
-      <span className="text-neutral-400">•</span>
+      <span className="text-neutral-400 dark:text-neutral-500">•</span>
       <span>Updated {updatedAtLabel}</span>
     </div>
   );
@@ -570,12 +570,12 @@ function getStatusBadge(pullRequest: GithubPullRequest): {
 
 function PullRequestHeaderSkeleton() {
   return (
-    <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+    <div className="rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 p-6 shadow-sm">
       <div className="animate-pulse space-y-4">
-        <div className="h-4 w-32 rounded bg-neutral-200" />
-        <div className="h-8 w-3/4 rounded bg-neutral-200" />
-        <div className="h-4 w-1/2 rounded bg-neutral-200" />
-        <div className="h-4 w-full rounded bg-neutral-200" />
+        <div className="h-4 w-32 rounded bg-neutral-200 dark:bg-neutral-700" />
+        <div className="h-8 w-3/4 rounded bg-neutral-200 dark:bg-neutral-700" />
+        <div className="h-4 w-1/2 rounded bg-neutral-200 dark:bg-neutral-700" />
+        <div className="h-4 w-full rounded bg-neutral-200 dark:bg-neutral-700" />
       </div>
     </div>
   );
