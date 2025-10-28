@@ -725,7 +725,9 @@ export function PullRequestDiffViewer({
           );
 
         if (visible[0]?.target.id) {
-          setActiveAnchor(visible[0].target.id);
+          const newActiveId = visible[0].target.id;
+          setActiveAnchor(newActiveId);
+          setActivePath(newActiveId);
           return;
         }
 
@@ -738,11 +740,12 @@ export function PullRequestDiffViewer({
 
         if (nearest?.id) {
           setActiveAnchor(nearest.id);
+          setActivePath(nearest.id);
         }
       },
       {
-        rootMargin: "-128px 0px -55% 0px",
-        threshold: [0, 0.2, 0.4, 0.6, 1],
+        rootMargin: "-20% 0px -45% 0px",
+        threshold: [0, 0.1, 0.25, 0.5, 0.75, 1],
       }
     );
 
