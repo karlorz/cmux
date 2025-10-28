@@ -561,6 +561,12 @@ export function PullRequestDiffViewer({
     useState<ActiveTooltipTarget | null>(null);
   const autoTooltipTimeoutRef = useRef<number | null>(null);
 
+  // Track user navigation to prevent auto-scrolling disruption
+  const userHasNavigatedRef = useRef(false);
+  const scrollPositionRef = useRef<number>(0);
+  const isUpdatingErrorsRef = useRef(false);
+  const previousTargetCountRef = useRef(targetCount);
+
   const clearAutoTooltip = useCallback(() => {
     if (
       typeof window !== "undefined" &&
@@ -611,6 +617,15 @@ export function PullRequestDiffViewer({
     []
   );
 
+  // Save scroll position before DOM updates
+  useEffect(() => {
+    if (typeof window !== "undefined" && previousTargetCountRef.current !== targetCount) {
+      scrollPositionRef.current = window.scrollY;
+      isUpdatingErrorsRef.current = true;
+      previousTargetCountRef.current = targetCount;
+    }
+  }, [targetCount]);
+
   useEffect(() => {
     if (targetCount === 0) {
       setFocusedErrorIndex(null);
@@ -618,15 +633,31 @@ export function PullRequestDiffViewer({
     }
 
     setFocusedErrorIndex((previous) => {
-      if (previous === null) {
+      // Only auto-focus first error if user hasn't manually navigated
+      if (previous === null && !userHasNavigatedRef.current) {
         return 0;
       }
-      if (previous >= targetCount) {
-        return 0;
+      if (previous !== null && previous >= targetCount) {
+        return Math.min(previous, targetCount - 1);
       }
       return previous;
     });
+
+    // Restore scroll position after state update to prevent disruption
+    if (isUpdatingErrorsRef.current && typeof window !== "undefined") {
+      requestAnimationFrame(() => {
+        // Only restore scroll if user hasn't manually navigated
+        if (!userHasNavigatedRef.current) {
+          window.scrollTo({
+            top: scrollPositionRef.current,
+            behavior: 'instant' as ScrollBehavior
+          });
+        }
+        isUpdatingErrorsRef.current = false;
+      });
+    }
   }, [targetCount]);
+
   useEffect(() => {
     if (targetCount === 0) {
       clearAutoTooltip();
@@ -714,35 +745,72 @@ export function PullRequestDiffViewer({
       return;
     }
 
+    let rafId: number | null = null;
+    let lastUpdateTime = 0;
+    const UPDATE_THROTTLE = 100; // Throttle updates to prevent too frequent changes
+
     const observer = new IntersectionObserver(
       (entries) => {
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort(
-            (a, b) =>
-              a.target.getBoundingClientRect().top -
-              b.target.getBoundingClientRect().top
-          );
-
-        if (visible[0]?.target.id) {
-          setActiveAnchor(visible[0].target.id);
-          return;
+        // Cancel any pending update
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
         }
 
-        const nearest = entries
-          .map((entry) => ({
-            id: entry.target.id,
-            top: entry.target.getBoundingClientRect().top,
-          }))
-          .sort((a, b) => Math.abs(a.top) - Math.abs(b.top))[0];
+        rafId = requestAnimationFrame(() => {
+          const now = Date.now();
 
-        if (nearest?.id) {
-          setActiveAnchor(nearest.id);
-        }
+          // Throttle updates to prevent rapid changes
+          if (now - lastUpdateTime < UPDATE_THROTTLE) {
+            return;
+          }
+
+          lastUpdateTime = now;
+
+          // Find the most visible element based on intersection ratio and position
+          const visible = entries
+            .filter((entry) => entry.isIntersecting)
+            .map((entry) => ({
+              id: entry.target.id,
+              ratio: entry.intersectionRatio,
+              top: entry.target.getBoundingClientRect().top,
+            }))
+            .sort((a, b) => {
+              // Prioritize elements that are more visible
+              if (Math.abs(a.ratio - b.ratio) > 0.1) {
+                return b.ratio - a.ratio;
+              }
+              // If similar visibility, prefer the one closer to top
+              return Math.abs(a.top - 150) - Math.abs(b.top - 150);
+            });
+
+          if (visible[0]?.id) {
+            setActiveAnchor(visible[0].id);
+            return;
+          }
+
+          // Fallback: find nearest element to viewport center
+          const viewportCenter = window.innerHeight / 2;
+          const nearest = entries
+            .map((entry) => ({
+              id: entry.target.id,
+              distanceToCenter: Math.abs(
+                entry.target.getBoundingClientRect().top +
+                entry.target.getBoundingClientRect().height / 2 -
+                viewportCenter
+              ),
+            }))
+            .sort((a, b) => a.distanceToCenter - b.distanceToCenter)[0];
+
+          if (nearest?.id) {
+            setActiveAnchor(nearest.id);
+          }
+        });
       },
       {
-        rootMargin: "-128px 0px -55% 0px",
-        threshold: [0, 0.2, 0.4, 0.6, 1],
+        // Adjust margins to account for header and better visibility detection
+        rootMargin: "-100px 0px -50% 0px",
+        // More granular thresholds for smoother transitions
+        threshold: [0, 0.1, 0.25, 0.5, 0.75, 0.9, 1],
       }
     );
 
@@ -753,6 +821,9 @@ export function PullRequestDiffViewer({
     elements.forEach((element) => observer.observe(element));
 
     return () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
       elements.forEach((element) => observer.unobserve(element));
       observer.disconnect();
     };
@@ -776,6 +847,7 @@ export function PullRequestDiffViewer({
       }
 
       const isKeyboard = options?.source === "keyboard";
+      userHasNavigatedRef.current = true;  // Mark that user has manually navigated
 
       setFocusedErrorIndex((previous) => {
         const nextIndex =
@@ -807,6 +879,7 @@ export function PullRequestDiffViewer({
       }
 
       const isKeyboard = options?.source === "keyboard";
+      userHasNavigatedRef.current = true;  // Mark that user has manually navigated
 
       setFocusedErrorIndex((previous) => {
         const nextIndex = previous === null ? 0 : (previous + 1) % targetCount;
@@ -906,6 +979,12 @@ export function PullRequestDiffViewer({
       return;
     }
     if (!focusedError) {
+      return;
+    }
+
+    // Only navigate and scroll if user has manually triggered navigation
+    // This prevents auto-scrolling when errors update in the background
+    if (!userHasNavigatedRef.current) {
       return;
     }
 
@@ -1286,6 +1365,37 @@ function FileDiffCard({
     [file.status]
   );
 
+  const handleToggleCollapse = useCallback(() => {
+    if (typeof window !== "undefined") {
+      // Save the card's position relative to viewport before toggling
+      const cardRect = cardRef.current?.getBoundingClientRect();
+      if (cardRect) {
+        const wasAboveViewport = cardRect.top < 100;
+        const scrollBefore = window.scrollY;
+
+        setIsCollapsed((prev) => !prev);
+
+        // After DOM update, adjust scroll to keep card in same position
+        requestAnimationFrame(() => {
+          if (wasAboveViewport) {
+            const newCardRect = cardRef.current?.getBoundingClientRect();
+            if (newCardRect) {
+              // Maintain the card header's position at top of viewport
+              window.scrollTo({
+                top: scrollBefore + newCardRect.top - cardRect.top,
+                behavior: 'instant' as ScrollBehavior
+              });
+            }
+          }
+        });
+      } else {
+        setIsCollapsed((prev) => !prev);
+      }
+    } else {
+      setIsCollapsed((prev) => !prev);
+    }
+  }, []);
+
   useEffect(() => {
     if (isActive) {
       setIsCollapsed(false);
@@ -1538,7 +1648,7 @@ function FileDiffCard({
       >
         <button
           type="button"
-          onClick={() => setIsCollapsed((previous) => !previous)}
+          onClick={handleToggleCollapse}
           className="flex w-full items-center gap-3 border-b border-neutral-200 bg-neutral-50/80 px-3.5 py-2.5 text-left transition hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
           aria-expanded={!isCollapsed}
         >
