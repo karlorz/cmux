@@ -13,7 +13,7 @@ import { api } from "@cmux/convex/api";
 import { postApiTeams } from "@cmux/www-openapi-client";
 import { Skeleton } from "@heroui/react";
 import { useStackApp, useUser, type Team } from "@stackframe/react";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { setLastTeamSlugOrId } from "@/lib/lastTeam";
 import { useQuery as useConvexQuery, useMutation } from "convex/react";
 import { useCallback, useState } from "react";
@@ -194,18 +194,50 @@ interface TeamItemProps {
 }
 
 function TeamItem({ team, getClientSlug }: TeamItemProps) {
+  const user = useUser({ or: "return-null" });
+  const navigate = useNavigate();
   const teamInfo = useConvexQuery(api.teams.get, { teamSlugOrId: team.id });
   const slug = teamInfo?.slug || getClientSlug(team.clientMetadata);
   const teamSlugOrId = slug ?? team.id;
 
+  const handleTeamSelect = useCallback(async (e: React.MouseEvent) => {
+    e.preventDefault();
+
+    try {
+      console.log("[TeamPicker] Selecting team:", { teamId: team.id, teamSlugOrId, displayName: team.displayName });
+
+      // Set the selected team in Stack auth first
+      if (user) {
+        console.log("[TeamPicker] Setting selected team in Stack auth...");
+        await user.setSelectedTeam(team);
+        console.log("[TeamPicker] Selected team set successfully in Stack auth");
+      } else {
+        console.warn("[TeamPicker] User not authenticated, cannot set selected team");
+      }
+
+      // Then save to localStorage
+      setLastTeamSlugOrId(teamSlugOrId);
+      console.log("[TeamPicker] Saved team to localStorage:", teamSlugOrId);
+
+      // Finally navigate
+      console.log("[TeamPicker] Navigating to dashboard...");
+      await navigate({
+        to: "/$teamSlugOrId/dashboard",
+        params: { teamSlugOrId },
+      });
+      console.log("[TeamPicker] Navigation successful");
+    } catch (error) {
+      console.error("[TeamPicker] Failed to select team:", error);
+      // Show user-friendly error
+      const errorMessage = error instanceof Error ? error.message : "Failed to select team";
+      alert(`Failed to select team: ${errorMessage}`);
+    }
+  }, [team, teamSlugOrId, user, navigate]);
+
   return (
     <li>
-      <Link
-        to="/$teamSlugOrId/dashboard"
-        params={{ teamSlugOrId }}
-        onClick={() => {
-          setLastTeamSlugOrId(teamSlugOrId);
-        }}
+      <button
+        onClick={handleTeamSelect}
         className={
           "group flex w-full text-left rounded-xl border transition-all focus:outline-none border-neutral-200 hover:border-neutral-300 dark:border-neutral-800 dark:hover:border-neutral-700 bg-white dark:bg-neutral-900/80 disabled:border-neutral-200 dark:disabled:border-neutral-800 p-4"
         }
@@ -230,7 +262,7 @@ function TeamItem({ team, getClientSlug }: TeamItemProps) {
             </div>
           </div>
         </div>
-      </Link>
+      </button>
     </li>
   );
 }

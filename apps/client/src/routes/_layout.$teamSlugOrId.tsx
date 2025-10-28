@@ -18,6 +18,7 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId")({
   beforeLoad: async ({ params, location }) => {
     const user = await cachedGetUser(stackClientApp);
     if (!user) {
+      console.log("[TeamLayout] User not authenticated, redirecting to sign-in");
       throw redirect({
         to: "/sign-in",
         search: {
@@ -25,19 +26,47 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId")({
         },
       });
     }
+
     const { teamSlugOrId } = params;
-    const teamMemberships = await convexQueryClient.convexClient.query(
-      api.teams.listTeamMemberships,
-    );
-    const teamMembership = teamMemberships.find((membership) => {
-      const team = membership.team;
-      const membershipTeamId = team?.teamId ?? membership.teamId;
-      const membershipSlug = team?.slug;
-      return (
-        membershipSlug === teamSlugOrId || membershipTeamId === teamSlugOrId
+    console.log("[TeamLayout] Loading team layout for:", teamSlugOrId);
+
+    try {
+      const teamMemberships = await convexQueryClient.convexClient.query(
+        api.teams.listTeamMemberships,
       );
-    });
-    if (!teamMembership) {
+      console.log("[TeamLayout] User has", teamMemberships.length, "team memberships");
+
+      const teamMembership = teamMemberships.find((membership) => {
+        const team = membership.team;
+        const membershipTeamId = team?.teamId ?? membership.teamId;
+        const membershipSlug = team?.slug;
+        const isMatch = membershipSlug === teamSlugOrId || membershipTeamId === teamSlugOrId;
+        if (isMatch) {
+          console.log("[TeamLayout] Found matching team membership:", {
+            teamId: membershipTeamId,
+            slug: membershipSlug,
+            displayName: team?.displayName,
+          });
+        }
+        return isMatch;
+      });
+
+      if (!teamMembership) {
+        console.warn("[TeamLayout] User is not a member of team:", teamSlugOrId);
+        console.log("[TeamLayout] Available teams:", teamMemberships.map(m => ({
+          id: m.team?.teamId ?? m.teamId,
+          slug: m.team?.slug,
+          displayName: m.team?.displayName,
+        })));
+        throw redirect({ to: "/team-picker" });
+      }
+
+      console.log("[TeamLayout] Successfully validated team membership");
+    } catch (error) {
+      if (error && typeof error === 'object' && 'redirect' in error) {
+        throw error; // Re-throw redirect errors
+      }
+      console.error("[TeamLayout] Error checking team membership:", error);
       throw redirect({ to: "/team-picker" });
     }
   },
