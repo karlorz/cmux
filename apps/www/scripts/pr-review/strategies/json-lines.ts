@@ -8,7 +8,8 @@ import type {
 
 function buildPrompt(context: StrategyPrepareContext): string {
   const diffForPrompt =
-    context.options.showDiffLineNumbers || context.options.showContextLineNumbers
+    context.options.showDiffLineNumbers ||
+    context.options.showContextLineNumbers
       ? context.formattedDiff.join("\n")
       : context.diff || "(no diff output)";
 
@@ -25,8 +26,8 @@ It should be understandable by a human and make sense (break the "X is Y" rule i
 mostImportantWord must always be provided and should identify the most critical word or identifier in the line. If you're unsure, pick the earliest relevant word or token.
 Ugly code should be given a higher score.
 Code that may be hard to read for a human should also be given a higher score.
-Non-clean code too.
-Only return lines that are actually interesting to review. Do not return lines that a human would not care about. But you should still be thorough and cover all interesting/suspicious lines.
+Non-clean code too. Type casts, type assertions, type guards, "any" types, etc. should be given a higher score.
+Do not be lazy. Return all lines that are even slightly interesting to review. Be extremely thorough.
 
 The diff:
 ${diffForPrompt || "(no diff output)"}`;

@@ -1035,33 +1035,37 @@ export function PullRequestDiffViewer({
 
   return (
     <div className="flex flex-col gap-3">
-      <ReviewProgressIndicator
-        totalFileCount={totalFileCount}
-        processedFileCount={processedFileCount}
-        isLoading={isLoadingFileOutputs}
-      />
-
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-3">
-        <aside className="lg:sticky lg:top-2 lg:h-[calc(100vh-96px)] lg:w-72 lg:overflow-y-auto">
-          {targetCount > 0 ? (
-            <div className="mb-4 flex justify-center">
-              <ErrorNavigator
-                totalCount={targetCount}
-                currentIndex={focusedErrorIndex}
-                onPrevious={handleFocusPrevious}
-                onNext={handleFocusNext}
+        <aside className="lg:sticky lg:top-2 lg:h-[calc(100vh)] lg:w-72 lg:overflow-y-auto">
+          <div className="flex flex-col gap-3">
+            <div className="lg:sticky lg:top-0 lg:z-10 lg:bg-white">
+              <ReviewProgressIndicator
+                totalFileCount={totalFileCount}
+                processedFileCount={processedFileCount}
+                isLoading={isLoadingFileOutputs}
               />
             </div>
-          ) : null}
-          <div className="">
-            <FileTreeNavigator
-              nodes={fileTree}
-              activePath={activeAnchor}
-              expandedPaths={expandedPaths}
-              onToggleDirectory={handleToggleDirectory}
-              onSelectFile={handleNavigate}
-            />
+            {targetCount > 0 ? (
+              <div className="flex justify-center">
+                <ErrorNavigator
+                  totalCount={targetCount}
+                  currentIndex={focusedErrorIndex}
+                  onPrevious={handleFocusPrevious}
+                  onNext={handleFocusNext}
+                />
+              </div>
+            ) : null}
+            <div>
+              <FileTreeNavigator
+                nodes={fileTree}
+                activePath={activeAnchor}
+                expandedPaths={expandedPaths}
+                onToggleDirectory={handleToggleDirectory}
+                onSelectFile={handleNavigate}
+              />
+            </div>
           </div>
+          <div className="h-[40px]"></div>
         </aside>
 
         <div className="flex-1 space-y-3">
@@ -1132,41 +1136,57 @@ function ReviewProgressIndicator({
       : pendingFileCount === 0
         ? "All files processed"
         : `${processedFileCount} processed • ${pendingFileCount} pending`;
-
   const processedBadgeText =
     processedFileCount === null ? "— done" : `${processedFileCount} done`;
   const pendingBadgeText =
     processedFileCount === null ? "— waiting" : `${pendingFileCount} waiting`;
+  const isFullyProcessed =
+    processedFileCount !== null && pendingFileCount === 0;
+  const shouldPulsePending =
+    processedFileCount === null || pendingFileCount > 0;
 
   return (
     <div
       className="border border-neutral-200 bg-white p-5 transition"
       aria-live="polite"
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="text-sm font-medium text-neutral-700">
             Automated review progress
           </p>
-          <p className="text-xs text-neutral-500">{statusText}</p>
+          <p className="sr-only">{statusText}</p>
         </div>
         <div className="flex items-center gap-2 text-xs font-semibold">
-          <span
-            className={cn(
-              "bg-emerald-100 px-2 py-0.5 text-emerald-700",
-              isLoading ? "animate-pulse" : undefined
-            )}
-          >
-            {processedBadgeText}
-          </span>
-          <span
-            className={cn(
-              "bg-amber-100 px-2 py-0.5 text-amber-700",
-              isLoading ? "animate-pulse" : undefined
-            )}
-          >
-            {pendingBadgeText}
-          </span>
+          {isFullyProcessed ? (
+            <span
+              className={cn(
+                "bg-emerald-100 px-2 py-0.5 text-emerald-700",
+                isLoading ? "animate-pulse" : undefined
+              )}
+            >
+              All files processed
+            </span>
+          ) : (
+            <>
+              <span
+                className={cn(
+                  "bg-emerald-100 px-2 py-0.5 text-emerald-700",
+                  isLoading ? "animate-pulse" : undefined
+                )}
+              >
+                {processedBadgeText}
+              </span>
+              <span
+                className={cn(
+                  "bg-amber-100 px-2 py-0.5 text-amber-700",
+                  shouldPulsePending ? "animate-pulse" : undefined
+                )}
+              >
+                {pendingBadgeText}
+              </span>
+            </>
+          )}
         </div>
       </div>
       <div className="mt-3 h-2 bg-neutral-200">
@@ -1213,7 +1233,7 @@ function ErrorNavigator({
         <span aria-live="polite" className="flex items-center gap-1">
           {hasSelection && displayIndex !== null ? (
             <>
-              <span>Error</span>
+              <span>Highlight</span>
               <span className="font-mono tabular-nums">{displayIndex}</span>
               <span>of</span>
               <span className="font-mono tabular-nums">{totalCount}</span>
@@ -1221,7 +1241,7 @@ function ErrorNavigator({
           ) : (
             <>
               <span className="font-mono tabular-nums">{totalCount}</span>
-              <span>{totalCount === 1 ? "error" : "errors"}</span>
+              <span>{totalCount === 1 ? "highlight" : "highlights"}</span>
             </>
           )}
         </span>
@@ -1232,7 +1252,7 @@ function ErrorNavigator({
                 type="button"
                 onClick={() => onPrevious()}
                 className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-600 transition hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sky-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800"
-                aria-label="Go to previous error (Shift+K)"
+                aria-label="Go to previous highlight (Shift+K)"
                 disabled={totalCount === 0}
               >
                 <ChevronLeft className="h-3.5 w-3.5" aria-hidden />
@@ -1243,7 +1263,7 @@ function ErrorNavigator({
               align="center"
               className="flex items-center gap-2 rounded-md border border-neutral-200 bg-white px-2 py-1 text-[11px] font-medium text-neutral-700 shadow-md dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
             >
-              <span>Previous error</span>
+              <span>Previous highlight</span>
               <span className="rounded border border-neutral-200 bg-neutral-50 px-1 py-0.5 font-mono text-[10px] uppercase text-neutral-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
                 ⇧ K
               </span>
@@ -1255,7 +1275,7 @@ function ErrorNavigator({
                 type="button"
                 onClick={() => onNext()}
                 className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-600 transition hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sky-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800"
-                aria-label="Go to next error (Shift+J)"
+                aria-label="Go to next highlight (Shift+J)"
                 disabled={totalCount === 0}
               >
                 <ChevronRight className="h-3.5 w-3.5" aria-hidden />
@@ -1266,7 +1286,7 @@ function ErrorNavigator({
               align="center"
               className="flex items-center gap-2 rounded-md border border-neutral-200 bg-white px-2 py-1 text-[11px] font-medium text-neutral-700 shadow-md dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
             >
-              <span>Next error</span>
+              <span>Next highlight</span>
               <span className="rounded border border-neutral-200 bg-neutral-50 px-1 py-0.5 font-mono text-[10px] uppercase text-neutral-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
                 ⇧ J
               </span>
@@ -1618,7 +1638,7 @@ function FileDiffCard({
   }, [review]);
 
   // const showReview = Boolean(reviewContent);
-  const showReview = false;
+  const showReview = true;
 
   return (
     <TooltipProvider
