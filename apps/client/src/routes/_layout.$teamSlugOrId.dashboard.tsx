@@ -6,6 +6,7 @@ import { DashboardInputControls } from "@/components/dashboard/DashboardInputCon
 import { DashboardInputFooter } from "@/components/dashboard/DashboardInputFooter";
 import { DashboardStartTaskButton } from "@/components/dashboard/DashboardStartTaskButton";
 import { TaskList } from "@/components/dashboard/TaskList";
+import { FirstTimeOnboarding } from "@/components/FirstTimeOnboarding";
 import { FloatingPane } from "@/components/floating-pane";
 import { GitHubIcon } from "@/components/icons/github";
 import { useTheme } from "@/components/theme/use-theme";
@@ -28,7 +29,8 @@ import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery as useConvexQuery } from "convex/react";
+import { useUser } from '@stackframe/react';
 import { Server as ServerIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -80,6 +82,18 @@ function DashboardComponent() {
   const { socket } = useSocket();
   const { theme } = useTheme();
   const { addTaskToExpand } = useExpandTasks();
+  const user = useUser({ or: "return-null" });
+
+  // Check if user has completed onboarding
+  const userProfile = useConvexQuery(
+    api.users.getUser,
+    user ? { userId: user.id } : "skip"
+  );
+  const hasCompletedOnboarding = userProfile?.hasCompletedOnboarding ?? false;
+
+  // Get team info to check if it's a first-time team
+  const teamInfo = useConvexQuery(api.teams.get, { teamSlugOrId });
+  const teamId = teamInfo?.uuid ?? teamSlugOrId;
 
   const [selectedProject, setSelectedProject] = useState<string[]>(() => {
     const stored = localStorage.getItem("selectedProject");
@@ -807,44 +821,49 @@ function DashboardComponent() {
   ]);
 
   return (
-    <FloatingPane header={<TitleBar title="cmux" />}>
-      <div className="flex flex-col grow overflow-y-auto">
-        {/* Main content area */}
-        <div className="flex-1 flex justify-center px-4 pt-60 pb-4">
-          <div className="w-full max-w-4xl min-w-0">
-            <DashboardMainCard
-              editorApiRef={editorApiRef}
-              onTaskDescriptionChange={handleTaskDescriptionChange}
-              onSubmit={handleSubmit}
-              lexicalRepoUrl={lexicalRepoUrl}
-              lexicalEnvironmentId={lexicalEnvironmentId}
-              lexicalBranch={lexicalBranch}
-              projectOptions={projectOptions}
-              selectedProject={selectedProject}
-              onProjectChange={handleProjectChange}
-              branchOptions={branchOptions}
-              selectedBranch={effectiveSelectedBranch}
-              onBranchChange={handleBranchChange}
-              selectedAgents={selectedAgents}
-              onAgentChange={handleAgentChange}
-              isCloudMode={isCloudMode}
-              onCloudModeToggle={handleCloudModeToggle}
-              isLoadingProjects={reposByOrgQuery.isLoading}
-              isLoadingBranches={branchesQuery.isPending}
-              teamSlugOrId={teamSlugOrId}
-              cloudToggleDisabled={isEnvSelected}
-              branchDisabled={isEnvSelected || !selectedProject[0]}
-              providerStatus={providerStatus}
-              canSubmit={canSubmit}
-              onStartTask={handleStartTask}
-            />
+    <>
+      {/* Show onboarding overlay for first-time users */}
+      {user && !hasCompletedOnboarding && <FirstTimeOnboarding teamId={teamId} />}
 
-            {/* Task List */}
-            <TaskList teamSlugOrId={teamSlugOrId} />
+      <FloatingPane header={<TitleBar title="cmux" />}>
+        <div className="flex flex-col grow overflow-y-auto">
+          {/* Main content area */}
+          <div className="flex-1 flex justify-center px-4 pt-60 pb-4">
+            <div className="w-full max-w-4xl min-w-0">
+              <DashboardMainCard
+                editorApiRef={editorApiRef}
+                onTaskDescriptionChange={handleTaskDescriptionChange}
+                onSubmit={handleSubmit}
+                lexicalRepoUrl={lexicalRepoUrl}
+                lexicalEnvironmentId={lexicalEnvironmentId}
+                lexicalBranch={lexicalBranch}
+                projectOptions={projectOptions}
+                selectedProject={selectedProject}
+                onProjectChange={handleProjectChange}
+                branchOptions={branchOptions}
+                selectedBranch={effectiveSelectedBranch}
+                onBranchChange={handleBranchChange}
+                selectedAgents={selectedAgents}
+                onAgentChange={handleAgentChange}
+                isCloudMode={isCloudMode}
+                onCloudModeToggle={handleCloudModeToggle}
+                isLoadingProjects={reposByOrgQuery.isLoading}
+                isLoadingBranches={branchesQuery.isPending}
+                teamSlugOrId={teamSlugOrId}
+                cloudToggleDisabled={isEnvSelected}
+                branchDisabled={isEnvSelected || !selectedProject[0]}
+                providerStatus={providerStatus}
+                canSubmit={canSubmit}
+                onStartTask={handleStartTask}
+              />
+
+              {/* Task List */}
+              <TaskList teamSlugOrId={teamSlugOrId} />
+            </div>
           </div>
         </div>
-      </div>
-    </FloatingPane>
+      </FloatingPane>
+    </>
   );
 }
 

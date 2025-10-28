@@ -32,6 +32,33 @@ export const getReposByOrg = authQuery({
   },
 });
 
+export const getReposByTeam = authQuery({
+  args: { teamId: v.string() },
+  handler: async (ctx, { teamId }) => {
+    // Get all repos for the team
+    const repos = await ctx.db
+      .query("repos")
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
+      .collect();
+
+    return repos;
+  },
+});
+
+export const getProviderConnections = authQuery({
+  args: { teamId: v.string() },
+  handler: async (ctx, { teamId }) => {
+    // Get all provider connections for the team
+    const connections = await ctx.db
+      .query("providerConnections")
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .collect();
+
+    return connections;
+  },
+});
+
 export const getBranches = authQuery({
   args: { teamSlugOrId: v.string(), repo: v.string() },
   handler: async (ctx, { teamSlugOrId, repo }) => {
@@ -707,5 +734,68 @@ export const replaceAllRepos = authMutation({
       )
     );
     return insertedIds;
+  },
+});
+
+// Install CMUX agent in selected repositories
+export const installAgentInRepos = authMutation({
+  args: {
+    teamId: v.string(),
+    repoIds: v.array(v.id("repos")),
+    setupType: v.union(v.literal("github_actions"), v.literal("webhook")),
+  },
+  handler: async (ctx, { teamId, repoIds, setupType }) => {
+    const userId = ctx.identity.subject;
+
+    // Verify user has access to the team
+    const membership = await ctx.db
+      .query("teamMemberships")
+      .withIndex("by_team_user", (q) =>
+        q.eq("teamId", teamId).eq("userId", userId)
+      )
+      .first();
+
+    if (!membership) {
+      throw new Error("User is not a member of this team");
+    }
+
+    // Get the repositories
+    const repos = await Promise.all(
+      repoIds.map(async (repoId) => {
+        const repo = await ctx.db.get(repoId);
+        if (!repo) {
+          throw new Error(`Repository ${repoId} not found`);
+        }
+        if (repo.teamId !== teamId) {
+          throw new Error(`Repository ${repoId} does not belong to this team`);
+        }
+        return repo;
+      })
+    );
+
+    // Track agent installation status for each repo
+    const installations = await Promise.all(
+      repos.map(async (repo) => {
+        // Update repo to indicate agent is installed
+        await ctx.db.patch(repo._id, {
+          agentInstalled: true,
+          agentSetupType: setupType,
+          agentInstalledAt: Date.now(),
+          agentInstalledBy: userId,
+        });
+
+        return {
+          repoId: repo._id,
+          fullName: repo.fullName,
+          status: "installed" as const,
+        };
+      })
+    );
+
+    return {
+      success: true,
+      installations,
+      totalInstalled: installations.length,
+    };
   },
 });

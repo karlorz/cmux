@@ -84,6 +84,9 @@ const convexSchema = defineSchema({
     ),
     // Anonymous flag
     isAnonymous: v.optional(v.boolean()),
+    // Onboarding tracking
+    hasCompletedOnboarding: v.optional(v.boolean()),
+    onboardingCompletedAt: v.optional(v.number()),
     // Local bookkeeping
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -418,6 +421,13 @@ const convexSchema = defineSchema({
     connectionId: v.optional(v.id("providerConnections")),
     lastSyncedAt: v.optional(v.number()),
     lastPushedAt: v.optional(v.number()),
+    // Agent installation tracking
+    agentInstalled: v.optional(v.boolean()),
+    agentSetupType: v.optional(
+      v.union(v.literal("github_actions"), v.literal("webhook"))
+    ),
+    agentInstalledAt: v.optional(v.number()),
+    agentInstalledBy: v.optional(v.string()),
   })
     .index("by_org", ["org"])
     .index("by_gitRemote", ["gitRemote"])

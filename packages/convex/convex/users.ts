@@ -1,4 +1,54 @@
-import { authQuery } from "./users/utils";
+import { v } from "convex/values";
+import { authMutation, authQuery } from "./users/utils";
+
+export const getUser = authQuery({
+  args: {
+    userId: v.string(),
+  },
+  handler: async (ctx, { userId }) => {
+    // Verify the requesting user matches or is admin
+    if (ctx.identity.subject !== userId) {
+      // For now, only allow users to query their own data
+      throw new Error("Unauthorized: Can only query your own user data");
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .first();
+
+    return user;
+  },
+});
+
+export const markOnboardingComplete = authMutation({
+  args: {
+    userId: v.string(),
+  },
+  handler: async (ctx, { userId }) => {
+    // Verify the requesting user matches
+    if (ctx.identity.subject !== userId) {
+      throw new Error("Unauthorized: Can only update your own user data");
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .first();
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    await ctx.db.patch(user._id, {
+      hasCompletedOnboarding: true,
+      onboardingCompletedAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
 
 export const getCurrentBasic = authQuery({
   // No args needed; uses auth context
