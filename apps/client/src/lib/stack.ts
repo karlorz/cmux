@@ -29,38 +29,59 @@ convexQueryClient.convexClient.setAuth(
 );
 
 const fetchWithAuth = (async (request: Request) => {
-  const user = await cachedGetUser(stackClientApp);
-  if (!user) {
-    throw new Error("User not found");
-  }
-  const authHeaders = await user.getAuthHeaders();
-  const mergedHeaders = new Headers();
-  for (const [key, value] of Object.entries(authHeaders)) {
-    mergedHeaders.set(key, value);
-  }
-  for (const [key, value] of request instanceof Request
-    ? request.headers.entries()
-    : []) {
-    mergedHeaders.set(key, value);
-  }
-  const response = await fetch(request, {
-    headers: mergedHeaders,
-  });
-  if (!response.ok) {
-    try {
-      const clone = response.clone();
-      const bodyText = await clone.text();
-      console.error("[APIError]", {
-        url: response.url,
-        status: response.status,
-        statusText: response.statusText,
-        body: bodyText.slice(0, 2000),
-      });
-    } catch (e) {
-      console.error("[APIError] Failed to read error body", e);
+  // Helper function to make the actual request with retry logic
+  async function makeRequestWithAuth(req: Request, isRetry = false): Promise<Response> {
+    const user = await cachedGetUser(stackClientApp);
+    if (!user) {
+      throw new Error("User not found");
     }
+    const authHeaders = await user.getAuthHeaders();
+    const mergedHeaders = new Headers();
+    for (const [key, value] of Object.entries(authHeaders)) {
+      mergedHeaders.set(key, value);
+    }
+    for (const [key, value] of req instanceof Request
+      ? req.headers.entries()
+      : []) {
+      mergedHeaders.set(key, value);
+    }
+    const response = await fetch(req, {
+      headers: mergedHeaders,
+    });
+
+    // Handle 401 Unauthorized errors with automatic token refresh and retry
+    if (response.status === 401 && !isRetry) {
+      console.warn("[Auth] Received 401 Unauthorized, clearing cached user and retrying with fresh token");
+
+      // Clear cached user to force token refresh on next call
+      window.cachedUser = null;
+      window.userPromise = null;
+
+      // Clone the request to retry
+      const clonedRequest = req.clone();
+
+      // Retry the request once with fresh credentials
+      return makeRequestWithAuth(clonedRequest, true);
+    }
+
+    if (!response.ok) {
+      try {
+        const clone = response.clone();
+        const bodyText = await clone.text();
+        console.error("[APIError]", {
+          url: response.url,
+          status: response.status,
+          statusText: response.statusText,
+          body: bodyText.slice(0, 2000),
+        });
+      } catch (e) {
+        console.error("[APIError] Failed to read error body", e);
+      }
+    }
+    return response;
   }
-  return response;
+
+  return makeRequestWithAuth(request);
 }) as typeof fetch; // TODO: remove when bun types dont conflict with node types
 
 wwwOpenAPIClient.setConfig({

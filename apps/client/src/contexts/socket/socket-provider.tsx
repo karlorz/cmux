@@ -8,6 +8,7 @@ import { useLocation } from "@tanstack/react-router";
 import React, { useEffect, useMemo } from "react";
 import { cachedGetUser } from "../../lib/cachedGetUser";
 import { stackClientApp } from "../../lib/stack";
+import { refreshAuth } from "../../lib/refreshAuth";
 import { authJsonQueryOptions } from "../convex/authJsonQueryOptions";
 import { setGlobalSocket, socketBoot } from "./socket-boot";
 import { WebSocketContext } from "./socket-context";
@@ -93,12 +94,87 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({
         setIsConnected(false);
       });
 
-      newSocket.on("connect_error", (err) => {
+      newSocket.on("connect_error", async (err) => {
         const errorMessage =
           err && typeof err === "object" && "message" in err
             ? (err as Error).message
             : String(err);
         console.error("[Socket] connect_error", errorMessage);
+
+        // Check if this is an auth-related error
+        const isAuthError =
+          errorMessage.toLowerCase().includes("unauthorized") ||
+          errorMessage.toLowerCase().includes("auth") ||
+          errorMessage.toLowerCase().includes("401");
+
+        if (isAuthError) {
+          console.warn(
+            "[Socket] Auth error detected, attempting to refresh token and reconnect"
+          );
+
+          try {
+            // Attempt to refresh the authentication token
+            const refreshedUser = await refreshAuth();
+
+            if (refreshedUser && !disposed) {
+              console.log(
+                "[Socket] Token refreshed successfully, reconnecting socket..."
+              );
+
+              // Disconnect the old socket
+              newSocket.disconnect();
+
+              // Get fresh auth data
+              const freshAuthJson = await refreshedUser.getAuthJson();
+              const freshAuthToken = freshAuthJson?.accessToken;
+
+              if (freshAuthToken) {
+                // Create a new socket with the refreshed credentials
+                const query: Record<string, string> = { auth: freshAuthToken };
+                if (teamSlugOrId) {
+                  query.team = teamSlugOrId;
+                }
+                if (freshAuthJson) {
+                  query.auth_json = JSON.stringify(freshAuthJson);
+                }
+
+                const reconnectedSocket = connectToMainServer({
+                  url,
+                  authToken: freshAuthToken,
+                  teamSlugOrId,
+                  authJson: freshAuthJson,
+                });
+
+                if (!disposed) {
+                  createdSocket = reconnectedSocket;
+                  setSocket(reconnectedSocket);
+                  setGlobalSocket(reconnectedSocket);
+
+                  // Re-attach event handlers
+                  reconnectedSocket.on("connect", () => {
+                    console.log("[Socket] reconnected with fresh token");
+                    setIsConnected(true);
+                  });
+
+                  reconnectedSocket.on("disconnect", () => {
+                    console.warn("[Socket] disconnected");
+                    setIsConnected(false);
+                  });
+
+                  reconnectedSocket.on("available-editors", (data: AvailableEditors) => {
+                    setAvailableEditors(data);
+                  });
+                }
+              }
+            } else {
+              console.error(
+                "[Socket] Failed to refresh auth token, cannot reconnect"
+              );
+            }
+          } catch (refreshError) {
+            console.error("[Socket] Error during token refresh:", refreshError);
+          }
+        }
       });
 
       newSocket.on("available-editors", (data: AvailableEditors) => {
