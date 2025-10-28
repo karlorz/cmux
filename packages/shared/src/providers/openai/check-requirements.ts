@@ -6,26 +6,21 @@ export async function checkOpenAIRequirements(
   const { access } = await import("node:fs/promises");
   const { homedir } = await import("node:os");
   const { join } = await import("node:path");
-  
+
   const missing: string[] = [];
   const hasApiKey = Boolean(context?.apiKeys?.OPENAI_API_KEY?.trim());
 
-  // Check for .codex/auth.json (required for Codex CLI)
+  // If we have an API key, we can use it to authenticate Codex
+  // via `codex login --with-api-key`, so auth.json is not required
+  if (hasApiKey) {
+    return missing;
+  }
+
+  // Otherwise, check for local authentication
   try {
     await access(join(homedir(), ".codex", "auth.json"));
   } catch {
-    if (!hasApiKey) {
-      missing.push(".codex/auth.json file or OPENAI_API_KEY");
-    }
-  }
-
-  // Check for .codex/config.toml (new preferred config)
-  try {
-    await access(join(homedir(), ".codex", "config.toml"));
-  } catch {
-    if (!hasApiKey) {
-      missing.push(".codex/config.toml file or OPENAI_API_KEY");
-    }
+    missing.push("Codex authentication required: either sign in locally with `codex login` or provide OPENAI_API_KEY");
   }
 
   return missing;
