@@ -1,5 +1,6 @@
 import { GithubApiError } from "./errors";
 import { createGitHubClient } from "./octokit";
+import { createAuthenticatedGitHubClient } from "./authenticated-client";
 
 type RequestErrorShape = {
   status?: number;
@@ -67,9 +68,14 @@ export async function fetchPullRequest(
   owner: string,
   repo: string,
   pullNumber: number,
+  options?: { installationId?: number; userToken?: string }
 ): Promise<GithubPullRequest> {
   try {
-    const octokit = createGitHubClient();
+    // Try with authenticated client if we have credentials
+    const octokit = options?.installationId || options?.userToken
+      ? await createAuthenticatedGitHubClient(options)
+      : createGitHubClient();
+
     const response = await octokit.rest.pulls.get({
       owner,
       repo,
@@ -85,9 +91,14 @@ export async function fetchPullRequestFiles(
   owner: string,
   repo: string,
   pullNumber: number,
+  options?: { installationId?: number; userToken?: string }
 ): Promise<GithubPullRequestFile[]> {
   try {
-    const octokit = createGitHubClient();
+    // Try with authenticated client if we have credentials
+    const octokit = options?.installationId || options?.userToken
+      ? await createAuthenticatedGitHubClient(options)
+      : createGitHubClient();
+
     const files = await octokit.paginate(octokit.rest.pulls.listFiles, {
       owner,
       repo,

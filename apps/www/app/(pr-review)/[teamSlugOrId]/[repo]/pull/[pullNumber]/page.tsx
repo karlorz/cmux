@@ -11,6 +11,7 @@ import {
   type GithubPullRequest,
   type GithubFileChange,
 } from "@/lib/github/fetch-pull-request";
+import { checkUserRepoAccess } from "@/lib/github/user-installations";
 import { isGithubApiError } from "@/lib/github/errors";
 import { cn } from "@/lib/utils";
 import { stackServerApp } from "@/lib/utils/stack";
@@ -26,6 +27,7 @@ import {
   ReviewGitHubLinkButton,
   summarizeFiles,
 } from "../../_components/review-diff-content";
+import { PrivateRepoAuth } from "../../_components/private-repo-auth";
 
 type PageParams = {
   teamSlugOrId: string;
@@ -88,10 +90,18 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   }
 
   try {
+    // Check if user has GitHub App installation for this repo
+    const repoFullName = `${githubOwner}/${repo}`;
+    const userAccess = await checkUserRepoAccess(repoFullName);
+    const authOptions = userAccess.hasAccess
+      ? { installationId: userAccess.installationId }
+      : undefined;
+
     const pullRequest = await fetchPullRequest(
       githubOwner,
       repo,
-      pullNumber
+      pullNumber,
+      authOptions
     );
 
     return {
@@ -125,11 +135,19 @@ export default async function PullRequestPage({ params }: PageProps) {
     notFound();
   }
 
-  const pullRequestPromise = fetchPullRequest(githubOwner, repo, pullNumber);
+  // Check if user has GitHub App installation for this repo
+  const repoFullName = `${githubOwner}/${repo}`;
+  const userAccess = await checkUserRepoAccess(repoFullName);
+  const authOptions = userAccess.hasAccess
+    ? { installationId: userAccess.installationId }
+    : undefined;
+
+  const pullRequestPromise = fetchPullRequest(githubOwner, repo, pullNumber, authOptions);
   const pullRequestFilesPromise = fetchPullRequestFiles(
     githubOwner,
     repo,
-    pullNumber
+    pullNumber,
+    authOptions
   ).then((files) => files.map(toGithubFileChange));
 
   scheduleCodeReviewStart({
@@ -148,6 +166,8 @@ export default async function PullRequestPage({ params }: PageProps) {
             promise={pullRequestPromise}
             githubOwner={githubOwner}
             repo={repo}
+            pullNumber={pullNumber}
+            teamSlugOrId={selectedTeam.id}
           />
         </Suspense>
 
@@ -285,10 +305,14 @@ function PullRequestHeader({
   promise,
   githubOwner,
   repo,
+  pullNumber,
+  teamSlugOrId,
 }: {
   promise: PullRequestPromise;
   githubOwner: string;
   repo: string;
+  pullNumber: number;
+  teamSlugOrId: string;
 }) {
   try {
     const pullRequest = use(promise);
@@ -301,6 +325,34 @@ function PullRequestHeader({
     );
   } catch (error) {
     if (isGithubApiError(error)) {
+      // Check if this is a private repo that needs authentication
+      if (error.status === 404 || error.status === 403) {
+        // Check if the error message indicates this is a private repo
+        const isPrivateRepo =
+          error.message?.toLowerCase().includes("not found") ||
+          error.message?.toLowerCase().includes("forbidden") ||
+          error.message?.toLowerCase().includes("requires authentication") ||
+          error.status === 404;
+
+        if (isPrivateRepo) {
+          const returnPath = buildPullRequestPath({
+            teamSlugOrId,
+            repo,
+            pullNumber: pullNumber.toString(),
+          });
+
+          return (
+            <PrivateRepoAuth
+              teamSlugOrId={teamSlugOrId}
+              githubOwner={githubOwner}
+              repo={repo}
+              pullNumber={pullNumber}
+              returnPath={returnPath}
+            />
+          );
+        }
+      }
+
       const message =
         error.status === 404
           ? "This pull request could not be found or you might not have access to view it."
