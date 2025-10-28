@@ -756,33 +756,24 @@ export function PullRequestDiffViewer({
 
     const observer = new IntersectionObserver(
       (entries) => {
+        // Find all visible entries and sort by their position from the top
         const visible = entries
           .filter((entry) => entry.isIntersecting)
-          .sort(
-            (a, b) =>
-              a.target.getBoundingClientRect().top -
-              b.target.getBoundingClientRect().top
-          );
-
-        if (visible[0]?.target.id) {
-          setActiveAnchor(visible[0].target.id);
-          return;
-        }
-
-        const nearest = entries
           .map((entry) => ({
             id: entry.target.id,
             top: entry.target.getBoundingClientRect().top,
           }))
-          .sort((a, b) => Math.abs(a.top) - Math.abs(b.top))[0];
+          .sort((a, b) => a.top - b.top);
 
-        if (nearest?.id) {
-          setActiveAnchor(nearest.id);
+        // Set the active anchor to the topmost visible file
+        if (visible.length > 0 && visible[0]?.id) {
+          setActiveAnchor(visible[0].id);
         }
       },
       {
-        rootMargin: "-128px 0px -55% 0px",
-        threshold: [0, 0.2, 0.4, 0.6, 1],
+        // Consider a file active when it's in the top 40% of the viewport
+        rootMargin: "0px 0px -60% 0px",
+        threshold: 0,
       }
     );
 
