@@ -195,8 +195,12 @@ interface TeamItemProps {
 
 function TeamItem({ team, getClientSlug }: TeamItemProps) {
   const teamInfo = useConvexQuery(api.teams.get, { teamSlugOrId: team.id });
-  const slug = teamInfo?.slug || getClientSlug(team.clientMetadata);
-  const teamSlugOrId = slug ?? team.id;
+  const resolvedSlug = teamInfo?.slug ?? undefined;
+  const resolvedTeamId = teamInfo?.uuid ?? team.id;
+  const teamSlugOrId = resolvedSlug ?? resolvedTeamId;
+  const displaySlug =
+    resolvedSlug ?? getClientSlug(team.clientMetadata) ?? team.id;
+  const isTeamInfoLoaded = teamInfo !== undefined;
 
   return (
     <li>
@@ -224,8 +228,8 @@ function TeamItem({ team, getClientSlug }: TeamItemProps) {
               {team.displayName}
             </div>
             <div className="text-sm text-neutral-500 dark:text-neutral-400 min-w-0 overflow-hidden">
-              <Skeleton isLoaded={!!teamInfo} className="rounded">
-                <span className="block truncate">{slug || team.id}</span>
+              <Skeleton isLoaded={isTeamInfoLoaded} className="rounded">
+                <span className="block truncate">{displaySlug}</span>
               </Skeleton>
             </div>
           </div>
