@@ -137,6 +137,25 @@ const convexSchema = defineSchema({
         })
       )
     ),
+    screenshotStatus: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("running"),
+        v.literal("completed"),
+        v.literal("failed"),
+        v.literal("skipped"),
+      ),
+    ),
+    screenshotRunId: v.optional(v.id("taskRuns")),
+    screenshotRequestId: v.optional(v.string()),
+    screenshotRequestedAt: v.optional(v.number()),
+    screenshotCompletedAt: v.optional(v.number()),
+    screenshotError: v.optional(v.string()),
+    screenshotStorageId: v.optional(v.id("_storage")),
+    screenshotMimeType: v.optional(v.string()),
+    screenshotFileName: v.optional(v.string()),
+    screenshotCommitSha: v.optional(v.string()),
+    latestScreenshotSetId: v.optional(v.id("taskRunScreenshotSets")),
   })
     .index("by_created", ["createdAt"])
     .index("by_user", ["userId", "createdAt"])
@@ -207,6 +226,12 @@ const convexSchema = defineSchema({
       )
     ),
     diffsLastUpdated: v.optional(v.number()), // Timestamp when diffs were last fetched/updated
+    screenshotStorageId: v.optional(v.id("_storage")),
+    screenshotCapturedAt: v.optional(v.number()),
+    screenshotMimeType: v.optional(v.string()),
+    screenshotFileName: v.optional(v.string()),
+    screenshotCommitSha: v.optional(v.string()),
+    latestScreenshotSetId: v.optional(v.id("taskRunScreenshotSets")),
     // VSCode instance information
     vscode: v.optional(
       v.object({
@@ -261,6 +286,30 @@ const convexSchema = defineSchema({
     .index("by_vscode_container_name", ["vscode.containerName"])
     .index("by_user", ["userId", "createdAt"])
     .index("by_team_user", ["teamId", "userId"]),
+  taskRunScreenshotSets: defineTable({
+    taskId: v.id("tasks"),
+    runId: v.id("taskRuns"),
+    status: v.union(
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("skipped"),
+    ),
+    commitSha: v.optional(v.string()),
+    capturedAt: v.number(),
+    error: v.optional(v.string()),
+    images: v.array(
+      v.object({
+        storageId: v.id("_storage"),
+        mimeType: v.string(),
+        fileName: v.optional(v.string()),
+        commitSha: v.optional(v.string()),
+      }),
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_task_capturedAt", ["taskId", "capturedAt"])
+    .index("by_run_capturedAt", ["runId", "capturedAt"]),
   taskVersions: defineTable({
     taskId: v.id("tasks"),
     version: v.number(),
