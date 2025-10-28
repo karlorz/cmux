@@ -26,6 +26,7 @@ import {
   ReviewGitHubLinkButton,
   summarizeFiles,
 } from "../../_components/review-diff-content";
+import { InstallAgentPrompt } from "@/components/pr/install-agent-prompt";
 
 type PageParams = {
   teamSlugOrId: string;
@@ -159,6 +160,7 @@ export default async function PullRequestPage({ params }: PageProps) {
             githubOwner={githubOwner}
             repo={repo}
             pullNumber={pullNumber}
+            userId={user.id}
           />
         </Suspense>
       </div>
@@ -485,6 +487,7 @@ function PullRequestDiffSection({
   teamSlugOrId,
   repo,
   pullNumber,
+  userId,
 }: {
   filesPromise: PullRequestFilesPromise;
   pullRequestPromise: PullRequestPromise;
@@ -492,6 +495,7 @@ function PullRequestDiffSection({
   teamSlugOrId: string;
   repo: string;
   pullNumber: number;
+  userId: string;
 }) {
   try {
     const files = use(filesPromise);
@@ -505,17 +509,25 @@ function PullRequestDiffSection({
     const baseCommitRef = pullRequest.base?.sha ?? undefined;
 
     return (
-      <ReviewDiffContent
-        files={files}
-        fileCount={totals.fileCount}
-        additions={totals.additions}
-        deletions={totals.deletions}
-        teamSlugOrId={teamSlugOrId}
-        repoFullName={fallbackRepoFullName}
-        reviewTarget={{ type: "pull_request", prNumber: pullNumber }}
-        commitRef={commitRef}
-        baseCommitRef={baseCommitRef}
-      />
+      <div className="flex flex-col gap-4">
+        <InstallAgentPrompt
+          teamSlugOrId={teamSlugOrId}
+          owner={githubOwner}
+          userId={userId}
+          repoFullName={fallbackRepoFullName}
+        />
+        <ReviewDiffContent
+          files={files}
+          fileCount={totals.fileCount}
+          additions={totals.additions}
+          deletions={totals.deletions}
+          teamSlugOrId={teamSlugOrId}
+          repoFullName={fallbackRepoFullName}
+          reviewTarget={{ type: "pull_request", prNumber: pullNumber }}
+          commitRef={commitRef}
+          baseCommitRef={baseCommitRef}
+        />
+      </div>
     );
   } catch (error) {
     if (isGithubApiError(error)) {

@@ -1,5 +1,6 @@
 import { CmuxComments } from "@/components/cmux-comments";
 import { CommandBar } from "@/components/CommandBar";
+import { GithubInstallPrompt } from "@/components/GithubInstallPrompt";
 import { Sidebar } from "@/components/Sidebar";
 import { SIDEBAR_PRS_DEFAULT_LIMIT } from "@/components/sidebar/const";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
@@ -72,6 +73,7 @@ function LayoutComponent() {
 
   return (
     <ExpandTasksProvider>
+      <GithubInstallPrompt teamSlugOrId={teamSlugOrId} />
       <CommandBar teamSlugOrId={teamSlugOrId} />
 
       <div className="flex flex-row grow min-h-0 h-dvh bg-white dark:bg-black">
