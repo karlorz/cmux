@@ -1618,7 +1618,7 @@ function FileDiffCard({
   }, [review]);
 
   // const showReview = Boolean(reviewContent);
-  const showReview = true;
+  const showReview = false;
 
   return (
     <TooltipProvider
