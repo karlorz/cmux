@@ -10,13 +10,12 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
 export const NAV_ITEMS = [
-  { id: "about", label: "About" },
-  { id: "workflow", label: "Workflow" },
-  { id: "verification", label: "Verification" },
+  { id: "about", label: "About", href: "#nav-about" },
+  { id: "workflow", label: "Workflow", href: "/workflow" },
+  { id: "verification", label: "Verification", href: "#nav-verification" },
 ];
 
 type SiteHeaderProps = {
-  linkPrefix?: string;
   showDownload?: boolean;
   fallbackUrl?: string;
   latestVersion?: string | null;
@@ -31,7 +30,6 @@ const DEFAULT_DOWNLOAD_URLS: MacDownloadUrls = {
 };
 
 export function SiteHeader({
-  linkPrefix = "",
   showDownload = true,
   fallbackUrl = "https://github.com/manaflow-ai/cmux/releases",
   latestVersion,
@@ -79,7 +77,7 @@ export function SiteHeader({
             <Link
               key={item.id}
               className="text-neutral-300 transition hover:text-white"
-              href={`${linkPrefix}#nav-${item.id}`}
+              href={item.href}
             >
               {item.label}
             </Link>

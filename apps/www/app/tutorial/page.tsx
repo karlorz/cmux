@@ -542,7 +542,6 @@ export default async function TutorialPage() {
         fallbackUrl={fallbackUrl}
         latestVersion={latestVersion}
         macDownloadUrls={macDownloadUrls}
-        linkPrefix="/"
       />
 
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pt-12 sm:px-6">
