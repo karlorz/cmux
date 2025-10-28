@@ -107,12 +107,6 @@ async function buildInjectScript(productionMode: boolean): Promise<void> {
         bundlePath,
         "--target",
         "bun",
-        "--external",
-        "@openai/codex-sdk",
-        "--external",
-        "@openai/codex",
-        "--external",
-        "zod",
       ],
       {
         stdio: "inherit",
@@ -632,10 +626,10 @@ export async function startAutomatedPrReview(
     describeServices(startedInstance);
     logOpenVscodeUrl(startedInstance, REMOTE_WORKSPACE_DIR);
 
-    const openAiApiKey = process.env.OPENAI_API_KEY;
-    if (!openAiApiKey || openAiApiKey.length === 0) {
+    const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+    if (!openRouterApiKey || openRouterApiKey.length === 0) {
       throw new Error(
-        "OPENAI_API_KEY environment variable is required to run PR review."
+        "OPENROUTER_API_KEY environment variable is required to run PR review."
       );
     }
 
@@ -651,7 +645,7 @@ export async function startAutomatedPrReview(
       ["GIT_BRANCH", prMetadata.headRefName],
       ["BASE_REPO_URL", baseRepoUrl],
       ["BASE_REF_NAME", prMetadata.baseRefName],
-      ["OPENAI_API_KEY", openAiApiKey],
+      ["OPENROUTER_API_KEY", openRouterApiKey],
       ["LOG_FILE_PATH", REMOTE_LOG_FILE_PATH],
       ["LOG_SYMLINK_PATH", WORKSPACE_LOG_ABSOLUTE_PATH],
       ["JOB_ID", config.jobId],

@@ -55,6 +55,8 @@ import { refractor } from "refractor/all";
 import {
   buildDiffHeatmap,
   parseReviewHeatmap,
+  stripCommentSeverity,
+  extractCommentSeverity,
   type DiffHeatmap,
   type ReviewHeatmapLine,
   type ResolvedHeatmapLine,
@@ -216,7 +218,8 @@ type FileOutput =
 
 type HeatmapTooltipMeta = {
   score: number;
-  reason: string | null;
+  comment: string | null;
+  severity: number | null;
 };
 
 type FileDiffViewModel = {
@@ -233,7 +236,8 @@ type ReviewErrorTarget = {
   filePath: string;
   lineNumber: number;
   side: DiffLineSide;
-  reason: string | null;
+  comment: string | null;
+  severity: number | null;
   score: number | null;
   changeKey: string | null;
 };
@@ -574,7 +578,8 @@ export function PullRequestDiffViewer({
             filePath: entry.file.filename,
             lineNumber,
             side,
-            reason: metadata.reason ?? null,
+            comment: metadata.comment ?? null,
+            severity: metadata.severity ?? null,
             score: metadata.score ?? null,
             changeKey:
               changeKeyByLine.get(buildLineKey(side, lineNumber)) ?? null,
@@ -1402,7 +1407,8 @@ function FileDiffCard({
 
         target.set(lineNumber, {
           score,
-          reason: metadata.reason ?? null,
+          comment: metadata.comment ?? null,
+          severity: metadata.severity ?? null,
         });
       }
     };
@@ -1465,7 +1471,8 @@ function FileDiffCard({
                 >
                   <HeatmapTooltipBody
                     score={tooltipMeta.score}
-                    reason={tooltipMeta.reason}
+                    comment={tooltipMeta.comment}
+                    severity={tooltipMeta.severity}
                   />
                 </TooltipContent>
               </Tooltip>
@@ -1800,7 +1807,8 @@ function HeatmapGutterTooltip({
       >
         <HeatmapTooltipBody
           score={tooltipMeta.score}
-          reason={tooltipMeta.reason}
+          comment={tooltipMeta.comment}
+          severity={tooltipMeta.severity}
         />
       </TooltipContent>
     </Tooltip>
@@ -1809,16 +1817,31 @@ function HeatmapGutterTooltip({
 
 function HeatmapTooltipBody({
   score,
-  reason,
+  comment,
+  severity,
 }: {
   score: number;
-  reason: string | null;
+  comment: string | null;
+  severity: number | null;
 }) {
   const theme = getHeatmapTooltipTheme(score);
+  const normalizedSeverity =
+    typeof severity === "number" && Number.isFinite(severity)
+      ? Math.min(3, Math.max(1, Math.floor(severity)))
+      : null;
+  const displayText =
+    stripCommentSeverity(comment) ?? comment?.trim() ?? null;
   return (
     <div className="text-left text-xs leading-relaxed">
-      {reason ? (
-        <p className={cn("text-xs", theme.reasonClass)}>{reason}</p>
+      {displayText || normalizedSeverity ? (
+        <p className={cn("text-xs", theme.reasonClass)}>
+          {normalizedSeverity ? (
+            <span className="mr-1 font-semibold">
+              {"*".repeat(normalizedSeverity)}
+            </span>
+          ) : null}
+          {displayText}
+        </p>
       ) : null}
     </div>
   );
@@ -1917,6 +1940,18 @@ function extractAutomatedReviewText(value: unknown): string | null {
       }
     }
 
+    if (
+      "comments" in value &&
+      Array.isArray((value as { comments?: unknown }).comments)
+    ) {
+      const formatted = formatLineReviews(
+        (value as { comments: unknown[] }).comments
+      );
+      if (formatted) {
+        return formatted;
+      }
+    }
+
     try {
       return JSON.stringify(value, null, 2);
     } catch {
@@ -1941,13 +1976,22 @@ function formatLineReviews(entries: unknown[]): string | null {
       continue;
     }
 
-    const reason =
-      typeof record.shouldReviewWhy === "string"
+    const rawComment =
+      typeof record.comment === "string"
+        ? record.comment.trim()
+        : typeof record.shouldReviewWhy === "string"
         ? record.shouldReviewWhy.trim()
         : null;
 
+    const severity =
+      typeof record.severity === "number" && Number.isFinite(record.severity)
+        ? record.severity
+        : extractCommentSeverity(rawComment);
+
     const score =
-      typeof record.shouldBeReviewedScore === "number"
+      typeof record.score === "number" && Number.isFinite(record.score)
+        ? record.score
+        : typeof record.shouldBeReviewedScore === "number"
         ? record.shouldBeReviewedScore
         : null;
 
@@ -1957,9 +2001,18 @@ function formatLineReviews(entries: unknown[]): string | null {
     if (changeFlag) {
       parts.push(changeFlag);
     }
-    if (reason) {
-      parts.push(reason);
+
+    if (typeof severity === "number" && severity > 0) {
+      const clamped = Math.min(3, Math.max(1, Math.floor(severity)));
+      parts.push("*".repeat(clamped));
     }
+
+    const displayComment =
+      stripCommentSeverity(rawComment) ?? rawComment ?? null;
+    if (displayComment) {
+      parts.push(displayComment);
+    }
+
     if (typeof score === "number" && Number.isFinite(score)) {
       parts.push(`importance ${(score * 100).toFixed(0)}%`);
     }

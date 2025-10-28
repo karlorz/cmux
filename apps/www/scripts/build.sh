@@ -16,10 +16,7 @@ NEXT_PID=$!
 
 "${BUN_EXECUTABLE}" build "scripts/pr-review/pr-review-inject.ts" \
   --outfile "scripts/pr-review/pr-review-inject.bundle.js" \
-  --target "bun" \
-  --external "@openai/codex-sdk" \
-  --external "@openai/codex" \
-  --external "zod" &
+  --target "bun" &
 BUN_PID=$!
 
 NEXT_STATUS=0

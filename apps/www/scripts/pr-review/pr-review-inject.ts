@@ -288,7 +288,7 @@ async function filterTextFiles(
 
 interface CodexReviewResult {
   file: string;
-  response: string;
+  response: unknown;
 }
 
 interface CodexReviewContext {
@@ -315,14 +315,14 @@ async function runCodexReviews({
     return [];
   }
 
-  const openAiApiKey = requireEnv("OPENAI_API_KEY");
+  const openRouterApiKey = requireEnv("OPENROUTER_API_KEY");
 
   console.log(
     `[inject] Launching Codex reviews for ${files.length} file(s)...`
   );
 
-  const { Codex } = await import("@openai/codex-sdk");
-  const codex = new Codex({ apiKey: openAiApiKey });
+  const systemPrompt =
+    "You are a senior engineer performing a focused pull request review based solely on the supplied diff.";
 
   const reviewStart = performance.now();
 
@@ -334,72 +334,92 @@ async function runCodexReviews({
         ["diff", `${baseRevision}..HEAD`, "--", file],
         { cwd: workspaceDir }
       );
-      const thread = codex.startThread({
-        workingDirectory: workspaceDir,
-        model: "gpt-5-codex",
-      });
       const prompt = `\
-You are a senior engineer performing a focused pull request review, focusing only on the diffs in the file provided.
-File path: ${file}
-Return a JSON object of type { lines: { line: string, shouldBeReviewedScore: number | null, shouldReviewWhy: string | null, mostImportantCharacterIndex: number }[] }.
-You should only have the "post-diff" array of lines in the JSON object
-shouldBeReviewedScore is a number from 0 to 1 that indicates how careful the reviewer should be when reviewing this line of code.
-Anything that feels like it might be off or might warrant a comment should have a high score, even if it's technically correct.
-shouldReviewWhy should be a concise (4-10 words) hint on why the reviewer should maybe review this line of code, but it shouldn't state obvious things, instead it should only be a hint for the reviewer as to what exactly you meant when you flagged it.
-In most cases, the reason should follow a template like "<X> <verb> <Y>" (eg. "line is too long" or "code accesses sensitive data").
-It should be understandable by a human and make sense (break the "X is Y" rule if it helps you make it more understandable).
-mostImportantCharacterIndex should be the index of the character that you deem most important in the review; if you're not sure or there are multiple, just choose any one of them.
-Ugly code should be given a higher score.
-Code that may be hard to read for a human should also be given a higher score.
-Non-clean code too.
-Only return lines that are actually interesting to review. Do not return lines that a human would not care about. But you should still be thorough and cover all interesting/suspicious lines.
+You are reviewing only the diff shown below for ${file}.
 
-The diff:
+Return a JSON object with this exact shape:
+{
+  "comments": [
+    {
+      "line": "<line number from the new file or descriptive identifier>",
+      "comment": "<severity stars><space><plain-language comment>",
+      "mostImportantCharacterIndex": <number or null>
+    }
+  ]
+}
+
+Rules for "comment":
+- Begin with one to three "*" characters indicating urgency: "*" (yellow, caution), "**" (orange, extreme caution), "***" (red, danger).
+- Follow the stars with a single space and then a concise, actionable observation.
+- Highlight real review concerns. Do not emit comments for lines that look fine.
+If you are unsure of a character index to highlight, set "mostImportantCharacterIndex" to null.
+
+Always return well-formed JSON. Never include Markdown or prose outside of the JSON object.
+
+Diff to review:
 ${diff || "(no diff output)"}`;
 
       logIndentedBlock(`[inject] Prompt for ${file}`, prompt);
 
-      const turn = await thread.runStreamed(prompt, {
-        outputSchema: {
-          type: "object",
-          properties: {
-            lines: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  line: { type: "string" },
-                  shouldBeReviewedScore: { type: ["number", "null"] as const },
-                  shouldReviewWhy: { type: ["string", "null"] as const },
-                  mostImportantCharacterIndex: { type: "number" },
-                },
-                required: [
-                  "line",
-                  "shouldBeReviewedScore",
-                  "shouldReviewWhy",
-                  "mostImportantCharacterIndex",
-                ],
-                additionalProperties: false,
-              },
-            },
+      const response = await fetch(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${openRouterApiKey}`,
+            "HTTP-Referer": "https://github.com/cmux/cmux",
+            "X-Title": "CMUX PR Review",
           },
-          required: ["lines"],
-          additionalProperties: false,
-        } as const,
-      });
-      let response = "<no response>";
-      for await (const event of turn.events) {
-        console.log(`[inject] Codex event: ${JSON.stringify(event)}`);
-        if (event.type === "item.completed") {
-          if (event.item.type === "agent_message") {
-            response = event.item.text;
-          }
+          body: JSON.stringify({
+            model: "z-ai/glm-4.6",
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: prompt },
+            ],
+            temperature: 0.1,
+            response_format: { type: "json_object" },
+          }),
         }
-      }
-      // const response = turn.finalResponse ?? "";
-      logIndentedBlock(`[inject] Codex review for ${file}`, response);
+      );
 
-      const result: CodexReviewResult = { file, response };
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `OpenRouter request failed for ${file} with ${
+            response.status
+          }: ${errorText.slice(0, 2048)}`
+        );
+      }
+
+      const payload = await response.json();
+      const content =
+        payload?.choices?.[0]?.message?.content ??
+        payload?.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments ??
+        null;
+
+      if (typeof content !== "string") {
+        throw new Error(
+          `OpenRouter response for ${file} did not include text content`
+        );
+      }
+
+      logIndentedBlock(`[inject] Codex review for ${file}`, content);
+
+      let structured: unknown = content;
+      try {
+        structured = JSON.parse(content);
+      } catch (parseError) {
+        console.warn(
+          `[inject] Failed to parse JSON for ${file}: ${
+            parseError instanceof Error
+              ? parseError.message
+              : String(parseError)
+          }`
+        );
+      }
+
+      const result: CodexReviewResult = { file, response: structured };
       const elapsedMs = performance.now() - fileStart;
       console.log(
         `[inject] Review completed for ${file} in ${formatDuration(elapsedMs)}`
@@ -531,7 +551,7 @@ async function main(): Promise<void> {
     console.log(`[inject] Clearing workspace ${workspaceDir}...`);
     await rm(workspaceDir, { recursive: true, force: true });
 
-    const cloneAndCheckout = (async () => {
+    await (async () => {
       console.log(`[inject] Cloning ${headRepoUrl} into ${workspaceDir}...`);
       await runCommand("git", ["clone", headRepoUrl, workspaceDir]);
       console.log(`[inject] Checking out branch ${headRefName}...`);
@@ -539,19 +559,6 @@ async function main(): Promise<void> {
         cwd: workspaceDir,
       });
     })();
-
-    const installCodex = (async () => {
-      console.log("[inject] Installing runtime dependencies globally...");
-      await runCommand("bun", [
-        "add",
-        "-g",
-        "@openai/codex@latest",
-        "@openai/codex-sdk@latest",
-        "zod@latest",
-      ]);
-    })();
-
-    await Promise.all([cloneAndCheckout, installCodex]);
 
     if (logFilePath && logSymlinkPath) {
       try {

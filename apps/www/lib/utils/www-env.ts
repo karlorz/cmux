@@ -15,6 +15,7 @@ export const env = createEnv({
     MORPH_API_KEY: z.string().min(1),
     CONVEX_DEPLOY_KEY: z.string().min(1),
     OPENAI_API_KEY: z.string().min(1).optional(),
+    OPENROUTER_API_KEY: z.string().min(1).optional(),
     GEMINI_API_KEY: z.string().min(1).optional(),
     ANTHROPIC_API_KEY: z.string().min(1),
     CMUX_TASK_RUN_JWT_SECRET: z.string().min(1),

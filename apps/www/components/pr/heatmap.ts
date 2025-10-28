@@ -5,11 +5,14 @@ import {
 } from "react-diff-view";
 import type { RangeTokenNode } from "react-diff-view";
 
+type HeatmapSeverity = 1 | 2 | 3;
+
 export type ReviewHeatmapLine = {
   lineNumber: number | null;
   lineText: string | null;
+  severity: HeatmapSeverity | null;
+  comment: string | null;
   score: number | null;
-  reason: string | null;
   mostImportantCharacterIndex: number | null;
 };
 
@@ -29,8 +32,9 @@ export type HeatmapRangeNode = RangeTokenNode & {
 export type ResolvedHeatmapLine = {
   side: DiffLineSide;
   lineNumber: number;
+  severity: HeatmapSeverity | null;
   score: number | null;
-  reason: string | null;
+  comment: string | null;
   mostImportantCharacterIndex: number | null;
 };
 
@@ -45,6 +49,12 @@ const SCORE_CLAMP_MIN = 0;
 const SCORE_CLAMP_MAX = 1;
 
 const HEATMAP_TIERS = [0.2, 0.4, 0.6, 0.8] as const;
+const DEFAULT_SEVERITY: HeatmapSeverity = 1;
+const SEVERITY_TO_SCORE: Record<HeatmapSeverity, number> = {
+  1: 0.3,
+  2: 0.65,
+  3: 0.9,
+};
 
 export function parseReviewHeatmap(raw: unknown): ReviewHeatmapLine[] {
   const payload = unwrapCodexPayload(raw);
@@ -52,48 +62,106 @@ export function parseReviewHeatmap(raw: unknown): ReviewHeatmapLine[] {
     return [];
   }
 
-  const lines = Array.isArray((payload as { lines?: unknown }).lines)
+  const commentEntries = Array.isArray(
+    (payload as { comments?: unknown }).comments
+  )
+    ? ((payload as { comments: unknown[] }).comments ?? [])
+    : [];
+  const legacyLineEntries = Array.isArray(
+    (payload as { lines?: unknown }).lines
+  )
     ? ((payload as { lines: unknown[] }).lines ?? [])
     : [];
 
   const parsed: ReviewHeatmapLine[] = [];
 
-  for (const entry of lines) {
-    if (typeof entry !== "object" || entry === null) {
-      continue;
+  if (commentEntries.length > 0) {
+    for (const entry of commentEntries) {
+      if (typeof entry !== "object" || entry === null) {
+        continue;
+      }
+
+      const record = entry as Record<string, unknown>;
+      const lineNumber = parseLineNumber(record.line);
+      const lineText =
+        typeof record.line === "string" ? record.line.trim() : null;
+
+      if (lineNumber === null && !lineText) {
+        continue;
+      }
+
+      const comment = parseNullableString(record.comment);
+      if (!comment) {
+        continue;
+      }
+
+      const severity =
+        normalizeSeverity(record.severity) ??
+        extractCommentSeverity(comment) ??
+        DEFAULT_SEVERITY;
+      const score = clamp(
+        severityToScore(severity),
+        SCORE_CLAMP_MIN,
+        SCORE_CLAMP_MAX
+      );
+      if (score <= 0) {
+        continue;
+      }
+
+      const mostImportantCharacterIndex = parseNullableInteger(
+        record.mostImportantCharacterIndex
+      );
+
+      parsed.push({
+        lineNumber,
+        lineText,
+        severity,
+        comment,
+        score,
+        mostImportantCharacterIndex,
+      });
     }
+  } else if (legacyLineEntries.length > 0) {
+    for (const entry of legacyLineEntries) {
+      if (typeof entry !== "object" || entry === null) {
+        continue;
+      }
 
-    const record = entry as Record<string, unknown>;
-    const lineNumber = parseLineNumber(record.line);
-    const lineText =
-      typeof record.line === "string" ? record.line.trim() : null;
+      const record = entry as Record<string, unknown>;
+      const lineNumber = parseLineNumber(record.line);
+      const lineText =
+        typeof record.line === "string" ? record.line.trim() : null;
 
-    if (lineNumber === null && !lineText) {
-      continue;
+      if (lineNumber === null && !lineText) {
+        continue;
+      }
+
+      const rawScore = parseNullableNumber(record.shouldBeReviewedScore);
+      const normalizedScore =
+        rawScore === null
+          ? null
+          : clamp(rawScore, SCORE_CLAMP_MIN, SCORE_CLAMP_MAX);
+      if (normalizedScore === null || normalizedScore <= 0) {
+        continue;
+      }
+
+      const severity =
+        scoreToSeverity(normalizedScore) ?? DEFAULT_SEVERITY;
+      const reason = parseNullableString(record.shouldReviewWhy);
+      const comment = buildLegacyComment(severity, reason);
+      const mostImportantCharacterIndex = parseNullableInteger(
+        record.mostImportantCharacterIndex
+      );
+
+      parsed.push({
+        lineNumber,
+        lineText,
+        severity,
+        comment,
+        score: normalizedScore,
+        mostImportantCharacterIndex,
+      });
     }
-
-    const rawScore = parseNullableNumber(record.shouldBeReviewedScore);
-    const normalizedScore =
-      rawScore === null
-        ? null
-        : clamp(rawScore, SCORE_CLAMP_MIN, SCORE_CLAMP_MAX);
-
-    if (normalizedScore === null || normalizedScore <= 0) {
-      continue;
-    }
-
-    const reason = parseNullableString(record.shouldReviewWhy);
-    const mostImportantCharacterIndex = parseNullableInteger(
-      record.mostImportantCharacterIndex
-    );
-
-    parsed.push({
-      lineNumber,
-      lineText,
-      score: normalizedScore,
-      reason,
-      mostImportantCharacterIndex,
-    });
   }
 
   parsed.sort((a, b) => {
@@ -212,15 +280,17 @@ function aggregateEntries(
 
     const currentScore = current.score ?? SCORE_CLAMP_MIN;
     const nextScore = entry.score ?? SCORE_CLAMP_MIN;
-    const shouldReplaceScore = nextScore > currentScore;
+    if (nextScore > currentScore) {
+      aggregated.set(key, { ...entry });
+      continue;
+    }
 
     aggregated.set(key, {
-      lineNumber: entry.lineNumber,
-      side: entry.side,
-      score: shouldReplaceScore ? entry.score : current.score,
-      reason: entry.reason ?? current.reason,
+      ...current,
+      severity: current.severity ?? entry.severity,
+      comment: current.comment ?? entry.comment,
       mostImportantCharacterIndex:
-        entry.mostImportantCharacterIndex ?? current.mostImportantCharacterIndex,
+        current.mostImportantCharacterIndex ?? entry.mostImportantCharacterIndex,
     });
   }
 
@@ -256,8 +326,9 @@ function resolveLineNumbers(
       resolved.push({
         side: directMatch.side,
         lineNumber: directMatch.lineNumber,
+        severity: entry.severity,
         score: entry.score,
-        reason: entry.reason,
+        comment: entry.comment,
         mostImportantCharacterIndex: entry.mostImportantCharacterIndex,
       });
       continue;
@@ -277,8 +348,9 @@ function resolveLineNumbers(
       resolved.push({
         side: "new",
         lineNumber: newCandidate,
+        severity: entry.severity,
         score: entry.score,
-        reason: entry.reason,
+        comment: entry.comment,
         mostImportantCharacterIndex: entry.mostImportantCharacterIndex,
       });
       continue;
@@ -293,8 +365,9 @@ function resolveLineNumbers(
       resolved.push({
         side: "old",
         lineNumber: oldCandidate,
+        severity: entry.severity,
         score: entry.score,
-        reason: entry.reason,
+        comment: entry.comment,
         mostImportantCharacterIndex: entry.mostImportantCharacterIndex,
       });
     }
@@ -429,6 +502,118 @@ function collectLineContent(diff: FileData): CollectedLineContent {
   };
 }
 
+function severityToScore(severity: HeatmapSeverity): number {
+  return SEVERITY_TO_SCORE[severity] ?? SEVERITY_TO_SCORE[DEFAULT_SEVERITY];
+}
+
+function normalizeSeverity(value: unknown): HeatmapSeverity | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const rounded = Math.round(value);
+    if (rounded >= 1 && rounded <= 3) {
+      return rounded as HeatmapSeverity;
+    }
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const numeric = Number.parseInt(trimmed, 10);
+    if (Number.isFinite(numeric)) {
+      return normalizeSeverity(numeric);
+    }
+
+    const starMatch = trimmed.match(/^(\*{1,3})$/);
+    if (starMatch) {
+      const length = starMatch[1]?.length ?? 0;
+      if (length >= 1 && length <= 3) {
+        return length as HeatmapSeverity;
+      }
+    }
+  }
+
+  return null;
+}
+
+function scoreToSeverity(score: number | null): HeatmapSeverity | null {
+  if (score === null || !Number.isFinite(score)) {
+    return null;
+  }
+
+  if (score >= 0.8) {
+    return 3;
+  }
+
+  if (score >= 0.5) {
+    return 2;
+  }
+
+  if (score > 0) {
+    return 1;
+  }
+
+  return null;
+}
+
+export function extractCommentSeverity(
+  comment: string | null
+): HeatmapSeverity | null {
+  if (!comment) {
+    return null;
+  }
+
+  const trimmed = comment.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const match = trimmed.match(/^(\*{1,3})(?:\s+|$)/);
+  if (!match) {
+    return null;
+  }
+
+  const length = match[1]?.length ?? 0;
+  if (length >= 1 && length <= 3) {
+    return length as HeatmapSeverity;
+  }
+
+  return null;
+}
+
+export function stripCommentSeverity(comment: string | null): string | null {
+  if (!comment) {
+    return null;
+  }
+
+  const trimmed = comment.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const match = trimmed.match(/^(\*{1,3})(?:\s+|$)(.*)$/s);
+  if (!match) {
+    return trimmed;
+  }
+
+  const remainder = match[2] ?? "";
+  const sanitized = remainder.trim();
+  return sanitized.length > 0 ? sanitized : trimmed;
+}
+
+function buildLegacyComment(
+  severity: HeatmapSeverity,
+  reason: string | null
+): string {
+  const prefix = "*".repeat(severity);
+  const suffix = reason?.trim() ?? "";
+  if (!suffix) {
+    return prefix;
+  }
+  return `${prefix} ${suffix}`;
+}
+
 function computeHeatmapTier(score: number | null): number {
   if (score === null) {
     return 0;
@@ -535,7 +720,7 @@ function unwrapCodexPayload(value: unknown): unknown {
       return unwrapCodexPayload(record.payload);
     }
 
-    if (Array.isArray(record.lines)) {
+    if (Array.isArray(record.lines) || Array.isArray(record.comments)) {
       return record;
     }
   }

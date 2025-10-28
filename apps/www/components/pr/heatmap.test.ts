@@ -21,29 +21,25 @@ describe("parseReviewHeatmap", () => {
   it("parses nested codex payloads best-effort", () => {
     const parsed = parseReviewHeatmap({
       response: JSON.stringify({
-        lines: [
+        comments: [
           {
             line: "2",
-            shouldBeReviewedScore: 0.3,
-            shouldReviewWhy: "first pass",
+            comment: "* consider re-running first pass",
             mostImportantCharacterIndex: 4,
           },
           {
             line: "2",
-            shouldBeReviewedScore: 0.7,
-            shouldReviewWhy: "updated score",
+            comment: "** updated score check",
             mostImportantCharacterIndex: 6,
           },
           {
             line: 4,
-            shouldBeReviewedScore: 0.92,
-            shouldReviewWhy: "new export logic",
+            comment: "*** new export logic",
             mostImportantCharacterIndex: 120,
           },
           {
             line: "invalid",
-            shouldBeReviewedScore: 1,
-            shouldReviewWhy: "ignored",
+            comment: "* ignored",
             mostImportantCharacterIndex: 0,
           },
         ],
@@ -58,6 +54,10 @@ describe("parseReviewHeatmap", () => {
     expect(parsed.some((entry) => entry.lineNumber === 4)).toBe(true);
     const fallbackEntry = parsed.find((entry) => entry.lineText === "invalid");
     expect(fallbackEntry?.lineNumber).toBeNull();
+    const severities = parsed
+      .filter((entry) => entry.lineNumber === 2)
+      .map((entry) => entry.severity);
+    expect(new Set(severities)).toEqual(new Set([1, 2]));
   });
 });
 
@@ -69,23 +69,20 @@ describe("buildDiffHeatmap", () => {
 
     const review = parseReviewHeatmap({
       response: JSON.stringify({
-        lines: [
+        comments: [
           {
             line: "2",
-            shouldBeReviewedScore: 0.3,
-            shouldReviewWhy: "first pass",
+            comment: "* first pass",
             mostImportantCharacterIndex: 4,
           },
           {
             line: "2",
-            shouldBeReviewedScore: 0.7,
-            shouldReviewWhy: "updated score",
+            comment: "** updated score",
             mostImportantCharacterIndex: 6,
           },
           {
             line: 4,
-            shouldBeReviewedScore: 0.92,
-            shouldReviewWhy: "new export logic",
+            comment: "*** new export logic",
             mostImportantCharacterIndex: 120,
           },
         ],
@@ -98,7 +95,9 @@ describe("buildDiffHeatmap", () => {
       return;
     }
 
-    expect(heatmap.entries.get(2)?.score).toBeCloseTo(0.7, 5);
+    expect(heatmap.entries.get(2)?.score).toBeCloseTo(0.65, 5);
+    expect(heatmap.entries.get(2)?.severity).toBe(2);
+    expect(heatmap.entries.get(4)?.severity).toBe(3);
     expect(heatmap.lineClasses.get(2)).toBe("cmux-heatmap-tier-3");
     expect(heatmap.lineClasses.get(4)).toBe("cmux-heatmap-tier-4");
 
