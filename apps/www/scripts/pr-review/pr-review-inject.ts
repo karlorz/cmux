@@ -111,8 +111,7 @@ async function runCommand(
       }
       reject(
         new Error(
-          `Command "${command} ${args.join(" ")}" exited with ${
-            code === null ? `signal ${String(signal)}` : `code ${code}`
+          `Command "${command} ${args.join(" ")}" exited with ${code === null ? `signal ${String(signal)}` : `code ${code}`
           }`
         )
       );
@@ -311,18 +310,21 @@ async function runCodexReviews({
   fileCallback,
 }: CodexReviewContext): Promise<CodexReviewResult[]> {
   if (files.length === 0) {
-    console.log("[inject] No text files require Codex review.");
+    console.log("[inject] No text files require OpenRouter review.");
     return [];
   }
 
-  const openAiApiKey = requireEnv("OPENAI_API_KEY");
+  const openRouterApiKey = requireEnv("OPENROUTER_API_KEY");
 
   console.log(
-    `[inject] Launching Codex reviews for ${files.length} file(s)...`
+    `[inject] Launching OpenRouter reviews for ${files.length} file(s)...`
   );
 
-  const { Codex } = await import("@openai/codex-sdk");
-  const codex = new Codex({ apiKey: openAiApiKey });
+  const { default: OpenAI } = await import("openai");
+  const openai = new OpenAI({
+    apiKey: openRouterApiKey,
+    baseURL: "https://openrouter.ai/api/v1",
+  });
 
   const reviewStart = performance.now();
 
@@ -334,10 +336,7 @@ async function runCodexReviews({
         ["diff", `${baseRevision}..HEAD`, "--", file],
         { cwd: workspaceDir }
       );
-      const thread = codex.startThread({
-        workingDirectory: workspaceDir,
-        model: "gpt-5-codex",
-      });
+
       const prompt = `\
 You are a senior engineer performing a focused pull request review, focusing only on the diffs in the file provided.
 File path: ${file}
@@ -359,45 +358,56 @@ ${diff || "(no diff output)"}`;
 
       logIndentedBlock(`[inject] Prompt for ${file}`, prompt);
 
-      const turn = await thread.runStreamed(prompt, {
-        outputSchema: {
-          type: "object",
-          properties: {
-            lines: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  line: { type: "string" },
-                  shouldBeReviewedScore: { type: ["number", "null"] as const },
-                  shouldReviewWhy: { type: ["string", "null"] as const },
-                  mostImportantCharacterIndex: { type: "number" },
+      const completion = await openai.chat.completions.create({
+        model: "z-ai/glm-4.6:exacto",
+        messages: [
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "code_review",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                lines: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      line: { type: "string" },
+                      shouldBeReviewedScore: {
+                        anyOf: [{ type: "number" }, { type: "null" }],
+                      },
+                      shouldReviewWhy: {
+                        anyOf: [{ type: "string" }, { type: "null" }],
+                      },
+                      mostImportantCharacterIndex: { type: "number" },
+                    },
+                    required: [
+                      "line",
+                      "shouldBeReviewedScore",
+                      "shouldReviewWhy",
+                      "mostImportantCharacterIndex",
+                    ],
+                    additionalProperties: false,
+                  },
                 },
-                required: [
-                  "line",
-                  "shouldBeReviewedScore",
-                  "shouldReviewWhy",
-                  "mostImportantCharacterIndex",
-                ],
-                additionalProperties: false,
               },
+              required: ["lines"],
+              additionalProperties: false,
             },
           },
-          required: ["lines"],
-          additionalProperties: false,
-        } as const,
+        },
       });
-      let response = "<no response>";
-      for await (const event of turn.events) {
-        console.log(`[inject] Codex event: ${JSON.stringify(event)}`);
-        if (event.type === "item.completed") {
-          if (event.item.type === "agent_message") {
-            response = event.item.text;
-          }
-        }
-      }
-      // const response = turn.finalResponse ?? "";
-      logIndentedBlock(`[inject] Codex review for ${file}`, response);
+
+      const response =
+        completion.choices[0]?.message?.content ?? "<no response>";
+      logIndentedBlock(`[inject] OpenRouter review for ${file}`, response);
 
       const result: CodexReviewResult = { file, response };
       const elapsedMs = performance.now() - fileStart;
@@ -433,7 +443,7 @@ ${diff || "(no diff output)"}`;
           ? error.message
           : String(error ?? "unknown error");
       const elapsedMs = performance.now() - fileStart;
-      console.error(`[inject] Codex review failed for ${file}: ${reason}`);
+      console.error(`[inject] OpenRouter review failed for ${file}: ${reason}`);
       console.error(
         `[inject] Review for ${file} failed after ${formatDuration(elapsedMs)}`
       );
@@ -451,7 +461,7 @@ ${diff || "(no diff output)"}`;
 
   if (failureCount > 0) {
     throw new Error(
-      `[inject] Codex review encountered ${failureCount} failure(s). See logs above.`
+      `[inject] OpenRouter review encountered ${failureCount} failure(s). See logs above.`
     );
   }
 
@@ -460,7 +470,7 @@ ${diff || "(no diff output)"}`;
     .map((result) => result.value);
 
   console.log(
-    `[inject] Codex reviews completed in ${formatDuration(
+    `[inject] OpenRouter reviews completed in ${formatDuration(
       performance.now() - reviewStart
     )}.`
   );
@@ -489,22 +499,22 @@ async function main(): Promise<void> {
   const callbackContext: CallbackContext | null =
     callbackUrl && callbackToken
       ? {
-          url: callbackUrl,
-          token: callbackToken,
-          jobId,
-          sandboxInstanceId,
-        }
+        url: callbackUrl,
+        token: callbackToken,
+        jobId,
+        sandboxInstanceId,
+      }
       : null;
 
   const fileCallbackContext: FileCallbackContext | null =
     fileCallbackUrl && fileCallbackToken
       ? {
-          url: fileCallbackUrl,
-          token: fileCallbackToken,
-          jobId,
-          sandboxInstanceId,
-          commitRef,
-        }
+        url: fileCallbackUrl,
+        token: fileCallbackToken,
+        jobId,
+        sandboxInstanceId,
+        commitRef,
+      }
       : null;
 
   if (logFilePath) {
@@ -540,18 +550,12 @@ async function main(): Promise<void> {
       });
     })();
 
-    const installCodex = (async () => {
+    const installOpenAI = (async () => {
       console.log("[inject] Installing runtime dependencies globally...");
-      await runCommand("bun", [
-        "add",
-        "-g",
-        "@openai/codex@latest",
-        "@openai/codex-sdk@latest",
-        "zod@latest",
-      ]);
+      await runCommand("bun", ["add", "-g", "openai@latest", "zod@latest"]);
     })();
 
-    await Promise.all([cloneAndCheckout, installCodex]);
+    await Promise.all([cloneAndCheckout, installOpenAI]);
 
     if (logFilePath && logSymlinkPath) {
       try {

@@ -56,6 +56,7 @@
     "scripts"
   ],
   "dependencies": {
-    "morphcloud": "^0.0.20"
+    "morphcloud": "^0.0.20",
+    "openai": "^6.7.0"
   }
 }
