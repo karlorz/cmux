@@ -52,7 +52,6 @@ export default function RootLayout({
     <html
       lang="en"
       className={clsx(
-        "dark",
         jetBrainsMono.className,
         jetBrainsMono.variable,
         geist.className,
