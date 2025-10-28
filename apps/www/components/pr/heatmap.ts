@@ -273,20 +273,55 @@ function resolveLineNumbers(
       continue;
     }
 
-    const normalizedTarget = normalizeLineText(entry.lineText);
-    if (!normalizedTarget) {
+    const normalizedTarget = toSearchableText(entry.lineText);
+    if (normalizedTarget) {
+      const newCandidate = findLineByText(
+        normalizedTarget,
+        newLineEntries,
+        newSearchOffsets
+      );
+      if (newCandidate !== null) {
+        resolved.push({
+          side: "new",
+          lineNumber: newCandidate,
+          score: entry.score,
+          reason: entry.reason,
+          mostImportantWord: entry.mostImportantWord,
+        });
+        continue;
+      }
+
+      const oldCandidate = findLineByText(
+        normalizedTarget,
+        oldLineEntries,
+        oldSearchOffsets
+      );
+      if (oldCandidate !== null) {
+        resolved.push({
+          side: "old",
+          lineNumber: oldCandidate,
+          score: entry.score,
+          reason: entry.reason,
+          mostImportantWord: entry.mostImportantWord,
+        });
+        continue;
+      }
+    }
+
+    const normalizedKeyword = toSearchableText(entry.mostImportantWord);
+    if (!normalizedKeyword) {
       continue;
     }
 
-    const newCandidate = findLineByText(
-      normalizedTarget,
+    const keywordNewCandidate = findLineByText(
+      normalizedKeyword,
       newLineEntries,
       newSearchOffsets
     );
-    if (newCandidate !== null) {
+    if (keywordNewCandidate !== null) {
       resolved.push({
         side: "new",
-        lineNumber: newCandidate,
+        lineNumber: keywordNewCandidate,
         score: entry.score,
         reason: entry.reason,
         mostImportantWord: entry.mostImportantWord,
@@ -294,15 +329,15 @@ function resolveLineNumbers(
       continue;
     }
 
-    const oldCandidate = findLineByText(
-      normalizedTarget,
+    const keywordOldCandidate = findLineByText(
+      normalizedKeyword,
       oldLineEntries,
       oldSearchOffsets
     );
-    if (oldCandidate !== null) {
+    if (keywordOldCandidate !== null) {
       resolved.push({
         side: "old",
-        lineNumber: oldCandidate,
+        lineNumber: keywordOldCandidate,
         score: entry.score,
         reason: entry.reason,
         mostImportantWord: entry.mostImportantWord,
@@ -331,42 +366,55 @@ function resolveDirectLineNumber(
   }
 
   if (hasNew && !hasOld) {
-    return { side: "new", lineNumber };
+    return doesLineContentMatch(entry, newLines.get(lineNumber))
+      ? { side: "new", lineNumber }
+      : null;
   }
 
   if (!hasNew && hasOld) {
+    return doesLineContentMatch(entry, oldLines.get(lineNumber))
+      ? { side: "old", lineNumber }
+      : null;
+  }
+
+  const matchesNew = doesLineContentMatch(entry, newLines.get(lineNumber));
+  const matchesOld = doesLineContentMatch(entry, oldLines.get(lineNumber));
+
+  if (matchesNew && !matchesOld) {
+    return { side: "new", lineNumber };
+  }
+
+  if (matchesOld && !matchesNew) {
     return { side: "old", lineNumber };
   }
 
-  const targetLooksLikeCode = isLikelyCodeFragment(entry.lineText);
-  const normalizedTarget = targetLooksLikeCode
-    ? normalizeLineText(entry.lineText)
-    : null;
-
-  if (targetLooksLikeCode && normalizedTarget) {
-    const normalizedNew = normalizeLineText(newLines.get(lineNumber));
-    const normalizedOld = normalizeLineText(oldLines.get(lineNumber));
-    const matchesNew =
-      normalizedTarget && normalizedNew
-        ? normalizedNew === normalizedTarget ||
-          normalizedNew.includes(normalizedTarget)
-        : false;
-    const matchesOld =
-      normalizedTarget && normalizedOld
-        ? normalizedOld === normalizedTarget ||
-          normalizedOld.includes(normalizedTarget)
-        : false;
-
-    if (matchesNew && !matchesOld) {
-      return { side: "new", lineNumber };
-    }
-
-    if (matchesOld && !matchesNew) {
-      return { side: "old", lineNumber };
-    }
+  if (matchesNew && matchesOld) {
+    return { side: "new", lineNumber };
   }
 
-  return { side: "new", lineNumber };
+  return null;
+}
+
+function doesLineContentMatch(
+  entry: ReviewHeatmapLine,
+  rawContent: string | null | undefined
+): boolean {
+  const normalizedContent = toSearchableText(rawContent);
+  if (!normalizedContent) {
+    return false;
+  }
+
+  const normalizedTarget = toSearchableText(entry.lineText);
+  if (normalizedTarget && normalizedContent.includes(normalizedTarget)) {
+    return true;
+  }
+
+  const normalizedWord = toSearchableText(entry.mostImportantWord);
+  if (normalizedWord && normalizedContent.includes(normalizedWord)) {
+    return true;
+  }
+
+  return !normalizedTarget && !normalizedWord;
 }
 
 function findLineByText(
@@ -379,7 +427,7 @@ function findLineByText(
 
   for (let index = startIndex; index < entriesCount; index += 1) {
     const [lineNumber, rawText] = lineEntries[index]!;
-    const normalizedSource = normalizeLineText(rawText);
+    const normalizedSource = toSearchableText(rawText);
     if (!normalizedSource) {
       continue;
     }
@@ -404,7 +452,14 @@ function normalizeLineText(value: string | null | undefined): string | null {
     return null;
   }
 
-  return value.replace(/\s+/g, " ").trim();
+  const { content } = stripDiffMarker(value);
+  const normalized = content.replace(/\s+/g, " ").trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function toSearchableText(value: string | null | undefined): string | null {
+  const normalized = normalizeLineText(value);
+  return normalized ? normalized.toLowerCase() : null;
 }
 
 function isLikelyCodeFragment(value: string | null | undefined): boolean {
@@ -572,7 +627,21 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function parseLineNumber(value: unknown): number | null {
-  const numeric = parseNullableNumber(value);
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const integer = Math.floor(value);
+    return integer > 0 ? integer : null;
+  }
+
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const candidate = extractLineNumberCandidate(value);
+  if (!candidate) {
+    return null;
+  }
+
+  const numeric = parseNullableNumber(candidate);
   if (numeric === null) {
     return null;
   }
@@ -593,6 +662,25 @@ function parseNullableNumber(value: unknown): number | null {
     }
     const parsed = Number.parseFloat(match[0] ?? "");
     return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function extractLineNumberCandidate(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (/^[+-]?\d+(\.\d+)?$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  const lineMatch =
+    trimmed.match(/^line\s*([+-]?\d+(?:\.\d+)?)(?:\s*[:\-–])?$/i);
+  if (lineMatch && lineMatch[1]) {
+    return lineMatch[1];
   }
 
   return null;
