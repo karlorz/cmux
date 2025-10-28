@@ -437,7 +437,29 @@ export function PullRequestDiffViewer({
   }, [fileOutputs]);
 
   const sortedFiles = useMemo(() => {
-    return [...files].sort((a, b) => a.filename.localeCompare(b.filename));
+    // First, build the tree structure to get the correct hierarchical order
+    const tree = buildFileTree([...files].sort((a, b) => a.filename.localeCompare(b.filename)));
+
+    // Then flatten the tree to get files in the same order as displayed in TOC
+    const flattenTree = (nodes: FileTreeNode[]): GithubFileChange[] => {
+      const result: GithubFileChange[] = [];
+
+      for (const node of nodes) {
+        // Add the file if this node represents a file
+        if (node.file) {
+          result.push(node.file);
+        }
+
+        // Recursively add files from children
+        if (node.children.length > 0) {
+          result.push(...flattenTree(node.children));
+        }
+      }
+
+      return result;
+    };
+
+    return flattenTree(tree);
   }, [files]);
 
   const totalFileCount = sortedFiles.length;
