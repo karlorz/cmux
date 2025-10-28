@@ -560,6 +560,8 @@ export function PullRequestDiffViewer({
   const [autoTooltipTarget, setAutoTooltipTarget] =
     useState<ActiveTooltipTarget | null>(null);
   const autoTooltipTimeoutRef = useRef<number | null>(null);
+  const allowAutoScrollRef = useRef<boolean>(true);
+  const userScrollTimeoutRef = useRef<number | null>(null);
 
   const clearAutoTooltip = useCallback(() => {
     if (
@@ -640,6 +642,37 @@ export function PullRequestDiffViewer({
         autoTooltipTimeoutRef.current !== null
       ) {
         window.clearTimeout(autoTooltipTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleUserScroll = () => {
+      allowAutoScrollRef.current = false;
+
+      if (userScrollTimeoutRef.current !== null) {
+        window.clearTimeout(userScrollTimeoutRef.current);
+      }
+
+      userScrollTimeoutRef.current = window.setTimeout(() => {
+        allowAutoScrollRef.current = true;
+      }, 150);
+    };
+
+    window.addEventListener("scroll", handleUserScroll, { passive: true });
+    window.addEventListener("wheel", handleUserScroll, { passive: true });
+    window.addEventListener("touchmove", handleUserScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener("scroll", handleUserScroll);
+      window.removeEventListener("wheel", handleUserScroll);
+      window.removeEventListener("touchmove", handleUserScroll);
+      if (userScrollTimeoutRef.current !== null) {
+        window.clearTimeout(userScrollTimeoutRef.current);
       }
     };
   }, []);
@@ -758,7 +791,7 @@ export function PullRequestDiffViewer({
     };
   }, [parsedDiffs]);
 
-  const handleNavigate = useCallback((path: string) => {
+  const handleNavigate = useCallback((path: string, options?: { scroll?: boolean }) => {
     setActivePath(path);
     setActiveAnchor(path);
 
@@ -767,6 +800,10 @@ export function PullRequestDiffViewer({
     }
 
     window.location.hash = encodeURIComponent(path);
+
+    if (options?.scroll) {
+      allowAutoScrollRef.current = true;
+    }
   }, []);
 
   const handleFocusPrevious = useCallback(
@@ -775,6 +812,7 @@ export function PullRequestDiffViewer({
         return;
       }
 
+      allowAutoScrollRef.current = true;
       const isKeyboard = options?.source === "keyboard";
 
       setFocusedErrorIndex((previous) => {
@@ -806,6 +844,7 @@ export function PullRequestDiffViewer({
         return;
       }
 
+      allowAutoScrollRef.current = true;
       const isKeyboard = options?.source === "keyboard";
 
       setFocusedErrorIndex((previous) => {
@@ -908,14 +947,20 @@ export function PullRequestDiffViewer({
     if (!focusedError) {
       return;
     }
+    if (!allowAutoScrollRef.current) {
+      return;
+    }
 
-    handleNavigate(focusedError.filePath);
+    handleNavigate(focusedError.filePath, { scroll: true });
 
     if (focusedError.changeKey) {
       return;
     }
 
     const frame = window.requestAnimationFrame(() => {
+      if (!allowAutoScrollRef.current) {
+        return;
+      }
       const article = document.getElementById(focusedError.anchorId);
       if (article) {
         scrollElementToViewportCenter(article);
@@ -961,7 +1006,10 @@ export function PullRequestDiffViewer({
               activePath={activeAnchor}
               expandedPaths={expandedPaths}
               onToggleDirectory={handleToggleDirectory}
-              onSelectFile={handleNavigate}
+              onSelectFile={(path) => {
+                allowAutoScrollRef.current = true;
+                handleNavigate(path, { scroll: true });
+              }}
             />
           </div>
         </aside>
@@ -1001,6 +1049,7 @@ export function PullRequestDiffViewer({
                 focusedLine={focusedLine}
                 focusedChangeKey={focusedChangeKey}
                 autoTooltipLine={autoTooltipLine}
+                allowAutoScrollRef={allowAutoScrollRef}
               />
             );
           })}
@@ -1268,6 +1317,7 @@ function FileDiffCard({
   focusedLine,
   focusedChangeKey,
   autoTooltipLine,
+  allowAutoScrollRef,
 }: {
   entry: ParsedFileDiff;
   isActive: boolean;
@@ -1276,6 +1326,7 @@ function FileDiffCard({
   focusedLine: DiffLineLocation | null;
   focusedChangeKey: string | null;
   autoTooltipLine: DiffLineLocation | null;
+  allowAutoScrollRef: React.MutableRefObject<boolean>;
 }) {
   const { file, diff, anchorId, error } = entry;
   const cardRef = useRef<HTMLElement | null>(null);
@@ -1322,6 +1373,9 @@ function FileDiffCard({
     const scrollTarget =
       targetRow instanceof HTMLElement ? targetRow : targetCell;
     window.requestAnimationFrame(() => {
+      if (!allowAutoScrollRef.current) {
+        return;
+      }
       scrollElementToViewportCenter(scrollTarget);
     });
   }, [focusedChangeKey]);
