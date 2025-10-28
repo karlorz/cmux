@@ -509,6 +509,9 @@ export async function startAutomatedPrReview(
     if (config.teamId) {
       envPairs.push(["TEAM_ID", config.teamId]);
     }
+    if (config.githubAccessToken) {
+      envPairs.push(["GITHUB_TOKEN", config.githubAccessToken]);
+    }
 
     const envAssignments = envPairs
       .map(([key, value]) => `${key}=${shellQuote(value)}`)
