@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useTransition,
 } from "react";
 import type { ReactElement, ReactNode } from "react";
 import {
@@ -560,6 +561,8 @@ export function PullRequestDiffViewer({
   const [autoTooltipTarget, setAutoTooltipTarget] =
     useState<ActiveTooltipTarget | null>(null);
   const autoTooltipTimeoutRef = useRef<number | null>(null);
+  const isUserNavigationRef = useRef(false);
+  const previousTargetCountRef = useRef(targetCount);
 
   const clearAutoTooltip = useCallback(() => {
     if (
@@ -612,16 +615,27 @@ export function PullRequestDiffViewer({
   );
 
   useEffect(() => {
+    const previousCount = previousTargetCountRef.current;
+    previousTargetCountRef.current = targetCount;
+
     if (targetCount === 0) {
       setFocusedErrorIndex(null);
       return;
     }
 
+    // Only update focused index if this is the first load or user initiated
+    // Don't change focus when new errors are incrementally added
     setFocusedErrorIndex((previous) => {
-      if (previous === null) {
+      // First time seeing errors
+      if (previous === null && previousCount === 0) {
         return 0;
       }
-      if (previous >= targetCount) {
+      // Keep current selection if it's still valid
+      if (previous !== null && previous < targetCount) {
+        return previous;
+      }
+      // Index out of bounds, wrap to 0
+      if (previous !== null && previous >= targetCount) {
         return 0;
       }
       return previous;
@@ -714,31 +728,40 @@ export function PullRequestDiffViewer({
       return;
     }
 
+    let debounceTimeout: number | null = null;
+
     const observer = new IntersectionObserver(
       (entries) => {
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort(
-            (a, b) =>
-              a.target.getBoundingClientRect().top -
-              b.target.getBoundingClientRect().top
-          );
-
-        if (visible[0]?.target.id) {
-          setActiveAnchor(visible[0].target.id);
-          return;
+        // Debounce to avoid rapid updates during scroll
+        if (debounceTimeout !== null) {
+          window.clearTimeout(debounceTimeout);
         }
 
-        const nearest = entries
-          .map((entry) => ({
-            id: entry.target.id,
-            top: entry.target.getBoundingClientRect().top,
-          }))
-          .sort((a, b) => Math.abs(a.top) - Math.abs(b.top))[0];
+        debounceTimeout = window.setTimeout(() => {
+          const visible = entries
+            .filter((entry) => entry.isIntersecting)
+            .sort(
+              (a, b) =>
+                a.target.getBoundingClientRect().top -
+                b.target.getBoundingClientRect().top
+            );
 
-        if (nearest?.id) {
-          setActiveAnchor(nearest.id);
-        }
+          if (visible[0]?.target.id) {
+            setActiveAnchor(visible[0].target.id);
+            return;
+          }
+
+          const nearest = entries
+            .map((entry) => ({
+              id: entry.target.id,
+              top: entry.target.getBoundingClientRect().top,
+            }))
+            .sort((a, b) => Math.abs(a.top) - Math.abs(b.top))[0];
+
+          if (nearest?.id) {
+            setActiveAnchor(nearest.id);
+          }
+        }, 100);
       },
       {
         rootMargin: "-128px 0px -55% 0px",
@@ -753,12 +776,19 @@ export function PullRequestDiffViewer({
     elements.forEach((element) => observer.observe(element));
 
     return () => {
+      if (debounceTimeout !== null) {
+        window.clearTimeout(debounceTimeout);
+      }
       elements.forEach((element) => observer.unobserve(element));
       observer.disconnect();
     };
   }, [parsedDiffs]);
 
-  const handleNavigate = useCallback((path: string) => {
+  const handleNavigate = useCallback((path: string, isUserInitiated = true) => {
+    if (isUserInitiated) {
+      isUserNavigationRef.current = true;
+    }
+
     setActivePath(path);
     setActiveAnchor(path);
 
@@ -776,6 +806,7 @@ export function PullRequestDiffViewer({
       }
 
       const isKeyboard = options?.source === "keyboard";
+      isUserNavigationRef.current = true;
 
       setFocusedErrorIndex((previous) => {
         const nextIndex =
@@ -807,6 +838,7 @@ export function PullRequestDiffViewer({
       }
 
       const isKeyboard = options?.source === "keyboard";
+      isUserNavigationRef.current = true;
 
       setFocusedErrorIndex((previous) => {
         const nextIndex = previous === null ? 0 : (previous + 1) % targetCount;
@@ -909,9 +941,17 @@ export function PullRequestDiffViewer({
       return;
     }
 
-    handleNavigate(focusedError.filePath);
+    // Only auto-scroll if this is user-initiated navigation
+    if (!isUserNavigationRef.current) {
+      return;
+    }
+
+    // Pass false to avoid re-setting the flag
+    handleNavigate(focusedError.filePath, false);
 
     if (focusedError.changeKey) {
+      // Reset flag after navigation
+      isUserNavigationRef.current = false;
       return;
     }
 
@@ -920,6 +960,8 @@ export function PullRequestDiffViewer({
       if (article) {
         scrollElementToViewportCenter(article);
       }
+      // Reset flag after scroll completes
+      isUserNavigationRef.current = false;
     });
 
     return () => {

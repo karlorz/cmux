@@ -57,6 +57,11 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Prevent scroll jumps during content updates */
+  html {
+    overflow-anchor: auto;
+  }
 }
 
 body {
