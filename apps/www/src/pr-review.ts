@@ -388,9 +388,7 @@ export async function startAutomatedPrReview(
       instance = startedInstance;
       return startedInstance;
     });
-    const prMetadataPromise = config.comparison
-      ? Promise.resolve(buildComparisonMetadata(config))
-      : fetchPrMetadataTask(config.prUrl, config.githubAccessToken);
+    const prMetadataPromise = fetchPrMetadataTask(config.prUrl, config.githubAccessToken);
 
     const [prMetadata, startedInstance] = await Promise.all([
       prMetadataPromise,
