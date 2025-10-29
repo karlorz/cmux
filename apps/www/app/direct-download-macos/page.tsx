@@ -1,12 +1,6 @@
-import type { MacArchitecture } from "@/lib/releases";
 import { fetchLatestRelease } from "@/lib/fetch-latest-release";
-import {
-  detectMacArchitectureFromHeaders,
-  normalizeMacArchitecture,
-  pickMacDownloadUrl,
-} from "@/lib/utils/mac-architecture";
+import { normalizeMacArchitecture, pickMacDownloadUrl } from "@/lib/utils/mac-architecture";
 import { DirectDownloadRedirector } from "@/app/direct-download-macos/redirector";
-import { headers } from "next/headers";
 
 type PageProps = {
   searchParams?: Record<string, string | string[] | undefined>;
@@ -33,16 +27,13 @@ const linkClasses =
 
 export default async function DirectDownloadPage({ searchParams }: PageProps) {
   const { macDownloadUrls, fallbackUrl, latestVersion } = await fetchLatestRelease();
-  const requestHeaders = await headers();
   const queryArchitecture = normalizeMacArchitecture(
     normalizeSearchParam(searchParams?.arch),
   );
-  const headerArchitecture = detectMacArchitectureFromHeaders(new Headers(requestHeaders));
-  const preferredArchitecture: MacArchitecture | null = queryArchitecture ?? headerArchitecture;
   const initialUrl = pickMacDownloadUrl(
     macDownloadUrls,
     fallbackUrl,
-    preferredArchitecture,
+    queryArchitecture ?? null,
   );
 
   return (
@@ -51,7 +42,6 @@ export default async function DirectDownloadPage({ searchParams }: PageProps) {
         macDownloadUrls={macDownloadUrls}
         fallbackUrl={fallbackUrl}
         initialUrl={initialUrl}
-        initialArchitecture={headerArchitecture}
         queryArchitecture={queryArchitecture}
       />
       <div className={cardClasses}>

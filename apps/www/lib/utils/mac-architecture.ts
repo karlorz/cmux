@@ -1,18 +1,5 @@
 import type { MacArchitecture, MacDownloadUrls } from "@/lib/releases";
 
-const stripQuotes = (value: string): string => value.replaceAll('"', "");
-
-const isMacPlatformValue = (value: string): boolean => {
-  const normalized = value.toLowerCase();
-
-  return (
-    normalized === "macos" ||
-    normalized === "mac os" ||
-    normalized === "mac" ||
-    normalized === "macintosh"
-  );
-};
-
 const hasDownloadUrl = (value: string | null): value is string =>
   typeof value === "string" && value.trim() !== "";
 
@@ -72,31 +59,6 @@ export const inferMacArchitectureFromUserAgent = (
   }
 
   return null;
-};
-
-export const detectMacArchitectureFromHeaders = (
-  headers: Headers,
-): MacArchitecture | null => {
-  const platformHeader = headers.get("sec-ch-ua-platform");
-
-  if (platformHeader) {
-    const normalizedPlatform = stripQuotes(platformHeader).trim();
-
-    if (!isMacPlatformValue(normalizedPlatform)) {
-      return null;
-    }
-  }
-
-  const architectureHeader = headers.get("sec-ch-ua-arch");
-  const architectureHint = normalizeMacArchitecture(
-    architectureHeader ? stripQuotes(architectureHeader).trim() : null,
-  );
-
-  if (architectureHint) {
-    return architectureHint;
-  }
-
-  return inferMacArchitectureFromUserAgent(headers.get("user-agent"));
 };
 
 export const pickMacDownloadUrl = (

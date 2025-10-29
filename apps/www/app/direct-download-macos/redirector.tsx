@@ -13,7 +13,6 @@ type DirectDownloadRedirectorProps = {
   macDownloadUrls: MacDownloadUrls;
   fallbackUrl: string;
   initialUrl: string;
-  initialArchitecture: MacArchitecture | null;
   queryArchitecture: MacArchitecture | null;
 };
 
@@ -21,7 +20,6 @@ export function DirectDownloadRedirector({
   macDownloadUrls,
   fallbackUrl,
   initialUrl,
-  initialArchitecture,
   queryArchitecture,
 }: DirectDownloadRedirectorProps) {
   useEffect(() => {
@@ -59,10 +57,10 @@ export function DirectDownloadRedirector({
           return;
         }
 
-        followUrl(initialArchitecture);
+        followUrl(null);
       } catch (error) {
         console.warn("macOS download redirect failed, using fallback", error);
-        followUrl(initialArchitecture);
+        followUrl(null);
       }
     };
 
@@ -71,7 +69,7 @@ export function DirectDownloadRedirector({
     return () => {
       isMounted = false;
     };
-  }, [fallbackUrl, initialArchitecture, macDownloadUrls, queryArchitecture]);
+  }, [fallbackUrl, macDownloadUrls, queryArchitecture]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
