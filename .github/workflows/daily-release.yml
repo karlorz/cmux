@@ -1,0 +1,101 @@
+name: Daily Release
+
+on:
+  schedule:
+    # Run at 4:00 AM UTC every day
+    - cron: '0 4 * * *'
+  workflow_dispatch: # Allow manual triggering
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: "24"
+
+jobs:
+  create-daily-release:
+    name: Create Daily Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for proper versioning
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.21
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version
+        id: bump
+        run: |
+          set -euo pipefail
+          cd apps/client
+
+          # Get current version
+          current_version=$(node -p "require('./package.json').version")
+          echo "Current version: $current_version"
+
+          # Bump patch version
+          IFS='.' read -r major minor patch <<< "$current_version"
+          new_patch=$((patch + 1))
+          new_version="${major}.${minor}.${new_patch}"
+          echo "New version: $new_version"
+
+          # Update package.json
+          node -e "const fs = require('node:fs'); const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')); pkg.version = '$new_version'; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');"
+
+          # Output for later steps
+          echo "version=$new_version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$new_version" >> "$GITHUB_OUTPUT"
+
+      - name: Commit version bump
+        run: |
+          git add apps/client/package.json
+          git commit -m "chore: bump version to ${{ steps.bump.outputs.version }} for daily release"
+          git push origin main
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.bump.outputs.tag }}
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # Create release notes
+          cat > release_notes.md <<EOF
+          ## Daily Release - $VERSION
+
+          This is an automated daily release of cmux.
+
+          ### What's Changed
+          $(git log --pretty=format:"- %s (%h)" --since="24 hours ago" --no-merges || echo "- No changes in the last 24 hours")
+
+          **Full Changelog**: https://github.com/${{ github.repository }}/compare/v${{ steps.bump.outputs.version }}...${RELEASE_TAG}
+
+          ---
+          *This release was automatically generated on $(date -u +"%Y-%m-%d at %H:%M UTC")*
+          EOF
+
+          # Create the GitHub release (draft)
+          gh release create "$RELEASE_TAG" \
+            --repo "${{ github.repository }}" \
+            --draft \
+            --title "Daily Release $VERSION" \
+            --notes-file release_notes.md
+
+          echo "Created draft release: $RELEASE_TAG"
+          echo "The release workflow will build and publish artifacts to this release."
