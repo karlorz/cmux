@@ -37,7 +37,7 @@ export function ReviewCompletionNotificationCard({
           onClick={state.onEnable}
           disabled={state.isRequesting}
         >
-          {state.isRequesting ? "Requesting..." : "Enable notification"}
+          {state.isRequesting ? "Requesting..." : "Enable notifications"}
         </Button>
       );
       break;
@@ -50,7 +50,7 @@ export function ReviewCompletionNotificationCard({
           className="rounded-none border border-neutral-200/70 text-neutral-600"
           onClick={state.onDisable}
         >
-          Turn off notification
+          Turn off notifications
         </Button>
       );
       break;
