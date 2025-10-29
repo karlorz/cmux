@@ -32,6 +32,26 @@ export const syncTeamMembershipsFromStack = internalAction({
         ),
       );
     } catch (error) {
+      // Check if this is a cross-environment webhook (production webhook hitting dev Convex)
+      if (
+        error &&
+        typeof error === "object" &&
+        "name" in error &&
+        error.name === "KnownError<INVALID_SECRET_SERVER_KEY>"
+      ) {
+        console.warn(
+          "[stack_webhook] Skipping team sync - webhook from different Stack project (likely cross-environment webhook)",
+          {
+            teamId,
+            message:
+              error && typeof error === "object" && "humanReadableMessage" in error
+                ? error.humanReadableMessage
+                : "Auth error",
+          },
+        );
+        return;
+      }
+
       console.error("[stack_webhook] Failed to sync team memberships", {
         teamId,
         error,

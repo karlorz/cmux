@@ -11,6 +11,7 @@ import {
   type GithubPullRequest,
   type GithubFileChange,
 } from "@/lib/github/fetch-pull-request";
+import { fetchRepository } from "@/lib/github/fetch-repository";
 import { isGithubApiError } from "@/lib/github/errors";
 import { cn } from "@/lib/utils";
 import { stackServerApp } from "@/lib/utils/stack";
@@ -47,9 +48,13 @@ type GithubAccountAccessor = {
 };
 
 type GithubConnectedUser = {
+  id?: string;
   getConnectedAccount: (
     provider: "github",
   ) => Promise<GithubAccountAccessor | null>;
+  getAuthJson: () => Promise<{ accessToken?: string | null }>;
+  selectedTeam?: Team | null;
+  isAnonymous?: boolean;
 };
 
 async function resolveGithubAccessToken(
@@ -92,14 +97,28 @@ function redirectToSignIn(returnPath: string): never {
   redirect(signInUrl);
 }
 
-async function requireSignedInUser(returnPath: string) {
-  const user = await stackServerApp.getUser({ or: "return-null" });
+async function isRepositoryPublic(
+  owner: string,
+  repo: string,
+): Promise<boolean> {
+  try {
+    const repository = await fetchRepository(owner, repo);
+    return repository.private === false;
+  } catch (error) {
+    if (isGithubApiError(error)) {
+      if ([401, 403, 404].includes(error.status)) {
+        return false;
+      }
+    }
 
-  if (!user) {
-    redirectToSignIn(returnPath);
+    console.error("[pr-review] Failed to determine repository visibility", {
+      owner,
+      repo,
+      error,
+    });
+
+    return false;
   }
-
-  return user;
 }
 
 async function getFirstTeam(): Promise<Team | null> {
@@ -111,14 +130,86 @@ async function getFirstTeam(): Promise<Team | null> {
   return firstTeam;
 }
 
+type ViewerContext = {
+  user: GithubConnectedUser;
+  selectedTeam: Team | null;
+  isAnonymous: boolean;
+};
+
+async function resolveViewerContext(
+  params: PageParams,
+  returnPath: string,
+): Promise<ViewerContext> {
+  const existingUser = (await stackServerApp.getUser({
+    or: "return-null",
+  })) as GithubConnectedUser | null;
+
+  if (existingUser) {
+    const isAnonymous = existingUser.isAnonymous ?? false;
+
+    // All users (including anonymous) should get a team
+    const selectedTeam =
+      existingUser.selectedTeam ?? (await getFirstTeam());
+
+    return {
+      user: existingUser,
+      selectedTeam: selectedTeam ?? null,
+      isAnonymous,
+    };
+  }
+
+  // No authenticated user found, check if repo is public
+  const repoIsPublic = await isRepositoryPublic(
+    params.teamSlugOrId,
+    params.repo,
+  );
+
+  if (!repoIsPublic) {
+    redirectToSignIn(returnPath);
+  }
+
+  // For public repos, create/get anonymous user directly
+  // Stack will handle creating a new anonymous user or returning existing one via cookies
+  console.log("[PR Review] Attempting to create/get anonymous user");
+  const anonymousUser = (await stackServerApp.getUser({
+    or: "anonymous",
+  })) as GithubConnectedUser;
+
+  console.log("[PR Review] Anonymous user created/retrieved:", {
+    userId: anonymousUser?.id,
+    isAnonymous: anonymousUser?.isAnonymous,
+    hasUser: !!anonymousUser,
+  });
+
+  // Anonymous users should also get a team assigned
+  // Try to get their selected team, or fall back to the first available team
+  const anonymousTeam =
+    anonymousUser.selectedTeam ?? (await getFirstTeam());
+
+  console.log("[PR Review] Anonymous user team:", {
+    hasSelectedTeam: !!anonymousUser.selectedTeam,
+    hasFirstTeam: !!anonymousTeam,
+    teamId: anonymousTeam?.id,
+  });
+
+  return {
+    user: anonymousUser,
+    selectedTeam: anonymousTeam ?? null,
+    isAnonymous: anonymousUser.isAnonymous ?? true,
+  };
+}
+
 export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const resolvedParams = await params;
   const returnPath = buildPullRequestPath(resolvedParams);
-  const user = await requireSignedInUser(returnPath);
-  const selectedTeam = user.selectedTeam || (await getFirstTeam());
-  if (!selectedTeam) {
+  const { user, selectedTeam, isAnonymous } = await resolveViewerContext(
+    resolvedParams,
+    returnPath,
+  );
+
+  if (!selectedTeam && !isAnonymous) {
     throw notFound();
   }
   const {
@@ -159,9 +250,12 @@ export async function generateMetadata({
 export default async function PullRequestPage({ params }: PageProps) {
   const resolvedParams = await params;
   const returnPath = buildPullRequestPath(resolvedParams);
-  const user = await requireSignedInUser(returnPath);
-  const selectedTeam = user.selectedTeam || (await getFirstTeam());
-  if (!selectedTeam) {
+  const { user, selectedTeam, isAnonymous } = await resolveViewerContext(
+    resolvedParams,
+    returnPath,
+  );
+
+  if (!selectedTeam && !isAnonymous) {
     return (
       <TeamOnboardingPrompt
         githubOwner={resolvedParams.teamSlugOrId}
@@ -191,12 +285,22 @@ export default async function PullRequestPage({ params }: PageProps) {
     });
   } catch (error) {
     if (isGithubApiError(error) && error.status === 404) {
+      if (selectedTeam) {
+        return (
+          <PrivateRepoPrompt
+            teamSlugOrId={selectedTeam.id}
+            repo={repo}
+            githubOwner={githubOwner}
+            githubAppSlug={env.NEXT_PUBLIC_GITHUB_APP_SLUG}
+          />
+        );
+      }
+
       return (
-        <PrivateRepoPrompt
-          teamSlugOrId={selectedTeam.id}
-          repo={repo}
-          githubOwner={githubOwner}
-          githubAppSlug={env.NEXT_PUBLIC_GITHUB_APP_SLUG}
+        <ErrorPanel
+          title="Pull request not found"
+          message="We couldn't find this pull request. It may be private or no longer exists."
+          documentationUrl={error.documentationUrl}
         />
       );
     }
@@ -211,13 +315,16 @@ export default async function PullRequestPage({ params }: PageProps) {
     { authToken: githubAccessToken }
   ).then((files) => files.map(toGithubFileChange));
 
-  scheduleCodeReviewStart({
-    teamSlugOrId: selectedTeam.id,
-    githubOwner,
-    repo,
-    pullNumber,
-    pullRequestPromise,
-  });
+  // Schedule code review for users with teams (including anonymous users)
+  if (selectedTeam) {
+    scheduleCodeReviewStart({
+      teamSlugOrId: selectedTeam.id,
+      githubOwner,
+      repo,
+      pullNumber,
+      pullRequestPromise,
+    });
+  }
 
   return (
     <div className="min-h-dvh bg-neutral-50 text-neutral-900">
@@ -234,7 +341,7 @@ export default async function PullRequestPage({ params }: PageProps) {
           <PullRequestDiffSection
             filesPromise={pullRequestFilesPromise}
             pullRequestPromise={pullRequestPromise}
-            teamSlugOrId={selectedTeam.id}
+            teamSlugOrId={selectedTeam?.id ?? null}
             githubOwner={githubOwner}
             repo={repo}
             pullNumber={pullNumber}
@@ -316,31 +423,39 @@ function scheduleCodeReviewStart({
           return;
         }
 
-        const user = await stackServerApp.getUser({ or: "return-null" });
-        if (!user) {
+        // Support both authenticated and anonymous users
+        let finalUser = await stackServerApp.getUser({
+          or: "return-null",
+        });
+
+        if (!finalUser) {
+          // Try anonymous user for public repos
+          finalUser = await stackServerApp.getUser({
+            or: "anonymous",
+          });
+        }
+
+        if (!finalUser) {
+          console.warn("[code-review] No user found for code review");
           return;
         }
 
-        const [{ accessToken }, githubAccount] = await Promise.all([
-          user.getAuthJson(),
-          user.getConnectedAccount("github"),
-        ]);
+        const { accessToken } = await finalUser.getAuthJson();
         if (!accessToken) {
+          console.warn("[code-review] No access token available");
           return;
         }
-        if (!githubAccount) {
-          console.warn(
-            "[code-review] Skipping auto-start: GitHub account not connected"
-          );
-          return;
-        }
-        const { accessToken: githubAccessToken } =
-          await githubAccount.getAccessToken();
+
+        // GitHub access token is optional for public repos (anonymous users won't have it)
+        const githubAccount = await finalUser.getConnectedAccount("github");
+        const githubAccessToken = githubAccount
+          ? (await githubAccount.getAccessToken()).accessToken ?? null
+          : null;
+
         if (!githubAccessToken) {
-          console.warn(
-            "[code-review] Skipping auto-start: GitHub access token unavailable"
+          console.info(
+            "[code-review] No GitHub access token (anonymous user viewing public repo)"
           );
-          return;
         }
 
         const { job, deduplicated, backgroundTask } = await startCodeReviewJob({
@@ -603,7 +718,7 @@ function PullRequestDiffSection({
   filesPromise: PullRequestFilesPromise;
   pullRequestPromise: PullRequestPromise;
   githubOwner: string;
-  teamSlugOrId: string;
+  teamSlugOrId: string | null;
   repo: string;
   pullNumber: number;
 }) {

@@ -79,7 +79,7 @@ import { kitties } from "./kitty";
 
 type PullRequestDiffViewerProps = {
   files: GithubFileChange[];
-  teamSlugOrId: string;
+  teamSlugOrId: string | null;
   repoFullName: string;
   prNumber?: number | null;
   comparisonSlug?: string | null;
@@ -439,8 +439,9 @@ export function PullRequestDiffViewer({
   const prQueryArgs = useMemo(
     () =>
       normalizedJobType !== "pull_request" ||
-      prNumber === null ||
-      prNumber === undefined
+        prNumber === null ||
+        prNumber === undefined ||
+        !teamSlugOrId
         ? ("skip" as const)
         : {
             teamSlugOrId,
@@ -462,6 +463,8 @@ export function PullRequestDiffViewer({
   const comparisonQueryArgs = useMemo(
     () =>
       normalizedJobType !== "comparison" || !comparisonSlug
+        ? ("skip" as const)
+        : !teamSlugOrId
         ? ("skip" as const)
         : {
             teamSlugOrId,

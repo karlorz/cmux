@@ -35,7 +35,7 @@ export function ReviewDiffContent({
   fileCount: number;
   additions: number;
   deletions: number;
-  teamSlugOrId: string;
+  teamSlugOrId: string | null;
   repoFullName: string;
   reviewTarget:
     | { type: "pull_request"; prNumber: number }
@@ -130,7 +130,7 @@ export function ReviewDiffViewerWrapper({
   baseCommitRef,
 }: {
   files: GithubFileChange[];
-  teamSlugOrId: string;
+  teamSlugOrId: string | null;
   repoFullName: string;
   reviewTarget:
     | { type: "pull_request"; prNumber: number }
