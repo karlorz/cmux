@@ -12,6 +12,7 @@ import {
   type GithubFileChange,
 } from "@/lib/github/fetch-pull-request";
 import { isGithubApiError } from "@/lib/github/errors";
+import { isRepoPublic } from "@/lib/github/check-repo-visibility";
 import { cn } from "@/lib/utils";
 import { stackServerApp } from "@/lib/utils/stack";
 import {
@@ -26,6 +27,7 @@ import {
   ReviewGitHubLinkButton,
 } from "../../_components/review-diff-content";
 import { PrivateRepoPrompt } from "../../_components/private-repo-prompt";
+import { PublicRepoAnonymousPrompt } from "../../_components/public-repo-anonymous-prompt";
 import { TeamOnboardingPrompt } from "../../_components/team-onboarding-prompt";
 import { env } from "@/lib/utils/www-env";
 
@@ -101,6 +103,11 @@ async function requireSignedInUser(returnPath: string) {
   return user;
 }
 
+async function getUserOrAnonymous() {
+  const user = await stackServerApp.getUser({ or: "return-null" });
+  return user;
+}
+
 async function getFirstTeam(): Promise<Team | null> {
   const teams = await stackServerApp.listTeams();
   const firstTeam = teams[0];
@@ -114,12 +121,6 @@ export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const resolvedParams = await params;
-  const returnPath = buildPullRequestPath(resolvedParams);
-  const user = await requireSignedInUser(returnPath);
-  const selectedTeam = user.selectedTeam || (await getFirstTeam());
-  if (!selectedTeam) {
-    throw notFound();
-  }
   const {
     teamSlugOrId: githubOwner,
     repo,
@@ -133,7 +134,20 @@ export async function generateMetadata({
     };
   }
 
-  const githubAccessToken = await resolveGithubAccessToken(user);
+  // Check if repo is public
+  const repoIsPublic = await isRepoPublic(githubOwner, repo);
+
+  // Get user if available
+  const user = await getUserOrAnonymous();
+
+  // For private repos without user, or if user doesn't have a team, return basic metadata
+  if (!repoIsPublic && !user) {
+    return {
+      title: `${githubOwner}/${repo} · #${pullNumber}`,
+    };
+  }
+
+  const githubAccessToken = user ? await resolveGithubAccessToken(user) : null;
 
   try {
     const pullRequest = await fetchPullRequest(githubOwner, repo, pullNumber, {
@@ -158,17 +172,6 @@ export async function generateMetadata({
 export default async function PullRequestPage({ params }: PageProps) {
   const resolvedParams = await params;
   const returnPath = buildPullRequestPath(resolvedParams);
-  const user = await requireSignedInUser(returnPath);
-  const selectedTeam = user.selectedTeam || (await getFirstTeam());
-  if (!selectedTeam) {
-    return (
-      <TeamOnboardingPrompt
-        githubOwner={resolvedParams.teamSlugOrId}
-        repo={resolvedParams.repo}
-        pullNumber={parsePullNumber(resolvedParams.pullNumber) ?? 0}
-      />
-    );
-  }
 
   const {
     teamSlugOrId: githubOwner,
@@ -181,7 +184,39 @@ export default async function PullRequestPage({ params }: PageProps) {
     notFound();
   }
 
-  const githubAccessToken = await resolveGithubAccessToken(user);
+  // Check if the repository is public
+  const repoIsPublic = await isRepoPublic(githubOwner, repo);
+
+  // Get user (may be null if anonymous)
+  const user = repoIsPublic
+    ? await getUserOrAnonymous()
+    : await requireSignedInUser(returnPath);
+
+  // For public repos without a user, show anonymous prompt
+  if (repoIsPublic && !user) {
+    return (
+      <PublicRepoAnonymousPrompt
+        teamSlugOrId={githubOwner}
+        repo={repo}
+        githubOwner={githubOwner}
+        pullNumber={pullNumber}
+      />
+    );
+  }
+
+  // For private repos, user is required (handled by requireSignedInUser above)
+  const selectedTeam = user!.selectedTeam || (await getFirstTeam());
+  if (!selectedTeam) {
+    return (
+      <TeamOnboardingPrompt
+        githubOwner={resolvedParams.teamSlugOrId}
+        repo={resolvedParams.repo}
+        pullNumber={parsePullNumber(resolvedParams.pullNumber) ?? 0}
+      />
+    );
+  }
+
+  const githubAccessToken = await resolveGithubAccessToken(user!);
 
   let initialPullRequest: GithubPullRequest;
   try {
