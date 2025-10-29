@@ -1688,7 +1688,7 @@ function HeatmapThresholdControl({
           htmlFor={sliderId}
           className="font-medium text-neutral-700"
         >
-          "Should review" threshold
+          &ldquo;Should review&rdquo; threshold
         </label>
         <span className="text-xs font-semibold text-neutral-600">
           ≥ <span className="tabular-nums">{percent}%</span>
