@@ -75,6 +75,7 @@ import {
   type ReviewCompletionNotificationCardState,
 } from "./review-completion-notification-card";
 import clsx from "clsx";
+import { kitties } from "./kitty";
 
 type PullRequestDiffViewerProps = {
   files: GithubFileChange[];
@@ -1391,6 +1392,10 @@ export function PullRequestDiffViewer({
     };
   }, [focusedError, handleNavigate]);
 
+  const kitty = useMemo(() => {
+    return kitties[Math.floor(Math.random() * kitties.length)];
+  }, []);
+
   if (totalFileCount === 0) {
     return (
       <div className="border border-neutral-200 bg-white p-8 text-sm text-neutral-600">
@@ -1519,7 +1524,18 @@ export function PullRequestDiffViewer({
               />
             );
           })}
-          <div className="h-[70dvh] w-full" />
+          <div className="h-[70dvh] w-full">
+            <div className="px-3 py-6 text-center">
+              <span className="select-none text-xs text-neutral-500 dark:text-neutral-400">
+                You&apos;ve reached the end of the diff!
+              </span>
+              <div className="grid place-content-center">
+                <pre className="mt-2 pb-20 select-none text-left text-[8px] font-mono text-neutral-500 dark:text-neutral-400">
+                  {kitty}
+                </pre>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

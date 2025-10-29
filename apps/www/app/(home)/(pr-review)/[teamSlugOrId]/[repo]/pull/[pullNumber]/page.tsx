@@ -26,6 +26,9 @@ import {
   ReviewGitHubLinkButton,
   summarizeFiles,
 } from "../../_components/review-diff-content";
+import { PrivateRepoPrompt } from "../../_components/private-repo-prompt";
+import { TeamOnboardingPrompt } from "../../_components/team-onboarding-prompt";
+import { env } from "@/lib/utils/www-env";
 
 type PageParams = {
   teamSlugOrId: string;
@@ -38,6 +41,36 @@ type PageProps = {
 };
 
 export const dynamic = "force-dynamic";
+
+type GithubAccountAccessor = {
+  getAccessToken: () => Promise<{ accessToken?: string | null }>;
+};
+
+type GithubConnectedUser = {
+  getConnectedAccount: (
+    provider: "github",
+  ) => Promise<GithubAccountAccessor | null>;
+};
+
+async function resolveGithubAccessToken(
+  user: GithubConnectedUser | null,
+): Promise<string | null> {
+  if (!user) {
+    return null;
+  }
+
+  const account = await user.getConnectedAccount("github");
+  if (!account) {
+    return null;
+  }
+
+  const { accessToken } = await account.getAccessToken();
+  if (!accessToken || accessToken.trim().length === 0) {
+    return null;
+  }
+
+  return accessToken;
+}
 
 function buildPullRequestPath({
   teamSlugOrId,
@@ -101,8 +134,12 @@ export async function generateMetadata({
     };
   }
 
+  const githubAccessToken = await resolveGithubAccessToken(user);
+
   try {
-    const pullRequest = await fetchPullRequest(githubOwner, repo, pullNumber);
+    const pullRequest = await fetchPullRequest(githubOwner, repo, pullNumber, {
+      authToken: githubAccessToken,
+    });
 
     return {
       title: `${pullRequest.title} · #${pullRequest.number} · ${githubOwner}/${repo}`,
@@ -125,7 +162,13 @@ export default async function PullRequestPage({ params }: PageProps) {
   const user = await requireSignedInUser(returnPath);
   const selectedTeam = user.selectedTeam || (await getFirstTeam());
   if (!selectedTeam) {
-    throw notFound();
+    return (
+      <TeamOnboardingPrompt
+        githubOwner={resolvedParams.teamSlugOrId}
+        repo={resolvedParams.repo}
+        pullNumber={parsePullNumber(resolvedParams.pullNumber) ?? 0}
+      />
+    );
   }
 
   const {
@@ -139,11 +182,33 @@ export default async function PullRequestPage({ params }: PageProps) {
     notFound();
   }
 
-  const pullRequestPromise = fetchPullRequest(githubOwner, repo, pullNumber);
+  const githubAccessToken = await resolveGithubAccessToken(user);
+
+  let initialPullRequest: GithubPullRequest;
+  try {
+    initialPullRequest = await fetchPullRequest(githubOwner, repo, pullNumber, {
+      authToken: githubAccessToken,
+    });
+  } catch (error) {
+    if (isGithubApiError(error) && error.status === 404) {
+      return (
+        <PrivateRepoPrompt
+          teamSlugOrId={selectedTeam.id}
+          repo={repo}
+          githubOwner={githubOwner}
+          githubAppSlug={env.NEXT_PUBLIC_GITHUB_APP_SLUG}
+        />
+      );
+    }
+    throw error;
+  }
+
+  const pullRequestPromise = Promise.resolve(initialPullRequest);
   const pullRequestFilesPromise = fetchPullRequestFiles(
     githubOwner,
     repo,
-    pullNumber
+    pullNumber,
+    { authToken: githubAccessToken }
   ).then((files) => files.map(toGithubFileChange));
 
   scheduleCodeReviewStart({
@@ -307,16 +372,24 @@ function scheduleCodeReviewStart({
           await backgroundTask;
         }
       } catch (error) {
-        console.error(
-          "[code-review] Skipping auto-start due to PR fetch error",
-          {
-            teamSlugOrId,
-            githubOwner,
-            repo,
-            pullNumber,
-          },
-          error
-        );
+        const context = {
+          teamSlugOrId,
+          githubOwner,
+          repo,
+          pullNumber,
+        };
+        if (isGithubApiError(error) && error.status === 404) {
+          console.warn(
+            "[code-review] Skipping auto-start; GitHub app not installed or repository access missing",
+            context,
+          );
+        } else {
+          console.error(
+            "[code-review] Skipping auto-start due to PR fetch error",
+            context,
+            error,
+          );
+        }
       }
     })()
   );
