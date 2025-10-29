@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle2 } from "lucide-react";
 
-export default function GitHubInstallCompletePage() {
+function GitHubInstallCompleteContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isRedirecting, setIsRedirecting] = useState(true);
@@ -134,5 +134,28 @@ export default function GitHubInstallCompletePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function GitHubInstallCompletePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-dvh bg-neutral-50 text-neutral-900 flex items-center justify-center px-6">
+          <div className="text-center">
+            <div className="mx-auto mb-6 grid place-items-center">
+              <div className="h-14 w-14 rounded-full bg-neutral-100 ring-8 ring-neutral-50 grid place-items-center">
+                <CheckCircle2 className="h-7 w-7 text-emerald-600" />
+              </div>
+            </div>
+            <h1 className="text-2xl font-semibold text-neutral-900">
+              Loading...
+            </h1>
+          </div>
+        </div>
+      }
+    >
+      <GitHubInstallCompleteContent />
+    </Suspense>
   );
 }
