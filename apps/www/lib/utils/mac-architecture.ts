@@ -3,6 +3,18 @@ import type { MacArchitecture, MacDownloadUrls } from "@/lib/releases";
 const hasDownloadUrl = (value: string | null): value is string =>
   typeof value === "string" && value.trim() !== "";
 
+const detectionLog = (message: string, details?: Record<string, unknown>) => {
+  if (typeof console === "undefined") {
+    return;
+  }
+
+  if (details) {
+    console.log("[cmux direct-download]", message, details);
+  } else {
+    console.log("[cmux direct-download]", message);
+  }
+};
+
 export const normalizeMacArchitecture = (
   value: string | null | undefined,
 ): MacArchitecture | null => {
@@ -61,6 +73,103 @@ export const inferMacArchitectureFromUserAgent = (
   return null;
 };
 
+type NavigatorTouchInfo = {
+  platform?: string | null;
+  maxTouchPoints?: number | null | undefined;
+};
+
+export const touchBasedMacArchitectureHint = (
+  info: NavigatorTouchInfo,
+): MacArchitecture | null => {
+  const { platform, maxTouchPoints } = info;
+  const normalizedPlatform = typeof platform === "string" ? platform.toLowerCase() : "";
+
+  if (!normalizedPlatform.includes("mac")) {
+    return null;
+  }
+
+  const touchPoints =
+    typeof maxTouchPoints === "number" && Number.isFinite(maxTouchPoints)
+      ? maxTouchPoints
+      : 0;
+
+  if (touchPoints > 0 && normalizedPlatform === "macintel") {
+    return "arm64";
+  }
+
+  return null;
+};
+
+export const architectureFromWebGLRenderer = (
+  renderer: string | null | undefined,
+): MacArchitecture | null => {
+  if (typeof renderer !== "string") {
+    return null;
+  }
+
+  const normalized = renderer.toLowerCase();
+
+  if (normalized.includes("apple") && (normalized.includes(" m") || normalized.includes("gpu"))) {
+    return "arm64";
+  }
+
+  if (normalized.includes("intel") || normalized.includes("amd") || normalized.includes("radeon")) {
+    return "x64";
+  }
+
+  return null;
+};
+
+const detectArchitectureViaWebGL = async (): Promise<MacArchitecture | null> => {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  const getRendererString = (): string | null => {
+    try {
+      const canvas = document.createElement("canvas");
+      const gl =
+        (canvas.getContext("webgl2") as WebGL2RenderingContext | null) ??
+        (canvas.getContext("webgl") as WebGLRenderingContext | null) ??
+        (canvas.getContext("experimental-webgl") as WebGLRenderingContext | null);
+
+      if (!gl) {
+        return null;
+      }
+
+      const debugInfo = gl.getExtension("WEBGL_debug_renderer_info") as
+        | WEBGL_debug_renderer_info
+        | null;
+
+      if (!debugInfo) {
+        return null;
+      }
+
+      const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+
+      return typeof renderer === "string" ? renderer : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const renderer = getRendererString();
+
+  if (!renderer) {
+    detectionLog("webgl renderer unavailable");
+    return null;
+  }
+
+  const architecture = architectureFromWebGLRenderer(renderer);
+
+  detectionLog("webgl renderer inspected", {
+    renderer,
+    architecture: architecture ?? "unknown",
+  });
+
+  return architecture;
+};
+
 export const pickMacDownloadUrl = (
   macDownloadUrls: MacDownloadUrls,
   fallbackUrl: string,
@@ -115,17 +224,33 @@ export const getNavigatorArchitectureHint = (): MacArchitecture | null => {
     const architectureHint = normalizeMacArchitecture(uaData.architecture);
 
     if (architectureHint) {
+      detectionLog("navigator userAgentData hint", {
+        architecture: architectureHint,
+      });
       return architectureHint;
     }
   }
 
-  return inferMacArchitectureFromUserAgent(userAgent);
+  const touchHint = touchBasedMacArchitectureHint({
+    platform: navigator.platform,
+    maxTouchPoints: navigator.maxTouchPoints,
+  });
+
+  if (touchHint) {
+    detectionLog("navigator touch hint", { architecture: touchHint });
+    return touchHint;
+  }
+
+  return null;
 };
 
 export const detectClientMacArchitecture = async (): Promise<MacArchitecture | null> => {
   const immediateHint = getNavigatorArchitectureHint();
 
   if (immediateHint) {
+    detectionLog("architecture detected via navigator hint", {
+      architecture: immediateHint,
+    });
     return immediateHint;
   }
 
@@ -145,7 +270,35 @@ export const detectClientMacArchitecture = async (): Promise<MacArchitecture | n
   const uaData = navigatorWithUAData.userAgentData;
 
   if (!uaData || typeof uaData.getHighEntropyValues !== "function") {
-    return inferMacArchitectureFromUserAgent(navigator.userAgent);
+    const touchHint = touchBasedMacArchitectureHint({
+      platform: navigator.platform,
+      maxTouchPoints: navigator.maxTouchPoints,
+    });
+
+    if (touchHint) {
+      detectionLog("architecture detected via touch fallback", {
+        architecture: touchHint,
+        stage: "no-ua-data",
+      });
+      return touchHint;
+    }
+
+    const webglHint = await detectArchitectureViaWebGL();
+
+    if (webglHint) {
+      detectionLog("architecture detected via webgl renderer", {
+        architecture: webglHint,
+      });
+      return webglHint;
+    }
+
+    const userAgentFallback = inferMacArchitectureFromUserAgent(navigator.userAgent);
+
+    detectionLog("architecture inferred from user agent", {
+      architecture: userAgentFallback ?? "unknown",
+    });
+
+    return userAgentFallback;
   }
 
   const details = await uaData
@@ -159,9 +312,40 @@ export const detectClientMacArchitecture = async (): Promise<MacArchitecture | n
     );
 
     if (normalizedArchitecture) {
+      detectionLog("architecture detected via high entropy ua data", {
+        architecture: normalizedArchitecture,
+      });
       return normalizedArchitecture;
     }
   }
 
-  return inferMacArchitectureFromUserAgent(navigator.userAgent);
+  const touchHint = touchBasedMacArchitectureHint({
+    platform: navigator.platform,
+    maxTouchPoints: navigator.maxTouchPoints,
+  });
+
+  if (touchHint) {
+    detectionLog("architecture detected via touch fallback", {
+      architecture: touchHint,
+      stage: "post-ua-data",
+    });
+    return touchHint;
+  }
+
+  const webglHint = await detectArchitectureViaWebGL();
+
+  if (webglHint) {
+    detectionLog("architecture detected via webgl renderer", {
+      architecture: webglHint,
+    });
+    return webglHint;
+  }
+
+  const userAgentFallback = inferMacArchitectureFromUserAgent(navigator.userAgent);
+
+  detectionLog("architecture inferred from user agent", {
+    architecture: userAgentFallback ?? "unknown",
+  });
+
+  return userAgentFallback;
 };

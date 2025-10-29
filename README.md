@@ -20,7 +20,11 @@ Each agent runs in its own Docker container, launching VS Code with a Git diff U
 
 cmux supports macOS Apple Silicon. macOS x64, Linux, and Windows support coming soon.
 
-```bash
+<a href="https://www.cmux.dev/direct-download-macos">
+  <img src="./docs/assets/macos-badge.png" alt="Download cmux for macOS" width="180" />
+</a>
+
+<!-- ```bash
 # with bun
 bunx cmux@latest
 
@@ -30,7 +34,7 @@ npx cmux@latest
 # or to install globally
 bun add -g cmux@latest
 npm install -g cmux@latest
-```
+``` -->
 
 <!-- ```bash
 # with uv
@@ -43,8 +47,8 @@ uvx cmux@latest
 cmux upgrade
 ``` -->
 
-## Uninstall
+<!-- ## Uninstall
 
 ```bash
 cmux uninstall
-```
+``` -->

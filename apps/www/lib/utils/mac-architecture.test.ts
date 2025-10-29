@@ -4,6 +4,8 @@ import {
   inferMacArchitectureFromUserAgent,
   normalizeMacArchitecture,
   pickMacDownloadUrl,
+  touchBasedMacArchitectureHint,
+  architectureFromWebGLRenderer,
 } from "./mac-architecture";
 
 describe("normalizeMacArchitecture", () => {
@@ -20,6 +22,60 @@ describe("normalizeMacArchitecture", () => {
     expect(normalizeMacArchitecture("ppc")).toBeNull();
     expect(normalizeMacArchitecture("")).toBeNull();
     expect(normalizeMacArchitecture(undefined)).toBeNull();
+  });
+});
+
+describe("touchBasedMacArchitectureHint", () => {
+  it("returns arm64 for macintel with touch support", () => {
+    expect(
+      touchBasedMacArchitectureHint({
+        platform: "MacIntel",
+        maxTouchPoints: 5,
+      }),
+    ).toBe("arm64");
+  });
+
+  it("returns null when touch points absent", () => {
+    expect(
+      touchBasedMacArchitectureHint({
+        platform: "MacIntel",
+        maxTouchPoints: 0,
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null for non-mac platforms", () => {
+    expect(
+      touchBasedMacArchitectureHint({
+        platform: "Win32",
+        maxTouchPoints: 10,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("architectureFromWebGLRenderer", () => {
+  it("returns arm64 for apple gpu renderers", () => {
+    expect(
+      architectureFromWebGLRenderer("Apple M3"),
+    ).toBe("arm64");
+    expect(
+      architectureFromWebGLRenderer("Apple GPU"),
+    ).toBe("arm64");
+  });
+
+  it("returns x64 for intel or amd renderers", () => {
+    expect(
+      architectureFromWebGLRenderer("Intel(R) Iris OpenGL Engine"),
+    ).toBe("x64");
+    expect(
+      architectureFromWebGLRenderer("AMD Radeon Pro 560"),
+    ).toBe("x64");
+  });
+
+  it("returns null when renderer is unknown", () => {
+    expect(architectureFromWebGLRenderer("Unknown Renderer")).toBeNull();
+    expect(architectureFromWebGLRenderer(null)).toBeNull();
   });
 });
 
