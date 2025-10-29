@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -10,23 +11,36 @@ export default function HeatmapPage() {
   return (
     <div className="flex min-h-screen flex-col items-center bg-white p-8 text-black">
       <div className="mx-auto mb-0 mt-[70px] max-w-3xl">
+        <Link
+          href="https://cmux.dev"
+          className="mb-8 inline-block text-sm text-neutral-600 hover:text-black"
+        >
+          ← Back to cmux
+        </Link>
         <h1 className="mb-8 text-3xl font-bold">
-          A heatmap diff viewer for code reviews
+          A <span className="bg-yellow-200 px-1">heatmap</span> diff viewer for
+          code reviews
         </h1>
 
         <div className="mb-8 text-base leading-[1.6]">
           <p className="mb-4">
-            Heatmap color-codes every diff line/token by how much human
-            attention it probably needs. Unlike PR-review bots, we try to flag
-            not just by &ldquo;is it a bug?&rdquo; but by &ldquo;is it worth a
-            second look?&rdquo; (examples: hard-coded secret, weird crypto mode,
-            gnarly logic).
+            Heatmap color-codes every diff line/token by how much{" "}
+            <span className="bg-yellow-200 px-1">human attention</span> it
+            probably needs. Unlike PR-review bots, we try to flag not just by
+            &ldquo;is it a bug?&rdquo; but by &ldquo;is it worth a second
+            look?&rdquo; (examples:{" "}
+            <span className="bg-red-300 px-1">hard-coded secret</span>,{" "}
+            <span className="bg-orange-300 px-1">weird crypto mode</span>,{" "}
+            <span className="bg-orange-200 px-1">gnarly logic</span>).
           </p>
 
           <p className="mb-4">
-            Try it by changing any GitHub pull request url link to 0github.com.
-            Under the hood, we spin up gpt-5-codex for every diff and ask it to
-            output a JSON data structure that we parse into a colored heatmap.
+            Try it by changing any GitHub pull request url link to{" "}
+            <span className="bg-yellow-300 px-1">0github.com</span>. Under the
+            hood, we spin up{" "}
+            <span className="bg-yellow-200 px-1">gpt-5-codex</span> for every
+            diff and ask it to output a JSON data structure that we parse into
+            a <span className="bg-yellow-200 px-1">colored heatmap</span>.
           </p>
         </div>
 
