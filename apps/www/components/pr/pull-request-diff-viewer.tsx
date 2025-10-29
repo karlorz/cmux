@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   useId,
+  useDeferredValue,
 } from "react";
 import type {
   ReactElement,
@@ -567,7 +568,8 @@ export function PullRequestDiffViewer({
     return Math.max(totalFileCount - processedFileCount, 0);
   }, [processedFileCount, totalFileCount]);
 
-  const [heatmapThreshold, setHeatmapThreshold] = useState(0);
+  const [heatmapThresholdInput, setHeatmapThresholdInput] = useState(0);
+  const heatmapThreshold = useDeferredValue(heatmapThresholdInput);
 
   const [isNotificationSupported, setIsNotificationSupported] = useState(false);
   const [notificationPermission, setNotificationPermission] =
@@ -1433,8 +1435,8 @@ export function PullRequestDiffViewer({
               <ReviewCompletionNotificationCard state={notificationCardState} />
             ) : null}
             <HeatmapThresholdControl
-              value={heatmapThreshold}
-              onChange={setHeatmapThreshold}
+              value={heatmapThresholdInput}
+              onChange={setHeatmapThresholdInput}
             />
             {targetCount > 0 ? (
               <div className="flex justify-center">
