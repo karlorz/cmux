@@ -1,3 +1,5 @@
+import { cache } from "react";
+
 import { GithubApiError } from "./errors";
 import { createGitHubClient } from "./octokit";
 import {
@@ -32,13 +34,60 @@ export type GithubPullRequestFile =
 
 export type GithubComparison = CompareCommitsResponse["data"];
 
-type FetchPullRequestOptions = {
+type GithubRequestOptionsInput = {
   authToken?: string | null;
 };
 
-type FetchPullRequestFilesOptions = {
-  authToken?: string | null;
+type NormalizedGithubRequestOptions = {
+  authToken: string | null;
 };
+
+type FetchPullRequestOptions = GithubRequestOptionsInput;
+
+type FetchPullRequestFilesOptions = GithubRequestOptionsInput;
+
+function normalizeGithubRequestOptions(
+  options?: GithubRequestOptionsInput,
+): NormalizedGithubRequestOptions {
+  if (!options) {
+    return { authToken: null };
+  }
+
+  const { authToken } = options;
+
+  if (authToken === null || authToken === undefined) {
+    return { authToken: null };
+  }
+
+  if (typeof authToken !== "string") {
+    return { authToken: null };
+  }
+
+  const trimmed = authToken.trim();
+
+  if (trimmed.length === 0) {
+    return { authToken: null };
+  }
+
+  return { authToken: trimmed };
+}
+
+function serializeGithubRequestOptions(
+  options: NormalizedGithubRequestOptions,
+): string {
+  return JSON.stringify(options);
+}
+
+function deserializeGithubRequestOptions(
+  serialized: string,
+): NormalizedGithubRequestOptions {
+  try {
+    const parsed = JSON.parse(serialized) as GithubRequestOptionsInput;
+    return normalizeGithubRequestOptions(parsed);
+  } catch {
+    return { authToken: null };
+  }
+}
 
 function toGithubApiError(error: unknown): GithubApiError {
   if (error instanceof GithubApiError) {
@@ -98,89 +147,162 @@ function shouldRetryWithAlternateAuth(error: unknown): boolean {
   return [401, 403, 404].includes(error.status ?? 0);
 }
 
-export async function fetchPullRequest(
+async function performFetchPullRequest(
   owner: string,
   repo: string,
   pullNumber: number,
-  options: FetchPullRequestOptions = {},
+  options: NormalizedGithubRequestOptions,
 ): Promise<GithubPullRequest> {
-  try {
-    const authCandidates = buildAuthCandidates(options.authToken);
-    let lastError: unknown;
+  const authCandidates = buildAuthCandidates(options.authToken);
+  let lastError: unknown;
 
-    for (const candidate of authCandidates) {
+  for (const candidate of authCandidates) {
+    try {
+      const octokit = createGitHubClient(candidate);
+      const response = await octokit.rest.pulls.get({
+        owner,
+        repo,
+        pull_number: pullNumber,
+      });
+      return response.data;
+    } catch (error) {
+      lastError = error;
+      if (shouldRetryWithAlternateAuth(error)) {
+        continue;
+      }
+      throw toGithubApiError(error);
+    }
+  }
+
+  if (isRequestErrorShape(lastError) && lastError.status === 404) {
+    console.log(
+      `[fetchPullRequest] Got 404, trying with GitHub App token for ${owner}/${repo}`,
+    );
+
+    const installationId = await getInstallationForRepo(`${owner}/${repo}`);
+    if (installationId) {
+      const appToken = await generateGitHubInstallationToken({
+        installationId,
+        permissions: {
+          contents: "read",
+          metadata: "read",
+          pull_requests: "read",
+        },
+      });
+
       try {
-        const octokit = createGitHubClient(candidate);
+        const octokit = createGitHubClient(appToken);
         const response = await octokit.rest.pulls.get({
           owner,
           repo,
           pull_number: pullNumber,
         });
         return response.data;
-      } catch (error) {
-        lastError = error;
-        if (shouldRetryWithAlternateAuth(error)) {
-          continue;
-        }
-        throw toGithubApiError(error);
+      } catch (appError) {
+        throw toGithubApiError(appError);
       }
     }
+  }
 
-    if (isRequestErrorShape(lastError) && lastError.status === 404) {
-      console.log(
-        `[fetchPullRequest] Got 404, trying with GitHub App token for ${owner}/${repo}`,
+  if (lastError) {
+    throw toGithubApiError(lastError);
+  }
+
+  throw new GithubApiError("Unable to fetch pull request", {
+    status: 500,
+  });
+}
+
+const cachedFetchPullRequest = cache(
+  async (
+    owner: string,
+    repo: string,
+    pullNumber: number,
+    serializedOptions: string,
+  ): Promise<GithubPullRequest> => {
+    const normalizedOptions =
+      deserializeGithubRequestOptions(serializedOptions);
+    try {
+      return await performFetchPullRequest(
+        owner,
+        repo,
+        pullNumber,
+        normalizedOptions,
       );
-
-      const installationId = await getInstallationForRepo(`${owner}/${repo}`);
-      if (installationId) {
-        const appToken = await generateGitHubInstallationToken({
-          installationId,
-          permissions: {
-            contents: "read",
-            metadata: "read",
-            pull_requests: "read",
-          },
-        });
-
-        try {
-          const octokit = createGitHubClient(appToken);
-          const response = await octokit.rest.pulls.get({
-            owner,
-            repo,
-            pull_number: pullNumber,
-          });
-          return response.data;
-        } catch (appError) {
-          throw toGithubApiError(appError);
-        }
-      }
+    } catch (error) {
+      throw toGithubApiError(error);
     }
+  },
+);
 
-    if (lastError) {
-      throw toGithubApiError(lastError);
-    }
+export async function fetchPullRequest(
+  owner: string,
+  repo: string,
+  pullNumber: number,
+  options: FetchPullRequestOptions = {},
+): Promise<GithubPullRequest> {
+  const normalizedOptions = normalizeGithubRequestOptions(options);
+  const serializedOptions =
+    serializeGithubRequestOptions(normalizedOptions);
 
-    throw new GithubApiError("Unable to fetch pull request", {
-      status: 500,
-    });
+  try {
+    return await cachedFetchPullRequest(
+      owner,
+      repo,
+      pullNumber,
+      serializedOptions,
+    );
   } catch (error) {
     throw toGithubApiError(error);
   }
 }
 
-export async function fetchPullRequestFiles(
+async function performFetchPullRequestFiles(
   owner: string,
   repo: string,
   pullNumber: number,
-  options: FetchPullRequestFilesOptions = {},
+  options: NormalizedGithubRequestOptions,
 ): Promise<GithubPullRequestFile[]> {
-  try {
-    const authCandidates = buildAuthCandidates(options.authToken);
-    let lastError: unknown;
+  const authCandidates = buildAuthCandidates(options.authToken);
+  let lastError: unknown;
 
-    for (const candidate of authCandidates) {
+  for (const candidate of authCandidates) {
+    try {
+      const octokit = createGitHubClient(candidate);
+      const files = await octokit.paginate(octokit.rest.pulls.listFiles, {
+        owner,
+        repo,
+        pull_number: pullNumber,
+        per_page: 100,
+      });
+      return files;
+    } catch (error) {
+      lastError = error;
+      if (shouldRetryWithAlternateAuth(error)) {
+        continue;
+      }
+      throw toGithubApiError(error);
+    }
+  }
+
+  if (isRequestErrorShape(lastError) && lastError.status === 404) {
+    console.log(
+      `[fetchPullRequestFiles] Got 404, trying with GitHub App token for ${owner}/${repo}`,
+    );
+
+    const installationId = await getInstallationForRepo(`${owner}/${repo}`);
+    if (installationId) {
+      const appToken = await generateGitHubInstallationToken({
+        installationId,
+        permissions: {
+          contents: "read",
+          metadata: "read",
+          pull_requests: "read",
+        },
+      });
+
       try {
-        const octokit = createGitHubClient(candidate);
+        const octokit = createGitHubClient(appToken);
         const files = await octokit.paginate(octokit.rest.pulls.listFiles, {
           owner,
           repo,
@@ -188,53 +310,60 @@ export async function fetchPullRequestFiles(
           per_page: 100,
         });
         return files;
-      } catch (error) {
-        lastError = error;
-        if (shouldRetryWithAlternateAuth(error)) {
-          continue;
-        }
-        throw toGithubApiError(error);
+      } catch (appError) {
+        throw toGithubApiError(appError);
       }
     }
+  }
 
-    if (isRequestErrorShape(lastError) && lastError.status === 404) {
-      console.log(
-        `[fetchPullRequestFiles] Got 404, trying with GitHub App token for ${owner}/${repo}`,
+  if (lastError) {
+    throw toGithubApiError(lastError);
+  }
+
+  throw new GithubApiError("Unable to fetch pull request files", {
+    status: 500,
+  });
+}
+
+const cachedFetchPullRequestFiles = cache(
+  async (
+    owner: string,
+    repo: string,
+    pullNumber: number,
+    serializedOptions: string,
+  ): Promise<GithubPullRequestFile[]> => {
+    const normalizedOptions =
+      deserializeGithubRequestOptions(serializedOptions);
+    try {
+      return await performFetchPullRequestFiles(
+        owner,
+        repo,
+        pullNumber,
+        normalizedOptions,
       );
-
-      const installationId = await getInstallationForRepo(`${owner}/${repo}`);
-      if (installationId) {
-        const appToken = await generateGitHubInstallationToken({
-          installationId,
-          permissions: {
-            contents: "read",
-            metadata: "read",
-            pull_requests: "read",
-          },
-        });
-
-        try {
-          const octokit = createGitHubClient(appToken);
-          const files = await octokit.paginate(octokit.rest.pulls.listFiles, {
-            owner,
-            repo,
-            pull_number: pullNumber,
-            per_page: 100,
-          });
-          return files;
-        } catch (appError) {
-          throw toGithubApiError(appError);
-        }
-      }
+    } catch (error) {
+      throw toGithubApiError(error);
     }
+  },
+);
 
-    if (lastError) {
-      throw toGithubApiError(lastError);
-    }
+export async function fetchPullRequestFiles(
+  owner: string,
+  repo: string,
+  pullNumber: number,
+  options: FetchPullRequestFilesOptions = {},
+): Promise<GithubPullRequestFile[]> {
+  const normalizedOptions = normalizeGithubRequestOptions(options);
+  const serializedOptions =
+    serializeGithubRequestOptions(normalizedOptions);
 
-    throw new GithubApiError("Unable to fetch pull request files", {
-      status: 500,
-    });
+  try {
+    return await cachedFetchPullRequestFiles(
+      owner,
+      repo,
+      pullNumber,
+      serializedOptions,
+    );
   } catch (error) {
     throw toGithubApiError(error);
   }
@@ -266,6 +395,37 @@ export function toGithubFileChange(
   };
 }
 
+async function performFetchComparison(
+  owner: string,
+  repo: string,
+  baseRef: string,
+  headRef: string,
+): Promise<GithubComparison> {
+  const octokit = createGitHubClient();
+  const response = await octokit.rest.repos.compareCommitsWithBasehead({
+    owner,
+    repo,
+    basehead: `${baseRef}...${headRef}`,
+    per_page: 100,
+  });
+  return response.data;
+}
+
+const cachedFetchComparison = cache(
+  async (
+    owner: string,
+    repo: string,
+    baseRef: string,
+    headRef: string,
+  ): Promise<GithubComparison> => {
+    try {
+      return await performFetchComparison(owner, repo, baseRef, headRef);
+    } catch (error) {
+      throw toGithubApiError(error);
+    }
+  },
+);
+
 export async function fetchComparison(
   owner: string,
   repo: string,
@@ -273,14 +433,7 @@ export async function fetchComparison(
   headRef: string,
 ): Promise<GithubComparison> {
   try {
-    const octokit = createGitHubClient();
-    const response = await octokit.rest.repos.compareCommitsWithBasehead({
-      owner,
-      repo,
-      basehead: `${baseRef}...${headRef}`,
-      per_page: 100,
-    });
-    return response.data;
+    return await cachedFetchComparison(owner, repo, baseRef, headRef);
   } catch (error) {
     throw toGithubApiError(error);
   }
