@@ -7,7 +7,6 @@ export function middleware(request: NextRequest) {
   const hostname = request.nextUrl.hostname;
 
   if (hostname === "0github.com" && pathname === "/") {
-    console.log("skibidi");
     return NextResponse.rewrite(new URL("/heatmap", request.url));
   }
 
