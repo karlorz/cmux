@@ -30,6 +30,9 @@ import {
   Copy,
   Check,
   Loader2,
+  Github,
+  Star,
+  ExternalLink,
 } from "lucide-react";
 import {
   Decoration,
@@ -66,6 +69,7 @@ import {
   MaterialSymbolsFolderOpenSharp,
   MaterialSymbolsFolderSharp,
 } from "../icons/material-symbols";
+import CmuxLogo from "../logo/cmux-logo";
 import {
   parseReviewHeatmap,
   prepareDiffHeatmapArtifacts,
@@ -1469,6 +1473,7 @@ export function PullRequestDiffViewer({
                 isLoading={isLoadingFileOutputs}
               />
             </div>
+            <CmuxPromoBox />
             {notificationCardState ? (
               <ReviewCompletionNotificationCard state={notificationCardState} />
             ) : null}
@@ -1680,6 +1685,57 @@ function ReviewProgressIndicator({
           aria-valuemax={totalFileCount}
           aria-valuenow={processedFileCount ?? 0}
         />
+      </div>
+    </div>
+  );
+}
+
+function CmuxPromoBox() {
+  return (
+    <div className="border border-neutral-200 bg-white p-5 dark:border-neutral-700 dark:bg-neutral-800">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex-shrink-0">
+            <CmuxLogo height={32} showWordmark={false} />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+              Powered by cmux
+            </p>
+            <p className="mt-0.5 text-xs text-neutral-600 dark:text-neutral-400">
+              Open-source PR review automation with AI coding agents
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href="https://cmux.dev"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 transition hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-600"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Visit cmux.dev
+          </a>
+          <a
+            href="https://github.com/anthropics/cmux"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 transition hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-600"
+          >
+            <Github className="h-3.5 w-3.5" />
+            GitHub
+          </a>
+          <a
+            href="https://github.com/anthropics/cmux"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 transition hover:bg-sky-100 dark:border-sky-700 dark:bg-sky-900/30 dark:text-sky-300 dark:hover:bg-sky-900/50"
+          >
+            <Star className="h-3.5 w-3.5" />
+            Star on GitHub
+          </a>
+        </div>
       </div>
     </div>
   );
