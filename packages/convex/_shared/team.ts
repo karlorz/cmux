@@ -68,13 +68,13 @@ export async function resolveTeamIdLoose(
 ): Promise<string> {
   if (isUuid(teamSlugOrId)) return teamSlugOrId;
 
-  const team = await ctx.db
-    .query("teams")
-    .withIndex("by_slug", (q) => q.eq("slug", teamSlugOrId))
-    .first();
-  if (team) {
-    return team.teamId;
-  }
+  // const team = await ctx.db
+  //   .query("teams")
+  //   .withIndex("by_slug", (q) => q.eq("slug", teamSlugOrId))
+  //   .first();
+  // if (team) {
+  //   return team.teamId;
+  // }
 
   // Back-compat: allow legacy string teamIds (e.g., "default").
   return teamSlugOrId;

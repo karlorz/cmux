@@ -211,7 +211,7 @@ export default async function PullRequestPage({ params }: PageProps) {
     { authToken: githubAccessToken }
   ).then((files) => files.map(toGithubFileChange));
 
-  // Only schedule code review if we have a team
+  // Schedule code review in background (non-blocking)
   if (selectedTeam) {
     scheduleCodeReviewStart({
       teamSlugOrId: selectedTeam.id,
@@ -321,30 +321,39 @@ function scheduleCodeReviewStart({
 
         const user = await stackServerApp.getUser({ or: "anonymous" });
         if (!user) {
+          console.warn("[code-review] No user found; skipping callback");
           return;
         }
 
-        const [{ accessToken }, githubAccount] = await Promise.all([
-          user.getAuthJson(),
-          user.getConnectedAccount("github"),
-        ]);
-        if (!accessToken) {
-          return;
-        }
-
+        let accessToken: string | null = null;
         let githubAccessToken: string | null = null;
-        if (!githubAccount) {
-          console.warn(
-            "[code-review] GitHub account not connected, proceeding without token"
-          );
-        } else {
-          const tokenResult = await githubAccount.getAccessToken();
-          githubAccessToken = tokenResult.accessToken ?? null;
-          if (!githubAccessToken) {
-            console.warn(
-              "[code-review] GitHub access token unavailable, proceeding without token"
-            );
+
+        try {
+          const authJson = await user.getAuthJson();
+          accessToken = authJson.accessToken ?? null;
+
+          if (!accessToken) {
+            console.warn("[code-review] No access token available; skipping callback");
+            return;
           }
+
+          const githubAccount = await user.getConnectedAccount("github");
+          if (!githubAccount) {
+            console.warn(
+              "[code-review] GitHub account not connected, proceeding without token"
+            );
+          } else {
+            const tokenResult = await githubAccount.getAccessToken();
+            githubAccessToken = tokenResult.accessToken ?? null;
+            if (!githubAccessToken) {
+              console.warn(
+                "[code-review] GitHub access token unavailable, proceeding without token"
+              );
+            }
+          }
+        } catch (error) {
+          console.warn("[code-review] Failed to get user auth info; skipping callback", error);
+          return;
         }
 
         const { job, deduplicated, backgroundTask } = await startCodeReviewJob({

@@ -112,9 +112,8 @@ export async function startCodeReviewJob({
 
   if (payload.teamSlugOrId) {
     try {
-      // Allow anonymous access when no GitHub token is available (indicates public repo access)
+      // public repo
       if (!githubAccessToken) {
-        console.info("[code-review] access token: ", accessToken)
         const teamVerification = await verifyTeamAccess({
           accessToken,
           req: request,
