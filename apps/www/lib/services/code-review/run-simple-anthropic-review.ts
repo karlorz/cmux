@@ -1,6 +1,7 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { streamText } from "ai";
 
+import { CLOUDFLARE_ANTHROPIC_BASE_URL } from "@cmux/shared";
 import { collectPrDiffs } from "@/scripts/pr-review-heatmap";
 import { env } from "@/lib/utils/www-env";
 import {
@@ -181,6 +182,7 @@ export async function runSimpleAnthropicReviewStream(
 
   const anthropic = createAnthropic({
     apiKey: env.ANTHROPIC_API_KEY,
+    baseURL: CLOUDFLARE_ANTHROPIC_BASE_URL,
   });
 
   const runWithSemaphore = createSemaphore(MAX_CONCURRENCY);
