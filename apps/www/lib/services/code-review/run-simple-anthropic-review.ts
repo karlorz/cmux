@@ -2,7 +2,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { streamText } from "ai";
 
 import { CLOUDFLARE_ANTHROPIC_BASE_URL } from "@cmux/shared";
-import { collectPrDiffs } from "@/scripts/pr-review-heatmap";
+import { collectPrDiffs, collectPrDiffsViaGhCli } from "@/scripts/pr-review-heatmap";
 import { env } from "@/lib/utils/www-env";
 import {
   SimpleReviewParser,
@@ -190,6 +190,9 @@ async function collectDiffsWithFallback({
       ? githubToken.trim()
       : null;
 
+  let firstError: unknown = null;
+
+  // Try with provided token first
   try {
     return await collectPrDiffs({
       prIdentifier,
@@ -198,49 +201,81 @@ async function collectDiffsWithFallback({
       githubToken: normalizedToken ?? undefined,
     });
   } catch (error) {
-    if (!normalizedToken) {
-      if (!isAuthorizationError(error)) {
-        throw error;
-      }
+    firstError = error;
 
-      const slug = parseRepoSlug(prIdentifier);
-      if (!slug) {
-        throw error;
-      }
+    // If not an auth error, fail immediately
+    if (!isAuthorizationError(error)) {
+      throw error;
+    }
+  }
 
+  // Try with GitHub App token
+  const slug = parseRepoSlug(prIdentifier);
+  if (slug) {
+    try {
       const installationId = await getInstallationForRepo(
         `${slug.owner}/${slug.repo}`
       );
-      if (!installationId) {
-        throw error;
-      }
 
-      console.info(
-        "[simple-review] Falling back to GitHub App token for diff fetch",
+      if (installationId) {
+        console.info(
+          "[simple-review] Falling back to GitHub App token for diff fetch",
+          {
+            owner: slug.owner,
+            repo: slug.repo,
+          }
+        );
+
+        const appToken = await generateGitHubInstallationToken({
+          installationId,
+          permissions: {
+            contents: "read",
+            metadata: "read",
+            pull_requests: "read",
+          },
+        });
+
+        return await collectPrDiffs({
+          prIdentifier,
+          includePaths: [],
+          maxFiles: null,
+          githubToken: appToken,
+        });
+      }
+    } catch (error) {
+      // GitHub App token failed, continue to gh CLI fallback
+      console.warn(
+        "[simple-review] GitHub App token fallback failed, trying gh CLI",
         {
-          owner: slug.owner,
-          repo: slug.repo,
+          error: error instanceof Error ? error.message : String(error),
         }
       );
-
-      const appToken = await generateGitHubInstallationToken({
-        installationId,
-        permissions: {
-          contents: "read",
-          metadata: "read",
-          pull_requests: "read",
-        },
-      });
-
-      return await collectPrDiffs({
-        prIdentifier,
-        includePaths: [],
-        maxFiles: null,
-        githubToken: appToken,
-      });
     }
+  }
 
-    throw error;
+  // Try with gh CLI as final fallback
+  try {
+    console.info(
+      "[simple-review] Falling back to gh CLI for diff fetch",
+      { prIdentifier }
+    );
+
+    return await collectPrDiffsViaGhCli(
+      prIdentifier,
+      [],
+      null
+    );
+  } catch (ghError) {
+    console.error(
+      "[simple-review] gh CLI fallback also failed",
+      {
+        ghError: ghError instanceof Error ? ghError.message : String(ghError),
+        originalError: firstError instanceof Error ? firstError.message : String(firstError),
+      }
+    );
+
+    // Throw the original error
+    throw firstError;
   }
 }
 
