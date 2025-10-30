@@ -44,6 +44,64 @@ export interface HeatmapJobResult {
 const DEFAULT_GITHUB_API_BASE_URL = "https://api.github.com";
 const GITHUB_USER_AGENT = "cmux-pr-review-heatmap";
 
+// Load GitHub tokens from environment variables
+function loadGitHubTokensFromEnv(): string[] {
+  return [
+    process.env.GITHUB_TOKEN_1,
+    process.env.GITHUB_TOKEN_2,
+    process.env.GITHUB_TOKEN_3,
+  ].filter((t): t is string => Boolean(t));
+}
+
+let currentTokenIndex = 0;
+
+function getNextGitHubToken(): string | null {
+  const tokens = loadGitHubTokensFromEnv();
+  if (tokens.length === 0) {
+    return null;
+  }
+  const token = tokens[currentTokenIndex % tokens.length];
+  currentTokenIndex = (currentTokenIndex + 1) % tokens.length;
+  return token;
+}
+
+// In-memory cache for GitHub API responses
+interface CacheEntry {
+  data: unknown;
+  timestamp: number;
+}
+
+const githubApiCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function getCacheKey(url: string, accept: string): string {
+  return `${url}::${accept}`;
+}
+
+function _getCachedResponse(url: string, accept: string): unknown | null {
+  const key = getCacheKey(url, accept);
+  const entry = githubApiCache.get(key);
+  if (!entry) {
+    return null;
+  }
+  const age = Date.now() - entry.timestamp;
+  if (age > CACHE_TTL_MS) {
+    githubApiCache.delete(key);
+    return null;
+  }
+  console.log(`[heatmap] Cache HIT for ${url}`);
+  return entry.data;
+}
+
+function _setCachedResponse(url: string, accept: string, data: unknown): void {
+  const key = getCacheKey(url, accept);
+  githubApiCache.set(key, {
+    data,
+    timestamp: Date.now(),
+  });
+  console.log(`[heatmap] Cached response for ${url}`);
+}
+
 interface CollectPrDiffsOptions {
   prIdentifier: string;
   includePaths?: string[];
@@ -246,7 +304,7 @@ async function mapWithConcurrency<T, R>(
 }
 
 // Export helper functions and core functions for external use
-export { formatDuration, isBinaryFile, mapWithConcurrency };
+export { formatDuration, isBinaryFile, mapWithConcurrency, collectPrDiffsViaGhCli };
 
 export async function runHeatmapJob(
   options: HeatmapJobOptions
@@ -629,12 +687,20 @@ interface GhPrMetadata {
 }
 
 function resolveGithubToken(token?: string | null): string | null {
-  const envToken =
-    process.env.GITHUB_TOKEN ??
-    process.env.GH_TOKEN ??
-    process.env.GITHUB_PERSONAL_ACCESS_TOKEN ??
-    null;
-  return token ?? envToken;
+  // If a token is explicitly provided, use it
+  if (token) {
+    console.log("[heatmap] Using explicitly provided GitHub token");
+    return token;
+  }
+
+  // Use rotating tokens by default
+  const nextToken = getNextGitHubToken();
+  if (nextToken) {
+    return nextToken;
+  }
+
+  console.warn("[heatmap] No GitHub tokens available (set GITHUB_TOKEN_1, GITHUB_TOKEN_2, GITHUB_TOKEN_3)");
+  return null;
 }
 
 function normalizeGithubApiBaseUrl(custom?: string): string {
@@ -682,8 +748,7 @@ async function fetchGithubResponse(
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(
-      `GitHub API request to ${url} failed with status ${
-        response.status
+      `GitHub API request to ${url} failed with status ${response.status
       }: ${errorText.slice(0, 2000)}`
     );
   }
