@@ -227,12 +227,17 @@ export default async function PullRequestPage({ params }: PageProps) {
     throw error;
   }
 
+  const headCommitRef = initialPullRequest.head?.sha ?? null;
+
   const pullRequestPromise = Promise.resolve(initialPullRequest);
   const pullRequestFilesPromise = fetchPullRequestFiles(
     githubOwner,
     repo,
     pullNumber,
-    { authToken: githubAccessToken }
+    {
+      authToken: githubAccessToken,
+      ref: headCommitRef ?? undefined,
+    }
   ).then((files) => files.map(toGithubFileChange));
 
   // Schedule code review in background (non-blocking)

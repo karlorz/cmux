@@ -1,4 +1,4 @@
-import { cache } from "react";
+import { unstable_cache } from "next/cache";
 
 import { GithubApiError } from "./errors";
 import { createGitHubClient } from "./octokit";
@@ -34,12 +34,33 @@ export type GithubPullRequestFile =
 
 export type GithubComparison = CompareCommitsResponse["data"];
 
+const DEFAULT_CACHE_WINDOW_MS = 2_000;
+const DEFAULT_COMPARISON_CACHE_WINDOW_MS = 2_000;
+const FULL_SHA_REGEX = /^[0-9a-f]{40}$/i;
+
 type GithubRequestOptionsInput = {
   authToken?: string | null;
+  /**
+   * Optional ref (branch name or commit SHA) used to scope caching.
+   * Prefer providing a commit SHA when available for more stable caching.
+   */
+  ref?: string | null;
+  /**
+   * Override the rolling cache window in milliseconds.
+   * Use 0 or a negative value to disable caching.
+   */
+  cacheWindowMs?: number | null;
+  /**
+   * Explicitly disable caching for this request.
+   */
+  disableCache?: boolean | null;
 };
 
 type NormalizedGithubRequestOptions = {
   authToken: string | null;
+  ref: string | null;
+  cacheWindowMs: number;
+  disableCache: boolean;
 };
 
 type FetchPullRequestOptions = GithubRequestOptionsInput;
@@ -49,27 +70,44 @@ type FetchPullRequestFilesOptions = GithubRequestOptionsInput;
 function normalizeGithubRequestOptions(
   options?: GithubRequestOptionsInput,
 ): NormalizedGithubRequestOptions {
+  const normalized: NormalizedGithubRequestOptions = {
+    authToken: null,
+    ref: null,
+    cacheWindowMs: DEFAULT_CACHE_WINDOW_MS,
+    disableCache: false,
+  };
+
   if (!options) {
-    return { authToken: null };
+    return normalized;
   }
 
-  const { authToken } = options;
-
-  if (authToken === null || authToken === undefined) {
-    return { authToken: null };
+  if (typeof options.authToken === "string") {
+    const trimmed = options.authToken.trim();
+    if (trimmed.length > 0) {
+      normalized.authToken = trimmed;
+    }
   }
 
-  if (typeof authToken !== "string") {
-    return { authToken: null };
+  if (typeof options.ref === "string") {
+    const trimmedRef = options.ref.trim();
+    if (trimmedRef.length > 0) {
+      normalized.ref = trimmedRef;
+    }
   }
 
-  const trimmed = authToken.trim();
-
-  if (trimmed.length === 0) {
-    return { authToken: null };
+  if (
+    typeof options.cacheWindowMs === "number" &&
+    Number.isFinite(options.cacheWindowMs)
+  ) {
+    const coerced = Math.floor(options.cacheWindowMs);
+    normalized.cacheWindowMs = coerced > 0 ? coerced : 0;
   }
 
-  return { authToken: trimmed };
+  if (options.disableCache === true) {
+    normalized.disableCache = true;
+  }
+
+  return normalized;
 }
 
 function serializeGithubRequestOptions(
@@ -85,8 +123,62 @@ function deserializeGithubRequestOptions(
     const parsed = JSON.parse(serialized) as GithubRequestOptionsInput;
     return normalizeGithubRequestOptions(parsed);
   } catch {
-    return { authToken: null };
+    return normalizeGithubRequestOptions();
   }
+}
+
+function getTimeBucket(windowMs: number, now: number): string | null {
+  if (!Number.isFinite(windowMs) || windowMs <= 0) {
+    return null;
+  }
+  return Math.floor(now / windowMs).toString();
+}
+
+function isFullGitSha(ref: string): boolean {
+  return FULL_SHA_REGEX.test(ref);
+}
+
+function computeCacheBucket(
+  options: NormalizedGithubRequestOptions,
+  now: number,
+): string | null {
+  const bucket = getTimeBucket(options.cacheWindowMs, now);
+
+  if (options.ref) {
+    if (isFullGitSha(options.ref)) {
+      return `sha:${options.ref}`;
+    }
+    if (bucket !== null) {
+      return `ref:${options.ref}:bucket:${bucket}`;
+    }
+    return null;
+  }
+
+  if (bucket === null) {
+    return null;
+  }
+
+  return `time:${bucket}`;
+}
+
+function computeComparisonCacheBucket(
+  baseRef: string,
+  headRef: string,
+  now: number,
+): string | null {
+  const bothAreShas =
+    isFullGitSha(baseRef) && isFullGitSha(headRef);
+
+  if (bothAreShas) {
+    return `comparison:${baseRef}:${headRef}`;
+  }
+
+  const bucket = getTimeBucket(DEFAULT_COMPARISON_CACHE_WINDOW_MS, now);
+  if (bucket === null) {
+    return null;
+  }
+
+  return `comparison:time:${bucket}`;
 }
 
 function toGithubApiError(error: unknown): GithubApiError {
@@ -213,13 +305,15 @@ async function performFetchPullRequest(
   });
 }
 
-const cachedFetchPullRequest = cache(
+const cachedFetchPullRequest = unstable_cache(
   async (
     owner: string,
     repo: string,
     pullNumber: number,
     serializedOptions: string,
+    cacheBucket: string,
   ): Promise<GithubPullRequest> => {
+    void cacheBucket;
     const normalizedOptions =
       deserializeGithubRequestOptions(serializedOptions);
     try {
@@ -233,6 +327,7 @@ const cachedFetchPullRequest = cache(
       throw toGithubApiError(error);
     }
   },
+  ["github", "fetchPullRequest"],
 );
 
 export async function fetchPullRequest(
@@ -242,6 +337,28 @@ export async function fetchPullRequest(
   options: FetchPullRequestOptions = {},
 ): Promise<GithubPullRequest> {
   const normalizedOptions = normalizeGithubRequestOptions(options);
+
+  if (normalizedOptions.disableCache) {
+    return await performFetchPullRequest(
+      owner,
+      repo,
+      pullNumber,
+      normalizedOptions,
+    );
+  }
+
+  const now = Date.now();
+  const cacheBucket = computeCacheBucket(normalizedOptions, now);
+
+  if (cacheBucket === null) {
+    return await performFetchPullRequest(
+      owner,
+      repo,
+      pullNumber,
+      normalizedOptions,
+    );
+  }
+
   const serializedOptions =
     serializeGithubRequestOptions(normalizedOptions);
 
@@ -251,6 +368,7 @@ export async function fetchPullRequest(
       repo,
       pullNumber,
       serializedOptions,
+      cacheBucket,
     );
   } catch (error) {
     throw toGithubApiError(error);
@@ -325,13 +443,15 @@ async function performFetchPullRequestFiles(
   });
 }
 
-const cachedFetchPullRequestFiles = cache(
+const cachedFetchPullRequestFiles = unstable_cache(
   async (
     owner: string,
     repo: string,
     pullNumber: number,
     serializedOptions: string,
+    cacheBucket: string,
   ): Promise<GithubPullRequestFile[]> => {
+    void cacheBucket;
     const normalizedOptions =
       deserializeGithubRequestOptions(serializedOptions);
     try {
@@ -345,6 +465,7 @@ const cachedFetchPullRequestFiles = cache(
       throw toGithubApiError(error);
     }
   },
+  ["github", "fetchPullRequestFiles"],
 );
 
 export async function fetchPullRequestFiles(
@@ -354,6 +475,28 @@ export async function fetchPullRequestFiles(
   options: FetchPullRequestFilesOptions = {},
 ): Promise<GithubPullRequestFile[]> {
   const normalizedOptions = normalizeGithubRequestOptions(options);
+
+  if (normalizedOptions.disableCache) {
+    return await performFetchPullRequestFiles(
+      owner,
+      repo,
+      pullNumber,
+      normalizedOptions,
+    );
+  }
+
+  const now = Date.now();
+  const cacheBucket = computeCacheBucket(normalizedOptions, now);
+
+  if (cacheBucket === null) {
+    return await performFetchPullRequestFiles(
+      owner,
+      repo,
+      pullNumber,
+      normalizedOptions,
+    );
+  }
+
   const serializedOptions =
     serializeGithubRequestOptions(normalizedOptions);
 
@@ -363,6 +506,7 @@ export async function fetchPullRequestFiles(
       repo,
       pullNumber,
       serializedOptions,
+      cacheBucket,
     );
   } catch (error) {
     throw toGithubApiError(error);
@@ -411,19 +555,22 @@ async function performFetchComparison(
   return response.data;
 }
 
-const cachedFetchComparison = cache(
+const cachedFetchComparison = unstable_cache(
   async (
     owner: string,
     repo: string,
     baseRef: string,
     headRef: string,
+    cacheBucket: string,
   ): Promise<GithubComparison> => {
+    void cacheBucket;
     try {
       return await performFetchComparison(owner, repo, baseRef, headRef);
     } catch (error) {
       throw toGithubApiError(error);
     }
   },
+  ["github", "fetchComparison"],
 );
 
 export async function fetchComparison(
@@ -432,8 +579,25 @@ export async function fetchComparison(
   baseRef: string,
   headRef: string,
 ): Promise<GithubComparison> {
+  const now = Date.now();
+  const cacheBucket = computeComparisonCacheBucket(baseRef, headRef, now);
+
+  if (cacheBucket === null) {
+    try {
+      return await performFetchComparison(owner, repo, baseRef, headRef);
+    } catch (error) {
+      throw toGithubApiError(error);
+    }
+  }
+
   try {
-    return await cachedFetchComparison(owner, repo, baseRef, headRef);
+    return await cachedFetchComparison(
+      owner,
+      repo,
+      baseRef,
+      headRef,
+      cacheBucket,
+    );
   } catch (error) {
     throw toGithubApiError(error);
   }
