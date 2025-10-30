@@ -30,6 +30,7 @@ import {
   Copy,
   Check,
   Loader2,
+  Star,
   AlertTriangle,
 } from "lucide-react";
 import {
@@ -55,6 +56,7 @@ import { useConvexQuery } from "@convex-dev/react-query";
 import type { FunctionReturnType } from "convex/server";
 import type { GithubFileChange } from "@/lib/github/fetch-pull-request";
 import { cn } from "@/lib/utils";
+import CmuxLogo from "@/components/logo/cmux-logo";
 import {
   Tooltip,
   TooltipContent,
@@ -1864,13 +1866,14 @@ export function PullRequestDiffViewer({
           }
         >
           <div className="flex flex-col gap-3">
-            <div className="lg:sticky lg:top-0 lg:z-10 lg:bg-white">
+            <div className="lg:sticky lg:top-0 lg:z-10 lg:bg-white lg:pb-3">
               <ReviewProgressIndicator
                 totalFileCount={totalFileCount}
                 processedFileCount={processedFileCount}
                 isLoading={isLoadingFileOutputs}
               />
             </div>
+            <CmuxPromoCard />
             {notificationCardState ? (
               <ReviewCompletionNotificationCard state={notificationCardState} />
             ) : null}
@@ -2087,6 +2090,58 @@ function ReviewProgressIndicator({
           aria-valuemax={totalFileCount}
           aria-valuenow={processedFileCount ?? 0}
         />
+      </div>
+    </div>
+  );
+}
+
+function CmuxPromoCard() {
+  return (
+    <div className="border border-neutral-200 bg-white p-5 pt-4 text-sm text-neutral-700">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-row items-center justify-start gap-2 text-center">
+          <p className="text-xs font-mono leading-relaxed text-neutral-900 font-bold">
+            From the creators of 
+          </p>
+          <a
+            href="https://cmux.dev"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Visit cmux.dev"
+            className="inline-flex w-fit items-center justify-start"
+          >
+            <CmuxLogo
+              height={36}
+              label="cmux.dev"
+              wordmarkText="cmux.dev"
+              wordmarkFill="#0f172a"
+            />
+          </a>
+        </div>
+        <div className="space-y-2">
+          <p className="text-xs font-mono leading-relaxed text-neutral-500">
+            We also made a Claude Code/Codex manager! Check out cmux if you want heatmaps for your vibe coded diffs (coming soon)!
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2 pt-1">
+           <a
+            href="https://cmux.dev"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-mono inline-flex items-center justify-center bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-neutral-800"
+          >
+            Explore cmux
+          </a>
+              <a
+            href="https://github.com/manaflow-ai/cmux"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-mono inline-flex items-center gap-1 border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50"
+          >
+            <Star className="h-3.5 w-3.5" aria-hidden />
+            Star on GitHub
+          </a>
+        </div>
       </div>
     </div>
   );
