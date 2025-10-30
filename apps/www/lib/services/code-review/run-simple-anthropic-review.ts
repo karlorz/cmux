@@ -3,8 +3,12 @@ import { streamText } from "ai";
 
 import { collectPrDiffs } from "@/scripts/pr-review-heatmap";
 import { env } from "@/lib/utils/www-env";
+import {
+  SimpleReviewParser,
+  type SimpleReviewParsedEvent,
+} from "./simple-review-parser";
 
-const SIMPLE_REVIEW_INSTRUCTIONS = `Annotate every modified/deleted/added line of this diff with a "fake" comment at the end of each line.
+const SIMPLE_REVIEW_INSTRUCTIONS = `Dannotate every modified/deleted/added line of this diff with a "fake" comment at the end of each line.
 
 For each line, you should add a comment at the end like so:
 # "<mostImportantWord>" "<comment>" "<score 0-100>"
@@ -29,6 +33,7 @@ export type SimpleReviewStreamOptions = {
   prIdentifier: string;
   githubToken: string;
   onChunk?: (chunk: string) => void | Promise<void>;
+  onEvent?: (event: SimpleReviewParsedEvent) => void | Promise<void>;
   signal?: AbortSignal;
 };
 
@@ -41,6 +46,7 @@ export async function runSimpleAnthropicReviewStream(
   options: SimpleReviewStreamOptions
 ): Promise<SimpleReviewStreamResult> {
   const { prIdentifier, githubToken, onChunk, signal } = options;
+  const onEvent = options.onEvent ?? null;
   console.info("[simple-review] Collecting PR diffs", { prIdentifier });
 
   if (signal?.aborted) {
@@ -91,6 +97,8 @@ export async function runSimpleAnthropicReviewStream(
     signal.addEventListener("abort", handleAbort, { once: true });
   }
 
+  const parser = new SimpleReviewParser();
+
   const result = streamText({
     model: anthropic("claude-opus-4-1-20250805"),
     prompt,
@@ -117,6 +125,20 @@ export async function runSimpleAnthropicReviewStream(
         await onChunk(delta);
       } else {
         console.debug("[simple-review][chunk]", delta);
+      }
+
+      const events = parser.push(delta);
+      if (onEvent && events.length > 0) {
+        for (const event of events) {
+          await onEvent(event);
+        }
+      }
+    }
+
+    const remaining = parser.flush();
+    if (onEvent && remaining.length > 0) {
+      for (const event of remaining) {
+        await onEvent(event);
       }
     }
   } catch (error) {

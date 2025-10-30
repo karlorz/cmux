@@ -101,10 +101,58 @@ export async function GET(request: NextRequest) {
                     : collapsed;
                 console.info("[simple-review][api][chunk]", snippet);
               }
-              enqueue({ type: "delta", text: chunk });
+            },
+            onEvent: async (event) => {
+              switch (event.type) {
+                case "file":
+                  console.info("[simple-review][api][file]", event.filePath);
+                  enqueue({
+                    type: "file",
+                    filePath: event.filePath,
+                  });
+                  break;
+                case "hunk":
+                  enqueue({
+                    type: "hunk",
+                    filePath: event.filePath,
+                    header: event.header,
+                  });
+                  break;
+                case "line": {
+                  const {
+                    changeType,
+                    diffLine,
+                    codeLine,
+                    mostImportantWord,
+                    shouldReviewWhy,
+                    score,
+                    scoreNormalized,
+                    oldLineNumber,
+                    newLineNumber,
+                  } = event.line;
+
+                  enqueue({
+                    type: "line",
+                    filePath: event.filePath,
+                    changeType,
+                    diffLine,
+                    codeLine,
+                    mostImportantWord,
+                    shouldReviewWhy,
+                    score,
+                    scoreNormalized,
+                    oldLineNumber,
+                    newLineNumber,
+                    line: event.line,
+                  });
+                  break;
+                }
+                default:
+                  break;
+              }
             },
           });
-          enqueue({ type: "done" });
+          enqueue({ type: "complete" });
           controller.close();
         } catch (error) {
           const message =

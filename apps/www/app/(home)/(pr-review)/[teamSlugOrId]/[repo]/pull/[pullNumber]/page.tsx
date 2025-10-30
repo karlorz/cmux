@@ -363,6 +363,13 @@ function scheduleCodeReviewStart({
                 console.info("[simple-review][page][chunk]", snippet);
               }
             },
+            onEvent: async (event) => {
+              if (event.type === "line") {
+                console.info("[simple-review][page][line]", event);
+              } else if (event.type === "file" || event.type === "hunk") {
+                console.info("[simple-review][page][event]", event);
+              }
+            },
           }).catch((error) => {
             const message =
               error instanceof Error ? error.message : String(error ?? "");

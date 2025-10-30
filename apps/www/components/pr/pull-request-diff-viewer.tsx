@@ -301,6 +301,44 @@ const SIDEBAR_DEFAULT_WIDTH = 330;
 const SIDEBAR_MIN_WIDTH = 240;
 const SIDEBAR_MAX_WIDTH = 520;
 
+function mergeHeatmapLines(
+  primary: ReviewHeatmapLine[],
+  fallback: ReviewHeatmapLine[]
+): ReviewHeatmapLine[] {
+  if (fallback.length === 0) {
+    return primary;
+  }
+
+  const lineMap = new Map<string, ReviewHeatmapLine>();
+
+  for (const entry of primary) {
+    const normalized =
+      typeof entry.lineText === "string"
+        ? entry.lineText.replace(/\s+/g, " ").trim()
+        : "";
+    const key = `${entry.lineNumber ?? "unknown"}:${normalized}`;
+    lineMap.set(key, entry);
+  }
+
+  for (const entry of fallback) {
+    const normalized =
+      typeof entry.lineText === "string"
+        ? entry.lineText.replace(/\s+/g, " ").trim()
+        : "";
+    const key = `${entry.lineNumber ?? "unknown"}:${normalized}`;
+    lineMap.set(key, entry);
+  }
+
+  return Array.from(lineMap.values()).sort((a, b) => {
+    const aLine = a.lineNumber ?? Number.MAX_SAFE_INTEGER;
+    const bLine = b.lineNumber ?? Number.MAX_SAFE_INTEGER;
+    if (aLine !== bLine) {
+      return aLine - bLine;
+    }
+    return (a.lineText ?? "").localeCompare(b.lineText ?? "");
+  });
+}
+
 function clampSidebarWidth(value: number): number {
   if (Number.isNaN(value)) {
     return SIDEBAR_DEFAULT_WIDTH;
@@ -442,6 +480,14 @@ export function PullRequestDiffViewer({
   const normalizedJobType: "pull_request" | "comparison" =
     jobType ?? (comparisonSlug ? "comparison" : "pull_request");
 
+  const [streamHeatmapByFile, setStreamHeatmapByFile] = useState<
+    Map<string, ReviewHeatmapLine[]>
+  >(() => new Map());
+  const streamingFileSet = useMemo(
+    () => new Set(Array.from(streamHeatmapByFile.keys())),
+    [streamHeatmapByFile]
+  );
+
   useEffect(() => {
     if (normalizedJobType !== "pull_request") {
       return;
@@ -454,23 +500,11 @@ export function PullRequestDiffViewer({
     }
 
     const controller = new AbortController();
+    setStreamHeatmapByFile(new Map());
     const params = new URLSearchParams({
       repoFullName,
       prNumber: String(prNumber),
     });
-
-    const logChunk = (label: string, text: string | undefined) => {
-      if (!text) {
-        return;
-      }
-      const collapsed = text.replace(/\s+/g, " ").trim();
-      if (collapsed.length === 0) {
-        return;
-      }
-      const snippet =
-        collapsed.length > 160 ? `${collapsed.slice(0, 157)}...` : collapsed;
-      console.info(label, snippet);
-    };
 
     (async () => {
       try {
@@ -524,33 +558,115 @@ export function PullRequestDiffViewer({
                 continue;
               }
               try {
-                const payload = JSON.parse(data) as {
-                  type: string;
-                  text?: string;
-                  message?: string;
-                };
+                const payload = JSON.parse(data) as Record<string, unknown>;
 
-                switch (payload.type) {
+                const type = typeof payload.type === "string" ? payload.type : "";
+                const filePath =
+                  typeof payload.filePath === "string" ? payload.filePath : null;
+
+                switch (type) {
                   case "status":
-                    logChunk("[simple-review][frontend][status]", payload.message);
+                    console.info("[simple-review][frontend][status]", payload);
                     break;
-                  case "delta":
-                    logChunk("[simple-review][frontend][chunk]", payload.text);
+                  case "file":
+                    console.info("[simple-review][frontend][file]", payload);
+                    break;
+                  case "hunk":
+                    console.info("[simple-review][frontend][hunk]", payload);
+                    break;
+                  case "line": {
+                    console.info("[simple-review][frontend][line]", payload);
+                    if (!filePath) {
+                      break;
+                    }
+                    const linePayload = payload.line as
+                      | Record<string, unknown>
+                      | undefined;
+                    if (!linePayload) {
+                      break;
+                    }
+                    const rawScore =
+                      typeof linePayload.scoreNormalized === "number"
+                        ? linePayload.scoreNormalized
+                        : typeof linePayload.score === "number"
+                          ? linePayload.score / 100
+                          : null;
+                    if (rawScore === null || rawScore <= 0) {
+                      break;
+                    }
+                    const normalizedScore = Math.max(
+                      0,
+                      Math.min(rawScore, 1)
+                    );
+                    const lineNumber =
+                      typeof linePayload.newLineNumber === "number"
+                        ? linePayload.newLineNumber
+                        : typeof linePayload.oldLineNumber === "number"
+                          ? linePayload.oldLineNumber
+                          : null;
+                    const lineText =
+                      typeof linePayload.diffLine === "string"
+                        ? linePayload.diffLine
+                        : typeof linePayload.codeLine === "string"
+                          ? linePayload.codeLine
+                          : null;
+                    const normalizedText =
+                      typeof lineText === "string"
+                        ? lineText.replace(/\s+/g, " ").trim()
+                        : null;
+                    if (!normalizedText) {
+                      break;
+                    }
+
+                    const reviewLine: ReviewHeatmapLine = {
+                      lineNumber,
+                      lineText,
+                      score: normalizedScore,
+                      reason:
+                        typeof linePayload.shouldReviewWhy === "string"
+                          ? linePayload.shouldReviewWhy
+                          : null,
+                      mostImportantWord:
+                        typeof linePayload.mostImportantWord === "string"
+                          ? linePayload.mostImportantWord
+                          : null,
+                    };
+
+                    setStreamHeatmapByFile((previous) => {
+                      const next = new Map(previous);
+                      const existing = next.get(filePath) ?? [];
+                      const lineKey = `${reviewLine.lineNumber ?? "unknown"}:${
+                        reviewLine.lineText ?? ""
+                      }`;
+                      const filtered = existing.filter((line) => {
+                        const existingKey = `${line.lineNumber ?? "unknown"}:${
+                          line.lineText ?? ""
+                        }`;
+                        return existingKey !== lineKey;
+                      });
+                      const updated = [...filtered, reviewLine].sort((a, b) => {
+                        const aLine = a.lineNumber ?? Number.MAX_SAFE_INTEGER;
+                        const bLine = b.lineNumber ?? Number.MAX_SAFE_INTEGER;
+                        if (aLine !== bLine) {
+                          return aLine - bLine;
+                        }
+                        return (a.lineText ?? "").localeCompare(
+                          b.lineText ?? ""
+                        );
+                      });
+                      next.set(filePath, updated);
+                      return next;
+                    });
+                    break;
+                  }
+                  case "complete":
+                    console.info("[simple-review][frontend][complete]", payload);
                     break;
                   case "error":
-                    console.error(
-                      "[simple-review][frontend] Stream error",
-                      payload.message
-                    );
-                    break;
-                  case "done":
-                    console.info("[simple-review][frontend] Stream completed");
+                    console.error("[simple-review][frontend][error]", payload);
                     break;
                   default:
-                    console.info(
-                      "[simple-review][frontend] Stream event",
-                      payload
-                    );
+                    console.info("[simple-review][frontend][event]", payload);
                 }
               } catch (error) {
                 console.warn(
@@ -576,7 +692,7 @@ export function PullRequestDiffViewer({
     return () => {
       controller.abort();
     };
-  }, [normalizedJobType, prNumber, repoFullName]);
+  }, [normalizedJobType, prNumber, repoFullName, setStreamHeatmapByFile]);
 
   const prQueryArgs = useMemo(
     () =>
@@ -685,21 +801,25 @@ export function PullRequestDiffViewer({
   const totalFileCount = sortedFiles.length;
 
   const processedFileCount = useMemo(() => {
-    if (fileOutputs === undefined) {
+    if (fileOutputs === undefined && streamingFileSet.size === 0) {
       return null;
     }
 
     let count = 0;
     for (const file of sortedFiles) {
-      if (fileOutputIndex.has(file.filename)) {
+      const isProcessed =
+        fileOutputIndex.has(file.filename) ||
+        streamingFileSet.has(file.filename);
+      if (isProcessed) {
         count += 1;
       }
     }
 
     return count;
-  }, [fileOutputs, fileOutputIndex, sortedFiles]);
+  }, [fileOutputs, fileOutputIndex, sortedFiles, streamingFileSet]);
 
-  const isLoadingFileOutputs = fileOutputs === undefined;
+  const isLoadingFileOutputs =
+    fileOutputs === undefined && streamingFileSet.size === 0;
 
   const pendingFileCount = useMemo(() => {
     if (processedFileCount === null) {
@@ -895,13 +1015,25 @@ export function PullRequestDiffViewer({
   const fileEntries = useMemo<FileDiffViewModel[]>(() => {
     return parsedDiffs.map((entry) => {
       const review = fileOutputIndex.get(entry.file.filename) ?? null;
-      const reviewHeatmap = review
+      const streamedHeatmap =
+        streamHeatmapByFile.get(entry.file.filename) ?? [];
+      const reviewHeatmapFromCodex = review
         ? parseReviewHeatmap(review.codexReviewOutput)
         : [];
+      const reviewHeatmap = mergeHeatmapLines(
+        streamedHeatmap,
+        reviewHeatmapFromCodex
+      );
       const diffHeatmapArtifacts =
         entry.diff && reviewHeatmap.length > 0
           ? prepareDiffHeatmapArtifacts(entry.diff, reviewHeatmap)
           : null;
+      if (entry.diff && reviewHeatmap.length > 0 && !diffHeatmapArtifacts) {
+        console.debug("[simple-review][frontend] No artifacts derived", {
+          filePath: entry.file.filename,
+          reviewHeatmapCount: reviewHeatmap.length,
+        });
+      }
 
       return {
         entry,
@@ -911,7 +1043,7 @@ export function PullRequestDiffViewer({
         changeKeyByLine: buildChangeKeyIndex(entry.diff),
       };
     });
-  }, [parsedDiffs, fileOutputIndex]);
+  }, [parsedDiffs, fileOutputIndex, streamHeatmapByFile]);
 
   const thresholdedFileEntries = useMemo(
     () =>
@@ -1077,7 +1209,9 @@ export function PullRequestDiffViewer({
       return nodes.map((node) => {
         if (node.file) {
           // This is a file node - check if it's been processed
-          const isLoading = !fileOutputIndex.has(node.file.filename);
+          const isLoading =
+            !fileOutputIndex.has(node.file.filename) &&
+            !streamingFileSet.has(node.file.filename);
           return {
             ...node,
             isLoading,
@@ -1092,7 +1226,7 @@ export function PullRequestDiffViewer({
       });
     };
     return addLoadingState(tree);
-  }, [sortedFiles, fileOutputIndex]);
+  }, [sortedFiles, fileOutputIndex, streamingFileSet]);
   const directoryPaths = useMemo(
     () => collectDirectoryPaths(fileTree),
     [fileTree]
@@ -1696,7 +1830,9 @@ export function PullRequestDiffViewer({
                   }
                 : null;
 
-            const isLoading = !fileOutputIndex.has(entry.file.filename);
+            const isLoading =
+              !fileOutputIndex.has(entry.file.filename) &&
+              !streamingFileSet.has(entry.file.filename);
 
             return (
               <FileDiffCard
