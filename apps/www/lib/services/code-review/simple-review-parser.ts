@@ -1,7 +1,6 @@
 const HUNK_HEADER_PATTERN =
   /^@@\s*-(?<oldStart>\d+)(?:,(?<oldLength>\d+))?\s+\+(?<newStart>\d+)(?:,(?<newLength>\d+))?\s*@@/;
-const ANNOTATION_PATTERN =
-  /\s+#\s*"(?<mostImportantWord>[^"]+)"\s*"(?<reason>[^"]+)"\s*"(?<score>\d{1,3})"\s*$/;
+const ANNOTATION_PATTERN = /^(?<prefix>.*)(\s+#\s+)(?<annotation>.+)$/;
 
 type LineChangeType = "add" | "remove" | "context";
 
@@ -54,11 +53,16 @@ function normalizeGitPath(input: string | null): string | null {
   return withoutPrefix;
 }
 
-function stripAnnotation(line: string, match: RegExpMatchArray): {
+type ParsedAnnotation = {
+  mostImportantWord: string;
+  shouldReviewWhy: string;
+  score: number;
+};
+
+function stripAnnotation(line: string, annotationStart: number): {
   diffLine: string;
   codeLine: string;
 } {
-  const annotationStart = match.index ?? line.length;
   const diffLine = line.slice(0, annotationStart).replace(/\s+$/, "");
   const diffMarker = diffLine[0] ?? "";
   const codeStart = diffMarker === "+" || diffMarker === "-" || diffMarker === " "
@@ -67,6 +71,65 @@ function stripAnnotation(line: string, match: RegExpMatchArray): {
   return {
     diffLine,
     codeLine: codeStart,
+  };
+}
+
+function parseAnnotation(content: string): ParsedAnnotation | null {
+  const trimmedContent = content.trim();
+  if (trimmedContent.length === 0) {
+    return null;
+  }
+
+  const scoreMatch = trimmedContent.match(/(?:"?(?<score>\d{1,3})"?)\s*$/);
+  if (!scoreMatch?.groups?.score || scoreMatch.index === undefined) {
+    return null;
+  }
+
+  const score = clampScore(Number.parseInt(scoreMatch.groups.score, 10));
+  let remainder = trimmedContent.slice(0, scoreMatch.index).trim();
+
+  if (remainder.length === 0) {
+    return null;
+  }
+
+  let mostImportantWord: string;
+
+  if (remainder.startsWith("\"")) {
+    const firstQuoted = remainder.match(/^"([^"]*)"/);
+    if (!firstQuoted) {
+      return null;
+    }
+    mostImportantWord = firstQuoted[1]?.trim() ?? "";
+    remainder = remainder.slice(firstQuoted[0].length).trim();
+  } else {
+    const nextQuoteIndex = remainder.indexOf("\"");
+    if (nextQuoteIndex === -1) {
+      const parts = remainder.split(/\s+/).filter((part) => part.length > 0);
+      if (parts.length === 0) {
+        return null;
+      }
+      mostImportantWord = parts.shift() ?? "";
+      const combinedReason = parts.join(" ").trim();
+      return {
+        mostImportantWord,
+        shouldReviewWhy: combinedReason,
+        score,
+      };
+    }
+    mostImportantWord = remainder.slice(0, nextQuoteIndex).trim();
+    remainder = remainder.slice(nextQuoteIndex).trim();
+  }
+
+  if (mostImportantWord.length === 0) {
+    return null;
+  }
+
+  const shouldReviewWhy = remainder.replace(/"/g, "").trim();
+
+  return {
+    mostImportantWord,
+    shouldReviewWhy,
+    score,
   };
 }
 
@@ -208,10 +271,22 @@ export class SimpleReviewParser {
       return events;
     }
 
-    const { mostImportantWord, reason, score } = annotationMatch.groups;
-    const parsedScore = clampScore(Number.parseInt(score ?? "0", 10));
+    const { prefix = "", annotation } = annotationMatch.groups;
+    if (!annotation) {
+      return events;
+    }
+
+    const parsedAnnotation = parseAnnotation(annotation);
+    if (!parsedAnnotation) {
+      return events;
+    }
+
+    const annotationStart = prefix.length;
+    const { diffLine, codeLine } = stripAnnotation(trimmed, annotationStart);
+
+    const { mostImportantWord, shouldReviewWhy, score } = parsedAnnotation;
+    const parsedScore = clampScore(score);
     const scoreNormalized = parsedScore / 100;
-    const { diffLine, codeLine } = stripAnnotation(trimmed, annotationMatch);
 
     const changeType: LineChangeType =
       firstChar === "+"
@@ -224,8 +299,8 @@ export class SimpleReviewParser {
       changeType,
       diffLine,
       codeLine,
-      mostImportantWord: mostImportantWord?.trim() ?? "",
-      shouldReviewWhy: reason?.trim() ?? "",
+      mostImportantWord: mostImportantWord.trim(),
+      shouldReviewWhy,
       score: parsedScore,
       scoreNormalized,
       oldLineNumber: currentOldLine,
