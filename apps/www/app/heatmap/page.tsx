@@ -4,9 +4,21 @@ import type { Metadata } from "next";
 import heatmapDemo1 from "@/assets/heatmap-demo-1.png";
 
 export const metadata: Metadata = {
-  title: "Heatmap diff viewer for code reviews",
+  title: "A heatmap diff viewer for code reviews",
   description:
     "Pull request viewer that color-codes every diff line/token by how much human attention it probably needs",
+  openGraph: {
+    title: "A heatmap diff viewer for code reviews",
+    description:
+      "Pull request viewer that color-codes every diff line/token by how much human attention it probably needs",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "A heatmap diff viewer for code reviews",
+    description:
+      "Pull request viewer that color-codes every diff line/token by how much human attention it probably needs",
+  },
 };
 
 export default function HeatmapPage() {

@@ -19,7 +19,7 @@ Every run spins up an isolated VS Code workspace either in the cloud or in a loc
 
 ## Install
 
-cmux supports macOS Apple Silicon. macOS x64, Linux, and Windows support coming soon.
+cmux supports macOS. Linux and Windows support coming soon.
 
 <a href="https://www.cmux.dev/direct-download-macos">
   <img src="./docs/assets/macos-badge.png" alt="Download cmux for macOS" width="180" />
