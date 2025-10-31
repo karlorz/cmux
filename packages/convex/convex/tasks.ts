@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { resolveTeamIdLoose } from "../_shared/team";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { internalQuery } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { authMutation, authQuery, taskIdWithFake } from "./users/utils";
 
 export const get = authQuery({
@@ -207,6 +207,26 @@ export const update = authMutation({
   },
 });
 
+export const updateWorktreePath = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    id: v.id("tasks"),
+    worktreePath: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const task = await ctx.db.get(args.id);
+    if (!task || task.teamId !== teamId || task.userId !== userId) {
+      throw new Error("Task not found or unauthorized");
+    }
+    await ctx.db.patch(args.id, {
+      worktreePath: args.worktreePath,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
 export const getById = authQuery({
   args: { teamSlugOrId: v.string(), id: taskIdWithFake },
   handler: async (ctx, args) => {
@@ -284,6 +304,14 @@ export const updateCrownError = authMutation({
   args: {
     teamSlugOrId: v.string(),
     id: v.id("tasks"),
+    crownEvaluationStatus: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("in_progress"),
+        v.literal("succeeded"),
+        v.literal("error"),
+      ),
+    ),
     crownEvaluationError: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -301,6 +329,41 @@ export const updateCrownError = authMutation({
   },
 });
 
+export const setCrownEvaluationStatusInternal = internalMutation({
+  args: {
+    taskId: v.id("tasks"),
+    teamId: v.string(),
+    userId: v.string(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("in_progress"),
+      v.literal("succeeded"),
+      v.literal("error"),
+    ),
+    errorMessage: v.optional(v.string()),
+    clearError: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.taskId);
+    if (!task || task.teamId !== args.teamId || task.userId !== args.userId) {
+      throw new Error("Task not found or unauthorized");
+    }
+
+    const patch: Record<string, unknown> = {
+      crownEvaluationStatus: args.status,
+      updatedAt: Date.now(),
+    };
+
+    if (args.clearError) {
+      patch.crownEvaluationError = undefined;
+    } else if (Object.prototype.hasOwnProperty.call(args, "errorMessage")) {
+      patch.crownEvaluationError = args.errorMessage;
+    }
+
+    await ctx.db.patch(args.taskId, patch);
+  },
+});
+
 // Try to atomically begin a crown evaluation; returns true if we acquired the lock
 export const tryBeginCrownEvaluation = authMutation({
   args: {
@@ -314,11 +377,12 @@ export const tryBeginCrownEvaluation = authMutation({
     if (!task || task.teamId !== teamId || task.userId !== userId) {
       throw new Error("Task not found or unauthorized");
     }
-    if (task.crownEvaluationError === "in_progress") {
+    if (task.crownEvaluationStatus === "in_progress") {
       return false;
     }
     await ctx.db.patch(args.id, {
-      crownEvaluationError: "in_progress",
+      crownEvaluationStatus: "in_progress",
+      crownEvaluationError: undefined,
       updatedAt: Date.now(),
     });
     return true;
@@ -423,9 +487,7 @@ export const getTasksWithPendingCrownEvaluation = authQuery({
       .withIndex("by_team_user", (q) =>
         q.eq("teamId", teamId).eq("userId", userId),
       )
-      .filter((q) =>
-        q.eq(q.field("crownEvaluationError"), "pending_evaluation"),
-      )
+      .filter((q) => q.eq(q.field("crownEvaluationStatus"), "pending"))
       .collect();
 
     // Double-check that no evaluation exists for these tasks
@@ -472,6 +534,95 @@ export const updateMergeStatus = authMutation({
       mergeStatus: args.mergeStatus,
       updatedAt: Date.now(),
     });
+  },
+});
+
+export const recordScreenshotResult = internalMutation({
+  args: {
+    taskId: v.id("tasks"),
+    runId: v.id("taskRuns"),
+    status: v.union(
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("skipped"),
+    ),
+    screenshots: v.optional(
+      v.array(
+        v.object({
+          storageId: v.id("_storage"),
+          mimeType: v.string(),
+          fileName: v.optional(v.string()),
+          commitSha: v.string(),
+        }),
+      ),
+    ),
+    error: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.taskId);
+    if (!task) {
+      throw new Error("Task not found");
+    }
+
+    const run = await ctx.db.get(args.runId);
+    if (!run || run.taskId !== args.taskId) {
+      throw new Error("Task run not found for task");
+    }
+
+    const now = Date.now();
+    const screenshots = args.screenshots ?? [];
+
+    const screenshotSetId = await ctx.db.insert("taskRunScreenshotSets", {
+      taskId: args.taskId,
+      runId: args.runId,
+      status: args.status,
+      commitSha: screenshots[0]?.commitSha,
+      capturedAt: now,
+      error: args.error ?? undefined,
+      images: screenshots.map((screenshot) => ({
+        storageId: screenshot.storageId,
+        mimeType: screenshot.mimeType,
+        fileName: screenshot.fileName,
+        commitSha: screenshot.commitSha,
+      })),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const patch: Record<string, unknown> = {
+      screenshotStatus: args.status,
+      screenshotRunId: args.runId,
+      screenshotRequestedAt: now,
+      updatedAt: now,
+      latestScreenshotSetId:
+        args.status === "completed" && screenshots.length > 0
+          ? screenshotSetId
+          : undefined,
+    };
+
+    if (args.status === "completed" && screenshots.length > 0) {
+      patch.screenshotStorageId = screenshots[0].storageId;
+      patch.screenshotMimeType = screenshots[0].mimeType;
+      patch.screenshotFileName = screenshots[0].fileName;
+      patch.screenshotCommitSha = screenshots[0].commitSha;
+      patch.screenshotCompletedAt = now;
+      patch.screenshotError = undefined;
+    } else {
+      patch.screenshotStorageId = undefined;
+      patch.screenshotMimeType = undefined;
+      patch.screenshotFileName = undefined;
+      patch.screenshotCommitSha = undefined;
+      patch.screenshotCompletedAt = undefined;
+      patch.screenshotError = args.error ?? undefined;
+    }
+
+    if (args.status === "failed" || args.status === "skipped") {
+      patch.screenshotError = args.error ?? patch.screenshotError;
+    }
+
+    await ctx.db.patch(args.taskId, patch);
+
+    return screenshotSetId;
   },
 });
 
@@ -557,11 +708,11 @@ export const checkAndEvaluateCrown = authMutation({
     // Check if crown evaluation is already pending or in progress
     const task = await ctx.db.get(args.taskId);
     if (
-      task?.crownEvaluationError === "pending_evaluation" ||
-      task?.crownEvaluationError === "in_progress"
+      task?.crownEvaluationStatus === "pending" ||
+      task?.crownEvaluationStatus === "in_progress"
     ) {
       console.log(
-        `[CheckCrown] Crown evaluation already ${task.crownEvaluationError} for task ${args.taskId}`,
+        `[CheckCrown] Crown evaluation already ${task.crownEvaluationStatus} for task ${args.taskId}`,
       );
       return "pending";
     }
@@ -598,6 +749,7 @@ export const checkAndEvaluateCrown = authMutation({
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       await ctx.db.patch(args.taskId, {
+        crownEvaluationStatus: "error",
         crownEvaluationError: errorMessage,
         updatedAt: Date.now(),
       });

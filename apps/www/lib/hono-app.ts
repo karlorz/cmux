@@ -11,8 +11,10 @@ import { githubReposRouter } from "@/lib/routes/github.repos.route";
 import {
   booksRouter,
   branchRouter,
+  codeReviewRouter,
   devServerRouter,
   environmentsRouter,
+  githubInstallStateRouter,
   healthRouter,
   morphRouter,
   sandboxesRouter,
@@ -20,6 +22,7 @@ import {
   usersRouter,
   iframePreflightRouter,
 } from "@/lib/routes/index";
+import { authAnonymousRouter } from "@/lib/routes/auth.anonymous.route";
 import { stackServerApp } from "@/lib/utils/stack";
 import { swaggerUI } from "@hono/swagger-ui";
 import { OpenAPIHono } from "@hono/zod-openapi";
@@ -68,7 +71,7 @@ app.use(
       "https://www.cmux.sh",
     ],
     credentials: true,
-    allowHeaders: ["x-stack-auth", "content-type"],
+    allowHeaders: ["x-stack-auth", "content-type", "authorization"],
   }),
 );
 
@@ -95,6 +98,7 @@ app.get("/user", async (c) => {
 
 // Routes - Next.js passes the full /api/* path
 app.route("/", healthRouter);
+app.route("/", authAnonymousRouter);
 app.route("/", usersRouter);
 app.route("/", booksRouter);
 app.route("/", devServerRouter);
@@ -108,12 +112,14 @@ app.route("/", githubPrsPatchRouter);
 app.route("/", githubPrsFilesRouter);
 app.route("/", githubPrsFileContentsRouter);
 app.route("/", githubPrsFileContentsBatchRouter);
+app.route("/", githubInstallStateRouter);
 app.route("/", morphRouter);
 app.route("/", iframePreflightRouter);
 app.route("/", environmentsRouter);
 app.route("/", sandboxesRouter);
 app.route("/", teamsRouter);
 app.route("/", branchRouter);
+app.route("/", codeReviewRouter);
 
 // OpenAPI documentation
 app.doc("/doc", {

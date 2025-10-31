@@ -29,13 +29,20 @@ function rewriteMorphUrl(url: string): string {
     return url;
   }
 
-  // Transform morph URLs to cmux.sh format
-  // https://port-8101-morphvm-jrtutqa3.http.cloud.morph.so/handler/sign-in -> https://port-8101-jrtutqa3.cmux.sh/handler/sign-in
+  // Transform morph URLs to cmux.app format
+  // https://port-8101-morphvm-jrtutqa3.http.cloud.morph.so/handler/sign-in -> https://cmux-jrtutqa3-base-8101.cmux.app/handler/sign-in
   if (url.includes("http.cloud.morph.so")) {
-    const result = url
-      .replace("morphvm-", "")
-      .replace("http.cloud.morph.so", "cmux.sh");
-    return result;
+    // Extract port and morphId from the URL
+    const match = url.match(/port-(\d+)-morphvm-([^.]+)\.http\.cloud\.morph\.so/);
+    if (match) {
+      const [fullMatch, port, morphId] = match;
+      const scope = "base";
+      const result = url.replace(
+        fullMatch,
+        `cmux-${morphId}-${scope}-${port}.cmux.app`
+      );
+      return result;
+    }
   }
   return url;
 }
@@ -68,6 +75,39 @@ function deriveGeneratedBranchName(branch?: string | null): string | undefined {
   if (idx <= 0) return trimmed;
   const candidate = trimmed.slice(0, idx);
   return candidate || trimmed;
+}
+
+type EnvironmentErrorPayload = {
+  maintenanceError?: string;
+  devError?: string;
+};
+
+const MAX_ENVIRONMENT_ERROR_MESSAGE_CHARS = 2500;
+
+function normalizeEnvironmentErrorPayload(
+  maintenanceError?: string,
+  devError?: string,
+): EnvironmentErrorPayload {
+  const truncate = (msg?: string) => {
+    if (!msg) return undefined;
+    const trimmed = msg.trim();
+    if (!trimmed) return undefined;
+    return trimmed.length > MAX_ENVIRONMENT_ERROR_MESSAGE_CHARS
+      ? `${trimmed.slice(0, MAX_ENVIRONMENT_ERROR_MESSAGE_CHARS)}…`
+      : trimmed;
+  };
+
+  const normalizedMaintenance = truncate(maintenanceError);
+  const normalizedDev = truncate(devError);
+
+  const payload: EnvironmentErrorPayload = {};
+  if (normalizedMaintenance) {
+    payload.maintenanceError = normalizedMaintenance;
+  }
+  if (normalizedDev) {
+    payload.devError = normalizedDev;
+  }
+  return payload;
 }
 
 type EnvironmentSummary = Pick<
@@ -354,6 +394,7 @@ export const getRunDiffContext = authQuery({
         task: null,
         taskRuns,
         branchMetadataByRepo: {} as Record<string, Doc<"branches">[]>,
+        screenshotSets: [],
       };
     }
 
@@ -393,10 +434,50 @@ export const getRunDiffContext = authQuery({
       }
     }
 
+    const screenshotSets = await (async () => {
+      const runDoc = await ctx.db.get(args.runId);
+      // Prevent leaking screenshots for runs outside the authenticated task/team
+      if (
+        !runDoc ||
+        runDoc.teamId !== teamId ||
+        runDoc.taskId !== args.taskId
+      ) {
+        return [];
+      }
+
+      const screenshotSetDocs = await ctx.db
+        .query("taskRunScreenshotSets")
+        .withIndex("by_run_capturedAt", (q) => q.eq("runId", args.runId))
+        .collect();
+
+      screenshotSetDocs.sort((a, b) => b.capturedAt - a.capturedAt);
+
+      const trimmedScreenshotSets = screenshotSetDocs.slice(0, 20);
+
+      return Promise.all(
+        trimmedScreenshotSets.map(async (set) => {
+          const imagesWithUrls = await Promise.all(
+            set.images.map(async (image) => {
+              const url = await ctx.storage.getUrl(image.storageId);
+              return {
+                ...image,
+                url: url ?? undefined,
+              };
+            }),
+          );
+          return {
+            ...set,
+            images: imagesWithUrls,
+          };
+        }),
+      );
+    })();
+
     return {
       task: taskWithImages,
       taskRuns,
       branchMetadataByRepo,
+      screenshotSets,
     };
   },
 });
@@ -479,6 +560,43 @@ export const updateExitCode = internalMutation({
   handler: async (ctx, args) => {
     await ctx.db.patch(args.id, {
       exitCode: args.exitCode,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const updateScreenshotMetadata = internalMutation({
+  args: {
+    id: v.id("taskRuns"),
+    storageId: v.id("_storage"),
+    mimeType: v.optional(v.string()),
+    fileName: v.optional(v.string()),
+    commitSha: v.optional(v.string()),
+    screenshotSetId: v.optional(v.id("taskRunScreenshotSets")),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      screenshotStorageId: args.storageId,
+      screenshotCapturedAt: Date.now(),
+      screenshotMimeType: args.mimeType,
+      screenshotFileName: args.fileName,
+      screenshotCommitSha: args.commitSha,
+      latestScreenshotSetId: args.screenshotSetId,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const clearScreenshotMetadata = internalMutation({
+  args: { id: v.id("taskRuns") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      screenshotStorageId: undefined,
+      screenshotCapturedAt: undefined,
+      screenshotMimeType: undefined,
+      screenshotFileName: undefined,
+      screenshotCommitSha: undefined,
+      latestScreenshotSetId: undefined,
       updatedAt: Date.now(),
     });
   },
@@ -1106,43 +1224,29 @@ export const updateNetworking = authMutation({
   },
 });
 
-// Update environment error for a task run
-export const updateEnvironmentError = authMutation({
+export const updateEnvironmentErrorFromWorker = internalMutation({
   args: {
-    teamSlugOrId: v.string(),
     id: v.id("taskRuns"),
+    teamId: v.string(),
+    userId: v.string(),
     maintenanceError: v.optional(v.string()),
     devError: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const userId = ctx.identity.subject;
     const run = await ctx.db.get(args.id);
-    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
 
-    if (!run || run.teamId !== teamId || run.userId !== userId) {
-      throw new Error("Task run not found or unauthorized");
+    if (!run) {
+      throw new Error("Task run not found");
     }
 
-    const MAX_ERROR_MESSAGE_CHARS = 2500;
-    const truncate = (msg: string | undefined) => {
-      if (!msg) return undefined;
-      const trimmed = msg.trim();
-      if (!trimmed) return undefined;
-      return trimmed.length > MAX_ERROR_MESSAGE_CHARS
-        ? `${trimmed.slice(0, MAX_ERROR_MESSAGE_CHARS)}…`
-        : trimmed;
-    };
+    if (run.teamId !== args.teamId || run.userId !== args.userId) {
+      throw new Error("Task run mismatch for provided credentials");
+    }
 
-    const maintenanceError = truncate(args.maintenanceError);
-    const devError = truncate(args.devError);
-
-    const environmentError = {
-      ...(maintenanceError ? { maintenanceError } : {}),
-      ...(devError ? { devError } : {}),
-    } as {
-      maintenanceError?: string;
-      devError?: string;
-    };
+    const environmentError = normalizeEnvironmentErrorPayload(
+      args.maintenanceError,
+      args.devError,
+    );
 
     await ctx.db.patch(args.id, {
       environmentError,

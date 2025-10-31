@@ -10,6 +10,18 @@ export type Health = {
     uptime: number;
 };
 
+export type AnonymousSignUpResponse = {
+    success: boolean;
+    userId?: string;
+    teamId?: string;
+    teams?: Array<{
+        id: string;
+        display_name: string;
+        profile_image_url: string | null;
+    }>;
+    message?: string;
+};
+
 export type User = {
     id: string;
     name: string;
@@ -323,6 +335,21 @@ export type GithubPrsFileContentsBatchBody = {
     maxFileBytes?: number;
 };
 
+export type GithubInstallStateResponse = {
+    state: string;
+};
+
+export type GithubInstallStateRequest = {
+    /**
+     * Team slug or UUID
+     */
+    teamSlugOrId: string;
+    /**
+     * Optional URL to redirect to after installation (web flows)
+     */
+    returnUrl?: string;
+};
+
 export type SetupInstanceResponse = {
     instanceId: string;
     vscodeUrl: string;
@@ -335,7 +362,7 @@ export type SetupInstanceBody = {
     instanceId?: string;
     selectedRepos?: Array<string>;
     ttlSeconds?: number;
-    snapshotId?: 'snapshot_vb7uqz8o' | 'snapshot_oa4dps0g';
+    snapshotId?: string | ('snapshot_hbmnt01r' | 'snapshot_wxrixtw7');
 };
 
 export type CreateEnvironmentResponse = {
@@ -524,6 +551,63 @@ export type GenerateBranchesBody = {
     uniqueId?: string;
 };
 
+export type CodeReviewStartResponse = {
+    job: {
+        jobId: string;
+        teamId: string | null;
+        repoFullName: string;
+        repoUrl: string;
+        prNumber: number | null;
+        commitRef: string;
+        headCommitRef: string;
+        baseCommitRef: string | null;
+        jobType: 'pull_request' | 'comparison';
+        comparisonSlug: string | null;
+        comparisonBaseOwner: string | null;
+        comparisonBaseRef: string | null;
+        comparisonHeadOwner: string | null;
+        comparisonHeadRef: string | null;
+        requestedByUserId: string;
+        state: 'pending' | 'running' | 'completed' | 'failed';
+        createdAt: number;
+        updatedAt: number;
+        startedAt: number | null;
+        completedAt: number | null;
+        sandboxInstanceId: string | null;
+        errorCode: string | null;
+        errorDetail: string | null;
+        codeReviewOutput: {
+            [key: string]: unknown;
+        } | null;
+    };
+    deduplicated: boolean;
+};
+
+export type CodeReviewStartBody = {
+    teamSlugOrId?: string;
+    githubLink: string;
+    prNumber?: number;
+    commitRef?: string;
+    headCommitRef?: string;
+    baseCommitRef?: string;
+    force?: boolean;
+    comparison?: {
+        slug: string;
+        base: {
+            owner: string;
+            repo: string;
+            ref: string;
+            label: string;
+        };
+        head: {
+            owner: string;
+            repo: string;
+            ref: string;
+            label: string;
+        };
+    };
+};
+
 export type GetApiHealthData = {
     body?: never;
     path?: never;
@@ -539,6 +623,33 @@ export type GetApiHealthResponses = {
 };
 
 export type GetApiHealthResponse = GetApiHealthResponses[keyof GetApiHealthResponses];
+
+export type PostApiAuthAnonymousSignUpData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/auth/anonymous/sign-up';
+};
+
+export type PostApiAuthAnonymousSignUpErrors = {
+    /**
+     * Bad request
+     */
+    400: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiAuthAnonymousSignUpResponses = {
+    /**
+     * Anonymous user created successfully
+     */
+    200: AnonymousSignUpResponse;
+};
+
+export type PostApiAuthAnonymousSignUpResponse = PostApiAuthAnonymousSignUpResponses[keyof PostApiAuthAnonymousSignUpResponses];
 
 export type GetApiUsersData = {
     body?: never;
@@ -1405,6 +1516,37 @@ export type PostApiIntegrationsGithubPrsFileContentsBatchResponses = {
 
 export type PostApiIntegrationsGithubPrsFileContentsBatchResponse = PostApiIntegrationsGithubPrsFileContentsBatchResponses[keyof PostApiIntegrationsGithubPrsFileContentsBatchResponses];
 
+export type PostApiIntegrationsGithubInstallStateData = {
+    body: GithubInstallStateRequest;
+    path?: never;
+    query?: never;
+    url: '/api/integrations/github/install-state';
+};
+
+export type PostApiIntegrationsGithubInstallStateErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiIntegrationsGithubInstallStateResponses = {
+    /**
+     * OK
+     */
+    200: GithubInstallStateResponse;
+};
+
+export type PostApiIntegrationsGithubInstallStateResponse = PostApiIntegrationsGithubInstallStateResponses[keyof PostApiIntegrationsGithubInstallStateResponses];
+
 export type PostApiMorphSetupInstanceData = {
     body: SetupInstanceBody;
     path?: never;
@@ -2047,6 +2189,33 @@ export type PostApiBranchesGenerateResponses = {
 };
 
 export type PostApiBranchesGenerateResponse = PostApiBranchesGenerateResponses[keyof PostApiBranchesGenerateResponses];
+
+export type PostApiCodeReviewStartData = {
+    body: CodeReviewStartBody;
+    path?: never;
+    query?: never;
+    url: '/api/code-review/start';
+};
+
+export type PostApiCodeReviewStartErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Failed to start code review
+     */
+    500: unknown;
+};
+
+export type PostApiCodeReviewStartResponses = {
+    /**
+     * Job created or reused
+     */
+    200: CodeReviewStartResponse;
+};
+
+export type PostApiCodeReviewStartResponse = PostApiCodeReviewStartResponses[keyof PostApiCodeReviewStartResponses];
 
 export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});

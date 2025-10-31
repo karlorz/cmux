@@ -1,6 +1,7 @@
 import { FloatingPane } from "@/components/floating-pane";
 import { type GitDiffViewerProps } from "@/components/git-diff-viewer";
 import { RunDiffSection } from "@/components/RunDiffSection";
+import { RunScreenshotGallery } from "@/components/RunScreenshotGallery";
 import { TaskDetailHeader } from "@/components/task-detail-header";
 import { useTheme } from "@/components/theme/use-theme";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,7 @@ import { attachTaskLifecycleListeners } from "@/lib/socket/taskLifecycleListener
 import z from "zod";
 import type { EditorApi } from "@/components/dashboard/DashboardInput";
 import LexicalEditor from "@/components/lexical/LexicalEditor";
+import { useCombinedWorkflowData, WorkflowRunsSection } from "@/components/WorkflowRunsSection";
 
 const paramsSchema = z.object({
   taskId: typedZid("tasks"),
@@ -423,6 +425,55 @@ function collectAgentNamesFromRuns(
   return ordered;
 }
 
+function WorkflowRunsWrapper({
+  teamSlugOrId,
+  repoFullName,
+  prNumber,
+  headSha,
+  checksExpandedByRepo,
+  setChecksExpandedByRepo,
+}: {
+  teamSlugOrId: string;
+  repoFullName: string;
+  prNumber: number;
+  headSha?: string;
+  checksExpandedByRepo: Record<string, boolean | null>;
+  setChecksExpandedByRepo: React.Dispatch<React.SetStateAction<Record<string, boolean | null>>>;
+}) {
+  const workflowData = useCombinedWorkflowData({
+    teamSlugOrId,
+    repoFullName,
+    prNumber,
+    headSha,
+  });
+
+  // Auto-expand if there are failures (only on initial load)
+  const hasAnyFailure = useMemo(() => {
+    return workflowData.allRuns.some(
+      (run) =>
+        run.conclusion === "failure" ||
+        run.conclusion === "timed_out" ||
+        run.conclusion === "action_required"
+    );
+  }, [workflowData.allRuns]);
+
+  const isExpanded = checksExpandedByRepo[repoFullName] ?? hasAnyFailure;
+
+  return (
+    <WorkflowRunsSection
+      allRuns={workflowData.allRuns}
+      isLoading={workflowData.isLoading}
+      isExpanded={isExpanded}
+      onToggle={() => {
+        setChecksExpandedByRepo((prev) => ({
+          ...prev,
+          [repoFullName]: !isExpanded,
+        }));
+      }}
+    />
+  );
+}
+
 export const Route = createFileRoute(
   "/_layout/$teamSlugOrId/task/$taskId/run/$runId/diff",
 )({
@@ -549,6 +600,47 @@ function RunDiffPage() {
   const selectedRun = useMemo(() => {
     return taskRuns?.find((run) => run._id === runId);
   }, [runId, taskRuns]);
+
+  const runDiffContextQuery = useRQ({
+    ...convexQuery(api.taskRuns.getRunDiffContext, {
+      teamSlugOrId,
+      taskId,
+      runId,
+    }),
+    enabled: Boolean(teamSlugOrId && taskId && runId),
+  });
+
+  const screenshotSets = runDiffContextQuery.data?.screenshotSets ?? [];
+  const screenshotSetsLoading =
+    runDiffContextQuery.isLoading && screenshotSets.length === 0;
+
+  // Get PR information from the selected run
+  const pullRequests = useMemo(() => {
+    return selectedRun?.pullRequests?.filter(
+      (pr) => pr.number !== undefined && pr.number !== null
+    ) as Array<{ repoFullName: string; number: number; url?: string }> | undefined;
+  }, [selectedRun]);
+
+  // Track expanded state for each PR's checks
+  const [checksExpandedByRepo, setChecksExpandedByRepo] = useState<Record<string, boolean | null>>({});
+
+  const expandAllChecks = useCallback(() => {
+    if (!pullRequests) return;
+    const newState: Record<string, boolean | null> = {};
+    for (const pr of pullRequests) {
+      newState[pr.repoFullName] = true;
+    }
+    setChecksExpandedByRepo(newState);
+  }, [pullRequests]);
+
+  const collapseAllChecks = useCallback(() => {
+    if (!pullRequests) return;
+    const newState: Record<string, boolean | null> = {};
+    for (const pr of pullRequests) {
+      newState[pr.repoFullName] = false;
+    }
+    setChecksExpandedByRepo(newState);
+  }, [pullRequests]);
   const restartProvider = selectedRun?.vscode?.provider;
   const restartRunEnvironmentId = selectedRun?.environmentId;
   const taskEnvironmentId = task?.environmentId;
@@ -656,6 +748,8 @@ function RunDiffPage() {
             taskRunId={taskRunId}
             onExpandAll={diffControls?.expandAll}
             onCollapseAll={diffControls?.collapseAll}
+            onExpandAllChecks={expandAllChecks}
+            onCollapseAllChecks={collapseAllChecks}
             teamSlugOrId={teamSlugOrId}
           />
           {task?.text && (
@@ -669,6 +763,31 @@ function RunDiffPage() {
             </div>
           )}
           <div className="bg-white dark:bg-neutral-900 grow flex flex-col">
+            {pullRequests && pullRequests.length > 0 && (
+              <Suspense fallback={null}>
+                {pullRequests.map((pr) => (
+                  <WorkflowRunsWrapper
+                    key={pr.repoFullName}
+                    teamSlugOrId={teamSlugOrId}
+                    repoFullName={pr.repoFullName}
+                    prNumber={pr.number}
+                    headSha={undefined}
+                    checksExpandedByRepo={checksExpandedByRepo}
+                    setChecksExpandedByRepo={setChecksExpandedByRepo}
+                  />
+                ))}
+              </Suspense>
+            )}
+            {screenshotSetsLoading ? (
+              <div className="border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-950/40 px-3.5 py-3 text-sm text-neutral-500 dark:text-neutral-400">
+                Loading screenshots...
+              </div>
+            ) : (
+              <RunScreenshotGallery
+                screenshotSets={screenshotSets}
+                highlightedSetId={selectedRun?.latestScreenshotSetId ?? null}
+              />
+            )}
             <Suspense
               fallback={
                 <div className="flex items-center justify-center h-full">

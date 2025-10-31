@@ -95,6 +95,7 @@ const convexSchema = defineSchema({
     text: v.string(),
     isCompleted: v.boolean(),
     isArchived: v.optional(v.boolean()),
+    isLocalWorkspace: v.optional(v.boolean()),
     description: v.optional(v.string()),
     pullRequestTitle: v.optional(v.string()),
     pullRequestDescription: v.optional(v.string()),
@@ -107,6 +108,14 @@ const convexSchema = defineSchema({
     userId: v.string(), // Link to user who created the task
     teamId: v.string(),
     environmentId: v.optional(v.id("environments")),
+    crownEvaluationStatus: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("in_progress"),
+        v.literal("succeeded"),
+        v.literal("error"),
+      ),
+    ), // State of crown evaluation workflow
     crownEvaluationError: v.optional(v.string()), // Error message if crown evaluation failed
     mergeStatus: v.optional(
       v.union(
@@ -128,6 +137,25 @@ const convexSchema = defineSchema({
         })
       )
     ),
+    screenshotStatus: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("running"),
+        v.literal("completed"),
+        v.literal("failed"),
+        v.literal("skipped"),
+      ),
+    ),
+    screenshotRunId: v.optional(v.id("taskRuns")),
+    screenshotRequestId: v.optional(v.string()),
+    screenshotRequestedAt: v.optional(v.number()),
+    screenshotCompletedAt: v.optional(v.number()),
+    screenshotError: v.optional(v.string()),
+    screenshotStorageId: v.optional(v.id("_storage")),
+    screenshotMimeType: v.optional(v.string()),
+    screenshotFileName: v.optional(v.string()),
+    screenshotCommitSha: v.optional(v.string()),
+    latestScreenshotSetId: v.optional(v.id("taskRunScreenshotSets")),
   })
     .index("by_created", ["createdAt"])
     .index("by_user", ["userId", "createdAt"])
@@ -145,6 +173,7 @@ const convexSchema = defineSchema({
       v.literal("completed"),
       v.literal("failed")
     ),
+    isLocalWorkspace: v.optional(v.boolean()),
     // Optional log retained for backward compatibility; no longer written to.
     log: v.optional(v.string()), // CLI output log (deprecated)
     worktreePath: v.optional(v.string()), // Path to the git worktree for this run
@@ -197,6 +226,12 @@ const convexSchema = defineSchema({
       )
     ),
     diffsLastUpdated: v.optional(v.number()), // Timestamp when diffs were last fetched/updated
+    screenshotStorageId: v.optional(v.id("_storage")),
+    screenshotCapturedAt: v.optional(v.number()),
+    screenshotMimeType: v.optional(v.string()),
+    screenshotFileName: v.optional(v.string()),
+    screenshotCommitSha: v.optional(v.string()),
+    latestScreenshotSetId: v.optional(v.id("taskRunScreenshotSets")),
     // VSCode instance information
     vscode: v.optional(
       v.object({
@@ -251,6 +286,30 @@ const convexSchema = defineSchema({
     .index("by_vscode_container_name", ["vscode.containerName"])
     .index("by_user", ["userId", "createdAt"])
     .index("by_team_user", ["teamId", "userId"]),
+  taskRunScreenshotSets: defineTable({
+    taskId: v.id("tasks"),
+    runId: v.id("taskRuns"),
+    status: v.union(
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("skipped"),
+    ),
+    commitSha: v.optional(v.string()),
+    capturedAt: v.number(),
+    error: v.optional(v.string()),
+    images: v.array(
+      v.object({
+        storageId: v.id("_storage"),
+        mimeType: v.string(),
+        fileName: v.optional(v.string()),
+        commitSha: v.optional(v.string()),
+      }),
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_task_capturedAt", ["taskId", "capturedAt"])
+    .index("by_run_capturedAt", ["runId", "capturedAt"]),
   taskVersions: defineTable({
     taskId: v.id("tasks"),
     version: v.number(),
@@ -268,6 +327,127 @@ const convexSchema = defineSchema({
   })
     .index("by_task", ["taskId", "version"])
     .index("by_team_user", ["teamId", "userId"]),
+
+  automatedCodeReviewJobs: defineTable({
+    teamId: v.optional(v.string()),
+    repoFullName: v.string(),
+    repoUrl: v.string(),
+    prNumber: v.optional(v.number()),
+    commitRef: v.string(),
+    headCommitRef: v.optional(v.string()),
+    baseCommitRef: v.optional(v.string()),
+    requestedByUserId: v.string(),
+    jobType: v.optional(v.union(v.literal("pull_request"), v.literal("comparison"))),
+    comparisonSlug: v.optional(v.string()),
+    comparisonBaseOwner: v.optional(v.string()),
+    comparisonBaseRef: v.optional(v.string()),
+    comparisonHeadOwner: v.optional(v.string()),
+    comparisonHeadRef: v.optional(v.string()),
+    state: v.union(
+      v.literal("pending"),
+      v.literal("running"),
+      v.literal("completed"),
+      v.literal("failed"),
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    sandboxInstanceId: v.optional(v.string()), // `morphvm_` prefix indicates Morph-managed instance IDs
+    callbackTokenHash: v.optional(v.string()),
+    callbackTokenIssuedAt: v.optional(v.number()),
+    errorCode: v.optional(v.string()),
+    errorDetail: v.optional(v.string()),
+    codeReviewOutput: v.optional(v.record(v.string(), v.any())),
+  })
+    .index("by_team_repo_pr", ["teamId", "repoFullName", "prNumber", "createdAt"])
+    .index("by_team_repo_pr_updated", [
+      "teamId",
+      "repoFullName",
+      "prNumber",
+      "updatedAt",
+    ])
+    .index("by_team_repo_comparison", [
+      "teamId",
+      "repoFullName",
+      "comparisonSlug",
+      "createdAt",
+    ])
+    .index("by_team_repo_comparison_updated", [
+      "teamId",
+      "repoFullName",
+      "comparisonSlug",
+      "updatedAt",
+    ])
+    .index("by_repo_comparison_commit", [
+      "repoFullName",
+      "comparisonSlug",
+      "commitRef",
+      "updatedAt",
+    ])
+    .index("by_state_updated", ["state", "updatedAt"])
+    .index("by_team_created", ["teamId", "createdAt"]),
+
+  automatedCodeReviewVersions: defineTable({
+    jobId: v.id("automatedCodeReviewJobs"),
+    teamId: v.optional(v.string()),
+    requestedByUserId: v.string(),
+    repoFullName: v.string(),
+    repoUrl: v.string(),
+    prNumber: v.optional(v.number()),
+    commitRef: v.string(),
+    headCommitRef: v.optional(v.string()),
+    baseCommitRef: v.optional(v.string()),
+    jobType: v.optional(v.union(v.literal("pull_request"), v.literal("comparison"))),
+    comparisonSlug: v.optional(v.string()),
+    comparisonBaseOwner: v.optional(v.string()),
+    comparisonBaseRef: v.optional(v.string()),
+    comparisonHeadOwner: v.optional(v.string()),
+    comparisonHeadRef: v.optional(v.string()),
+    sandboxInstanceId: v.optional(v.string()), // `morphvm_` prefix indicates Morph-managed instance IDs
+    codeReviewOutput: v.record(v.string(), v.any()),
+    createdAt: v.number(),
+  })
+    .index("by_job", ["jobId"])
+    .index("by_team_pr", ["teamId", "repoFullName", "prNumber", "createdAt"]),
+
+  automatedCodeReviewFileOutputs: defineTable({
+    jobId: v.id("automatedCodeReviewJobs"),
+    teamId: v.optional(v.string()),
+    repoFullName: v.string(),
+    prNumber: v.optional(v.number()),
+    commitRef: v.string(),
+    headCommitRef: v.optional(v.string()),
+    baseCommitRef: v.optional(v.string()),
+    jobType: v.optional(v.union(v.literal("pull_request"), v.literal("comparison"))),
+    comparisonSlug: v.optional(v.string()),
+    comparisonBaseOwner: v.optional(v.string()),
+    comparisonBaseRef: v.optional(v.string()),
+    comparisonHeadOwner: v.optional(v.string()),
+    comparisonHeadRef: v.optional(v.string()),
+    sandboxInstanceId: v.optional(v.string()),
+    filePath: v.string(),
+    codexReviewOutput: v.any(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_job", ["jobId", "createdAt"])
+    .index("by_job_file", ["jobId", "filePath"])
+    .index("by_team_repo_pr_commit", [
+      "teamId",
+      "repoFullName",
+      "prNumber",
+      "commitRef",
+      "createdAt",
+    ])
+    .index("by_team_repo_comparison_commit", [
+      "teamId",
+      "repoFullName",
+      "comparisonSlug",
+      "commitRef",
+      "createdAt",
+    ]),
+
   repos: defineTable({
     fullName: v.string(),
     org: v.string(),
@@ -332,6 +512,7 @@ const convexSchema = defineSchema({
   workspaceSettings: defineTable({
     worktreePath: v.optional(v.string()), // Custom path for git worktrees
     autoPrEnabled: v.optional(v.boolean()), // Auto-create PR for crown winner (default: false)
+    nextLocalWorkspaceSequence: v.optional(v.number()), // Counter for local workspace naming
     createdAt: v.number(),
     updatedAt: v.number(),
     userId: v.string(),
@@ -490,6 +671,7 @@ const convexSchema = defineSchema({
       v.literal("expired")
     ),
     createdAt: v.number(),
+    returnUrl: v.optional(v.string()),
   }).index("by_nonce", ["nonce"]),
 
   // Pull Requests ingested from GitHub (via webhook or backfill)

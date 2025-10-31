@@ -10,6 +10,9 @@
 
 import type * as apiKeys from "../apiKeys.js";
 import type * as backfill from "../backfill.js";
+import type * as codeReview from "../codeReview.js";
+import type * as codeReviewActions from "../codeReviewActions.js";
+import type * as codeReview_http from "../codeReview_http.js";
 import type * as comments from "../comments.js";
 import type * as containerSettings from "../containerSettings.js";
 import type * as crown_actions from "../crown/actions.js";
@@ -28,7 +31,9 @@ import type * as github_setup from "../github_setup.js";
 import type * as github_webhook from "../github_webhook.js";
 import type * as github_workflows from "../github_workflows.js";
 import type * as http from "../http.js";
+import type * as localWorkspaces from "../localWorkspaces.js";
 import type * as migrations from "../migrations.js";
+import type * as screenshots_http from "../screenshots_http.js";
 import type * as stack from "../stack.js";
 import type * as stack_webhook from "../stack_webhook.js";
 import type * as stack_webhook_actions from "../stack_webhook_actions.js";
@@ -36,9 +41,11 @@ import type * as storage from "../storage.js";
 import type * as taskComments from "../taskComments.js";
 import type * as taskRunLogChunks from "../taskRunLogChunks.js";
 import type * as taskRuns from "../taskRuns.js";
+import type * as taskRuns_http from "../taskRuns_http.js";
 import type * as tasks from "../tasks.js";
 import type * as teams from "../teams.js";
-import type * as users_utils from "../users/utils.js";
+import type * as users_utils_getWorkerAuth from "../users/utils/getWorkerAuth.js";
+import type * as users_utils_index from "../users/utils/index.js";
 import type * as users from "../users.js";
 import type * as workspaceSettings from "../workspaceSettings.js";
 
@@ -59,6 +66,9 @@ import type {
 declare const fullApi: ApiFromModules<{
   apiKeys: typeof apiKeys;
   backfill: typeof backfill;
+  codeReview: typeof codeReview;
+  codeReviewActions: typeof codeReviewActions;
+  codeReview_http: typeof codeReview_http;
   comments: typeof comments;
   containerSettings: typeof containerSettings;
   "crown/actions": typeof crown_actions;
@@ -77,7 +87,9 @@ declare const fullApi: ApiFromModules<{
   github_webhook: typeof github_webhook;
   github_workflows: typeof github_workflows;
   http: typeof http;
+  localWorkspaces: typeof localWorkspaces;
   migrations: typeof migrations;
+  screenshots_http: typeof screenshots_http;
   stack: typeof stack;
   stack_webhook: typeof stack_webhook;
   stack_webhook_actions: typeof stack_webhook_actions;
@@ -85,9 +97,11 @@ declare const fullApi: ApiFromModules<{
   taskComments: typeof taskComments;
   taskRunLogChunks: typeof taskRunLogChunks;
   taskRuns: typeof taskRuns;
+  taskRuns_http: typeof taskRuns_http;
   tasks: typeof tasks;
   teams: typeof teams;
-  "users/utils": typeof users_utils;
+  "users/utils/getWorkerAuth": typeof users_utils_getWorkerAuth;
+  "users/utils/index": typeof users_utils_index;
   users: typeof users;
   workspaceSettings: typeof workspaceSettings;
 }>;

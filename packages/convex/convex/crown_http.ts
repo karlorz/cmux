@@ -4,19 +4,18 @@ import {
   WorkerCheckSchema,
   WorkerCompleteRequestSchema,
   WorkerFinalizeSchema,
-  verifyTaskRunToken,
   type CrownEvaluationRequest,
   type CrownWorkerCheckResponse,
-  type TaskRunTokenPayload,
   type WorkerAllRunsCompleteResponse,
   type WorkerRunStatus,
   type WorkerTaskRunResponse,
-} from "../../shared/src/convex-safe";
-import { env } from "../_shared/convex-env";
+} from "@cmux/shared/convex-safe";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { httpAction } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
+import { getWorkerAuth } from "./users/utils/getWorkerAuth";
+import type { WorkerAuthContext } from "./users/utils/getWorkerAuth";
 
 const JSON_HEADERS = {
   "Content-Type": "application/json",
@@ -27,13 +26,13 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 async function ensureJsonRequest(
-  req: Request,
+  req: Request
 ): Promise<{ json: unknown } | Response> {
   const contentType = req.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().includes("application/json")) {
     return jsonResponse(
       { code: 415, message: "Content-Type must be application/json" },
-      415,
+      415
     );
   }
 
@@ -56,7 +55,7 @@ function ensureStackAuth(req: Request): Response | void {
     const parsed = JSON.parse(stackAuthHeader) as { accessToken?: string };
     if (!parsed.accessToken) {
       console.error(
-        "[convex.crown] Missing access token in x-stack-auth header",
+        "[convex.crown] Missing access token in x-stack-auth header"
       );
       return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
     }
@@ -64,14 +63,14 @@ function ensureStackAuth(req: Request): Response | void {
     console.error("[convex.crown] Failed to parse x-stack-auth header", error);
     return jsonResponse(
       { code: 400, message: "Invalid stack auth header" },
-      400,
+      400
     );
   }
 }
 
 async function ensureTeamMembership(
   ctx: ActionCtx,
-  teamSlugOrId: string,
+  teamSlugOrId: string
 ): Promise<Response | { teamId: string }> {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) {
@@ -103,7 +102,7 @@ async function ensureTeamMembership(
 
 async function resolveTeamSlugOrId(
   ctx: ActionCtx,
-  teamSlugOrId?: string,
+  teamSlugOrId?: string
 ): Promise<Response | { teamSlugOrId: string }> {
   if (teamSlugOrId) {
     const membership = await ensureTeamMembership(ctx, teamSlugOrId);
@@ -139,30 +138,10 @@ async function resolveTeamSlugOrId(
   return { teamSlugOrId: slugOrId };
 }
 
-type WorkerAuthContext = {
-  token: string;
-  payload: TaskRunTokenPayload;
-};
-
-async function getWorkerAuth(req: Request): Promise<WorkerAuthContext | null> {
-  const token = req.headers.get("x-cmux-token");
-  if (!token) return null;
-
-  try {
-    const payload = await verifyTaskRunToken(
-      token,
-      env.CMUX_TASK_RUN_JWT_SECRET,
-    );
-    return { token, payload };
-  } catch (error) {
-    console.error("[convex.crown] Failed to verify task run token", error);
-    return null;
-  }
-}
 async function loadTaskRunForWorker(
   ctx: ActionCtx,
   auth: WorkerAuthContext,
-  runId?: Id<"taskRuns">,
+  runId?: Id<"taskRuns">
 ): Promise<Response | Doc<"taskRuns">> {
   const taskRunId = runId ?? (auth.payload.taskRunId as Id<"taskRuns">);
   const taskRun = await ctx.runQuery(internal.taskRuns.getById, {
@@ -185,7 +164,7 @@ async function loadTaskRunForWorker(
         taskRunId,
         workerTeamId: auth.payload.teamId,
         taskRunTeamId: taskRun.teamId,
-      },
+      }
     );
     return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
   }
@@ -194,7 +173,9 @@ async function loadTaskRunForWorker(
 }
 
 export const crownEvaluate = httpAction(async (ctx, req) => {
-  const workerAuth = await getWorkerAuth(req);
+  const workerAuth = await getWorkerAuth(req, {
+    loggerPrefix: "[convex.crown]",
+  });
 
   if (!workerAuth) {
     const stackAuthError = ensureStackAuth(req);
@@ -222,13 +203,100 @@ export const crownEvaluate = httpAction(async (ctx, req) => {
   if (!teamSlugOrId) {
     return jsonResponse(
       { code: 400, message: "teamSlugOrId is required" },
-      400,
+      400
     );
   }
 
-  if (!workerAuth) {
+  let teamContext: { teamId: string; userId: string } | null = null;
+
+  if (workerAuth) {
+    teamContext = {
+      teamId: workerAuth.payload.teamId,
+      userId: workerAuth.payload.userId,
+    };
+  } else {
     const membership = await ensureTeamMembership(ctx, teamSlugOrId);
     if (membership instanceof Response) return membership;
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      console.warn("[convex.crown] Missing identity during evaluation request");
+      return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
+    }
+    teamContext = { teamId: membership.teamId, userId: identity.subject };
+  }
+
+  if (!teamContext) {
+    console.error("[convex.crown] Failed to resolve team context");
+    return jsonResponse({ code: 500, message: "Team resolution failed" }, 500);
+  }
+
+  let targetTaskId: Id<"tasks"> | null = null;
+
+  const candidateWithRunId = data.candidates.find(
+    (candidate) => candidate.runId
+  );
+
+  if (candidateWithRunId?.runId) {
+    try {
+      const run = await ctx.runQuery(internal.taskRuns.getById, {
+        id: candidateWithRunId.runId as Id<"taskRuns">,
+      });
+      if (
+        run &&
+        run.teamId === teamContext.teamId &&
+        run.userId === teamContext.userId
+      ) {
+        targetTaskId = run.taskId;
+      }
+    } catch (error) {
+      console.error("[convex.crown] Failed to resolve task from candidate", {
+        runId: candidateWithRunId.runId,
+        error,
+      });
+    }
+  }
+
+  if (!targetTaskId && workerAuth?.payload.taskRunId) {
+    try {
+      const run = await ctx.runQuery(internal.taskRuns.getById, {
+        id: workerAuth.payload.taskRunId as Id<"taskRuns">,
+      });
+      if (run) {
+        targetTaskId = run.taskId;
+      }
+    } catch (error) {
+      console.error("[convex.crown] Failed to resolve task from worker run", {
+        taskRunId: workerAuth.payload.taskRunId,
+        error,
+      });
+    }
+  }
+
+  if (targetTaskId) {
+    try {
+      const task = await ctx.runQuery(internal.tasks.getByIdInternal, {
+        id: targetTaskId,
+      });
+      if (
+        task &&
+        task.teamId === teamContext.teamId &&
+        task.userId === teamContext.userId &&
+        task.crownEvaluationStatus !== "in_progress"
+      ) {
+        await ctx.runMutation(internal.tasks.setCrownEvaluationStatusInternal, {
+          taskId: targetTaskId,
+          teamId: teamContext.teamId,
+          userId: teamContext.userId,
+          status: "in_progress",
+          clearError: true,
+        });
+      }
+    } catch (error) {
+      console.error("[convex.crown] Failed to mark crown in progress", {
+        taskId: targetTaskId,
+        error,
+      });
+    }
   }
 
   try {
@@ -254,7 +322,9 @@ export const crownEvaluate = httpAction(async (ctx, req) => {
 });
 
 export const crownSummarize = httpAction(async (ctx, req) => {
-  const workerAuth = await getWorkerAuth(req);
+  const workerAuth = await getWorkerAuth(req, {
+    loggerPrefix: "[convex.crown]",
+  });
 
   if (!workerAuth) {
     const stackAuthError = ensureStackAuth(req);
@@ -286,7 +356,7 @@ export const crownSummarize = httpAction(async (ctx, req) => {
   if (!teamSlugOrId) {
     return jsonResponse(
       { code: 400, message: "teamSlugOrId is required" },
-      400,
+      400
     );
   }
 
@@ -304,7 +374,9 @@ export const crownSummarize = httpAction(async (ctx, req) => {
 });
 
 export const crownWorkerCheck = httpAction(async (ctx, req) => {
-  const workerAuth = await getWorkerAuth(req);
+  const workerAuth = await getWorkerAuth(req, {
+    loggerPrefix: "[convex.crown]",
+  });
   if (!workerAuth) {
     throw jsonResponse({ code: 401, message: "Unauthorized" }, 401);
   }
@@ -316,7 +388,7 @@ export const crownWorkerCheck = httpAction(async (ctx, req) => {
   if (!validation.success) {
     console.warn(
       "[convex.crown] Invalid worker check payload",
-      validation.error,
+      validation.error
     );
     return jsonResponse({ code: 400, message: "Invalid input" }, 400);
   }
@@ -338,7 +410,7 @@ export const crownWorkerCheck = httpAction(async (ctx, req) => {
 async function handleInfoRequest(
   ctx: ActionCtx,
   workerAuth: WorkerAuthContext,
-  taskRunId: Id<"taskRuns">,
+  taskRunId: Id<"taskRuns">
 ): Promise<Response> {
   const taskRun = await ctx.runQuery(internal.taskRuns.getById, {
     id: taskRunId,
@@ -379,7 +451,7 @@ async function handleInfoRequest(
 async function handleAllCompleteRequest(
   ctx: ActionCtx,
   workerAuth: WorkerAuthContext,
-  taskId: Id<"tasks">,
+  taskId: Id<"tasks">
 ): Promise<Response> {
   const task = await ctx.runQuery(internal.tasks.getByIdInternal, {
     id: taskId,
@@ -400,7 +472,7 @@ async function handleAllCompleteRequest(
       taskId,
       teamId: workerAuth.payload.teamId,
       userId: workerAuth.payload.userId,
-    },
+    }
   );
 
   const statuses = runsForTeam.map((run) => ({
@@ -424,7 +496,7 @@ async function handleAllCompleteRequest(
 async function handleCrownCheckRequest(
   ctx: ActionCtx,
   workerAuth: WorkerAuthContext,
-  data: { taskRunId?: Id<"taskRuns">; taskId?: Id<"tasks"> },
+  data: { taskRunId?: Id<"taskRuns">; taskId?: Id<"tasks"> }
 ): Promise<Response> {
   const taskRun = await loadTaskRunForWorker(ctx, workerAuth, data.taskRunId);
   if (taskRun instanceof Response) return taskRun;
@@ -450,10 +522,13 @@ async function handleCrownCheckRequest(
   ) {
     console.warn(
       "[convex.crown] Worker attempted to access unauthorized task",
-      { taskId },
+      { taskId }
     );
     return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
   }
+
+  let currentStatus = task.crownEvaluationStatus ?? null;
+  let currentError = task.crownEvaluationError ?? null;
 
   const [runsForTeam, workspaceSettings, existingEvaluation] =
     await Promise.all([
@@ -474,10 +549,10 @@ async function handleCrownCheckRequest(
     ]);
 
   const allRunsFinished = runsForTeam.every((run) =>
-    ["completed", "failed"].includes(run.status),
+    ["completed", "failed"].includes(run.status)
   );
   const allWorkersReported = runsForTeam.every(
-    (run) => run.status === "completed",
+    (run) => run.status === "completed"
   );
   const completedRuns = runsForTeam.filter((run) => run.status === "completed");
 
@@ -491,6 +566,29 @@ async function handleCrownCheckRequest(
     runsForTeam.length === 1 && completedRuns.length === 1
       ? completedRuns[0]._id
       : null;
+
+  if (
+    shouldEvaluate &&
+    currentStatus !== "pending" &&
+    currentStatus !== "in_progress"
+  ) {
+    try {
+      await ctx.runMutation(internal.tasks.setCrownEvaluationStatusInternal, {
+        taskId,
+        teamId: workerAuth.payload.teamId,
+        userId: workerAuth.payload.userId,
+        status: "pending",
+        clearError: true,
+      });
+      currentStatus = "pending";
+      currentError = null;
+    } catch (error) {
+      console.error("[convex.crown] Failed to mark crown pending", {
+        taskId,
+        error,
+      });
+    }
+  }
 
   const response = {
     ok: true,
@@ -507,7 +605,8 @@ async function handleCrownCheckRequest(
       : null,
     task: {
       text: task.text,
-      crownEvaluationError: task.crownEvaluationError ?? null,
+      crownEvaluationStatus: currentStatus,
+      crownEvaluationError: currentError,
       isCompleted: task.isCompleted,
       baseBranch: task.baseBranch ?? null,
       projectFullName: task.projectFullName ?? null,
@@ -526,7 +625,9 @@ async function handleCrownCheckRequest(
 }
 
 export const crownWorkerFinalize = httpAction(async (ctx, req) => {
-  const workerAuth = await getWorkerAuth(req);
+  const workerAuth = await getWorkerAuth(req, {
+    loggerPrefix: "[convex.crown]",
+  });
   if (!workerAuth) {
     throw jsonResponse({ code: 401, message: "Unauthorized" }, 401);
   }
@@ -538,7 +639,7 @@ export const crownWorkerFinalize = httpAction(async (ctx, req) => {
   if (!validation.success) {
     console.warn(
       "[convex.crown] Invalid worker finalize payload",
-      validation.error,
+      validation.error
     );
     return jsonResponse({ code: 400, message: "Invalid input" }, 400);
   }
@@ -566,7 +667,7 @@ export const crownWorkerFinalize = httpAction(async (ctx, req) => {
       taskId,
       teamId: workerAuth.payload.teamId,
       userId: workerAuth.payload.userId,
-    },
+    }
   );
 
   if (existingEvaluation) {
@@ -601,7 +702,7 @@ export const crownWorkerFinalize = httpAction(async (ctx, req) => {
 });
 
 export const crownWorkerComplete = httpAction(async (ctx, req) => {
-  const auth = await getWorkerAuth(req);
+  const auth = await getWorkerAuth(req, { loggerPrefix: "[convex.crown]" });
   if (!auth) {
     console.error("[convex.crown] Auth failed for worker complete");
     throw jsonResponse({ code: 401, message: "Unauthorized" }, 401);
@@ -614,7 +715,7 @@ export const crownWorkerComplete = httpAction(async (ctx, req) => {
   if (!validation.success) {
     console.warn(
       "[convex.crown] Invalid worker complete payload",
-      validation.error,
+      validation.error
     );
     return jsonResponse({ code: 400, message: "Invalid input" }, 400);
   }
@@ -647,7 +748,7 @@ export const crownWorkerComplete = httpAction(async (ctx, req) => {
     {
       teamId: auth.payload.teamId,
       userId: auth.payload.userId,
-    },
+    }
   );
 
   if (containerSettings?.autoCleanupEnabled && updatedRun?.vscode) {
