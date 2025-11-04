@@ -74,6 +74,56 @@ import {
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 
+/**
+ * Wait for a cloud VSCode URL to become ready by polling until it responds with 2xx status.
+ * This is necessary because cloud providers (like Morph) return the VSCode URL immediately
+ * when the container starts, but the VSCode server inside hasn't finished initializing yet.
+ */
+async function waitForCloudVSCodeReady(
+  url: string,
+  timeoutMs = 60_000
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  const pollIntervalMs = 500;
+
+  serverLogger.info(
+    `[waitForCloudVSCodeReady] Polling ${url} for readiness (timeout: ${timeoutMs}ms)`
+  );
+
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url, {
+        method: "HEAD",
+        redirect: "manual",
+        signal: AbortSignal.timeout(5000), // 5 second timeout per request
+      });
+
+      if (response.ok) {
+        serverLogger.info(
+          `[waitForCloudVSCodeReady] VSCode is ready at ${url} (status: ${response.status})`
+        );
+        return true;
+      }
+
+      serverLogger.debug?.(
+        `[waitForCloudVSCodeReady] VSCode not ready yet (status: ${response.status}), retrying...`
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      serverLogger.debug?.(
+        `[waitForCloudVSCodeReady] Health check failed: ${message}, retrying...`
+      );
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+
+  serverLogger.warn(
+    `[waitForCloudVSCodeReady] VSCode at ${url} did not become ready within ${timeoutMs}ms`
+  );
+  return false;
+}
+
 const GitSocketDiffRequestSchema = z.object({
   headRef: z.string(),
   baseRef: z.string().optional(),
@@ -1058,7 +1108,23 @@ export function setupSocketHandlers(
           const workspaceUrl = `${vscodeBaseUrl}?folder=/root/workspace`;
 
           serverLogger.info(
-            `[create-cloud-workspace] Sandbox started: ${sandboxId}, VSCode: ${workspaceUrl}`
+            `[create-cloud-workspace] Sandbox started: ${sandboxId}, VSCode URL: ${workspaceUrl}`
+          );
+
+          // Wait for VSCode to be ready before proceeding
+          serverLogger.info(
+            `[create-cloud-workspace] Waiting for VSCode to be ready at ${workspaceUrl}`
+          );
+          const isReady = await waitForCloudVSCodeReady(workspaceUrl, 60_000);
+
+          if (!isReady) {
+            throw new Error(
+              "VSCode server did not become ready within timeout (60s)"
+            );
+          }
+
+          serverLogger.info(
+            `[create-cloud-workspace] VSCode is ready, updating status to running`
           );
 
           // Update taskRun with actual VSCode info
