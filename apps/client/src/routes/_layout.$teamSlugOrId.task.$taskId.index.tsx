@@ -5,11 +5,11 @@ import { TaskDetailHeader } from "@/components/task-detail-header";
 import type { PersistentIframeStatus } from "@/components/persistent-iframe";
 import { PersistentWebView } from "@/components/persistent-webview";
 import { WorkspaceLoadingIndicator } from "@/components/workspace-loading-indicator";
-import { ResizableGrid } from "@/components/ResizableGrid";
+import { FlexiblePanelLayout } from "@/components/FlexiblePanelLayout";
 import { TaskRunGitDiffPanel } from "@/components/TaskRunGitDiffPanel";
 import { RenderPanel } from "@/components/TaskPanelFactory";
-import { loadPanelConfig, savePanelConfig, getAvailablePanels, PANEL_LABELS } from "@/lib/panel-config";
-import type { PanelConfig, PanelType } from "@/lib/panel-config";
+import { loadPanelConfig, savePanelConfig, getAvailablePanels, getActivePanelPositions, PANEL_LABELS } from "@/lib/panel-config";
+import type { PanelConfig, PanelType, PanelPosition } from "@/lib/panel-config";
 import {
   getTaskRunBrowserPersistKey,
   getTaskRunPersistKey,
@@ -45,8 +45,6 @@ type IframeStatusEntry = {
   status: PersistentIframeStatus;
   url: string | null;
 };
-
-type PanelPosition = "topLeft" | "topRight" | "bottomLeft" | "bottomRight";
 
 const paramsSchema = z.object({
   taskId: typedZid("tasks"),
@@ -504,6 +502,11 @@ function TaskDetailPage() {
   }, [selectedRun, taskRuns?.length]);
 
   const availablePanels = useMemo(() => getAvailablePanels(panelConfig), [panelConfig]);
+  const activePanelPositions = useMemo(() => getActivePanelPositions(panelConfig.layoutMode), [panelConfig.layoutMode]);
+
+  const isPanelPositionActive = useCallback((position: PanelPosition) => {
+    return activePanelPositions.includes(position);
+  }, [activePanelPositions]);
 
   const panelProps = useMemo(
     () => ({
@@ -582,12 +585,11 @@ function TaskDetailPage() {
               onClick={() => setExpandedPanel(null)}
             />
           ) : null}
-          <ResizableGrid
+          <FlexiblePanelLayout
+            layoutMode={panelConfig.layoutMode}
             storageKey="taskDetailGrid"
-            defaultLeftWidth={50}
-            defaultTopHeight={50}
             topLeft={
-              panelConfig.topLeft ? (
+              isPanelPositionActive("topLeft") && panelConfig.topLeft ? (
                 <RenderPanel
                   key={panelConfig.topLeft}
                   {...panelProps}
@@ -598,12 +600,14 @@ function TaskDetailPage() {
                   isExpanded={expandedPanel === "topLeft"}
                   isAnyPanelExpanded={expandedPanel !== null}
                 />
-              ) : (
+              ) : isPanelPositionActive("topLeft") ? (
                 <EmptyPanelSlot position="topLeft" availablePanels={availablePanels} onAddPanel={handleAddPanel} />
+              ) : (
+                <div />
               )
             }
             topRight={
-              panelConfig.topRight ? (
+              isPanelPositionActive("topRight") && panelConfig.topRight ? (
                 <RenderPanel
                   key={panelConfig.topRight}
                   {...panelProps}
@@ -614,12 +618,14 @@ function TaskDetailPage() {
                   isExpanded={expandedPanel === "topRight"}
                   isAnyPanelExpanded={expandedPanel !== null}
                 />
-              ) : (
+              ) : isPanelPositionActive("topRight") ? (
                 <EmptyPanelSlot position="topRight" availablePanels={availablePanels} onAddPanel={handleAddPanel} />
+              ) : (
+                <div />
               )
             }
             bottomLeft={
-              panelConfig.bottomLeft ? (
+              isPanelPositionActive("bottomLeft") && panelConfig.bottomLeft ? (
                 <RenderPanel
                   key={panelConfig.bottomLeft}
                   {...panelProps}
@@ -630,12 +636,14 @@ function TaskDetailPage() {
                   isExpanded={expandedPanel === "bottomLeft"}
                   isAnyPanelExpanded={expandedPanel !== null}
                 />
-              ) : (
+              ) : isPanelPositionActive("bottomLeft") ? (
                 <EmptyPanelSlot position="bottomLeft" availablePanels={availablePanels} onAddPanel={handleAddPanel} />
+              ) : (
+                <div />
               )
             }
             bottomRight={
-              panelConfig.bottomRight ? (
+              isPanelPositionActive("bottomRight") && panelConfig.bottomRight ? (
                 <RenderPanel
                   key={panelConfig.bottomRight}
                   {...panelProps}
@@ -646,8 +654,10 @@ function TaskDetailPage() {
                   isExpanded={expandedPanel === "bottomRight"}
                   isAnyPanelExpanded={expandedPanel !== null}
                 />
-              ) : (
+              ) : isPanelPositionActive("bottomRight") ? (
                 <EmptyPanelSlot position="bottomRight" availablePanels={availablePanels} onAddPanel={handleAddPanel} />
+              ) : (
+                <div />
               )
             }
           />

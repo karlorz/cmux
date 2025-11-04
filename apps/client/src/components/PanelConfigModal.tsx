@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { LucideIcon } from "lucide-react";
-import { X, RotateCcw, GripVertical, MessageSquare, Code2, TerminalSquare, Globe2, GitCompare, Plus } from "lucide-react";
+import { X, RotateCcw, GripVertical, MessageSquare, Code2, TerminalSquare, Globe2, GitCompare, Plus, Grid2x2, Columns2, Rows2, PanelLeft, PanelRight, PanelTop, PanelBottom } from "lucide-react";
 import clsx from "clsx";
-import type { PanelConfig, PanelType } from "@/lib/panel-config";
-import { PANEL_LABELS, DEFAULT_PANEL_CONFIG } from "@/lib/panel-config";
+import type { PanelConfig, PanelType, LayoutMode, PanelPosition } from "@/lib/panel-config";
+import { PANEL_LABELS, DEFAULT_PANEL_CONFIG, LAYOUT_LABELS, LAYOUT_DESCRIPTIONS, getActivePanelPositions } from "@/lib/panel-config";
 
 interface PanelConfigModalProps {
   isOpen: boolean;
@@ -12,8 +12,6 @@ interface PanelConfigModalProps {
   config: PanelConfig;
   onChange: (config: PanelConfig) => void;
 }
-
-type PanelPosition = "topLeft" | "topRight" | "bottomLeft" | "bottomRight";
 
 const PANEL_ICONS_MAP: Record<PanelType, LucideIcon> = {
   chat: MessageSquare,
@@ -23,11 +21,23 @@ const PANEL_ICONS_MAP: Record<PanelType, LucideIcon> = {
   gitDiff: GitCompare,
 };
 
+const LAYOUT_ICONS_MAP: Record<LayoutMode, LucideIcon> = {
+  "four-panel": Grid2x2,
+  "two-horizontal": Columns2,
+  "two-vertical": Rows2,
+  "three-left": PanelLeft,
+  "three-right": PanelRight,
+  "three-top": PanelTop,
+  "three-bottom": PanelBottom,
+};
+
 export function PanelConfigModal({ isOpen, onClose, config, onChange }: PanelConfigModalProps) {
   const [draggedType, setDraggedType] = useState<PanelType | null>(null);
   const [draggedFrom, setDraggedFrom] = useState<PanelPosition | null>(null);
 
   if (!isOpen) return null;
+
+  const activePanelPositions = getActivePanelPositions(config.layoutMode);
 
   const handleDragStart = (type: PanelType, position: PanelPosition) => {
     setDraggedType(type);
@@ -56,7 +66,20 @@ export function PanelConfigModal({ isOpen, onClose, config, onChange }: PanelCon
     onChange(DEFAULT_PANEL_CONFIG);
   };
 
+  const handleLayoutModeChange = (layoutMode: LayoutMode) => {
+    onChange({ ...config, layoutMode });
+  };
+
   const renderPanel = (position: PanelPosition, label: string) => {
+    const isActive = activePanelPositions.includes(position);
+    if (!isActive) {
+      return (
+        <div className="flex h-32 items-center justify-center rounded-lg border-2 border-dashed border-neutral-200 bg-neutral-100 opacity-50 dark:border-neutral-800 dark:bg-neutral-950">
+          <span className="text-xs text-neutral-400 dark:text-neutral-600">Inactive</span>
+        </div>
+      );
+    }
+
     const panelType = config[position];
     const panelLabel = panelType ? PANEL_LABELS[panelType] : "Empty";
     const PanelIcon = panelType ? PANEL_ICONS_MAP[panelType] : Plus;
@@ -140,15 +163,52 @@ export function PanelConfigModal({ isOpen, onClose, config, onChange }: PanelCon
 
         {/* Description */}
         <p className="mb-6 text-sm text-neutral-600 dark:text-neutral-400">
-          Drag and drop panels to rearrange your layout. Your configuration will be saved automatically.
+          Choose a layout mode and drag and drop panels to customize your workspace. Your configuration will be saved automatically.
         </p>
 
+        {/* Layout Mode Selection */}
+        <div className="mb-6">
+          <h3 className="mb-3 text-sm font-semibold text-neutral-900 dark:text-white">
+            Layout Mode
+          </h3>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {(Object.keys(LAYOUT_LABELS) as LayoutMode[]).map((layoutMode) => {
+              const LayoutIcon = LAYOUT_ICONS_MAP[layoutMode];
+              const isSelected = config.layoutMode === layoutMode;
+              return (
+                <button
+                  key={layoutMode}
+                  type="button"
+                  onClick={() => handleLayoutModeChange(layoutMode)}
+                  className={clsx(
+                    "flex flex-col items-center gap-2 rounded-lg border-2 p-3 transition-all",
+                    isSelected
+                      ? "border-neutral-900 bg-neutral-900 text-white dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900"
+                      : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-neutral-600 dark:hover:bg-neutral-800"
+                  )}
+                  title={LAYOUT_DESCRIPTIONS[layoutMode]}
+                >
+                  <LayoutIcon className="size-5" />
+                  <span className="text-xs font-medium text-center leading-tight">
+                    {LAYOUT_LABELS[layoutMode].replace(/\s*\(.*?\)\s*/g, "")}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Grid Preview */}
-        <div className="mb-6 grid grid-cols-2 gap-4">
-          {renderPanel("topLeft", "Top Left")}
-          {renderPanel("topRight", "Top Right")}
-          {renderPanel("bottomLeft", "Bottom Left")}
-          {renderPanel("bottomRight", "Bottom Right")}
+        <div className="mb-6">
+          <h3 className="mb-3 text-sm font-semibold text-neutral-900 dark:text-white">
+            Panel Configuration
+          </h3>
+          <div className="grid grid-cols-2 gap-4">
+            {renderPanel("topLeft", "Top Left")}
+            {renderPanel("topRight", "Top Right")}
+            {renderPanel("bottomLeft", "Bottom Left")}
+            {renderPanel("bottomRight", "Bottom Right")}
+          </div>
         </div>
 
         {/* Actions */}
