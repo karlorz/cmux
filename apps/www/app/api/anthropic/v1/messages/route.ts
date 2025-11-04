@@ -1,5 +1,6 @@
 import { verifyTaskRunToken, type TaskRunTokenPayload } from "@cmux/shared";
 import { env } from "@/lib/utils/www-env";
+import { trackModelUsage } from "@/lib/utils/posthog";
 import { NextRequest, NextResponse } from "next/server";
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
@@ -23,14 +24,18 @@ function getIsOAuthToken(token: string) {
 }
 
 export async function POST(request: NextRequest) {
+  let taskRunPayload: TaskRunTokenPayload | null = null;
+
   if (!TEMPORARY_DISABLE_AUTH) {
     try {
-      await requireTaskRunToken(request);
+      taskRunPayload = await requireTaskRunToken(request);
     } catch (authError) {
       console.error("[anthropic proxy] Auth error:", authError);
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
+
+  const startTime = Date.now();
 
   try {
     // Get query parameters
@@ -120,12 +125,62 @@ export async function POST(request: NextRequest) {
 
     if (!response.ok) {
       console.error("[anthropic proxy] Anthropic error:", data);
+
+      // Track failed API call
+      trackModelUsage({
+        model: body.model || "unknown",
+        provider: "anthropic",
+        teamId: taskRunPayload?.teamId,
+        userId: taskRunPayload?.userId,
+        taskRunId: taskRunPayload?.taskRunId,
+        streaming: false,
+        responseTimeMs: Date.now() - startTime,
+        success: false,
+        errorType: data.error?.type || "unknown_error",
+      }).catch((error) => {
+        console.error("[anthropic proxy] Failed to track error event", error);
+      });
+
       return NextResponse.json(data, { status: response.status });
     }
+
+    // Track successful API call
+    trackModelUsage({
+      model: body.model || data.model || "unknown",
+      provider: "anthropic",
+      teamId: taskRunPayload?.teamId,
+      userId: taskRunPayload?.userId,
+      taskRunId: taskRunPayload?.taskRunId,
+      inputTokens: data.usage?.input_tokens,
+      outputTokens: data.usage?.output_tokens,
+      totalTokens:
+        (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0),
+      streaming: false,
+      responseTimeMs: Date.now() - startTime,
+      success: true,
+    }).catch((error) => {
+      console.error("[anthropic proxy] Failed to track success event", error);
+    });
 
     return NextResponse.json(data);
   } catch (error) {
     console.error("[anthropic proxy] Error:", error);
+
+    // Track proxy error
+    trackModelUsage({
+      model: "unknown",
+      provider: "anthropic",
+      teamId: taskRunPayload?.teamId,
+      userId: taskRunPayload?.userId,
+      taskRunId: taskRunPayload?.taskRunId,
+      streaming: false,
+      responseTimeMs: Date.now() - startTime,
+      success: false,
+      errorType: "proxy_error",
+    }).catch((trackError) => {
+      console.error("[anthropic proxy] Failed to track proxy error", trackError);
+    });
+
     return NextResponse.json(
       { error: "Failed to proxy request to Anthropic" },
       { status: 500 }

@@ -1,5 +1,10 @@
 import { getAccessTokenFromRequest } from "@/lib/utils/auth";
 import { getConvex } from "@/lib/utils/get-convex";
+import {
+  trackEnvironmentCreated,
+  trackEnvironmentDeleted,
+  trackEnvironmentSnapshotCreated,
+} from "@/lib/utils/posthog";
 import { stackServerAppJs } from "@/lib/utils/stack";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { env } from "@/lib/utils/www-env";
@@ -203,6 +208,11 @@ environmentsRouter.openapi(
     const accessToken = await getAccessTokenFromRequest(c.req.raw);
     if (!accessToken) return c.text("Unauthorized", 401);
 
+    const user = await stackServerAppJs.getUser({ tokenStore: c.req.raw });
+    if (!user) {
+      return c.text("Unauthorized", 401);
+    }
+
     const body = c.req.valid("json");
 
     try {
@@ -267,6 +277,22 @@ environmentsRouter.openapi(
           exposedPorts: sanitizedPorts.length > 0 ? sanitizedPorts : undefined,
         }
       );
+
+      // Track environment creation in PostHog
+      trackEnvironmentCreated({
+        environmentId,
+        teamId: team.uuid,
+        userId: user.id,
+        environmentName: body.name,
+        morphSnapshotId: snapshot.id,
+        morphInstanceId: body.morphInstanceId,
+        hasEnvVars: Boolean(body.envVarsContent && body.envVarsContent.trim()),
+        exposedPortsCount: sanitizedPorts.length,
+        hasDevScript: Boolean(body.devScript),
+        hasMaintenanceScript: Boolean(body.maintenanceScript),
+      }).catch((error) => {
+        console.error("[environments.create] Failed to track event", error);
+      });
 
       return c.json({
         id: environmentId,
@@ -842,6 +868,11 @@ environmentsRouter.openapi(
     const accessToken = await getAccessTokenFromRequest(c.req.raw);
     if (!accessToken) return c.text("Unauthorized", 401);
 
+    const user = await stackServerAppJs.getUser({ tokenStore: c.req.raw });
+    if (!user) {
+      return c.text("Unauthorized", 401);
+    }
+
     const { id } = c.req.valid("param");
     const body = c.req.valid("json");
     const environmentId = typedZid("environments").parse(id);
@@ -885,6 +916,21 @@ environmentsRouter.openapi(
           devScript: body.devScript,
         }
       );
+
+      // Track snapshot creation in PostHog
+      trackEnvironmentSnapshotCreated({
+        environmentId,
+        teamId: team.uuid,
+        userId: user.id,
+        snapshotVersion: creation.version,
+        morphSnapshotId: snapshot.id,
+        isActivated: Boolean(body.activate),
+      }).catch((error) => {
+        console.error(
+          "[environments.createSnapshot] Failed to track event",
+          error
+        );
+      });
 
       return c.json({
         snapshotVersionId: String(creation.snapshotVersionId),
@@ -1014,14 +1060,48 @@ environmentsRouter.openapi(
     const accessToken = await getAccessTokenFromRequest(c.req.raw);
     if (!accessToken) return c.text("Unauthorized", 401);
 
+    const user = await stackServerAppJs.getUser({ tokenStore: c.req.raw });
+    if (!user) {
+      return c.text("Unauthorized", 401);
+    }
+
     const { id } = c.req.valid("param");
     const { teamSlugOrId } = c.req.valid("query");
 
     try {
       const convexClient = getConvex({ accessToken });
+      const team = await verifyTeamAccess({
+        req: c.req.raw,
+        teamSlugOrId,
+      });
+
+      // Get environment details before deletion for tracking
+      const environment = await convexClient.query(api.environments.get, {
+        teamSlugOrId,
+        id: typedZid("environments").parse(id),
+      });
+
+      const snapshots = await convexClient.query(
+        api.environmentSnapshots.list,
+        {
+          teamSlugOrId,
+          environmentId: typedZid("environments").parse(id),
+        }
+      );
+
       await convexClient.mutation(api.environments.remove, {
         teamSlugOrId,
         id: typedZid("environments").parse(id),
+      });
+
+      // Track environment deletion in PostHog
+      trackEnvironmentDeleted({
+        environmentId: id,
+        teamId: team.uuid,
+        userId: user.id,
+        snapshotVersions: snapshots.length,
+      }).catch((error) => {
+        console.error("[environments.delete] Failed to track event", error);
       });
 
       return c.body(null, 204);

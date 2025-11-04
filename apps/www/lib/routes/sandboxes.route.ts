@@ -1,6 +1,7 @@
 import { getAccessTokenFromRequest } from "@/lib/utils/auth";
 import { getConvex } from "@/lib/utils/get-convex";
 import { selectGitIdentity } from "@/lib/utils/gitIdentity";
+import { trackSandboxCreated } from "@/lib/utils/posthog";
 import { stackServerAppJs } from "@/lib/utils/stack";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { env } from "@/lib/utils/www-env";
@@ -324,6 +325,22 @@ sandboxesRouter.openapi(
       }
 
       await configureGitIdentityTask;
+
+      // Track sandbox creation in PostHog
+      trackSandboxCreated({
+        sandboxId: instance.id,
+        teamId: team.uuid,
+        userId: user.id,
+        sandboxType: body.environmentId ? "environment" : "morph",
+        environmentId: body.environmentId,
+        morphInstanceId: instance.id,
+        ttlMinutes: Math.floor((body.ttlSeconds ?? 3600) / 60),
+        hasDevScript: Boolean(devScript),
+        hasMaintenanceScript: Boolean(maintenanceScript),
+        repoCount: repoConfig ? 1 : 0,
+      }).catch((error) => {
+        console.error("[sandboxes.start] Failed to track event", error);
+      });
 
       return c.json({
         instanceId: instance.id,

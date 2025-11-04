@@ -23,7 +23,7 @@
     },
     "apps/client": {
       "name": "@cmux/client",
-      "version": "1.0.142",
+      "version": "1.0.143",
       "dependencies": {
         "@base-ui-components/react": "1.0.0-beta.2",
         "@cmux/convex": "workspace:*",
@@ -335,6 +335,7 @@
         "morphcloud": "^0.0.18",
         "next": "15.5.2",
         "octokit": "^3.2.2",
+        "posthog-node": "^5.11.0",
         "react": "^19.1.0",
         "react-diff-view": "^3.3.2",
         "react-dom": "^19.1.0",
@@ -1556,7 +1557,7 @@
 
     "@playwright/mcp": ["@playwright/mcp@0.0.44", "", { "dependencies": { "playwright": "1.57.0-alpha-2025-10-24", "playwright-core": "1.57.0-alpha-2025-10-24" }, "bin": { "mcp-server-playwright": "cli.js" } }, "sha512-QkJd/qUxbw9MY5Vy5TMC6EmK2VSTBJ0+NOx/wTat5W7ycj8s19tweYRJI+33Ix8SMdf6aaG9pIaY0AZGfnK0oA=="],
 
-    "@posthog/core": ["@posthog/core@1.3.1", "", {}, "sha512-sGKVHituJ8L/bJxVV4KamMFp+IBWAZyCiYunFawJZ4cc59PCtLnKFIMEV6kn7A4eZQcQ6EKV5Via4sF3Z7qMLQ=="],
+    "@posthog/core": ["@posthog/core@1.5.0", "", {}, "sha512-oxfV20QMNwH30jKybUyqi3yGuMghULQz1zkJgQG3rjpHDxhD2vDN6E7UpmaqgphMIvGG3Q+DgfU10zfSPA7w7w=="],
 
     "@prisma/instrumentation": ["@prisma/instrumentation@6.15.0", "", { "dependencies": { "@opentelemetry/instrumentation": "^0.52.0 || ^0.53.0 || ^0.54.0 || ^0.55.0 || ^0.56.0 || ^0.57.0" }, "peerDependencies": { "@opentelemetry/api": "^1.8" } }, "sha512-6TXaH6OmDkMOQvOxwLZ8XS51hU2v4A3vmE2pSijCIiGRJYyNeMcL6nMHQMyYdZRD8wl7LF3Wzc+AMPMV/9Oo7A=="],
 
@@ -4180,7 +4181,7 @@
 
     "postgres-interval": ["postgres-interval@1.2.0", "", { "dependencies": { "xtend": "^4.0.0" } }, "sha512-9ZhXKM/rw350N1ovuWHbGxnGh/SNJ4cnxHiM0rxE4VN41wsg8P8zWn9hv/buK00RP4WvlOyr/RBDiptyxVbkZQ=="],
 
-    "posthog-node": ["posthog-node@5.10.3", "", { "dependencies": { "@posthog/core": "1.3.1" } }, "sha512-pe0P/4MfTSBgM4PWRTeg2iKDSSX6nxnlxAyW+v2+acpCSU50KM2YE5UFJ1Vkq/PtwcJgrt2Ydj66IzuRn2uwFQ=="],
+    "posthog-node": ["posthog-node@5.11.0", "", { "dependencies": { "@posthog/core": "1.5.0" } }, "sha512-9+gmWp/7AEryJMi0+/ywJjKQhpkmcjxf+eT030fTIIPvFTF84zeeagdZBGNC/Nh2Jc0grIAW6O1n5lxXiX3daA=="],
 
     "postject": ["postject@1.0.0-alpha.6", "", { "dependencies": { "commander": "^9.4.0" }, "bin": { "postject": "dist/cli.js" } }, "sha512-b9Eb8h2eVqNE8edvKdwqkrY6O7kAwmI8kcnBv1NScolYJbo59XUF0noFq+lxbC1yN20bmC0WBEbDC5H/7ASb0A=="],
 
@@ -5692,6 +5693,8 @@
 
     "magnitude-core/playwright": ["patchright@1.56.1", "", { "dependencies": { "patchright-core": "1.56.1" }, "optionalDependencies": { "fsevents": "2.3.2" }, "bin": { "patchright": "cli.js" } }, "sha512-HY4s3vJNPVoasoy0X7sOm2dufQwlicvXoCpoINYFUWYkEaSBM2l4UtSOdI4/MYQHNskfOFpIqE+Usj748qbtYg=="],
 
+    "magnitude-core/posthog-node": ["posthog-node@5.10.3", "", { "dependencies": { "@posthog/core": "1.3.1" } }, "sha512-pe0P/4MfTSBgM4PWRTeg2iKDSSX6nxnlxAyW+v2+acpCSU50KM2YE5UFJ1Vkq/PtwcJgrt2Ydj66IzuRn2uwFQ=="],
+
     "magnitude-core/zod": ["zod@3.25.76", "", {}, "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="],
 
     "magnitude-extract/cheerio": ["cheerio@1.1.2", "", { "dependencies": { "cheerio-select": "^2.1.0", "dom-serializer": "^2.0.0", "domhandler": "^5.0.3", "domutils": "^3.2.2", "encoding-sniffer": "^0.2.1", "htmlparser2": "^10.0.0", "parse5": "^7.3.0", "parse5-htmlparser2-tree-adapter": "^7.1.0", "parse5-parser-stream": "^7.1.2", "undici": "^7.12.0", "whatwg-mimetype": "^4.0.0" } }, "sha512-IkxPpb5rS/d1IiLbHMgfPuS0FgiWTtFIm/Nj+2woXDLTZ7fOT2eqzgYbdMlLweqlHbsZjxEChoVK+7iph7jyQg=="],
@@ -6417,6 +6420,8 @@
     "lazystream/readable-stream/string_decoder": ["string_decoder@1.1.1", "", { "dependencies": { "safe-buffer": "~5.1.0" } }, "sha512-n/ShnvDi6FHbbVfviro+WojiFzv+s8MPMHBczVePfUpDJLwoLT0ht1l4YwBCbi8pJAveEEdnkHyPyTP/mzRfwg=="],
 
     "magnitude-core/playwright/fsevents": ["fsevents@2.3.2", "", { "os": "darwin" }, "sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA=="],
+
+    "magnitude-core/posthog-node/@posthog/core": ["@posthog/core@1.3.1", "", {}, "sha512-sGKVHituJ8L/bJxVV4KamMFp+IBWAZyCiYunFawJZ4cc59PCtLnKFIMEV6kn7A4eZQcQ6EKV5Via4sF3Z7qMLQ=="],
 
     "magnitude-extract/cheerio/dom-serializer": ["dom-serializer@2.0.0", "", { "dependencies": { "domelementtype": "^2.3.0", "domhandler": "^5.0.2", "entities": "^4.2.0" } }, "sha512-wIkAryiqt/nV5EQKqQpo3SToSOV9J0DnbJqwK7Wv/Trc92zIAYZ4FlMu+JPFW1DfGFt81ZTCGgDEabffXeLyJg=="],
 

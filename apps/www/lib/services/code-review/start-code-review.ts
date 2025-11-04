@@ -3,6 +3,7 @@ import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
 
 import { getConvex } from "@/lib/utils/get-convex";
+import { trackCodeReviewStarted } from "@/lib/utils/posthog";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { env } from "@/lib/utils/www-env";
 import {
@@ -243,6 +244,21 @@ export async function startCodeReviewJob({
     repoFullName: runningJob.repoFullName,
     prNumber: runningJob.prNumber,
     callbackTokenPreview: callbackToken.slice(0, 8),
+  });
+
+  // Track code review started in PostHog
+  trackCodeReviewStarted({
+    jobId: runningJob.jobId,
+    teamId: runningJob.teamId || "anonymous",
+    userId: runningJob.requestedByUserId,
+    reviewType: jobType === "pull_request" ? "pr" : "comparison",
+    repoFullName: runningJob.repoFullName,
+    prNumber: runningJob.prNumber ?? undefined,
+    comparison: payload.comparison
+      ? `${payload.comparison.base.owner}/${payload.comparison.base.ref}...${payload.comparison.head.owner}/${payload.comparison.head.ref}`
+      : undefined,
+  }).catch((error) => {
+    console.error("[code-review] Failed to track event", error);
   });
 
   const reviewConfig: PrReviewJobContext = {
