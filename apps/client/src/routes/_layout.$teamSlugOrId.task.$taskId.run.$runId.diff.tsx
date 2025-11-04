@@ -270,7 +270,7 @@ const RestartTaskForm = memo(function RestartTaskForm({
   }, [isRestartingTask, overridePrompt, socket, task, trimmedFollowUp]);
 
   return (
-    <div className="sticky bottom-0 z-[var(--z-popover)] border-t border-transparent px-3.5 pb-3.5 pt-2">
+    <div className="border-t border-transparent px-3.5 pb-3.5 pt-2 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-sm">
       <form
         onSubmit={handleFormSubmit}
         className="mx-auto w-full max-w-2xl overflow-hidden rounded-2xl border border-neutral-500/15 bg-white dark:border-neutral-500/15 dark:bg-neutral-950"
@@ -740,7 +740,7 @@ function RunDiffPage() {
   return (
     <FloatingPane>
       <div className="flex h-full min-h-0 flex-col relative isolate">
-        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
+        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col pb-[120px]">
           <TaskDetailHeader
             task={task}
             taskRuns={taskRuns ?? null}
@@ -814,15 +814,17 @@ function RunDiffPage() {
                 </div>
               )}
             </Suspense>
-            <RestartTaskForm
-              key={restartTaskPersistenceKey}
-              task={task}
-              teamSlugOrId={teamSlugOrId}
-              restartAgents={restartAgents}
-              restartIsCloudMode={restartIsCloudMode}
-              persistenceKey={restartTaskPersistenceKey}
-            />
           </div>
+        </div>
+        <div className="fixed bottom-0 left-0 right-0 z-[var(--z-popover)]">
+          <RestartTaskForm
+            key={restartTaskPersistenceKey}
+            task={task}
+            teamSlugOrId={teamSlugOrId}
+            restartAgents={restartAgents}
+            restartIsCloudMode={restartIsCloudMode}
+            persistenceKey={restartTaskPersistenceKey}
+          />
         </div>
       </div>
     </FloatingPane>
