@@ -1,7 +1,21 @@
 import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
 
+const commitSha =
+  process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ??
+  process.env.VERCEL_GIT_COMMIT_SHA ??
+  undefined;
+
+const release = commitSha ?? undefined;
+
+const env: Record<string, string> = {};
+
+if (commitSha) {
+  env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA = commitSha;
+}
+
 const nextConfig: NextConfig = {
+  ...(Object.keys(env).length ? { env } : {}),
   serverExternalPackages: ["morphcloud", "ssh2", "node-ssh", "cpu-features"],
   outputFileTracingIncludes: {
     "/": ["./scripts/pr-review/pr-review-inject.bundle.js"],
@@ -32,6 +46,12 @@ export default withSentryConfig(nextConfig, {
   org: "manaflow",
 
   project: "cmux-www",
+
+  release: release
+    ? {
+        name: release,
+      }
+    : undefined,
 
   // Only print logs for uploading source maps in CI
   silent: !process.env.CI,
