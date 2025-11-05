@@ -73,13 +73,43 @@ export const CreateLocalWorkspaceResponseSchema = z.object({
   error: z.string().optional(),
 });
 
-export const CreateCloudWorkspaceSchema = z.object({
-  teamSlugOrId: z.string(),
-  environmentId: typedZid("environments"),
-  taskId: typedZid("tasks").optional(),
-  taskRunId: typedZid("taskRuns").optional(),
-  theme: z.enum(["dark", "light", "system"]).optional(),
-});
+export const CreateCloudWorkspaceSchema = z
+  .object({
+    teamSlugOrId: z.string(),
+    environmentId: typedZid("environments").optional(),
+    projectFullName: z.string().optional(),
+    repoUrl: z.string().optional(),
+    branch: z.string().optional(),
+    taskId: typedZid("tasks").optional(),
+    taskRunId: typedZid("taskRuns").optional(),
+    theme: z.enum(["dark", "light", "system"]).optional(),
+  })
+  .superRefine((data, ctx) => {
+    const hasEnvironment = Boolean(data.environmentId);
+    const hasRepo =
+      Boolean(data.projectFullName) && Boolean(data.repoUrl);
+    if (!hasEnvironment && !hasRepo) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["environmentId"],
+        message: "environmentId or projectFullName/repoUrl is required",
+      });
+    }
+    if (data.projectFullName && !data.repoUrl) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["repoUrl"],
+        message: "repoUrl is required when projectFullName is provided",
+      });
+    }
+    if (data.repoUrl && !data.projectFullName) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["projectFullName"],
+        message: "projectFullName is required when repoUrl is provided",
+      });
+    }
+  });
 
 export const CreateCloudWorkspaceResponseSchema = z.object({
   success: z.boolean(),

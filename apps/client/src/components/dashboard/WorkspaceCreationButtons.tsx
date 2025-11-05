@@ -119,38 +119,71 @@ export function WorkspaceCreationButtons({
     }
 
     if (selectedProject.length === 0) {
-      toast.error("Please select an environment first");
+      toast.error("Please select an environment or repository first");
       return;
     }
 
-    if (!isEnvSelected) {
-      toast.error("Cloud workspaces require an environment, not a repository");
-      return;
-    }
-
-    const projectFullName = selectedProject[0];
-    const environmentId = projectFullName.replace(
-      /^env:/,
-      ""
-    ) as Id<"environments">;
-
-    // Extract environment name from the selectedProject (format is "env:id:name")
-    const environmentName = projectFullName.split(":")[2] || "Unknown Environment";
+    const selection = selectedProject[0];
 
     setIsCreatingCloud(true);
 
     try {
-      // Create task in Convex with environment name
+      if (isEnvSelected) {
+        const environmentId = selection.replace(
+          /^env:/,
+          ""
+        ) as Id<"environments">;
+        const environmentName =
+          selection.split(":")[2] || "Unknown Environment";
+
+        const taskId = await createTask({
+          teamSlugOrId,
+          text: `Cloud Workspace: ${environmentName}`,
+          projectFullName: undefined,
+          baseBranch: undefined,
+          environmentId,
+          isCloudWorkspace: true,
+        });
+
+        addTaskToExpand(taskId);
+
+        await new Promise<void>((resolve) => {
+          socket.emit(
+            "create-cloud-workspace",
+            {
+              teamSlugOrId,
+              environmentId,
+              taskId,
+              theme,
+            },
+            async (response: CreateCloudWorkspaceResponse) => {
+              if (response.success) {
+                toast.success("Cloud workspace created successfully");
+              } else {
+                toast.error(
+                  response.error || "Failed to create cloud workspace"
+                );
+              }
+              resolve();
+            }
+          );
+        });
+
+        console.log("Cloud environment workspace created:", taskId);
+        return;
+      }
+
+      const projectFullName = selection;
+      const repoUrl = `https://github.com/${projectFullName}.git`;
+
       const taskId = await createTask({
         teamSlugOrId,
-        text: `Cloud Workspace: ${environmentName}`,
-        projectFullName: undefined, // No repo for cloud environment workspaces
-        baseBranch: undefined, // No branch for environments
-        environmentId,
+        text: `Cloud Workspace: ${projectFullName}`,
+        projectFullName,
+        baseBranch: undefined,
         isCloudWorkspace: true,
       });
 
-      // Hint the sidebar to auto-expand this task once it appears
       addTaskToExpand(taskId);
 
       await new Promise<void>((resolve) => {
@@ -158,7 +191,8 @@ export function WorkspaceCreationButtons({
           "create-cloud-workspace",
           {
             teamSlugOrId,
-            environmentId,
+            projectFullName,
+            repoUrl,
             taskId,
             theme,
           },
@@ -175,7 +209,7 @@ export function WorkspaceCreationButtons({
         );
       });
 
-      console.log("Cloud workspace created:", taskId);
+      console.log("Cloud repo workspace created:", taskId);
     } catch (error) {
       console.error("Error creating cloud workspace:", error);
       toast.error("Failed to create cloud workspace");
@@ -185,15 +219,15 @@ export function WorkspaceCreationButtons({
   }, [
     socket,
     selectedProject,
-    isEnvSelected,
     teamSlugOrId,
     createTask,
     addTaskToExpand,
     theme,
+    isEnvSelected,
   ]);
 
   const canCreateLocal = selectedProject.length > 0 && !isEnvSelected;
-  const canCreateCloud = selectedProject.length > 0 && isEnvSelected;
+  const canCreateCloud = selectedProject.length > 0;
 
   const SHOW_WORKSPACE_BUTTONS = false;
 
@@ -244,10 +278,10 @@ export function WorkspaceCreationButtons({
         </TooltipTrigger>
         <TooltipContent>
           {!selectedProject.length
-            ? "Select an environment first"
-            : !isEnvSelected
-              ? "Switch to environment mode (not repository)"
-              : "Create workspace from selected environment"}
+            ? "Select an environment or repository first"
+            : isEnvSelected
+              ? "Create workspace from selected environment"
+              : "Create workspace from selected repository"}
         </TooltipContent>
       </Tooltip>
     </div>

@@ -971,6 +971,9 @@ export function setupSocketHandlers(
         const {
           teamSlugOrId: requestedTeamSlugOrId,
           environmentId,
+          projectFullName,
+          repoUrl,
+          branch,
           taskId: providedTaskId,
         } = parsed.data;
         const teamSlugOrId = requestedTeamSlugOrId || safeTeam;
@@ -992,7 +995,7 @@ export function setupSocketHandlers(
             taskId,
             prompt: "Cloud Workspace",
             agentName: "cloud-workspace",
-            environmentId,
+            environmentId: environmentId ?? undefined,
           });
           taskRunId = taskRunResult.taskRunId;
           const taskRunJwt = taskRunResult.jwt;
@@ -1029,8 +1032,14 @@ export function setupSocketHandlers(
           // Spawn Morph instance via www API
           const { postApiSandboxesStart } = await getWwwOpenApiModule();
 
+          const targetLabel = environmentId
+            ? `environment ${environmentId}`
+            : projectFullName
+              ? `repository ${projectFullName}`
+              : "unknown target";
+
           serverLogger.info(
-            `[create-cloud-workspace] Starting Morph sandbox for environment ${environmentId}`
+            `[create-cloud-workspace] Starting Morph sandbox for ${targetLabel}`
           );
 
           const startRes = await postApiSandboxesStart({
@@ -1041,10 +1050,17 @@ export function setupSocketHandlers(
               metadata: {
                 instance: `cmux-workspace-${taskRunId}`,
                 agentName: "cloud-workspace",
+                ...(projectFullName ? { projectFullName } : {}),
               },
               taskRunId,
               taskRunJwt,
-              environmentId,
+              ...(environmentId ? { environmentId } : {}),
+              ...(projectFullName && repoUrl
+                ? {
+                    repoUrl,
+                    ...(branch ? { branch } : {}),
+                  }
+                : {}),
             },
           });
 
