@@ -740,55 +740,55 @@ function RunDiffPage() {
   return (
     <FloatingPane>
       <div className="flex h-full min-h-0 flex-col relative isolate">
-        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
-          <TaskDetailHeader
-            task={task}
-            taskRuns={taskRuns ?? null}
-            selectedRun={selectedRun ?? null}
-            taskRunId={taskRunId}
-            onExpandAll={diffControls?.expandAll}
-            onCollapseAll={diffControls?.collapseAll}
-            onExpandAllChecks={expandAllChecks}
-            onCollapseAllChecks={collapseAllChecks}
-            teamSlugOrId={teamSlugOrId}
-          />
-          {task?.text && (
-            <div className="mb-2 px-3.5">
-              <div className="text-xs text-neutral-600 dark:text-neutral-300">
-                <span className="text-neutral-500 dark:text-neutral-400 select-none">
-                  Prompt:{" "}
-                </span>
-                <span className="font-medium">{task.text}</span>
+        <div className="flex-1 min-h-0 flex flex-col">
+          <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
+            <TaskDetailHeader
+              task={task}
+              taskRuns={taskRuns ?? null}
+              selectedRun={selectedRun ?? null}
+              taskRunId={taskRunId}
+              onExpandAll={diffControls?.expandAll}
+              onCollapseAll={diffControls?.collapseAll}
+              onExpandAllChecks={expandAllChecks}
+              onCollapseAllChecks={collapseAllChecks}
+              teamSlugOrId={teamSlugOrId}
+            />
+            {task?.text && (
+              <div className="mb-2 px-3.5">
+                <div className="text-xs text-neutral-600 dark:text-neutral-300">
+                  <span className="text-neutral-500 dark:text-neutral-400 select-none">
+                    Prompt:{" "}
+                  </span>
+                  <span className="font-medium">{task.text}</span>
+                </div>
               </div>
-            </div>
-          )}
-          <div className="bg-white dark:bg-neutral-900 flex-1 min-h-0 flex flex-col">
-            {pullRequests && pullRequests.length > 0 && (
-              <Suspense fallback={null}>
-                {pullRequests.map((pr) => (
-                  <WorkflowRunsWrapper
-                    key={pr.repoFullName}
-                    teamSlugOrId={teamSlugOrId}
-                    repoFullName={pr.repoFullName}
-                    prNumber={pr.number}
-                    headSha={undefined}
-                    checksExpandedByRepo={checksExpandedByRepo}
-                    setChecksExpandedByRepo={setChecksExpandedByRepo}
-                  />
-                ))}
-              </Suspense>
             )}
-            {screenshotSetsLoading ? (
-              <div className="border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-950/40 px-3.5 py-3 text-sm text-neutral-500 dark:text-neutral-400">
-                Loading screenshots...
-              </div>
-            ) : (
-              <RunScreenshotGallery
-                screenshotSets={screenshotSets}
-                highlightedSetId={selectedRun?.latestScreenshotSetId ?? null}
-              />
-            )}
-            <div className="flex-1 min-h-0 flex flex-col">
+            <div className="bg-white dark:bg-neutral-900 flex-1 min-h-0 flex flex-col">
+              {pullRequests && pullRequests.length > 0 && (
+                <Suspense fallback={null}>
+                  {pullRequests.map((pr) => (
+                    <WorkflowRunsWrapper
+                      key={pr.repoFullName}
+                      teamSlugOrId={teamSlugOrId}
+                      repoFullName={pr.repoFullName}
+                      prNumber={pr.number}
+                      headSha={undefined}
+                      checksExpandedByRepo={checksExpandedByRepo}
+                      setChecksExpandedByRepo={setChecksExpandedByRepo}
+                    />
+                  ))}
+                </Suspense>
+              )}
+              {screenshotSetsLoading ? (
+                <div className="border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-950/40 px-3.5 py-3 text-sm text-neutral-500 dark:text-neutral-400">
+                  Loading screenshots...
+                </div>
+              ) : (
+                <RunScreenshotGallery
+                  screenshotSets={screenshotSets}
+                  highlightedSetId={selectedRun?.latestScreenshotSetId ?? null}
+                />
+              )}
               <div className="flex-1 min-h-0">
                 <Suspense
                   fallback={
@@ -817,15 +817,17 @@ function RunDiffPage() {
                   )}
                 </Suspense>
               </div>
-              <RestartTaskForm
-                key={restartTaskPersistenceKey}
-                task={task}
-                teamSlugOrId={teamSlugOrId}
-                restartAgents={restartAgents}
-                restartIsCloudMode={restartIsCloudMode}
-                persistenceKey={restartTaskPersistenceKey}
-              />
             </div>
+          </div>
+          <div className="bg-white dark:bg-neutral-900">
+            <RestartTaskForm
+              key={restartTaskPersistenceKey}
+              task={task}
+              teamSlugOrId={teamSlugOrId}
+              restartAgents={restartAgents}
+              restartIsCloudMode={restartIsCloudMode}
+              persistenceKey={restartTaskPersistenceKey}
+            />
           </div>
         </div>
       </div>
