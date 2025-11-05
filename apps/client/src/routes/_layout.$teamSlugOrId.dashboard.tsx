@@ -41,7 +41,7 @@ import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation } from "convex/react";
-import { Server as ServerIcon } from "lucide-react";
+import { Link as LinkIcon, Server as ServerIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -85,6 +85,8 @@ const parseStoredAgentSelection = (stored: string | null): string[] => {
     return [];
   }
 };
+
+const LAST_IMPORTED_REPO_KEY = "dashboard:lastImportedRepo";
 
 function DashboardComponent() {
   const { teamSlugOrId } = Route.useParams();
@@ -133,6 +135,42 @@ function DashboardComponent() {
   const [providerStatus, setProviderStatus] =
     useState<ProviderStatusResponse | null>(null);
   const [isLaunchingRepo, setIsLaunchingRepo] = useState(false);
+  const [lastImportedRepo, setLastImportedRepo] = useState<string | null>(() => {
+    if (typeof window === "undefined") {
+      return null;
+    }
+    try {
+      return localStorage.getItem(LAST_IMPORTED_REPO_KEY);
+    } catch {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    if (lastImportedRepo !== null) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      const stored = localStorage.getItem(LAST_IMPORTED_REPO_KEY);
+      if (stored) {
+        setLastImportedRepo(stored);
+      }
+    } catch {
+      /* noop */
+    }
+  }, [lastImportedRepo]);
+
+  const persistLastImportedRepo = useCallback((repoFullName: string) => {
+    setLastImportedRepo(repoFullName);
+    try {
+      localStorage.setItem(LAST_IMPORTED_REPO_KEY, repoFullName);
+    } catch {
+      /* ignore storage errors */
+    }
+  }, []);
 
   // Ref to access editor API
   const editorApiRef = useRef<EditorApi | null>(null);
@@ -649,8 +687,25 @@ function DashboardComponent() {
       options.push(...repoOptions);
     }
 
+    const normalizedLink = lastImportedRepo?.trim();
+    if (normalizedLink) {
+      options.push({
+        label: "Links",
+        value: "__heading-links",
+        heading: true,
+      });
+      options.push({
+        label: normalizedLink,
+        value: normalizedLink,
+        icon: (
+          <LinkIcon className="w-4 h-4 text-neutral-600 dark:text-neutral-300" />
+        ),
+        iconKey: "links",
+      });
+    }
+
     return options;
-  }, [reposByOrg, environmentsQuery.data]);
+  }, [reposByOrg, environmentsQuery.data, lastImportedRepo]);
 
   const branchOptions = branchNames;
 
@@ -802,6 +857,7 @@ function DashboardComponent() {
       } else {
         await launchLocalWorkspace(repo);
       }
+      persistLastImportedRepo(repo.repoFullName);
       setSelectedProject([repo.repoFullName]);
       localStorage.setItem(
         "selectedProject",
@@ -814,6 +870,7 @@ function DashboardComponent() {
       launchCloudWorkspaceFromRepo,
       launchLocalWorkspace,
       setSelectedBranch,
+      persistLastImportedRepo,
     ],
   );
 

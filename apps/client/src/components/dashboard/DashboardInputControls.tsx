@@ -20,7 +20,7 @@ import { Link, useRouter } from "@tanstack/react-router";
 import clsx from "clsx";
 import { useMutation } from "convex/react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { ArrowDownToLine, GitBranch, Image, Loader2, Mic, Server, X } from "lucide-react";
+import { GitBranch, Image, Link as LinkIcon, Loader2, Mic, Server, X } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -517,7 +517,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
           maxTagCount={1}
           showSearch
           footer={
-            <div className="p-1">
+            <div className="p-1 space-y-1.5">
               <Link
                 to="/$teamSlugOrId/environments/new"
                 params={{ teamSlugOrId }}
@@ -534,30 +534,6 @@ export const DashboardInputControls = memo(function DashboardInputControls({
                 <Server className="w-4 h-4 text-neutral-600 dark:text-neutral-300" />
                 <span className="select-none">Create environment</span>
               </Link>
-              <button
-                type="button"
-                onClick={() => {
-                  setImportError(null);
-                  setImportValue("");
-                  setIsImportDialogOpen(true);
-                }}
-                disabled={!onImportRepo}
-                className={clsx(
-                  "w-full px-2 h-8 flex items-center gap-2 text-[13.5px] rounded-md",
-                  "text-neutral-800 dark:text-neutral-200",
-                  "hover:bg-neutral-50 dark:hover:bg-neutral-900",
-                  "disabled:opacity-50 disabled:cursor-not-allowed",
-                )}
-              >
-                {isImportingRepo ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-neutral-600 dark:text-neutral-300" />
-                ) : (
-                  <ArrowDownToLine className="w-4 h-4 text-neutral-600 dark:text-neutral-300" />
-                )}
-                <span className="select-none">
-                  {isImportingRepo ? "Importing…" : "Import repo"}
-                </span>
-              </button>
               {env.NEXT_PUBLIC_GITHUB_APP_SLUG ? (
                 <button
                   type="button"
@@ -587,9 +563,33 @@ export const DashboardInputControls = memo(function DashboardInputControls({
                   className="w-full px-2 h-8 flex items-center gap-2 text-[13.5px] text-neutral-800 dark:text-neutral-200 rounded-md hover:bg-neutral-50 dark:hover:bg-neutral-900"
                 >
                   <GitHubIcon className="w-4 h-4 text-neutral-600 dark:text-neutral-300" />
-                  <span className="select-none">Add GitHub account</span>
+                  <span className="select-none">Add GitHub repos</span>
                 </button>
               ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  setImportError(null);
+                  setImportValue("");
+                  setIsImportDialogOpen(true);
+                }}
+                disabled={!onImportRepo}
+                className={clsx(
+                  "w-full px-2 h-8 flex items-center gap-2 text-[13.5px] rounded-md",
+                  "text-neutral-800 dark:text-neutral-200",
+                  "hover:bg-neutral-50 dark:hover:bg-neutral-900",
+                  "disabled:opacity-50 disabled:cursor-not-allowed",
+                )}
+              >
+                {isImportingRepo ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-neutral-600 dark:text-neutral-300" />
+                ) : (
+                  <LinkIcon className="w-4 h-4 text-neutral-600 dark:text-neutral-300" />
+                )}
+                <span className="select-none">
+                  {isImportingRepo ? "Importing…" : "Import GitHub link"}
+                </span>
+              </button>
             </div>
           }
         />
@@ -686,10 +686,10 @@ export const DashboardInputControls = memo(function DashboardInputControls({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <Dialog.Title className="text-lg font-semibold text-neutral-900 dark:text-neutral-50">
-                  Import a repository
+                  Import a GitHub link
                 </Dialog.Title>
                 <Dialog.Description className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-                  Paste a GitHub URL and we&apos;ll start a workspace for you.
+                  Paste any GitHub repository URL and we&apos;ll start a workspace for you.
                 </Dialog.Description>
               </div>
               <Dialog.Close asChild disabled={isImportingRepo}>
@@ -749,7 +749,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
                       Importing…
                     </>
                   ) : (
-                    "Import repo"
+                    "Import GitHub link"
                   )}
                 </button>
               </div>
