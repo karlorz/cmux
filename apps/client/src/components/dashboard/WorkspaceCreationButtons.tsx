@@ -11,9 +11,10 @@ import type { Id } from "@cmux/convex/dataModel";
 import type {
   CreateLocalWorkspaceResponse,
   CreateCloudWorkspaceResponse,
+  CreateCloudRepoWorkspaceResponse,
 } from "@cmux/shared";
 import { useMutation } from "convex/react";
-import { Server as ServerIcon, FolderOpen, Loader2 } from "lucide-react";
+import { Server as ServerIcon, FolderOpen, Loader2, Cloud } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 
@@ -33,6 +34,7 @@ export function WorkspaceCreationButtons({
   const { theme } = useTheme();
   const [isCreatingLocal, setIsCreatingLocal] = useState(false);
   const [isCreatingCloud, setIsCreatingCloud] = useState(false);
+  const [isCreatingCloudRepo, setIsCreatingCloudRepo] = useState(false);
 
   const reserveLocalWorkspace = useMutation(api.localWorkspaces.reserve);
   const createTask = useMutation(api.tasks.create);
@@ -192,8 +194,84 @@ export function WorkspaceCreationButtons({
     theme,
   ]);
 
+  const handleCreateCloudRepoWorkspace = useCallback(async () => {
+    if (!socket) {
+      toast.error("Socket not connected");
+      return;
+    }
+
+    if (selectedProject.length === 0) {
+      toast.error("Please select a repository first");
+      return;
+    }
+
+    if (isEnvSelected) {
+      toast.error("Cloud repo workspaces require a repository, not an environment");
+      return;
+    }
+
+    const projectFullName = selectedProject[0];
+    const repoUrl = `https://github.com/${projectFullName}.git`;
+
+    setIsCreatingCloudRepo(true);
+
+    try {
+      // Create task in Convex with repo info
+      const taskId = await createTask({
+        teamSlugOrId,
+        text: `Cloud Workspace: ${projectFullName}`,
+        projectFullName,
+        baseBranch: "main",
+        isCloudWorkspace: true,
+      });
+
+      // Hint the sidebar to auto-expand this task once it appears
+      addTaskToExpand(taskId);
+
+      await new Promise<void>((resolve) => {
+        socket.emit(
+          "create-cloud-repo-workspace",
+          {
+            teamSlugOrId,
+            projectFullName,
+            repoUrl,
+            branch: "main",
+            taskId,
+            theme,
+          },
+          async (response: CreateCloudRepoWorkspaceResponse) => {
+            if (response.success) {
+              toast.success(`Cloud repo workspace for "${projectFullName}" created successfully`);
+            } else {
+              toast.error(
+                response.error || "Failed to create cloud repo workspace"
+              );
+            }
+            resolve();
+          }
+        );
+      });
+
+      console.log("Cloud repo workspace created:", taskId);
+    } catch (error) {
+      console.error("Error creating cloud repo workspace:", error);
+      toast.error("Failed to create cloud repo workspace");
+    } finally {
+      setIsCreatingCloudRepo(false);
+    }
+  }, [
+    socket,
+    selectedProject,
+    isEnvSelected,
+    teamSlugOrId,
+    createTask,
+    addTaskToExpand,
+    theme,
+  ]);
+
   const canCreateLocal = selectedProject.length > 0 && !isEnvSelected;
   const canCreateCloud = selectedProject.length > 0 && isEnvSelected;
+  const canCreateCloudRepo = selectedProject.length > 0 && !isEnvSelected;
 
   const SHOW_WORKSPACE_BUTTONS = false;
 
@@ -248,6 +326,30 @@ export function WorkspaceCreationButtons({
             : !isEnvSelected
               ? "Switch to environment mode (not repository)"
               : "Create workspace from selected environment"}
+        </TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={handleCreateCloudRepoWorkspace}
+            disabled={!canCreateCloudRepo || isCreatingCloudRepo}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium transition-colors rounded-lg bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isCreatingCloudRepo ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Cloud className="w-3.5 h-3.5" />
+            )}
+            <span>Create Cloud Repo Workspace</span>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {!selectedProject.length
+            ? "Select a repository first"
+            : isEnvSelected
+              ? "Switch to repository mode (not environment)"
+              : "Create cloud workspace from selected repository"}
         </TooltipContent>
       </Tooltip>
     </div>

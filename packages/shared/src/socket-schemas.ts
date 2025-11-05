@@ -90,6 +90,25 @@ export const CreateCloudWorkspaceResponseSchema = z.object({
   error: z.string().optional(),
 });
 
+export const CreateCloudRepoWorkspaceSchema = z.object({
+  teamSlugOrId: z.string(),
+  projectFullName: z.string(),
+  repoUrl: z.string().optional(),
+  branch: z.string().optional(),
+  taskId: typedZid("tasks").optional(),
+  taskRunId: typedZid("taskRuns").optional(),
+  theme: z.enum(["dark", "light", "system"]).optional(),
+});
+
+export const CreateCloudRepoWorkspaceResponseSchema = z.object({
+  success: z.boolean(),
+  taskId: typedZid("tasks").optional(),
+  taskRunId: typedZid("taskRuns").optional(),
+  workspaceUrl: z.string().optional(),
+  pending: z.boolean().optional(),
+  error: z.string().optional(),
+});
+
 // Server to Client Events
 export const TerminalCreatedSchema = z.object({
   terminalId: z.string(),
@@ -430,6 +449,10 @@ export type CreateCloudWorkspace = z.infer<typeof CreateCloudWorkspaceSchema>;
 export type CreateCloudWorkspaceResponse = z.infer<
   typeof CreateCloudWorkspaceResponseSchema
 >;
+export type CreateCloudRepoWorkspace = z.infer<typeof CreateCloudRepoWorkspaceSchema>;
+export type CreateCloudRepoWorkspaceResponse = z.infer<
+  typeof CreateCloudRepoWorkspaceResponseSchema
+>;
 export type TerminalCreated = z.infer<typeof TerminalCreatedSchema>;
 export type TerminalOutput = z.infer<typeof TerminalOutputSchema>;
 export type TerminalExit = z.infer<typeof TerminalExitSchema>;
@@ -493,6 +516,10 @@ export interface ClientToServerEvents {
   "create-cloud-workspace": (
     data: CreateCloudWorkspace,
     callback: (response: CreateCloudWorkspaceResponse) => void
+  ) => void;
+  "create-cloud-repo-workspace": (
+    data: CreateCloudRepoWorkspace,
+    callback: (response: CreateCloudRepoWorkspaceResponse) => void
   ) => void;
   "git-status": (data: GitStatusRequest) => void;
   "git-diff": (
