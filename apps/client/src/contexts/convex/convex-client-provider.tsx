@@ -4,10 +4,37 @@ import { getRandomKitty } from "@/components/kitties";
 import CmuxLogoMarkAnimated from "@/components/logo/cmux-logo-mark-animated";
 import { useQuery } from "@tanstack/react-query";
 import { ConvexProvider } from "convex/react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState, useRef } from "react";
 import { convexAuthReadyPromise } from "./convex-auth-ready";
 import { convexQueryClient } from "./convex-query-client";
 import clsx from "clsx";
+import { authJsonQueryOptions } from "./authJsonQueryOptions";
+import { stackClientApp } from "@/lib/stack";
+
+function AuthTokenRefresher() {
+  const authJsonQuery = useQuery(authJsonQueryOptions());
+  const lastTokenRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const currentToken = authJsonQuery.data?.accessToken ?? null;
+
+    // Only update if the token has actually changed
+    if (currentToken !== lastTokenRef.current) {
+      lastTokenRef.current = currentToken;
+
+      // Force the Convex client to re-fetch auth
+      // This is done by calling setAuth again with the same auth function
+      // which causes Convex to call the function again and get the fresh token
+      convexQueryClient.convexClient.setAuth(
+        stackClientApp.getConvexClientAuth({ tokenStore: "cookie" }),
+      );
+
+      console.log("[AuthTokenRefresher] Token refreshed for Convex client");
+    }
+  }, [authJsonQuery.data?.accessToken]);
+
+  return null;
+}
 
 function BootLoader({ children }: { children: ReactNode }) {
   const [minimumDelayPassed, setMinimumDelayPassed] = useState(false);
@@ -47,6 +74,7 @@ export function ConvexClientProvider({ children }: { children: ReactNode }) {
     <>
       <BootLoader>
         <ConvexProvider client={convexQueryClient.convexClient}>
+          <AuthTokenRefresher />
           {children}
         </ConvexProvider>
       </BootLoader>

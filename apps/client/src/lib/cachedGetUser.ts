@@ -22,7 +22,10 @@ export async function cachedGetUser(
         return null;
       }
       const jwt = decodeJwt(tokens.accessToken);
-      if (jwt.exp && jwt.exp < Date.now() / 1000) {
+      // Add a 60 second buffer to prevent edge cases where token expires during a request
+      const bufferSeconds = 60;
+      if (jwt.exp && jwt.exp < Date.now() / 1000 + bufferSeconds) {
+        console.log("[cachedGetUser] Token expired or expiring soon, clearing cache");
         window.cachedUser = null;
         window.userPromise = null;
         return null;
