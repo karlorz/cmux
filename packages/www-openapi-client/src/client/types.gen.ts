@@ -2217,6 +2217,271 @@ export type PostApiCodeReviewStartResponses = {
 
 export type PostApiCodeReviewStartResponse = PostApiCodeReviewStartResponses[keyof PostApiCodeReviewStartResponses];
 
+export type GetApiApiTeamsByTeamSlugOrIdCloudRepositoriesData = {
+    body?: never;
+    path: {
+        teamSlugOrId: string;
+    };
+    query?: never;
+    url: '/api/api/teams/{teamSlugOrId}/cloud-repositories';
+};
+
+export type GetApiApiTeamsByTeamSlugOrIdCloudRepositoriesErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiApiTeamsByTeamSlugOrIdCloudRepositoriesResponses = {
+    /**
+     * List of cloud repositories
+     */
+    200: Array<{
+        _id: string;
+        name: string;
+        teamId: string;
+        userId: string;
+        provider: 'github' | 'gitlab' | 'bitbucket';
+        repoUrl: string;
+        defaultBranch: string;
+        dataVaultKey: string;
+        description?: string;
+        isPrivate?: boolean;
+        lastSynced?: number;
+        createdAt: number;
+        updatedAt: number;
+    }>;
+};
+
+export type GetApiApiTeamsByTeamSlugOrIdCloudRepositoriesResponse = GetApiApiTeamsByTeamSlugOrIdCloudRepositoriesResponses[keyof GetApiApiTeamsByTeamSlugOrIdCloudRepositoriesResponses];
+
+export type PostApiApiTeamsByTeamSlugOrIdCloudRepositoriesData = {
+    body: {
+        name: string;
+        provider: 'github' | 'gitlab' | 'bitbucket';
+        repoUrl: string;
+        defaultBranch?: string;
+        dataVaultKey: string;
+        description?: string;
+        isPrivate?: boolean;
+    };
+    path: {
+        teamSlugOrId: string;
+    };
+    query?: never;
+    url: '/api/api/teams/{teamSlugOrId}/cloud-repositories';
+};
+
+export type PostApiApiTeamsByTeamSlugOrIdCloudRepositoriesErrors = {
+    /**
+     * Bad request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiApiTeamsByTeamSlugOrIdCloudRepositoriesResponses = {
+    /**
+     * Cloud repository created
+     */
+    201: {
+        repositoryId: string;
+    };
+};
+
+export type PostApiApiTeamsByTeamSlugOrIdCloudRepositoriesResponse = PostApiApiTeamsByTeamSlugOrIdCloudRepositoriesResponses[keyof PostApiApiTeamsByTeamSlugOrIdCloudRepositoriesResponses];
+
+export type DeleteApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdData = {
+    body?: never;
+    path: {
+        teamSlugOrId: string;
+        id: string;
+    };
+    query?: never;
+    url: '/api/api/teams/{teamSlugOrId}/cloud-repositories/{id}';
+};
+
+export type DeleteApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Not found
+     */
+    404: unknown;
+};
+
+export type DeleteApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdResponses = {
+    /**
+     * Cloud repository deleted
+     */
+    200: {
+        success: boolean;
+    };
+};
+
+export type DeleteApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdResponse = DeleteApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdResponses[keyof DeleteApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdResponses];
+
+export type GetApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdData = {
+    body?: never;
+    path: {
+        teamSlugOrId: string;
+        id: string;
+    };
+    query?: never;
+    url: '/api/api/teams/{teamSlugOrId}/cloud-repositories/{id}';
+};
+
+export type GetApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Not found
+     */
+    404: unknown;
+};
+
+export type GetApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdResponses = {
+    /**
+     * Cloud repository details
+     */
+    200: {
+        _id: string;
+        name: string;
+        teamId: string;
+        userId: string;
+        provider: 'github' | 'gitlab' | 'bitbucket';
+        repoUrl: string;
+        defaultBranch: string;
+        dataVaultKey: string;
+        description?: string;
+        isPrivate?: boolean;
+        lastSynced?: number;
+        createdAt: number;
+        updatedAt: number;
+    } | null;
+};
+
+export type GetApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdResponse = GetApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdResponses[keyof GetApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdResponses];
+
+export type PatchApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdData = {
+    body: {
+        name?: string;
+        description?: string;
+        defaultBranch?: string;
+        isPrivate?: boolean;
+    };
+    path: {
+        teamSlugOrId: string;
+        id: string;
+    };
+    query?: never;
+    url: '/api/api/teams/{teamSlugOrId}/cloud-repositories/{id}';
+};
+
+export type PatchApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdErrors = {
+    /**
+     * Bad request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Not found
+     */
+    404: unknown;
+};
+
+export type PatchApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdResponses = {
+    /**
+     * Cloud repository updated
+     */
+    200: {
+        success: boolean;
+    };
+};
+
+export type PatchApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdResponse = PatchApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdResponses[keyof PatchApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdResponses];
+
+export type PostApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdSyncData = {
+    body?: never;
+    path: {
+        teamSlugOrId: string;
+        id: string;
+    };
+    query?: never;
+    url: '/api/api/teams/{teamSlugOrId}/cloud-repositories/{id}/sync';
+};
+
+export type PostApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdSyncErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Not found
+     */
+    404: unknown;
+};
+
+export type PostApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdSyncResponses = {
+    /**
+     * Cloud repository synced
+     */
+    200: {
+        success: boolean;
+    };
+};
+
+export type PostApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdSyncResponse = PostApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdSyncResponses[keyof PostApiApiTeamsByTeamSlugOrIdCloudRepositoriesByIdSyncResponses];
+
+export type PostApiSandboxesStartRepositoryData = {
+    body: {
+        teamSlugOrId: string;
+        ttlSeconds?: number;
+        metadata?: unknown;
+        taskRunId?: string;
+        taskRunJwt?: string;
+        cloudRepositoryId: string;
+        branch?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/api/sandboxes/start-repository';
+};
+
+export type PostApiSandboxesStartRepositoryErrors = {
+    /**
+     * Bad request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiSandboxesStartRepositoryResponses = {
+    /**
+     * Sandbox started
+     */
+    200: {
+        instanceId: string;
+        vscodeUrl: string;
+    };
+};
+
+export type PostApiSandboxesStartRepositoryResponse = PostApiSandboxesStartRepositoryResponses[keyof PostApiSandboxesStartRepositoryResponses];
+
 export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };

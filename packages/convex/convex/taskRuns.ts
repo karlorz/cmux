@@ -217,6 +217,7 @@ export const create = authMutation({
     agentName: v.optional(v.string()),
     newBranch: v.optional(v.string()),
     environmentId: v.optional(v.id("environments")),
+    cloudRepositoryId: v.optional(v.id("cloudRepositories")),
   },
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
@@ -232,6 +233,12 @@ export const create = authMutation({
         throw new Error("Environment not found");
       }
     }
+    if (args.cloudRepositoryId) {
+      const repository = await ctx.db.get(args.cloudRepositoryId);
+      if (!repository || repository.teamId !== teamId) {
+        throw new Error("Cloud repository not found");
+      }
+    }
     const taskRunId = await ctx.db.insert("taskRuns", {
       taskId: args.taskId,
       parentRunId: args.parentRunId,
@@ -244,8 +251,10 @@ export const create = authMutation({
       userId,
       teamId,
       environmentId: args.environmentId,
+      cloudRepositoryId: args.cloudRepositoryId,
       isLocalWorkspace: task.isLocalWorkspace,
       isCloudWorkspace: task.isCloudWorkspace,
+      isCloudRepositoryWorkspace: task.isCloudRepositoryWorkspace,
     });
     const generatedBranchName = deriveGeneratedBranchName(args.newBranch);
     if (

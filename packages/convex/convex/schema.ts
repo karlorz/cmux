@@ -97,6 +97,7 @@ const convexSchema = defineSchema({
     isArchived: v.optional(v.boolean()),
     isLocalWorkspace: v.optional(v.boolean()),
     isCloudWorkspace: v.optional(v.boolean()),
+    isCloudRepositoryWorkspace: v.optional(v.boolean()),
     description: v.optional(v.string()),
     pullRequestTitle: v.optional(v.string()),
     pullRequestDescription: v.optional(v.string()),
@@ -109,6 +110,7 @@ const convexSchema = defineSchema({
     userId: v.string(), // Link to user who created the task
     teamId: v.string(),
     environmentId: v.optional(v.id("environments")),
+    cloudRepositoryId: v.optional(v.id("cloudRepositories")),
     crownEvaluationStatus: v.optional(
       v.union(
         v.literal("pending"),
@@ -176,6 +178,7 @@ const convexSchema = defineSchema({
     ),
     isLocalWorkspace: v.optional(v.boolean()),
     isCloudWorkspace: v.optional(v.boolean()),
+    isCloudRepositoryWorkspace: v.optional(v.boolean()),
     // Optional log retained for backward compatibility; no longer written to.
     log: v.optional(v.string()), // CLI output log (deprecated)
     worktreePath: v.optional(v.string()), // Path to the git worktree for this run
@@ -194,6 +197,7 @@ const convexSchema = defineSchema({
     userId: v.string(), // Link to user who created the run
     teamId: v.string(),
     environmentId: v.optional(v.id("environments")),
+    cloudRepositoryId: v.optional(v.id("cloudRepositories")),
     isCrowned: v.optional(v.boolean()), // Whether this run won the crown evaluation
     crownReason: v.optional(v.string()), // LLM's reasoning for why this run was crowned
     pullRequestUrl: v.optional(v.string()), // URL of the PR
@@ -634,6 +638,26 @@ const convexSchema = defineSchema({
     .index("by_team", ["teamId", "createdAt"])
     .index("by_team_user", ["teamId", "userId"])
     .index("by_dataVaultKey", ["dataVaultKey"]),
+
+  // Cloud repositories for teams
+  cloudRepositories: defineTable({
+    name: v.string(), // Human-friendly repository name
+    teamId: v.string(), // Team that owns this repository
+    userId: v.string(), // User who created the repository
+    provider: v.union(v.literal("github"), v.literal("gitlab"), v.literal("bitbucket")), // Git provider
+    repoUrl: v.string(), // Repository URL
+    defaultBranch: v.string(), // Default branch (e.g., main, master)
+    dataVaultKey: v.string(), // Key for StackAuth DataBook (stores encrypted credentials)
+    description: v.optional(v.string()), // Optional description
+    isPrivate: v.optional(v.boolean()), // Whether the repo is private
+    lastSynced: v.optional(v.number()), // Last sync timestamp
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_team", ["teamId", "createdAt"])
+    .index("by_team_user", ["teamId", "userId"])
+    .index("by_dataVaultKey", ["dataVaultKey"])
+    .index("by_repo_url", ["repoUrl"]),
 
   environmentSnapshotVersions: defineTable({
     environmentId: v.id("environments"),

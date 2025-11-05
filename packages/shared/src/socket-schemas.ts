@@ -90,6 +90,27 @@ export const CreateCloudWorkspaceResponseSchema = z.object({
   error: z.string().optional(),
 });
 
+export const CreateCloudRepositoryWorkspaceSchema = z.object({
+  teamSlugOrId: z.string(),
+  repositoryId: typedZid("cloudRepositories"),
+  branch: z.string().optional(),
+  taskId: typedZid("tasks").optional(),
+  taskRunId: typedZid("taskRuns").optional(),
+  theme: z.enum(["dark", "light", "system"]).optional(),
+});
+
+export const CreateCloudRepositoryWorkspaceResponseSchema = z.object({
+  success: z.boolean(),
+  taskId: typedZid("tasks").optional(),
+  taskRunId: typedZid("taskRuns").optional(),
+  workspaceUrl: z.string().optional(),
+  pending: z.boolean().optional(),
+  error: z.string().optional(),
+});
+
+export type CreateCloudRepositoryWorkspaceResponse = z.infer<typeof CreateCloudRepositoryWorkspaceResponseSchema>;
+export type CreateCloudRepositoryWorkspace = z.infer<typeof CreateCloudRepositoryWorkspaceSchema>;
+
 // Server to Client Events
 export const TerminalCreatedSchema = z.object({
   terminalId: z.string(),
@@ -493,6 +514,10 @@ export interface ClientToServerEvents {
   "create-cloud-workspace": (
     data: CreateCloudWorkspace,
     callback: (response: CreateCloudWorkspaceResponse) => void
+  ) => void;
+  "create-cloud-repository-workspace": (
+    data: CreateCloudRepositoryWorkspace,
+    callback: (response: CreateCloudRepositoryWorkspaceResponse) => void
   ) => void;
   "git-status": (data: GitStatusRequest) => void;
   "git-diff": (

@@ -22,6 +22,7 @@ import {
   usersRouter,
   iframePreflightRouter,
 } from "@/lib/routes/index";
+import { registerCloudRepositoriesRoutes } from "@/lib/routes/cloud-repositories.route";
 import { authAnonymousRouter } from "@/lib/routes/auth.anonymous.route";
 import { stackServerApp } from "@/lib/utils/stack";
 import { swaggerUI } from "@hono/swagger-ui";
@@ -120,6 +121,7 @@ app.route("/", sandboxesRouter);
 app.route("/", teamsRouter);
 app.route("/", branchRouter);
 app.route("/", codeReviewRouter);
+registerCloudRepositoriesRoutes(app);
 
 // OpenAPI documentation
 app.doc("/doc", {

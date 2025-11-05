@@ -16,6 +16,8 @@ import {
   type CreateLocalWorkspaceResponse,
   CreateCloudWorkspaceSchema,
   type CreateCloudWorkspaceResponse,
+  CreateCloudRepositoryWorkspaceSchema,
+  type CreateCloudRepositoryWorkspaceResponse,
   type AvailableEditors,
   type FileInfo,
   isLoopbackHostname,
@@ -1109,6 +1111,209 @@ export function setupSocketHandlers(
             error instanceof Error
               ? error.message
               : "Failed to create cloud workspace";
+
+          if (!responded) {
+            callback({
+              success: false,
+              error: message,
+            });
+          } else if (taskRunId) {
+            try {
+              await convex.mutation(api.taskRuns.fail, {
+                teamSlugOrId,
+                id: taskRunId,
+                errorMessage: message,
+              });
+            } catch (failError) {
+              serverLogger.error(
+                "Failed to mark task run as failed:",
+                failError
+              );
+            }
+            try {
+              await convex.mutation(api.taskRuns.updateVSCodeStatus, {
+                teamSlugOrId,
+                id: taskRunId,
+                status: "stopped",
+                stoppedAt: Date.now(),
+              });
+            } catch (statusError) {
+              serverLogger.warn(
+                "Failed to update VS Code status after failure:",
+                statusError
+              );
+            }
+          }
+        }
+      }
+    );
+
+    socket.on(
+      "create-cloud-repository-workspace",
+      async (
+        rawData,
+        callback: (response: CreateCloudRepositoryWorkspaceResponse) => void
+      ) => {
+        const parsed = CreateCloudRepositoryWorkspaceSchema.safeParse(rawData);
+        if (!parsed.success) {
+          serverLogger.error(
+            "Invalid create-cloud-repository-workspace payload:",
+            parsed.error
+          );
+          callback({
+            success: false,
+            error: "Invalid cloud repository workspace request",
+          });
+          return;
+        }
+
+        const {
+          teamSlugOrId: requestedTeamSlugOrId,
+          repositoryId,
+          branch,
+          taskId: providedTaskId,
+        } = parsed.data;
+        const teamSlugOrId = requestedTeamSlugOrId || safeTeam;
+
+        const convex = getConvex();
+        let taskId: Id<"tasks"> | undefined = providedTaskId;
+        let taskRunId: Id<"taskRuns"> | null = null;
+        let responded = false;
+
+        try {
+          if (!taskId) {
+            throw new Error("taskId is required for cloud repository workspace creation");
+          }
+
+          // Fetch repository details from Convex
+          const repository = await convex.query(api.cloudRepositories.get, {
+            teamSlugOrId,
+            id: repositoryId,
+          });
+
+          if (!repository) {
+            throw new Error("Cloud repository not found");
+          }
+
+          // Create a taskRun for the workspace
+          const now = Date.now();
+          const taskRunResult = await convex.mutation(api.taskRuns.create, {
+            teamSlugOrId,
+            taskId,
+            prompt: `Cloud Repository Workspace: ${repository.name}`,
+            agentName: "cloud-repository-workspace",
+            cloudRepositoryId: repositoryId,
+          });
+          taskRunId = taskRunResult.taskRunId;
+          const taskRunJwt = taskRunResult.jwt;
+
+          serverLogger.info(
+            `[create-cloud-repository-workspace] Created taskRun ${taskRunId} for task ${taskId}`
+          );
+
+          // Update initial VSCode status
+          await convex.mutation(api.taskRuns.updateVSCodeInstance, {
+            teamSlugOrId,
+            id: taskRunId,
+            vscode: {
+              provider: "morph",
+              status: "starting",
+              startedAt: now,
+            },
+          });
+
+          await convex.mutation(api.taskRuns.updateStatusPublic, {
+            teamSlugOrId,
+            id: taskRunId,
+            status: "pending",
+          });
+
+          callback({
+            success: true,
+            pending: true,
+            taskId,
+            taskRunId,
+          });
+          responded = true;
+
+          // Spawn Morph instance for cloud repository via www API
+          const { postApiSandboxesStartRepository } = await getWwwOpenApiModule();
+
+          serverLogger.info(
+            `[create-cloud-repository-workspace] Starting Morph sandbox for repository ${repositoryId}`
+          );
+
+          const startRes = await postApiSandboxesStartRepository({
+            client: getWwwClient(),
+            body: {
+              teamSlugOrId,
+              ttlSeconds: 60 * 60,
+              metadata: {
+                instance: `cmux-repo-workspace-${taskRunId}`,
+                agentName: "cloud-repository-workspace",
+              },
+              taskRunId,
+              taskRunJwt,
+              cloudRepositoryId: repositoryId,
+              branch: branch || repository.defaultBranch,
+            },
+          });
+
+          const data = startRes.data;
+          if (!data) {
+            throw new Error("Failed to start repository sandbox");
+          }
+
+          const sandboxId = data.instanceId;
+          const vscodeBaseUrl = data.vscodeUrl;
+          const workspaceUrl = `${vscodeBaseUrl}?folder=/root/workspace`;
+
+          serverLogger.info(
+            `[create-cloud-repository-workspace] Repository sandbox started: ${sandboxId}, VSCode URL: ${workspaceUrl}`
+          );
+
+          // Update taskRun with actual VSCode info immediately
+          await convex.mutation(api.taskRuns.updateVSCodeInstance, {
+            teamSlugOrId,
+            id: taskRunId,
+            vscode: {
+              provider: "morph",
+              status: "running",
+              url: vscodeBaseUrl,
+              workspaceUrl,
+              startedAt: now,
+            },
+          });
+
+          await convex.mutation(api.taskRuns.updateStatusPublic, {
+            teamSlugOrId,
+            id: taskRunId,
+            status: "running",
+          });
+
+          await convex.mutation(api.taskRuns.updateVSCodeStatus, {
+            teamSlugOrId,
+            id: taskRunId,
+            status: "running",
+          });
+
+          // Emit vscode-spawned event to the client
+          rt.emit("vscode-spawned", {
+            instanceId: sandboxId,
+            url: vscodeBaseUrl,
+            workspaceUrl,
+            provider: "morph",
+          });
+
+          serverLogger.info(
+            `Cloud repository workspace created successfully: ${taskId} for repository ${repositoryId}`
+          );
+        } catch (error) {
+          serverLogger.error("Error creating cloud repository workspace:", error);
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Failed to create cloud repository workspace";
 
           if (!responded) {
             callback({

@@ -118,7 +118,9 @@ export const create = authMutation({
       ),
     ),
     environmentId: v.optional(v.id("environments")),
+    cloudRepositoryId: v.optional(v.id("cloudRepositories")),
     isCloudWorkspace: v.optional(v.boolean()),
+    isCloudRepositoryWorkspace: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
@@ -127,6 +129,12 @@ export const create = authMutation({
       const environment = await ctx.db.get(args.environmentId);
       if (!environment || environment.teamId !== teamId) {
         throw new Error("Environment not found");
+      }
+    }
+    if (args.cloudRepositoryId) {
+      const repository = await ctx.db.get(args.cloudRepositoryId);
+      if (!repository || repository.teamId !== teamId) {
+        throw new Error("Cloud repository not found");
       }
     }
     const now = Date.now();
@@ -143,7 +151,9 @@ export const create = authMutation({
       userId,
       teamId,
       environmentId: args.environmentId,
+      cloudRepositoryId: args.cloudRepositoryId,
       isCloudWorkspace: args.isCloudWorkspace,
+      isCloudRepositoryWorkspace: args.isCloudRepositoryWorkspace,
     });
 
     return taskId;
