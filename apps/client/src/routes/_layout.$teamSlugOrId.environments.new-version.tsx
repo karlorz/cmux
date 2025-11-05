@@ -3,6 +3,7 @@ import { FloatingPane } from "@/components/floating-pane";
 import { TitleBar } from "@/components/TitleBar";
 import { parseEnvBlock } from "@/lib/parseEnvBlock";
 import { toMorphVncUrl } from "@/lib/toProxyWorkspaceUrl";
+import { clearEnvironmentDraft } from "@/state/environment-draft-store";
 import type { Id } from "@cmux/convex/dataModel";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import {
@@ -177,6 +178,7 @@ function NewSnapshotVersionPage() {
             }
             initialEnvVars={initialEnvVars}
             onHeaderControlsChange={setHeaderActions}
+            onEnvironmentSaved={() => clearEnvironmentDraft(teamSlugOrId)}
           />
         )}
       </div>
