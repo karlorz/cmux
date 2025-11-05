@@ -65,6 +65,7 @@ export interface SearchableSelectProps {
   options: SelectOption[];
   value: string[];
   onChange: (value: string[]) => void;
+  onSearchPaste?: (value: string) => boolean | Promise<boolean>;
   placeholder?: string;
   singleSelect?: boolean;
   className?: string;
@@ -232,6 +233,7 @@ const SearchableSelect = forwardRef<
     options,
     value,
     onChange,
+    onSearchPaste,
     placeholder = "Select",
     singleSelect = false,
     className,
@@ -591,6 +593,26 @@ const SearchableSelect = forwardRef<
                     // Clear the search box when pressing Enter
                     setSearch("");
                   }
+                }}
+                onPaste={(event) => {
+                  if (!onSearchPaste) {
+                    return;
+                  }
+                  const pasted = event.clipboardData?.getData("text/plain") ?? "";
+                  const trimmed = pasted.trim();
+                  if (!trimmed) {
+                    return;
+                  }
+                  Promise.resolve(onSearchPaste(trimmed))
+                    .then((handled) => {
+                      if (handled) {
+                        setSearch("");
+                        setOpen(false);
+                      }
+                    })
+                    .catch((error) => {
+                      console.error("Failed to handle search paste:", error);
+                    });
                 }}
                 className={clsx("text-[13.5px] py-2", classNames.commandInput)}
               />

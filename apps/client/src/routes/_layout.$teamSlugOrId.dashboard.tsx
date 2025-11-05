@@ -20,15 +20,26 @@ import {
 import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
 import { useSocket } from "@/contexts/socket/use-socket";
 import { createFakeConvexId } from "@/lib/fakeConvexId";
+import { parseGithubRepoInput, type ParsedGithubRepo } from "@/lib/parseGithubRepo";
+import { preloadTaskRunIframes } from "@/lib/preloadTaskRunIframes";
 import { attachTaskLifecycleListeners } from "@/lib/socket/taskLifecycleListeners";
+import { rewriteLocalWorkspaceUrlIfNeeded, toProxyWorkspaceUrl } from "@/lib/toProxyWorkspaceUrl";
 import { branchesQueryOptions } from "@/queries/branches";
+import { useLocalVSCodeServeWebQuery } from "@/queries/local-vscode-serve-web";
 import { api } from "@cmux/convex/api";
 import type { Doc, Id } from "@cmux/convex/dataModel";
-import type { ProviderStatusResponse, TaskAcknowledged, TaskError, TaskStarted } from "@cmux/shared";
+import type {
+  CreateCloudWorkspaceResponse,
+  CreateLocalWorkspaceResponse,
+  ProviderStatusResponse,
+  TaskAcknowledged,
+  TaskError,
+  TaskStarted,
+} from "@cmux/shared";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation } from "convex/react";
 import { Server as ServerIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -81,6 +92,10 @@ function DashboardComponent() {
   const { socket } = useSocket();
   const { theme } = useTheme();
   const { addTaskToExpand } = useExpandTasks();
+  const navigate = useNavigate({ from: Route.fullPath });
+  const localServeWeb = useLocalVSCodeServeWebQuery();
+  const reserveLocalWorkspace = useMutation(api.localWorkspaces.reserve);
+  const failTaskRun = useMutation(api.taskRuns.fail);
 
   const [selectedProject, setSelectedProject] = useState<string[]>(() => {
     const stored = localStorage.getItem("selectedProject");
@@ -117,6 +132,7 @@ function DashboardComponent() {
   const [, setDockerReady] = useState<boolean | null>(null);
   const [providerStatus, setProviderStatus] =
     useState<ProviderStatusResponse | null>(null);
+  const [isLaunchingRepo, setIsLaunchingRepo] = useState(false);
 
   // Ref to access editor API
   const editorApiRef = useRef<EditorApi | null>(null);
@@ -638,6 +654,231 @@ function DashboardComponent() {
 
   const branchOptions = branchNames;
 
+  const launchLocalWorkspace = useCallback(
+    async (repo: ParsedGithubRepo) => {
+      if (!socket) {
+        throw new Error("Socket not connected");
+      }
+      const reservation = await reserveLocalWorkspace({
+        teamSlugOrId,
+        projectFullName: repo.repoFullName,
+        repoUrl: repo.repoUrl,
+      });
+      if (!reservation) {
+        throw new Error("Unable to reserve workspace name");
+      }
+      addTaskToExpand(reservation.taskId);
+
+      await new Promise<void>((resolve, reject) => {
+        socket.emit(
+          "create-local-workspace",
+          {
+            teamSlugOrId,
+            projectFullName: repo.repoFullName,
+            repoUrl: repo.repoUrl,
+            taskId: reservation.taskId,
+            taskRunId: reservation.taskRunId,
+            workspaceName: reservation.workspaceName,
+            descriptor: reservation.descriptor,
+          },
+          async (response: CreateLocalWorkspaceResponse) => {
+            try {
+              if (!response?.success) {
+                const message =
+                  response?.error ??
+                  `Unable to create workspace for ${repo.repoFullName}`;
+                if (reservation.taskRunId) {
+                  await failTaskRun({
+                    teamSlugOrId,
+                    id: reservation.taskRunId,
+                    errorMessage: message,
+                  }).catch(() => undefined);
+                }
+                reject(new Error(message));
+                return;
+              }
+
+              const effectiveTaskId = response.taskId ?? reservation.taskId;
+              const effectiveTaskRunId =
+                response.taskRunId ?? reservation.taskRunId;
+              const normalizedWorkspaceUrl = response.workspaceUrl
+                ? rewriteLocalWorkspaceUrlIfNeeded(
+                    response.workspaceUrl,
+                    localServeWeb.data?.baseUrl,
+                  )
+                : null;
+
+              if (response.workspaceUrl && effectiveTaskRunId) {
+                const proxiedUrl = toProxyWorkspaceUrl(
+                  response.workspaceUrl,
+                  localServeWeb.data?.baseUrl,
+                );
+                if (proxiedUrl) {
+                  void preloadTaskRunIframes([
+                    { url: proxiedUrl, taskRunId: effectiveTaskRunId },
+                  ]).catch(() => undefined);
+                }
+              }
+
+              if (effectiveTaskId && effectiveTaskRunId) {
+                void navigate({
+                  to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+                  params: {
+                    teamSlugOrId,
+                    taskId: effectiveTaskId,
+                    runId: effectiveTaskRunId,
+                  },
+                });
+              } else if (normalizedWorkspaceUrl) {
+                window.location.assign(normalizedWorkspaceUrl);
+              }
+              resolve();
+            } catch (error) {
+              reject(
+                error instanceof Error
+                  ? error
+                  : new Error(String(error ?? "Unknown error")),
+              );
+            }
+          },
+        );
+      });
+    },
+    [
+      socket,
+      reserveLocalWorkspace,
+      teamSlugOrId,
+      addTaskToExpand,
+      failTaskRun,
+      localServeWeb.data?.baseUrl,
+      navigate,
+    ],
+  );
+
+  const launchCloudWorkspaceFromRepo = useCallback(
+    async (repo: ParsedGithubRepo) => {
+      if (!socket) {
+        throw new Error("Socket not connected");
+      }
+      const descriptor = `Cloud Workspace: ${repo.repoFullName}`;
+      const taskId = await createTask({
+        teamSlugOrId,
+        text: descriptor,
+        description: descriptor,
+        projectFullName: repo.repoFullName,
+        isCloudWorkspace: true,
+      });
+      addTaskToExpand(taskId);
+      await new Promise<void>((resolve, reject) => {
+        socket.emit(
+          "create-cloud-workspace",
+          {
+            teamSlugOrId,
+            taskId,
+            repoUrl: repo.repoUrl,
+            projectFullName: repo.repoFullName,
+            theme,
+          },
+          (response: CreateCloudWorkspaceResponse) => {
+            if (!response?.success) {
+              const message =
+                response?.error ??
+                `Unable to create cloud workspace for ${repo.repoFullName}`;
+              reject(new Error(message));
+              return;
+            }
+            resolve();
+          },
+        );
+      });
+    },
+    [socket, createTask, teamSlugOrId, addTaskToExpand, theme],
+  );
+
+  const startWorkspaceFromRepo = useCallback(
+    async (repo: ParsedGithubRepo) => {
+      if (isCloudMode) {
+        await launchCloudWorkspaceFromRepo(repo);
+      } else {
+        await launchLocalWorkspace(repo);
+      }
+      setSelectedProject([repo.repoFullName]);
+      localStorage.setItem(
+        "selectedProject",
+        JSON.stringify([repo.repoFullName]),
+      );
+      setSelectedBranch([]);
+    },
+    [
+      isCloudMode,
+      launchCloudWorkspaceFromRepo,
+      launchLocalWorkspace,
+      setSelectedBranch,
+    ],
+  );
+
+  const handleRepoSearchPaste = useCallback(
+    async (input: string) => {
+      const parsed = parseGithubRepoInput(input);
+      if (!parsed) {
+        return false;
+      }
+      if (isLaunchingRepo) {
+        toast.info("Workspace creation already in progress");
+        return true;
+      }
+      setIsLaunchingRepo(true);
+      try {
+        await startWorkspaceFromRepo(parsed);
+        toast.success(
+          isCloudMode
+            ? `Starting Morph workspace for ${parsed.repoFullName}`
+            : `Starting Docker workspace for ${parsed.repoFullName}`,
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to import repository";
+        toast.error(message);
+      } finally {
+        setIsLaunchingRepo(false);
+      }
+      return true;
+    },
+    [isCloudMode, isLaunchingRepo, startWorkspaceFromRepo],
+  );
+
+  const handleImportRepo = useCallback(
+    async (input: string) => {
+      const parsed = parseGithubRepoInput(input);
+      if (!parsed) {
+        throw new Error("Enter a valid GitHub repository URL.");
+      }
+      if (isLaunchingRepo) {
+        throw new Error("Another repository import is already running.");
+      }
+      setIsLaunchingRepo(true);
+      try {
+        await startWorkspaceFromRepo(parsed);
+        toast.success(
+          isCloudMode
+            ? `Starting Morph workspace for ${parsed.repoFullName}`
+            : `Starting Docker workspace for ${parsed.repoFullName}`,
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to import repository";
+        throw new Error(message);
+      } finally {
+        setIsLaunchingRepo(false);
+      }
+    },
+    [isCloudMode, isLaunchingRepo, startWorkspaceFromRepo],
+  );
+
   // Cloud mode toggle handler
   const handleCloudModeToggle = useCallback(() => {
     if (isEnvSelected) return; // environment forces cloud mode
@@ -830,6 +1071,7 @@ function DashboardComponent() {
               projectOptions={projectOptions}
               selectedProject={selectedProject}
               onProjectChange={handleProjectChange}
+              onProjectSearchPaste={handleRepoSearchPaste}
               branchOptions={branchOptions}
               selectedBranch={effectiveSelectedBranch}
               onBranchChange={handleBranchChange}
@@ -845,6 +1087,8 @@ function DashboardComponent() {
               providerStatus={providerStatus}
               canSubmit={canSubmit}
               onStartTask={handleStartTask}
+              onImportRepo={handleImportRepo}
+              isImportingRepo={isLaunchingRepo}
             />
 
             {/* Task List */}
@@ -866,6 +1110,7 @@ type DashboardMainCardProps = {
   projectOptions: SelectOption[];
   selectedProject: string[];
   onProjectChange: (newProjects: string[]) => void;
+  onProjectSearchPaste: (value: string) => Promise<boolean> | boolean;
   branchOptions: string[];
   selectedBranch: string[];
   onBranchChange: (newBranches: string[]) => void;
@@ -881,6 +1126,8 @@ type DashboardMainCardProps = {
   providerStatus: ProviderStatusResponse | null;
   canSubmit: boolean;
   onStartTask: () => void;
+  onImportRepo: (value: string) => Promise<void>;
+  isImportingRepo: boolean;
 };
 
 function DashboardMainCard({
@@ -893,6 +1140,7 @@ function DashboardMainCard({
   projectOptions,
   selectedProject,
   onProjectChange,
+  onProjectSearchPaste,
   branchOptions,
   selectedBranch,
   onBranchChange,
@@ -908,6 +1156,8 @@ function DashboardMainCard({
   providerStatus,
   canSubmit,
   onStartTask,
+  onImportRepo,
+  isImportingRepo,
 }: DashboardMainCardProps) {
   return (
     <div className="relative bg-white dark:bg-neutral-700/50 border border-neutral-500/15 dark:border-neutral-500/15 rounded-2xl transition-all">
@@ -927,6 +1177,7 @@ function DashboardMainCard({
           projectOptions={projectOptions}
           selectedProject={selectedProject}
           onProjectChange={onProjectChange}
+          onProjectSearchPaste={onProjectSearchPaste}
           branchOptions={branchOptions}
           selectedBranch={selectedBranch}
           onBranchChange={onBranchChange}
@@ -940,6 +1191,8 @@ function DashboardMainCard({
           cloudToggleDisabled={cloudToggleDisabled}
           branchDisabled={branchDisabled}
           providerStatus={providerStatus}
+          onImportRepo={onImportRepo}
+          isImportingRepo={isImportingRepo}
         />
         <DashboardStartTaskButton
           canSubmit={canSubmit}

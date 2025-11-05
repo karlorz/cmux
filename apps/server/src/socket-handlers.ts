@@ -971,9 +971,27 @@ export function setupSocketHandlers(
         const {
           teamSlugOrId: requestedTeamSlugOrId,
           environmentId,
+          repoUrl: explicitRepoUrl,
+          projectFullName,
+          branch: requestedBranch,
+          snapshotId,
           taskId: providedTaskId,
         } = parsed.data;
         const teamSlugOrId = requestedTeamSlugOrId || safeTeam;
+        const repoUrl =
+          explicitRepoUrl ??
+          (projectFullName
+            ? `https://github.com/${projectFullName}.git`
+            : undefined);
+        const branch = requestedBranch?.trim() || undefined;
+
+        if (!environmentId && !repoUrl) {
+          callback({
+            success: false,
+            error: "Environment or repo information is required",
+          });
+          return;
+        }
 
         const convex = getConvex();
         let taskId: Id<"tasks"> | undefined = providedTaskId;
@@ -1028,9 +1046,12 @@ export function setupSocketHandlers(
 
           // Spawn Morph instance via www API
           const { postApiSandboxesStart } = await getWwwOpenApiModule();
+          const targetLabel = environmentId
+            ? `environment ${environmentId}`
+            : `repo ${projectFullName ?? repoUrl}`;
 
           serverLogger.info(
-            `[create-cloud-workspace] Starting Morph sandbox for environment ${environmentId}`
+            `[create-cloud-workspace] Starting Morph sandbox for ${targetLabel}`
           );
 
           const startRes = await postApiSandboxesStart({
@@ -1041,10 +1062,18 @@ export function setupSocketHandlers(
               metadata: {
                 instance: `cmux-workspace-${taskRunId}`,
                 agentName: "cloud-workspace",
+                ...(projectFullName ? { repoFullName: projectFullName } : {}),
               },
               taskRunId,
               taskRunJwt,
-              environmentId,
+              ...(environmentId ? { environmentId } : {}),
+              ...(snapshotId ? { snapshotId } : {}),
+              ...(repoUrl
+                ? {
+                    repoUrl,
+                    ...(branch ? { branch } : {}),
+                  }
+                : {}),
             },
           });
 
@@ -1101,7 +1130,7 @@ export function setupSocketHandlers(
           });
 
           serverLogger.info(
-            `Cloud workspace created successfully: ${taskId} for environment ${environmentId}`
+            `Cloud workspace created successfully: ${taskId} for ${targetLabel}`
           );
         } catch (error) {
           serverLogger.error("Error creating cloud workspace:", error);

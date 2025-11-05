@@ -19,14 +19,24 @@ import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { Link, useRouter } from "@tanstack/react-router";
 import clsx from "clsx";
 import { useMutation } from "convex/react";
-import { GitBranch, Image, Mic, Server, X } from "lucide-react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
+import { ArrowDownToLine, GitBranch, Image, Loader2, Mic, Server, X } from "lucide-react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { AgentCommandItem, MAX_AGENT_COMMAND_COUNT } from "./AgentCommandItem";
 
 interface DashboardInputControlsProps {
   projectOptions: SelectOption[];
   selectedProject: string[];
   onProjectChange: (projects: string[]) => void;
+  onProjectSearchPaste?: (value: string) => Promise<boolean> | boolean;
   branchOptions: string[];
   selectedBranch: string[];
   onBranchChange: (branches: string[]) => void;
@@ -40,6 +50,8 @@ interface DashboardInputControlsProps {
   cloudToggleDisabled?: boolean;
   branchDisabled?: boolean;
   providerStatus?: ProviderStatusResponse | null;
+  onImportRepo?: (value: string) => Promise<void>;
+  isImportingRepo?: boolean;
 }
 
 type AgentOption = SelectOptionObject & { displayLabel: string };
@@ -53,6 +65,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
   projectOptions,
   selectedProject,
   onProjectChange,
+  onProjectSearchPaste,
   branchOptions,
   selectedBranch,
   onBranchChange,
@@ -66,9 +79,15 @@ export const DashboardInputControls = memo(function DashboardInputControls({
   cloudToggleDisabled = false,
   branchDisabled = false,
   providerStatus = null,
+  onImportRepo,
+  isImportingRepo = false,
 }: DashboardInputControlsProps) {
   const router = useRouter();
   const agentSelectRef = useRef<SearchableSelectHandle | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [importValue, setImportValue] = useState("");
+  const [importError, setImportError] = useState<string | null>(null);
   const mintState = useMutation(api.github_app.mintInstallState);
   const providerStatusMap = useMemo(() => {
     const map = new Map<string, ProviderStatus>();
@@ -77,12 +96,69 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     });
     return map;
   }, [providerStatus?.providers]);
+  useEffect(() => {
+    if (!isImportDialogOpen) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      importInputRef.current?.focus();
+    }, 20);
+    return () => window.clearTimeout(timer);
+  }, [isImportDialogOpen]);
   const handleOpenSettings = useCallback(() => {
     void router.navigate({
       to: "/$teamSlugOrId/settings",
       params: { teamSlugOrId },
     });
   }, [router, teamSlugOrId]);
+  const handleImportDialogOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (!nextOpen && isImportingRepo) {
+        return;
+      }
+      setIsImportDialogOpen(nextOpen);
+      if (!nextOpen) {
+        setImportError(null);
+        setImportValue("");
+      }
+    },
+    [isImportingRepo],
+  );
+  const handleImportValueChange = useCallback(
+    (value: string) => {
+      setImportValue(value);
+      if (importError) {
+        setImportError(null);
+      }
+    },
+    [importError],
+  );
+  const handleImportRepoSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (!onImportRepo) {
+        return;
+      }
+      const trimmed = importValue.trim();
+      if (!trimmed) {
+        setImportError("Enter a GitHub repository URL.");
+        return;
+      }
+      try {
+        setImportError(null);
+        await onImportRepo(trimmed);
+        setIsImportDialogOpen(false);
+        setImportValue("");
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to import repository";
+        setImportError(message);
+      }
+    },
+    [importValue, onImportRepo],
+  );
   const agentOptions = useMemo<AgentOption[]>(() => {
     const vendorKey = (name: string): string => {
       const lower = name.toLowerCase();
@@ -426,12 +502,14 @@ export const DashboardInputControls = memo(function DashboardInputControls({
   }
 
   return (
-    <div className="flex items-end gap-1 grow">
+    <>
+      <div className="flex items-end gap-1 grow">
       <div className="flex items-end gap-1">
         <SearchableSelect
           options={projectOptions}
           value={selectedProject}
           onChange={onProjectChange}
+          onSearchPaste={onProjectSearchPaste}
           placeholder="Select project"
           singleSelect={true}
           className="rounded-2xl"
@@ -456,6 +534,30 @@ export const DashboardInputControls = memo(function DashboardInputControls({
                 <Server className="w-4 h-4 text-neutral-600 dark:text-neutral-300" />
                 <span className="select-none">Create environment</span>
               </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  setImportError(null);
+                  setImportValue("");
+                  setIsImportDialogOpen(true);
+                }}
+                disabled={!onImportRepo}
+                className={clsx(
+                  "w-full px-2 h-8 flex items-center gap-2 text-[13.5px] rounded-md",
+                  "text-neutral-800 dark:text-neutral-200",
+                  "hover:bg-neutral-50 dark:hover:bg-neutral-900",
+                  "disabled:opacity-50 disabled:cursor-not-allowed",
+                )}
+              >
+                {isImportingRepo ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-neutral-600 dark:text-neutral-300" />
+                ) : (
+                  <ArrowDownToLine className="w-4 h-4 text-neutral-600 dark:text-neutral-300" />
+                )}
+                <span className="select-none">
+                  {isImportingRepo ? "Importing…" : "Import repo"}
+                </span>
+              </button>
               {env.NEXT_PUBLIC_GITHUB_APP_SLUG ? (
                 <button
                   type="button"
@@ -573,6 +675,88 @@ export const DashboardInputControls = memo(function DashboardInputControls({
           <Mic className="w-4 h-4" />
         </button>
       </div>
-    </div>
+      </div>
+      <Dialog.Root
+        open={isImportDialogOpen}
+        onOpenChange={handleImportDialogOpenChange}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-neutral-950/50 backdrop-blur-sm z-[var(--z-modal)]" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-neutral-200 bg-white p-6 shadow-xl focus:outline-none dark:border-neutral-800 dark:bg-neutral-900 z-[var(--z-modal)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <Dialog.Title className="text-lg font-semibold text-neutral-900 dark:text-neutral-50">
+                  Import a repository
+                </Dialog.Title>
+                <Dialog.Description className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+                  Paste a GitHub URL and we&apos;ll start a workspace for you.
+                </Dialog.Description>
+              </div>
+              <Dialog.Close asChild disabled={isImportingRepo}>
+                <button
+                  type="button"
+                  className="rounded-full p-2 text-neutral-500 transition hover:bg-neutral-100 hover:text-neutral-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+                  aria-label="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </Dialog.Close>
+            </div>
+            <form className="mt-6 space-y-4" onSubmit={handleImportRepoSubmit}>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-neutral-800 dark:text-neutral-200">
+                  GitHub repository URL
+                </label>
+                <input
+                  ref={importInputRef}
+                  type="text"
+                  value={importValue}
+                  onChange={(event) => handleImportValueChange(event.target.value)}
+                  placeholder="https://github.com/owner/repo"
+                  className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 shadow-xs transition focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+                  disabled={isImportingRepo}
+                />
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  Supports HTTPS or SSH URLs. We&apos;ll hydrate it into a Morph VM or Docker container based on your mode.
+                </p>
+              </div>
+              {importError ? (
+                <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive dark:border-red-900/60 dark:bg-red-900/20">
+                  {importError}
+                </div>
+              ) : null}
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <Dialog.Close asChild disabled={isImportingRepo}>
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 text-sm rounded-md border border-neutral-200 text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                  >
+                    Cancel
+                  </button>
+                </Dialog.Close>
+                <button
+                  type="submit"
+                  disabled={isImportingRepo}
+                  className={clsx(
+                    "inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium text-white",
+                    "bg-neutral-900 hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-100",
+                    "disabled:opacity-50 disabled:cursor-not-allowed",
+                  )}
+                >
+                  {isImportingRepo ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Importing…
+                    </>
+                  ) : (
+                    "Import repo"
+                  )}
+                </button>
+              </div>
+            </form>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+    </>
   );
 });
