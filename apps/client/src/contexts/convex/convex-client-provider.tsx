@@ -8,6 +8,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { convexAuthReadyPromise } from "./convex-auth-ready";
 import { convexQueryClient } from "./convex-query-client";
 import clsx from "clsx";
+import { useConvexAuthSync } from "@/hooks/useConvexAuthSync";
 
 function BootLoader({ children }: { children: ReactNode }) {
   const [minimumDelayPassed, setMinimumDelayPassed] = useState(false);
@@ -42,12 +43,19 @@ function BootLoader({ children }: { children: ReactNode }) {
   );
 }
 
+function ConvexAuthSyncWrapper({ children }: { children: ReactNode }) {
+  // This hook ensures that when auth tokens are refreshed (every 9 minutes),
+  // the Convex client is updated to prevent "Token expired" errors during idle sessions
+  useConvexAuthSync();
+  return <>{children}</>;
+}
+
 export function ConvexClientProvider({ children }: { children: ReactNode }) {
   return (
     <>
       <BootLoader>
         <ConvexProvider client={convexQueryClient.convexClient}>
-          {children}
+          <ConvexAuthSyncWrapper>{children}</ConvexAuthSyncWrapper>
         </ConvexProvider>
       </BootLoader>
     </>
