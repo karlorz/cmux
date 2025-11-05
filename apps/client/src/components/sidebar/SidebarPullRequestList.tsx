@@ -74,17 +74,16 @@ type PullRequestListItemProps = {
   setExpanded: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
 };
 
-function PullRequestListItem({ pr, teamSlugOrId, expanded, setExpanded }: PullRequestListItemProps) {
+function PullRequestListItem({
+  pr,
+  teamSlugOrId,
+  expanded,
+  setExpanded,
+}: PullRequestListItemProps) {
   const [owner = "", repo = ""] = pr.repoFullName?.split("/", 2) ?? ["", ""];
   const key = `${pr.repoFullName}#${pr.number}`;
   const isExpanded = expanded[key] ?? false;
-  const branchLabel = pr.headRef;
-
-  const secondaryParts = [
-    branchLabel,
-    `${pr.repoFullName}#${pr.number}`,
-    pr.authorLogin,
-  ]
+  const secondaryParts = [`${pr.repoFullName}#${pr.number}`, pr.authorLogin]
     .filter(Boolean)
     .map(String);
   const secondary = secondaryParts.join(" • ");
