@@ -73,29 +73,6 @@ type TaskWithGeneratedBranch = Doc<"tasks"> & {
   generatedBranchName?: string | null;
 };
 
-function sanitizeBranchName(input?: string | null): string | null {
-  if (!input) return null;
-  const trimmed = input.trim();
-  if (!trimmed) return null;
-  let normalized = trimmed;
-  if (normalized.startsWith("cmux/")) {
-    normalized = normalized.slice("cmux/".length).trim();
-    if (!normalized) return null;
-  }
-  const idx = normalized.lastIndexOf("-");
-  if (idx <= 0) return normalized;
-  const candidate = normalized.slice(0, idx);
-  return candidate || normalized;
-}
-
-function getTaskBranch(task: TaskWithGeneratedBranch): string | null {
-  const fromGenerated = sanitizeBranchName(task.generatedBranchName);
-  if (fromGenerated) {
-    return fromGenerated;
-  }
-  return sanitizeBranchName(task.baseBranch);
-}
-
 interface TaskTreeProps {
   task: TaskWithGeneratedBranch;
   level?: number;
@@ -417,22 +394,10 @@ function TaskTreeInner({
     focusRenameInput();
   }, [canRenameTask, focusRenameInput, task.text]);
 
-  const inferredBranch = getTaskBranch(task);
   const trimmedTaskText = (task.text ?? "").trim();
   const trimmedPullRequestTitle = task.pullRequestTitle?.trim();
   const taskTitleValue =
     trimmedTaskText || trimmedPullRequestTitle || task.pullRequestTitle || task.text;
-  const taskSecondaryParts: string[] = [];
-  if (inferredBranch) {
-    taskSecondaryParts.push(inferredBranch);
-  }
-  if (task.projectFullName) {
-    taskSecondaryParts.push(task.projectFullName);
-  }
-  if (trimmedPullRequestTitle && trimmedPullRequestTitle !== taskTitleValue) {
-    taskSecondaryParts.push(trimmedPullRequestTitle);
-  }
-  const taskSecondary = taskSecondaryParts.join(" • ");
   const taskListPaddingLeft = 10 + level * 4;
   const taskTitleClassName = clsx(
     "inline-flex flex-1 min-w-0 items-center h-[18px] text-[13px] leading-[18px] text-neutral-900 dark:text-neutral-100 transition-colors duration-200",
@@ -599,17 +564,16 @@ function TaskTreeInner({
               >
               <SidebarListItem
                 paddingLeft={taskListPaddingLeft}
-                toggle={{
-                  expanded: isExpanded,
-                  onToggle: handleToggle,
-                  visible: canExpand,
-                }}
-                title={taskTitleContent}
-                titleClassName={taskTitleClassName}
-                secondary={taskSecondary || undefined}
-                meta={taskLeadingIcon || undefined}
-                className={clsx(isRenaming && "pr-2")}
-              />
+              toggle={{
+                expanded: isExpanded,
+                onToggle: handleToggle,
+                visible: canExpand,
+              }}
+              title={taskTitleContent}
+              titleClassName={taskTitleClassName}
+              meta={taskLeadingIcon || undefined}
+              className={clsx(isRenaming && "pr-2")}
+            />
             </Link>
           </ContextMenu.Trigger>
           {isRenaming && renameError ? (
