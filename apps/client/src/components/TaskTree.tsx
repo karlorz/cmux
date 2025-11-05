@@ -471,6 +471,8 @@ function TaskTreeInner({
   const isLocalWorkspace = task.isLocalWorkspace;
   const isCloudWorkspace = task.isCloudWorkspace;
 
+  const shouldShowTaskSecondary = !isLocalWorkspace && !isCloudWorkspace;
+
   const taskLeadingIcon = (() => {
     if (isCrownEvaluating) {
       return (
@@ -606,7 +608,11 @@ function TaskTreeInner({
                 }}
                 title={taskTitleContent}
                 titleClassName={taskTitleClassName}
-                secondary={taskSecondary || undefined}
+                secondary={
+                  shouldShowTaskSecondary && taskSecondary
+                    ? taskSecondary
+                    : undefined
+                }
                 meta={taskLeadingIcon || undefined}
                 className={clsx(isRenaming && "pr-2")}
               />
