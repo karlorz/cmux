@@ -621,22 +621,12 @@ async fn handle_websocket(
                 .as_ref()
                 .and_then(|value| HeaderValue::from_str(value).ok())
         });
-    let negotiated_extensions = backend_response
-        .headers()
-        .get("sec-websocket-extensions")
-        .cloned();
-
     match hyper_tungstenite::upgrade(req, None) {
         Ok((mut response, websocket)) => {
             if let Some(value) = negotiated_protocol {
                 response
                     .headers_mut()
                     .insert("Sec-WebSocket-Protocol", value);
-            }
-            if let Some(value) = negotiated_extensions {
-                response
-                    .headers_mut()
-                    .insert("Sec-WebSocket-Extensions", value);
             }
             tokio::spawn(async move {
                 if let Err(err) = pump_websocket(websocket, backend_ws).await {
@@ -665,6 +655,7 @@ fn collect_forward_headers(
         http::HeaderMap::new()
     };
     headers.remove(header::HOST);
+    headers.remove("sec-websocket-extensions");
     if let Some(port) = &behavior.port_header {
         if let Ok(value) = HeaderValue::from_str(port) {
             headers.insert("X-Cmux-Port-Internal", value);
