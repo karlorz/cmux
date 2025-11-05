@@ -7,6 +7,7 @@ import { DashboardInputFooter } from "@/components/dashboard/DashboardInputFoote
 import { DashboardStartTaskButton } from "@/components/dashboard/DashboardStartTaskButton";
 import { TaskList } from "@/components/dashboard/TaskList";
 import { WorkspaceCreationButtons } from "@/components/dashboard/WorkspaceCreationButtons";
+import { TeamOnboardingFlow } from "@/components/onboarding/TeamOnboardingFlow";
 import { FloatingPane } from "@/components/floating-pane";
 import { GitHubIcon } from "@/components/icons/github";
 import { useTheme } from "@/components/theme/use-theme";
@@ -228,6 +229,10 @@ function DashboardComponent() {
     refetchOnMount: "always",
     refetchOnWindowFocus: false,
   });
+
+  const providerConnectionsQuery = useQuery(
+    convexQuery(api.github.listProviderConnections, { teamSlugOrId })
+  );
   const reposByOrg = useMemo(
     () => reposByOrgQuery.data || {},
     [reposByOrgQuery.data]
@@ -564,6 +569,27 @@ function DashboardComponent() {
     convexQuery(api.environments.list, { teamSlugOrId })
   );
 
+  const providerConnections = providerConnectionsQuery.data;
+  const repoCollections = reposByOrgQuery.data;
+  const environmentCollection = environmentsQuery.data;
+
+  const activeConnectionCount = providerConnections
+    ? providerConnections.filter((conn) => conn.isActive !== false).length
+    : 0;
+  const totalRepos = repoCollections
+    ? Object.values(repoCollections).reduce((sum, repos) => sum + repos.length, 0)
+    : 0;
+  const totalEnvironments = environmentCollection?.length ?? 0;
+
+  const needsConnectionGate =
+    providerConnections !== undefined && activeConnectionCount === 0;
+  const needsRepoGate = repoCollections !== undefined && totalRepos === 0;
+  const needsEnvironmentGate =
+    environmentCollection !== undefined && totalEnvironments === 0;
+
+  const showOnboarding =
+    needsConnectionGate || needsRepoGate || needsEnvironmentGate;
+
   const projectOptions = useMemo(() => {
     // Repo options as objects with GitHub icon
     const repoDocs = Object.values(reposByOrg || {}).flatMap((repos) => repos);
@@ -806,6 +832,20 @@ function DashboardComponent() {
     isEnvSelected,
     effectiveSelectedBranch,
   ]);
+
+  if (showOnboarding) {
+    return (
+      <FloatingPane header={<TitleBar title="cmux" />}>
+        <TeamOnboardingFlow
+          teamSlugOrId={teamSlugOrId}
+          socket={socket}
+          connections={providerConnections}
+          reposByOrg={repoCollections}
+          environments={environmentCollection}
+        />
+      </FloatingPane>
+    );
+  }
 
   return (
     <FloatingPane header={<TitleBar title="cmux" />}>

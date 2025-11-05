@@ -71,13 +71,13 @@ function formatTimeAgo(input?: string | number): string {
   return `${yr}y ago`;
 }
 
-interface ConnectionContext {
+export interface ConnectionContext {
   selectedLogin: string | null;
   installationId: number | null;
   hasConnections: boolean;
 }
 
-interface RepositoryConnectionsSectionProps {
+export interface RepositoryConnectionsSectionProps {
   teamSlugOrId: string;
   selectedLogin: string | null;
   onSelectedLoginChange: (login: string | null) => void;
@@ -439,7 +439,7 @@ export function RepositoryPicker({
   );
 }
 
-function RepositoryConnectionsSection({
+export function RepositoryConnectionsSection({
   teamSlugOrId,
   selectedLogin,
   onSelectedLoginChange,
