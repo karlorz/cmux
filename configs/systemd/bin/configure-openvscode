@@ -16,29 +16,56 @@ case "${VSCODE_THEME:-}" in
     ;;
 esac
 
+read -r -d '' DEFAULT_SETTINGS <<'JSON'
+{
+  "workbench.startupEditor": "none",
+  "terminal.integrated.shellIntegration.enabled": false,
+  "terminal.integrated.macOptionClickForcesSelection": true,
+  "terminal.integrated.shell.linux": "/usr/bin/zsh",
+  "terminal.integrated.shellArgs.linux": ["-l"],
+  "terminal.integrated.defaultProfile.linux": "zsh",
+  "terminal.integrated.profiles.linux": {
+    "zsh": {
+      "path": "/usr/bin/zsh",
+      "args": ["-l"]
+    }
+  },
+  "python.languageServer": "Pylance",
+  "python.defaultInterpreterPath": "/usr/bin/python3",
+  "git.openDiffOnClick": true,
+  "scm.defaultViewMode": "tree",
+  "git.showPushSuccessNotification": true,
+  "git.autorefresh": true,
+  "git.branchCompareWith": "main"
+}
+JSON
+
+USER_SETTINGS_FILE="${CMUX_VSCODE_SETTINGS_FILE:-/root/.cmux/vscode/settings.json}"
+USER_SETTINGS="{}"
+if [ -f "$USER_SETTINGS_FILE" ]; then
+  if jq empty "$USER_SETTINGS_FILE" >/dev/null 2>&1; then
+    USER_SETTINGS=$(cat "$USER_SETTINGS_FILE")
+    echo "[cmux] Applying user VS Code settings from ${USER_SETTINGS_FILE}"
+  else
+    echo "[cmux] Ignoring invalid VS Code settings at ${USER_SETTINGS_FILE}" >&2
+  fi
+fi
+
 SETTINGS=$(jq -n \
+  --argjson defaults "$DEFAULT_SETTINGS" \
+  --argjson user "$USER_SETTINGS" \
   --arg theme "$color" \
-  '{
-    "workbench.startupEditor": "none",
-    "terminal.integrated.shellIntegration.enabled": false,
-    "terminal.integrated.macOptionClickForcesSelection": true,
-    "terminal.integrated.shell.linux": "/usr/bin/zsh",
-    "terminal.integrated.shellArgs.linux": ["-l"],
-    "terminal.integrated.defaultProfile.linux": "zsh",
-    "terminal.integrated.profiles.linux": {
-      "zsh": {
-        "path": "/usr/bin/zsh",
-        "args": ["-l"]
-      }
-    },
-    "python.languageServer": "Pylance",
-    "python.defaultInterpreterPath": "/usr/bin/python3",
-    "git.openDiffOnClick": true,
-    "scm.defaultViewMode": "tree",
-    "git.showPushSuccessNotification": true,
-    "git.autorefresh": true,
-    "git.branchCompareWith": "main"
-  } + (if $theme != "" then {"workbench.colorTheme": $theme} else {} end)')
+  '
+    def apply_theme(obj):
+      if ($user["workbench.colorTheme"] // "") != "" then
+        obj + {"workbench.colorTheme": $user["workbench.colorTheme"]}
+      elif $theme != "" then
+        obj + {"workbench.colorTheme": $theme}
+      else
+        obj
+      end;
+    apply_theme(($user + $defaults))
+  ')
 
 home="${HOME:-/root}"
 user_base="${home}/.openvscode-server"

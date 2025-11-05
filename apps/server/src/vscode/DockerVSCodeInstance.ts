@@ -342,6 +342,8 @@ export class DockerVSCodeInstance extends VSCodeInstance {
           dockerLogger.info(`  No SSH directory found at ${sshDir}`);
         }
 
+        await this.addLocalSettingsMount(binds);
+
         // Mount git config if it exists
         try {
           await fs.promises.access(gitConfigPath);
@@ -398,6 +400,8 @@ export class DockerVSCodeInstance extends VSCodeInstance {
         } catch {
           dockerLogger.info(`  No SSH directory found at ${sshDir}`);
         }
+
+        await this.addLocalSettingsMount(binds);
 
         // Mount GitHub CLI config for authentication
         const ghConfigDir = path.join(homeDir, ".config", "gh");
@@ -982,6 +986,21 @@ export class DockerVSCodeInstance extends VSCodeInstance {
   } | null {
     const mapping = containerMappings.get(this.containerName);
     return mapping?.ports || null;
+  }
+
+  private async addLocalSettingsMount(binds: string[]): Promise<void> {
+    const settingsDir = path.join(os.homedir(), ".cmux", "vscode");
+    try {
+      await fs.promises.access(settingsDir);
+      binds.push(`${settingsDir}:/root/.cmux/vscode:ro`);
+      dockerLogger.info(
+        `  VS Code settings mount: ${settingsDir} -> /root/.cmux/vscode (read-only)`
+      );
+    } catch {
+      dockerLogger.info(
+        `  No VS Code settings override found at ${settingsDir}`
+      );
+    }
   }
 
   private filterGitConfig(gitConfigContent: string): string {

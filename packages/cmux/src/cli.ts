@@ -13,6 +13,7 @@ import { checkPorts } from "./utils/checkPorts";
 import { getGitRepoInfo } from "./utils/gitUtils";
 import { killPortsIfNeeded } from "./utils/killPortsIfNeeded";
 import { checkDockerStatus } from "./utils/checkDocker";
+import { ensureEditorSettingsSynced } from "./utils/firstTimeSetup";
 
 const versionPadding = " ".repeat(Math.max(0, 14 - VERSION.toString().length));
 console.log("\n\x1b[36m╔══════════════════════════════════════╗\x1b[0m");
@@ -168,6 +169,13 @@ program
       await logger.error(`Failed to extract bundled assets: ${e}`);
       console.error("Failed to extract bundled assets:", e);
       process.exit(1);
+    }
+
+    try {
+      await ensureEditorSettingsSynced(convexDir);
+    } catch (error) {
+      await logger.warn(`VS Code settings sync skipped: ${error}`);
+      console.warn("VS Code settings sync skipped:", error);
     }
 
     // Start Convex backend
