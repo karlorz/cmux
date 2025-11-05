@@ -1,6 +1,7 @@
 import { CmuxComments } from "@/components/cmux-comments";
 import { CommandBar } from "@/components/CommandBar";
 import { Sidebar } from "@/components/Sidebar";
+import { TeamOnboardingOverlay } from "@/components/onboarding/TeamOnboardingOverlay";
 import { SIDEBAR_PRS_DEFAULT_LIMIT } from "@/components/sidebar/const";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { ExpandTasksProvider } from "@/contexts/expand-tasks/ExpandTasksProvider";
@@ -127,6 +128,7 @@ function LayoutComponentWrapper() {
     <>
       <LayoutComponent />
       <CmuxComments teamSlugOrId={teamSlugOrId} />
+      <TeamOnboardingOverlay teamSlugOrId={teamSlugOrId} />
     </>
   );
 }
