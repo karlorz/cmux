@@ -52,6 +52,12 @@ export interface SelectOptionObject {
   // Render as a non-selectable heading row
   heading?: boolean;
   warning?: OptionWarning;
+  // Optional metadata for downstream custom renderers
+  meta?: Record<string, unknown>;
+  // Hide this option when the query input is empty
+  hideWhenQueryEmpty?: boolean;
+  // Hide this option when the user has typed a query
+  hideWhenQueryPresent?: boolean;
 }
 
 export type SelectOption = string | SelectOptionObject;
@@ -408,8 +414,13 @@ const SearchableSelect = forwardRef<
 
   const filteredOptions = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return normOptions;
-    return normOptions.filter((o) =>
+    const base = normOptions.filter((o) => {
+      if (!q && o.hideWhenQueryEmpty) return false;
+      if (q && o.hideWhenQueryPresent) return false;
+      return true;
+    });
+    if (!q) return base;
+    return base.filter((o) =>
       `${o.label} ${o.value}`.toLowerCase().includes(q)
     );
   }, [normOptions, search]);
@@ -739,5 +750,5 @@ const SearchableSelect = forwardRef<
   );
 });
 
-export { SearchableSelect };
+export { SearchableSelect, DefaultOptionItem };
 export default SearchableSelect;

@@ -3,6 +3,8 @@ import { AgentLogo } from "@/components/icons/agent-logos";
 import { GitHubIcon } from "@/components/icons/github";
 import { ModeToggleTooltip } from "@/components/ui/mode-toggle-tooltip";
 import SearchableSelect, {
+  DefaultOptionItem,
+  type OptionItemRenderProps,
   type SearchableSelectHandle,
   type SelectOption,
   type SelectOptionObject,
@@ -19,8 +21,16 @@ import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { Link, useRouter } from "@tanstack/react-router";
 import clsx from "clsx";
 import { useMutation } from "convex/react";
-import { GitBranch, Image, Mic, Server, X } from "lucide-react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { GitBranch, Image, Mic, Server, X, ChevronRight } from "lucide-react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { AgentCommandItem, MAX_AGENT_COMMAND_COUNT } from "./AgentCommandItem";
 
 interface DashboardInputControlsProps {
@@ -47,6 +57,138 @@ type AgentOption = SelectOptionObject & { displayLabel: string };
 type AgentSelectionInstance = {
   agent: string;
   id: string;
+};
+
+export const ENVIRONMENT_OVERFLOW_OPTION_VALUE = "__env-overflow-row";
+export const RECENT_ENVIRONMENT_LIMIT = 5;
+
+type EnvironmentOverflowMeta = {
+  type: "environment-overflow";
+  environments: SelectOptionObject[];
+};
+
+const isEnvironmentOverflowOption = (
+  option: SelectOptionObject
+): option is SelectOptionObject & { meta: EnvironmentOverflowMeta } => {
+  return (
+    (option.meta as EnvironmentOverflowMeta | undefined)?.type ===
+    "environment-overflow"
+  );
+};
+
+type EnvironmentOverflowOptionProps = OptionItemRenderProps & {
+  meta: EnvironmentOverflowMeta;
+};
+
+function EnvironmentOverflowOption({
+  opt,
+  itemComponent: ItemComponent,
+  itemClassName,
+  itemVariant,
+  meta,
+  onSelectValue,
+}: EnvironmentOverflowOptionProps) {
+  const panelId = useId();
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  const handlePossibleClose = useCallback(
+    (nextTarget: EventTarget | null) => {
+      if (
+        nextTarget instanceof Node &&
+        containerRef.current?.contains(nextTarget)
+      ) {
+        return;
+      }
+      setIsOpen(false);
+    },
+    []
+  );
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative"
+      onMouseEnter={() => setIsOpen(true)}
+      onMouseLeave={(event) => handlePossibleClose(event.relatedTarget)}
+      onFocus={() => setIsOpen(true)}
+      onBlur={(event) => handlePossibleClose(event.relatedTarget)}
+    >
+      <ItemComponent
+        value={opt.value}
+        onSelect={() => {
+          /* noop - this row only toggles the overflow panel */
+        }}
+        className={itemClassName}
+        variant={itemVariant}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        aria-controls={panelId}
+      >
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          {opt.icon ? (
+            <span className="shrink-0 inline-flex items-center justify-center">
+              {opt.icon}
+            </span>
+          ) : null}
+          <div className="flex flex-col min-w-0">
+            <span className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100 truncate">
+              Browse all environments
+            </span>
+            <span className="text-[11px] text-neutral-500 dark:text-neutral-400">
+              Hover or focus to expand
+            </span>
+          </div>
+        </div>
+        <ChevronRight
+          className="h-4 w-4 text-neutral-500 dark:text-neutral-400"
+          aria-hidden="true"
+        />
+      </ItemComponent>
+      <div
+        id={panelId}
+        role="menu"
+        aria-label="All environments"
+        className={clsx(
+          "absolute top-0 left-full ml-2 z-10 w-64 rounded-xl border border-neutral-200 bg-white text-neutral-900 shadow-lg transition-opacity dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100",
+          isOpen
+            ? "opacity-100 pointer-events-auto"
+            : "opacity-0 pointer-events-none"
+        )}
+      >
+        <div className="px-3 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+          All environments
+        </div>
+        <ul className="max-h-64 overflow-y-auto py-1">
+          {meta.environments.map((env) => (
+            <li key={env.value}>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-neutral-800 hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSelectValue(env.value);
+                  setIsOpen(false);
+                }}
+              >
+                <span className="inline-flex h-4 w-4 items-center justify-center text-neutral-500 dark:text-neutral-400">
+                  <Server className="h-3.5 w-3.5" aria-hidden="true" />
+                </span>
+                <span className="truncate">{env.label}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+const ProjectOptionItem = (props: OptionItemRenderProps) => {
+  if (isEnvironmentOverflowOption(props.opt)) {
+    return <EnvironmentOverflowOption {...props} meta={props.opt.meta} />;
+  }
+  return <DefaultOptionItem {...props} />;
 };
 
 export const DashboardInputControls = memo(function DashboardInputControls({
@@ -438,6 +580,10 @@ export const DashboardInputControls = memo(function DashboardInputControls({
           loading={isLoadingProjects}
           maxTagCount={1}
           showSearch
+          classNames={{
+            commandList: "overflow-x-visible",
+          }}
+          optionItemComponent={ProjectOptionItem}
           footer={
             <div className="p-1">
               <Link

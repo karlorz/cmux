@@ -2,7 +2,11 @@ import {
   DashboardInput,
   type EditorApi,
 } from "@/components/dashboard/DashboardInput";
-import { DashboardInputControls } from "@/components/dashboard/DashboardInputControls";
+import {
+  DashboardInputControls,
+  ENVIRONMENT_OVERFLOW_OPTION_VALUE,
+  RECENT_ENVIRONMENT_LIMIT,
+} from "@/components/dashboard/DashboardInputControls";
 import { DashboardInputFooter } from "@/components/dashboard/DashboardInputFooter";
 import { DashboardStartTaskButton } from "@/components/dashboard/DashboardStartTaskButton";
 import { TaskList } from "@/components/dashboard/TaskList";
@@ -599,7 +603,12 @@ function DashboardComponent() {
     }));
 
     // Environment options as objects with an icon and stable key
-    const envOptions = (environmentsQuery.data || []).map((env) => ({
+    const envDocs = [...(environmentsQuery.data || [])].sort((a, b) => {
+      const aTime = a.updatedAt ?? a.createdAt ?? 0;
+      const bTime = b.updatedAt ?? b.createdAt ?? 0;
+      return bTime - aTime;
+    });
+    const envOptions = envDocs.map((env) => ({
       label: `${env.name}`,
       value: `env:${env._id}`,
       icon: (
@@ -614,6 +623,38 @@ function DashboardComponent() {
       ),
       iconKey: "environment",
     }));
+    const recentEnvOptions = envOptions.slice(0, RECENT_ENVIRONMENT_LIMIT);
+    const hiddenEnvOptions = envOptions
+      .slice(RECENT_ENVIRONMENT_LIMIT)
+      .map((option) => ({
+        ...option,
+        hideWhenQueryEmpty: true,
+      }));
+    const envOverflowTrigger =
+      envOptions.length > RECENT_ENVIRONMENT_LIMIT
+        ? {
+            label: "Browse all environments",
+            value: ENVIRONMENT_OVERFLOW_OPTION_VALUE,
+            icon: (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <ServerIcon className="w-4 h-4 text-neutral-600 dark:text-neutral-300" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Hover to open the full environment list
+                </TooltipContent>
+              </Tooltip>
+            ),
+            iconKey: "environment-overflow",
+            meta: {
+              type: "environment-overflow",
+              environments: envOptions,
+            },
+            hideWhenQueryPresent: true,
+          }
+        : null;
 
     const options: SelectOption[] = [];
     if (envOptions.length > 0) {
@@ -622,7 +663,11 @@ function DashboardComponent() {
         value: "__heading-env",
         heading: true,
       });
-      options.push(...envOptions);
+      options.push(...recentEnvOptions);
+      if (envOverflowTrigger) {
+        options.push(envOverflowTrigger);
+        options.push(...hiddenEnvOptions);
+      }
     }
     if (repoOptions.length > 0) {
       options.push({
