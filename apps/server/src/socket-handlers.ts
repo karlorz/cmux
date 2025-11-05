@@ -48,6 +48,12 @@ import { getConvex } from "./utils/convexClient";
 import { ensureRunWorktreeAndBranch } from "./utils/ensureRunWorktree";
 import { serverLogger } from "./utils/fileLogger";
 import { getGitHubTokenFromKeychain } from "./utils/getGitHubToken";
+import {
+  hasValidToken,
+  startGitHubDeviceFlow,
+  pollGitHubDeviceFlow,
+  clearCachedGitHubToken,
+} from "./utils/githubAuth";
 import { createDraftPr, fetchPrDetail } from "./utils/githubPr";
 import { getOctokit } from "./utils/octokit";
 import { checkAllProvidersStatus } from "./utils/providerStatus";
@@ -2234,6 +2240,98 @@ ${title}`;
         callback({ success: true, ...status });
       } catch (error) {
         serverLogger.error("Error checking provider status:", error);
+        callback({
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    });
+
+    // GitHub Authentication - Check status
+    socket.on("github-auth-status", async (callback) => {
+      try {
+        const hasToken = hasValidToken();
+        const token = await getGitHubTokenFromKeychain();
+        callback({
+          success: true,
+          authenticated: hasToken || !!token,
+          source: hasToken ? "session" : token ? "gh-cli" : "none",
+        });
+      } catch (error) {
+        callback({
+          success: false,
+          authenticated: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    });
+
+    // GitHub Authentication - Start device flow
+    socket.on("github-auth-start", async (callback) => {
+      try {
+        const deviceFlow = await startGitHubDeviceFlow();
+        if (!deviceFlow) {
+          callback({
+            success: false,
+            error: "Failed to start GitHub device flow",
+          });
+          return;
+        }
+
+        callback({
+          success: true,
+          userCode: deviceFlow.userCode,
+          verificationUrl: deviceFlow.verificationUrl,
+          deviceCode: deviceFlow.deviceCode,
+          expiresIn: deviceFlow.expiresIn,
+          interval: deviceFlow.interval,
+        });
+      } catch (error) {
+        serverLogger.error("Error starting GitHub auth:", error);
+        callback({
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    });
+
+    // GitHub Authentication - Poll for completion
+    socket.on("github-auth-poll", async (data, callback) => {
+      try {
+        const { deviceCode, interval, expiresIn } = data;
+        const token = await pollGitHubDeviceFlow(
+          deviceCode,
+          interval,
+          expiresIn
+        );
+
+        if (token) {
+          callback({ success: true, authenticated: true });
+        } else {
+          callback({
+            success: false,
+            authenticated: false,
+            error: "Authentication failed or timed out",
+          });
+        }
+      } catch (error) {
+        serverLogger.error("Error polling GitHub auth:", error);
+        callback({
+          success: false,
+          authenticated: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    });
+
+    // GitHub Authentication - Logout
+    socket.on("github-auth-logout", async (callback) => {
+      try {
+        clearCachedGitHubToken();
+        serverLogger.info("Cleared GitHub session token");
+        callback({ success: true });
+      } catch (error) {
+        serverLogger.error("Error logging out:", error);
         callback({
           success: false,
           error: error instanceof Error ? error.message : "Unknown error",
