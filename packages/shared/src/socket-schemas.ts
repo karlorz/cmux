@@ -77,21 +77,26 @@ export const CreateCloudWorkspaceSchema = z
   .object({
     teamSlugOrId: z.string(),
     environmentId: typedZid("environments").optional(),
-    repoUrl: z.string().optional(),
     projectFullName: z.string().optional(),
+    repoUrl: z.string().optional(),
     branch: z.string().optional(),
-    snapshotId: z.string().optional(),
     taskId: typedZid("tasks").optional(),
     taskRunId: typedZid("taskRuns").optional(),
     theme: z.enum(["dark", "light", "system"]).optional(),
   })
   .refine(
-    (value) =>
-      Boolean(value.environmentId || value.repoUrl || value.projectFullName),
+    (value) => Boolean(value.environmentId || value.projectFullName),
     {
-      message: "environmentId or repo information is required",
+      message: "environmentId or projectFullName is required",
       path: ["environmentId"],
-    },
+    }
+  )
+  .refine(
+    (value) => !(value.environmentId && value.projectFullName),
+    {
+      message: "Provide environmentId or projectFullName, not both",
+      path: ["environmentId"],
+    }
   );
 
 export const CreateCloudWorkspaceResponseSchema = z.object({
