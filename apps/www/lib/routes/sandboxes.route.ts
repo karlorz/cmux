@@ -181,7 +181,7 @@ sandboxesRouter.openapi(
             teamSlugOrId: body.teamSlugOrId,
             id: body.taskRunId as Id<"taskRuns">,
           });
-          isCloudWorkspace = taskRun?.isCloudWorkspace ?? false;
+          isCloudWorkspace = taskRun?.isCloudWorkspace ?? taskRun?.isCloudRepoWorkspace ?? false;
         } catch (error) {
           console.warn("[sandboxes.start] Failed to query taskRun for isCloudWorkspace", error);
         }

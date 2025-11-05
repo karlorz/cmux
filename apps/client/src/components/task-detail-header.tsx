@@ -298,7 +298,7 @@ export function TaskDetailHeader({
             {taskTitle || "Loading..."}
           </h1>
           {/* Hide git diff stats for cloud/local workspaces */}
-          {!task?.isCloudWorkspace && !task?.isLocalWorkspace && (
+          {!task?.isCloudWorkspace && !task?.isLocalWorkspace && !task?.isCloudRepoWorkspace && (
             <Suspense
               fallback={
                 <div className="flex items-center gap-2 text-[11px] ml-2 shrink-0">

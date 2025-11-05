@@ -230,6 +230,7 @@ function TaskTreeInner({
   const isCrownEvaluating = task.crownEvaluationStatus === "in_progress";
   const isLocalWorkspace = task.isLocalWorkspace;
   const isCloudWorkspace = task.isCloudWorkspace;
+  const isCloudRepoWorkspace = task.isCloudRepoWorkspace;
 
   const taskLeadingIcon = (() => {
     if (isCrownEvaluating) {
@@ -316,7 +317,7 @@ function TaskTreeInner({
       }
     }
 
-    if (isLocalWorkspace || isCloudWorkspace) {
+    if (isLocalWorkspace || isCloudWorkspace || isCloudRepoWorkspace) {
       return null;
     }
 
@@ -602,6 +603,7 @@ function TaskRunTreeInner({
 
   const isLocalWorkspaceRunEntry = run.isLocalWorkspace;
   const isCloudWorkspaceRunEntry = run.isCloudWorkspace;
+  const isCloudRepoWorkspaceRunEntry = run.isCloudRepoWorkspace;
 
   const statusIcon = {
     pending: <Circle className="w-3 h-3 text-neutral-400" />,
@@ -611,7 +613,7 @@ function TaskRunTreeInner({
   }[run.status];
 
   const shouldHideStatusIcon =
-    (isLocalWorkspaceRunEntry || isCloudWorkspaceRunEntry) && run.status !== "failed";
+    (isLocalWorkspaceRunEntry || isCloudWorkspaceRunEntry || isCloudRepoWorkspaceRunEntry) && run.status !== "failed";
 
   const pullRequestState = useMemo<RunPullRequestState | null>(() => {
     if (run.pullRequests && run.pullRequests.length > 0) {
