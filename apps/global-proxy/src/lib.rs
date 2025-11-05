@@ -532,6 +532,19 @@ async fn handle_websocket(
     target: Target,
     behavior: ProxyBehavior,
 ) -> Response<Body> {
+    let requested_protocol = req
+        .headers()
+        .get("sec-websocket-protocol")
+        .and_then(|value| value.to_str().ok())
+        .map(|value| {
+            value
+                .split(',')
+                .map(|token| token.trim())
+                .find(|token| !token.is_empty())
+                .map(|token| token.to_string())
+        })
+        .flatten();
+
     let (scheme, host, port_opt) = match target {
         Target::BackendPort(port) => (
             state.backend_scheme.clone(),
@@ -560,7 +573,12 @@ async fn handle_websocket(
     let headers_to_forward = collect_forward_headers(req.headers(), &behavior);
 
     match hyper_tungstenite::upgrade(req, None) {
-        Ok((response, websocket)) => {
+        Ok((mut response, websocket)) => {
+            if let Some(protocol) = requested_protocol {
+                if let Ok(value) = HeaderValue::from_str(&protocol) {
+                    response.headers_mut().insert("Sec-WebSocket-Protocol", value);
+                }
+            }
             tokio::spawn(async move {
                 if let Err(err) = pump_websocket(websocket, backend_url, headers_to_forward).await {
                     error!(%err, "websocket proxy error");
@@ -587,6 +605,7 @@ fn collect_forward_headers(
     } else {
         http::HeaderMap::new()
     };
+    headers.remove(header::HOST);
     if let Some(port) = &behavior.port_header {
         if let Ok(value) = HeaderValue::from_str(port) {
             headers.insert("X-Cmux-Port-Internal", value);
@@ -829,6 +848,51 @@ fn decode_body_with_encoding(bytes: &[u8], encoding: Option<&str>) -> io::Result
                 format!("unsupported content-encoding: {}", other),
             )),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_body_with_encoding;
+    use flate2::{write::GzEncoder, Compression};
+    use std::io::Write;
+
+    #[test]
+    fn decodes_identity_and_none_encodings() {
+        let payload = b"hello world";
+        assert_eq!(
+            decode_body_with_encoding(payload, None).unwrap(),
+            payload
+        );
+        assert_eq!(
+            decode_body_with_encoding(payload, Some("identity")).unwrap(),
+            payload
+        );
+        assert_eq!(
+            decode_body_with_encoding(payload, Some("")).unwrap(),
+            payload
+        );
+    }
+
+    #[test]
+    fn decodes_gzip_payloads() {
+        let payload = b"compressed content";
+        let compressed = gzip(payload);
+        let decoded = decode_body_with_encoding(&compressed, Some("gzip")).unwrap();
+        assert_eq!(decoded, payload);
+    }
+
+    #[test]
+    fn errors_on_unsupported_encoding() {
+        let payload = b"noop";
+        let err = decode_body_with_encoding(payload, Some("unknown-enc")).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    fn gzip(payload: &[u8]) -> Vec<u8> {
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(payload).unwrap();
+        encoder.finish().unwrap()
     }
 }
 
