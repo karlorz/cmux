@@ -37,10 +37,6 @@ ensure_session
 tmux select-window -t "$SESSION:main" >/dev/null 2>&1 || true
 exec tmux attach -t "$SESSION"`;
 
-const STANDARD_ATTACH_SCRIPT = `set -euo pipefail
-tmux select-window -t cmux:0 >/dev/null 2>&1 || true
-exec tmux attach -t cmux`;
-
 export function TaskRunTerminalPane({
   workspaceUrl,
   isCloudWorkspace = false,
@@ -156,13 +152,14 @@ export function TaskRunTerminalPane({
         try {
           const request = isCloudWorkspace
             ? {
-                cmd: "bash",
-                args: ["-lc", CLOUD_TMUX_BOOTSTRAP_SCRIPT],
-              }
+              cmd: "bash",
+              args: ["-lc", CLOUD_TMUX_BOOTSTRAP_SCRIPT],
+            }
             : {
-                cmd: "bash",
-                args: ["-lc", STANDARD_ATTACH_SCRIPT],
-              };
+
+              cmd: "tmux",
+              args: ["attach", "-t", "cmux"],
+            };
 
           const created = await createTerminalTab({
             baseUrl,
