@@ -1,6 +1,6 @@
 import { DiffEditor, type DiffOnMount } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
-import { memo, use, useEffect, useMemo, useRef, useState } from "react";
+import { memo, use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useTheme } from "@/components/theme/use-theme";
 import { loaderInitPromise } from "@/lib/monaco-environment";
@@ -12,6 +12,8 @@ import { FileDiffHeader } from "../file-diff-header";
 import { kitties } from "../kitties";
 import type { GitDiffViewerProps } from "../codemirror-git-diff-viewer";
 export type { GitDiffViewerProps } from "../codemirror-git-diff-viewer";
+import { isImageFile } from "./image-utils";
+import { ImageModal } from "./ImageModal";
 
 void loaderInitPromise;
 
@@ -75,6 +77,7 @@ type MonacoFileGroup = {
   newContent: string;
   patch?: string;
   isBinary: boolean;
+  isImage: boolean;
   contentOmitted: boolean;
   language: string;
   editorMetrics: EditorLayoutMetrics | null;
@@ -845,6 +848,7 @@ interface MonacoFileDiffRowProps {
   editorTheme: string;
   diffOptions: editor.IDiffEditorConstructionOptions;
   classNames?: FileDiffRowClassNames;
+  onImageClick?: () => void;
 }
 
 function MonacoFileDiffRow({
@@ -854,6 +858,7 @@ function MonacoFileDiffRow({
   editorTheme,
   diffOptions,
   classNames,
+  onImageClick,
 }: MonacoFileDiffRowProps) {
   const canRenderEditor =
     !file.isBinary &&
@@ -927,6 +932,41 @@ function MonacoFileDiffRow({
               </p>
             ) : null}
           </div>
+        ) : file.isImage ? (
+          <div className="flex grow items-center justify-center gap-8 bg-neutral-50 px-8 py-8 dark:bg-neutral-900/50">
+            {file.oldContent && (
+              <button
+                type="button"
+                onClick={onImageClick}
+                className="group flex flex-col items-center gap-3 transition hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+              >
+                <span className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
+                  Before
+                </span>
+                <img
+                  src={`data:image/png;base64,${file.oldContent}`}
+                  alt={`${file.filePath} (before)`}
+                  className="max-h-[400px] max-w-[500px] cursor-pointer rounded border border-neutral-200 object-contain shadow-sm dark:border-neutral-700"
+                />
+              </button>
+            )}
+            {file.newContent && (
+              <button
+                type="button"
+                onClick={onImageClick}
+                className="group flex flex-col items-center gap-3 transition hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+              >
+                <span className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
+                  After
+                </span>
+                <img
+                  src={`data:image/png;base64,${file.newContent}`}
+                  alt={`${file.filePath} (after)`}
+                  className="max-h-[400px] max-w-[500px] cursor-pointer rounded border border-neutral-200 object-contain shadow-sm dark:border-neutral-700"
+                />
+              </button>
+            )}
+          </div>
         ) : file.isBinary ? (
           <div className="grow bg-neutral-50 px-3 py-6 text-center text-xs text-neutral-500 dark:bg-neutral-900/50 dark:text-neutral-400 grid place-content-center">
             Binary file not shown
@@ -964,12 +1004,14 @@ const MemoMonacoFileDiffRow = memo(MonacoFileDiffRow, (prev, next) => {
   return (
     prev.isExpanded === next.isExpanded &&
     prev.editorTheme === next.editorTheme &&
+    prev.onImageClick === next.onImageClick &&
     a.filePath === b.filePath &&
     a.oldPath === b.oldPath &&
     a.status === b.status &&
     a.additions === b.additions &&
     a.deletions === b.deletions &&
     a.isBinary === b.isBinary &&
+    a.isImage === b.isImage &&
     a.contentOmitted === b.contentOmitted &&
     a.language === b.language &&
     a.oldContent === b.oldContent &&
@@ -993,11 +1035,43 @@ export function MonacoGitDiffViewer({
     () => new Set(diffs.map((diff) => diff.filePath)),
   );
 
+  const [imageModalOpen, setImageModalOpen] = useState(false);
+  const [imageModalIndex, setImageModalIndex] = useState(0);
+
+  const imageFiles = useMemo(() => {
+    return diffs
+      .map((diff, index) => {
+        const isImage = diff.isBinary && isImageFile(diff.filePath);
+        if (!isImage) return null;
+
+        return {
+          index,
+          filePath: diff.filePath,
+          oldUrl: diff.oldContent
+            ? `data:image/png;base64,${diff.oldContent}`
+            : null,
+          newUrl: diff.newContent
+            ? `data:image/png;base64,${diff.newContent}`
+            : null,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+  }, [diffs]);
+
+  const handleImageClick = useCallback((fileIndex: number) => {
+    const imageIndex = imageFiles.findIndex((img) => img.index === fileIndex);
+    if (imageIndex !== -1) {
+      setImageModalIndex(imageIndex);
+      setImageModalOpen(true);
+    }
+  }, [imageFiles]);
+
   const fileGroups: MonacoFileGroup[] = useMemo(
     () =>
       diffs.map((diff) => {
         const oldContent = diff.oldContent ?? "";
         const newContent = diff.newContent ?? "";
+        const isImage = diff.isBinary && isImageFile(diff.filePath);
         const shouldMeasure =
           !diff.isBinary &&
           !diff.contentOmitted &&
@@ -1018,6 +1092,7 @@ export function MonacoGitDiffViewer({
           newContent,
           patch: diff.patch,
           isBinary: diff.isBinary,
+          isImage,
           contentOmitted: diff.contentOmitted ?? false,
           language: guessMonacoLanguage(diff.filePath),
           editorMetrics,
@@ -1117,37 +1192,49 @@ export function MonacoGitDiffViewer({
   use(loaderInitPromise);
 
   return (
-    <div className="grow bg-white dark:bg-neutral-900">
-      <div className="flex flex-col -space-y-[2px]">
-        {fileGroups.map((file, index) => (
-          <MemoMonacoFileDiffRow
-            key={`monaco:${file.filePath}`}
-            file={file}
-            isExpanded={expandedFiles.has(file.filePath)}
-            onToggle={() => toggleFile(file.filePath)}
-            editorTheme={editorTheme}
-            diffOptions={diffOptions}
-            classNames={{
-              ...classNames?.fileDiffRow,
-              button: cn(
-                classNames?.fileDiffRow?.button,
-                index === 0 && "!border-t-0"
-              ),
-            }}
-          />
-        ))}
-        <hr className="border-neutral-200 dark:border-neutral-800" />
-        <div className="px-3 py-6 text-center">
-          <span className="select-none text-xs text-neutral-500 dark:text-neutral-400">
-            You’ve reached the end of the diff!
-          </span>
-          <div className="grid place-content-center">
-            <pre className="mt-2 pb-20 select-none text-left text-[8px] font-mono text-neutral-500 dark:text-neutral-400">
-              {kitty}
-            </pre>
+    <>
+      <div className="grow bg-white dark:bg-neutral-900">
+        <div className="flex flex-col -space-y-[2px]">
+          {fileGroups.map((file, index) => (
+            <MemoMonacoFileDiffRow
+              key={`monaco:${file.filePath}`}
+              file={file}
+              isExpanded={expandedFiles.has(file.filePath)}
+              onToggle={() => toggleFile(file.filePath)}
+              editorTheme={editorTheme}
+              diffOptions={diffOptions}
+              onImageClick={file.isImage ? () => handleImageClick(index) : undefined}
+              classNames={{
+                ...classNames?.fileDiffRow,
+                button: cn(
+                  classNames?.fileDiffRow?.button,
+                  index === 0 && "!border-t-0"
+                ),
+              }}
+            />
+          ))}
+          <hr className="border-neutral-200 dark:border-neutral-800" />
+          <div className="px-3 py-6 text-center">
+            <span className="select-none text-xs text-neutral-500 dark:text-neutral-400">
+              You've reached the end of the diff!
+            </span>
+            <div className="grid place-content-center">
+              <pre className="mt-2 pb-20 select-none text-left text-[8px] font-mono text-neutral-500 dark:text-neutral-400">
+                {kitty}
+              </pre>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+
+      {imageFiles.length > 0 && (
+        <ImageModal
+          images={imageFiles}
+          initialIndex={imageModalIndex}
+          open={imageModalOpen}
+          onOpenChange={setImageModalOpen}
+        />
+      )}
+    </>
   );
 }
