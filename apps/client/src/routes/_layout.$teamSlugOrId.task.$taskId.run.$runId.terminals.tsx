@@ -17,7 +17,6 @@ import {
   type TerminalConnectionState,
 } from "@/components/task-run-terminal-session";
 import { toMorphXtermBaseUrl } from "@/lib/toProxyWorkspaceUrl";
-import { buildTerminalCommand } from "@/lib/terminal-command";
 import {
   createTerminalTab,
   deleteTerminalTab,
@@ -32,6 +31,28 @@ const paramsSchema = z.object({
   taskId: typedZid("tasks"),
   runId: typedZid("taskRuns"),
 });
+
+const CLOUD_TMUX_BOOTSTRAP_SCRIPT = `set -euo pipefail
+SESSION="cmux"
+WORKSPACE_ROOT="/root/workspace"
+ensure_session() {
+  if tmux has-session -t "$SESSION" 2>/dev/null; then
+    return
+  fi
+
+  tmux new-session -d -s "$SESSION" -c "$WORKSPACE_ROOT" -n "main"
+  tmux rename-window -t "$SESSION:1" "main" >/dev/null 2>&1 || true
+  tmux new-window -t "$SESSION:" -n "maintenance" -c "$WORKSPACE_ROOT"
+  tmux new-window -t "$SESSION:" -n "dev" -c "$WORKSPACE_ROOT"
+}
+ensure_session
+
+tmux select-window -t "$SESSION:main" >/dev/null 2>&1 || true
+exec tmux attach -t "$SESSION"`;
+
+const STANDARD_ATTACH_SCRIPT = `set -euo pipefail
+tmux select-window -t cmux:0 >/dev/null 2>&1 || true
+exec tmux attach -t cmux`;
 
 export const Route = createFileRoute(
   "/_layout/$teamSlugOrId/task/$taskId/run/$runId/terminals"
@@ -78,10 +99,15 @@ export const Route = createFileRoute(
       return;
     }
 
-    const request = buildTerminalCommand({
-      intent: "attach-session",
-      isCloudWorkspace: Boolean(taskRun?.isCloudWorkspace),
-    });
+    const request = taskRun?.isCloudWorkspace
+      ? {
+          cmd: "bash",
+          args: ["-lc", CLOUD_TMUX_BOOTSTRAP_SCRIPT],
+        }
+      : {
+          cmd: "bash",
+          args: ["-lc", STANDARD_ATTACH_SCRIPT],
+        };
 
     try {
       const created = await createTerminalTab({

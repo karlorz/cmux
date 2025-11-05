@@ -73,7 +73,7 @@ const environmentSearchDefaults = {
   repoSearch: undefined,
   instanceId: undefined,
   snapshotId: undefined,
-} as const;
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
@@ -303,8 +303,8 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
         ...environments
           .slice()
           .sort((a, b) => b.createdAt - a.createdAt)
-          .map((env) => ({
-            type: "environment" as const,
+          .map<CloudWorkspaceOption>((env) => ({
+            type: "environment",
             environmentId: env._id,
             name: env.name,
             keywords: compactStrings([
@@ -318,8 +318,8 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
     }
     if (localWorkspaceOptions.length > 0) {
       options.push(
-        ...localWorkspaceOptions.map((repo) => ({
-          type: "repo" as const,
+        ...localWorkspaceOptions.map<CloudWorkspaceOption>((repo) => ({
+          type: "repo",
           projectFullName: repo.fullName,
           name: repo.repoBaseName,
           keywords: repo.keywords,

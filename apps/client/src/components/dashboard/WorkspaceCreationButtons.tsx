@@ -25,6 +25,21 @@ type WorkspaceCreationButtonsProps = {
   environments?: Doc<"environments">[] | null;
 };
 
+type SelectionMeta =
+  | { kind: "none"; workspaceLabel: string }
+  | {
+      kind: "environment";
+      environmentId: Id<"environments">;
+      environment?: Doc<"environments">;
+      workspaceLabel: string;
+    }
+  | {
+      kind: "repository";
+      projectFullName: string;
+      workspaceLabel: string;
+      repoUrl: string;
+    };
+
 export function WorkspaceCreationButtons({
   teamSlugOrId,
   selectedProject,
@@ -48,11 +63,11 @@ export function WorkspaceCreationButtons({
     return map;
   }, [environments]);
 
-  const selectionMeta = useMemo(() => {
+  const selectionMeta = useMemo<SelectionMeta>(() => {
     const selection = selectedProject[0] ?? null;
     if (!selection) {
       return {
-        kind: "none" as const,
+        kind: "none",
         workspaceLabel: "Unknown Selection",
       };
     }
@@ -61,7 +76,7 @@ export function WorkspaceCreationButtons({
       const environmentId = selection.replace(/^env:/, "") as Id<"environments">;
       const environment = environmentById.get(environmentId);
       return {
-        kind: "environment" as const,
+        kind: "environment",
         environmentId,
         environment,
         workspaceLabel: environment?.name ?? "Unknown Environment",
@@ -69,7 +84,7 @@ export function WorkspaceCreationButtons({
     }
 
     return {
-      kind: "repository" as const,
+      kind: "repository",
       projectFullName: selection,
       workspaceLabel: selection,
       repoUrl: `https://github.com/${selection}.git`,
@@ -101,7 +116,12 @@ export function WorkspaceCreationButtons({
       return;
     }
 
-    const repoUrl = selectionMeta.repoUrl ?? `https://github.com/${projectFullName}.git`;
+    const repoUrl =
+      selectionMeta.kind === "repository"
+        ? selectionMeta.repoUrl
+        : undefined;
+    const resolvedRepoUrl =
+      repoUrl ?? `https://github.com/${projectFullName}.git`;
 
     setIsCreatingLocal(true);
 
@@ -109,7 +129,7 @@ export function WorkspaceCreationButtons({
       const reservation = await reserveLocalWorkspace({
         teamSlugOrId,
         projectFullName,
-        repoUrl,
+        repoUrl: resolvedRepoUrl,
       });
 
       if (!reservation) {
@@ -124,7 +144,7 @@ export function WorkspaceCreationButtons({
           {
             teamSlugOrId,
             projectFullName,
-            repoUrl,
+            repoUrl: resolvedRepoUrl,
             taskId: reservation.taskId,
             taskRunId: reservation.taskRunId,
             workspaceName: reservation.workspaceName,
@@ -178,7 +198,10 @@ export function WorkspaceCreationButtons({
       ? selectionMeta.projectFullName
       : undefined;
     const workspaceLabel = selectionMeta.workspaceLabel;
-    const repoUrl = selectionMeta.repoUrl;
+    const repoUrl =
+      selectionMeta.kind === "repository"
+        ? selectionMeta.repoUrl
+        : undefined;
 
     setIsCreatingCloud(true);
 
