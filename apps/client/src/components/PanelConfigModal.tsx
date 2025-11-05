@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { LucideIcon } from "lucide-react";
-import { X, RotateCcw, GripVertical, MessageSquare, Code2, TerminalSquare, Globe2, GitCompare, Plus, Grid2x2, Columns2, Rows2, PanelLeft, PanelRight, PanelTop, PanelBottom, Trash2 } from "lucide-react";
+import { X, RotateCcw, GripVertical, MessageSquare, Code2, TerminalSquare, Globe2, GitCompare, Plus, Grid2x2, Columns2, Rows2, LayoutPanelTop, PanelsTopLeft, PanelsRightBottom, Trash2 } from "lucide-react";
 import clsx from "clsx";
 import type { PanelConfig, PanelType, LayoutMode, PanelPosition } from "@/lib/panel-config";
 import { PANEL_LABELS, DEFAULT_PANEL_CONFIG, LAYOUT_LABELS, LAYOUT_DESCRIPTIONS, getActivePanelPositions, getAvailablePanels, removePanelFromAllPositions } from "@/lib/panel-config";
@@ -25,10 +25,10 @@ const LAYOUT_ICONS_MAP: Record<LayoutMode, LucideIcon> = {
   "four-panel": Grid2x2,
   "two-horizontal": Columns2,
   "two-vertical": Rows2,
-  "three-left": PanelLeft,
-  "three-right": PanelRight,
-  "three-top": PanelTop,
-  "three-bottom": PanelBottom,
+  "three-left": PanelsRightBottom, // Shows large left + 2 stacked right
+  "three-right": PanelsRightBottom, // Flipped to show 2 stacked left + large right
+  "three-top": PanelsTopLeft, // Shows large top + 2 below
+  "three-bottom": LayoutPanelTop, // Flipped to show 2 top + 1 large bottom
 };
 
 export function PanelConfigModal({ isOpen, onClose, config, onChange }: PanelConfigModalProps) {
@@ -294,7 +294,13 @@ export function PanelConfigModal({ isOpen, onClose, config, onChange }: PanelCon
                   )}
                   title={LAYOUT_DESCRIPTIONS[layoutMode]}
                 >
-                  <LayoutIcon className="size-5" />
+                  <LayoutIcon
+                    className={clsx(
+                      "size-5",
+                      layoutMode === "three-right" && "scale-x-[-1]",
+                      layoutMode === "three-bottom" && "scale-y-[-1]"
+                    )}
+                  />
                   <span className="text-xs font-medium text-center leading-tight">
                     {LAYOUT_LABELS[layoutMode].replace(/\s*\(.*?\)\s*/g, "")}
                   </span>
