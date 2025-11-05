@@ -53,7 +53,6 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/dashboard")({
 // Default agents (not persisted to localStorage)
 const DEFAULT_AGENTS = [
   "claude/sonnet-4.5",
-  "claude/opus-4.1",
   "codex/gpt-5-codex-high",
 ];
 const KNOWN_AGENT_NAMES = new Set(AGENT_CONFIGS.map((agent) => agent.name));
@@ -85,8 +84,6 @@ const parseStoredAgentSelection = (stored: string | null): string[] => {
     return [];
   }
 };
-
-const LAST_IMPORTED_REPO_KEY = "dashboard:lastImportedRepo";
 
 function DashboardComponent() {
   const { teamSlugOrId } = Route.useParams();
@@ -135,42 +132,6 @@ function DashboardComponent() {
   const [providerStatus, setProviderStatus] =
     useState<ProviderStatusResponse | null>(null);
   const [isLaunchingRepo, setIsLaunchingRepo] = useState(false);
-  const [lastImportedRepo, setLastImportedRepo] = useState<string | null>(() => {
-    if (typeof window === "undefined") {
-      return null;
-    }
-    try {
-      return localStorage.getItem(LAST_IMPORTED_REPO_KEY);
-    } catch {
-      return null;
-    }
-  });
-
-  useEffect(() => {
-    if (lastImportedRepo !== null) {
-      return;
-    }
-    if (typeof window === "undefined") {
-      return;
-    }
-    try {
-      const stored = localStorage.getItem(LAST_IMPORTED_REPO_KEY);
-      if (stored) {
-        setLastImportedRepo(stored);
-      }
-    } catch {
-      /* noop */
-    }
-  }, [lastImportedRepo]);
-
-  const persistLastImportedRepo = useCallback((repoFullName: string) => {
-    setLastImportedRepo(repoFullName);
-    try {
-      localStorage.setItem(LAST_IMPORTED_REPO_KEY, repoFullName);
-    } catch {
-      /* ignore storage errors */
-    }
-  }, []);
 
   // Ref to access editor API
   const editorApiRef = useRef<EditorApi | null>(null);
@@ -619,7 +580,7 @@ function DashboardComponent() {
   );
 
   const projectOptions = useMemo(() => {
-    // Repo options as objects with GitHub icon
+    // Separate manual repos (added via link) from synced repos (GitHub App)
     const repoDocs = Object.values(reposByOrg || {}).flatMap((repos) => repos);
     const uniqueRepos = repoDocs.reduce((acc, repo) => {
       const existing = acc.get(repo.fullName);
@@ -635,7 +596,23 @@ function DashboardComponent() {
       }
       return acc;
     }, new Map<string, Doc<"repos">>());
-    const sortedRepos = Array.from(uniqueRepos.values()).sort((a, b) => {
+
+    const allRepos = Array.from(uniqueRepos.values());
+    console.log('[Dashboard] All repos:', allRepos.map(r => ({ fullName: r.fullName, manual: r.manual })));
+    const manualRepos = allRepos.filter((repo) => repo.manual === true);
+    console.log('[Dashboard] Manual repos:', manualRepos.length, manualRepos.map(r => r.fullName));
+    const syncedRepos = allRepos.filter((repo) => !repo.manual);
+
+    const sortedManualRepos = manualRepos.sort((a, b) => {
+      const aSynced = a.lastSyncedAt ?? Number.NEGATIVE_INFINITY;
+      const bSynced = b.lastSyncedAt ?? Number.NEGATIVE_INFINITY;
+      if (aSynced !== bSynced) {
+        return bSynced - aSynced;
+      }
+      return a.fullName.localeCompare(b.fullName);
+    });
+
+    const sortedSyncedRepos = syncedRepos.sort((a, b) => {
       const aPushedAt = a.lastPushedAt ?? Number.NEGATIVE_INFINITY;
       const bPushedAt = b.lastPushedAt ?? Number.NEGATIVE_INFINITY;
       if (aPushedAt !== bPushedAt) {
@@ -643,7 +620,17 @@ function DashboardComponent() {
       }
       return a.fullName.localeCompare(b.fullName);
     });
-    const repoOptions = sortedRepos.map((repo) => ({
+
+    const manualRepoOptions = sortedManualRepos.map((repo) => ({
+      label: repo.fullName,
+      value: repo.fullName,
+      icon: (
+        <LinkIcon className="w-4 h-4 text-neutral-600 dark:text-neutral-300" />
+      ),
+      iconKey: "manual",
+    }));
+
+    const repoOptions = sortedSyncedRepos.map((repo) => ({
       label: repo.fullName,
       value: repo.fullName,
       icon: (
@@ -678,6 +665,14 @@ function DashboardComponent() {
       });
       options.push(...envOptions);
     }
+    if (manualRepoOptions.length > 0) {
+      options.push({
+        label: "Links",
+        value: "__heading-links",
+        heading: true,
+      });
+      options.push(...manualRepoOptions);
+    }
     if (repoOptions.length > 0) {
       options.push({
         label: "Repositories",
@@ -687,28 +682,12 @@ function DashboardComponent() {
       options.push(...repoOptions);
     }
 
-    const normalizedLink = lastImportedRepo?.trim();
-    if (normalizedLink) {
-      options.push({
-        label: "Links",
-        value: "__heading-links",
-        heading: true,
-      });
-      options.push({
-        label: normalizedLink,
-        value: normalizedLink,
-        icon: (
-          <LinkIcon className="w-4 h-4 text-neutral-600 dark:text-neutral-300" />
-        ),
-        iconKey: "links",
-      });
-    }
-
     return options;
-  }, [reposByOrg, environmentsQuery.data, lastImportedRepo]);
+  }, [reposByOrg, environmentsQuery.data]);
 
   const branchOptions = branchNames;
 
+  // @ts-ignore
   const launchLocalWorkspace = useCallback(
     async (repo: ParsedGithubRepo) => {
       if (!socket) {
@@ -758,9 +737,9 @@ function DashboardComponent() {
                 response.taskRunId ?? reservation.taskRunId;
               const normalizedWorkspaceUrl = response.workspaceUrl
                 ? rewriteLocalWorkspaceUrlIfNeeded(
-                    response.workspaceUrl,
-                    localServeWeb.data?.baseUrl,
-                  )
+                  response.workspaceUrl,
+                  localServeWeb.data?.baseUrl,
+                )
                 : null;
 
               if (response.workspaceUrl && effectiveTaskRunId) {
@@ -810,6 +789,7 @@ function DashboardComponent() {
     ],
   );
 
+  // @ts-ignore
   const launchCloudWorkspaceFromRepo = useCallback(
     async (repo: ParsedGithubRepo) => {
       if (!socket) {
@@ -850,48 +830,53 @@ function DashboardComponent() {
     [socket, createTask, teamSlugOrId, addTaskToExpand, theme],
   );
 
-  const startWorkspaceFromRepo = useCallback(
-    async (repo: ParsedGithubRepo) => {
-      if (isCloudMode) {
-        await launchCloudWorkspaceFromRepo(repo);
-      } else {
-        await launchLocalWorkspace(repo);
-      }
-      persistLastImportedRepo(repo.repoFullName);
-      setSelectedProject([repo.repoFullName]);
-      localStorage.setItem(
-        "selectedProject",
-        JSON.stringify([repo.repoFullName]),
-      );
-      setSelectedBranch([]);
-    },
-    [
-      isCloudMode,
-      launchCloudWorkspaceFromRepo,
-      launchLocalWorkspace,
-      setSelectedBranch,
-      persistLastImportedRepo,
-    ],
-  );
-
   const handleRepoSearchPaste = useCallback(
     async (input: string) => {
+      console.log('[Dashboard] handleRepoSearchPaste called with input:', input);
       const parsed = parseGithubRepoInput(input);
       if (!parsed) {
+        console.log('[Dashboard] Failed to parse GitHub repo input');
         return false;
       }
+      console.log('[Dashboard] Parsed repo:', parsed);
       if (isLaunchingRepo) {
-        toast.info("Workspace creation already in progress");
+        toast.info("Repository import already in progress");
+        return true;
+      }
+      if (!socket) {
+        toast.error("Socket not connected");
         return true;
       }
       setIsLaunchingRepo(true);
       try {
-        await startWorkspaceFromRepo(parsed);
-        toast.success(
-          isCloudMode
-            ? `Starting Morph workspace for ${parsed.repoFullName}`
-            : `Starting Docker workspace for ${parsed.repoFullName}`,
-        );
+        console.log('[Dashboard] Emitting add-manual-repo event for:', parsed.repoFullName);
+        await new Promise<void>((resolve, reject) => {
+          socket.emit(
+            "add-manual-repo",
+            {
+              teamSlugOrId,
+              projectFullName: parsed.repoFullName,
+            },
+            (response) => {
+              console.log('[Dashboard] add-manual-repo response:', response);
+              if (!response?.success) {
+                reject(new Error(response?.error ?? "Failed to add repository"));
+                return;
+              }
+              resolve();
+            }
+          );
+        });
+
+        // Refresh the repos list to show the newly added repo
+        await reposByOrgQuery.refetch();
+
+        // Auto-select the newly added repo
+        setSelectedProject([parsed.repoFullName]);
+        localStorage.setItem("selectedProject", JSON.stringify([parsed.repoFullName]));
+        setSelectedBranch([]);
+
+        toast.success(`Added ${parsed.repoFullName} to your repositories`);
       } catch (error) {
         const message =
           error instanceof Error
@@ -903,7 +888,7 @@ function DashboardComponent() {
       }
       return true;
     },
-    [isCloudMode, isLaunchingRepo, startWorkspaceFromRepo],
+    [isLaunchingRepo, socket, teamSlugOrId, reposByOrgQuery],
   );
 
   const handleImportRepo = useCallback(
@@ -915,14 +900,37 @@ function DashboardComponent() {
       if (isLaunchingRepo) {
         throw new Error("Another repository import is already running.");
       }
+      if (!socket) {
+        throw new Error("Socket not connected");
+      }
       setIsLaunchingRepo(true);
       try {
-        await startWorkspaceFromRepo(parsed);
-        toast.success(
-          isCloudMode
-            ? `Starting Morph workspace for ${parsed.repoFullName}`
-            : `Starting Docker workspace for ${parsed.repoFullName}`,
-        );
+        await new Promise<void>((resolve, reject) => {
+          socket.emit(
+            "add-manual-repo",
+            {
+              teamSlugOrId,
+              projectFullName: parsed.repoFullName,
+            },
+            (response) => {
+              if (!response?.success) {
+                reject(new Error(response?.error ?? "Failed to add repository"));
+                return;
+              }
+              resolve();
+            }
+          );
+        });
+
+        // Refresh the repos list to show the newly added repo
+        await reposByOrgQuery.refetch();
+
+        // Auto-select the newly added repo
+        setSelectedProject([parsed.repoFullName]);
+        localStorage.setItem("selectedProject", JSON.stringify([parsed.repoFullName]));
+        setSelectedBranch([]);
+
+        toast.success(`Added ${parsed.repoFullName} to your repositories`);
       } catch (error) {
         const message =
           error instanceof Error
@@ -933,7 +941,7 @@ function DashboardComponent() {
         setIsLaunchingRepo(false);
       }
     },
-    [isCloudMode, isLaunchingRepo, startWorkspaceFromRepo],
+    [isLaunchingRepo, socket, teamSlugOrId, reposByOrgQuery],
   );
 
   // Cloud mode toggle handler

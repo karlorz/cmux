@@ -16,6 +16,8 @@ import {
   type CreateLocalWorkspaceResponse,
   CreateCloudWorkspaceSchema,
   type CreateCloudWorkspaceResponse,
+  AddManualRepoSchema,
+  type AddManualRepoResponse,
   type AvailableEditors,
   type FileInfo,
   isLoopbackHostname,
@@ -70,6 +72,7 @@ import {
   splitRepoFullName,
   toPullRequestActionResult,
 } from "./pullRequestState";
+import { validateGithubRepo } from "./utils/validateGithubRepo";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -950,6 +953,85 @@ export function setupSocketHandlers(
     );
 
     socket.on(
+      "add-manual-repo",
+      async (rawData, callback: (response: AddManualRepoResponse) => void) => {
+        const parsed = AddManualRepoSchema.safeParse(rawData);
+        if (!parsed.success) {
+          serverLogger.error(
+            "Invalid add-manual-repo payload:",
+            parsed.error
+          );
+          callback({
+            success: false,
+            error: "Invalid repo request",
+          });
+          return;
+        }
+
+        const { teamSlugOrId, projectFullName } = parsed.data;
+
+        // Validate repository format
+        if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(projectFullName)) {
+          callback({
+            success: false,
+            error: "Invalid repository name format. Expected: owner/repo",
+          });
+          return;
+        }
+
+        try {
+          serverLogger.info(
+            `[add-manual-repo] Validating GitHub repo: ${projectFullName}`
+          );
+
+          // Validate the repo exists and is accessible
+          const validatedRepo = await validateGithubRepo(projectFullName);
+
+          serverLogger.info(
+            `[add-manual-repo] GitHub repo validated: ${validatedRepo.fullName}`
+          );
+
+          // Insert or update the repo in the repos table
+          const result = await getConvex().mutation(api.github.upsertManualRepo, {
+            teamSlugOrId,
+            fullName: validatedRepo.fullName,
+            org: validatedRepo.org,
+            name: validatedRepo.name,
+            gitRemote: `https://github.com/${projectFullName}.git`,
+            provider: "github",
+            defaultBranch: validatedRepo.defaultBranch,
+            visibility: validatedRepo.visibility,
+            ownerLogin: validatedRepo.ownerLogin,
+            ownerType: validatedRepo.ownerType,
+          });
+
+          serverLogger.info(
+            `[add-manual-repo] ${result.created ? "Created" : "Updated"} manual repo: ${validatedRepo.fullName}`
+          );
+
+          callback({
+            success: true,
+            repoId: result.id,
+            created: result.created,
+          });
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Failed to add repository";
+          serverLogger.error(
+            `[add-manual-repo] Repository validation failed:`,
+            error
+          );
+          callback({
+            success: false,
+            error: message,
+          });
+        }
+      }
+    );
+
+    socket.on(
       "create-cloud-workspace",
       async (
         rawData,
@@ -1140,9 +1222,6 @@ export function setupSocketHandlers(
 
           // Spawn Morph instance via www API
           const { postApiSandboxesStart } = await getWwwOpenApiModule();
-          const targetLabel = environmentId
-            ? `environment ${environmentId}`
-            : `repo ${projectFullName ?? repoUrl}`;
 
           serverLogger.info(
             `[create-cloud-workspace] Starting Morph sandbox for ${workspaceTargetLabel}`

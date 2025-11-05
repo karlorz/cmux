@@ -458,6 +458,8 @@ const convexSchema = defineSchema({
     provider: v.optional(v.string()), // e.g. "github", "gitlab", etc.
     userId: v.string(),
     teamId: v.string(),
+    // Manual repos are added via direct links (not GitHub App sync)
+    manual: v.optional(v.boolean()),
     // Provider metadata (GitHub App)
     providerRepoId: v.optional(v.number()),
     ownerLogin: v.optional(v.string()),

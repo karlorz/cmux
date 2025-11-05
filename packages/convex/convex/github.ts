@@ -709,3 +709,89 @@ export const replaceAllRepos = authMutation({
     return insertedIds;
   },
 });
+
+// Upsert a manual repo entry (added via direct link, not GitHub App sync)
+export const upsertManualRepo = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    fullName: v.string(),
+    org: v.string(),
+    name: v.string(),
+    gitRemote: v.string(),
+    provider: v.optional(v.string()),
+    defaultBranch: v.optional(v.string()),
+    visibility: v.optional(v.union(v.literal("public"), v.literal("private"))),
+    ownerLogin: v.optional(v.string()),
+    ownerType: v.optional(v.union(v.literal("User"), v.literal("Organization"))),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+    const now = Date.now();
+
+    // Check if repo already exists (by fullName and team)
+    const existing = await ctx.db
+      .query("repos")
+      .withIndex("by_team_user", (q) =>
+        q.eq("teamId", teamId).eq("userId", userId)
+      )
+      .filter((q) => q.eq(q.field("fullName"), args.fullName))
+      .first();
+
+    if (existing) {
+      // Update existing repo, preserving connectionId if it exists
+      const patch: Partial<Doc<"repos">> = {
+        org: args.org,
+        name: args.name,
+        gitRemote: args.gitRemote,
+        lastSyncedAt: now,
+      };
+
+      // Only update provider if specified
+      if (args.provider !== undefined) {
+        patch.provider = args.provider;
+      }
+
+      // Update metadata if provided
+      if (args.defaultBranch !== undefined) {
+        patch.defaultBranch = args.defaultBranch;
+      }
+      if (args.visibility !== undefined) {
+        patch.visibility = args.visibility;
+      }
+      if (args.ownerLogin !== undefined) {
+        patch.ownerLogin = args.ownerLogin;
+      }
+      if (args.ownerType !== undefined) {
+        patch.ownerType = args.ownerType;
+      }
+
+      // Mark as manual if not already from a connection
+      if (!existing.connectionId && !existing.manual) {
+        patch.manual = true;
+      }
+
+      await ctx.db.patch(existing._id, patch);
+      return { id: existing._id, created: false };
+    }
+
+    // Insert new manual repo
+    const repoId = await ctx.db.insert("repos", {
+      fullName: args.fullName,
+      org: args.org,
+      name: args.name,
+      gitRemote: args.gitRemote,
+      provider: args.provider || "github",
+      userId,
+      teamId,
+      manual: true,
+      defaultBranch: args.defaultBranch,
+      visibility: args.visibility,
+      ownerLogin: args.ownerLogin,
+      ownerType: args.ownerType,
+      lastSyncedAt: now,
+    });
+
+    return { id: repoId, created: true };
+  },
+});
