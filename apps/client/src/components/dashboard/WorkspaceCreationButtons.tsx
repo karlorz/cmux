@@ -12,6 +12,7 @@ import type {
   CreateLocalWorkspaceResponse,
   CreateCloudWorkspaceResponse,
 } from "@cmux/shared";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useMutation } from "convex/react";
 import { Server as ServerIcon, FolderOpen, Loader2 } from "lucide-react";
 import { useCallback, useState } from "react";
@@ -28,6 +29,8 @@ export function WorkspaceCreationButtons({
   selectedProject,
   isEnvSelected,
 }: WorkspaceCreationButtonsProps) {
+  const navigate = useNavigate();
+  const router = useRouter();
   const { socket } = useSocket();
   const { addTaskToExpand } = useExpandTasks();
   const { theme } = useTheme();
@@ -162,14 +165,39 @@ export function WorkspaceCreationButtons({
             taskId,
             theme,
           },
-          async (response: CreateCloudWorkspaceResponse) => {
-            if (response.success) {
-              toast.success("Cloud workspace created successfully");
-            } else {
-              toast.error(
-                response.error || "Failed to create cloud workspace"
-              );
-            }
+            async (response: CreateCloudWorkspaceResponse) => {
+              if (response.success) {
+                toast.success("Cloud workspace created successfully");
+                const effectiveTaskId = response.taskId ?? taskId;
+                const effectiveTaskRunId = response.taskRunId;
+
+                if (effectiveTaskId && effectiveTaskRunId) {
+                  void router
+                    .preloadRoute({
+                      to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+                      params: {
+                        teamSlugOrId,
+                        taskId: effectiveTaskId,
+                        runId: effectiveTaskRunId,
+                      },
+                    })
+                    .catch(() => undefined);
+                  void navigate({
+                    to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+                    params: {
+                      teamSlugOrId,
+                      taskId: effectiveTaskId,
+                      runId: effectiveTaskRunId,
+                    },
+                  });
+                } else if (response.workspaceUrl) {
+                  window.location.assign(response.workspaceUrl);
+                }
+              } else {
+                toast.error(
+                  response.error || "Failed to create cloud workspace"
+                );
+              }
             resolve();
           }
         );
@@ -190,6 +218,8 @@ export function WorkspaceCreationButtons({
     createTask,
     addTaskToExpand,
     theme,
+    navigate,
+    router,
   ]);
 
   const canCreateLocal = selectedProject.length > 0 && !isEnvSelected;
