@@ -40,6 +40,9 @@ declare global {
             updateAvailable?: boolean;
             version?: string | null;
           }>;
+        configure: (options: {
+          includeDraftReleases: boolean;
+        }) => Promise<{ ok: boolean; reason?: string }>;
         install: () => Promise<{ ok: boolean; reason?: string }>;
       };
     };

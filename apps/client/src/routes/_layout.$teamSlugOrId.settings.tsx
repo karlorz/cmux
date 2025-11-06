@@ -2,6 +2,7 @@ import { ContainerSettings } from "@/components/ContainerSettings";
 import { FloatingPane } from "@/components/floating-pane";
 import { ProviderStatusSettings } from "@/components/provider-status-settings";
 import { useTheme } from "@/components/theme/use-theme";
+import { isElectron } from "@/lib/electron";
 import { TitleBar } from "@/components/TitleBar";
 import { api } from "@cmux/convex/api";
 import type { Doc } from "@cmux/convex/dataModel";
@@ -40,6 +41,12 @@ function SettingsComponent() {
   const [autoPrEnabled, setAutoPrEnabled] = useState<boolean>(false);
   const [originalAutoPrEnabled, setOriginalAutoPrEnabled] =
     useState<boolean>(false);
+  const [autoUpdateIncludeDrafts, setAutoUpdateIncludeDrafts] =
+    useState<boolean>(false);
+  const [
+    originalAutoUpdateIncludeDrafts,
+    setOriginalAutoUpdateIncludeDrafts,
+  ] = useState<boolean>(false);
   // const [isSaveButtonVisible, setIsSaveButtonVisible] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const saveButtonRef = useRef<HTMLDivElement>(null);
@@ -145,6 +152,32 @@ function SettingsComponent() {
       const effective = enabled === undefined ? false : Boolean(enabled);
       setAutoPrEnabled(effective);
       setOriginalAutoPrEnabled(effective);
+      const includeDrafts = (
+        workspaceSettings as unknown as { autoUpdateIncludeDrafts?: boolean }
+      )?.autoUpdateIncludeDrafts;
+      const draftEffective =
+        includeDrafts === undefined ? false : Boolean(includeDrafts);
+      setAutoUpdateIncludeDrafts(draftEffective);
+      setOriginalAutoUpdateIncludeDrafts(draftEffective);
+    }
+  }, [workspaceSettings]);
+
+  useEffect(() => {
+    if (!isElectron || typeof window === "undefined") {
+      return;
+    }
+    const includeDrafts =
+      (
+        workspaceSettings as unknown as {
+          autoUpdateIncludeDrafts?: boolean;
+        }
+      )?.autoUpdateIncludeDrafts ?? false;
+    try {
+      void window.cmux?.autoUpdate?.configure?.({
+        includeDraftReleases: Boolean(includeDrafts),
+      });
+    } catch (error) {
+      console.error("Failed to sync auto-update setting with Electron", error);
     }
   }, [workspaceSettings]);
 
@@ -243,10 +276,13 @@ function SettingsComponent() {
 
     // Auto PR toggle changes
     const autoPrChanged = autoPrEnabled !== originalAutoPrEnabled;
+    const autoUpdateIncludeDraftsChanged =
+      autoUpdateIncludeDrafts !== originalAutoUpdateIncludeDrafts;
 
     return (
       worktreePathChanged ||
       autoPrChanged ||
+      autoUpdateIncludeDraftsChanged ||
       apiKeysChanged ||
       containerSettingsChanged
     );
@@ -262,15 +298,30 @@ function SettingsComponent() {
       // Save worktree path / auto PR if changed
       if (
         worktreePath !== originalWorktreePath ||
-        autoPrEnabled !== originalAutoPrEnabled
+        autoPrEnabled !== originalAutoPrEnabled ||
+        autoUpdateIncludeDrafts !== originalAutoUpdateIncludeDrafts
       ) {
         await convex.mutation(api.workspaceSettings.update, {
           teamSlugOrId,
           worktreePath: worktreePath || undefined,
           autoPrEnabled,
+          autoUpdateIncludeDrafts,
         });
         setOriginalWorktreePath(worktreePath);
         setOriginalAutoPrEnabled(autoPrEnabled);
+        setOriginalAutoUpdateIncludeDrafts(autoUpdateIncludeDrafts);
+        if (isElectron && typeof window !== "undefined") {
+          try {
+            await window.cmux?.autoUpdate?.configure?.({
+              includeDraftReleases: Boolean(autoUpdateIncludeDrafts),
+            });
+          } catch (error) {
+            console.error(
+              "Failed to push auto-update preference to Electron",
+              error
+            );
+          }
+        }
       }
 
       // Save container settings if changed
@@ -641,6 +692,37 @@ function SettingsComponent() {
                 </div>
               </div>
             </div>
+
+            {isElectron && (
+              <div className="bg-white dark:bg-neutral-950 rounded-lg border border-neutral-200 dark:border-neutral-800">
+                <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
+                  <h2 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                    App Updates
+                  </h2>
+                </div>
+                <div className="p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                        Always install the newest GitHub release
+                      </label>
+                      <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                        Enable this to let cmux auto-update to the latest build
+                        from GitHub releases as soon as it appears, even if the
+                        release is still marked as a draft or pre-release.
+                      </p>
+                    </div>
+                    <Switch
+                      aria-label="Always install the newest GitHub release"
+                      size="sm"
+                      color="primary"
+                      isSelected={autoUpdateIncludeDrafts}
+                      onValueChange={setAutoUpdateIncludeDrafts}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Worktree Path */}
             <div className="bg-white dark:bg-neutral-950 rounded-lg border border-neutral-200 dark:border-neutral-800">

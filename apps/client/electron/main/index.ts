@@ -425,6 +425,54 @@ function registerAutoUpdateIpcHandlers(): void {
       throw err;
     }
   });
+
+  ipcMain.handle(
+    "cmux:auto-update:configure",
+    async (_event, rawOptions: unknown) => {
+      if (!app.isPackaged) {
+        mainLog(
+          "Auto-update configuration requested while app is not packaged; ignoring request"
+        );
+        return { ok: false, reason: "not-packaged" as const };
+      }
+
+      const includeDraftReleases =
+        rawOptions &&
+        typeof rawOptions === "object" &&
+        rawOptions !== null &&
+        "includeDraftReleases" in rawOptions
+          ? Boolean(
+              (rawOptions as {
+                includeDraftReleases?: unknown;
+              }).includeDraftReleases
+            )
+          : false;
+
+      const previous = Boolean(autoUpdater.allowPrerelease);
+      autoUpdater.allowPrerelease = includeDraftReleases;
+
+      mainLog("Updated auto-update configuration", {
+        includeDraftReleases,
+      });
+
+      if (includeDraftReleases && !previous) {
+        try {
+          const result = await autoUpdater.checkForUpdates();
+          logUpdateCheckResult(
+            "Configure-triggered checkForUpdates",
+            result
+          );
+        } catch (error) {
+          mainWarn(
+            "Auto-update configure-triggered checkForUpdates failed",
+            error
+          );
+        }
+      }
+
+      return { ok: true as const };
+    }
+  );
 }
 
 // Write critical errors to a file to aid debugging packaged crashes

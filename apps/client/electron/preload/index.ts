@@ -154,6 +154,11 @@ const cmuxAPI = {
         updateAvailable?: boolean;
         version?: string | null;
       }>,
+    configure: (options: { includeDraftReleases: boolean }) =>
+      ipcRenderer.invoke(
+        "cmux:auto-update:configure",
+        options
+      ) as Promise<{ ok: boolean; reason?: string }>,
     install: () =>
       ipcRenderer.invoke("cmux:auto-update:install") as Promise<{
         ok: boolean;
