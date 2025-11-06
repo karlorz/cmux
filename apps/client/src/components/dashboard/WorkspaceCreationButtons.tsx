@@ -13,6 +13,7 @@ import type {
   CreateCloudWorkspaceResponse,
 } from "@cmux/shared";
 import { useMutation } from "convex/react";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import { Server as ServerIcon, FolderOpen, Loader2 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
@@ -33,9 +34,32 @@ export function WorkspaceCreationButtons({
   const { theme } = useTheme();
   const [isCreatingLocal, setIsCreatingLocal] = useState(false);
   const [isCreatingCloud, setIsCreatingCloud] = useState(false);
+  const navigate = useNavigate();
+  const router = useRouter();
 
   const reserveLocalWorkspace = useMutation(api.localWorkspaces.reserve);
   const createTask = useMutation(api.tasks.create);
+
+  const navigateToWorkspace = useCallback(
+    (taskId?: Id<"tasks">, taskRunId?: Id<"taskRuns">) => {
+      if (!taskId || !taskRunId) {
+        return;
+      }
+
+      void router
+        .preloadRoute({
+          to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+          params: { teamSlugOrId, taskId, runId: taskRunId },
+        })
+        .catch(() => undefined);
+
+      void navigate({
+        to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+        params: { teamSlugOrId, taskId, runId: taskRunId },
+      });
+    },
+    [navigate, router, teamSlugOrId]
+  );
 
   const handleCreateLocalWorkspace = useCallback(async () => {
     if (!socket) {
@@ -88,6 +112,10 @@ export function WorkspaceCreationButtons({
               toast.success(
                 `Local workspace "${reservation.workspaceName}" created successfully`
               );
+              const effectiveTaskId = response.taskId ?? reservation.taskId;
+              const effectiveTaskRunId =
+                response.taskRunId ?? reservation.taskRunId;
+              navigateToWorkspace(effectiveTaskId, effectiveTaskRunId);
             } else {
               toast.error(
                 response.error || "Failed to create local workspace"
@@ -110,6 +138,7 @@ export function WorkspaceCreationButtons({
     teamSlugOrId,
     reserveLocalWorkspace,
     addTaskToExpand,
+    navigateToWorkspace,
   ]);
 
   const handleCreateCloudWorkspace = useCallback(async () => {
@@ -165,6 +194,8 @@ export function WorkspaceCreationButtons({
           async (response: CreateCloudWorkspaceResponse) => {
             if (response.success) {
               toast.success("Cloud workspace created successfully");
+              const effectiveTaskId = response.taskId ?? taskId;
+              navigateToWorkspace(effectiveTaskId, response.taskRunId);
             } else {
               toast.error(
                 response.error || "Failed to create cloud workspace"
@@ -190,6 +221,7 @@ export function WorkspaceCreationButtons({
     createTask,
     addTaskToExpand,
     theme,
+    navigateToWorkspace,
   ]);
 
   const canCreateLocal = selectedProject.length > 0 && !isEnvSelected;
