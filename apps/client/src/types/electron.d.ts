@@ -8,6 +8,7 @@ import type {
   ElectronWebContentsSnapshot,
   ElectronWebContentsState,
 } from "./electron-webcontents";
+import type { AppSettings } from "../../electron/main/settings";
 
 interface CmuxSocketAPI {
   connect: (
@@ -117,6 +118,11 @@ interface CmuxAPI {
         version?: string | null;
       }>;
     install: () => Promise<{ ok: boolean; reason?: string }>;
+  };
+  settings: {
+    read: () => Promise<{ ok: boolean; settings: AppSettings }>;
+    write: (settings: AppSettings) => Promise<{ ok: boolean }>;
+    reset: () => Promise<{ ok: boolean; settings: AppSettings }>;
   };
 }
 

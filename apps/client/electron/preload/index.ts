@@ -10,6 +10,7 @@ import type {
   ElectronLogsPayload,
   ElectronMainLogMessage,
 } from "../../src/lib/electron-logs/types";
+import type { AppSettings } from "../main/settings";
 
 const api = {};
 
@@ -158,6 +159,22 @@ const cmuxAPI = {
       ipcRenderer.invoke("cmux:auto-update:install") as Promise<{
         ok: boolean;
         reason?: string;
+      }>,
+  },
+  settings: {
+    read: () =>
+      ipcRenderer.invoke("cmux:settings:read") as Promise<{
+        ok: boolean;
+        settings: AppSettings;
+      }>,
+    write: (settings: AppSettings) =>
+      ipcRenderer.invoke("cmux:settings:write", settings) as Promise<{
+        ok: boolean;
+      }>,
+    reset: () =>
+      ipcRenderer.invoke("cmux:settings:reset") as Promise<{
+        ok: boolean;
+        settings: AppSettings;
       }>,
   },
   webContentsView: {

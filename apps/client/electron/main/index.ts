@@ -48,6 +48,7 @@ import {
   getProxyCredentialsForWebContents,
   startPreviewProxy,
 } from "./task-run-preview-proxy";
+import { loadSettings, saveSettings, type AppSettings } from "./settings";
 import { normalizeBrowserUrl } from "@cmux/shared";
 
 // Use a cookieable HTTPS origin intercepted locally instead of a custom scheme.
@@ -427,6 +428,69 @@ function registerAutoUpdateIpcHandlers(): void {
   });
 }
 
+function registerSettingsIpcHandlers(): void {
+  ipcMain.handle("cmux:settings:read", async () => {
+    try {
+      const settings = await loadSettings();
+      return { ok: true as const, settings };
+    } catch (error) {
+      mainWarn("Failed to read settings", error);
+      const err = error instanceof Error ? error : new Error(String(error));
+      throw err;
+    }
+  });
+
+  ipcMain.handle("cmux:settings:write", async (_event, settings: AppSettings) => {
+    try {
+      await saveSettings(settings);
+
+      // If auto-update settings changed, reconfigure auto-updater
+      if (app.isPackaged) {
+        const includeDrafts = settings.autoUpdate.includeDraftReleases;
+        if (autoUpdater.allowPrerelease !== includeDrafts) {
+          autoUpdater.allowPrerelease = includeDrafts;
+          mainLog("Auto-updater prerelease setting updated", { allowPrerelease: includeDrafts });
+
+          // Trigger a check to apply the new setting immediately
+          autoUpdater.checkForUpdates()
+            .then((result) => logUpdateCheckResult("Settings-triggered checkForUpdates", result))
+            .catch((e) => mainWarn("Settings-triggered checkForUpdates failed", e));
+        }
+      }
+
+      return { ok: true as const };
+    } catch (error) {
+      mainWarn("Failed to write settings", error);
+      const err = error instanceof Error ? error : new Error(String(error));
+      throw err;
+    }
+  });
+
+  ipcMain.handle("cmux:settings:reset", async () => {
+    try {
+      const defaultSettings: AppSettings = {
+        autoUpdate: {
+          enabled: true,
+          includeDraftReleases: false,
+        },
+      };
+      await saveSettings(defaultSettings);
+
+      // Reconfigure auto-updater with defaults
+      if (app.isPackaged) {
+        autoUpdater.allowPrerelease = false;
+        mainLog("Auto-updater reset to default settings");
+      }
+
+      return { ok: true as const, settings: defaultSettings };
+    } catch (error) {
+      mainWarn("Failed to reset settings", error);
+      const err = error instanceof Error ? error : new Error(String(error));
+      throw err;
+    }
+  });
+}
+
 // Write critical errors to a file to aid debugging packaged crashes
 async function writeFatalLog(...args: unknown[]) {
   try {
@@ -450,7 +514,7 @@ process.on("unhandledRejection", (reason) => {
   void writeFatalLog("unhandledRejection", reason);
 });
 
-function setupAutoUpdates(): void {
+async function setupAutoUpdates(): Promise<void> {
   if (!app.isPackaged) {
     mainLog("Skipping auto-updates in development");
     return;
@@ -462,6 +526,24 @@ function setupAutoUpdates(): void {
     arch: process.arch,
   });
 
+  // Load user settings
+  let settings: AppSettings;
+  try {
+    settings = await loadSettings();
+    mainLog("Loaded auto-update settings", {
+      enabled: settings.autoUpdate.enabled,
+      includeDraftReleases: settings.autoUpdate.includeDraftReleases,
+    });
+  } catch (e) {
+    mainWarn("Failed to load settings, using defaults", e);
+    settings = {
+      autoUpdate: {
+        enabled: true,
+        includeDraftReleases: false,
+      },
+    };
+  }
+
   try {
     // Wire logs to our logger
     (autoUpdater as unknown as { logger: unknown }).logger = {
@@ -472,7 +554,7 @@ function setupAutoUpdates(): void {
 
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
-    autoUpdater.allowPrerelease = false;
+    autoUpdater.allowPrerelease = settings.autoUpdate.includeDraftReleases;
 
     if (process.platform === "darwin") {
       const channel = "latest-universal";
@@ -610,7 +692,7 @@ function createWindow(): void {
   // Socket bridge not required; renderer connects directly
 
   // Initialize auto-updates
-  setupAutoUpdates();
+  void setupAutoUpdates();
 
   // Once the renderer is loaded, process any queued deep-link
   mainWindow.webContents.on("did-finish-load", () => {
@@ -716,6 +798,7 @@ app.whenReady().then(async () => {
   });
   registerLogIpcHandlers();
   registerAutoUpdateIpcHandlers();
+  registerSettingsIpcHandlers();
   initCmdK({
     getMainWindow: () => mainWindow,
     logger: {
