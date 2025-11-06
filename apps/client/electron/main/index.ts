@@ -48,7 +48,15 @@ import {
   getProxyCredentialsForWebContents,
   startPreviewProxy,
 } from "./task-run-preview-proxy";
-import { normalizeBrowserUrl } from "@cmux/shared";
+import {
+  normalizeBrowserUrl,
+  type PersistedGlobalShortcuts,
+} from "@cmux/shared";
+import {
+  getShortcutAccelerator,
+  matchesGlobalShortcut,
+  updateGlobalShortcuts,
+} from "./global-shortcut-manager";
 
 // Use a cookieable HTTPS origin intercepted locally instead of a custom scheme.
 const PARTITION = "persist:cmux";
@@ -251,6 +259,30 @@ function setPreviewReloadMenuVisibility(visible: boolean): void {
   }
 }
 
+function applyGlobalShortcutAcceleratorsToMenu(): void {
+  const menu = Menu.getApplicationMenu();
+  if (!menu) return;
+
+  const mapping: Array<[string, "commandPalette" | "previewReload" | "previewBack" | "previewForward" | "previewFocusAddress"]> =
+    [
+      ["cmux-command-palette", "commandPalette"],
+      ["cmux-preview-reload", "previewReload"],
+      ["cmux-preview-back", "previewBack"],
+      ["cmux-preview-forward", "previewForward"],
+      ["cmux-preview-focus-address", "previewFocusAddress"],
+    ];
+
+  for (const [id, action] of mapping) {
+    const item = menu.getMenuItemById(id);
+    if (item) {
+      item.accelerator = getShortcutAccelerator(action) ?? undefined;
+    }
+  }
+
+  previewReloadMenuItem = menu.getMenuItemById("cmux-preview-reload") ?? null;
+  setPreviewReloadMenuVisibility(previewReloadMenuVisible);
+}
+
 ipcMain.on("cmux:get-current-webcontents-id", (event) => {
   event.returnValue = event.sender.id;
 });
@@ -260,6 +292,29 @@ ipcMain.handle(
   async (_event, visible: unknown) => {
     setPreviewReloadMenuVisibility(Boolean(visible));
     return { ok: true };
+  }
+);
+
+ipcMain.handle(
+  "cmux:ui:set-global-shortcuts",
+  async (_event, payload: unknown) => {
+    try {
+      const maybeRecord =
+        payload && typeof payload === "object"
+          ? (payload as Record<string, unknown>)
+          : null;
+      updateGlobalShortcuts(
+        maybeRecord as unknown as PersistedGlobalShortcuts | null | undefined
+      );
+      applyGlobalShortcutAcceleratorsToMenu();
+      return { ok: true };
+    } catch (error) {
+      mainWarn("Failed to update global shortcuts", error);
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 );
 
@@ -739,35 +794,25 @@ app.whenReady().then(async () => {
       // Only handle preview shortcuts when preview is visible
       if (!previewReloadMenuVisible) return;
 
-      const isMac = process.platform === "darwin";
-      const modKey = isMac ? input.meta : input.control;
-      if (!modKey || input.alt || input.shift) return;
-
-      const key = input.key.toLowerCase();
-
-      // cmd+l: focus address bar
-      if (key === "l") {
+      if (matchesGlobalShortcut("previewFocusAddress", input)) {
         e.preventDefault();
         sendShortcutToFocusedWindow("preview-focus-address");
         return;
       }
 
-      // cmd+[: go back
-      if (input.key === "[") {
+      if (matchesGlobalShortcut("previewBack", input)) {
         e.preventDefault();
         sendShortcutToFocusedWindow("preview-back");
         return;
       }
 
-      // cmd+]: go forward
-      if (input.key === "]") {
+      if (matchesGlobalShortcut("previewForward", input)) {
         e.preventDefault();
         sendShortcutToFocusedWindow("preview-forward");
         return;
       }
 
-      // cmd+r: reload
-      if (key === "r") {
+      if (matchesGlobalShortcut("previewReload", input)) {
         e.preventDefault();
         sendShortcutToFocusedWindow("preview-reload");
         return;
@@ -899,7 +944,7 @@ app.whenReady().then(async () => {
           id: "cmux-preview-reload",
           visible: previewReloadMenuVisible,
           label: "Reload Preview",
-          accelerator: "CommandOrControl+R",
+          accelerator: getShortcutAccelerator("previewReload") ?? undefined,
           click: () => {
             const dispatched = sendShortcutToFocusedWindow("preview-reload");
             if (!dispatched) {
@@ -913,7 +958,7 @@ app.whenReady().then(async () => {
           id: "cmux-preview-back",
           visible: previewReloadMenuVisible,
           label: "Back",
-          accelerator: "CommandOrControl+[",
+          accelerator: getShortcutAccelerator("previewBack") ?? undefined,
           click: () => {
             sendShortcutToFocusedWindow("preview-back");
           },
@@ -922,7 +967,7 @@ app.whenReady().then(async () => {
           id: "cmux-preview-forward",
           visible: previewReloadMenuVisible,
           label: "Forward",
-          accelerator: "CommandOrControl+]",
+          accelerator: getShortcutAccelerator("previewForward") ?? undefined,
           click: () => {
             sendShortcutToFocusedWindow("preview-forward");
           },
@@ -931,7 +976,8 @@ app.whenReady().then(async () => {
           id: "cmux-preview-focus-address",
           visible: previewReloadMenuVisible,
           label: "Focus Address Bar",
-          accelerator: "CommandOrControl+L",
+          accelerator:
+            getShortcutAccelerator("previewFocusAddress") ?? undefined,
           click: () => {
             sendShortcutToFocusedWindow("preview-focus-address");
           },
@@ -958,8 +1004,10 @@ app.whenReady().then(async () => {
         label: "Commands",
         submenu: [
           {
+            id: "cmux-command-palette",
             label: "Command Palette…",
-            accelerator: "CommandOrControl+K",
+            accelerator:
+              getShortcutAccelerator("commandPalette") ?? undefined,
             click: () => {
               try {
                 const target = resolveTargetWindow();
@@ -1021,9 +1069,8 @@ app.whenReady().then(async () => {
       ],
     });
     const menu = Menu.buildFromTemplate(template);
-    previewReloadMenuItem = menu.getMenuItemById("cmux-preview-reload") ?? null;
-    setPreviewReloadMenuVisibility(previewReloadMenuVisible);
     Menu.setApplicationMenu(menu);
+    applyGlobalShortcutAcceleratorsToMenu();
   } catch (e) {
     mainWarn("Failed to set application menu", e);
   }

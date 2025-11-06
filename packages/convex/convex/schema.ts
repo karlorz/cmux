@@ -515,6 +515,14 @@ const convexSchema = defineSchema({
     worktreePath: v.optional(v.string()), // Custom path for git worktrees
     autoPrEnabled: v.optional(v.boolean()), // Auto-create PR for crown winner (default: false)
     nextLocalWorkspaceSequence: v.optional(v.number()), // Counter for local workspace naming
+    globalShortcuts: v.optional(
+      v.record(
+        v.string(),
+        v.object({
+          accelerator: v.optional(v.union(v.string(), v.null())),
+        })
+      )
+    ),
     createdAt: v.number(),
     updatedAt: v.number(),
     userId: v.string(),

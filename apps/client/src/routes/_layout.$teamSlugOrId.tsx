@@ -7,11 +7,16 @@ import { ExpandTasksProvider } from "@/contexts/expand-tasks/ExpandTasksProvider
 import { cachedGetUser } from "@/lib/cachedGetUser";
 import { setLastTeamSlugOrId } from "@/lib/lastTeam";
 import { stackClientApp } from "@/lib/stack";
+import { isElectron } from "@/lib/electron";
 import { api } from "@cmux/convex/api";
 import { convexQuery } from "@convex-dev/react-query";
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { Suspense, useEffect, useMemo } from "react";
+import {
+  normalizeGlobalShortcuts,
+  serializeShortcutSettings,
+} from "@cmux/shared";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId")({
   component: LayoutComponentWrapper,
@@ -58,6 +63,9 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId")({
 function LayoutComponent() {
   const { teamSlugOrId } = Route.useParams();
   const tasks = useQuery(api.tasks.get, { teamSlugOrId });
+  const workspaceSettings = useQuery(api.workspaceSettings.get, {
+    teamSlugOrId,
+  });
 
   // Sort tasks by creation date (newest first) and take the latest 5
   const recentTasks = useMemo(() => {
@@ -69,6 +77,18 @@ function LayoutComponent() {
   }, [tasks]);
 
   const displayTasks = tasks === undefined ? undefined : recentTasks;
+
+  useEffect(() => {
+    if (!isElectron) return;
+    if (typeof window === "undefined") return;
+    const sender = window.cmux?.ui?.setGlobalShortcuts;
+    if (typeof sender !== "function") return;
+    if (workspaceSettings === undefined) return;
+    const normalized = normalizeGlobalShortcuts(
+      workspaceSettings?.globalShortcuts ?? undefined
+    );
+    void sender(serializeShortcutSettings(normalized));
+  }, [workspaceSettings]);
 
   return (
     <ExpandTasksProvider>

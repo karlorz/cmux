@@ -1,4 +1,5 @@
 import { ElectronAPI } from "@electron-toolkit/preload";
+import type { PersistedGlobalShortcuts } from "@cmux/shared";
 
 declare global {
   interface Window {
@@ -20,6 +21,9 @@ declare global {
         ) => Promise<{ ok: boolean; queued?: boolean }>;
         setCommandPaletteOpen: (open: boolean) => Promise<{ ok: boolean }>;
         setPreviewReloadVisible: (visible: boolean) => Promise<{ ok: boolean }>;
+        setGlobalShortcuts: (
+          settings: PersistedGlobalShortcuts | null | undefined
+        ) => Promise<{ ok: boolean; error?: unknown }>;
         restoreLastFocus: () => Promise<{ ok: boolean; queued?: boolean }>;
       };
       socket: {

@@ -1,12 +1,7 @@
 import path from "node:path";
 import { createWriteStream, existsSync, mkdirSync, type WriteStream } from "node:fs";
-import {
-  app,
-  BrowserWindow,
-  ipcMain,
-  webContents,
-  webFrameMain,
-} from "electron";
+import { app, BrowserWindow, ipcMain, webContents, webFrameMain } from "electron";
+import { matchesGlobalShortcut } from "./global-shortcut-manager";
 
 type Logger = {
   log: (...args: unknown[]) => void;
@@ -238,26 +233,9 @@ export function initCmdK(opts: {
           typeInput: input.type,
         });
         if (input.type !== "keyDown") return;
-        const isMac = process.platform === "darwin";
-        // Only trigger on EXACT Cmd+K (mac) or Ctrl+K (others)
-        const isCmdK = (() => {
-          if (input.key.toLowerCase() !== "k") return false;
-          if (input.alt || input.shift) return false;
-          if (isMac) {
-            // Require meta only; disallow ctrl on mac
-            return Boolean(input.meta) && !input.control;
-          }
-          // Non-mac: require ctrl only; disallow meta
-          return Boolean(input.control) && !input.meta;
-        })();
-
-        const isSidebarToggle = (() => {
-          if (input.key.toLowerCase() !== "s") return false;
-          if (!input.shift) return false;
-          if (input.alt || input.meta) return false;
-          // Require control to align with renderer shortcut (Ctrl+Shift+S)
-          return Boolean(input.control);
-        })();
+        // Only trigger on configured shortcuts (no extra modifiers)
+        const isCmdK = matchesGlobalShortcut("commandPalette", input);
+        const isSidebarToggle = matchesGlobalShortcut("sidebarToggle", input);
 
         if (!isCmdK && !isSidebarToggle) return;
 

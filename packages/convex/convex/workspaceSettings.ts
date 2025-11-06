@@ -23,6 +23,14 @@ export const update = authMutation({
     teamSlugOrId: v.string(),
     worktreePath: v.optional(v.string()),
     autoPrEnabled: v.optional(v.boolean()),
+    globalShortcuts: v.optional(
+      v.record(
+        v.string(),
+        v.object({
+          accelerator: v.optional(v.union(v.string(), v.null())),
+        })
+      )
+    ),
   },
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
@@ -39,6 +47,7 @@ export const update = authMutation({
       const updates: {
         worktreePath?: string;
         autoPrEnabled?: boolean;
+        globalShortcuts?: Record<string, { accelerator?: string | null }>;
         updatedAt: number;
       } = { updatedAt: now };
 
@@ -48,12 +57,16 @@ export const update = authMutation({
       if (args.autoPrEnabled !== undefined) {
         updates.autoPrEnabled = args.autoPrEnabled;
       }
+      if (args.globalShortcuts !== undefined) {
+        updates.globalShortcuts = args.globalShortcuts;
+      }
 
       await ctx.db.patch(existing._id, updates);
     } else {
       await ctx.db.insert("workspaceSettings", {
         worktreePath: args.worktreePath,
         autoPrEnabled: args.autoPrEnabled,
+        globalShortcuts: args.globalShortcuts,
         nextLocalWorkspaceSequence: 0,
         createdAt: now,
         updatedAt: now,

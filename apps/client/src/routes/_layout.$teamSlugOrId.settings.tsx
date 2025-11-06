@@ -2,6 +2,7 @@ import { ContainerSettings } from "@/components/ContainerSettings";
 import { FloatingPane } from "@/components/floating-pane";
 import { ProviderStatusSettings } from "@/components/provider-status-settings";
 import { useTheme } from "@/components/theme/use-theme";
+import { ShortcutRecorder } from "@/components/ShortcutRecorder";
 import { TitleBar } from "@/components/TitleBar";
 import { api } from "@cmux/convex/api";
 import type { Doc } from "@cmux/convex/dataModel";
@@ -12,8 +13,19 @@ import { Switch } from "@heroui/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useConvex } from "convex/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { isElectron } from "@/lib/electron";
+import {
+  GLOBAL_SHORTCUT_DEFINITIONS,
+  areShortcutSettingsEqual,
+  normalizeGlobalShortcuts,
+  serializeShortcutSettings,
+  type GlobalShortcutAction,
+  type GlobalShortcutState,
+  type PersistedGlobalShortcuts,
+  type GlobalShortcutDefinition,
+} from "@cmux/shared";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/settings")({
   component: SettingsComponent,
@@ -59,6 +71,14 @@ function SettingsComponent() {
   } | null>(null);
   const [originalContainerSettingsData, setOriginalContainerSettingsData] =
     useState<typeof containerSettingsData>(null);
+  const defaultShortcutMap = useMemo(
+    () => normalizeGlobalShortcuts(),
+    []
+  );
+  const [globalShortcuts, setGlobalShortcuts] =
+    useState<GlobalShortcutState>(() => normalizeGlobalShortcuts());
+  const [originalGlobalShortcuts, setOriginalGlobalShortcuts] =
+    useState<GlobalShortcutState>(() => normalizeGlobalShortcuts());
 
   // Get all required API keys from agent configs
   const apiKeys = Array.from(
@@ -148,6 +168,16 @@ function SettingsComponent() {
     }
   }, [workspaceSettings]);
 
+  useEffect(() => {
+    if (workspaceSettings === undefined) return;
+    const overrides =
+      (workspaceSettings as Doc<"workspaceSettings"> | null | undefined)
+        ?.globalShortcuts ?? undefined;
+    const normalized = normalizeGlobalShortcuts(overrides);
+    setGlobalShortcuts(normalized);
+    setOriginalGlobalShortcuts(normalized);
+  }, [workspaceSettings]);
+
   // Track save button visibility
   // Footer-based save button; no visibility tracking needed
 
@@ -206,6 +236,21 @@ function SettingsComponent() {
     setShowKeys((prev) => ({ ...prev, [envVar]: !prev[envVar] }));
   };
 
+  const handleShortcutChange = useCallback(
+    (action: GlobalShortcutAction, accelerator: string | null) => {
+      setGlobalShortcuts((prev) => {
+        const trimmed = accelerator?.trim() ?? "";
+        return {
+          ...prev,
+          [action]: {
+            accelerator: trimmed.length === 0 ? null : trimmed,
+          },
+        };
+      });
+    },
+    []
+  );
+
   const handleContainerSettingsChange = useCallback(
     (data: {
       maxRunningContainers: number;
@@ -243,12 +288,17 @@ function SettingsComponent() {
 
     // Auto PR toggle changes
     const autoPrChanged = autoPrEnabled !== originalAutoPrEnabled;
+    const shortcutsChanged = !areShortcutSettingsEqual(
+      globalShortcuts,
+      originalGlobalShortcuts
+    );
 
     return (
       worktreePathChanged ||
       autoPrChanged ||
       apiKeysChanged ||
-      containerSettingsChanged
+      containerSettingsChanged ||
+      shortcutsChanged
     );
   };
 
@@ -259,42 +309,76 @@ function SettingsComponent() {
       let savedCount = 0;
       let deletedCount = 0;
 
-      // Save worktree path / auto PR if changed
-      if (
-        worktreePath !== originalWorktreePath ||
-        autoPrEnabled !== originalAutoPrEnabled
-      ) {
-        await convex.mutation(api.workspaceSettings.update, {
-          teamSlugOrId,
-          worktreePath: worktreePath || undefined,
-          autoPrEnabled,
-        });
-        setOriginalWorktreePath(worktreePath);
-        setOriginalAutoPrEnabled(autoPrEnabled);
+      const worktreePathChanged = worktreePath !== originalWorktreePath;
+      const autoPrChanged = autoPrEnabled !== originalAutoPrEnabled;
+      const shortcutsChanged = !areShortcutSettingsEqual(
+        globalShortcuts,
+        originalGlobalShortcuts
+      );
+      const workspaceUpdates: {
+        worktreePath?: string;
+        autoPrEnabled?: boolean;
+        globalShortcuts?: PersistedGlobalShortcuts;
+      } = {};
+      const workspaceActions: string[] = [];
+      let serializedShortcuts: PersistedGlobalShortcuts | undefined;
+
+      if (worktreePathChanged) {
+        workspaceUpdates.worktreePath = worktreePath || undefined;
+        workspaceActions.push("updated worktree path");
       }
 
-      // Save container settings if changed
-      if (
-        containerSettingsData &&
-        originalContainerSettingsData &&
-        JSON.stringify(containerSettingsData) !==
-          JSON.stringify(originalContainerSettingsData)
-      ) {
-        await convex.mutation(api.containerSettings.update, {
+      if (autoPrChanged) {
+        workspaceUpdates.autoPrEnabled = autoPrEnabled;
+        workspaceActions.push("updated auto PR setting");
+      }
+
+      if (shortcutsChanged) {
+        serializedShortcuts = serializeShortcutSettings(globalShortcuts);
+        workspaceUpdates.globalShortcuts = serializedShortcuts;
+        workspaceActions.push("updated shortcuts");
+      }
+
+      if (Object.keys(workspaceUpdates).length > 0) {
+        await convex.mutation(api.workspaceSettings.update, {
           teamSlugOrId,
-          ...containerSettingsData,
+          ...workspaceUpdates,
         });
-        setOriginalContainerSettingsData(containerSettingsData);
+        if (worktreePathChanged) {
+          setOriginalWorktreePath(worktreePath);
+        }
+        if (autoPrChanged) {
+          setOriginalAutoPrEnabled(autoPrEnabled);
+        }
+        if (shortcutsChanged) {
+          setOriginalGlobalShortcuts(globalShortcuts);
+          if (isElectron && window.cmux?.ui?.setGlobalShortcuts) {
+            void window.cmux.ui.setGlobalShortcuts(serializedShortcuts);
+          }
+        }
+      }
+
+      let updatedContainers = false;
+      if (containerSettingsData && originalContainerSettingsData) {
+        const containerSettingsChanged =
+          JSON.stringify(containerSettingsData) !==
+          JSON.stringify(originalContainerSettingsData);
+        if (containerSettingsChanged) {
+          await convex.mutation(api.containerSettings.update, {
+            teamSlugOrId,
+            ...containerSettingsData,
+          });
+          setOriginalContainerSettingsData(containerSettingsData);
+          updatedContainers = true;
+        }
       }
 
       for (const key of apiKeys) {
         const value = apiKeyValues[key.envVar] || "";
         const originalValue = originalApiKeyValues[key.envVar] || "";
 
-        // Only save if the value has changed
         if (value !== originalValue) {
           if (value.trim()) {
-            // Save or update the key
             await saveApiKeyMutation.mutateAsync({
               envVar: key.envVar,
               value: value.trim(),
@@ -303,7 +387,6 @@ function SettingsComponent() {
             });
             savedCount++;
           } else if (originalValue) {
-            // Delete the key if it was cleared
             await convex.mutation(api.apiKeys.remove, {
               teamSlugOrId,
               envVar: key.envVar,
@@ -313,29 +396,40 @@ function SettingsComponent() {
         }
       }
 
-      // Update original values to reflect saved state
       setOriginalApiKeyValues(apiKeyValues);
-
-      // After successful save, hide all API key inputs
       setShowKeys({});
 
-      if (savedCount > 0 || deletedCount > 0) {
-        const actions = [];
-        if (savedCount > 0) {
-          actions.push(`saved ${savedCount} key${savedCount > 1 ? "s" : ""}`);
-        }
-        if (deletedCount > 0) {
-          actions.push(
-            `removed ${deletedCount} key${deletedCount > 1 ? "s" : ""}`
-          );
-        }
-        toast.success(`Successfully ${actions.join(" and ")}`);
+      const actionMessages: string[] = [];
+
+      if (workspaceActions.length > 0) {
+        actionMessages.push(...workspaceActions);
+      }
+      if (updatedContainers) {
+        actionMessages.push("updated container settings");
+      }
+      if (savedCount > 0) {
+        actionMessages.push(
+          `saved ${savedCount} key${savedCount > 1 ? "s" : ""}`
+        );
+      }
+      if (deletedCount > 0) {
+        actionMessages.push(
+          `removed ${deletedCount} key${deletedCount > 1 ? "s" : ""}`
+        );
+      }
+
+      if (actionMessages.length > 0) {
+        const summary =
+          actionMessages.length === 1
+            ? actionMessages[0]
+            : actionMessages.join(" and ");
+        toast.success(`Successfully ${summary}`);
       } else {
         toast.info("No changes to save");
       }
     } catch (error) {
-      toast.error("Failed to save API keys. Please try again.");
-      console.error("Error saving API keys:", error);
+      toast.error("Failed to save settings. Please try again.");
+      console.error("Error saving settings:", error);
     } finally {
       setIsSaving(false);
     }
@@ -674,6 +768,51 @@ function SettingsComponent() {
                     Default location: ~/cmux
                   </p>
                 </div>
+              </div>
+            </div>
+
+            {/* Global Shortcuts */}
+            <div className="bg-white dark:bg-neutral-950 rounded-lg border border-neutral-200 dark:border-neutral-800">
+              <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
+                <h2 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                  Global Shortcuts
+                </h2>
+                <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                  Customize keyboard shortcuts for the command palette, sidebar, and preview controls. Clear a shortcut to disable it.
+                </p>
+              </div>
+              <div className="p-4 space-y-4">
+                {GLOBAL_SHORTCUT_DEFINITIONS.map(
+                  (definition: GlobalShortcutDefinition) => {
+                    const current =
+                      globalShortcuts[definition.action]?.accelerator ?? null;
+                    const defaultValue =
+                      defaultShortcutMap[definition.action]?.accelerator ??
+                      definition.defaultAccelerator;
+                  return (
+                    <div
+                      key={definition.action}
+                      className="flex flex-col gap-2 border-b border-neutral-200/70 dark:border-neutral-800/70 pb-4 last:border-b-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between sm:gap-6"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                          {definition.label}
+                        </p>
+                        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                          {definition.description}
+                        </p>
+                      </div>
+                      <ShortcutRecorder
+                        value={current}
+                        defaultValue={defaultValue}
+                        onChange={(next) =>
+                          handleShortcutChange(definition.action, next)
+                        }
+                      />
+                    </div>
+                    );
+                  }
+                )}
               </div>
             </div>
 

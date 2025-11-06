@@ -103,6 +103,12 @@ interface CmuxAPI {
     ) => Promise<{ ok: boolean; queued?: boolean }>;
     setCommandPaletteOpen: (open: boolean) => Promise<{ ok: boolean }>;
     setPreviewReloadVisible?: (visible: boolean) => Promise<{ ok: boolean }>;
+    setGlobalShortcuts?: (
+      settings:
+        | import("@cmux/shared").PersistedGlobalShortcuts
+        | null
+        | undefined
+    ) => Promise<{ ok: boolean; error?: unknown }>;
     restoreLastFocus: () => Promise<{ ok: boolean; queued?: boolean }>;
   };
   socket: CmuxSocketAPI;
