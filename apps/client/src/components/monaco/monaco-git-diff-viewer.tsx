@@ -11,6 +11,7 @@ import type { ReplaceDiffEntry } from "@cmux/shared/diff-types";
 import { FileDiffHeader } from "../file-diff-header";
 import { kitties } from "../kitties";
 import type { GitDiffViewerProps } from "../codemirror-git-diff-viewer";
+import { ImageSlideshow, type SlideshowImage } from "../ImageSlideshow";
 export type { GitDiffViewerProps } from "../codemirror-git-diff-viewer";
 
 void loaderInitPromise;
@@ -78,6 +79,8 @@ type MonacoFileGroup = {
   contentOmitted: boolean;
   language: string;
   editorMetrics: EditorLayoutMetrics | null;
+  oldImageDataUrl?: string;
+  newImageDataUrl?: string;
 };
 
 const DEFAULT_EDITOR_MIN_HEIGHT =
@@ -845,6 +848,7 @@ interface MonacoFileDiffRowProps {
   editorTheme: string;
   diffOptions: editor.IDiffEditorConstructionOptions;
   classNames?: FileDiffRowClassNames;
+  onImageClick?: (image: SlideshowImage) => void;
 }
 
 function MonacoFileDiffRow({
@@ -854,6 +858,7 @@ function MonacoFileDiffRow({
   editorTheme,
   diffOptions,
   classNames,
+  onImageClick,
 }: MonacoFileDiffRowProps) {
   const canRenderEditor =
     !file.isBinary &&
@@ -928,9 +933,87 @@ function MonacoFileDiffRow({
             ) : null}
           </div>
         ) : file.isBinary ? (
-          <div className="grow bg-neutral-50 px-3 py-6 text-center text-xs text-neutral-500 dark:bg-neutral-900/50 dark:text-neutral-400 grid place-content-center">
-            Binary file not shown
-          </div>
+          file.oldImageDataUrl || file.newImageDataUrl ? (
+            <div className="grow bg-neutral-50 dark:bg-neutral-900/50 p-4">
+              <div className="grid grid-cols-2 gap-4">
+                {/* Old/Before Image */}
+                <div className="flex flex-col gap-2">
+                  <div className="text-xs font-medium text-neutral-600 dark:text-neutral-400 px-2">
+                    {file.status === "modified" ? "Before" : "Original"}
+                  </div>
+                  {file.oldImageDataUrl ? (
+                    <button
+                      onClick={() => {
+                        if (file.oldImageDataUrl && onImageClick) {
+                          onImageClick({
+                            dataUrl: file.oldImageDataUrl,
+                            label: `Before: ${file.oldPath || file.filePath}`,
+                            filePath: file.oldPath || file.filePath,
+                          });
+                        }
+                      }}
+                      className="relative rounded-lg border-2 border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 overflow-hidden hover:border-emerald-400 dark:hover:border-emerald-400 transition-colors group"
+                    >
+                      <img
+                        src={file.oldImageDataUrl}
+                        alt={`Before: ${file.oldPath || file.filePath}`}
+                        className="w-full h-auto max-h-96 object-contain"
+                      />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                        <span className="opacity-0 group-hover:opacity-100 transition-opacity text-xs font-medium text-white bg-black/70 px-3 py-1.5 rounded-full">
+                          Click to view
+                        </span>
+                      </div>
+                    </button>
+                  ) : (
+                    <div className="rounded-lg border-2 border-dashed border-neutral-300 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-800 p-8 text-center text-xs text-neutral-500 dark:text-neutral-400">
+                      No image (file added)
+                    </div>
+                  )}
+                </div>
+
+                {/* New/After Image */}
+                <div className="flex flex-col gap-2">
+                  <div className="text-xs font-medium text-neutral-600 dark:text-neutral-400 px-2">
+                    {file.status === "modified" ? "After" : file.status === "added" ? "New" : "Current"}
+                  </div>
+                  {file.newImageDataUrl ? (
+                    <button
+                      onClick={() => {
+                        if (file.newImageDataUrl && onImageClick) {
+                          onImageClick({
+                            dataUrl: file.newImageDataUrl,
+                            label: `After: ${file.filePath}`,
+                            filePath: file.filePath,
+                          });
+                        }
+                      }}
+                      className="relative rounded-lg border-2 border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 overflow-hidden hover:border-emerald-400 dark:hover:border-emerald-400 transition-colors group"
+                    >
+                      <img
+                        src={file.newImageDataUrl}
+                        alt={`After: ${file.filePath}`}
+                        className="w-full h-auto max-h-96 object-contain"
+                      />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                        <span className="opacity-0 group-hover:opacity-100 transition-opacity text-xs font-medium text-white bg-black/70 px-3 py-1.5 rounded-full">
+                          Click to view
+                        </span>
+                      </div>
+                    </button>
+                  ) : (
+                    <div className="rounded-lg border-2 border-dashed border-neutral-300 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-800 p-8 text-center text-xs text-neutral-500 dark:text-neutral-400">
+                      No image (file deleted)
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="grow bg-neutral-50 px-3 py-6 text-center text-xs text-neutral-500 dark:bg-neutral-900/50 dark:text-neutral-400 grid place-content-center">
+              Binary file not shown
+            </div>
+          )
         ) : file.status === "deleted" ? (
           <div className="grow bg-neutral-50 px-3 py-6 text-center text-xs text-neutral-500 dark:bg-neutral-900/50 dark:text-neutral-400 grid place-content-center">
             File was deleted
@@ -964,6 +1047,7 @@ const MemoMonacoFileDiffRow = memo(MonacoFileDiffRow, (prev, next) => {
   return (
     prev.isExpanded === next.isExpanded &&
     prev.editorTheme === next.editorTheme &&
+    prev.onImageClick === next.onImageClick &&
     a.filePath === b.filePath &&
     a.oldPath === b.oldPath &&
     a.status === b.status &&
@@ -973,7 +1057,9 @@ const MemoMonacoFileDiffRow = memo(MonacoFileDiffRow, (prev, next) => {
     a.contentOmitted === b.contentOmitted &&
     a.language === b.language &&
     a.oldContent === b.oldContent &&
-    a.newContent === b.newContent
+    a.newContent === b.newContent &&
+    a.oldImageDataUrl === b.oldImageDataUrl &&
+    a.newImageDataUrl === b.newImageDataUrl
   );
 });
 
@@ -1021,10 +1107,55 @@ export function MonacoGitDiffViewer({
           contentOmitted: diff.contentOmitted ?? false,
           language: guessMonacoLanguage(diff.filePath),
           editorMetrics,
+          oldImageDataUrl: diff.oldImageDataUrl,
+          newImageDataUrl: diff.newImageDataUrl,
         };
       }),
     [diffs],
   );
+
+  // Collect all images for slideshow
+  const allImages = useMemo(() => {
+    const images: SlideshowImage[] = [];
+    for (const file of fileGroups) {
+      if (file.oldImageDataUrl) {
+        images.push({
+          dataUrl: file.oldImageDataUrl,
+          label: `Before: ${file.oldPath || file.filePath}`,
+          filePath: file.oldPath || file.filePath,
+        });
+      }
+      if (file.newImageDataUrl) {
+        images.push({
+          dataUrl: file.newImageDataUrl,
+          label: `After: ${file.filePath}`,
+          filePath: file.filePath,
+        });
+      }
+    }
+    return images;
+  }, [fileGroups]);
+
+  const [slideshowState, setSlideshowState] = useState<{
+    isOpen: boolean;
+    initialIndex: number;
+  }>({ isOpen: false, initialIndex: 0 });
+
+  const handleImageClick = (clickedImage: SlideshowImage) => {
+    const index = allImages.findIndex(
+      (img) =>
+        img.dataUrl === clickedImage.dataUrl &&
+        img.filePath === clickedImage.filePath
+    );
+    setSlideshowState({
+      isOpen: true,
+      initialIndex: index >= 0 ? index : 0,
+    });
+  };
+
+  const closeSlideshowCallback = () => {
+    setSlideshowState({ isOpen: false, initialIndex: 0 });
+  };
 
   const expandAll = () => {
     debugGitDiffViewerLog("expandAll invoked", {
@@ -1117,37 +1248,47 @@ export function MonacoGitDiffViewer({
   use(loaderInitPromise);
 
   return (
-    <div className="grow bg-white dark:bg-neutral-900">
-      <div className="flex flex-col -space-y-[2px]">
-        {fileGroups.map((file, index) => (
-          <MemoMonacoFileDiffRow
-            key={`monaco:${file.filePath}`}
-            file={file}
-            isExpanded={expandedFiles.has(file.filePath)}
-            onToggle={() => toggleFile(file.filePath)}
-            editorTheme={editorTheme}
-            diffOptions={diffOptions}
-            classNames={{
-              ...classNames?.fileDiffRow,
-              button: cn(
-                classNames?.fileDiffRow?.button,
-                index === 0 && "!border-t-0"
-              ),
-            }}
-          />
-        ))}
-        <hr className="border-neutral-200 dark:border-neutral-800" />
-        <div className="px-3 py-6 text-center">
-          <span className="select-none text-xs text-neutral-500 dark:text-neutral-400">
-            You’ve reached the end of the diff!
-          </span>
-          <div className="grid place-content-center">
-            <pre className="mt-2 pb-20 select-none text-left text-[8px] font-mono text-neutral-500 dark:text-neutral-400">
-              {kitty}
-            </pre>
+    <>
+      <div className="grow bg-white dark:bg-neutral-900">
+        <div className="flex flex-col -space-y-[2px]">
+          {fileGroups.map((file, index) => (
+            <MemoMonacoFileDiffRow
+              key={`monaco:${file.filePath}`}
+              file={file}
+              isExpanded={expandedFiles.has(file.filePath)}
+              onToggle={() => toggleFile(file.filePath)}
+              editorTheme={editorTheme}
+              diffOptions={diffOptions}
+              onImageClick={handleImageClick}
+              classNames={{
+                ...classNames?.fileDiffRow,
+                button: cn(
+                  classNames?.fileDiffRow?.button,
+                  index === 0 && "!border-t-0"
+                ),
+              }}
+            />
+          ))}
+          <hr className="border-neutral-200 dark:border-neutral-800" />
+          <div className="px-3 py-6 text-center">
+            <span className="select-none text-xs text-neutral-500 dark:text-neutral-400">
+              You've reached the end of the diff!
+            </span>
+            <div className="grid place-content-center">
+              <pre className="mt-2 pb-20 select-none text-left text-[8px] font-mono text-neutral-500 dark:text-neutral-400">
+                {kitty}
+              </pre>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+
+      <ImageSlideshow
+        images={allImages}
+        initialIndex={slideshowState.initialIndex}
+        isOpen={slideshowState.isOpen}
+        onClose={closeSlideshowCallback}
+      />
+    </>
   );
 }

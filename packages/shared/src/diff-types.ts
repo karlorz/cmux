@@ -14,5 +14,7 @@ export interface ReplaceDiffEntry {
   oldSize?: number;
   newSize?: number;
   patchSize?: number;
+  oldImageDataUrl?: string;
+  newImageDataUrl?: string;
 }
 

@@ -7,6 +7,7 @@ import type { RealtimeServer } from "../realtime";
 import { ensureRunWorktreeAndBranch } from "../utils/ensureRunWorktree";
 import { serverLogger } from "../utils/fileLogger";
 import { getConvex } from "../utils/convexClient";
+import { enrichDiffWithImages } from "../utils/imageUtils";
 // Stop using workspace diff; we rely on native ref diff.
 
 export interface GetRunDiffsOptions {
@@ -64,7 +65,7 @@ export async function getRunDiffs(
     }
   }
 
-  const entries = await getGitDiff({
+  let entries = await getGitDiff({
     baseRef: ensured.baseBranch,
     headRef: ensured.branchName,
     repoFullName: ensured.task.projectFullName || undefined,
@@ -73,6 +74,14 @@ export async function getRunDiffs(
     lastKnownBaseSha: baseBranchMetadata?.lastKnownBaseSha,
     lastKnownMergeCommitSha: baseBranchMetadata?.lastKnownMergeCommitSha,
   });
+
+  // Enrich binary image files with data URLs
+  entries = await enrichDiffWithImages(
+    entries,
+    worktreePath,
+    ensured.baseBranch
+  );
+
   const tCompute = Date.now();
 
   // Start watching this worktree to push reactive updates to connected clients, if available
