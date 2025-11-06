@@ -1040,7 +1040,6 @@ export function PullRequestDiffViewer({
     } catch (error) {
       console.error("[heatmap-colors] Failed to load settings", error);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

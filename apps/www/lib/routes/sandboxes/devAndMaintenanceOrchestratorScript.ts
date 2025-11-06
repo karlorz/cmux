@@ -141,7 +141,6 @@ const config = {
   convexUrl: requireEnv("CMUX_ORCH_CONVEX_URL"),
   taskRunJwt: requireEnv("CMUX_ORCH_TASK_RUN_JWT"),
   isCloudWorkspace: envBoolean("CMUX_ORCH_IS_CLOUD_WORKSPACE"),
-  isCloudWorkspace: envBoolean("CMUX_ORCH_IS_CLOUD_WORKSPACE"),
 };
 
 async function ensureTmuxSession(): Promise<void> {
