@@ -39,7 +39,6 @@ const LAYOUT_ICON_CONFIGS: Record<LayoutMode, LayoutIconConfig> = {
 export function PanelConfigModal({ isOpen, onClose, config, onChange }: PanelConfigModalProps) {
   const [draggedType, setDraggedType] = useState<PanelType | null>(null);
   const [draggedFrom, setDraggedFrom] = useState<PanelPosition | null>(null);
-  const [showAddMenu, setShowAddMenu] = useState<PanelPosition | null>(null);
 
   if (!isOpen) return null;
 
@@ -123,7 +122,6 @@ export function PanelConfigModal({ isOpen, onClose, config, onChange }: PanelCon
       },
     };
     onChange(newConfig);
-    setShowAddMenu(null);
   };
 
   const renderPanel = (position: PanelPosition, label: string) => {
@@ -141,7 +139,6 @@ export function PanelConfigModal({ isOpen, onClose, config, onChange }: PanelCon
     const PanelIcon = panelType ? PANEL_ICONS_MAP[panelType] : Plus;
     const isDragging = draggedFrom === position;
     const isDraggable = Boolean(panelType);
-    const isAddMenuOpen = showAddMenu === position;
 
     const handlePanelDragStart = () => {
       if (!panelType) {
@@ -195,61 +192,51 @@ export function PanelConfigModal({ isOpen, onClose, config, onChange }: PanelCon
         </div>
         <div className="flex flex-col items-center gap-1">
           {panelType ? (
-            <div
-              className="flex size-10 items-center justify-center rounded-full bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
-            >
-              <PanelIcon className="size-5" />
-            </div>
-          ) : (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowAddMenu(isAddMenuOpen ? null : position);
-                }}
-                className="flex size-10 items-center justify-center rounded-full bg-neutral-200 text-neutral-400 hover:bg-neutral-300 hover:text-neutral-700 dark:bg-neutral-800 dark:text-neutral-500 dark:hover:bg-neutral-700 dark:hover:text-neutral-300 transition-colors"
+            <>
+              <div
+                className="flex size-10 items-center justify-center rounded-full bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
               >
-                <Plus className="size-5" />
-              </button>
-
-              {isAddMenuOpen && availablePanels.length > 0 && (
-                <>
-                  <div
-                    className="fixed inset-0 z-[100]"
-                    onClick={() => setShowAddMenu(null)}
-                  />
-                  <div className="absolute left-1/2 -translate-x-1/2 top-full z-[101] mt-2 w-40 rounded-lg border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-800">
-                    {availablePanels.map((availablePanelType) => {
-                      const Icon = PANEL_ICONS_MAP[availablePanelType];
-                      return (
-                        <button
-                          key={availablePanelType}
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleAddPanelToPosition(position, availablePanelType);
-                          }}
-                          className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-neutral-700 first:rounded-t-lg last:rounded-b-lg transition-colors"
-                        >
-                          <Icon className="size-4" />
-                          {PANEL_LABELS[availablePanelType]}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-            </div>
+                <PanelIcon className="size-5" />
+              </div>
+              <span
+                className={clsx(
+                  "text-sm font-medium",
+                  "text-neutral-800 dark:text-neutral-100"
+                )}
+              >
+                {panelLabel}
+              </span>
+            </>
+          ) : (
+            availablePanels.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5 justify-center max-w-full px-2">
+                {availablePanels.map((availablePanelType) => {
+                  const Icon = PANEL_ICONS_MAP[availablePanelType];
+                  return (
+                    <button
+                      key={availablePanelType}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleAddPanelToPosition(position, availablePanelType);
+                      }}
+                      className="flex flex-col items-center gap-1 rounded-md border border-neutral-300 bg-white px-2 py-1.5 hover:bg-neutral-100 hover:border-neutral-400 dark:border-neutral-600 dark:bg-neutral-800 dark:hover:bg-neutral-700 dark:hover:border-neutral-500 transition-colors"
+                      title={PANEL_LABELS[availablePanelType]}
+                    >
+                      <Icon className="size-4" />
+                      <span className="text-[10px] text-neutral-700 dark:text-neutral-200 leading-none">
+                        {PANEL_LABELS[availablePanelType]}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                No panels available
+              </span>
+            )
           )}
-          <span
-            className={clsx(
-              "text-sm font-medium",
-              panelType ? "text-neutral-800 dark:text-neutral-100" : "text-neutral-500 dark:text-neutral-400"
-            )}
-          >
-            {panelLabel}
-          </span>
         </div>
       </div>
     );
