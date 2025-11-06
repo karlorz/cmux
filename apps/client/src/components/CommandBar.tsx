@@ -22,6 +22,7 @@ import { deriveRepoBaseName } from "@cmux/shared";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useUser, type Team } from "@stackframe/react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
+import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
 import { Command, useCommandState } from "cmdk";
 import { useMutation, useQuery } from "convex/react";
 import {
@@ -103,6 +104,10 @@ const taskCommandItemClassName =
 const placeholderClassName =
   "flex items-center gap-3 px-3 py-2.5 mx-1 rounded-md text-sm text-neutral-500 dark:text-neutral-400";
 
+const COMMAND_LIST_VIRTUALIZATION_THRESHOLD = 40;
+const COMMAND_LIST_ESTIMATED_ROW_HEIGHT = 44;
+const COMMAND_LIST_VIRTUALIZED_FALLBACK_COUNT = 20;
+
 type TeamCommandItem = {
   id: string;
   label: string;
@@ -144,6 +149,65 @@ type CommandListEntry = {
   dataValue?: string;
   trackUsage?: boolean;
 };
+
+function VirtualizedCommandItems({
+  entries,
+  virtualizer,
+  renderEntry,
+  fallbackCount = COMMAND_LIST_VIRTUALIZED_FALLBACK_COUNT,
+}: {
+  entries: CommandListEntry[];
+  virtualizer: Virtualizer<HTMLDivElement, HTMLDivElement>;
+  renderEntry: (entry: CommandListEntry) => ReactNode;
+  fallbackCount?: number;
+}) {
+  if (entries.length === 0) {
+    return null;
+  }
+
+  const virtualizationEnabled = virtualizer.options.enabled !== false;
+  const virtualItems = virtualizationEnabled
+    ? virtualizer.getVirtualItems()
+    : [];
+
+  if (!virtualizationEnabled) {
+    return <>{entries.map((entry) => renderEntry(entry))}</>;
+  }
+
+  if (virtualItems.length === 0) {
+    const fallbackEntries = entries.slice(0, fallbackCount);
+    return <>{fallbackEntries.map((entry) => renderEntry(entry))}</>;
+  }
+
+  return (
+    <div
+      style={{
+        height: virtualizer.getTotalSize(),
+        position: "relative",
+      }}
+    >
+      {virtualItems.map((virtualItem) => {
+        const entry = entries[virtualItem.index]!;
+        return (
+          <div
+            key={entry.value}
+            data-index={virtualItem.index}
+            ref={virtualizer.measureElement}
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "100%",
+              transform: `translateY(${virtualItem.start}px)`,
+            }}
+          >
+            {renderEntry(entry)}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function CommandHighlightListener({
   onHighlight,
@@ -1846,6 +1910,74 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
     [cloudWorkspaceCommandsToRender, cloudWorkspaceSuggestionsToRender]
   );
 
+  const shouldVirtualizeRoot =
+    rootCommandsToRender.length > COMMAND_LIST_VIRTUALIZATION_THRESHOLD;
+  const shouldVirtualizeLocal =
+    localWorkspaceCommandsToRender.length >
+    COMMAND_LIST_VIRTUALIZATION_THRESHOLD;
+  const shouldVirtualizeCloud =
+    cloudWorkspaceCommandsToRender.length >
+    COMMAND_LIST_VIRTUALIZATION_THRESHOLD;
+
+  const rootVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
+    count: rootCommandsToRender.length,
+    getScrollElement: () => commandListRef.current,
+    estimateSize: () => COMMAND_LIST_ESTIMATED_ROW_HEIGHT,
+    overscan: 24,
+    initialRect: { width: 720, height: 400 },
+    enabled: shouldVirtualizeRoot && activePage === "root" && open,
+  });
+
+  const localWorkspaceVirtualizer =
+    useVirtualizer<HTMLDivElement, HTMLDivElement>({
+      count: localWorkspaceCommandsToRender.length,
+      getScrollElement: () => commandListRef.current,
+      estimateSize: () => COMMAND_LIST_ESTIMATED_ROW_HEIGHT,
+      overscan: 24,
+      initialRect: { width: 720, height: 400 },
+      enabled:
+        shouldVirtualizeLocal &&
+        activePage === "local-workspaces" &&
+        open,
+    });
+
+  const cloudWorkspaceVirtualizer =
+    useVirtualizer<HTMLDivElement, HTMLDivElement>({
+      count: cloudWorkspaceCommandsToRender.length,
+      getScrollElement: () => commandListRef.current,
+      estimateSize: () => COMMAND_LIST_ESTIMATED_ROW_HEIGHT,
+      overscan: 24,
+      initialRect: { width: 720, height: 400 },
+      enabled:
+        shouldVirtualizeCloud &&
+        activePage === "cloud-workspaces" &&
+        open,
+    });
+
+  const rootCommandIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    rootCommandsToRender.forEach((entry, index) => {
+      map.set(entry.value, index);
+    });
+    return map;
+  }, [rootCommandsToRender]);
+
+  const localWorkspaceCommandIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    localWorkspaceCommandsToRender.forEach((entry, index) => {
+      map.set(entry.value, index);
+    });
+    return map;
+  }, [localWorkspaceCommandsToRender]);
+
+  const cloudWorkspaceCommandIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    cloudWorkspaceCommandsToRender.forEach((entry, index) => {
+      map.set(entry.value, index);
+    });
+    return map;
+  }, [cloudWorkspaceCommandsToRender]);
+
   const teamVisibleValues = useMemo(() => {
     if (!filteredTeamEntries.length) return [];
     return filteredTeamEntries.map((entry) => entry.value);
@@ -1877,27 +2009,100 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
     []
   );
 
-  const scrollCommandItemIntoView = useCallback((value: string | undefined) => {
-    if (!value) return;
-    if (typeof window === "undefined") return;
-    const listEl = commandListRef.current;
-    if (!listEl) return;
-    const escapeValue =
-      typeof window.CSS !== "undefined" &&
-      typeof window.CSS.escape === "function"
-        ? window.CSS.escape(value)
-        : value.replace(/["\\]/g, "\\$&");
-    const selector = `[data-value="${escapeValue}"]`;
-    const run = () => {
-      const target = listEl.querySelector<HTMLElement>(selector);
-      target?.scrollIntoView({ block: "nearest", behavior: "instant" });
-    };
-    if (typeof window.requestAnimationFrame === "function") {
-      window.requestAnimationFrame(run);
-    } else {
-      run();
-    }
-  }, []);
+  const renderRootCommandEntry = useCallback(
+    (entry: CommandListEntry) => renderCommandItem(entry, recordRootUsage),
+    [recordRootUsage, renderCommandItem]
+  );
+
+  const renderLocalWorkspaceCommandEntry = useCallback(
+    (entry: CommandListEntry) =>
+      renderCommandItem(entry, recordLocalWorkspaceUsage),
+    [recordLocalWorkspaceUsage, renderCommandItem]
+  );
+
+  const renderCloudWorkspaceCommandEntry = useCallback(
+    (entry: CommandListEntry) =>
+      renderCommandItem(entry, recordCloudWorkspaceUsage),
+    [recordCloudWorkspaceUsage, renderCommandItem]
+  );
+
+  const scrollCommandItemIntoView = useCallback(
+    (value: string | undefined) => {
+      if (!value) return;
+
+      if (activePage === "root" && shouldVirtualizeRoot) {
+        const index = rootCommandIndexMap.get(value);
+        if (index !== undefined) {
+          try {
+            rootVirtualizer.scrollToIndex(index, {
+              align: "auto",
+              behavior: "auto",
+            });
+            return;
+          } catch {
+            // ignore and fall back to DOM-based scrolling
+          }
+        }
+      } else if (activePage === "local-workspaces" && shouldVirtualizeLocal) {
+        const index = localWorkspaceCommandIndexMap.get(value);
+        if (index !== undefined) {
+          try {
+            localWorkspaceVirtualizer.scrollToIndex(index, {
+              align: "auto",
+              behavior: "auto",
+            });
+            return;
+          } catch {
+            // ignore and fall back to DOM-based scrolling
+          }
+        }
+      } else if (activePage === "cloud-workspaces" && shouldVirtualizeCloud) {
+        const index = cloudWorkspaceCommandIndexMap.get(value);
+        if (index !== undefined) {
+          try {
+            cloudWorkspaceVirtualizer.scrollToIndex(index, {
+              align: "auto",
+              behavior: "auto",
+            });
+            return;
+          } catch {
+            // ignore and fall back to DOM-based scrolling
+          }
+        }
+      }
+
+      if (typeof window === "undefined") return;
+      const listEl = commandListRef.current;
+      if (!listEl) return;
+      const escapeValue =
+        typeof window.CSS !== "undefined" &&
+        typeof window.CSS.escape === "function"
+          ? window.CSS.escape(value)
+          : value.replace(/["\\]/g, "\\$&");
+      const selector = `[data-value="${escapeValue}"]`;
+      const run = () => {
+        const target = listEl.querySelector<HTMLElement>(selector);
+        target?.scrollIntoView({ block: "nearest", behavior: "instant" });
+      };
+      if (typeof window.requestAnimationFrame === "function") {
+        window.requestAnimationFrame(run);
+      } else {
+        run();
+      }
+    },
+    [
+      activePage,
+      cloudWorkspaceCommandIndexMap,
+      cloudWorkspaceVirtualizer,
+      localWorkspaceCommandIndexMap,
+      localWorkspaceVirtualizer,
+      rootCommandIndexMap,
+      rootVirtualizer,
+      shouldVirtualizeCloud,
+      shouldVirtualizeLocal,
+      shouldVirtualizeRoot,
+    ]
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -2057,14 +2262,22 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
                 {rootSuggestionsToRender.length > 0 ? (
                   <Command.Group>
                     {rootSuggestionsToRender.map((entry) =>
-                      renderCommandItem(entry, recordRootUsage)
+                      renderRootCommandEntry(entry)
                     )}
                   </Command.Group>
                 ) : null}
                 {rootCommandsToRender.length > 0 ? (
                   <Command.Group>
-                    {rootCommandsToRender.map((entry) =>
-                      renderCommandItem(entry, recordRootUsage)
+                    {shouldVirtualizeRoot ? (
+                      <VirtualizedCommandItems
+                        entries={rootCommandsToRender}
+                        virtualizer={rootVirtualizer}
+                        renderEntry={renderRootCommandEntry}
+                      />
+                    ) : (
+                      rootCommandsToRender.map((entry) =>
+                        renderRootCommandEntry(entry)
+                      )
                     )}
                   </Command.Group>
                 ) : null}
@@ -2082,7 +2295,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
                     {localWorkspaceSuggestionsToRender.length > 0 ? (
                       <Command.Group>
                         {localWorkspaceSuggestionsToRender.map((entry) =>
-                          renderCommandItem(entry, recordLocalWorkspaceUsage)
+                          renderLocalWorkspaceCommandEntry(entry)
                         )}
                       </Command.Group>
                     ) : null}
@@ -2094,8 +2307,16 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
                     ) : null}
                     {localWorkspaceCommandsToRender.length > 0 ? (
                       <Command.Group>
-                        {localWorkspaceCommandsToRender.map((entry) =>
-                          renderCommandItem(entry, recordLocalWorkspaceUsage)
+                        {shouldVirtualizeLocal ? (
+                          <VirtualizedCommandItems
+                            entries={localWorkspaceCommandsToRender}
+                            virtualizer={localWorkspaceVirtualizer}
+                            renderEntry={renderLocalWorkspaceCommandEntry}
+                          />
+                        ) : (
+                          localWorkspaceCommandsToRender.map((entry) =>
+                            renderLocalWorkspaceCommandEntry(entry)
+                          )
                         )}
                       </Command.Group>
                     ) : null}
@@ -2115,7 +2336,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
                     {cloudWorkspaceSuggestionsToRender.length > 0 ? (
                       <Command.Group>
                         {cloudWorkspaceSuggestionsToRender.map((entry) =>
-                          renderCommandItem(entry, recordCloudWorkspaceUsage)
+                          renderCloudWorkspaceCommandEntry(entry)
                         )}
                       </Command.Group>
                     ) : null}
@@ -2127,8 +2348,16 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
                     ) : null}
                     {cloudWorkspaceCommandsToRender.length > 0 ? (
                       <Command.Group>
-                        {cloudWorkspaceCommandsToRender.map((entry) =>
-                          renderCommandItem(entry, recordCloudWorkspaceUsage)
+                        {shouldVirtualizeCloud ? (
+                          <VirtualizedCommandItems
+                            entries={cloudWorkspaceCommandsToRender}
+                            virtualizer={cloudWorkspaceVirtualizer}
+                            renderEntry={renderCloudWorkspaceCommandEntry}
+                          />
+                        ) : (
+                          cloudWorkspaceCommandsToRender.map((entry) =>
+                            renderCloudWorkspaceCommandEntry(entry)
+                          )
                         )}
                       </Command.Group>
                     ) : null}
