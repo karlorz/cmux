@@ -16,6 +16,7 @@ import { useMutation } from "convex/react";
 import { Server as ServerIcon, FolderOpen, Loader2 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
+import { useRouter, useNavigate } from "@tanstack/react-router";
 
 type WorkspaceCreationButtonsProps = {
   teamSlugOrId: string;
@@ -31,6 +32,8 @@ export function WorkspaceCreationButtons({
   const { socket } = useSocket();
   const { addTaskToExpand } = useExpandTasks();
   const { theme } = useTheme();
+  const router = useRouter();
+  const navigate = useNavigate();
   const [isCreatingLocal, setIsCreatingLocal] = useState(false);
   const [isCreatingCloud, setIsCreatingCloud] = useState(false);
 
@@ -165,6 +168,28 @@ export function WorkspaceCreationButtons({
           async (response: CreateCloudWorkspaceResponse) => {
             if (response.success) {
               toast.success("Cloud workspace created successfully");
+
+              // Navigate to the workspace, similar to local workspace creation
+              if (response.taskRunId && taskId) {
+                void router
+                  .preloadRoute({
+                    to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+                    params: {
+                      teamSlugOrId,
+                      taskId: taskId,
+                      runId: response.taskRunId,
+                    },
+                  })
+                  .catch(() => undefined);
+                void navigate({
+                  to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+                  params: {
+                    teamSlugOrId,
+                    taskId: taskId,
+                    runId: response.taskRunId,
+                  },
+                });
+              }
             } else {
               toast.error(
                 response.error || "Failed to create cloud workspace"
@@ -190,6 +215,8 @@ export function WorkspaceCreationButtons({
     createTask,
     addTaskToExpand,
     theme,
+    router,
+    navigate,
   ]);
 
   const canCreateLocal = selectedProject.length > 0 && !isEnvSelected;

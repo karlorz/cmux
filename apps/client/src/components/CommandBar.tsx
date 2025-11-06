@@ -627,6 +627,28 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
               try {
                 if (response.success) {
                   toast.success("Cloud workspace created successfully");
+
+                  // Navigate to the workspace, similar to local workspace creation
+                  if (response.taskRunId && taskId) {
+                    void router
+                      .preloadRoute({
+                        to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+                        params: {
+                          teamSlugOrId,
+                          taskId: taskId,
+                          runId: response.taskRunId,
+                        },
+                      })
+                      .catch(() => undefined);
+                    void navigate({
+                      to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+                      params: {
+                        teamSlugOrId,
+                        taskId: taskId,
+                        runId: response.taskRunId,
+                      },
+                    });
+                  }
                 } else {
                   toast.error(
                     response.error || "Failed to create cloud workspace"
@@ -708,6 +730,28 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
               try {
                 if (response.success) {
                   toast.success("Cloud workspace created successfully");
+
+                  // Navigate to the workspace, similar to local workspace creation
+                  if (response.taskRunId && taskId) {
+                    void router
+                      .preloadRoute({
+                        to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+                        params: {
+                          teamSlugOrId,
+                          taskId: taskId,
+                          runId: response.taskRunId,
+                        },
+                      })
+                      .catch(() => undefined);
+                    void navigate({
+                      to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+                      params: {
+                        teamSlugOrId,
+                        taskId: taskId,
+                        runId: response.taskRunId,
+                      },
+                    });
+                  }
                 } else {
                   toast.error(
                     response.error || "Failed to create cloud workspace"
