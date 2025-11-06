@@ -155,7 +155,7 @@ async function ensureTmuxSession(): Promise<void> {
   }
 
   // Only create the session for cloud workspaces (no agent)
-  // For regular tasks with agents, the agent spawner creates the session
+  // For tasks with agents, the agent spawner creates the session
   if (!config.isCloudWorkspace) {
     console.log("[ORCHESTRATOR] Not a cloud workspace, waiting for agent to create tmux session...");
 
