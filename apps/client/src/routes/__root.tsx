@@ -8,8 +8,10 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast, Toaster } from "sonner";
+import { QuitConfirmationDialog } from "@/components/QuitConfirmationDialog";
+import { shouldSkipQuitConfirmation } from "@/lib/quit-preference";
 
 const AUTO_UPDATE_TOAST_ID = "auto-update-toast";
 
@@ -118,12 +120,74 @@ function useAutoUpdateNotifications() {
   }, []);
 }
 
+function useQuitConfirmation() {
+  const [quitDialogOpen, setQuitDialogOpen] = useState(false);
+
+  useEffect(() => {
+    const maybeWindow = typeof window === "undefined" ? undefined : window;
+    const cmux = maybeWindow?.cmux;
+
+    if (!cmux?.on) return;
+
+    const handler = () => {
+      // Check if user has enabled "always quit" preference
+      if (shouldSkipQuitConfirmation()) {
+        void cmux.quit?.confirm().catch((error) => {
+          console.error("Failed to quit app", error);
+        });
+      } else {
+        setQuitDialogOpen(true);
+      }
+    };
+
+    const unsubscribe = cmux.on("shortcut:cmd-q", handler);
+
+    return () => {
+      try {
+        unsubscribe?.();
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
+
+  const handleConfirmQuit = useCallback(() => {
+    const cmux = window?.cmux;
+    if (cmux?.quit) {
+      void cmux.quit.confirm().catch((error) => {
+        console.error("Failed to quit app", error);
+      });
+    }
+  }, []);
+
+  const handleOpenChange = useCallback((open: boolean) => {
+    const cmux = window?.cmux;
+    setQuitDialogOpen(open);
+
+    // If dialog is being closed (not through confirm), cancel the quit
+    if (!open && cmux?.quit) {
+      void cmux.quit.cancel().catch((error) => {
+        console.error("Failed to cancel quit", error);
+      });
+    }
+  }, []);
+
+  return {
+    quitDialogOpen,
+    handleOpenChange,
+    handleConfirmQuit,
+  };
+}
+
 function RootComponent() {
   const location = useRouterState({
     select: (state) => state.location,
   });
 
   useAutoUpdateNotifications();
+
+  const { quitDialogOpen, handleOpenChange, handleConfirmQuit } =
+    useQuitConfirmation();
 
   useEffect(() => {
     if (import.meta.env.DEV) {
@@ -141,6 +205,11 @@ function RootComponent() {
       <Outlet />
       <DevTools />
       <ToasterWithTheme />
+      <QuitConfirmationDialog
+        open={quitDialogOpen}
+        onOpenChange={handleOpenChange}
+        onConfirmQuit={handleConfirmQuit}
+      />
     </>
   );
 }

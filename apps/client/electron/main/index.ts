@@ -427,6 +427,52 @@ function registerAutoUpdateIpcHandlers(): void {
   });
 }
 
+let quitConfirmationPending = false;
+
+function registerQuitConfirmationHandlers(): void {
+  // Request quit - returns whether to show confirmation dialog
+  ipcMain.handle("cmux:quit:request", async () => {
+    try {
+      if (quitConfirmationPending) {
+        return { ok: false, reason: "already-pending" as const };
+      }
+      quitConfirmationPending = true;
+      return { ok: true, showDialog: true };
+    } catch (error) {
+      mainWarn("Failed to handle quit request", error);
+      const err = error instanceof Error ? error : new Error(String(error));
+      throw err;
+    }
+  });
+
+  // Confirm quit - actually quit the app
+  ipcMain.handle("cmux:quit:confirm", async () => {
+    try {
+      mainLog("Quit confirmed by user, quitting app");
+      quitConfirmationPending = false;
+      app.quit();
+      return { ok: true };
+    } catch (error) {
+      mainWarn("Failed to quit app", error);
+      const err = error instanceof Error ? error : new Error(String(error));
+      throw err;
+    }
+  });
+
+  // Cancel quit
+  ipcMain.handle("cmux:quit:cancel", async () => {
+    try {
+      mainLog("Quit cancelled by user");
+      quitConfirmationPending = false;
+      return { ok: true };
+    } catch (error) {
+      mainWarn("Failed to cancel quit", error);
+      const err = error instanceof Error ? error : new Error(String(error));
+      throw err;
+    }
+  });
+}
+
 // Write critical errors to a file to aid debugging packaged crashes
 async function writeFatalLog(...args: unknown[]) {
   try {
@@ -716,12 +762,35 @@ app.whenReady().then(async () => {
   });
   registerLogIpcHandlers();
   registerAutoUpdateIpcHandlers();
+  registerQuitConfirmationHandlers();
   initCmdK({
     getMainWindow: () => mainWindow,
     logger: {
       log: mainLog,
       warn: mainWarn,
     },
+  });
+
+  // Register global Cmd+Q quit handler
+  app.on("web-contents-created", (_event, contents) => {
+    contents.on("before-input-event", (e, input) => {
+      if (input.type !== "keyDown") return;
+
+      // Only handle Cmd+Q on macOS
+      if (process.platform !== "darwin") return;
+
+      const isCmdQ = input.key.toLowerCase() === "q" && input.meta && !input.control && !input.alt && !input.shift;
+
+      if (isCmdQ) {
+        e.preventDefault();
+        mainLog("Cmd+Q detected, showing quit confirmation");
+
+        // Send event to renderer to show confirmation dialog
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("cmux:event:shortcut:cmd-q");
+        }
+      }
+    });
   });
 
   await startPreviewProxy({
