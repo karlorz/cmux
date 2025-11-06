@@ -1,5 +1,4 @@
 import { TaskRunChatPane } from "@/components/TaskRunChatPane";
-import { TaskRunTerminalPane } from "@/components/TaskRunTerminalPane";
 import { FloatingPane } from "@/components/floating-pane";
 import { TaskDetailHeader } from "@/components/task-detail-header";
 import type { PersistentIframeStatus } from "@/components/persistent-iframe";
@@ -37,7 +36,7 @@ import { convexQuery } from "@convex-dev/react-query";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Code2, Globe2, TerminalSquare, GitCompare, MessageCircle } from "lucide-react";
+import { Plus, Code2, Globe2, GitCompare, MessageCircle } from "lucide-react";
 import z from "zod";
 import { useLocalVSCodeServeWebQuery } from "@/queries/local-vscode-serve-web";
 
@@ -187,8 +186,6 @@ function EmptyPanelSlot({ position, availablePanels, onAddPanel }: EmptyPanelSlo
         return <MessageCircle className="size-4" />;
       case "workspace":
         return <Code2 className="size-4" />;
-      case "terminal":
-        return <TerminalSquare className="size-4" />;
       case "browser":
         return <Globe2 className="size-4" />;
       case "gitDiff":
@@ -588,7 +585,6 @@ function TaskDetailPage() {
       TaskRunChatPane,
       PersistentWebView,
       WorkspaceLoadingIndicator,
-      TaskRunTerminalPane,
       TaskRunGitDiffPanel,
       TASK_RUN_IFRAME_ALLOW,
       TASK_RUN_IFRAME_SANDBOX,
