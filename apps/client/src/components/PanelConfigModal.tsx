@@ -39,7 +39,6 @@ const LAYOUT_ICON_CONFIGS: Record<LayoutMode, LayoutIconConfig> = {
 export function PanelConfigModal({ isOpen, onClose, config, onChange }: PanelConfigModalProps) {
   const [draggedType, setDraggedType] = useState<PanelType | null>(null);
   const [draggedFrom, setDraggedFrom] = useState<PanelPosition | null>(null);
-  const [showAddMenu, setShowAddMenu] = useState<PanelPosition | null>(null);
 
   if (!isOpen) return null;
 
@@ -123,7 +122,6 @@ export function PanelConfigModal({ isOpen, onClose, config, onChange }: PanelCon
       },
     };
     onChange(newConfig);
-    setShowAddMenu(null);
   };
 
   const renderPanel = (position: PanelPosition, label: string) => {
@@ -141,7 +139,6 @@ export function PanelConfigModal({ isOpen, onClose, config, onChange }: PanelCon
     const PanelIcon = panelType ? PANEL_ICONS_MAP[panelType] : Plus;
     const isDragging = draggedFrom === position;
     const isDraggable = Boolean(panelType);
-    const isAddMenuOpen = showAddMenu === position;
 
     const handlePanelDragStart = () => {
       if (!panelType) {
@@ -201,25 +198,13 @@ export function PanelConfigModal({ isOpen, onClose, config, onChange }: PanelCon
               <PanelIcon className="size-5" />
             </div>
           ) : (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowAddMenu(isAddMenuOpen ? null : position);
-                }}
-                className="flex size-10 items-center justify-center rounded-full bg-neutral-200 text-neutral-400 hover:bg-neutral-300 hover:text-neutral-700 dark:bg-neutral-800 dark:text-neutral-500 dark:hover:bg-neutral-700 dark:hover:text-neutral-300 transition-colors"
-              >
-                <Plus className="size-5" />
-              </button>
-
-              {isAddMenuOpen && availablePanels.length > 0 && (
-                <>
-                  <div
-                    className="fixed inset-0 z-[100]"
-                    onClick={() => setShowAddMenu(null)}
-                  />
-                  <div className="absolute left-1/2 -translate-x-1/2 top-full z-[101] mt-2 w-40 rounded-lg border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-800">
+            <div className="relative w-full">
+              <div className="flex flex-col items-center gap-3">
+                <span className="text-xs font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
+                  Add a panel
+                </span>
+                {availablePanels.length > 0 ? (
+                  <div className="flex flex-wrap justify-center gap-2">
                     {availablePanels.map((availablePanelType) => {
                       const Icon = PANEL_ICONS_MAP[availablePanelType];
                       return (
@@ -230,7 +215,7 @@ export function PanelConfigModal({ isOpen, onClose, config, onChange }: PanelCon
                             e.stopPropagation();
                             handleAddPanelToPosition(position, availablePanelType);
                           }}
-                          className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-neutral-700 first:rounded-t-lg last:rounded-b-lg transition-colors"
+                          className="flex items-center gap-2 rounded-full border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 transition-colors hover:border-neutral-400 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:border-neutral-600 dark:hover:bg-neutral-700"
                         >
                           <Icon className="size-4" />
                           {PANEL_LABELS[availablePanelType]}
@@ -238,8 +223,12 @@ export function PanelConfigModal({ isOpen, onClose, config, onChange }: PanelCon
                       );
                     })}
                   </div>
-                </>
-              )}
+                ) : (
+                  <span className="text-xs text-neutral-400 dark:text-neutral-500">
+                    All panels added
+                  </span>
+                )}
+              </div>
             </div>
           )}
           <span
