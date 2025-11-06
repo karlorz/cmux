@@ -6,6 +6,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import {
   internalMutation,
   internalQuery,
+  type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
 import { authMutation, authQuery, taskIdWithFake } from "./users/utils";
@@ -120,19 +121,65 @@ type TaskRunWithChildren = Doc<"taskRuns"> & {
   environment: EnvironmentSummary | null;
 };
 
+type FetchTaskRunsOptions = {
+  includeArchived?: boolean;
+};
+
+async function collectDescendantRunIds(
+  ctx: MutationCtx,
+  teamId: string,
+  userId: string,
+  rootRunId: Id<"taskRuns">,
+): Promise<Id<"taskRuns">[]> {
+  const queue: Id<"taskRuns">[] = [rootRunId];
+  const visited = new Set<Id<"taskRuns">>();
+  const result: Id<"taskRuns">[] = [];
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+    result.push(current);
+
+    const children = await ctx.db
+      .query("taskRuns")
+      .withIndex("by_parent", (q) => q.eq("parentRunId", current))
+      .filter(
+        (q) =>
+          q.eq(q.field("teamId"), teamId) && q.eq(q.field("userId"), userId),
+      )
+      .collect();
+
+    for (const child of children) {
+      queue.push(child._id);
+    }
+  }
+
+  return result;
+}
+
 async function fetchTaskRunsForTask(
   ctx: QueryCtx,
   teamId: string,
   userId: string,
   taskId: Id<"tasks">,
+  options?: FetchTaskRunsOptions,
 ): Promise<TaskRunWithChildren[]> {
-  const runs = await ctx.db
+  const includeArchived = options?.includeArchived === true;
+
+  const allRuns = await ctx.db
     .query("taskRuns")
     .withIndex("by_task", (q) => q.eq("taskId", taskId))
     .filter(
       (q) => q.eq(q.field("teamId"), teamId) && q.eq(q.field("userId"), userId),
     )
     .collect();
+
+  const runs = includeArchived
+    ? allRuns
+    : allRuns.filter((run) => run.isArchived !== true);
 
   const environmentSummaries = new Map<
     Id<"environments">,
@@ -272,7 +319,11 @@ export const create = authMutation({
 
 // Get all task runs for a task, organized in tree structure
 export const getByTask = authQuery({
-  args: { teamSlugOrId: v.string(), taskId: taskIdWithFake },
+  args: {
+    teamSlugOrId: v.string(),
+    taskId: taskIdWithFake,
+    includeArchived: v.optional(v.boolean()),
+  },
   handler: async (ctx, args) => {
     if (typeof args.taskId === "string" && args.taskId.startsWith("fake-")) {
       return [];
@@ -285,7 +336,68 @@ export const getByTask = authQuery({
       teamId,
       userId,
       args.taskId as Id<"tasks">,
+      { includeArchived: args.includeArchived === true },
     );
+  },
+});
+
+export const archive = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    runId: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const run = await ctx.db.get(args.runId);
+    if (!run || run.teamId !== teamId || run.userId !== userId) {
+      throw new Error("Task run not found or unauthorized");
+    }
+
+    const idsToArchive = await collectDescendantRunIds(
+      ctx,
+      teamId,
+      userId,
+      args.runId,
+    );
+
+    const now = Date.now();
+    for (const runId of idsToArchive) {
+      await ctx.db.patch(runId, {
+        isArchived: true,
+        updatedAt: now,
+      });
+    }
+  },
+});
+
+export const unarchive = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    runId: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const run = await ctx.db.get(args.runId);
+    if (!run || run.teamId !== teamId || run.userId !== userId) {
+      throw new Error("Task run not found or unauthorized");
+    }
+
+    const idsToUnarchive = await collectDescendantRunIds(
+      ctx,
+      teamId,
+      userId,
+      args.runId,
+    );
+
+    const now = Date.now();
+    for (const runId of idsToUnarchive) {
+      await ctx.db.patch(runId, {
+        isArchived: false,
+        updatedAt: now,
+      });
+    }
   },
 });
 
@@ -388,7 +500,9 @@ export const getRunDiffContext = authQuery({
 
     const [taskDoc, taskRuns] = await Promise.all([
       ctx.db.get(args.taskId),
-      fetchTaskRunsForTask(ctx, teamId, userId, args.taskId),
+      fetchTaskRunsForTask(ctx, teamId, userId, args.taskId, {
+        includeArchived: true,
+      }),
     ]);
 
     if (!taskDoc || taskDoc.teamId !== teamId || taskDoc.userId !== userId) {

@@ -6,6 +6,7 @@ import {
 } from "@/components/ui/tooltip";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { useArchiveTask } from "@/hooks/useArchiveTask";
+import { useArchiveTaskRun } from "@/hooks/useArchiveTaskRun";
 import { useOpenWithActions } from "@/hooks/useOpenWithActions";
 import { isElectron } from "@/lib/electron";
 import { isFakeConvexId } from "@/lib/fakeConvexId";
@@ -29,6 +30,7 @@ import {
   CheckCircle,
   Circle,
   Copy as CopyIcon,
+  ChevronRight,
   Crown,
   EllipsisVertical,
   ExternalLink,
@@ -56,6 +58,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type ComponentType,
   type FocusEvent,
   type KeyboardEvent,
   type MouseEvent,
@@ -214,7 +217,57 @@ function TaskTreeInner({
     prefetchTaskRuns();
   }, [prefetchTaskRuns]);
 
+  const [taskContextMenuOpen, setTaskContextMenuOpen] = useState(false);
+  const [shouldLoadRunsForMenu, setShouldLoadRunsForMenu] = useState(false);
+  const shouldQueryRunsForMenu = shouldLoadRunsForMenu && !isOptimisticTask;
+  const taskRunsForMenu = useConvexQuery(
+    api.taskRuns.getByTask,
+    shouldQueryRunsForMenu
+      ? { teamSlugOrId, taskId: task._id, includeArchived: true }
+      : "skip"
+  );
+  const isTaskRunsMenuLoading =
+    shouldQueryRunsForMenu && taskRunsForMenu === undefined;
+
+  useEffect(() => {
+    if (isExpanded && !shouldLoadRunsForMenu && !isOptimisticTask) {
+      setShouldLoadRunsForMenu(true);
+    }
+  }, [isExpanded, isOptimisticTask, shouldLoadRunsForMenu]);
+
+  const handleTaskMenuOpenChange = useCallback(
+    (open: boolean) => {
+      setTaskContextMenuOpen(open);
+      if (open) {
+        if (!shouldLoadRunsForMenu && !isOptimisticTask) {
+          setShouldLoadRunsForMenu(true);
+        }
+        prefetchTaskRuns();
+        if (!isOptimisticTask) {
+          void convexQueryClient.convexClient.prewarmQuery({
+            query: api.taskRuns.getByTask,
+            args: {
+              teamSlugOrId,
+              taskId: task._id,
+              includeArchived: true,
+            },
+          });
+        }
+      }
+    },
+    [
+      isOptimisticTask,
+      prefetchTaskRuns,
+      shouldLoadRunsForMenu,
+      task._id,
+      teamSlugOrId,
+    ]
+  );
+
   const { archiveWithUndo, unarchive } = useArchiveTask(teamSlugOrId);
+  const { archive: archiveRun, unarchive: unarchiveRun } = useArchiveTaskRun({
+    teamSlugOrId,
+  });
   const updateTaskMutation = useMutation(api.tasks.update).withOptimisticUpdate(
     (localStore, args) => {
       const optimisticUpdatedAt = Date.now();
@@ -570,7 +623,10 @@ function TaskTreeInner({
   return (
     <TaskRunExpansionContext.Provider value={expansionContextValue}>
       <div className="select-none flex flex-col">
-        <ContextMenu.Root>
+        <ContextMenu.Root
+          open={taskContextMenuOpen}
+          onOpenChange={handleTaskMenuOpenChange}
+        >
           <ContextMenu.Trigger>
             <Link
               to="/$teamSlugOrId/task/$taskId"
@@ -637,11 +693,20 @@ function TaskTreeInner({
                 ) : null}
                 <ContextMenu.Item
                   className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
-                  onClick={handleCopyDescription}
-                >
-                  <CopyIcon className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
-                  <span>Copy Description</span>
-                </ContextMenu.Item>
+                onClick={handleCopyDescription}
+              >
+                <CopyIcon className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                <span>Copy Description</span>
+              </ContextMenu.Item>
+                <TaskRunArchiveSubmenu
+                  runs={taskRunsForMenu}
+                  isLoading={isTaskRunsMenuLoading}
+                  shouldQuery={shouldQueryRunsForMenu}
+                  onArchiveRun={archiveRun}
+                  onUnarchiveRun={unarchiveRun}
+                  isTaskOptimistic={isOptimisticTask}
+                />
+                <div className="my-1 h-px bg-neutral-200 dark:bg-neutral-700" />
                 {task.isArchived ? (
                   <ContextMenu.Item
                     className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
@@ -1424,6 +1489,213 @@ function TaskRunDetails({
         </div>
       ) : null}
     </Fragment>
+  );
+}
+
+type FlattenedTaskRunMenuItem = {
+  id: Id<"taskRuns">;
+  label: string;
+  depth: number;
+  isArchived: boolean;
+};
+
+interface TaskRunArchiveSubmenuProps {
+  runs: TaskRunWithChildren[] | undefined;
+  isLoading: boolean;
+  shouldQuery: boolean;
+  isTaskOptimistic: boolean;
+  onArchiveRun: (runId: Id<"taskRuns">) => void;
+  onUnarchiveRun: (runId: Id<"taskRuns">) => void;
+}
+
+function TaskRunArchiveSubmenu({
+  runs,
+  isLoading,
+  shouldQuery,
+  isTaskOptimistic,
+  onArchiveRun,
+  onUnarchiveRun,
+}: TaskRunArchiveSubmenuProps) {
+  const hasResolvedRuns = runs !== undefined;
+  const flattenedRuns = useMemo<FlattenedTaskRunMenuItem[]>(() => {
+    if (!runs || runs.length === 0) {
+      return [];
+    }
+    const acc: FlattenedTaskRunMenuItem[] = [];
+    const walk = (nodes: TaskRunWithChildren[], depth: number) => {
+      nodes.forEach((node) => {
+        acc.push({
+          id: node._id,
+          label: getRunDisplayText(node),
+          depth,
+          isArchived: node.isArchived === true,
+        });
+        if (node.children.length > 0) {
+          walk(node.children, depth + 1);
+        }
+      });
+    };
+    walk(runs, 0);
+    return acc;
+  }, [runs]);
+  return (
+    <ContextMenu.SubmenuRoot>
+      <ContextMenu.SubmenuTrigger
+        className="flex items-center gap-2 cursor-default py-1.5 pr-4 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+      >
+        <ArchiveIcon className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+        <span className="flex-1 text-left">Manage Task Runs</span>
+        <ChevronRight className="w-3 h-3 text-neutral-500 dark:text-neutral-300" />
+      </ContextMenu.SubmenuTrigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Positioner className="outline-none z-[var(--z-context-menu)]">
+          <ContextMenu.Popup className="origin-[var(--transform-origin)] rounded-md bg-white dark:bg-neutral-800 py-1 text-neutral-900 dark:text-neutral-100 shadow-lg shadow-gray-200 outline-1 outline-neutral-200 transition-[opacity] data-[ending-style]:opacity-0 dark:shadow-none dark:-outline-offset-1 dark:outline-neutral-700 w-72 max-h-72 overflow-y-auto">
+            <TaskRunArchiveSubmenuContent
+              isTaskOptimistic={isTaskOptimistic}
+              shouldQuery={shouldQuery}
+              isLoading={isLoading}
+              hasResolvedRuns={hasResolvedRuns}
+              runs={flattenedRuns}
+              onArchiveRun={onArchiveRun}
+              onUnarchiveRun={onUnarchiveRun}
+            />
+          </ContextMenu.Popup>
+        </ContextMenu.Positioner>
+      </ContextMenu.Portal>
+    </ContextMenu.SubmenuRoot>
+  );
+}
+
+interface TaskRunArchiveSubmenuContentProps {
+  isTaskOptimistic: boolean;
+  shouldQuery: boolean;
+  isLoading: boolean;
+  hasResolvedRuns: boolean;
+  runs: FlattenedTaskRunMenuItem[];
+  onArchiveRun: (runId: Id<"taskRuns">) => void;
+  onUnarchiveRun: (runId: Id<"taskRuns">) => void;
+}
+
+function TaskRunArchiveSubmenuContent({
+  isTaskOptimistic,
+  shouldQuery,
+  isLoading,
+  hasResolvedRuns,
+  runs,
+  onArchiveRun,
+  onUnarchiveRun,
+}: TaskRunArchiveSubmenuContentProps) {
+  if (isTaskOptimistic) {
+    return (
+      <TaskRunMenuMessage text="Task runs become available after the task is created." />
+    );
+  }
+  if (!shouldQuery) {
+    return (
+      <TaskRunMenuMessage text="Task runs will load when the menu opens." />
+    );
+  }
+  if (isLoading || !hasResolvedRuns) {
+    return (
+      <TaskRunMenuMessage
+        text="Loading task runs…"
+        icon={<Loader2 className="w-3 h-3 animate-spin text-neutral-500" />}
+      />
+    );
+  }
+  if (runs.length === 0) {
+    return <TaskRunMenuMessage text="No task runs yet." />;
+  }
+  const activeRuns = runs.filter((run) => !run.isArchived);
+  const archivedRuns = runs.filter((run) => run.isArchived);
+  return (
+    <>
+      <TaskRunMenuSection
+        title="Active runs"
+        runs={activeRuns}
+        emptyLabel="No active runs"
+        actionLabel="Archive"
+        icon={ArchiveIcon}
+        onRunAction={onArchiveRun}
+      />
+      <div className="my-1 h-px bg-neutral-200 dark:bg-neutral-700" />
+      <TaskRunMenuSection
+        title="Archived runs"
+        runs={archivedRuns}
+        emptyLabel="No archived runs"
+        actionLabel="Unarchive"
+        icon={ArchiveRestoreIcon}
+        onRunAction={onUnarchiveRun}
+      />
+    </>
+  );
+}
+
+interface TaskRunMenuSectionProps {
+  title: string;
+  runs: FlattenedTaskRunMenuItem[];
+  emptyLabel: string;
+  actionLabel: string;
+  icon: ComponentType<{ className?: string }>;
+  onRunAction: (runId: Id<"taskRuns">) => void;
+}
+
+function TaskRunMenuSection({
+  title,
+  runs,
+  emptyLabel,
+  actionLabel,
+  icon: Icon,
+  onRunAction,
+}: TaskRunMenuSectionProps) {
+  const itemClassName =
+    "flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700";
+  return (
+    <ContextMenu.Group>
+      <ContextMenu.GroupLabel className="px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+        {title}
+      </ContextMenu.GroupLabel>
+      {runs.length === 0 ? (
+        <TaskRunMenuMessage text={emptyLabel} />
+      ) : (
+        runs.map((run) => (
+          <ContextMenu.Item
+            key={run.id}
+            className={itemClassName}
+            onClick={() => onRunAction(run.id)}
+          >
+            <Icon className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300 shrink-0" />
+            <span
+              className="truncate text-left text-neutral-800 dark:text-neutral-100"
+              style={{ marginLeft: run.depth * 8 }}
+            >
+              {run.label}
+            </span>
+            <span className="ml-auto text-[11px] text-neutral-500 dark:text-neutral-400">
+              {actionLabel}
+            </span>
+          </ContextMenu.Item>
+        ))
+      )}
+    </ContextMenu.Group>
+  );
+}
+
+function TaskRunMenuMessage({
+  text,
+  icon,
+}: {
+  text: string;
+  icon?: ReactNode;
+}) {
+  return (
+    <ContextMenu.Item
+      disabled
+      className="flex items-center gap-2 cursor-default py-1.5 pr-4 pl-3 text-[13px] leading-5 text-neutral-500 dark:text-neutral-400"
+    >
+      {icon}
+      <span>{text}</span>
+    </ContextMenu.Item>
   );
 }
 
