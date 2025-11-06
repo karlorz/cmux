@@ -1,5 +1,6 @@
 import { ContainerSettings } from "@/components/ContainerSettings";
 import { FloatingPane } from "@/components/floating-pane";
+import { GlobalShortcutSettings } from "@/components/GlobalShortcutSettings";
 import { ProviderStatusSettings } from "@/components/provider-status-settings";
 import { useTheme } from "@/components/theme/use-theme";
 import { TitleBar } from "@/components/TitleBar";
@@ -406,6 +407,17 @@ function SettingsComponent() {
 
           {/* Settings Sections */}
           <div className="space-y-4">
+            <div className="bg-white dark:bg-neutral-950 rounded-lg border border-neutral-200 dark:border-neutral-800">
+              <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
+                <h2 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                  Global Shortcuts
+                </h2>
+              </div>
+              <div className="p-4">
+                <GlobalShortcutSettings />
+              </div>
+            </div>
+
             {/* Team name */}
             <div className="bg-white dark:bg-neutral-950 rounded-lg border border-neutral-200 dark:border-neutral-800">
               <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">

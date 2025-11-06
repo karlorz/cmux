@@ -10,6 +10,10 @@ import type {
   ElectronLogsPayload,
   ElectronMainLogMessage,
 } from "../../src/lib/electron-logs/types";
+import type {
+  GlobalShortcutAction,
+  ShortcutBinding,
+} from "../../src/lib/global-shortcuts";
 
 const api = {};
 
@@ -22,6 +26,15 @@ type RectanglePayload = {
 
 type LogListener = (entry: ElectronMainLogMessage) => void;
 const mainLogListeners = new Set<LogListener>();
+
+type ShortcutConfigPayload = {
+  overrides: Partial<Record<GlobalShortcutAction, ShortcutBinding>>;
+  effective: Record<GlobalShortcutAction, ShortcutBinding>;
+};
+
+type ShortcutMutationResult =
+  | ({ ok: true } & ShortcutConfigPayload)
+  | { ok: false; reason: string };
 
 // Cmux IPC API for Electron server communication
 const cmuxAPI = {
@@ -61,6 +74,38 @@ const cmuxAPI = {
     } else {
       ipcRenderer.removeAllListeners(`cmux:event:${event}`);
     }
+  },
+
+  shortcuts: {
+    getAll: () =>
+      ipcRenderer.invoke(
+        "cmux:shortcuts:get-all"
+      ) as Promise<ShortcutMutationResult>,
+    setBinding: (
+      action: GlobalShortcutAction,
+      binding: ShortcutBinding | null
+    ) =>
+      ipcRenderer.invoke("cmux:shortcuts:set-binding", {
+        action,
+        binding,
+      }) as Promise<ShortcutMutationResult>,
+    resetAll: () =>
+      ipcRenderer.invoke(
+        "cmux:shortcuts:reset-all"
+      ) as Promise<ShortcutMutationResult>,
+    onUpdate: (callback: (payload: ShortcutConfigPayload) => void) => {
+      const channel = "cmux:event:shortcuts:updated";
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload: ShortcutConfigPayload
+      ) => {
+        callback(payload);
+      };
+      ipcRenderer.on(channel, listener);
+      return () => {
+        ipcRenderer.removeListener(channel, listener);
+      };
+    },
   },
 
   // Socket IPC methods for IPC-based socket communication

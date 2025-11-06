@@ -8,6 +8,10 @@ import type {
   ElectronWebContentsSnapshot,
   ElectronWebContentsState,
 } from "./electron-webcontents";
+import type {
+  GlobalShortcutAction,
+  ShortcutBinding,
+} from "../lib/global-shortcuts";
 
 interface CmuxSocketAPI {
   connect: (
@@ -30,6 +34,27 @@ interface CmuxLogsAPI {
   onMainLog: (callback: (entry: ElectronMainLogMessage) => void) => () => void;
   readAll: () => Promise<ElectronLogsPayload>;
   copyAll: () => Promise<{ ok: boolean }>;
+}
+
+type CmuxShortcutConfigPayload = {
+  overrides: Partial<Record<GlobalShortcutAction, ShortcutBinding>>;
+  effective: Record<GlobalShortcutAction, ShortcutBinding>;
+};
+
+type CmuxShortcutMutationResult =
+  | ({ ok: true } & CmuxShortcutConfigPayload)
+  | { ok: false; reason: string };
+
+interface CmuxShortcutsAPI {
+  getAll: () => Promise<CmuxShortcutMutationResult>;
+  setBinding: (
+    action: GlobalShortcutAction,
+    binding: ShortcutBinding | null
+  ) => Promise<CmuxShortcutMutationResult>;
+  resetAll: () => Promise<CmuxShortcutMutationResult>;
+  onUpdate: (
+    callback: (payload: CmuxShortcutConfigPayload) => void
+  ) => () => void;
 }
 
 interface CmuxRectangle {
@@ -107,6 +132,7 @@ interface CmuxAPI {
   };
   socket: CmuxSocketAPI;
   logs: CmuxLogsAPI;
+  shortcuts: CmuxShortcutsAPI;
   webContentsView: CmuxWebContentsViewAPI;
   autoUpdate: {
     check: () =>

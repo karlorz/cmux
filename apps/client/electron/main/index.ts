@@ -49,6 +49,13 @@ import {
   startPreviewProxy,
 } from "./task-run-preview-proxy";
 import { normalizeBrowserUrl } from "@cmux/shared";
+import {
+  bindingToElectronAccelerator,
+  type GlobalShortcutAction,
+  type ShortcutBinding,
+} from "../../src/lib/global-shortcuts";
+import { globalShortcutStore } from "./global-shortcut-store";
+import { matchesShortcutAction } from "./global-shortcut-util";
 
 // Use a cookieable HTTPS origin intercepted locally instead of a custom scheme.
 const PARTITION = "persist:cmux";
@@ -95,6 +102,7 @@ let pendingProtocolUrl: string | null = null;
 let mainWindow: BrowserWindow | null = null;
 let previewReloadMenuItem: MenuItem | null = null;
 let previewReloadMenuVisible = false;
+let disposeShortcutStoreListener: (() => void) | null = null;
 
 function getTimestamp(): string {
   return new Date().toISOString();
@@ -244,10 +252,216 @@ function sendShortcutToFocusedWindow(
   }
 }
 
+function acceleratorFor(
+  action: GlobalShortcutAction
+): string | undefined {
+  try {
+    const accelerator = bindingToElectronAccelerator(
+      globalShortcutStore.getBinding(action),
+      process.platform as NodeJS.Platform
+    );
+    return accelerator ?? undefined;
+  } catch (error) {
+    mainWarn("Failed to compute accelerator for shortcut", {
+      action,
+      error,
+    });
+    return undefined;
+  }
+}
+
+function parseShortcutBinding(raw: unknown): ShortcutBinding | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const candidate = raw as Record<string, unknown>;
+  const key = candidate["key"];
+  if (typeof key !== "string" || key.length === 0) {
+    return null;
+  }
+  const code = candidate["code"];
+  return {
+    key,
+    code: typeof code === "string" ? code : null,
+    meta: Boolean(candidate["meta"]),
+    ctrl: Boolean(candidate["ctrl"]),
+    alt: Boolean(candidate["alt"]),
+    shift: Boolean(candidate["shift"]),
+  };
+}
+
+type ShortcutBroadcastPayload = {
+  overrides: Partial<Record<GlobalShortcutAction, ShortcutBinding>>;
+  effective: Record<GlobalShortcutAction, ShortcutBinding>;
+};
+
+function broadcastShortcutChange(payload: ShortcutBroadcastPayload): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    try {
+      win.webContents.send("cmux:event:shortcuts:updated", payload);
+    } catch (error) {
+      mainWarn("Failed to broadcast shortcut update", error);
+    }
+  }
+}
+
 function setPreviewReloadMenuVisibility(visible: boolean): void {
   previewReloadMenuVisible = visible;
   if (previewReloadMenuItem) {
     previewReloadMenuItem.visible = visible;
+  }
+}
+
+function buildApplicationMenu(): void {
+  try {
+    const template: MenuItemConstructorOptions[] = [];
+    if (process.platform === "darwin") {
+      template.push({ role: "appMenu" });
+    } else {
+      template.push({ label: "File", submenu: [{ role: "quit" }] });
+    }
+
+    const resolveTargetWindow = () =>
+      BrowserWindow.getFocusedWindow() ??
+      mainWindow ??
+      BrowserWindow.getAllWindows()[0] ??
+      null;
+
+    const viewMenu: MenuItemConstructorOptions = {
+      label: "View",
+      submenu: [
+        {
+          id: "cmux-preview-reload",
+          visible: previewReloadMenuVisible,
+          label: "Reload Preview",
+          accelerator: acceleratorFor("previewReload"),
+          click: () => {
+            const dispatched = sendShortcutToFocusedWindow("preview-reload");
+            if (!dispatched) {
+              mainWarn(
+                "Reload Preview shortcut triggered with no active renderer"
+              );
+            }
+          },
+        },
+        {
+          id: "cmux-preview-back",
+          visible: previewReloadMenuVisible,
+          label: "Back",
+          accelerator: acceleratorFor("previewBack"),
+          click: () => {
+            sendShortcutToFocusedWindow("preview-back");
+          },
+        },
+        {
+          id: "cmux-preview-forward",
+          visible: previewReloadMenuVisible,
+          label: "Forward",
+          accelerator: acceleratorFor("previewForward"),
+          click: () => {
+            sendShortcutToFocusedWindow("preview-forward");
+          },
+        },
+        {
+          id: "cmux-preview-focus-address",
+          visible: previewReloadMenuVisible,
+          label: "Focus Address Bar",
+          accelerator: acceleratorFor("previewFocusAddress"),
+          click: () => {
+            sendShortcutToFocusedWindow("preview-focus-address");
+          },
+        },
+        {
+          label: "Reload Application",
+          click: () => {
+            const target = resolveTargetWindow();
+            target?.webContents.reload();
+          },
+        },
+        { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+        { role: "toggleDevTools" },
+      ],
+    };
+    template.push(
+      { role: "editMenu" },
+      {
+        label: "Commands",
+        submenu: [
+          {
+            label: "Command Palette…",
+            accelerator: acceleratorFor("commandPalette"),
+            click: () => {
+              try {
+                const target = resolveTargetWindow();
+                keyDebug("menu-accelerator-cmdk", {
+                  to: target?.webContents.id,
+                });
+                if (target && !target.isDestroyed()) {
+                  target.webContents.send("cmux:event:shortcut:cmd-k");
+                }
+              } catch (err) {
+                mainWarn("Failed to emit Cmd+K from menu accelerator", err);
+                keyDebug("menu-accelerator-cmdk-error", { err: String(err) });
+              }
+            },
+          },
+        ],
+      },
+      viewMenu,
+      { role: "windowMenu" }
+    );
+    template.push({
+      role: "help",
+      submenu: [
+        {
+          label: "Check for Updates…",
+          click: async () => {
+            if (!app.isPackaged) {
+              await dialog.showMessageBox({
+                type: "info",
+                message: "Updates are only available in packaged builds.",
+              });
+              return;
+            }
+            try {
+              mainLog("Manual update check initiated");
+              const result = await autoUpdater.checkForUpdates();
+              if (!result?.updateInfo) {
+                await dialog.showMessageBox({
+                  type: "info",
+                  message: "You’re up to date.",
+                });
+              }
+            } catch (e) {
+              mainWarn("Manual checkForUpdates failed", e);
+              await dialog.showMessageBox({
+                type: "error",
+                message: "Failed to check for updates.",
+              });
+            }
+          },
+        },
+        {
+          label: "Open Logs Folder",
+          click: async () => {
+            if (!logsDir) ensureLogFiles();
+            if (logsDir) await shell.openPath(logsDir);
+          },
+        },
+      ],
+    });
+    const menu = Menu.buildFromTemplate(template);
+    previewReloadMenuItem = menu.getMenuItemById("cmux-preview-reload") ?? null;
+    setPreviewReloadMenuVisibility(previewReloadMenuVisible);
+    Menu.setApplicationMenu(menu);
+  } catch (e) {
+    mainWarn("Failed to set application menu", e);
   }
 }
 
@@ -262,6 +476,69 @@ ipcMain.handle(
     return { ok: true };
   }
 );
+
+ipcMain.handle("cmux:shortcuts:get-all", async () => {
+  await globalShortcutStore.init();
+  return {
+    ok: true as const,
+    overrides: globalShortcutStore.getOverrides(),
+    effective: globalShortcutStore.getEffectiveBindings(),
+  };
+});
+
+ipcMain.handle(
+  "cmux:shortcuts:set-binding",
+  async (
+    _event,
+    payload:
+      | {
+          action?: unknown;
+          binding?: unknown;
+        }
+      | undefined
+  ) => {
+    try {
+      await globalShortcutStore.init();
+      const action = payload?.action;
+      if (typeof action !== "string") {
+        return { ok: false as const, reason: "invalid-action" };
+      }
+      const binding =
+        payload?.binding === null || payload?.binding === undefined
+          ? null
+          : parseShortcutBinding(payload.binding);
+      if (payload?.binding != null && !binding) {
+        return { ok: false as const, reason: "invalid-binding" };
+      }
+      await globalShortcutStore.setBinding(
+        action as GlobalShortcutAction,
+        binding
+      );
+      return {
+        ok: true as const,
+        overrides: globalShortcutStore.getOverrides(),
+        effective: globalShortcutStore.getEffectiveBindings(),
+      };
+    } catch (error) {
+      mainWarn("Failed to update shortcut binding", error);
+      return { ok: false as const, reason: "error" };
+    }
+  }
+);
+
+ipcMain.handle("cmux:shortcuts:reset-all", async () => {
+  try {
+    await globalShortcutStore.resetAll();
+    return {
+      ok: true as const,
+      overrides: globalShortcutStore.getOverrides(),
+      effective: globalShortcutStore.getEffectiveBindings(),
+    };
+  } catch (error) {
+    mainWarn("Failed to reset shortcuts", error);
+    return { ok: false as const, reason: "error" };
+  }
+});
 
 function emitAutoUpdateToastIfPossible(): void {
   if (!queuedAutoUpdateToast) return;
@@ -713,9 +990,24 @@ app.whenReady().then(async () => {
     } catch (error) {
       console.error("Failed to dispose context menu", error);
     }
+    try {
+      disposeShortcutStoreListener?.();
+      disposeShortcutStoreListener = null;
+    } catch (error) {
+      console.error("Failed to dispose shortcut store listener", error);
+    }
   });
   registerLogIpcHandlers();
   registerAutoUpdateIpcHandlers();
+  globalShortcutStore.setLogger({
+    log: mainLog,
+    warn: mainWarn,
+  });
+  await globalShortcutStore.init();
+  disposeShortcutStoreListener = globalShortcutStore.onChange((payload) => {
+    broadcastShortcutChange(payload);
+    buildApplicationMenu();
+  });
   initCmdK({
     getMainWindow: () => mainWindow,
     logger: {
@@ -735,42 +1027,21 @@ app.whenReady().then(async () => {
   app.on("web-contents-created", (_event, contents) => {
     contents.on("before-input-event", (e, input) => {
       if (input.type !== "keyDown") return;
-
-      // Only handle preview shortcuts when preview is visible
       if (!previewReloadMenuVisible) return;
 
-      const isMac = process.platform === "darwin";
-      const modKey = isMac ? input.meta : input.control;
-      if (!modKey || input.alt || input.shift) return;
+      const previewActions: Array<[GlobalShortcutAction, string]> = [
+        ["previewFocusAddress", "preview-focus-address"],
+        ["previewBack", "preview-back"],
+        ["previewForward", "preview-forward"],
+        ["previewReload", "preview-reload"],
+      ];
 
-      const key = input.key.toLowerCase();
-
-      // cmd+l: focus address bar
-      if (key === "l") {
-        e.preventDefault();
-        sendShortcutToFocusedWindow("preview-focus-address");
-        return;
-      }
-
-      // cmd+[: go back
-      if (input.key === "[") {
-        e.preventDefault();
-        sendShortcutToFocusedWindow("preview-back");
-        return;
-      }
-
-      // cmd+]: go forward
-      if (input.key === "]") {
-        e.preventDefault();
-        sendShortcutToFocusedWindow("preview-forward");
-        return;
-      }
-
-      // cmd+r: reload
-      if (key === "r") {
-        e.preventDefault();
-        sendShortcutToFocusedWindow("preview-reload");
-        return;
+      for (const [action, eventName] of previewActions) {
+        if (matchesShortcutAction(action, input)) {
+          e.preventDefault();
+          sendShortcutToFocusedWindow(eventName);
+          return;
+        }
       }
     });
   });
@@ -788,6 +1059,8 @@ app.whenReady().then(async () => {
     maxSuspendedEntries: resolveMaxSuspendedWebContents(),
     rendererBaseUrl,
   });
+
+  buildApplicationMenu();
 
   // Ensure macOS menu and About panel use "cmux" instead of package.json name
   if (process.platform === "darwin") {
@@ -878,155 +1151,6 @@ app.whenReady().then(async () => {
 
   // Create the initial window.
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
-
-  // Application menu with Command Palette accelerator; keep Help items.
-  try {
-    const template: MenuItemConstructorOptions[] = [];
-    if (process.platform === "darwin") {
-      template.push({ role: "appMenu" });
-    } else {
-      template.push({ label: "File", submenu: [{ role: "quit" }] });
-    }
-    const resolveTargetWindow = () =>
-      BrowserWindow.getFocusedWindow() ??
-      mainWindow ??
-      BrowserWindow.getAllWindows()[0] ??
-      null;
-    const viewMenu: MenuItemConstructorOptions = {
-      label: "View",
-      submenu: [
-        {
-          id: "cmux-preview-reload",
-          visible: previewReloadMenuVisible,
-          label: "Reload Preview",
-          accelerator: "CommandOrControl+R",
-          click: () => {
-            const dispatched = sendShortcutToFocusedWindow("preview-reload");
-            if (!dispatched) {
-              mainWarn(
-                "Reload Preview shortcut triggered with no active renderer"
-              );
-            }
-          },
-        },
-        {
-          id: "cmux-preview-back",
-          visible: previewReloadMenuVisible,
-          label: "Back",
-          accelerator: "CommandOrControl+[",
-          click: () => {
-            sendShortcutToFocusedWindow("preview-back");
-          },
-        },
-        {
-          id: "cmux-preview-forward",
-          visible: previewReloadMenuVisible,
-          label: "Forward",
-          accelerator: "CommandOrControl+]",
-          click: () => {
-            sendShortcutToFocusedWindow("preview-forward");
-          },
-        },
-        {
-          id: "cmux-preview-focus-address",
-          visible: previewReloadMenuVisible,
-          label: "Focus Address Bar",
-          accelerator: "CommandOrControl+L",
-          click: () => {
-            sendShortcutToFocusedWindow("preview-focus-address");
-          },
-        },
-        {
-          label: "Reload Application",
-          click: () => {
-            const target = resolveTargetWindow();
-            target?.webContents.reload();
-          },
-        },
-        { type: "separator" },
-        { role: "resetZoom" },
-        { role: "zoomIn" },
-        { role: "zoomOut" },
-        { type: "separator" },
-        { role: "togglefullscreen" },
-        { role: "toggleDevTools" },
-      ],
-    };
-    template.push(
-      { role: "editMenu" },
-      {
-        label: "Commands",
-        submenu: [
-          {
-            label: "Command Palette…",
-            accelerator: "CommandOrControl+K",
-            click: () => {
-              try {
-                const target = resolveTargetWindow();
-                keyDebug("menu-accelerator-cmdk", {
-                  to: target?.webContents.id,
-                });
-                if (target && !target.isDestroyed()) {
-                  target.webContents.send("cmux:event:shortcut:cmd-k");
-                }
-              } catch (err) {
-                mainWarn("Failed to emit Cmd+K from menu accelerator", err);
-                keyDebug("menu-accelerator-cmdk-error", { err: String(err) });
-              }
-            },
-          },
-        ],
-      },
-      viewMenu,
-      { role: "windowMenu" }
-    );
-    template.push({
-      role: "help",
-      submenu: [
-        {
-          label: "Check for Updates…",
-          click: async () => {
-            if (!app.isPackaged) {
-              await dialog.showMessageBox({
-                type: "info",
-                message: "Updates are only available in packaged builds.",
-              });
-              return;
-            }
-            try {
-              mainLog("Manual update check initiated");
-              const result = await autoUpdater.checkForUpdates();
-              if (!result?.updateInfo) {
-                await dialog.showMessageBox({
-                  type: "info",
-                  message: "You’re up to date.",
-                });
-              }
-            } catch (e) {
-              mainWarn("Manual checkForUpdates failed", e);
-              await dialog.showMessageBox({
-                type: "error",
-                message: "Failed to check for updates.",
-              });
-            }
-          },
-        },
-        {
-          label: "Open Logs Folder",
-          click: async () => {
-            if (!logsDir) ensureLogFiles();
-            if (logsDir) await shell.openPath(logsDir);
-          },
-        },
-      ],
-    });
-    const menu = Menu.buildFromTemplate(template);
-    previewReloadMenuItem = menu.getMenuItemById("cmux-preview-reload") ?? null;
-    setPreviewReloadMenuVisibility(previewReloadMenuVisible);
-    Menu.setApplicationMenu(menu);
-  } catch (e) {
-    mainWarn("Failed to set application menu", e);
-  }
 
   app.on("activate", function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

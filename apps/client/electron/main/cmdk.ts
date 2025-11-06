@@ -8,6 +8,8 @@ import {
   webFrameMain,
 } from "electron";
 
+import { matchesShortcutAction } from "./global-shortcut-util";
+
 type Logger = {
   log: (...args: unknown[]) => void;
   warn: (...args: unknown[]) => void;
@@ -238,27 +240,8 @@ export function initCmdK(opts: {
           typeInput: input.type,
         });
         if (input.type !== "keyDown") return;
-        const isMac = process.platform === "darwin";
-        // Only trigger on EXACT Cmd+K (mac) or Ctrl+K (others)
-        const isCmdK = (() => {
-          if (input.key.toLowerCase() !== "k") return false;
-          if (input.alt || input.shift) return false;
-          if (isMac) {
-            // Require meta only; disallow ctrl on mac
-            return Boolean(input.meta) && !input.control;
-          }
-          // Non-mac: require ctrl only; disallow meta
-          return Boolean(input.control) && !input.meta;
-        })();
-
-        const isSidebarToggle = (() => {
-          if (input.key.toLowerCase() !== "s") return false;
-          if (!input.shift) return false;
-          if (input.alt || input.meta) return false;
-          // Require control to align with renderer shortcut (Ctrl+Shift+S)
-          return Boolean(input.control);
-        })();
-
+        const isCmdK = matchesShortcutAction("commandPalette", input);
+        const isSidebarToggle = matchesShortcutAction("sidebarToggle", input);
         if (!isCmdK && !isSidebarToggle) return;
 
         // Prevent default to avoid in-app conflicts and ensure single toggle
