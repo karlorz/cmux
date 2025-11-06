@@ -53,6 +53,7 @@ import { normalizeBrowserUrl } from "@cmux/shared";
 // Use a cookieable HTTPS origin intercepted locally instead of a custom scheme.
 const PARTITION = "persist:cmux";
 const APP_HOST = "cmux.local";
+const SETTINGS_FILE_NAME = "cmux-settings.json";
 
 function resolveMaxSuspendedWebContents(): number | undefined {
   const raw =
@@ -351,6 +352,167 @@ function logUpdateCheckResult(
   mainLog(`${context} completed`, summary);
 }
 
+type AutoUpdateSettings = {
+  includeDrafts?: boolean;
+};
+
+type AppSettings = {
+  autoUpdate?: AutoUpdateSettings;
+  [key: string]: unknown;
+};
+
+let appSettings: AppSettings = {};
+let appSettingsLoaded = false;
+let appSettingsPath: string | null = null;
+let storedAutoUpdateIncludeDrafts = false;
+let envAutoUpdateIncludeDraftsOverrideCache: boolean | null | undefined;
+let lastAppliedReleaseType: "release" | "draft" | null = null;
+
+function getEnvAutoUpdateIncludeDraftsOverride(): boolean | null {
+  if (envAutoUpdateIncludeDraftsOverrideCache !== undefined) {
+    return envAutoUpdateIncludeDraftsOverrideCache;
+  }
+  const raw =
+    process.env.CMUX_AUTO_UPDATE_INCLUDE_DRAFTS ??
+    process.env.CMUX_ELECTRON_AUTO_UPDATE_INCLUDE_DRAFTS ??
+    null;
+  if (raw == null) {
+    envAutoUpdateIncludeDraftsOverrideCache = null;
+    return envAutoUpdateIncludeDraftsOverrideCache;
+  }
+  if (/^(1|true|yes|on)$/i.test(raw)) {
+    envAutoUpdateIncludeDraftsOverrideCache = true;
+    return envAutoUpdateIncludeDraftsOverrideCache;
+  }
+  if (/^(0|false|no|off)$/i.test(raw)) {
+    envAutoUpdateIncludeDraftsOverrideCache = false;
+    return envAutoUpdateIncludeDraftsOverrideCache;
+  }
+  envAutoUpdateIncludeDraftsOverrideCache = null;
+  mainWarn("Ignoring invalid value for CMUX_AUTO_UPDATE_INCLUDE_DRAFTS", {
+    value: raw,
+  });
+  return envAutoUpdateIncludeDraftsOverrideCache;
+}
+
+async function loadAppSettings(): Promise<void> {
+  if (appSettingsLoaded) return;
+  try {
+    const userDataDir = app.getPath("userData");
+    appSettingsPath = path.join(userDataDir, SETTINGS_FILE_NAME);
+    const raw = await fs.readFile(appSettingsPath, { encoding: "utf8" });
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      appSettings = parsed as AppSettings;
+    } else {
+      appSettings = {};
+    }
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (!err || err.code !== "ENOENT") {
+      mainWarn("Failed to read application settings file", error);
+    }
+    appSettings = {};
+  } finally {
+    storedAutoUpdateIncludeDrafts =
+      typeof appSettings.autoUpdate?.includeDrafts === "boolean"
+        ? appSettings.autoUpdate.includeDrafts
+        : false;
+    appSettingsLoaded = true;
+  }
+}
+
+async function saveAppSettings(): Promise<void> {
+  if (!appSettingsLoaded) return;
+  if (!appSettingsPath) return;
+  try {
+    const payload = JSON.stringify(appSettings, null, 2);
+    await fs.writeFile(appSettingsPath, payload + "\n", {
+      encoding: "utf8",
+    });
+  } catch (error) {
+    mainWarn("Failed to persist application settings file", error);
+    const err = error instanceof Error ? error : new Error(String(error));
+    throw err;
+  }
+}
+
+async function setStoredAutoUpdateIncludeDrafts(
+  includeDrafts: boolean
+): Promise<void> {
+  if (getEnvAutoUpdateIncludeDraftsOverride() !== null) {
+    return;
+  }
+  if (!appSettingsLoaded) {
+    await loadAppSettings();
+  }
+  if (
+    typeof appSettings.autoUpdate !== "object" ||
+    appSettings.autoUpdate === null
+  ) {
+    appSettings.autoUpdate = {};
+  }
+  if (appSettings.autoUpdate.includeDrafts === includeDrafts) {
+    storedAutoUpdateIncludeDrafts = includeDrafts;
+    return;
+  }
+  const previousStored = storedAutoUpdateIncludeDrafts;
+  const previousPersisted = appSettings.autoUpdate.includeDrafts;
+  appSettings.autoUpdate.includeDrafts = includeDrafts;
+  storedAutoUpdateIncludeDrafts = includeDrafts;
+  try {
+    await saveAppSettings();
+  } catch (error) {
+    storedAutoUpdateIncludeDrafts = previousStored;
+    appSettings.autoUpdate.includeDrafts = previousPersisted;
+    throw error;
+  }
+}
+
+function shouldIncludeDraftUpdates(): boolean {
+  const override = getEnvAutoUpdateIncludeDraftsOverride();
+  if (override !== null) {
+    return override;
+  }
+  return storedAutoUpdateIncludeDrafts;
+}
+
+function getAutoUpdateDraftPreferenceSource(): "env" | "stored" {
+  return getEnvAutoUpdateIncludeDraftsOverride() !== null ? "env" : "stored";
+}
+
+function configureAutoUpdateIncludeDrafts(context: string): void {
+  const includeDrafts = shouldIncludeDraftUpdates();
+  autoUpdater.allowPrerelease = includeDrafts;
+  autoUpdater.allowDowngrade = includeDrafts;
+  const releaseType: "release" | "draft" = includeDrafts ? "draft" : "release";
+  if (!app.isPackaged) {
+    lastAppliedReleaseType = releaseType;
+    return;
+  }
+  if (lastAppliedReleaseType === releaseType) {
+    return;
+  }
+  const previousReleaseType = lastAppliedReleaseType;
+  lastAppliedReleaseType = releaseType;
+  try {
+    autoUpdater.setFeedURL({
+      provider: "github",
+      owner: "manaflow-ai",
+      repo: "cmux",
+      releaseType,
+      updaterCacheDirName: "cmux-updater",
+    });
+    mainLog("Configured auto-update feed", { context, releaseType });
+  } catch (error) {
+    lastAppliedReleaseType = previousReleaseType ?? null;
+    mainWarn("Failed to configure auto-update feed", {
+      context,
+      releaseType,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
 function registerLogIpcHandlers(): void {
   ipcMain.handle("cmux:logs:read-all", async () => {
     try {
@@ -456,10 +618,16 @@ function setupAutoUpdates(): void {
     return;
   }
 
+  const includeDrafts = shouldIncludeDraftUpdates();
+  const preferenceSource = getAutoUpdateDraftPreferenceSource();
+
   mainLog("Setting up auto-updates", {
     appVersion: app.getVersion(),
     platform: process.platform,
     arch: process.arch,
+    includeDrafts,
+    preferenceSource,
+    envOverride: getEnvAutoUpdateIncludeDraftsOverride(),
   });
 
   try {
@@ -472,7 +640,7 @@ function setupAutoUpdates(): void {
 
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
-    autoUpdater.allowPrerelease = false;
+    configureAutoUpdateIncludeDrafts("startup");
 
     if (process.platform === "darwin") {
       const channel = "latest-universal";
@@ -490,6 +658,7 @@ function setupAutoUpdates(): void {
       autoInstallOnAppQuit: autoUpdater.autoInstallOnAppQuit,
       allowPrerelease: autoUpdater.allowPrerelease,
       channel: autoUpdater.channel ?? null,
+      includeDrafts,
     });
   } catch (e) {
     mainWarn("Failed to initialize autoUpdater", e);
@@ -706,6 +875,7 @@ app.on("open-url", (_event, url) => {
 app.whenReady().then(async () => {
   ensureLogFiles();
   setupConsoleFileMirrors();
+  await loadAppSettings();
   const disposeContextMenu = registerGlobalContextMenu();
   app.once("will-quit", () => {
     try {
@@ -881,6 +1051,11 @@ app.whenReady().then(async () => {
 
   // Application menu with Command Palette accelerator; keep Help items.
   try {
+    const envIncludeDraftsOverride = getEnvAutoUpdateIncludeDraftsOverride();
+    const autoUpdatePreferenceLabel =
+      envIncludeDraftsOverride !== null
+        ? `Always Update to Latest GitHub Release (Drafts Included) — Controlled by Environment (${envIncludeDraftsOverride ? "On" : "Off"})`
+        : "Always Update to Latest GitHub Release (Drafts Included)";
     const template: MenuItemConstructorOptions[] = [];
     if (process.platform === "darwin") {
       template.push({ role: "appMenu" });
@@ -980,45 +1155,88 @@ app.whenReady().then(async () => {
       viewMenu,
       { role: "windowMenu" }
     );
-    template.push({
-      role: "help",
-      submenu: [
-        {
-          label: "Check for Updates…",
-          click: async () => {
-            if (!app.isPackaged) {
-              await dialog.showMessageBox({
-                type: "info",
-                message: "Updates are only available in packaged builds.",
-              });
-              return;
-            }
+    const helpSubmenu: MenuItemConstructorOptions[] = [
+      {
+        label: autoUpdatePreferenceLabel,
+        type: "checkbox",
+        checked: shouldIncludeDraftUpdates(),
+        enabled: envIncludeDraftsOverride === null,
+        click: (menuItem) => {
+          if (envIncludeDraftsOverride !== null) {
+            menuItem.checked = shouldIncludeDraftUpdates();
+            return;
+          }
+          const target = Boolean(menuItem.checked);
+          void (async () => {
             try {
-              mainLog("Manual update check initiated");
-              const result = await autoUpdater.checkForUpdates();
-              if (!result?.updateInfo) {
-                await dialog.showMessageBox({
-                  type: "info",
-                  message: "You’re up to date.",
-                });
+              await setStoredAutoUpdateIncludeDrafts(target);
+              configureAutoUpdateIncludeDrafts("user-toggle");
+              mainLog("Auto-update draft preference updated", {
+                includeDrafts: target,
+              });
+              if (app.isPackaged) {
+                void autoUpdater
+                  .checkForUpdates()
+                  .catch((error) =>
+                    mainWarn(
+                      "Auto-update check after preference change failed",
+                      error
+                    )
+                  );
               }
-            } catch (e) {
-              mainWarn("Manual checkForUpdates failed", e);
+            } catch (error) {
+              mainWarn("Failed to update auto-update draft preference", error);
+              menuItem.checked = shouldIncludeDraftUpdates();
               await dialog.showMessageBox({
                 type: "error",
-                message: "Failed to check for updates.",
+                message: "Failed to update auto-update preference.",
+                detail:
+                  error instanceof Error ? error.message : String(error),
               });
             }
-          },
+          })();
         },
-        {
-          label: "Open Logs Folder",
-          click: async () => {
-            if (!logsDir) ensureLogFiles();
-            if (logsDir) await shell.openPath(logsDir);
-          },
+      },
+      { type: "separator" },
+      {
+        label: "Check for Updates…",
+        click: async () => {
+          if (!app.isPackaged) {
+            await dialog.showMessageBox({
+              type: "info",
+              message: "Updates are only available in packaged builds.",
+            });
+            return;
+          }
+          try {
+            mainLog("Manual update check initiated");
+            const result = await autoUpdater.checkForUpdates();
+            if (!result?.updateInfo) {
+              await dialog.showMessageBox({
+                type: "info",
+                message: "You’re up to date.",
+              });
+            }
+          } catch (e) {
+            mainWarn("Manual checkForUpdates failed", e);
+            await dialog.showMessageBox({
+              type: "error",
+              message: "Failed to check for updates.",
+            });
+          }
         },
-      ],
+      },
+      {
+        label: "Open Logs Folder",
+        click: async () => {
+          if (!logsDir) ensureLogFiles();
+          if (logsDir) await shell.openPath(logsDir);
+        },
+      },
+    ];
+    template.push({
+      role: "help",
+      submenu: helpSubmenu,
     });
     const menu = Menu.buildFromTemplate(template);
     previewReloadMenuItem = menu.getMenuItemById("cmux-preview-reload") ?? null;
