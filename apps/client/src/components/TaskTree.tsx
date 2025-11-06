@@ -28,6 +28,7 @@ import {
   ArchiveRestore as ArchiveRestoreIcon,
   CheckCircle,
   Circle,
+  ChevronRight,
   Copy as CopyIcon,
   Crown,
   EllipsisVertical,
@@ -124,6 +125,156 @@ function getRunDisplayText(run: TaskRunWithChildren): string {
   return run.prompt.substring(0, 50) + "...";
 }
 
+function flattenRuns(
+  runs: TaskRunWithChildren[] | undefined,
+): TaskRunWithChildren[] {
+  if (!runs) return [];
+  const acc: TaskRunWithChildren[] = [];
+  const traverse = (items: TaskRunWithChildren[]) => {
+    for (const item of items) {
+      acc.push(item);
+      if (item.children.length > 0) {
+        traverse(item.children);
+      }
+    }
+  };
+  traverse(runs);
+  return acc;
+}
+
+function pruneArchivedRuns(
+  runs: TaskRunWithChildren[] | undefined,
+): TaskRunWithChildren[] | undefined {
+  if (!runs) return undefined;
+  const prune = (items: TaskRunWithChildren[]): TaskRunWithChildren[] => {
+    const next: TaskRunWithChildren[] = [];
+    for (const item of items) {
+      if (item.isArchived) {
+        continue;
+      }
+      const prunedChildren =
+        item.children.length > 0 ? prune(item.children) : item.children;
+      if (prunedChildren !== item.children) {
+        next.push({
+          ...item,
+          children: prunedChildren,
+        });
+      } else {
+        next.push(item);
+      }
+    }
+    return next;
+  };
+  return prune(runs);
+}
+
+function findRunInTree(
+  runs: TaskRunWithChildren[],
+  targetId: Id<"taskRuns">,
+): TaskRunWithChildren | null {
+  for (const run of runs) {
+    if (run._id === targetId) {
+      return run;
+    }
+    if (run.children.length > 0) {
+      const childMatch = findRunInTree(run.children, targetId);
+      if (childMatch) {
+        return childMatch;
+      }
+    }
+  }
+  return null;
+}
+
+function collectRunIds(
+  node: TaskRunWithChildren,
+  includeChildren: boolean,
+  acc: Set<Id<"taskRuns">>,
+) {
+  acc.add(node._id);
+  if (!includeChildren) {
+    return;
+  }
+  for (const child of node.children) {
+    collectRunIds(child, true, acc);
+  }
+}
+
+function applyArchiveStateToNode(
+  run: TaskRunWithChildren,
+  ids: Set<Id<"taskRuns">>,
+  archive: boolean,
+): [TaskRunWithChildren, boolean] {
+  let nextChildren: TaskRunWithChildren[] | null = null;
+  let childrenChanged = false;
+
+  for (let i = 0; i < run.children.length; i += 1) {
+    const child = run.children[i];
+    const [nextChild, childChanged] = applyArchiveStateToNode(
+      child,
+      ids,
+      archive,
+    );
+    if (childChanged) {
+      if (!nextChildren) {
+        nextChildren = run.children.slice(0, i);
+      }
+      nextChildren.push(nextChild);
+      childrenChanged = true;
+    } else if (nextChildren) {
+      nextChildren.push(nextChild);
+    }
+  }
+
+  const shouldUpdate = ids.has(run._id);
+  const nextIsArchived = shouldUpdate ? archive : run.isArchived;
+  const nodeChanged = childrenChanged || nextIsArchived !== run.isArchived;
+
+  if (!nodeChanged) {
+    return [run, false];
+  }
+
+  return [
+    {
+      ...run,
+      isArchived: nextIsArchived,
+      children: nextChildren ?? run.children,
+    },
+    true,
+  ];
+}
+
+function applyArchiveStateToRuns(
+  runs: TaskRunWithChildren[],
+  ids: Set<Id<"taskRuns">>,
+  archive: boolean,
+): TaskRunWithChildren[] {
+  let changed = false;
+  const nextRuns = runs.map((run) => {
+    const [nextRun, nodeChanged] = applyArchiveStateToNode(run, ids, archive);
+    if (nodeChanged) {
+      changed = true;
+    }
+    return nextRun;
+  });
+  return changed ? nextRuns : runs;
+}
+
+function updateRunArchiveStateLocal(
+  runs: TaskRunWithChildren[],
+  targetId: Id<"taskRuns">,
+  archive: boolean,
+  includeChildren: boolean,
+): TaskRunWithChildren[] {
+  const target = findRunInTree(runs, targetId);
+  if (!target) {
+    return runs;
+  }
+  const ids = new Set<Id<"taskRuns">>();
+  collectRunIds(target, includeChildren, ids);
+  return applyArchiveStateToRuns(runs, ids, archive);
+}
+
 type TaskRunExpansionState = Partial<Record<Id<"taskRuns">, boolean>>;
 
 interface TaskRunExpansionContextValue {
@@ -184,6 +335,39 @@ function TaskTreeInner({
   );
   const isOptimisticTask = isFakeConvexId(task._id);
   const canRenameTask = !isOptimisticTask;
+  const taskRuns = useConvexQuery(
+    api.taskRuns.getByTask,
+    isOptimisticTask
+      ? "skip"
+      : { teamSlugOrId, taskId: task._id, includeArchived: true }
+  );
+  const runsLoading = !isOptimisticTask && taskRuns === undefined;
+  const visibleRuns = useMemo(
+    () => pruneArchivedRuns(taskRuns),
+    [taskRuns]
+  );
+  const flattenedRuns = useMemo(() => flattenRuns(taskRuns), [taskRuns]);
+  const activeRunsFlat = useMemo(
+    () => flattenedRuns.filter((run) => !run.isArchived),
+    [flattenedRuns]
+  );
+  const archivedRunsFlat = useMemo(
+    () => flattenedRuns.filter((run) => run.isArchived),
+    [flattenedRuns]
+  );
+  const runMenuEntries = useMemo(
+    () => ({
+      active: activeRunsFlat.map((run) => ({
+        id: run._id,
+        label: getRunDisplayText(run),
+      })),
+      archived: archivedRunsFlat.map((run) => ({
+        id: run._id,
+        label: getRunDisplayText(run),
+      })),
+    }),
+    [activeRunsFlat, archivedRunsFlat]
+  );
   const prefetched = useRef(false);
   const prefetchTaskRuns = useCallback(() => {
     if (prefetched.current || isOptimisticTask) {
@@ -192,9 +376,69 @@ function TaskTreeInner({
     prefetched.current = true;
     void convexQueryClient.convexClient.prewarmQuery({
       query: api.taskRuns.getByTask,
-      args: { teamSlugOrId, taskId: task._id },
+      args: { teamSlugOrId, taskId: task._id, includeArchived: true },
     });
   }, [isOptimisticTask, task._id, teamSlugOrId]);
+
+  const archiveTaskRun = useMutation(
+    api.taskRuns.archive
+  ).withOptimisticUpdate((localStore, args) => {
+    if (!args.taskId) {
+      return;
+    }
+    const variants: Array<{
+      teamSlugOrId: string;
+      taskId: Id<"tasks">;
+      includeArchived?: boolean;
+    }> = [
+      { teamSlugOrId: args.teamSlugOrId, taskId: args.taskId },
+      {
+        teamSlugOrId: args.teamSlugOrId,
+        taskId: args.taskId,
+        includeArchived: true,
+      },
+    ];
+
+    for (const variant of variants) {
+      const current = localStore.getQuery(api.taskRuns.getByTask, variant);
+      if (!current) {
+        continue;
+      }
+      const updated = updateRunArchiveStateLocal(
+        current,
+        args.id,
+        args.archive,
+        args.includeChildren ?? false,
+      );
+      if (updated !== current) {
+        localStore.setQuery(api.taskRuns.getByTask, variant, updated);
+      }
+    }
+  });
+
+  const handleRunArchiveToggle = useCallback(
+    async (runId: Id<"taskRuns">, shouldArchive: boolean) => {
+      try {
+        await archiveTaskRun({
+          teamSlugOrId,
+          id: runId,
+          archive: shouldArchive,
+          taskId: task._id,
+        });
+        toast.success(
+          shouldArchive ? "Task run archived" : "Task run restored"
+        );
+      } catch (error) {
+        console.error(error);
+        toast.error(
+          shouldArchive
+            ? "Failed to archive task run"
+            : "Failed to restore task run"
+        );
+      }
+    },
+    [archiveTaskRun, task._id, teamSlugOrId]
+  );
 
   // Memoize the toggle handler
   const handleToggle = useCallback(
@@ -642,6 +886,67 @@ function TaskTreeInner({
                   <CopyIcon className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
                   <span>Copy Description</span>
                 </ContextMenu.Item>
+                <ContextMenu.SubmenuRoot>
+                  <ContextMenu.SubmenuTrigger
+                    className="flex items-center gap-2 cursor-default py-1.5 pr-4 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                  >
+                    <ArchiveIcon className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                    <span>Task Runs</span>
+                    <ChevronRight className="w-3 h-3 ml-auto text-neutral-400 dark:text-neutral-500" />
+                  </ContextMenu.SubmenuTrigger>
+                  <ContextMenu.Positioner className="outline-none z-[var(--z-context-menu)]">
+                    <ContextMenu.Popup className="origin-[var(--transform-origin)] rounded-md bg-white dark:bg-neutral-800 py-1 text-neutral-900 dark:text-neutral-100 shadow-lg shadow-gray-200 outline-1 outline-neutral-200 transition-[opacity] data-[ending-style]:opacity-0 dark:shadow-none dark:-outline-offset-1 dark:outline-neutral-700 max-w-xs">
+                      {runsLoading ? (
+                        <div className="flex items-center gap-2 px-3 py-2 text-xs text-neutral-500 dark:text-neutral-400">
+                          <Loader2 className="w-3 h-3 animate-spin text-neutral-400" />
+                          <span>Loading task runs…</span>
+                        </div>
+                      ) : (
+                        <div className="max-h-64 overflow-y-auto">
+                          <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                            Active runs
+                          </div>
+                          {runMenuEntries.active.length > 0 ? (
+                            runMenuEntries.active.map((run) => (
+                              <ContextMenu.Item
+                                key={`archive-${run.id}`}
+                                className="flex items-center gap-2 cursor-default py-1.5 pr-6 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                                onClick={() => handleRunArchiveToggle(run.id, true)}
+                              >
+                                <ArchiveIcon className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                                <span className="truncate">{run.label}</span>
+                              </ContextMenu.Item>
+                            ))
+                          ) : (
+                            <div className="px-3 py-1.5 text-xs text-neutral-500 dark:text-neutral-400">
+                              No active runs
+                            </div>
+                          )}
+                          <div className="my-1 h-px bg-neutral-200 dark:bg-neutral-700" />
+                          <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                            Archived runs
+                          </div>
+                          {runMenuEntries.archived.length > 0 ? (
+                            runMenuEntries.archived.map((run) => (
+                              <ContextMenu.Item
+                                key={`unarchive-${run.id}`}
+                                className="flex items-center gap-2 cursor-default py-1.5 pr-6 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                                onClick={() => handleRunArchiveToggle(run.id, false)}
+                              >
+                                <ArchiveRestoreIcon className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                                <span className="truncate">{run.label}</span>
+                              </ContextMenu.Item>
+                            ))
+                          ) : (
+                            <div className="px-3 py-1.5 text-xs text-neutral-500 dark:text-neutral-400">
+                              No archived runs
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </ContextMenu.Popup>
+                  </ContextMenu.Positioner>
+                </ContextMenu.SubmenuRoot>
                 {task.isArchived ? (
                   <ContextMenu.Item
                     className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
@@ -669,6 +974,9 @@ function TaskTreeInner({
             taskId={task._id}
             teamSlugOrId={teamSlugOrId}
             level={level}
+            runs={visibleRuns}
+            isLoading={runsLoading}
+            onArchiveToggle={handleRunArchiveToggle}
           />
         ) : null}
       </div>
@@ -680,19 +988,21 @@ interface TaskRunsContentProps {
   taskId: Id<"tasks">;
   teamSlugOrId: string;
   level: number;
+  runs: TaskRunWithChildren[] | undefined;
+  isLoading: boolean;
+  onArchiveToggle: (runId: Id<"taskRuns">, archive: boolean) => void;
 }
 
 function TaskRunsContent({
   taskId,
   teamSlugOrId,
   level,
+  runs,
+  isLoading,
+  onArchiveToggle,
 }: TaskRunsContentProps) {
   const location = useLocation();
   const optimisticTask = isFakeConvexId(taskId);
-  const runs = useConvexQuery(
-    api.taskRuns.getByTask,
-    optimisticTask ? "skip" : { teamSlugOrId, taskId }
-  );
 
   const annotatedRuns = useMemo(
     () => (runs && runs.length > 0 ? annotateAgentOrdinals(runs) : []),
@@ -733,7 +1043,7 @@ function TaskRunsContent({
     );
   }
 
-  if (runs === undefined) {
+  if (isLoading) {
     return (
       <TaskRunsMessage level={level}>
         <Loader2 className="w-3 h-3 animate-spin text-neutral-400" />
@@ -760,6 +1070,7 @@ function TaskRunsContent({
           taskId={taskId}
           teamSlugOrId={teamSlugOrId}
           isDefaultSelected={shouldHighlightDefaultRun && index === 0}
+          onArchiveToggle={onArchiveToggle}
         />
       ))}
     </div>
@@ -790,6 +1101,7 @@ interface TaskRunTreeProps {
   taskId: Id<"tasks">;
   teamSlugOrId: string;
   isDefaultSelected?: boolean;
+  onArchiveToggle: (runId: Id<"taskRuns">, archive: boolean) => void;
 }
 
 function TaskRunTreeInner({
@@ -798,6 +1110,7 @@ function TaskRunTreeInner({
   taskId,
   teamSlugOrId,
   isDefaultSelected = false,
+  onArchiveToggle,
 }: TaskRunTreeProps) {
   const location = useLocation();
   const { expandedRuns, setRunExpanded } = useTaskRunExpansionContext();
@@ -864,6 +1177,9 @@ function TaskRunTreeInner({
     },
     [isExpanded, run._id, setRunExpanded]
   );
+  const handleArchiveRun = useCallback(() => {
+    onArchiveToggle(run._id, true);
+  }, [onArchiveToggle, run._id]);
 
   const isLocalWorkspaceRunEntry = run.isLocalWorkspace;
   const isCloudWorkspaceRunEntry = run.isCloudWorkspace;
@@ -1155,6 +1471,14 @@ function TaskRunTreeInner({
               >
                 {isExpanded ? "Collapse details" : "Expand details"}
               </ContextMenu.Item>
+              <div className="my-1 h-px bg-neutral-200 dark:bg-neutral-700" />
+              <ContextMenu.Item
+                className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                onClick={handleArchiveRun}
+              >
+                <ArchiveIcon className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                <span>Archive run</span>
+              </ContextMenu.Item>
             </ContextMenu.Popup>
           </ContextMenu.Positioner>
         </ContextMenu.Portal>
@@ -1173,6 +1497,7 @@ function TaskRunTreeInner({
         shouldRenderPullRequestLink={shouldRenderPullRequestLink}
         previewServices={previewServices}
         environmentError={run.environmentError}
+        onArchiveToggle={onArchiveToggle}
       />
     </Fragment>
   );
@@ -1240,6 +1565,7 @@ interface TaskRunDetailsProps {
     maintenanceError?: string;
     devError?: string;
   };
+  onArchiveToggle: (runId: Id<"taskRuns">, archive: boolean) => void;
 }
 
 function TaskRunDetails({
@@ -1255,6 +1581,7 @@ function TaskRunDetails({
   shouldRenderPullRequestLink,
   previewServices,
   environmentError,
+  onArchiveToggle,
 }: TaskRunDetailsProps) {
   if (!isExpanded) {
     return null;
@@ -1419,6 +1746,7 @@ function TaskRunDetails({
               level={level + 1}
               taskId={taskId}
               teamSlugOrId={teamSlugOrId}
+              onArchiveToggle={onArchiveToggle}
             />
           ))}
         </div>
