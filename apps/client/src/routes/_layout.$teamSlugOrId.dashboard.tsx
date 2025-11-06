@@ -34,6 +34,8 @@ import { Server as ServerIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
+import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
+import { useOnboarding } from "@/hooks/useOnboarding";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/dashboard")({
   component: DashboardComponent,
@@ -81,6 +83,12 @@ function DashboardComponent() {
   const { socket } = useSocket();
   const { theme } = useTheme();
   const { addTaskToExpand } = useExpandTasks();
+
+  // Onboarding hook
+  const {
+    isOnboardingOpen,
+    closeOnboarding,
+  } = useOnboarding({ teamSlugOrId });
 
   const [selectedProject, setSelectedProject] = useState<string[]>(() => {
     const stored = localStorage.getItem("selectedProject");
@@ -808,18 +816,19 @@ function DashboardComponent() {
   ]);
 
   return (
-    <FloatingPane header={<TitleBar title="cmux" />}>
-      <div className="flex flex-col grow overflow-y-auto">
-        {/* Main content area */}
-        <div className="flex-1 flex justify-center px-4 pt-60 pb-4">
-          <div className="w-full max-w-4xl min-w-0">
-            {/* Workspace Creation Buttons */}
-            <WorkspaceCreationButtons
-              teamSlugOrId={teamSlugOrId}
-              selectedProject={selectedProject}
-              isEnvSelected={isEnvSelected}
-              environments={environmentsQuery.data || null}
-            />
+    <>
+      <FloatingPane header={<TitleBar title="cmux" />}>
+        <div className="flex flex-col grow overflow-y-auto">
+          {/* Main content area */}
+          <div className="flex-1 flex justify-center px-4 pt-60 pb-4">
+            <div className="w-full max-w-4xl min-w-0">
+              {/* Workspace Creation Buttons */}
+              <WorkspaceCreationButtons
+                teamSlugOrId={teamSlugOrId}
+                selectedProject={selectedProject}
+                isEnvSelected={isEnvSelected}
+                environments={environmentsQuery.data || null}
+              />
 
             <DashboardMainCard
               editorApiRef={editorApiRef}
@@ -854,6 +863,18 @@ function DashboardComponent() {
         </div>
       </div>
     </FloatingPane>
+
+    {/* Onboarding Modal */}
+    <OnboardingModal
+      isOpen={isOnboardingOpen}
+      onClose={closeOnboarding}
+      teamSlugOrId={teamSlugOrId}
+      onComplete={() => {
+        closeOnboarding();
+        // Optionally refresh the page or update state after onboarding
+      }}
+    />
+    </>
   );
 }
 
