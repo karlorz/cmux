@@ -7,6 +7,10 @@ import {
   webContents,
   webFrameMain,
 } from "electron";
+import {
+  getAccelerator,
+  identifyShortcutFromInput,
+} from "./globalShortcuts";
 
 type Logger = {
   log: (...args: unknown[]) => void;
@@ -238,31 +242,11 @@ export function initCmdK(opts: {
           typeInput: input.type,
         });
         if (input.type !== "keyDown") return;
-        const isMac = process.platform === "darwin";
-        // Only trigger on EXACT Cmd+K (mac) or Ctrl+K (others)
-        const isCmdK = (() => {
-          if (input.key.toLowerCase() !== "k") return false;
-          if (input.alt || input.shift) return false;
-          if (isMac) {
-            // Require meta only; disallow ctrl on mac
-            return Boolean(input.meta) && !input.control;
-          }
-          // Non-mac: require ctrl only; disallow meta
-          return Boolean(input.control) && !input.meta;
-        })();
-
-        const isSidebarToggle = (() => {
-          if (input.key.toLowerCase() !== "s") return false;
-          if (!input.shift) return false;
-          if (input.alt || input.meta) return false;
-          // Require control to align with renderer shortcut (Ctrl+Shift+S)
-          return Boolean(input.control);
-        })();
-
-        if (!isCmdK && !isSidebarToggle) return;
-
-        // Prevent default to avoid in-app conflicts and ensure single toggle
-        e.preventDefault();
+        const matched = identifyShortcutFromInput(input, [
+          "cmd-k",
+          "sidebar-toggle",
+        ]);
+        if (!matched) return;
 
         const getTargetWindow = (): BrowserWindow | null => {
           return (
@@ -273,10 +257,14 @@ export function initCmdK(opts: {
           );
         };
 
-        if (isSidebarToggle) {
+        // Prevent default to avoid in-app conflicts and ensure single toggle
+        e.preventDefault();
+
+        if (matched === "sidebar-toggle") {
           keyDebug("sidebar-toggle-detected", {
             sourceId: contents.id,
             type: contents.getType?.(),
+            accelerator: getAccelerator("sidebar-toggle"),
           });
           const targetWin = getTargetWindow();
           if (targetWin && !targetWin.isDestroyed()) {
@@ -297,6 +285,7 @@ export function initCmdK(opts: {
         keyDebug("cmdk-detected", {
           sourceId: contents.id,
           type: contents.getType?.(),
+          accelerator: getAccelerator("cmd-k"),
         });
 
         // If already open, just toggle; do not overwrite previous capture

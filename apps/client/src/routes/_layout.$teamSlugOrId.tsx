@@ -11,7 +11,12 @@ import { api } from "@cmux/convex/api";
 import { convexQuery } from "@convex-dev/react-query";
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
-import { Suspense, useEffect, useMemo } from "react";
+import { Suspense, useEffect, useMemo, useRef } from "react";
+import {
+  DEFAULT_GLOBAL_SHORTCUTS,
+  GLOBAL_SHORTCUT_IDS,
+  mergeShortcutSettings,
+} from "@cmux/shared/global-shortcuts";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId")({
   component: LayoutComponentWrapper,
@@ -58,6 +63,40 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId")({
 function LayoutComponent() {
   const { teamSlugOrId } = Route.useParams();
   const tasks = useQuery(api.tasks.get, { teamSlugOrId });
+  const workspaceSettings = useQuery(api.workspaceSettings.get, {
+    teamSlugOrId,
+  });
+  const lastShortcutPayload = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (workspaceSettings === undefined) return;
+    const shortcuts =
+      (
+        workspaceSettings as unknown as {
+          shortcuts?: Record<string, string> | null;
+        }
+      )?.shortcuts ?? null;
+    const merged = mergeShortcutSettings(shortcuts);
+    const payload: Record<string, string> = {};
+    for (const id of GLOBAL_SHORTCUT_IDS) {
+      const value = merged[id];
+      const defaultValue = DEFAULT_GLOBAL_SHORTCUTS[id];
+      if (value && value !== defaultValue) {
+        payload[id] = value;
+      }
+    }
+    const serialized = JSON.stringify(payload);
+    if (serialized === lastShortcutPayload.current) {
+      return;
+    }
+    lastShortcutPayload.current = serialized;
+    if (typeof window === "undefined") return;
+    const setter = window.cmux?.ui?.setGlobalShortcuts;
+    if (!setter) return;
+    void setter(payload).catch((error: unknown) => {
+      console.warn("Failed to apply global shortcuts", error);
+    });
+  }, [workspaceSettings]);
 
   // Sort tasks by creation date (newest first) and take the latest 5
   const recentTasks = useMemo(() => {

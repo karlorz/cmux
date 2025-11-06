@@ -3,10 +3,17 @@ import { FloatingPane } from "@/components/floating-pane";
 import { ProviderStatusSettings } from "@/components/provider-status-settings";
 import { useTheme } from "@/components/theme/use-theme";
 import { TitleBar } from "@/components/TitleBar";
+import { GlobalShortcutSettings } from "@/components/global-shortcut-settings";
 import { api } from "@cmux/convex/api";
 import type { Doc } from "@cmux/convex/dataModel";
 import { AGENT_CONFIGS, type AgentConfig } from "@cmux/shared/agentConfig";
 import { API_KEY_MODELS_BY_ENV } from "@cmux/shared/model-usage";
+import {
+  DEFAULT_GLOBAL_SHORTCUTS,
+  GLOBAL_SHORTCUT_IDS,
+  mergeShortcutSettings,
+  type GlobalShortcutId,
+} from "@cmux/shared/global-shortcuts";
 import { convexQuery } from "@convex-dev/react-query";
 import { Switch } from "@heroui/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -40,6 +47,12 @@ function SettingsComponent() {
   const [autoPrEnabled, setAutoPrEnabled] = useState<boolean>(false);
   const [originalAutoPrEnabled, setOriginalAutoPrEnabled] =
     useState<boolean>(false);
+  const [shortcutValues, setShortcutValues] = useState<
+    Record<GlobalShortcutId, string>
+  >(() => ({ ...DEFAULT_GLOBAL_SHORTCUTS }));
+  const [originalShortcutValues, setOriginalShortcutValues] = useState<
+    Record<GlobalShortcutId, string>
+  >(() => ({ ...DEFAULT_GLOBAL_SHORTCUTS }));
   // const [isSaveButtonVisible, setIsSaveButtonVisible] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const saveButtonRef = useRef<HTMLDivElement>(null);
@@ -145,8 +158,19 @@ function SettingsComponent() {
       const effective = enabled === undefined ? false : Boolean(enabled);
       setAutoPrEnabled(effective);
       setOriginalAutoPrEnabled(effective);
+
+      const workspaceShortcuts =
+        (
+          workspaceSettings as unknown as {
+            shortcuts?: Record<string, string> | null;
+          }
+        )?.shortcuts ?? null;
+      const mergedShortcuts = mergeShortcutSettings(workspaceShortcuts);
+      setShortcutValues(mergedShortcuts);
+      setOriginalShortcutValues(mergedShortcuts);
+      applyShortcutsToElectron(mergedShortcuts);
     }
-  }, [workspaceSettings]);
+  }, [workspaceSettings, applyShortcutsToElectron]);
 
   // Track save button visibility
   // Footer-based save button; no visibility tracking needed
@@ -222,6 +246,49 @@ function SettingsComponent() {
     [originalContainerSettingsData]
   );
 
+  const applyShortcutsToElectron = useCallback(
+    (shortcuts: Record<GlobalShortcutId, string>) => {
+      if (typeof window === "undefined") return;
+      const setter = window.cmux?.ui?.setGlobalShortcuts;
+      if (!setter) return;
+      const payload: Record<string, string> = {};
+      for (const id of GLOBAL_SHORTCUT_IDS) {
+        const value = shortcuts[id];
+        const defaultValue = DEFAULT_GLOBAL_SHORTCUTS[id];
+        if (value && value !== defaultValue) {
+          payload[id] = value;
+        }
+      }
+      void setter(payload).catch((error: unknown) => {
+        console.warn("Failed to apply global shortcuts", error);
+      });
+    },
+    []
+  );
+
+  const handleShortcutChange = useCallback(
+    (id: GlobalShortcutId, value: string) => {
+      setShortcutValues((prev) => ({ ...prev, [id]: value }));
+    },
+    []
+  );
+
+  const handleShortcutReset = useCallback((id: GlobalShortcutId) => {
+    const defaultValue = DEFAULT_GLOBAL_SHORTCUTS[id];
+    setShortcutValues((prev) => ({ ...prev, [id]: defaultValue }));
+  }, []);
+
+  const handleShortcutInvalid = useCallback(
+    (_id: GlobalShortcutId, attempted: string | null) => {
+      if (!attempted) {
+        toast.error("Include a non-modifier key in the shortcut.");
+      } else {
+        toast.error(`"${attempted}" is not a valid shortcut.`);
+      }
+    },
+    []
+  );
+
   // Check if there are any changes
   const hasChanges = () => {
     // Check worktree path changes
@@ -244,11 +311,16 @@ function SettingsComponent() {
     // Auto PR toggle changes
     const autoPrChanged = autoPrEnabled !== originalAutoPrEnabled;
 
+    const shortcutsChanged = GLOBAL_SHORTCUT_IDS.some(
+      (id) => shortcutValues[id] !== originalShortcutValues[id]
+    );
+
     return (
       worktreePathChanged ||
       autoPrChanged ||
       apiKeysChanged ||
-      containerSettingsChanged
+      containerSettingsChanged ||
+      shortcutsChanged
     );
   };
 
@@ -258,19 +330,55 @@ function SettingsComponent() {
     try {
       let savedCount = 0;
       let deletedCount = 0;
+      let workspaceSettingsUpdated = false;
 
-      // Save worktree path / auto PR if changed
-      if (
-        worktreePath !== originalWorktreePath ||
-        autoPrEnabled !== originalAutoPrEnabled
-      ) {
-        await convex.mutation(api.workspaceSettings.update, {
-          teamSlugOrId,
-          worktreePath: worktreePath || undefined,
-          autoPrEnabled,
-        });
-        setOriginalWorktreePath(worktreePath);
-        setOriginalAutoPrEnabled(autoPrEnabled);
+      const worktreePathChanged = worktreePath !== originalWorktreePath;
+      const autoPrChanged = autoPrEnabled !== originalAutoPrEnabled;
+      const shortcutsChanged = GLOBAL_SHORTCUT_IDS.some(
+        (id) => shortcutValues[id] !== originalShortcutValues[id]
+      );
+
+      if (worktreePathChanged || autoPrChanged || shortcutsChanged) {
+        const payload: {
+          teamSlugOrId: string;
+          worktreePath?: string;
+          autoPrEnabled?: boolean;
+          shortcuts?: Record<string, string>;
+        } = { teamSlugOrId };
+
+        if (worktreePathChanged) {
+          payload.worktreePath = worktreePath || undefined;
+        }
+
+        if (autoPrChanged) {
+          payload.autoPrEnabled = autoPrEnabled;
+        }
+
+        if (shortcutsChanged) {
+          const overrides: Record<string, string> = {};
+          for (const id of GLOBAL_SHORTCUT_IDS) {
+            const current = shortcutValues[id];
+            const defaultValue = DEFAULT_GLOBAL_SHORTCUTS[id];
+            if (current && current !== defaultValue) {
+              overrides[id] = current;
+            }
+          }
+          payload.shortcuts = overrides;
+        }
+
+        await convex.mutation(api.workspaceSettings.update, payload);
+        workspaceSettingsUpdated = true;
+
+        if (worktreePathChanged) {
+          setOriginalWorktreePath(worktreePath);
+        }
+        if (autoPrChanged) {
+          setOriginalAutoPrEnabled(autoPrEnabled);
+        }
+        if (shortcutsChanged) {
+          setOriginalShortcutValues({ ...shortcutValues });
+          applyShortcutsToElectron(shortcutValues);
+        }
       }
 
       // Save container settings if changed
@@ -319,8 +427,14 @@ function SettingsComponent() {
       // After successful save, hide all API key inputs
       setShowKeys({});
 
+      const actions: string[] = [];
+      if (workspaceSettingsUpdated) {
+        actions.push("updated workspace settings");
+      }
+      if (shortcutsChanged) {
+        actions.push("updated shortcuts");
+      }
       if (savedCount > 0 || deletedCount > 0) {
-        const actions = [];
         if (savedCount > 0) {
           actions.push(`saved ${savedCount} key${savedCount > 1 ? "s" : ""}`);
         }
@@ -329,6 +443,9 @@ function SettingsComponent() {
             `removed ${deletedCount} key${deletedCount > 1 ? "s" : ""}`
           );
         }
+      }
+
+      if (actions.length > 0) {
         toast.success(`Successfully ${actions.join(" and ")}`);
       } else {
         toast.info("No changes to save");
@@ -676,6 +793,13 @@ function SettingsComponent() {
                 </div>
               </div>
             </div>
+
+            <GlobalShortcutSettings
+              values={shortcutValues}
+              onChange={handleShortcutChange}
+              onReset={handleShortcutReset}
+              onInvalid={handleShortcutInvalid}
+            />
 
             {/* AI Provider Authentication */}
             <div className="bg-white dark:bg-neutral-950 rounded-lg border border-neutral-200 dark:border-neutral-800">

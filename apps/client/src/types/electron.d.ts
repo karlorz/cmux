@@ -103,6 +103,9 @@ interface CmuxAPI {
     ) => Promise<{ ok: boolean; queued?: boolean }>;
     setCommandPaletteOpen: (open: boolean) => Promise<{ ok: boolean }>;
     setPreviewReloadVisible?: (visible: boolean) => Promise<{ ok: boolean }>;
+    setGlobalShortcuts?: (overrides: Record<string, string>) => Promise<{
+      ok: boolean;
+    }>;
     restoreLastFocus: () => Promise<{ ok: boolean; queued?: boolean }>;
   };
   socket: CmuxSocketAPI;

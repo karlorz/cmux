@@ -127,6 +127,12 @@ const cmuxAPI = {
         Boolean(visible)
       ) as Promise<{ ok: boolean }>;
     },
+    setGlobalShortcuts: (overrides: Record<string, string>) => {
+      return ipcRenderer.invoke(
+        "cmux:ui:set-global-shortcuts",
+        overrides ?? {}
+      ) as Promise<{ ok: boolean }>;
+    },
     restoreLastFocus: () => {
       return ipcRenderer.invoke("cmux:ui:restore-last-focus") as Promise<{
         ok: boolean;
