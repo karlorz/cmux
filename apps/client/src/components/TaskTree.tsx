@@ -6,6 +6,7 @@ import {
 } from "@/components/ui/tooltip";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { useArchiveTask } from "@/hooks/useArchiveTask";
+import { useArchiveTaskRun } from "@/hooks/useArchiveTaskRun";
 import { useOpenWithActions } from "@/hooks/useOpenWithActions";
 import { isElectron } from "@/lib/electron";
 import { isFakeConvexId } from "@/lib/fakeConvexId";
@@ -110,8 +111,13 @@ type TasksGetArgs = {
   archived?: boolean;
 };
 
+type TaskRunsQueryResult = typeof api.taskRuns.getByTask._returnType;
+type TaskRunsQueryItem = TaskRunsQueryResult[number];
+
 // Extract the display text logic to avoid re-creating it on every render
-function getRunDisplayText(run: TaskRunWithChildren): string {
+function getRunDisplayText(
+  run: Pick<TaskRunWithChildren, "agentName" | "summary" | "prompt">
+): string {
   const fromRun = run.agentName?.trim();
   if (fromRun && fromRun.length > 0) {
     return fromRun;
@@ -215,6 +221,56 @@ function TaskTreeInner({
   }, [prefetchTaskRuns]);
 
   const { archiveWithUndo, unarchive } = useArchiveTask(teamSlugOrId);
+  const { unarchive: unarchiveTaskRun } = useArchiveTaskRun(teamSlugOrId);
+  const [archivedRuns, setArchivedRuns] = useState<TaskRunsQueryItem[]>([]);
+  const [isLoadingArchivedRuns, setIsLoadingArchivedRuns] = useState(false);
+  const [archivedRunsError, setArchivedRunsError] = useState<string | null>(
+    null
+  );
+  const fetchArchivedRuns = useCallback(async () => {
+    if (isOptimisticTask) {
+      setArchivedRuns([]);
+      setArchivedRunsError(null);
+      return;
+    }
+    setIsLoadingArchivedRuns(true);
+    try {
+      const result = await convexQueryClient.convexClient.query(
+        api.taskRuns.getByTask,
+        {
+          teamSlugOrId,
+          taskId: task._id,
+          archived: true,
+        }
+      );
+      setArchivedRuns(result);
+      setArchivedRunsError(null);
+    } catch (error) {
+      console.error("Failed to load archived task runs", error);
+      setArchivedRunsError("Failed to load archived task runs");
+    } finally {
+      setIsLoadingArchivedRuns(false);
+    }
+  }, [isOptimisticTask, task._id, teamSlugOrId]);
+  const handleTaskContextMenuOpenChange = useCallback(
+    (open: boolean) => {
+      if (open) {
+        void fetchArchivedRuns();
+      }
+    },
+    [fetchArchivedRuns]
+  );
+  const handleUnarchiveRunFromMenu = useCallback(
+    async (runId: Id<"taskRuns">) => {
+      try {
+        await unarchiveTaskRun(runId);
+        setArchivedRuns((prev) => prev.filter((run) => run._id !== runId));
+      } catch {
+        // toast already handled inside hook
+      }
+    },
+    [unarchiveTaskRun]
+  );
   const updateTaskMutation = useMutation(api.tasks.update).withOptimisticUpdate(
     (localStore, args) => {
       const optimisticUpdatedAt = Date.now();
@@ -570,7 +626,7 @@ function TaskTreeInner({
   return (
     <TaskRunExpansionContext.Provider value={expansionContextValue}>
       <div className="select-none flex flex-col">
-        <ContextMenu.Root>
+        <ContextMenu.Root onOpenChange={handleTaskContextMenuOpenChange}>
           <ContextMenu.Trigger>
             <Link
               to="/$teamSlugOrId/task/$taskId"
@@ -659,6 +715,54 @@ function TaskTreeInner({
                     <span>Archive Task</span>
                   </ContextMenu.Item>
                 )}
+                <div className="my-1 h-px bg-neutral-200 dark:bg-neutral-700" />
+                <ContextMenu.SubmenuRoot>
+                  <ContextMenu.SubmenuTrigger
+                    className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                  >
+                    <ArchiveRestoreIcon className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                    <span>Archived Task Runs</span>
+                  </ContextMenu.SubmenuTrigger>
+                  <ContextMenu.Positioner className="outline-none z-[var(--z-context-menu)]">
+                    <ContextMenu.Popup className="origin-[var(--transform-origin)] rounded-md bg-white dark:bg-neutral-800 py-1 text-neutral-900 dark:text-neutral-100 shadow-lg shadow-gray-200 outline-1 outline-neutral-200 transition-[opacity] data-[ending-style]:opacity-0 dark:shadow-none dark:-outline-offset-1 dark:outline-neutral-700 max-h-64 overflow-y-auto min-w-[220px]">
+                      {isLoadingArchivedRuns ? (
+                        <ContextMenu.Item
+                          disabled
+                          className="px-3 py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400 cursor-default"
+                        >
+                          Loading archived runs…
+                        </ContextMenu.Item>
+                      ) : archivedRunsError ? (
+                        <ContextMenu.Item
+                          disabled
+                          className="px-3 py-1.5 text-[13px] text-red-500 dark:text-red-400 cursor-default"
+                        >
+                          {archivedRunsError}
+                        </ContextMenu.Item>
+                      ) : archivedRuns.length === 0 ? (
+                        <ContextMenu.Item
+                          disabled
+                          className="px-3 py-1.5 text-[13px] text-neutral-500 dark:text-neutral-400 cursor-default"
+                        >
+                          No archived task runs
+                        </ContextMenu.Item>
+                      ) : (
+                        archivedRuns.map((run) => (
+                          <ContextMenu.Item
+                            key={run._id}
+                            className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none text-neutral-900 dark:text-neutral-100 data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                            onClick={() => handleUnarchiveRunFromMenu(run._id)}
+                          >
+                            <ArchiveRestoreIcon className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300 shrink-0" />
+                            <span className="text-left line-clamp-2">
+                              {getRunDisplayText(run)}
+                            </span>
+                          </ContextMenu.Item>
+                        ))
+                      )}
+                    </ContextMenu.Popup>
+                  </ContextMenu.Positioner>
+                </ContextMenu.SubmenuRoot>
               </ContextMenu.Popup>
             </ContextMenu.Positioner>
           </ContextMenu.Portal>
@@ -699,6 +803,24 @@ function TaskRunsContent({
     [runs]
   );
 
+  const activeRuns = useMemo(() => {
+    const pruneRun = (run: AnnotatedTaskRun): AnnotatedTaskRun | null => {
+      if (run.isArchived) {
+        return null;
+      }
+      const children = run.children
+        .map(pruneRun)
+        .filter((child): child is AnnotatedTaskRun => child !== null);
+      return {
+        ...run,
+        children,
+      };
+    };
+    return annotatedRuns
+      .map(pruneRun)
+      .filter((run): run is AnnotatedTaskRun => run !== null);
+  }, [annotatedRuns]);
+
   const runIdFromSearch = useMemo(() => {
     if (
       location.search &&
@@ -716,14 +838,14 @@ function TaskRunsContent({
   }, [location.search]);
 
   const shouldHighlightDefaultRun = useMemo(() => {
-    if (!annotatedRuns.length) {
+    if (!activeRuns.length) {
       return false;
     }
     const isTaskRoute = location.pathname.includes(`/task/${taskId}`);
     const hasRunSegment = location.pathname.includes(`/task/${taskId}/run/`);
     const hasExplicitRunSelection = Boolean(runIdFromSearch);
     return isTaskRoute && !hasRunSegment && !hasExplicitRunSelection;
-  }, [annotatedRuns.length, location.pathname, runIdFromSearch, taskId]);
+  }, [activeRuns.length, location.pathname, runIdFromSearch, taskId]);
 
   if (optimisticTask) {
     return (
@@ -742,17 +864,21 @@ function TaskRunsContent({
     );
   }
 
-  if (annotatedRuns.length === 0) {
+  if (activeRuns.length === 0) {
+    const message =
+      annotatedRuns.length === 0
+        ? "No task runs yet"
+        : "All task runs are archived";
     return (
       <TaskRunsMessage level={level}>
-        <span className="italic">No task runs yet</span>
+        <span className="italic">{message}</span>
       </TaskRunsMessage>
     );
   }
 
   return (
     <div className="flex flex-col">
-      {annotatedRuns.map((run, index) => (
+      {activeRuns.map((run, index) => (
         <TaskRunTree
           key={run._id}
           run={run}
@@ -803,6 +929,8 @@ function TaskRunTreeInner({
   const { expandedRuns, setRunExpanded } = useTaskRunExpansionContext();
   const defaultExpanded = Boolean(run.isCrowned);
   const isExpanded = expandedRuns[run._id] ?? defaultExpanded;
+  const { archive: archiveRun, unarchive: unarchiveRun } =
+    useArchiveTaskRun(teamSlugOrId);
   const runIdFromSearch = useMemo(() => {
     if (
       location.search &&
@@ -1046,6 +1174,14 @@ function TaskRunTreeInner({
     shouldRenderPullRequestLink ||
     shouldRenderPreviewLink;
 
+  const handleToggleArchive = useCallback(() => {
+    if (run.isArchived) {
+      void unarchiveRun(run._id);
+      return;
+    }
+    void archiveRun(run._id);
+  }, [archiveRun, run._id, run.isArchived, unarchiveRun]);
+
   return (
     <Fragment>
       <ContextMenu.Root>
@@ -1154,6 +1290,22 @@ function TaskRunTreeInner({
                 onClick={() => setRunExpanded(run._id, !isExpanded)}
               >
                 {isExpanded ? "Collapse details" : "Expand details"}
+              </ContextMenu.Item>
+              <ContextMenu.Item
+                className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                onClick={handleToggleArchive}
+              >
+                {run.isArchived ? (
+                  <>
+                    <ArchiveRestoreIcon className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                    <span>Unarchive run</span>
+                  </>
+                ) : (
+                  <>
+                    <ArchiveIcon className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                    <span>Archive run</span>
+                  </>
+                )}
               </ContextMenu.Item>
             </ContextMenu.Popup>
           </ContextMenu.Positioner>

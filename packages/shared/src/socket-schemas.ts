@@ -356,6 +356,10 @@ export const ArchiveTaskSchema = z.object({
   taskId: typedZid("tasks"),
 });
 
+export const ArchiveTaskRunSchema = z.object({
+  taskRunId: typedZid("taskRuns"),
+});
+
 export const SpawnFromCommentSchema = z.object({
   url: z.string(),
   page: z.string(),
@@ -475,6 +479,7 @@ export type GitHubCreateDraftPr = z.infer<typeof GitHubCreateDraftPrSchema>;
 export type GitHubSyncPrState = z.infer<typeof GitHubSyncPrStateSchema>;
 export type GitHubMergeBranch = z.infer<typeof GitHubMergeBranchSchema>;
 export type ArchiveTask = z.infer<typeof ArchiveTaskSchema>;
+export type ArchiveTaskRun = z.infer<typeof ArchiveTaskRunSchema>;
 export type SpawnFromComment = z.infer<typeof SpawnFromCommentSchema>;
 export type ProviderStatus = z.infer<typeof ProviderStatusSchema>;
 export type DockerStatus = z.infer<typeof DockerStatusSchema>;
@@ -576,6 +581,10 @@ export interface ClientToServerEvents {
   ) => void;
   "archive-task": (
     data: ArchiveTask,
+    callback: (response: { success: boolean; error?: string }) => void
+  ) => void;
+  "archive-task-run": (
+    data: ArchiveTaskRun,
     callback: (response: { success: boolean; error?: string }) => void
   ) => void;
   "spawn-from-comment": (

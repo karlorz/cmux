@@ -2,6 +2,7 @@ import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
 import {
   ArchiveTaskSchema,
+  ArchiveTaskRunSchema,
   GitFullDiffRequestSchema,
   GitHubCreateDraftPrSchema,
   GitHubFetchBranchesSchema,
@@ -35,7 +36,7 @@ import * as path from "node:path";
 import { promisify } from "node:util";
 import z from "zod";
 import { spawnAllAgents } from "./agentSpawner";
-import { stopContainersForRuns } from "./archiveTask";
+import { stopContainerForRun, stopContainersForRuns } from "./archiveTask";
 import { execWithEnv } from "./execWithEnv";
 import { getGitDiff } from "./diffs/gitDiff";
 import { GitDiffManager } from "./gitDiff";
@@ -2155,6 +2156,39 @@ ${title}`;
         callback({ success: true });
       } catch (error) {
         serverLogger.error("Error archiving task:", error);
+        callback({
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    });
+
+    socket.on("archive-task-run", async (data, callback) => {
+      try {
+        const { taskRunId } = ArchiveTaskRunSchema.parse(data);
+        const run = await getConvex().query(api.taskRuns.get, {
+          teamSlugOrId: safeTeam,
+          id: taskRunId,
+        });
+
+        if (!run) {
+          callback({
+            success: false,
+            error: `Task run ${taskRunId} not found`,
+          });
+          return;
+        }
+
+        const result = await stopContainerForRun(run);
+        if (result && !result.success) {
+          serverLogger.warn(
+            `Failed to stop container for run ${taskRunId}:`,
+            result.error
+          );
+        }
+        callback({ success: true });
+      } catch (error) {
+        serverLogger.error("Error archiving task run:", error);
         callback({
           success: false,
           error: error instanceof Error ? error.message : "Unknown error",

@@ -19,6 +19,12 @@ export interface StopResult {
   error?: unknown;
 }
 
+type ContainerTarget = {
+  provider: VSCodeProvider;
+  containerName: string;
+  runId: string;
+};
+
 async function stopDockerContainer(containerName: string): Promise<void> {
   try {
     await execAsync(`docker stop ${containerName}`, { timeout: 15_000 });
@@ -98,92 +104,108 @@ export function stopContainersForRunsFromTree(
   }
 
   // Collect valid docker/morph targets
-  const targets: {
-    provider: VSCodeProvider;
-    containerName: string;
-    runId: string;
-  }[] = [];
+  const targets: ContainerTarget[] = [];
   for (const r of flat) {
-    if (typeof r !== "object" || r === null) continue;
-    const vscode = Reflect.get(Object(r), "vscode");
-    const runId = Reflect.get(Object(r), "_id");
-    const provider =
-      typeof vscode === "object" && vscode !== null
-        ? Reflect.get(Object(vscode), "provider")
-        : undefined;
-    const name =
-      typeof vscode === "object" && vscode !== null
-        ? Reflect.get(Object(vscode), "containerName")
-        : undefined;
-
-    if (
-      provider === "docker" &&
-      typeof name === "string" &&
-      typeof runId === "string"
-    ) {
-      targets.push({ provider: "docker", containerName: name, runId });
-    } else if (
-      provider === "morph" &&
-      typeof name === "string" &&
-      typeof runId === "string"
-    ) {
-      targets.push({ provider: "morph", containerName: name, runId });
+    const target = extractContainerTargetFromRunLike(r);
+    if (target) {
+      targets.push(target);
     }
   }
 
   return Promise.all(
-    targets.map(async (t): Promise<StopResult> => {
-      try {
-        serverLogger.info(
-          `Stopping ${t.provider} container for run ${t.runId}: ${t.containerName}`
-        );
-        if (t.provider === "docker") {
-          // Remove 'docker-' prefix for actual Docker commands
-          const actualContainerName = t.containerName.startsWith("docker-")
-            ? t.containerName.substring(7)
-            : t.containerName;
-          await stopDockerContainer(actualContainerName);
-          serverLogger.info(
-            `Successfully stopped Docker container: ${t.containerName} (actual: ${actualContainerName})`
-          );
-          return {
-            success: true,
-            containerName: t.containerName,
-            provider: t.provider,
-          };
-        }
-        if (t.provider === "morph") {
-          await stopCmuxSandbox(t.containerName);
-          serverLogger.info(
-            `Successfully paused Morph instance: ${t.containerName}`
-          );
-          return {
-            success: true,
-            containerName: t.containerName,
-            provider: t.provider,
-          };
-        }
-        serverLogger.warn(
-          `Unsupported provider '${t.provider}' for container ${t.containerName}`
-        );
-        return {
-          success: false,
-          containerName: t.containerName,
-          provider: t.provider,
-          error: new Error("Unsupported provider"),
-        };
-      } catch (error) {
-        serverLogger.error(
-          `Failed to stop ${t.provider} container ${t.containerName}:`,
-          error
-        );
-        return {
-          success: false,
-          containerName: t.containerName,
-          provider: t.provider,
-          error,
-        };
-      }
-    })
+    targets.map((target) => stopContainerTarget(target))
   );
+}
+
+export function extractContainerTargetFromRunLike(
+  run: unknown
+): ContainerTarget | null {
+  if (typeof run !== "object" || run === null) return null;
+  const runObj = Object(run);
+  const runId = Reflect.get(runObj, "_id");
+  if (typeof runId !== "string") return null;
+  const vscode = Reflect.get(runObj, "vscode");
+  if (typeof vscode !== "object" || vscode === null) return null;
+  const provider = Reflect.get(Object(vscode), "provider");
+  const containerName = Reflect.get(Object(vscode), "containerName");
+  if (
+    (provider === "docker" || provider === "morph") &&
+    typeof containerName === "string"
+  ) {
+    return {
+      provider,
+      containerName,
+      runId,
+    };
+  }
+
+  return null;
+}
+
+export async function stopContainerForRun(
+  run: {
+    _id: string;
+    vscode?: {
+      provider?: VSCodeProvider;
+      containerName?: string;
+    } | null;
+  } | null
+): Promise<StopResult | null> {
+  if (!run) return null;
+  const target = extractContainerTargetFromRunLike(run);
+  if (!target) return null;
+  return await stopContainerTarget(target);
+}
+
+async function stopContainerTarget(target: ContainerTarget): Promise<StopResult> {
+  try {
+    serverLogger.info(
+      `Stopping ${target.provider} container for run ${target.runId}: ${target.containerName}`
+    );
+    if (target.provider === "docker") {
+      const actualContainerName = target.containerName.startsWith("docker-")
+        ? target.containerName.substring(7)
+        : target.containerName;
+      await stopDockerContainer(actualContainerName);
+      serverLogger.info(
+        `Successfully stopped Docker container: ${target.containerName} (actual: ${actualContainerName})`
+      );
+      return {
+        success: true,
+        containerName: target.containerName,
+        provider: target.provider,
+      };
+    }
+    if (target.provider === "morph") {
+      await stopCmuxSandbox(target.containerName);
+      serverLogger.info(
+        `Successfully paused Morph instance: ${target.containerName}`
+      );
+      return {
+        success: true,
+        containerName: target.containerName,
+        provider: target.provider,
+      };
+    }
+    serverLogger.warn(
+      `Unsupported provider '${target.provider}' for container ${target.containerName}`
+    );
+    return {
+      success: false,
+      containerName: target.containerName,
+      provider: target.provider,
+      error: new Error("Unsupported provider"),
+    };
+  } catch (error) {
+    serverLogger.error(
+      `Failed to stop ${target.provider} container ${target.containerName}:`,
+      error
+    );
+    return {
+      success: false,
+      containerName: target.containerName,
+      provider: target.provider,
+      error,
+    };
+  }
 }

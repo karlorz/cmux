@@ -207,6 +207,20 @@ async function fetchTaskRunsForTask(
   return rootRuns;
 }
 
+function filterTaskRunsByArchivedState(
+  runs: TaskRunWithChildren[],
+  archived: boolean,
+): TaskRunWithChildren[] {
+  return runs
+    .map((run) => ({
+      ...run,
+      children: filterTaskRunsByArchivedState(run.children, archived),
+    }))
+    .filter((run) =>
+      archived ? run.isArchived === true : run.isArchived !== true,
+    );
+}
+
 // Create a new task run
 export const create = authMutation({
   args: {
@@ -272,7 +286,11 @@ export const create = authMutation({
 
 // Get all task runs for a task, organized in tree structure
 export const getByTask = authQuery({
-  args: { teamSlugOrId: v.string(), taskId: taskIdWithFake },
+  args: {
+    teamSlugOrId: v.string(),
+    taskId: taskIdWithFake,
+    archived: v.optional(v.boolean()),
+  },
   handler: async (ctx, args) => {
     if (typeof args.taskId === "string" && args.taskId.startsWith("fake-")) {
       return [];
@@ -280,12 +298,16 @@ export const getByTask = authQuery({
 
     const userId = ctx.identity.subject;
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
-    return await fetchTaskRunsForTask(
+    const runs = await fetchTaskRunsForTask(
       ctx,
       teamId,
       userId,
       args.taskId as Id<"tasks">,
     );
+    if (args.archived === undefined) {
+      return runs;
+    }
+    return filterTaskRunsByArchivedState(runs, args.archived);
   },
 });
 
@@ -502,6 +524,32 @@ export const updateSummary = authMutation({
       summary: args.summary,
       updatedAt: Date.now(),
     });
+  },
+});
+
+export const archive = authMutation({
+  args: { teamSlugOrId: v.string(), id: v.id("taskRuns") },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const run = await ctx.db.get(args.id);
+    if (!run || run.teamId !== teamId || run.userId !== userId) {
+      throw new Error("Task run not found or unauthorized");
+    }
+    await ctx.db.patch(args.id, { isArchived: true, updatedAt: Date.now() });
+  },
+});
+
+export const unarchive = authMutation({
+  args: { teamSlugOrId: v.string(), id: v.id("taskRuns") },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const run = await ctx.db.get(args.id);
+    if (!run || run.teamId !== teamId || run.userId !== userId) {
+      throw new Error("Task run not found or unauthorized");
+    }
+    await ctx.db.patch(args.id, { isArchived: false, updatedAt: Date.now() });
   },
 });
 
