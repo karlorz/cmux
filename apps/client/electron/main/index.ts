@@ -41,6 +41,10 @@ import {
 } from "./log-management/log-rotation";
 const { autoUpdater } = electronUpdater;
 
+import type { PublishConfiguration } from "builder-util-runtime";
+import { PrivateGitHubProvider } from "electron-updater/out/providers/PrivateGitHubProvider.js";
+import { newUrlFromBase } from "electron-updater/out/util.js";
+
 import util from "node:util";
 import { initCmdK, keyDebug } from "./cmdk";
 import { env } from "./electron-main-env";
@@ -76,6 +80,9 @@ let queuedAutoUpdateToast: AutoUpdateToastPayload | null = null;
 let logsDir: string | null = null;
 let mainLogPath: string | null = null;
 let rendererLogPath: string | null = null;
+
+const FORCE_GITHUB_LATEST_UPDATES = shouldForceLatestGitHubUpdates();
+let patchedPrivateGitHubProviderForDrafts = false;
 
 const LOG_ROTATION: LogRotationOptions = {
   maxBytes: 5 * 1024 * 1024,
@@ -351,6 +358,155 @@ function logUpdateCheckResult(
   mainLog(`${context} completed`, summary);
 }
 
+function envStringIsTruthy(value: string | undefined | null): boolean {
+  if (!value) return false;
+  switch (value.trim().toLowerCase()) {
+    case "1":
+    case "true":
+    case "yes":
+    case "y":
+    case "on":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function shouldForceLatestGitHubUpdates(): boolean {
+  if (
+    envStringIsTruthy(process.env.CMUX_ELECTRON_AUTO_UPDATE_ALWAYS_LATEST) ||
+    envStringIsTruthy(process.env.CMUX_AUTO_UPDATE_ALWAYS_LATEST)
+  ) {
+    return true;
+  }
+
+  const modeRaw =
+    process.env.CMUX_ELECTRON_AUTO_UPDATE_MODE ??
+    process.env.CMUX_AUTO_UPDATE_MODE ??
+    null;
+  if (!modeRaw) return false;
+
+  const mode = modeRaw.trim().toLowerCase();
+  return [
+    "github-latest",
+    "github-draft",
+    "latest",
+    "latest-github",
+    "latest-draft",
+    "always-latest",
+    "draft",
+  ].includes(mode);
+}
+
+function configureDraftAwareAutoUpdater(): void {
+  if (!FORCE_GITHUB_LATEST_UPDATES) return;
+
+  patchPrivateGitHubProviderForDrafts();
+
+  const githubToken =
+    process.env.CMUX_ELECTRON_AUTO_UPDATE_GITHUB_TOKEN ??
+    process.env.CMUX_GITHUB_TOKEN ??
+    process.env.GITHUB_TOKEN ??
+    process.env.GH_TOKEN ??
+    null;
+
+  if (githubToken) {
+    autoUpdater.addAuthHeader(`token ${githubToken}`);
+  }
+
+  const feedConfig: Record<string, unknown> = {
+    provider: "github",
+    owner: "manafow-ai",
+    repo: "cmux",
+  };
+
+  if (githubToken) {
+    feedConfig.private = true;
+  }
+
+  if (process.platform === "darwin") {
+    feedConfig.channel = "latest-universal";
+  }
+
+  try {
+    autoUpdater.setFeedURL(feedConfig as unknown as PublishConfiguration);
+  } catch (error) {
+    mainWarn("Failed to override auto-updater feed for draft releases", error);
+  }
+
+  if (githubToken) {
+    mainLog("Draft auto-update mode enabled (GitHub token detected)");
+  } else {
+    mainWarn(
+      "Draft auto-update mode enabled without GitHub token; draft assets may be inaccessible"
+    );
+  }
+}
+
+function patchPrivateGitHubProviderForDrafts(): void {
+  if (patchedPrivateGitHubProviderForDrafts) return;
+
+  try {
+    const prototype = PrivateGitHubProvider.prototype as unknown as {
+      getLatestVersionInfo: (
+        this: unknown,
+        cancellationToken: unknown
+      ) => Promise<unknown>;
+    };
+    const original = prototype.getLatestVersionInfo;
+    (PrivateGitHubProvider.prototype as unknown as { getLatestVersionInfo: (
+      cancellationToken: unknown
+    ) => Promise<unknown> }).getLatestVersionInfo = async function (
+      cancellationToken: unknown
+    ) {
+      const self = this as unknown as {
+        updater: { allowPrerelease: boolean };
+        basePath: string;
+        baseUrl: URL;
+        httpRequest: (
+          url: URL,
+          headers: Record<string, string>,
+          token: unknown
+        ) => Promise<unknown>;
+        configureHeaders: (accept: string) => Record<string, string>;
+      };
+
+      if (!self.updater.allowPrerelease) {
+        return await original.call(this, cancellationToken);
+      }
+
+      try {
+        const url = newUrlFromBase(self.basePath, self.baseUrl);
+        const response = await self.httpRequest(
+          url,
+          self.configureHeaders("application/vnd.github.v3+json"),
+          cancellationToken
+        );
+        const releases = JSON.parse(String(response)) as unknown[];
+        if (Array.isArray(releases) && releases.length > 0) {
+          const target =
+            releases.find((release: unknown) =>
+              Boolean(
+                release &&
+                  typeof release === "object" &&
+                  (release as { draft?: unknown }).draft === true
+              )
+            ) ?? releases[0];
+          return target;
+        }
+      } catch {
+        // ignore and fall back to original implementation
+      }
+
+      return await original.call(this, cancellationToken);
+    };
+
+    patchedPrivateGitHubProviderForDrafts = true;
+  } catch (error) {
+    mainWarn("Failed to patch PrivateGitHubProvider for draft releases", error);
+  }
+}
+
 function registerLogIpcHandlers(): void {
   ipcMain.handle("cmux:logs:read-all", async () => {
     try {
@@ -472,7 +628,12 @@ function setupAutoUpdates(): void {
 
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
-    autoUpdater.allowPrerelease = false;
+    autoUpdater.allowPrerelease = FORCE_GITHUB_LATEST_UPDATES;
+
+    if (FORCE_GITHUB_LATEST_UPDATES) {
+      autoUpdater.allowDowngrade = true;
+      configureDraftAwareAutoUpdater();
+    }
 
     if (process.platform === "darwin") {
       const channel = "latest-universal";
@@ -490,6 +651,7 @@ function setupAutoUpdates(): void {
       autoInstallOnAppQuit: autoUpdater.autoInstallOnAppQuit,
       allowPrerelease: autoUpdater.allowPrerelease,
       channel: autoUpdater.channel ?? null,
+      forceGithubLatest: FORCE_GITHUB_LATEST_UPDATES,
     });
   } catch (e) {
     mainWarn("Failed to initialize autoUpdater", e);
