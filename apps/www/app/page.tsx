@@ -223,6 +223,13 @@ export default async function LandingPage() {
                       : "Download cmux for macOS"
                   }
                   urls={macDownloadUrls}
+                  tracking={{
+                    eventName: "mac_download_link_clicked",
+                    properties: {
+                      placement: "home_hero",
+                      latest_version: latestVersion ?? null,
+                    },
+                  }}
                 >
                   <span className="flex items-center gap-2">
                     <svg
