@@ -193,6 +193,29 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
   const prevFocusedElRef = useRef<HTMLElement | null>(null);
   const navigate = useNavigate();
   const router = useRouter();
+  const goToWorkspaceRun = useCallback(
+    (taskId: Id<"tasks">, taskRunId: Id<"taskRuns">) => {
+      void router
+        .preloadRoute({
+          to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+          params: {
+            teamSlugOrId,
+            taskId,
+            runId: taskRunId,
+          },
+        })
+        .catch(() => undefined);
+      void navigate({
+        to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+        params: {
+          teamSlugOrId,
+          taskId,
+          runId: taskRunId,
+        },
+      });
+    },
+    [navigate, router, teamSlugOrId]
+  );
   const { setTheme, theme } = useTheme();
   const { addTaskToExpand } = useExpandTasks();
   const { socket } = useSocket();
@@ -513,24 +536,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
                 }
 
                 if (effectiveTaskId && effectiveTaskRunId) {
-                  void router
-                    .preloadRoute({
-                      to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
-                      params: {
-                        teamSlugOrId,
-                        taskId: effectiveTaskId,
-                        runId: effectiveTaskRunId,
-                      },
-                    })
-                    .catch(() => undefined);
-                  void navigate({
-                    to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
-                    params: {
-                      teamSlugOrId,
-                      taskId: effectiveTaskId,
-                      runId: effectiveTaskRunId,
-                    },
-                  });
+                  goToWorkspaceRun(effectiveTaskId, effectiveTaskRunId);
                 } else if (normalizedWorkspaceUrl) {
                   window.location.assign(normalizedWorkspaceUrl);
                 }
@@ -564,11 +570,10 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
     [
       addTaskToExpand,
       failTaskRun,
+      goToWorkspaceRun,
       isCreatingLocalWorkspace,
       localServeWeb.data?.baseUrl,
-      navigate,
       reserveLocalWorkspace,
-      router,
       socket,
       teamSlugOrId,
     ]
@@ -626,6 +631,11 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
             async (response: CreateCloudWorkspaceResponse) => {
               try {
                 if (response.success) {
+                  const effectiveTaskId = response.taskId ?? taskId;
+                  const effectiveTaskRunId = response.taskRunId;
+                  if (effectiveTaskId && effectiveTaskRunId) {
+                    goToWorkspaceRun(effectiveTaskId, effectiveTaskRunId);
+                  }
                   toast.success("Cloud workspace created successfully");
                 } else {
                   toast.error(
@@ -657,6 +667,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
       addTaskToExpand,
       createTask,
       environments,
+      goToWorkspaceRun,
       isCreatingCloudWorkspace,
       socket,
       teamSlugOrId,
@@ -707,6 +718,11 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
             async (response: CreateCloudWorkspaceResponse) => {
               try {
                 if (response.success) {
+                  const effectiveTaskId = response.taskId ?? taskId;
+                  const effectiveTaskRunId = response.taskRunId;
+                  if (effectiveTaskId && effectiveTaskRunId) {
+                    goToWorkspaceRun(effectiveTaskId, effectiveTaskRunId);
+                  }
                   toast.success("Cloud workspace created successfully");
                 } else {
                   toast.error(
@@ -737,6 +753,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
     [
       addTaskToExpand,
       createTask,
+      goToWorkspaceRun,
       isCreatingCloudWorkspace,
       socket,
       teamSlugOrId,
