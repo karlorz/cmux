@@ -232,6 +232,33 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
     closeCommand();
   }, [activePage, closeCommand, search, setActivePage, setSearch]);
 
+  const goToWorkspaceRun = useCallback(
+    (taskId?: Id<"tasks"> | null, taskRunId?: Id<"taskRuns"> | null) => {
+      if (!taskId || !taskRunId) {
+        return;
+      }
+      void router
+        .preloadRoute({
+          to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+          params: {
+            teamSlugOrId,
+            taskId,
+            runId: taskRunId,
+          },
+        })
+        .catch(() => undefined);
+      void navigate({
+        to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+        params: {
+          teamSlugOrId,
+          taskId,
+          runId: taskRunId,
+        },
+      });
+    },
+    [navigate, router, teamSlugOrId]
+  );
+
   const stackUser = useUser({ or: "return-null" });
   const stackTeams = stackUser?.useTeams() ?? EMPTY_TEAM_LIST;
   const selectedTeamId = stackUser?.selectedTeam?.id ?? null;
@@ -513,24 +540,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
                 }
 
                 if (effectiveTaskId && effectiveTaskRunId) {
-                  void router
-                    .preloadRoute({
-                      to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
-                      params: {
-                        teamSlugOrId,
-                        taskId: effectiveTaskId,
-                        runId: effectiveTaskRunId,
-                      },
-                    })
-                    .catch(() => undefined);
-                  void navigate({
-                    to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
-                    params: {
-                      teamSlugOrId,
-                      taskId: effectiveTaskId,
-                      runId: effectiveTaskRunId,
-                    },
-                  });
+                  goToWorkspaceRun(effectiveTaskId, effectiveTaskRunId);
                 } else if (normalizedWorkspaceUrl) {
                   window.location.assign(normalizedWorkspaceUrl);
                 }
@@ -566,9 +576,8 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
       failTaskRun,
       isCreatingLocalWorkspace,
       localServeWeb.data?.baseUrl,
-      navigate,
+      goToWorkspaceRun,
       reserveLocalWorkspace,
-      router,
       socket,
       teamSlugOrId,
     ]
@@ -627,6 +636,9 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
               try {
                 if (response.success) {
                   toast.success("Cloud workspace created successfully");
+                  const targetTaskId = response.taskId ?? taskId;
+                  const targetTaskRunId = response.taskRunId;
+                  goToWorkspaceRun(targetTaskId, targetTaskRunId);
                 } else {
                   toast.error(
                     response.error || "Failed to create cloud workspace"
@@ -657,6 +669,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
       addTaskToExpand,
       createTask,
       environments,
+      goToWorkspaceRun,
       isCreatingCloudWorkspace,
       socket,
       teamSlugOrId,
@@ -708,6 +721,9 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
               try {
                 if (response.success) {
                   toast.success("Cloud workspace created successfully");
+                  const targetTaskId = response.taskId ?? taskId;
+                  const targetTaskRunId = response.taskRunId;
+                  goToWorkspaceRun(targetTaskId, targetTaskRunId);
                 } else {
                   toast.error(
                     response.error || "Failed to create cloud workspace"
@@ -737,6 +753,7 @@ export function CommandBar({ teamSlugOrId }: CommandBarProps) {
     [
       addTaskToExpand,
       createTask,
+      goToWorkspaceRun,
       isCreatingCloudWorkspace,
       socket,
       teamSlugOrId,
