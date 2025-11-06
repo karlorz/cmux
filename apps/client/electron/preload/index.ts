@@ -133,6 +133,22 @@ const cmuxAPI = {
         queued?: boolean;
       }>;
     },
+    getQuitConfirmationPreference: () => {
+      return ipcRenderer.invoke(
+        "cmux:ui:get-quit-confirmation-preference"
+      ) as Promise<{ skipPrompt: boolean }>;
+    },
+    setQuitConfirmationPreference: (skipPrompt: boolean) => {
+      return ipcRenderer.invoke(
+        "cmux:ui:set-quit-confirmation-preference",
+        { skipPrompt: Boolean(skipPrompt) }
+      ) as Promise<{ ok: boolean }>;
+    },
+    confirmQuit: (options?: { skipPrompt?: boolean }) => {
+      return ipcRenderer.invoke("cmux:ui:confirm-quit", {
+        skipPrompt: Boolean(options?.skipPrompt),
+      }) as Promise<{ ok: boolean }>;
+    },
   },
   logs: {
     onMainLog: (callback: LogListener) => {

@@ -96,6 +96,19 @@ let mainWindow: BrowserWindow | null = null;
 let previewReloadMenuItem: MenuItem | null = null;
 let previewReloadMenuVisible = false;
 
+type QuitConfirmationPreference = {
+  skipPrompt: boolean;
+};
+
+const DEFAULT_QUIT_CONFIRMATION_PREFERENCE: QuitConfirmationPreference = {
+  skipPrompt: false,
+};
+
+let quitConfirmationPreference: QuitConfirmationPreference = {
+  ...DEFAULT_QUIT_CONFIRMATION_PREFERENCE,
+};
+let quitPreferencePath: string | null = null;
+
 function getTimestamp(): string {
   return new Date().toISOString();
 }
@@ -241,6 +254,67 @@ function sendShortcutToFocusedWindow(
   } catch (error) {
     mainWarn("Failed to dispatch shortcut event", { eventName, error });
     return false;
+  }
+}
+
+function resolveQuitPreferencePath(): string {
+  if (quitPreferencePath) return quitPreferencePath;
+  const base = app.getPath("userData");
+  const file = path.join(base, "quit-confirmation.json");
+  quitPreferencePath = file;
+  return file;
+}
+
+async function loadQuitConfirmationPreference(): Promise<void> {
+  try {
+    const file = resolveQuitPreferencePath();
+    const raw = await fs.readFile(file, "utf8");
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.skipPrompt === "boolean") {
+      quitConfirmationPreference.skipPrompt = parsed.skipPrompt;
+    } else {
+      quitConfirmationPreference = {
+        ...DEFAULT_QUIT_CONFIRMATION_PREFERENCE,
+      };
+    }
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException | undefined;
+    if (err?.code === "ENOENT") {
+      quitConfirmationPreference = {
+        ...DEFAULT_QUIT_CONFIRMATION_PREFERENCE,
+      };
+      return;
+    }
+    mainWarn("Failed to load quit confirmation preference", error);
+  }
+}
+
+async function persistQuitConfirmationPreference(): Promise<void> {
+  const file = resolveQuitPreferencePath();
+  const payload = JSON.stringify(quitConfirmationPreference);
+  await fs.writeFile(file, payload, "utf8");
+}
+
+async function updateQuitConfirmationPreference(
+  skipPrompt: boolean
+): Promise<void> {
+  if (quitConfirmationPreference.skipPrompt === skipPrompt) return;
+  quitConfirmationPreference.skipPrompt = skipPrompt;
+  try {
+    await persistQuitConfirmationPreference();
+  } catch (error) {
+    mainWarn("Failed to persist quit confirmation preference", error);
+  }
+}
+
+function handleQuitShortcut(): void {
+  if (quitConfirmationPreference.skipPrompt) {
+    app.quit();
+    return;
+  }
+  const dispatched = sendShortcutToFocusedWindow("cmd-q");
+  if (!dispatched) {
+    app.quit();
   }
 }
 
@@ -425,6 +499,35 @@ function registerAutoUpdateIpcHandlers(): void {
       throw err;
     }
   });
+}
+
+function registerQuitConfirmationIpcHandlers(): void {
+  ipcMain.handle("cmux:ui:get-quit-confirmation-preference", async () => {
+    return {
+      skipPrompt: Boolean(quitConfirmationPreference.skipPrompt),
+    };
+  });
+
+  ipcMain.handle(
+    "cmux:ui:set-quit-confirmation-preference",
+    async (_event, payload: { skipPrompt?: unknown }) => {
+      const skip = Boolean(payload?.skipPrompt);
+      await updateQuitConfirmationPreference(skip);
+      return { ok: true as const };
+    }
+  );
+
+  ipcMain.handle(
+    "cmux:ui:confirm-quit",
+    async (_event, payload: { skipPrompt?: unknown }) => {
+      const skip = Boolean(payload?.skipPrompt);
+      await updateQuitConfirmationPreference(skip);
+      setImmediate(() => {
+        app.quit();
+      });
+      return { ok: true as const };
+    }
+  );
 }
 
 // Write critical errors to a file to aid debugging packaged crashes
@@ -716,6 +819,7 @@ app.whenReady().then(async () => {
   });
   registerLogIpcHandlers();
   registerAutoUpdateIpcHandlers();
+  registerQuitConfirmationIpcHandlers();
   initCmdK({
     getMainWindow: () => mainWindow,
     logger: {
@@ -729,6 +833,8 @@ app.whenReady().then(async () => {
     warn: mainWarn,
     error: mainError,
   });
+
+  await loadQuitConfirmationPreference();
 
   // Register before-input-event handlers for preview browser shortcuts
   // These fire before web content sees them, so they work even in WebContentsViews
@@ -883,7 +989,27 @@ app.whenReady().then(async () => {
   try {
     const template: MenuItemConstructorOptions[] = [];
     if (process.platform === "darwin") {
-      template.push({ role: "appMenu" });
+      const appMenu: MenuItemConstructorOptions = {
+        label: app.name,
+        submenu: [
+          { role: "about" },
+          { type: "separator" },
+          { role: "services" },
+          { type: "separator" },
+          { role: "hide" },
+          { role: "hideOthers" },
+          { role: "unhide" },
+          { type: "separator" },
+          {
+            label: `Quit ${app.name}`,
+            accelerator: "Command+Q",
+            click: () => {
+              handleQuitShortcut();
+            },
+          },
+        ],
+      };
+      template.push(appMenu);
     } else {
       template.push({ label: "File", submenu: [{ role: "quit" }] });
     }

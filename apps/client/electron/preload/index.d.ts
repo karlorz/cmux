@@ -21,6 +21,9 @@ declare global {
         setCommandPaletteOpen: (open: boolean) => Promise<{ ok: boolean }>;
         setPreviewReloadVisible: (visible: boolean) => Promise<{ ok: boolean }>;
         restoreLastFocus: () => Promise<{ ok: boolean; queued?: boolean }>;
+        getQuitConfirmationPreference: () => Promise<{ skipPrompt: boolean }>;
+        setQuitConfirmationPreference: (skipPrompt: boolean) => Promise<{ ok: boolean }>;
+        confirmQuit: (options?: { skipPrompt?: boolean }) => Promise<{ ok: boolean }>;
       };
       socket: {
         connect: (query: Record<string, string>) => Promise<unknown>;

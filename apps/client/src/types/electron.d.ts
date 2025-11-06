@@ -104,6 +104,9 @@ interface CmuxAPI {
     setCommandPaletteOpen: (open: boolean) => Promise<{ ok: boolean }>;
     setPreviewReloadVisible?: (visible: boolean) => Promise<{ ok: boolean }>;
     restoreLastFocus: () => Promise<{ ok: boolean; queued?: boolean }>;
+    getQuitConfirmationPreference?: () => Promise<{ skipPrompt: boolean }>;
+    setQuitConfirmationPreference?: (skipPrompt: boolean) => Promise<{ ok: boolean }>;
+    confirmQuit?: (options?: { skipPrompt?: boolean }) => Promise<{ ok: boolean }>;
   };
   socket: CmuxSocketAPI;
   logs: CmuxLogsAPI;
