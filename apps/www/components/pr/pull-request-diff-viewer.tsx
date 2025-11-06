@@ -17,6 +17,7 @@ import type {
   ReactElement,
   ReactNode,
   KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
   CSSProperties,
   ChangeEvent,
 } from "react";
@@ -331,6 +332,38 @@ type DiffLineLocation = {
 };
 
 type LineTooltipMap = Record<DiffLineSide, Map<number, HeatmapTooltipMeta>>;
+
+type DiffMinimapKind = "addition" | "deletion";
+
+type DiffMinimapSegment = {
+  side: DiffLineSide;
+  startLine: number;
+  endLine: number;
+  kind: DiffMinimapKind;
+};
+
+type DiffMinimapMarker = {
+  side: DiffLineSide;
+  lineNumber: number;
+  score: number;
+};
+
+type DiffMinimapData = {
+  totalLines: number;
+  segments: DiffMinimapSegment[];
+  markers: DiffMinimapMarker[];
+  hunkBoundaries: number[];
+};
+
+type ChangeAnchor = {
+  lineNumber: number;
+  changeKey: string;
+};
+
+type ChangeAnchorsIndex = {
+  new: ChangeAnchor[];
+  old: ChangeAnchor[];
+};
 
 type StreamFileStatus = "pending" | "success" | "skipped" | "error";
 
@@ -2144,7 +2177,7 @@ export function PullRequestDiffViewer({
 
         <div className="flex-1 min-w-0 space-y-3">
           {thresholdedFileEntries.map(
-            ({ entry, review, diffHeatmap, streamState }) => {
+            ({ entry, review, diffHeatmap, streamState, changeKeyByLine }) => {
               const isFocusedFile =
                 focusedError?.filePath === entry.file.filename;
               const focusedLine = isFocusedFile
@@ -2179,6 +2212,7 @@ export function PullRequestDiffViewer({
                   isActive={entry.anchorId === activeAnchor}
                   review={review}
                   diffHeatmap={diffHeatmap}
+                  changeKeyByLine={changeKeyByLine}
                   focusedLine={focusedLine}
                   focusedChangeKey={focusedChangeKey}
                   autoTooltipLine={autoTooltipLine}
@@ -2721,6 +2755,7 @@ type FileDiffCardProps = {
   isActive: boolean;
   review: FileOutput | null;
   diffHeatmap: DiffHeatmap | null;
+  changeKeyByLine: Map<string, string>;
   focusedLine: DiffLineLocation | null;
   focusedChangeKey: string | null;
   autoTooltipLine: DiffLineLocation | null;
@@ -2733,6 +2768,7 @@ const FileDiffCard = memo(function FileDiffCardComponent({
   isActive,
   review,
   diffHeatmap,
+  changeKeyByLine,
   focusedLine,
   focusedChangeKey,
   autoTooltipLine,
@@ -2760,6 +2796,16 @@ const FileDiffCard = memo(function FileDiffCardComponent({
     }
     setIsCollapsed(false);
   }, [focusedChangeKey]);
+
+  const changeAnchors = useMemo(
+    () => buildChangeAnchors(changeKeyByLine),
+    [changeKeyByLine]
+  );
+
+  const minimapData = useMemo(
+    () => buildDiffMinimapData(diff, diffHeatmap),
+    [diff, diffHeatmap]
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -2824,6 +2870,33 @@ const FileDiffCard = memo(function FileDiffCardComponent({
 
     return tooltipMap;
   }, [diffHeatmap]);
+
+  const handleMinimapSelect = useCallback(
+    (lineNumber: number, side: DiffLineSide) => {
+      const anchor = resolveMinimapAnchor(changeAnchors, lineNumber, side);
+      if (!anchor) {
+        return;
+      }
+      const card = cardRef.current;
+      if (!card) {
+        return;
+      }
+      const element = card.querySelector<HTMLElement>(
+        `[data-change-key="${anchor.changeKey}"]`
+      );
+      if (!element) {
+        return;
+      }
+      const targetRow = element.closest("tr");
+      const scrollTarget =
+        targetRow instanceof HTMLElement ? targetRow : element;
+      scrollElementToViewportCenter(scrollTarget, { behavior: "smooth" });
+      if (typeof element.focus === "function") {
+        element.focus();
+      }
+    },
+    [changeAnchors]
+  );
 
   const renderHeatmapToken = useMemo<RenderToken | undefined>(() => {
     if (
@@ -3112,92 +3185,104 @@ const FileDiffCard = memo(function FileDiffCardComponent({
 
           {!isCollapsed &&
             (diff ? (
-              <Diff
-                diffType={diff.type}
-                hunks={diff.hunks}
-                viewType="split"
-                optimizeSelection
-                className="diff-syntax system-mono overflow-auto bg-white text-xs leading-5 text-neutral-800"
-                gutterClassName="system-mono bg-white text-xs text-neutral-500"
-                codeClassName="system-mono text-xs text-neutral-800"
-                tokens={tokens ?? undefined}
-                renderToken={renderHeatmapToken}
-                renderGutter={renderHeatmapGutter}
-                generateLineClassName={({ changes, defaultGenerate }) => {
-                  const defaultClassName = defaultGenerate();
-                  const classNames: string[] = ["system-mono text-xs py-1"];
-                  const normalizedChanges = changes.filter(
-                    (change): change is ChangeData => Boolean(change)
-                  );
-                  const hasFocus =
-                    focusedLine !== null &&
-                    normalizedChanges.some((change) =>
-                      doesChangeMatchLine(change, focusedLine)
+              <div className="relative">
+                <Diff
+                  diffType={diff.type}
+                  hunks={diff.hunks}
+                  viewType="split"
+                  optimizeSelection
+                  className={clsx(
+                    "diff-syntax system-mono overflow-auto bg-white text-xs leading-5 text-neutral-800",
+                    minimapData ? "xl:pr-[4.5rem]" : undefined
+                  )}
+                  gutterClassName="system-mono bg-white text-xs text-neutral-500"
+                  codeClassName="system-mono text-xs text-neutral-800"
+                  tokens={tokens ?? undefined}
+                  renderToken={renderHeatmapToken}
+                  renderGutter={renderHeatmapGutter}
+                  generateLineClassName={({ changes, defaultGenerate }) => {
+                    const defaultClassName = defaultGenerate();
+                    const classNames: string[] = ["system-mono text-xs py-1"];
+                    const normalizedChanges = changes.filter(
+                      (change): change is ChangeData => Boolean(change)
                     );
-                  if (hasFocus) {
-                    classNames.push("cmux-heatmap-focus");
-                  }
-                  if (
-                    diffHeatmap &&
-                    (diffHeatmap.lineClasses.size > 0 ||
-                      diffHeatmap.oldLineClasses.size > 0)
-                  ) {
-                    let bestHeatmapClass: string | null = null;
-
-                    const considerClass = (candidate: string | undefined) => {
-                      if (!candidate) {
-                        return;
-                      }
-                      if (!bestHeatmapClass) {
-                        bestHeatmapClass = candidate;
-                        return;
-                      }
-                      const currentStep = extractHeatmapGradientStep(
-                        bestHeatmapClass
+                    const hasFocus =
+                      focusedLine !== null &&
+                      normalizedChanges.some((change) =>
+                        doesChangeMatchLine(change, focusedLine)
                       );
-                      const nextStep = extractHeatmapGradientStep(candidate);
-                      if (nextStep > currentStep) {
-                        bestHeatmapClass = candidate;
-                      }
-                    };
-                    for (const change of normalizedChanges) {
-                      const newLineNumber = computeNewLineNumber(change);
-                      if (newLineNumber > 0) {
-                        considerClass(
-                          diffHeatmap.lineClasses.get(newLineNumber)
+                    if (hasFocus) {
+                      classNames.push("cmux-heatmap-focus");
+                    }
+                    if (
+                      diffHeatmap &&
+                      (diffHeatmap.lineClasses.size > 0 ||
+                        diffHeatmap.oldLineClasses.size > 0)
+                    ) {
+                      let bestHeatmapClass: string | null = null;
+
+                      const considerClass = (candidate: string | undefined) => {
+                        if (!candidate) {
+                          return;
+                        }
+                        if (!bestHeatmapClass) {
+                          bestHeatmapClass = candidate;
+                          return;
+                        }
+                        const currentStep = extractHeatmapGradientStep(
+                          bestHeatmapClass
                         );
+                        const nextStep = extractHeatmapGradientStep(candidate);
+                        if (nextStep > currentStep) {
+                          bestHeatmapClass = candidate;
+                        }
+                      };
+                      for (const change of normalizedChanges) {
+                        const newLineNumber = computeNewLineNumber(change);
+                        if (newLineNumber > 0) {
+                          considerClass(
+                            diffHeatmap.lineClasses.get(newLineNumber)
+                          );
+                        }
+                        const oldLineNumber = computeOldLineNumber(change);
+                        if (oldLineNumber > 0) {
+                          considerClass(
+                            diffHeatmap.oldLineClasses.get(oldLineNumber)
+                          );
+                        }
                       }
-                      const oldLineNumber = computeOldLineNumber(change);
-                      if (oldLineNumber > 0) {
-                        considerClass(
-                          diffHeatmap.oldLineClasses.get(oldLineNumber)
-                        );
+
+                      if (bestHeatmapClass) {
+                        classNames.push(bestHeatmapClass);
                       }
                     }
 
-                    if (bestHeatmapClass) {
-                      classNames.push(bestHeatmapClass);
-                    }
+                    classNames.push("text-neutral-800");
+
+                    return cn(defaultClassName, classNames);
+                  }}
+                >
+                  {(hunks) =>
+                    hunks.map((hunk) => (
+                      <Fragment key={hunk.content}>
+                        <Decoration>
+                          <div className="bg-sky-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-sky-700">
+                            {hunk.content}
+                          </div>
+                        </Decoration>
+                        <Hunk hunk={hunk} />
+                      </Fragment>
+                    ))
                   }
-
-                  classNames.push("text-neutral-800");
-
-                  return cn(defaultClassName, classNames);
-                }}
-              >
-                {(hunks) =>
-                  hunks.map((hunk) => (
-                    <Fragment key={hunk.content}>
-                      <Decoration>
-                        <div className="bg-sky-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-sky-700">
-                          {hunk.content}
-                        </div>
-                      </Decoration>
-                      <Hunk hunk={hunk} />
-                    </Fragment>
-                  ))
-                }
-              </Diff>
+                </Diff>
+                {minimapData ? (
+                  <DiffMinimap
+                    data={minimapData}
+                    focus={focusedLine}
+                    onSelectLine={handleMinimapSelect}
+                  />
+                ) : null}
+              </div>
             ) : (
               <div className="bg-neutral-50 px-4 py-6 text-sm text-neutral-600">
                 {error ??
@@ -3232,6 +3317,7 @@ function areFileDiffCardPropsEqual(
     prev.isActive === next.isActive &&
     prev.review === next.review &&
     prev.diffHeatmap === next.diffHeatmap &&
+    prev.changeKeyByLine === next.changeKeyByLine &&
     prev.focusedChangeKey === next.focusedChangeKey &&
     prev.isLoading === next.isLoading &&
     prev.streamState === next.streamState &&
@@ -3321,6 +3407,181 @@ function HeatmapTooltipBody({
     </div>
   );
 }
+
+type DiffMinimapProps = {
+  data: DiffMinimapData;
+  focus: DiffLineLocation | null;
+  onSelectLine: (lineNumber: number, side: DiffLineSide) => void;
+};
+
+const DiffMinimap = memo(function DiffMinimapComponent({
+  data,
+  focus,
+  onSelectLine,
+}: DiffMinimapProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  const handleNavigate = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const container = containerRef.current;
+      if (!container || data.totalLines <= 0) {
+        return;
+      }
+
+      const rect = container.getBoundingClientRect();
+      if (rect.height <= 0) {
+        return;
+      }
+
+      const ratio = Math.min(
+        1,
+        Math.max((event.clientY - rect.top) / rect.height, 0)
+      );
+      const candidateLine = Math.max(
+        1,
+        Math.round(ratio * data.totalLines)
+      );
+
+      const target = pickMinimapTarget(
+        data.segments,
+        data.hunkBoundaries,
+        data.totalLines,
+        candidateLine
+      );
+
+      if (target) {
+        onSelectLine(target.lineNumber, target.side);
+      }
+    },
+    [data, onSelectLine]
+  );
+
+  const handleKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+      event.preventDefault();
+      const primarySegment = data.segments[0];
+      if (primarySegment) {
+        onSelectLine(primarySegment.startLine, primarySegment.side);
+        return;
+      }
+      const fallbackLine = data.hunkBoundaries[0] ?? 1;
+      onSelectLine(
+        Math.max(1, Math.min(fallbackLine, data.totalLines)),
+        "new"
+      );
+    },
+    [data, onSelectLine]
+  );
+
+  const focusStyle = useMemo(() => {
+    if (!focus || data.totalLines <= 0) {
+      return null;
+    }
+    const clampedLine = Math.max(
+      1,
+      Math.min(focus.lineNumber, data.totalLines)
+    );
+    const topPercent = ((clampedLine - 1) / data.totalLines) * 100;
+    return {
+      top: `calc(${topPercent}% - 1px)`,
+    };
+  }, [focus, data.totalLines]);
+
+  return (
+    <div
+      className="pointer-events-none absolute right-1 top-3 hidden h-[calc(100%-1.5rem)] w-10 items-center justify-center xl:flex"
+      aria-hidden="true"
+    >
+      <div
+        ref={containerRef}
+        role="button"
+        tabIndex={0}
+        aria-label="Diff minimap. Click to jump to a change region."
+        className="pointer-events-auto relative flex h-full w-3 cursor-pointer select-none items-stretch justify-center rounded-full bg-neutral-200/70 ring-1 ring-inset ring-neutral-300/60 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 hover:bg-neutral-200"
+        onClick={handleNavigate}
+        onKeyDown={handleKeyDown}
+      >
+        <span className="sr-only">
+          Minimap preview of diff changes. Click to navigate.
+        </span>
+        <div className="absolute inset-0">
+          {data.hunkBoundaries.map((boundary) => {
+            const topPercent = ((boundary - 1) / data.totalLines) * 100;
+            return (
+              <span
+                key={`minimap-hunk-${boundary}`}
+                className="absolute left-0 right-0 border-t border-neutral-400/30"
+                style={{
+                  top: `${Math.min(topPercent, 100)}%`,
+                }}
+              />
+            );
+          })}
+          {data.segments.map((segment) => {
+            const topPercent =
+              ((segment.startLine - 1) / data.totalLines) * 100;
+            const heightPercentRaw =
+              ((segment.endLine - segment.startLine + 1) /
+                data.totalLines) *
+              100;
+            const heightPercent = Math.max(heightPercentRaw, 0.6);
+            const clampedHeight = Math.min(
+              heightPercent,
+              100 - topPercent + 0.2
+            );
+            const sideOffset = segment.side === "new" ? "52%" : "0%";
+            const sideWidth = segment.side === "new" ? "48%" : "48%";
+            const colorClass =
+              segment.kind === "addition"
+                ? "bg-emerald-400/70"
+                : "bg-rose-400/70";
+            return (
+              <span
+                key={`minimap-segment-${segment.side}-${segment.startLine}-${segment.endLine}-${segment.kind}`}
+                className={cn("absolute rounded-full", colorClass)}
+                style={{
+                  top: `${topPercent}%`,
+                  height: `${Math.max(clampedHeight, 0)}%`,
+                  left: sideOffset,
+                  width: sideWidth,
+                }}
+              />
+            );
+          })}
+          {data.markers.map((marker) => {
+            const topPercent = ((marker.lineNumber - 1) / data.totalLines) * 100;
+            const intensity = Math.min(0.9, 0.35 + marker.score * 0.55);
+            const color = `rgba(234, 88, 12, ${intensity.toFixed(2)})`;
+            return (
+              <span
+                key={`minimap-marker-${marker.side}-${marker.lineNumber}-${marker.score}`}
+                className="absolute left-0 right-0 rounded-full"
+                style={{
+                  top: `${Math.min(topPercent, 100)}%`,
+                  height: "2px",
+                  backgroundColor: color,
+                  transform: "translateY(-50%)",
+                }}
+              />
+            );
+          })}
+          {focusStyle ? (
+            <span
+              className="absolute left-[-2px] right-[-2px] h-[3px] rounded-full bg-sky-500/70 shadow-[0_0_6px_rgba(56,189,248,0.5)]"
+              style={focusStyle}
+            />
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+});
 
 const HEATMAP_SCORE_TIERS = [0.2, 0.4, 0.6, 0.8] as const;
 
@@ -3470,6 +3731,246 @@ function formatLineReviews(entries: unknown[]): string | null {
   return summaries.join("\n\n");
 }
 
+function buildDiffMinimapData(
+  diff: FileData | null,
+  diffHeatmap: DiffHeatmap | null
+): DiffMinimapData | null {
+  if (!diff) {
+    return null;
+  }
+
+  let maxNewLine = 0;
+  let maxOldLine = 0;
+  const rawSegments: DiffMinimapSegment[] = [];
+  const hunkBoundaries: number[] = [];
+
+  for (const hunk of diff.hunks) {
+    const hunkNewEnd =
+      hunk.newStart > 0 ? hunk.newStart + Math.max(hunk.newLines - 1, 0) : 0;
+    const hunkOldEnd =
+      hunk.oldStart > 0 ? hunk.oldStart + Math.max(hunk.oldLines - 1, 0) : 0;
+
+    if (hunkNewEnd > 0) {
+      maxNewLine = Math.max(maxNewLine, hunkNewEnd);
+    }
+    if (hunkOldEnd > 0) {
+      maxOldLine = Math.max(maxOldLine, hunkOldEnd);
+    }
+
+    const boundaryCandidate =
+      hunk.newStart > 0 ? hunk.newStart : hunk.oldStart;
+    if (boundaryCandidate > 0) {
+      hunkBoundaries.push(boundaryCandidate);
+    }
+
+    for (const change of hunk.changes) {
+      if (change.type === "insert") {
+        const lineNumber = computeNewLineNumber(change);
+        if (lineNumber > 0) {
+          maxNewLine = Math.max(maxNewLine, lineNumber);
+          rawSegments.push({
+            side: "new",
+            startLine: lineNumber,
+            endLine: lineNumber,
+            kind: "addition",
+          });
+        }
+      } else if (change.type === "delete") {
+        const lineNumber = computeOldLineNumber(change);
+        if (lineNumber > 0) {
+          maxOldLine = Math.max(maxOldLine, lineNumber);
+          rawSegments.push({
+            side: "old",
+            startLine: lineNumber,
+            endLine: lineNumber,
+            kind: "deletion",
+          });
+        }
+      } else {
+        const newLine = computeNewLineNumber(change);
+        const oldLine = computeOldLineNumber(change);
+        if (newLine > 0) {
+          maxNewLine = Math.max(maxNewLine, newLine);
+        }
+        if (oldLine > 0) {
+          maxOldLine = Math.max(maxOldLine, oldLine);
+        }
+      }
+    }
+  }
+
+  const totalLines = Math.max(maxNewLine, maxOldLine);
+  if (totalLines <= 0) {
+    return null;
+  }
+
+  const segments = mergeMinimapSegments(rawSegments);
+  const normalizedBoundaries = Array.from(new Set(hunkBoundaries))
+    .filter((line) => line > 0 && line <= totalLines)
+    .sort((a, b) => a - b);
+
+  const markers = diffHeatmap
+    ? collectHeatmapMarkers(diffHeatmap, totalLines)
+    : [];
+
+  if (segments.length === 0 && markers.length === 0) {
+    return null;
+  }
+
+  return {
+    totalLines,
+    segments,
+    markers,
+    hunkBoundaries: normalizedBoundaries,
+  };
+}
+
+function mergeMinimapSegments(
+  segments: DiffMinimapSegment[]
+): DiffMinimapSegment[] {
+  if (segments.length === 0) {
+    return [];
+  }
+
+  const sorted = segments
+    .map((segment) => ({
+      ...segment,
+      startLine: Math.max(1, segment.startLine),
+      endLine: Math.max(segment.startLine, segment.endLine),
+    }))
+    .sort((a, b) => {
+      if (a.startLine !== b.startLine) {
+        return a.startLine - b.startLine;
+      }
+      if (a.side !== b.side) {
+        return a.side === "new" ? -1 : 1;
+      }
+      if (a.kind !== b.kind) {
+        return a.kind === "addition" ? -1 : 1;
+      }
+      return 0;
+    });
+
+  const merged: DiffMinimapSegment[] = [];
+
+  for (const segment of sorted) {
+    const previous = merged[merged.length - 1];
+    if (
+      previous &&
+      previous.side === segment.side &&
+      previous.kind === segment.kind &&
+      segment.startLine <= previous.endLine + 1
+    ) {
+      previous.endLine = Math.max(previous.endLine, segment.endLine);
+    } else {
+      merged.push({ ...segment });
+    }
+  }
+
+  return merged;
+}
+
+function collectHeatmapMarkers(
+  diffHeatmap: DiffHeatmap,
+  totalLines: number
+): DiffMinimapMarker[] {
+  const markers: DiffMinimapMarker[] = [];
+
+  const pushEntries = (
+    source: Map<number, ResolvedHeatmapLine>,
+    side: DiffLineSide
+  ) => {
+    for (const [lineNumber, metadata] of source.entries()) {
+      if (lineNumber <= 0 || lineNumber > totalLines) {
+        continue;
+      }
+      const score = metadata.score ?? null;
+      if (score === null || score <= 0) {
+        continue;
+      }
+      const clamped = Math.max(0, Math.min(score, 1));
+      markers.push({
+        side,
+        lineNumber,
+        score: clamped,
+      });
+    }
+  };
+
+  pushEntries(diffHeatmap.entries, "new");
+  pushEntries(diffHeatmap.oldEntries, "old");
+
+  markers.sort((a, b) => a.lineNumber - b.lineNumber);
+
+  return markers;
+}
+
+function pickMinimapTarget(
+  segments: DiffMinimapSegment[],
+  hunkBoundaries: number[],
+  totalLines: number,
+  candidateLine: number
+): { lineNumber: number; side: DiffLineSide } | null {
+  if (segments.length === 0 && hunkBoundaries.length === 0) {
+    if (totalLines <= 0) {
+      return null;
+    }
+    return {
+      lineNumber: Math.max(1, Math.min(candidateLine, totalLines)),
+      side: "new",
+    };
+  }
+
+  let nearest: { lineNumber: number; side: DiffLineSide } | null = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+
+  for (const segment of segments) {
+    if (candidateLine >= segment.startLine && candidateLine <= segment.endLine) {
+      return { lineNumber: candidateLine, side: segment.side };
+    }
+    const distance =
+      candidateLine < segment.startLine
+        ? segment.startLine - candidateLine
+        : candidateLine - segment.endLine;
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      const clampedLine =
+        candidateLine < segment.startLine
+          ? segment.startLine
+          : segment.endLine;
+      nearest = { lineNumber: clampedLine, side: segment.side };
+      if (distance === 0) {
+        break;
+      }
+    }
+  }
+
+  if (nearest) {
+    return nearest;
+  }
+
+  if (hunkBoundaries.length > 0) {
+    let fallbackLine = hunkBoundaries[0];
+    let fallbackDistance = Math.abs(candidateLine - fallbackLine);
+    for (const boundary of hunkBoundaries) {
+      const distance = Math.abs(candidateLine - boundary);
+      if (distance < fallbackDistance) {
+        fallbackLine = boundary;
+        fallbackDistance = distance;
+      }
+    }
+    return {
+      lineNumber: Math.max(1, Math.min(fallbackLine, totalLines)),
+      side: "new",
+    };
+  }
+
+  return {
+    lineNumber: Math.max(1, Math.min(candidateLine, totalLines)),
+    side: "new",
+  };
+}
+
 function scrollElementToViewportCenter(
   element: HTMLElement,
   { behavior = "auto" }: { behavior?: ScrollBehavior } = {}
@@ -3530,6 +4031,76 @@ function buildChangeKeyIndex(diff: FileData | null): Map<string, string> {
   }
 
   return map;
+}
+
+function buildChangeAnchors(
+  changeKeyByLine: Map<string, string>
+): ChangeAnchorsIndex {
+  const anchors: ChangeAnchorsIndex = { new: [], old: [] };
+
+  for (const [key, changeKey] of changeKeyByLine.entries()) {
+    const [side, rawLine] = key.split(":");
+    const lineNumber = Number.parseInt(rawLine ?? "", 10);
+    if (!Number.isFinite(lineNumber)) {
+      continue;
+    }
+    if (side === "new") {
+      anchors.new.push({ lineNumber, changeKey });
+    } else if (side === "old") {
+      anchors.old.push({ lineNumber, changeKey });
+    }
+  }
+
+  anchors.new.sort((a, b) => a.lineNumber - b.lineNumber);
+  anchors.old.sort((a, b) => a.lineNumber - b.lineNumber);
+
+  return anchors;
+}
+
+function findNearestChangeAnchor(
+  anchors: ChangeAnchor[],
+  lineNumber: number
+): ChangeAnchor | null {
+  if (anchors.length === 0) {
+    return null;
+  }
+
+  let closest: ChangeAnchor | null = null;
+  let smallestDistance = Number.POSITIVE_INFINITY;
+
+  for (const anchor of anchors) {
+    const distance = Math.abs(anchor.lineNumber - lineNumber);
+    if (distance < smallestDistance) {
+      smallestDistance = distance;
+      closest = anchor;
+      if (distance === 0) {
+        break;
+      }
+    }
+  }
+
+  return closest;
+}
+
+function resolveMinimapAnchor(
+  anchors: ChangeAnchorsIndex,
+  lineNumber: number,
+  side: DiffLineSide
+): ChangeAnchor | null {
+  const primary = side === "new" ? anchors.new : anchors.old;
+  const fallback = side === "new" ? anchors.old : anchors.new;
+
+  const direct = primary.find((anchor) => anchor.lineNumber === lineNumber);
+  if (direct) {
+    return direct;
+  }
+
+  const nearestPrimary = findNearestChangeAnchor(primary, lineNumber);
+  if (nearestPrimary) {
+    return nearestPrimary;
+  }
+
+  return findNearestChangeAnchor(fallback, lineNumber);
 }
 
 function buildLineKey(side: DiffLineSide, lineNumber: number): string {
