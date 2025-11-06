@@ -7,6 +7,7 @@ import { DashboardInputFooter } from "@/components/dashboard/DashboardInputFoote
 import { DashboardStartTaskButton } from "@/components/dashboard/DashboardStartTaskButton";
 import { TaskList } from "@/components/dashboard/TaskList";
 import { WorkspaceCreationButtons } from "@/components/dashboard/WorkspaceCreationButtons";
+import { CloudModeOnboardingModal } from "@/components/dashboard/CloudModeOnboardingModal";
 import { FloatingPane } from "@/components/floating-pane";
 import { GitHubIcon } from "@/components/icons/github";
 import { useTheme } from "@/components/theme/use-theme";
@@ -21,6 +22,7 @@ import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
 import { useSocket } from "@/contexts/socket/use-socket";
 import { createFakeConvexId } from "@/lib/fakeConvexId";
 import { attachTaskLifecycleListeners } from "@/lib/socket/taskLifecycleListeners";
+import { shouldShowOnboarding, markOnboardingShown } from "@/lib/cloudModeOnboarding";
 import { branchesQueryOptions } from "@/queries/branches";
 import { api } from "@cmux/convex/api";
 import type { Doc, Id } from "@cmux/convex/dataModel";
@@ -117,6 +119,9 @@ function DashboardComponent() {
   const [, setDockerReady] = useState<boolean | null>(null);
   const [providerStatus, setProviderStatus] =
     useState<ProviderStatusResponse | null>(null);
+
+  // Onboarding modal state
+  const [isOnboardingModalOpen, setIsOnboardingModalOpen] = useState(false);
 
   // Ref to access editor API
   const editorApiRef = useRef<EditorApi | null>(null);
@@ -364,7 +369,8 @@ function DashboardComponent() {
     return [preferredBranch];
   }, [selectedBranch, branchNames, remoteDefaultBranch]);
 
-  const handleStartTask = useCallback(async () => {
+  // Internal function that actually starts the task
+  const executeTaskStart = useCallback(async () => {
     // For local mode, perform a fresh docker check right before starting
     if (!isEnvSelected && !isCloudMode) {
       // Always check Docker status when in local mode, regardless of current state
@@ -530,6 +536,34 @@ function DashboardComponent() {
     theme,
     generateUploadUrl,
   ]);
+
+  // Handle onboarding modal callbacks
+  const handleOnboardingClose = useCallback(() => {
+    setIsOnboardingModalOpen(false);
+  }, []);
+
+  const handleContinueWithoutEnvironment = useCallback(() => {
+    // Mark onboarding as shown for this repo
+    const repoFullName = selectedProject[0];
+    if (repoFullName && !repoFullName.startsWith("env:")) {
+      markOnboardingShown(teamSlugOrId, repoFullName);
+    }
+    // Execute the task that was pending
+    setIsOnboardingModalOpen(false);
+    void executeTaskStart();
+  }, [selectedProject, teamSlugOrId, executeTaskStart]);
+
+  // Main task start handler that checks for onboarding
+  const handleStartTask = useCallback(async () => {
+    // Check if we should show onboarding
+    if (shouldShowOnboarding(isCloudMode, selectedProject, teamSlugOrId)) {
+      setIsOnboardingModalOpen(true);
+      return;
+    }
+
+    // If no onboarding needed, execute task directly
+    await executeTaskStart();
+  }, [isCloudMode, selectedProject, teamSlugOrId, executeTaskStart]);
 
   // Fetch repos on mount if none exist
   // useEffect(() => {
@@ -852,6 +886,15 @@ function DashboardComponent() {
           </div>
         </div>
       </div>
+
+      {/* Cloud Mode Onboarding Modal */}
+      <CloudModeOnboardingModal
+        isOpen={isOnboardingModalOpen}
+        onClose={handleOnboardingClose}
+        onContinueWithoutEnvironment={handleContinueWithoutEnvironment}
+        teamSlugOrId={teamSlugOrId}
+        repoFullName={selectedProject[0] || ""}
+      />
     </FloatingPane>
   );
 }
