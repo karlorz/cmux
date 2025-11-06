@@ -546,6 +546,24 @@ const convexSchema = defineSchema({
     teamId: v.string(),
   }).index("by_team_user", ["teamId", "userId"]),
 
+  keyboardShortcuts: defineTable({
+    // Command Palette Toggle
+    commandPaletteMac: v.optional(v.string()), // Default: "Cmd+K"
+    commandPaletteOther: v.optional(v.string()), // Default: "Ctrl+K"
+    // Sidebar Toggle
+    sidebarToggle: v.optional(v.string()), // Default: "Ctrl+Shift+S"
+    // Task Run Navigation (1-8)
+    taskRunNavigationMac: v.optional(v.string()), // Default: "Ctrl" (for Ctrl+1-8)
+    taskRunNavigationOther: v.optional(v.string()), // Default: "Alt" (for Alt+1-8)
+    // DevTools Toggle
+    devToolsMac: v.optional(v.string()), // Default: "Cmd+I"
+    devToolsOther: v.optional(v.string()), // Default: "Ctrl+I"
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    userId: v.string(),
+    teamId: v.string(),
+  }).index("by_team_user", ["teamId", "userId"]),
+
   // System and user comments attached to a task
   taskComments: defineTable({
     taskId: v.id("tasks"),

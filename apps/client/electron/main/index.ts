@@ -263,6 +263,27 @@ ipcMain.handle(
   }
 );
 
+// Store keyboard shortcuts in memory for cmdk module to access
+let keyboardShortcuts: {
+  commandPaletteMac: string;
+  commandPaletteOther: string;
+  sidebarToggle: string;
+  taskRunNavigationMac: string;
+  taskRunNavigationOther: string;
+  devToolsMac: string;
+  devToolsOther: string;
+} | null = null;
+
+ipcMain.on("cmux:shortcuts:update", (_event, shortcuts) => {
+  keyboardShortcuts = shortcuts;
+  mainLog("Keyboard shortcuts updated", shortcuts);
+});
+
+// Export function to get current shortcuts (for cmdk module)
+export function getKeyboardShortcuts() {
+  return keyboardShortcuts;
+}
+
 function emitAutoUpdateToastIfPossible(): void {
   if (!queuedAutoUpdateToast) return;
   if (!mainWindow || mainWindow.isDestroyed() || !rendererLoaded) return;
@@ -718,6 +739,7 @@ app.whenReady().then(async () => {
   registerAutoUpdateIpcHandlers();
   initCmdK({
     getMainWindow: () => mainWindow,
+    getShortcuts: getKeyboardShortcuts,
     logger: {
       log: mainLog,
       warn: mainWarn,

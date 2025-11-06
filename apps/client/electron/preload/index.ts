@@ -160,6 +160,19 @@ const cmuxAPI = {
         reason?: string;
       }>,
   },
+  shortcuts: {
+    update: (shortcuts: {
+      commandPaletteMac: string;
+      commandPaletteOther: string;
+      sidebarToggle: string;
+      taskRunNavigationMac: string;
+      taskRunNavigationOther: string;
+      devToolsMac: string;
+      devToolsOther: string;
+    }) => {
+      ipcRenderer.send("cmux:shortcuts:update", shortcuts);
+    },
+  },
   webContentsView: {
     create: (options: {
       url: string;

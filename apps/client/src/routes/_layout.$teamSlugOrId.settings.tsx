@@ -1,5 +1,6 @@
 import { ContainerSettings } from "@/components/ContainerSettings";
 import { FloatingPane } from "@/components/floating-pane";
+import { KeyboardShortcutsSettings } from "@/components/KeyboardShortcutsSettings";
 import { ProviderStatusSettings } from "@/components/provider-status-settings";
 import { useTheme } from "@/components/theme/use-theme";
 import { TitleBar } from "@/components/TitleBar";
@@ -59,6 +60,17 @@ function SettingsComponent() {
   } | null>(null);
   const [originalContainerSettingsData, setOriginalContainerSettingsData] =
     useState<typeof containerSettingsData>(null);
+  const [keyboardShortcutsData, setKeyboardShortcutsData] = useState<{
+    commandPaletteMac: string;
+    commandPaletteOther: string;
+    sidebarToggle: string;
+    taskRunNavigationMac: string;
+    taskRunNavigationOther: string;
+    devToolsMac: string;
+    devToolsOther: string;
+  } | null>(null);
+  const [originalKeyboardShortcutsData, setOriginalKeyboardShortcutsData] =
+    useState<typeof keyboardShortcutsData>(null);
 
   // Get all required API keys from agent configs
   const apiKeys = Array.from(
@@ -85,6 +97,11 @@ function SettingsComponent() {
   // Query workspace settings
   const { data: workspaceSettings } = useQuery(
     convexQuery(api.workspaceSettings.get, { teamSlugOrId })
+  );
+
+  // Query keyboard shortcuts
+  const { data: keyboardShortcuts } = useQuery(
+    convexQuery(api.keyboardShortcuts.get, { teamSlugOrId })
   );
 
   // Initialize form values when data loads
@@ -147,6 +164,14 @@ function SettingsComponent() {
       setOriginalAutoPrEnabled(effective);
     }
   }, [workspaceSettings]);
+
+  // Initialize keyboard shortcuts when data loads
+  useEffect(() => {
+    if (keyboardShortcuts !== undefined) {
+      setKeyboardShortcutsData(keyboardShortcuts);
+      setOriginalKeyboardShortcutsData(keyboardShortcuts);
+    }
+  }, [keyboardShortcuts]);
 
   // Track save button visibility
   // Footer-based save button; no visibility tracking needed
@@ -222,6 +247,24 @@ function SettingsComponent() {
     [originalContainerSettingsData]
   );
 
+  const handleKeyboardShortcutsChange = useCallback(
+    (data: {
+      commandPaletteMac: string;
+      commandPaletteOther: string;
+      sidebarToggle: string;
+      taskRunNavigationMac: string;
+      taskRunNavigationOther: string;
+      devToolsMac: string;
+      devToolsOther: string;
+    }) => {
+      setKeyboardShortcutsData(data);
+      if (!originalKeyboardShortcutsData) {
+        setOriginalKeyboardShortcutsData(data);
+      }
+    },
+    [originalKeyboardShortcutsData]
+  );
+
   // Check if there are any changes
   const hasChanges = () => {
     // Check worktree path changes
@@ -241,6 +284,13 @@ function SettingsComponent() {
       JSON.stringify(containerSettingsData) !==
         JSON.stringify(originalContainerSettingsData);
 
+    // Check keyboard shortcuts changes
+    const keyboardShortcutsChanged =
+      keyboardShortcutsData &&
+      originalKeyboardShortcutsData &&
+      JSON.stringify(keyboardShortcutsData) !==
+        JSON.stringify(originalKeyboardShortcutsData);
+
     // Auto PR toggle changes
     const autoPrChanged = autoPrEnabled !== originalAutoPrEnabled;
 
@@ -248,7 +298,8 @@ function SettingsComponent() {
       worktreePathChanged ||
       autoPrChanged ||
       apiKeysChanged ||
-      containerSettingsChanged
+      containerSettingsChanged ||
+      keyboardShortcutsChanged
     );
   };
 
@@ -285,6 +336,28 @@ function SettingsComponent() {
           ...containerSettingsData,
         });
         setOriginalContainerSettingsData(containerSettingsData);
+      }
+
+      // Save keyboard shortcuts if changed
+      if (
+        keyboardShortcutsData &&
+        originalKeyboardShortcutsData &&
+        JSON.stringify(keyboardShortcutsData) !==
+          JSON.stringify(originalKeyboardShortcutsData)
+      ) {
+        await convex.mutation(api.keyboardShortcuts.update, {
+          teamSlugOrId,
+          ...keyboardShortcutsData,
+        });
+        setOriginalKeyboardShortcutsData(keyboardShortcutsData);
+
+        // Store in localStorage for immediate access
+        localStorage.setItem("cmux-keyboard-shortcuts", JSON.stringify(keyboardShortcutsData));
+
+        // Notify Electron main process if in Electron environment
+        if (window.cmux?.shortcuts) {
+          window.cmux.shortcuts.update(keyboardShortcutsData);
+        }
       }
 
       for (const key of apiKeys) {
@@ -991,6 +1064,23 @@ function SettingsComponent() {
                 />
               </div>
             </div>
+
+            {/* Keyboard Shortcuts */}
+            {keyboardShortcutsData && (
+              <div className="bg-white dark:bg-neutral-950 rounded-lg border border-neutral-200 dark:border-neutral-800">
+                <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
+                  <h2 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                    Keyboard Shortcuts
+                  </h2>
+                </div>
+                <div className="p-4">
+                  <KeyboardShortcutsSettings
+                    data={keyboardShortcutsData}
+                    onChange={handleKeyboardShortcutsChange}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Notifications */}
             <div className="bg-white dark:bg-neutral-950 rounded-lg border border-neutral-200 dark:border-neutral-800 hidden">

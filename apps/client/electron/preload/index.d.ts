@@ -42,6 +42,17 @@ declare global {
           }>;
         install: () => Promise<{ ok: boolean; reason?: string }>;
       };
+      shortcuts: {
+        update: (shortcuts: {
+          commandPaletteMac: string;
+          commandPaletteOther: string;
+          sidebarToggle: string;
+          taskRunNavigationMac: string;
+          taskRunNavigationOther: string;
+          devToolsMac: string;
+          devToolsOther: string;
+        }) => void;
+      };
     };
   }
 }

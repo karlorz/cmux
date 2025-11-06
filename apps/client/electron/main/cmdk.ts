@@ -52,6 +52,44 @@ export function keyDebug(event: string, data?: unknown): void {
   }
 }
 
+// Helper function to parse shortcut string and check if input matches
+function matchesShortcut(
+  shortcut: string,
+  input: {
+    key: string;
+    control: boolean;
+    meta: boolean;
+    alt: boolean;
+    shift: boolean;
+  }
+): boolean {
+  const parts = shortcut.split("+").map((p) => p.trim().toLowerCase());
+  const keyPart = parts[parts.length - 1];
+  const modifiers = parts.slice(0, -1);
+
+  // Check if key matches
+  if (input.key.toLowerCase() !== keyPart) return false;
+
+  // Check modifiers
+  const hasCtrl = modifiers.includes("ctrl") || modifiers.includes("control");
+  const hasCmd = modifiers.includes("cmd") || modifiers.includes("command");
+  const hasAlt = modifiers.includes("alt");
+  const hasShift = modifiers.includes("shift");
+
+  // On Mac, Cmd maps to meta, on others Ctrl maps to control
+  const expectMeta = hasCmd;
+  const expectCtrl = hasCtrl;
+  const expectAlt = hasAlt;
+  const expectShift = hasShift;
+
+  return (
+    input.control === expectCtrl &&
+    input.meta === expectMeta &&
+    input.alt === expectAlt &&
+    input.shift === expectShift
+  );
+}
+
 // Track whether the Command Palette (Cmd+K) is currently open in any renderer
 let cmdkOpen = false;
 
@@ -200,6 +238,15 @@ function enqueueWindowTask(
 export function initCmdK(opts: {
   getMainWindow: () => BrowserWindow | null;
   logger: Logger;
+  getShortcuts?: () => {
+    commandPaletteMac: string;
+    commandPaletteOther: string;
+    sidebarToggle: string;
+    taskRunNavigationMac: string;
+    taskRunNavigationOther: string;
+    devToolsMac: string;
+    devToolsOther: string;
+  } | null;
 }): void {
   ensureKeyDebugFile(opts.logger);
   if (!browserWindowFocusListenerRegistered) {
@@ -239,25 +286,26 @@ export function initCmdK(opts: {
         });
         if (input.type !== "keyDown") return;
         const isMac = process.platform === "darwin";
-        // Only trigger on EXACT Cmd+K (mac) or Ctrl+K (others)
-        const isCmdK = (() => {
-          if (input.key.toLowerCase() !== "k") return false;
-          if (input.alt || input.shift) return false;
-          if (isMac) {
-            // Require meta only; disallow ctrl on mac
-            return Boolean(input.meta) && !input.control;
-          }
-          // Non-mac: require ctrl only; disallow meta
-          return Boolean(input.control) && !input.meta;
-        })();
 
-        const isSidebarToggle = (() => {
-          if (input.key.toLowerCase() !== "s") return false;
-          if (!input.shift) return false;
-          if (input.alt || input.meta) return false;
-          // Require control to align with renderer shortcut (Ctrl+Shift+S)
-          return Boolean(input.control);
-        })();
+        // Get configured shortcuts or use defaults
+        const shortcuts = opts.getShortcuts?.() || {
+          commandPaletteMac: "Cmd+K",
+          commandPaletteOther: "Ctrl+K",
+          sidebarToggle: "Ctrl+Shift+S",
+          taskRunNavigationMac: "Ctrl",
+          taskRunNavigationOther: "Alt",
+          devToolsMac: "Cmd+I",
+          devToolsOther: "Ctrl+I",
+        };
+
+        // Check for command palette shortcut
+        const commandPaletteShortcut = isMac
+          ? shortcuts.commandPaletteMac
+          : shortcuts.commandPaletteOther;
+        const isCmdK = matchesShortcut(commandPaletteShortcut, input);
+
+        // Check for sidebar toggle shortcut
+        const isSidebarToggle = matchesShortcut(shortcuts.sidebarToggle, input);
 
         if (!isCmdK && !isSidebarToggle) return;
 
