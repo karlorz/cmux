@@ -68,6 +68,27 @@ export async function spawnAgent(
   },
   teamSlugOrId: string
 ): Promise<AgentSpawnResult> {
+  let createdTaskRunId: Id<"taskRuns"> | null = null;
+  const markRunFailed = async (errorMessage: string) => {
+    if (!createdTaskRunId) {
+      return;
+    }
+    try {
+      await retryOnOptimisticConcurrency(() =>
+        getConvex().mutation(api.taskRuns.fail, {
+          teamSlugOrId,
+          id: createdTaskRunId,
+          errorMessage,
+          exitCode: 1,
+        })
+      );
+    } catch (failError) {
+      serverLogger.error(
+        `[AgentSpawner] Failed to mark taskRun ${createdTaskRunId} as failed`,
+        failError
+      );
+    }
+  };
   try {
     // Capture the current auth token and header JSON from AsyncLocalStorage so we can
     // re-enter the auth context inside async event handlers later.
@@ -84,17 +105,17 @@ export async function spawnAgent(
     );
 
     // Create a task run for this specific agent
-    const { taskRunId, jwt: taskRunJwt } = await getConvex().mutation(
-      api.taskRuns.create,
-      {
-        teamSlugOrId,
-        taskId: taskId,
-        prompt: options.taskDescription,
-        agentName: agent.name,
-        newBranch,
-        environmentId: options.environmentId,
-      }
-    );
+    const taskRunResult = await getConvex().mutation(api.taskRuns.create, {
+      teamSlugOrId,
+      taskId: taskId,
+      prompt: options.taskDescription,
+      agentName: agent.name,
+      newBranch,
+      environmentId: options.environmentId,
+    });
+    const taskRunId = taskRunResult.taskRunId;
+    const taskRunJwt = taskRunResult.jwt;
+    createdTaskRunId = taskRunId;
 
     // Fetch the task to get image storage IDs
     const task = await getConvex().query(api.tasks.getById, {
@@ -396,6 +417,7 @@ export async function spawnAgent(
       });
 
       if (!workspaceResult.success || !workspaceResult.worktreePath) {
+        await markRunFailed(workspaceResult.error || "Failed to setup workspace");
         return {
           agentName: agent.name,
           terminalId: "",
@@ -588,6 +610,7 @@ export async function spawnAgent(
       serverLogger.error(
         `[AgentSpawner] No worker socket available for ${agent.name}`
       );
+      await markRunFailed("No worker connection available");
       return {
         agentName: agent.name,
         terminalId,
@@ -923,13 +946,15 @@ exit $EXIT_CODE
     };
   } catch (error) {
     serverLogger.error("Error spawning agent", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    await markRunFailed(message);
     return {
       agentName: agent.name,
       terminalId: "",
-      taskRunId: "",
+      taskRunId: createdTaskRunId ?? "",
       worktreePath: "",
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: message,
     };
   }
 }

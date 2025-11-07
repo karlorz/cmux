@@ -375,6 +375,9 @@ function DashboardComponent() {
   }, [selectedBranch, branchNames, remoteDefaultBranch]);
 
   const handleStartTask = useCallback(async () => {
+    const selectedRepo = selectedProject[0];
+    const trimmedDescription = taskDescription.trim();
+
     // For local mode, perform a fresh docker check right before starting
     if (!isEnvSelected && !isCloudMode) {
       // Always check Docker status when in local mode, regardless of current state
@@ -402,18 +405,22 @@ function DashboardComponent() {
       }
     }
 
-    if (!selectedProject[0] || !taskDescription.trim()) {
-      console.error("Please select a project and enter a task description");
+    if (!selectedRepo) {
+      toast.error("Select a project before starting a task.");
+      return;
+    }
+    if (!trimmedDescription) {
+      toast.error("Enter a task description before starting.");
       return;
     }
     if (!socket) {
-      console.error("Socket not connected");
+      toast.error("Socket not connected. Refresh the page or restart the app.");
       return;
     }
 
     // Use the effective selected branch (respects available branches and sensible defaults)
     const branch = effectiveSelectedBranch[0];
-    const projectFullName = selectedProject[0];
+    const projectFullName = selectedRepo;
     const envSelected = projectFullName.startsWith("env:");
     const environmentId = envSelected
       ? (projectFullName.replace(/^env:/, "") as Id<"environments">)
@@ -460,18 +467,12 @@ function DashboardComponent() {
         )
       );
 
-      // Clear input after successful task creation
-      setTaskDescription("");
-      // Force editor to clear
-      handleTaskDescriptionChange("");
-      if (editorApiRef.current?.clear) {
-        editorApiRef.current.clear();
-      }
+      const taskText = content?.text || taskDescription;
 
       // Create task in Convex with storage IDs
       const taskId = await createTask({
         teamSlugOrId,
-        text: content?.text || taskDescription, // Use content.text which includes image references
+        text: taskText, // Use content.text which includes image references
         projectFullName: envSelected ? undefined : projectFullName,
         baseBranch: envSelected ? undefined : branch,
         images: uploadedImages.length > 0 ? uploadedImages : undefined,
@@ -509,7 +510,7 @@ function DashboardComponent() {
         {
           ...(repoUrl ? { repoUrl } : {}),
           ...(envSelected ? {} : { branch }),
-          taskDescription: content?.text || taskDescription, // Use content.text which includes image references
+          taskDescription: taskText, // Use content.text which includes image references
           projectFullName,
           taskId,
           selectedAgents:
@@ -521,9 +522,19 @@ function DashboardComponent() {
         },
         handleStartTaskAck
       );
+      // Clear input after handing off the task
+      setTaskDescription("");
+      // Force editor to clear
+      handleTaskDescriptionChange("");
+      if (editorApiRef.current?.clear) {
+        editorApiRef.current.clear();
+      }
       console.log("Task created:", taskId);
     } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unknown error";
       console.error("Error starting task:", error);
+      toast.error(`Failed to start task: ${message}`);
     }
   }, [
     selectedProject,
