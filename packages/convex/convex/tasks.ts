@@ -123,12 +123,31 @@ export const create = authMutation({
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
-    if (args.environmentId) {
-      const environment = await ctx.db.get(args.environmentId);
+
+    // Determine which environment to use
+    let environmentId = args.environmentId;
+
+    // If no environment specified and this is a local workspace with a repo, use repo's default environment
+    if (!environmentId && !args.isCloudWorkspace && args.projectFullName) {
+      const repo = await ctx.db
+        .query("repos")
+        .withIndex("by_team", (q) => q.eq("teamId", teamId))
+        .filter((q) => q.eq(q.field("fullName"), args.projectFullName))
+        .first();
+
+      if (repo?.defaultEnvironmentId) {
+        environmentId = repo.defaultEnvironmentId;
+      }
+    }
+
+    // Validate environment if provided
+    if (environmentId) {
+      const environment = await ctx.db.get(environmentId);
       if (!environment || environment.teamId !== teamId) {
         throw new Error("Environment not found");
       }
     }
+
     const now = Date.now();
     const taskId = await ctx.db.insert("tasks", {
       text: args.text,
@@ -142,7 +161,7 @@ export const create = authMutation({
       images: args.images,
       userId,
       teamId,
-      environmentId: args.environmentId,
+      environmentId,
       isCloudWorkspace: args.isCloudWorkspace,
     });
 
@@ -536,6 +555,108 @@ export const updateMergeStatus = authMutation({
       mergeStatus: args.mergeStatus,
       updatedAt: Date.now(),
     });
+  },
+});
+
+export const updateEnvironmentId = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    id: v.id("tasks"),
+    environmentId: v.union(v.id("environments"), v.null()),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const task = await ctx.db.get(args.id);
+    if (task === null || task.teamId !== teamId || task.userId !== userId) {
+      throw new Error("Task not found or unauthorized");
+    }
+
+    // Verify environment belongs to same team if not null
+    if (args.environmentId) {
+      const environment = await ctx.db.get(args.environmentId);
+      if (!environment || environment.teamId !== teamId) {
+        throw new Error("Environment not found or unauthorized");
+      }
+    }
+
+    await ctx.db.patch(args.id, {
+      environmentId: args.environmentId ?? undefined,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const updateSetupScriptStatus = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    id: v.id("tasks"),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("running"),
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("skipped")
+    ),
+    error: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const task = await ctx.db.get(args.id);
+    if (task === null || task.teamId !== teamId || task.userId !== userId) {
+      throw new Error("Task not found or unauthorized");
+    }
+
+    const updates: Record<string, unknown> = {
+      setupScriptStatus: args.status,
+      updatedAt: Date.now(),
+    };
+
+    if (args.status === "completed") {
+      updates.setupScriptCompletedAt = Date.now();
+      updates.setupScriptError = undefined;
+    } else if (args.status === "failed" && args.error) {
+      updates.setupScriptError = args.error;
+    }
+
+    await ctx.db.patch(args.id, updates);
+  },
+});
+
+export const updateDevScriptStatus = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    id: v.id("tasks"),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("running"),
+      v.literal("stopped"),
+      v.literal("failed")
+    ),
+    error: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const task = await ctx.db.get(args.id);
+    if (task === null || task.teamId !== teamId || task.userId !== userId) {
+      throw new Error("Task not found or unauthorized");
+    }
+
+    const updates: Record<string, unknown> = {
+      devScriptStatus: args.status,
+      updatedAt: Date.now(),
+    };
+
+    if (args.status === "running") {
+      updates.devScriptStartedAt = Date.now();
+      updates.devScriptError = undefined;
+    } else if (args.status === "failed" && args.error) {
+      updates.devScriptError = args.error;
+    }
+
+    await ctx.db.patch(args.id, updates);
   },
 });
 

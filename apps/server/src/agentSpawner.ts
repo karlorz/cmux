@@ -31,6 +31,7 @@ import { getWwwOpenApiModule } from "./utils/wwwOpenApiModule";
 import { CmuxVSCodeInstance } from "./vscode/CmuxVSCodeInstance";
 import { DockerVSCodeInstance } from "./vscode/DockerVSCodeInstance";
 import { VSCodeInstance } from "./vscode/VSCodeInstance";
+import { setupLocalWorkspaceEnvironment } from "./localWorkspaceEnvironment";
 import { getWorktreePath, setupProjectWorkspace } from "./workspace";
 import { workerExec } from "./utils/workerExec";
 import rawSwitchBranchScript from "./utils/switch-branch.ts?raw";
@@ -407,6 +408,30 @@ export async function spawnAgent(
       }
 
       worktreePath = workspaceResult.worktreePath;
+
+      // Setup environment for local workspace if environmentId is provided
+      if (options.environmentId) {
+        serverLogger.info(
+          `[AgentSpawner] Setting up environment for local workspace`
+        );
+        const envSetupResult = await setupLocalWorkspaceEnvironment({
+          taskId,
+          environmentId: options.environmentId,
+          worktreePath,
+          teamSlugOrId,
+        });
+
+        if (!envSetupResult.success) {
+          serverLogger.error(
+            `[AgentSpawner] Environment setup failed: ${envSetupResult.error}`
+          );
+          // Don't fail the task, just log the error and continue
+        } else {
+          serverLogger.info(
+            `[AgentSpawner] Environment setup completed successfully`
+          );
+        }
+      }
 
       serverLogger.info(
         `[AgentSpawner] Creating DockerVSCodeInstance for ${agent.name}`

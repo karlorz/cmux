@@ -109,6 +109,28 @@ const convexSchema = defineSchema({
     userId: v.string(), // Link to user who created the task
     teamId: v.string(),
     environmentId: v.optional(v.id("environments")),
+    // Environment setup state for local workspaces
+    setupScriptStatus: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("running"),
+        v.literal("completed"),
+        v.literal("failed"),
+        v.literal("skipped"),
+      )
+    ),
+    setupScriptError: v.optional(v.string()),
+    setupScriptCompletedAt: v.optional(v.number()),
+    devScriptStatus: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("running"),
+        v.literal("stopped"),
+        v.literal("failed"),
+      )
+    ),
+    devScriptError: v.optional(v.string()),
+    devScriptStartedAt: v.optional(v.number()),
     crownEvaluationStatus: v.optional(
       v.union(
         v.literal("pending"),
@@ -469,6 +491,8 @@ const convexSchema = defineSchema({
     connectionId: v.optional(v.id("providerConnections")),
     lastSyncedAt: v.optional(v.number()),
     lastPushedAt: v.optional(v.number()),
+    // Default environment for local workspaces
+    defaultEnvironmentId: v.optional(v.id("environments")),
   })
     .index("by_org", ["org"])
     .index("by_gitRemote", ["gitRemote"])

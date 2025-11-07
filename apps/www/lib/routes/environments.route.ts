@@ -987,6 +987,70 @@ environmentsRouter.openapi(
   }
 );
 
+// Internal endpoint to get environment variables by dataVaultKey (for server-side script execution)
+environmentsRouter.openapi(
+  createRoute({
+    method: "get" as const,
+    path: "/internal/environments/env-vars/{dataVaultKey}",
+    tags: ["Environments - Internal"],
+    summary: "Internal: Get environment variables by dataVaultKey",
+    request: {
+      params: z.object({
+        dataVaultKey: z.string(),
+      }),
+      headers: z.object({
+        authorization: z.string().optional(),
+      }),
+    },
+    responses: {
+      200: {
+        content: {
+          "text/plain": {
+            schema: z.string(),
+          },
+        },
+        description: "Environment variables retrieved successfully (as .env format)",
+      },
+      401: { description: "Unauthorized" },
+      500: { description: "Failed to get environment variables" },
+    },
+  }),
+  async (c) => {
+    // Check for internal API key
+    const authHeader = c.req.header("authorization");
+    const internalKey = env.INTERNAL_API_KEY || "internal-dev-key";
+
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return c.text("Unauthorized", 401);
+    }
+
+    const token = authHeader.substring(7);
+    if (token !== internalKey) {
+      return c.text("Unauthorized", 401);
+    }
+
+    const { dataVaultKey } = c.req.valid("param");
+
+    try {
+      // Retrieve environment variables from StackAuth DataBook
+      const store =
+        await stackServerAppJs.getDataVaultStore("cmux-snapshot-envs");
+      const envVarsContent = await store.getValue(dataVaultKey, {
+        secret: env.STACK_DATA_VAULT_SECRET,
+      });
+
+      if (!envVarsContent) {
+        return c.text("");
+      }
+
+      return c.text(envVarsContent);
+    } catch (error) {
+      console.error("Failed to get environment variables:", error);
+      return c.text("Failed to get environment variables", 500);
+    }
+  }
+);
+
 // Delete an environment
 environmentsRouter.openapi(
   createRoute({
