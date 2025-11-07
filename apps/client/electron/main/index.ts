@@ -17,6 +17,7 @@ import {
   webFrameMain,
   type BrowserWindowConstructorOptions,
   type MenuItemConstructorOptions,
+  type Input,
 } from "electron";
 import { startEmbeddedServer } from "./embedded-server";
 import { registerWebContentsViewHandlers } from "./web-contents-view";
@@ -242,6 +243,64 @@ function sendShortcutToFocusedWindow(
     mainWarn("Failed to dispatch shortcut event", { eventName, error });
     return false;
   }
+}
+
+type HistoryShortcutEvent =
+  | "history-back"
+  | "history-forward"
+  | "history-menu";
+
+function trySendHistoryShortcut(eventName: HistoryShortcutEvent): void {
+  const dispatched = sendShortcutToFocusedWindow(eventName);
+  if (!dispatched) {
+    mainWarn(`History shortcut ${eventName} triggered with no active renderer`);
+  }
+}
+
+function isHistoryModifierInput(input: Input): boolean {
+  return Boolean(
+    input.meta &&
+    input.control &&
+    !input.alt &&
+    !input.shift
+  );
+}
+
+function handleHistoryShortcutEvent(
+  event: Electron.Event,
+  input: Input
+): boolean {
+  if (!isHistoryModifierInput(input)) {
+    return false;
+  }
+
+  const rawKey = input.key ? String(input.key).toLowerCase() : "";
+  const code = input.code ?? "";
+
+  if (rawKey === "[" || code === "BracketLeft") {
+    event.preventDefault();
+    trySendHistoryShortcut("history-back");
+    return true;
+  }
+
+  if (rawKey === "]" || code === "BracketRight") {
+    event.preventDefault();
+    trySendHistoryShortcut("history-forward");
+    return true;
+  }
+
+  if (rawKey === "y") {
+    event.preventDefault();
+    trySendHistoryShortcut("history-menu");
+    return true;
+  }
+
+  return false;
+}
+
+function resolveHistoryAccelerator(key: "[" | "]" | "Y"): string {
+  const prefix = process.platform === "darwin" ? "Command+Ctrl+" : "Ctrl+Super+";
+  return `${prefix}${key}`;
 }
 
 function setPreviewReloadMenuVisibility(visible: boolean): void {
@@ -736,6 +795,10 @@ app.whenReady().then(async () => {
     contents.on("before-input-event", (e, input) => {
       if (input.type !== "keyDown") return;
 
+      if (handleHistoryShortcutEvent(e, input)) {
+        return;
+      }
+
       // Only handle preview shortcuts when preview is visible
       if (!previewReloadMenuVisible) return;
 
@@ -743,7 +806,7 @@ app.whenReady().then(async () => {
       const modKey = isMac ? input.meta : input.control;
       if (!modKey || input.alt || input.shift) return;
 
-      const key = input.key.toLowerCase();
+      const key = (input.key ?? "").toLowerCase();
 
       // cmd+l: focus address bar
       if (key === "l") {
@@ -952,6 +1015,33 @@ app.whenReady().then(async () => {
         { role: "toggleDevTools" },
       ],
     };
+    const historyMenu: MenuItemConstructorOptions = {
+      label: "History",
+      submenu: [
+        {
+          label: "Back",
+          accelerator: resolveHistoryAccelerator("["),
+          click: () => {
+            trySendHistoryShortcut("history-back");
+          },
+        },
+        {
+          label: "Forward",
+          accelerator: resolveHistoryAccelerator("]"),
+          click: () => {
+            trySendHistoryShortcut("history-forward");
+          },
+        },
+        { type: "separator" },
+        {
+          label: "Show History",
+          accelerator: resolveHistoryAccelerator("Y"),
+          click: () => {
+            trySendHistoryShortcut("history-menu");
+          },
+        },
+      ],
+    };
     template.push(
       { role: "editMenu" },
       {
@@ -977,6 +1067,7 @@ app.whenReady().then(async () => {
           },
         ],
       },
+      historyMenu,
       viewMenu,
       { role: "windowMenu" }
     );
