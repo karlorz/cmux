@@ -197,10 +197,13 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
             onOpenChange={(open) => !open && closeSlideshow()}
           >
             <Dialog.Portal>
-              <Dialog.Overlay className="fixed inset-0 bg-neutral-950/70 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in data-[state=closed]:fade-out" />
-              <Dialog.Content className="fixed inset-0 flex items-center justify-center p-6 focus:outline-none">
-                <div className="relative flex w-full max-w-5xl flex-col gap-3 rounded-2xl border border-neutral-200 bg-white/95 p-3 shadow-2xl backdrop-blur-md focus:outline-none dark:border-neutral-800 dark:bg-neutral-950/90 sm:p-5">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
+              <Dialog.Overlay className="fixed inset-0 bg-neutral-950/70 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in data-[state=closed]:fade-out" />
+              <Dialog.Content
+                className="fixed left-1/2 top-1/2 z-50 w-[min(1400px,95vw)] max-h-[95vh] -translate-x-1/2 -translate-y-1/2 focus:outline-none"
+                onPointerDownOutside={closeSlideshow}
+              >
+                <div className="relative flex flex-col gap-4 rounded-2xl border border-neutral-200 bg-white p-4 shadow-2xl focus:outline-none dark:border-neutral-800 dark:bg-neutral-950">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="space-y-1">
                       <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
                         {activeOverallIndex !== null
@@ -227,7 +230,7 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
                       </button>
                     </Dialog.Close>
                   </div>
-                  <div className="flex flex-1 items-center justify-center gap-4">
+                  <div className="flex min-h-[55vh] items-center justify-center gap-6">
                     {flattenedImages.length > 1 ? (
                       <button
                         type="button"
@@ -238,11 +241,11 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
                         <ChevronLeft className="h-5 w-5" />
                       </button>
                     ) : null}
-                    <div className="relative flex max-h-[70vh] flex-1 items-center justify-center border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-800 dark:bg-neutral-900">
+                    <div className="relative flex h-[60vh] max-h-[80vh] w-full flex-1 items-center justify-center rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
                       <img
                         src={currentEntry.image.url ?? undefined}
                         alt={currentEntry.image.fileName ?? "Screenshot"}
-                        className="max-h-[calc(70vh-1.5rem)] max-w-full object-contain"
+                        className="max-h-full max-w-full object-contain"
                       />
                     </div>
                     {flattenedImages.length > 1 ? (
