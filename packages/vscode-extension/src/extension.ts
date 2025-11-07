@@ -21,6 +21,10 @@ let workerSocket: Socket<ServerToClientEvents, ClientToServerEvents> | null =
 // Track active terminals
 const activeTerminals = new Map<string, vscode.Terminal>();
 let isSetupComplete = false;
+let isSetupInProgress = false;
+let tmuxSetupRetryTimer: NodeJS.Timeout | null = null;
+let hasLoggedMissingTmuxSession = false;
+const TMUX_SESSION_POLL_INTERVAL_MS = 1000;
 
 // Track file watcher and debounce timer
 let fileWatcher: vscode.FileSystemWatcher | null = null;
@@ -260,93 +264,107 @@ async function openMultiDiffEditor(
   }
 }
 
-async function waitForTmuxSessions(maxAttempts: number = 20, delayMs: number = 1000): Promise<boolean> {
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const hasSessions = await hasTmuxSessions();
-    if (hasSessions) {
-      log(`Tmux sessions found after ${attempt + 1} attempt(s)`);
-      return true;
-    }
-    log(`No tmux sessions yet (attempt ${attempt + 1}/${maxAttempts}), waiting ${delayMs}ms...`);
-    await new Promise(resolve => setTimeout(resolve, delayMs));
-  }
-  return false;
-}
-
 async function setupDefaultTerminal() {
   log("Setting up default terminal");
 
-  // Prevent duplicate setup
   if (isSetupComplete) {
     log("Setup already complete, skipping");
     return;
   }
 
-  // Wait for tmux sessions to exist (they may be created by orchestrator for cloud workspaces)
-  const hasSessions = await waitForTmuxSessions(20, 1000);
-  if (!hasSessions) {
-    log("No tmux sessions found after waiting; skipping terminal setup and attach");
+  if (isSetupInProgress) {
+    log("Setup already in progress, skipping");
     return;
   }
 
-  // if an existing editor is called "bash", early return
-  const activeEditors = vscode.window.visibleTextEditors;
-  for (const editor of activeEditors) {
-    if (editor.document.fileName === "bash") {
-      log("Bash editor already exists, skipping terminal setup");
+  isSetupInProgress = true;
+
+  try {
+    const hasSessions = await hasTmuxSessions();
+    if (!hasSessions) {
+      if (!hasLoggedMissingTmuxSession) {
+        log(
+          `Tmux session not ready yet; will keep retrying every ${TMUX_SESSION_POLL_INTERVAL_MS}ms until it appears`
+        );
+        hasLoggedMissingTmuxSession = true;
+      }
+      scheduleTmuxSetupRetry();
       return;
     }
-  }
 
-  isSetupComplete = true; // Set this BEFORE creating UI elements to prevent race conditions
+    hasLoggedMissingTmuxSession = false;
+    log("Tmux session detected; proceeding with terminal setup");
 
-  // Open Source Control view
-  log("Opening SCM view...");
-  await vscode.commands.executeCommand("workbench.view.scm");
+    if (tmuxSetupRetryTimer) {
+      clearTimeout(tmuxSetupRetryTimer);
+      tmuxSetupRetryTimer = null;
+    }
 
-  // Open git changes view
-  log("Opening git changes view...");
-  await openMultiDiffEditor();
+    isSetupComplete = true; // Set this BEFORE creating UI elements to prevent race conditions
 
-  // Create terminal for default tmux session
-  log("Creating terminal for default tmux session");
+    // Open Source Control view
+    log("Opening SCM view...");
+    await vscode.commands.executeCommand("workbench.view.scm");
 
-  const terminal = vscode.window.createTerminal({
-    name: `Default Session`,
-    location: vscode.TerminalLocation.Editor,
-    cwd: "/root/workspace",
-    env: process.env,
-  });
+    // Open git changes view
+    log("Opening git changes view...");
+    await openMultiDiffEditor();
 
-  terminal.show();
+    // Create terminal for default tmux session
+    log("Creating terminal for default tmux session");
 
-  // Store terminal reference
-  activeTerminals.set("default", terminal);
+    const terminal = vscode.window.createTerminal({
+      name: `Default Session`,
+      location: vscode.TerminalLocation.Editor,
+      cwd: "/root/workspace",
+      env: process.env,
+    });
 
-  // Attach to default tmux session with a small delay to ensure it's ready
-  setTimeout(() => {
-    terminal.sendText(`tmux attach-session -t cmux`);
-    log("Attached to default tmux session");
-  }, 500); // 500ms delay to ensure tmux session is ready
-
-  log("Created terminal successfully");
-
-  // After terminal is created, ensure the terminal is active and move to right group
-  setTimeout(async () => {
-    // Focus on the terminal tab
     terminal.show();
 
-    // Move the active editor (terminal) to the right group
-    log("Moving terminal editor to right group");
-    await vscode.commands.executeCommand(
-      "workbench.action.moveEditorToRightGroup"
-    );
+    // Store terminal reference
+    activeTerminals.set("default", terminal);
 
-    // Ensure terminal has focus
-    // await vscode.commands.executeCommand("workbench.action.terminal.focus");
+    // Attach to default tmux session with a small delay to ensure it's ready
+    setTimeout(() => {
+      terminal.sendText(`tmux attach-session -t cmux`);
+      log("Attached to default tmux session");
+    }, 500); // 500ms delay to ensure tmux session is ready
 
-    log("Terminal setup complete");
-  }, 100);
+    log("Created terminal successfully");
+
+    // After terminal is created, ensure the terminal is active and move to right group
+    setTimeout(async () => {
+      // Focus on the terminal tab
+      terminal.show();
+
+      // Move the active editor (terminal) to the right group
+      log("Moving terminal editor to right group");
+      await vscode.commands.executeCommand(
+        "workbench.action.moveEditorToRightGroup"
+      );
+
+      log("Terminal setup complete");
+    }, 100);
+  } catch (error) {
+    // Allow future retries if something fails mid-setup
+    isSetupComplete = false;
+    log("Failed to set up default terminal:", error);
+    scheduleTmuxSetupRetry();
+  } finally {
+    isSetupInProgress = false;
+  }
+}
+
+function scheduleTmuxSetupRetry(delayMs: number = TMUX_SESSION_POLL_INTERVAL_MS) {
+  if (tmuxSetupRetryTimer) {
+    return;
+  }
+
+  tmuxSetupRetryTimer = setTimeout(() => {
+    tmuxSetupRetryTimer = null;
+    setupDefaultTerminal();
+  }, delayMs);
 }
 
 function connectToWorker() {
