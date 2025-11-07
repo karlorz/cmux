@@ -30,6 +30,7 @@ import {
   FolderPlus,
   GitPullRequest,
   Home,
+  Link as LinkIcon,
   LogOut,
   Monitor,
   Moon,
@@ -62,6 +63,7 @@ import {
   useSuggestionHistory,
 } from "./command-bar/useSuggestionHistory";
 import clsx from "clsx";
+import { env } from "@/client-env";
 
 interface CommandBarProps {
   teamSlugOrId: string;
@@ -665,6 +667,109 @@ export function CommandBar({
   const reserveLocalWorkspace = useMutation(api.localWorkspaces.reserve);
   const createTask = useMutation(api.tasks.create);
   const failTaskRun = useMutation(api.taskRuns.fail);
+  const mintState = useMutation(api.github_app.mintInstallState);
+
+  const openCenteredPopup = useCallback(
+    (
+      url: string,
+      opts?: { name?: string; width?: number; height?: number },
+      onClose?: () => void
+    ): Window | null => {
+      if (isElectron) {
+        window.open(url, "_blank", "noopener,noreferrer");
+        return null;
+      }
+      const name = opts?.name ?? "cmux-popup";
+      const width = Math.floor(opts?.width ?? 980);
+      const height = Math.floor(opts?.height ?? 780);
+      const dualScreenLeft = window.screenLeft ?? window.screenX ?? 0;
+      const dualScreenTop = window.screenTop ?? window.screenY ?? 0;
+      const outerWidth = window.outerWidth || window.innerWidth || width;
+      const outerHeight = window.outerHeight || window.innerHeight || height;
+      const left = Math.max(0, dualScreenLeft + (outerWidth - width) / 2);
+      const top = Math.max(0, dualScreenTop + (outerHeight - height) / 2);
+      const features = [
+        `width=${width}`,
+        `height=${height}`,
+        `left=${Math.floor(left)}`,
+        `top=${Math.floor(top)}`,
+        "resizable=yes",
+        "scrollbars=yes",
+        "toolbar=no",
+        "location=no",
+        "status=no",
+        "menubar=no",
+      ].join(",");
+
+      const win = window.open("about:blank", name, features);
+      if (win) {
+        try {
+          (win as Window & { opener: null | Window }).opener = null;
+        } catch (_error) {
+          void 0;
+        }
+        try {
+          win.location.href = url;
+        } catch (_error) {
+          window.open(url, "_blank");
+        }
+        win.focus?.();
+        if (onClose) {
+          const timer = window.setInterval(() => {
+            try {
+              if (win.closed) {
+                window.clearInterval(timer);
+                onClose();
+              }
+            } catch (_error) {
+              void 0;
+            }
+          }, 600);
+        }
+        return win;
+      } else {
+        window.open(url, "_blank");
+        return null;
+      }
+    },
+    []
+  );
+
+  const handleLinkGitHub = useCallback(async () => {
+    if (!env.NEXT_PUBLIC_GITHUB_APP_SLUG) {
+      toast.error("GitHub app not configured");
+      return;
+    }
+
+    try {
+      const { state } = await mintState({ teamSlugOrId });
+      const baseUrl = `https://github.com/apps/${env.NEXT_PUBLIC_GITHUB_APP_SLUG}/installations/new`;
+      const sep = baseUrl.includes("?") ? "&" : "?";
+      const url = `${baseUrl}${sep}state=${encodeURIComponent(state)}`;
+
+      openCenteredPopup(
+        url,
+        { name: "github-install" },
+        () => {
+          router.options.context?.queryClient?.invalidateQueries();
+        }
+      );
+
+      closeCommand();
+    } catch (err) {
+      console.error("Failed to start GitHub install:", err);
+      toast.error("Failed to link GitHub account. Please try again.");
+    }
+  }, [closeCommand, mintState, openCenteredPopup, router.options.context?.queryClient, teamSlugOrId]);
+
+  const handleCreateEnvironment = useCallback(() => {
+    closeCommand();
+    navigate({
+      to: "/$teamSlugOrId/environments/new",
+      params: { teamSlugOrId },
+      search: environmentSearchDefaults,
+    });
+  }, [closeCommand, navigate, teamSlugOrId]);
 
   useEffect(() => {
     openRef.current = open;
@@ -2536,19 +2641,13 @@ export function CommandBar({
               }}
               className="flex-1 min-h-0 overflow-y-auto px-1 pt-1 pb-2 flex flex-col gap-2"
             >
-              <Command.Empty className="py-6 text-center text-sm text-neutral-500 dark:text-neutral-400">
-                {activePage === "teams"
-                  ? "No matching teams."
-                  : activePage === "local-workspaces"
-                    ? isLocalWorkspaceLoading
-                      ? "Loading repositories…"
-                      : "No matching repositories."
-                    : activePage === "cloud-workspaces"
-                      ? isCloudWorkspaceLoading
-                        ? "Loading workspaces…"
-                        : "No matching workspaces."
-                      : "No results found."}
-              </Command.Empty>
+              {activePage !== "local-workspaces" && activePage !== "cloud-workspaces" ? (
+                <Command.Empty className="py-6 text-center text-sm text-neutral-500 dark:text-neutral-400">
+                  {activePage === "teams"
+                    ? "No matching teams."
+                    : "No results found."}
+                </Command.Empty>
+              ) : null}
 
               {activePage === "root" ? (
                 <>
@@ -2613,6 +2712,29 @@ export function CommandBar({
                           )}
                         </Command.Group>
                       ) : null}
+                      {localWorkspaceSuggestionsToRender.length === 0 &&
+                      localWorkspaceCommandsToRender.length === 0 ? (
+                        <Command.Group>
+                          <Command.Item
+                            value="local-workspaces:create-environment"
+                            onSelect={handleCreateEnvironment}
+                            className={baseCommandItemClassName}
+                          >
+                            <Plus className="h-4 w-4 text-neutral-500" />
+                            <span className="text-sm">Create environment</span>
+                          </Command.Item>
+                          {env.NEXT_PUBLIC_GITHUB_APP_SLUG ? (
+                            <Command.Item
+                              value="local-workspaces:link-github"
+                              onSelect={handleLinkGitHub}
+                              className={baseCommandItemClassName}
+                            >
+                              <LinkIcon className="h-4 w-4 text-neutral-500" />
+                              <span className="text-sm">Link GitHub account</span>
+                            </Command.Item>
+                          ) : null}
+                        </Command.Group>
+                      ) : null}
                     </>
                   )}
                 </>
@@ -2652,6 +2774,29 @@ export function CommandBar({
                               renderCloudWorkspaceCommandEntry(entry)
                             )
                           )}
+                        </Command.Group>
+                      ) : null}
+                      {cloudWorkspaceSuggestionsToRender.length === 0 &&
+                      cloudWorkspaceCommandsToRender.length === 0 ? (
+                        <Command.Group>
+                          <Command.Item
+                            value="cloud-workspaces:create-environment"
+                            onSelect={handleCreateEnvironment}
+                            className={baseCommandItemClassName}
+                          >
+                            <Plus className="h-4 w-4 text-neutral-500" />
+                            <span className="text-sm">Create environment</span>
+                          </Command.Item>
+                          {env.NEXT_PUBLIC_GITHUB_APP_SLUG ? (
+                            <Command.Item
+                              value="cloud-workspaces:link-github"
+                              onSelect={handleLinkGitHub}
+                              className={baseCommandItemClassName}
+                            >
+                              <LinkIcon className="h-4 w-4 text-neutral-500" />
+                              <span className="text-sm">Link GitHub account</span>
+                            </Command.Item>
+                          ) : null}
                         </Command.Group>
                       ) : null}
                     </>
