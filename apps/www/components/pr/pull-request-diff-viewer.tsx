@@ -3313,10 +3313,34 @@ function HeatmapTooltipBody({
   reason: string | null;
 }) {
   const theme = getHeatmapTooltipTheme(score);
+  const clipboard = useClipboard({ timeout: 2000 });
+
+  const handleCopy = useCallback(() => {
+    if (reason) {
+      clipboard.copy(reason);
+    }
+  }, [reason, clipboard]);
+
   return (
-    <div className="text-left text-xs leading-relaxed">
+    <div className="flex items-start gap-2">
+      <div className="flex-1 text-left text-xs leading-relaxed">
+        {reason ? (
+          <p className={cn("text-xs", theme.reasonClass)}>{reason}</p>
+        ) : null}
+      </div>
       {reason ? (
-        <p className={cn("text-xs", theme.reasonClass)}>{reason}</p>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="flex-shrink-0 rounded p-1 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+          aria-label={clipboard.copied ? "Copied!" : "Copy to clipboard"}
+        >
+          {clipboard.copied ? (
+            <Check className="h-3 w-3" />
+          ) : (
+            <Copy className="h-3 w-3" />
+          )}
+        </button>
       ) : null}
     </div>
   );
