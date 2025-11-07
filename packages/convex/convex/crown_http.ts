@@ -556,14 +556,16 @@ async function handleCrownCheckRequest(
   );
   const completedRuns = runsForTeam.filter((run) => run.status === "completed");
 
+  // Should evaluate if all runs are finished and we have at least 2 completed runs
+  // (even if some failed - we still want to crown a winner among the successful ones)
   const shouldEvaluate =
     allRunsFinished &&
-    allWorkersReported &&
     completedRuns.length >= 2 &&
     !existingEvaluation;
 
+  // If only one run completed successfully (even if others failed), crown it
   const singleRunWinnerId =
-    runsForTeam.length === 1 && completedRuns.length === 1
+    allRunsFinished && completedRuns.length === 1
       ? completedRuns[0]._id
       : null;
 

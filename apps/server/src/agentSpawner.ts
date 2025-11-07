@@ -923,10 +923,27 @@ exit $EXIT_CODE
     };
   } catch (error) {
     serverLogger.error("Error spawning agent", error);
+
+    // If we created a taskRun, mark it as failed
+    const taskRunIdToFail = typeof taskRunId === "string" && taskRunId ? taskRunId as Id<"taskRuns"> : undefined;
+    if (taskRunIdToFail) {
+      try {
+        await getConvex().mutation(api.taskRuns.fail, {
+          teamSlugOrId,
+          id: taskRunIdToFail,
+          errorMessage: error instanceof Error ? error.message : "Unknown error",
+          exitCode: 1,
+        });
+        serverLogger.info(`[AgentSpawner] Marked taskRun ${taskRunIdToFail} as failed due to spawn error`);
+      } catch (failError) {
+        serverLogger.error(`[AgentSpawner] Failed to mark taskRun as failed:`, failError);
+      }
+    }
+
     return {
       agentName: agent.name,
       terminalId: "",
-      taskRunId: "",
+      taskRunId: taskRunIdToFail || "",
       worktreePath: "",
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",

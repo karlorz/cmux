@@ -419,6 +419,10 @@ function DashboardComponent() {
       ? (projectFullName.replace(/^env:/, "") as Id<"environments">)
       : undefined;
 
+    // Store the input content before clearing, so we can restore it on error
+    const originalTaskDescription = taskDescription;
+    const originalEditorContent = editorApiRef.current?.getContent();
+
     try {
       // Extract content including images from the editor
       const content = editorApiRef.current?.getContent();
@@ -489,7 +493,18 @@ function DashboardComponent() {
       const handleStartTaskAck = (response: TaskAcknowledged | TaskStarted | TaskError) => {
         if ("error" in response) {
           console.error("Task start error:", response.error);
-          toast.error(`Task start error: ${JSON.stringify(response.error)}`);
+          toast.error(`Task start error: ${JSON.stringify(response.error)}`, {
+            action: {
+              label: "Restore input",
+              onClick: () => {
+                setTaskDescription(originalTaskDescription);
+                handleTaskDescriptionChange(originalTaskDescription);
+                if (originalEditorContent && editorApiRef.current?.setContent) {
+                  editorApiRef.current.setContent(originalEditorContent);
+                }
+              },
+            },
+          });
           return;
         }
 
@@ -498,7 +513,18 @@ function DashboardComponent() {
             console.log("Task started:", payload);
           },
           onFailed: (payload) => {
-            toast.error(`Task failed to start: ${payload.error}`);
+            toast.error(`Task failed to start: ${payload.error}`, {
+              action: {
+                label: "Restore input",
+                onClick: () => {
+                  setTaskDescription(originalTaskDescription);
+                  handleTaskDescriptionChange(originalTaskDescription);
+                  if (originalEditorContent && editorApiRef.current?.setContent) {
+                    editorApiRef.current.setContent(originalEditorContent);
+                  }
+                },
+              },
+            });
           },
         });
         console.log("Task acknowledged:", response);
@@ -524,6 +550,22 @@ function DashboardComponent() {
       console.log("Task created:", taskId);
     } catch (error) {
       console.error("Error starting task:", error);
+      // Show error toast with restore button
+      toast.error(
+        `Failed to start task: ${error instanceof Error ? error.message : "Unknown error"}`,
+        {
+          action: {
+            label: "Restore input",
+            onClick: () => {
+              setTaskDescription(originalTaskDescription);
+              handleTaskDescriptionChange(originalTaskDescription);
+              if (originalEditorContent && editorApiRef.current?.setContent) {
+                editorApiRef.current.setContent(originalEditorContent);
+              }
+            },
+          },
+        }
+      );
     }
   }, [
     selectedProject,
