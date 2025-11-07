@@ -63,6 +63,24 @@ export function SidebarPullRequestList({
           setExpanded={setExpanded}
         />
       ))}
+      <li className="rounded-md select-none">
+        <Link
+          to="/$teamSlugOrId/prs"
+          params={{ teamSlugOrId }}
+          className="group block"
+        >
+          <SidebarListItem
+            paddingLeft={10}
+            title="All"
+            secondary="View all PRs"
+            titleClassName="text-[13px] text-neutral-950 dark:text-neutral-100"
+            secondaryClassName="text-[10px]"
+            leading={
+              <GitPullRequest className="w-3 h-3 text-neutral-400 dark:text-neutral-500" />
+            }
+          />
+        </Link>
+      </li>
     </ul>
   );
 }
