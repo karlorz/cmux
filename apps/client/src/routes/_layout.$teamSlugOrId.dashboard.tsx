@@ -131,6 +131,9 @@ function DashboardComponent() {
   // Ref to access editor API
   const editorApiRef = useRef<EditorApi | null>(null);
 
+  // Ref to store content for potential restoration on error
+  const lastContentRef = useRef<{ text: string; images: any[] } | null>(null);
+
   const persistAgentSelection = useCallback((agents: string[]) => {
     try {
       const isDefaultSelection =
@@ -423,6 +426,11 @@ function DashboardComponent() {
       // Extract content including images from the editor
       const content = editorApiRef.current?.getContent();
       const images = content?.images || [];
+      // Store content for potential restoration on error
+      lastContentRef.current = {
+        text: content?.text || taskDescription,
+        images: images,
+      };
 
       // Upload images to Convex storage first
       const uploadedImages = await Promise.all(
@@ -489,7 +497,18 @@ function DashboardComponent() {
       const handleStartTaskAck = (response: TaskAcknowledged | TaskStarted | TaskError) => {
         if ("error" in response) {
           console.error("Task start error:", response.error);
-          toast.error(`Task start error: ${JSON.stringify(response.error)}`);
+          toast.error(`Task start error: ${JSON.stringify(response.error)}`, {
+            duration: 10000,
+            action: lastContentRef.current ? {
+              label: "Restore text",
+              onClick: () => {
+                if (lastContentRef.current) {
+                  setTaskDescription(lastContentRef.current.text);
+                  handleTaskDescriptionChange(lastContentRef.current.text);
+                }
+              },
+            } : undefined,
+          });
           return;
         }
 
@@ -498,7 +517,18 @@ function DashboardComponent() {
             console.log("Task started:", payload);
           },
           onFailed: (payload) => {
-            toast.error(`Task failed to start: ${payload.error}`);
+            toast.error(`Task failed to start: ${payload.error}`, {
+              duration: 10000,
+              action: lastContentRef.current ? {
+                label: "Restore text",
+                onClick: () => {
+                  if (lastContentRef.current) {
+                    setTaskDescription(lastContentRef.current.text);
+                    handleTaskDescriptionChange(lastContentRef.current.text);
+                  }
+                },
+              } : undefined,
+            });
           },
         });
         console.log("Task acknowledged:", response);
@@ -524,6 +554,20 @@ function DashboardComponent() {
       console.log("Task created:", taskId);
     } catch (error) {
       console.error("Error starting task:", error);
+      // Show error toast with restore button
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      toast.error(`Failed to start task: ${errorMessage}`, {
+        duration: 10000,
+        action: lastContentRef.current ? {
+          label: "Restore text",
+          onClick: () => {
+            if (lastContentRef.current) {
+              setTaskDescription(lastContentRef.current.text);
+              handleTaskDescriptionChange(lastContentRef.current.text);
+            }
+          },
+        } : undefined,
+      });
     }
   }, [
     selectedProject,

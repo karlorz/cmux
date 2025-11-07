@@ -27,32 +27,48 @@ export const evaluateAndCrownWinner = authMutation({
         throw new Error("Unauthorized");
       }
 
-      // Get all completed runs for this task
+      // Get all completed or failed runs for this task
+      // We want to evaluate even if some tasks failed, so we consider both
       const taskRuns = await ctx.db
         .query("taskRuns")
         .withIndex("by_task", (q) => q.eq("taskId", args.taskId))
         .filter((q) => q.eq(q.field("teamId"), teamId))
         .filter((q) => q.eq(q.field("userId"), userId))
-        .filter((q) => q.eq(q.field("status"), "completed"))
+        .filter((q) =>
+          q.or(
+            q.eq(q.field("status"), "completed"),
+            q.eq(q.field("status"), "failed")
+          )
+        )
         .collect();
 
+      // Separate completed and failed runs for logging
+      const completedRuns = taskRuns.filter((r) => r.status === "completed");
+      const failedRuns = taskRuns.filter((r) => r.status === "failed");
+
       console.log(
-        `[Crown] Found ${taskRuns.length} completed runs for task ${args.taskId}`
+        `[Crown] Found ${completedRuns.length} completed and ${failedRuns.length} failed runs for task ${args.taskId}`
       );
 
-      // If only one model or less, crown it by default
-      if (taskRuns.length <= 1) {
-        if (taskRuns.length === 1) {
-          await ctx.db.patch(taskRuns[0]._id, {
-            isCrowned: true,
-            crownReason: "Only one model completed the task",
-          });
-        }
-        return taskRuns[0]?._id || null;
+      // If only one completed run (even if others failed), crown it by default
+      if (completedRuns.length === 1) {
+        await ctx.db.patch(completedRuns[0]._id, {
+          isCrowned: true,
+          crownReason: failedRuns.length > 0
+            ? `Only one model completed successfully (${failedRuns.length} failed)`
+            : "Only one model completed the task",
+        });
+        return completedRuns[0]._id;
       }
 
-      // Only evaluate if 2+ models completed
-      if (taskRuns.length < 2) {
+      // If no completed runs (all failed), don't crown anyone
+      if (completedRuns.length === 0) {
+        console.log(`[Crown] No completed runs for task ${args.taskId}, not crowning anyone`);
+        return null;
+      }
+
+      // Only evaluate if 2+ models completed successfully
+      if (completedRuns.length < 2) {
         return null;
       }
 

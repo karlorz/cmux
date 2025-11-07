@@ -68,6 +68,7 @@ export async function spawnAgent(
   },
   teamSlugOrId: string
 ): Promise<AgentSpawnResult> {
+  let taskRunId: Id<"taskRuns"> | undefined;
   try {
     // Capture the current auth token and header JSON from AsyncLocalStorage so we can
     // re-enter the auth context inside async event handlers later.
@@ -84,7 +85,7 @@ export async function spawnAgent(
     );
 
     // Create a task run for this specific agent
-    const { taskRunId, jwt: taskRunJwt } = await getConvex().mutation(
+    const result = await getConvex().mutation(
       api.taskRuns.create,
       {
         teamSlugOrId,
@@ -95,6 +96,10 @@ export async function spawnAgent(
         environmentId: options.environmentId,
       }
     );
+    taskRunId = result.taskRunId;
+    const taskRunJwt = result.jwt;
+    // Store in a const to help TypeScript understand it's not undefined
+    const definiteTaskRunId: Id<"taskRuns"> = taskRunId;
 
     // Fetch the task to get image storage IDs
     const task = await getConvex().query(api.tasks.getById, {
@@ -365,7 +370,7 @@ export async function spawnAgent(
       // For remote sandboxes (Morph-backed via www API)
       vscodeInstance = new CmuxVSCodeInstance({
         agentName: agent.name,
-        taskRunId,
+        taskRunId: definiteTaskRunId,
         taskId,
         theme: options.theme,
         teamSlugOrId,
@@ -414,7 +419,7 @@ export async function spawnAgent(
       vscodeInstance = new DockerVSCodeInstance({
         workspacePath: worktreePath,
         agentName: agent.name,
-        taskRunId,
+        taskRunId: definiteTaskRunId,
         taskId,
         theme: options.theme,
         teamSlugOrId,
@@ -425,7 +430,7 @@ export async function spawnAgent(
     await retryOnOptimisticConcurrency(() =>
       getConvex().mutation(api.taskRuns.updateWorktreePath, {
         teamSlugOrId,
-        id: taskRunId,
+        id: definiteTaskRunId,
         worktreePath: worktreePath,
       })
     );
@@ -488,7 +493,7 @@ export async function spawnAgent(
           retryOnOptimisticConcurrency(() =>
             getConvex().mutation(api.taskRuns.fail, {
               teamSlugOrId,
-              id: taskRunId,
+              id: definiteTaskRunId,
               errorMessage: data.errorMessage || "Terminal failed",
               // WorkerTerminalFailed does not include exitCode in schema; default to 1
               exitCode: 1,
@@ -497,7 +502,7 @@ export async function spawnAgent(
         );
 
         serverLogger.info(
-          `[AgentSpawner] Marked taskRun ${taskRunId} as failed`
+          `[AgentSpawner] Marked taskRun ${definiteTaskRunId} as failed`
         );
       } catch (error) {
         serverLogger.error(
@@ -536,7 +541,7 @@ export async function spawnAgent(
     await retryOnOptimisticConcurrency(() =>
       getConvex().mutation(api.taskRuns.updateVSCodeInstance, {
         teamSlugOrId,
-        id: taskRunId,
+        id: definiteTaskRunId,
         vscode: {
           provider: vscodeInfo.provider,
           containerName: vscodeInstance.getName(),
@@ -923,13 +928,30 @@ exit $EXIT_CODE
     };
   } catch (error) {
     serverLogger.error("Error spawning agent", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+    // Mark the taskRun as failed in Convex if it was created
+    if (taskRunId) {
+      try {
+        await getConvex().mutation(api.taskRuns.fail, {
+          teamSlugOrId,
+          id: taskRunId,
+          errorMessage: `Failed to spawn agent: ${errorMessage}`,
+          exitCode: 1,
+        });
+        serverLogger.info(`[AgentSpawner] Marked taskRun ${taskRunId} as failed in Convex`);
+      } catch (convexError) {
+        serverLogger.error(`[AgentSpawner] Failed to update taskRun status in Convex:`, convexError);
+      }
+    }
+
     return {
       agentName: agent.name,
       terminalId: "",
-      taskRunId: "",
+      taskRunId: taskRunId ?? "",
       worktreePath: "",
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: errorMessage,
     };
   }
 }
