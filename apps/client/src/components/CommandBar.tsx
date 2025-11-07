@@ -1,3 +1,4 @@
+import { env } from "@/client-env";
 import { GitHubIcon } from "@/components/icons/github";
 import { useTheme } from "@/components/theme/use-theme";
 import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
@@ -30,6 +31,7 @@ import {
   FolderPlus,
   GitPullRequest,
   Home,
+  Link as LinkIcon,
   LogOut,
   Monitor,
   Moon,
@@ -665,6 +667,106 @@ export function CommandBar({
   const reserveLocalWorkspace = useMutation(api.localWorkspaces.reserve);
   const createTask = useMutation(api.tasks.create);
   const failTaskRun = useMutation(api.taskRuns.fail);
+  const mintState = useMutation(api.github_app.mintInstallState);
+
+  // GitHub OAuth flow helpers
+  const installNewUrl = env.NEXT_PUBLIC_GITHUB_APP_SLUG
+    ? `https://github.com/apps/${env.NEXT_PUBLIC_GITHUB_APP_SLUG}/installations/new`
+    : null;
+
+  const watchPopupClosed = useCallback(
+    (
+      popup: Window | null,
+      callback: () => void,
+      intervalMs = 500,
+      timeoutMs = 300_000
+    ) => {
+      if (!popup) return;
+      const startTime = Date.now();
+      const interval = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(interval);
+          callback();
+        } else if (Date.now() - startTime > timeoutMs) {
+          clearInterval(interval);
+          try {
+            popup.close();
+          } catch {
+            // ignore
+          }
+          callback();
+        }
+      }, intervalMs);
+    },
+    []
+  );
+
+  const openCenteredPopup = useCallback(
+    (
+      url: string,
+      opts?: { name?: string; width?: number; height?: number },
+      onClosed?: () => void
+    ) => {
+      const width = opts?.width ?? 600;
+      const height = opts?.height ?? 700;
+      const left = window.screen.width / 2 - width / 2;
+      const top = window.screen.height / 2 - height / 2;
+      const features = `width=${width},height=${height},left=${left},top=${top},popup=1`;
+      const popup = window.open(url, opts?.name ?? "_blank", features);
+      if (onClosed) {
+        watchPopupClosed(popup, onClosed);
+      }
+      return popup;
+    },
+    [watchPopupClosed]
+  );
+
+  const handleLinkGitHubAccount = useCallback(async () => {
+    if (!installNewUrl) {
+      toast.error("GitHub App is not configured");
+      return;
+    }
+    try {
+      const { state } = await mintState({ teamSlugOrId });
+      const sep = installNewUrl.includes("?") ? "&" : "?";
+      const url = `${installNewUrl}${sep}state=${encodeURIComponent(state)}`;
+      openCenteredPopup(
+        url,
+        { name: "github-install" },
+        () => {
+          // Refetch repos after GitHub installation
+          void router.invalidate();
+        }
+      );
+      closeCommand();
+    } catch (err) {
+      console.error("Failed to start GitHub install:", err);
+      toast.error("Failed to start installation. Please try again.");
+    }
+  }, [
+    closeCommand,
+    installNewUrl,
+    mintState,
+    openCenteredPopup,
+    router,
+    teamSlugOrId,
+  ]);
+
+  const handleCreateEnvironment = useCallback(() => {
+    closeCommand();
+    void navigate({
+      to: "/$teamSlugOrId/environments/new",
+      params: { teamSlugOrId },
+      search: {
+        step: undefined,
+        selectedRepos: undefined,
+        connectionLogin: undefined,
+        repoSearch: undefined,
+        instanceId: undefined,
+        snapshotId: undefined,
+      },
+    });
+  }, [closeCommand, navigate, teamSlugOrId]);
 
   useEffect(() => {
     openRef.current = open;
@@ -2536,18 +2638,90 @@ export function CommandBar({
               }}
               className="flex-1 min-h-0 overflow-y-auto px-1 pt-1 pb-2 flex flex-col gap-2"
             >
-              <Command.Empty className="py-6 text-center text-sm text-neutral-500 dark:text-neutral-400">
-                {activePage === "teams"
-                  ? "No matching teams."
-                  : activePage === "local-workspaces"
-                    ? isLocalWorkspaceLoading
-                      ? "Loading repositories…"
-                      : "No matching repositories."
-                    : activePage === "cloud-workspaces"
-                      ? isCloudWorkspaceLoading
-                        ? "Loading workspaces…"
-                        : "No matching workspaces."
-                      : "No results found."}
+              <Command.Empty className="py-6 px-4">
+                {activePage === "teams" ? (
+                  <div className="text-center text-sm text-neutral-500 dark:text-neutral-400">
+                    No matching teams.
+                  </div>
+                ) : activePage === "local-workspaces" ? (
+                  isLocalWorkspaceLoading ? (
+                    <div className="text-center text-sm text-neutral-500 dark:text-neutral-400">
+                      Loading repositories…
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <button
+                        onClick={handleCreateEnvironment}
+                        className={clsx(
+                          baseCommandItemClassName,
+                          "w-full text-left"
+                        )}
+                      >
+                        <Server className="h-4 w-4 text-neutral-500" />
+                        <div className="flex min-w-0 flex-1 flex-col">
+                          <span className="truncate text-sm">
+                            Create environment
+                          </span>
+                        </div>
+                      </button>
+                      <button
+                        onClick={handleLinkGitHubAccount}
+                        className={clsx(
+                          baseCommandItemClassName,
+                          "w-full text-left"
+                        )}
+                      >
+                        <LinkIcon className="h-4 w-4 text-neutral-500" />
+                        <div className="flex min-w-0 flex-1 flex-col">
+                          <span className="truncate text-sm">
+                            Link GitHub account
+                          </span>
+                        </div>
+                      </button>
+                    </div>
+                  )
+                ) : activePage === "cloud-workspaces" ? (
+                  isCloudWorkspaceLoading ? (
+                    <div className="text-center text-sm text-neutral-500 dark:text-neutral-400">
+                      Loading workspaces…
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <button
+                        onClick={handleCreateEnvironment}
+                        className={clsx(
+                          baseCommandItemClassName,
+                          "w-full text-left"
+                        )}
+                      >
+                        <Server className="h-4 w-4 text-neutral-500" />
+                        <div className="flex min-w-0 flex-1 flex-col">
+                          <span className="truncate text-sm">
+                            Create environment
+                          </span>
+                        </div>
+                      </button>
+                      <button
+                        onClick={handleLinkGitHubAccount}
+                        className={clsx(
+                          baseCommandItemClassName,
+                          "w-full text-left"
+                        )}
+                      >
+                        <LinkIcon className="h-4 w-4 text-neutral-500" />
+                        <div className="flex min-w-0 flex-1 flex-col">
+                          <span className="truncate text-sm">
+                            Link GitHub account
+                          </span>
+                        </div>
+                      </button>
+                    </div>
+                  )
+                ) : (
+                  <div className="text-center text-sm text-neutral-500 dark:text-neutral-400">
+                    No results found.
+                  </div>
+                )}
               </Command.Empty>
 
               {activePage === "root" ? (
