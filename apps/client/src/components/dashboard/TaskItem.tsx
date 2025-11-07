@@ -11,8 +11,9 @@ import { useNavigate } from "@tanstack/react-router";
 import clsx from "clsx";
 import { useQuery as useConvexQuery, useMutation } from "convex/react";
 // Read team slug from path to avoid route type coupling
-import { Archive, ArchiveRestore, Check, Copy, Pin } from "lucide-react";
-import { memo, useCallback, useMemo } from "react";
+import { Archive, ArchiveRestore, Check, Copy, Pencil, Pin } from "lucide-react";
+import { memo, useCallback, useMemo, useState, useRef, type ChangeEvent, type KeyboardEvent } from "react";
+import { flushSync } from "react-dom";
 
 interface TaskItemProps {
   task: Doc<"tasks">;
@@ -27,6 +28,13 @@ export const TaskItem = memo(function TaskItem({
   const clipboard = useClipboard({ timeout: 2000 });
   const { archiveWithUndo, unarchive } = useArchiveTask(teamSlugOrId);
 
+  // Rename state
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(task.text);
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [isRenamePending, setIsRenamePending] = useState(false);
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
+
   // Query for task runs to find VSCode instances
   const taskRunsQuery = useConvexQuery(
     api.taskRuns.getByTask,
@@ -35,6 +43,9 @@ export const TaskItem = memo(function TaskItem({
 
   // Mutation for toggling keep-alive status
   const toggleKeepAlive = useMutation(api.taskRuns.toggleKeepAlive);
+
+  // Mutation for updating task
+  const updateTaskMutation = useMutation(api.tasks.update);
 
   // Find the latest task run with a VSCode instance
   const getLatestVSCodeInstance = useCallback(() => {
@@ -84,13 +95,105 @@ export const TaskItem = memo(function TaskItem({
     return null;
   }, [hasActiveVSCode, runWithVSCode]);
 
+  // Rename handlers
+  const handleStartRenaming = useCallback(() => {
+    flushSync(() => {
+      setRenameValue(task.text);
+      setRenameError(null);
+      setIsRenaming(true);
+    });
+    setTimeout(() => {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    }, 0);
+  }, [task.text]);
+
+  const handleRenameChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      setRenameValue(event.target.value);
+      if (renameError) {
+        setRenameError(null);
+      }
+    },
+    [renameError]
+  );
+
+  const handleRenameCancel = useCallback(() => {
+    setRenameValue(task.text);
+    setRenameError(null);
+    setIsRenaming(false);
+  }, [task.text]);
+
+  const handleRenameSubmit = useCallback(async () => {
+    if (isRenamePending) {
+      return;
+    }
+    const trimmed = renameValue.trim();
+    if (!trimmed) {
+      setRenameError("Task name is required.");
+      renameInputRef.current?.focus();
+      return;
+    }
+    const current = task.text.trim();
+    if (trimmed === current) {
+      setIsRenaming(false);
+      setRenameError(null);
+      return;
+    }
+    setIsRenamePending(true);
+    try {
+      await updateTaskMutation({
+        teamSlugOrId,
+        id: task._id,
+        text: trimmed,
+      });
+      setIsRenaming(false);
+      setRenameError(null);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to rename task.";
+      setRenameError(message);
+      renameInputRef.current?.focus();
+    } finally {
+      setIsRenamePending(false);
+    }
+  }, [
+    isRenamePending,
+    renameValue,
+    task._id,
+    task.text,
+    teamSlugOrId,
+    updateTaskMutation,
+  ]);
+
+  const handleRenameKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        void handleRenameSubmit();
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        handleRenameCancel();
+      }
+    },
+    [handleRenameCancel, handleRenameSubmit]
+  );
+
+  const handleRenameBlur = useCallback(() => {
+    void handleRenameSubmit();
+  }, [handleRenameSubmit]);
+
   const handleClick = useCallback(() => {
+    if (isRenaming) {
+      return;
+    }
     navigate({
       to: "/$teamSlugOrId/task/$taskId",
       params: { teamSlugOrId, taskId: task._id },
       search: { runId: undefined },
     });
-  }, [navigate, task._id, teamSlugOrId]);
+  }, [isRenaming, navigate, task._id, teamSlugOrId]);
 
   const handleCopy = useCallback(
     (e: React.MouseEvent) => {
@@ -149,6 +252,8 @@ export const TaskItem = memo(function TaskItem({
       <ContextMenu.Root>
         <ContextMenu.Trigger>
           <div
+            role="button"
+            tabIndex={0}
             className={clsx(
               "relative flex items-center gap-2.5 px-3 py-2 border rounded-lg transition-all cursor-default select-none",
               isOptimisticUpdate
@@ -168,8 +273,25 @@ export const TaskItem = memo(function TaskItem({
               )}
             />
             <div className="flex-1 min-w-0 flex items-center gap-2">
-              <span className="text-[14px] truncate min-w-0">{task.text}</span>
-              {(task.projectFullName ||
+              {isRenaming ? (
+                <input
+                  ref={renameInputRef}
+                  type="text"
+                  value={renameValue}
+                  onChange={handleRenameChange}
+                  onKeyDown={handleRenameKeyDown}
+                  onBlur={handleRenameBlur}
+                  disabled={isRenamePending}
+                  className={clsx(
+                    "flex-1 min-w-0 text-[14px] bg-transparent border-b border-blue-500 dark:border-blue-400 outline-none px-1 -mx-1",
+                    isRenamePending && "opacity-50 cursor-not-allowed"
+                  )}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <span className="text-[14px] truncate min-w-0">{task.text}</span>
+              )}
+              {!isRenaming && (task.projectFullName ||
                 (task.baseBranch && task.baseBranch !== "main")) && (
                   <span className="text-[11px] text-neutral-400 dark:text-neutral-500 flex-shrink-0 ml-auto mr-0">
                     {task.projectFullName && (
@@ -200,6 +322,14 @@ export const TaskItem = memo(function TaskItem({
             <ContextMenu.Popup className="origin-[var(--transform-origin)] rounded-md bg-white dark:bg-neutral-800 py-1 text-neutral-900 dark:text-neutral-100 shadow-lg shadow-gray-200 outline-1 outline-neutral-200 transition-[opacity] data-[ending-style]:opacity-0 dark:shadow-none dark:-outline-offset-1 dark:outline-neutral-700">
               <ContextMenu.Item
                 className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                onClick={handleStartRenaming}
+              >
+                <Pencil className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                <span>Rename Task</span>
+              </ContextMenu.Item>
+              <div className="my-1 h-px bg-neutral-200 dark:bg-neutral-700" />
+              <ContextMenu.Item
+                className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
                 onClick={handleCopyFromMenu}
               >
                 <Copy className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
@@ -226,6 +356,11 @@ export const TaskItem = memo(function TaskItem({
           </ContextMenu.Positioner>
         </ContextMenu.Portal>
       </ContextMenu.Root>
+      {renameError && (
+        <div className="mt-1 text-[11px] text-red-500 dark:text-red-400 px-3">
+          {renameError}
+        </div>
+      )}
       <div className="right-2 top-0 bottom-0 absolute py-2">
         <div className="flex gap-1">
           {/* Copy button */}
