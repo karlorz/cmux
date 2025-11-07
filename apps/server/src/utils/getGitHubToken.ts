@@ -1,59 +1,52 @@
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
 import {
   getCachedGitHubToken,
   authenticateWithGitHub,
   verifyGitHubToken,
+  setCachedGitHubToken,
+  clearCachedGitHubToken,
 } from "./githubAuth.js";
 import { serverLogger } from "./fileLogger.js";
 
-const execAsync = promisify(exec);
+function resolveEnvGitHubToken(): string | null {
+  const tokenFromEnv = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  if (tokenFromEnv && tokenFromEnv.trim().length > 0) {
+    return tokenFromEnv.trim();
+  }
+  return null;
+}
 
 /**
- * Get GitHub token with fallback to gh CLI if needed
- * Prioritizes in-memory session token to avoid keychain prompts
+ * Get GitHub token without touching host keychain helpers.
+ * Prioritizes cached/device-flow tokens, then environment variables.
  */
-export async function getGitHubTokenFromKeychain(): Promise<string | null> {
+export async function getGitHubToken(): Promise<string | null> {
   try {
-    // First, check if we have a valid cached token (no keychain prompt!)
     const cachedToken = getCachedGitHubToken();
     if (cachedToken) {
-      // Verify it's still valid
       const isValid = await verifyGitHubToken(cachedToken);
       if (isValid) {
         return cachedToken;
       }
-      serverLogger.info("Cached token is invalid, will try alternative auth");
+      serverLogger.info("Cached GitHub token is invalid, clearing cache");
+      clearCachedGitHubToken();
     }
 
-    // Fallback: Try gh CLI (but this will trigger keychain prompt)
-    // Only use this as a last resort or if user explicitly set up gh CLI
-    try {
-      const { stdout: ghToken } = await execAsync(
-        "bash -lc 'gh auth token 2>/dev/null'"
-      );
-      if (ghToken.trim()) {
-        serverLogger.info("Using token from gh CLI");
-        return ghToken.trim();
+    const envToken = resolveEnvGitHubToken();
+    if (envToken) {
+      const isValid = await verifyGitHubToken(envToken);
+      if (isValid) {
+        setCachedGitHubToken(envToken);
+        return envToken;
       }
-    } catch {
-      // gh not available or not authenticated
+      serverLogger.warn("Environment GitHub token failed verification");
     }
 
-    // No token available - user needs to authenticate
-    serverLogger.info("No GitHub token found. Please authenticate.");
+    serverLogger.info("No GitHub token found in cache or environment");
     return null;
-  } catch {
+  } catch (error) {
+    serverLogger.error("Failed to load GitHub token:", error);
     return null;
   }
-}
-
-/**
- * Get GitHub token, prompting for authentication if needed
- * This is a non-interactive version that returns null if no token exists
- */
-export async function getGitHubToken(): Promise<string | null> {
-  return getGitHubTokenFromKeychain();
 }
 
 /**
@@ -61,7 +54,7 @@ export async function getGitHubToken(): Promise<string | null> {
  * This version will trigger the authentication flow if no token exists
  */
 export async function ensureGitHubToken(): Promise<string | null> {
-  const existingToken = await getGitHubTokenFromKeychain();
+  const existingToken = await getGitHubToken();
   if (existingToken) {
     return existingToken;
   }
@@ -76,7 +69,7 @@ export async function getGitCredentialsFromHost(): Promise<{
   username?: string;
   password?: string;
 } | null> {
-  const token = await getGitHubTokenFromKeychain();
+  const token = await getGitHubToken();
 
   if (token) {
     // GitHub tokens use 'oauth' as username

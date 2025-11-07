@@ -47,7 +47,7 @@ import { getPRTitleFromTaskDescription } from "./utils/branchNameGenerator";
 import { getConvex } from "./utils/convexClient";
 import { ensureRunWorktreeAndBranch } from "./utils/ensureRunWorktree";
 import { serverLogger } from "./utils/fileLogger";
-import { getGitHubTokenFromKeychain } from "./utils/getGitHubToken";
+import { getGitHubToken } from "./utils/getGitHubToken";
 import {
   hasValidToken,
   startGitHubDeviceFlow,
@@ -1194,7 +1194,7 @@ export function setupSocketHandlers(
           return;
         }
 
-        const githubToken = await getGitHubTokenFromKeychain();
+        const githubToken = await getGitHubToken();
         if (!githubToken) {
           callback({
             success: false,
@@ -1307,7 +1307,7 @@ export function setupSocketHandlers(
         const { run, task, branchName, baseBranch } =
           await ensureRunWorktreeAndBranch(taskRunId, safeTeam);
 
-        const githubToken = await getGitHubTokenFromKeychain();
+        const githubToken = await getGitHubToken();
         if (!githubToken) {
           return callback({
             success: false,
@@ -1725,23 +1725,24 @@ export function setupSocketHandlers(
 
     socket.on("github-test-auth", async (callback) => {
       try {
-        // Run all commands in parallel
-        const [authStatus, whoami, home, ghConfig] = await Promise.all([
-          execWithEnv("gh auth status")
-            .then((r) => r.stdout)
-            .catch((e) => e.message),
-          execWithEnv("whoami").then((r) => r.stdout),
-          execWithEnv("echo $HOME").then((r) => r.stdout),
-          execWithEnv('ls -la ~/.config/gh/ || echo "No gh config"').then(
-            (r) => r.stdout
-          ),
+        // Check GitHub token using new auth system (no keychain access!)
+        const token = await getGitHubToken();
+        const hasToken = hasValidToken();
+
+        const authStatus = token
+          ? `GitHub token available (source: ${hasToken ? "session" : "environment"})`
+          : "No GitHub token configured";
+
+        const [whoami, home] = await Promise.all([
+          execWithEnv("whoami").then((r) => r.stdout).catch(() => "unknown"),
+          execWithEnv("echo $HOME").then((r) => r.stdout).catch(() => "unknown"),
         ]);
 
         callback({
           authStatus,
           whoami,
           home,
-          ghConfig,
+          ghConfig: "Using in-memory token (no gh CLI needed)",
           processEnv: {
             HOME: process.env.HOME,
             USER: process.env.USER,
@@ -1992,7 +1993,7 @@ Please address the issue mentioned in the comment above.`;
           return;
         }
 
-        const githubToken = await getGitHubTokenFromKeychain();
+        const githubToken = await getGitHubToken();
         if (!githubToken) {
           callback({
             success: false,
@@ -2141,7 +2142,7 @@ ${title}`;
     socket.on("github-auth-status", async (callback) => {
       try {
         const hasToken = hasValidToken();
-        const token = await getGitHubTokenFromKeychain();
+        const token = await getGitHubToken();
         callback({
           success: true,
           authenticated: hasToken || !!token,
