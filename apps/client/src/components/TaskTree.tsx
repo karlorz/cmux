@@ -331,6 +331,7 @@ function TaskTreeInner({
         id: run._id,
         label: getRunDisplayText(run),
         ordinal: run.agentOrdinal,
+        hasDuplicateAgentName: run.hasDuplicateAgentName,
         isArchived: Boolean(run.isArchived),
       })),
     [flattenedRuns]
@@ -889,7 +890,7 @@ function TaskTreeInner({
                                   <span className="truncate text-left">
                                     {run.label}
                                   </span>
-                                  {showRunNumbers ? (
+                                  {run.hasDuplicateAgentName ? (
                                     <span className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400 flex-shrink-0">
                                       {run.ordinal}
                                     </span>
@@ -1184,7 +1185,7 @@ function TaskRunTreeInner({
     return base;
   }, [run]);
   const runNumberSuffix =
-    showRunNumbers && run.agentOrdinal ? (
+    run.hasDuplicateAgentName && run.agentOrdinal ? (
       <span className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400 tabular-nums">
         {run.agentOrdinal}
       </span>
