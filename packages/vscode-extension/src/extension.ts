@@ -1,6 +1,6 @@
 import type { ClientToServerEvents, ServerToClientEvents } from "@cmux/shared";
 import * as http from "http";
-import { execFile, execSync } from "node:child_process";
+import { execSync } from "node:child_process";
 import { Server } from "socket.io";
 import { io, Socket } from "socket.io-client";
 import * as vscode from "vscode";
@@ -68,23 +68,6 @@ async function resolveDefaultBaseRef(repositoryPath: string): Promise<string> {
     // ignore and fall back
   }
   return "origin/main";
-}
-
-async function hasTmuxSessions(): Promise<boolean> {
-  return new Promise((resolve) => {
-    try {
-      execFile("tmux", ["list-sessions"], (error, stdout) => {
-        if (error) {
-          // tmux not installed or no server/sessions
-          resolve(false);
-          return;
-        }
-        resolve(stdout.trim().length > 0);
-      });
-    } catch {
-      resolve(false);
-    }
-  });
 }
 
 function tryExecGit(repoPath: string, cmd: string): string | null {
@@ -260,19 +243,6 @@ async function openMultiDiffEditor(
   }
 }
 
-async function waitForTmuxSessions(maxAttempts: number = 20, delayMs: number = 1000): Promise<boolean> {
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const hasSessions = await hasTmuxSessions();
-    if (hasSessions) {
-      log(`Tmux sessions found after ${attempt + 1} attempt(s)`);
-      return true;
-    }
-    log(`No tmux sessions yet (attempt ${attempt + 1}/${maxAttempts}), waiting ${delayMs}ms...`);
-    await new Promise(resolve => setTimeout(resolve, delayMs));
-  }
-  return false;
-}
-
 async function setupDefaultTerminal() {
   log("Setting up default terminal");
 
@@ -280,22 +250,6 @@ async function setupDefaultTerminal() {
   if (isSetupComplete) {
     log("Setup already complete, skipping");
     return;
-  }
-
-  // Wait for tmux sessions to exist (they may be created by orchestrator for cloud workspaces)
-  const hasSessions = await waitForTmuxSessions(20, 1000);
-  if (!hasSessions) {
-    log("No tmux sessions found after waiting; skipping terminal setup and attach");
-    return;
-  }
-
-  // if an existing editor is called "bash", early return
-  const activeEditors = vscode.window.visibleTextEditors;
-  for (const editor of activeEditors) {
-    if (editor.document.fileName === "bash") {
-      log("Bash editor already exists, skipping terminal setup");
-      return;
-    }
   }
 
   isSetupComplete = true; // Set this BEFORE creating UI elements to prevent race conditions
@@ -323,11 +277,20 @@ async function setupDefaultTerminal() {
   // Store terminal reference
   activeTerminals.set("default", terminal);
 
-  // Attach to default tmux session with a small delay to ensure it's ready
-  setTimeout(() => {
-    terminal.sendText(`tmux attach-session -t cmux`);
-    log("Attached to default tmux session");
-  }, 500); // 500ms delay to ensure tmux session is ready
+  const attachScript = `
+SESSION_NAME="cmux"
+if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+  echo "[cmux] Waiting for tmux session '$SESSION_NAME'..."
+  while ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; do
+    sleep 1
+  done
+fi
+tmux attach-session -t "$SESSION_NAME"
+`.trim();
+
+  // Attach to default tmux session; if it's not ready yet we'll patiently wait inside the shell
+  terminal.sendText(attachScript, true);
+  log("Queued tmux attach command with wait-until-ready guard");
 
   log("Created terminal successfully");
 
