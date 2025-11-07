@@ -52,6 +52,8 @@ export interface FileDiffHeaderProps {
   className?: string;
 }
 
+const CUSTOM_TOP_CLASS_PATTERN = /(^|[\s:![\]])-?top-/;
+
 export function FileDiffHeader({
   filePath,
   oldPath,
@@ -62,11 +64,15 @@ export function FileDiffHeader({
   onToggle,
   className,
 }: FileDiffHeaderProps) {
+  const hasCustomStickyTop =
+    typeof className === "string" && CUSTOM_TOP_CLASS_PATTERN.test(className);
+
   return (
     <button
       onClick={onToggle}
       className={cn(
         "w-full pl-3 pr-2.5 py-1.5 flex items-center hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors text-left group pt-1 bg-white dark:bg-neutral-900 border-y border-neutral-200 dark:border-neutral-800 sticky z-[var(--z-sticky-low)]",
+        hasCustomStickyTop ? null : "top-0",
         className,
       )}
     >
