@@ -63,6 +63,15 @@ export function SidebarPullRequestList({
           setExpanded={setExpanded}
         />
       ))}
+      <li className="rounded-md select-none">
+        <Link
+          to="/$teamSlugOrId/prs"
+          params={{ teamSlugOrId }}
+          className="group block px-2 py-1.5 text-xs text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/45 dark:hover:bg-neutral-800/45 rounded-md transition-colors"
+        >
+          View all PRs
+        </Link>
+      </li>
     </ul>
   );
 }
