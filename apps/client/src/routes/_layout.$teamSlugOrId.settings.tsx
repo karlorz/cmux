@@ -12,8 +12,66 @@ import { Switch } from "@heroui/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useConvex } from "convex/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+
+type LocalEnvVarEntry = {
+  id: string;
+  key: string;
+  value: string;
+};
+
+type LocalSetupCommandEntry = {
+  id: string;
+  command: string;
+};
+
+const ENV_KEY_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+const generateLocalId = () => {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return Math.random().toString(36).slice(2);
+};
+
+const createEnvVarEntry = (): LocalEnvVarEntry => ({
+  id: generateLocalId(),
+  key: "",
+  value: "",
+});
+
+const createSetupCommandEntry = (): LocalSetupCommandEntry => ({
+  id: generateLocalId(),
+  command: "",
+});
+
+const normalizeEnvVarPayload = (entries: LocalEnvVarEntry[]) =>
+  entries
+    .filter((entry) => entry.key.trim().length > 0)
+    .map((entry) => ({
+      id: entry.id,
+      key: entry.key.trim(),
+      value: entry.value,
+    }));
+
+const normalizeSetupCommandPayload = (
+  entries: LocalSetupCommandEntry[]
+) =>
+  entries
+    .map((entry) => ({
+      id: entry.id,
+      command: entry.command.trim(),
+    }))
+    .filter((entry) => entry.command.length > 0);
+
+const envVarsForComparison = (entries: LocalEnvVarEntry[]) =>
+  normalizeEnvVarPayload(entries).map(({ key, value }) => ({ key, value }));
+
+const setupCommandsForComparison = (
+  entries: LocalSetupCommandEntry[]
+) =>
+  normalizeSetupCommandPayload(entries).map(({ command }) => ({ command }));
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/settings")({
   component: SettingsComponent,
@@ -59,6 +117,17 @@ function SettingsComponent() {
   } | null>(null);
   const [originalContainerSettingsData, setOriginalContainerSettingsData] =
     useState<typeof containerSettingsData>(null);
+  const [localEnvVars, setLocalEnvVars] = useState<LocalEnvVarEntry[]>([
+    createEnvVarEntry(),
+  ]);
+  const [originalLocalEnvVars, setOriginalLocalEnvVars] = useState<
+    LocalEnvVarEntry[]
+  >([]);
+  const [localSetupCommands, setLocalSetupCommands] = useState<
+    LocalSetupCommandEntry[]
+  >([createSetupCommandEntry()]);
+  const [originalLocalSetupCommands, setOriginalLocalSetupCommands] =
+    useState<LocalSetupCommandEntry[]>([]);
 
   // Get all required API keys from agent configs
   const apiKeys = Array.from(
@@ -145,8 +214,103 @@ function SettingsComponent() {
       const effective = enabled === undefined ? false : Boolean(enabled);
       setAutoPrEnabled(effective);
       setOriginalAutoPrEnabled(effective);
+      const storedEnv =
+        workspaceSettings?.localEnvVars?.map((entry) => ({
+          id: entry.id ?? generateLocalId(),
+          key: entry.key ?? "",
+          value: entry.value ?? "",
+        })) ?? [];
+      setLocalEnvVars(
+        storedEnv.length > 0 ? storedEnv : [createEnvVarEntry()]
+      );
+      setOriginalLocalEnvVars(normalizeEnvVarPayload(storedEnv));
+      const storedCommands =
+        workspaceSettings?.localSetupCommands?.map((entry) => ({
+          id: entry.id ?? generateLocalId(),
+          command: entry.command ?? "",
+        })) ?? [];
+      setLocalSetupCommands(
+        storedCommands.length > 0
+          ? storedCommands
+          : [createSetupCommandEntry()]
+      );
+      setOriginalLocalSetupCommands(
+        normalizeSetupCommandPayload(storedCommands)
+      );
     }
   }, [workspaceSettings]);
+
+  const duplicateEnvKeys = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const entry of localEnvVars) {
+      const trimmed = entry.key.trim();
+      if (!trimmed) continue;
+      counts.set(trimmed, (counts.get(trimmed) ?? 0) + 1);
+    }
+    return new Set(
+      Array.from(counts.entries())
+        .filter(([, count]) => count > 1)
+        .map(([key]) => key)
+    );
+  }, [localEnvVars]);
+
+  const getEnvVarError = useCallback(
+    (entry: LocalEnvVarEntry) => {
+      const trimmed = entry.key.trim();
+      if (!trimmed) {
+        return "";
+      }
+      if (!ENV_KEY_REGEX.test(trimmed)) {
+        return "Use letters, numbers, and underscores; start with a letter or underscore.";
+      }
+      if (duplicateEnvKeys.has(trimmed)) {
+        return "Duplicate key";
+      }
+      return "";
+    },
+    [duplicateEnvKeys]
+  );
+
+  const handleEnvVarChange = useCallback(
+    (id: string, field: "key" | "value", value: string) => {
+      setLocalEnvVars((prev) =>
+        prev.map((entry) =>
+          entry.id === id ? { ...entry, [field]: value } : entry
+        )
+      );
+    },
+    []
+  );
+
+  const handleRemoveEnvVar = useCallback((id: string) => {
+    setLocalEnvVars((prev) => {
+      const filtered = prev.filter((entry) => entry.id !== id);
+      return filtered.length > 0 ? filtered : [createEnvVarEntry()];
+    });
+  }, []);
+
+  const handleAddEnvVar = useCallback(() => {
+    setLocalEnvVars((prev) => [...prev, createEnvVarEntry()]);
+  }, []);
+
+  const handleCommandChange = useCallback((id: string, value: string) => {
+    setLocalSetupCommands((prev) =>
+      prev.map((entry) =>
+        entry.id === id ? { ...entry, command: value } : entry
+      )
+    );
+  }, []);
+
+  const handleRemoveCommand = useCallback((id: string) => {
+    setLocalSetupCommands((prev) => {
+      const filtered = prev.filter((entry) => entry.id !== id);
+      return filtered.length > 0 ? filtered : [createSetupCommandEntry()];
+    });
+  }, []);
+
+  const handleAddCommand = useCallback(() => {
+    setLocalSetupCommands((prev) => [...prev, createSetupCommandEntry()]);
+  }, []);
 
   // Track save button visibility
   // Footer-based save button; no visibility tracking needed
@@ -222,6 +386,14 @@ function SettingsComponent() {
     [originalContainerSettingsData]
   );
 
+  const envVarsHaveChanges = () =>
+    JSON.stringify(envVarsForComparison(localEnvVars)) !==
+    JSON.stringify(envVarsForComparison(originalLocalEnvVars));
+
+  const setupCommandsHaveChanges = () =>
+    JSON.stringify(setupCommandsForComparison(localSetupCommands)) !==
+    JSON.stringify(setupCommandsForComparison(originalLocalSetupCommands));
+
   // Check if there are any changes
   const hasChanges = () => {
     // Check worktree path changes
@@ -248,38 +420,99 @@ function SettingsComponent() {
       worktreePathChanged ||
       autoPrChanged ||
       apiKeysChanged ||
-      containerSettingsChanged
+      containerSettingsChanged ||
+      envVarsHaveChanges() ||
+      setupCommandsHaveChanges()
     );
   };
 
   const saveApiKeys = async () => {
+    const hasEnvErrors = localEnvVars.some((entry) =>
+      Boolean(getEnvVarError(entry))
+    );
+    if (hasEnvErrors) {
+      toast.error("Resolve environment variable errors before saving.");
+      return;
+    }
+
     setIsSaving(true);
 
     try {
       let savedCount = 0;
       let deletedCount = 0;
 
-      // Save worktree path / auto PR if changed
-      if (
-        worktreePath !== originalWorktreePath ||
-        autoPrEnabled !== originalAutoPrEnabled
-      ) {
-        await convex.mutation(api.workspaceSettings.update, {
-          teamSlugOrId,
-          worktreePath: worktreePath || undefined,
-          autoPrEnabled,
-        });
-        setOriginalWorktreePath(worktreePath);
-        setOriginalAutoPrEnabled(autoPrEnabled);
+      const envPayload = normalizeEnvVarPayload(localEnvVars);
+      const setupCommandPayload =
+        normalizeSetupCommandPayload(localSetupCommands);
+      const worktreePathChanged = worktreePath !== originalWorktreePath;
+      const autoPrChanged = autoPrEnabled !== originalAutoPrEnabled;
+      const envChanged = envVarsHaveChanges();
+      const commandsChanged = setupCommandsHaveChanges();
+      const containerSettingsChanged = Boolean(
+        containerSettingsData &&
+          originalContainerSettingsData &&
+          JSON.stringify(containerSettingsData) !==
+            JSON.stringify(originalContainerSettingsData)
+      );
+
+      const workspaceSettingsUpdates: {
+        teamSlugOrId: string;
+        worktreePath?: string;
+        autoPrEnabled?: boolean;
+        localEnvVars?: ReturnType<typeof normalizeEnvVarPayload>;
+        localSetupCommands?: ReturnType<typeof normalizeSetupCommandPayload>;
+      } = { teamSlugOrId };
+      const workspaceParts: string[] = [];
+      let shouldUpdateWorkspaceSettings = false;
+
+      if (worktreePathChanged) {
+        workspaceSettingsUpdates.worktreePath = worktreePath || undefined;
+        workspaceParts.push("worktree path");
+        shouldUpdateWorkspaceSettings = true;
+      }
+      if (autoPrChanged) {
+        workspaceSettingsUpdates.autoPrEnabled = autoPrEnabled;
+        workspaceParts.push("auto PR");
+        shouldUpdateWorkspaceSettings = true;
+      }
+      if (envChanged) {
+        workspaceSettingsUpdates.localEnvVars = envPayload;
+        workspaceParts.push("local env vars");
+        shouldUpdateWorkspaceSettings = true;
+      }
+      if (commandsChanged) {
+        workspaceSettingsUpdates.localSetupCommands = setupCommandPayload;
+        workspaceParts.push("setup commands");
+        shouldUpdateWorkspaceSettings = true;
       }
 
-      // Save container settings if changed
-      if (
-        containerSettingsData &&
-        originalContainerSettingsData &&
-        JSON.stringify(containerSettingsData) !==
-          JSON.stringify(originalContainerSettingsData)
-      ) {
+      if (shouldUpdateWorkspaceSettings) {
+        await convex.mutation(api.workspaceSettings.update, {
+          ...workspaceSettingsUpdates,
+        });
+        if (worktreePathChanged) {
+          setOriginalWorktreePath(worktreePath);
+        }
+        if (autoPrChanged) {
+          setOriginalAutoPrEnabled(autoPrEnabled);
+        }
+        if (envChanged) {
+          setOriginalLocalEnvVars(envPayload);
+          setLocalEnvVars(
+            envPayload.length > 0 ? envPayload : [createEnvVarEntry()]
+          );
+        }
+        if (commandsChanged) {
+          setOriginalLocalSetupCommands(setupCommandPayload);
+          setLocalSetupCommands(
+            setupCommandPayload.length > 0
+              ? setupCommandPayload
+              : [createSetupCommandEntry()]
+          );
+        }
+      }
+
+      if (containerSettingsChanged && containerSettingsData) {
         await convex.mutation(api.containerSettings.update, {
           teamSlugOrId,
           ...containerSettingsData,
@@ -291,10 +524,8 @@ function SettingsComponent() {
         const value = apiKeyValues[key.envVar] || "";
         const originalValue = originalApiKeyValues[key.envVar] || "";
 
-        // Only save if the value has changed
         if (value !== originalValue) {
           if (value.trim()) {
-            // Save or update the key
             await saveApiKeyMutation.mutateAsync({
               envVar: key.envVar,
               value: value.trim(),
@@ -303,7 +534,6 @@ function SettingsComponent() {
             });
             savedCount++;
           } else if (originalValue) {
-            // Delete the key if it was cleared
             await convex.mutation(api.apiKeys.remove, {
               teamSlugOrId,
               envVar: key.envVar,
@@ -313,29 +543,33 @@ function SettingsComponent() {
         }
       }
 
-      // Update original values to reflect saved state
       setOriginalApiKeyValues(apiKeyValues);
-
-      // After successful save, hide all API key inputs
       setShowKeys({});
 
-      if (savedCount > 0 || deletedCount > 0) {
-        const actions = [];
-        if (savedCount > 0) {
-          actions.push(`saved ${savedCount} key${savedCount > 1 ? "s" : ""}`);
-        }
-        if (deletedCount > 0) {
-          actions.push(
-            `removed ${deletedCount} key${deletedCount > 1 ? "s" : ""}`
-          );
-        }
-        toast.success(`Successfully ${actions.join(" and ")}`);
+      const updates: string[] = [];
+      if (workspaceParts.length > 0) {
+        updates.push(`updated ${workspaceParts.join(", ")}`);
+      }
+      if (containerSettingsChanged) {
+        updates.push("updated container lifecycle settings");
+      }
+      if (savedCount > 0) {
+        updates.push(`saved ${savedCount} key${savedCount > 1 ? "s" : ""}`);
+      }
+      if (deletedCount > 0) {
+        updates.push(
+          `removed ${deletedCount} key${deletedCount > 1 ? "s" : ""}`
+        );
+      }
+
+      if (updates.length > 0) {
+        toast.success(`Successfully ${updates.join(" and ")}`);
       } else {
         toast.info("No changes to save");
       }
     } catch (error) {
-      toast.error("Failed to save API keys. Please try again.");
-      console.error("Error saving API keys:", error);
+      toast.error("Failed to save settings. Please try again.");
+      console.error("Error saving settings:", error);
     } finally {
       setIsSaving(false);
     }
@@ -673,6 +907,201 @@ function SettingsComponent() {
                   <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">
                     Default location: ~/cmux
                   </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Local Workspace Bootstrap */}
+            <div className="bg-white dark:bg-neutral-950 rounded-lg border border-neutral-200 dark:border-neutral-800">
+              <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
+                <h2 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                  Local Workspace Bootstrap
+                </h2>
+              </div>
+              <div className="p-4 space-y-6">
+                <div>
+                  <p className="text-sm text-neutral-700 dark:text-neutral-300">
+                    Automatically set up every local workspace with the
+                    environment variables and commands you rely on.
+                  </p>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                    Variables are appended to
+                    <code className="font-mono text-xs text-neutral-800 dark:text-neutral-200">
+                      .env.local
+                    </code>
+                    and made available to the setup commands. Output from each
+                    command is written to
+                    <code className="font-mono text-xs text-neutral-800 dark:text-neutral-200">
+                      .cmux/setup.log
+                    </code>
+                    .
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                      Environment Variables
+                    </h3>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                      Provide KEY=VALUE pairs to inject into every workspace's
+                      <code className="font-mono text-xs mx-1 text-neutral-800 dark:text-neutral-200">
+                        .env.local
+                      </code>
+                      file.
+                    </p>
+                  </div>
+                  <div className="space-y-3">
+                    {localEnvVars.map((entry, index) => {
+                      const error = getEnvVarError(entry);
+                      return (
+                        <div
+                          key={entry.id}
+                          className="rounded-lg border border-neutral-200 dark:border-neutral-800 p-3 space-y-3"
+                        >
+                          <div className="flex flex-col gap-3 md:flex-row">
+                            <div className="flex-1">
+                              <label
+                                htmlFor={`env-key-${entry.id}`}
+                                className="block text-xs font-medium text-neutral-600 dark:text-neutral-300 mb-1"
+                              >
+                                Key {localEnvVars.length > 1 ? index + 1 : ""}
+                              </label>
+                              <input
+                                id={`env-key-${entry.id}`}
+                                type="text"
+                                autoComplete="off"
+                                value={entry.key}
+                                onChange={(e) =>
+                                  handleEnvVarChange(
+                                    entry.id,
+                                    "key",
+                                    e.target.value
+                                  )
+                                }
+                                placeholder="NEXT_PUBLIC_API_URL"
+                                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 font-mono text-xs ${
+                                  error
+                                    ? "border-red-500"
+                                    : "border-neutral-300 dark:border-neutral-700"
+                                }`}
+                              />
+                              {error && (
+                                <p className="text-xs text-red-500 dark:text-red-400 mt-1">
+                                  {error}
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex-1">
+                              <label
+                                htmlFor={`env-value-${entry.id}`}
+                                className="block text-xs font-medium text-neutral-600 dark:text-neutral-300 mb-1"
+                              >
+                                Value
+                              </label>
+                              <input
+                                id={`env-value-${entry.id}`}
+                                type="text"
+                                autoComplete="off"
+                                value={entry.value}
+                                onChange={(e) =>
+                                  handleEnvVarChange(
+                                    entry.id,
+                                    "value",
+                                    e.target.value
+                                  )
+                                }
+                                placeholder="https://internal-api.local"
+                                className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">
+                            <span>
+                              Added to
+                              <code className="font-mono text-xs text-neutral-800 dark:text-neutral-200">
+                                .env.local
+                              </code>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveEnvVar(entry.id)}
+                              className="text-neutral-500 hover:text-red-500 dark:hover:text-red-400 font-medium"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddEnvVar}
+                    className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    + Add variable
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                      Setup Commands
+                    </h3>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                      Commands run sequentially after the repository is cloned.
+                      They inherit every environment variable above and execute
+                      from the workspace root.
+                    </p>
+                  </div>
+                  <div className="space-y-3">
+                    {localSetupCommands.map((entry, index) => (
+                      <div
+                        key={entry.id}
+                        className="rounded-lg border border-neutral-200 dark:border-neutral-800 p-3 space-y-2"
+                      >
+                        <label
+                          htmlFor={`setup-command-${entry.id}`}
+                          className="block text-xs font-medium text-neutral-600 dark:text-neutral-300"
+                        >
+                          Command {index + 1}
+                        </label>
+                        <textarea
+                          id={`setup-command-${entry.id}`}
+                          rows={2}
+                          value={entry.command}
+                          onChange={(e) =>
+                            handleCommandChange(entry.id, e.target.value)
+                          }
+                          placeholder="bun install"
+                          className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 font-mono text-xs"
+                        />
+                        <div className="flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">
+                          <span>
+                            Logs appended to
+                            <code className="font-mono text-xs text-neutral-800 dark:text-neutral-200">
+                              .cmux/setup.log
+                            </code>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveCommand(entry.id)}
+                            className="text-neutral-500 hover:text-red-500 dark:hover:text-red-400 font-medium"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddCommand}
+                    className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    + Add command
+                  </button>
                 </div>
               </div>
             </div>

@@ -62,6 +62,7 @@ import {
   waitForVSCodeServeWebBaseUrl,
 } from "./vscode/serveWeb";
 import { getProjectPaths } from "./workspace";
+import { applyLocalWorkspaceBootstrap } from "./localWorkspaceBootstrap";
 import {
   collectRepoFullNamesForRun,
   EMPTY_AGGREGATE,
@@ -894,6 +895,15 @@ export function setupSocketHandlers(
               "Could not set up file watching for workspace:",
               error
             );
+          }
+
+          if (taskId) {
+            void applyLocalWorkspaceBootstrap({
+              convex,
+              teamSlugOrId,
+              workspacePath: resolvedWorkspacePath,
+              taskId,
+            });
           }
         } catch (error) {
           serverLogger.error("Error creating local workspace:", error);

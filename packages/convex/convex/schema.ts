@@ -514,6 +514,23 @@ const convexSchema = defineSchema({
   workspaceSettings: defineTable({
     worktreePath: v.optional(v.string()), // Custom path for git worktrees
     autoPrEnabled: v.optional(v.boolean()), // Auto-create PR for crown winner (default: false)
+    localEnvVars: v.optional(
+      v.array(
+        v.object({
+          id: v.string(), // Client-generated identifier for stable editing
+          key: v.string(), // Env var name (e.g. NEXT_PUBLIC_API_URL)
+          value: v.string(), // Raw env var value
+        }),
+      ),
+    ),
+    localSetupCommands: v.optional(
+      v.array(
+        v.object({
+          id: v.string(), // Client-generated identifier for stable editing
+          command: v.string(), // Shell command executed post-clone
+        }),
+      ),
+    ),
     nextLocalWorkspaceSequence: v.optional(v.number()), // Counter for local workspace naming
     createdAt: v.number(),
     updatedAt: v.number(),
