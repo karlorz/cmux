@@ -259,7 +259,28 @@ export function initCmdK(opts: {
           return Boolean(input.control);
         })();
 
-        if (!isCmdK && !isSidebarToggle) return;
+        const isHistoryBack = (() => {
+          if (input.key !== "[") return false;
+          if (input.shift || input.alt) return false;
+          // Require both control and meta (Ctrl+Cmd+[)
+          return Boolean(input.control && input.meta);
+        })();
+
+        const isHistoryForward = (() => {
+          if (input.key !== "]") return false;
+          if (input.shift || input.alt) return false;
+          // Require both control and meta (Ctrl+Cmd+])
+          return Boolean(input.control && input.meta);
+        })();
+
+        const isHistoryView = (() => {
+          if (input.key.toLowerCase() !== "y") return false;
+          if (input.shift || input.alt) return false;
+          // Require both control and meta (Ctrl+Cmd+Y)
+          return Boolean(input.control && input.meta);
+        })();
+
+        if (!isCmdK && !isSidebarToggle && !isHistoryBack && !isHistoryForward && !isHistoryView) return;
 
         // Prevent default to avoid in-app conflicts and ensure single toggle
         e.preventDefault();
@@ -289,6 +310,69 @@ export function initCmdK(opts: {
             } catch (err) {
               opts.logger.warn("Failed to emit sidebar toggle shortcut", err);
               keyDebug("emit-sidebar-toggle-error", { err: String(err) });
+            }
+          }
+          return;
+        }
+
+        if (isHistoryBack) {
+          keyDebug("history-back-detected", {
+            sourceId: contents.id,
+            type: contents.getType?.(),
+          });
+          const targetWin = getTargetWindow();
+          if (targetWin && !targetWin.isDestroyed()) {
+            try {
+              targetWin.webContents.send("cmux:event:shortcut:history-back");
+              keyDebug("emit-history-back", {
+                to: targetWin.webContents.id,
+                from: contents.id,
+              });
+            } catch (err) {
+              opts.logger.warn("Failed to emit history back shortcut", err);
+              keyDebug("emit-history-back-error", { err: String(err) });
+            }
+          }
+          return;
+        }
+
+        if (isHistoryForward) {
+          keyDebug("history-forward-detected", {
+            sourceId: contents.id,
+            type: contents.getType?.(),
+          });
+          const targetWin = getTargetWindow();
+          if (targetWin && !targetWin.isDestroyed()) {
+            try {
+              targetWin.webContents.send("cmux:event:shortcut:history-forward");
+              keyDebug("emit-history-forward", {
+                to: targetWin.webContents.id,
+                from: contents.id,
+              });
+            } catch (err) {
+              opts.logger.warn("Failed to emit history forward shortcut", err);
+              keyDebug("emit-history-forward-error", { err: String(err) });
+            }
+          }
+          return;
+        }
+
+        if (isHistoryView) {
+          keyDebug("history-view-detected", {
+            sourceId: contents.id,
+            type: contents.getType?.(),
+          });
+          const targetWin = getTargetWindow();
+          if (targetWin && !targetWin.isDestroyed()) {
+            try {
+              targetWin.webContents.send("cmux:event:shortcut:history-view");
+              keyDebug("emit-history-view", {
+                to: targetWin.webContents.id,
+                from: contents.id,
+              });
+            } catch (err) {
+              opts.logger.warn("Failed to emit history view shortcut", err);
+              keyDebug("emit-history-view-error", { err: String(err) });
             }
           }
           return;

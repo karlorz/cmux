@@ -18,6 +18,7 @@ import CmuxLogo from "./logo/cmux-logo";
 import { SidebarNavLink } from "./sidebar/SidebarNavLink";
 import { SidebarPullRequestList } from "./sidebar/SidebarPullRequestList";
 import { SidebarSectionLink } from "./sidebar/SidebarSectionLink";
+import { HistoryNavigation } from "./sidebar/HistoryNavigation";
 
 interface SidebarProps {
   tasks: Doc<"tasks">[] | undefined;
@@ -237,6 +238,12 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
           <CmuxLogo height={32} />
         </Link>
         <div className="grow"></div>
+        <div
+          className="flex items-center gap-1 mr-2"
+          style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
+        >
+          <HistoryNavigation />
+        </div>
         <Link
           to="/$teamSlugOrId/dashboard"
           params={{ teamSlugOrId }}
