@@ -1,3 +1,4 @@
+import { env } from "@/client-env";
 import { GitHubIcon } from "@/components/icons/github";
 import { useTheme } from "@/components/theme/use-theme";
 import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
@@ -341,6 +342,78 @@ export function CommandBar({
     });
   }, []);
 
+  const watchPopupClosed = useCallback((win: Window | null, onClose?: () => void) => {
+    if (typeof window === "undefined") return;
+    if (!win || !onClose) return;
+    const timer = window.setInterval(() => {
+      try {
+        if (win.closed) {
+          window.clearInterval(timer);
+          onClose();
+        }
+      } catch {
+        // ignore cross-origin access errors
+      }
+    }, 600);
+  }, []);
+
+  const openCenteredPopup = useCallback(
+    (
+      url: string,
+      opts?: { name?: string; width?: number; height?: number },
+      onClose?: () => void
+    ): Window | null => {
+      if (typeof window === "undefined") return null;
+      if (isElectron) {
+        window.open(url, "_blank", "noopener,noreferrer");
+        return null;
+      }
+      const name = opts?.name ?? "cmux-popup";
+      const width = Math.floor(opts?.width ?? 980);
+      const height = Math.floor(opts?.height ?? 780);
+      const dualScreenLeft = window.screenLeft ?? window.screenX ?? 0;
+      const dualScreenTop = window.screenTop ?? window.screenY ?? 0;
+      const outerWidth = window.outerWidth || window.innerWidth || width;
+      const outerHeight = window.outerHeight || window.innerHeight || height;
+      const left = Math.max(0, dualScreenLeft + (outerWidth - width) / 2);
+      const top = Math.max(0, dualScreenTop + (outerHeight - height) / 2);
+      const features = [
+        `width=${width}`,
+        `height=${height}`,
+        `left=${Math.floor(left)}`,
+        `top=${Math.floor(top)}`,
+        "resizable=yes",
+        "scrollbars=yes",
+        "toolbar=no",
+        "location=no",
+        "status=no",
+        "menubar=no",
+      ].join(",");
+
+      const popup = window.open("about:blank", name, features);
+      if (popup) {
+        try {
+          (popup as Window & { opener: Window | null }).opener = null;
+        } catch {
+          // ignore if we cannot touch opener
+        }
+        try {
+          popup.location.href = url;
+        } catch {
+          window.open(url, "_blank");
+        }
+        popup.focus?.();
+        if (onClose) {
+          watchPopupClosed(popup, onClose);
+        }
+        return popup;
+      }
+      window.open(url, "_blank");
+      return null;
+    },
+    [watchPopupClosed]
+  );
+
   const captureFocusBeforeOpen = useCallback(() => {
     if (typeof document === "undefined") return;
     const active = document.activeElement;
@@ -665,6 +738,7 @@ export function CommandBar({
   const reserveLocalWorkspace = useMutation(api.localWorkspaces.reserve);
   const createTask = useMutation(api.tasks.create);
   const failTaskRun = useMutation(api.taskRuns.fail);
+  const mintGithubInstallState = useMutation(api.github_app.mintInstallState);
 
   useEffect(() => {
     openRef.current = open;
@@ -1515,6 +1589,52 @@ export function CommandBar({
     ]
   );
 
+  const handleCreateEnvironment = useCallback(() => {
+    clearCommandInput();
+    closeCommand();
+    navigate({
+      to: "/$teamSlugOrId/environments/new",
+      params: { teamSlugOrId },
+      search: { ...environmentSearchDefaults },
+    });
+  }, [clearCommandInput, closeCommand, navigate, teamSlugOrId]);
+
+  const handleGithubInstallPopupClosed = useCallback(() => {
+    router.options.context?.queryClient?.invalidateQueries();
+  }, [router]);
+
+  const handleLinkGithubAccount = useCallback(async () => {
+    clearCommandInput();
+    closeCommand();
+    if (!env.NEXT_PUBLIC_GITHUB_APP_SLUG) {
+      toast.error("GitHub integration is not configured.");
+      return;
+    }
+
+    try {
+      const slug = env.NEXT_PUBLIC_GITHUB_APP_SLUG;
+      const baseUrl = `https://github.com/apps/${slug}/installations/new`;
+      const { state } = await mintGithubInstallState({ teamSlugOrId });
+      const sep = baseUrl.includes("?") ? "&" : "?";
+      const url = `${baseUrl}${sep}state=${encodeURIComponent(state)}`;
+      openCenteredPopup(
+        url,
+        { name: "github-install" },
+        handleGithubInstallPopupClosed
+      );
+    } catch (error) {
+      console.error("Failed to start GitHub install:", error);
+      toast.error("Unable to connect GitHub right now. Please try again.");
+    }
+  }, [
+    clearCommandInput,
+    closeCommand,
+    handleGithubInstallPopupClosed,
+    mintGithubInstallState,
+    openCenteredPopup,
+    teamSlugOrId,
+  ]);
+
   const rootCommandEntries = useMemo<CommandListEntry[]>(() => {
     const baseEntries: CommandListEntry[] = [
       {
@@ -2004,6 +2124,73 @@ export function CommandBar({
     isCreatingCloudWorkspace,
   ]);
 
+  const canLinkGithubAccount = Boolean(env.NEXT_PUBLIC_GITHUB_APP_SLUG);
+
+  const buildWorkspaceFallbackEntries = useCallback(
+    (scope: "local-workspaces" | "cloud-workspaces"): CommandListEntry[] => [
+      {
+        value: `${scope}:create-environment`,
+        label: "Create environment",
+        keywords: ["create", "environment", "workspace"],
+        searchText: buildSearchText(
+          "Create environment",
+          ["create", "environment"],
+          [`${scope}:create-environment`]
+        ),
+        className: baseCommandItemClassName,
+        trackUsage: false,
+        execute: handleCreateEnvironment,
+        renderContent: () => (
+          <>
+            <Server className="h-4 w-4 text-neutral-500" />
+            <div className="flex min-w-0 flex-col">
+              <span className="text-sm">Create environment</span>
+              <span className="text-xs text-neutral-500">
+                Set up a reusable cloud workspace
+              </span>
+            </div>
+          </>
+        ),
+      },
+      {
+        value: `${scope}:link-github`,
+        label: "Link GitHub account",
+        keywords: ["github", "link", "connect"],
+        searchText: buildSearchText(
+          "Link GitHub account",
+          ["github", "link"],
+          [`${scope}:link-github`]
+        ),
+        className: baseCommandItemClassName,
+        trackUsage: false,
+        disabled: !canLinkGithubAccount,
+        execute: handleLinkGithubAccount,
+        renderContent: () => (
+          <>
+            <GitHubIcon className="h-4 w-4 text-neutral-500" />
+            <div className="flex min-w-0 flex-col">
+              <span className="text-sm">Link GitHub account</span>
+              <span className="text-xs text-neutral-500">
+                Connect repos to start workspaces
+              </span>
+            </div>
+          </>
+        ),
+      },
+    ],
+    [canLinkGithubAccount, handleCreateEnvironment, handleLinkGithubAccount]
+  );
+
+  const localWorkspaceFallbackEntries = useMemo(
+    () => buildWorkspaceFallbackEntries("local-workspaces"),
+    [buildWorkspaceFallbackEntries]
+  );
+
+  const cloudWorkspaceFallbackEntries = useMemo(
+    () => buildWorkspaceFallbackEntries("cloud-workspaces"),
+    [buildWorkspaceFallbackEntries]
+  );
+
   const {
     history: rootSuggestionHistory,
     record: recordRootUsage,
@@ -2186,6 +2373,33 @@ export function CommandBar({
       ].map((entry) => entry.value),
     [cloudWorkspaceCommandsToRender, cloudWorkspaceSuggestionsToRender]
   );
+
+  const hasLocalWorkspaceItems =
+    localWorkspaceSuggestionsToRender.length +
+      localWorkspaceCommandsToRender.length >
+    0;
+  const hasCloudWorkspaceItems =
+    cloudWorkspaceSuggestionsToRender.length +
+      cloudWorkspaceCommandsToRender.length >
+    0;
+
+  const showLocalWorkspaceFallback =
+    !isLocalWorkspaceLoading && !hasLocalWorkspaceItems;
+  const showCloudWorkspaceFallback =
+    !isCloudWorkspaceLoading && !hasCloudWorkspaceItems;
+
+  const emptyStateMessage = useMemo(() => {
+    if (activePage === "teams") {
+      return "No matching teams.";
+    }
+    if (activePage === "local-workspaces") {
+      return isLocalWorkspaceLoading ? "Loading repositories…" : null;
+    }
+    if (activePage === "cloud-workspaces") {
+      return isCloudWorkspaceLoading ? "Loading workspaces…" : null;
+    }
+    return "No results found.";
+  }, [activePage, isCloudWorkspaceLoading, isLocalWorkspaceLoading]);
 
   const shouldVirtualizeRoot =
     rootCommandsToRender.length > COMMAND_LIST_VIRTUALIZATION_THRESHOLD;
@@ -2537,17 +2751,7 @@ export function CommandBar({
               className="flex-1 min-h-0 overflow-y-auto px-1 pt-1 pb-2 flex flex-col gap-2"
             >
               <Command.Empty className="py-6 text-center text-sm text-neutral-500 dark:text-neutral-400">
-                {activePage === "teams"
-                  ? "No matching teams."
-                  : activePage === "local-workspaces"
-                    ? isLocalWorkspaceLoading
-                      ? "Loading repositories…"
-                      : "No matching repositories."
-                    : activePage === "cloud-workspaces"
-                      ? isCloudWorkspaceLoading
-                        ? "Loading workspaces…"
-                        : "No matching workspaces."
-                      : "No results found."}
+                {emptyStateMessage ?? ""}
               </Command.Empty>
 
               {activePage === "root" ? (
@@ -2613,6 +2817,13 @@ export function CommandBar({
                           )}
                         </Command.Group>
                       ) : null}
+                      {showLocalWorkspaceFallback ? (
+                        <Command.Group>
+                          {localWorkspaceFallbackEntries.map((entry) =>
+                            renderLocalWorkspaceCommandEntry(entry)
+                          )}
+                        </Command.Group>
+                      ) : null}
                     </>
                   )}
                 </>
@@ -2651,6 +2862,13 @@ export function CommandBar({
                             cloudWorkspaceCommandsToRender.map((entry) =>
                               renderCloudWorkspaceCommandEntry(entry)
                             )
+                          )}
+                        </Command.Group>
+                      ) : null}
+                      {showCloudWorkspaceFallback ? (
+                        <Command.Group>
+                          {cloudWorkspaceFallbackEntries.map((entry) =>
+                            renderCloudWorkspaceCommandEntry(entry)
                           )}
                         </Command.Group>
                       ) : null}
