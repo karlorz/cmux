@@ -15,6 +15,7 @@ import {
   type CSSProperties,
 } from "react";
 import CmuxLogo from "./logo/cmux-logo";
+import { SidebarHistoryNavigation } from "./sidebar/SidebarHistoryNavigation";
 import { SidebarNavLink } from "./sidebar/SidebarNavLink";
 import { SidebarPullRequestList } from "./sidebar/SidebarPullRequestList";
 import { SidebarSectionLink } from "./sidebar/SidebarSectionLink";
@@ -222,10 +223,11 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
       }}
     >
       <div
-        className={`h-[38px] flex items-center pr-1.5 shrink-0 ${isElectron ? "" : "pl-3"}`}
+        className={`h-[38px] flex items-center pr-1.5 shrink-0 gap-2 ${isElectron ? "" : "pl-3"}`}
         style={{ WebkitAppRegion: "drag" } as CSSProperties}
       >
         {isElectron && <div className="w-[80px]"></div>}
+        <SidebarHistoryNavigation />
         <Link
           to="/$teamSlugOrId/dashboard"
           params={{ teamSlugOrId }}
