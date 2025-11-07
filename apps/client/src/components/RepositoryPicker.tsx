@@ -1,6 +1,7 @@
 import { env } from "@/client-env";
 import { GitHubIcon } from "@/components/icons/github";
 import { GitLabIcon } from "@/components/icons/gitlab";
+import { isGitHubAuthError } from "@/lib/utils";
 import {
   Command,
   CommandEmpty,
@@ -267,6 +268,27 @@ export function RepositoryPicker({
           },
           onError: (error) => {
             console.error("Failed to setup instance:", error);
+
+            if (isGitHubAuthError(error)) {
+              const shouldConnect = confirm(
+                "GitHub account not connected.\n\n" +
+                "To use this feature, you need to connect your GitHub account. " +
+                "Would you like to connect now?"
+              );
+
+              if (shouldConnect) {
+                // Trigger the GitHub connection flow
+                // This will scroll to and focus on the connection section
+                const connectionSection = document.querySelector('[data-connection-section]');
+                if (connectionSection) {
+                  connectionSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+              }
+            } else {
+              // Generic error message for other errors
+              const errorMessage = error instanceof Error ? error.message : String(error);
+              alert(`Failed to setup instance: ${errorMessage}`);
+            }
           },
         }
       );
@@ -607,7 +629,7 @@ function RepositoryConnectionsSection({
   ]);
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" data-connection-section>
       <label className="block text-sm font-medium text-neutral-800 dark:text-neutral-200">
         Connection
       </label>

@@ -9,7 +9,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
+import { cn, isGitHubAuthError } from "@/lib/utils";
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
@@ -484,7 +484,26 @@ function EnvironmentDetailsPage() {
       error instanceof Error
         ? error.message
         : "Failed to launch snapshot environment";
-    toast.error(message);
+
+    if (isGitHubAuthError(error)) {
+      toast.error(
+        "GitHub account not connected. Please connect your GitHub account to continue.",
+        {
+          duration: 5000,
+          action: {
+            label: "Connect GitHub",
+            onClick: () => {
+              navigate({
+                to: "/$teamSlugOrId/settings",
+                params: { teamSlugOrId },
+              });
+            },
+          },
+        }
+      );
+    } else {
+      toast.error(message);
+    }
   };
 
   const handleLaunch = () => {
