@@ -401,7 +401,7 @@ function TaskRunTerminals() {
                       className={clsx(
                         "flex items-center gap-2 rounded-md pl-3 pr-8 py-1.5 text-xs font-medium transition-colors",
                         isActive
-                          ? "bg-neutral-900 text-neutral-50 dark:bg-neutral-100 dark:text-neutral-900"
+                          ? "bg-neutral-900 text-neutral-50 dark:bg-neutral-700 dark:text-white"
                           : "bg-transparent text-neutral-600 hover:bg-neutral-200/70 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800/60 dark:hover:text-neutral-100"
                       )}
                       title={id}
@@ -430,7 +430,7 @@ function TaskRunTerminals() {
                       className={clsx(
                         "absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 transition-colors disabled:cursor-not-allowed disabled:opacity-60",
                         isActive
-                          ? "text-neutral-100 hover:text-neutral-50 hover:bg-neutral-900/80 dark:text-neutral-700 dark:hover:text-neutral-900 dark:hover:bg-neutral-200"
+                          ? "text-neutral-100 hover:text-neutral-50 hover:bg-neutral-900/80 dark:text-white dark:hover:text-white dark:hover:bg-neutral-600"
                           : "text-neutral-500 hover:text-neutral-900 hover:bg-neutral-300 dark:text-neutral-400 dark:hover:text-neutral-100 dark:hover:bg-neutral-700"
                       )}
                       aria-label={`Close terminal ${index + 1}`}
@@ -464,7 +464,7 @@ function TaskRunTerminals() {
                   createTerminalMutation.mutate(undefined);
                 }}
                 disabled={!hasTerminalBackend || isCreatingTerminal}
-                className="flex items-center gap-1 rounded-md border border-neutral-200 px-2 py-1 text-xs font-medium text-neutral-600 transition hover:border-neutral-300 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-neutral-600 dark:hover:text-neutral-100"
+                className="flex items-center gap-1 rounded-md border border-neutral-200 px-2 py-1 text-xs font-medium text-neutral-600 transition hover:border-neutral-300 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-700 dark:text-white dark:hover:border-neutral-600 dark:hover:bg-neutral-600"
               >
                 {isCreatingTerminal ? (
                   "Creating…"

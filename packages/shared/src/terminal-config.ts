@@ -9,7 +9,7 @@ export const DEFAULT_TERMINAL_CONFIG: ITerminalOptions = {
   fontFamily:
     "Menlo, Monaco, operator mono,SFMono-Regular,Consolas,Liberation Mono,Menlo,monospace",
   theme: {
-    background: "#1e1e1e",
+    background: "#000000",
     foreground: "#d4d4d4",
     cursor: "#aeafad",
     black: "#000000",
