@@ -80,6 +80,8 @@ class PersistentIframeManager {
   private resizeObserver: ResizeObserver;
   private debugMode = false;
   private syncTimeouts = new Map<string, number>();
+  private lastFocusedElement: HTMLElement | null = null;
+  private focusRestoreFrame: number | null = null;
 
   constructor() {
     // Create resize observer for syncing positions
@@ -96,6 +98,7 @@ class PersistentIframeManager {
     });
 
     this.initializeContainer();
+    this.setupFocusCatch();
   }
 
   private initializeContainer() {
@@ -122,6 +125,14 @@ class PersistentIframeManager {
     } else {
       document.addEventListener("DOMContentLoaded", init);
     }
+  }
+
+  private setupFocusCatch() {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    document.addEventListener("focusin", this.handleFocusIn, true);
   }
 
   /**
@@ -174,6 +185,7 @@ class PersistentIframeManager {
 
     // Create iframe
     const iframe = document.createElement("iframe");
+    iframe.dataset.persistentIframeKey = key;
     iframe.style.cssText = `
       width: 100%;
       height: 100%;
@@ -529,6 +541,10 @@ class PersistentIframeManager {
       cancelAnimationFrame(rafId);
     }
     this.syncTimeouts.clear();
+    if (this.focusRestoreFrame !== null) {
+      cancelAnimationFrame(this.focusRestoreFrame);
+      this.focusRestoreFrame = null;
+    }
 
     for (const key of this.iframes.keys()) {
       this.removeIframe(key);
@@ -561,6 +577,142 @@ class PersistentIframeManager {
     entry.wrapper.style.width = `${viewportWidth}px`;
     entry.wrapper.style.height = `${viewportHeight}px`;
     entry.wrapper.style.transform = `translate(-${viewportWidth}px, -${viewportHeight}px)`;
+  }
+
+  private handleFocusIn = (event: FocusEvent) => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const target = event.target;
+    if (!target) {
+      return;
+    }
+
+    if (!(target instanceof HTMLIFrameElement)) {
+      if (target instanceof HTMLElement) {
+        this.lastFocusedElement = target;
+      }
+      return;
+    }
+
+    const match = this.findEntryForIframe(target);
+    if (!match) {
+      this.lastFocusedElement = target;
+      return;
+    }
+
+    const { key, entry } = match;
+
+    if (this.isEntryVisible(entry)) {
+      return;
+    }
+
+    const preferredFallback =
+      event.relatedTarget instanceof HTMLElement
+        ? (event.relatedTarget as HTMLElement)
+        : null;
+
+    const fallback = this.resolveFocusFallback(preferredFallback, target);
+
+    target.blur();
+
+    if (!fallback) {
+      return;
+    }
+
+    if (this.debugMode) {
+      console.log(
+        `[FocusCatch] Restoring focus because iframe ${key} is hidden`
+      );
+    }
+
+    this.restoreFocus(fallback);
+  };
+
+  private findEntryForIframe(target: HTMLIFrameElement):
+    | { key: string; entry: IframeEntry }
+    | null {
+    const iframeKey =
+      target.dataset?.persistentIframeKey ??
+      target.parentElement?.getAttribute("data-iframe-key");
+    if (!iframeKey) {
+      return null;
+    }
+    const entry = this.iframes.get(iframeKey);
+    if (!entry) {
+      return null;
+    }
+    return { key: iframeKey, entry };
+  }
+
+  private isEntryVisible(entry: IframeEntry): boolean {
+    if (!entry.isVisible) {
+      return false;
+    }
+
+    if (typeof window === "undefined") {
+      return true;
+    }
+
+    const style = window.getComputedStyle(entry.wrapper);
+    if (style.visibility === "hidden" || style.display === "none") {
+      return false;
+    }
+
+    const rect = entry.wrapper.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }
+
+  private resolveFocusFallback(
+    preferred: HTMLElement | null,
+    currentTarget: HTMLIFrameElement
+  ): HTMLElement | null {
+    if (typeof document === "undefined") {
+      return null;
+    }
+
+    if (
+      preferred &&
+      preferred !== currentTarget &&
+      document.contains(preferred)
+    ) {
+      return preferred;
+    }
+
+    if (
+      this.lastFocusedElement &&
+      this.lastFocusedElement !== currentTarget &&
+      !(this.lastFocusedElement instanceof HTMLIFrameElement) &&
+      document.contains(this.lastFocusedElement)
+    ) {
+      return this.lastFocusedElement;
+    }
+
+    return null;
+  }
+
+  private restoreFocus(element: HTMLElement): void {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    if (this.focusRestoreFrame !== null) {
+      cancelAnimationFrame(this.focusRestoreFrame);
+    }
+
+    this.focusRestoreFrame = requestAnimationFrame(() => {
+      this.focusRestoreFrame = null;
+      if (!document.contains(element)) {
+        return;
+      }
+
+      try {
+        element.focus({ preventScroll: true });
+      } catch {
+        element.focus();
+      }
+    });
   }
 }
 
