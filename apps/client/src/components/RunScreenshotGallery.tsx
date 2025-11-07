@@ -197,65 +197,67 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
             onOpenChange={(open) => !open && closeSlideshow()}
           >
             <Dialog.Portal>
-              <Dialog.Overlay className="fixed inset-0 bg-neutral-950/70 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in data-[state=closed]:fade-out" />
-              <Dialog.Content className="fixed inset-0 flex items-center justify-center p-6 focus:outline-none">
-                <div className="relative flex w-full max-w-5xl flex-col gap-3 rounded-2xl border border-neutral-200 bg-white/95 p-3 shadow-2xl backdrop-blur-md focus:outline-none dark:border-neutral-800 dark:bg-neutral-950/90 sm:p-5">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
-                        {activeOverallIndex !== null
-                          ? `${activeOverallIndex}. `
-                          : ""}
-                        {currentEntry.image.fileName ?? "Screenshot"}
-                      </Dialog.Title>
-                      <Dialog.Description className="text-xs text-neutral-600 dark:text-neutral-400">
-                        Image {currentEntry.indexInSet + 1} of {currentEntry.set.images.length}
-                        <span className="px-1 text-neutral-400 dark:text-neutral-600">•</span>
-                        {formatDistanceToNow(new Date(currentEntry.set.capturedAt), {
-                          addSuffix: true,
-                        })}
-                      </Dialog.Description>
-                    </div>
-                    <Dialog.Close asChild>
-                      <button
-                        type="button"
-                        onClick={closeSlideshow}
-                        className="p-1 text-neutral-600 transition hover:text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 dark:text-neutral-300 dark:hover:text-neutral-100"
-                        aria-label="Close slideshow"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </Dialog.Close>
+              <Dialog.Overlay className="fixed inset-0 bg-neutral-950/70 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in data-[state=closed]:fade-out" />
+              <Dialog.Content
+                className="fixed left-1/2 top-1/2 z-50 flex w-[min(1400px,95vw)] max-h-[90vh] -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-3xl border border-neutral-200 bg-white p-4 shadow-2xl focus:outline-none dark:border-neutral-800 dark:bg-neutral-950 sm:p-6"
+                onPointerDownOutside={(event) => {
+                  event.preventDefault();
+                  closeSlideshow();
+                }}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
+                      {activeOverallIndex !== null ? `${activeOverallIndex}. ` : ""}
+                      {currentEntry.image.fileName ?? "Screenshot"}
+                    </Dialog.Title>
+                    <Dialog.Description className="text-xs text-neutral-600 dark:text-neutral-400">
+                      Image {currentEntry.indexInSet + 1} of {currentEntry.set.images.length}
+                      <span className="px-1 text-neutral-400 dark:text-neutral-600">•</span>
+                      {formatDistanceToNow(new Date(currentEntry.set.capturedAt), {
+                        addSuffix: true,
+                      })}
+                    </Dialog.Description>
                   </div>
-                  <div className="flex flex-1 items-center justify-center gap-4">
-                    {flattenedImages.length > 1 ? (
-                      <button
-                        type="button"
-                        onClick={goPrev}
-                        className="p-1 text-neutral-600 transition hover:text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 dark:text-neutral-300 dark:hover:text-neutral-100"
-                        aria-label="Previous screenshot"
-                      >
-                        <ChevronLeft className="h-5 w-5" />
-                      </button>
-                    ) : null}
-                    <div className="relative flex max-h-[70vh] flex-1 items-center justify-center border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-800 dark:bg-neutral-900">
-                      <img
-                        src={currentEntry.image.url ?? undefined}
-                        alt={currentEntry.image.fileName ?? "Screenshot"}
-                        className="max-h-[calc(70vh-1.5rem)] max-w-full object-contain"
-                      />
-                    </div>
-                    {flattenedImages.length > 1 ? (
-                      <button
-                        type="button"
-                        onClick={goNext}
-                        className="p-1 text-neutral-600 transition hover:text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 dark:text-neutral-300 dark:hover:text-neutral-100"
-                        aria-label="Next screenshot"
-                      >
-                        <ChevronRight className="h-5 w-5" />
-                      </button>
-                    ) : null}
+                  <Dialog.Close asChild>
+                    <button
+                      type="button"
+                      onClick={closeSlideshow}
+                      className="p-1 text-neutral-600 transition hover:text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 dark:text-neutral-300 dark:hover:text-neutral-100"
+                      aria-label="Close slideshow"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </Dialog.Close>
+                </div>
+                <div className="flex flex-1 items-center justify-center gap-4">
+                  {flattenedImages.length > 1 ? (
+                    <button
+                      type="button"
+                      onClick={goPrev}
+                      className="p-1 text-neutral-600 transition hover:text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 dark:text-neutral-300 dark:hover:text-neutral-100"
+                      aria-label="Previous screenshot"
+                    >
+                      <ChevronLeft className="h-5 w-5" />
+                    </button>
+                  ) : null}
+                  <div className="relative flex max-h-[80vh] min-h-[320px] flex-1 items-center justify-center rounded-2xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+                    <img
+                      src={currentEntry.image.url ?? undefined}
+                      alt={currentEntry.image.fileName ?? "Screenshot"}
+                      className="max-h-[calc(80vh-2rem)] max-w-full object-contain"
+                    />
                   </div>
+                  {flattenedImages.length > 1 ? (
+                    <button
+                      type="button"
+                      onClick={goNext}
+                      className="p-1 text-neutral-600 transition hover:text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 dark:text-neutral-300 dark:hover:text-neutral-100"
+                      aria-label="Next screenshot"
+                    >
+                      <ChevronRight className="h-5 w-5" />
+                    </button>
+                  ) : null}
                 </div>
               </Dialog.Content>
             </Dialog.Portal>
