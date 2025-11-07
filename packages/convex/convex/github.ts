@@ -1,8 +1,6 @@
 import { v } from "convex/values";
 import { getTeamId } from "../_shared/team";
-import type { Doc, Id } from "./_generated/dataModel";
-import { internal } from "./_generated/api";
-import { action } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { authMutation, authQuery } from "./users/utils";
 
@@ -730,6 +728,33 @@ export const insertManualRepoInternal = internalMutation({
   handler: async (ctx, args) => {
     const teamId = await getTeamId(ctx, args.teamSlugOrId);
     const now = Date.now();
+
+    // Check for existing repo to prevent duplicates
+    const existing = await ctx.db
+      .query("repos")
+      .withIndex("by_team_fullName", (q) =>
+        q.eq("teamId", teamId).eq("fullName", args.fullName)
+      )
+      .first();
+
+    if (existing) {
+      // Update existing repo with new data (keep manual flag as is)
+      await ctx.db.patch(existing._id, {
+        org: args.org,
+        name: args.name,
+        gitRemote: args.gitRemote,
+        provider: "github",
+        providerRepoId: args.providerRepoId,
+        ownerLogin: args.ownerLogin,
+        ownerType: args.ownerType,
+        visibility: "public",
+        defaultBranch: args.defaultBranch,
+        lastPushedAt: args.lastPushedAt,
+        lastSyncedAt: now,
+      });
+      return existing._id;
+    }
+
     return await ctx.db.insert("repos", {
       fullName: args.fullName,
       org: args.org,
@@ -766,151 +791,3 @@ export const getRepoByFullNameInternal = internalQuery({
       .first();
   },
 });
-
-// Add a manual repository from a custom URL
-export const addManualRepo = action({
-  args: {
-    teamSlugOrId: v.string(),
-    repoUrl: v.string(),
-  },
-  handler: async (ctx, { teamSlugOrId, repoUrl }): Promise<{ success: true; repoId: Id<"repos">; fullName: string }> => {
-    // Parse the repo URL
-    const parsed = parseGithubRepoUrl(repoUrl);
-    if (!parsed) {
-      throw new Error("Invalid GitHub repository URL");
-    }
-
-    // Check if the repo is public using GitHub API
-    try {
-      const response = await fetch(
-        `https://api.github.com/repos/${parsed.owner}/${parsed.repo}`,
-        {
-          headers: {
-            Accept: "application/vnd.github.v3+json",
-            "User-Agent": "cmux",
-          },
-        }
-      );
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error("Repository not found or is private");
-        }
-        throw new Error(`GitHub API error: ${response.status}`);
-      }
-
-      const data = (await response.json()) as {
-        id: number;
-        full_name: string;
-        private: boolean;
-        owner: { login: string; type: string };
-        default_branch: string;
-        pushed_at: string;
-      };
-
-      if (data.private) {
-        throw new Error("Private repositories are not supported for manual addition");
-      }
-
-      // Get the authenticated user
-      const identity = await ctx.auth.getUserIdentity();
-      if (!identity) {
-        throw new Error("Not authenticated");
-      }
-
-      // Check if repo already exists
-      const existing: Doc<"repos"> | null = await ctx.runQuery(internal.github.getRepoByFullNameInternal, {
-        teamSlugOrId,
-        fullName: parsed.fullName,
-      });
-
-      if (existing) {
-        return { success: true, repoId: existing._id, fullName: parsed.fullName };
-      }
-
-      // Insert the manual repo
-      const repoId: Id<"repos"> = await ctx.runMutation(internal.github.insertManualRepoInternal, {
-        teamSlugOrId,
-        userId: identity.subject,
-        fullName: parsed.fullName,
-        org: parsed.owner,
-        name: parsed.repo,
-        gitRemote: parsed.gitUrl,
-        providerRepoId: data.id,
-        ownerLogin: data.owner.login,
-        ownerType: data.owner.type as "User" | "Organization",
-        defaultBranch: data.default_branch,
-        lastPushedAt: data.pushed_at ? new Date(data.pushed_at).getTime() : undefined,
-      });
-
-      return { success: true, repoId, fullName: parsed.fullName };
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error("Failed to validate repository");
-    }
-  },
-});
-
-function parseGithubRepoUrl(input: string): {
-  owner: string;
-  repo: string;
-  fullName: string;
-  url: string;
-  gitUrl: string;
-} | null {
-  if (!input || typeof input !== "string") {
-    return null;
-  }
-
-  const trimmed = input.trim();
-
-  // Pattern 1: owner/repo (simple format)
-  const simpleMatch = trimmed.match(/^([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-]+)$/);
-  if (simpleMatch) {
-    const [, owner, repo] = simpleMatch;
-    const cleanRepo = repo.replace(/\.git$/, "");
-    return {
-      owner,
-      repo: cleanRepo,
-      fullName: `${owner}/${cleanRepo}`,
-      url: `https://github.com/${owner}/${cleanRepo}`,
-      gitUrl: `https://github.com/${owner}/${cleanRepo}.git`,
-    };
-  }
-
-  // Pattern 2: https://github.com/owner/repo or https://github.com/owner/repo.git
-  const httpsMatch = trimmed.match(
-    /^https?:\/\/github\.com\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-]+?)(?:\.git)?(?:\/)?$/i
-  );
-  if (httpsMatch) {
-    const [, owner, repo] = httpsMatch;
-    const cleanRepo = repo.replace(/\.git$/, "");
-    return {
-      owner,
-      repo: cleanRepo,
-      fullName: `${owner}/${cleanRepo}`,
-      url: `https://github.com/${owner}/${cleanRepo}`,
-      gitUrl: `https://github.com/${owner}/${cleanRepo}.git`,
-    };
-  }
-
-  // Pattern 3: git@github.com:owner/repo.git
-  const sshMatch = trimmed.match(
-    /^git@github\.com:([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-]+?)(?:\.git)?$/i
-  );
-  if (sshMatch) {
-    const [, owner, repo] = sshMatch;
-    const cleanRepo = repo.replace(/\.git$/, "");
-    return {
-      owner,
-      repo: cleanRepo,
-      fullName: `${owner}/${cleanRepo}`,
-      url: `https://github.com/${owner}/${cleanRepo}`,
-      gitUrl: `https://github.com/${owner}/${cleanRepo}.git`,
-    };
-  }
-
-  return null;
-}

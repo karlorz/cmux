@@ -354,7 +354,7 @@ function DashboardComponent() {
     }
   );
   const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
-  const addManualRepo = useAction(api.github.addManualRepo);
+  const addManualRepo = useAction(api.github_http.addManualRepo);
 
   const effectiveSelectedBranch = useMemo(() => {
     if (selectedBranch.length > 0) {

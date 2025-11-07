@@ -16,6 +16,7 @@ import { isElectron } from "@/lib/electron";
 import { api } from "@cmux/convex/api";
 import type { ProviderStatus, ProviderStatusResponse } from "@cmux/shared";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
+import { parseGithubRepoUrl } from "@cmux/shared";
 import { Link, useRouter } from "@tanstack/react-router";
 import clsx from "clsx";
 import { useAction, useMutation } from "convex/react";
@@ -73,7 +74,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
   const router = useRouter();
   const agentSelectRef = useRef<SearchableSelectHandle | null>(null);
   const mintState = useMutation(api.github_app.mintInstallState);
-  const addManualRepo = useAction(api.github.addManualRepo);
+  const addManualRepo = useAction(api.github_http.addManualRepo);
   const providerStatusMap = useMemo(() => {
     const map = new Map<string, ProviderStatus>();
     providerStatus?.providers?.forEach((provider) => {
@@ -298,8 +299,17 @@ export const DashboardInputControls = memo(function DashboardInputControls({
   }, []);
 
   const handleCustomRepoSubmit = useCallback(async () => {
-    if (!customRepoUrl.trim()) {
-      setCustomRepoError("Invalid GitHub repository URL");
+    const trimmedUrl = customRepoUrl.trim();
+
+    // Validate URL format before sending to backend
+    if (!trimmedUrl) {
+      setCustomRepoError("Please enter a GitHub repository URL");
+      return;
+    }
+
+    const parsed = parseGithubRepoUrl(trimmedUrl);
+    if (!parsed) {
+      setCustomRepoError("Invalid GitHub repository URL. Use format: owner/repo or https://github.com/owner/repo");
       return;
     }
 
@@ -309,7 +319,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     try {
       const result = await addManualRepo({
         teamSlugOrId,
-        repoUrl: customRepoUrl,
+        repoUrl: trimmedUrl,
       });
 
       if (result.success) {
@@ -564,7 +574,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();
-                          handleCustomRepoSubmit();
+                          void handleCustomRepoSubmit();
                         } else if (e.key === "Escape") {
                           setShowCustomRepoInput(false);
                           setCustomRepoUrl("");

@@ -585,7 +585,7 @@ const SearchableSelect = forwardRef<
             {showSearch ? (
               <CommandInput
                 showIcon={false}
-                placeholder={onSearchPaste ? "Search or paste a GitHub link..." : "Search..."}
+                placeholder={onSearchPaste ? "Search or paste a repo link..." : "Search..."}
                 value={search}
                 onValueChange={setSearch}
                 onKeyDown={(e) => {
