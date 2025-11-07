@@ -1,7 +1,4 @@
-import {
-  LOCAL_VSCODE_PLACEHOLDER_HOST,
-  isLoopbackHostname,
-} from "@cmux/shared";
+import { LOCAL_VSCODE_PLACEHOLDER_HOST } from "@cmux/shared";
 
 const MORPH_HOST_REGEX = /^port-(\d+)-morphvm-([^.]+)\.http\.cloud\.morph\.so$/;
 
@@ -53,10 +50,10 @@ function shouldRewriteUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
     const hostname = parsed.hostname;
-    return (
-      isLoopbackHostname(hostname) ||
-      hostname.toLowerCase() === LOCAL_VSCODE_PLACEHOLDER_HOST
-    );
+    // Only rewrite the placeholder host, NOT actual localhost URLs
+    // Docker tasks use real localhost:port URLs that should NOT be rewritten
+    // Only local workspaces use the placeholder that needs rewriting
+    return hostname.toLowerCase() === LOCAL_VSCODE_PLACEHOLDER_HOST;
   } catch {
     return false;
   }
