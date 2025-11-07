@@ -28,6 +28,7 @@ import {
   ReviewDiffContent,
   ReviewGitHubLinkButton,
 } from "../../_components/review-diff-content";
+import { PullRequestCommentsSection } from "@/components/pr/pull-request-comments";
 import { PrivateRepoPrompt } from "../../_components/private-repo-prompt";
 import { TeamOnboardingPrompt } from "../../_components/team-onboarding-prompt";
 import { env } from "@/lib/utils/www-env";
@@ -277,6 +278,13 @@ export default async function PullRequestPage({ params }: PageProps) {
             pullNumber={pullNumber}
           />
         </Suspense>
+
+        <PullRequestCommentsSection
+          teamSlugOrId={selectedTeam?.id ?? null}
+          repoFullName={`${githubOwner}/${repo}`}
+          prNumber={pullNumber}
+          pullRequestUrl={initialPullRequest.html_url ?? null}
+        />
       </div>
     </div>
   );

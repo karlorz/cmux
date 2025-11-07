@@ -4,7 +4,10 @@ import type {
   DeploymentStatusEvent,
   InstallationEvent,
   InstallationRepositoriesEvent,
+  IssueCommentEvent,
   PullRequestEvent,
+  PullRequestReviewCommentEvent,
+  PullRequestReviewEvent,
   PushEvent,
   StatusEvent,
   WebhookEvent,
@@ -23,6 +26,11 @@ const DEBUG_FLAGS = {
 
 const FEATURE_FLAGS = {
   githubEyesReactionOnPrOpen: false,
+};
+
+type ReactionWebhookEnvelope = WebhookEvent & {
+  repository?: { full_name?: string | null } | null;
+  installation?: { id?: number | null } | null;
 };
 
 async function verifySignature(
@@ -213,10 +221,161 @@ export const githubWebhook = httpAction(async (_ctx, req) => {
       }
       case "repository":
       case "create":
-      case "delete":
-      case "pull_request_review":
-      case "pull_request_review_comment":
+      case "delete": {
+        break;
+      }
       case "issue_comment": {
+        try {
+          const issueCommentPayload = body as IssueCommentEvent;
+          const repoFullName = String(
+            issueCommentPayload.repository?.full_name ?? "",
+          );
+          const installation = Number(issueCommentPayload.installation?.id ?? 0);
+          const isPullRequestComment = Boolean(
+            issueCommentPayload.issue?.pull_request,
+          );
+
+          if (!repoFullName || !installation || !isPullRequestComment) {
+            break;
+          }
+
+          const conn = await _ctx.runQuery(
+            internal.github_app.getProviderConnectionByInstallationId,
+            { installationId: installation },
+          );
+          const teamId = conn?.teamId;
+
+          if (!teamId) {
+            console.warn("[issue_comment] No teamId found for installation", {
+              installation,
+              delivery,
+              connectionFound: !!conn,
+            });
+            break;
+          }
+
+          await _ctx.runMutation(
+            internal.github_pr_comments.upsertIssueCommentFromWebhook,
+            {
+              installationId: installation,
+              repoFullName,
+              teamId,
+              payload: issueCommentPayload,
+            },
+          );
+        } catch (err) {
+          console.error("[issue_comment] Handler failed", {
+            err,
+            delivery,
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
+        break;
+      }
+      case "pull_request_review_comment": {
+        try {
+          const reviewCommentPayload = body as PullRequestReviewCommentEvent;
+          const repoFullName = String(
+            reviewCommentPayload.repository?.full_name ?? "",
+          );
+          const installation = Number(
+            reviewCommentPayload.installation?.id ?? 0,
+          );
+
+          if (!repoFullName || !installation) {
+            console.warn(
+              "[pull_request_review_comment] Missing repoFullName or installation",
+              { repoFullName, installation, delivery },
+            );
+            break;
+          }
+
+          const conn = await _ctx.runQuery(
+            internal.github_app.getProviderConnectionByInstallationId,
+            { installationId: installation },
+          );
+          const teamId = conn?.teamId;
+
+          if (!teamId) {
+            console.warn(
+              "[pull_request_review_comment] No teamId found for installation",
+              {
+                installation,
+                delivery,
+                connectionFound: !!conn,
+              },
+            );
+            break;
+          }
+
+          await _ctx.runMutation(
+            internal.github_pr_comments.upsertReviewCommentFromWebhook,
+            {
+              installationId: installation,
+              repoFullName,
+              teamId,
+              payload: reviewCommentPayload,
+            },
+          );
+        } catch (err) {
+          console.error("[pull_request_review_comment] Handler failed", {
+            err,
+            delivery,
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
+        break;
+      }
+      case "pull_request_review": {
+        try {
+          const reviewPayload = body as PullRequestReviewEvent;
+          const repoFullName = String(
+            reviewPayload.repository?.full_name ?? "",
+          );
+          const installation = Number(reviewPayload.installation?.id ?? 0);
+
+          if (!repoFullName || !installation) {
+            console.warn(
+              "[pull_request_review] Missing repoFullName or installation",
+              { repoFullName, installation, delivery },
+            );
+            break;
+          }
+
+          const conn = await _ctx.runQuery(
+            internal.github_app.getProviderConnectionByInstallationId,
+            { installationId: installation },
+          );
+          const teamId = conn?.teamId;
+
+          if (!teamId) {
+            console.warn(
+              "[pull_request_review] No teamId found for installation",
+              {
+                installation,
+                delivery,
+                connectionFound: !!conn,
+              },
+            );
+            break;
+          }
+
+          await _ctx.runMutation(
+            internal.github_pr_comments.upsertReviewFromWebhook,
+            {
+              installationId: installation,
+              repoFullName,
+              teamId,
+              payload: reviewPayload,
+            },
+          );
+        } catch (err) {
+          console.error("[pull_request_review] Handler failed", {
+            err,
+            delivery,
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
         break;
       }
       case "workflow_run": {
@@ -567,6 +726,56 @@ export const githubWebhook = httpAction(async (_ctx, req) => {
           console.error("github_webhook push handler failed", {
             err,
             delivery,
+          });
+        }
+        break;
+      }
+      case "reaction": {
+        try {
+          const reactionPayload = body as ReactionWebhookEnvelope;
+          const repoFullName = String(
+            reactionPayload.repository?.full_name ?? "",
+          );
+          const installation = Number(reactionPayload.installation?.id ?? 0);
+
+          if (!repoFullName || !installation) {
+            console.warn("[reaction] Missing repoFullName or installation", {
+              repoFullName,
+              installation,
+              delivery,
+            });
+            break;
+          }
+
+          const conn = await _ctx.runQuery(
+            internal.github_app.getProviderConnectionByInstallationId,
+            { installationId: installation },
+          );
+          const teamId = conn?.teamId;
+
+          if (!teamId) {
+            console.warn("[reaction] No teamId found for installation", {
+              installation,
+              delivery,
+              connectionFound: !!conn,
+            });
+            break;
+          }
+
+          await _ctx.runMutation(
+            internal.github_pr_comments.applyReactionFromWebhook,
+            {
+              installationId: installation,
+              repoFullName,
+              teamId,
+              payload: reactionPayload,
+            },
+          );
+        } catch (err) {
+          console.error("[reaction] Handler failed", {
+            err,
+            delivery,
+            message: err instanceof Error ? err.message : String(err),
           });
         }
         break;

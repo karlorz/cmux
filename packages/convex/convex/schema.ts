@@ -726,6 +726,89 @@ const convexSchema = defineSchema({
     .index("by_installation", ["installationId", "updatedAt"]) // debug/ops
     .index("by_repo", ["repoFullName", "updatedAt"]),
 
+  // GitHub pull request comments (issue comments, review comments, reviews)
+  githubPrComments: defineTable({
+    provider: v.literal("github"),
+    installationId: v.number(),
+    repositoryId: v.optional(v.number()),
+    repoFullName: v.string(),
+    prNumber: v.number(),
+    pullRequestId: v.optional(v.number()),
+    commentId: v.number(),
+    nodeId: v.optional(v.string()),
+    type: v.union(
+      v.literal("issue_comment"),
+      v.literal("review_comment"),
+      v.literal("review"),
+    ),
+    teamId: v.string(),
+    body: v.optional(v.string()),
+    authorLogin: v.optional(v.string()),
+    authorId: v.optional(v.number()),
+    authorType: v.optional(v.string()),
+    authorAvatarUrl: v.optional(v.string()),
+    authorAssociation: v.optional(v.string()),
+    htmlUrl: v.optional(v.string()),
+    url: v.optional(v.string()),
+    pullRequestUrl: v.optional(v.string()),
+    reviewId: v.optional(v.number()),
+    commitId: v.optional(v.string()),
+    diffHunk: v.optional(v.string()),
+    path: v.optional(v.string()),
+    line: v.optional(v.number()),
+    originalLine: v.optional(v.number()),
+    startLine: v.optional(v.number()),
+    originalStartLine: v.optional(v.number()),
+    position: v.optional(v.number()),
+    originalPosition: v.optional(v.number()),
+    side: v.optional(v.union(v.literal("LEFT"), v.literal("RIGHT"))),
+    startSide: v.optional(v.union(v.literal("LEFT"), v.literal("RIGHT"))),
+    inReplyToId: v.optional(v.number()),
+    reviewState: v.optional(
+      v.union(
+        v.literal("APPROVED"),
+        v.literal("CHANGES_REQUESTED"),
+        v.literal("COMMENTED"),
+        v.literal("DISMISSED"),
+        v.literal("PENDING"),
+      ),
+    ),
+    isDismissed: v.optional(v.boolean()),
+    submittedAt: v.optional(v.number()),
+    dismissedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    deletedAt: v.optional(v.number()),
+    isDeleted: v.optional(v.boolean()),
+    reactions: v.optional(
+      v.object({
+        totalCount: v.optional(v.number()),
+        plusOne: v.optional(v.number()),
+        minusOne: v.optional(v.number()),
+        laugh: v.optional(v.number()),
+        hooray: v.optional(v.number()),
+        confused: v.optional(v.number()),
+        heart: v.optional(v.number()),
+        rocket: v.optional(v.number()),
+        eyes: v.optional(v.number()),
+      }),
+    ),
+    lastSyncedAt: v.number(),
+  })
+    .index("by_team_repo_pr", [
+      "teamId",
+      "repoFullName",
+      "prNumber",
+      "createdAt",
+    ])
+    .index("by_commentId", ["commentId"])
+    .index("by_repo_comment_type", [
+      "repoFullName",
+      "prNumber",
+      "type",
+      "createdAt",
+    ]),
+
   // GitHub Actions workflow runs
   githubWorkflowRuns: defineTable({
     // Identity within provider and repo context
