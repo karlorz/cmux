@@ -8,6 +8,7 @@ import { DashboardStartTaskButton } from "@/components/dashboard/DashboardStartT
 import { TaskList } from "@/components/dashboard/TaskList";
 import { WorkspaceCreationButtons } from "@/components/dashboard/WorkspaceCreationButtons";
 import { FloatingPane } from "@/components/floating-pane";
+import { LocalWorkspaceSetupPanel } from "@/components/LocalWorkspaceSetupPanel";
 import { GitHubIcon } from "@/components/icons/github";
 import { useTheme } from "@/components/theme/use-theme";
 import { TitleBar } from "@/components/TitleBar";
@@ -664,6 +665,8 @@ function DashboardComponent() {
 
   const shouldShowCloudRepoOnboarding =
     !!selectedRepoFullName && isCloudMode && !isEnvSelected;
+  const shouldShowLocalWorkspaceSetup =
+    !!selectedRepoFullName && !isCloudMode && !isEnvSelected;
 
   const createEnvironmentSearch = useMemo<
     EnvironmentNewSearchParams | undefined
@@ -920,6 +923,13 @@ function DashboardComponent() {
                   </div>
                 </div>
               </div>
+            ) : null}
+
+            {shouldShowLocalWorkspaceSetup ? (
+              <LocalWorkspaceSetupPanel
+                teamSlugOrId={teamSlugOrId}
+                projectFullName={selectedRepoFullName}
+              />
             ) : null}
 
             {/* Task List */}

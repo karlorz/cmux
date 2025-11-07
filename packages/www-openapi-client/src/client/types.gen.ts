@@ -609,6 +609,20 @@ export type CodeReviewStartBody = {
     };
 };
 
+export type LocalWorkspaceConfigResponse = {
+    projectFullName: string;
+    maintenanceScript?: string;
+    envVarsContent: string;
+    updatedAt?: number;
+} | null;
+
+export type LocalWorkspaceConfigBody = {
+    teamSlugOrId: string;
+    projectFullName: string;
+    maintenanceScript?: string;
+    envVarsContent?: string;
+};
+
 export type GetApiHealthData = {
     body?: never;
     path?: never;
@@ -2217,6 +2231,59 @@ export type PostApiCodeReviewStartResponses = {
 };
 
 export type PostApiCodeReviewStartResponse = PostApiCodeReviewStartResponses[keyof PostApiCodeReviewStartResponses];
+
+export type GetApiLocalWorkspaceConfigsData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+        projectFullName: string;
+    };
+    url: '/api/local-workspace-configs';
+};
+
+export type GetApiLocalWorkspaceConfigsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiLocalWorkspaceConfigsResponses = {
+    /**
+     * Configuration retrieved
+     */
+    200: LocalWorkspaceConfigResponse;
+};
+
+export type GetApiLocalWorkspaceConfigsResponse = GetApiLocalWorkspaceConfigsResponses[keyof GetApiLocalWorkspaceConfigsResponses];
+
+export type PostApiLocalWorkspaceConfigsData = {
+    body?: LocalWorkspaceConfigBody;
+    path?: never;
+    query?: never;
+    url: '/api/local-workspace-configs';
+};
+
+export type PostApiLocalWorkspaceConfigsErrors = {
+    /**
+     * Invalid request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiLocalWorkspaceConfigsResponses = {
+    /**
+     * Configuration saved
+     */
+    200: LocalWorkspaceConfigResponse;
+};
+
+export type PostApiLocalWorkspaceConfigsResponse = PostApiLocalWorkspaceConfigsResponses[keyof PostApiLocalWorkspaceConfigsResponses];
 
 export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});

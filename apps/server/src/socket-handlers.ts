@@ -1,5 +1,6 @@
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
+import type { LocalWorkspaceConfigResponse } from "@cmux/www-openapi-client";
 import {
   ArchiveTaskSchema,
   GitFullDiffRequestSchema,
@@ -27,6 +28,7 @@ import {
   type StoredPullRequestInfo,
 } from "@cmux/shared/pull-request-state";
 import fuzzysort from "fuzzysort";
+import { parse as parseDotenv } from "dotenv";
 import { minimatch } from "minimatch";
 import { exec, execFile, spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
@@ -678,6 +680,30 @@ export function setupSocketHandlers(
             : undefined);
         const branch = requestedBranch?.trim();
 
+        let localWorkspaceConfig: LocalWorkspaceConfigResponse = null;
+        if (projectFullName) {
+          try {
+            const { getApiLocalWorkspaceConfigs } =
+              await getWwwOpenApiModule();
+            const response = await getApiLocalWorkspaceConfigs({
+              client: getWwwClient(),
+              query: {
+                teamSlugOrId,
+                projectFullName,
+              },
+            });
+            localWorkspaceConfig = response.data ?? null;
+          } catch (error) {
+            serverLogger.warn(
+              "[create-local-workspace] Failed to load saved local workspace config",
+              {
+                projectFullName,
+                error,
+              }
+            );
+          }
+        }
+
         let taskId: Id<"tasks"> | null =
           providedTaskId !== undefined ? providedTaskId : null;
         let taskRunId: Id<"taskRuns"> | null =
@@ -735,6 +761,111 @@ export function setupSocketHandlers(
             await fs
               .rm(resolvedWorkspacePath, { recursive: true, force: true })
               .catch(() => undefined);
+          };
+
+          const applyLocalWorkspaceConfigIfPresent = async () => {
+            if (!localWorkspaceConfig || !taskRunId) {
+              return;
+            }
+
+            const envVarsContent = localWorkspaceConfig.envVarsContent ?? "";
+            const trimmedEnvVars = envVarsContent.trim();
+            let parsedEnvVars: Record<string, string> = {};
+
+            if (trimmedEnvVars.length > 0) {
+              try {
+                parsedEnvVars = parseDotenv(envVarsContent);
+              } catch (error) {
+                serverLogger.warn(
+                  "[create-local-workspace] Failed to parse saved env vars for local workspace config",
+                  {
+                    projectFullName,
+                    error,
+                  }
+                );
+                parsedEnvVars = {};
+              }
+
+              try {
+                const cmuxDir = path.join(resolvedWorkspacePath, ".cmux");
+                await fs.mkdir(cmuxDir, { recursive: true });
+                const envFile = path.join(cmuxDir, "local.env");
+                await fs.writeFile(envFile, envVarsContent, {
+                  encoding: "utf8",
+                  mode: 0o600,
+                });
+              } catch (error) {
+                serverLogger.warn(
+                  "[create-local-workspace] Failed to write saved env vars to disk",
+                  {
+                    projectFullName,
+                    error,
+                  }
+                );
+              }
+            }
+
+            const maintenanceScript =
+              localWorkspaceConfig.maintenanceScript?.trim() ?? "";
+            if (!maintenanceScript) {
+              return;
+            }
+
+            serverLogger.info(
+              `[create-local-workspace] Running local maintenance script for ${workspaceName}`
+            );
+
+            const scriptPreamble = "set -euo pipefail";
+            const maintenancePayload = `${scriptPreamble}\n${maintenanceScript}`;
+
+            try {
+              await execFileAsync("zsh", ["-lc", maintenancePayload], {
+                cwd: resolvedWorkspacePath,
+                env: {
+                  ...process.env,
+                  ...parsedEnvVars,
+                },
+                maxBuffer: 10 * 1024 * 1024,
+              });
+              await convex.mutation(api.taskRuns.updateEnvironmentError, {
+                teamSlugOrId,
+                id: taskRunId,
+                maintenanceError: undefined,
+                devError: undefined,
+              });
+            } catch (error) {
+              const stderr =
+                error &&
+                typeof error === "object" &&
+                "stderr" in error &&
+                typeof (error as { stderr?: unknown }).stderr === "string"
+                  ? (error as { stderr?: string }).stderr?.trim() ?? ""
+                  : "";
+              const stdout =
+                error &&
+                typeof error === "object" &&
+                "stdout" in error &&
+                typeof (error as { stdout?: unknown }).stdout === "string"
+                  ? (error as { stdout?: string }).stdout?.trim() ?? ""
+                  : "";
+              const baseMessage =
+                stderr ||
+                stdout ||
+                (error instanceof Error ? error.message : String(error));
+
+              const maintenanceErrorMessage = baseMessage
+                ? `Maintenance script failed: ${baseMessage}`
+                : "Maintenance script failed";
+
+              await convex.mutation(api.taskRuns.updateEnvironmentError, {
+                teamSlugOrId,
+                id: taskRunId,
+                maintenanceError: maintenanceErrorMessage,
+                devError: undefined,
+              });
+
+              throw new Error(maintenanceErrorMessage);
+            }
           };
 
           const baseServeWebUrl =
@@ -860,6 +991,8 @@ export function setupSocketHandlers(
               cwd: resolvedWorkspacePath,
             });
           }
+
+          await applyLocalWorkspaceConfigIfPresent();
 
           await convex.mutation(api.taskRuns.updateWorktreePath, {
             teamSlugOrId,
