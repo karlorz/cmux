@@ -302,6 +302,17 @@ export const getPullRequest = authQuery({
   },
 });
 
+// Internal version of getPullRequest that accepts pullRequestId directly
+export const getPullRequestInternal = internalQuery({
+  args: {
+    pullRequestId: v.id("pullRequests"),
+  },
+  handler: async (ctx, { pullRequestId }) => {
+    const pr = await ctx.db.get(pullRequestId);
+    return pr ?? null;
+  },
+});
+
 // Helper to look up a provider connection for a repository owner
 export const getConnectionForOwnerInternal = internalQuery({
   args: { owner: v.string() },

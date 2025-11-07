@@ -14,6 +14,7 @@ import { MergeButton, type MergeMethod } from "@/components/ui/merge-button";
 import { postApiIntegrationsGithubPrsCloseMutation, postApiIntegrationsGithubPrsMergeSimpleMutation } from "@cmux/www-openapi-client/react-query";
 import type { PostApiIntegrationsGithubPrsCloseData, PostApiIntegrationsGithubPrsCloseResponse, PostApiIntegrationsGithubPrsMergeSimpleData, PostApiIntegrationsGithubPrsMergeSimpleResponse, Options } from "@cmux/www-openapi-client";
 import { useCombinedWorkflowData, WorkflowRunsBadge, WorkflowRunsSection } from "@/components/WorkflowRunsSection";
+import { PrComments } from "@/components/prs/PrComments";
 
 const RUN_PENDING_STATUSES = new Set(["in_progress", "queued", "waiting", "pending"]);
 const RUN_PASSING_CONCLUSIONS = new Set(["success", "neutral", "skipped"]);
@@ -499,6 +500,9 @@ export function PullRequestDetailView({
                 isExpanded={checksExpanded}
                 onToggle={handleToggleChecks}
               />
+            </Suspense>
+            <Suspense fallback={null}>
+              <PrComments pullRequestId={currentPR._id} />
             </Suspense>
             <Suspense
               fallback={

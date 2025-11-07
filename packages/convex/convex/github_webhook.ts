@@ -4,7 +4,9 @@ import type {
   DeploymentStatusEvent,
   InstallationEvent,
   InstallationRepositoriesEvent,
+  IssueCommentEvent,
   PullRequestEvent,
+  PullRequestReviewCommentEvent,
   PushEvent,
   StatusEvent,
   WebhookEvent,
@@ -213,10 +215,62 @@ export const githubWebhook = httpAction(async (_ctx, req) => {
       }
       case "repository":
       case "create":
-      case "delete":
-      case "pull_request_review":
-      case "pull_request_review_comment":
+      case "delete": {
+        break;
+      }
       case "issue_comment": {
+        try {
+          const commentPayload = body as IssueCommentEvent;
+          // Only handle comments on pull requests (not issues)
+          if (!("pull_request" in commentPayload.issue)) {
+            break;
+          }
+          const repoFullName = String(
+            commentPayload.repository?.full_name ?? "",
+          );
+          const installation = Number(commentPayload.installation?.id ?? 0);
+
+          await _ctx.runMutation(internal.github_pr_comments.upsertIssueComment, {
+            installationId: installation,
+            repoFullName,
+            prNumber: commentPayload.issue.number,
+            comment: commentPayload.comment,
+            action: commentPayload.action,
+          });
+        } catch (error) {
+          console.error("Error processing issue_comment webhook:", error);
+        }
+        break;
+      }
+      case "pull_request_review_comment": {
+        try {
+          const reviewCommentPayload = body as PullRequestReviewCommentEvent;
+          const repoFullName = String(
+            reviewCommentPayload.repository?.full_name ?? "",
+          );
+          const installation = Number(reviewCommentPayload.installation?.id ?? 0);
+
+          await _ctx.runMutation(
+            internal.github_pr_comments.upsertReviewComment,
+            {
+              installationId: installation,
+              repoFullName,
+              prNumber: reviewCommentPayload.pull_request.number,
+              comment: reviewCommentPayload.comment,
+              action: reviewCommentPayload.action,
+            },
+          );
+        } catch (error) {
+          console.error(
+            "Error processing pull_request_review_comment webhook:",
+            error,
+          );
+        }
+        break;
+      }
+      case "pull_request_review": {
+        // We'll handle individual review comments through pull_request_review_comment events
+        // This event is mainly for tracking review state (approved, changes requested, etc.)
         break;
       }
       case "workflow_run": {

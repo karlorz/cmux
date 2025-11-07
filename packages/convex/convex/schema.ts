@@ -726,6 +726,118 @@ const convexSchema = defineSchema({
     .index("by_installation", ["installationId", "updatedAt"]) // debug/ops
     .index("by_repo", ["repoFullName", "updatedAt"]),
 
+  // GitHub PR Issue Comments (general comments on the PR conversation)
+  githubPrComments: defineTable({
+    // Identity
+    provider: v.literal("github"),
+    installationId: v.number(),
+    repoFullName: v.string(), // owner/repo
+    prNumber: v.number(),
+    commentId: v.number(), // GitHub comment ID
+
+    // Team scoping
+    teamId: v.string(),
+
+    // Related PR
+    pullRequestId: v.id("pullRequests"),
+
+    // Comment content
+    body: v.string(),
+    htmlUrl: v.optional(v.string()),
+
+    // Author info
+    authorLogin: v.optional(v.string()),
+    authorId: v.optional(v.number()),
+    authorAvatarUrl: v.optional(v.string()),
+
+    // Timestamps
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+
+    // Reactions (synced from GitHub)
+    reactions: v.optional(
+      v.object({
+        totalCount: v.number(),
+        plusOne: v.number(),
+        minusOne: v.number(),
+        laugh: v.number(),
+        hooray: v.number(),
+        confused: v.number(),
+        heart: v.number(),
+        rocket: v.number(),
+        eyes: v.number(),
+      })
+    ),
+  })
+    .index("by_pr", ["pullRequestId", "createdAt"])
+    .index("by_team_repo_pr", ["teamId", "repoFullName", "prNumber", "createdAt"])
+    .index("by_comment_id", ["commentId"]),
+
+  // GitHub PR Review Comments (inline code review comments)
+  githubPrReviewComments: defineTable({
+    // Identity
+    provider: v.literal("github"),
+    installationId: v.number(),
+    repoFullName: v.string(),
+    prNumber: v.number(),
+    commentId: v.number(), // GitHub review comment ID
+    reviewId: v.optional(v.number()), // Associated review ID if part of a review
+
+    // Team scoping
+    teamId: v.string(),
+
+    // Related PR
+    pullRequestId: v.id("pullRequests"),
+
+    // Comment content
+    body: v.string(),
+    htmlUrl: v.optional(v.string()),
+
+    // Code location
+    path: v.string(), // File path
+    commitId: v.string(), // Commit SHA
+    originalCommitId: v.optional(v.string()),
+    diffHunk: v.optional(v.string()), // The diff hunk the comment refers to
+    position: v.optional(v.number()), // Position in the diff
+    originalPosition: v.optional(v.number()),
+    line: v.optional(v.number()), // Line number in the file
+    originalLine: v.optional(v.number()),
+    side: v.optional(v.union(v.literal("LEFT"), v.literal("RIGHT"))),
+    startLine: v.optional(v.number()),
+    startSide: v.optional(v.union(v.literal("LEFT"), v.literal("RIGHT"))),
+
+    // Thread info
+    inReplyToId: v.optional(v.number()), // Parent comment ID if this is a reply
+
+    // Author info
+    authorLogin: v.optional(v.string()),
+    authorId: v.optional(v.number()),
+    authorAvatarUrl: v.optional(v.string()),
+
+    // Timestamps
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+
+    // Reactions (synced from GitHub)
+    reactions: v.optional(
+      v.object({
+        totalCount: v.number(),
+        plusOne: v.number(),
+        minusOne: v.number(),
+        laugh: v.number(),
+        hooray: v.number(),
+        confused: v.number(),
+        heart: v.number(),
+        rocket: v.number(),
+        eyes: v.number(),
+      })
+    ),
+  })
+    .index("by_pr", ["pullRequestId", "createdAt"])
+    .index("by_team_repo_pr", ["teamId", "repoFullName", "prNumber", "createdAt"])
+    .index("by_comment_id", ["commentId"])
+    .index("by_path", ["pullRequestId", "path", "createdAt"]),
+
   // GitHub Actions workflow runs
   githubWorkflowRuns: defineTable({
     // Identity within provider and repo context
