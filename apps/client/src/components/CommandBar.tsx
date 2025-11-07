@@ -437,6 +437,11 @@ export function CommandBar({
     scheduleCommandStateReset();
   }, [scheduleCommandStateReset, setOpen, setOpenedWithShift]);
 
+  const closeCommandAndClearInput = useCallback(() => {
+    closeCommand();
+    clearCommandInput();
+  }, [clearCommandInput, closeCommand]);
+
   const handleEscape = useCallback(() => {
     skipNextCloseRef.current = false;
     if (search.length > 0) {
@@ -840,11 +845,10 @@ export function CommandBar({
 
   const handleLocalWorkspaceSelect = useCallback(
     (projectFullName: string) => {
-      clearCommandInput();
-      closeCommand();
+      closeCommandAndClearInput();
       void createLocalWorkspace(projectFullName);
     },
-    [clearCommandInput, closeCommand, createLocalWorkspace]
+    [closeCommandAndClearInput, createLocalWorkspace]
   );
 
   const createCloudWorkspaceFromEnvironment = useCallback(
@@ -1013,8 +1017,7 @@ export function CommandBar({
 
   const handleCloudWorkspaceSelect = useCallback(
     (option: CloudWorkspaceOption) => {
-      clearCommandInput();
-      closeCommand();
+      closeCommandAndClearInput();
       if (option.type === "environment") {
         void createCloudWorkspaceFromEnvironment(option.environmentId);
       } else {
@@ -1022,8 +1025,7 @@ export function CommandBar({
       }
     },
     [
-      clearCommandInput,
-      closeCommand,
+      closeCommandAndClearInput,
       createCloudWorkspaceFromEnvironment,
       createCloudWorkspaceFromRepo,
     ]
@@ -1302,9 +1304,15 @@ export function CommandBar({
 
   const handleSelect = useCallback(
     async (value: string) => {
-      clearCommandInput();
+      const setPageAndResetSearch = (
+        page: "root" | "teams" | "local-workspaces" | "cloud-workspaces"
+      ) => {
+        clearCommandInput();
+        setActivePage(page);
+      };
+
       if (value === "teams:switch") {
-        setActivePage("teams");
+        setPageAndResetSearch("teams");
         return;
       } else if (value === "new-task") {
         navigate({
@@ -1312,10 +1320,10 @@ export function CommandBar({
           params: { teamSlugOrId },
         });
       } else if (value === "local-workspaces") {
-        setActivePage("local-workspaces");
+        setPageAndResetSearch("local-workspaces");
         return;
       } else if (value === "cloud-workspaces") {
-        setActivePage("cloud-workspaces");
+        setPageAndResetSearch("cloud-workspaces");
         return;
       } else if (value === "pull-requests") {
         navigate({
@@ -1501,7 +1509,7 @@ export function CommandBar({
           }
         }
       }
-      closeCommand();
+      closeCommandAndClearInput();
     },
     [
       clearCommandInput,
@@ -1511,7 +1519,7 @@ export function CommandBar({
       allTasks,
       stackUser,
       stackTeams,
-      closeCommand,
+      closeCommandAndClearInput,
     ]
   );
 
