@@ -2,10 +2,12 @@ import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
 import {
   ArchiveTaskSchema,
+  AddManualRepoSchema,
   GitFullDiffRequestSchema,
   GitHubCreateDraftPrSchema,
   GitHubFetchBranchesSchema,
   GitHubFetchReposSchema,
+  type AddManualRepoResponse,
   GitHubMergeBranchSchema,
   GitHubSyncPrStateSchema,
   ListFilesRequestSchema,
@@ -49,6 +51,7 @@ import { ensureRunWorktreeAndBranch } from "./utils/ensureRunWorktree";
 import { serverLogger } from "./utils/fileLogger";
 import { getGitHubTokenFromKeychain } from "./utils/getGitHubToken";
 import { createDraftPr, fetchPrDetail } from "./utils/githubPr";
+import { ghApi } from "./ghApi";
 import { getOctokit } from "./utils/octokit";
 import { checkAllProvidersStatus } from "./utils/providerStatus";
 import { refreshGitHubData } from "./utils/refreshGitHubData";
@@ -88,6 +91,17 @@ const GitSocketDiffRequestSchema = z.object({
 
 const IframePreflightRequestSchema = z.object({
   url: z.string().url(),
+});
+
+const GitHubRepoMetadataSchema = z.object({
+  default_branch: z.string().optional(),
+  private: z.boolean().optional(),
+  owner: z
+    .object({
+      login: z.string().optional(),
+      type: z.string().optional(),
+    })
+    .optional(),
 });
 
 function buildServeWebWorkspaceUrl(
@@ -1755,6 +1769,212 @@ export function setupSocketHandlers(
         });
       }
     });
+
+    socket.on(
+      "add-manual-repo",
+      async (
+        rawData: unknown,
+        callback: (response: AddManualRepoResponse) => void,
+      ) => {
+        const respond = (response: AddManualRepoResponse) => {
+          callback(response);
+        };
+
+        try {
+          const {
+            teamSlugOrId: requestedTeamSlugOrId,
+            projectFullName,
+            repoUrl,
+          } = AddManualRepoSchema.parse(rawData ?? {});
+
+          const split = splitRepoFullName(projectFullName);
+          if (!split) {
+            respond({
+              success: false,
+              error: "Repository must be in owner/name format (owner/repo).",
+            });
+            return;
+          }
+
+          const teamSlugOrId = requestedTeamSlugOrId || safeTeam;
+          const { owner, repo } = split;
+          const gitRemote = repoUrl.endsWith(".git")
+            ? repoUrl
+            : `${repoUrl}.git`;
+
+          type RepoMetadata = {
+            defaultBranch?: string;
+            visibility?: "public" | "private";
+            ownerLogin?: string;
+            ownerType?: "User" | "Organization";
+          };
+
+          const parseMetadata = (json: unknown): RepoMetadata | undefined => {
+            const parsed = GitHubRepoMetadataSchema.safeParse(json);
+            if (!parsed.success) {
+              serverLogger.warn(
+                `[add-manual-repo] Received unexpected GitHub metadata shape for ${projectFullName}: ${parsed.error.message}`,
+              );
+              return undefined;
+            }
+
+            const ownerType = parsed.data.owner?.type;
+            const normalizedOwnerType =
+              ownerType === "Organization"
+                ? "Organization"
+                : ownerType === "User"
+                  ? "User"
+                  : undefined;
+
+            return {
+              defaultBranch: parsed.data.default_branch ?? undefined,
+              visibility:
+                parsed.data.private === undefined
+                  ? undefined
+                  : parsed.data.private
+                    ? "private"
+                    : "public",
+              ownerLogin: parsed.data.owner?.login ?? undefined,
+              ownerType: normalizedOwnerType,
+            };
+          };
+
+          const getStatus = (error: unknown): number | undefined => {
+            if (error && typeof error === "object" && "status" in error) {
+              const status = (error as { status?: unknown }).status;
+              if (typeof status === "number") {
+                return status;
+              }
+            }
+            return undefined;
+          };
+
+          let metadata: RepoMetadata | undefined;
+          try {
+            const response = await ghApi.fetchGitHub(
+              `/repos/${projectFullName}`,
+            );
+            metadata = parseMetadata(await response.json());
+          } catch (error) {
+            const status = getStatus(error);
+
+            if (status === 404) {
+              respond({
+                success: false,
+                error: `Repository ${projectFullName} was not found on GitHub.`,
+              });
+              return;
+            }
+
+            if (status === 403) {
+              respond({
+                success: false,
+                error: `You do not have access to ${projectFullName}.`,
+              });
+              return;
+            }
+
+            if (status === 401) {
+              try {
+                const fallbackResponse = await fetch(
+                  `https://api.github.com/repos/${projectFullName}`,
+                  {
+                    headers: {
+                      Accept: "application/vnd.github.v3+json",
+                      "User-Agent": "cmux-app",
+                    },
+                  },
+                );
+
+                if (fallbackResponse.status === 404) {
+                  respond({
+                    success: false,
+                    error: `Repository ${projectFullName} was not found on GitHub.`,
+                  });
+                  return;
+                }
+
+                if (fallbackResponse.status === 403) {
+                  respond({
+                    success: false,
+                    error: `GitHub authentication is required to access ${projectFullName}.`,
+                  });
+                  return;
+                }
+
+                if (fallbackResponse.ok) {
+                  metadata = parseMetadata(await fallbackResponse.json());
+                } else {
+                  serverLogger.warn(
+                    `[add-manual-repo] Unexpected fallback GitHub response for ${projectFullName}: ${fallbackResponse.status} ${fallbackResponse.statusText}`,
+                  );
+                }
+              } catch (fallbackError) {
+                serverLogger.warn(
+                  `[add-manual-repo] Failed fallback GitHub fetch for ${projectFullName}: ${String(fallbackError)}`,
+                );
+              }
+            } else {
+              const message =
+                error instanceof Error
+                  ? error.message
+                  : String(error);
+              serverLogger.warn(
+                `[add-manual-repo] Failed to fetch GitHub metadata for ${projectFullName}: ${message}`,
+              );
+            }
+          }
+
+          try {
+            const result = await getConvex().mutation(
+              api.github.upsertManualRepo,
+              {
+                teamSlugOrId,
+                fullName: projectFullName,
+                org: owner,
+                name: repo,
+                gitRemote,
+                provider: "github",
+                defaultBranch: metadata?.defaultBranch,
+                visibility: metadata?.visibility,
+                ownerLogin: metadata?.ownerLogin,
+                ownerType: metadata?.ownerType,
+              },
+            );
+
+            respond({
+              success: true,
+              created: result.created,
+            });
+          } catch (mutationError) {
+            const message =
+              mutationError instanceof Error
+                ? mutationError.message
+                : String(mutationError);
+            serverLogger.error(
+              `[add-manual-repo] Failed to upsert repository ${projectFullName}: ${message}`,
+            );
+            respond({
+              success: false,
+              error: message,
+            });
+          }
+        } catch (error) {
+          if (error instanceof z.ZodError) {
+            respond({ success: false, error: "Invalid repository request." });
+            return;
+          }
+          const message = error instanceof Error ? error.message : String(error);
+          serverLogger.error(
+            `[add-manual-repo] Unexpected error while handling request: ${message}`,
+          );
+          respond({
+            success: false,
+            error: "Failed to add repository.",
+          });
+        }
+      },
+    );
 
     socket.on("github-fetch-repos", async (data, callback) => {
       try {

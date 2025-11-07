@@ -169,7 +169,7 @@ sandboxesRouter.openapi(
       const maintenanceScript = environmentMaintenanceScript ?? null;
       const devScript = environmentDevScript ?? null;
 
-      const isCloudWorkspace =
+      let isCloudWorkspace =
         body.isCloudWorkspace !== undefined
           ? body.isCloudWorkspace
           : !body.taskRunId;
@@ -180,14 +180,15 @@ sandboxesRouter.openapi(
           : null;
 
       // Check if this is a cloud workspace by querying the taskRun
-      let isCloudWorkspace = false;
       if (body.taskRunId) {
         try {
           const taskRun = await convex.query(api.taskRuns.get, {
             teamSlugOrId: body.teamSlugOrId,
             id: body.taskRunId as Id<"taskRuns">,
           });
-          isCloudWorkspace = taskRun?.isCloudWorkspace ?? false;
+          if (taskRun?.isCloudWorkspace !== undefined) {
+            isCloudWorkspace = taskRun.isCloudWorkspace;
+          }
         } catch (error) {
           console.warn("[sandboxes.start] Failed to query taskRun for isCloudWorkspace", error);
         }

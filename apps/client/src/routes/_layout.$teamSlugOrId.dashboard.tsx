@@ -828,6 +828,7 @@ function DashboardComponent() {
             {
               teamSlugOrId,
               projectFullName: parsed.repoFullName,
+              repoUrl: parsed.repoUrl,
             },
             (response) => {
               console.log('[Dashboard] add-manual-repo response:', response);
@@ -883,6 +884,7 @@ function DashboardComponent() {
             {
               teamSlugOrId,
               projectFullName: parsed.repoFullName,
+              repoUrl: parsed.repoUrl,
             },
             (response) => {
               if (!response?.success) {

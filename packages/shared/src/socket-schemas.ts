@@ -288,6 +288,18 @@ export const GitHubFetchBranchesSchema = z.object({
   repo: z.string(),
 });
 
+export const AddManualRepoSchema = z.object({
+  teamSlugOrId: z.string().optional(),
+  projectFullName: z.string(),
+  repoUrl: z.string().url(),
+});
+
+export const AddManualRepoResponseSchema = z.object({
+  success: z.boolean(),
+  created: z.boolean().optional(),
+  error: z.string().optional(),
+});
+
 export const GitHubBranchSchema = z.object({
   name: z.string(),
   lastCommitSha: z.string().optional(),
@@ -470,6 +482,10 @@ export type GitHubBranchesResponse = z.infer<
   typeof GitHubBranchesResponseSchema
 >;
 export type GitHubReposResponse = z.infer<typeof GitHubReposResponseSchema>;
+export type AddManualRepo = z.infer<typeof AddManualRepoSchema>;
+export type AddManualRepoResponse = z.infer<
+  typeof AddManualRepoResponseSchema
+>;
 export type GitHubAuthResponse = z.infer<typeof GitHubAuthResponseSchema>;
 export type GitHubCreateDraftPr = z.infer<typeof GitHubCreateDraftPrSchema>;
 export type GitHubSyncPrState = z.infer<typeof GitHubSyncPrStateSchema>;
@@ -527,6 +543,10 @@ export interface ClientToServerEvents {
   "github-fetch-branches": (
     data: GitHubFetchBranches,
     callback: (response: GitHubBranchesResponse) => void
+  ) => void;
+  "add-manual-repo": (
+    data: AddManualRepo,
+    callback: (response: AddManualRepoResponse) => void
   ) => void;
   // Create a draft pull request for a given task run
   "github-create-draft-pr": (
