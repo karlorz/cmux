@@ -259,7 +259,27 @@ export function initCmdK(opts: {
           return Boolean(input.control);
         })();
 
-        if (!isCmdK && !isSidebarToggle) return;
+        const historyShortcut = (() => {
+          if (!input.meta || !input.control) return null;
+          if (input.alt || input.shift) return null;
+          const lowerKey = input.key.toLowerCase();
+          const lowerCode = (input.code ?? "").toLowerCase();
+          if (lowerKey === "[" || lowerCode === "bracketleft") {
+            return "back" as const;
+          }
+          if (lowerKey === "]" || lowerCode === "bracketright") {
+            return "forward" as const;
+          }
+          if (lowerKey === "y") {
+            return "history" as const;
+          }
+          return null;
+        })();
+
+        const shouldHandle =
+          isCmdK || isSidebarToggle || historyShortcut !== null;
+
+        if (!shouldHandle) return;
 
         // Prevent default to avoid in-app conflicts and ensure single toggle
         e.preventDefault();
@@ -289,6 +309,36 @@ export function initCmdK(opts: {
             } catch (err) {
               opts.logger.warn("Failed to emit sidebar toggle shortcut", err);
               keyDebug("emit-sidebar-toggle-error", { err: String(err) });
+            }
+          }
+          return;
+        }
+
+        if (historyShortcut) {
+          keyDebug("history-shortcut-detected", {
+            sourceId: contents.id,
+            type: contents.getType?.(),
+            action: historyShortcut,
+          });
+          const targetWin = getTargetWindow();
+          if (targetWin && !targetWin.isDestroyed()) {
+            const eventName = (() => {
+              if (historyShortcut === "back") return "navigation-back";
+              if (historyShortcut === "forward") return "navigation-forward";
+              return "navigation-history";
+            })();
+            try {
+              targetWin.webContents.send(
+                `cmux:event:shortcut:${eventName}`
+              );
+              keyDebug("emit-history-shortcut", {
+                to: targetWin.webContents.id,
+                from: contents.id,
+                eventName,
+              });
+            } catch (err) {
+              opts.logger.warn("Failed to emit history shortcut", err);
+              keyDebug("emit-history-shortcut-error", { err: String(err) });
             }
           }
           return;

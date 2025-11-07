@@ -18,6 +18,7 @@ import CmuxLogo from "./logo/cmux-logo";
 import { SidebarNavLink } from "./sidebar/SidebarNavLink";
 import { SidebarPullRequestList } from "./sidebar/SidebarPullRequestList";
 import { SidebarSectionLink } from "./sidebar/SidebarSectionLink";
+import { SidebarHistoryControls } from "./sidebar/SidebarHistoryControls";
 
 interface SidebarProps {
   tasks: Doc<"tasks">[] | undefined;
@@ -226,6 +227,7 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
         style={{ WebkitAppRegion: "drag" } as CSSProperties}
       >
         {isElectron && <div className="w-[80px]"></div>}
+        <SidebarHistoryControls />
         <Link
           to="/$teamSlugOrId/dashboard"
           params={{ teamSlugOrId }}
