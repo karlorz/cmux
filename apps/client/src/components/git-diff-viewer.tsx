@@ -1,4 +1,4 @@
 export {
-  MonacoGitDiffViewer as GitDiffViewer,
+  ShadcnGitDiffViewer as GitDiffViewer,
   type GitDiffViewerProps,
-} from "./monaco/monaco-git-diff-viewer";
+} from "./shadcn-diff/shadcn-git-diff-viewer";
