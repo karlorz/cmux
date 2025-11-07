@@ -23,6 +23,7 @@
     "@asteasolutions/zod-to-openapi": "^8.1.0",
     "@cmux/convex": "workspace:*",
     "@cmux/shared": "workspace:*",
+    "@cmux/ui-diff": "workspace:*",
     "@cmux/www-openapi-client": "workspace:*",
     "@convex-dev/react-query": "^0.0.0-alpha.11",
     "@hono/node-server": "^1.18.1",

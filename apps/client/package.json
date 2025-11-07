@@ -35,6 +35,7 @@
     "@cmux/convex": "workspace:*",
     "@cmux/server": "workspace:*",
     "@cmux/shared": "workspace:*",
+    "@cmux/ui-diff": "workspace:*",
     "@cmux/www-openapi-client": "workspace:*",
     "@emotion/is-prop-valid": "^1.2.2",
     "@codemirror/lang-cpp": "^6.0.3",

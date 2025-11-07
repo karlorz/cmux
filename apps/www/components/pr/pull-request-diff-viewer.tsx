@@ -38,8 +38,8 @@ import {
 } from "lucide-react";
 import {
   Decoration,
-  Diff,
-  Hunk,
+  Diff as LegacyDiff,
+  Hunk as LegacyHunk,
   computeNewLineNumber,
   computeOldLineNumber,
   parseDiff,
@@ -53,7 +53,12 @@ import {
   type RenderToken,
 } from "react-diff-view";
 import "react-diff-view/style/index.css";
-
+import {
+  Diff as UiDiff,
+  Hunk as UiHunk,
+  parseDiff as parseUiDiff,
+  type DiffFile as UiDiffFile,
+} from "@/ui/diff";
 import { api } from "@cmux/convex/api";
 import { useConvexQuery } from "@convex-dev/react-query";
 import type { FunctionReturnType } from "convex/server";
@@ -109,6 +114,7 @@ type ParsedFileDiff = {
   file: GithubFileChange;
   anchorId: string;
   diff: FileData | null;
+  uiDiffs: UiDiffFile[] | null;
   error?: string;
 };
 
@@ -1273,18 +1279,31 @@ export function PullRequestDiffViewer({
           file,
           anchorId: file.filename,
           diff: null,
+          uiDiffs: null,
           error: renameMessage ?? undefined,
         };
       }
 
+      const diffText = buildDiffText(file);
+      let uiDiffs: UiDiffFile[] | null = null;
       try {
-        const [diff] = parseDiff(buildDiffText(file), {
+        uiDiffs = parseUiDiff(diffText);
+      } catch (uiError) {
+        console.warn(
+          "[pull-request-diff-viewer] Failed to parse diff for UI renderer",
+          uiError
+        );
+      }
+
+      try {
+        const [diff] = parseDiff(diffText, {
           nearbySequences: "zip",
         });
         return {
           file,
           anchorId: file.filename,
           diff: diff ?? null,
+          uiDiffs,
         };
       } catch (error) {
         const message =
@@ -1295,6 +1314,7 @@ export function PullRequestDiffViewer({
           file,
           anchorId: file.filename,
           diff: null,
+          uiDiffs,
           error: message,
         };
       }
@@ -3111,8 +3131,34 @@ const FileDiffCard = memo(function FileDiffCardComponent({
           ) : null}
 
           {!isCollapsed &&
-            (diff ? (
-              <Diff
+            (entry.uiDiffs && entry.uiDiffs.length > 0 ? (
+              <div className="bg-white">
+                {entry.uiDiffs.map((uiFile, idx) => (
+                  <div
+                    key={`${file.filename}:${idx}`}
+                    className={cn(
+                      "overflow-auto border-neutral-200",
+                      idx === 0 ? "" : "border-t"
+                    )}
+                  >
+                    <UiDiff
+                      fileName={uiFile.newPath ?? file.filename}
+                      hunks={uiFile.hunks}
+                      type={uiFile.type}
+                      className="diff-syntax system-mono w-full overflow-auto text-xs leading-5 text-neutral-800"
+                    >
+                      {uiFile.hunks.map((hunk, hunkIndex) => (
+                        <UiHunk
+                          key={`${uiFile.newPath ?? file.filename}:${hunkIndex}:${hunk.content}`}
+                          hunk={hunk}
+                        />
+                      ))}
+                    </UiDiff>
+                  </div>
+                ))}
+              </div>
+            ) : diff ? (
+              <LegacyDiff
                 diffType={diff.type}
                 hunks={diff.hunks}
                 viewType="split"
@@ -3193,11 +3239,11 @@ const FileDiffCard = memo(function FileDiffCardComponent({
                           {hunk.content}
                         </div>
                       </Decoration>
-                      <Hunk hunk={hunk} />
+                      <LegacyHunk hunk={hunk} />
                     </Fragment>
                   ))
                 }
-              </Diff>
+              </LegacyDiff>
             ) : (
               <div className="bg-neutral-50 px-4 py-6 text-sm text-neutral-600">
                 {error ??

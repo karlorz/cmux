@@ -22,6 +22,7 @@ const nextConfig: NextConfig = {
     "@cmux/server",
     "@cmux/shared",
     "@cmux/convex",
+    "@cmux/ui-diff",
     "refractor",
   ],
   async rewrites() {
