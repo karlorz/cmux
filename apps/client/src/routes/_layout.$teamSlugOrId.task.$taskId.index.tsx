@@ -464,9 +464,12 @@ function TaskDetailPage() {
   }, [selectedRunId]);
   const headerTaskRunId = selectedRunId ?? taskRuns?.[0]?._id ?? null;
 
+  const workspaceProvider = selectedRun?.vscode?.provider;
   const rawWorkspaceUrl = selectedRun?.vscode?.workspaceUrl ?? null;
   const workspaceUrl = rawWorkspaceUrl
-    ? toProxyWorkspaceUrl(rawWorkspaceUrl, localServeWeb.data?.baseUrl)
+    ? toProxyWorkspaceUrl(rawWorkspaceUrl, localServeWeb.data?.baseUrl, {
+        provider: workspaceProvider,
+      })
     : null;
   const workspacePersistKey = selectedRunId
     ? getTaskRunPersistKey(selectedRunId)

@@ -11,6 +11,10 @@ interface MorphUrlComponents {
   port: number;
 }
 
+type RewriteOptions = {
+  treatAsLocalWorkspace?: boolean;
+};
+
 export function normalizeWorkspaceOrigin(origin: string | null): string | null {
   if (!origin) {
     return null;
@@ -26,9 +30,10 @@ export function normalizeWorkspaceOrigin(origin: string | null): string | null {
 
 export function rewriteLocalWorkspaceUrlIfNeeded(
   url: string,
-  preferredOrigin?: string | null
+  preferredOrigin?: string | null,
+  options?: RewriteOptions
 ): string {
-  if (!shouldRewriteUrl(url)) {
+  if (!shouldRewriteUrl(url, options?.treatAsLocalWorkspace ?? false)) {
     return url;
   }
 
@@ -49,14 +54,21 @@ export function rewriteLocalWorkspaceUrlIfNeeded(
   }
 }
 
-function shouldRewriteUrl(url: string): boolean {
+function shouldRewriteUrl(
+  url: string,
+  treatAsLocalWorkspace: boolean
+): boolean {
   try {
     const parsed = new URL(url);
     const hostname = parsed.hostname;
-    return (
-      isLoopbackHostname(hostname) ||
-      hostname.toLowerCase() === LOCAL_VSCODE_PLACEHOLDER_HOST
-    );
+    const normalizedHost = hostname.toLowerCase();
+    if (normalizedHost === LOCAL_VSCODE_PLACEHOLDER_HOST) {
+      return true;
+    }
+    if (!treatAsLocalWorkspace) {
+      return false;
+    }
+    return isLoopbackHostname(hostname);
   } catch {
     return false;
   }
@@ -103,11 +115,23 @@ function createMorphPortUrl(
 
 export function toProxyWorkspaceUrl(
   workspaceUrl: string,
-  preferredOrigin?: string | null
+  preferredOrigin?: string | null,
+  options?: {
+    provider?:
+      | "docker"
+      | "morph"
+      | "daytona"
+      | "other"
+      | (string & {});
+    isLocalWorkspace?: boolean;
+  }
 ): string {
+  const treatAsLocalWorkspace =
+    options?.isLocalWorkspace ?? options?.provider === "other";
   const normalizedUrl = rewriteLocalWorkspaceUrlIfNeeded(
     workspaceUrl,
-    preferredOrigin
+    preferredOrigin,
+    { treatAsLocalWorkspace }
   );
   const components = parseMorphUrl(normalizedUrl);
 

@@ -1356,6 +1356,7 @@ function TaskRunTreeInner({
     executePortAction,
   } = useOpenWithActions({
     vscodeUrl,
+    vscodeProvider: run.vscode?.provider ?? null,
     worktreePath: run.worktreePath,
     branch: run.newBranch,
     networking: run.networking,

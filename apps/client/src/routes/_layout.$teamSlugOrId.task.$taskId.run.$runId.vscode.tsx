@@ -60,10 +60,13 @@ export const Route = createFileRoute(
       ]);
       if (result) {
         const workspaceUrl = result.vscode?.workspaceUrl;
+        const workspaceProvider = result.vscode?.provider;
         await preloadTaskRunIframes([
           {
             url: workspaceUrl
-              ? toProxyWorkspaceUrl(workspaceUrl, localServeWeb.baseUrl)
+              ? toProxyWorkspaceUrl(workspaceUrl, localServeWeb.baseUrl, {
+                  provider: workspaceProvider,
+                })
               : "",
             taskRunId: opts.params.runId,
           },
@@ -83,10 +86,12 @@ function VSCodeComponent() {
     })
   );
 
+  const workspaceProvider = taskRun?.data?.vscode?.provider;
   const workspaceUrl = taskRun?.data?.vscode?.workspaceUrl
     ? toProxyWorkspaceUrl(
         taskRun.data.vscode.workspaceUrl,
-        localServeWeb.data?.baseUrl
+        localServeWeb.data?.baseUrl,
+        { provider: workspaceProvider }
       )
     : null;
   const disablePreflight = taskRun?.data?.vscode?.workspaceUrl

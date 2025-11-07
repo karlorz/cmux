@@ -257,6 +257,7 @@ export const TaskItem = memo(function TaskItem({
           {/* Open with dropdown - always appears on hover */}
           <OpenWithDropdown
             vscodeUrl={vscodeUrl}
+            vscodeProvider={runWithVSCode?.vscode?.provider ?? null}
             worktreePath={runWithVSCode?.worktreePath || task.worktreePath}
             branch={task.baseBranch}
             className="group-hover:opacity-100 aria-expanded:opacity-100 opacity-0"

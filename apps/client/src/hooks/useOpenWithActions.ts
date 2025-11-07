@@ -7,6 +7,7 @@ import { rewriteLocalWorkspaceUrlIfNeeded } from "@/lib/toProxyWorkspaceUrl";
 import { useLocalVSCodeServeWebQuery } from "@/queries/local-vscode-serve-web";
 
 type NetworkingInfo = Doc<"taskRuns">["networking"];
+type VSCodeProvider = NonNullable<Doc<"taskRuns">["vscode"]>["provider"];
 
 type OpenWithAction = {
   id: EditorType;
@@ -21,6 +22,7 @@ type PortAction = {
 
 type UseOpenWithActionsArgs = {
   vscodeUrl?: string | null;
+  vscodeProvider?: VSCodeProvider | null;
   worktreePath?: string | null;
   branch?: string | null;
   networking?: NetworkingInfo;
@@ -28,6 +30,7 @@ type UseOpenWithActionsArgs = {
 
 export function useOpenWithActions({
   vscodeUrl,
+  vscodeProvider,
   worktreePath,
   branch,
   networking,
@@ -35,6 +38,7 @@ export function useOpenWithActions({
   const { socket, availableEditors } = useSocket();
   const localServeWeb = useLocalVSCodeServeWebQuery();
   const localServeWebOrigin = localServeWeb.data?.baseUrl ?? null;
+  const treatAsLocalWorkspace = vscodeProvider === "other";
 
   useEffect(() => {
     if (!socket) return;
@@ -57,6 +61,7 @@ export function useOpenWithActions({
           const normalizedUrl = rewriteLocalWorkspaceUrlIfNeeded(
             vscodeUrl,
             localServeWebOrigin,
+            { treatAsLocalWorkspace }
           );
           const vscodeUrlWithWorkspace = `${normalizedUrl}?folder=/root/workspace`;
           window.open(vscodeUrlWithWorkspace, "_blank", "noopener,noreferrer");
@@ -104,7 +109,7 @@ export function useOpenWithActions({
         }
       });
     },
-    [socket, worktreePath, vscodeUrl, localServeWebOrigin]
+    [socket, worktreePath, vscodeUrl, localServeWebOrigin, treatAsLocalWorkspace]
   );
 
   const handleCopyBranch = useCallback(() => {
