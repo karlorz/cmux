@@ -1,7 +1,4 @@
-import {
-  LOCAL_VSCODE_PLACEHOLDER_HOST,
-  isLoopbackHostname,
-} from "@cmux/shared";
+import { LOCAL_VSCODE_PLACEHOLDER_HOST } from "@cmux/shared";
 
 const MORPH_HOST_REGEX = /^port-(\d+)-morphvm-([^.]+)\.http\.cloud\.morph\.so$/;
 
@@ -52,11 +49,8 @@ export function rewriteLocalWorkspaceUrlIfNeeded(
 function shouldRewriteUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
-    const hostname = parsed.hostname;
-    return (
-      isLoopbackHostname(hostname) ||
-      hostname.toLowerCase() === LOCAL_VSCODE_PLACEHOLDER_HOST
-    );
+    const hostname = parsed.hostname.toLowerCase();
+    return hostname === LOCAL_VSCODE_PLACEHOLDER_HOST;
   } catch {
     return false;
   }
