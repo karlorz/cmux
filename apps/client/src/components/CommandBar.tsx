@@ -1,3 +1,4 @@
+import { env } from "@/client-env";
 import { GitHubIcon } from "@/components/icons/github";
 import { useTheme } from "@/components/theme/use-theme";
 import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
@@ -105,6 +106,8 @@ const taskCommandItemClassName =
   "flex items-center gap-3 px-3 py-2.5 mx-1 rounded-md cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 data-[selected=true]:bg-neutral-100 dark:data-[selected=true]:bg-neutral-800 data-[selected=true]:text-neutral-900 dark:data-[selected=true]:text-neutral-100 group";
 const placeholderClassName =
   "flex items-center gap-3 px-3 py-2.5 mx-1 rounded-md text-sm text-neutral-500 dark:text-neutral-400";
+const workspaceEmptyActionButtonClassName =
+  "flex w-full items-center justify-center gap-2 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2.5 text-sm font-medium text-neutral-900 dark:text-neutral-100 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors disabled:cursor-not-allowed disabled:opacity-60";
 
 const COMMAND_LIST_VIRTUALIZATION_THRESHOLD = 40;
 const COMMAND_LIST_ESTIMATED_ROW_HEIGHT = 44;
@@ -280,6 +283,57 @@ function CommandHighlightListener({
   return null;
 }
 
+interface WorkspaceEmptyActionsProps {
+  onCreateEnvironment: () => void;
+  onLinkGithubAccount: () => void;
+  isLinkingGithubAccount: boolean;
+  githubLinkAvailable: boolean;
+}
+
+function WorkspaceEmptyActions({
+  onCreateEnvironment,
+  onLinkGithubAccount,
+  isLinkingGithubAccount,
+  githubLinkAvailable,
+}: WorkspaceEmptyActionsProps) {
+  return (
+    <div className="flex flex-col items-center gap-4 px-4 text-center">
+      <div className="mx-auto max-w-xs space-y-1 text-sm text-neutral-600 dark:text-neutral-300">
+        <p>Nothing to show here yet.</p>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          Create an environment or link your GitHub account to continue.
+        </p>
+      </div>
+      <div className="flex w-full max-w-xs flex-col gap-2">
+        <button
+          type="button"
+          onClick={onCreateEnvironment}
+          className={workspaceEmptyActionButtonClassName}
+        >
+          <Server className="h-4 w-4 text-neutral-600 dark:text-neutral-200" />
+          <span>Create environment</span>
+        </button>
+        <button
+          type="button"
+          onClick={onLinkGithubAccount}
+          disabled={!githubLinkAvailable || isLinkingGithubAccount}
+          className={workspaceEmptyActionButtonClassName}
+        >
+          <GitHubIcon className="h-4 w-4 text-neutral-600 dark:text-neutral-200" />
+          <span>
+            {isLinkingGithubAccount ? "Opening GitHub…" : "Link GitHub account"}
+          </span>
+        </button>
+        {!githubLinkAvailable ? (
+          <p className="text-[11px] text-neutral-500 dark:text-neutral-500">
+            GitHub linking is not configured in this environment.
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function CommandBar({
   teamSlugOrId,
   stateResetDelayMs = 30_000,
@@ -296,6 +350,8 @@ export function CommandBar({
   const [isCreatingLocalWorkspace, setIsCreatingLocalWorkspace] =
     useState(false);
   const [isCreatingCloudWorkspace, setIsCreatingCloudWorkspace] =
+    useState(false);
+  const [isLinkingGithubAccount, setIsLinkingGithubAccount] =
     useState(false);
   const [commandValue, setCommandValue] = useState<string | undefined>(
     undefined
@@ -587,6 +643,9 @@ export function CommandBar({
 
   const isCloudWorkspaceLoading =
     environments === undefined || reposByOrg === undefined;
+  const githubInstallBaseUrl = env.NEXT_PUBLIC_GITHUB_APP_SLUG
+    ? `https://github.com/apps/${env.NEXT_PUBLIC_GITHUB_APP_SLUG}/installations/new`
+    : null;
 
   const getClientSlug = useCallback((meta: unknown): string | undefined => {
     if (!isRecord(meta)) return undefined;
@@ -665,6 +724,7 @@ export function CommandBar({
   const reserveLocalWorkspace = useMutation(api.localWorkspaces.reserve);
   const createTask = useMutation(api.tasks.create);
   const failTaskRun = useMutation(api.taskRuns.fail);
+  const mintGithubInstallState = useMutation(api.github_app.mintInstallState);
 
   useEffect(() => {
     openRef.current = open;
@@ -1028,6 +1088,95 @@ export function CommandBar({
       createCloudWorkspaceFromRepo,
     ]
   );
+
+  const navigateToCreateEnvironment = useCallback(() => {
+    closeCommand();
+    navigate({
+      to: "/$teamSlugOrId/environments/new",
+      params: { teamSlugOrId },
+      search: { ...environmentSearchDefaults },
+    });
+  }, [closeCommand, navigate, teamSlugOrId]);
+
+  const openGithubInstallWindow = useCallback((url: string) => {
+    if (typeof window === "undefined") return;
+    if (isElectron) {
+      window.open(url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    const width = 980;
+    const height = 780;
+    const dualScreenLeft = window.screenLeft ?? window.screenX ?? 0;
+    const dualScreenTop = window.screenTop ?? window.screenY ?? 0;
+    const outerWidth = window.outerWidth || window.innerWidth || width;
+    const outerHeight = window.outerHeight || window.innerHeight || height;
+    const left = Math.max(0, dualScreenLeft + (outerWidth - width) / 2);
+    const top = Math.max(0, dualScreenTop + (outerHeight - height) / 2);
+    const features = [
+      `width=${width}`,
+      `height=${height}`,
+      `left=${Math.floor(left)}`,
+      `top=${Math.floor(top)}`,
+      "resizable=yes",
+      "scrollbars=yes",
+      "toolbar=no",
+      "location=no",
+      "status=no",
+      "menubar=no",
+    ].join(",");
+
+    const popup = window.open("about:blank", "github-install", features);
+    if (popup) {
+      try {
+        (popup as Window & { opener: null | Window }).opener = null;
+      } catch {
+        // ignore opener detachment errors
+      }
+      try {
+        popup.location.href = url;
+      } catch {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+      popup.focus?.();
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  }, []);
+
+  const handleLinkGithubAccount = useCallback(async () => {
+    if (!githubInstallBaseUrl) {
+      toast.error("GitHub linking isn't configured yet.");
+      return;
+    }
+    if (isLinkingGithubAccount) return;
+
+    setIsLinkingGithubAccount(true);
+    try {
+      const { state } = await mintGithubInstallState({ teamSlugOrId });
+      const sep = githubInstallBaseUrl.includes("?") ? "&" : "?";
+      const targetUrl = `${githubInstallBaseUrl}${sep}state=${encodeURIComponent(
+        state
+      )}`;
+      openGithubInstallWindow(targetUrl);
+      closeCommand();
+    } catch (error) {
+      console.error("Failed to start GitHub OAuth flow", error);
+      toast.error("Failed to open GitHub. Please try again.");
+    } finally {
+      setIsLinkingGithubAccount(false);
+    }
+  }, [
+    closeCommand,
+    githubInstallBaseUrl,
+    isLinkingGithubAccount,
+    mintGithubInstallState,
+    openGithubInstallWindow,
+    teamSlugOrId,
+  ]);
+
+  const handleLinkGithubAccountClick = useCallback(() => {
+    void handleLinkGithubAccount();
+  }, [handleLinkGithubAccount]);
 
   useEffect(() => {
     // In Electron, prefer global shortcut from main via cmux event.
@@ -2464,6 +2613,10 @@ export function CommandBar({
     teamVisibleValues,
   ]);
 
+  const showWorkspaceEmptyActions =
+    (activePage === "local-workspaces" && !isLocalWorkspaceLoading) ||
+    (activePage === "cloud-workspaces" && !isCloudWorkspaceLoading);
+
   return (
     <>
       <div
@@ -2536,17 +2689,37 @@ export function CommandBar({
               }}
               className="flex-1 min-h-0 overflow-y-auto px-1 pt-1 pb-2 flex flex-col gap-2"
             >
-              <Command.Empty className="py-6 text-center text-sm text-neutral-500 dark:text-neutral-400">
+              <Command.Empty
+                className={clsx(
+                  "py-6 text-center text-sm text-neutral-500 dark:text-neutral-400",
+                  showWorkspaceEmptyActions &&
+                    "text-neutral-700 dark:text-neutral-300"
+                )}
+              >
                 {activePage === "teams"
                   ? "No matching teams."
                   : activePage === "local-workspaces"
-                    ? isLocalWorkspaceLoading
-                      ? "Loading repositories…"
-                      : "No matching repositories."
+                    ? isLocalWorkspaceLoading ? (
+                        "Loading repositories…"
+                      ) : (
+                        <WorkspaceEmptyActions
+                          onCreateEnvironment={navigateToCreateEnvironment}
+                          onLinkGithubAccount={handleLinkGithubAccountClick}
+                          isLinkingGithubAccount={isLinkingGithubAccount}
+                          githubLinkAvailable={Boolean(githubInstallBaseUrl)}
+                        />
+                      )
                     : activePage === "cloud-workspaces"
-                      ? isCloudWorkspaceLoading
-                        ? "Loading workspaces…"
-                        : "No matching workspaces."
+                      ? isCloudWorkspaceLoading ? (
+                          "Loading workspaces…"
+                        ) : (
+                          <WorkspaceEmptyActions
+                            onCreateEnvironment={navigateToCreateEnvironment}
+                            onLinkGithubAccount={handleLinkGithubAccountClick}
+                            isLinkingGithubAccount={isLinkingGithubAccount}
+                            githubLinkAvailable={Boolean(githubInstallBaseUrl)}
+                          />
+                        )
                       : "No results found."}
               </Command.Empty>
 
