@@ -840,8 +840,8 @@ export function CommandBar({
 
   const handleLocalWorkspaceSelect = useCallback(
     (projectFullName: string) => {
-      clearCommandInput();
       closeCommand();
+      clearCommandInput();
       void createLocalWorkspace(projectFullName);
     },
     [clearCommandInput, closeCommand, createLocalWorkspace]
@@ -1013,8 +1013,8 @@ export function CommandBar({
 
   const handleCloudWorkspaceSelect = useCallback(
     (option: CloudWorkspaceOption) => {
-      clearCommandInput();
       closeCommand();
+      clearCommandInput();
       if (option.type === "environment") {
         void createCloudWorkspaceFromEnvironment(option.environmentId);
       } else {
@@ -1302,29 +1302,39 @@ export function CommandBar({
 
   const handleSelect = useCallback(
     async (value: string) => {
-      clearCommandInput();
       if (value === "teams:switch") {
+        clearCommandInput();
         setActivePage("teams");
         return;
       } else if (value === "new-task") {
+        closeCommand();
+        clearCommandInput();
         navigate({
           to: "/$teamSlugOrId/dashboard",
           params: { teamSlugOrId },
         });
       } else if (value === "local-workspaces") {
+        clearCommandInput();
         setActivePage("local-workspaces");
         return;
       } else if (value === "cloud-workspaces") {
+        clearCommandInput();
         setActivePage("cloud-workspaces");
         return;
       } else if (value === "pull-requests") {
+        closeCommand();
+        clearCommandInput();
         navigate({
           to: "/$teamSlugOrId/prs",
           params: { teamSlugOrId },
         });
       } else if (value === "logs:view") {
+        closeCommand();
+        clearCommandInput();
         navigate({ to: "/$teamSlugOrId/logs", params: { teamSlugOrId } });
       } else if (value === "logs:copy") {
+        closeCommand();
+        clearCommandInput();
         try {
           const ok = await copyAllElectronLogs();
           if (ok) {
@@ -1336,6 +1346,8 @@ export function CommandBar({
           toast.error("Unable to copy logs");
         }
       } else if (value === "updates:check") {
+        closeCommand();
+        clearCommandInput();
         if (!isElectron) {
           toast.error("Update checks are only available in the desktop app.");
         } else {
@@ -1370,6 +1382,8 @@ export function CommandBar({
           }
         }
       } else if (value === "sign-out") {
+        closeCommand();
+        clearCommandInput();
         try {
           if (stackUser) {
             await stackUser.signOut({
@@ -1384,12 +1398,20 @@ export function CommandBar({
           return;
         }
       } else if (value === "theme-light") {
+        closeCommand();
+        clearCommandInput();
         setTheme("light");
       } else if (value === "theme-dark") {
+        closeCommand();
+        clearCommandInput();
         setTheme("dark");
       } else if (value === "theme-system") {
+        closeCommand();
+        clearCommandInput();
         setTheme("system");
       } else if (value === "sidebar-toggle") {
+        closeCommand();
+        clearCommandInput();
         const currentHidden = localStorage.getItem("sidebarHidden") === "true";
         localStorage.setItem("sidebarHidden", String(!currentHidden));
         window.dispatchEvent(
@@ -1402,24 +1424,34 @@ export function CommandBar({
           })
         );
       } else if (value === "home") {
+        closeCommand();
+        clearCommandInput();
         navigate({
           to: "/$teamSlugOrId/dashboard",
           params: { teamSlugOrId },
         });
       } else if (value === "environments") {
+        closeCommand();
+        clearCommandInput();
         navigate({
           to: "/$teamSlugOrId/environments",
           params: { teamSlugOrId },
           search: { ...environmentSearchDefaults },
         });
       } else if (value === "settings") {
+        closeCommand();
+        clearCommandInput();
         navigate({
           to: "/$teamSlugOrId/settings",
           params: { teamSlugOrId },
         });
       } else if (value === "dev:webcontents") {
+        closeCommand();
+        clearCommandInput();
         navigate({ to: "/debug-webcontents" });
       } else if (value.startsWith("team:")) {
+        closeCommand();
+        clearCommandInput();
         const [teamId, slugPart] = value.slice(5).split(":");
         const targetTeamSlugOrId = slugPart || teamId;
         if (!teamId || !targetTeamSlugOrId) {
@@ -1452,6 +1484,8 @@ export function CommandBar({
           params: { teamSlugOrId: targetTeamSlugOrId },
         });
       } else if (value.startsWith("task:")) {
+        closeCommand();
+        clearCommandInput();
         const parts = value.slice(5).split(":");
         const taskId = parts[0] as Id<"tasks">;
         const action = parts[1];
@@ -1501,7 +1535,6 @@ export function CommandBar({
           }
         }
       }
-      closeCommand();
     },
     [
       clearCommandInput,
