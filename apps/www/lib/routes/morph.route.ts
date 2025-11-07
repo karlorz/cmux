@@ -46,6 +46,15 @@ const SetupInstanceResponse = z
   })
   .openapi("SetupInstanceResponse");
 
+type GithubAuthErrorCode = "account_missing" | "token_missing";
+
+const githubAuthErrorMessages: Record<GithubAuthErrorCode, string> = {
+  account_missing:
+    "Connect GitHub to configure a Morph workspace with repositories.",
+  token_missing:
+    "Refresh your GitHub connection to configure a Morph workspace.",
+};
+
 morphRouter.openapi(
   createRoute({
     method: "post" as const,
@@ -98,25 +107,31 @@ morphRouter.openapi(
       const githubAccount = await user.getConnectedAccount("github");
       if (!githubAccount) {
         return {
-          githubAccessTokenError: "GitHub account not found",
           githubAccessToken: null,
-        } as const;
+          githubAuthError: {
+            code: "account_missing",
+            message: "GitHub account not found",
+          } as const,
+        };
       }
       const { accessToken: githubAccessToken } =
         await githubAccount.getAccessToken();
       if (!githubAccessToken) {
         return {
-          githubAccessTokenError: "GitHub access token not found",
           githubAccessToken: null,
-        } as const;
+          githubAuthError: {
+            code: "token_missing",
+            message: "GitHub access token not found",
+          } as const,
+        };
       }
 
-      return { githubAccessTokenError: null, githubAccessToken } as const;
+      return { githubAccessToken, githubAuthError: null as const };
     })();
     const gitIdentityPromise = githubAccessTokenPromise.then(
       ({ githubAccessToken }) => {
         if (!githubAccessToken) {
-          throw new Error("GitHub access token not found");
+          return null;
         }
         return fetchGitIdentityInputs(convex, githubAccessToken);
       }
@@ -165,7 +180,11 @@ morphRouter.openapi(
       }
 
       void gitIdentityPromise
-        .then(([who, gh]) => {
+        .then((identity) => {
+          if (!identity) {
+            return;
+          }
+          const [who, gh] = identity;
           const { name, email } = selectGitIdentity(who, gh);
           return configureGitIdentity(instance, { name, email });
         })
@@ -185,13 +204,24 @@ morphRouter.openapi(
         throw new Error("VSCode URL not found");
       }
 
-      const { githubAccessToken, githubAccessTokenError } =
+      const { githubAccessToken, githubAuthError } =
         await githubAccessTokenPromise;
-      if (githubAccessTokenError) {
+      if (!githubAccessToken || githubAuthError) {
+        const reason: GithubAuthErrorCode =
+          githubAuthError?.code ?? "token_missing";
         console.error(
-          `[sandboxes.start] GitHub access token error: ${githubAccessTokenError}`
+          `[sandboxes.start] GitHub access token error: ${githubAuthError?.message ?? "GitHub access token not found"}`
         );
-        return c.text("Failed to resolve GitHub credentials", 401);
+        return c.json(
+          {
+            error: "github_auth_required",
+            reason,
+            message: githubAuthErrorMessages[reason],
+            requiresGithubAuth: true,
+            details: githubAuthError?.message,
+          },
+          409
+        );
       }
       await configureGithubAccess(instance, githubAccessToken);
 

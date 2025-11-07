@@ -36,10 +36,13 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
+  type MouseEvent,
   type ReactNode,
 } from "react";
 import { RepositoryAdvancedOptions } from "./RepositoryAdvancedOptions";
+import { toast } from "sonner";
 
 function ConnectionIcon({ type }: { type?: string }) {
   if (type && type.includes("gitlab")) {
@@ -83,6 +86,7 @@ interface RepositoryConnectionsSectionProps {
   onSelectedLoginChange: (login: string | null) => void;
   onContextChange: (context: ConnectionContext) => void;
   onConnectionsInvalidated: () => void;
+  onProvideInstallHandler?: (handler: (() => void) | null) => void;
 }
 
 interface RepositoryListSectionProps {
@@ -91,6 +95,73 @@ interface RepositoryListSectionProps {
   selectedRepos: readonly string[];
   onToggleRepo: (repo: string) => void;
   hasConnections: boolean;
+}
+
+interface SetupInstanceErrorPayload {
+  error?: string;
+  message?: string;
+  reason?: string;
+  requiresGithubAuth?: boolean;
+  details?: string;
+}
+
+interface ParsedSetupInstanceError {
+  message: string;
+  requiresGithubAuth: boolean;
+  reason?: string;
+}
+
+const DEFAULT_SETUP_INSTANCE_ERROR_MESSAGE =
+  "Failed to set up the workspace. Please try again.";
+
+function parseSetupInstanceError(error: unknown): ParsedSetupInstanceError {
+  if (!error) {
+    return {
+      message: DEFAULT_SETUP_INSTANCE_ERROR_MESSAGE,
+      requiresGithubAuth: false,
+    };
+  }
+
+  if (typeof error === "string") {
+    const normalized = error.toLowerCase();
+    return {
+      message: error,
+      requiresGithubAuth: normalized.includes("github"),
+    };
+  }
+
+  if (error instanceof Error) {
+    const normalized = (error.message || "").toLowerCase();
+    return {
+      message: error.message || DEFAULT_SETUP_INSTANCE_ERROR_MESSAGE,
+      requiresGithubAuth: normalized.includes("github"),
+    };
+  }
+
+  if (typeof error === "object") {
+    const payload = error as SetupInstanceErrorPayload;
+    const message =
+      (typeof payload.message === "string" && payload.message) ||
+      (typeof payload.error === "string" && payload.error) ||
+      DEFAULT_SETUP_INSTANCE_ERROR_MESSAGE;
+    const reason =
+      typeof payload.reason === "string" ? payload.reason : undefined;
+    const requiresGithubAuth =
+      payload.requiresGithubAuth === true ||
+      payload.error === "github_auth_required" ||
+      reason === "account_missing" ||
+      reason === "token_missing";
+    return {
+      message,
+      requiresGithubAuth,
+      reason,
+    };
+  }
+
+  return {
+    message: DEFAULT_SETUP_INSTANCE_ERROR_MESSAGE,
+    requiresGithubAuth: false,
+  };
 }
 
 export interface RepositoryPickerProps {
@@ -147,6 +218,48 @@ export function RepositoryPicker({
       installationId: null,
       hasConnections: false,
     }
+  );
+  const githubInstallHandlerRef = useRef<(() => void) | null>(null);
+
+  const registerInstallHandler = useCallback(
+    (handler: (() => void) | null) => {
+      githubInstallHandlerRef.current = handler;
+    },
+    []
+  );
+
+  const handleSetupError = useCallback(
+    (error: unknown) => {
+      console.error("Failed to setup instance:", error);
+      const parsed = parseSetupInstanceError(error);
+      if (parsed.requiresGithubAuth) {
+        const description =
+          parsed.reason === "account_missing"
+            ? "Install the GitHub App for your team to continue."
+            : parsed.reason === "token_missing"
+              ? "Refresh your GitHub connection and try again."
+              : undefined;
+
+        const action =
+          githubInstallHandlerRef.current != null
+            ? {
+                label: "Connect GitHub",
+                onClick: (_event: MouseEvent<HTMLButtonElement>) => {
+                  githubInstallHandlerRef.current?.();
+                },
+              }
+            : undefined;
+
+        toast.warning(parsed.message, {
+          description,
+          action,
+        });
+        return;
+      }
+
+      toast.error(parsed.message);
+    },
+    []
   );
 
   const setupInstanceMutation = useRQMutation(
@@ -265,9 +378,7 @@ export function RepositoryPicker({
             console.log("Cloned repos:", data.clonedRepos);
             console.log("Removed repos:", data.removedRepos);
           },
-          onError: (error) => {
-            console.error("Failed to setup instance:", error);
-          },
+          onError: handleSetupError,
         }
       );
     },
@@ -276,6 +387,7 @@ export function RepositoryPicker({
       instanceId,
       onStartConfigure,
       selectedSnapshotId,
+      handleSetupError,
       setupInstanceMutation,
       setupManualInstanceMutation,
       teamSlugOrId,
@@ -353,6 +465,7 @@ export function RepositoryPicker({
           onSelectedLoginChange={setSelectedConnectionLogin}
           onContextChange={setConnectionContextSafe}
           onConnectionsInvalidated={handleConnectionsInvalidated}
+          onProvideInstallHandler={registerInstallHandler}
         />
 
         <RepositoryListSection
@@ -445,6 +558,7 @@ function RepositoryConnectionsSection({
   onSelectedLoginChange,
   onContextChange,
   onConnectionsInvalidated,
+  onProvideInstallHandler,
 }: RepositoryConnectionsSectionProps) {
   const connections = useQuery(api.github.listProviderConnections, {
     teamSlugOrId,
@@ -605,6 +719,16 @@ function RepositoryConnectionsSection({
     openCenteredPopup,
     teamSlugOrId,
   ]);
+
+  useEffect(() => {
+    if (!onProvideInstallHandler) {
+      return;
+    }
+    onProvideInstallHandler(handleInstallApp);
+    return () => {
+      onProvideInstallHandler(null);
+    };
+  }, [handleInstallApp, onProvideInstallHandler]);
 
   return (
     <div className="space-y-2">
