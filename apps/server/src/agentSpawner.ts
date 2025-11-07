@@ -49,6 +49,29 @@ export interface AgentSpawnResult {
   error?: string;
 }
 
+async function markTaskRunAsFailed(
+  teamSlugOrId: string,
+  taskRunId: Id<"taskRuns">,
+  errorMessage: string,
+  exitCode = 1
+) {
+  try {
+    await retryOnOptimisticConcurrency(() =>
+      getConvex().mutation(api.taskRuns.fail, {
+        teamSlugOrId,
+        id: taskRunId,
+        errorMessage,
+        exitCode,
+      })
+    );
+  } catch (failError) {
+    serverLogger.error(
+      `[AgentSpawner] Unable to mark taskRun ${taskRunId} as failed`,
+      failError
+    );
+  }
+}
+
 export async function spawnAgent(
   agent: AgentConfig,
   taskId: Id<"tasks">,
@@ -68,6 +91,7 @@ export async function spawnAgent(
   },
   teamSlugOrId: string
 ): Promise<AgentSpawnResult> {
+  let createdTaskRunId: Id<"taskRuns"> | null = null;
   try {
     // Capture the current auth token and header JSON from AsyncLocalStorage so we can
     // re-enter the auth context inside async event handlers later.
@@ -95,6 +119,7 @@ export async function spawnAgent(
         environmentId: options.environmentId,
       }
     );
+    createdTaskRunId = taskRunId;
 
     // Fetch the task to get image storage IDs
     const task = await getConvex().query(api.tasks.getById, {
@@ -396,13 +421,16 @@ export async function spawnAgent(
       });
 
       if (!workspaceResult.success || !workspaceResult.worktreePath) {
+        const errorMessage =
+          workspaceResult.error || "Failed to setup workspace";
+        await markTaskRunAsFailed(teamSlugOrId, taskRunId, errorMessage);
         return {
           agentName: agent.name,
           terminalId: "",
           taskRunId,
           worktreePath: "",
           success: false,
-          error: workspaceResult.error || "Failed to setup workspace",
+          error: errorMessage,
         };
       }
 
@@ -588,6 +616,8 @@ export async function spawnAgent(
       serverLogger.error(
         `[AgentSpawner] No worker socket available for ${agent.name}`
       );
+      const errorMessage = "No worker connection available";
+      await markTaskRunAsFailed(teamSlugOrId, taskRunId, errorMessage);
       return {
         agentName: agent.name,
         terminalId,
@@ -595,7 +625,7 @@ export async function spawnAgent(
         worktreePath,
         vscodeUrl,
         success: false,
-        error: "No worker connection available",
+        error: errorMessage,
       };
     }
     if (!vscodeInstance.isWorkerConnected()) {
@@ -923,10 +953,15 @@ exit $EXIT_CODE
     };
   } catch (error) {
     serverLogger.error("Error spawning agent", error);
+    if (createdTaskRunId) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to start workspace";
+      await markTaskRunAsFailed(teamSlugOrId, createdTaskRunId, errorMessage);
+    }
     return {
       agentName: agent.name,
       terminalId: "",
-      taskRunId: "",
+      taskRunId: createdTaskRunId ?? "",
       worktreePath: "",
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",

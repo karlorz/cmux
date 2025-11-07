@@ -403,10 +403,18 @@ function DashboardComponent() {
     }
 
     if (!selectedProject[0] || !taskDescription.trim()) {
-      console.error("Please select a project and enter a task description");
+      const missing =
+        !selectedProject[0] && !taskDescription.trim()
+          ? "Select a project and enter a task description."
+          : !selectedProject[0]
+            ? "Select a project before starting a task."
+            : "Enter a task description before starting.";
+      toast.error(missing);
+      console.error("Start task aborted:", missing);
       return;
     }
     if (!socket) {
+      toast.error("Connection to the desktop app was lost. Refresh and try again.");
       console.error("Socket not connected");
       return;
     }
@@ -423,6 +431,7 @@ function DashboardComponent() {
       // Extract content including images from the editor
       const content = editorApiRef.current?.getContent();
       const images = content?.images || [];
+      const taskText = content?.text || taskDescription;
 
       // Upload images to Convex storage first
       const uploadedImages = await Promise.all(
@@ -460,6 +469,16 @@ function DashboardComponent() {
         )
       );
 
+      // Create task in Convex with storage IDs
+      const taskId = await createTask({
+        teamSlugOrId,
+        text: taskText, // Use content.text which includes image references
+        projectFullName: envSelected ? undefined : projectFullName,
+        baseBranch: envSelected ? undefined : branch,
+        images: uploadedImages.length > 0 ? uploadedImages : undefined,
+        environmentId,
+      });
+
       // Clear input after successful task creation
       setTaskDescription("");
       // Force editor to clear
@@ -467,16 +486,6 @@ function DashboardComponent() {
       if (editorApiRef.current?.clear) {
         editorApiRef.current.clear();
       }
-
-      // Create task in Convex with storage IDs
-      const taskId = await createTask({
-        teamSlugOrId,
-        text: content?.text || taskDescription, // Use content.text which includes image references
-        projectFullName: envSelected ? undefined : projectFullName,
-        baseBranch: envSelected ? undefined : branch,
-        images: uploadedImages.length > 0 ? uploadedImages : undefined,
-        environmentId,
-      });
 
       // Hint the sidebar to auto-expand this task once it appears
       addTaskToExpand(taskId);
@@ -509,7 +518,7 @@ function DashboardComponent() {
         {
           ...(repoUrl ? { repoUrl } : {}),
           ...(envSelected ? {} : { branch }),
-          taskDescription: content?.text || taskDescription, // Use content.text which includes image references
+          taskDescription: taskText, // Use content.text which includes image references
           projectFullName,
           taskId,
           selectedAgents:
@@ -524,6 +533,13 @@ function DashboardComponent() {
       console.log("Task created:", taskId);
     } catch (error) {
       console.error("Error starting task:", error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === "string"
+            ? error
+            : "Unknown error";
+      toast.error(`Unable to start task: ${message}`);
     }
   }, [
     selectedProject,

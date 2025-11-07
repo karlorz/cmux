@@ -719,12 +719,48 @@ export const checkAndEvaluateCrown = authMutation({
       return "pending";
     }
 
+    const completedRuns = taskRuns.filter((run) => run.status === "completed");
+
+    if (completedRuns.length === 1) {
+      const winner = completedRuns[0];
+      const now = Date.now();
+      console.log(
+        `[CheckCrown] Auto-crowning ${winner._id} because other runs failed to complete`,
+      );
+
+      await ctx.db.patch(winner._id, {
+        isCrowned: true,
+        crownReason: "Automatically crowned because other runs failed.",
+      });
+
+      await ctx.db.insert("crownEvaluations", {
+        taskId: args.taskId,
+        evaluatedAt: now,
+        winnerRunId: winner._id,
+        candidateRunIds: taskRuns.map((run) => run._id),
+        evaluationPrompt: "Automatic crown: only one run completed successfully.",
+        evaluationResponse:
+          "Automatically selected because it was the only successful run.",
+        createdAt: now,
+        userId,
+        teamId,
+      });
+
+      await ctx.db.patch(args.taskId, {
+        crownEvaluationStatus: "succeeded",
+        crownEvaluationError: undefined,
+        isCompleted: true,
+        updatedAt: now,
+      });
+
+      return winner._id;
+    }
+
     console.log(
       `[CheckCrown] No existing evaluation, proceeding with crown evaluation`,
     );
 
     // Only evaluate if we have at least 2 completed runs
-    const completedRuns = taskRuns.filter((run) => run.status === "completed");
     if (completedRuns.length < 2) {
       console.log(
         `[CheckCrown] Not enough completed runs (${completedRuns.length} < 2)`,
