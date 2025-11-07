@@ -271,7 +271,7 @@ jobs:
         working-directory: apps/server/native/core
         shell: bash
         env:
-          CARGO_BUILD_JOBS: 2
+          CARGO_BUILD_JOBS: 3
           CARGO_NET_GIT_FETCH_WITH_CLI: true
         run: bunx --bun @napi-rs/cli build --platform --release
       - name: Build, sign, and notarize (arm64) via publish script
