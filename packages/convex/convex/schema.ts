@@ -65,6 +65,8 @@ const convexSchema = defineSchema({
     hasPassword: v.optional(v.boolean()),
     otpAuthEnabled: v.optional(v.boolean()),
     passkeyAuthEnabled: v.optional(v.boolean()),
+    // Onboarding
+    onboardingCompletedAt: v.optional(v.number()), // Timestamp when user completed onboarding
     // Timestamps from Stack
     signedUpAtMillis: v.optional(v.number()),
     lastActiveAtMillis: v.optional(v.number()),
