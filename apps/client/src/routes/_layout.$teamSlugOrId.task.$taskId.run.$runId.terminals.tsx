@@ -12,6 +12,7 @@ import clsx from "clsx";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, X } from "lucide-react";
 import z from "zod";
+import type { Id } from "@cmux/convex/dataModel";
 import {
   TaskRunTerminalSession,
   type TerminalConnectionState,
@@ -32,10 +33,25 @@ const paramsSchema = z.object({
   runId: typedZid("taskRuns"),
 });
 
+export interface TaskRunTerminalsPaneProps {
+  teamSlugOrId: string;
+  taskRunId: Id<"taskRuns">;
+}
+
+function TaskRunTerminalsRoute() {
+  const { runId: taskRunId, teamSlugOrId } = Route.useParams();
+  return (
+    <TaskRunTerminalsPane
+      taskRunId={taskRunId}
+      teamSlugOrId={teamSlugOrId}
+    />
+  );
+}
+
 export const Route = createFileRoute(
   "/_layout/$teamSlugOrId/task/$taskId/run/$runId/terminals"
 )({
-  component: TaskRunTerminals,
+  component: TaskRunTerminalsRoute,
   params: {
     parse: paramsSchema.parse,
     stringify: (params) => ({
@@ -154,8 +170,10 @@ function getTabRemovalOutcome(
   return { nextTabs, nextActiveId: nextTabs[0] ?? null };
 }
 
-function TaskRunTerminals() {
-  const { runId: taskRunId, teamSlugOrId } = Route.useParams();
+export function TaskRunTerminalsPane({
+  taskRunId,
+  teamSlugOrId,
+}: TaskRunTerminalsPaneProps) {
   const taskRun = useSuspenseQuery(
     convexQuery(api.taskRuns.get, {
       teamSlugOrId,
@@ -364,7 +382,7 @@ function TaskRunTerminals() {
 
   const renderMessage = useCallback((message: string) => {
     return (
-      <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-neutral-500 dark:text-neutral-400">
+      <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-neutral-500 dark:text-neutral-300">
         {message}
       </div>
     );
@@ -385,7 +403,7 @@ function TaskRunTerminals() {
 
     return (
       <div className="flex flex-col grow min-h-0">
-        <div className="flex items-center justify-between gap-3 border-b border-neutral-200 bg-neutral-100/70 px-3 dark:border-neutral-800 dark:bg-neutral-900/40">
+        <div className="flex items-center justify-between gap-3 border-b border-neutral-200 bg-neutral-100/70 px-3 dark:border-neutral-700 dark:bg-neutral-950/70">
           <div className="flex items-center overflow-x-auto py-0.5">
             {terminalIds.length > 0 ? (
               terminalIds.map((id, index) => {
@@ -398,14 +416,14 @@ function TaskRunTerminals() {
                     <button
                       type="button"
                       onClick={() => setActiveTerminalId(id)}
-                      className={clsx(
-                        "flex items-center gap-2 rounded-md pl-3 pr-8 py-1.5 text-xs font-medium transition-colors",
-                        isActive
-                          ? "bg-neutral-900 text-neutral-50 dark:bg-neutral-100 dark:text-neutral-900"
-                          : "bg-transparent text-neutral-600 hover:bg-neutral-200/70 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800/60 dark:hover:text-neutral-100"
-                      )}
-                      title={id}
-                    >
+                    className={clsx(
+                      "flex items-center gap-2 rounded-md pl-3 pr-8 py-1.5 text-xs font-medium transition-colors",
+                      isActive
+                        ? "bg-neutral-900 text-neutral-50 dark:bg-neutral-700 dark:text-white"
+                        : "bg-transparent text-neutral-600 hover:bg-neutral-200/70 hover:text-neutral-900 dark:bg-neutral-900/50 dark:text-neutral-300 dark:hover:bg-neutral-700/70 dark:hover:text-white"
+                    )}
+                    title={id}
+                  >
                       <span
                         className={clsx(
                           "h-2 w-2 rounded-full",
@@ -427,12 +445,12 @@ function TaskRunTerminals() {
                         deleteTerminalMutation.mutate(id);
                       }}
                       disabled={isDeletingThis}
-                      className={clsx(
-                        "absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 transition-colors disabled:cursor-not-allowed disabled:opacity-60",
-                        isActive
-                          ? "text-neutral-100 hover:text-neutral-50 hover:bg-neutral-900/80 dark:text-neutral-700 dark:hover:text-neutral-900 dark:hover:bg-neutral-200"
-                          : "text-neutral-500 hover:text-neutral-900 hover:bg-neutral-300 dark:text-neutral-400 dark:hover:text-neutral-100 dark:hover:bg-neutral-700"
-                      )}
+                    className={clsx(
+                      "absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                      isActive
+                        ? "text-neutral-100 hover:text-neutral-50 hover:bg-neutral-900/80 dark:text-white dark:hover:text-neutral-50 dark:hover:bg-neutral-600"
+                        : "text-neutral-500 hover:text-neutral-900 hover:bg-neutral-300 dark:text-neutral-300 dark:hover:text-white dark:hover:bg-neutral-700"
+                    )}
                       aria-label={`Close terminal ${index + 1}`}
                       title="Close terminal"
                     >
@@ -448,7 +466,7 @@ function TaskRunTerminals() {
                 );
               })
             ) : (
-              <span className="text-xs text-neutral-500 dark:text-neutral-400">
+              <span className="text-xs text-neutral-500 dark:text-neutral-300">
                 No terminals detected yet.
               </span>
             )}
@@ -464,7 +482,7 @@ function TaskRunTerminals() {
                   createTerminalMutation.mutate(undefined);
                 }}
                 disabled={!hasTerminalBackend || isCreatingTerminal}
-                className="flex items-center gap-1 rounded-md border border-neutral-200 px-2 py-1 text-xs font-medium text-neutral-600 transition hover:border-neutral-300 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-neutral-600 dark:hover:text-neutral-100"
+                className="flex items-center gap-1 rounded-md border border-neutral-200 px-2 py-1 text-xs font-medium text-neutral-600 transition hover:border-neutral-300 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-neutral-600 dark:bg-neutral-800 dark:text-white dark:hover:border-neutral-500 dark:hover:bg-neutral-700 dark:hover:text-white"
               >
                 {isCreatingTerminal ? (
                   "Creating…"
@@ -500,7 +518,7 @@ function TaskRunTerminals() {
                 : "Unable to load terminals."
             )
           ) : terminalIds.length === 0 ? (
-            <div className="flex flex-1 items-center justify-center px-6 py-4 text-center text-sm text-neutral-400">
+            <div className="flex flex-1 items-center justify-center px-6 py-4 text-center text-sm text-neutral-400 dark:text-neutral-300">
               No terminal sessions are currently active.
             </div>
           ) : (

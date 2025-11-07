@@ -631,6 +631,7 @@ function TaskDetailPage() {
     () => ({
       task: task ?? null,
       taskRuns: taskRuns ?? null,
+      teamSlugOrId,
       crownEvaluation,
       workspaceUrl,
       workspacePersistKey,
@@ -684,6 +685,7 @@ function TaskDetailPage() {
       isMorphProvider,
       isBrowserBusy,
       handlePanelClose,
+      teamSlugOrId,
     ]
   );
 
