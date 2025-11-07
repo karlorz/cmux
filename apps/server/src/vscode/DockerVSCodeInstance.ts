@@ -4,6 +4,7 @@ import Docker from "dockerode";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { getContainerWorkspacePath } from "@cmux/shared/node/workspace-path";
 import { getDockerSocketCandidates } from "@cmux/shared/providers/common/check-docker";
 import { getConvex } from "../utils/convexClient";
 import { cleanupGitCredentials } from "../utils/dockerGitSetup";
@@ -34,6 +35,7 @@ export interface ContainerMapping {
 }
 
 export const containerMappings = new Map<string, ContainerMapping>();
+const CONTAINER_WORKSPACE_PATH = getContainerWorkspacePath();
 
 interface DockerEvent {
   status?: string;
@@ -256,7 +258,11 @@ export class DockerVSCodeInstance extends VSCodeInstance {
       // Container doesn't exist, which is fine
     }
 
-    const envVars = ["NODE_ENV=production", "WORKER_PORT=39377"];
+    const envVars = [
+      "NODE_ENV=production",
+      "WORKER_PORT=39377",
+      `CMUX_WORKSPACE_PATH=${CONTAINER_WORKSPACE_PATH}`,
+    ];
 
     // Add theme environment variable if provided
     if (this.config.theme) {
@@ -328,7 +334,9 @@ export class DockerVSCodeInstance extends VSCodeInstance {
         if (!createOptions.HostConfig?.Binds) {
           createOptions.HostConfig!.Binds = binds;
         }
-        binds.push(`${this.config.workspacePath}:/root/workspace`);
+        binds.push(
+          `${this.config.workspacePath}:${CONTAINER_WORKSPACE_PATH}`
+        );
         // Mount the origin directory at the same absolute path to preserve git references
         binds.push(`${originPath}:${originPath}:rw`); // Read-write mount for git operations
 
@@ -387,7 +395,9 @@ export class DockerVSCodeInstance extends VSCodeInstance {
         if (!createOptions.HostConfig?.Binds) {
           createOptions.HostConfig!.Binds = binds;
         }
-        binds.push(`${this.config.workspacePath}:/root/workspace`);
+        binds.push(
+          `${this.config.workspacePath}:${CONTAINER_WORKSPACE_PATH}`
+        );
 
         // Mount SSH directory for git authentication
         const sshDir = path.join(homeDir, ".ssh");
@@ -879,8 +889,8 @@ export class DockerVSCodeInstance extends VSCodeInstance {
     }
   }
 
-  // Detect and start devcontainer tooling inside the running OpenVSCode container
-  // Runs in background and writes output to /root/workspace/.cmux/devcontainer.log
+  // Detect and start devcontainer tooling inside the running OpenVSCode container.
+  // Runs in background and writes output to the workspace's .cmux/devcontainer.log.
   private async bootstrapDevcontainerIfPresent(): Promise<void> {
     try {
       if (!this.container) {
@@ -918,20 +928,35 @@ export class DockerVSCodeInstance extends VSCodeInstance {
         `Devcontainer detected. Bootstrapping inside ${this.containerName} (non-blocking)...`
       );
 
+      const containerWorkspace = CONTAINER_WORKSPACE_PATH;
+      const cmuxDirInContainer = path.posix.join(
+        containerWorkspace,
+        ".cmux"
+      );
+      const devcontainerJsonInContainer = path.posix.join(
+        containerWorkspace,
+        ".devcontainer",
+        "devcontainer.json"
+      );
+      const devcontainerLogInContainer = path.posix.join(
+        cmuxDirInContainer,
+        "devcontainer.log"
+      );
+
       // Prepare background command inside the container
       const bootstrapCmd = [
         "bash",
         "-lc",
         [
           "set -euo pipefail",
-          "mkdir -p /root/workspace/.cmux",
+          `mkdir -p "${cmuxDirInContainer}"`,
           // Only run if devcontainer file exists in container mount as well
-          "if [ -f /root/workspace/.devcontainer/devcontainer.json ]; then",
+          `if [ -f "${devcontainerJsonInContainer}" ]; then`,
           // Run in background; redirect output to a log inside workspace
-          "  (cd /root/workspace && nohup bunx @devcontainers/cli up --workspace-folder . >> /root/workspace/.cmux/devcontainer.log 2>&1 &)",
-          "  echo 'devcontainer up triggered in background' >> /root/workspace/.cmux/devcontainer.log",
+          `  (cd "${containerWorkspace}" && nohup bunx @devcontainers/cli up --workspace-folder . >> "${devcontainerLogInContainer}" 2>&1 &)`,
+          `  echo 'devcontainer up triggered in background' >> "${devcontainerLogInContainer}"`,
           "else",
-          "  echo 'devcontainer.json not found in container' >> /root/workspace/.cmux/devcontainer.log",
+          `  echo 'devcontainer.json not found in container' >> "${devcontainerLogInContainer}"`,
           "fi",
         ].join(" && "),
       ];

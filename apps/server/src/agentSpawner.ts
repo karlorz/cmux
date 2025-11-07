@@ -5,6 +5,7 @@ import {
   type AgentConfig,
   type EnvironmentResult,
 } from "@cmux/shared/agentConfig";
+import { getContainerWorkspacePath } from "@cmux/shared/node/workspace-path";
 import type {
   WorkerCreateTerminal,
   WorkerTerminalFailed,
@@ -36,6 +37,7 @@ import { workerExec } from "./utils/workerExec";
 import rawSwitchBranchScript from "./utils/switch-branch.ts?raw";
 
 const SWITCH_BRANCH_BUN_SCRIPT = rawSwitchBranchScript;
+const CONTAINER_WORKSPACE_PATH = getContainerWorkspacePath();
 
 const { getApiEnvironmentsByIdVars } = await getWwwOpenApiModule();
 
@@ -376,7 +378,7 @@ export async function spawnAgent(
         taskRunJwt,
       });
 
-      worktreePath = "/root/workspace";
+      worktreePath = CONTAINER_WORKSPACE_PATH;
     } else {
       // For Docker, set up worktree as before
       const worktreeInfo = await getWorktreePath(
@@ -640,7 +642,7 @@ export async function spawnAgent(
           "-s",
           tmuxSessionName,
           "-c",
-          "/root/workspace",
+          CONTAINER_WORKSPACE_PATH,
           actualCommand,
           ...actualArgs.map((arg) => {
             // Replace $CMUX_PROMPT with actual prompt value
@@ -676,7 +678,7 @@ export async function spawnAgent(
       agentModel: agent.name,
       authFiles,
       startupCommands,
-      cwd: "/root/workspace",
+      cwd: CONTAINER_WORKSPACE_PATH,
     };
 
     const switchBranch = async () => {
@@ -696,7 +698,7 @@ exit $EXIT_CODE
         workerSocket,
         command: "bash",
         args: ["-lc", command],
-        cwd: "/root/workspace",
+        cwd: CONTAINER_WORKSPACE_PATH,
         env: {
           CMUX_BRANCH_NAME: newBranch,
         },

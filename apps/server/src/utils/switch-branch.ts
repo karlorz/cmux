@@ -1,11 +1,12 @@
 #!/usr/bin/env bun
 
+import { $ } from "bun";
+import { getContainerWorkspacePath } from "@cmux/shared/node/workspace-path";
 import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { $ } from "bun";
 
-const workspaceDir = "/root/workspace";
+const workspaceDir = getContainerWorkspacePath();
 const branchName = process.env.CMUX_BRANCH_NAME;
 
 const logPrefix = "[cmux switch-branch]";
