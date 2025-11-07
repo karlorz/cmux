@@ -482,7 +482,9 @@ async function handleAllCompleteRequest(
 
   const allComplete =
     runsForTeam.length > 0 &&
-    runsForTeam.every((run) => run.status === "completed");
+    runsForTeam.every((run) =>
+      ["completed", "failed"].includes(run.status)
+    );
 
   const response = {
     ok: true,
@@ -557,13 +559,10 @@ async function handleCrownCheckRequest(
   const completedRuns = runsForTeam.filter((run) => run.status === "completed");
 
   const shouldEvaluate =
-    allRunsFinished &&
-    allWorkersReported &&
-    completedRuns.length >= 2 &&
-    !existingEvaluation;
+    allRunsFinished && completedRuns.length >= 2 && !existingEvaluation;
 
   const singleRunWinnerId =
-    runsForTeam.length === 1 && completedRuns.length === 1
+    allRunsFinished && completedRuns.length === 1
       ? completedRuns[0]._id
       : null;
 

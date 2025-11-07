@@ -68,6 +68,33 @@ export async function spawnAgent(
   },
   teamSlugOrId: string
 ): Promise<AgentSpawnResult> {
+  let lastTaskRunId: Id<"taskRuns"> | null = null;
+  const markRunFailed = async (
+    runId: Id<"taskRuns"> | null,
+    message: string
+  ) => {
+    if (!runId) {
+      return;
+    }
+    try {
+      await retryOnOptimisticConcurrency(() =>
+        getConvex().mutation(api.taskRuns.fail, {
+          teamSlugOrId,
+          id: runId,
+          errorMessage: message,
+          exitCode: 1,
+        })
+      );
+      serverLogger.info(
+        `[AgentSpawner] Marked taskRun ${runId} as failed: ${message}`
+      );
+    } catch (markError) {
+      serverLogger.error(
+        `[AgentSpawner] Failed to mark task run ${runId} as failed`,
+        markError
+      );
+    }
+  };
   try {
     // Capture the current auth token and header JSON from AsyncLocalStorage so we can
     // re-enter the auth context inside async event handlers later.
@@ -95,6 +122,7 @@ export async function spawnAgent(
         environmentId: options.environmentId,
       }
     );
+    lastTaskRunId = taskRunId;
 
     // Fetch the task to get image storage IDs
     const task = await getConvex().query(api.tasks.getById, {
@@ -396,6 +424,10 @@ export async function spawnAgent(
       });
 
       if (!workspaceResult.success || !workspaceResult.worktreePath) {
+        await markRunFailed(
+          taskRunId,
+          workspaceResult.error || "Failed to setup workspace"
+        );
         return {
           agentName: agent.name,
           terminalId: "",
@@ -588,6 +620,7 @@ export async function spawnAgent(
       serverLogger.error(
         `[AgentSpawner] No worker socket available for ${agent.name}`
       );
+      await markRunFailed(taskRunId, "No worker connection available");
       return {
         agentName: agent.name,
         terminalId,
@@ -923,13 +956,18 @@ exit $EXIT_CODE
     };
   } catch (error) {
     serverLogger.error("Error spawning agent", error);
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+
+    await markRunFailed(lastTaskRunId, errorMessage);
+
     return {
       agentName: agent.name,
       terminalId: "",
-      taskRunId: "",
+      taskRunId: lastTaskRunId ?? "",
       worktreePath: "",
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: errorMessage,
     };
   }
 }

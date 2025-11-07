@@ -437,19 +437,24 @@ async function startCrownEvaluation({
   const completedRuns = crownData.runs.filter(
     (run) => run.status === "completed"
   );
+  const finishedRuns = crownData.runs.filter((run) =>
+    ["completed", "failed"].includes(run.status)
+  );
   const totalRuns = crownData.runs.length;
-  const allRunsCompleted = totalRuns > 0 && completedRuns.length === totalRuns;
+  const allRunsFinished =
+    totalRuns > 0 && finishedRuns.length === totalRuns;
 
   log("INFO", "Crown readiness status", {
     taskRunId,
     taskId: currentTaskId,
     totalRuns,
     completedRuns: completedRuns.length,
-    allRunsCompleted,
+    failedRuns: finishedRuns.length - completedRuns.length,
+    allRunsFinished,
   });
 
-  if (!allRunsCompleted) {
-    log("INFO", "Not all task runs completed; deferring crown evaluation", {
+  if (!allRunsFinished) {
+    log("INFO", "Not all task runs finished; deferring crown evaluation", {
       taskRunId,
       taskId: currentTaskId,
       runStatuses: crownData.runs.map((run) => ({

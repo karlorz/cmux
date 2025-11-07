@@ -49,6 +49,10 @@ type EnvironmentNewSearchParams = {
   snapshotId: MorphSnapshotId | undefined;
 };
 
+type RestorePayload = {
+  text: string;
+};
+
 // Default agents (not persisted to localStorage)
 const DEFAULT_AGENTS = [
   "claude/sonnet-4.5",
@@ -82,6 +86,23 @@ const parseStoredAgentSelection = (stored: string | null): string[] => {
   } catch (error) {
     console.warn("Failed to parse stored agent selection", error);
     return [];
+  }
+};
+
+const formatTaskStartError = (error: unknown): string => {
+  if (!error) {
+    return "Unknown error";
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
   }
 };
 
@@ -130,6 +151,27 @@ function DashboardComponent() {
 
   // Ref to access editor API
   const editorApiRef = useRef<EditorApi | null>(null);
+  const restoreEntriesRef = useRef<Map<Id<"tasks">, RestorePayload>>(new Map());
+
+  const rememberRestorePayload = useCallback(
+    (taskId: Id<"tasks">, payload: RestorePayload) => {
+      restoreEntriesRef.current.set(taskId, payload);
+    },
+    []
+  );
+
+  const consumeRestorePayload = useCallback((taskId: Id<"tasks">) => {
+    const payload = restoreEntriesRef.current.get(taskId);
+    if (payload) {
+      restoreEntriesRef.current.delete(taskId);
+    }
+    return payload ?? null;
+  }, []);
+
+  const releaseRestorePayload = useCallback((taskId: Id<"tasks">) => {
+    restoreEntriesRef.current.delete(taskId);
+  }, []);
+
 
   const persistAgentSelection = useCallback((agents: string[]) => {
     try {
@@ -165,6 +207,42 @@ function DashboardComponent() {
   const handleTaskDescriptionChange = useCallback((value: string) => {
     setTaskDescription(value);
   }, []);
+
+  const restoreEditorText = useCallback(
+    (text: string) => {
+      if (!editorApiRef.current) {
+        handleTaskDescriptionChange(text);
+        return;
+      }
+
+      editorApiRef.current.clear();
+      if (text) {
+        editorApiRef.current.insertText?.(text);
+      }
+      handleTaskDescriptionChange(text);
+      editorApiRef.current.focus?.();
+    },
+    [handleTaskDescriptionChange]
+  );
+
+  const showTaskErrorToast = useCallback(
+    (message: string, payload?: RestorePayload | null) => {
+      const hasRestoreText = Boolean(payload?.text);
+      toast.error(message, {
+        action: hasRestoreText
+          ? {
+              label: "Restore input",
+              onClick: () => {
+                if (payload?.text) {
+                  restoreEditorText(payload.text);
+                }
+              },
+            }
+          : undefined,
+      });
+    },
+    [restoreEditorText]
+  );
 
   // Fetch branches for selected repo from Convex
   const isEnvSelected = useMemo(
@@ -375,43 +453,56 @@ function DashboardComponent() {
   }, [selectedBranch, branchNames, remoteDefaultBranch]);
 
   const handleStartTask = useCallback(async () => {
-    // For local mode, perform a fresh docker check right before starting
-    if (!isEnvSelected && !isCloudMode) {
-      // Always check Docker status when in local mode, regardless of current state
-      if (socket) {
-        const ready = await new Promise<boolean>((resolve) => {
-          socket.emit("check-provider-status", (response) => {
-            const isRunning = !!response?.dockerStatus?.isRunning;
-            if (typeof isRunning === "boolean") {
-              setDockerReady(isRunning);
-            }
-            resolve(isRunning);
-          });
-        });
+    const trimmedDescription = taskDescription.trim();
+    let lastSubmittedPayload: RestorePayload = { text: taskDescription };
 
-        // Only show the alert if Docker is actually not running after checking
-        if (!ready) {
-          toast.error("Docker is not running. Start Docker Desktop.");
-          return;
-        }
-      } else {
-        // If socket is not connected, we can't verify Docker status
-        console.error("Cannot verify Docker status: socket not connected");
-        toast.error("Cannot verify Docker status. Please ensure the server is running.");
+    if (!selectedProject[0]) {
+      console.error("Please select a project before starting a task");
+      showTaskErrorToast(
+        "Select a project before starting a task.",
+        lastSubmittedPayload
+      );
+      return;
+    }
+
+    if (!trimmedDescription) {
+      console.error("Task description is required");
+      showTaskErrorToast(
+        "Enter a task description before starting a task.",
+        lastSubmittedPayload
+      );
+      return;
+    }
+
+    if (!socket) {
+      console.error("Socket not connected");
+      showTaskErrorToast(
+        "Cannot reach the server. Refresh and try again.",
+        lastSubmittedPayload
+      );
+      return;
+    }
+
+    if (!isEnvSelected && !isCloudMode) {
+      const ready = await new Promise<boolean>((resolve) => {
+        socket.emit("check-provider-status", (response) => {
+          const isRunning = !!response?.dockerStatus?.isRunning;
+          if (typeof isRunning === "boolean") {
+            setDockerReady(isRunning);
+          }
+          resolve(isRunning);
+        });
+      });
+
+      if (!ready) {
+        showTaskErrorToast(
+          "Docker is not running. Start Docker Desktop or switch to Cloud mode.",
+          lastSubmittedPayload
+        );
         return;
       }
     }
 
-    if (!selectedProject[0] || !taskDescription.trim()) {
-      console.error("Please select a project and enter a task description");
-      return;
-    }
-    if (!socket) {
-      console.error("Socket not connected");
-      return;
-    }
-
-    // Use the effective selected branch (respects available branches and sensible defaults)
     const branch = effectiveSelectedBranch[0];
     const projectFullName = selectedProject[0];
     const envSelected = projectFullName.startsWith("env:");
@@ -420,11 +511,12 @@ function DashboardComponent() {
       : undefined;
 
     try {
-      // Extract content including images from the editor
       const content = editorApiRef.current?.getContent();
       const images = content?.images || [];
+      lastSubmittedPayload = {
+        text: content?.text || trimmedDescription,
+      };
 
-      // Upload images to Convex storage first
       const uploadedImages = await Promise.all(
         images.map(
           async (image: {
@@ -432,7 +524,6 @@ function DashboardComponent() {
             fileName?: string;
             altText: string;
           }) => {
-            // Convert base64 to blob
             const base64Data = image.src.split(",")[1] || image.src;
             const byteCharacters = atob(base64Data);
             const byteNumbers = new Array(byteCharacters.length);
@@ -460,45 +551,53 @@ function DashboardComponent() {
         )
       );
 
-      // Clear input after successful task creation
+      // Clear input immediately so users can queue another task while this one starts
       setTaskDescription("");
-      // Force editor to clear
       handleTaskDescriptionChange("");
       if (editorApiRef.current?.clear) {
         editorApiRef.current.clear();
       }
 
-      // Create task in Convex with storage IDs
       const taskId = await createTask({
         teamSlugOrId,
-        text: content?.text || taskDescription, // Use content.text which includes image references
+        text: lastSubmittedPayload.text,
         projectFullName: envSelected ? undefined : projectFullName,
         baseBranch: envSelected ? undefined : branch,
         images: uploadedImages.length > 0 ? uploadedImages : undefined,
         environmentId,
       });
 
-      // Hint the sidebar to auto-expand this task once it appears
+      rememberRestorePayload(taskId, lastSubmittedPayload);
       addTaskToExpand(taskId);
 
       const repoUrl = envSelected
         ? undefined
         : `https://github.com/${projectFullName}.git`;
 
-      // For socket.io, we need to send the content text (which includes image references) and the images
       const handleStartTaskAck = (response: TaskAcknowledged | TaskStarted | TaskError) => {
         if ("error" in response) {
           console.error("Task start error:", response.error);
-          toast.error(`Task start error: ${JSON.stringify(response.error)}`);
+          const payloadForRestore =
+            consumeRestorePayload(response.taskId) ?? lastSubmittedPayload;
+          showTaskErrorToast(
+            `Task failed to start: ${formatTaskStartError(response.error)}`,
+            payloadForRestore
+          );
           return;
         }
 
         attachTaskLifecycleListeners(socket, response.taskId, {
           onStarted: (payload) => {
+            releaseRestorePayload(payload.taskId);
             console.log("Task started:", payload);
           },
           onFailed: (payload) => {
-            toast.error(`Task failed to start: ${payload.error}`);
+            const payloadForRestore =
+              consumeRestorePayload(payload.taskId) ?? lastSubmittedPayload;
+            showTaskErrorToast(
+              `Task failed to start: ${formatTaskStartError(payload.error)}`,
+              payloadForRestore
+            );
           },
         });
         console.log("Task acknowledged:", response);
@@ -509,7 +608,7 @@ function DashboardComponent() {
         {
           ...(repoUrl ? { repoUrl } : {}),
           ...(envSelected ? {} : { branch }),
-          taskDescription: content?.text || taskDescription, // Use content.text which includes image references
+          taskDescription: lastSubmittedPayload.text,
           projectFullName,
           taskId,
           selectedAgents:
@@ -524,6 +623,10 @@ function DashboardComponent() {
       console.log("Task created:", taskId);
     } catch (error) {
       console.error("Error starting task:", error);
+      showTaskErrorToast(
+        `Error starting task: ${formatTaskStartError(error)}`,
+        lastSubmittedPayload
+      );
     }
   }, [
     selectedProject,
@@ -539,6 +642,10 @@ function DashboardComponent() {
     isEnvSelected,
     theme,
     generateUploadUrl,
+    rememberRestorePayload,
+    consumeRestorePayload,
+    releaseRestorePayload,
+    showTaskErrorToast,
   ]);
 
   // Fetch repos on mount if none exist
