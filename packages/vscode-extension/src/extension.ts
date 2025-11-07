@@ -282,23 +282,15 @@ async function setupDefaultTerminal() {
     return;
   }
 
+  // Set this BEFORE creating UI elements to prevent race conditions
+  isSetupComplete = true;
+
   // Wait for tmux sessions to exist (they may be created by orchestrator for cloud workspaces)
+  // Continue even if no sessions yet - terminal will show and wait for tmux to be ready
   const hasSessions = await waitForTmuxSessions(20, 1000);
   if (!hasSessions) {
-    log("No tmux sessions found after waiting; skipping terminal setup and attach");
-    return;
+    log("No tmux sessions found after waiting; creating terminal anyway to ensure visibility");
   }
-
-  // if an existing editor is called "bash", early return
-  const activeEditors = vscode.window.visibleTextEditors;
-  for (const editor of activeEditors) {
-    if (editor.document.fileName === "bash") {
-      log("Bash editor already exists, skipping terminal setup");
-      return;
-    }
-  }
-
-  isSetupComplete = true; // Set this BEFORE creating UI elements to prevent race conditions
 
   // Open Source Control view
   log("Opening SCM view...");
@@ -376,6 +368,18 @@ function connectToWorker() {
     if (!isSetupComplete) {
       log("Setting up default terminal...");
       setupDefaultTerminal();
+    } else {
+      // If setup is complete but terminal exists, ensure it's visible
+      const existingTerminal = activeTerminals.get("default");
+      if (existingTerminal) {
+        log("Terminal already exists, ensuring it's visible...");
+        existingTerminal.show();
+      } else {
+        // Terminal was disposed or lost, recreate it
+        log("Terminal was lost, recreating...");
+        isSetupComplete = false;
+        setupDefaultTerminal();
+      }
     }
   });
 
@@ -390,6 +394,15 @@ function connectToWorker() {
   // Handle reconnection without duplicating setup
   workerSocket.io.on("reconnect", () => {
     log("Reconnected to worker socket server");
+    // Ensure terminal is visible on reconnection
+    const existingTerminal = activeTerminals.get("default");
+    if (existingTerminal) {
+      log("Reconnected - ensuring terminal is visible...");
+      existingTerminal.show();
+    } else if (!isSetupComplete) {
+      log("Reconnected - setting up terminal...");
+      setupDefaultTerminal();
+    }
   });
 }
 
@@ -565,9 +578,27 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
+  // Track terminal closures to remove from our map
+  const terminalCloseListener = vscode.window.onDidCloseTerminal((terminal) => {
+    log(`Terminal closed: ${terminal.name}`);
+    // Remove from our tracking map
+    for (const [key, value] of activeTerminals.entries()) {
+      if (value === terminal) {
+        log(`Removing terminal from tracking: ${key}`);
+        activeTerminals.delete(key);
+        // If it's the default terminal that was closed, allow recreation
+        if (key === "default") {
+          isSetupComplete = false;
+        }
+        break;
+      }
+    }
+  });
+
   context.subscriptions.push(disposable);
   context.subscriptions.push(run);
   context.subscriptions.push(openAllChangesVsBase);
+  context.subscriptions.push(terminalCloseListener);
 }
 
 export function deactivate() {
