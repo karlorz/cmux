@@ -2875,7 +2875,7 @@ const FileDiffCard = memo(function FileDiffCardComponent({
                   align="start"
                   sideOffset={0}
                   className={cn(
-                    "max-w-xs space-y-1 text-left leading-relaxed border backdrop-blur",
+                    "max-w-xs space-y-1 text-left leading-relaxed border backdrop-blur pointer-events-auto select-text",
                     getHeatmapTooltipTheme(tooltipMeta.score).contentClass
                   )}
                 >
@@ -3292,7 +3292,7 @@ function HeatmapGutterTooltip({
         side="left"
         align="start"
         className={cn(
-          "max-w-xs space-y-1 text-left leading-relaxed border backdrop-blur",
+          "max-w-xs space-y-1 text-left leading-relaxed border backdrop-blur pointer-events-auto select-text",
           theme.contentClass
         )}
       >
@@ -3313,11 +3313,60 @@ function HeatmapTooltipBody({
   reason: string | null;
 }) {
   const theme = getHeatmapTooltipTheme(score);
+  const { copy, copied } = useClipboard({ timeout: 1500 });
+  const safeReason = reason ?? "";
+  const hasReason = safeReason.trim().length > 0;
+
+  const handleCopy = useCallback(() => {
+    if (!hasReason) {
+      return;
+    }
+    copy(safeReason);
+  }, [copy, hasReason, safeReason]);
+
+  if (!hasReason) {
+    return null;
+  }
+
+  const isDarkTheme = theme.titleClass.includes("text-neutral-100");
+  const buttonToneClass = isDarkTheme
+    ? "border-white/40 text-white hover:bg-white/10"
+    : "border-neutral-400/60 text-neutral-900 hover:bg-black/5";
+
   return (
     <div className="text-left text-xs leading-relaxed">
-      {reason ? (
-        <p className={cn("text-xs", theme.reasonClass)}>{reason}</p>
-      ) : null}
+      <div className="flex items-start gap-2">
+        <p
+          className={cn(
+            "flex-1 whitespace-pre-wrap break-words text-xs",
+            theme.reasonClass
+          )}
+        >
+          {safeReason}
+        </p>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className={cn(
+            "ml-1 inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500",
+            buttonToneClass,
+            copied ? "bg-emerald-500/20" : ""
+          )}
+          aria-label={copied ? "Tooltip reason copied" : "Copy tooltip reason"}
+        >
+          {copied ? (
+            <>
+              <Check className="h-3 w-3" aria-hidden />
+              <span>Copied</span>
+            </>
+          ) : (
+            <>
+              <Copy className="h-3 w-3" aria-hidden />
+              <span>Copy</span>
+            </>
+          )}
+        </button>
+      </div>
     </div>
   );
 }
