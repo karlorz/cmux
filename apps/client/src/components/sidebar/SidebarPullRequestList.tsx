@@ -53,17 +53,26 @@ export function SidebarPullRequestList({
   }
 
   return (
-    <ul className="flex flex-col gap-px">
-      {list.map((pr) => (
-        <PullRequestListItem
-          key={`${pr.repoFullName}#${pr.number}`}
-          pr={pr}
-          teamSlugOrId={teamSlugOrId}
-          expanded={expanded}
-          setExpanded={setExpanded}
-        />
-      ))}
-    </ul>
+    <>
+      <ul className="flex flex-col gap-px">
+        {list.map((pr) => (
+          <PullRequestListItem
+            key={`${pr.repoFullName}#${pr.number}`}
+            pr={pr}
+            teamSlugOrId={teamSlugOrId}
+            expanded={expanded}
+            setExpanded={setExpanded}
+          />
+        ))}
+      </ul>
+      <Link
+        to="/$teamSlugOrId/prs"
+        params={{ teamSlugOrId }}
+        className="mt-1 flex items-center rounded-md px-2 py-1.5 text-xs text-neutral-600 dark:text-neutral-400 transition-colors hover:bg-neutral-200/45 dark:hover:bg-neutral-800/45"
+      >
+        View all PRs
+      </Link>
+    </>
   );
 }
 
