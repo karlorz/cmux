@@ -57,6 +57,8 @@ import {
 import type {
   SocketMutationErrorInstance,
 } from "./task-detail-header.mutations";
+import { api } from "@cmux/convex/api";
+import { useQuery as useConvexQuery } from "convex/react";
 
 interface TaskDetailHeaderProps {
   task?: Doc<"tasks"> | null;
@@ -605,6 +607,50 @@ function SocketActions({
     [pullRequests],
   );
 
+  // Query PR details from database to check for conflicts
+  const prDetailsQueries = pullRequests
+    .filter((pr) => pr.repoFullName && pr.number)
+    .map((pr) => {
+      const [owner = "", repo = ""] = (pr.repoFullName || "").split("/", 2);
+      return {
+        owner,
+        repo,
+        number: pr.number,
+        repoFullName: pr.repoFullName,
+      };
+    });
+
+  const prDetails = prDetailsQueries.map(({ owner, repo, number }) =>
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    useConvexQuery(
+      api.github_prs.getPullRequest,
+      owner && repo && number
+        ? {
+            teamSlugOrId,
+            repoFullName: `${owner}/${repo}`,
+            number,
+          }
+        : "skip"
+    )
+  );
+
+  // Check if any PR has conflicts
+  const hasConflicts = useMemo(() => {
+    return prDetails.some((pr) => pr?.mergeable === false);
+  }, [prDetails]);
+
+  const conflictDisabledReason = useMemo(() => {
+    if (!hasConflicts) return undefined;
+    const conflictedPrs = prDetails
+      .filter((pr) => pr?.mergeable === false)
+      .map((pr) => pr?.repoFullName)
+      .filter(Boolean);
+    if (conflictedPrs.length === 1) {
+      return `Cannot merge: The pull request in ${conflictedPrs[0]} has conflicts with the base branch that must be resolved.`;
+    }
+    return `Cannot merge: ${conflictedPrs.length} pull requests have conflicts with their base branches that must be resolved.`;
+  }, [hasConflicts, prDetails]);
+
   const diffQueries = useQueries({
     queries: repoDiffTargets.map((target) => ({
       ...gitDiffQueryOptions({
@@ -969,8 +1015,15 @@ function SocketActions({
             isOpeningPr ||
             isCreatingPr ||
             isMerging ||
-            (!prIsOpen && !hasChanges)
+            (!prIsOpen && !hasChanges) ||
+            (prIsOpen && hasConflicts)
           }
+          disabledReason={
+            prIsOpen && hasConflicts
+              ? conflictDisabledReason
+              : undefined
+          }
+          isLoading={prIsOpen ? isMerging : isOpeningPr}
           prCount={repoFullNames.length}
         />
       )}

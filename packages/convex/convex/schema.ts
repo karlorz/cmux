@@ -719,6 +719,10 @@ const convexSchema = defineSchema({
     additions: v.optional(v.number()),
     deletions: v.optional(v.number()),
     changedFiles: v.optional(v.number()),
+
+    // Merge status
+    mergeable: v.optional(v.union(v.literal(true), v.literal(false), v.literal("unknown"))),
+    mergeableState: v.optional(v.string()),
   })
     .index("by_team", ["teamId", "updatedAt"]) // list by team, recent first client-side
     .index("by_team_state", ["teamId", "state", "updatedAt"]) // filter by state

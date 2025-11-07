@@ -27,6 +27,8 @@ type GitHubPrBasic = {
 type GitHubPrDetail = GitHubPrBasic & {
   merged_at: string | null;
   node_id: string;
+  mergeable: boolean | null;
+  mergeable_state: string;
 };
 
 type ConvexClient = ReturnType<typeof getConvex>;
@@ -596,6 +598,11 @@ githubPrsOpenRouter.openapi(
             });
           }
 
+          // Check if PR has merge conflicts
+          if (detail.mergeable === false) {
+            throw new Error(`Cannot merge PR #${detail.number}: This pull request has conflicts with the base branch that must be resolved before merging.`);
+          }
+
           await mergePullRequest({
             octokit,
             owner,
@@ -803,6 +810,8 @@ githubPrsOpenRouter.openapi(
           closedAt: Date.now(),
           mergedAt: closedPR.merged_at ? new Date(closedPR.merged_at).getTime() : undefined,
           repositoryId: existingPR.repositoryId,
+          mergeable: closedPR.mergeable === null ? "unknown" : closedPR.mergeable,
+          mergeableState: closedPR.mergeable_state,
         },
       });
 
@@ -855,6 +864,7 @@ githubPrsOpenRouter.openapi(
       400: { description: "Invalid request" },
       401: { description: "Unauthorized" },
       403: { description: "Forbidden" },
+      409: { description: "Merge conflict - PR has conflicts with base branch" },
       500: { description: "Failed to merge PR" },
     },
   }),
@@ -921,6 +931,25 @@ githubPrsOpenRouter.openapi(
     const octokit = createOctokit(githubAccessToken);
 
     try {
+      // Fetch latest PR details to check mergeable status
+      const prDetail = await fetchPullRequestDetail({
+        octokit,
+        owner,
+        repo,
+        number,
+      });
+
+      // Check if PR has merge conflicts
+      if (prDetail.mergeable === false) {
+        return c.json(
+          {
+            success: false,
+            message: `Cannot merge PR #${number}: This pull request has conflicts with the base branch that must be resolved before merging.`,
+          },
+          409,
+        );
+      }
+
       await mergePullRequest({
         octokit,
         owner,
@@ -962,6 +991,8 @@ githubPrsOpenRouter.openapi(
           closedAt: existingPR.closedAt,
           mergedAt: mergedPR.merged_at ? new Date(mergedPR.merged_at).getTime() : undefined,
           repositoryId: existingPR.repositoryId,
+          mergeable: mergedPR.mergeable === null ? "unknown" : mergedPR.mergeable,
+          mergeableState: mergedPR.mergeable_state,
         },
       });
 
@@ -1139,6 +1170,8 @@ async function fetchPullRequestDetail({
     draft: data.draft ?? undefined,
     merged_at: data.merged_at,
     node_id: data.node_id,
+    mergeable: data.mergeable,
+    mergeable_state: data.mergeable_state,
   };
 }
 

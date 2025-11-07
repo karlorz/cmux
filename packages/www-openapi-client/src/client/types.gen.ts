@@ -1356,6 +1356,10 @@ export type PostApiIntegrationsGithubPrsMergeSimpleErrors = {
      */
     403: unknown;
     /**
+     * Merge conflict - PR has conflicts with base branch
+     */
+    409: unknown;
+    /**
      * Failed to merge PR
      */
     500: unknown;

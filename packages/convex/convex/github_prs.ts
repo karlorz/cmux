@@ -438,6 +438,8 @@ export const upsertFromServer = authMutation({
       additions: v.optional(v.number()),
       deletions: v.optional(v.number()),
       changedFiles: v.optional(v.number()),
+      mergeable: v.optional(v.union(v.literal(true), v.literal(false), v.literal("unknown"))),
+      mergeableState: v.optional(v.string()),
     }),
   },
   handler: async (ctx, { teamSlugOrId, installationId, repoFullName, number, record }) => {

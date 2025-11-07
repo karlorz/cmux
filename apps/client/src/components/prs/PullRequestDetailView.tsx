@@ -248,6 +248,14 @@ export function PullRequestDetailView({
       } as const;
     }
 
+    // Check for merge conflicts first
+    if (currentPR?.mergeable === false) {
+      return {
+        checksAllowMerge: false,
+        checksDisabledReason: "This pull request has conflicts with the base branch that must be resolved before merging.",
+      } as const;
+    }
+
     const runs = workflowData.allRuns;
     if (runs.length === 0) {
       return {
@@ -284,7 +292,7 @@ export function PullRequestDetailView({
       checksAllowMerge: true,
       checksDisabledReason: undefined,
     } as const;
-  }, [workflowData.allRuns, workflowData.isLoading]);
+  }, [workflowData.allRuns, workflowData.isLoading, currentPR?.mergeable]);
 
   const disabledBecauseOfChecks = !checksAllowMerge;
   const mergeDisabled =
