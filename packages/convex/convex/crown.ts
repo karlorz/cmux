@@ -28,7 +28,7 @@ export const evaluateAndCrownWinner = authMutation({
       }
 
       // Get all completed runs for this task
-      const taskRuns = await ctx.db
+      const completedRuns = await ctx.db
         .query("taskRuns")
         .withIndex("by_task", (q) => q.eq("taskId", args.taskId))
         .filter((q) => q.eq(q.field("teamId"), teamId))
@@ -37,8 +37,43 @@ export const evaluateAndCrownWinner = authMutation({
         .collect();
 
       console.log(
-        `[Crown] Found ${taskRuns.length} completed runs for task ${args.taskId}`
+        `[Crown] Found ${completedRuns.length} completed runs for task ${args.taskId}`
       );
+
+      // If no completed runs, check if all runs have failed (so we can still finalize the task)
+      if (completedRuns.length === 0) {
+        const allRuns = await ctx.db
+          .query("taskRuns")
+          .withIndex("by_task", (q) => q.eq("taskId", args.taskId))
+          .filter((q) => q.eq(q.field("teamId"), teamId))
+          .filter((q) => q.eq(q.field("userId"), userId))
+          .collect();
+
+        const allFailed = allRuns.length > 0 && allRuns.every((run) => run.status === "failed");
+
+        if (allFailed) {
+          console.log(
+            `[Crown] All ${allRuns.length} runs failed for task ${args.taskId}. Marking task as completed with no winner.`
+          );
+          // Mark the task as completed even though all runs failed
+          await ctx.db.patch(args.taskId, {
+            crownEvaluationStatus: "failed",
+            crownEvaluationError: "All task runs failed",
+            isCompleted: true,
+            updatedAt: Date.now(),
+          });
+          return null;
+        }
+
+        // Some runs are still in progress
+        console.log(
+          `[Crown] No completed runs yet for task ${args.taskId}. Waiting for completion.`
+        );
+        return null;
+      }
+
+      // Use completed runs for evaluation
+      const taskRuns = completedRuns;
 
       // If only one model or less, crown it by default
       if (taskRuns.length <= 1) {

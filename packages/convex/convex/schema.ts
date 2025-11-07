@@ -115,6 +115,7 @@ const convexSchema = defineSchema({
         v.literal("in_progress"),
         v.literal("succeeded"),
         v.literal("error"),
+        v.literal("failed"), // All task runs failed, no winner to crown
       ),
     ), // State of crown evaluation workflow
     crownEvaluationError: v.optional(v.string()), // Error message if crown evaluation failed

@@ -24,6 +24,7 @@ export const CrownEvaluationStatusSchema = z.enum([
   "in_progress",
   "succeeded",
   "error",
+  "failed", // All task runs failed, no winner to crown
 ]);
 export type CrownEvaluationStatus = z.infer<
   typeof CrownEvaluationStatusSchema

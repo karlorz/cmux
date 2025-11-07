@@ -94,6 +94,11 @@ export class CmuxVSCodeInstance extends VSCodeInstance {
           `[CmuxVSCodeInstance ${this.instanceId}] Failed to connect to worker`,
           error
         );
+        dockerLogger.error(
+          `[CmuxVSCodeInstance ${this.instanceId}] The task may not function correctly without worker connection. Sandbox ID: ${this.sandboxId}`
+        );
+        // Continue anyway - the instance is running even if we can't connect to the worker yet
+        // The worker connection might succeed later, or the task will eventually timeout and be marked as failed
       }
     }
 

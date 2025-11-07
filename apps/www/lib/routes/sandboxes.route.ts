@@ -205,7 +205,9 @@ sandboxesRouter.openapi(
       const vscodeService = exposed.find((s) => s.port === 39378);
       const workerService = exposed.find((s) => s.port === 39377);
       if (!vscodeService || !workerService) {
-        await instance.stop().catch(() => { });
+        await instance.stop().catch((stopError) => {
+          console.error("Failed to stop instance after service check failure:", stopError);
+        });
         return c.text("VSCode or worker service not found", 500);
       }
 
@@ -256,10 +258,11 @@ sandboxesRouter.openapi(
           return configureGitIdentity(instance, { name, email });
         })
         .catch((error) => {
-          console.log(
-            `[sandboxes.start] Failed to configure git identity; continuing...`,
+          console.error(
+            `[sandboxes.start] Failed to configure git identity. Git operations may fail.`,
             error,
           );
+          // Continue despite failure - git identity can be configured manually if needed
         });
 
       const { githubAccessToken, githubAccessTokenError } =
@@ -307,7 +310,9 @@ sandboxesRouter.openapi(
         });
       } catch (error) {
         console.error(`[sandboxes.start] Hydration failed:`, error);
-        await instance.stop().catch(() => { });
+        await instance.stop().catch((stopError) => {
+          console.error("Failed to stop instance after hydration failure:", stopError);
+        });
         return c.text("Failed to hydrate sandbox", 500);
       }
 

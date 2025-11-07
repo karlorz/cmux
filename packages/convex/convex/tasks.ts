@@ -668,19 +668,31 @@ export const checkAndEvaluateCrown = authMutation({
     if (taskRuns.length === 1) {
       console.log(`[CheckCrown] Single agent scenario - marking task complete`);
 
-      // Mark the task as completed
-      await ctx.db.patch(args.taskId, {
-        isCompleted: true,
-        updatedAt: Date.now(),
-      });
+      const singleRun = taskRuns[0];
 
       // If the single run was successful, return it as the "winner" for potential auto-PR
-      const singleRun = taskRuns[0];
       if (singleRun.status === "completed") {
         console.log(
           `[CheckCrown] Single agent completed successfully: ${singleRun._id}`,
         );
+        await ctx.db.patch(args.taskId, {
+          isCompleted: true,
+          updatedAt: Date.now(),
+        });
         return singleRun._id;
+      }
+
+      // If the single run failed, mark task as completed with failure
+      if (singleRun.status === "failed") {
+        console.log(
+          `[CheckCrown] Single agent failed: ${singleRun._id}`,
+        );
+        await ctx.db.patch(args.taskId, {
+          crownEvaluationStatus: "failed",
+          crownEvaluationError: singleRun.errorMessage || "Task run failed",
+          isCompleted: true,
+          updatedAt: Date.now(),
+        });
       }
 
       return null;
@@ -729,6 +741,21 @@ export const checkAndEvaluateCrown = authMutation({
       console.log(
         `[CheckCrown] Not enough completed runs (${completedRuns.length} < 2)`,
       );
+
+      // Check if all runs have failed - if so, finalize the task anyway
+      const allFailed = taskRuns.every((run) => run.status === "failed");
+      if (allFailed && taskRuns.length > 0) {
+        console.log(
+          `[CheckCrown] All ${taskRuns.length} runs failed. Marking task as completed with failure status.`,
+        );
+        await ctx.db.patch(args.taskId, {
+          crownEvaluationStatus: "failed",
+          crownEvaluationError: "All task runs failed",
+          isCompleted: true,
+          updatedAt: Date.now(),
+        });
+      }
+
       return null;
     }
 

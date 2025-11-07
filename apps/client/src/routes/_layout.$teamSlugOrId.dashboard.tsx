@@ -524,6 +524,9 @@ function DashboardComponent() {
       console.log("Task created:", taskId);
     } catch (error) {
       console.error("Error starting task:", error);
+      toast.error("Failed to start task", {
+        description: error instanceof Error ? error.message : "An unknown error occurred",
+      });
     }
   }, [
     selectedProject,

@@ -447,12 +447,13 @@ export async function spawnAgent(
       console.log("[AgentSpawner] [isCloudMode] Setting up devcontainer");
       void vscodeInstance
         .setupDevcontainer()
-        .catch((err) =>
+        .catch((err) => {
           serverLogger.error(
-            "[AgentSpawner] setupDevcontainer encountered an error",
+            "[AgentSpawner] setupDevcontainer encountered an error. Devcontainer networking info may not be available.",
             err
-          )
-        );
+          );
+          // Continue despite failure - this is a best-effort operation for publishing networking info
+        });
     }
 
     // Start file watching for real-time diff updates

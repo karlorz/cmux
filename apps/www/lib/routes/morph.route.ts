@@ -170,10 +170,11 @@ morphRouter.openapi(
           return configureGitIdentity(instance, { name, email });
         })
         .catch((error) => {
-          console.log(
-            `[sandboxes.start] Failed to configure git identity; continuing...`,
+          console.error(
+            `[sandboxes.start] Failed to configure git identity. Git operations may fail.`,
             error
           );
+          // Continue despite failure - git identity can be configured manually if needed
         });
 
       // Get VSCode URL

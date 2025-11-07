@@ -511,6 +511,25 @@ export function setupSocketHandlers(
                 `Failed to spawn any agents for task ${taskId}:`,
                 errors
               );
+
+              // Mark all failed task runs in Convex
+              for (const result of agentResults) {
+                if (!result.success && result.taskRunId) {
+                  try {
+                    await getConvex().mutation(api.taskRuns.fail, {
+                      teamSlugOrId: safeTeam,
+                      id: result.taskRunId as Id<"taskRuns">,
+                      errorMessage: result.error || "Failed to spawn agent",
+                    });
+                  } catch (convexError) {
+                    serverLogger.error(
+                      `Failed to mark task run ${result.taskRunId} as failed in Convex:`,
+                      convexError
+                    );
+                  }
+                }
+              }
+
               rt.emit("task-failed", {
                 taskId,
                 error: errors || "Failed to spawn any agents",
@@ -580,6 +599,41 @@ export function setupSocketHandlers(
             }
           } catch (error) {
             serverLogger.error("Error spawning agents for task:", error);
+
+            // Mark all task runs for this task as failed in Convex
+            try {
+              const taskRuns = await getConvex().query(
+                api.taskRuns.getByTask,
+                {
+                  teamSlugOrId: safeTeam,
+                  taskId,
+                }
+              );
+
+              for (const taskRun of taskRuns) {
+                if (taskRun.status !== "completed" && taskRun.status !== "failed") {
+                  try {
+                    await getConvex().mutation(api.taskRuns.fail, {
+                      teamSlugOrId: safeTeam,
+                      id: taskRun._id,
+                      errorMessage:
+                        error instanceof Error ? error.message : "Unknown error during task execution",
+                    });
+                  } catch (convexError) {
+                    serverLogger.error(
+                      `Failed to mark task run ${taskRun._id} as failed in Convex:`,
+                      convexError
+                    );
+                  }
+                }
+              }
+            } catch (queryError) {
+              serverLogger.error(
+                "Failed to query task runs for failed task:",
+                queryError
+              );
+            }
+
             rt.emit("task-failed", {
               taskId,
               error: error instanceof Error ? error.message : "Unknown error",
