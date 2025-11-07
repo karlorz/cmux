@@ -15,6 +15,17 @@ function ConnectComplete() {
   const triedAutoClose = useRef(false);
 
   useEffect(() => {
+    // Try to communicate with opener window first
+    try {
+      window.opener?.postMessage?.(
+        { type: "cmux/github-connect-complete", teamSlugOrId },
+        "*"
+      );
+    } catch {
+      // ignored
+    }
+
+    // Also try the custom protocol for electron
     const href = `cmux://github-connect-complete?team=${encodeURIComponent(
       teamSlugOrId
     )}`;

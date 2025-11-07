@@ -40,6 +40,7 @@ import {
   type ReactNode,
 } from "react";
 import { RepositoryAdvancedOptions } from "./RepositoryAdvancedOptions";
+import { GitHubConnectionDialog } from "./GitHubConnectionDialog";
 
 function ConnectionIcon({ type }: { type?: string }) {
   if (type && type.includes("gitlab")) {
@@ -148,6 +149,11 @@ export function RepositoryPicker({
       hasConnections: false,
     }
   );
+  const [showGitHubConnectionDialog, setShowGitHubConnectionDialog] =
+    useState(false);
+  const [githubConnectionError, setGithubConnectionError] = useState<
+    string | null
+  >(null);
 
   const setupInstanceMutation = useRQMutation(
     postApiMorphSetupInstanceMutation()
@@ -244,6 +250,7 @@ export function RepositoryPicker({
     (repos: string[]): void => {
       const mutation =
         repos.length > 0 ? setupInstanceMutation : setupManualInstanceMutation;
+      setGithubConnectionError(null);
       mutation.mutate(
         {
           body: {
@@ -267,6 +274,29 @@ export function RepositoryPicker({
           },
           onError: (error) => {
             console.error("Failed to setup instance:", error);
+
+            // Check if this is a GitHub connection error
+            if (error instanceof Error) {
+              try {
+                // Try to parse error response
+                const errorMessage = error.message;
+                if (
+                  errorMessage.includes("github_not_connected") ||
+                  errorMessage.includes("GitHub account not connected") ||
+                  errorMessage.includes("GitHub access token")
+                ) {
+                  setGithubConnectionError(
+                    errorMessage.includes("not connected")
+                      ? "GitHub account not connected. Please connect your GitHub account to continue."
+                      : "Failed to retrieve GitHub access token. Please reconnect your GitHub account."
+                  );
+                  setShowGitHubConnectionDialog(true);
+                  return;
+                }
+              } catch (e) {
+                // If parsing fails, just continue to generic error handling
+              }
+            }
           },
         }
       );
@@ -331,6 +361,17 @@ export function RepositoryPicker({
 
   const isContinueLoading = setupInstanceMutation.isPending;
   const isManualLoading = setupManualInstanceMutation.isPending;
+
+  const handleGitHubConnectionSuccess = useCallback(() => {
+    setShowGitHubConnectionDialog(false);
+    setGithubConnectionError(null);
+    // Invalidate queries to refresh the connection status
+    router.options.context?.queryClient?.invalidateQueries();
+  }, [router]);
+
+  const handleGitHubConnectionClose = useCallback(() => {
+    setShowGitHubConnectionDialog(false);
+  }, []);
 
   return (
     <div className={className}>
@@ -435,6 +476,16 @@ export function RepositoryPicker({
           </>
         )}
       </div>
+
+      <GitHubConnectionDialog
+        isOpen={showGitHubConnectionDialog}
+        onClose={handleGitHubConnectionClose}
+        onSuccess={handleGitHubConnectionSuccess}
+        message={
+          githubConnectionError ||
+          "To use this feature, you need to connect your GitHub account. This allows us to access repositories and configure git credentials in your environments."
+        }
+      />
     </div>
   );
 }
