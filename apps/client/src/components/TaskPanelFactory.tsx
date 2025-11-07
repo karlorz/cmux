@@ -168,6 +168,8 @@ interface PanelFactoryProps {
   rawWorkspaceUrl?: string | null;
   // Browser panel props
   browserUrl?: string | null;
+  // Git diff panel props
+  teamSlugOrId?: string;
   browserPersistKey?: string | null;
   browserStatus?: PersistentIframeStatus;
   setBrowserStatus?: (status: PersistentIframeStatus) => void;
@@ -629,14 +631,19 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
     }
 
     case "gitDiff": {
-      const { task, selectedRun, TaskRunGitDiffPanel } = props;
-      if (!TaskRunGitDiffPanel) return null;
+      const { task, selectedRun, TaskRunGitDiffPanel, teamSlugOrId } = props;
+      if (!TaskRunGitDiffPanel || !teamSlugOrId) return null;
 
       return panelWrapper(
         <GitCompare className="size-3" aria-hidden />,
         PANEL_LABELS.gitDiff,
         <div className="flex-1 overflow-auto">
-          <TaskRunGitDiffPanel key={selectedRun?._id} task={task} selectedRun={selectedRun} />
+          <TaskRunGitDiffPanel
+            key={selectedRun?._id}
+            task={task}
+            selectedRun={selectedRun}
+            teamSlugOrId={teamSlugOrId}
+          />
         </div>
       );
     }
