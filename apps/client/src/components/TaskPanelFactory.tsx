@@ -149,6 +149,8 @@ interface PanelFactoryProps {
     winnerRunId?: Id<"taskRuns">;
     reason?: string;
   } | null;
+  taskId?: Id<"tasks">;
+  teamSlugOrId?: string;
   // Workspace panel props
   workspaceUrl?: string | null;
   workspacePersistKey?: string | null;
@@ -629,14 +631,20 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
     }
 
     case "gitDiff": {
-      const { task, selectedRun, TaskRunGitDiffPanel } = props;
-      if (!TaskRunGitDiffPanel) return null;
+      const { task, selectedRun, TaskRunGitDiffPanel, taskId, teamSlugOrId } = props;
+      if (!TaskRunGitDiffPanel || !taskId || !teamSlugOrId) return null;
 
       return panelWrapper(
         <GitCompare className="size-3" aria-hidden />,
         PANEL_LABELS.gitDiff,
-        <div className="flex-1 overflow-auto">
-          <TaskRunGitDiffPanel key={selectedRun?._id} task={task} selectedRun={selectedRun} />
+        <div className="flex h-full min-h-0 flex-col">
+          <TaskRunGitDiffPanel
+            key={selectedRun?._id ?? "no-run"}
+            task={task}
+            selectedRun={selectedRun}
+            taskId={taskId}
+            teamSlugOrId={teamSlugOrId}
+          />
         </div>
       );
     }

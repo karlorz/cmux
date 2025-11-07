@@ -642,6 +642,8 @@ function TaskDetailPage() {
       task: task ?? null,
       taskRuns: taskRuns ?? null,
       crownEvaluation,
+      taskId,
+      teamSlugOrId,
       workspaceUrl,
       workspacePersistKey,
       selectedRun: selectedRun ?? null,
@@ -673,6 +675,8 @@ function TaskDetailPage() {
     [
       task,
       taskRuns,
+      taskId,
+      teamSlugOrId,
       crownEvaluation,
       workspaceUrl,
       workspacePersistKey,
