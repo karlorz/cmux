@@ -25,7 +25,7 @@ import { branchesQueryOptions } from "@/queries/branches";
 import { clearEnvironmentDraft } from "@/state/environment-draft-store";
 import { api } from "@cmux/convex/api";
 import type { Doc, Id } from "@cmux/convex/dataModel";
-import type { ProviderStatusResponse, TaskAcknowledged, TaskError, TaskStarted } from "@cmux/shared";
+import type { MorphSnapshotId, ProviderStatusResponse, TaskAcknowledged, TaskError, TaskStarted } from "@cmux/shared";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
@@ -39,6 +39,15 @@ import { z } from "zod";
 export const Route = createFileRoute("/_layout/$teamSlugOrId/dashboard")({
   component: DashboardComponent,
 });
+
+type EnvironmentNewSearchParams = {
+  step: "select" | "configure" | undefined;
+  selectedRepos: string[] | undefined;
+  instanceId: string | undefined;
+  connectionLogin: string | undefined;
+  repoSearch: string | undefined;
+  snapshotId: MorphSnapshotId | undefined;
+};
 
 // Default agents (not persisted to localStorage)
 const DEFAULT_AGENTS = [
@@ -656,20 +665,20 @@ function DashboardComponent() {
   const shouldShowCloudRepoOnboarding =
     !!selectedRepoFullName && isCloudMode && !isEnvSelected;
 
-  const createEnvironmentSearch = useMemo(
+  const createEnvironmentSearch = useMemo<
+    EnvironmentNewSearchParams | undefined
+  >(
     () =>
       selectedRepoFullName
-        ? ({
-            step: "select" as const,
+        ? {
+            step: "select",
             selectedRepos: [selectedRepoFullName],
             instanceId: undefined,
             connectionLogin:
-              selectedRepoInfo?.org ??
-              selectedRepoInfo?.ownerLogin ??
-              undefined,
+              selectedRepoInfo?.org ?? selectedRepoInfo?.ownerLogin ?? undefined,
             repoSearch: undefined,
             snapshotId: undefined,
-          })
+          }
         : undefined,
     [selectedRepoFullName, selectedRepoInfo],
   );
