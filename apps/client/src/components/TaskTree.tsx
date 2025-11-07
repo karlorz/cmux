@@ -127,16 +127,16 @@ function getRunDisplayText(run: TaskRunWithChildren): string {
   return run.prompt.substring(0, 50) + "...";
 }
 
-function flattenRuns(
-  runs: TaskRunWithChildren[] | undefined
-): TaskRunWithChildren[] {
+function flattenRuns<T extends TaskRunWithChildren>(
+  runs: T[] | undefined
+): T[] {
   if (!runs) return [];
-  const acc: TaskRunWithChildren[] = [];
-  const traverse = (items: TaskRunWithChildren[]) => {
+  const acc: T[] = [];
+  const traverse = (items: T[]) => {
     for (const item of items) {
       acc.push(item);
       if (item.children.length > 0) {
-        traverse(item.children);
+        traverse(item.children as T[]);
       }
     }
   };
@@ -318,19 +318,34 @@ function TaskTreeInner({
       : { teamSlugOrId, taskId: task._id, includeArchived: true }
   );
   const runsLoading = !isOptimisticTask && taskRuns === undefined;
-  const flattenedRuns = useMemo(() => flattenRuns(taskRuns), [taskRuns]);
+  const annotatedRuns = useMemo(
+    () =>
+      taskRuns && taskRuns.length > 0
+        ? annotateAgentOrdinals(taskRuns)
+        : [],
+    [taskRuns]
+  );
+  const flattenedRuns = useMemo(
+    () => flattenRuns(annotatedRuns),
+    [annotatedRuns]
+  );
   const activeRunsFlat = useMemo(
     () => flattenedRuns.filter((run) => !run.isArchived),
     [flattenedRuns]
   );
   const hasVisibleRuns = activeRunsFlat.length > 0;
-  const showRunNumbers = flattenedRuns.length > 1;
+  const showRunNumbers = flattenedRuns.some(
+    (run) => run.hasDuplicateAgentName
+  );
   const runMenuEntries = useMemo(
     () =>
-      annotateAgentOrdinals(flattenedRuns).map((run) => ({
+      flattenedRuns.map((run) => ({
         id: run._id,
         label: getRunDisplayText(run),
-        ordinal: run.agentOrdinal,
+        ordinal:
+          run.hasDuplicateAgentName && run.agentOrdinal
+            ? run.agentOrdinal
+            : undefined,
         isArchived: Boolean(run.isArchived),
       })),
     [flattenedRuns]
@@ -873,37 +888,42 @@ function TaskTreeInner({
                       ) : (
                         <div className="max-h-64 overflow-y-auto">
                           {runMenuEntries.length > 0 ? (
-                            runMenuEntries.map((run) => (
-                              <ContextMenu.Item
-                                key={run.id}
-                                closeOnClick={false}
-                                className="flex items-center justify-between gap-3 cursor-default py-1.5 pr-4 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
-                                onClick={() =>
-                                  handleRunArchiveToggle(
-                                    run.id,
-                                    !run.isArchived
-                                  )
-                                }
-                              >
-                                <div className="flex min-w-0 items-center gap-2">
-                                  <span className="truncate text-left">
-                                    {run.label}
-                                  </span>
-                                  {showRunNumbers ? (
-                                    <span className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400 flex-shrink-0">
-                                      {run.ordinal}
+                            runMenuEntries.map((run) => {
+                              const shouldShowOrdinal =
+                                showRunNumbers &&
+                                typeof run.ordinal === "number";
+                              return (
+                                <ContextMenu.Item
+                                  key={run.id}
+                                  closeOnClick={false}
+                                  className="flex items-center justify-between gap-3 cursor-default py-1.5 pr-4 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                                  onClick={() =>
+                                    handleRunArchiveToggle(
+                                      run.id,
+                                      !run.isArchived
+                                    )
+                                  }
+                                >
+                                  <div className="flex min-w-0 items-center gap-2">
+                                    <span className="truncate text-left">
+                                      {run.label}
                                     </span>
-                                  ) : null}
-                                </div>
-                                <span className="ml-2 flex flex-shrink-0 items-center text-neutral-500 dark:text-neutral-400">
-                                  {run.isArchived ? (
-                                    <EyeOff className="w-3.5 h-3.5" />
-                                  ) : (
-                                    <Eye className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
-                                  )}
-                                </span>
-                              </ContextMenu.Item>
-                            ))
+                                    {shouldShowOrdinal ? (
+                                      <span className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400 flex-shrink-0">
+                                        {run.ordinal}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  <span className="ml-2 flex flex-shrink-0 items-center text-neutral-500 dark:text-neutral-400">
+                                    {run.isArchived ? (
+                                      <EyeOff className="w-3.5 h-3.5" />
+                                    ) : (
+                                      <Eye className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                                    )}
+                                  </span>
+                                </ContextMenu.Item>
+                              );
+                            })
                           ) : (
                             <div className="px-3 py-1.5 text-xs text-neutral-500 dark:text-neutral-400">
                               No task runs yet
@@ -941,7 +961,7 @@ function TaskTreeInner({
             taskId={task._id}
             teamSlugOrId={teamSlugOrId}
             level={level}
-            runs={taskRuns}
+            runs={annotatedRuns}
             isLoading={runsLoading}
             onArchiveToggle={handleRunArchiveToggle}
             hasVisibleRuns={hasVisibleRuns}
@@ -957,7 +977,7 @@ interface TaskRunsContentProps {
   taskId: Id<"tasks">;
   teamSlugOrId: string;
   level: number;
-  runs: TaskRunWithChildren[] | undefined;
+  runs: AnnotatedTaskRun[];
   isLoading: boolean;
   onArchiveToggle: (runId: Id<"taskRuns">, archive: boolean) => void;
   hasVisibleRuns: boolean;
@@ -968,7 +988,7 @@ function TaskRunsContent({
   taskId,
   teamSlugOrId,
   level,
-  runs,
+  runs: annotatedRuns,
   isLoading,
   onArchiveToggle,
   hasVisibleRuns,
@@ -976,11 +996,6 @@ function TaskRunsContent({
 }: TaskRunsContentProps) {
   const location = useLocation();
   const optimisticTask = isFakeConvexId(taskId);
-
-  const annotatedRuns = useMemo(
-    () => (runs && runs.length > 0 ? annotateAgentOrdinals(runs) : []),
-    [runs]
-  );
 
   const runIdFromSearch = useMemo(() => {
     if (
@@ -1184,7 +1199,9 @@ function TaskRunTreeInner({
     return base;
   }, [run]);
   const runNumberSuffix =
-    showRunNumbers && run.agentOrdinal ? (
+    showRunNumbers &&
+    run.hasDuplicateAgentName &&
+    typeof run.agentOrdinal === "number" ? (
       <span className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400 tabular-nums">
         {run.agentOrdinal}
       </span>
