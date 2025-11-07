@@ -36,6 +36,7 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -83,6 +84,7 @@ interface RepositoryConnectionsSectionProps {
   onSelectedLoginChange: (login: string | null) => void;
   onContextChange: (context: ConnectionContext) => void;
   onConnectionsInvalidated: () => void;
+  onActionsChange?: (actions: RepositoryConnectionActions) => void;
 }
 
 interface RepositoryListSectionProps {
@@ -91,6 +93,93 @@ interface RepositoryListSectionProps {
   selectedRepos: readonly string[];
   onToggleRepo: (repo: string) => void;
   hasConnections: boolean;
+}
+
+type FlowErrorAction = "connect" | "reauth";
+
+interface FlowErrorState {
+  message: string;
+  action?: FlowErrorAction;
+}
+
+interface RepositoryConnectionActions {
+  openMenu: () => void;
+  installApp?: () => void;
+}
+
+interface ApiErrorDetails {
+  status?: number;
+  code?: number;
+  message?: string;
+  error?: string;
+}
+
+const GITHUB_AUTH_ERROR_ACTIONS: Record<string, FlowErrorAction> = {
+  GITHUB_ACCOUNT_REQUIRED: "connect",
+  GITHUB_TOKEN_INVALID: "reauth",
+};
+
+function extractApiErrorDetails(error: unknown): ApiErrorDetails | null {
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+
+  const candidate = error as Record<string, unknown>;
+  let status: number | undefined;
+
+  if (typeof candidate.status === "number") {
+    status = candidate.status;
+  } else if (
+    candidate.response &&
+    typeof candidate.response === "object" &&
+    candidate.response !== null &&
+    typeof (candidate.response as { status?: unknown }).status === "number"
+  ) {
+    status = (candidate.response as { status: number }).status;
+  }
+
+  const payloadSources: unknown[] = [];
+  if ("data" in candidate) {
+    payloadSources.push(candidate.data);
+  }
+  if ("body" in candidate) {
+    payloadSources.push(candidate.body);
+  }
+  if (
+    candidate.response &&
+    typeof candidate.response === "object" &&
+    candidate.response !== null &&
+    "data" in candidate.response
+  ) {
+    payloadSources.push((candidate.response as { data?: unknown }).data);
+  }
+
+  for (const payload of payloadSources) {
+    if (
+      payload &&
+      typeof payload === "object" &&
+      ("message" in payload || "code" in payload || "error" in payload)
+    ) {
+      const record = payload as Record<string, unknown>;
+      return {
+        status,
+        code: typeof record.code === "number" ? record.code : undefined,
+        message:
+          typeof record.message === "string" ? record.message : undefined,
+        error: typeof record.error === "string" ? record.error : undefined,
+      };
+    }
+  }
+
+  if (status || typeof candidate.message === "string") {
+    return {
+      status,
+      message:
+        typeof candidate.message === "string" ? candidate.message : undefined,
+    };
+  }
+
+  return null;
 }
 
 export interface RepositoryPickerProps {
@@ -148,6 +237,8 @@ export function RepositoryPicker({
       hasConnections: false,
     }
   );
+  const [flowError, setFlowError] = useState<FlowErrorState | null>(null);
+  const connectionActionsRef = useRef<RepositoryConnectionActions | null>(null);
 
   const setupInstanceMutation = useRQMutation(
     postApiMorphSetupInstanceMutation()
@@ -171,6 +262,13 @@ export function RepositoryPicker({
     }
     window.focus?.();
   }, [router]);
+
+  const registerConnectionActions = useCallback(
+    (actions: RepositoryConnectionActions) => {
+      connectionActionsRef.current = actions;
+    },
+    []
+  );
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -240,8 +338,41 @@ export function RepositoryPicker({
     ]
   );
 
+  const requireGithubConnection = useCallback((): boolean => {
+    if (connectionContext.hasConnections) {
+      return true;
+    }
+    setFlowError({
+      message:
+        "Connect GitHub to continue. Use the Connection menu above to install the CMUX GitHub App for your account.",
+      action: "connect",
+    });
+    connectionActionsRef.current?.openMenu?.();
+    return false;
+  }, [connectionContext.hasConnections]);
+
+  useEffect(() => {
+    if (connectionContext.hasConnections && flowError?.action === "connect") {
+      setFlowError(null);
+    }
+  }, [connectionContext.hasConnections, flowError]);
+
+  const handleFlowErrorAction = useCallback(() => {
+    if (!flowError?.action) return;
+    if (flowError.action === "connect" && connectionActionsRef.current?.installApp) {
+      connectionActionsRef.current.installApp();
+      return;
+    }
+    connectionActionsRef.current?.openMenu?.();
+  }, [flowError]);
+
   const handleContinue = useCallback(
     (repos: string[]): void => {
+      if (!requireGithubConnection()) {
+        return;
+      }
+
+      setFlowError(null);
       const mutation =
         repos.length > 0 ? setupInstanceMutation : setupManualInstanceMutation;
       mutation.mutate(
@@ -264,9 +395,19 @@ export function RepositoryPicker({
             });
             console.log("Cloned repos:", data.clonedRepos);
             console.log("Removed repos:", data.removedRepos);
+            setFlowError(null);
           },
           onError: (error) => {
             console.error("Failed to setup instance:", error);
+            const details = extractApiErrorDetails(error);
+            const action = details?.error
+              ? GITHUB_AUTH_ERROR_ACTIONS[details.error] ?? undefined
+              : undefined;
+            const fallbackMessage = details?.status
+              ? `Request failed with status ${details.status}`
+              : "Failed to setup instance. Please try again.";
+            const message = details?.message ?? fallbackMessage;
+            setFlowError(action ? { message, action } : { message });
           },
         }
       );
@@ -275,6 +416,7 @@ export function RepositoryPicker({
       goToConfigure,
       instanceId,
       onStartConfigure,
+      requireGithubConnection,
       selectedSnapshotId,
       setupInstanceMutation,
       setupManualInstanceMutation,
@@ -329,6 +471,7 @@ export function RepositoryPicker({
     });
   }, []);
 
+
   const isContinueLoading = setupInstanceMutation.isPending;
   const isManualLoading = setupManualInstanceMutation.isPending;
 
@@ -353,6 +496,7 @@ export function RepositoryPicker({
           onSelectedLoginChange={setSelectedConnectionLogin}
           onContextChange={setConnectionContextSafe}
           onConnectionsInvalidated={handleConnectionsInvalidated}
+          onActionsChange={registerConnectionActions}
         />
 
         <RepositoryListSection
@@ -432,6 +576,24 @@ export function RepositoryPicker({
                 We'll capture your changes as a reusable base snapshot.
               </p>
             )}
+            {flowError ? (
+              <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-200">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <span>{flowError.message}</span>
+                  {flowError.action ? (
+                    <button
+                      type="button"
+                      className="text-sm font-medium text-amber-900 underline dark:text-amber-200"
+                      onClick={handleFlowErrorAction}
+                    >
+                      {flowError.action === "connect"
+                        ? "Connect GitHub"
+                        : "Refresh GitHub access"}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </>
         )}
       </div>
@@ -445,6 +607,7 @@ function RepositoryConnectionsSection({
   onSelectedLoginChange,
   onContextChange,
   onConnectionsInvalidated,
+  onActionsChange,
 }: RepositoryConnectionsSectionProps) {
   const connections = useQuery(api.github.listProviderConnections, {
     teamSlugOrId,
@@ -605,6 +768,18 @@ function RepositoryConnectionsSection({
     openCenteredPopup,
     teamSlugOrId,
   ]);
+
+  useEffect(() => {
+    if (!onActionsChange) return;
+    onActionsChange({
+      openMenu: () => setConnectionDropdownOpen(true),
+      installApp: installNewUrl
+        ? () => {
+            void handleInstallApp();
+          }
+        : undefined,
+    });
+  }, [handleInstallApp, installNewUrl, onActionsChange]);
 
   return (
     <div className="space-y-2">

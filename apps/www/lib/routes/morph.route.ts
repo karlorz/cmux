@@ -7,6 +7,7 @@ import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { env } from "@/lib/utils/www-env";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { MorphCloudClient } from "morphcloud";
+import { HTTPException } from "hono/http-exception";
 import { getConvex } from "../utils/get-convex";
 import { selectGitIdentity } from "../utils/gitIdentity";
 import { stackServerAppJs } from "../utils/stack";
@@ -46,6 +47,22 @@ const SetupInstanceResponse = z
   })
   .openapi("SetupInstanceResponse");
 
+const SetupInstanceErrorResponse = z
+  .object({
+    code: z.number(),
+    message: z.string(),
+    error: z.string().optional(),
+  })
+  .openapi("SetupInstanceErrorResponse");
+
+const GithubCredentialErrorCode = {
+  MissingAccount: "GITHUB_ACCOUNT_REQUIRED",
+  MissingToken: "GITHUB_TOKEN_INVALID",
+} as const;
+
+type GithubCredentialError =
+  (typeof GithubCredentialErrorCode)[keyof typeof GithubCredentialErrorCode];
+
 morphRouter.openapi(
   createRoute({
     method: "post" as const,
@@ -71,17 +88,41 @@ morphRouter.openapi(
         },
         description: "Instance setup successfully",
       },
-      401: { description: "Unauthorized" },
-      500: { description: "Failed to setup instance" },
+      401: {
+        description: "Unauthorized",
+        content: {
+          "application/json": {
+            schema: SetupInstanceErrorResponse,
+          },
+        },
+      },
+      403: {
+        description: "Forbidden",
+        content: {
+          "application/json": {
+            schema: SetupInstanceErrorResponse,
+          },
+        },
+      },
+      500: {
+        description: "Failed to setup instance",
+        content: {
+          "application/json": {
+            schema: SetupInstanceErrorResponse,
+          },
+        },
+      },
     },
   }),
   async (c) => {
     const user = await stackServerAppJs.getUser({ tokenStore: c.req.raw });
     if (!user) {
-      return c.text("Unauthorized", 401);
+      return c.json({ code: 401, message: "Unauthorized" }, 401);
     }
     const { accessToken } = await user.getAuthJson();
-    if (!accessToken) return c.text("Unauthorized", 401);
+    if (!accessToken) {
+      return c.json({ code: 401, message: "Unauthorized" }, 401);
+    }
     const {
       teamSlugOrId,
       instanceId: existingInstanceId,
@@ -99,6 +140,7 @@ morphRouter.openapi(
       if (!githubAccount) {
         return {
           githubAccessTokenError: "GitHub account not found",
+          githubAccessTokenErrorCode: GithubCredentialErrorCode.MissingAccount,
           githubAccessToken: null,
         } as const;
       }
@@ -107,20 +149,19 @@ morphRouter.openapi(
       if (!githubAccessToken) {
         return {
           githubAccessTokenError: "GitHub access token not found",
+          githubAccessTokenErrorCode: GithubCredentialErrorCode.MissingToken,
           githubAccessToken: null,
         } as const;
       }
 
-      return { githubAccessTokenError: null, githubAccessToken } as const;
+      return {
+        githubAccessTokenError: null,
+        githubAccessTokenErrorCode: null,
+        githubAccessToken,
+      } as const;
     })();
-    const gitIdentityPromise = githubAccessTokenPromise.then(
-      ({ githubAccessToken }) => {
-        if (!githubAccessToken) {
-          throw new Error("GitHub access token not found");
-        }
-        return fetchGitIdentityInputs(convex, githubAccessToken);
-      }
-    );
+    let gitIdentityPromise: ReturnType<typeof fetchGitIdentityInputs> | null =
+      null;
 
     try {
       const client = new MorphCloudClient({
@@ -157,24 +198,15 @@ morphRouter.openapi(
         const meta = instance.metadata;
         const instanceTeamId = meta?.teamId;
         if (!instanceTeamId || instanceTeamId !== team.uuid) {
-          return c.text(
-            "Forbidden: Instance does not belong to this team",
+          return c.json(
+            {
+              code: 403,
+              message: "Forbidden: Instance does not belong to this team",
+            },
             403
           );
         }
       }
-
-      void gitIdentityPromise
-        .then(([who, gh]) => {
-          const { name, email } = selectGitIdentity(who, gh);
-          return configureGitIdentity(instance, { name, email });
-        })
-        .catch((error) => {
-          console.log(
-            `[sandboxes.start] Failed to configure git identity; continuing...`,
-            error
-          );
-        });
 
       // Get VSCode URL
       const vscodeUrl = instance.networking.httpServices.find(
@@ -185,15 +217,48 @@ morphRouter.openapi(
         throw new Error("VSCode URL not found");
       }
 
-      const { githubAccessToken, githubAccessTokenError } =
-        await githubAccessTokenPromise;
-      if (githubAccessTokenError) {
+      const {
+        githubAccessToken,
+        githubAccessTokenError,
+        githubAccessTokenErrorCode,
+      } = await githubAccessTokenPromise;
+      if (githubAccessTokenError || !githubAccessToken) {
         console.error(
           `[sandboxes.start] GitHub access token error: ${githubAccessTokenError}`
         );
-        return c.text("Failed to resolve GitHub credentials", 401);
+        const errorCode: GithubCredentialError =
+          githubAccessTokenErrorCode ?? GithubCredentialErrorCode.MissingToken;
+        const message =
+          errorCode === GithubCredentialErrorCode.MissingAccount
+            ? "Connect GitHub to continue provisioning an environment."
+            : "We couldn't access GitHub. Refresh the connection and try again.";
+        return c.json(
+          {
+            code: 401,
+            message,
+            error: errorCode,
+          },
+          401
+        );
       }
+
+      gitIdentityPromise = fetchGitIdentityInputs(convex, githubAccessToken);
+
       await configureGithubAccess(instance, githubAccessToken);
+
+      if (gitIdentityPromise) {
+        void gitIdentityPromise
+          .then(([who, gh]) => {
+            const { name, email } = selectGitIdentity(who, gh);
+            return configureGitIdentity(instance, { name, email });
+          })
+          .catch((error) => {
+            console.log(
+              `[sandboxes.start] Failed to configure git identity; continuing...`,
+              error
+            );
+          });
+      }
 
       const url = `${vscodeUrl}/?folder=/root/workspace`;
 
@@ -210,22 +275,29 @@ morphRouter.openapi(
         for (const repo of selectedRepos) {
           // Validate format: should be owner/repo
           if (!repo.includes("/") || repo.split("/").length !== 2) {
-            return c.text(
-              `Invalid repository format: ${repo}. Expected format: owner/repo`,
+            return c.json(
+              {
+                code: 400,
+                message: `Invalid repository format: ${repo}. Expected format: owner/repo`,
+              },
               400
             );
           }
 
           const [owner, repoName] = repo.split("/");
           if (!repoName) {
-            return c.text(`Invalid repository: ${repo}`, 400);
+            return c.json({ code: 400, message: `Invalid repository: ${repo}` }, 400);
           }
 
           // Check for duplicate repo names
           if (repoNames.has(repoName)) {
-            return c.text(
-              `Duplicate repository name detected: '${repoName}' from both '${repoNames.get(repoName)}' and '${repo}'. ` +
-                `Repositories with the same name cannot be cloned to the same workspace.`,
+            return c.json(
+              {
+                code: 400,
+                message:
+                  `Duplicate repository name detected: '${repoName}' from both '${repoNames.get(repoName)}' and '${repo}'. ` +
+                  `Repositories with the same name cannot be cloned to the same workspace.`,
+              },
               400
             );
           }
@@ -384,7 +456,17 @@ morphRouter.openapi(
       });
     } catch (error) {
       console.error("Failed to setup Morph instance:", error);
-      return c.text("Failed to setup instance", 500);
+      if (error instanceof HTTPException) {
+        const status = error.status ?? 500;
+        return c.json(
+          {
+            code: status,
+            message: error.message || "Failed to setup instance",
+          },
+          status
+        );
+      }
+      return c.json({ code: 500, message: "Failed to setup instance" }, 500);
     }
   }
 );

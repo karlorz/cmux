@@ -357,6 +357,12 @@ export type SetupInstanceResponse = {
     removedRepos: Array<string>;
 };
 
+export type SetupInstanceErrorResponse = {
+    code: number;
+    message: string;
+    error?: string;
+};
+
 export type SetupInstanceBody = {
     teamSlugOrId: string;
     instanceId?: string;
@@ -1559,12 +1565,18 @@ export type PostApiMorphSetupInstanceErrors = {
     /**
      * Unauthorized
      */
-    401: unknown;
+    401: SetupInstanceErrorResponse;
+    /**
+     * Forbidden
+     */
+    403: SetupInstanceErrorResponse;
     /**
      * Failed to setup instance
      */
-    500: unknown;
+    500: SetupInstanceErrorResponse;
 };
+
+export type PostApiMorphSetupInstanceError = PostApiMorphSetupInstanceErrors[keyof PostApiMorphSetupInstanceErrors];
 
 export type PostApiMorphSetupInstanceResponses = {
     /**
