@@ -19,9 +19,10 @@ import type { ProviderStatus, ProviderStatusResponse } from "@cmux/shared";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { Link, useRouter } from "@tanstack/react-router";
 import clsx from "clsx";
-import { useMutation } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import { Check, GitBranch, Image, Link2, Mic, Server, X } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { AgentCommandItem, MAX_AGENT_COMMAND_COUNT } from "./AgentCommandItem";
 
 interface DashboardInputControlsProps {
@@ -71,6 +72,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
   const router = useRouter();
   const agentSelectRef = useRef<SearchableSelectHandle | null>(null);
   const mintState = useMutation(api.github_app.mintInstallState);
+  const addManualRepo = useAction(api.github.addManualRepo);
   const providerStatusMap = useMemo(() => {
     const map = new Map<string, ProviderStatus>();
     providerStatus?.providers?.forEach((provider) => {
@@ -226,6 +228,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
   const [showCustomRepoInput, setShowCustomRepoInput] = useState(false);
   const [customRepoUrl, setCustomRepoUrl] = useState("");
   const [customRepoError, setCustomRepoError] = useState<string | null>(null);
+  const [isAddingRepo, setIsAddingRepo] = useState(false);
 
   useEffect(() => {
     const node = pillboxScrollRef.current;
@@ -293,21 +296,42 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     agentSelectRef.current?.open({ focusValue: agent });
   }, []);
 
-  const handleCustomRepoSubmit = useCallback(() => {
+  const handleCustomRepoSubmit = useCallback(async () => {
     const parsed = parseGithubRepo(customRepoUrl);
     if (!parsed) {
       setCustomRepoError("Invalid GitHub repository URL");
       return;
     }
 
-    // Set the parsed fullName as the selected project
-    onProjectChange([parsed.fullName]);
-
-    // Clear the custom input
-    setCustomRepoUrl("");
+    setIsAddingRepo(true);
     setCustomRepoError(null);
-    setShowCustomRepoInput(false);
-  }, [customRepoUrl, onProjectChange]);
+
+    try {
+      const result = await addManualRepo({
+        teamSlugOrId,
+        repoUrl: customRepoUrl,
+      });
+
+      if (result.success) {
+        // Set the repo as selected
+        onProjectChange([result.fullName]);
+
+        // Clear the custom input
+        setCustomRepoUrl("");
+        setCustomRepoError(null);
+        setShowCustomRepoInput(false);
+
+        toast.success(`Added ${result.fullName} to repositories`);
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to add repository";
+      setCustomRepoError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setIsAddingRepo(false);
+    }
+  }, [customRepoUrl, addManualRepo, teamSlugOrId, onProjectChange]);
 
   const handleCustomRepoInputChange = useCallback((value: string) => {
     setCustomRepoUrl(value);
@@ -561,15 +585,21 @@ export const DashboardInputControls = memo(function DashboardInputControls({
                     <button
                       type="button"
                       onClick={handleCustomRepoSubmit}
+                      disabled={isAddingRepo}
                       className={clsx(
                         "px-2 h-7 flex items-center justify-center rounded",
                         "bg-blue-500 hover:bg-blue-600",
                         "text-white text-[12px] font-medium",
-                        "transition-colors"
+                        "transition-colors",
+                        "disabled:opacity-50 disabled:cursor-not-allowed"
                       )}
                       title="Add repository"
                     >
-                      <Check className="w-3.5 h-3.5" />
+                      {isAddingRepo ? (
+                        <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Check className="w-3.5 h-3.5" />
+                      )}
                     </button>
                   </div>
                   {customRepoError ? (
