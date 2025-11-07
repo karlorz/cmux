@@ -254,6 +254,15 @@ export type GithubMergePrSimpleRequest = {
     method: 'squash' | 'rebase' | 'merge';
 };
 
+export type GithubMergeStatusResponse = {
+    mergeable: boolean | null;
+    mergeableState: string | null;
+    hasConflicts: boolean;
+    baseRef: string | null;
+    headRef: string | null;
+    message?: string;
+};
+
 export type GithubPrsFilesResponse = {
     repoFullName: string;
     number: number;
@@ -1372,6 +1381,46 @@ export type PostApiIntegrationsGithubPrsMergeSimpleResponses = {
 };
 
 export type PostApiIntegrationsGithubPrsMergeSimpleResponse = PostApiIntegrationsGithubPrsMergeSimpleResponses[keyof PostApiIntegrationsGithubPrsMergeSimpleResponses];
+
+export type GetApiIntegrationsGithubPrsMergeStatusData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+        owner: string;
+        repo: string;
+        number?: number | null;
+    };
+    url: '/api/integrations/github/prs/merge-status';
+};
+
+export type GetApiIntegrationsGithubPrsMergeStatusErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Pull request not found
+     */
+    404: unknown;
+    /**
+     * Failed to fetch merge status
+     */
+    500: unknown;
+};
+
+export type GetApiIntegrationsGithubPrsMergeStatusResponses = {
+    /**
+     * Merge status fetched
+     */
+    200: GithubMergeStatusResponse;
+};
+
+export type GetApiIntegrationsGithubPrsMergeStatusResponse = GetApiIntegrationsGithubPrsMergeStatusResponses[keyof GetApiIntegrationsGithubPrsMergeStatusResponses];
 
 export type GetApiIntegrationsGithubPrsRawData = {
     body?: never;

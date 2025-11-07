@@ -27,6 +27,10 @@ type GitHubPrBasic = {
 type GitHubPrDetail = GitHubPrBasic & {
   merged_at: string | null;
   node_id: string;
+  baseRef?: string;
+  headRef?: string;
+  mergeable?: boolean | null;
+  mergeable_state?: string | null;
 };
 
 type ConvexClient = ReturnType<typeof getConvex>;
@@ -102,6 +106,26 @@ const MergePullRequestSimpleBody = z
     method: z.enum(["squash", "rebase", "merge"]),
   })
   .openapi("GithubMergePrSimpleRequest");
+
+const MergeStatusQuery = z
+  .object({
+    teamSlugOrId: z.string(),
+    owner: z.string(),
+    repo: z.string(),
+    number: z.coerce.number(),
+  })
+  .openapi("GithubMergeStatusQuery");
+
+const MergeStatusResponse = z
+  .object({
+    mergeable: z.boolean().nullable(),
+    mergeableState: z.string().nullable(),
+    hasConflicts: z.boolean(),
+    baseRef: z.string().nullable(),
+    headRef: z.string().nullable(),
+    message: z.string().optional(),
+  })
+  .openapi("GithubMergeStatusResponse");
 
 const OpenPullRequestResponse = z
   .object({
@@ -983,6 +1007,127 @@ githubPrsOpenRouter.openapi(
   },
 );
 
+githubPrsOpenRouter.openapi(
+  createRoute({
+    method: "get" as const,
+    path: "/integrations/github/prs/merge-status",
+    tags: ["Integrations"],
+    summary: "Fetch mergeability information for a GitHub pull request",
+    request: {
+      query: MergeStatusQuery,
+    },
+    responses: {
+      200: {
+        description: "Merge status fetched",
+        content: {
+          "application/json": {
+            schema: MergeStatusResponse,
+          },
+        },
+      },
+      401: { description: "Unauthorized" },
+      403: { description: "Forbidden" },
+      404: { description: "Pull request not found" },
+      500: { description: "Failed to fetch merge status" },
+    },
+  }),
+  async (c) => {
+    const user = await stackServerAppJs.getUser({ tokenStore: c.req.raw });
+    if (!user) {
+      return c.text("Unauthorized", 401);
+    }
+
+    const [{ accessToken }, githubAccount] = await Promise.all([
+      user.getAuthJson(),
+      user.getConnectedAccount("github"),
+    ]);
+
+    if (!accessToken) {
+      return c.text("Unauthorized", 401);
+    }
+
+    if (!githubAccount) {
+      return c.text("Unauthorized", 401);
+    }
+
+    const { accessToken: githubAccessToken } = await githubAccount.getAccessToken();
+    if (!githubAccessToken) {
+      return c.text("Unauthorized", 401);
+    }
+
+    const { teamSlugOrId, owner, repo, number } = c.req.valid("query");
+
+    await verifyTeamAccess({ req: c.req.raw, teamSlugOrId });
+
+    const octokit = createOctokit(githubAccessToken);
+
+    try {
+      const detail = await fetchPullRequestDetail({
+        octokit,
+        owner,
+        repo,
+        number,
+      });
+
+      const mergeable =
+        typeof detail.mergeable === "boolean" ? detail.mergeable : null;
+      const mergeableState = detail.mergeable_state ?? null;
+      const hasConflicts = mergeableState === "dirty";
+      const baseRef = detail.baseRef ?? null;
+      const headRef = detail.headRef ?? null;
+      const message = hasConflicts
+        ? `Conflicts with ${baseRef ?? "the base branch"} must be resolved in GitHub before merging.`
+        : undefined;
+
+      return c.json({
+        mergeable,
+        mergeableState,
+        hasConflicts,
+        baseRef,
+        headRef,
+        message,
+      });
+    } catch (error) {
+      const status =
+        typeof (error as { status?: number }).status === "number"
+          ? (error as { status?: number }).status
+          : 500;
+      const message =
+        error instanceof Error ? error.message : "Failed to fetch merge status";
+      if (status === 404) {
+        return c.json(
+          {
+            mergeable: null,
+            mergeableState: null,
+            hasConflicts: false,
+            baseRef: null,
+            headRef: null,
+            message: "Pull request not found",
+          },
+          404,
+        );
+      }
+      console.error("[merge-status] Failed to fetch PR merge status", {
+        owner,
+        repo,
+        number,
+        error,
+      });
+      return c.json(
+        {
+          mergeable: null,
+          mergeableState: null,
+          hasConflicts: false,
+          baseRef: null,
+          headRef: null,
+          message,
+        },
+        500,
+      );
+    }
+  },
+);
+
 function createOctokit(token: string): Octokit {
   return new Octokit({
     auth: token,
@@ -1139,6 +1284,10 @@ async function fetchPullRequestDetail({
     draft: data.draft ?? undefined,
     merged_at: data.merged_at,
     node_id: data.node_id,
+    baseRef: data.base?.ref,
+    headRef: data.head?.ref,
+    mergeable: typeof data.mergeable === "boolean" ? data.mergeable : null,
+    mergeable_state: data.mergeable_state ?? null,
   };
 }
 

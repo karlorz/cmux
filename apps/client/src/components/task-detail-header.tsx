@@ -16,6 +16,7 @@ import {
   type DefaultError,
 } from "@tanstack/react-query";
 import {
+  getApiIntegrationsGithubPrsMergeStatusOptions,
   postApiIntegrationsGithubPrsMergeMutation,
   postApiIntegrationsGithubPrsOpenMutation,
 } from "@cmux/www-openapi-client/react-query";
@@ -583,6 +584,36 @@ function SocketActions({
     [selectedRun?.pullRequests],
   );
 
+  const mergeablePullRequests = useMemo(
+    () =>
+      prIsOpen
+        ? pullRequests
+          .map((pr) => {
+            const repoFullName = pr.repoFullName?.trim();
+            const number = pr.number;
+            if (!repoFullName || typeof number !== "number") {
+              return null;
+            }
+            const [owner, repo] = repoFullName.split("/", 2);
+            if (!owner || !repo) {
+              return null;
+            }
+            return { owner, repo, number, repoFullName };
+          })
+          .filter(
+            (
+              entry,
+            ): entry is {
+              owner: string;
+              repo: string;
+              number: number;
+              repoFullName: string;
+            } => Boolean(entry),
+          )
+        : [],
+    [prIsOpen, pullRequests],
+  );
+
   const repoFullNames = useMemo(() => {
     const names = new Set<string>();
     for (const target of repoDiffTargets) {
@@ -614,8 +645,44 @@ function SocketActions({
       }),
       enabled:
         Boolean(target.repoFullName?.trim()) && Boolean(target.headRef?.trim()),
+      })),
+  });
+
+  const mergeStatusQueries = useQueries({
+    queries: mergeablePullRequests.map((target) => ({
+      ...getApiIntegrationsGithubPrsMergeStatusOptions({
+        query: {
+          teamSlugOrId,
+          owner: target.owner,
+          repo: target.repo,
+          number: target.number,
+        },
+      }),
+      enabled: prIsOpen,
     })),
   });
+
+  const mergeStatusLoading =
+    prIsOpen &&
+    mergeStatusQueries.some(
+      (query) => query.fetchStatus === "fetching" && !query.data,
+    );
+
+  const mergeConflictDetail = prIsOpen
+    ? mergeStatusQueries
+      .map((query, index) => ({
+        query,
+        target: mergeablePullRequests[index],
+      }))
+      .find(({ query }) => query.data?.hasConflicts)
+    : undefined;
+
+  const mergeHasConflicts = Boolean(mergeConflictDetail);
+
+  const mergeConflictReason = mergeConflictDetail
+    ? mergeConflictDetail.query.data?.message ??
+    `Conflicts detected with ${mergeConflictDetail.query.data?.baseRef ?? "the base branch"}${mergeConflictDetail.target?.repoFullName ? ` in ${mergeConflictDetail.target.repoFullName}` : ""}. Resolve them on GitHub before merging.`
+    : undefined;
 
   const hasChanges =
     repoDiffTargets.length === 0
@@ -875,6 +942,14 @@ function SocketActions({
   };
 
   const handleMerge = (method: MergeMethod) => {
+    if (
+      !prIsOpen ||
+      isMerging ||
+      mergeHasConflicts ||
+      mergeStatusLoading
+    ) {
+      return;
+    }
     mergePrMutation.mutate({
       body: {
         teamSlugOrId,
@@ -969,9 +1044,19 @@ function SocketActions({
             isOpeningPr ||
             isCreatingPr ||
             isMerging ||
-            (!prIsOpen && !hasChanges)
+            (!prIsOpen && !hasChanges) ||
+            (prIsOpen && (mergeHasConflicts || mergeStatusLoading))
           }
           prCount={repoFullNames.length}
+          disabledReason={
+            prIsOpen
+              ? mergeHasConflicts
+                ? mergeConflictReason
+                : mergeStatusLoading
+                  ? "Checking for conflicts with the base branch..."
+                  : undefined
+              : undefined
+          }
         />
       )}
       {!prIsOpen && !prIsMerged && ENABLE_MERGE_BUTTON && (

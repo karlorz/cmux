@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { useClipboard } from "@mantine/hooks";
 import clsx from "clsx";
 import { MergeButton, type MergeMethod } from "@/components/ui/merge-button";
-import { postApiIntegrationsGithubPrsCloseMutation, postApiIntegrationsGithubPrsMergeSimpleMutation } from "@cmux/www-openapi-client/react-query";
+import { getApiIntegrationsGithubPrsMergeStatusOptions, postApiIntegrationsGithubPrsCloseMutation, postApiIntegrationsGithubPrsMergeSimpleMutation } from "@cmux/www-openapi-client/react-query";
 import type { PostApiIntegrationsGithubPrsCloseData, PostApiIntegrationsGithubPrsCloseResponse, PostApiIntegrationsGithubPrsMergeSimpleData, PostApiIntegrationsGithubPrsMergeSimpleResponse, Options } from "@cmux/www-openapi-client";
 import { useCombinedWorkflowData, WorkflowRunsBadge, WorkflowRunsSection } from "@/components/WorkflowRunsSection";
 
@@ -133,6 +133,7 @@ export function PullRequestDetailView({
   number,
 }: PullRequestDetailViewProps) {
   const clipboard = useClipboard({ timeout: 2000 });
+  const prNumberFromRoute = Number(number) || 0;
 
   const currentPR = useConvexQuery(api.github_prs.getPullRequest, {
     teamSlugOrId,
@@ -286,14 +287,51 @@ export function PullRequestDetailView({
     } as const;
   }, [workflowData.allRuns, workflowData.isLoading]);
 
+  const shouldCheckMergeStatus =
+    Boolean(currentPR && currentPR.state === "open" && !currentPR.merged);
+
+  const mergeStatusQuery = useRQ(
+    {
+      ...getApiIntegrationsGithubPrsMergeStatusOptions({
+        query: {
+          teamSlugOrId,
+          owner,
+          repo,
+          number: currentPR?.number ?? prNumberFromRoute,
+        },
+      }),
+      enabled: shouldCheckMergeStatus,
+    },
+  );
+
+  const mergeStatusLoading =
+    shouldCheckMergeStatus &&
+    mergeStatusQuery.fetchStatus === "fetching" &&
+    !mergeStatusQuery.data;
+
+  const mergeHasConflicts = Boolean(
+    shouldCheckMergeStatus && mergeStatusQuery.data?.hasConflicts,
+  );
+
+  const mergeConflictReason = mergeHasConflicts
+    ? mergeStatusQuery.data?.message ??
+    `This pull request has conflicts with ${mergeStatusQuery.data?.baseRef ?? "the base branch"}. Resolve them on GitHub before merging.`
+    : undefined;
+
   const disabledBecauseOfChecks = !checksAllowMerge;
   const mergeDisabled =
     mergePrMutation.isPending ||
     closePrMutation.isPending ||
-    disabledBecauseOfChecks;
-  const mergeDisabledReason = disabledBecauseOfChecks
-    ? checksDisabledReason
-    : undefined;
+    disabledBecauseOfChecks ||
+    mergeHasConflicts ||
+    mergeStatusLoading;
+  const mergeDisabledReason = mergeHasConflicts
+    ? mergeConflictReason
+    : disabledBecauseOfChecks
+      ? checksDisabledReason
+      : mergeStatusLoading
+        ? "Checking for conflicts with the base branch..."
+        : undefined;
 
   const handleClosePR = () => {
     if (!currentPR) return;
@@ -312,7 +350,9 @@ export function PullRequestDetailView({
       !currentPR ||
       mergePrMutation.isPending ||
       closePrMutation.isPending ||
-      disabledBecauseOfChecks
+      disabledBecauseOfChecks ||
+      mergeHasConflicts ||
+      mergeStatusLoading
     ) {
       return;
     }
