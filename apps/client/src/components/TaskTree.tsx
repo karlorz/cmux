@@ -1,3 +1,4 @@
+import { TaskContextMenuContent } from "@/components/tasks/TaskContextMenuContent";
 import { Dropdown } from "@/components/ui/dropdown";
 import {
   Tooltip,
@@ -7,6 +8,7 @@ import {
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { useArchiveTask } from "@/hooks/useArchiveTask";
 import { useOpenWithActions } from "@/hooks/useOpenWithActions";
+import { useRenameTask } from "@/hooks/useRenameTask";
 import { isElectron } from "@/lib/electron";
 import { isFakeConvexId } from "@/lib/fakeConvexId";
 import type { AnnotatedTaskRun, TaskRunWithChildren } from "@/types/task";
@@ -25,11 +27,9 @@ import { toast } from "sonner";
 import {
   AlertTriangle,
   Archive as ArchiveIcon,
-  ArchiveRestore as ArchiveRestoreIcon,
   CheckCircle,
   Circle,
   ChevronRight,
-  Copy as CopyIcon,
   Crown,
   EllipsisVertical,
   ExternalLink,
@@ -43,7 +43,6 @@ import {
   GitPullRequestDraft,
   Globe,
   Monitor,
-  Pencil,
   TerminalSquare,
   Loader2,
   XCircle,
@@ -58,14 +57,10 @@ import {
   useMemo,
   useRef,
   useState,
-  type ChangeEvent,
-  type FocusEvent,
-  type KeyboardEvent,
   type MouseEvent,
   type ReactElement,
   type ReactNode,
 } from "react";
-import { flushSync } from "react-dom";
 import { VSCodeIcon } from "./icons/VSCodeIcon";
 import { SidebarListItem } from "./sidebar/SidebarListItem";
 import { annotateAgentOrdinals } from "./task-tree/annotateAgentOrdinals";
@@ -106,12 +101,6 @@ interface TaskTreeProps {
   defaultExpanded?: boolean;
   teamSlugOrId: string;
 }
-
-type TasksGetArgs = {
-  teamSlugOrId: string;
-  projectFullName?: string;
-  archived?: boolean;
-};
 
 // Extract the display text logic to avoid re-creating it on every render
 function getRunDisplayText(run: TaskRunWithChildren): string {
@@ -423,89 +412,18 @@ function TaskTreeInner({
   }, [prefetchTaskRuns]);
 
   const { archiveWithUndo, unarchive } = useArchiveTask(teamSlugOrId);
-  const updateTaskMutation = useMutation(api.tasks.update).withOptimisticUpdate(
-    (localStore, args) => {
-      const optimisticUpdatedAt = Date.now();
-      const applyUpdateToList = (keyArgs: TasksGetArgs) => {
-        const list = localStore.getQuery(api.tasks.get, keyArgs);
-        if (!list) {
-          return;
-        }
-        const index = list.findIndex((item) => item._id === args.id);
-        if (index === -1) {
-          return;
-        }
-        const next = list.slice();
-        next[index] = {
-          ...next[index],
-          text: args.text,
-          updatedAt: optimisticUpdatedAt,
-        };
-        localStore.setQuery(api.tasks.get, keyArgs, next);
-      };
-
-      const listVariants: TasksGetArgs[] = [
-        { teamSlugOrId: args.teamSlugOrId },
-        { teamSlugOrId: args.teamSlugOrId, archived: false },
-        { teamSlugOrId: args.teamSlugOrId, archived: true },
-      ];
-
-      listVariants.forEach(applyUpdateToList);
-
-      const detailArgs = { teamSlugOrId: args.teamSlugOrId, id: args.id };
-      const existingDetail = localStore.getQuery(api.tasks.getById, detailArgs);
-      if (existingDetail) {
-        localStore.setQuery(api.tasks.getById, detailArgs, {
-          ...existingDetail,
-          text: args.text,
-          updatedAt: optimisticUpdatedAt,
-        });
-      }
-    }
-  );
-  const [isRenaming, setIsRenaming] = useState(false);
-  const [renameValue, setRenameValue] = useState(task.text ?? "");
-  const [renameError, setRenameError] = useState<string | null>(null);
-  const [isRenamePending, setIsRenamePending] = useState(false);
-  const renameInputRef = useRef<HTMLInputElement | null>(null);
-  const pendingRenameFocusFrame = useRef<number | null>(null);
-  const renameInputHasFocusedRef = useRef(false);
-
-  const focusRenameInput = useCallback(() => {
-    if (typeof window === "undefined") {
-      renameInputRef.current?.focus();
-      renameInputRef.current?.select();
-      return;
-    }
-    if (pendingRenameFocusFrame.current !== null) {
-      window.cancelAnimationFrame(pendingRenameFocusFrame.current);
-    }
-    pendingRenameFocusFrame.current = window.requestAnimationFrame(() => {
-      pendingRenameFocusFrame.current = null;
-      const input = renameInputRef.current;
-      if (!input) {
-        return;
-      }
-      input.focus();
-      input.select();
-    });
-  }, []);
-
-  useEffect(
-    () => () => {
-      if (pendingRenameFocusFrame.current !== null) {
-        window.cancelAnimationFrame(pendingRenameFocusFrame.current);
-        pendingRenameFocusFrame.current = null;
-      }
-    },
-    []
-  );
-
-  useEffect(() => {
-    if (!isRenaming) {
-      setRenameValue(task.text ?? "");
-    }
-  }, [isRenaming, task.text]);
+  const {
+    isRenaming,
+    renameValue,
+    renameError,
+    isRenamePending,
+    renameInputRef,
+    startRenaming,
+    handleRenameChange,
+    handleRenameKeyDown,
+    handleRenameBlur,
+    handleRenameFocus,
+  } = useRenameTask({ task, teamSlugOrId, canRenameTask });
 
   const handleCopyDescription = useCallback(() => {
     if (navigator?.clipboard?.writeText) {
@@ -521,112 +439,6 @@ function TaskTreeInner({
     unarchive(task._id);
   }, [unarchive, task._id]);
 
-  const handleRenameChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      setRenameValue(event.target.value);
-      if (renameError) {
-        setRenameError(null);
-      }
-    },
-    [renameError]
-  );
-
-  const handleRenameCancel = useCallback(() => {
-    setRenameValue(task.text ?? "");
-    setRenameError(null);
-    setIsRenaming(false);
-  }, [task.text]);
-
-  const handleRenameSubmit = useCallback(async () => {
-    if (!canRenameTask) {
-      setIsRenaming(false);
-      return;
-    }
-    if (isRenamePending) {
-      return;
-    }
-    const trimmed = renameValue.trim();
-    if (!trimmed) {
-      setRenameError("Task name is required.");
-      renameInputRef.current?.focus();
-      return;
-    }
-    const current = (task.text ?? "").trim();
-    if (trimmed === current) {
-      setIsRenaming(false);
-      setRenameError(null);
-      return;
-    }
-    setIsRenamePending(true);
-    try {
-      await updateTaskMutation({
-        teamSlugOrId,
-        id: task._id,
-        text: trimmed,
-      });
-      setIsRenaming(false);
-      setRenameError(null);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to rename task.";
-      setRenameError(message);
-      toast.error(message);
-      renameInputRef.current?.focus();
-    } finally {
-      setIsRenamePending(false);
-    }
-  }, [
-    canRenameTask,
-    isRenamePending,
-    renameValue,
-    task._id,
-    task.text,
-    teamSlugOrId,
-    updateTaskMutation,
-  ]);
-
-  const handleRenameKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLInputElement>) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        void handleRenameSubmit();
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        handleRenameCancel();
-      }
-    },
-    [handleRenameCancel, handleRenameSubmit]
-  );
-
-  const handleRenameBlur = useCallback(() => {
-    if (!renameInputHasFocusedRef.current) {
-      focusRenameInput();
-      return;
-    }
-    void handleRenameSubmit();
-  }, [focusRenameInput, handleRenameSubmit]);
-
-  const handleRenameFocus = useCallback(
-    (event: FocusEvent<HTMLInputElement>) => {
-      renameInputHasFocusedRef.current = true;
-      event.currentTarget.select();
-    },
-    []
-  );
-
-  const handleStartRenaming = useCallback(() => {
-    if (!canRenameTask) {
-      return;
-    }
-    flushSync(() => {
-      setRenameValue(task.text ?? "");
-      setRenameError(null);
-      setIsRenaming(true);
-    });
-    renameInputHasFocusedRef.current = false;
-    focusRenameInput();
-  }, [canRenameTask, focusRenameInput, task.text]);
 
   const inferredBranch = getTaskBranch(task);
   const trimmedTaskText = (task.text ?? "").trim();
@@ -838,99 +650,72 @@ function TaskTreeInner({
           <ContextMenu.Portal>
             <ContextMenu.Positioner className="outline-none z-[var(--z-context-menu)]">
               <ContextMenu.Popup className="origin-[var(--transform-origin)] rounded-md bg-white dark:bg-neutral-800 py-1 text-neutral-900 dark:text-neutral-100 shadow-lg shadow-gray-200 outline-1 outline-neutral-200 transition-[opacity] data-[ending-style]:opacity-0 dark:shadow-none dark:-outline-offset-1 dark:outline-neutral-700">
-                {canRenameTask ? (
-                  <>
-                    <ContextMenu.Item
-                      className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
-                      onClick={handleStartRenaming}
-                    >
-                      <Pencil className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
-                      <span>Rename Task</span>
-                    </ContextMenu.Item>
-                    <div className="my-1 h-px bg-neutral-200 dark:bg-neutral-700" />
-                  </>
-                ) : null}
-                <ContextMenu.Item
-                  className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
-                  onClick={handleCopyDescription}
+                <TaskContextMenuContent
+                  canRename={canRenameTask}
+                  onRename={startRenaming}
+                  onCopyDescription={handleCopyDescription}
+                  onArchive={handleArchive}
+                  onUnarchive={handleUnarchive}
+                  isArchived={Boolean(task.isArchived)}
                 >
-                  <CopyIcon className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
-                  <span>Copy Description</span>
-                </ContextMenu.Item>
-                <ContextMenu.SubmenuRoot>
-                  <ContextMenu.SubmenuTrigger className="flex items-center gap-2 cursor-default py-1.5 pr-4 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700">
-                    <ArchiveIcon className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
-                    <span>Task Runs</span>
-                    <ChevronRight className="w-3 h-3 ml-auto text-neutral-400 dark:text-neutral-500" />
-                  </ContextMenu.SubmenuTrigger>
-                  <ContextMenu.Positioner className="outline-none z-[var(--z-context-menu)]">
-                    <ContextMenu.Popup className="origin-[var(--transform-origin)] rounded-md bg-white dark:bg-neutral-800 py-1 text-neutral-900 dark:text-neutral-100 shadow-lg shadow-gray-200 outline-1 outline-neutral-200 transition-[opacity] data-[ending-style]:opacity-0 dark:shadow-none dark:-outline-offset-1 dark:outline-neutral-700 max-w-xs">
-                      {runsLoading ? (
-                        <div className="flex items-center gap-2 px-3 py-2 text-xs text-neutral-500 dark:text-neutral-400">
-                          <Loader2 className="w-3 h-3 animate-spin text-neutral-400" />
-                          <span>Loading task runs…</span>
-                        </div>
-                      ) : (
-                        <div className="max-h-64 overflow-y-auto">
-                          {runMenuEntries.length > 0 ? (
-                            runMenuEntries.map((run) => (
-                              <ContextMenu.Item
-                                key={run.id}
-                                closeOnClick={false}
-                                className="flex items-center justify-between gap-3 cursor-default py-1.5 pr-4 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
-                                onClick={() =>
-                                  handleRunArchiveToggle(
-                                    run.id,
-                                    !run.isArchived
-                                  )
-                                }
-                              >
-                                <div className="flex min-w-0 items-center gap-2">
-                                  <span className="truncate text-left">
-                                    {run.label}
-                                  </span>
-                                  {showRunNumbers ? (
-                                    <span className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400 flex-shrink-0">
-                                      {run.ordinal}
+                  <ContextMenu.SubmenuRoot>
+                    <ContextMenu.SubmenuTrigger className="flex items-center gap-2 cursor-default py-1.5 pr-4 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700">
+                      <ArchiveIcon className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                      <span>Task Runs</span>
+                      <ChevronRight className="w-3 h-3 ml-auto text-neutral-400 dark:text-neutral-500" />
+                    </ContextMenu.SubmenuTrigger>
+                    <ContextMenu.Positioner className="outline-none z-[var(--z-context-menu)]">
+                      <ContextMenu.Popup className="origin-[var(--transform-origin)] rounded-md bg-white dark:bg-neutral-800 py-1 text-neutral-900 dark:text-neutral-100 shadow-lg shadow-gray-200 outline-1 outline-neutral-200 transition-[opacity] data-[ending-style]:opacity-0 dark:shadow-none dark:-outline-offset-1 dark:outline-neutral-700 max-w-xs">
+                        {runsLoading ? (
+                          <div className="flex items-center gap-2 px-3 py-2 text-xs text-neutral-500 dark:text-neutral-400">
+                            <Loader2 className="w-3 h-3 animate-spin text-neutral-400" />
+                            <span>Loading task runs…</span>
+                          </div>
+                        ) : (
+                          <div className="max-h-64 overflow-y-auto">
+                            {runMenuEntries.length > 0 ? (
+                              runMenuEntries.map((run) => (
+                                <ContextMenu.Item
+                                  key={run.id}
+                                  closeOnClick={false}
+                                  className="flex items-center justify-between gap-3 cursor-default py-1.5 pr-4 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                                  onClick={() =>
+                                    handleRunArchiveToggle(
+                                      run.id,
+                                      !run.isArchived
+                                    )
+                                  }
+                                >
+                                  <div className="flex min-w-0 items-center gap-2">
+                                    <span className="truncate text-left">
+                                      {run.label}
                                     </span>
-                                  ) : null}
-                                </div>
-                                <span className="ml-2 flex flex-shrink-0 items-center text-neutral-500 dark:text-neutral-400">
-                                  {run.isArchived ? (
-                                    <EyeOff className="w-3.5 h-3.5" />
-                                  ) : (
-                                    <Eye className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
-                                  )}
-                                </span>
-                              </ContextMenu.Item>
-                            ))
-                          ) : (
-                            <div className="px-3 py-1.5 text-xs text-neutral-500 dark:text-neutral-400">
-                              No task runs yet
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </ContextMenu.Popup>
-                  </ContextMenu.Positioner>
-                </ContextMenu.SubmenuRoot>
-                {task.isArchived ? (
-                  <ContextMenu.Item
-                    className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
-                    onClick={handleUnarchive}
-                  >
-                    <ArchiveRestoreIcon className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
-                    <span>Unarchive Task</span>
-                  </ContextMenu.Item>
-                ) : (
-                  <ContextMenu.Item
-                    className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
-                    onClick={handleArchive}
-                  >
-                    <ArchiveIcon className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
-                    <span>Archive Task</span>
-                  </ContextMenu.Item>
-                )}
+                                    {showRunNumbers ? (
+                                      <span className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400 flex-shrink-0">
+                                        {run.ordinal}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  <span className="ml-2 flex flex-shrink-0 items-center text-neutral-500 dark:text-neutral-400">
+                                    {run.isArchived ? (
+                                      <EyeOff className="w-3.5 h-3.5" />
+                                    ) : (
+                                      <Eye className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                                    )}
+                                  </span>
+                                </ContextMenu.Item>
+                              ))
+                            ) : (
+                              <div className="px-3 py-1.5 text-xs text-neutral-500 dark:text-neutral-400">
+                                No task runs yet
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </ContextMenu.Popup>
+                    </ContextMenu.Positioner>
+                  </ContextMenu.SubmenuRoot>
+                </TaskContextMenuContent>
               </ContextMenu.Popup>
             </ContextMenu.Positioner>
           </ContextMenu.Portal>

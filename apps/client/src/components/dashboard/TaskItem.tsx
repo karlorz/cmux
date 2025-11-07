@@ -1,6 +1,8 @@
 import { OpenWithDropdown } from "@/components/OpenWithDropdown";
+import { TaskContextMenuContent } from "@/components/tasks/TaskContextMenuContent";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useArchiveTask } from "@/hooks/useArchiveTask";
+import { useRenameTask } from "@/hooks/useRenameTask";
 import { isFakeConvexId } from "@/lib/fakeConvexId";
 import { ContextMenu } from "@base-ui-components/react/context-menu";
 import { api } from "@cmux/convex/api";
@@ -26,15 +28,29 @@ export const TaskItem = memo(function TaskItem({
   const navigate = useNavigate();
   const clipboard = useClipboard({ timeout: 2000 });
   const { archiveWithUndo, unarchive } = useArchiveTask(teamSlugOrId);
+  const isOptimisticTask = isFakeConvexId(task._id);
 
   // Query for task runs to find VSCode instances
   const taskRunsQuery = useConvexQuery(
     api.taskRuns.getByTask,
-    isFakeConvexId(task._id) ? "skip" : { teamSlugOrId, taskId: task._id }
+    isOptimisticTask ? "skip" : { teamSlugOrId, taskId: task._id }
   );
 
   // Mutation for toggling keep-alive status
   const toggleKeepAlive = useMutation(api.taskRuns.toggleKeepAlive);
+  const canRenameTask = !isOptimisticTask;
+  const {
+    isRenaming,
+    renameValue,
+    renameError,
+    isRenamePending,
+    renameInputRef,
+    startRenaming,
+    handleRenameChange,
+    handleRenameKeyDown,
+    handleRenameBlur,
+    handleRenameFocus,
+  } = useRenameTask({ task, teamSlugOrId, canRenameTask });
 
   // Find the latest task run with a VSCode instance
   const getLatestVSCodeInstance = useCallback(() => {
@@ -85,12 +101,15 @@ export const TaskItem = memo(function TaskItem({
   }, [hasActiveVSCode, runWithVSCode]);
 
   const handleClick = useCallback(() => {
+    if (isRenaming) {
+      return;
+    }
     navigate({
       to: "/$teamSlugOrId/task/$taskId",
       params: { teamSlugOrId, taskId: task._id },
       search: { runId: undefined },
     });
-  }, [navigate, task._id, teamSlugOrId]);
+  }, [isRenaming, navigate, task._id, teamSlugOrId]);
 
   const handleCopy = useCallback(
     (e: React.MouseEvent) => {
@@ -142,7 +161,7 @@ export const TaskItem = memo(function TaskItem({
     [unarchive, task._id]
   );
 
-  const isOptimisticUpdate = task._id.includes("-") && task._id.length === 36;
+  const isOptimisticUpdate = isOptimisticTask;
 
   return (
     <div className="relative group">
@@ -168,9 +187,34 @@ export const TaskItem = memo(function TaskItem({
               )}
             />
             <div className="flex-1 min-w-0 flex items-center gap-2">
-              <span className="text-[14px] truncate min-w-0">{task.text}</span>
-              {(task.projectFullName ||
-                (task.baseBranch && task.baseBranch !== "main")) && (
+              {isRenaming ? (
+                <input
+                  ref={renameInputRef}
+                  type="text"
+                  value={renameValue}
+                  onChange={handleRenameChange}
+                  onKeyDown={handleRenameKeyDown}
+                  onBlur={handleRenameBlur}
+                  onFocus={handleRenameFocus}
+                  disabled={isRenamePending}
+                  autoFocus
+                  placeholder="Task name"
+                  aria-label="Task name"
+                  aria-invalid={renameError ? true : undefined}
+                  autoComplete="off"
+                  spellCheck={false}
+                  className={clsx(
+                    "flex-1 min-w-0 bg-transparent text-[14px] font-medium text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 outline-none border-none focus-visible:outline-none focus-visible:ring-0",
+                    isRenamePending &&
+                      "text-neutral-400/70 dark:text-neutral-500/70 cursor-wait"
+                  )}
+                />
+              ) : (
+                <span className="text-[14px] truncate min-w-0">{task.text}</span>
+              )}
+              {!isRenaming &&
+                (task.projectFullName ||
+                  (task.baseBranch && task.baseBranch !== "main")) && (
                   <span className="text-[11px] text-neutral-400 dark:text-neutral-500 flex-shrink-0 ml-auto mr-0">
                     {task.projectFullName && (
                       <span>{task.projectFullName.split("/")[1]}</span>
@@ -198,34 +242,23 @@ export const TaskItem = memo(function TaskItem({
         <ContextMenu.Portal>
           <ContextMenu.Positioner className="outline-none z-[var(--z-context-menu)]">
             <ContextMenu.Popup className="origin-[var(--transform-origin)] rounded-md bg-white dark:bg-neutral-800 py-1 text-neutral-900 dark:text-neutral-100 shadow-lg shadow-gray-200 outline-1 outline-neutral-200 transition-[opacity] data-[ending-style]:opacity-0 dark:shadow-none dark:-outline-offset-1 dark:outline-neutral-700">
-              <ContextMenu.Item
-                className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
-                onClick={handleCopyFromMenu}
-              >
-                <Copy className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
-                <span>Copy Description</span>
-              </ContextMenu.Item>
-              {task.isArchived ? (
-                <ContextMenu.Item
-                  className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
-                  onClick={handleUnarchiveFromMenu}
-                >
-                  <ArchiveRestore className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
-                  <span>Unarchive Task</span>
-                </ContextMenu.Item>
-              ) : (
-                <ContextMenu.Item
-                  className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
-                  onClick={handleArchiveFromMenu}
-                >
-                  <Archive className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
-                  <span>Archive Task</span>
-                </ContextMenu.Item>
-              )}
+              <TaskContextMenuContent
+                canRename={canRenameTask}
+                onRename={startRenaming}
+                onCopyDescription={handleCopyFromMenu}
+                onArchive={handleArchiveFromMenu}
+                onUnarchive={handleUnarchiveFromMenu}
+                isArchived={Boolean(task.isArchived)}
+              />
             </ContextMenu.Popup>
           </ContextMenu.Positioner>
         </ContextMenu.Portal>
       </ContextMenu.Root>
+      {renameError ? (
+        <div className="mt-1 text-[11px] text-red-500 dark:text-red-400 px-3">
+          {renameError}
+        </div>
+      ) : null}
       <div className="right-2 top-0 bottom-0 absolute py-2">
         <div className="flex gap-1">
           {/* Copy button */}
