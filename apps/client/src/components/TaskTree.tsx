@@ -1359,6 +1359,7 @@ function TaskRunTreeInner({
     worktreePath: run.worktreePath,
     branch: run.newBranch,
     networking: run.networking,
+    isLocalWorkspace: Boolean(run.isLocalWorkspace),
   });
 
   const shouldRenderDiffLink = true;

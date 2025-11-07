@@ -75,6 +75,8 @@ export const TaskItem = memo(function TaskItem({
     [getLatestVSCodeInstance]
   );
   const hasActiveVSCode = runWithVSCode?.vscode?.status === "running";
+  const isLocalWorkspace =
+    Boolean(runWithVSCode?.isLocalWorkspace) || Boolean(task.isLocalWorkspace);
 
   // Generate the VSCode URL if available
   const vscodeUrl = useMemo(() => {
@@ -260,6 +262,7 @@ export const TaskItem = memo(function TaskItem({
             worktreePath={runWithVSCode?.worktreePath || task.worktreePath}
             branch={task.baseBranch}
             className="group-hover:opacity-100 aria-expanded:opacity-100 opacity-0"
+            isLocalWorkspace={isLocalWorkspace}
           />
 
           {/* Keep-alive button */}

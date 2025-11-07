@@ -101,14 +101,19 @@ function createMorphPortUrl(
   return url;
 }
 
+type WorkspaceUrlOptions = {
+  isLocalWorkspace?: boolean;
+};
+
 export function toProxyWorkspaceUrl(
   workspaceUrl: string,
-  preferredOrigin?: string | null
+  preferredOrigin?: string | null,
+  options?: WorkspaceUrlOptions
 ): string {
-  const normalizedUrl = rewriteLocalWorkspaceUrlIfNeeded(
-    workspaceUrl,
-    preferredOrigin
-  );
+  const normalizedUrl =
+    options?.isLocalWorkspace === true
+      ? rewriteLocalWorkspaceUrlIfNeeded(workspaceUrl, preferredOrigin)
+      : workspaceUrl;
   const components = parseMorphUrl(normalizedUrl);
 
   if (!components) {

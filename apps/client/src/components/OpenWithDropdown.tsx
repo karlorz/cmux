@@ -11,6 +11,7 @@ interface OpenWithDropdownProps {
   networking?: Parameters<typeof useOpenWithActions>[0]["networking"];
   className?: string;
   iconClassName?: string;
+  isLocalWorkspace?: boolean;
 }
 
 export function OpenWithDropdown({
@@ -20,6 +21,7 @@ export function OpenWithDropdown({
   networking,
   className,
   iconClassName = "w-3.5 h-3.5",
+  isLocalWorkspace,
 }: OpenWithDropdownProps) {
   const {
     actions,
@@ -32,6 +34,7 @@ export function OpenWithDropdown({
     worktreePath,
     branch,
     networking,
+    isLocalWorkspace,
   });
 
   return (
