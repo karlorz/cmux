@@ -724,11 +724,47 @@ export const checkAndEvaluateCrown = authMutation({
     );
 
     // Only evaluate if we have at least 2 completed runs
+    // Failed runs are considered in crown evaluation logic, but we need at least 2 completed to evaluate
     const completedRuns = taskRuns.filter((run) => run.status === "completed");
+    const failedRuns = taskRuns.filter((run) => run.status === "failed");
+
+    console.log(
+      `[CheckCrown] Found ${completedRuns.length} completed runs and ${failedRuns.length} failed runs`,
+    );
+
+    // If only 1 run completed and others failed, crown the single completed run
+    if (completedRuns.length === 1 && taskRuns.length > 1) {
+      console.log(
+        `[CheckCrown] Only 1 run completed with ${failedRuns.length} failed, crowning single success`,
+      );
+      await ctx.db.patch(completedRuns[0]._id, {
+        isCrowned: true,
+        crownReason: "Only one model completed the task successfully",
+      });
+      await ctx.db.patch(args.taskId, {
+        isCompleted: true,
+        updatedAt: Date.now(),
+      });
+      return completedRuns[0]._id;
+    }
+
     if (completedRuns.length < 2) {
       console.log(
         `[CheckCrown] Not enough completed runs (${completedRuns.length} < 2)`,
       );
+      // Still mark task as completed if all runs are done (either completed or failed)
+      const allRunsDone = taskRuns.every(
+        (run) => run.status === "completed" || run.status === "failed"
+      );
+      if (allRunsDone && taskRuns.length > 0) {
+        console.log(
+          `[CheckCrown] All runs are done but not enough completed runs for evaluation, marking task as completed`,
+        );
+        await ctx.db.patch(args.taskId, {
+          isCompleted: true,
+          updatedAt: Date.now(),
+        });
+      }
       return null;
     }
 

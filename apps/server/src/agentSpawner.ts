@@ -436,7 +436,35 @@ export async function spawnAgent(
     serverLogger.info(`Starting VSCode instance for agent ${agent.name}...`);
 
     // Start the VSCode instance
-    const vscodeInfo = await vscodeInstance.start();
+    let vscodeInfo: VSCodeInstanceInfo;
+    try {
+      vscodeInfo = await vscodeInstance.start();
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      serverLogger.error(
+        `[AgentSpawner] Failed to start VSCode instance for agent ${agent.name}:`,
+        error
+      );
+
+      // Mark the taskRun as failed in Convex
+      await retryOnOptimisticConcurrency(() =>
+        getConvex().mutation(api.taskRuns.fail, {
+          teamSlugOrId,
+          id: taskRunId,
+          errorMessage: `Failed to start VSCode instance: ${errorMessage}`,
+          exitCode: 1,
+        })
+      );
+
+      return {
+        agentName: agent.name,
+        terminalId: taskRunId,
+        taskRunId,
+        worktreePath,
+        success: false,
+        error: `Failed to start VSCode instance: ${errorMessage}`,
+      };
+    }
     const vscodeUrl = vscodeInfo.workspaceUrl;
 
     serverLogger.info(
@@ -585,9 +613,29 @@ export async function spawnAgent(
     // Get the worker socket
     const workerSocket = vscodeInstance.getWorkerSocket();
     if (!workerSocket) {
+      const errorMessage = "No worker connection available";
       serverLogger.error(
         `[AgentSpawner] No worker socket available for ${agent.name}`
       );
+
+      // Mark the taskRun as failed in Convex
+      await retryOnOptimisticConcurrency(() =>
+        getConvex().mutation(api.taskRuns.fail, {
+          teamSlugOrId,
+          id: taskRunId,
+          errorMessage,
+          exitCode: 1,
+        })
+      );
+
+      // Stop the VSCode instance
+      await vscodeInstance.stop().catch((stopError) => {
+        serverLogger.error(
+          `[AgentSpawner] Failed to stop VSCode instance after worker connection failure`,
+          stopError
+        );
+      });
+
       return {
         agentName: agent.name,
         terminalId,
@@ -595,11 +643,42 @@ export async function spawnAgent(
         worktreePath,
         vscodeUrl,
         success: false,
-        error: "No worker connection available",
+        error: errorMessage,
       };
     }
     if (!vscodeInstance.isWorkerConnected()) {
-      throw new Error("Worker socket not available");
+      const errorMessage = "Worker socket not available";
+      serverLogger.error(
+        `[AgentSpawner] Worker not connected for ${agent.name}`
+      );
+
+      // Mark the taskRun as failed in Convex
+      await retryOnOptimisticConcurrency(() =>
+        getConvex().mutation(api.taskRuns.fail, {
+          teamSlugOrId,
+          id: taskRunId,
+          errorMessage,
+          exitCode: 1,
+        })
+      );
+
+      // Stop the VSCode instance
+      await vscodeInstance.stop().catch((stopError) => {
+        serverLogger.error(
+          `[AgentSpawner] Failed to stop VSCode instance after worker connection check failure`,
+          stopError
+        );
+      });
+
+      return {
+        agentName: agent.name,
+        terminalId,
+        taskRunId,
+        worktreePath,
+        vscodeUrl,
+        success: false,
+        error: errorMessage,
+      };
     }
 
     const actualCommand = agent.command;
@@ -742,17 +821,39 @@ exit $EXIT_CODE
       await switchBranch();
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
+      const errorMessage = err.message;
       serverLogger.error(
         `[AgentSpawner] Branch switch command errored for ${newBranch}`,
         err
       );
+
+      // Mark the taskRun as failed in Convex
+      await retryOnOptimisticConcurrency(() =>
+        getConvex().mutation(api.taskRuns.fail, {
+          teamSlugOrId,
+          id: taskRunId,
+          errorMessage: `Branch switch failed: ${errorMessage}`,
+          exitCode: 1,
+        })
+      );
+
+      // Stop the VSCode instance
       await vscodeInstance.stop().catch((stopError) => {
         serverLogger.error(
           `[AgentSpawner] Failed to stop VSCode instance after branch switch failure`,
           stopError
         );
       });
-      throw err;
+
+      return {
+        agentName: agent.name,
+        terminalId: taskRunId,
+        taskRunId,
+        worktreePath,
+        vscodeUrl,
+        success: false,
+        error: `Branch switch failed: ${errorMessage}`,
+      };
     }
 
     serverLogger.info(
@@ -883,35 +984,71 @@ exit $EXIT_CODE
     );
     serverLogger.info(`[AgentSpawner] Socket id:`, workerSocket.id);
 
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        serverLogger.error(
-          `[AgentSpawner] Timeout waiting for terminal creation response after 30s`
-        );
-        reject(new Error("Timeout waiting for terminal creation"));
-      }, 30000);
-
-      workerSocket.emit(
-        "worker:create-terminal",
-        terminalCreationCommand,
-        (result) => {
-          clearTimeout(timeout);
-          serverLogger.info(
-            `[AgentSpawner] Got response from worker:create-terminal at ${new Date().toISOString()}:`,
-            result
+    try {
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          serverLogger.error(
+            `[AgentSpawner] Timeout waiting for terminal creation response after 30s`
           );
-          if (result.error) {
-            reject(result.error);
-            return;
+          reject(new Error("Timeout waiting for terminal creation"));
+        }, 30000);
+
+        workerSocket.emit(
+          "worker:create-terminal",
+          terminalCreationCommand,
+          (result) => {
+            clearTimeout(timeout);
+            serverLogger.info(
+              `[AgentSpawner] Got response from worker:create-terminal at ${new Date().toISOString()}:`,
+              result
+            );
+            if (result.error) {
+              reject(result.error);
+              return;
+            }
+            serverLogger.info("Terminal created successfully", result);
+            resolve(result.data);
           }
-          serverLogger.info("Terminal created successfully", result);
-          resolve(result.data);
-        }
+        );
+        serverLogger.info(
+          `[AgentSpawner] Emitted worker:create-terminal at ${new Date().toISOString()}`
+        );
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      serverLogger.error(
+        `[AgentSpawner] Failed to create terminal for agent ${agent.name}:`,
+        error
       );
-      serverLogger.info(
-        `[AgentSpawner] Emitted worker:create-terminal at ${new Date().toISOString()}`
+
+      // Mark the taskRun as failed in Convex
+      await retryOnOptimisticConcurrency(() =>
+        getConvex().mutation(api.taskRuns.fail, {
+          teamSlugOrId,
+          id: taskRunId,
+          errorMessage: `Failed to create terminal: ${errorMessage}`,
+          exitCode: 1,
+        })
       );
-    });
+
+      // Stop the VSCode instance
+      await vscodeInstance.stop().catch((stopError) => {
+        serverLogger.error(
+          `[AgentSpawner] Failed to stop VSCode instance after terminal creation failure`,
+          stopError
+        );
+      });
+
+      return {
+        agentName: agent.name,
+        terminalId,
+        taskRunId,
+        worktreePath,
+        vscodeUrl,
+        success: false,
+        error: `Failed to create terminal: ${errorMessage}`,
+      };
+    }
 
     return {
       agentName: agent.name,
