@@ -9,12 +9,12 @@ import {
 import { toMorphVncUrl } from "@/lib/toProxyWorkspaceUrl";
 import { api } from "@cmux/convex/api";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
-import { convexQuery } from "@convex-dev/react-query";
-import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import clsx from "clsx";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import z from "zod";
+import { convexQueryClient } from "@/contexts/convex/convex-query-client";
+import { useQuery } from "convex/react";
 
 const paramsSchema = z.object({
   taskId: typedZid("tasks"),
@@ -33,25 +33,21 @@ export const Route = createFileRoute(
     }),
   },
   loader: async (opts) => {
-    await opts.context.queryClient.ensureQueryData(
-      convexQuery(api.taskRuns.get, {
-        teamSlugOrId: opts.params.teamSlugOrId,
-        id: opts.params.runId,
-      })
-    );
+    convexQueryClient.convexClient.prewarmQuery({
+      query: api.taskRuns.get,
+      args: { teamSlugOrId: opts.params.teamSlugOrId, id: opts.params.runId },
+    });
   },
 });
 
 function BrowserComponent() {
   const { runId: taskRunId, teamSlugOrId } = Route.useParams();
-  const taskRun = useSuspenseQuery(
-    convexQuery(api.taskRuns.get, {
-      teamSlugOrId,
-      id: taskRunId,
-    })
-  );
+  const taskRun = useQuery(api.taskRuns.get, {
+    teamSlugOrId,
+    id: taskRunId,
+  });
 
-  const vscodeInfo = taskRun?.data?.vscode;
+  const vscodeInfo = taskRun?.vscode ?? null;
   const rawMorphUrl = vscodeInfo?.url ?? vscodeInfo?.workspaceUrl ?? null;
   const vncUrl = useMemo(() => {
     if (!rawMorphUrl) {
