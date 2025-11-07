@@ -117,7 +117,6 @@ export const DashboardInput = memo(
         pendingRefocusTimeoutRef.current = window.setTimeout(() => {
           pendingRefocusTimeoutRef.current = null;
           if (isCommandPaletteOpen()) {
-            console.log("[DashboardInput] skip refocus due to command palette");
             return;
           }
           internalApiRef.current?.focus?.();
@@ -208,8 +207,6 @@ export const DashboardInput = memo(
 
         if (shouldRefocusImmediately && !isCommandPaletteOpen()) {
           scheduleRefocus();
-        } else if (shouldRefocusImmediately) {
-          console.log("[DashboardInput] skip immediate refocus, palette open");
         }
 
         queueMicrotask(() => {
@@ -237,8 +234,6 @@ export const DashboardInput = memo(
 
           if (shouldRefocusAfterMicrotask && !isCommandPaletteOpen()) {
             scheduleRefocus();
-          } else if (shouldRefocusAfterMicrotask) {
-            console.log("[DashboardInput] skip microtask refocus, palette open");
           }
         });
       };
