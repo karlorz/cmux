@@ -24,11 +24,16 @@ export function normalizeWorkspaceOrigin(origin: string | null): string | null {
   }
 }
 
+export interface WorkspaceUrlRewriteOptions {
+  isLocalWorkspace?: boolean;
+}
+
 export function rewriteLocalWorkspaceUrlIfNeeded(
   url: string,
-  preferredOrigin?: string | null
+  preferredOrigin?: string | null,
+  options?: WorkspaceUrlRewriteOptions
 ): string {
-  if (!shouldRewriteUrl(url)) {
+  if (!shouldRewriteUrl(url, options?.isLocalWorkspace ?? false)) {
     return url;
   }
 
@@ -49,14 +54,22 @@ export function rewriteLocalWorkspaceUrlIfNeeded(
   }
 }
 
-function shouldRewriteUrl(url: string): boolean {
+function shouldRewriteUrl(
+  url: string,
+  isLocalWorkspace: boolean
+): boolean {
   try {
     const parsed = new URL(url);
     const hostname = parsed.hostname;
-    return (
-      isLoopbackHostname(hostname) ||
-      hostname.toLowerCase() === LOCAL_VSCODE_PLACEHOLDER_HOST
-    );
+    if (hostname.toLowerCase() === LOCAL_VSCODE_PLACEHOLDER_HOST) {
+      return true;
+    }
+
+    if (!isLocalWorkspace) {
+      return false;
+    }
+
+    return isLoopbackHostname(hostname);
   } catch {
     return false;
   }
@@ -103,11 +116,13 @@ function createMorphPortUrl(
 
 export function toProxyWorkspaceUrl(
   workspaceUrl: string,
-  preferredOrigin?: string | null
+  preferredOrigin?: string | null,
+  options?: WorkspaceUrlRewriteOptions
 ): string {
   const normalizedUrl = rewriteLocalWorkspaceUrlIfNeeded(
     workspaceUrl,
-    preferredOrigin
+    preferredOrigin,
+    options
   );
   const components = parseMorphUrl(normalizedUrl);
 

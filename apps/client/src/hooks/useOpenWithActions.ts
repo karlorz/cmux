@@ -24,6 +24,7 @@ type UseOpenWithActionsArgs = {
   worktreePath?: string | null;
   branch?: string | null;
   networking?: NetworkingInfo;
+  isLocalWorkspace?: boolean;
 };
 
 export function useOpenWithActions({
@@ -31,6 +32,7 @@ export function useOpenWithActions({
   worktreePath,
   branch,
   networking,
+  isLocalWorkspace = false,
 }: UseOpenWithActionsArgs) {
   const { socket, availableEditors } = useSocket();
   const localServeWeb = useLocalVSCodeServeWebQuery();
@@ -57,6 +59,7 @@ export function useOpenWithActions({
           const normalizedUrl = rewriteLocalWorkspaceUrlIfNeeded(
             vscodeUrl,
             localServeWebOrigin,
+            { isLocalWorkspace },
           );
           const vscodeUrlWithWorkspace = `${normalizedUrl}?folder=/root/workspace`;
           window.open(vscodeUrlWithWorkspace, "_blank", "noopener,noreferrer");
@@ -104,7 +107,7 @@ export function useOpenWithActions({
         }
       });
     },
-    [socket, worktreePath, vscodeUrl, localServeWebOrigin]
+    [socket, worktreePath, vscodeUrl, localServeWebOrigin, isLocalWorkspace]
   );
 
   const handleCopyBranch = useCallback(() => {

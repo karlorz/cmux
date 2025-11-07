@@ -260,6 +260,7 @@ export const TaskItem = memo(function TaskItem({
             worktreePath={runWithVSCode?.worktreePath || task.worktreePath}
             branch={task.baseBranch}
             className="group-hover:opacity-100 aria-expanded:opacity-100 opacity-0"
+            isLocalWorkspace={Boolean(runWithVSCode?.isLocalWorkspace)}
           />
 
           {/* Keep-alive button */}
