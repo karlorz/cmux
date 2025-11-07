@@ -64,6 +64,7 @@ export class DockerVSCodeInstance extends VSCodeInstance {
   private static dockerInstance: Docker | null = null;
   private static eventStreamRetryTimer: NodeJS.Timeout | null = null;
   private static eventStreamBackoffMs = 1000;
+  private containerWorkspacePath: string;
 
   // Get or create the Docker singleton
   static getDocker(): Docker {
@@ -82,6 +83,18 @@ export class DockerVSCodeInstance extends VSCodeInstance {
     this.imageName = process.env.WORKER_IMAGE_NAME || "cmux-worker:0.0.1";
     dockerLogger.info(`WORKER_IMAGE_NAME: ${process.env.WORKER_IMAGE_NAME}`);
     dockerLogger.info(`this.imageName: ${this.imageName}`);
+
+    // Determine container workspace path based on isLocalWorkspace flag
+    // Local workspaces always use /root/workspace
+    // Local tasks use the actual host worktree path
+    this.containerWorkspacePath = config.isLocalWorkspace
+      ? CONTAINER_WORKSPACE_PATH
+      : (config.workspacePath || CONTAINER_WORKSPACE_PATH);
+
+    dockerLogger.info(
+      `[DockerVSCodeInstance] Container workspace path: ${this.containerWorkspacePath} (isLocalWorkspace: ${config.isLocalWorkspace})`
+    );
+
     // Register this instance
     VSCodeInstance.getInstances().set(this.instanceId, this);
   }
@@ -261,7 +274,7 @@ export class DockerVSCodeInstance extends VSCodeInstance {
     const envVars = [
       "NODE_ENV=production",
       "WORKER_PORT=39377",
-      `CMUX_WORKSPACE_PATH=${CONTAINER_WORKSPACE_PATH}`,
+      `CMUX_WORKSPACE_PATH=${this.containerWorkspacePath}`,
     ];
 
     // Add theme environment variable if provided
@@ -335,7 +348,7 @@ export class DockerVSCodeInstance extends VSCodeInstance {
           createOptions.HostConfig!.Binds = binds;
         }
         binds.push(
-          `${this.config.workspacePath}:${CONTAINER_WORKSPACE_PATH}`
+          `${this.config.workspacePath}:${this.containerWorkspacePath}`
         );
         // Mount the origin directory at the same absolute path to preserve git references
         binds.push(`${originPath}:${originPath}:rw`); // Read-write mount for git operations
@@ -396,7 +409,7 @@ export class DockerVSCodeInstance extends VSCodeInstance {
           createOptions.HostConfig!.Binds = binds;
         }
         binds.push(
-          `${this.config.workspacePath}:${CONTAINER_WORKSPACE_PATH}`
+          `${this.config.workspacePath}:${this.containerWorkspacePath}`
         );
 
         // Mount SSH directory for git authentication
@@ -928,7 +941,7 @@ export class DockerVSCodeInstance extends VSCodeInstance {
         `Devcontainer detected. Bootstrapping inside ${this.containerName} (non-blocking)...`
       );
 
-      const containerWorkspace = CONTAINER_WORKSPACE_PATH;
+      const containerWorkspace = this.containerWorkspacePath;
       const cmuxDirInContainer = path.posix.join(
         containerWorkspace,
         ".cmux"
@@ -996,6 +1009,26 @@ export class DockerVSCodeInstance extends VSCodeInstance {
 
   getName() {
     return `docker-${this.containerName}`;
+  }
+
+  protected getWorkspaceUrl(baseUrl: string): string {
+    return `${baseUrl}/?folder=${this.containerWorkspacePath}`;
+  }
+
+  startFileWatch(worktreePath: string): void {
+    if (this.workerSocket && this.workerConnected) {
+      dockerLogger.info(
+        `[DockerVSCodeInstance ${this.instanceId}] Starting file watch for ${worktreePath} -> ${this.containerWorkspacePath}`
+      );
+      this.workerSocket.emit("worker:start-file-watch", {
+        taskRunId: this.taskRunId,
+        worktreePath: this.containerWorkspacePath,
+      });
+    } else {
+      dockerLogger.warn(
+        `[DockerVSCodeInstance ${this.instanceId}] Cannot start file watch - worker not connected`
+      );
+    }
   }
 
   getPorts(): {

@@ -80,8 +80,7 @@ export async function spawnAgent(
       options.newBranch ||
       (await generateNewBranchName(options.taskDescription, teamSlugOrId));
     serverLogger.info(
-      `[AgentSpawner] New Branch: ${newBranch}, Base Branch: ${
-        options.branch ?? "(auto)"
+      `[AgentSpawner] New Branch: ${newBranch}, Base Branch: ${options.branch ?? "(auto)"
       }`
     );
 
@@ -360,6 +359,7 @@ export async function spawnAgent(
 
     let vscodeInstance: VSCodeInstance;
     let worktreePath: string;
+    let containerWorkspacePath: string;
 
     console.log("[AgentSpawner] [isCloudMode]", options.isCloudMode);
 
@@ -379,6 +379,7 @@ export async function spawnAgent(
       });
 
       worktreePath = CONTAINER_WORKSPACE_PATH;
+      containerWorkspacePath = CONTAINER_WORKSPACE_PATH;
     } else {
       // For Docker, set up worktree as before
       const worktreeInfo = await getWorktreePath(
@@ -420,7 +421,12 @@ export async function spawnAgent(
         taskId,
         theme: options.theme,
         teamSlugOrId,
+        isLocalWorkspace: task?.isLocalWorkspace,
       });
+
+      // Determine container workspace path based on isLocalWorkspace flag
+      // Local workspaces use /root/workspace, local tasks use the actual worktree path
+      containerWorkspacePath = task?.isLocalWorkspace ? CONTAINER_WORKSPACE_PATH : worktreePath;
     }
 
     // Update the task run with the worktree path (retry on OCC)
@@ -512,12 +518,12 @@ export async function spawnAgent(
     // Get ports if it's a Docker instance
     let ports:
       | {
-          vscode: string;
-          worker: string;
-          extension?: string;
-          proxy?: string;
-          vnc?: string;
-        }
+        vscode: string;
+        worker: string;
+        extension?: string;
+        proxy?: string;
+        vnc?: string;
+      }
       | undefined;
     if (vscodeInstance instanceof DockerVSCodeInstance) {
       const dockerPorts = vscodeInstance.getPorts();
@@ -637,30 +643,30 @@ export async function spawnAgent(
     // The notify command contains complex JSON that gets mangled through shell layers
     const tmuxArgs = agent.name.toLowerCase().includes("codex")
       ? [
-          "new-session",
-          "-d",
-          "-s",
-          tmuxSessionName,
-          "-c",
-          CONTAINER_WORKSPACE_PATH,
-          actualCommand,
-          ...actualArgs.map((arg) => {
-            // Replace $CMUX_PROMPT with actual prompt value
-            if (arg === "$CMUX_PROMPT") {
-              return processedTaskDescription;
-            }
-            return arg;
-          }),
-        ]
+        "new-session",
+        "-d",
+        "-s",
+        tmuxSessionName,
+        "-c",
+        containerWorkspacePath,
+        actualCommand,
+        ...actualArgs.map((arg) => {
+          // Replace $CMUX_PROMPT with actual prompt value
+          if (arg === "$CMUX_PROMPT") {
+            return processedTaskDescription;
+          }
+          return arg;
+        }),
+      ]
       : [
-          "new-session",
-          "-d",
-          "-s",
-          tmuxSessionName,
-          "bash",
-          "-lc",
-          `${unsetCommand}exec ${commandString}`,
-        ];
+        "new-session",
+        "-d",
+        "-s",
+        tmuxSessionName,
+        "bash",
+        "-lc",
+        `${unsetCommand}exec ${commandString}`,
+      ];
 
     const terminalCreationCommand: WorkerCreateTerminal = {
       terminalId: tmuxSessionName,
@@ -678,7 +684,7 @@ export async function spawnAgent(
       agentModel: agent.name,
       authFiles,
       startupCommands,
-      cwd: CONTAINER_WORKSPACE_PATH,
+      cwd: containerWorkspacePath,
     };
 
     const switchBranch = async () => {
@@ -698,9 +704,10 @@ exit $EXIT_CODE
         workerSocket,
         command: "bash",
         args: ["-lc", command],
-        cwd: CONTAINER_WORKSPACE_PATH,
+        cwd: containerWorkspacePath,
         env: {
           CMUX_BRANCH_NAME: newBranch,
+          CMUX_WORKSPACE_PATH: containerWorkspacePath,
         },
         timeout: 60000,
       });
@@ -958,22 +965,22 @@ export async function spawnAllAgents(
   // If selectedAgents is provided, map each entry to an AgentConfig to preserve duplicates
   const agentsToSpawn = options.selectedAgents
     ? options.selectedAgents
-        .map((name) => AGENT_CONFIGS.find((agent) => agent.name === name))
-        .filter((a): a is AgentConfig => Boolean(a))
+      .map((name) => AGENT_CONFIGS.find((agent) => agent.name === name))
+      .filter((a): a is AgentConfig => Boolean(a))
     : AGENT_CONFIGS;
 
   // Generate unique branch names for all agents at once to ensure no collisions
   const branchNames = options.prTitle
     ? await generateUniqueBranchNamesFromTitle(
-        options.prTitle!,
-        agentsToSpawn.length,
-        teamSlugOrId
-      )
+      options.prTitle!,
+      agentsToSpawn.length,
+      teamSlugOrId
+    )
     : await generateUniqueBranchNames(
-        options.taskDescription,
-        agentsToSpawn.length,
-        teamSlugOrId
-      );
+      options.taskDescription,
+      agentsToSpawn.length,
+      teamSlugOrId
+    );
 
   serverLogger.info(
     `[AgentSpawner] Generated ${branchNames.length} unique branch names for agents`
