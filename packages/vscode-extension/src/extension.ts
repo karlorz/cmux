@@ -318,35 +318,50 @@ async function setupDefaultTerminal() {
     env: process.env,
   });
 
+  // Show the terminal and wait for it to be ready
   terminal.show();
+  log("Terminal shown, waiting for it to be ready...");
 
   // Store terminal reference
   activeTerminals.set("default", terminal);
 
-  // Attach to default tmux session with a small delay to ensure it's ready
-  setTimeout(() => {
-    terminal.sendText(`tmux attach-session -t cmux`);
-    log("Attached to default tmux session");
-  }, 500); // 500ms delay to ensure tmux session is ready
+  // Wait longer for the terminal to fully initialize in VSCode before attaching to tmux
+  // This ensures the terminal UI is rendered and ready to receive input
+  // Increased from 500ms to 1500ms to give VSCode more time to set up the terminal UI
+  await new Promise(resolve => setTimeout(resolve, 1500));
 
-  log("Created terminal successfully");
+  // Verify the terminal is still active (not disposed)
+  if (terminal.exitStatus !== undefined) {
+    log("ERROR: Terminal exited before we could attach to tmux");
+    isSetupComplete = false; // Reset so we can try again
+    return;
+  }
 
-  // After terminal is created, ensure the terminal is active and move to right group
-  setTimeout(async () => {
-    // Focus on the terminal tab
-    terminal.show();
+  log("Attaching to tmux session...");
+  terminal.sendText(`tmux attach-session -t cmux`);
+  log("Sent tmux attach command to terminal");
 
-    // Move the active editor (terminal) to the right group
-    log("Moving terminal editor to right group");
-    await vscode.commands.executeCommand(
-      "workbench.action.moveEditorToRightGroup"
-    );
+  // After terminal attachment command is sent, wait a bit then move to right group
+  await new Promise(resolve => setTimeout(resolve, 500));
 
-    // Ensure terminal has focus
-    // await vscode.commands.executeCommand("workbench.action.terminal.focus");
+  // Focus on the terminal tab
+  terminal.show();
 
-    log("Terminal setup complete");
-  }, 100);
+  // Move the active editor (terminal) to the right group
+  log("Moving terminal editor to right group");
+  await vscode.commands.executeCommand(
+    "workbench.action.moveEditorToRightGroup"
+  );
+
+  log("Terminal setup complete");
+
+  // Monitor terminal disposal
+  vscode.window.onDidCloseTerminal((closedTerminal) => {
+    if (closedTerminal === terminal) {
+      log("Default terminal was closed");
+      activeTerminals.delete("default");
+    }
+  });
 }
 
 function connectToWorker() {
