@@ -1302,9 +1302,9 @@ export function CommandBar({
 
   const handleSelect = useCallback(
     async (value: string) => {
-      clearCommandInput();
       if (value === "teams:switch") {
         setActivePage("teams");
+        clearCommandInput();
         return;
       } else if (value === "new-task") {
         navigate({
@@ -1313,9 +1313,11 @@ export function CommandBar({
         });
       } else if (value === "local-workspaces") {
         setActivePage("local-workspaces");
+        clearCommandInput();
         return;
       } else if (value === "cloud-workspaces") {
         setActivePage("cloud-workspaces");
+        clearCommandInput();
         return;
       } else if (value === "pull-requests") {
         navigate({
@@ -1502,6 +1504,7 @@ export function CommandBar({
         }
       }
       closeCommand();
+      clearCommandInput();
     },
     [
       clearCommandInput,
