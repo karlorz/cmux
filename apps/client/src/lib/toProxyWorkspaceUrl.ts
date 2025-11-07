@@ -54,7 +54,6 @@ function shouldRewriteUrl(url: string): boolean {
     const parsed = new URL(url);
     const hostname = parsed.hostname;
     return (
-      isLoopbackHostname(hostname) ||
       hostname.toLowerCase() === LOCAL_VSCODE_PLACEHOLDER_HOST
     );
   } catch {
