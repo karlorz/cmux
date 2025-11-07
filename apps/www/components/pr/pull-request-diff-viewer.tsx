@@ -316,6 +316,7 @@ type HeatmapTooltipTheme = {
   contentClass: string;
   titleClass: string;
   reasonClass: string;
+  copyButtonVariant: "light" | "dark";
 };
 
 type NavigateOptions = {
@@ -2996,7 +2997,6 @@ const FileDiffCard = memo(function FileDiffCardComponent({
     <TooltipProvider
       delayDuration={120}
       skipDelayDuration={100}
-      disableHoverableContent
     >
       <article
         id={anchorId}
@@ -3313,11 +3313,51 @@ function HeatmapTooltipBody({
   reason: string | null;
 }) {
   const theme = getHeatmapTooltipTheme(score);
+  const clipboard = useClipboard({ timeout: 1500 });
+  const handleCopy = useCallback(() => {
+    if (!reason) {
+      return;
+    }
+    clipboard.copy(reason);
+  }, [clipboard, reason]);
+  const buttonClassName = cn(
+    "ml-3 inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition focus-visible:outline-none focus-visible:ring-2",
+    theme.copyButtonVariant === "dark"
+      ? "border-white/30 bg-white/10 text-white hover:bg-white/20 focus-visible:ring-white/60"
+      : "border-neutral-300 bg-white/80 text-neutral-800 hover:bg-white focus-visible:ring-black/30",
+    !reason && "cursor-not-allowed opacity-60"
+  );
+
   return (
     <div className="text-left text-xs leading-relaxed">
-      {reason ? (
-        <p className={cn("text-xs", theme.reasonClass)}>{reason}</p>
-      ) : null}
+      <div className="flex items-start gap-2">
+        <p className={cn("flex-1 text-xs leading-relaxed", theme.reasonClass)}>
+          {reason ?? "No automated note for this line."}
+        </p>
+        <button
+          type="button"
+          onClick={handleCopy}
+          disabled={!reason}
+          className={buttonClassName}
+          aria-label={
+            clipboard.copied
+              ? "Copied heatmap note"
+              : "Copy heatmap note to clipboard"
+          }
+        >
+          {clipboard.copied ? (
+            <>
+              <Check className="h-3 w-3" aria-hidden />
+              <span>Copied</span>
+            </>
+          ) : (
+            <>
+              <Copy className="h-3 w-3" aria-hidden />
+              <span>Copy</span>
+            </>
+          )}
+        </button>
+      </div>
     </div>
   );
 }
@@ -3341,6 +3381,7 @@ function getHeatmapTooltipTheme(score: number): HeatmapTooltipTheme {
           "bg-orange-100 border-orange-300 text-neutral-900 shadow-lg shadow-orange-200/70",
         titleClass: "text-neutral-900",
         reasonClass: "text-neutral-800",
+        copyButtonVariant: "light",
       };
     case 3:
       return {
@@ -3348,6 +3389,7 @@ function getHeatmapTooltipTheme(score: number): HeatmapTooltipTheme {
           "bg-amber-100 border-amber-300 text-neutral-900 shadow-lg shadow-amber-200/70",
         titleClass: "text-neutral-900",
         reasonClass: "text-neutral-800",
+        copyButtonVariant: "light",
       };
     case 2:
       return {
@@ -3355,6 +3397,7 @@ function getHeatmapTooltipTheme(score: number): HeatmapTooltipTheme {
           "bg-yellow-100 border-yellow-200 text-neutral-900 shadow-lg shadow-yellow-200/60",
         titleClass: "text-neutral-900",
         reasonClass: "text-neutral-800",
+        copyButtonVariant: "light",
       };
     case 1:
       return {
@@ -3362,6 +3405,7 @@ function getHeatmapTooltipTheme(score: number): HeatmapTooltipTheme {
           "bg-yellow-50 border-yellow-200 text-neutral-900 shadow-lg shadow-yellow-200/50",
         titleClass: "text-neutral-900",
         reasonClass: "text-neutral-700",
+        copyButtonVariant: "light",
       };
     default:
       return {
@@ -3369,6 +3413,7 @@ function getHeatmapTooltipTheme(score: number): HeatmapTooltipTheme {
           "bg-neutral-900/95 border-neutral-700/60 text-neutral-100 shadow-lg shadow-black/40",
         titleClass: "text-neutral-100",
         reasonClass: "text-neutral-300",
+        copyButtonVariant: "dark",
       };
   }
 }
