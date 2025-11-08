@@ -1,3 +1,4 @@
+import { CommandNewTaskDialog } from "@/components/command-bar/NewTaskDialog";
 import { GitHubIcon } from "@/components/icons/github";
 import { useTheme } from "@/components/theme/use-theme";
 import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
@@ -287,6 +288,7 @@ export function CommandBar({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [openedWithShift, setOpenedWithShift] = useState(false);
+  const [isTaskDialogOpen, setIsTaskDialogOpen] = useState(false);
   const clearCommandInput = useCallback(() => {
     setSearch("");
   }, [setSearch]);
@@ -456,6 +458,10 @@ export function CommandBar({
     if (!open) return;
     clearPendingStateReset();
   }, [open, clearPendingStateReset]);
+
+  useEffect(() => {
+    setIsTaskDialogOpen(false);
+  }, [teamSlugOrId]);
 
   useEffect(() => {
     return () => {
@@ -1307,10 +1313,9 @@ export function CommandBar({
         setActivePage("teams");
         return;
       } else if (value === "new-task") {
-        navigate({
-          to: "/$teamSlugOrId/dashboard",
-          params: { teamSlugOrId },
-        });
+        closeCommand();
+        setIsTaskDialogOpen(true);
+        return;
       } else if (value === "local-workspaces") {
         setActivePage("local-workspaces");
         return;
@@ -2466,6 +2471,13 @@ export function CommandBar({
 
   return (
     <>
+      {isTaskDialogOpen ? (
+        <CommandNewTaskDialog
+          open={isTaskDialogOpen}
+          onOpenChange={setIsTaskDialogOpen}
+          teamSlugOrId={teamSlugOrId}
+        />
+      ) : null}
       <div
         className={clsx(
           "fixed inset-0 z-[var(--z-commandbar)]",
