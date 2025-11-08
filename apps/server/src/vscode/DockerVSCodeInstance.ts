@@ -17,6 +17,11 @@ import {
   type VSCodeInstanceInfo,
 } from "./VSCodeInstance";
 
+export interface DockerVSCodeInstanceConfig extends VSCodeInstanceConfig {
+  // Distinguishes local workspaces from local tasks
+  isLocalWorkspace?: boolean;
+}
+
 // Global port mapping storage
 export interface ContainerMapping {
   containerName: string;
@@ -77,7 +82,7 @@ export class DockerVSCodeInstance extends VSCodeInstance {
     return DockerVSCodeInstance.dockerInstance;
   }
 
-  constructor(config: VSCodeInstanceConfig) {
+  constructor(config: DockerVSCodeInstanceConfig) {
     super(config);
     this.containerName = `cmux-${this.taskRunId}`;
     this.imageName = process.env.WORKER_IMAGE_NAME || "cmux-worker:0.0.1";
@@ -85,11 +90,11 @@ export class DockerVSCodeInstance extends VSCodeInstance {
     dockerLogger.info(`this.imageName: ${this.imageName}`);
 
     // Determine container workspace path based on isLocalWorkspace flag
-    // Local workspaces always use /root/workspace
-    // Local tasks use the actual host worktree path
-    this.containerWorkspacePath = config.isLocalWorkspace
-      ? CONTAINER_WORKSPACE_PATH
-      : (config.workspacePath || CONTAINER_WORKSPACE_PATH);
+    // Local workspaces: use /root/workspace
+    // Local tasks: use actual worktree path (or fallback to /root/workspace)
+    this.containerWorkspacePath = !config.isLocalWorkspace && config.workspacePath
+      ? config.workspacePath
+      : CONTAINER_WORKSPACE_PATH;
 
     dockerLogger.info(
       `[DockerVSCodeInstance] Container workspace path: ${this.containerWorkspacePath} (isLocalWorkspace: ${config.isLocalWorkspace})`

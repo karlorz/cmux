@@ -22,8 +22,6 @@ export interface VSCodeInstanceConfig {
   environmentId?: Id<"environments"> | string;
   // Optional: JWT token for crown workflow authentication
   taskRunJwt?: string;
-  // Optional: distinguishes local workspaces from local tasks
-  isLocalWorkspace?: boolean;
 }
 
 export interface VSCodeInstanceInfo {
