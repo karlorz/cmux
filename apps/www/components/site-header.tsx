@@ -2,6 +2,7 @@
 
 import CmuxLogo from "@/components/logo/cmux-logo";
 import { MacDownloadLink } from "@/components/mac-download-link";
+import { GitHubStarButton } from "@/components/github-star-button";
 import type { MacDownloadUrls } from "@/lib/releases";
 import clsx from "clsx";
 import { Download } from "lucide-react";
@@ -106,6 +107,7 @@ export function SiteHeader({
         </nav>
         <div className="flex items-center gap-3">
           {extraEndContent}
+          <GitHubStarButton className="hidden lg:flex cursor-pointer items-center justify-center space-x-2 rounded-md border border-transparent px-2.5 py-1 text-xs font-regular text-neutral-400 shadow-none outline-none outline-0 transition-all duration-200 ease-out hover:bg-neutral-800 hover:text-neutral-300 focus-visible:outline-4 focus-visible:outline-offset-1" />
           {showDownload ? (
             <MacDownloadLink
               autoDetect
