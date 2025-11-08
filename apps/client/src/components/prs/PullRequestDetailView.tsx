@@ -14,6 +14,7 @@ import { MergeButton, type MergeMethod } from "@/components/ui/merge-button";
 import { postApiIntegrationsGithubPrsCloseMutation, postApiIntegrationsGithubPrsMergeSimpleMutation } from "@cmux/www-openapi-client/react-query";
 import type { PostApiIntegrationsGithubPrsCloseData, PostApiIntegrationsGithubPrsCloseResponse, PostApiIntegrationsGithubPrsMergeSimpleData, PostApiIntegrationsGithubPrsMergeSimpleResponse, Options } from "@cmux/www-openapi-client";
 import { useCombinedWorkflowData, WorkflowRunsBadge, WorkflowRunsSection } from "@/components/WorkflowRunsSection";
+import { Link } from "@tanstack/react-router";
 
 const RUN_PENDING_STATUSES = new Set(["in_progress", "queued", "waiting", "pending"]);
 const RUN_PASSING_CONCLUSIONS = new Set(["success", "neutral", "skipped"]);
@@ -135,6 +136,12 @@ export function PullRequestDetailView({
   const clipboard = useClipboard({ timeout: 2000 });
 
   const currentPR = useConvexQuery(api.github_prs.getPullRequest, {
+    teamSlugOrId,
+    repoFullName: `${owner}/${repo}`,
+    number: Number(number),
+  });
+
+  const taskRuns = useConvexQuery(api.taskRuns.getByPullRequest, {
     teamSlugOrId,
     repoFullName: `${owner}/${repo}`,
     number: Number(number),
@@ -488,6 +495,25 @@ export function PullRequestDetailView({
                   <span className="select-none">→</span>
                   <span className="font-mono">{currentPR.baseRef || "?"}</span>
                 </span>
+                {taskRuns && taskRuns.length > 0 && (
+                  <>
+                    <span className="text-neutral-500 dark:text-neutral-600 select-none">
+                      •
+                    </span>
+                    <Link
+                      to="/$teamSlugOrId/task/$taskId/run/$runId"
+                      params={{
+                        teamSlugOrId,
+                        taskId: taskRuns[0].taskId,
+                        runId: taskRuns[0]._id,
+                        taskRunId: taskRuns[0]._id,
+                      }}
+                      className="text-[11px] text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline transition-colors"
+                    >
+                      View Task Run
+                    </Link>
+                  </>
+                )}
               </div>
             </div>
           </div>

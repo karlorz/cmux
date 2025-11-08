@@ -678,6 +678,40 @@ export const getById = internalQuery({
   },
 });
 
+export const getByPullRequest = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    repoFullName: v.string(),
+    number: v.number(),
+  },
+  handler: async (ctx, { teamSlugOrId, repoFullName, number }) => {
+    const teamId = await resolveTeamIdLoose(ctx, teamSlugOrId);
+
+    // Since we don't have an index on pullRequests array, we need to query by team
+    // and filter in memory. This should still be reasonably efficient as we're limiting
+    // to the team's taskRuns.
+    const allTaskRuns = await ctx.db
+      .query("taskRuns")
+      .withIndex("by_team_user", (q) => q.eq("teamId", teamId))
+      .collect();
+
+    // Filter for taskRuns that have a PR matching the given repo and number
+    const matchingRuns = allTaskRuns.filter((run) => {
+      if (!run.pullRequests || run.pullRequests.length === 0) {
+        return false;
+      }
+      return run.pullRequests.some(
+        (pr) => pr.repoFullName === repoFullName && pr.number === number
+      );
+    });
+
+    // Sort by creation time, most recent first
+    matchingRuns.sort((a, b) => b.createdAt - a.createdAt);
+
+    return matchingRuns;
+  },
+});
+
 export const updateStatusPublic = authMutation({
   args: {
     teamSlugOrId: v.string(),
