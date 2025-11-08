@@ -642,6 +642,28 @@ function TaskTreeInner({
                 titleClassName={taskTitleClassName}
                 secondary={taskSecondary || undefined}
                 meta={taskLeadingIcon || undefined}
+                trailing={
+                  !isRenaming ? (
+                    <Tooltip delayDuration={0}>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            handleArchive();
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-neutral-300/50 dark:hover:bg-neutral-700/50 text-neutral-600 dark:text-neutral-400"
+                          aria-label="Archive task"
+                        >
+                          <ArchiveIcon className="w-3 h-3" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" sideOffset={6}>
+                        Archive task
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : undefined
+                }
                 className={clsx(isRenaming && "pr-2")}
               />
             </Link>
@@ -1243,6 +1265,26 @@ function TaskRunTreeInner({
               titleClassName="text-[13px] text-neutral-700 dark:text-neutral-300"
               titleSuffix={runNumberSuffix ?? undefined}
               meta={leadingContent}
+              trailing={
+                <Tooltip delayDuration={0}>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        handleArchiveRun();
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-neutral-300/50 dark:hover:bg-neutral-700/50 text-neutral-600 dark:text-neutral-400"
+                      aria-label="Archive run"
+                    >
+                      <ArchiveIcon className="w-3 h-3" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={6}>
+                    Archive run
+                  </TooltipContent>
+                </Tooltip>
+              }
             />
           </Link>
         </ContextMenu.Trigger>
