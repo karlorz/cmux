@@ -93,7 +93,7 @@ function DashboardComponent() {
   const { addTaskToExpand } = useExpandTasks();
 
   const [selectedProject, setSelectedProject] = useState<string[]>(() => {
-    const stored = localStorage.getItem("selectedProject");
+    const stored = localStorage.getItem(`selectedProject-${teamSlugOrId}`);
     return stored ? JSON.parse(stored) : [];
   });
   const [selectedBranch, setSelectedBranch] = useState<string[]>([]);
@@ -155,11 +155,11 @@ function DashboardComponent() {
     if (searchParams?.environmentId) {
       const val = `env:${searchParams.environmentId}`;
       setSelectedProject([val]);
-      localStorage.setItem("selectedProject", JSON.stringify([val]));
+      localStorage.setItem(`selectedProject-${teamSlugOrId}`, JSON.stringify([val]));
       setIsCloudMode(true);
       localStorage.setItem("isCloudMode", JSON.stringify(true));
     }
-  }, [searchParams?.environmentId]);
+  }, [searchParams?.environmentId, teamSlugOrId]);
 
   // Callback for task description changes
   const handleTaskDescriptionChange = useCallback((value: string) => {
@@ -204,7 +204,7 @@ function DashboardComponent() {
   const handleProjectChange = useCallback(
     (newProjects: string[]) => {
       setSelectedProject(newProjects);
-      localStorage.setItem("selectedProject", JSON.stringify(newProjects));
+      localStorage.setItem(`selectedProject-${teamSlugOrId}`, JSON.stringify(newProjects));
       if (newProjects[0] !== selectedProject[0]) {
         setSelectedBranch([]);
       }
@@ -214,7 +214,7 @@ function DashboardComponent() {
         localStorage.setItem("isCloudMode", JSON.stringify(true));
       }
     },
-    [selectedProject]
+    [selectedProject, teamSlugOrId]
   );
 
   // Callback for branch selection changes
@@ -672,14 +672,14 @@ function DashboardComponent() {
     () =>
       selectedRepoFullName
         ? {
-            step: "select",
-            selectedRepos: [selectedRepoFullName],
-            instanceId: undefined,
-            connectionLogin:
-              selectedRepoInfo?.org ?? selectedRepoInfo?.ownerLogin ?? undefined,
-            repoSearch: undefined,
-            snapshotId: undefined,
-          }
+          step: "select",
+          selectedRepos: [selectedRepoFullName],
+          instanceId: undefined,
+          connectionLogin:
+            selectedRepoInfo?.org ?? selectedRepoInfo?.ownerLogin ?? undefined,
+          repoSearch: undefined,
+          snapshotId: undefined,
+        }
         : undefined,
     [selectedRepoFullName, selectedRepoInfo],
   );
@@ -713,7 +713,7 @@ function DashboardComponent() {
 
           // Select the newly added repo
           setSelectedProject([result.fullName]);
-          localStorage.setItem("selectedProject", JSON.stringify([result.fullName]));
+          localStorage.setItem(`selectedProject-${teamSlugOrId}`, JSON.stringify([result.fullName]));
 
           toast.success(`Added ${result.fullName} to repositories`);
           return true;
@@ -767,7 +767,7 @@ function DashboardComponent() {
       // This ensures CLI-provided repos take precedence
       setSelectedProject([data.repoFullName]);
       localStorage.setItem(
-        "selectedProject",
+        `selectedProject-${teamSlugOrId}`,
         JSON.stringify([data.repoFullName])
       );
 
@@ -782,7 +782,7 @@ function DashboardComponent() {
     return () => {
       socket.off("default-repo", handleDefaultRepo);
     };
-  }, [socket]);
+  }, [socket, teamSlugOrId]);
 
   // Global keydown handler for autofocus
   useEffect(() => {

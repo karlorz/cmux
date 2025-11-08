@@ -48,7 +48,7 @@ export const addManualRepo = action({
       await ctx.runQuery(api.github.hasReposForTeam, { teamSlugOrId });
 
       // Check if repo already exists
-      const existing: Doc<"repos"> | null = await ctx.runQuery(internal.github.getRepoByFullNameInternal, {
+      const existing = await ctx.runQuery(internal.github.getRepoByFullNameInternal, {
         teamSlugOrId,
         fullName: parsed.fullName,
       });
@@ -64,7 +64,7 @@ export const addManualRepo = action({
       }
 
       // Insert the manual repo
-      const repoId: Id<"repos"> = await ctx.runMutation(internal.github.insertManualRepoInternal, {
+      const repoId = await ctx.runMutation(internal.github.insertManualRepoInternal, {
         teamSlugOrId,
         userId: identity.subject,
         fullName: parsed.fullName,
