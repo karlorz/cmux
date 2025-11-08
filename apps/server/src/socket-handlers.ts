@@ -787,9 +787,7 @@ export function setupSocketHandlers(
               }
 
               try {
-                const cmuxDir = path.join(resolvedWorkspacePath, ".cmux");
-                await fs.mkdir(cmuxDir, { recursive: true });
-                const envFile = path.join(cmuxDir, "local.env");
+                const envFile = path.join(resolvedWorkspacePath, ".env");
                 await fs.writeFile(envFile, envVarsContent, {
                   encoding: "utf8",
                   mode: 0o600,
