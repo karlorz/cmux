@@ -803,6 +803,24 @@ const convexSchema = defineSchema({
     .index("by_repo_runNumber", ["repoFullName", "runNumber"]) // unique per repo
     .index("by_repo_sha", ["repoFullName", "headSha", "runStartedAt"]), // filter by SHA for PR
 
+  githubWorkflowRunUpserts: defineTable({
+    runId: v.number(),
+    installationId: v.number(),
+    repoFullName: v.string(),
+    teamId: v.string(),
+    payload: v.any(),
+    deliveryId: v.optional(v.string()),
+    enqueuedAt: v.number(),
+  })
+    .index("by_runId_enqueuedAt", ["runId", "enqueuedAt"])
+    .index("by_enqueuedAt", ["enqueuedAt"]),
+
+  githubWorkflowRunProcessorState: defineTable({
+    runId: v.number(),
+    processorScheduled: v.boolean(),
+    scheduledAt: v.number(),
+  }).index("by_runId", ["runId"]),
+
   // GitHub Check Runs (for Vercel, deployments, etc.)
   githubCheckRuns: defineTable({
     // Identity

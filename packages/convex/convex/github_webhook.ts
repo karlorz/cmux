@@ -254,12 +254,13 @@ export const githubWebhook = httpAction(async (_ctx, req) => {
 
 
           await _ctx.runMutation(
-            internal.github_workflows.upsertWorkflowRunFromWebhook,
+            internal.github_workflows.enqueueWorkflowRunUpsert,
             {
               installationId: installation,
               repoFullName,
               teamId,
               payload: workflowRunPayload,
+              deliveryId: delivery ?? undefined,
             },
           );
 
