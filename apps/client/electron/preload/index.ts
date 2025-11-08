@@ -1,5 +1,5 @@
 import { electronAPI } from "@electron-toolkit/preload";
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webFrame } from "electron";
 import type {
   ElectronDevToolsMode,
   ElectronWebContentsEvent,
@@ -126,6 +126,13 @@ const cmuxAPI = {
         "cmux:ui:set-preview-reload-visible",
         Boolean(visible)
       ) as Promise<{ ok: boolean }>;
+    },
+    getZoomFactor: () => {
+      try {
+        return webFrame.getZoomFactor();
+      } catch {
+        return 1;
+      }
     },
     restoreLastFocus: () => {
       return ipcRenderer.invoke("cmux:ui:restore-last-focus") as Promise<{

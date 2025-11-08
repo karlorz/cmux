@@ -34,6 +34,15 @@ function getWebContentsBridge() {
   return window.cmux?.webContentsView ?? null;
 }
 
+function getCurrentZoomFactor(): number {
+  if (typeof window === "undefined") return 1;
+  const zoom = window.cmux?.ui?.getZoomFactor?.();
+  if (typeof zoom === "number" && Number.isFinite(zoom) && zoom > 0) {
+    return zoom;
+  }
+  return 1;
+}
+
 function debugLog(message: string, payload?: Record<string, unknown>) {
   if (process.env.NODE_ENV === "development") {
     console.log("[electron-web-contents-view]", message, payload ?? {});
@@ -61,12 +70,23 @@ function roundToDevicePixels(value: number, scale: number): number {
   return Math.round(value * scale) / scale;
 }
 
-function rectToBounds(rect: DOMRect, scale: number): BoundsPayload {
+function rectToBounds(
+  rect: DOMRect,
+  pixelScale: number,
+  zoomFactor: number,
+): BoundsPayload {
+  const safeZoom = Number.isFinite(zoomFactor) && zoomFactor > 0 ? zoomFactor : 1;
+  const displayScale =
+    Number.isFinite(pixelScale) && pixelScale > 0
+      ? pixelScale / safeZoom
+      : 1;
+  const toDip = (value: number) =>
+    roundToDevicePixels(value * safeZoom, displayScale);
   return {
-    x: roundToDevicePixels(rect.left, scale),
-    y: roundToDevicePixels(rect.top, scale),
-    width: Math.max(0, roundToDevicePixels(rect.width, scale)),
-    height: Math.max(0, roundToDevicePixels(rect.height, scale)),
+    x: toDip(rect.left),
+    y: toDip(rect.top),
+    width: Math.max(0, toDip(rect.width)),
+    height: Math.max(0, toDip(rect.height)),
   };
 }
 
@@ -230,9 +250,10 @@ export function ElectronWebContentsView({
     const container = containerRef.current;
     if (!bridge || id === null || !container) return;
 
-    const scale = window.devicePixelRatio ?? 1;
+    const pixelScale = window.devicePixelRatio ?? 1;
+    const zoomFactor = getCurrentZoomFactor();
     const rect = container.getBoundingClientRect();
-    const bounds = rectToBounds(rect, scale);
+    const bounds = rectToBounds(rect, pixelScale, zoomFactor);
     const sizeMissing = bounds.width <= 0 || bounds.height <= 0;
     const hiddenByStyle = isEffectivelyHidden(container);
     const isVisible =
@@ -390,9 +411,11 @@ export function ElectronWebContentsView({
     setErrorMessage(null);
 
     const initialScale = window.devicePixelRatio ?? 1;
+    const initialZoomFactor = getCurrentZoomFactor();
     const initialBounds = rectToBounds(
       container.getBoundingClientRect(),
       initialScale,
+      initialZoomFactor,
     );
     const { backgroundColor: initialBackground, borderRadius: initialRadius } =
       latestStyleRef.current;
