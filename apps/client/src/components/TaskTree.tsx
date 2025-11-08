@@ -1145,6 +1145,17 @@ function TaskRunTreeInner({
     </Tooltip>
   ) : null;
 
+  // Build subtitle for run (environment name and repos)
+  const runSecondaryParts: string[] = [];
+  if (run.environment?.name) {
+    runSecondaryParts.push(run.environment.name);
+  }
+  if (run.environment?.selectedRepos && run.environment.selectedRepos.length > 0) {
+    const repoNames = run.environment.selectedRepos.map(repo => repo.fullName);
+    runSecondaryParts.push(...repoNames);
+  }
+  const runSecondary = runSecondaryParts.join(" • ");
+
   const leadingContent = crownIcon ? (
     <div className="flex items-center gap-1">
       {crownIcon}
@@ -1242,6 +1253,7 @@ function TaskRunTreeInner({
               title={baseDisplayText}
               titleClassName="text-[13px] text-neutral-700 dark:text-neutral-300"
               titleSuffix={runNumberSuffix ?? undefined}
+              secondary={runSecondary || undefined}
               meta={leadingContent}
             />
           </Link>
