@@ -7,6 +7,7 @@ import {
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { useArchiveTask } from "@/hooks/useArchiveTask";
 import { useOpenWithActions } from "@/hooks/useOpenWithActions";
+import { useTaskRename } from "@/hooks/useTaskRename";
 import { isElectron } from "@/lib/electron";
 import { isFakeConvexId } from "@/lib/fakeConvexId";
 import type { AnnotatedTaskRun, TaskRunWithChildren } from "@/types/task";
@@ -28,10 +29,13 @@ import {
   ArchiveRestore as ArchiveRestoreIcon,
   CheckCircle,
   Circle,
+  ChevronRight,
   Copy as CopyIcon,
   Crown,
   EllipsisVertical,
   ExternalLink,
+  Eye,
+  EyeOff,
   GitBranch,
   GitCompare,
   GitMerge,
@@ -55,14 +59,10 @@ import {
   useMemo,
   useRef,
   useState,
-  type ChangeEvent,
-  type FocusEvent,
-  type KeyboardEvent,
   type MouseEvent,
   type ReactElement,
   type ReactNode,
 } from "react";
-import { flushSync } from "react-dom";
 import { VSCodeIcon } from "./icons/VSCodeIcon";
 import { SidebarListItem } from "./sidebar/SidebarListItem";
 import { annotateAgentOrdinals } from "./task-tree/annotateAgentOrdinals";
@@ -104,12 +104,6 @@ interface TaskTreeProps {
   teamSlugOrId: string;
 }
 
-type TasksGetArgs = {
-  teamSlugOrId: string;
-  projectFullName?: string;
-  archived?: boolean;
-};
-
 // Extract the display text logic to avoid re-creating it on every render
 function getRunDisplayText(run: TaskRunWithChildren): string {
   const fromRun = run.agentName?.trim();
@@ -122,6 +116,130 @@ function getRunDisplayText(run: TaskRunWithChildren): string {
   }
 
   return run.prompt.substring(0, 50) + "...";
+}
+
+function flattenRuns(
+  runs: TaskRunWithChildren[] | undefined
+): TaskRunWithChildren[] {
+  if (!runs) return [];
+  const acc: TaskRunWithChildren[] = [];
+  const traverse = (items: TaskRunWithChildren[]) => {
+    for (const item of items) {
+      acc.push(item);
+      if (item.children.length > 0) {
+        traverse(item.children);
+      }
+    }
+  };
+  traverse(runs);
+  return acc;
+}
+
+function findRunInTree(
+  runs: TaskRunWithChildren[],
+  targetId: Id<"taskRuns">
+): TaskRunWithChildren | null {
+  for (const run of runs) {
+    if (run._id === targetId) {
+      return run;
+    }
+    if (run.children.length > 0) {
+      const childMatch = findRunInTree(run.children, targetId);
+      if (childMatch) {
+        return childMatch;
+      }
+    }
+  }
+  return null;
+}
+
+function collectRunIds(
+  node: TaskRunWithChildren,
+  includeChildren: boolean,
+  acc: Set<Id<"taskRuns">>
+) {
+  acc.add(node._id);
+  if (!includeChildren) {
+    return;
+  }
+  for (const child of node.children) {
+    collectRunIds(child, true, acc);
+  }
+}
+
+function applyArchiveStateToNode(
+  run: TaskRunWithChildren,
+  ids: Set<Id<"taskRuns">>,
+  archive: boolean
+): [TaskRunWithChildren, boolean] {
+  let nextChildren: TaskRunWithChildren[] | null = null;
+  let childrenChanged = false;
+
+  for (let i = 0; i < run.children.length; i += 1) {
+    const child = run.children[i];
+    const [nextChild, childChanged] = applyArchiveStateToNode(
+      child,
+      ids,
+      archive
+    );
+    if (childChanged) {
+      if (!nextChildren) {
+        nextChildren = run.children.slice(0, i);
+      }
+      nextChildren.push(nextChild);
+      childrenChanged = true;
+    } else if (nextChildren) {
+      nextChildren.push(nextChild);
+    }
+  }
+
+  const shouldUpdate = ids.has(run._id);
+  const nextIsArchived = shouldUpdate ? archive : run.isArchived;
+  const nodeChanged = childrenChanged || nextIsArchived !== run.isArchived;
+
+  if (!nodeChanged) {
+    return [run, false];
+  }
+
+  return [
+    {
+      ...run,
+      isArchived: nextIsArchived,
+      children: nextChildren ?? run.children,
+    },
+    true,
+  ];
+}
+
+function applyArchiveStateToRuns(
+  runs: TaskRunWithChildren[],
+  ids: Set<Id<"taskRuns">>,
+  archive: boolean
+): TaskRunWithChildren[] {
+  let changed = false;
+  const nextRuns = runs.map((run) => {
+    const [nextRun, nodeChanged] = applyArchiveStateToNode(run, ids, archive);
+    if (nodeChanged) {
+      changed = true;
+    }
+    return nextRun;
+  });
+  return changed ? nextRuns : runs;
+}
+
+function updateRunArchiveStateLocal(
+  runs: TaskRunWithChildren[],
+  targetId: Id<"taskRuns">,
+  archive: boolean,
+  includeChildren: boolean
+): TaskRunWithChildren[] {
+  const target = findRunInTree(runs, targetId);
+  if (!target) {
+    return runs;
+  }
+  const ids = new Set<Id<"taskRuns">>();
+  collectRunIds(target, includeChildren, ids);
+  return applyArchiveStateToRuns(runs, ids, archive);
 }
 
 type TaskRunExpansionState = Partial<Record<Id<"taskRuns">, boolean>>;
@@ -184,6 +302,30 @@ function TaskTreeInner({
   );
   const isOptimisticTask = isFakeConvexId(task._id);
   const canRenameTask = !isOptimisticTask;
+  const taskRuns = useConvexQuery(
+    api.taskRuns.getByTask,
+    isOptimisticTask
+      ? "skip"
+      : { teamSlugOrId, taskId: task._id, includeArchived: true }
+  );
+  const runsLoading = !isOptimisticTask && taskRuns === undefined;
+  const flattenedRuns = useMemo(() => flattenRuns(taskRuns), [taskRuns]);
+  const activeRunsFlat = useMemo(
+    () => flattenedRuns.filter((run) => !run.isArchived),
+    [flattenedRuns]
+  );
+  const hasVisibleRuns = activeRunsFlat.length > 0;
+  const showRunNumbers = flattenedRuns.length > 1;
+  const runMenuEntries = useMemo(
+    () =>
+      annotateAgentOrdinals(flattenedRuns).map((run) => ({
+        id: run._id,
+        label: getRunDisplayText(run),
+        ordinal: run.agentOrdinal,
+        isArchived: Boolean(run.isArchived),
+      })),
+    [flattenedRuns]
+  );
   const prefetched = useRef(false);
   const prefetchTaskRuns = useCallback(() => {
     if (prefetched.current || isOptimisticTask) {
@@ -192,9 +334,66 @@ function TaskTreeInner({
     prefetched.current = true;
     void convexQueryClient.convexClient.prewarmQuery({
       query: api.taskRuns.getByTask,
-      args: { teamSlugOrId, taskId: task._id },
+      args: { teamSlugOrId, taskId: task._id, includeArchived: true },
     });
   }, [isOptimisticTask, task._id, teamSlugOrId]);
+
+  const archiveTaskRun = useMutation(api.taskRuns.archive).withOptimisticUpdate(
+    (localStore, args) => {
+      if (!args.taskId) {
+        return;
+      }
+      const variants: Array<{
+        teamSlugOrId: string;
+        taskId: Id<"tasks">;
+        includeArchived?: boolean;
+      }> = [
+        { teamSlugOrId: args.teamSlugOrId, taskId: args.taskId },
+        {
+          teamSlugOrId: args.teamSlugOrId,
+          taskId: args.taskId,
+          includeArchived: true,
+        },
+      ];
+
+      for (const variant of variants) {
+        const current = localStore.getQuery(api.taskRuns.getByTask, variant);
+        if (!current) {
+          continue;
+        }
+        const updated = updateRunArchiveStateLocal(
+          current,
+          args.id,
+          args.archive,
+          args.includeChildren ?? false
+        );
+        if (updated !== current) {
+          localStore.setQuery(api.taskRuns.getByTask, variant, updated);
+        }
+      }
+    }
+  );
+
+  const handleRunArchiveToggle = useCallback(
+    async (runId: Id<"taskRuns">, shouldArchive: boolean) => {
+      try {
+        await archiveTaskRun({
+          teamSlugOrId,
+          id: runId,
+          archive: shouldArchive,
+          taskId: task._id,
+        });
+      } catch (error) {
+        console.error(error);
+        toast.error(
+          shouldArchive
+            ? "Failed to archive task run"
+            : "Failed to restore task run"
+        );
+      }
+    },
+    [archiveTaskRun, task._id, teamSlugOrId]
+  );
 
   // Memoize the toggle handler
   const handleToggle = useCallback(
@@ -215,89 +414,24 @@ function TaskTreeInner({
   }, [prefetchTaskRuns]);
 
   const { archiveWithUndo, unarchive } = useArchiveTask(teamSlugOrId);
-  const updateTaskMutation = useMutation(api.tasks.update).withOptimisticUpdate(
-    (localStore, args) => {
-      const optimisticUpdatedAt = Date.now();
-      const applyUpdateToList = (keyArgs: TasksGetArgs) => {
-        const list = localStore.getQuery(api.tasks.get, keyArgs);
-        if (!list) {
-          return;
-        }
-        const index = list.findIndex((item) => item._id === args.id);
-        if (index === -1) {
-          return;
-        }
-        const next = list.slice();
-        next[index] = {
-          ...next[index],
-          text: args.text,
-          updatedAt: optimisticUpdatedAt,
-        };
-        localStore.setQuery(api.tasks.get, keyArgs, next);
-      };
 
-      const listVariants: TasksGetArgs[] = [
-        { teamSlugOrId: args.teamSlugOrId },
-        { teamSlugOrId: args.teamSlugOrId, archived: false },
-        { teamSlugOrId: args.teamSlugOrId, archived: true },
-      ];
-
-      listVariants.forEach(applyUpdateToList);
-
-      const detailArgs = { teamSlugOrId: args.teamSlugOrId, id: args.id };
-      const existingDetail = localStore.getQuery(api.tasks.getById, detailArgs);
-      if (existingDetail) {
-        localStore.setQuery(api.tasks.getById, detailArgs, {
-          ...existingDetail,
-          text: args.text,
-          updatedAt: optimisticUpdatedAt,
-        });
-      }
-    }
-  );
-  const [isRenaming, setIsRenaming] = useState(false);
-  const [renameValue, setRenameValue] = useState(task.text ?? "");
-  const [renameError, setRenameError] = useState<string | null>(null);
-  const [isRenamePending, setIsRenamePending] = useState(false);
-  const renameInputRef = useRef<HTMLInputElement | null>(null);
-  const pendingRenameFocusFrame = useRef<number | null>(null);
-  const renameInputHasFocusedRef = useRef(false);
-
-  const focusRenameInput = useCallback(() => {
-    if (typeof window === "undefined") {
-      renameInputRef.current?.focus();
-      renameInputRef.current?.select();
-      return;
-    }
-    if (pendingRenameFocusFrame.current !== null) {
-      window.cancelAnimationFrame(pendingRenameFocusFrame.current);
-    }
-    pendingRenameFocusFrame.current = window.requestAnimationFrame(() => {
-      pendingRenameFocusFrame.current = null;
-      const input = renameInputRef.current;
-      if (!input) {
-        return;
-      }
-      input.focus();
-      input.select();
-    });
-  }, []);
-
-  useEffect(
-    () => () => {
-      if (pendingRenameFocusFrame.current !== null) {
-        window.cancelAnimationFrame(pendingRenameFocusFrame.current);
-        pendingRenameFocusFrame.current = null;
-      }
-    },
-    []
-  );
-
-  useEffect(() => {
-    if (!isRenaming) {
-      setRenameValue(task.text ?? "");
-    }
-  }, [isRenaming, task.text]);
+  const {
+    isRenaming,
+    renameValue,
+    renameError,
+    isRenamePending,
+    renameInputRef,
+    handleRenameChange,
+    handleRenameKeyDown,
+    handleRenameBlur,
+    handleRenameFocus,
+    handleStartRenaming,
+  } = useTaskRename({
+    taskId: task._id,
+    teamSlugOrId,
+    currentText: task.text ?? "",
+    canRename: canRenameTask,
+  });
 
   const handleCopyDescription = useCallback(() => {
     if (navigator?.clipboard?.writeText) {
@@ -313,115 +447,14 @@ function TaskTreeInner({
     unarchive(task._id);
   }, [unarchive, task._id]);
 
-  const handleRenameChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      setRenameValue(event.target.value);
-      if (renameError) {
-        setRenameError(null);
-      }
-    },
-    [renameError]
-  );
-
-  const handleRenameCancel = useCallback(() => {
-    setRenameValue(task.text ?? "");
-    setRenameError(null);
-    setIsRenaming(false);
-  }, [task.text]);
-
-  const handleRenameSubmit = useCallback(async () => {
-    if (!canRenameTask) {
-      setIsRenaming(false);
-      return;
-    }
-    if (isRenamePending) {
-      return;
-    }
-    const trimmed = renameValue.trim();
-    if (!trimmed) {
-      setRenameError("Task name is required.");
-      renameInputRef.current?.focus();
-      return;
-    }
-    const current = (task.text ?? "").trim();
-    if (trimmed === current) {
-      setIsRenaming(false);
-      setRenameError(null);
-      return;
-    }
-    setIsRenamePending(true);
-    try {
-      await updateTaskMutation({
-        teamSlugOrId,
-        id: task._id,
-        text: trimmed,
-      });
-      setIsRenaming(false);
-      setRenameError(null);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to rename task.";
-      setRenameError(message);
-      toast.error(message);
-      renameInputRef.current?.focus();
-    } finally {
-      setIsRenamePending(false);
-    }
-  }, [
-    canRenameTask,
-    isRenamePending,
-    renameValue,
-    task._id,
-    task.text,
-    teamSlugOrId,
-    updateTaskMutation,
-  ]);
-
-  const handleRenameKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLInputElement>) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        void handleRenameSubmit();
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        handleRenameCancel();
-      }
-    },
-    [handleRenameCancel, handleRenameSubmit]
-  );
-
-  const handleRenameBlur = useCallback(() => {
-    if (!renameInputHasFocusedRef.current) {
-      focusRenameInput();
-      return;
-    }
-    void handleRenameSubmit();
-  }, [focusRenameInput, handleRenameSubmit]);
-
-  const handleRenameFocus = useCallback((event: FocusEvent<HTMLInputElement>) => {
-    renameInputHasFocusedRef.current = true;
-    event.currentTarget.select();
-  }, []);
-
-  const handleStartRenaming = useCallback(() => {
-    if (!canRenameTask) {
-      return;
-    }
-    flushSync(() => {
-      setRenameValue(task.text ?? "");
-      setRenameError(null);
-      setIsRenaming(true);
-    });
-    renameInputHasFocusedRef.current = false;
-    focusRenameInput();
-  }, [canRenameTask, focusRenameInput, task.text]);
-
   const inferredBranch = getTaskBranch(task);
   const trimmedTaskText = (task.text ?? "").trim();
   const trimmedPullRequestTitle = task.pullRequestTitle?.trim();
   const taskTitleValue =
-    trimmedTaskText || trimmedPullRequestTitle || task.pullRequestTitle || task.text;
+    trimmedTaskText ||
+    trimmedPullRequestTitle ||
+    task.pullRequestTitle ||
+    task.text;
   const taskSecondaryParts: string[] = [];
   if (inferredBranch) {
     taskSecondaryParts.push(inferredBranch);
@@ -437,8 +470,8 @@ function TaskTreeInner({
   const taskTitleClassName = clsx(
     "inline-flex flex-1 min-w-0 items-center h-[18px] text-[13px] leading-[18px] text-neutral-900 dark:text-neutral-100 transition-colors duration-200",
     isRenaming &&
-    "!font-normal !overflow-visible !whitespace-normal [text-overflow:clip]",
-    isRenamePending && "text-neutral-400/70 dark:text-neutral-500/70",
+      "!font-normal !overflow-visible !whitespace-normal [text-overflow:clip]",
+    isRenamePending && "text-neutral-400/70 dark:text-neutral-500/70"
   );
   const renameInputElement = (
     <input
@@ -461,7 +494,8 @@ function TaskTreeInner({
         "leading-[18px] h-[18px] px-0 py-0 align-middle",
         "placeholder:text-neutral-400 outline-none border-none focus-visible:outline-none focus-visible:ring-0 appearance-none",
         "dark:text-neutral-100 dark:caret-neutral-200 dark:placeholder:text-neutral-500",
-        isRenamePending && "text-neutral-400/70 dark:text-neutral-500/70 cursor-wait"
+        isRenamePending &&
+          "text-neutral-400/70 dark:text-neutral-500/70 cursor-wait"
       )}
     />
   );
@@ -580,23 +614,23 @@ function TaskTreeInner({
               className="group block"
               onMouseEnter={handlePrefetch}
               onFocus={handlePrefetch}
-                onClick={(event) => {
-                  if (
-                    event.defaultPrevented ||
-                    event.metaKey ||
-                    event.ctrlKey ||
-                    event.shiftKey ||
-                    event.altKey
-                  ) {
-                    return;
-                  }
-                  if (isRenaming) {
-                    event.preventDefault();
-                    return;
-                  }
-                  handleToggle(event);
-                }}
-              >
+              onClick={(event) => {
+                if (
+                  event.defaultPrevented ||
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  event.shiftKey ||
+                  event.altKey
+                ) {
+                  return;
+                }
+                if (isRenaming) {
+                  event.preventDefault();
+                  return;
+                }
+                handleToggle(event);
+              }}
+            >
               <SidebarListItem
                 paddingLeft={taskListPaddingLeft}
                 toggle={{
@@ -642,6 +676,63 @@ function TaskTreeInner({
                   <CopyIcon className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
                   <span>Copy Description</span>
                 </ContextMenu.Item>
+                <ContextMenu.SubmenuRoot>
+                  <ContextMenu.SubmenuTrigger className="flex items-center gap-2 cursor-default py-1.5 pr-4 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700">
+                    <ArchiveIcon className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                    <span>Task Runs</span>
+                    <ChevronRight className="w-3 h-3 ml-auto text-neutral-400 dark:text-neutral-500" />
+                  </ContextMenu.SubmenuTrigger>
+                  <ContextMenu.Positioner className="outline-none z-[var(--z-context-menu)]">
+                    <ContextMenu.Popup className="origin-[var(--transform-origin)] rounded-md bg-white dark:bg-neutral-800 py-1 text-neutral-900 dark:text-neutral-100 shadow-lg shadow-gray-200 outline-1 outline-neutral-200 transition-[opacity] data-[ending-style]:opacity-0 dark:shadow-none dark:-outline-offset-1 dark:outline-neutral-700 max-w-xs">
+                      {runsLoading ? (
+                        <div className="flex items-center gap-2 px-3 py-2 text-xs text-neutral-500 dark:text-neutral-400">
+                          <Loader2 className="w-3 h-3 animate-spin text-neutral-400" />
+                          <span>Loading task runs…</span>
+                        </div>
+                      ) : (
+                        <div className="max-h-64 overflow-y-auto">
+                          {runMenuEntries.length > 0 ? (
+                            runMenuEntries.map((run) => (
+                              <ContextMenu.Item
+                                key={run.id}
+                                closeOnClick={false}
+                                className="flex items-center justify-between gap-3 cursor-default py-1.5 pr-4 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                                onClick={() =>
+                                  handleRunArchiveToggle(
+                                    run.id,
+                                    !run.isArchived
+                                  )
+                                }
+                              >
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <span className="truncate text-left">
+                                    {run.label}
+                                  </span>
+                                  {showRunNumbers ? (
+                                    <span className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400 flex-shrink-0">
+                                      {run.ordinal}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <span className="ml-2 flex flex-shrink-0 items-center text-neutral-500 dark:text-neutral-400">
+                                  {run.isArchived ? (
+                                    <EyeOff className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <Eye className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                                  )}
+                                </span>
+                              </ContextMenu.Item>
+                            ))
+                          ) : (
+                            <div className="px-3 py-1.5 text-xs text-neutral-500 dark:text-neutral-400">
+                              No task runs yet
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </ContextMenu.Popup>
+                  </ContextMenu.Positioner>
+                </ContextMenu.SubmenuRoot>
                 {task.isArchived ? (
                   <ContextMenu.Item
                     className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
@@ -669,6 +760,11 @@ function TaskTreeInner({
             taskId={task._id}
             teamSlugOrId={teamSlugOrId}
             level={level}
+            runs={taskRuns}
+            isLoading={runsLoading}
+            onArchiveToggle={handleRunArchiveToggle}
+            hasVisibleRuns={hasVisibleRuns}
+            showRunNumbers={showRunNumbers}
           />
         ) : null}
       </div>
@@ -680,19 +776,25 @@ interface TaskRunsContentProps {
   taskId: Id<"tasks">;
   teamSlugOrId: string;
   level: number;
+  runs: TaskRunWithChildren[] | undefined;
+  isLoading: boolean;
+  onArchiveToggle: (runId: Id<"taskRuns">, archive: boolean) => void;
+  hasVisibleRuns: boolean;
+  showRunNumbers: boolean;
 }
 
 function TaskRunsContent({
   taskId,
   teamSlugOrId,
   level,
+  runs,
+  isLoading,
+  onArchiveToggle,
+  hasVisibleRuns,
+  showRunNumbers,
 }: TaskRunsContentProps) {
   const location = useLocation();
   const optimisticTask = isFakeConvexId(taskId);
-  const runs = useConvexQuery(
-    api.taskRuns.getByTask,
-    optimisticTask ? "skip" : { teamSlugOrId, taskId }
-  );
 
   const annotatedRuns = useMemo(
     () => (runs && runs.length > 0 ? annotateAgentOrdinals(runs) : []),
@@ -715,15 +817,30 @@ function TaskRunsContent({
     return undefined;
   }, [location.search]);
 
+  const firstVisibleRunId = useMemo(() => {
+    for (const run of annotatedRuns) {
+      if (!run.isArchived) {
+        return run._id;
+      }
+    }
+    return null;
+  }, [annotatedRuns]);
+
   const shouldHighlightDefaultRun = useMemo(() => {
-    if (!annotatedRuns.length) {
+    if (!annotatedRuns.length || !hasVisibleRuns) {
       return false;
     }
     const isTaskRoute = location.pathname.includes(`/task/${taskId}`);
     const hasRunSegment = location.pathname.includes(`/task/${taskId}/run/`);
     const hasExplicitRunSelection = Boolean(runIdFromSearch);
     return isTaskRoute && !hasRunSegment && !hasExplicitRunSelection;
-  }, [annotatedRuns.length, location.pathname, runIdFromSearch, taskId]);
+  }, [
+    annotatedRuns.length,
+    hasVisibleRuns,
+    location.pathname,
+    runIdFromSearch,
+    taskId,
+  ]);
 
   if (optimisticTask) {
     return (
@@ -733,7 +850,7 @@ function TaskRunsContent({
     );
   }
 
-  if (runs === undefined) {
+  if (isLoading) {
     return (
       <TaskRunsMessage level={level}>
         <Loader2 className="w-3 h-3 animate-spin text-neutral-400" />
@@ -750,16 +867,28 @@ function TaskRunsContent({
     );
   }
 
+  if (!hasVisibleRuns) {
+    return (
+      <TaskRunsMessage level={level} fixedHeight={24.33}>
+        <span className="italic">All task runs hidden</span>
+      </TaskRunsMessage>
+    );
+  }
+
   return (
     <div className="flex flex-col">
-      {annotatedRuns.map((run, index) => (
+      {annotatedRuns.map((run) => (
         <TaskRunTree
           key={run._id}
           run={run}
           level={level + 1}
           taskId={taskId}
           teamSlugOrId={teamSlugOrId}
-          isDefaultSelected={shouldHighlightDefaultRun && index === 0}
+          isDefaultSelected={
+            shouldHighlightDefaultRun && firstVisibleRunId === run._id
+          }
+          onArchiveToggle={onArchiveToggle}
+          showRunNumbers={showRunNumbers}
         />
       ))}
     </div>
@@ -769,15 +898,28 @@ function TaskRunsContent({
 function TaskRunsMessage({
   level,
   children,
+  fixedHeight,
 }: {
   level: number;
   children: ReactNode;
+  fixedHeight?: number;
 }) {
   const paddingLeft = 10 + (level + 1) * 16;
   return (
     <div
-      className="flex items-center gap-2 py-2 text-xs text-neutral-500 dark:text-neutral-400 select-none"
-      style={{ paddingLeft }}
+      className={clsx(
+        "flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400 select-none",
+        fixedHeight ? "py-0" : "py-2"
+      )}
+      style={
+        fixedHeight
+          ? {
+              paddingLeft,
+              height: `${fixedHeight}px`,
+              minHeight: `${fixedHeight}px`,
+            }
+          : { paddingLeft }
+      }
     >
       {children}
     </div>
@@ -790,6 +932,8 @@ interface TaskRunTreeProps {
   taskId: Id<"tasks">;
   teamSlugOrId: string;
   isDefaultSelected?: boolean;
+  onArchiveToggle: (runId: Id<"taskRuns">, archive: boolean) => void;
+  showRunNumbers: boolean;
 }
 
 function TaskRunTreeInner({
@@ -798,6 +942,8 @@ function TaskRunTreeInner({
   taskId,
   teamSlugOrId,
   isDefaultSelected = false,
+  onArchiveToggle,
+  showRunNumbers,
 }: TaskRunTreeProps) {
   const location = useLocation();
   const { expandedRuns, setRunExpanded } = useTaskRunExpansionContext();
@@ -847,14 +993,21 @@ function TaskRunTreeInner({
   const hasChildren = run.children.length > 0;
 
   // Memoize the display text to avoid recalculating on every render
-  const displayText = useMemo(() => {
+  const baseDisplayText = useMemo(() => {
     const base = getRunDisplayText(run);
-    if (!run.hasDuplicateAgentName) {
-      return base;
-    }
-    const ordinal = run.agentOrdinal;
-    return ordinal ? `${base} (${ordinal})` : base;
+    // if (!run.hasDuplicateAgentName) {
+    //   return base;
+    // }
+    // const ordinal = run.agentOrdinal;
+    // return ordinal ? `${base} (${ordinal})` : base;
+    return base;
   }, [run]);
+  const runNumberSuffix =
+    showRunNumbers && run.agentOrdinal ? (
+      <span className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400 tabular-nums">
+        {run.agentOrdinal}
+      </span>
+    ) : null;
 
   // Memoize the toggle handler
   const handleToggle = useCallback(
@@ -864,6 +1017,9 @@ function TaskRunTreeInner({
     },
     [isExpanded, run._id, setRunExpanded]
   );
+  const handleArchiveRun = useCallback(() => {
+    onArchiveToggle(run._id, true);
+  }, [onArchiveToggle, run._id]);
 
   const isLocalWorkspaceRunEntry = run.isLocalWorkspace;
   const isCloudWorkspaceRunEntry = run.isCloudWorkspace;
@@ -876,7 +1032,8 @@ function TaskRunTreeInner({
   }[run.status];
 
   const shouldHideStatusIcon =
-    (isLocalWorkspaceRunEntry || isCloudWorkspaceRunEntry) && run.status !== "failed";
+    (isLocalWorkspaceRunEntry || isCloudWorkspaceRunEntry) &&
+    run.status !== "failed";
 
   const pullRequestState = useMemo<RunPullRequestState | null>(() => {
     if (run.pullRequests && run.pullRequests.length > 0) {
@@ -1028,15 +1185,12 @@ function TaskRunTreeInner({
   const shouldRenderTerminalLink = shouldRenderBrowserLink;
   const shouldRenderPullRequestLink = Boolean(
     (run.pullRequestUrl && run.pullRequestUrl !== "pending") ||
-    run.pullRequests?.some((pr) => pr.url)
+      run.pullRequests?.some((pr) => pr.url)
   );
   const shouldRenderPreviewLink = previewServices.length > 0;
   const hasOpenWithActions = openWithActions.length > 0;
   const hasPortActions = portActions.length > 0;
   const canCopyBranch = Boolean(copyRunBranch);
-  const shouldShowCopyDivider =
-    canCopyBranch && (hasOpenWithActions || hasPortActions);
-  const shouldShowOpenWithDivider = hasOpenWithActions && hasPortActions;
   const hasCollapsibleContent =
     hasChildren ||
     hasActiveVSCode ||
@@ -1047,7 +1201,7 @@ function TaskRunTreeInner({
     shouldRenderPreviewLink;
 
   return (
-    <Fragment>
+    <div className={clsx({ hidden: run.isArchived })}>
       <ContextMenu.Root>
         <ContextMenu.Trigger>
           <Link
@@ -1085,8 +1239,9 @@ function TaskRunTreeInner({
                 onToggle: handleToggle,
                 visible: hasCollapsibleContent,
               }}
-              title={displayText}
+              title={baseDisplayText}
               titleClassName="text-[13px] text-neutral-700 dark:text-neutral-300"
+              titleSuffix={runNumberSuffix ?? undefined}
               meta={leadingContent}
             />
           </Link>
@@ -1095,59 +1250,74 @@ function TaskRunTreeInner({
           <ContextMenu.Positioner className="outline-none z-[var(--z-context-menu)]">
             <ContextMenu.Popup className="origin-[var(--transform-origin)] rounded-md bg-white dark:bg-neutral-800 py-1 text-neutral-900 dark:text-neutral-100 shadow-lg shadow-gray-200 outline-1 outline-neutral-200 transition-[opacity] data-[ending-style]:opacity-0 dark:shadow-none dark:-outline-offset-1 dark:outline-neutral-700">
               {canCopyBranch ? (
-                <>
-                  <ContextMenu.Item
-                    className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
-                    onClick={copyRunBranch}
-                  >
-                    <GitBranch className="w-3.5 h-3.5" />
-                    Copy branch name
-                  </ContextMenu.Item>
-                  {shouldShowCopyDivider ? (
-                    <div className="my-1 h-px bg-neutral-200 dark:bg-neutral-700" />
-                  ) : null}
-                </>
+                <ContextMenu.Item
+                  className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                  onClick={copyRunBranch}
+                >
+                  <GitBranch className="w-3.5 h-3.5" />
+                  Copy branch name
+                </ContextMenu.Item>
               ) : null}
               {hasOpenWithActions ? (
-                <>
-                  <div className="px-3 py-1 text-[11px] font-medium text-neutral-500 dark:text-neutral-400 select-none">
-                    Open with
-                  </div>
-                  {openWithActions.map((action) => {
-                    const Icon = action.Icon;
-                    return (
-                      <ContextMenu.Item
-                        key={action.id}
-                        className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
-                        onClick={() => executeOpenAction(action)}
-                      >
-                        {Icon ? <Icon className="w-3.5 h-3.5" /> : null}
-                        {action.name}
-                      </ContextMenu.Item>
-                    );
-                  })}
-                  {shouldShowOpenWithDivider ? (
-                    <div className="my-1 h-px bg-neutral-200 dark:bg-neutral-700" />
-                  ) : null}
-                </>
+                <ContextMenu.SubmenuRoot>
+                  <ContextMenu.SubmenuTrigger className="flex items-center gap-2 cursor-default py-1.5 pr-4 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700">
+                    <ExternalLink className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                    <span>Open with</span>
+                    <ChevronRight className="w-3 h-3 ml-auto text-neutral-400 dark:text-neutral-500" />
+                  </ContextMenu.SubmenuTrigger>
+                  <ContextMenu.Positioner className="outline-none z-[var(--z-context-menu)]">
+                    <ContextMenu.Popup className="origin-[var(--transform-origin)] rounded-md bg-white dark:bg-neutral-800 py-1 text-neutral-900 dark:text-neutral-100 shadow-lg shadow-gray-200 outline-1 outline-neutral-200 transition-[opacity] data-[ending-style]:opacity-0 dark:shadow-none dark:-outline-offset-1 dark:outline-neutral-700 max-w-xs">
+                      <div className="max-h-64 overflow-y-auto">
+                        {openWithActions.map((action) => {
+                          const Icon = action.Icon;
+                          return (
+                            <ContextMenu.Item
+                              key={action.id}
+                              className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                              onClick={() => executeOpenAction(action)}
+                            >
+                              {Icon ? <Icon className="w-3.5 h-3.5" /> : null}
+                              {action.name}
+                            </ContextMenu.Item>
+                          );
+                        })}
+                      </div>
+                    </ContextMenu.Popup>
+                  </ContextMenu.Positioner>
+                </ContextMenu.SubmenuRoot>
               ) : null}
               {hasPortActions ? (
-                <>
-                  <div className="px-3 py-1 text-[11px] font-medium text-neutral-500 dark:text-neutral-400 select-none">
-                    Forwarded ports
-                  </div>
-                  {portActions.map((port) => (
-                    <ContextMenu.Item
-                      key={port.port}
-                      className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
-                      onClick={() => executePortAction(port)}
-                    >
-                      <Globe className="w-3 h-3" />
-                      Port {port.port}
-                    </ContextMenu.Item>
-                  ))}
-                </>
+                <ContextMenu.SubmenuRoot>
+                  <ContextMenu.SubmenuTrigger className="flex items-center gap-2 cursor-default py-1.5 pr-4 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700">
+                    <Globe className="w-3 h-3 text-neutral-600 dark:text-neutral-300" />
+                    <span>Forwarded ports</span>
+                    <ChevronRight className="w-3 h-3 ml-auto text-neutral-400 dark:text-neutral-500" />
+                  </ContextMenu.SubmenuTrigger>
+                  <ContextMenu.Positioner className="outline-none z-[var(--z-context-menu)]">
+                    <ContextMenu.Popup className="origin-[var(--transform-origin)] rounded-md bg-white dark:bg-neutral-800 py-1 text-neutral-900 dark:text-neutral-100 shadow-lg shadow-gray-200 outline-1 outline-neutral-200 transition-[opacity] data-[ending-style]:opacity-0 dark:shadow-none dark:-outline-offset-1 dark:outline-neutral-700 max-w-xs">
+                      <div className="max-h-64 overflow-y-auto">
+                        {portActions.map((port) => (
+                          <ContextMenu.Item
+                            key={port.port}
+                            className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                            onClick={() => executePortAction(port)}
+                          >
+                            <Globe className="w-3 h-3" />
+                            Port {port.port}
+                          </ContextMenu.Item>
+                        ))}
+                      </div>
+                    </ContextMenu.Popup>
+                  </ContextMenu.Positioner>
+                </ContextMenu.SubmenuRoot>
               ) : null}
+              <ContextMenu.Item
+                className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                onClick={handleArchiveRun}
+              >
+                <ArchiveIcon className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                <span>Archive run</span>
+              </ContextMenu.Item>
             </ContextMenu.Popup>
           </ContextMenu.Positioner>
         </ContextMenu.Portal>
@@ -1166,8 +1336,10 @@ function TaskRunTreeInner({
         shouldRenderPullRequestLink={shouldRenderPullRequestLink}
         previewServices={previewServices}
         environmentError={run.environmentError}
+        onArchiveToggle={onArchiveToggle}
+        showRunNumbers={showRunNumbers}
       />
-    </Fragment>
+    </div>
   );
 }
 
@@ -1233,6 +1405,8 @@ interface TaskRunDetailsProps {
     maintenanceError?: string;
     devError?: string;
   };
+  onArchiveToggle: (runId: Id<"taskRuns">, archive: boolean) => void;
+  showRunNumbers: boolean;
 }
 
 function TaskRunDetails({
@@ -1248,6 +1422,8 @@ function TaskRunDetails({
   shouldRenderPullRequestLink,
   previewServices,
   environmentError,
+  onArchiveToggle,
+  showRunNumbers,
 }: TaskRunDetailsProps) {
   if (!isExpanded) {
     return null;
@@ -1412,6 +1588,8 @@ function TaskRunDetails({
               level={level + 1}
               taskId={taskId}
               teamSlugOrId={teamSlugOrId}
+              onArchiveToggle={onArchiveToggle}
+              showRunNumbers={showRunNumbers}
             />
           ))}
         </div>
