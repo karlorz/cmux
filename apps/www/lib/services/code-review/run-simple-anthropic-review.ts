@@ -1,4 +1,5 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 import { streamText } from "ai";
 
 import { CLOUDFLARE_ANTHROPIC_BASE_URL } from "@cmux/shared";
@@ -43,6 +44,9 @@ const SIMPLE_REVIEW_GUIDANCE = `You must respond strictly with the diff provided
 - Process the diff from top to bottom without skipping sections.`;
 
 const MAX_CONCURRENCY = 10;
+const CLAUDE_OPUS_MODEL = "claude-opus-4-1-20250805";
+const OPENAI_FINE_TUNED_MODEL_ID =
+  "ft:gpt-4.1-mini-2025-04-14:lawrence:cmux-heatmap-sft:CZW6Lc77";
 
 const BINARY_EXTENSIONS = [
   ".png",
@@ -117,6 +121,7 @@ export type SimpleReviewStreamOptions = {
   onChunk?: (chunk: string) => void | Promise<void>;
   onEvent?: (event: SimpleReviewParsedEvent) => void | Promise<void>;
   signal?: AbortSignal;
+  useFineTunedModel?: boolean;
 };
 
 export type SimpleReviewStreamResult = {
@@ -283,6 +288,7 @@ export async function runSimpleAnthropicReviewStream(
     githubToken: providedGithubToken = null,
     onChunk,
     signal,
+    useFineTunedModel = false,
   } = options;
   const onEvent = options.onEvent ?? null;
 
@@ -338,6 +344,31 @@ export async function runSimpleAnthropicReviewStream(
     baseURL: CLOUDFLARE_ANTHROPIC_BASE_URL,
   });
 
+  let getModel = () => anthropic(CLAUDE_OPUS_MODEL);
+  let modelInfo: { provider: string; model: string } = {
+    provider: "anthropic",
+    model: CLAUDE_OPUS_MODEL,
+  };
+
+  if (useFineTunedModel) {
+    const openAiApiKey = env.OPENAI_API_KEY;
+    if (!openAiApiKey) {
+      throw new Error(
+        "OPENAI_API_KEY is required to use the fine-tuned OpenAI model (?ft0)"
+      );
+    }
+    const openai = createOpenAI({
+      apiKey: openAiApiKey,
+    });
+    getModel = () => openai(OPENAI_FINE_TUNED_MODEL_ID);
+    modelInfo = { provider: "openai", model: OPENAI_FINE_TUNED_MODEL_ID };
+  }
+
+  console.info("[simple-review] Using model", {
+    prIdentifier,
+    ...modelInfo,
+  });
+
   const runWithSemaphore = createSemaphore(MAX_CONCURRENCY);
   const finalChunks: string[] = [];
 
@@ -369,8 +400,7 @@ export async function runSimpleAnthropicReviewStream(
 
         try {
           const stream = streamText({
-            model: anthropic("claude-opus-4-1-20250805"),
-            // model: anthropic("claude-haiku-4-5"),
+            model: getModel(),
             prompt,
             temperature: 0,
             maxRetries: 2,

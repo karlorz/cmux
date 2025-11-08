@@ -40,6 +40,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = request.nextUrl;
     const repoFullName = parseRepoFullName(searchParams.get("repoFullName"));
     const prNumber = parsePrNumber(searchParams.get("prNumber"));
+    const useFineTunedModel = searchParams.has("ft0");
 
     if (!repoFullName || prNumber === null) {
       return NextResponse.json(
@@ -114,6 +115,7 @@ export async function GET(request: NextRequest) {
             prIdentifier,
             githubToken: normalizedGithubToken,
             signal: abortController.signal,
+            useFineTunedModel,
             onEvent: async (event) => {
               switch (event.type) {
                 case "file":
