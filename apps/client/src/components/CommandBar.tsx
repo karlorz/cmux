@@ -61,6 +61,7 @@ import {
   selectSuggestedItems,
   useSuggestionHistory,
 } from "./command-bar/useSuggestionHistory";
+import { CommandBarNewTaskDialog } from "./command-bar/CommandBarNewTaskDialog";
 import clsx from "clsx";
 
 interface CommandBarProps {
@@ -287,6 +288,7 @@ export function CommandBar({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [openedWithShift, setOpenedWithShift] = useState(false);
+  const [isNewTaskDialogOpen, setIsNewTaskDialogOpen] = useState(false);
   const clearCommandInput = useCallback(() => {
     setSearch("");
   }, [setSearch]);
@@ -668,6 +670,12 @@ export function CommandBar({
 
   useEffect(() => {
     openRef.current = open;
+  }, [open]);
+
+  useEffect(() => {
+    if (open) {
+      setIsNewTaskDialogOpen(false);
+    }
   }, [open]);
 
   useEffect(() => {
@@ -1307,10 +1315,9 @@ export function CommandBar({
         setActivePage("teams");
         return;
       } else if (value === "new-task") {
-        navigate({
-          to: "/$teamSlugOrId/dashboard",
-          params: { teamSlugOrId },
-        });
+        closeCommand();
+        setIsNewTaskDialogOpen(true);
+        return;
       } else if (value === "local-workspaces") {
         setActivePage("local-workspaces");
         return;
@@ -2713,6 +2720,13 @@ export function CommandBar({
           </Command>
         </div>
       </div>
+      {isNewTaskDialogOpen ? (
+        <CommandBarNewTaskDialog
+          teamSlugOrId={teamSlugOrId}
+          open={isNewTaskDialogOpen}
+          onOpenChange={setIsNewTaskDialogOpen}
+        />
+      ) : null}
     </>
   );
 }
