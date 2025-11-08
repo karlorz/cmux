@@ -1,4 +1,3 @@
-import { ScriptTextareaField } from "@/components/ScriptTextareaField";
 import { parseEnvBlock } from "@/lib/parseEnvBlock";
 import { ensureInitialEnvVars, type EnvVar } from "@/types/environment";
 import { formatEnvVarsContent } from "@cmux/shared/utils/format-env-vars-content";
@@ -8,7 +7,7 @@ import {
 } from "@cmux/www-openapi-client/react-query";
 import { useMutation as useRQMutation, useQuery } from "@tanstack/react-query";
 import TextareaAutosize from "react-textarea-autosize";
-import { FileUp, Minus, Plus } from "lucide-react";
+import { Minus, Plus } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -92,7 +91,11 @@ export function LocalWorkspaceSetupPanel({
 
   const updateEnvVars = useCallback(
     (updater: (prev: EnvVar[]) => EnvVar[]) => {
-      setEnvVars((prev) => ensureInitialEnvVars(updater(prev)));
+      setEnvVars((prev) => {
+        const updated = updater(prev);
+        // Always ensure at least 1 row exists
+        return updated.length === 0 ? [{ name: "", value: "", isSecret: true }] : updated;
+      });
     },
     [],
   );
@@ -186,46 +189,6 @@ export function LocalWorkspaceSetupPanel({
     [updateEnvVars],
   );
 
-  const handleLoadEnvFile = useCallback(
-    async (file: File) => {
-      try {
-        const text = await file.text();
-        const entries = parseEnvBlock(text);
-
-        if (entries.length === 0) {
-          toast.error("No environment variables found in file");
-          return;
-        }
-
-        updateEnvVars((prev) => {
-          const map = new Map(
-            prev
-              .filter(
-                (row) =>
-                  row.name.trim().length > 0 || row.value.trim().length > 0,
-              )
-              .map((row) => [row.name, row] as const),
-          );
-          for (const entry of entries) {
-            if (!entry.name) continue;
-            map.set(entry.name, {
-              name: entry.name,
-              value: entry.value,
-              isSecret: true,
-            });
-          }
-          return Array.from(map.values());
-        });
-
-        toast.success(`Loaded ${entries.length} variables from ${file.name}`);
-      } catch (error) {
-        console.error("Failed to load env file:", error);
-        toast.error(`Failed to load file: ${error instanceof Error ? error.message : "Unknown error"}`);
-      }
-    },
-    [updateEnvVars],
-  );
-
   if (configQuery.error) {
     throw configQuery.error;
   }
@@ -255,17 +218,34 @@ export function LocalWorkspaceSetupPanel({
         <div className="mt-4 space-y-4">
           {/* Split Screen Container */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Left: Scripts Section */}
+            {/* Left: Setup Script Section */}
             <div className="flex flex-col">
-              <ScriptTextareaField
-                description="Runs after cmux clones your repository locally so dependencies and services are ready."
-                subtitle="Executed from your workspace root (e.g. ~/cmux/local-workspaces/<workspace-name>)."
-                value={maintenanceScript}
-                onChange={setMaintenanceScript}
-                placeholder={`# e.g.\npnpm install\nbundle install\nuv sync`}
-                minRows={4}
-                maxRows={18}
-              />
+              <div className="rounded-lg border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950 flex flex-col h-full">
+                <div className="px-3 py-3 border-b border-neutral-200 dark:border-neutral-800">
+                  <div className="flex flex-col gap-1">
+                    <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                      Setup script
+                    </p>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                      Runs after cmux clones your repository locally so dependencies and services are ready.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex-1 px-3 py-3">
+                  <TextareaAutosize
+                    value={maintenanceScript}
+                    onChange={(e) => setMaintenanceScript(e.target.value)}
+                    placeholder={`# e.g.\npnpm install\nbundle install\nuv sync`}
+                    minRows={4}
+                    maxRows={18}
+                    className="w-full rounded-md border border-neutral-200 bg-white px-2.5 py-2 text-sm font-mono text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 resize-none dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-600 dark:focus:ring-neutral-700"
+                  />
+                  <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+                    Executed from your workspace root (e.g. ~/cmux/local-workspaces/&lt;workspace-name&gt;)
+                  </p>
+                </div>
+              </div>
             </div>
 
             {/* Right: Environment Variables Section */}
@@ -280,51 +260,26 @@ export function LocalWorkspaceSetupPanel({
                       Environment variables
                     </p>
                     <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                      Stored securely and injected when your setup script runs. Load from .env files or paste directly.
-                    </p>
-                  </div>
-
-                  {/* File Upload Buttons */}
-                  <div className="mt-3 space-y-2">
-                    <label className="inline-flex items-center gap-1.5 rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 cursor-pointer dark:border-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-900">
-                      <FileUp className="h-3.5 w-3.5" />
-                      Load .env file
-                      <input
-                        type="file"
-                        accept=".env,.env.*,text/plain"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            handleLoadEnvFile(file);
-                            // Reset input so same file can be loaded again
-                            e.target.value = "";
-                          }
-                        }}
-                      />
-                    </label>
-                    <p className="text-2xs text-neutral-500 dark:text-neutral-400">
-                      Click to browse and load environment variables from .env files
+                      Stored securely and injected when your setup script runs. Paste directly from .env files.
                     </p>
                   </div>
                 </div>
 
                 {/* Scrollable Env Vars Grid */}
                 <div className="flex-1 overflow-y-auto px-3 py-3" style={{ maxHeight: "400px" }}>
-                  <div className="grid gap-2 text-2xs text-neutral-500 dark:text-neutral-500 items-center mb-2" style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.2fr) 40px" }}>
+                  <div className="grid gap-3 text-xs font-medium text-neutral-600 dark:text-neutral-400 items-center mb-3" style={{ gridTemplateColumns: "1fr 1fr 36px" }}>
                     <span>Key</span>
                     <span>Value</span>
                     <span />
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-2.5">
                     {envVars.map((row, idx) => (
                       <div
-                        key={`${row.name}-${idx}`}
-                        className="grid gap-2 items-start"
+                        key={idx}
+                        className="grid gap-3 items-center"
                         style={{
-                          gridTemplateColumns:
-                            "minmax(0, 1fr) minmax(0, 1.2fr) 40px",
+                          gridTemplateColumns: "1fr 1fr 36px",
                         }}
                       >
                         <input
@@ -339,7 +294,7 @@ export function LocalWorkspaceSetupPanel({
                             });
                           }}
                           placeholder="EXAMPLE_KEY"
-                          className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm font-mono text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:focus:ring-neutral-700"
+                          className="w-full rounded-md border border-neutral-200 bg-white px-2.5 py-2 text-sm font-mono text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-600 dark:focus:ring-neutral-700"
                         />
                         <TextareaAutosize
                           value={row.value}
@@ -354,11 +309,11 @@ export function LocalWorkspaceSetupPanel({
                           minRows={1}
                           maxRows={6}
                           placeholder="secret-value"
-                          className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm font-mono text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:focus:ring-neutral-700"
+                          className="w-full rounded-md border border-neutral-200 bg-white px-2.5 py-2 text-sm font-mono text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 resize-none dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-600 dark:focus:ring-neutral-700"
                         />
                         <button
                           type="button"
-                          className="mt-1 inline-flex h-9 w-9 items-center justify-center rounded-md border border-neutral-200 text-neutral-600 hover:bg-neutral-50 dark:border-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-900"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-neutral-200 text-neutral-500 transition-colors hover:bg-neutral-50 hover:text-neutral-700 hover:border-neutral-300 dark:border-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-900 dark:hover:text-neutral-300 dark:hover:border-neutral-700"
                           onClick={() =>
                             updateEnvVars((prev) =>
                               prev.filter((_, i) => i !== idx),
@@ -372,10 +327,10 @@ export function LocalWorkspaceSetupPanel({
                     ))}
                   </div>
 
-                  <div className="mt-3">
+                  <div className="mt-4 pt-2 border-t border-neutral-100 dark:border-neutral-800/50">
                     <button
                       type="button"
-                      className="inline-flex items-center gap-2 rounded-md border border-neutral-200 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 dark:border-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-900"
+                      className="inline-flex items-center gap-2 rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 transition-colors hover:bg-neutral-50 hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800 dark:hover:border-neutral-700"
                       onClick={() =>
                         updateEnvVars((prev) => [
                           ...prev,
