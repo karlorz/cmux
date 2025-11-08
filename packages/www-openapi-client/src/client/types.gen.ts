@@ -116,6 +116,21 @@ export type GithubReposResponse = {
     repos: Array<GithubRepo>;
 };
 
+export type GitHubStats = {
+    /**
+     * Number of stars on the repository
+     */
+    stars: number;
+    /**
+     * Number of forks of the repository
+     */
+    forks: number;
+    /**
+     * Number of watchers of the repository
+     */
+    watchers: number;
+};
+
 export type GithubPullRequestItem = {
     id: number;
     number: number;
@@ -1036,6 +1051,22 @@ export type GetApiIntegrationsGithubReposResponses = {
 };
 
 export type GetApiIntegrationsGithubReposResponse = GetApiIntegrationsGithubReposResponses[keyof GetApiIntegrationsGithubReposResponses];
+
+export type GetApiGithubStatsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/github/stats';
+};
+
+export type GetApiGithubStatsResponses = {
+    /**
+     * GitHub repository statistics
+     */
+    200: GitHubStats;
+};
+
+export type GetApiGithubStatsResponse = GetApiGithubStatsResponses[keyof GetApiGithubStatsResponses];
 
 export type GetApiIntegrationsGithubPrsData = {
     body?: never;

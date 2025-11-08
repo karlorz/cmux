@@ -4,7 +4,7 @@ import CmuxLogo from "@/components/logo/cmux-logo";
 import { MacDownloadLink } from "@/components/mac-download-link";
 import type { MacDownloadUrls } from "@/lib/releases";
 import clsx from "clsx";
-import { Download } from "lucide-react";
+import { Download, Star } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
@@ -40,6 +40,7 @@ export function SiteHeader({
 }: SiteHeaderProps) {
   const effectiveUrls = macDownloadUrls ?? DEFAULT_DOWNLOAD_URLS;
   const [isScrolled, setIsScrolled] = useState(false);
+  const [starCount, setStarCount] = useState<number | null>(null);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -52,6 +53,20 @@ export function SiteHeader({
     return () => {
       window.removeEventListener("scroll", handleScroll);
     };
+  }, []);
+
+  useEffect(() => {
+    // Fetch GitHub star count
+    fetch("/api/github/stats")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.stars) {
+          setStarCount(data.stars);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to fetch GitHub stats:", err);
+      });
   }, []);
 
   return (
@@ -88,12 +103,13 @@ export function SiteHeader({
             Tutorial
           </Link> */}
           <a
-            className="text-neutral-300 transition hover:text-white"
+            className="flex items-center gap-1.5 text-neutral-300 transition hover:text-white"
             href="https://github.com/manaflow-ai/cmux"
             rel="noopener noreferrer"
             target="_blank"
           >
-            GitHub
+            <Star className="h-4 w-4" aria-hidden />
+            <span>{starCount !== null ? starCount.toLocaleString() : "GitHub"}</span>
           </a>
           <a
             className="text-neutral-300 transition hover:text-white"
