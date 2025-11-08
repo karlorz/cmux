@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
 import { formatDistanceToNow } from "date-fns";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ChevronLeft, ChevronRight, Maximize2, X } from "lucide-react";
@@ -31,6 +32,14 @@ interface RunScreenshotGalleryProps {
   highlightedSetId?: Id<"taskRunScreenshotSets"> | null;
 }
 
+type PointerDragState = {
+  pointerId: number;
+  originX: number;
+  originY: number;
+  startX: number;
+  startY: number;
+};
+
 const STATUS_LABELS: Record<ScreenshotStatus, string> = {
   completed: "Completed",
   failed: "Failed",
@@ -50,6 +59,13 @@ const getImageKey = (
   image: ScreenshotImage,
   indexInSet: number,
 ) => `${setId}:${image.storageId}:${indexInSet}`;
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
+
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 5;
+const ZOOM_STEP = 0.15;
 
 export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
   const { screenshotSets, highlightedSetId } = props;
@@ -98,6 +114,18 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
   }, [flattenedImages]);
 
   const [activeImageKey, setActiveImageKey] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const imageViewportRef = useRef<HTMLDivElement | null>(null);
+  const dragStateRef = useRef<PointerDragState | null>(null);
+
+  const resetViewport = useCallback(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setIsDragging(false);
+    dragStateRef.current = null;
+  }, []);
 
   const activeImageIndex =
     activeImageKey !== null ? globalIndexByKey.get(activeImageKey) ?? null : null;
@@ -108,6 +136,11 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
       ? flattenedImages[activeImageIndex]
       : null;
 
+  const activeEntryKey = currentEntry?.key ?? null;
+  const isSlideshowOpen = Boolean(currentEntry);
+  const hasMultipleImages = flattenedImages.length > 1;
+  const zoomPercent = Math.round(zoom * 100);
+  const isZoomed = zoom > 1.01;
   const activeOverallIndex =
     currentEntry?.globalIndex !== undefined
       ? currentEntry.globalIndex + 1
@@ -128,7 +161,8 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
 
   const closeSlideshow = useCallback(() => {
     setActiveImageKey(null);
-  }, []);
+    resetViewport();
+  }, [resetViewport]);
 
   const goNext = useCallback(() => {
     if (activeImageIndex === null) {
@@ -154,7 +188,118 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
     setActiveImageKey(flattenedImages[prevIndex]?.key ?? null);
   }, [activeImageIndex, flattenedImages]);
 
-  const isSlideshowOpen = Boolean(currentEntry);
+  const handleWheel = useCallback(
+    (event: ReactWheelEvent<HTMLDivElement>) => {
+      if (!isSlideshowOpen) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const direction = Math.sign(event.deltaY);
+      if (direction === 0) {
+        return;
+      }
+      const nextZoom = clamp(zoom - direction * ZOOM_STEP, MIN_ZOOM, MAX_ZOOM);
+      if (nextZoom === zoom) {
+        return;
+      }
+      const viewport = imageViewportRef.current;
+      if (viewport) {
+        const rect = viewport.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        const offsetX = event.clientX - centerX;
+        const offsetY = event.clientY - centerY;
+        setPan((prev) => ({
+          x: prev.x - (offsetX / zoom) * (nextZoom - zoom),
+          y: prev.y - (offsetY / zoom) * (nextZoom - zoom),
+        }));
+      }
+      setZoom(nextZoom);
+    },
+    [isSlideshowOpen, zoom],
+  );
+
+  const handlePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) {
+        return;
+      }
+      event.preventDefault();
+      dragStateRef.current = {
+        pointerId: event.pointerId,
+        originX: event.clientX,
+        originY: event.clientY,
+        startX: pan.x,
+        startY: pan.y,
+      };
+      imageViewportRef.current?.setPointerCapture(event.pointerId);
+      setIsDragging(true);
+    },
+    [pan.x, pan.y],
+  );
+
+  const handlePointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const dragState = dragStateRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) {
+      return;
+    }
+    event.preventDefault();
+    const deltaX = event.clientX - dragState.originX;
+    const deltaY = event.clientY - dragState.originY;
+    setPan({
+      x: dragState.startX + deltaX,
+      y: dragState.startY + deltaY,
+    });
+  }, []);
+
+  const endPointerDrag = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (dragStateRef.current?.pointerId !== event.pointerId) {
+        return;
+      }
+      dragStateRef.current = null;
+      setIsDragging(false);
+      try {
+        imageViewportRef.current?.releasePointerCapture(event.pointerId);
+      } catch {
+        // Ignore release errors.
+      }
+    },
+    [],
+  );
+
+  const handlePointerUp = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      endPointerDrag(event);
+    },
+    [endPointerDrag],
+  );
+
+  const handlePointerLeave = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      endPointerDrag(event);
+    },
+    [endPointerDrag],
+  );
+
+  const handleDoubleClick = useCallback(() => {
+    resetViewport();
+  }, [resetViewport]);
+
+
+  useEffect(() => {
+    if (!activeEntryKey) {
+      return;
+    }
+    resetViewport();
+  }, [activeEntryKey, resetViewport]);
+
+  useEffect(() => {
+    if (!isSlideshowOpen) {
+      resetViewport();
+    }
+  }, [isSlideshowOpen, resetViewport]);
 
   useEffect(() => {
     if (!isSlideshowOpen) {
@@ -197,12 +342,15 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
             onOpenChange={(open) => !open && closeSlideshow()}
           >
             <Dialog.Portal>
-              <Dialog.Overlay className="fixed inset-0 bg-neutral-950/70 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in data-[state=closed]:fade-out" />
-              <Dialog.Content className="fixed inset-0 flex items-center justify-center p-6 focus:outline-none">
-                <div className="relative flex w-full max-w-5xl flex-col gap-3 rounded-2xl border border-neutral-200 bg-white/95 p-3 shadow-2xl backdrop-blur-md focus:outline-none dark:border-neutral-800 dark:bg-neutral-950/90 sm:p-5">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
+              <Dialog.Overlay className="fixed inset-0 bg-neutral-950/60 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in data-[state=closed]:fade-out" />
+              <Dialog.Content
+                className="fixed left-1/2 top-1/2 z-50 w-[min(1400px,95vw)] max-h-[95vh] -translate-x-1/2 -translate-y-1/2 focus:outline-none"
+                onInteractOutside={closeSlideshow}
+              >
+                <div className="flex h-full max-h-[95vh] flex-col gap-4 rounded-3xl border border-neutral-200 bg-white p-4 shadow-2xl focus:outline-none dark:border-neutral-800 dark:bg-neutral-950/95 sm:p-6">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="space-y-2">
+                      <Dialog.Title className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
                         {activeOverallIndex !== null
                           ? `${activeOverallIndex}. `
                           : ""}
@@ -215,41 +363,72 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
                           addSuffix: true,
                         })}
                       </Dialog.Description>
+                      <p className="text-xs text-neutral-500 dark:text-neutral-500">
+                        Scroll to zoom, drag to pan, double-click to reset.
+                      </p>
                     </div>
-                    <Dialog.Close asChild>
-                      <button
-                        type="button"
-                        onClick={closeSlideshow}
-                        className="p-1 text-neutral-600 transition hover:text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 dark:text-neutral-300 dark:hover:text-neutral-100"
-                        aria-label="Close slideshow"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </Dialog.Close>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                        {zoomPercent}% zoom
+                      </span>
+                      <Dialog.Close asChild>
+                        <button
+                          type="button"
+                          onClick={closeSlideshow}
+                          className="rounded-full border border-transparent p-2 text-neutral-600 transition hover:text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 dark:text-neutral-300 dark:hover:text-neutral-100"
+                          aria-label="Close slideshow"
+                        >
+                          <X className="h-5 w-5" />
+                        </button>
+                      </Dialog.Close>
+                    </div>
                   </div>
-                  <div className="flex flex-1 items-center justify-center gap-4">
-                    {flattenedImages.length > 1 ? (
+                  <div className="flex flex-1 items-center gap-4 overflow-hidden">
+                    {hasMultipleImages ? (
                       <button
                         type="button"
                         onClick={goPrev}
-                        className="p-1 text-neutral-600 transition hover:text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 dark:text-neutral-300 dark:hover:text-neutral-100"
+                        className="rounded-full border border-neutral-200 bg-white/80 p-2 text-neutral-700 shadow-lg transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 dark:border-neutral-700 dark:bg-neutral-900/80 dark:text-neutral-100"
                         aria-label="Previous screenshot"
                       >
                         <ChevronLeft className="h-5 w-5" />
                       </button>
                     ) : null}
-                    <div className="relative flex max-h-[70vh] flex-1 items-center justify-center border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-800 dark:bg-neutral-900">
+                    <div
+                      ref={imageViewportRef}
+                      className={cn(
+                        "relative flex min-h-[60vh] max-h-[80vh] w-full flex-1 items-center justify-center overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-50 transition-colors dark:border-neutral-800 dark:bg-neutral-900",
+                        isDragging ? "cursor-grabbing" : "cursor-grab",
+                        isZoomed && "shadow-inner",
+                      )}
+                      title="Scroll to zoom, drag to pan, double-click to reset"
+                      onWheel={handleWheel}
+                      onPointerDown={handlePointerDown}
+                      onPointerMove={handlePointerMove}
+                      onPointerUp={handlePointerUp}
+                      onPointerLeave={handlePointerLeave}
+                      onPointerCancel={handlePointerUp}
+                      onDoubleClick={handleDoubleClick}
+                    >
                       <img
                         src={currentEntry.image.url ?? undefined}
                         alt={currentEntry.image.fileName ?? "Screenshot"}
-                        className="max-h-[calc(70vh-1.5rem)] max-w-full object-contain"
+                        draggable={false}
+                        className="max-h-none max-w-none select-none object-contain will-change-transform"
+                        style={{
+                          transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
+                          transition: isDragging ? "none" : "transform 120ms ease-out",
+                        }}
                       />
+                      <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-neutral-900/80 px-3 py-1 text-xs font-medium text-white shadow-lg dark:bg-neutral-700/80">
+                        {zoomPercent}% · scroll to zoom, drag to pan
+                      </div>
                     </div>
-                    {flattenedImages.length > 1 ? (
+                    {hasMultipleImages ? (
                       <button
                         type="button"
                         onClick={goNext}
-                        className="p-1 text-neutral-600 transition hover:text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 dark:text-neutral-300 dark:hover:text-neutral-100"
+                        className="rounded-full border border-neutral-200 bg-white/80 p-2 text-neutral-700 shadow-lg transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 dark:border-neutral-700 dark:bg-neutral-900/80 dark:text-neutral-100"
                         aria-label="Next screenshot"
                       >
                         <ChevronRight className="h-5 w-5" />
