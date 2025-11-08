@@ -36,7 +36,27 @@ stop_staging_app_instances() {
   echo "==> Attempting graceful shutdown for existing $pattern..."
   local graceful_shutdown=0
   if command -v osascript >/dev/null 2>&1; then
-    if osascript -e "tell application id \"$bundle_id\" to quit" >/dev/null 2>&1; then
+    if osascript - "$pattern" <<'OSA' >/dev/null 2>&1; then
+on run argv
+  if (count of argv) is 0 then return
+  set targetName to item 1 of argv
+
+  tell application "System Events"
+    try
+      set matchingProcesses to every process whose name is targetName
+    on error
+      set matchingProcesses to {}
+    end try
+  end tell
+
+  repeat with procRef in matchingProcesses
+    try
+      set appAlias to application file of procRef as alias
+      tell application appAlias to quit
+    end try
+  end repeat
+end run
+OSA
       if wait_for_process_exit "$pattern" 5; then
         echo "==> $pattern exited after AppleScript quit request."
         graceful_shutdown=1
