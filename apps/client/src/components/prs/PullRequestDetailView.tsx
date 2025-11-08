@@ -5,7 +5,7 @@ import { gitDiffQueryOptions } from "@/queries/git-diff";
 import { api } from "@cmux/convex/api";
 import { useQuery as useRQ, useMutation } from "@tanstack/react-query";
 import { useQuery as useConvexQuery } from "convex/react";
-import { ExternalLink, X, Check, Copy, GitBranch, Loader2 } from "lucide-react";
+import { ExternalLink, X, Check, Copy, GitBranch, Loader2, GitPullRequest } from "lucide-react";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useClipboard } from "@mantine/hooks";
@@ -14,6 +14,7 @@ import { MergeButton, type MergeMethod } from "@/components/ui/merge-button";
 import { postApiIntegrationsGithubPrsCloseMutation, postApiIntegrationsGithubPrsMergeSimpleMutation } from "@cmux/www-openapi-client/react-query";
 import type { PostApiIntegrationsGithubPrsCloseData, PostApiIntegrationsGithubPrsCloseResponse, PostApiIntegrationsGithubPrsMergeSimpleData, PostApiIntegrationsGithubPrsMergeSimpleResponse, Options } from "@cmux/www-openapi-client";
 import { useCombinedWorkflowData, WorkflowRunsBadge, WorkflowRunsSection } from "@/components/WorkflowRunsSection";
+import { Link } from "@tanstack/react-router";
 
 const RUN_PENDING_STATUSES = new Set(["in_progress", "queued", "waiting", "pending"]);
 const RUN_PASSING_CONCLUSIONS = new Set(["success", "neutral", "skipped"]);
@@ -133,6 +134,8 @@ export function PullRequestDetailView({
   number,
 }: PullRequestDetailViewProps) {
   const clipboard = useClipboard({ timeout: 2000 });
+  const repoFullNameFromRoute = `${owner}/${repo}`;
+  const prNumberFromRoute = Number(number);
 
   const currentPR = useConvexQuery(api.github_prs.getPullRequest, {
     teamSlugOrId,
@@ -166,6 +169,16 @@ export function PullRequestDetailView({
     prNumber: currentPR?.number || 0,
     headSha: currentPR?.headSha,
   });
+  const linkedRun = useConvexQuery(
+    api.taskRuns.findByPullRequest,
+    Number.isFinite(prNumberFromRoute)
+      ? {
+        teamSlugOrId,
+        repoFullName: repoFullNameFromRoute,
+        pullRequestNumber: prNumberFromRoute,
+      }
+      : "skip",
+  );
 
   const hasAnyFailure = useMemo(() => {
     return workflowData.allRuns.some(
@@ -376,6 +389,25 @@ export function PullRequestDetailView({
               </div>
 
               <div className="col-start-3 row-start-1 row-span-2 self-center flex items-center gap-2 shrink-0">
+                {linkedRun ? (
+                  <Link
+                    to="/$teamSlugOrId/task/$taskId/run/$runId"
+                    params={{
+                      teamSlugOrId,
+                      taskId: linkedRun.taskId,
+                      runId: linkedRun.runId,
+                    }}
+                    title={
+                      linkedRun.taskText
+                        ? `Open task "${linkedRun.taskText}"`
+                        : undefined
+                    }
+                    className="flex items-center gap-1.5 px-3 py-1 bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white border border-neutral-200 dark:border-neutral-700 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 font-medium text-xs select-none whitespace-nowrap"
+                  >
+                    <GitPullRequest className="w-3.5 h-3.5" />
+                    View task run
+                  </Link>
+                ) : null}
                 {currentPR.state === "open" && !currentPR.merged && (
                   <>
                     <MergeButton

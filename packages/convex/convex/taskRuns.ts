@@ -334,6 +334,142 @@ export const getByTask = authQuery({
   },
 });
 
+function normalizeRepoFullName(repo: string | null | undefined): string {
+  return (repo ?? "").trim().toLowerCase();
+}
+
+function extractPullNumberFromUrl(url?: string | null): number | null {
+  if (!url) {
+    return null;
+  }
+  const match = url.match(/\/pull\/(\d+)/i);
+  if (!match) {
+    return null;
+  }
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function runMatchesPullRequest({
+  run,
+  normalizedTargetRepo,
+  targetNumber,
+}: {
+  run: Doc<"taskRuns">;
+  normalizedTargetRepo: string;
+  targetNumber: number;
+}): boolean {
+  if (!Number.isFinite(targetNumber)) {
+    return false;
+  }
+
+  const records = run.pullRequests ?? [];
+  for (const record of records) {
+    const repoMatches =
+      normalizeRepoFullName(record.repoFullName) === normalizedTargetRepo;
+    if (!repoMatches) {
+      continue;
+    }
+    const candidateNumber =
+      typeof record.number === "number"
+        ? record.number
+        : extractPullNumberFromUrl(record.url);
+    if (candidateNumber === targetNumber) {
+      return true;
+    }
+  }
+
+  if (
+    typeof run.pullRequestNumber === "number" &&
+    run.pullRequestNumber === targetNumber
+  ) {
+    return true;
+  }
+
+  const derivedFromUrl = extractPullNumberFromUrl(run.pullRequestUrl);
+  if (derivedFromUrl === targetNumber) {
+    return true;
+  }
+
+  return false;
+}
+
+export const findByPullRequest = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    repoFullName: v.string(),
+    pullRequestNumber: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const trimmedRepo = args.repoFullName.trim();
+    const normalizedRepo = normalizeRepoFullName(trimmedRepo);
+    const targetNumber = Math.trunc(args.pullRequestNumber);
+    if (!Number.isFinite(targetNumber)) {
+      return null;
+    }
+
+    const tasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_team_user", (q) =>
+        q.eq("teamId", teamId).eq("userId", userId),
+      )
+      .filter((q) => q.eq(q.field("projectFullName"), trimmedRepo))
+      .collect();
+
+    let bestMatch:
+      | {
+          task: Doc<"tasks">;
+          run: Doc<"taskRuns">;
+        }
+      | null = null;
+
+    for (const task of tasks) {
+      const runs = await ctx.db
+        .query("taskRuns")
+        .withIndex("by_task", (q) => q.eq("taskId", task._id))
+        .order("desc")
+        .collect();
+
+      for (const run of runs) {
+        if (run.teamId !== teamId || run.userId !== userId) {
+          continue;
+        }
+        if (
+          runMatchesPullRequest({
+            run,
+            normalizedTargetRepo: normalizedRepo,
+            targetNumber,
+          })
+        ) {
+          if (
+            !bestMatch ||
+            (run.updatedAt ?? 0) > (bestMatch.run.updatedAt ?? 0)
+          ) {
+            bestMatch = { task, run };
+          }
+          break;
+        }
+      }
+    }
+
+    if (!bestMatch) {
+      return null;
+    }
+
+    return {
+      taskId: bestMatch.task._id,
+      taskText: bestMatch.task.text,
+      taskIsArchived: Boolean(bestMatch.task.isArchived),
+      runId: bestMatch.run._id,
+      runStatus: bestMatch.run.status,
+      runIsArchived: Boolean(bestMatch.run.isArchived),
+      runSummary: bestMatch.run.summary ?? null,
+    };
+  },
+});
+
 const SYSTEM_BRANCH_USER_ID = "__system__";
 
 async function fetchBranchMetadataForRepo(
