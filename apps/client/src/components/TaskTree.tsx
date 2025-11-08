@@ -1154,6 +1154,34 @@ function TaskRunTreeInner({
     runLeadingIcon
   );
 
+  const runSecondary = useMemo(() => {
+    const environment = run.environment;
+    if (!environment) {
+      return null;
+    }
+
+    const parts: string[] = [];
+    const envName = environment.name?.trim();
+    if (envName) {
+      parts.push(envName);
+    }
+
+    const selectedRepos = (environment.selectedRepos ?? [])
+      .map((repo) => repo?.trim())
+      .filter((repo): repo is string => Boolean(repo));
+
+    if (selectedRepos.length > 0) {
+      if (selectedRepos.length <= 2) {
+        parts.push(selectedRepos.join(", "));
+      } else {
+        const [firstRepo, secondRepo] = selectedRepos;
+        parts.push(`${firstRepo}, ${secondRepo} +${selectedRepos.length - 2} more`);
+      }
+    }
+
+    return parts.length > 0 ? parts.join(" • ") : null;
+  }, [run.environment]);
+
   // Generate VSCode URL if available
   const hasActiveVSCode = run.vscode?.status === "running";
   const vscodeUrl = useMemo(
@@ -1243,6 +1271,7 @@ function TaskRunTreeInner({
               titleClassName="text-[13px] text-neutral-700 dark:text-neutral-300"
               titleSuffix={runNumberSuffix ?? undefined}
               meta={leadingContent}
+              secondary={runSecondary ?? undefined}
             />
           </Link>
         </ContextMenu.Trigger>
