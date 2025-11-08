@@ -16,6 +16,7 @@ import {
   TASK_RUN_IFRAME_SANDBOX,
 } from "../lib/preloadTaskRunIframes";
 import { shouldUseServerIframePreflight } from "@/hooks/useIframePreflight";
+import { isElectron } from "@/lib/electron";
 import {
   localVSCodeServeWebQueryOptions,
   useLocalVSCodeServeWebQuery,
@@ -129,6 +130,73 @@ function VSCodeComponent() {
   );
 
   const isEditorBusy = !hasWorkspace || iframeStatus !== "loaded";
+
+  useEffect(() => {
+    if (!isElectron || !hasWorkspace) {
+      return;
+    }
+
+    if (typeof window === "undefined" || typeof document === "undefined") {
+      return;
+    }
+
+    let pendingFocusTimeout: number | null = null;
+
+    const focusIframe = () => {
+      if (pendingFocusTimeout !== null) {
+        window.clearTimeout(pendingFocusTimeout);
+      }
+
+      pendingFocusTimeout = window.setTimeout(() => {
+        pendingFocusTimeout = null;
+
+        if (
+          typeof document === "undefined" ||
+          document.visibilityState !== "visible" ||
+          !document.hasFocus()
+        ) {
+          return;
+        }
+
+        const iframe = document.querySelector(
+          `[data-iframe-key="${persistKey}"] iframe`
+        ) as HTMLIFrameElement | null;
+
+        if (!iframe) {
+          return;
+        }
+
+        requestAnimationFrame(() => {
+          try {
+            iframe.contentWindow?.focus();
+          } catch {
+            // Ignore focus errors from cross-origin frames
+          }
+
+          if (typeof iframe.focus === "function") {
+            try {
+              iframe.focus();
+            } catch {
+              // Ignore focus errors if the iframe rejects focus
+            }
+          }
+        });
+      }, 150);
+    };
+
+    // Ensure VSCode regains keyboard focus when returning to the Electron app.
+    window.addEventListener("focus", focusIframe);
+    if (document.hasFocus()) {
+      focusIframe();
+    }
+
+    return () => {
+      window.removeEventListener("focus", focusIframe);
+      if (pendingFocusTimeout !== null) {
+        window.clearTimeout(pendingFocusTimeout);
+      }
+    };
+  }, [hasWorkspace, persistKey]);
 
   return (
     <div className="flex flex-col grow bg-neutral-50 dark:bg-black">
