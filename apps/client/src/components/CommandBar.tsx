@@ -1771,20 +1771,26 @@ export function CommandBar({
         : []),
     ];
 
+    // Show first 9 tasks with numbers when not searching, all tasks when searching
+    const tasksToShow = search.trim() ? allTasks : allTasks?.slice(0, 9);
     const taskEntries =
-      allTasks && allTasks.length > 0
-        ? allTasks.slice(0, 9).flatMap<CommandListEntry>((task, index) => {
+      tasksToShow && tasksToShow.length > 0
+        ? tasksToShow.flatMap<CommandListEntry>((task, index) => {
+            // Only show number badges for first 9 tasks when not searching
+            const showNumberBadge = !search.trim() && index < 9;
+            const numberLabel = index + 1;
+
             const title =
-              task.pullRequestTitle || task.text || `Task ${index + 1}`;
+              task.pullRequestTitle || task.text || `Task ${numberLabel}`;
             const keywords = compactStrings([
               title,
               task.text,
               task.pullRequestTitle,
-              `task ${index + 1}`,
+              showNumberBadge ? `task ${numberLabel}` : undefined,
             ]);
-            const baseSearch = buildSearchText(title, keywords, [
-              `${index + 1}`,
-            ]);
+            const baseSearch = showNumberBadge
+              ? buildSearchText(title, keywords, [`${numberLabel}`])
+              : buildSearchText(title, keywords);
             const statusLabel = task.isCompleted ? "completed" : "in progress";
             const statusClassName = task.isCompleted
               ? "text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
@@ -1793,7 +1799,9 @@ export function CommandBar({
 
             const entriesForTask: CommandListEntry[] = [
               {
-                value: `${index + 1}:task:${task._id}`,
+                value: showNumberBadge
+                  ? `${numberLabel}:task:${task._id}`
+                  : `task:${task._id}`,
                 label: title,
                 keywords,
                 searchText: baseSearch,
@@ -1801,9 +1809,11 @@ export function CommandBar({
                 execute: () => handleSelect(`task:${task._id}`),
                 renderContent: () => (
                   <>
-                    <span className="flex h-5 w-5 items-center justify-center rounded text-xs font-semibold bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 group-data-[selected=true]:bg-neutral-300 dark:group-data-[selected=true]:bg-neutral-600">
-                      {index + 1}
-                    </span>
+                    {showNumberBadge && (
+                      <span className="flex h-5 w-5 items-center justify-center rounded text-xs font-semibold bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 group-data-[selected=true]:bg-neutral-300 dark:group-data-[selected=true]:bg-neutral-600">
+                        {numberLabel}
+                      </span>
+                    )}
                     <span className="flex-1 truncate text-sm">{title}</span>
                     <span className={statusClassName}>{statusLabel}</span>
                   </>
@@ -1814,21 +1824,27 @@ export function CommandBar({
             if (run) {
               const vsKeywords = [...keywords, "vs", "vscode"];
               entriesForTask.push({
-                value: `${index + 1} vs:task:${task._id}`,
+                value: showNumberBadge
+                  ? `${numberLabel} vs:task:${task._id}`
+                  : `vs:task:${task._id}`,
                 label: `${title} (VS)`,
                 keywords: vsKeywords,
-                searchText: buildSearchText(`${title} VS`, vsKeywords, [
-                  `${index + 1} vs`,
-                  `${index + 1}vs`,
-                  `${index + 1}v`,
-                ]),
+                searchText: showNumberBadge
+                  ? buildSearchText(`${title} VS`, vsKeywords, [
+                      `${numberLabel} vs`,
+                      `${numberLabel}vs`,
+                      `${numberLabel}v`,
+                    ])
+                  : buildSearchText(`${title} VS`, vsKeywords),
                 className: taskCommandItemClassName,
                 execute: () => handleSelect(`task:${task._id}:vs`),
                 renderContent: () => (
                   <>
-                    <span className="flex h-5 w-8 items-center justify-center rounded text-xs font-semibold bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 group-data-[selected=true]:bg-neutral-300 dark:group-data-[selected=true]:bg-neutral-600">
-                      {index + 1} VS
-                    </span>
+                    {showNumberBadge && (
+                      <span className="flex h-5 w-8 items-center justify-center rounded text-xs font-semibold bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 group-data-[selected=true]:bg-neutral-300 dark:group-data-[selected=true]:bg-neutral-600">
+                        {numberLabel} VS
+                      </span>
+                    )}
                     <span className="flex-1 truncate text-sm">{title}</span>
                     <span className={statusClassName}>{statusLabel}</span>
                   </>
@@ -1837,21 +1853,27 @@ export function CommandBar({
 
               const diffKeywords = [...keywords, "git", "diff"];
               entriesForTask.push({
-                value: `${index + 1} git diff:task:${task._id}`,
+                value: showNumberBadge
+                  ? `${numberLabel} git diff:task:${task._id}`
+                  : `git diff:task:${task._id}`,
                 label: `${title} (git diff)`,
                 keywords: diffKeywords,
-                searchText: buildSearchText(`${title} git diff`, diffKeywords, [
-                  `${index + 1} git diff`,
-                  `${index + 1}gitdiff`,
-                  `${index + 1}gd`,
-                ]),
+                searchText: showNumberBadge
+                  ? buildSearchText(`${title} git diff`, diffKeywords, [
+                      `${numberLabel} git diff`,
+                      `${numberLabel}gitdiff`,
+                      `${numberLabel}gd`,
+                    ])
+                  : buildSearchText(`${title} git diff`, diffKeywords),
                 className: taskCommandItemClassName,
                 execute: () => handleSelect(`task:${task._id}:gitdiff`),
                 renderContent: () => (
                   <>
-                    <span className="flex h-5 px-2 items-center justify-center rounded text-xs font-semibold bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 group-data-[selected=true]:bg-neutral-300 dark:group-data-[selected=true]:bg-neutral-600">
-                      {index + 1} git diff
-                    </span>
+                    {showNumberBadge && (
+                      <span className="flex h-5 px-2 items-center justify-center rounded text-xs font-semibold bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 group-data-[selected=true]:bg-neutral-300 dark:group-data-[selected=true]:bg-neutral-600">
+                        {numberLabel} git diff
+                      </span>
+                    )}
                     <span className="flex-1 truncate text-sm">{title}</span>
                     <span className={statusClassName}>{statusLabel}</span>
                   </>
