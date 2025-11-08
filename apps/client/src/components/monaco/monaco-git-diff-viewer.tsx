@@ -843,6 +843,28 @@ function createDiffEditorMount({
       applyLayout();
     });
 
+    // Prevent cursor position changes on click in read-only mode
+    // Store the current scroll and selection state
+    const preventCursorJump = (targetEditor: editor.IStandaloneCodeEditor) => {
+      targetEditor.onMouseDown(() => {
+        const currentScrollTop = targetEditor.getScrollTop();
+        const currentScrollLeft = targetEditor.getScrollLeft();
+        const currentSelection = targetEditor.getSelection();
+
+        // Restore scroll and selection after Monaco processes the click
+        requestAnimationFrame(() => {
+          targetEditor.setScrollTop(currentScrollTop);
+          targetEditor.setScrollLeft(currentScrollLeft);
+          if (currentSelection) {
+            targetEditor.setSelection(currentSelection);
+          }
+        });
+      });
+    };
+
+    preventCursorJump(originalEditor);
+    preventCursorJump(modifiedEditor);
+
     disposables.push(
       onOriginalContentChange,
       onModifiedContentChange,
