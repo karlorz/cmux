@@ -1511,3 +1511,46 @@ export const getRunningContainersByCleanupPriority = authQuery({
     };
   },
 });
+
+export const getByPullRequest = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    owner: v.string(),
+    repo: v.string(),
+    prNumber: v.number(),
+  },
+  handler: async (ctx, { teamSlugOrId, owner, repo, prNumber }) => {
+    const teamId = await resolveTeamIdLoose(ctx, teamSlugOrId);
+    if (!teamId) return null;
+
+    const repoFullName = `${owner}/${repo}`;
+
+    // Try to find by pullRequests array first (for multi-repo PRs)
+    const allRuns = await ctx.db
+      .query("taskRuns")
+      .withIndex("by_team_user", (q) => q.eq("teamId", teamId))
+      .collect();
+
+    for (const run of allRuns) {
+      if (run.pullRequests) {
+        const matchingPr = run.pullRequests.find(
+          (pr) => pr.repoFullName === repoFullName && pr.number === prNumber
+        );
+        if (matchingPr) {
+          return run;
+        }
+      }
+    }
+
+    // Fallback: try to find by pullRequestUrl for single-repo PRs
+    const prUrl = `https://github.com/${owner}/${repo}/pull/${prNumber}`;
+    const runByUrl = await ctx.db
+      .query("taskRuns")
+      .withIndex("by_team_pr_url", (q) =>
+        q.eq("teamId", teamId).eq("pullRequestUrl", prUrl)
+      )
+      .first();
+
+    return runByUrl ?? null;
+  },
+});

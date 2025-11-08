@@ -14,6 +14,7 @@ import { MergeButton, type MergeMethod } from "@/components/ui/merge-button";
 import { postApiIntegrationsGithubPrsCloseMutation, postApiIntegrationsGithubPrsMergeSimpleMutation } from "@cmux/www-openapi-client/react-query";
 import type { PostApiIntegrationsGithubPrsCloseData, PostApiIntegrationsGithubPrsCloseResponse, PostApiIntegrationsGithubPrsMergeSimpleData, PostApiIntegrationsGithubPrsMergeSimpleResponse, Options } from "@cmux/www-openapi-client";
 import { useCombinedWorkflowData, WorkflowRunsBadge, WorkflowRunsSection } from "@/components/WorkflowRunsSection";
+import { Link } from "@tanstack/react-router";
 
 const RUN_PENDING_STATUSES = new Set(["in_progress", "queued", "waiting", "pending"]);
 const RUN_PASSING_CONCLUSIONS = new Set(["success", "neutral", "skipped"]);
@@ -146,6 +147,18 @@ export function PullRequestDetailView({
     prNumber: Number(number),
     commitRef: currentPR?.headSha ?? undefined,
   });
+
+  const associatedTaskRun = useConvexQuery(
+    api.taskRuns.getByPullRequest,
+    currentPR
+      ? {
+          teamSlugOrId,
+          owner,
+          repo,
+          prNumber: currentPR.number,
+        }
+      : "skip"
+  );
 
   const commitRefForLogging = currentPR?.headSha ?? null;
 
@@ -448,6 +461,25 @@ export function PullRequestDetailView({
                   {currentPR.repoFullName}#{currentPR.number} •{" "}
                   {currentPR.authorLogin || ""}
                 </span>
+                {associatedTaskRun && (
+                  <>
+                    <span className="text-neutral-500 dark:text-neutral-600 select-none">
+                      •
+                    </span>
+                    <Link
+                      to="/$teamSlugOrId/task/$taskId/run/$runId"
+                      params={{
+                        teamSlugOrId,
+                        taskId: associatedTaskRun.taskId,
+                        runId: associatedTaskRun._id,
+                        taskRunId: associatedTaskRun._id,
+                      }}
+                      className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                      View task run
+                    </Link>
+                  </>
+                )}
                 <span className="text-neutral-500 dark:text-neutral-600 select-none">
                   •
                 </span>
