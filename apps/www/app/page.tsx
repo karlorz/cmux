@@ -17,6 +17,7 @@ import cmuxDemo1 from "@/docs/assets/cmux1.png";
 import cmuxDemo2 from "@/docs/assets/cmux2.png";
 import cmuxDemo3 from "@/docs/assets/cmux3.png";
 import { fetchLatestRelease } from "@/lib/fetch-latest-release";
+import { fetchRepoStars } from "@/lib/github/fetch-repo-stars";
 
 const heroHighlights = [
   {
@@ -147,8 +148,8 @@ const verificationHighlights = [
 ];
 
 export default async function LandingPage() {
-  const { fallbackUrl, latestVersion, macDownloadUrls } =
-    await fetchLatestRelease();
+  const [{ fallbackUrl, latestVersion, macDownloadUrls }, githubStarCount] =
+    await Promise.all([fetchLatestRelease(), fetchRepoStars()]);
 
   return (
     <div className="relative flex min-h-dvh flex-col bg-[#030712] text-foreground">
@@ -163,6 +164,7 @@ export default async function LandingPage() {
 
       <SiteHeader
         fallbackUrl={fallbackUrl}
+        githubStarCount={githubStarCount}
         latestVersion={latestVersion}
         macDownloadUrls={macDownloadUrls}
       />

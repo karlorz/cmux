@@ -2,9 +2,10 @@
 
 import CmuxLogo from "@/components/logo/cmux-logo";
 import { MacDownloadLink } from "@/components/mac-download-link";
+import { CMUX_GITHUB_REPO_URL } from "@/lib/constants";
 import type { MacDownloadUrls } from "@/lib/releases";
 import clsx from "clsx";
-import { Download } from "lucide-react";
+import { Download, Star } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
@@ -22,6 +23,7 @@ type SiteHeaderProps = {
   latestVersion?: string | null;
   macDownloadUrls?: MacDownloadUrls;
   extraEndContent?: ReactNode;
+  githubStarCount?: number | null;
 };
 
 const DEFAULT_DOWNLOAD_URLS: MacDownloadUrls = {
@@ -37,9 +39,20 @@ export function SiteHeader({
   latestVersion,
   macDownloadUrls,
   extraEndContent,
+  githubStarCount = null,
 }: SiteHeaderProps) {
   const effectiveUrls = macDownloadUrls ?? DEFAULT_DOWNLOAD_URLS;
   const [isScrolled, setIsScrolled] = useState(false);
+  const formattedStarCount =
+    typeof githubStarCount === "number"
+      ? new Intl.NumberFormat("en-US", {
+          notation: "compact",
+          maximumFractionDigits: 1,
+        }).format(githubStarCount)
+      : null;
+  const githubLinkLabel = formattedStarCount
+    ? `cmux on GitHub — ${formattedStarCount} stars`
+    : "cmux on GitHub";
 
   useEffect(() => {
     const handleScroll = () => {
@@ -89,14 +102,6 @@ export function SiteHeader({
           </Link> */}
           <a
             className="text-neutral-300 transition hover:text-white"
-            href="https://github.com/manaflow-ai/cmux"
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            GitHub
-          </a>
-          <a
-            className="text-neutral-300 transition hover:text-white"
             href="https://cal.com/team/manaflow/meeting"
             rel="noopener noreferrer"
             target="_blank"
@@ -106,6 +111,22 @@ export function SiteHeader({
         </nav>
         <div className="flex items-center gap-3">
           {extraEndContent}
+          <a
+            aria-label={githubLinkLabel}
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/15 px-3 py-1.5 text-xs font-semibold text-white transition hover:border-white/30 hover:bg-white/10 sm:px-4 sm:py-2 sm:text-sm"
+            href={CMUX_GITHUB_REPO_URL}
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            <Star className="h-4 w-4 text-yellow-300" aria-hidden fill="currentColor" />
+            <span className="hidden sm:inline">GitHub</span>
+            <span className="sm:hidden">Star</span>
+            {formattedStarCount ? (
+              <span className="rounded-full bg-white/10 px-2 py-0.5 text-[0.7rem] font-semibold text-yellow-200 sm:text-xs">
+                {formattedStarCount}
+              </span>
+            ) : null}
+          </a>
           {showDownload ? (
             <MacDownloadLink
               autoDetect

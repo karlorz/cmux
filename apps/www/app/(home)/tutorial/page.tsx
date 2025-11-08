@@ -1,5 +1,6 @@
 import { SiteHeader } from "@/components/site-header";
 import { fetchLatestRelease } from "@/lib/fetch-latest-release";
+import { fetchRepoStars } from "@/lib/github/fetch-repo-stars";
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
@@ -528,7 +529,8 @@ function Placeholder({ label }: { label: string }) {
 }
 
 export default async function TutorialPage() {
-  const { fallbackUrl, latestVersion, macDownloadUrls } = await fetchLatestRelease();
+  const [{ fallbackUrl, latestVersion, macDownloadUrls }, githubStarCount] =
+    await Promise.all([fetchLatestRelease(), fetchRepoStars()]);
 
   return (
     <div className="relative min-h-dvh overflow-hidden bg-[#030712] text-foreground">
@@ -540,6 +542,7 @@ export default async function TutorialPage() {
 
       <SiteHeader
         fallbackUrl={fallbackUrl}
+        githubStarCount={githubStarCount}
         latestVersion={latestVersion}
         macDownloadUrls={macDownloadUrls}
         linkPrefix="/"
