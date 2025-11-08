@@ -1,14 +1,16 @@
-import { TaskTree } from "@/components/TaskTree";
+import { PinnedTaskRun, TaskTree } from "@/components/TaskTree";
 import { TaskTreeSkeleton } from "@/components/TaskTreeSkeleton";
 import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
+import { useSidebarPins } from "@/hooks/useSidebarPins";
 import { isElectron } from "@/lib/electron";
-import { type Doc } from "@cmux/convex/dataModel";
+import { type Doc, type Id } from "@cmux/convex/dataModel";
 import type { LinkProps } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
 import { Home, Plus, Server, Settings } from "lucide-react";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ComponentType,
@@ -80,6 +82,60 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
   });
 
   const { expandTaskIds } = useExpandTasks();
+  const {
+    pinnedTasks,
+    pinnedRuns,
+    isTaskPinned,
+    setTaskPinned,
+    isRunPinned,
+    setRunPinned,
+  } = useSidebarPins(teamSlugOrId);
+
+  const pinControls = useMemo(
+    () => ({
+      isTaskPinned,
+      setTaskPinned,
+      isRunPinned,
+      setRunPinned,
+    }),
+    [isRunPinned, isTaskPinned, setRunPinned, setTaskPinned]
+  );
+
+  const tasksById = useMemo(() => {
+    if (!tasks) {
+      return new Map<Id<"tasks">, Doc<"tasks">>();
+    }
+    return new Map<Id<"tasks">, Doc<"tasks">>(
+      tasks.map((task) => [task._id, task])
+    );
+  }, [tasks]);
+
+  const pinnedTaskDocs = useMemo(
+    () =>
+      pinnedTasks
+        .map((entry) => tasksById.get(entry.taskId))
+        .filter((task): task is Doc<"tasks"> => Boolean(task)),
+    [pinnedTasks, tasksById]
+  );
+
+  const pinnedTaskIdSet = useMemo(() => {
+    return new Set(pinnedTaskDocs.map((task) => task._id));
+  }, [pinnedTaskDocs]);
+
+  const visibleTasks = useMemo(() => {
+    if (tasks === undefined) {
+      return undefined;
+    }
+    return tasks.filter((task) => !pinnedTaskIdSet.has(task._id));
+  }, [tasks, pinnedTaskIdSet]);
+
+  const hasPinnedItems = pinnedTaskDocs.length > 0 || pinnedRuns.length > 0;
+  const shouldShowPinnedTaskSkeleton =
+    tasks === undefined && pinnedTasks.length > 0;
+  const pinnedTaskSkeletonCount = Math.min(
+    Math.max(pinnedTasks.length, 1),
+    5
+  );
 
   useEffect(() => {
     localStorage.setItem("sidebarWidth", String(width));
@@ -281,6 +337,40 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
             </div>
           </div>
 
+          {hasPinnedItems ? (
+            <div className="mt-4">
+              <p className="px-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400 select-none">
+                Pinned
+              </p>
+              <div className="ml-2 pt-px space-y-px">
+                {shouldShowPinnedTaskSkeleton ? (
+                  <TaskTreeSkeleton count={pinnedTaskSkeletonCount} />
+                ) : (
+                  pinnedTaskDocs.map((task) => (
+                    <TaskTree
+                      key={`pinned-${task._id}`}
+                      task={task}
+                      defaultExpanded={
+                        expandTaskIds?.includes(task._id) ?? false
+                      }
+                      teamSlugOrId={teamSlugOrId}
+                      pinControls={pinControls}
+                    />
+                  ))
+                )}
+                {pinnedRuns.map((entry) => (
+                  <PinnedTaskRun
+                    key={`${entry.taskId}:${entry.runId}`}
+                    teamSlugOrId={teamSlugOrId}
+                    taskId={entry.taskId}
+                    runId={entry.runId}
+                    pinControls={pinControls}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           <div className="mt-2 flex flex-col gap-0.5">
             <SidebarSectionLink
               to="/$teamSlugOrId/workspaces"
@@ -293,15 +383,18 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
 
           <div className="ml-2 pt-px">
             <div className="space-y-px">
-              {tasks === undefined ? (
+              {visibleTasks === undefined ? (
                 <TaskTreeSkeleton count={5} />
-              ) : tasks && tasks.length > 0 ? (
-                tasks.map((task) => (
+              ) : visibleTasks.length > 0 ? (
+                visibleTasks.map((task) => (
                   <TaskTree
                     key={task._id}
                     task={task}
-                    defaultExpanded={expandTaskIds?.includes(task._id) ?? false}
+                    defaultExpanded={
+                      expandTaskIds?.includes(task._id) ?? false
+                    }
                     teamSlugOrId={teamSlugOrId}
+                    pinControls={pinControls}
                   />
                 ))
               ) : (
