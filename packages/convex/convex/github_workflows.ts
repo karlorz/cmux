@@ -11,13 +11,18 @@
  */
 import { v } from "convex/values";
 import { getTeamId } from "../_shared/team";
-import { internalMutation } from "./_generated/server";
+import { internal } from "./_generated/api";
+import type { Doc } from "./_generated/dataModel";
+import { internalMutation, type MutationCtx } from "./_generated/server";
 import { authQuery } from "./users/utils";
 import type { WorkflowRunEvent } from "@octokit/webhooks-types";
 
 type WorkflowRunWithCompletedAt = NonNullable<WorkflowRunEvent["workflow_run"]> & {
   completed_at?: string | null;
 };
+
+type WorkflowRunDoc = Doc<"githubWorkflowRuns">;
+type WorkflowRunUpdate = Omit<WorkflowRunDoc, "_id" | "_creationTime">;
 
 function normalizeTimestamp(
   value: string | number | null | undefined,
@@ -28,6 +33,73 @@ function normalizeTimestamp(
   }
   const parsed = Date.parse(value);
   return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+function hasWorkflowRunChanges(
+  existing: WorkflowRunDoc,
+  incoming: WorkflowRunUpdate,
+): boolean {
+  for (const key of Object.keys(incoming) as Array<keyof WorkflowRunUpdate>) {
+    if (existing[key] !== incoming[key]) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function shouldUpdateWorkflowRun(
+  existing: WorkflowRunDoc,
+  incoming: WorkflowRunUpdate,
+): boolean {
+  if (!hasWorkflowRunChanges(existing, incoming)) {
+    return false;
+  }
+
+  const incomingUpdatedAt = incoming.updatedAt;
+  const existingUpdatedAt = existing.updatedAt;
+
+  const incomingIsOlder =
+    incomingUpdatedAt !== undefined &&
+    existingUpdatedAt !== undefined &&
+    incomingUpdatedAt < existingUpdatedAt;
+
+  const addsCompletion = !existing.runCompletedAt && incoming.runCompletedAt !== undefined;
+
+  if (incomingIsOlder && !addsCompletion) {
+    return false;
+  }
+
+  return true;
+}
+
+function diffWorkflowRunFields(
+  existing: WorkflowRunDoc,
+  incoming: WorkflowRunUpdate,
+): Partial<WorkflowRunDoc> {
+  const patch: Partial<WorkflowRunDoc> = {};
+  for (const key of Object.keys(incoming) as Array<keyof WorkflowRunUpdate>) {
+    const typedKey = key as keyof WorkflowRunDoc;
+    if (existing[typedKey] !== incoming[key]) {
+      (patch as Record<string, unknown>)[typedKey as string] = incoming[key];
+    }
+  }
+  return patch;
+}
+
+function stripWorkflowRunDoc(doc: WorkflowRunDoc): WorkflowRunUpdate {
+  const { _id: _omitId, _creationTime: _omitCreated, ...rest } = doc;
+  return rest;
+}
+
+async function scheduleWorkflowRunDedup(
+  ctx: MutationCtx,
+  runId: number,
+): Promise<void> {
+  await ctx.scheduler.runAfter(
+    1000,
+    internal.github_workflows.cleanupDuplicateWorkflowRuns,
+    { runId },
+  );
 }
 
 export const upsertWorkflowRunFromWebhook = internalMutation({
@@ -104,7 +176,7 @@ export const upsertWorkflowRunFromWebhook = internalMutation({
     }
 
     // Prepare the document
-    const workflowRunDoc = {
+    const workflowRunDoc: WorkflowRunUpdate = {
       provider: "github" as const,
       installationId,
       repositoryId: payload.repository?.id,
@@ -132,33 +204,90 @@ export const upsertWorkflowRunFromWebhook = internalMutation({
     };
 
 
-    // Upsert the workflow run - fetch all matching records to handle duplicates
-    const existingRecords = await ctx.db
+    const existingRecord = await ctx.db
       .query("githubWorkflowRuns")
       .withIndex("by_runId", (q) => q.eq("runId", runId))
-      .collect();
+      .first();
 
-    if (existingRecords.length > 0) {
-      // Update the first record
-      await ctx.db.patch(existingRecords[0]._id, workflowRunDoc);
-
-      // Delete any duplicates
-      if (existingRecords.length > 1) {
-        console.warn("[upsertWorkflowRun] Found duplicates, cleaning up", {
-          runId,
-          count: existingRecords.length,
-          duplicateIds: existingRecords.slice(1).map(r => r._id),
-        });
-        for (const duplicate of existingRecords.slice(1)) {
-          await ctx.db.delete(duplicate._id);
-        }
-      }
-    } else {
-      // Insert new run
+    if (!existingRecord) {
       await ctx.db.insert("githubWorkflowRuns", workflowRunDoc);
+      await scheduleWorkflowRunDedup(ctx, runId);
+      return;
     }
+
+    if (!shouldUpdateWorkflowRun(existingRecord, workflowRunDoc)) {
+      return;
+    }
+
+    const patch = diffWorkflowRunFields(existingRecord, workflowRunDoc);
+    if (Object.keys(patch).length === 0) {
+      return;
+    }
+
+    await ctx.db.patch(existingRecord._id, patch);
   },
 });
+
+export const cleanupDuplicateWorkflowRuns = internalMutation({
+  args: {
+    runId: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await cleanupWorkflowRunDuplicates(ctx, args.runId);
+  },
+});
+
+async function cleanupWorkflowRunDuplicates(
+  ctx: MutationCtx,
+  runId: number,
+): Promise<void> {
+  const runs = await ctx.db
+    .query("githubWorkflowRuns")
+    .withIndex("by_runId", (q) => q.eq("runId", runId))
+    .collect();
+
+  if (runs.length <= 1) {
+    return;
+  }
+
+  const sorted = [...runs].sort((a, b) => {
+    if (Boolean(a.runCompletedAt) !== Boolean(b.runCompletedAt)) {
+      return Boolean(a.runCompletedAt) ? -1 : 1;
+    }
+    const updatedDiff = (b.updatedAt ?? 0) - (a.updatedAt ?? 0);
+    if (updatedDiff !== 0) {
+      return updatedDiff;
+    }
+    return b._creationTime - a._creationTime;
+  });
+
+  const [keeper, ...duplicates] = sorted;
+  let mergedDoc: WorkflowRunDoc = { ...keeper } as WorkflowRunDoc;
+  for (const candidate of duplicates) {
+    const candidateData = stripWorkflowRunDoc(candidate);
+    if (shouldUpdateWorkflowRun(mergedDoc, candidateData)) {
+      mergedDoc = { ...mergedDoc, ...candidateData };
+    }
+  }
+
+  const mergedPatch = diffWorkflowRunFields(
+    keeper,
+    stripWorkflowRunDoc(mergedDoc),
+  );
+  if (Object.keys(mergedPatch).length > 0) {
+    await ctx.db.patch(keeper._id, mergedPatch);
+  }
+
+  for (const duplicate of duplicates) {
+    await ctx.db.delete(duplicate._id);
+  }
+
+  console.info("[cleanupDuplicateWorkflowRuns]", {
+    runId,
+    kept: keeper._id,
+    removedCount: duplicates.length,
+  });
+}
 
 // Query to get workflow runs for a team
 export const getWorkflowRuns = authQuery({
