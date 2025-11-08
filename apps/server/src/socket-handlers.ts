@@ -1,6 +1,6 @@
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
-import type { LocalWorkspaceConfigResponse } from "@cmux/www-openapi-client";
+import type { WorkspaceConfigResponse } from "@cmux/www-openapi-client";
 import {
   ArchiveTaskSchema,
   GitFullDiffRequestSchema,
@@ -680,22 +680,22 @@ export function setupSocketHandlers(
             : undefined);
         const branch = requestedBranch?.trim();
 
-        let localWorkspaceConfig: LocalWorkspaceConfigResponse = null;
+        let workspaceConfig: WorkspaceConfigResponse = null;
         if (projectFullName) {
           try {
-            const { getApiLocalWorkspaceConfigs } =
+            const { getApiWorkspaceConfigs } =
               await getWwwOpenApiModule();
-            const response = await getApiLocalWorkspaceConfigs({
+            const response = await getApiWorkspaceConfigs({
               client: getWwwClient(),
               query: {
                 teamSlugOrId,
                 projectFullName,
               },
             });
-            localWorkspaceConfig = response.data ?? null;
+            workspaceConfig = response.data ?? null;
           } catch (error) {
             serverLogger.warn(
-              "[create-local-workspace] Failed to load saved local workspace config",
+              "[create-local-workspace] Failed to load saved workspace config",
               {
                 projectFullName,
                 error,
@@ -764,11 +764,11 @@ export function setupSocketHandlers(
           };
 
           const applyLocalWorkspaceConfigIfPresent = async () => {
-            if (!localWorkspaceConfig || !taskRunId) {
+            if (!workspaceConfig || !taskRunId) {
               return;
             }
 
-            const envVarsContent = localWorkspaceConfig.envVarsContent ?? "";
+            const envVarsContent = workspaceConfig.envVarsContent ?? "";
             const trimmedEnvVars = envVarsContent.trim();
             let parsedEnvVars: Record<string, string> = {};
 
@@ -804,7 +804,7 @@ export function setupSocketHandlers(
             }
 
             const maintenanceScript =
-              localWorkspaceConfig.maintenanceScript?.trim() ?? "";
+              workspaceConfig.maintenanceScript?.trim() ?? "";
             if (!maintenanceScript) {
               return;
             }

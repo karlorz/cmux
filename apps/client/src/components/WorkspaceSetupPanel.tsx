@@ -27,7 +27,6 @@ export function WorkspaceSetupPanel({
   teamSlugOrId,
   projectFullName,
 }: WorkspaceSetupPanelProps) {
-  // Use the unified query for both modes
   const configQuery = useQuery({
     ...getApiWorkspaceConfigsOptions({
       query: {
@@ -38,7 +37,6 @@ export function WorkspaceSetupPanel({
     enabled: Boolean(projectFullName),
   });
 
-  // Use the unified mutation for both modes
   const saveMutation = useRQMutation(postApiWorkspaceConfigsMutation());
 
   const [maintenanceScript, setMaintenanceScript] = useState("");
@@ -217,7 +215,7 @@ export function WorkspaceSetupPanel({
         <p className="text-xs text-blue-900/80 dark:text-blue-200/80">
           Set up scripts and environment variables for{" "}
           <span className="font-semibold">{projectFullName}</span>. This
-          configuration will be used when creating workspaces.
+          configuration will be used for both local and cloud workspaces.
         </p>
       </div>
 

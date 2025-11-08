@@ -21,8 +21,6 @@ import {
   teamsRouter,
   usersRouter,
   iframePreflightRouter,
-  localWorkspaceConfigsRouter,
-  cloudRepoConfigsRouter,
   workspaceConfigsRouter,
 } from "@/lib/routes/index";
 import { authAnonymousRouter } from "@/lib/routes/auth.anonymous.route";
@@ -123,8 +121,6 @@ app.route("/", sandboxesRouter);
 app.route("/", teamsRouter);
 app.route("/", branchRouter);
 app.route("/", codeReviewRouter);
-app.route("/", localWorkspaceConfigsRouter);
-app.route("/", cloudRepoConfigsRouter);
 app.route("/", workspaceConfigsRouter);
 
 // OpenAPI documentation

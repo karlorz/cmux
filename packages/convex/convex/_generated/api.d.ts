@@ -10,7 +10,6 @@
 
 import type * as apiKeys from "../apiKeys.js";
 import type * as backfill from "../backfill.js";
-import type * as cloudRepoConfigs from "../cloudRepoConfigs.js";
 import type * as codeReview from "../codeReview.js";
 import type * as codeReviewActions from "../codeReviewActions.js";
 import type * as codeReview_http from "../codeReview_http.js";
@@ -33,7 +32,6 @@ import type * as github_setup from "../github_setup.js";
 import type * as github_webhook from "../github_webhook.js";
 import type * as github_workflows from "../github_workflows.js";
 import type * as http from "../http.js";
-import type * as localWorkspaceConfigs from "../localWorkspaceConfigs.js";
 import type * as localWorkspaces from "../localWorkspaces.js";
 import type * as migrations from "../migrations.js";
 import type * as screenshots_http from "../screenshots_http.js";
@@ -70,7 +68,6 @@ import type {
 declare const fullApi: ApiFromModules<{
   apiKeys: typeof apiKeys;
   backfill: typeof backfill;
-  cloudRepoConfigs: typeof cloudRepoConfigs;
   codeReview: typeof codeReview;
   codeReviewActions: typeof codeReviewActions;
   codeReview_http: typeof codeReview_http;
@@ -93,7 +90,6 @@ declare const fullApi: ApiFromModules<{
   github_webhook: typeof github_webhook;
   github_workflows: typeof github_workflows;
   http: typeof http;
-  localWorkspaceConfigs: typeof localWorkspaceConfigs;
   localWorkspaces: typeof localWorkspaces;
   migrations: typeof migrations;
   screenshots_http: typeof screenshots_http;

@@ -524,16 +524,7 @@ const convexSchema = defineSchema({
     userId: v.string(),
     teamId: v.string(),
   }).index("by_team_user", ["teamId", "userId"]),
-  localWorkspaceConfigs: defineTable({
-    projectFullName: v.string(),
-    maintenanceScript: v.optional(v.string()),
-    dataVaultKey: v.optional(v.string()),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-    userId: v.string(),
-    teamId: v.string(),
-  }).index("by_team_user_repo", ["teamId", "userId", "projectFullName"]),
-  cloudRepoConfigs: defineTable({
+  workspaceConfigs: defineTable({
     projectFullName: v.string(),
     maintenanceScript: v.optional(v.string()),
     dataVaultKey: v.optional(v.string()),

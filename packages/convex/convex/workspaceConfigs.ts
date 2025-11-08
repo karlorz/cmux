@@ -34,9 +34,8 @@ export const get = authQuery({
       throw new Error("Authentication required");
     }
 
-    // Try to get from the unified local table (which is now the source of truth)
     const config = await ctx.db
-      .query("localWorkspaceConfigs")
+      .query("workspaceConfigs")
       .withIndex("by_team_user_repo", (q) =>
         q
           .eq("teamId", teamId)
@@ -45,21 +44,7 @@ export const get = authQuery({
       )
       .first();
 
-    // If not found, try the cloud table for backward compatibility
-    if (!config) {
-      const cloudConfig = await ctx.db
-        .query("cloudRepoConfigs")
-        .withIndex("by_team_user_repo", (q) =>
-          q
-            .eq("teamId", teamId)
-            .eq("userId", userId)
-            .eq("projectFullName", projectFullName),
-        )
-        .first();
-      return cloudConfig ?? null;
-    }
-
-    return config;
+    return config ?? null;
   },
 });
 
@@ -81,9 +66,9 @@ export const upsert = authMutation({
       throw new Error("Authentication required");
     }
 
-    // Check both tables for existing config
-    const existingLocal = await ctx.db
-      .query("localWorkspaceConfigs")
+    // Check for existing config
+    const existing = await ctx.db
+      .query("workspaceConfigs")
       .withIndex("by_team_user_repo", (q) =>
         q
           .eq("teamId", teamId)
@@ -92,60 +77,17 @@ export const upsert = authMutation({
       )
       .first();
 
-    const existingCloud = await ctx.db
-      .query("cloudRepoConfigs")
-      .withIndex("by_team_user_repo", (q) =>
-        q
-          .eq("teamId", teamId)
-          .eq("userId", userId)
-          .eq("projectFullName", projectFullName),
-      )
-      .first();
-
-    // If we have a config in the local table, update it
-    if (existingLocal) {
-      await ctx.db.patch(existingLocal._id, {
+    if (existing) {
+      await ctx.db.patch(existing._id, {
         maintenanceScript,
-        dataVaultKey: args.dataVaultKey ?? existingLocal.dataVaultKey,
+        dataVaultKey: args.dataVaultKey ?? existing.dataVaultKey,
         updatedAt: now,
       });
-
-      // Also update cloud config if it exists, to keep them in sync during migration
-      if (existingCloud) {
-        await ctx.db.patch(existingCloud._id, {
-          maintenanceScript,
-          dataVaultKey: args.dataVaultKey ?? existingCloud.dataVaultKey,
-          updatedAt: now,
-        });
-      }
-
-      return existingLocal._id;
+      return existing._id;
     }
 
-    // If we only have cloud config, migrate it to local table
-    if (existingCloud) {
-      const id = await ctx.db.insert("localWorkspaceConfigs", {
-        projectFullName,
-        maintenanceScript,
-        dataVaultKey: args.dataVaultKey ?? existingCloud.dataVaultKey,
-        createdAt: now,
-        updatedAt: now,
-        userId,
-        teamId,
-      });
-
-      // Update the cloud config too for backward compatibility
-      await ctx.db.patch(existingCloud._id, {
-        maintenanceScript,
-        dataVaultKey: args.dataVaultKey ?? existingCloud.dataVaultKey,
-        updatedAt: now,
-      });
-
-      return id;
-    }
-
-    // No existing config, create new in local table (source of truth)
-    const id = await ctx.db.insert("localWorkspaceConfigs", {
+    // No existing config, create new
+    const id = await ctx.db.insert("workspaceConfigs", {
       projectFullName,
       maintenanceScript,
       dataVaultKey: args.dataVaultKey,

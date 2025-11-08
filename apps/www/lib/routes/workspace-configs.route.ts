@@ -151,7 +151,6 @@ workspaceConfigsRouter.openapi(
     const envVarsContent = body.envVarsContent ?? "";
     let dataVaultKey = existing?.dataVaultKey;
     if (!dataVaultKey) {
-      // Use unified key without local/cloud prefix
       dataVaultKey = `workspace_${randomBytes(16).toString("hex")}`;
     }
 
