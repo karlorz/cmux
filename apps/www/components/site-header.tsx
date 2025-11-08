@@ -1,5 +1,6 @@
 "use client";
 
+import { GithubStarButton } from "@/components/github-star-button";
 import CmuxLogo from "@/components/logo/cmux-logo";
 import { MacDownloadLink } from "@/components/mac-download-link";
 import type { MacDownloadUrls } from "@/lib/releases";
@@ -106,6 +107,7 @@ export function SiteHeader({
         </nav>
         <div className="flex items-center gap-3">
           {extraEndContent}
+          <GithubStarButton />
           {showDownload ? (
             <MacDownloadLink
               autoDetect
