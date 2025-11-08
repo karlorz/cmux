@@ -19,7 +19,7 @@ import {
   aggregatePullRequestState,
   type RunPullRequestState,
 } from "@cmux/shared/pull-request-state";
-import { Link, useLocation, type LinkProps } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate, type LinkProps } from "@tanstack/react-router";
 import clsx from "clsx";
 import { useMutation, useQuery as useConvexQuery } from "convex/react";
 import { toast } from "sonner";
@@ -43,10 +43,13 @@ import {
   GitPullRequestClosed,
   GitPullRequestDraft,
   Globe,
+  Loader2,
   Monitor,
   Pencil,
+  Pin,
+  PinOff,
+  SquareArrowOutUpRight,
   TerminalSquare,
-  Loader2,
   XCircle,
 } from "lucide-react";
 import {
@@ -64,6 +67,7 @@ import {
   type ReactNode,
 } from "react";
 import { VSCodeIcon } from "./icons/VSCodeIcon";
+import { useSidebarPins } from "@/contexts/sidebar-pins/SidebarPinsProvider";
 import { SidebarListItem } from "./sidebar/SidebarListItem";
 import { annotateAgentOrdinals } from "./task-tree/annotateAgentOrdinals";
 
@@ -242,6 +246,44 @@ function updateRunArchiveStateLocal(
   return applyArchiveStateToRuns(runs, ids, archive);
 }
 
+function useTaskRunArchiveMutation() {
+  return useMutation(api.taskRuns.archive).withOptimisticUpdate(
+    (localStore, args) => {
+      if (!args.taskId) {
+        return;
+      }
+      const variants: Array<{
+        teamSlugOrId: string;
+        taskId: Id<"tasks">;
+        includeArchived?: boolean;
+      }> = [
+        { teamSlugOrId: args.teamSlugOrId, taskId: args.taskId },
+        {
+          teamSlugOrId: args.teamSlugOrId,
+          taskId: args.taskId,
+          includeArchived: true,
+        },
+      ];
+
+      for (const variant of variants) {
+        const current = localStore.getQuery(api.taskRuns.getByTask, variant);
+        if (!current) {
+          continue;
+        }
+        const updated = updateRunArchiveStateLocal(
+          current,
+          args.id,
+          args.archive,
+          args.includeChildren ?? false
+        );
+        if (updated !== current) {
+          localStore.setQuery(api.taskRuns.getByTask, variant, updated);
+        }
+      }
+    }
+  );
+}
+
 type TaskRunExpansionState = Partial<Record<Id<"taskRuns">, boolean>>;
 
 interface TaskRunExpansionContextValue {
@@ -326,6 +368,18 @@ function TaskTreeInner({
       })),
     [flattenedRuns]
   );
+  const { isTaskPinned, pinTask, unpinTask } = useSidebarPins();
+  const taskIsPinned = isTaskPinned(task._id);
+  const handleTaskPinToggle = useCallback(() => {
+    if (taskIsPinned) {
+      unpinTask(task._id);
+    } else {
+      pinTask(task._id);
+    }
+  }, [pinTask, taskIsPinned, task._id, unpinTask]);
+  const taskPinIndicator = taskIsPinned ? (
+    <Pin className="h-3 w-3 text-amber-500" />
+  ) : null;
   const prefetched = useRef(false);
   const prefetchTaskRuns = useCallback(() => {
     if (prefetched.current || isOptimisticTask) {
@@ -338,41 +392,7 @@ function TaskTreeInner({
     });
   }, [isOptimisticTask, task._id, teamSlugOrId]);
 
-  const archiveTaskRun = useMutation(api.taskRuns.archive).withOptimisticUpdate(
-    (localStore, args) => {
-      if (!args.taskId) {
-        return;
-      }
-      const variants: Array<{
-        teamSlugOrId: string;
-        taskId: Id<"tasks">;
-        includeArchived?: boolean;
-      }> = [
-        { teamSlugOrId: args.teamSlugOrId, taskId: args.taskId },
-        {
-          teamSlugOrId: args.teamSlugOrId,
-          taskId: args.taskId,
-          includeArchived: true,
-        },
-      ];
-
-      for (const variant of variants) {
-        const current = localStore.getQuery(api.taskRuns.getByTask, variant);
-        if (!current) {
-          continue;
-        }
-        const updated = updateRunArchiveStateLocal(
-          current,
-          args.id,
-          args.archive,
-          args.includeChildren ?? false
-        );
-        if (updated !== current) {
-          localStore.setQuery(api.taskRuns.getByTask, variant, updated);
-        }
-      }
-    }
-  );
+  const archiveTaskRun = useTaskRunArchiveMutation();
 
   const handleRunArchiveToggle = useCallback(
     async (runId: Id<"taskRuns">, shouldArchive: boolean) => {
@@ -642,6 +662,7 @@ function TaskTreeInner({
                 titleClassName={taskTitleClassName}
                 secondary={taskSecondary || undefined}
                 meta={taskLeadingIcon || undefined}
+                trailing={taskPinIndicator ?? undefined}
                 className={clsx(isRenaming && "pr-2")}
               />
             </Link>
@@ -669,6 +690,17 @@ function TaskTreeInner({
                     <div className="my-1 h-px bg-neutral-200 dark:bg-neutral-700" />
                   </>
                 ) : null}
+                <ContextMenu.Item
+                  className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                  onClick={handleTaskPinToggle}
+                >
+                  {taskIsPinned ? (
+                    <PinOff className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                  ) : (
+                    <Pin className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                  )}
+                  <span>{taskIsPinned ? "Unpin Task" : "Pin Task"}</span>
+                </ContextMenu.Item>
                 <ContextMenu.Item
                   className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
                   onClick={handleCopyDescription}
@@ -934,6 +966,7 @@ interface TaskRunTreeProps {
   isDefaultSelected?: boolean;
   onArchiveToggle: (runId: Id<"taskRuns">, archive: boolean) => void;
   showRunNumbers: boolean;
+  contextSecondary?: ReactNode;
 }
 
 function TaskRunTreeInner({
@@ -944,8 +977,10 @@ function TaskRunTreeInner({
   isDefaultSelected = false,
   onArchiveToggle,
   showRunNumbers,
+  contextSecondary,
 }: TaskRunTreeProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const { expandedRuns, setRunExpanded } = useTaskRunExpansionContext();
   const defaultExpanded = Boolean(run.isCrowned);
   const isExpanded = expandedRuns[run._id] ?? defaultExpanded;
@@ -977,6 +1012,25 @@ function TaskRunTreeInner({
     () => isDefaultSelected || runIdFromSearch === run._id || isRunRoute,
     [isDefaultSelected, isRunRoute, run._id, runIdFromSearch]
   );
+  const { isRunPinned, pinRun, unpinRun } = useSidebarPins();
+  const runIsPinned = isRunPinned(run._id);
+  const handleRunPinToggle = useCallback(() => {
+    if (runIsPinned) {
+      unpinRun(run._id);
+    } else {
+      pinRun(taskId, run._id);
+    }
+  }, [pinRun, runIsPinned, run._id, taskId, unpinRun]);
+  const handleJumpToTask = useCallback(() => {
+    void navigate({
+      to: "/$teamSlugOrId/task/$taskId",
+      params: { teamSlugOrId, taskId },
+      search: { runId: undefined },
+    });
+  }, [navigate, taskId, teamSlugOrId]);
+  const runPinIndicator = runIsPinned ? (
+    <Pin className="h-3 w-3 text-amber-500" />
+  ) : null;
 
   const hasExpandedManually = useRef<Id<"taskRuns"> | null>(null);
 
@@ -1242,13 +1296,35 @@ function TaskRunTreeInner({
               title={baseDisplayText}
               titleClassName="text-[13px] text-neutral-700 dark:text-neutral-300"
               titleSuffix={runNumberSuffix ?? undefined}
+              secondary={contextSecondary}
               meta={leadingContent}
+              trailing={runPinIndicator ?? undefined}
             />
           </Link>
         </ContextMenu.Trigger>
         <ContextMenu.Portal>
           <ContextMenu.Positioner className="outline-none z-[var(--z-context-menu)]">
             <ContextMenu.Popup className="origin-[var(--transform-origin)] rounded-md bg-white dark:bg-neutral-800 py-1 text-neutral-900 dark:text-neutral-100 shadow-lg shadow-gray-200 outline-1 outline-neutral-200 transition-[opacity] data-[ending-style]:opacity-0 dark:shadow-none dark:-outline-offset-1 dark:outline-neutral-700">
+              <ContextMenu.Item
+                className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                onClick={handleRunPinToggle}
+              >
+                {runIsPinned ? (
+                  <PinOff className="w-3.5 h-3.5" />
+                ) : (
+                  <Pin className="w-3.5 h-3.5" />
+                )}
+                <span>{runIsPinned ? "Unpin run" : "Pin run"}</span>
+              </ContextMenu.Item>
+              {runIsPinned ? (
+                <ContextMenu.Item
+                  className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                  onClick={handleJumpToTask}
+                >
+                  <SquareArrowOutUpRight className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                  <span>Go to task</span>
+                </ContextMenu.Item>
+              ) : null}
               {canCopyBranch ? (
                 <ContextMenu.Item
                   className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
@@ -1342,6 +1418,8 @@ function TaskRunTreeInner({
     </div>
   );
 }
+
+const TaskRunTree = memo(TaskRunTreeInner);
 
 interface TaskRunDetailLinkProps {
   to: LinkProps["to"];
@@ -1598,12 +1676,131 @@ function TaskRunDetails({
   );
 }
 
+interface PinnedTaskRunProps {
+  taskId: Id<"tasks">;
+  runId: Id<"taskRuns">;
+  teamSlugOrId: string;
+  taskTitle?: string | null;
+}
+
+export function PinnedTaskRun({
+  taskId,
+  runId,
+  teamSlugOrId,
+  taskTitle,
+}: PinnedTaskRunProps) {
+  const [expandedRuns, setExpandedRuns] = useState<TaskRunExpansionState>({});
+  const setRunExpanded = useCallback(
+    (targetId: Id<"taskRuns">, expanded: boolean) => {
+      setExpandedRuns((prev) => {
+        if (prev[targetId] === expanded) {
+          return prev;
+        }
+        return { ...prev, [targetId]: expanded };
+      });
+    },
+    []
+  );
+  const expansionContextValue = useMemo(
+    () => ({ expandedRuns, setRunExpanded }),
+    [expandedRuns, setRunExpanded]
+  );
+  const archiveTaskRun = useTaskRunArchiveMutation();
+  const { unpinRun } = useSidebarPins();
+  const isOptimisticTask = isFakeConvexId(taskId);
+  const taskRuns = useConvexQuery(
+    api.taskRuns.getByTask,
+    isOptimisticTask
+      ? "skip"
+      : { teamSlugOrId, taskId, includeArchived: true }
+  );
+  const flattenedRuns = useMemo(() => flattenRuns(taskRuns), [taskRuns]);
+  const showRunNumbers = flattenedRuns.length > 1;
+  const annotatedRuns = useMemo(
+    () => annotateAgentOrdinals(taskRuns ?? []),
+    [taskRuns]
+  );
+  const targetRun = useMemo<AnnotatedTaskRun | null>(() => {
+    if (!annotatedRuns || annotatedRuns.length === 0) {
+      return null;
+    }
+    return (findRunInTree(annotatedRuns, runId) as AnnotatedTaskRun | null);
+  }, [annotatedRuns, runId]);
+
+  const handleRunArchiveToggle = useCallback(
+    async (targetRunId: Id<"taskRuns">, shouldArchive: boolean) => {
+      try {
+        await archiveTaskRun({
+          teamSlugOrId,
+          id: targetRunId,
+          archive: shouldArchive,
+          taskId,
+        });
+      } catch (error) {
+        console.error(error);
+        toast.error(
+          shouldArchive
+            ? "Failed to archive task run"
+            : "Failed to restore task run"
+        );
+      }
+    },
+    [archiveTaskRun, taskId, teamSlugOrId]
+  );
+
+  if (isOptimisticTask) {
+    return (
+      <TaskRunsMessage level={0} fixedHeight={24}>
+        <Loader2 className="h-3 w-3 animate-spin text-neutral-400" />
+        <span>Preparing pinned run…</span>
+      </TaskRunsMessage>
+    );
+  }
+
+  if (taskRuns === undefined) {
+    return (
+      <TaskRunsMessage level={0}>
+        <Loader2 className="h-3 w-3 animate-spin text-neutral-400" />
+        <span>Loading pinned run…</span>
+      </TaskRunsMessage>
+    );
+  }
+
+  if (!targetRun) {
+    return (
+      <TaskRunsMessage level={0}>
+        <span>Pinned run unavailable</span>
+        <button
+          type="button"
+          onClick={() => unpinRun(runId)}
+          className="text-[11px] font-semibold text-blue-600 hover:underline dark:text-blue-400"
+        >
+          Unpin
+        </button>
+      </TaskRunsMessage>
+    );
+  }
+
+  return (
+    <TaskRunExpansionContext.Provider value={expansionContextValue}>
+      <TaskRunTree
+        run={targetRun}
+        level={0}
+        taskId={taskId}
+        teamSlugOrId={teamSlugOrId}
+        onArchiveToggle={handleRunArchiveToggle}
+        showRunNumbers={showRunNumbers}
+        contextSecondary={taskTitle ?? undefined}
+      />
+    </TaskRunExpansionContext.Provider>
+  );
+}
+
 export interface VSCodeIconProps {
   className?: string;
 }
 
 // Prevent unnecessary re-renders of large trees during unrelated state changes
 export const TaskTree = memo(TaskTreeInner);
-const TaskRunTree = memo(TaskRunTreeInner);
 
 export type { AnnotatedTaskRun, TaskRunWithChildren } from "./task-tree/types";

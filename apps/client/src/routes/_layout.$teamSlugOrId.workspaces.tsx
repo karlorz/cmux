@@ -3,6 +3,7 @@ import { TaskTreeSkeleton } from "@/components/TaskTreeSkeleton";
 import { FloatingPane } from "@/components/floating-pane";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
+import { SidebarPinsProvider } from "@/contexts/sidebar-pins/SidebarPinsProvider";
 import { isFakeConvexId } from "@/lib/fakeConvexId";
 import { api } from "@cmux/convex/api";
 import { type Id } from "@cmux/convex/dataModel";
@@ -71,34 +72,36 @@ function WorkspacesRoute() {
   );
 
   return (
-    <FloatingPane>
-      <div className="grow h-full flex flex-col">
-        <div className="border-b border-neutral-200 px-6 py-4 dark:border-neutral-800">
-          <h1 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 select-none">
-            Workspaces
-          </h1>
+    <SidebarPinsProvider>
+      <FloatingPane>
+        <div className="grow h-full flex flex-col">
+          <div className="border-b border-neutral-200 px-6 py-4 dark:border-neutral-800">
+            <h1 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 select-none">
+              Workspaces
+            </h1>
+          </div>
+          <div className="overflow-y-auto px-4 pb-6">
+            {tasks === undefined ? (
+              <TaskTreeSkeleton count={10} />
+            ) : tasksWithRuns.length === 0 ? (
+              <p className="mt-6 text-sm text-neutral-500 dark:text-neutral-400 select-none">
+                No workspaces yet.
+              </p>
+            ) : (
+              <div className="mt-2 space-y-1">
+                {tasksWithRuns.map((task) => (
+                  <TaskTree
+                    key={task._id}
+                    task={task}
+                    defaultExpanded={expandTaskIds?.includes(task._id) ?? false}
+                    teamSlugOrId={teamSlugOrId}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-        <div className="overflow-y-auto px-4 pb-6">
-          {tasks === undefined ? (
-            <TaskTreeSkeleton count={10} />
-          ) : tasksWithRuns.length === 0 ? (
-            <p className="mt-6 text-sm text-neutral-500 dark:text-neutral-400 select-none">
-              No workspaces yet.
-            </p>
-          ) : (
-            <div className="mt-2 space-y-1">
-              {tasksWithRuns.map((task) => (
-                <TaskTree
-                  key={task._id}
-                  task={task}
-                  defaultExpanded={expandTaskIds?.includes(task._id) ?? false}
-                  teamSlugOrId={teamSlugOrId}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </FloatingPane>
+      </FloatingPane>
+    </SidebarPinsProvider>
   );
 }

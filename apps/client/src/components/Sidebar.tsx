@@ -1,14 +1,19 @@
-import { TaskTree } from "@/components/TaskTree";
+import { PinnedTaskRun, TaskTree } from "@/components/TaskTree";
 import { TaskTreeSkeleton } from "@/components/TaskTreeSkeleton";
 import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
+import {
+  SidebarPinsProvider,
+  useSidebarPins,
+} from "@/contexts/sidebar-pins/SidebarPinsProvider";
 import { isElectron } from "@/lib/electron";
-import { type Doc } from "@cmux/convex/dataModel";
+import { type Doc, type Id } from "@cmux/convex/dataModel";
 import type { LinkProps } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
 import { Home, Plus, Server, Settings } from "lucide-react";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ComponentType,
@@ -59,7 +64,15 @@ const navItems: SidebarNavItem[] = [
   },
 ];
 
-export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
+export function Sidebar(props: SidebarProps) {
+  return (
+    <SidebarPinsProvider>
+      <SidebarContent {...props} />
+    </SidebarPinsProvider>
+  );
+}
+
+function SidebarContent({ tasks, teamSlugOrId }: SidebarProps) {
   const DEFAULT_WIDTH = 256;
   const MIN_WIDTH = 240;
   const MAX_WIDTH = 600;
@@ -80,6 +93,83 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
   });
 
   const { expandTaskIds } = useExpandTasks();
+  const { orderedPins } = useSidebarPins();
+
+  const tasksById = useMemo(() => {
+    const map = new Map<Id<"tasks">, Doc<"tasks">>();
+    if (tasks) {
+      for (const task of tasks) {
+        map.set(task._id, task);
+      }
+    }
+    return map;
+  }, [tasks]);
+
+  const pinnedTaskIds = useMemo(() => {
+    const ids = new Set<Id<"tasks">>();
+    for (const pin of orderedPins) {
+      if (pin.type === "task" && tasksById.has(pin.taskId)) {
+        ids.add(pin.taskId);
+      }
+    }
+    return ids;
+  }, [orderedPins, tasksById]);
+
+  const unpinnedTasks = useMemo(() => {
+    if (tasks === undefined) {
+      return undefined;
+    }
+    return tasks.filter((task) => !pinnedTaskIds.has(task._id));
+  }, [pinnedTaskIds, tasks]);
+
+  const isTasksLoading = tasks === undefined;
+
+  const pinnedItems = useMemo(() => {
+    return orderedPins.map((pin) => {
+      if (pin.type === "task") {
+        const taskDoc = tasksById.get(pin.taskId);
+        if (!taskDoc) {
+          return isTasksLoading ? (
+            <TaskTreeSkeleton
+              key={`pinned-task-skeleton-${pin.taskId}`}
+              count={1}
+            />
+          ) : (
+            <PinnedTaskPlaceholder
+              key={`missing-task-${pin.taskId}`}
+              taskId={pin.taskId}
+            />
+          );
+        }
+        return (
+          <TaskTree
+            key={`pinned-task-${taskDoc._id}`}
+            task={taskDoc}
+            defaultExpanded={expandTaskIds?.includes(taskDoc._id) ?? false}
+            teamSlugOrId={teamSlugOrId}
+          />
+        );
+      }
+      const taskDoc = tasksById.get(pin.taskId);
+      return (
+        <PinnedTaskRun
+          key={`pinned-run-${pin.runId}`}
+          taskId={pin.taskId}
+          runId={pin.runId}
+          teamSlugOrId={teamSlugOrId}
+          taskTitle={taskDoc?.text ?? null}
+        />
+      );
+    });
+  }, [
+    expandTaskIds,
+    isTasksLoading,
+    orderedPins,
+    tasksById,
+    teamSlugOrId,
+  ]);
+
+  const hasPinnedItems = pinnedItems.length > 0;
 
   useEffect(() => {
     localStorage.setItem("sidebarWidth", String(width));
@@ -291,12 +381,20 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
             </SidebarSectionLink>
           </div>
 
-          <div className="ml-2 pt-px">
+          <div className="ml-2 pt-px space-y-3">
+            {hasPinnedItems ? (
+              <div>
+                <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                  Pinned
+                </p>
+                <div className="space-y-px">{pinnedItems}</div>
+              </div>
+            ) : null}
             <div className="space-y-px">
-              {tasks === undefined ? (
+              {unpinnedTasks === undefined ? (
                 <TaskTreeSkeleton count={5} />
-              ) : tasks && tasks.length > 0 ? (
-                tasks.map((task) => (
+              ) : unpinnedTasks.length > 0 ? (
+                unpinnedTasks.map((task) => (
                   <TaskTree
                     key={task._id}
                     task={task}
@@ -334,6 +432,25 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
           } as CSSProperties
         }
       />
+    </div>
+  );
+}
+
+function PinnedTaskPlaceholder({ taskId }: { taskId: Id<"tasks"> }) {
+  const { unpinTask } = useSidebarPins();
+  const shortId = taskId.slice(-6);
+  return (
+    <div className="flex items-center justify-between rounded-sm bg-neutral-200/45 px-2 py-1 text-[11px] text-neutral-600 dark:bg-neutral-800/45 dark:text-neutral-400">
+      <span className="truncate pr-2">
+        Task unavailable ({shortId})
+      </span>
+      <button
+        type="button"
+        onClick={() => unpinTask(taskId)}
+        className="text-[11px] font-semibold text-blue-600 hover:underline dark:text-blue-400"
+      >
+        Unpin
+      </button>
     </div>
   );
 }
