@@ -68,6 +68,23 @@ function normalizePullRequestRecords(
   }));
 }
 
+function normalizeRepoFullName(value?: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.toLowerCase() : null;
+}
+
+function parsePullRequestUrl(
+  url?: string | null,
+): { repoFullName: string; number: number } | null {
+  if (!url) return null;
+  const match = url.match(/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/i);
+  if (!match) return null;
+  const number = Number(match[2]);
+  if (!Number.isFinite(number)) return null;
+  return { repoFullName: match[1].trim(), number };
+}
+
 function deriveGeneratedBranchName(branch?: string | null): string | undefined {
   if (!branch) return undefined;
   const trimmed = branch.trim();
@@ -1237,6 +1254,204 @@ export const updatePullRequestState = authMutation({
           : updates.pullRequestNumber;
     }
     await ctx.db.patch(args.id, updates);
+  },
+});
+
+export const applyPullRequestStateFromWebhook = internalMutation({
+  args: {
+    teamId: v.string(),
+    repoFullName: v.string(),
+    prNumber: v.number(),
+    state: v.union(
+      v.literal("none"),
+      v.literal("draft"),
+      v.literal("open"),
+      v.literal("merged"),
+      v.literal("closed"),
+      v.literal("unknown"),
+    ),
+    isDraft: v.optional(v.boolean()),
+    url: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const normalizedTargetRepo = normalizeRepoFullName(args.repoFullName);
+    if (!normalizedTargetRepo) {
+      return { updatedRuns: [] as Id<"taskRuns">[] };
+    }
+
+    const normalizedRepoFullName = args.repoFullName.trim();
+    const normalizedUrl = args.url?.trim();
+    const normalizedIsDraft =
+      args.isDraft !== undefined ? args.isDraft : args.state === "draft";
+    const now = Date.now();
+
+    const runs = await ctx.db
+      .query("taskRuns")
+      .withIndex("by_team_user", (q) => q.eq("teamId", args.teamId))
+      .collect();
+
+    const taskCache = new Map<Id<"tasks">, Doc<"tasks"> | null>();
+    const loadTask = async (
+      taskId: Id<"tasks">,
+    ): Promise<Doc<"tasks"> | null> => {
+      if (taskCache.has(taskId)) {
+        return taskCache.get(taskId) ?? null;
+      }
+      const task = await ctx.db.get(taskId);
+      if (!task || task.teamId !== args.teamId) {
+        taskCache.set(taskId, null);
+        return null;
+      }
+      taskCache.set(taskId, task);
+      return task;
+    };
+
+    const updatedRuns: Id<"taskRuns">[] = [];
+
+    for (const run of runs) {
+      const normalizedRecords =
+        normalizePullRequestRecords(run.pullRequests) ?? [];
+
+      const hasMatchingRecord = normalizedRecords.some((record) => {
+        const recordRepo = normalizeRepoFullName(record.repoFullName);
+        if (recordRepo !== normalizedTargetRepo) {
+          return false;
+        }
+        if (
+          typeof record.number === "number" &&
+          record.number !== args.prNumber
+        ) {
+          return false;
+        }
+        return true;
+      });
+
+      let matched = hasMatchingRecord;
+
+      if (!matched) {
+        const parsed = parsePullRequestUrl(run.pullRequestUrl);
+        if (
+          parsed &&
+          normalizeRepoFullName(parsed.repoFullName) === normalizedTargetRepo &&
+          parsed.number === args.prNumber
+        ) {
+          matched = true;
+        }
+      }
+
+      let taskDoc: Doc<"tasks"> | null = null;
+
+      if (!matched) {
+        taskDoc = await loadTask(run.taskId);
+        if (
+          taskDoc?.projectFullName &&
+          normalizeRepoFullName(taskDoc.projectFullName) ===
+            normalizedTargetRepo &&
+          run.pullRequestNumber === args.prNumber
+        ) {
+          matched = true;
+        }
+      }
+
+      if (!matched) {
+        continue;
+      }
+
+      if (!taskDoc) {
+        taskDoc = await loadTask(run.taskId);
+      }
+
+      const nextRecords: StoredPullRequestInfo[] = [];
+      let foundRecord = false;
+      let recordsChanged = false;
+
+      for (const record of normalizedRecords) {
+        const recordRepo = normalizeRepoFullName(record.repoFullName);
+        if (recordRepo !== normalizedTargetRepo) {
+          nextRecords.push(record);
+          continue;
+        }
+        if (
+          typeof record.number === "number" &&
+          record.number !== args.prNumber
+        ) {
+          nextRecords.push(record);
+          continue;
+        }
+        foundRecord = true;
+        const updatedRecord: StoredPullRequestInfo = {
+          ...record,
+          state: args.state,
+          isDraft: normalizedIsDraft,
+          number: args.prNumber,
+          url: record.url ?? normalizedUrl ?? run.pullRequestUrl ?? undefined,
+        };
+        if (
+          updatedRecord.state !== record.state ||
+          updatedRecord.isDraft !== record.isDraft ||
+          updatedRecord.number !== record.number ||
+          updatedRecord.url !== record.url
+        ) {
+          recordsChanged = true;
+        }
+        nextRecords.push(updatedRecord);
+      }
+
+      if (!foundRecord) {
+        recordsChanged = true;
+        nextRecords.push({
+          repoFullName: normalizedRepoFullName,
+          state: args.state,
+          isDraft: normalizedIsDraft,
+          number: args.prNumber,
+          url: normalizedUrl ?? run.pullRequestUrl ?? undefined,
+        });
+      }
+
+      const aggregate = aggregatePullRequestState(nextRecords);
+      const aggregateUrl =
+        aggregate.url ?? normalizedUrl ?? run.pullRequestUrl ?? undefined;
+      const needsRunPatch =
+        recordsChanged ||
+        run.pullRequestState !== aggregate.state ||
+        run.pullRequestIsDraft !== aggregate.isDraft ||
+        (aggregate.number !== undefined &&
+          aggregate.number !== run.pullRequestNumber) ||
+        (aggregateUrl !== undefined && aggregateUrl !== run.pullRequestUrl);
+
+      if (!needsRunPatch) {
+        continue;
+      }
+
+      const runPatch: Partial<Doc<"taskRuns">> = {
+        pullRequests: nextRecords,
+        pullRequestState: aggregate.state,
+        pullRequestIsDraft: aggregate.isDraft,
+        pullRequestNumber:
+          aggregate.number ?? run.pullRequestNumber ?? args.prNumber,
+        updatedAt: now,
+      };
+      if (aggregateUrl !== undefined) {
+        runPatch.pullRequestUrl = aggregateUrl;
+      }
+
+      await ctx.db.patch(run._id, runPatch);
+      updatedRuns.push(run._id);
+
+      if (taskDoc && taskDoc.mergeStatus !== aggregate.mergeStatus) {
+        await ctx.db.patch(taskDoc._id, {
+          mergeStatus: aggregate.mergeStatus,
+          updatedAt: now,
+        });
+        taskCache.set(taskDoc._id, {
+          ...taskDoc,
+          mergeStatus: aggregate.mergeStatus,
+          updatedAt: now,
+        });
+      }
+    }
+
+    return { updatedRuns };
   },
 });
 
