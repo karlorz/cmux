@@ -40,6 +40,7 @@ interface CmuxRectangle {
 }
 
 interface CmuxWebContentsViewAPI {
+  getZoomFactor: () => Promise<number>;
   create: (options: {
     url: string;
     requestUrl?: string;

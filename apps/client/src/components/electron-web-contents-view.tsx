@@ -177,6 +177,7 @@ export function ElectronWebContentsView({
   const scrollCleanupsRef = useRef<Array<() => void>>([]);
   const lastTransformStateRef = useRef(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const zoomFactorRef = useRef<number>(1);
 
   useEffect(() => {
     latestSrcRef.current = src;
@@ -231,8 +232,16 @@ export function ElectronWebContentsView({
     if (!bridge || id === null || !container) return;
 
     const scale = window.devicePixelRatio ?? 1;
+    const zoomFactor = zoomFactorRef.current;
     const rect = container.getBoundingClientRect();
-    const bounds = rectToBounds(rect, scale);
+    // Apply zoom factor to convert from zoomed CSS pixels to actual screen coordinates
+    const adjustedRect = new DOMRect(
+      rect.x / zoomFactor,
+      rect.y / zoomFactor,
+      rect.width / zoomFactor,
+      rect.height / zoomFactor,
+    );
+    const bounds = rectToBounds(adjustedRect, scale);
     const sizeMissing = bounds.width <= 0 || bounds.height <= 0;
     const hiddenByStyle = isEffectivelyHidden(container);
     const isVisible =
@@ -299,6 +308,38 @@ export function ElectronWebContentsView({
       syncBounds();
     });
   }, [syncBounds]);
+
+  useEffect(() => {
+    if (!isElectron) return;
+    const bridge = getWebContentsBridge();
+    if (!bridge) return;
+
+    const updateZoomFactor = () => {
+      void bridge.getZoomFactor().then((factor) => {
+        const oldFactor = zoomFactorRef.current;
+        zoomFactorRef.current = factor;
+        // Only trigger sync if zoom factor actually changed
+        if (oldFactor !== factor) {
+          scheduleBoundsSync();
+        }
+      }).catch((err) => {
+        console.warn("Failed to get zoom factor", err);
+      });
+    };
+
+    // Get initial zoom factor
+    updateZoomFactor();
+
+    // Listen for zoom changes - resize event fires when zoom changes
+    const handleZoomChange = () => {
+      updateZoomFactor();
+    };
+
+    window.addEventListener("resize", handleZoomChange);
+    return () => {
+      window.removeEventListener("resize", handleZoomChange);
+    };
+  }, [scheduleBoundsSync]);
 
   const persistKeyRef = useRef<string | undefined>(persistKey);
 

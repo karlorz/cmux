@@ -161,6 +161,8 @@ const cmuxAPI = {
       }>,
   },
   webContentsView: {
+    getZoomFactor: () =>
+      ipcRenderer.invoke("cmux:webcontents:get-zoom-factor") as Promise<number>,
     create: (options: {
       url: string;
       requestUrl?: string;

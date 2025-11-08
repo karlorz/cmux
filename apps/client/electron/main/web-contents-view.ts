@@ -574,6 +574,19 @@ export function registerWebContentsViewHandlers({
   setMaxSuspendedEntries(providedMax);
   rendererBaseUrl = providedBaseUrl;
 
+  ipcMain.handle("cmux:webcontents:get-zoom-factor", (event) => {
+    try {
+      const sender = event.sender;
+      if (sender && !sender.isDestroyed()) {
+        return sender.getZoomFactor();
+      }
+      return 1;
+    } catch (error) {
+      logger.warn("Failed to get zoom factor", error);
+      return 1;
+    }
+  });
+
   ipcMain.handle(
     "cmux:webcontents:create",
     async (event, rawOptions: CreateOptions) => {
