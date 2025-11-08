@@ -38,6 +38,7 @@ function parsePrNumber(raw: string | null): number | null {
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = request.nextUrl;
+    const useFt0Model = searchParams.has("ft0");
     const repoFullName = parseRepoFullName(searchParams.get("repoFullName"));
     const prNumber = parsePrNumber(searchParams.get("prNumber"));
 
@@ -114,6 +115,7 @@ export async function GET(request: NextRequest) {
             prIdentifier,
             githubToken: normalizedGithubToken,
             signal: abortController.signal,
+            useFt0Model,
             onEvent: async (event) => {
               switch (event.type) {
                 case "file":

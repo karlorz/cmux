@@ -1,4 +1,5 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 import { streamText } from "ai";
 
 import { CLOUDFLARE_ANTHROPIC_BASE_URL } from "@cmux/shared";
@@ -43,6 +44,9 @@ const SIMPLE_REVIEW_GUIDANCE = `You must respond strictly with the diff provided
 - Process the diff from top to bottom without skipping sections.`;
 
 const MAX_CONCURRENCY = 10;
+const ANTHROPIC_MODEL_NAME = "claude-opus-4-1-20250805";
+const OPENAI_FT0_MODEL_NAME =
+  "ft:gpt-4.1-mini-2025-04-14:lawrence:cmux-heatmap-sft:CZW6Lc77";
 
 const BINARY_EXTENSIONS = [
   ".png",
@@ -117,6 +121,7 @@ export type SimpleReviewStreamOptions = {
   onChunk?: (chunk: string) => void | Promise<void>;
   onEvent?: (event: SimpleReviewParsedEvent) => void | Promise<void>;
   signal?: AbortSignal;
+  useFt0Model?: boolean;
 };
 
 export type SimpleReviewStreamResult = {
@@ -283,6 +288,7 @@ export async function runSimpleAnthropicReviewStream(
     githubToken: providedGithubToken = null,
     onChunk,
     signal,
+    useFt0Model = false,
   } = options;
   const onEvent = options.onEvent ?? null;
 
@@ -337,6 +343,32 @@ export async function runSimpleAnthropicReviewStream(
     apiKey: env.ANTHROPIC_API_KEY,
     baseURL: CLOUDFLARE_ANTHROPIC_BASE_URL,
   });
+  let openaiClient: ReturnType<typeof createOpenAI> | null = null;
+  if (useFt0Model) {
+    const openAiApiKey = env.OPENAI_API_KEY;
+    if (!openAiApiKey) {
+      throw new Error(
+        "OPENAI_API_KEY is required when the ft0 model is requested."
+      );
+    }
+    openaiClient = createOpenAI({ apiKey: openAiApiKey });
+  }
+
+  const selectModel = () => {
+    if (useFt0Model) {
+      if (!openaiClient) {
+        throw new Error("OpenAI client was not initialized");
+      }
+      return openaiClient(OPENAI_FT0_MODEL_NAME);
+    }
+    return anthropic(ANTHROPIC_MODEL_NAME);
+  };
+
+  console.info("[simple-review] Model configuration", {
+    prIdentifier,
+    model: useFt0Model ? OPENAI_FT0_MODEL_NAME : ANTHROPIC_MODEL_NAME,
+    provider: useFt0Model ? "openai" : "anthropic",
+  });
 
   const runWithSemaphore = createSemaphore(MAX_CONCURRENCY);
   const finalChunks: string[] = [];
@@ -369,7 +401,7 @@ export async function runSimpleAnthropicReviewStream(
 
         try {
           const stream = streamText({
-            model: anthropic("claude-opus-4-1-20250805"),
+            model: selectModel(),
             // model: anthropic("claude-haiku-4-5"),
             prompt,
             temperature: 0,
