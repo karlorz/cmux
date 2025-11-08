@@ -244,6 +244,65 @@ function updateRunArchiveStateLocal(
 
 type TaskRunExpansionState = Partial<Record<Id<"taskRuns">, boolean>>;
 
+interface SidebarArchiveMetaProps {
+  icon: ReactNode;
+  tooltip: string;
+  onArchive: () => void | Promise<void>;
+  showButton?: boolean;
+}
+
+function SidebarArchiveMeta({
+  icon,
+  tooltip,
+  onArchive,
+  showButton = true,
+}: SidebarArchiveMetaProps) {
+  const handleClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void onArchive();
+    },
+    [onArchive]
+  );
+
+  if (!icon) {
+    return null;
+  }
+
+  if (!showButton) {
+    return <>{icon}</>;
+  }
+
+  return (
+    <div className="relative inline-flex items-center justify-center">
+      <span className="pointer-events-none flex items-center">{icon}</span>
+      <Tooltip delayDuration={0}>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label={tooltip}
+            onClick={handleClick}
+            className={clsx(
+              "absolute inset-[-4px] hidden items-center justify-center rounded-sm border border-neutral-200 bg-white text-neutral-700",
+              "dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200",
+              "group-hover:flex group-focus-within:flex focus-visible:flex",
+              "pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto focus-visible:pointer-events-auto",
+              "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sky-500",
+              "z-[1]"
+            )}
+          >
+            <ArchiveIcon className="w-3 h-3" aria-hidden="true" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="left" sideOffset={6}>
+          {tooltip}
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  );
+}
+
 interface TaskRunExpansionContextValue {
   expandedRuns: TaskRunExpansionState;
   setRunExpanded: (runId: Id<"taskRuns">, expanded: boolean) => void;
@@ -600,6 +659,14 @@ function TaskTreeInner({
       <Circle className="w-3 h-3 text-neutral-400 animate-pulse" />
     );
   })();
+  const taskStatusMeta = taskLeadingIcon ? (
+    <SidebarArchiveMeta
+      icon={taskLeadingIcon}
+      tooltip="Archive task"
+      onArchive={handleArchive}
+      showButton={!task.isArchived}
+    />
+  ) : null;
 
   return (
     <TaskRunExpansionContext.Provider value={expansionContextValue}>
@@ -641,7 +708,7 @@ function TaskTreeInner({
                 title={taskTitleContent}
                 titleClassName={taskTitleClassName}
                 secondary={taskSecondary || undefined}
-                meta={taskLeadingIcon || undefined}
+                meta={taskStatusMeta || undefined}
                 className={clsx(isRenaming && "pr-2")}
               />
             </Link>
@@ -1122,6 +1189,14 @@ function TaskRunTreeInner({
     );
 
   const runLeadingIcon = pullRequestIcon ?? statusIconWithTooltip;
+  const runStatusMeta = runLeadingIcon ? (
+    <SidebarArchiveMeta
+      icon={runLeadingIcon}
+      tooltip="Hide task run"
+      onArchive={handleArchiveRun}
+      showButton={!run.isArchived}
+    />
+  ) : null;
 
   const crownIcon = run.isCrowned ? (
     <Tooltip delayDuration={0}>
@@ -1148,10 +1223,10 @@ function TaskRunTreeInner({
   const leadingContent = crownIcon ? (
     <div className="flex items-center gap-1">
       {crownIcon}
-      {runLeadingIcon}
+      {runStatusMeta}
     </div>
   ) : (
-    runLeadingIcon
+    runStatusMeta
   );
 
   // Generate VSCode URL if available
