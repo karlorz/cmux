@@ -488,6 +488,72 @@ function createDiffEditorMount({
     }
 
     const disposables: Array<{ dispose: () => void }> = [];
+    const originalDomNode = originalEditor.getDomNode();
+    const modifiedDomNode = modifiedEditor.getDomNode();
+
+    const focusEditorInputWithoutScroll = (
+      targetEditor: editor.IStandaloneCodeEditor,
+    ) => {
+      if (typeof document === "undefined") {
+        return;
+      }
+
+      const editorDomNode = targetEditor.getDomNode();
+      if (!editorDomNode) {
+        return;
+      }
+
+      const textarea = editorDomNode.querySelector<HTMLTextAreaElement>(
+        "textarea.inputarea",
+      );
+      if (!textarea || document.activeElement === textarea) {
+        return;
+      }
+
+      try {
+        textarea.focus({ preventScroll: true });
+      } catch {
+        textarea.focus();
+      }
+    };
+
+    const handlePointerDownCapture = (event: PointerEvent) => {
+      if (event.defaultPrevented) {
+        return;
+      }
+      if (
+        typeof window === "undefined" ||
+        (event.button !== undefined && event.button !== 0)
+      ) {
+        return;
+      }
+
+      const target = event.target as Node | null;
+      if (!target) {
+        return;
+      }
+
+      if (originalDomNode?.contains(target)) {
+        focusEditorInputWithoutScroll(originalEditor);
+        return;
+      }
+
+      if (modifiedDomNode?.contains(target)) {
+        focusEditorInputWithoutScroll(modifiedEditor);
+      }
+    };
+
+    container.addEventListener("pointerdown", handlePointerDownCapture, true);
+    disposables.push({
+      dispose: () => {
+        container.removeEventListener(
+          "pointerdown",
+          handlePointerDownCapture,
+          true,
+        );
+      },
+    });
+
     const originalVisibility = container.style.visibility;
     const originalTransform = container.style.transform;
     let isContainerVisible = container.style.visibility !== "hidden";
