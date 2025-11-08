@@ -114,6 +114,7 @@ const COMMAND_LIST_VERTICAL_MARGIN_PX = 12; // pt-1 (4px) + pb-2 (8px)
 const COMMAND_LIST_SCROLL_PADDING_TOP_PX = 4;
 const COMMAND_LIST_SCROLL_PADDING_BOTTOM_PX =
   COMMAND_LIST_SCROLL_PADDING_TOP_PX;
+const TASK_SHORTCUT_LIMIT = 9;
 const adjustContainerScrollForChild = (
   container: HTMLElement,
   target: HTMLElement
@@ -173,6 +174,7 @@ type CommandListEntry = {
   label: string;
   keywords?: string[];
   searchText: string;
+  searchOnly?: boolean;
   renderContent: () => ReactNode;
   execute: () => Promise<void> | void;
   disabled?: boolean;
@@ -1771,97 +1773,214 @@ export function CommandBar({
         : []),
     ];
 
-    const taskEntries =
+    const shortcutTaskEntries =
       allTasks && allTasks.length > 0
-        ? allTasks.slice(0, 9).flatMap<CommandListEntry>((task, index) => {
-            const title =
-              task.pullRequestTitle || task.text || `Task ${index + 1}`;
-            const keywords = compactStrings([
-              title,
-              task.text,
-              task.pullRequestTitle,
-              `task ${index + 1}`,
-            ]);
-            const baseSearch = buildSearchText(title, keywords, [
-              `${index + 1}`,
-            ]);
-            const statusLabel = task.isCompleted ? "completed" : "in progress";
-            const statusClassName = task.isCompleted
-              ? "text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
-              : "text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400";
-            const run = task.selectedTaskRun;
+        ? allTasks
+            .slice(0, TASK_SHORTCUT_LIMIT)
+            .flatMap<CommandListEntry>((task, index) => {
+              const displayIndex = index + 1;
+              const title =
+                task.pullRequestTitle || task.text || `Task ${displayIndex}`;
+              const keywords = compactStrings([
+                title,
+                task.text,
+                task.pullRequestTitle,
+                `task ${displayIndex}`,
+              ]);
+              const baseSearch = buildSearchText(title, keywords, [
+                `${displayIndex}`,
+              ]);
+              const statusLabel = task.isCompleted
+                ? "completed"
+                : "in progress";
+              const statusClassName = task.isCompleted
+                ? "text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+                : "text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400";
+              const run = task.selectedTaskRun;
 
-            const entriesForTask: CommandListEntry[] = [
-              {
-                value: `${index + 1}:task:${task._id}`,
-                label: title,
-                keywords,
-                searchText: baseSearch,
-                className: taskCommandItemClassName,
-                execute: () => handleSelect(`task:${task._id}`),
-                renderContent: () => (
-                  <>
-                    <span className="flex h-5 w-5 items-center justify-center rounded text-xs font-semibold bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 group-data-[selected=true]:bg-neutral-300 dark:group-data-[selected=true]:bg-neutral-600">
-                      {index + 1}
-                    </span>
-                    <span className="flex-1 truncate text-sm">{title}</span>
-                    <span className={statusClassName}>{statusLabel}</span>
-                  </>
-                ),
-              },
-            ];
+              const entriesForTask: CommandListEntry[] = [
+                {
+                  value: `${displayIndex}:task:${task._id}`,
+                  label: title,
+                  keywords,
+                  searchText: baseSearch,
+                  className: taskCommandItemClassName,
+                  execute: () => handleSelect(`task:${task._id}`),
+                  renderContent: () => (
+                    <>
+                      <span className="flex h-5 w-5 items-center justify-center rounded text-xs font-semibold bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 group-data-[selected=true]:bg-neutral-300 dark:group-data-[selected=true]:bg-neutral-600">
+                        {displayIndex}
+                      </span>
+                      <span className="flex-1 truncate text-sm">{title}</span>
+                      <span className={statusClassName}>{statusLabel}</span>
+                    </>
+                  ),
+                },
+              ];
 
-            if (run) {
-              const vsKeywords = [...keywords, "vs", "vscode"];
-              entriesForTask.push({
-                value: `${index + 1} vs:task:${task._id}`,
-                label: `${title} (VS)`,
-                keywords: vsKeywords,
-                searchText: buildSearchText(`${title} VS`, vsKeywords, [
-                  `${index + 1} vs`,
-                  `${index + 1}vs`,
-                  `${index + 1}v`,
-                ]),
-                className: taskCommandItemClassName,
-                execute: () => handleSelect(`task:${task._id}:vs`),
-                renderContent: () => (
-                  <>
-                    <span className="flex h-5 w-8 items-center justify-center rounded text-xs font-semibold bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 group-data-[selected=true]:bg-neutral-300 dark:group-data-[selected=true]:bg-neutral-600">
-                      {index + 1} VS
-                    </span>
-                    <span className="flex-1 truncate text-sm">{title}</span>
-                    <span className={statusClassName}>{statusLabel}</span>
-                  </>
-                ),
-              });
+              if (run) {
+                const vsKeywords = [...keywords, "vs", "vscode"];
+                entriesForTask.push({
+                  value: `${displayIndex} vs:task:${task._id}`,
+                  label: `${title} (VS)`,
+                  keywords: vsKeywords,
+                  searchText: buildSearchText(`${title} VS`, vsKeywords, [
+                    `${displayIndex} vs`,
+                    `${displayIndex}vs`,
+                    `${displayIndex}v`,
+                  ]),
+                  className: taskCommandItemClassName,
+                  execute: () => handleSelect(`task:${task._id}:vs`),
+                  renderContent: () => (
+                    <>
+                      <span className="flex h-5 w-8 items-center justify-center rounded text-xs font-semibold bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 group-data-[selected=true]:bg-neutral-300 dark:group-data-[selected=true]:bg-neutral-600">
+                        {displayIndex} VS
+                      </span>
+                      <span className="flex-1 truncate text-sm">{title}</span>
+                      <span className={statusClassName}>{statusLabel}</span>
+                    </>
+                  ),
+                });
 
-              const diffKeywords = [...keywords, "git", "diff"];
-              entriesForTask.push({
-                value: `${index + 1} git diff:task:${task._id}`,
-                label: `${title} (git diff)`,
-                keywords: diffKeywords,
-                searchText: buildSearchText(`${title} git diff`, diffKeywords, [
-                  `${index + 1} git diff`,
-                  `${index + 1}gitdiff`,
-                  `${index + 1}gd`,
-                ]),
-                className: taskCommandItemClassName,
-                execute: () => handleSelect(`task:${task._id}:gitdiff`),
-                renderContent: () => (
-                  <>
-                    <span className="flex h-5 px-2 items-center justify-center rounded text-xs font-semibold bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 group-data-[selected=true]:bg-neutral-300 dark:group-data-[selected=true]:bg-neutral-600">
-                      {index + 1} git diff
-                    </span>
-                    <span className="flex-1 truncate text-sm">{title}</span>
-                    <span className={statusClassName}>{statusLabel}</span>
-                  </>
-                ),
-              });
-            }
+                const diffKeywords = [...keywords, "git", "diff"];
+                entriesForTask.push({
+                  value: `${displayIndex} git diff:task:${task._id}`,
+                  label: `${title} (git diff)`,
+                  keywords: diffKeywords,
+                  searchText: buildSearchText(
+                    `${title} git diff`,
+                    diffKeywords,
+                    [
+                      `${displayIndex} git diff`,
+                      `${displayIndex}gitdiff`,
+                      `${displayIndex}gd`,
+                    ]
+                  ),
+                  className: taskCommandItemClassName,
+                  execute: () => handleSelect(`task:${task._id}:gitdiff`),
+                  renderContent: () => (
+                    <>
+                      <span className="flex h-5 px-2 items-center justify-center rounded text-xs font-semibold bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 group-data-[selected=true]:bg-neutral-300 dark:group-data-[selected=true]:bg-neutral-600">
+                        {displayIndex} git diff
+                      </span>
+                      <span className="flex-1 truncate text-sm">{title}</span>
+                      <span className={statusClassName}>{statusLabel}</span>
+                    </>
+                  ),
+                });
+              }
 
-            return entriesForTask;
-          })
+              return entriesForTask;
+            })
         : [];
+
+    const searchableTaskEntries =
+      allTasks && allTasks.length > TASK_SHORTCUT_LIMIT
+        ? allTasks
+            .slice(TASK_SHORTCUT_LIMIT)
+            .flatMap<CommandListEntry>((task, offset) => {
+              const absoluteIndex = offset + TASK_SHORTCUT_LIMIT;
+              const displayIndex = absoluteIndex + 1;
+              const title =
+                task.pullRequestTitle || task.text || `Task ${displayIndex}`;
+              const keywords = compactStrings([
+                title,
+                task.text,
+                task.pullRequestTitle,
+                `task ${displayIndex}`,
+              ]);
+              const baseSearch = buildSearchText(title, keywords, [
+                `${displayIndex}`,
+              ]);
+              const statusLabel = task.isCompleted
+                ? "completed"
+                : "in progress";
+              const statusClassName = task.isCompleted
+                ? "text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+                : "text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400";
+              const run = task.selectedTaskRun;
+
+              const pillClassName =
+                "flex h-5 px-2 items-center justify-center rounded text-xs font-semibold bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 group-data-[selected=true]:bg-neutral-300 dark:group-data-[selected=true]:bg-neutral-600";
+
+              const entriesForTask: CommandListEntry[] = [
+                {
+                  value: `search:task:${task._id}`,
+                  label: title,
+                  keywords,
+                  searchText: baseSearch,
+                  searchOnly: true,
+                  className: taskCommandItemClassName,
+                  execute: () => handleSelect(`task:${task._id}`),
+                  renderContent: () => (
+                    <>
+                      <span className={pillClassName}>#{displayIndex}</span>
+                      <span className="flex-1 truncate text-sm">{title}</span>
+                      <span className={statusClassName}>{statusLabel}</span>
+                    </>
+                  ),
+                },
+              ];
+
+              if (run) {
+                const vsKeywords = [...keywords, "vs", "vscode"];
+                entriesForTask.push({
+                  value: `search:task:${task._id}:vs`,
+                  label: `${title} (VS)`,
+                  keywords: vsKeywords,
+                  searchText: buildSearchText(`${title} VS`, vsKeywords, [
+                    `${displayIndex} vs`,
+                    `${displayIndex}vs`,
+                    `${displayIndex}v`,
+                  ]),
+                  searchOnly: true,
+                  className: taskCommandItemClassName,
+                  execute: () => handleSelect(`task:${task._id}:vs`),
+                  renderContent: () => (
+                    <>
+                      <span className={pillClassName}>
+                        #{displayIndex} VS
+                      </span>
+                      <span className="flex-1 truncate text-sm">{title}</span>
+                      <span className={statusClassName}>{statusLabel}</span>
+                    </>
+                  ),
+                });
+
+                const diffKeywords = [...keywords, "git", "diff"];
+                entriesForTask.push({
+                  value: `search:task:${task._id}:gitdiff`,
+                  label: `${title} (git diff)`,
+                  keywords: diffKeywords,
+                  searchText: buildSearchText(
+                    `${title} git diff`,
+                    diffKeywords,
+                    [
+                      `${displayIndex} git diff`,
+                      `${displayIndex}gitdiff`,
+                      `${displayIndex}gd`,
+                    ]
+                  ),
+                  searchOnly: true,
+                  className: taskCommandItemClassName,
+                  execute: () => handleSelect(`task:${task._id}:gitdiff`),
+                  renderContent: () => (
+                    <>
+                      <span className={pillClassName}>
+                        #{displayIndex} git diff
+                      </span>
+                      <span className="flex-1 truncate text-sm">{title}</span>
+                      <span className={statusClassName}>{statusLabel}</span>
+                    </>
+                  ),
+                });
+              }
+
+              return entriesForTask;
+            })
+        : [];
+
+    const taskEntries = [...shortcutTaskEntries, ...searchableTaskEntries];
 
     const electronEntries = isElectron
       ? [
@@ -2036,10 +2155,13 @@ export function CommandBar({
     );
   }, [cloudWorkspaceEntries, pruneCloudWorkspaceHistory]);
 
-  const filteredRootEntries = useMemo(
-    () => filterCommandItems(search, rootCommandEntries),
-    [rootCommandEntries, search]
-  );
+  const filteredRootEntries = useMemo(() => {
+    const filtered = filterCommandItems(search, rootCommandEntries);
+    if (search.trim().length === 0) {
+      return filtered.filter((entry) => !entry.searchOnly);
+    }
+    return filtered;
+  }, [rootCommandEntries, search]);
 
   const filteredLocalWorkspaceEntries = useMemo(
     () => filterCommandItems(search, localWorkspaceEntries),
