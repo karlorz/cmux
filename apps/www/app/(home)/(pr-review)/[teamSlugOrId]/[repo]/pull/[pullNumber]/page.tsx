@@ -15,7 +15,10 @@ import { isGithubApiError } from "@/lib/github/errors";
 import { isRepoPublic } from "@/lib/github/check-repo-visibility";
 import { cn } from "@/lib/utils";
 import { stackServerApp } from "@/lib/utils/stack";
-import { runSimpleAnthropicReviewStream } from "@/lib/services/code-review/run-simple-anthropic-review";
+import {
+  runSimpleAnthropicReviewStream,
+  SIMPLE_REVIEW_FT0_MODEL_ID,
+} from "@/lib/services/code-review/run-simple-anthropic-review";
 import {
   getConvexHttpActionBaseUrl,
   startCodeReviewJob,
@@ -32,6 +35,7 @@ import { PrivateRepoPrompt } from "../../_components/private-repo-prompt";
 import { TeamOnboardingPrompt } from "../../_components/team-onboarding-prompt";
 import { env } from "@/lib/utils/www-env";
 import { trackRepoPageView } from "@/lib/analytics/track-repo-page-view";
+import { isSearchParamFlagEnabled } from "@/lib/utils/search-param-flags";
 
 const ENABLE_IMMEDIATE_CODE_REVIEW = false;
 
@@ -43,6 +47,7 @@ type PageParams = {
 
 type PageProps = {
   params: Promise<PageParams>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
 export const dynamic = "force-dynamic";
@@ -138,8 +143,18 @@ export async function generateMetadata({
   }
 }
 
-export default async function PullRequestPage({ params }: PageProps) {
+export default async function PullRequestPage({
+  params,
+  searchParams,
+}: PageProps) {
   const resolvedParams = await params;
+  const resolvedSearchParams = searchParams
+    ? await searchParams
+    : undefined;
+  const useFineTunedHeatmapModel = isSearchParamFlagEnabled(
+    resolvedSearchParams,
+    "ft0"
+  );
 
   const {
     teamSlugOrId: githubOwner,
@@ -244,6 +259,7 @@ export default async function PullRequestPage({ params }: PageProps) {
       repo,
       pullNumber,
       pullRequestPromise,
+      useFineTunedHeatmapModel,
     });
   }
 
@@ -275,6 +291,7 @@ export default async function PullRequestPage({ params }: PageProps) {
             githubOwner={githubOwner}
             repo={repo}
             pullNumber={pullNumber}
+            useFineTunedHeatmapModel={useFineTunedHeatmapModel}
           />
         </Suspense>
       </div>
@@ -290,12 +307,14 @@ function scheduleCodeReviewStart({
   repo,
   pullNumber,
   pullRequestPromise,
+  useFineTunedHeatmapModel,
 }: {
   teamSlugOrId: string;
   githubOwner: string;
   repo: string;
   pullNumber: number;
   pullRequestPromise: Promise<GithubPullRequest>;
+  useFineTunedHeatmapModel: boolean;
 }): void {
   waitUntil(
     (async () => {
@@ -405,9 +424,16 @@ function scheduleCodeReviewStart({
         let simpleReviewPromise: Promise<unknown> | null = null;
 
         if (shouldAttemptSimpleReview) {
+          const modelOverride = useFineTunedHeatmapModel
+            ? {
+                provider: "openai" as const,
+                model: SIMPLE_REVIEW_FT0_MODEL_ID,
+              }
+            : undefined;
           simpleReviewPromise = runSimpleAnthropicReviewStream({
             prIdentifier: githubLink,
             githubToken: simpleReviewToken,
+            modelOverride,
           }).catch((error) => {
             const message =
               error instanceof Error ? error.message : String(error ?? "");
@@ -699,6 +725,7 @@ function PullRequestDiffSection({
   teamSlugOrId,
   repo,
   pullNumber,
+  useFineTunedHeatmapModel,
 }: {
   filesPromise: PullRequestFilesPromise;
   pullRequestPromise: PullRequestPromise;
@@ -706,6 +733,7 @@ function PullRequestDiffSection({
   teamSlugOrId: string;
   repo: string;
   pullNumber: number;
+  useFineTunedHeatmapModel: boolean;
 }) {
   try {
     const files = use(filesPromise);
@@ -740,6 +768,7 @@ function PullRequestDiffSection({
         baseCommitRef={baseCommitRef}
         pullRequestTitle={pullRequestTitle}
         pullRequestUrl={pullRequestUrl}
+        useFineTunedHeatmapModel={useFineTunedHeatmapModel}
       />
     );
   } catch (error) {

@@ -28,6 +28,7 @@ import {
 import { buildComparisonJobDetails } from "@/lib/services/code-review/comparison";
 import type { ComparisonJobDetails } from "@/lib/services/code-review/comparison";
 import { trackRepoPageView } from "@/lib/analytics/track-repo-page-view";
+import { isSearchParamFlagEnabled } from "@/lib/utils/search-param-flags";
 
 type PageParams = {
   teamSlugOrId: string;
@@ -38,6 +39,7 @@ type PageParams = {
 
 type PageProps = {
   params: Promise<PageParams>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
 export const dynamic = "force-dynamic";
@@ -119,7 +121,10 @@ export async function generateMetadata({
   }
 }
 
-export default async function ComparisonPage({ params }: PageProps) {
+export default async function ComparisonPage({
+  params,
+  searchParams,
+}: PageProps) {
   const user = await stackServerApp.getUser({ or: "redirect" });
   const selectedTeam = user.selectedTeam || (await getFirstTeam());
   if (!selectedTeam) {
@@ -132,6 +137,13 @@ export default async function ComparisonPage({ params }: PageProps) {
     comparison,
     segments = [],
   } = await params;
+  const resolvedSearchParams = searchParams
+    ? await searchParams
+    : undefined;
+  const useFineTunedHeatmapModel = isSearchParamFlagEnabled(
+    resolvedSearchParams,
+    "ft0"
+  );
 
   const comparisonSlug = [comparison, ...segments].filter(Boolean).join("/");
   const refs = parseComparisonSlug(comparisonSlug);
@@ -193,6 +205,7 @@ export default async function ComparisonPage({ params }: PageProps) {
             repo={repo}
             teamSlugOrId={selectedTeam.id}
             comparisonDetails={comparisonDetails}
+            useFineTunedHeatmapModel={useFineTunedHeatmapModel}
           />
         </Suspense>
       </div>
@@ -366,6 +379,7 @@ function ComparisonDiffSection({
   repo,
   teamSlugOrId,
   comparisonDetails,
+  useFineTunedHeatmapModel,
 }: {
   filesPromise: ComparisonFilesPromise;
   comparisonPromise: ComparisonPromise;
@@ -373,6 +387,7 @@ function ComparisonDiffSection({
   repo: string;
   teamSlugOrId: string;
   comparisonDetails: ComparisonJobDetails;
+  useFineTunedHeatmapModel: boolean;
 }) {
   try {
     const files = use(filesPromise);
@@ -403,6 +418,7 @@ function ComparisonDiffSection({
         reviewTarget={{ type: "comparison", slug: comparisonDetails.slug }}
         commitRef={commitRef}
         baseCommitRef={baseCommitRef}
+        useFineTunedHeatmapModel={useFineTunedHeatmapModel}
       />
     );
   } catch (error) {

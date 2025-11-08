@@ -103,6 +103,7 @@ type PullRequestDiffViewerProps = {
   baseCommitRef?: string;
   pullRequestTitle?: string;
   pullRequestUrl?: string;
+  useFineTunedHeatmapModel?: boolean;
 };
 
 type ParsedFileDiff = {
@@ -538,6 +539,7 @@ export function PullRequestDiffViewer({
   baseCommitRef,
   pullRequestTitle,
   pullRequestUrl,
+  useFineTunedHeatmapModel = false,
 }: PullRequestDiffViewerProps) {
   const normalizedJobType: "pull_request" | "comparison" =
     jobType ?? (comparisonSlug ? "comparison" : "pull_request");
@@ -563,6 +565,9 @@ export function PullRequestDiffViewer({
       repoFullName,
       prNumber: String(prNumber),
     });
+    if (useFineTunedHeatmapModel) {
+      params.set("ft0", "1");
+    }
 
     (async () => {
       try {
@@ -863,7 +868,13 @@ export function PullRequestDiffViewer({
     return () => {
       controller.abort();
     };
-  }, [normalizedJobType, prNumber, repoFullName, setStreamStateByFile]);
+  }, [
+    normalizedJobType,
+    prNumber,
+    repoFullName,
+    setStreamStateByFile,
+    useFineTunedHeatmapModel,
+  ]);
 
   const prQueryArgs = useMemo(
     () =>

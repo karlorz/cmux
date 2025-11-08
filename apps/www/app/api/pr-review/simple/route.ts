@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { stackServerApp } from "@/lib/utils/stack";
-import { runSimpleAnthropicReviewStream } from "@/lib/services/code-review/run-simple-anthropic-review";
+import {
+  runSimpleAnthropicReviewStream,
+  SIMPLE_REVIEW_FT0_MODEL_ID,
+} from "@/lib/services/code-review/run-simple-anthropic-review";
 import { isRepoPublic } from "@/lib/github/check-repo-visibility";
 
 export const runtime = "nodejs";
@@ -40,6 +43,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = request.nextUrl;
     const repoFullName = parseRepoFullName(searchParams.get("repoFullName"));
     const prNumber = parsePrNumber(searchParams.get("prNumber"));
+    const useFineTunedHeatmapModel = searchParams.has("ft0");
 
     if (!repoFullName || prNumber === null) {
       return NextResponse.json(
@@ -114,6 +118,12 @@ export async function GET(request: NextRequest) {
             prIdentifier,
             githubToken: normalizedGithubToken,
             signal: abortController.signal,
+            modelOverride: useFineTunedHeatmapModel
+              ? {
+                  provider: "openai",
+                  model: SIMPLE_REVIEW_FT0_MODEL_ID,
+                }
+              : undefined,
             onEvent: async (event) => {
               switch (event.type) {
                 case "file":

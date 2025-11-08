@@ -1,4 +1,5 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 import { streamText } from "ai";
 
 import { CLOUDFLARE_ANTHROPIC_BASE_URL } from "@cmux/shared";
@@ -43,6 +44,13 @@ const SIMPLE_REVIEW_GUIDANCE = `You must respond strictly with the diff provided
 - Process the diff from top to bottom without skipping sections.`;
 
 const MAX_CONCURRENCY = 10;
+const DEFAULT_SIMPLE_REVIEW_MODEL = "claude-opus-4-1-20250805";
+
+export const SIMPLE_REVIEW_FT0_MODEL_ID =
+  "ft:gpt-4.1-mini-2025-04-14:lawrence:cmux-heatmap-sft:CZW6Lc77";
+export type SimpleReviewModelOverride =
+  | { provider: "anthropic"; model: string }
+  | { provider: "openai"; model: string };
 
 const BINARY_EXTENSIONS = [
   ".png",
@@ -117,6 +125,7 @@ export type SimpleReviewStreamOptions = {
   onChunk?: (chunk: string) => void | Promise<void>;
   onEvent?: (event: SimpleReviewParsedEvent) => void | Promise<void>;
   signal?: AbortSignal;
+  modelOverride?: SimpleReviewModelOverride;
 };
 
 export type SimpleReviewStreamResult = {
@@ -283,8 +292,14 @@ export async function runSimpleAnthropicReviewStream(
     githubToken: providedGithubToken = null,
     onChunk,
     signal,
+    modelOverride,
   } = options;
   const onEvent = options.onEvent ?? null;
+  const resolvedModel: SimpleReviewModelOverride =
+    modelOverride ?? {
+      provider: "anthropic",
+      model: DEFAULT_SIMPLE_REVIEW_MODEL,
+    };
 
   const emitEvent = async (event: SimpleReviewParsedEvent): Promise<void> => {
     if (!onEvent) {
@@ -337,6 +352,23 @@ export async function runSimpleAnthropicReviewStream(
     apiKey: env.ANTHROPIC_API_KEY,
     baseURL: CLOUDFLARE_ANTHROPIC_BASE_URL,
   });
+  const languageModel =
+    resolvedModel.provider === "anthropic"
+      ? anthropic(resolvedModel.model)
+      : (() => {
+          const openAiApiKey = env.OPENAI_API_KEY;
+          if (!openAiApiKey) {
+            throw new Error(
+              "[simple-review] OPENAI_API_KEY is required when using the OpenAI heatmap model"
+            );
+          }
+          const openai = createOpenAI({ apiKey: openAiApiKey });
+          return openai(resolvedModel.model);
+        })();
+  console.info("[simple-review] Using review heatmap model", {
+    provider: resolvedModel.provider,
+    model: resolvedModel.model,
+  });
 
   const runWithSemaphore = createSemaphore(MAX_CONCURRENCY);
   const finalChunks: string[] = [];
@@ -369,8 +401,7 @@ export async function runSimpleAnthropicReviewStream(
 
         try {
           const stream = streamText({
-            model: anthropic("claude-opus-4-1-20250805"),
-            // model: anthropic("claude-haiku-4-5"),
+            model: languageModel,
             prompt,
             temperature: 0,
             maxRetries: 2,
