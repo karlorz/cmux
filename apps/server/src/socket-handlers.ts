@@ -763,7 +763,6 @@ export function setupSocketHandlers(
               .catch(() => undefined);
           };
 
-          // Write env variables synchronously (fast, doesn't block)
           const writeEnvVariablesIfPresent = async (): Promise<
             Record<string, string>
           > => {
@@ -856,16 +855,16 @@ export function setupSocketHandlers(
               } catch (error) {
                 const stderr =
                   error &&
-                  typeof error === "object" &&
-                  "stderr" in error &&
-                  typeof (error as { stderr?: unknown }).stderr === "string"
+                    typeof error === "object" &&
+                    "stderr" in error &&
+                    typeof (error as { stderr?: unknown }).stderr === "string"
                     ? (error as { stderr?: string }).stderr?.trim() ?? ""
                     : "";
                 const stdout =
                   error &&
-                  typeof error === "object" &&
-                  "stdout" in error &&
-                  typeof (error as { stdout?: unknown }).stdout === "string"
+                    typeof error === "object" &&
+                    "stdout" in error &&
+                    typeof (error as { stdout?: unknown }).stdout === "string"
                     ? (error as { stdout?: string }).stdout?.trim() ?? ""
                     : "";
                 const baseMessage =
@@ -1016,7 +1015,6 @@ export function setupSocketHandlers(
             });
           }
 
-          // Write env variables immediately (fast, doesn't block)
           const parsedEnvVars = await writeEnvVariablesIfPresent();
 
           await convex.mutation(api.taskRuns.updateWorktreePath, {

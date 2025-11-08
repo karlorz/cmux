@@ -70,6 +70,10 @@
       "import": "./src/utils/derive-repo-base-name.ts",
       "types": "./src/utils/derive-repo-base-name.ts"
     },
+    "./utils/parse-github-repo-url": {
+      "import": "./src/utils/parse-github-repo-url.ts",
+      "types": "./src/utils/parse-github-repo-url.ts"
+    },
     "./utils/validate-exposed-ports": {
       "import": "./src/utils/validate-exposed-ports.ts",
       "types": "./src/utils/validate-exposed-ports.ts"

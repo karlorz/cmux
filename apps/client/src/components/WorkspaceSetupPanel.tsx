@@ -112,7 +112,6 @@ export function WorkspaceSetupPanel({
         return updated.length === 0
           ? [
             {
-              id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
               name: "",
               value: "",
               isSecret: true,

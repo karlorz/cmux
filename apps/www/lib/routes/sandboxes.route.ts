@@ -6,6 +6,7 @@ import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { env } from "@/lib/utils/www-env";
 import { api } from "@cmux/convex/api";
 import { RESERVED_CMUX_PORT_SET } from "@cmux/shared/utils/reserved-cmux-ports";
+import { parseGithubRepoUrl } from "@cmux/shared/utils/parse-github-repo-url";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { MorphCloudClient } from "morphcloud";
@@ -168,13 +169,12 @@ sandboxesRouter.openapi(
       // Load workspace config if we're in cloud mode with a repository (not an environment)
       let workspaceConfig: { maintenanceScript?: string; envVarsContent?: string } | null = null;
       if (body.repoUrl && !body.environmentId) {
-        const match = body.repoUrl.match(/github\.com\/?([^\s/]+)\/([^\s/.]+)(?:\.git)?/i);
-        if (match) {
-          const projectFullName = `${match[1]}/${match[2]}`;
+        const parsed = parseGithubRepoUrl(body.repoUrl);
+        if (parsed) {
           try {
             const config = await convex.query(api.workspaceConfigs.get, {
               teamSlugOrId: body.teamSlugOrId,
-              projectFullName,
+              projectFullName: parsed.fullName,
             });
             if (config) {
               const envVarsContent = config.dataVaultKey
@@ -184,13 +184,13 @@ sandboxesRouter.openapi(
                 maintenanceScript: config.maintenanceScript ?? undefined,
                 envVarsContent: envVarsContent ?? undefined,
               };
-              console.log(`[sandboxes.start] Loaded workspace config for ${projectFullName}`, {
+              console.log(`[sandboxes.start] Loaded workspace config for ${parsed.fullName}`, {
                 hasMaintenanceScript: Boolean(workspaceConfig.maintenanceScript),
                 hasEnvVars: Boolean(workspaceConfig.envVarsContent),
               });
             }
           } catch (error) {
-            console.error(`[sandboxes.start] Failed to load workspace config for ${projectFullName}`, error);
+            console.error(`[sandboxes.start] Failed to load workspace config for ${parsed.fullName}`, error);
           }
         }
       }
@@ -309,23 +309,18 @@ sandboxesRouter.openapi(
       let repoConfig: HydrateRepoConfig | undefined;
       if (body.repoUrl) {
         console.log(`[sandboxes.start] Hydrating repo for ${instance.id}`);
-        const match = body.repoUrl.match(
-          /github\.com\/?([^\s/]+)\/([^\s/.]+)(?:\.git)?/i,
-        );
-        if (!match) {
+        const parsed = parseGithubRepoUrl(body.repoUrl);
+        if (!parsed) {
           return c.text("Unsupported repo URL; expected GitHub URL", 400);
         }
-        const owner = match[1]!;
-        const name = match[2]!;
-        const repoFull = `${owner}/${name}`;
-        console.log(`[sandboxes.start] Parsed owner/repo: ${repoFull}`);
+        console.log(`[sandboxes.start] Parsed owner/repo: ${parsed.fullName}`);
 
         repoConfig = {
-          owner,
-          name,
-          repoFull,
-          cloneUrl: `https://github.com/${owner}/${name}.git`,
-          maskedCloneUrl: `https://github.com/${owner}/${name}.git`,
+          owner: parsed.owner,
+          name: parsed.repo,
+          repoFull: parsed.fullName,
+          cloneUrl: parsed.gitUrl,
+          maskedCloneUrl: parsed.gitUrl,
           depth: Math.max(1, Math.floor(body.depth ?? 1)),
           baseBranch: body.branch || "main",
           newBranch: body.newBranch ?? "",
