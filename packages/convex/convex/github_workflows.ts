@@ -132,31 +132,77 @@ export const upsertWorkflowRunFromWebhook = internalMutation({
     };
 
 
-    // Upsert the workflow run - fetch all matching records to handle duplicates
-    const existingRecords = await ctx.db
+    // Upsert the workflow run - use .first() to minimize read surface and reduce conflicts
+    const existingRecord = await ctx.db
+      .query("githubWorkflowRuns")
+      .withIndex("by_runId", (q) => q.eq("runId", runId))
+      .first();
+
+    if (existingRecord) {
+      // Update the existing record
+      await ctx.db.patch(existingRecord._id, workflowRunDoc);
+    } else {
+      // Insert new run - handle potential race condition where another call inserted between our query and insert
+      try {
+        await ctx.db.insert("githubWorkflowRuns", workflowRunDoc);
+      } catch (error) {
+        // If insert fails due to concurrent insert, retry the patch operation once
+        console.warn("[upsertWorkflowRun] Concurrent insert detected, retrying patch", {
+          runId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        const retryRecord = await ctx.db
+          .query("githubWorkflowRuns")
+          .withIndex("by_runId", (q) => q.eq("runId", runId))
+          .first();
+        if (retryRecord) {
+          await ctx.db.patch(retryRecord._id, workflowRunDoc);
+        } else {
+          // This should be extremely rare - log and rethrow
+          console.error("[upsertWorkflowRun] Failed to find record after concurrent insert", {
+            runId,
+          });
+          throw error;
+        }
+      }
+    }
+  },
+});
+
+// Internal mutation to clean up duplicate workflow runs (if any exist)
+export const cleanupDuplicateWorkflowRuns = internalMutation({
+  args: {
+    runId: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const { runId } = args;
+
+    const allRecords = await ctx.db
       .query("githubWorkflowRuns")
       .withIndex("by_runId", (q) => q.eq("runId", runId))
       .collect();
 
-    if (existingRecords.length > 0) {
-      // Update the first record
-      await ctx.db.patch(existingRecords[0]._id, workflowRunDoc);
+    if (allRecords.length > 1) {
+      // Keep the most recently updated record
+      const sorted = allRecords.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+      const toKeep = sorted[0];
+      const toDelete = sorted.slice(1);
 
-      // Delete any duplicates
-      if (existingRecords.length > 1) {
-        console.warn("[upsertWorkflowRun] Found duplicates, cleaning up", {
-          runId,
-          count: existingRecords.length,
-          duplicateIds: existingRecords.slice(1).map(r => r._id),
-        });
-        for (const duplicate of existingRecords.slice(1)) {
-          await ctx.db.delete(duplicate._id);
-        }
+      console.warn("[cleanupDuplicateWorkflowRuns] Removing duplicates", {
+        runId,
+        totalFound: allRecords.length,
+        keeping: toKeep._id,
+        deleting: toDelete.map(r => r._id),
+      });
+
+      for (const record of toDelete) {
+        await ctx.db.delete(record._id);
       }
-    } else {
-      // Insert new run
-      await ctx.db.insert("githubWorkflowRuns", workflowRunDoc);
+
+      return { cleaned: true, deletedCount: toDelete.length };
     }
+
+    return { cleaned: false, deletedCount: 0 };
   },
 });
 
