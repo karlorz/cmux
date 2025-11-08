@@ -1,4 +1,5 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 import { streamText } from "ai";
 
 import { CLOUDFLARE_ANTHROPIC_BASE_URL } from "@cmux/shared";
@@ -111,12 +112,35 @@ type RepoSlug = {
   repo: string;
 };
 
+export type SimpleReviewModelConfig =
+  | {
+      provider: "anthropic";
+      modelId: string;
+    }
+  | {
+      provider: "openai";
+      modelId: string;
+    };
+
+export const SIMPLE_REVIEW_MODELS = {
+  anthropicDefault: {
+    provider: "anthropic",
+    modelId: "claude-opus-4-1-20250805",
+  },
+  openaiFt0: {
+    provider: "openai",
+    modelId:
+      "ft:gpt-4.1-mini-2025-04-14:lawrence:cmux-heatmap-sft:CZW6Lc77",
+  },
+} satisfies Record<string, SimpleReviewModelConfig>;
+
 export type SimpleReviewStreamOptions = {
   prIdentifier: string;
   githubToken?: string | null;
   onChunk?: (chunk: string) => void | Promise<void>;
   onEvent?: (event: SimpleReviewParsedEvent) => void | Promise<void>;
   signal?: AbortSignal;
+  modelOverride?: SimpleReviewModelConfig;
 };
 
 export type SimpleReviewStreamResult = {
@@ -338,6 +362,27 @@ export async function runSimpleAnthropicReviewStream(
     baseURL: CLOUDFLARE_ANTHROPIC_BASE_URL,
   });
 
+  const selectedModel =
+    options.modelOverride ?? SIMPLE_REVIEW_MODELS.anthropicDefault;
+
+  const pickModel = (() => {
+    if (selectedModel.provider === "openai") {
+      if (!env.OPENAI_API_KEY) {
+        throw new Error(
+          "OPENAI_API_KEY is required to use the fine-tuned OpenAI model."
+        );
+      }
+      const openai = createOpenAI({ apiKey: env.OPENAI_API_KEY });
+      return () => openai(selectedModel.modelId);
+    }
+    return () => anthropic(selectedModel.modelId);
+  })();
+
+  console.info("[simple-review] Using model", {
+    provider: selectedModel.provider,
+    modelId: selectedModel.modelId,
+  });
+
   const runWithSemaphore = createSemaphore(MAX_CONCURRENCY);
   const finalChunks: string[] = [];
 
@@ -369,7 +414,7 @@ export async function runSimpleAnthropicReviewStream(
 
         try {
           const stream = streamText({
-            model: anthropic("claude-opus-4-1-20250805"),
+            model: pickModel(),
             // model: anthropic("claude-haiku-4-5"),
             prompt,
             temperature: 0,

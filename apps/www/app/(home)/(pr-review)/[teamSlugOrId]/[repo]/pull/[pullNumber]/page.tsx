@@ -15,7 +15,10 @@ import { isGithubApiError } from "@/lib/github/errors";
 import { isRepoPublic } from "@/lib/github/check-repo-visibility";
 import { cn } from "@/lib/utils";
 import { stackServerApp } from "@/lib/utils/stack";
-import { runSimpleAnthropicReviewStream } from "@/lib/services/code-review/run-simple-anthropic-review";
+import {
+  runSimpleAnthropicReviewStream,
+  SIMPLE_REVIEW_MODELS,
+} from "@/lib/services/code-review/run-simple-anthropic-review";
 import {
   getConvexHttpActionBaseUrl,
   startCodeReviewJob,
@@ -43,6 +46,7 @@ type PageParams = {
 
 type PageProps = {
   params: Promise<PageParams>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
 export const dynamic = "force-dynamic";
@@ -138,8 +142,13 @@ export async function generateMetadata({
   }
 }
 
-export default async function PullRequestPage({ params }: PageProps) {
+export default async function PullRequestPage({
+  params,
+  searchParams,
+}: PageProps) {
   const resolvedParams = await params;
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const useFineTunedModel = hasSearchParamFlag(resolvedSearchParams, "ft0");
 
   const {
     teamSlugOrId: githubOwner,
@@ -244,6 +253,7 @@ export default async function PullRequestPage({ params }: PageProps) {
       repo,
       pullNumber,
       pullRequestPromise,
+      useFineTunedModel,
     });
   }
 
@@ -290,12 +300,14 @@ function scheduleCodeReviewStart({
   repo,
   pullNumber,
   pullRequestPromise,
+  useFineTunedModel,
 }: {
   teamSlugOrId: string;
   githubOwner: string;
   repo: string;
   pullNumber: number;
   pullRequestPromise: Promise<GithubPullRequest>;
+  useFineTunedModel: boolean;
 }): void {
   waitUntil(
     (async () => {
@@ -408,6 +420,9 @@ function scheduleCodeReviewStart({
           simpleReviewPromise = runSimpleAnthropicReviewStream({
             prIdentifier: githubLink,
             githubToken: simpleReviewToken,
+            modelOverride: useFineTunedModel
+              ? SIMPLE_REVIEW_MODELS.openaiFt0
+              : undefined,
           }).catch((error) => {
             const message =
               error instanceof Error ? error.message : String(error ?? "");
@@ -818,6 +833,23 @@ function parsePullNumber(raw: string): number | null {
   }
 
   return numericValue;
+}
+
+function hasSearchParamFlag(
+  params: Record<string, string | string[] | undefined> | undefined,
+  key: string
+): boolean {
+  if (!params) {
+    return false;
+  }
+  if (!(key in params)) {
+    return false;
+  }
+  const value = params[key];
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+  return value !== undefined;
 }
 
 function formatRelativeTimeFromNow(date: Date): string {
