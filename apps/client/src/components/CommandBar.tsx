@@ -1771,9 +1771,16 @@ export function CommandBar({
         : []),
     ];
 
-    const taskEntries =
+    const shouldShowAllTasks = search.trim().length > 0;
+    const visibleTasks =
       allTasks && allTasks.length > 0
-        ? allTasks.slice(0, 9).flatMap<CommandListEntry>((task, index) => {
+        ? shouldShowAllTasks
+          ? allTasks
+          : allTasks.slice(0, 9)
+        : null;
+
+    const taskEntries = visibleTasks
+      ? visibleTasks.flatMap<CommandListEntry>((task, index) => {
             const title =
               task.pullRequestTitle || task.text || `Task ${index + 1}`;
             const keywords = compactStrings([
@@ -1923,7 +1930,7 @@ export function CommandBar({
       : [];
 
     return [...baseEntries, ...taskEntries, ...electronEntries];
-  }, [allTasks, handleSelect, stackUser]);
+  }, [allTasks, handleSelect, search, stackUser]);
 
   const localWorkspaceEntries = useMemo<CommandListEntry[]>(() => {
     return localWorkspaceOptions.map((option) => {
