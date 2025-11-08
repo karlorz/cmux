@@ -1,6 +1,7 @@
 "use client";
 
 import CmuxLogo from "@/components/logo/cmux-logo";
+import { GitHubStarButton } from "@/components/github-star-button";
 import { MacDownloadLink } from "@/components/mac-download-link";
 import type { MacDownloadUrls } from "@/lib/releases";
 import clsx from "clsx";
@@ -22,6 +23,7 @@ type SiteHeaderProps = {
   latestVersion?: string | null;
   macDownloadUrls?: MacDownloadUrls;
   extraEndContent?: ReactNode;
+  starCount?: number | null;
 };
 
 const DEFAULT_DOWNLOAD_URLS: MacDownloadUrls = {
@@ -37,6 +39,7 @@ export function SiteHeader({
   latestVersion,
   macDownloadUrls,
   extraEndContent,
+  starCount,
 }: SiteHeaderProps) {
   const effectiveUrls = macDownloadUrls ?? DEFAULT_DOWNLOAD_URLS;
   const [isScrolled, setIsScrolled] = useState(false);
@@ -106,6 +109,7 @@ export function SiteHeader({
         </nav>
         <div className="flex items-center gap-3">
           {extraEndContent}
+          <GitHubStarButton starCount={starCount ?? null} />
           {showDownload ? (
             <MacDownloadLink
               autoDetect
