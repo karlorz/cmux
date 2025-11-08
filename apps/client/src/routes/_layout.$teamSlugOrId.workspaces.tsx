@@ -25,6 +25,14 @@ function WorkspacesRoute() {
   const { teamSlugOrId } = Route.useParams();
   const tasks = useQuery(api.tasks.get, { teamSlugOrId });
   const { expandTaskIds } = useExpandTasks();
+  const environments = useQuery(api.environments.list, { teamSlugOrId });
+  const environmentNamesById = useMemo(() => {
+    if (!environments) return {};
+    return environments.reduce((acc, env) => {
+      acc[env._id] = env.name;
+      return acc;
+    }, {} as Record<string, string>);
+  }, [environments]);
 
   const orderedTasks = useMemo(() => {
     if (!tasks) return [] as NonNullable<typeof tasks>;
@@ -93,6 +101,7 @@ function WorkspacesRoute() {
                   task={task}
                   defaultExpanded={expandTaskIds?.includes(task._id) ?? false}
                   teamSlugOrId={teamSlugOrId}
+                  environmentNamesById={environmentNamesById}
                 />
               ))}
             </div>
