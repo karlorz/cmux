@@ -31,6 +31,7 @@ OPTIONS:
     -m, --month             Show stats for this month
     --top NUM               Show top NUM most productive days (default: 10)
     --daily                 Show daily breakdown
+    --all-time-top NUM      Show top NUM most productive days ever (per-contributor breakdown)
     -h, --help              Show this help message
 
 EXAMPLES:
@@ -39,6 +40,7 @@ EXAMPLES:
     $(basename "$0") --days 7                   # Last 7 days
     $(basename "$0") --since 2025-11-01         # Since Nov 1
     $(basename "$0") --top 5 --daily            # Show daily breakdown and top 5 days
+    $(basename "$0") --all-time-top 15          # Top 15 most productive days ever
 
 EOF
     exit 0
@@ -50,6 +52,7 @@ SINCE=""
 UNTIL=""
 TOP_DAYS=10
 SHOW_DAILY=false
+ALL_TIME_TOP=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -89,12 +92,87 @@ while [[ $# -gt 0 ]]; do
             SHOW_DAILY=true
             shift
             ;;
+        --all-time-top)
+            ALL_TIME_TOP="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown option: $1"
             show_help
             ;;
     esac
 done
+
+# Handle --all-time-top mode (separate mode that exits after displaying)
+if [[ -n "$ALL_TIME_TOP" ]]; then
+    set +e  # Temporarily disable strict error mode for this section
+
+    echo -e "${BLUE}=== Top $ALL_TIME_TOP Most Productive Days (All Time) ===${NC}"
+    echo ""
+
+    # Get all unique dates from git history
+    dates=$(git log --all --no-merges --pretty=format:"%ai" | awk '{print $1}' | sort -u)
+
+    declare -a daily_results=()
+
+    for date in $dates; do
+        next_date=$(TZ='America/Los_Angeles' date -d "$date + 1 day" '+%Y-%m-%d' 2>/dev/null || date -d "$date + 1 day" '+%Y-%m-%d')
+
+        # Get stats for Lawrence Chen
+        lawrence_data=$(git log --since="$date 00:00:00" --until="$next_date 00:00:00" --all --no-merges --author="Lawrence Chen" --numstat --pretty=format:"" | \
+            grep -v -E "$EXCLUDE_PATTERN" | \
+            awk '{added+=$1; deleted+=$2} END {printf "%d|%d", added, deleted}')
+
+        # Get stats for Austin (both austinpower1258 and Austin Wang)
+        austin_data=$(git log --since="$date 00:00:00" --until="$next_date 00:00:00" --all --no-merges --author="Austin" --numstat --pretty=format:"" | \
+            grep -v -E "$EXCLUDE_PATTERN" | \
+            awk '{added+=$1; deleted+=$2} END {printf "%d|%d", added, deleted}')
+
+        # Get commit counts
+        lawrence_commits=$(git log --since="$date 00:00:00" --until="$next_date 00:00:00" --all --no-merges --author="Lawrence Chen" --oneline 2>/dev/null | wc -l | tr -d ' ')
+        austin_commits=$(git log --since="$date 00:00:00" --until="$next_date 00:00:00" --all --no-merges --author="Austin" --oneline 2>/dev/null | wc -l | tr -d ' ')
+
+        # Get PR counts
+        lawrence_prs=$(git log --since="$date 00:00:00" --until="$next_date 00:00:00" --all --merges --author="Lawrence Chen" --pretty=format:"%s" 2>/dev/null | grep -c "Merge pull request" || echo 0)
+        austin_prs=$(git log --since="$date 00:00:00" --until="$next_date 00:00:00" --all --merges --author="Austin" --pretty=format:"%s" 2>/dev/null | grep -c "Merge pull request" || echo 0)
+
+        IFS='|' read -r l_add l_del <<< "$lawrence_data"
+        IFS='|' read -r a_add a_del <<< "$austin_data"
+
+        l_add=${l_add:-0}
+        l_del=${l_del:-0}
+        a_add=${a_add:-0}
+        a_del=${a_del:-0}
+
+        l_total=$((l_add + l_del))
+        a_total=$((a_add + a_del))
+        combined_total=$((l_total + a_total))
+
+        if [[ $combined_total -gt 0 ]]; then
+            daily_results+=("$date|$combined_total|$lawrence_commits|$lawrence_prs|$l_add|$l_del|$l_total|$austin_commits|$austin_prs|$a_add|$a_del|$a_total")
+        fi
+    done
+
+    # Sort by combined total and display top N
+    if [[ ${#daily_results[@]} -gt 0 ]]; then
+        printf '%s\n' "${daily_results[@]}" | grep -E '^[0-9]{4}-' | sort -t'|' -k2 -rn | head -n "$ALL_TIME_TOP" | while IFS='|' read -r date total l_c l_pr l_add l_del l_tot a_c a_pr a_add a_del a_tot; do
+            # Ensure values are set
+            l_c=${l_c:-0}; l_pr=${l_pr:-0}; l_add=${l_add:-0}; l_del=${l_del:-0}; l_tot=${l_tot:-0}
+            a_c=${a_c:-0}; a_pr=${a_pr:-0}; a_add=${a_add:-0}; a_del=${a_del:-0}; a_tot=${a_tot:-0}
+
+            echo -e "${CYAN}$date${NC} (${BLUE}$total total lines${NC})"
+            echo -e "  ${GREEN}Lawrence:${NC} $l_c commits, $l_pr PRs, +$l_add -$l_del = $l_tot lines"
+            echo -e "  ${GREEN}Austin:${NC} $a_c commits, $a_pr PRs, +$a_add -$a_del = $a_tot lines"
+            echo ""
+        done
+    else
+        echo "No data found."
+    fi
+
+    set -e  # Re-enable strict error mode
+
+    exit 0
+fi
 
 # Set default if no date range specified
 if [[ -z "$SINCE" && -z "$DAYS" ]]; then
