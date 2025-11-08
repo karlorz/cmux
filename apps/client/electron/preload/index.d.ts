@@ -21,6 +21,7 @@ declare global {
         setCommandPaletteOpen: (open: boolean) => Promise<{ ok: boolean }>;
         setPreviewReloadVisible: (visible: boolean) => Promise<{ ok: boolean }>;
         restoreLastFocus: () => Promise<{ ok: boolean; queued?: boolean }>;
+        onWindowFocus: (callback: () => void) => () => void;
       };
       socket: {
         connect: (query: Record<string, string>) => Promise<unknown>;
@@ -41,6 +42,38 @@ declare global {
             version?: string | null;
           }>;
         install: () => Promise<{ ok: boolean; reason?: string }>;
+      };
+      webContentsView?: {
+        create: (options: {
+          url: string;
+          requestUrl?: string;
+          bounds?: { x: number; y: number; width: number; height: number };
+          backgroundColor?: string;
+          borderRadius?: number;
+          persistKey?: string;
+        }) => Promise<{ id: number; webContentsId: number; restored: boolean }>;
+        setBounds: (options: {
+          id: number;
+          bounds: { x: number; y: number; width: number; height: number };
+          visible?: boolean;
+        }) => Promise<{ ok: boolean }>;
+        loadURL: (id: number, url: string) => Promise<{ ok: boolean }>;
+        release: (options: { id: number; persist?: boolean }) => Promise<{ ok: boolean; suspended: boolean }>;
+        destroy: (id: number) => Promise<{ ok: boolean }>;
+        updateStyle: (options: {
+          id: number;
+          backgroundColor?: string;
+          borderRadius?: number;
+        }) => Promise<{ ok: boolean }>;
+        goBack: (id: number) => Promise<{ ok: boolean }>;
+        goForward: (id: number) => Promise<{ ok: boolean }>;
+        reload: (id: number) => Promise<{ ok: boolean }>;
+        onEvent: (id: number, callback: (event: unknown) => void) => () => void;
+        getState: (id: number) => Promise<{ ok: boolean; state?: unknown }>;
+        getAllStates: () => Promise<{ ok: boolean; states?: unknown[] }>;
+        getSnapshot: (id: number) => Promise<{ ok: boolean; snapshot?: unknown }>;
+        openDevTools: (id: number, mode: string) => Promise<{ ok: boolean }>;
+        closeDevTools: (id: number) => Promise<{ ok: boolean }>;
       };
     };
   }

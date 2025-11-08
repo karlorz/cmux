@@ -3,7 +3,7 @@ import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { convexQuery } from "@convex-dev/react-query";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import z from "zod";
 import type { PersistentIframeStatus } from "@/components/persistent-iframe";
 import { PersistentWebView } from "@/components/persistent-webview";
@@ -21,6 +21,7 @@ import {
   useLocalVSCodeServeWebQuery,
 } from "@/queries/local-vscode-serve-web";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
+import { isElectron } from "@/lib/electron";
 
 const paramsSchema = z.object({
   taskId: typedZid("tasks"),
@@ -102,6 +103,33 @@ function VSCodeComponent() {
     setIframeStatus("loading");
   }, [workspaceUrl]);
 
+  // Store webContentsId when using Electron WebContentsView
+  const webContentsIdRef = useRef<number | null>(null);
+
+  // Focus the VSCode iframe when window gains focus
+  useEffect(() => {
+    if (!isElectron || !hasWorkspace || !window.cmux?.ui.onWindowFocus) return;
+
+    const cleanup = window.cmux.ui.onWindowFocus(() => {
+      // Focus the webContents if we have a webContentsId (Electron WebContentsView)
+      if (webContentsIdRef.current !== null) {
+        void window.cmux?.ui.restoreLastFocusInWebContents(
+          webContentsIdRef.current
+        );
+      } else {
+        // Fallback: try to focus the iframe element directly
+        const iframe = document.querySelector(
+          `iframe[data-iframe-key="${persistKey}"]`
+        ) as HTMLIFrameElement | null;
+        if (iframe?.contentWindow) {
+          iframe.contentWindow.focus();
+        }
+      }
+    });
+
+    return cleanup;
+  }, [hasWorkspace, persistKey]);
+
   const onLoad = useCallback(() => {
     console.log(`Workspace view loaded for task run ${taskRunId}`);
   }, [taskRunId]);
@@ -114,6 +142,13 @@ function VSCodeComponent() {
       );
     },
     [taskRunId]
+  );
+
+  const onElectronViewReady = useCallback(
+    (info: { id: number; webContentsId: number; restored: boolean }) => {
+      webContentsIdRef.current = info.webContentsId;
+    },
+    []
   );
 
   const loadingFallback = useMemo(
@@ -150,6 +185,7 @@ function VSCodeComponent() {
               preflight={!disablePreflight}
               onLoad={onLoad}
               onError={onError}
+              onElectronViewReady={onElectronViewReady}
               fallback={loadingFallback}
               fallbackClassName="bg-neutral-50 dark:bg-black"
               errorFallback={errorFallback}

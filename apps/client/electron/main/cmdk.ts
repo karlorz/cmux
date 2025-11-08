@@ -148,6 +148,8 @@ function ensureWindowTaskListeners(win: BrowserWindow): void {
   const handleFocus = () => {
     keyDebug("browser-window.focus", describeWindowFocus(win));
     void drainQueuedWindowTasks(win);
+    // Notify renderer of window focus
+    win.webContents.send("cmux:window-focus");
   };
 
   const handleBlur = () => {

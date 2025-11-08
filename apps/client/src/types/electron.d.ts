@@ -104,6 +104,7 @@ interface CmuxAPI {
     setCommandPaletteOpen: (open: boolean) => Promise<{ ok: boolean }>;
     setPreviewReloadVisible?: (visible: boolean) => Promise<{ ok: boolean }>;
     restoreLastFocus: () => Promise<{ ok: boolean; queued?: boolean }>;
+    onWindowFocus: (callback: () => void) => () => void;
   };
   socket: CmuxSocketAPI;
   logs: CmuxLogsAPI;

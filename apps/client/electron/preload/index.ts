@@ -104,6 +104,15 @@ const cmuxAPI = {
         id
       ) as Promise<{ ok: boolean; queued?: boolean }>;
     },
+    onWindowFocus: (callback: () => void) => {
+      const listener = () => {
+        callback();
+      };
+      ipcRenderer.on("cmux:window-focus", listener);
+      return () => {
+        ipcRenderer.removeListener("cmux:window-focus", listener);
+      };
+    },
     restoreLastFocusInFrame: (
       contentsId: number,
       frameRoutingId: number,
