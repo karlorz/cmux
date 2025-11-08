@@ -649,6 +649,128 @@ function createDiffEditorMount({
       }
     };
 
+    const isPlainPrimaryClick = (event: MouseEvent) => {
+      return (
+        event.button === 0 &&
+        event.detail === 1 &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.shiftKey
+      );
+    };
+
+    type EditorClickPosition = {
+      lineNumber: number;
+      column: number;
+    };
+
+    type EditorClickTarget = {
+      editor: editor.IStandaloneCodeEditor;
+      position: EditorClickPosition;
+    };
+
+    const resolveClickTarget = (event: MouseEvent): EditorClickTarget | null => {
+      const modifiedTarget = modifiedEditor.getTargetAtClientPoint(
+        event.clientX,
+        event.clientY,
+      );
+      if (modifiedTarget?.position) {
+        return {
+          editor: modifiedEditor,
+          position: modifiedTarget.position,
+        };
+      }
+
+      const originalTarget = originalEditor.getTargetAtClientPoint(
+        event.clientX,
+        event.clientY,
+      );
+      if (originalTarget?.position) {
+        return {
+          editor: originalEditor,
+          position: originalTarget.position,
+        };
+      }
+
+      return null;
+    };
+
+    let pendingClickState:
+      | {
+          editor: editor.IStandaloneCodeEditor;
+          position: EditorClickPosition;
+          rafId: number | null;
+          moved: boolean;
+        }
+      | null = null;
+
+    const clearPendingClickState = () => {
+      const state = pendingClickState;
+      if (state && state.rafId !== null && typeof window !== "undefined") {
+        window.cancelAnimationFrame(state.rafId);
+      }
+      pendingClickState = null;
+    };
+
+    if (typeof window !== "undefined") {
+      const handleMouseDown = (event: MouseEvent) => {
+        clearPendingClickState();
+
+        if (!isPlainPrimaryClick(event)) {
+          return;
+        }
+
+        const target = resolveClickTarget(event);
+        if (!target) {
+          return;
+        }
+
+        const state: NonNullable<typeof pendingClickState> = {
+          editor: target.editor,
+          position: target.position,
+          moved: false,
+          rafId: null,
+        };
+
+        state.rafId = window.requestAnimationFrame(() => {
+          pendingClickState = null;
+
+          if (state.moved) {
+            return;
+          }
+
+          state.editor.setPosition(state.position);
+          state.editor.revealPositionInCenterIfOutsideViewport(state.position);
+        });
+
+        pendingClickState = state;
+      };
+
+      const handleMouseMove = () => {
+        if (pendingClickState) {
+          pendingClickState.moved = true;
+        }
+      };
+
+      const handleMouseLeave = () => {
+        clearPendingClickState();
+      };
+
+      container.addEventListener("mousedown", handleMouseDown, true);
+      container.addEventListener("mousemove", handleMouseMove, true);
+      container.addEventListener("mouseleave", handleMouseLeave, true);
+
+      disposables.push({
+        dispose: () => {
+          clearPendingClickState();
+          container.removeEventListener("mousedown", handleMouseDown, true);
+          container.removeEventListener("mousemove", handleMouseMove, true);
+          container.removeEventListener("mouseleave", handleMouseLeave, true);
+        },
+      });
+    }
+
     const observer = new ResizeObserver(() => {
       applyLayout();
     });
