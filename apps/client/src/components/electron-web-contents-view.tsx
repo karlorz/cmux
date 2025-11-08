@@ -34,6 +34,30 @@ function getWebContentsBridge() {
   return window.cmux?.webContentsView ?? null;
 }
 
+type ZoomBridge = {
+  getFactor?: () => number;
+};
+
+function getZoomFactor(): number {
+  if (typeof window === "undefined") return 1;
+  const zoomBridge = (window.cmux as { zoom?: ZoomBridge } | undefined)?.zoom;
+  const raw = zoomBridge?.getFactor?.();
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+    return raw;
+  }
+  return 1;
+}
+
+function getDisplayScale(deviceScale: number, zoomFactor: number): number {
+  if (!Number.isFinite(deviceScale) || deviceScale <= 0) {
+    return 1;
+  }
+  if (!Number.isFinite(zoomFactor) || zoomFactor <= 0) {
+    return deviceScale;
+  }
+  return deviceScale / zoomFactor;
+}
+
 function debugLog(message: string, payload?: Record<string, unknown>) {
   if (process.env.NODE_ENV === "development") {
     console.log("[electron-web-contents-view]", message, payload ?? {});
@@ -61,12 +85,20 @@ function roundToDevicePixels(value: number, scale: number): number {
   return Math.round(value * scale) / scale;
 }
 
-function rectToBounds(rect: DOMRect, scale: number): BoundsPayload {
+function rectToBounds(
+  rect: DOMRect,
+  displayScale: number,
+  zoomFactor: number
+): BoundsPayload {
+  const zoom =
+    Number.isFinite(zoomFactor) && zoomFactor > 0 ? zoomFactor : 1;
+  const scale =
+    Number.isFinite(displayScale) && displayScale > 0 ? displayScale : 1;
   return {
-    x: roundToDevicePixels(rect.left, scale),
-    y: roundToDevicePixels(rect.top, scale),
-    width: Math.max(0, roundToDevicePixels(rect.width, scale)),
-    height: Math.max(0, roundToDevicePixels(rect.height, scale)),
+    x: roundToDevicePixels(rect.left * zoom, scale),
+    y: roundToDevicePixels(rect.top * zoom, scale),
+    width: Math.max(0, roundToDevicePixels(rect.width * zoom, scale)),
+    height: Math.max(0, roundToDevicePixels(rect.height * zoom, scale)),
   };
 }
 
@@ -230,9 +262,11 @@ export function ElectronWebContentsView({
     const container = containerRef.current;
     if (!bridge || id === null || !container) return;
 
-    const scale = window.devicePixelRatio ?? 1;
+    const deviceScale = window.devicePixelRatio ?? 1;
+    const zoomFactor = getZoomFactor();
+    const displayScale = getDisplayScale(deviceScale, zoomFactor);
     const rect = container.getBoundingClientRect();
-    const bounds = rectToBounds(rect, scale);
+    const bounds = rectToBounds(rect, displayScale, zoomFactor);
     const sizeMissing = bounds.width <= 0 || bounds.height <= 0;
     const hiddenByStyle = isEffectivelyHidden(container);
     const isVisible =
@@ -389,10 +423,16 @@ export function ElectronWebContentsView({
     let disposed = false;
     setErrorMessage(null);
 
-    const initialScale = window.devicePixelRatio ?? 1;
+    const initialDeviceScale = window.devicePixelRatio ?? 1;
+    const initialZoom = getZoomFactor();
+    const initialDisplayScale = getDisplayScale(
+      initialDeviceScale,
+      initialZoom
+    );
     const initialBounds = rectToBounds(
       container.getBoundingClientRect(),
-      initialScale,
+      initialDisplayScale,
+      initialZoom
     );
     const { backgroundColor: initialBackground, borderRadius: initialRadius } =
       latestStyleRef.current;

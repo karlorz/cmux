@@ -42,6 +42,9 @@ declare global {
           }>;
         install: () => Promise<{ ok: boolean; reason?: string }>;
       };
+      zoom: {
+        getFactor: () => number;
+      };
     };
   }
 }

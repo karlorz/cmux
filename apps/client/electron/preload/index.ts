@@ -1,5 +1,5 @@
 import { electronAPI } from "@electron-toolkit/preload";
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webFrame } from "electron";
 import type {
   ElectronDevToolsMode,
   ElectronWebContentsEvent,
@@ -28,6 +28,19 @@ const cmuxAPI = {
   // Get the current webContents ID
   getCurrentWebContentsId: () => {
     return ipcRenderer.sendSync("cmux:get-current-webcontents-id") as number;
+  },
+  zoom: {
+    getFactor: () => {
+      try {
+        const factor = webFrame.getZoomFactor();
+        if (typeof factor === "number" && Number.isFinite(factor) && factor > 0) {
+          return factor;
+        }
+      } catch (error) {
+        console.warn("Failed to read zoom factor", error);
+      }
+      return 1;
+    },
   },
 
   // Register with the server (like socket connection)
