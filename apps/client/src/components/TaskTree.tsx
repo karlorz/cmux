@@ -462,6 +462,9 @@ function TaskTreeInner({
   if (task.projectFullName) {
     taskSecondaryParts.push(task.projectFullName);
   }
+  if ("environmentName" in task && typeof task.environmentName === "string") {
+    taskSecondaryParts.push(task.environmentName);
+  }
   if (trimmedPullRequestTitle && trimmedPullRequestTitle !== taskTitleValue) {
     taskSecondaryParts.push(trimmedPullRequestTitle);
   }

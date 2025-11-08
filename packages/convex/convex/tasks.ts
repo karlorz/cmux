@@ -33,8 +33,36 @@ export const get = authQuery({
     }
 
     // Note: order by createdAt desc, fallback to insertion order if not present
-    const results = await q.collect();
-    return results.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+    const tasks = await q.collect();
+    const sortedTasks = tasks.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+
+    // Fetch environment names for all tasks
+    const environmentIds = Array.from(
+      new Set(
+        sortedTasks
+          .map((task) => task.environmentId)
+          .filter((id): id is Id<"environments"> => id !== undefined),
+      ),
+    );
+
+    const environmentNames = new Map<Id<"environments">, string>();
+    if (environmentIds.length > 0) {
+      const environmentDocs = await Promise.all(
+        environmentIds.map((environmentId) => ctx.db.get(environmentId)),
+      );
+
+      for (const environment of environmentDocs) {
+        if (!environment || environment.teamId !== teamId) continue;
+        environmentNames.set(environment._id, environment.name);
+      }
+    }
+
+    return sortedTasks.map((task) => ({
+      ...task,
+      environmentName: task.environmentId
+        ? (environmentNames.get(task.environmentId) ?? null)
+        : null,
+    }));
   },
 });
 
@@ -70,6 +98,27 @@ export const getTasksWithTaskRuns = authQuery({
       (a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0),
     );
 
+    // Fetch environment names for all tasks
+    const environmentIds = Array.from(
+      new Set(
+        sortedTasks
+          .map((task) => task.environmentId)
+          .filter((id): id is Id<"environments"> => id !== undefined),
+      ),
+    );
+
+    const environmentNames = new Map<Id<"environments">, string>();
+    if (environmentIds.length > 0) {
+      const environmentDocs = await Promise.all(
+        environmentIds.map((environmentId) => ctx.db.get(environmentId)),
+      );
+
+      for (const environment of environmentDocs) {
+        if (!environment || environment.teamId !== teamId) continue;
+        environmentNames.set(environment._id, environment.name);
+      }
+    }
+
     const tasksWithRuns = await Promise.all(
       sortedTasks.map(async (task) => {
         const crownedRun = await ctx.db
@@ -94,6 +143,9 @@ export const getTasksWithTaskRuns = authQuery({
         return {
           ...task,
           selectedTaskRun,
+          environmentName: task.environmentId
+            ? (environmentNames.get(task.environmentId) ?? null)
+            : null,
         };
       }),
     );
