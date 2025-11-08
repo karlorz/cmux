@@ -4,10 +4,10 @@ import CmuxLogo from "@/components/logo/cmux-logo";
 import { MacDownloadLink } from "@/components/mac-download-link";
 import type { MacDownloadUrls } from "@/lib/releases";
 import clsx from "clsx";
-import { Download } from "lucide-react";
+import { Download, Github } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export const NAV_ITEMS = [
   { id: "about", label: "About" },
@@ -22,12 +22,42 @@ type SiteHeaderProps = {
   latestVersion?: string | null;
   macDownloadUrls?: MacDownloadUrls;
   extraEndContent?: ReactNode;
+  githubStarCount?: number | null;
 };
 
 const DEFAULT_DOWNLOAD_URLS: MacDownloadUrls = {
   universal: null,
   arm64: null,
   x64: null,
+};
+
+const CMUX_GITHUB_URL = "https://github.com/manaflow-ai/cmux";
+
+const formatStarCount = (value: number | null | undefined): string | null => {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return null;
+  }
+
+  if (value < 1000) {
+    return value.toString();
+  }
+
+  const units = [
+    { threshold: 1_000_000, suffix: "M" },
+    { threshold: 1_000, suffix: "K" },
+  ];
+
+  for (const { threshold, suffix } of units) {
+    if (value >= threshold) {
+      const shortened = value / threshold;
+      const rounded =
+        shortened >= 10 ? Math.round(shortened) : Number(shortened.toFixed(1));
+
+      return `${rounded}${suffix}`;
+    }
+  }
+
+  return value.toString();
 };
 
 export function SiteHeader({
@@ -37,9 +67,14 @@ export function SiteHeader({
   latestVersion,
   macDownloadUrls,
   extraEndContent,
+  githubStarCount,
 }: SiteHeaderProps) {
   const effectiveUrls = macDownloadUrls ?? DEFAULT_DOWNLOAD_URLS;
   const [isScrolled, setIsScrolled] = useState(false);
+  const formattedStars = useMemo(
+    () => formatStarCount(githubStarCount),
+    [githubStarCount]
+  );
 
   useEffect(() => {
     const handleScroll = () => {
@@ -89,7 +124,7 @@ export function SiteHeader({
           </Link> */}
           <a
             className="text-neutral-300 transition hover:text-white"
-            href="https://github.com/manaflow-ai/cmux"
+            href={CMUX_GITHUB_URL}
             rel="noopener noreferrer"
             target="_blank"
           >
@@ -106,6 +141,16 @@ export function SiteHeader({
         </nav>
         <div className="flex items-center gap-3">
           {extraEndContent}
+          <a
+            href={CMUX_GITHUB_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hidden items-center gap-1 rounded-md border border-white/15 px-3 py-1.5 text-xs font-mono text-white transition hover:border-white/30 hover:bg-white/5 md:flex"
+            aria-label="View cmux on GitHub"
+          >
+            <Github className="h-4 w-4" aria-hidden />
+            <span>{formattedStars ?? "Star us"}</span>
+          </a>
           {showDownload ? (
             <MacDownloadLink
               autoDetect
