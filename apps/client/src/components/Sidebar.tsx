@@ -227,7 +227,6 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
         style={{ WebkitAppRegion: "drag" } as CSSProperties}
       >
         {isElectron && <div className="w-[80px]"></div>}
-        <SidebarHistoryControls />
         <Link
           to="/$teamSlugOrId/dashboard"
           params={{ teamSlugOrId }}
@@ -238,6 +237,11 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
           {/* <Terminals */}
           <CmuxLogo height={32} />
         </Link>
+        {isElectron && (
+          <div className="ml-2">
+            <SidebarHistoryControls />
+          </div>
+        )}
         <div className="grow"></div>
         <Link
           to="/$teamSlugOrId/dashboard"
