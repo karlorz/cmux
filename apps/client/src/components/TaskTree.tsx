@@ -69,8 +69,14 @@ import { annotateAgentOrdinals } from "./task-tree/annotateAgentOrdinals";
 
 type PreviewService = NonNullable<TaskRunWithChildren["networking"]>[number];
 
+type TaskEnvironmentSummary = Pick<
+  Doc<"environments">,
+  "_id" | "name" | "selectedRepos"
+>;
+
 type TaskWithGeneratedBranch = Doc<"tasks"> & {
   generatedBranchName?: string | null;
+  environment?: TaskEnvironmentSummary | null;
 };
 
 function sanitizeBranchName(input?: string | null): string | null {
@@ -458,6 +464,9 @@ function TaskTreeInner({
   const taskSecondaryParts: string[] = [];
   if (inferredBranch) {
     taskSecondaryParts.push(inferredBranch);
+  }
+  if (task.environment?.name) {
+    taskSecondaryParts.push(task.environment.name);
   }
   if (task.projectFullName) {
     taskSecondaryParts.push(task.projectFullName);

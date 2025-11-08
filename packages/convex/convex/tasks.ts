@@ -1,9 +1,18 @@
 import { v } from "convex/values";
 import { resolveTeamIdLoose } from "../_shared/team";
 import { api } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { authMutation, authQuery, taskIdWithFake } from "./users/utils";
+
+type TaskEnvironmentSummary = Pick<
+  Doc<"environments">,
+  "_id" | "name" | "selectedRepos"
+>;
+
+type TaskWithEnvironment = Doc<"tasks"> & {
+  environment: TaskEnvironmentSummary | null;
+};
 
 export const get = authQuery({
   args: {
@@ -34,7 +43,45 @@ export const get = authQuery({
 
     // Note: order by createdAt desc, fallback to insertion order if not present
     const results = await q.collect();
-    return results.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+    const sortedResults = results.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+
+    // Fetch environment data for tasks
+    const environmentSummaries = new Map<
+      Id<"environments">,
+      TaskEnvironmentSummary
+    >();
+    const environmentIds = Array.from(
+      new Set(
+        sortedResults
+          .map((task) => task.environmentId)
+          .filter((id): id is Id<"environments"> => id !== undefined),
+      ),
+    );
+
+    if (environmentIds.length > 0) {
+      const environmentDocs = await Promise.all(
+        environmentIds.map((environmentId) => ctx.db.get(environmentId)),
+      );
+
+      for (const environment of environmentDocs) {
+        if (!environment || environment.teamId !== teamId) continue;
+        environmentSummaries.set(environment._id, {
+          _id: environment._id,
+          name: environment.name,
+          selectedRepos: environment.selectedRepos,
+        });
+      }
+    }
+
+    // Attach environment data to tasks
+    const tasksWithEnvironment: TaskWithEnvironment[] = sortedResults.map((task) => ({
+      ...task,
+      environment: task.environmentId
+        ? (environmentSummaries.get(task.environmentId) ?? null)
+        : null,
+    }));
+
+    return tasksWithEnvironment;
   },
 });
 
