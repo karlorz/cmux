@@ -359,7 +359,6 @@ export async function spawnAgent(
 
     let vscodeInstance: VSCodeInstance;
     let worktreePath: string;
-    let containerWorkspacePath: string;
 
     console.log("[AgentSpawner] [isCloudMode]", options.isCloudMode);
 
@@ -379,7 +378,6 @@ export async function spawnAgent(
       });
 
       worktreePath = CONTAINER_WORKSPACE_PATH;
-      containerWorkspacePath = CONTAINER_WORKSPACE_PATH;
     } else {
       // For Docker, set up worktree as before
       const worktreeInfo = await getWorktreePath(
@@ -423,10 +421,6 @@ export async function spawnAgent(
         teamSlugOrId,
         isLocalWorkspace: task?.isLocalWorkspace,
       });
-
-      // Determine container workspace path based on isLocalWorkspace flag
-      // Local workspaces use /root/workspace, local tasks use the actual worktree path
-      containerWorkspacePath = task?.isLocalWorkspace ? CONTAINER_WORKSPACE_PATH : worktreePath;
     }
 
     // Update the task run with the worktree path (retry on OCC)
@@ -639,6 +633,9 @@ export async function spawnAgent(
     const unsetCommand =
       unsetEnvVars.length > 0 ? `unset ${unsetEnvVars.join(" ")}; ` : "";
 
+    // Compute container workspace path: local workspaces use /root/workspace, local tasks use worktree path
+    const cwd = options.isCloudMode || task?.isLocalWorkspace ? CONTAINER_WORKSPACE_PATH : worktreePath;
+
     // For Codex agents, use direct command execution to preserve notify argument
     // The notify command contains complex JSON that gets mangled through shell layers
     const tmuxArgs = agent.name.toLowerCase().includes("codex")
@@ -648,7 +645,7 @@ export async function spawnAgent(
         "-s",
         tmuxSessionName,
         "-c",
-        containerWorkspacePath,
+        cwd,
         actualCommand,
         ...actualArgs.map((arg) => {
           // Replace $CMUX_PROMPT with actual prompt value
@@ -684,7 +681,7 @@ export async function spawnAgent(
       agentModel: agent.name,
       authFiles,
       startupCommands,
-      cwd: containerWorkspacePath,
+      cwd,
     };
 
     const switchBranch = async () => {
@@ -704,10 +701,10 @@ exit $EXIT_CODE
         workerSocket,
         command: "bash",
         args: ["-lc", command],
-        cwd: containerWorkspacePath,
+        cwd,
         env: {
           CMUX_BRANCH_NAME: newBranch,
-          CMUX_WORKSPACE_PATH: containerWorkspacePath,
+          CMUX_WORKSPACE_PATH: cwd,
         },
         timeout: 60000,
       });
