@@ -4,7 +4,7 @@ import CmuxLogo from "@/components/logo/cmux-logo";
 import { MacDownloadLink } from "@/components/mac-download-link";
 import type { MacDownloadUrls } from "@/lib/releases";
 import clsx from "clsx";
-import { Download } from "lucide-react";
+import { Download, Star } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
@@ -22,6 +22,7 @@ type SiteHeaderProps = {
   latestVersion?: string | null;
   macDownloadUrls?: MacDownloadUrls;
   extraEndContent?: ReactNode;
+  githubStarCount?: number | null;
 };
 
 const DEFAULT_DOWNLOAD_URLS: MacDownloadUrls = {
@@ -37,6 +38,7 @@ export function SiteHeader({
   latestVersion,
   macDownloadUrls,
   extraEndContent,
+  githubStarCount,
 }: SiteHeaderProps) {
   const effectiveUrls = macDownloadUrls ?? DEFAULT_DOWNLOAD_URLS;
   const [isScrolled, setIsScrolled] = useState(false);
@@ -88,12 +90,18 @@ export function SiteHeader({
             Tutorial
           </Link> */}
           <a
-            className="text-neutral-300 transition hover:text-white"
+            className="flex items-center gap-1.5 text-neutral-300 transition hover:text-white"
             href="https://github.com/manaflow-ai/cmux"
             rel="noopener noreferrer"
             target="_blank"
           >
-            GitHub
+            <span>GitHub</span>
+            {githubStarCount !== null && githubStarCount !== undefined && (
+              <span className="flex items-center gap-1 rounded-full bg-neutral-800 px-2 py-0.5 text-xs font-medium text-neutral-200">
+                <Star className="h-3 w-3 fill-current" aria-hidden />
+                {githubStarCount.toLocaleString()}
+              </span>
+            )}
           </a>
           <a
             className="text-neutral-300 transition hover:text-white"
