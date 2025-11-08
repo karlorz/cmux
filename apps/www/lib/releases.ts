@@ -1,8 +1,4 @@
-export const RELEASE_PAGE_URL =
-  "https://github.com/manaflow-ai/cmux/releases/latest";
-
-export const GITHUB_RELEASE_URL =
-  "https://api.github.com/repos/manaflow-ai/cmux/releases/latest";
+export { GITHUB_RELEASE_URL, RELEASE_PAGE_URL } from "@/lib/github/constants";
 
 export const DMG_SUFFIXES = {
   universal: "-universal.dmg",

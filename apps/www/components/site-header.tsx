@@ -2,9 +2,10 @@
 
 import CmuxLogo from "@/components/logo/cmux-logo";
 import { MacDownloadLink } from "@/components/mac-download-link";
+import { GITHUB_REPO_URL } from "@/lib/github/constants";
 import type { MacDownloadUrls } from "@/lib/releases";
 import clsx from "clsx";
-import { Download } from "lucide-react";
+import { Download, Star } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
@@ -22,6 +23,8 @@ type SiteHeaderProps = {
   latestVersion?: string | null;
   macDownloadUrls?: MacDownloadUrls;
   extraEndContent?: ReactNode;
+  githubRepoUrl?: string;
+  githubStarCount?: number | null;
 };
 
 const DEFAULT_DOWNLOAD_URLS: MacDownloadUrls = {
@@ -30,6 +33,27 @@ const DEFAULT_DOWNLOAD_URLS: MacDownloadUrls = {
   x64: null,
 };
 
+const starCountFormatter = new Intl.NumberFormat("en-US");
+
+const formatStarCount = (count: number): string => starCountFormatter.format(count);
+
+function GithubStarPill({
+  starCount,
+}: {
+  starCount?: number | null;
+}) {
+  if (typeof starCount !== "number") {
+    return null;
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/10 px-2 py-0.5 text-xs font-semibold text-white">
+      <Star className="h-3.5 w-3.5 text-amber-300" aria-hidden />
+      {formatStarCount(starCount)}
+    </span>
+  );
+}
+
 export function SiteHeader({
   linkPrefix = "",
   showDownload = true,
@@ -37,6 +61,8 @@ export function SiteHeader({
   latestVersion,
   macDownloadUrls,
   extraEndContent,
+  githubRepoUrl = GITHUB_REPO_URL,
+  githubStarCount = null,
 }: SiteHeaderProps) {
   const effectiveUrls = macDownloadUrls ?? DEFAULT_DOWNLOAD_URLS;
   const [isScrolled, setIsScrolled] = useState(false);
@@ -88,12 +114,13 @@ export function SiteHeader({
             Tutorial
           </Link> */}
           <a
-            className="text-neutral-300 transition hover:text-white"
-            href="https://github.com/manaflow-ai/cmux"
+            className="inline-flex items-center gap-2 text-neutral-300 transition hover:text-white"
+            href={githubRepoUrl}
             rel="noopener noreferrer"
             target="_blank"
           >
-            GitHub
+            <span>GitHub</span>
+            <GithubStarPill starCount={githubStarCount} />
           </a>
           <a
             className="text-neutral-300 transition hover:text-white"
@@ -105,6 +132,15 @@ export function SiteHeader({
           </a>
         </nav>
         <div className="flex items-center gap-3">
+          <a
+            className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-1 text-sm font-semibold text-white transition hover:border-white/30 hover:bg-white/5 md:hidden"
+            href={githubRepoUrl}
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            <span>GitHub</span>
+            <GithubStarPill starCount={githubStarCount} />
+          </a>
           {extraEndContent}
           {showDownload ? (
             <MacDownloadLink
