@@ -13,8 +13,8 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-# Lockfile patterns to exclude
-EXCLUDE_PATTERN='(package-lock\.json|bun\.lockb|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|composer\.lock|Gemfile\.lock|poetry\.lock|\.min\.js|\.min\.css)'
+# Lockfile and generated file patterns to exclude
+EXCLUDE_PATTERN='(package-lock\.json|bun\.lock|bun\.lockb|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|composer\.lock|Gemfile\.lock|poetry\.lock|\.min\.js|\.min\.css|\.woff|\.woff2|\.ttf|\.otf|\.eot|data/.*\.json|packages/www-openapi-client/src/client/types\.gen\.ts)'
 
 show_help() {
     cat << EOF
