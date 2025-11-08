@@ -264,6 +264,53 @@ function useTaskRunExpansionContext(): TaskRunExpansionContextValue {
   return context;
 }
 
+interface SidebarHoverArchiveButtonProps {
+  icon: ReactNode;
+  label: string;
+  onArchive: () => void;
+  enabled?: boolean;
+}
+
+function SidebarHoverArchiveButton({
+  icon,
+  label,
+  onArchive,
+  enabled = true,
+}: SidebarHoverArchiveButtonProps) {
+  if (!icon) {
+    return null;
+  }
+
+  if (!enabled) {
+    return icon;
+  }
+
+  const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onArchive();
+  };
+
+  return (
+    <div className="relative flex items-center justify-center">
+      {icon}
+      <Tooltip delayDuration={0}>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label={label}
+            onClick={handleClick}
+            className="absolute inset-0 z-10 flex items-center justify-center rounded-full text-neutral-500 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-[1px] focus-visible:outline-neutral-400 dark:text-neutral-300 dark:focus-visible:outline-neutral-500"
+          >
+            <ArchiveIcon className="w-3 h-3" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="right">{label}</TooltipContent>
+      </Tooltip>
+    </div>
+  );
+}
+
 function TaskTreeInner({
   task,
   level = 0,
@@ -600,6 +647,14 @@ function TaskTreeInner({
       <Circle className="w-3 h-3 text-neutral-400 animate-pulse" />
     );
   })();
+  const taskStatusMeta = (
+    <SidebarHoverArchiveButton
+      icon={taskLeadingIcon}
+      label="Archive task"
+      onArchive={handleArchive}
+      enabled={!task.isArchived}
+    />
+  );
 
   return (
     <TaskRunExpansionContext.Provider value={expansionContextValue}>
@@ -641,7 +696,7 @@ function TaskTreeInner({
                 title={taskTitleContent}
                 titleClassName={taskTitleClassName}
                 secondary={taskSecondary || undefined}
-                meta={taskLeadingIcon || undefined}
+                meta={taskStatusMeta || undefined}
                 className={clsx(isRenaming && "pr-2")}
               />
             </Link>
@@ -1122,6 +1177,14 @@ function TaskRunTreeInner({
     );
 
   const runLeadingIcon = pullRequestIcon ?? statusIconWithTooltip;
+  const runStatusWithArchive = (
+    <SidebarHoverArchiveButton
+      icon={runLeadingIcon}
+      label="Archive task run"
+      onArchive={handleArchiveRun}
+      enabled={!run.isArchived}
+    />
+  );
 
   const crownIcon = run.isCrowned ? (
     <Tooltip delayDuration={0}>
@@ -1148,10 +1211,10 @@ function TaskRunTreeInner({
   const leadingContent = crownIcon ? (
     <div className="flex items-center gap-1">
       {crownIcon}
-      {runLeadingIcon}
+      {runStatusWithArchive}
     </div>
   ) : (
-    runLeadingIcon
+    runStatusWithArchive
   );
 
   // Generate VSCode URL if available
