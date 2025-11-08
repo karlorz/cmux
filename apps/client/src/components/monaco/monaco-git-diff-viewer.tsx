@@ -867,6 +867,42 @@ function createDiffEditorMount({
 
     disposables.push(disposeListener);
 
+    const preventUnwantedScrolling = (editor: editor.IStandaloneCodeEditor) => {
+      let lastScrollTop = 0;
+      let lastScrollLeft = 0;
+
+      const scrollHandler = editor.onDidScrollChange((e) => {
+        lastScrollTop = e.scrollTop;
+        lastScrollLeft = e.scrollLeft;
+      });
+
+      const mouseDownHandler = () => {
+        setTimeout(() => {
+          const currentScrollTop = editor.getScrollTop();
+          const currentScrollLeft = editor.getScrollLeft();
+
+          if (currentScrollTop !== lastScrollTop || currentScrollLeft !== lastScrollLeft) {
+            editor.setScrollPosition({
+              scrollTop: lastScrollTop,
+              scrollLeft: lastScrollLeft,
+            });
+          }
+        }, 0);
+      };
+
+      container.addEventListener("mousedown", mouseDownHandler);
+
+      disposables.push(scrollHandler);
+      disposables.push({
+        dispose: () => {
+          container.removeEventListener("mousedown", mouseDownHandler);
+        },
+      });
+    };
+
+    preventUnwantedScrolling(originalEditor);
+    preventUnwantedScrolling(modifiedEditor);
+
     applyLayout();
 
     onReady?.({
@@ -1168,6 +1204,11 @@ export function MonacoGitDiffViewer({
         enabled: true,
         ...HIDE_UNCHANGED_REGIONS_SETTINGS,
       },
+      revealHorizontalRightPadding: 0,
+      cursorBlinking: "solid",
+      cursorStyle: "line-thin",
+      selectionHighlight: false,
+      occurrencesHighlight: "off",
     }),
     [],
   );
