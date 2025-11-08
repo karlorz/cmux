@@ -381,11 +381,6 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      onDoubleClick={() => {
-        if (onToggleExpand) {
-          onToggleExpand(position);
-        }
-      }}
     >
       {renderDropOverlay()}
       <div
@@ -450,11 +445,6 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          onDoubleClick={() => {
-            if (onToggleExpand) {
-              onToggleExpand(position);
-            }
-          }}
         >
           {renderDropOverlay()}
           <TaskRunChatPane
