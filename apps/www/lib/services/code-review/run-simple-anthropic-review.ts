@@ -1,4 +1,5 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 import { streamText } from "ai";
 
 import { CLOUDFLARE_ANTHROPIC_BASE_URL } from "@cmux/shared";
@@ -111,12 +112,18 @@ type RepoSlug = {
   repo: string;
 };
 
+export type SimpleReviewModelVariant = "default" | "ft0";
+
+const OPENAI_FT0_MODEL =
+  "ft:gpt-4.1-mini-2025-04-14:lawrence:cmux-heatmap-sft:CZW6Lc77";
+
 export type SimpleReviewStreamOptions = {
   prIdentifier: string;
   githubToken?: string | null;
   onChunk?: (chunk: string) => void | Promise<void>;
   onEvent?: (event: SimpleReviewParsedEvent) => void | Promise<void>;
   signal?: AbortSignal;
+  modelVariant?: SimpleReviewModelVariant;
 };
 
 export type SimpleReviewStreamResult = {
@@ -283,8 +290,10 @@ export async function runSimpleAnthropicReviewStream(
     githubToken: providedGithubToken = null,
     onChunk,
     signal,
+    modelVariant: requestedModelVariant = "default",
   } = options;
   const onEvent = options.onEvent ?? null;
+  const modelVariant = requestedModelVariant ?? "default";
 
   const emitEvent = async (event: SimpleReviewParsedEvent): Promise<void> => {
     if (!onEvent) {
@@ -337,6 +346,28 @@ export async function runSimpleAnthropicReviewStream(
     apiKey: env.ANTHROPIC_API_KEY,
     baseURL: CLOUDFLARE_ANTHROPIC_BASE_URL,
   });
+  const openAiApiKey = env.OPENAI_API_KEY?.trim() || null;
+  const openai = openAiApiKey ? createOpenAI({ apiKey: openAiApiKey }) : null;
+
+  if (modelVariant === "ft0" && !openai) {
+    throw new Error(
+      "OPENAI_API_KEY environment variable is required to use the ft0 heatmap model override."
+    );
+  }
+
+  if (modelVariant !== "default") {
+    console.info("[simple-review] Using non-default heatmap model", {
+      prIdentifier,
+      modelVariant,
+    });
+  }
+
+  const selectModel = () => {
+    if (modelVariant === "ft0") {
+      return openai!(OPENAI_FT0_MODEL);
+    }
+    return anthropic("claude-opus-4-1-20250805");
+  };
 
   const runWithSemaphore = createSemaphore(MAX_CONCURRENCY);
   const finalChunks: string[] = [];
@@ -369,7 +400,7 @@ export async function runSimpleAnthropicReviewStream(
 
         try {
           const stream = streamText({
-            model: anthropic("claude-opus-4-1-20250805"),
+            model: selectModel(),
             // model: anthropic("claude-haiku-4-5"),
             prompt,
             temperature: 0,

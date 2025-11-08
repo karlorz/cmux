@@ -12,6 +12,7 @@ import {
   useDeferredValue,
   useTransition,
 } from "react";
+import { useSearchParams } from "next/navigation";
 import { useClipboard } from "@mantine/hooks";
 import type {
   ReactElement,
@@ -541,6 +542,12 @@ export function PullRequestDiffViewer({
 }: PullRequestDiffViewerProps) {
   const normalizedJobType: "pull_request" | "comparison" =
     jobType ?? (comparisonSlug ? "comparison" : "pull_request");
+  const searchParams = useSearchParams();
+  const simpleReviewModelVariant = useMemo(
+    () => (searchParams?.has("ft0") ? "ft0" : "default"),
+    [searchParams]
+  );
+  const shouldRequestFineTune = simpleReviewModelVariant === "ft0";
 
   const [streamStateByFile, setStreamStateByFile] = useState<
     Map<string, StreamFileState>
@@ -563,6 +570,9 @@ export function PullRequestDiffViewer({
       repoFullName,
       prNumber: String(prNumber),
     });
+    if (shouldRequestFineTune) {
+      params.set("ft0", "1");
+    }
 
     (async () => {
       try {
@@ -863,7 +873,13 @@ export function PullRequestDiffViewer({
     return () => {
       controller.abort();
     };
-  }, [normalizedJobType, prNumber, repoFullName, setStreamStateByFile]);
+  }, [
+    normalizedJobType,
+    prNumber,
+    repoFullName,
+    setStreamStateByFile,
+    shouldRequestFineTune,
+  ]);
 
   const prQueryArgs = useMemo(
     () =>
