@@ -147,7 +147,7 @@ const verificationHighlights = [
 ];
 
 export default async function LandingPage() {
-  const { fallbackUrl, latestVersion, macDownloadUrls } =
+  const { fallbackUrl, latestVersion, macDownloadUrls, starCount } =
     await fetchLatestRelease();
 
   return (
@@ -165,6 +165,7 @@ export default async function LandingPage() {
         fallbackUrl={fallbackUrl}
         latestVersion={latestVersion}
         macDownloadUrls={macDownloadUrls}
+        starCount={starCount}
       />
 
       <main className="relative z-10 flex-1">

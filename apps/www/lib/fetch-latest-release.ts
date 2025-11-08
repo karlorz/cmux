@@ -1,6 +1,7 @@
 import {
   DMG_SUFFIXES,
   GITHUB_RELEASE_URL,
+  GITHUB_REPO_URL,
   MacArchitecture,
   MacDownloadUrls,
   RELEASE_PAGE_URL,
@@ -10,6 +11,7 @@ export type ReleaseInfo = {
   latestVersion: string | null;
   macDownloadUrls: MacDownloadUrls;
   fallbackUrl: string;
+  starCount: number | null;
 };
 
 type GithubRelease = {
@@ -29,12 +31,16 @@ const emptyDownloads: MacDownloadUrls = {
 const normalizeVersion = (tag: string): string =>
   tag.startsWith("v") ? tag.slice(1) : tag;
 
-const deriveReleaseInfo = (data: GithubRelease | null): ReleaseInfo => {
+const deriveReleaseInfo = (
+  data: GithubRelease | null,
+  starCount: number | null
+): ReleaseInfo => {
   if (!data) {
     return {
       latestVersion: null,
       macDownloadUrls: { ...emptyDownloads },
       fallbackUrl: RELEASE_PAGE_URL,
+      starCount,
     };
   }
 
@@ -71,12 +77,17 @@ const deriveReleaseInfo = (data: GithubRelease | null): ReleaseInfo => {
     latestVersion,
     macDownloadUrls,
     fallbackUrl: RELEASE_PAGE_URL,
+    starCount,
   };
 };
 
-export async function fetchLatestRelease(): Promise<ReleaseInfo> {
+type GithubRepo = {
+  stargazers_count?: number;
+};
+
+async function fetchStarCount(): Promise<number | null> {
   try {
-    const response = await fetch(GITHUB_RELEASE_URL, {
+    const response = await fetch(GITHUB_REPO_URL, {
       headers: {
         Accept: "application/vnd.github+json",
       },
@@ -86,15 +97,43 @@ export async function fetchLatestRelease(): Promise<ReleaseInfo> {
     });
 
     if (!response.ok) {
-      return deriveReleaseInfo(null);
+      return null;
     }
 
-    const data = (await response.json()) as GithubRelease;
+    const data = (await response.json()) as GithubRepo;
 
-    return deriveReleaseInfo(data);
+    return typeof data.stargazers_count === "number" ? data.stargazers_count : null;
+  } catch (error) {
+    console.error("Failed to retrieve GitHub star count", error);
+
+    return null;
+  }
+}
+
+export async function fetchLatestRelease(): Promise<ReleaseInfo> {
+  try {
+    const [releaseResponse, starCount] = await Promise.all([
+      fetch(GITHUB_RELEASE_URL, {
+        headers: {
+          Accept: "application/vnd.github+json",
+        },
+        next: {
+          revalidate: 3600,
+        },
+      }),
+      fetchStarCount(),
+    ]);
+
+    if (!releaseResponse.ok) {
+      return deriveReleaseInfo(null, starCount);
+    }
+
+    const data = (await releaseResponse.json()) as GithubRelease;
+
+    return deriveReleaseInfo(data, starCount);
   } catch (error) {
     console.error("Failed to retrieve latest GitHub release", error);
 
-    return deriveReleaseInfo(null);
+    return deriveReleaseInfo(null, null);
   }
 }
