@@ -1508,12 +1508,12 @@ function TaskRunDetails({
             Environment Issue
           </p>
           {environmentError?.maintenanceError && (
-            <p className="text-xs text-neutral-400">
+            <p className="text-xs text-neutral-400 dark:text-neutral-200">
               Maintenance: {environmentError.maintenanceError}
             </p>
           )}
           {environmentError?.devError && (
-            <p className="text-xs text-neutral-400">
+            <p className="text-xs text-neutral-400 dark:text-neutral-200">
               Dev: {environmentError.devError}
             </p>
           )}
