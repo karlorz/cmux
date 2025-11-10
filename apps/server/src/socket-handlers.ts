@@ -89,6 +89,30 @@ function isExecError(error: unknown): error is ExecError {
   );
 }
 
+function getLoginShellCommand(): { command: string; args: string[] } {
+  const envShell = process.env.SHELL?.trim();
+  if (envShell) {
+    return { command: envShell, args: ["-l", "-c"] };
+  }
+
+  try {
+    const userShell = os.userInfo().shell?.trim();
+    if (userShell) {
+      return { command: userShell, args: ["-l", "-c"] };
+    }
+  } catch {
+    // Ignore failures when resolving the shell from user info
+  }
+
+  if (process.platform === "win32") {
+    const comSpec =
+      process.env.COMSPEC?.trim() ?? process.env.ComSpec?.trim() ?? "cmd.exe";
+    return { command: comSpec, args: ["/d", "/c"] };
+  }
+
+  return { command: "/bin/bash", args: ["-l", "-c"] };
+}
+
 const GitSocketDiffRequestSchema = z.object({
   headRef: z.string(),
   baseRef: z.string().optional(),
@@ -846,16 +870,24 @@ export function setupSocketHandlers(
 
               const scriptPreamble = "set -euo pipefail";
               const maintenancePayload = `${scriptPreamble}\n${maintenanceScript}`;
+              const loginShell = getLoginShellCommand();
+              serverLogger.info(
+                `[create-local-workspace] Using login shell ${loginShell.command} for maintenance script`
+              );
 
               try {
-                await execFileAsync("zsh", ["-lc", maintenancePayload], {
-                  cwd: resolvedWorkspacePath,
-                  env: {
-                    ...process.env,
-                    ...parsedEnvVars,
-                  },
-                  maxBuffer: 10 * 1024 * 1024,
-                });
+                await execFileAsync(
+                  loginShell.command,
+                  [...loginShell.args, maintenancePayload],
+                  {
+                    cwd: resolvedWorkspacePath,
+                    env: {
+                      ...process.env,
+                      ...parsedEnvVars,
+                    },
+                    maxBuffer: 10 * 1024 * 1024,
+                  }
+                );
                 await convex.mutation(api.taskRuns.updateEnvironmentError, {
                   teamSlugOrId,
                   id: taskRunId,
