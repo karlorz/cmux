@@ -19,7 +19,11 @@ import {
   aggregatePullRequestState,
   type RunPullRequestState,
 } from "@cmux/shared/pull-request-state";
+import {
+  postApiMorphTaskRunsWakeMutation,
+} from "@cmux/www-openapi-client/react-query";
 import { Link, useLocation, type LinkProps } from "@tanstack/react-router";
+import { useMutation as useRQMutation } from "@tanstack/react-query";
 import clsx from "clsx";
 import { useMutation, useQuery as useConvexQuery } from "convex/react";
 import { toast } from "sonner";
@@ -48,6 +52,7 @@ import {
   TerminalSquare,
   Loader2,
   XCircle,
+  Zap,
 } from "lucide-react";
 import {
   Fragment,
@@ -1068,6 +1073,42 @@ function TaskRunTreeInner({
   const handleArchiveRun = useCallback(() => {
     onArchiveToggle(run._id, true);
   }, [onArchiveToggle, run._id]);
+  const {
+    mutateAsync: wakeVmMutateAsync,
+    isPending: isWakeVmPending,
+  } = useRQMutation(postApiMorphTaskRunsWakeMutation());
+  const canForceWakeVm = run.vscode?.provider === "morph";
+  const handleForceWakeVm = useCallback(() => {
+    if (!canForceWakeVm || isWakeVmPending) {
+      return;
+    }
+    toast.promise(
+      wakeVmMutateAsync({
+        body: {
+          teamSlugOrId,
+          taskRunId: run._id,
+        },
+      }),
+      {
+        loading: "Waking Morph VM…",
+        success: (data) =>
+          data.wasAlreadyReady
+            ? "VM is already awake."
+            : "VM is ready to use.",
+        error: (error) => {
+          if (
+            error &&
+            typeof error === "object" &&
+            "error" in error &&
+            typeof (error as { error?: string }).error === "string"
+          ) {
+            return (error as { error?: string }).error;
+          }
+          return "Failed to wake the Morph VM.";
+        },
+      }
+    );
+  }, [canForceWakeVm, isWakeVmPending, run._id, teamSlugOrId, wakeVmMutateAsync]);
 
   const isLocalWorkspaceRunEntry = run.isLocalWorkspace;
   const isCloudWorkspaceRunEntry = run.isCloudWorkspace;
@@ -1369,6 +1410,15 @@ function TaskRunTreeInner({
                     </ContextMenu.Popup>
                   </ContextMenu.Positioner>
                 </ContextMenu.SubmenuRoot>
+              ) : null}
+              {canForceWakeVm ? (
+                <ContextMenu.Item
+                  className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                  onClick={handleForceWakeVm}
+                >
+                  <Zap className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                  <span>{isWakeVmPending ? "Waking VM…" : "Force wake VM"}</span>
+                </ContextMenu.Item>
               ) : null}
               <ContextMenu.Item
                 className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"

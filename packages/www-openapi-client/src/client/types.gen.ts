@@ -365,6 +365,23 @@ export type SetupInstanceBody = {
     snapshotId?: string | ('snapshot_pmo7bxv7' | 'snapshot_qbpom27i');
 };
 
+export type WakeMorphTaskRunResponse = {
+    instanceId: string;
+    status: 'already_ready' | 'resumed';
+    wasAlreadyReady: boolean;
+    workspaceUrl?: string;
+    waitedMs: number;
+};
+
+export type WakeMorphTaskRunError = {
+    error: string;
+};
+
+export type WakeMorphTaskRunBody = {
+    teamSlugOrId: string;
+    taskRunId: string;
+};
+
 export type CreateEnvironmentResponse = {
     id: string;
     snapshotId: string;
@@ -1574,6 +1591,47 @@ export type PostApiMorphSetupInstanceResponses = {
 };
 
 export type PostApiMorphSetupInstanceResponse = PostApiMorphSetupInstanceResponses[keyof PostApiMorphSetupInstanceResponses];
+
+export type PostApiMorphTaskRunsWakeData = {
+    body: WakeMorphTaskRunBody;
+    path?: never;
+    query?: never;
+    url: '/api/morph/task-runs/wake';
+};
+
+export type PostApiMorphTaskRunsWakeErrors = {
+    /**
+     * The task run is not backed by a Morph VM or is invalid.
+     */
+    400: WakeMorphTaskRunError;
+    /**
+     * Unauthorized
+     */
+    401: WakeMorphTaskRunError;
+    /**
+     * The user does not own the Morph VM.
+     */
+    403: WakeMorphTaskRunError;
+    /**
+     * Task run or Morph instance not found.
+     */
+    404: WakeMorphTaskRunError;
+    /**
+     * Failed to resume the Morph VM.
+     */
+    500: WakeMorphTaskRunError;
+};
+
+export type PostApiMorphTaskRunsWakeError = PostApiMorphTaskRunsWakeErrors[keyof PostApiMorphTaskRunsWakeErrors];
+
+export type PostApiMorphTaskRunsWakeResponses = {
+    /**
+     * Workspace is ready for use.
+     */
+    200: WakeMorphTaskRunResponse;
+};
+
+export type PostApiMorphTaskRunsWakeResponse = PostApiMorphTaskRunsWakeResponses[keyof PostApiMorphTaskRunsWakeResponses];
 
 export type GetApiIframePreflightData = {
     body?: never;
