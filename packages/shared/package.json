@@ -58,6 +58,10 @@
       "import": "./src/utils/typed-zid.ts",
       "types": "./src/utils/typed-zid.ts"
     },
+    "./utils/morph-instance": {
+      "import": "./src/utils/morph-instance.ts",
+      "types": "./src/utils/morph-instance.ts"
+    },
     "./utils/reserved-cmux-ports": {
       "import": "./src/utils/reserved-cmux-ports.ts",
       "types": "./src/utils/reserved-cmux-ports.ts"
