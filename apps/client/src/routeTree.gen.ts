@@ -27,6 +27,7 @@ import { Route as LayoutTeamSlugOrIdWorkspacesRouteImport } from './routes/_layo
 import { Route as LayoutTeamSlugOrIdSettingsRouteImport } from './routes/_layout.$teamSlugOrId.settings'
 import { Route as LayoutTeamSlugOrIdPrsRouteImport } from './routes/_layout.$teamSlugOrId.prs'
 import { Route as LayoutTeamSlugOrIdLogsRouteImport } from './routes/_layout.$teamSlugOrId.logs'
+import { Route as LayoutTeamSlugOrIdKanbanRouteImport } from './routes/_layout.$teamSlugOrId.kanban'
 import { Route as LayoutTeamSlugOrIdEnvironmentsRouteImport } from './routes/_layout.$teamSlugOrId.environments'
 import { Route as LayoutTeamSlugOrIdDiffRouteImport } from './routes/_layout.$teamSlugOrId.diff'
 import { Route as LayoutTeamSlugOrIdDashboardRouteImport } from './routes/_layout.$teamSlugOrId.dashboard'
@@ -138,6 +139,12 @@ const LayoutTeamSlugOrIdLogsRoute = LayoutTeamSlugOrIdLogsRouteImport.update({
   path: '/logs',
   getParentRoute: () => LayoutTeamSlugOrIdRoute,
 } as any)
+const LayoutTeamSlugOrIdKanbanRoute =
+  LayoutTeamSlugOrIdKanbanRouteImport.update({
+    id: '/kanban',
+    path: '/kanban',
+    getParentRoute: () => LayoutTeamSlugOrIdRoute,
+  } as any)
 const LayoutTeamSlugOrIdEnvironmentsRoute =
   LayoutTeamSlugOrIdEnvironmentsRouteImport.update({
     id: '/environments',
@@ -270,6 +277,7 @@ export interface FileRoutesByFullPath {
   '/$teamSlugOrId/dashboard': typeof LayoutTeamSlugOrIdDashboardRoute
   '/$teamSlugOrId/diff': typeof LayoutTeamSlugOrIdDiffRoute
   '/$teamSlugOrId/environments': typeof LayoutTeamSlugOrIdEnvironmentsRouteWithChildren
+  '/$teamSlugOrId/kanban': typeof LayoutTeamSlugOrIdKanbanRoute
   '/$teamSlugOrId/logs': typeof LayoutTeamSlugOrIdLogsRoute
   '/$teamSlugOrId/prs': typeof LayoutTeamSlugOrIdPrsRouteWithChildren
   '/$teamSlugOrId/settings': typeof LayoutTeamSlugOrIdSettingsRoute
@@ -307,6 +315,7 @@ export interface FileRoutesByTo {
   '/$teamSlugOrId/connect-complete': typeof LayoutTeamSlugOrIdConnectCompleteRoute
   '/$teamSlugOrId/dashboard': typeof LayoutTeamSlugOrIdDashboardRoute
   '/$teamSlugOrId/diff': typeof LayoutTeamSlugOrIdDiffRoute
+  '/$teamSlugOrId/kanban': typeof LayoutTeamSlugOrIdKanbanRoute
   '/$teamSlugOrId/logs': typeof LayoutTeamSlugOrIdLogsRoute
   '/$teamSlugOrId/prs': typeof LayoutTeamSlugOrIdPrsRouteWithChildren
   '/$teamSlugOrId/settings': typeof LayoutTeamSlugOrIdSettingsRoute
@@ -346,6 +355,7 @@ export interface FileRoutesById {
   '/_layout/$teamSlugOrId/dashboard': typeof LayoutTeamSlugOrIdDashboardRoute
   '/_layout/$teamSlugOrId/diff': typeof LayoutTeamSlugOrIdDiffRoute
   '/_layout/$teamSlugOrId/environments': typeof LayoutTeamSlugOrIdEnvironmentsRouteWithChildren
+  '/_layout/$teamSlugOrId/kanban': typeof LayoutTeamSlugOrIdKanbanRoute
   '/_layout/$teamSlugOrId/logs': typeof LayoutTeamSlugOrIdLogsRoute
   '/_layout/$teamSlugOrId/prs': typeof LayoutTeamSlugOrIdPrsRouteWithChildren
   '/_layout/$teamSlugOrId/settings': typeof LayoutTeamSlugOrIdSettingsRoute
@@ -386,6 +396,7 @@ export interface FileRouteTypes {
     | '/$teamSlugOrId/dashboard'
     | '/$teamSlugOrId/diff'
     | '/$teamSlugOrId/environments'
+    | '/$teamSlugOrId/kanban'
     | '/$teamSlugOrId/logs'
     | '/$teamSlugOrId/prs'
     | '/$teamSlugOrId/settings'
@@ -423,6 +434,7 @@ export interface FileRouteTypes {
     | '/$teamSlugOrId/connect-complete'
     | '/$teamSlugOrId/dashboard'
     | '/$teamSlugOrId/diff'
+    | '/$teamSlugOrId/kanban'
     | '/$teamSlugOrId/logs'
     | '/$teamSlugOrId/prs'
     | '/$teamSlugOrId/settings'
@@ -461,6 +473,7 @@ export interface FileRouteTypes {
     | '/_layout/$teamSlugOrId/dashboard'
     | '/_layout/$teamSlugOrId/diff'
     | '/_layout/$teamSlugOrId/environments'
+    | '/_layout/$teamSlugOrId/kanban'
     | '/_layout/$teamSlugOrId/logs'
     | '/_layout/$teamSlugOrId/prs'
     | '/_layout/$teamSlugOrId/settings'
@@ -621,6 +634,13 @@ declare module '@tanstack/react-router' {
       path: '/logs'
       fullPath: '/$teamSlugOrId/logs'
       preLoaderRoute: typeof LayoutTeamSlugOrIdLogsRouteImport
+      parentRoute: typeof LayoutTeamSlugOrIdRoute
+    }
+    '/_layout/$teamSlugOrId/kanban': {
+      id: '/_layout/$teamSlugOrId/kanban'
+      path: '/kanban'
+      fullPath: '/$teamSlugOrId/kanban'
+      preLoaderRoute: typeof LayoutTeamSlugOrIdKanbanRouteImport
       parentRoute: typeof LayoutTeamSlugOrIdRoute
     }
     '/_layout/$teamSlugOrId/environments': {
@@ -838,6 +858,7 @@ interface LayoutTeamSlugOrIdRouteChildren {
   LayoutTeamSlugOrIdDashboardRoute: typeof LayoutTeamSlugOrIdDashboardRoute
   LayoutTeamSlugOrIdDiffRoute: typeof LayoutTeamSlugOrIdDiffRoute
   LayoutTeamSlugOrIdEnvironmentsRoute: typeof LayoutTeamSlugOrIdEnvironmentsRouteWithChildren
+  LayoutTeamSlugOrIdKanbanRoute: typeof LayoutTeamSlugOrIdKanbanRoute
   LayoutTeamSlugOrIdLogsRoute: typeof LayoutTeamSlugOrIdLogsRoute
   LayoutTeamSlugOrIdPrsRoute: typeof LayoutTeamSlugOrIdPrsRouteWithChildren
   LayoutTeamSlugOrIdSettingsRoute: typeof LayoutTeamSlugOrIdSettingsRoute
@@ -853,6 +874,7 @@ const LayoutTeamSlugOrIdRouteChildren: LayoutTeamSlugOrIdRouteChildren = {
   LayoutTeamSlugOrIdDiffRoute: LayoutTeamSlugOrIdDiffRoute,
   LayoutTeamSlugOrIdEnvironmentsRoute:
     LayoutTeamSlugOrIdEnvironmentsRouteWithChildren,
+  LayoutTeamSlugOrIdKanbanRoute: LayoutTeamSlugOrIdKanbanRoute,
   LayoutTeamSlugOrIdLogsRoute: LayoutTeamSlugOrIdLogsRoute,
   LayoutTeamSlugOrIdPrsRoute: LayoutTeamSlugOrIdPrsRouteWithChildren,
   LayoutTeamSlugOrIdSettingsRoute: LayoutTeamSlugOrIdSettingsRoute,
