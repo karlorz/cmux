@@ -117,15 +117,12 @@ function SidebarArchiveOverlay({
 }: SidebarArchiveOverlayProps) {
   return (
     <div className="relative flex h-4 w-4 items-center justify-center">
-      <div className="flex items-center justify-center group-hover:pointer-events-none group-hover:opacity-0 group-focus-within:pointer-events-none group-focus-within:opacity-0">
-        {icon}
-      </div>
       <Tooltip delayDuration={0}>
         <TooltipTrigger asChild>
           <button
             type="button"
             aria-label={label}
-            className="absolute inset-0 flex items-center justify-center rounded-sm text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-50 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400 dark:focus-visible:outline-neutral-500"
+            className="peer absolute inset-0 flex items-center justify-center rounded-sm text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-50 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 pointer-events-none focus-visible:pointer-events-auto group-hover:pointer-events-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400 dark:focus-visible:outline-neutral-500"
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -137,6 +134,9 @@ function SidebarArchiveOverlay({
         </TooltipTrigger>
         <TooltipContent side="right">{label}</TooltipContent>
       </Tooltip>
+      <div className="flex items-center justify-center group-hover:pointer-events-none group-hover:opacity-0 peer-focus:pointer-events-none peer-focus:opacity-0 peer-focus-visible:pointer-events-none peer-focus-visible:opacity-0">
+        {icon}
+      </div>
     </div>
   );
 }
