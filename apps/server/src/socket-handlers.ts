@@ -660,6 +660,7 @@ export function setupSocketHandlers(
           projectFullName,
           repoUrl: explicitRepoUrl,
           branch: requestedBranch,
+          prNumber,
           taskId: providedTaskId,
           taskRunId: providedTaskRunId,
           workspaceName: providedWorkspaceName,
@@ -951,24 +952,56 @@ export function setupSocketHandlers(
             if (cleanupWorkspace) {
               await cleanupWorkspace();
             }
-            const cloneArgs = ["clone"];
-            if (branch) {
-              cloneArgs.push("--branch", branch, "--single-branch");
-            }
-            cloneArgs.push(repoUrl, resolvedWorkspacePath);
-            try {
-              await execFileAsync("git", cloneArgs, { cwd: workspaceRoot });
-            } catch (error) {
-              if (cleanupWorkspace) {
-                await cleanupWorkspace();
+
+            // If a PR number is provided, use gh pr checkout
+            if (prNumber && projectFullName) {
+              try {
+                // Clone the repo first
+                const cloneArgs = ["clone", repoUrl, resolvedWorkspacePath];
+                await execFileAsync("git", cloneArgs, { cwd: workspaceRoot });
+
+                // Then checkout the PR using gh pr checkout
+                const ghArgs = ["pr", "checkout", String(prNumber)];
+                await execFileAsync("gh", ghArgs, {
+                  cwd: resolvedWorkspacePath,
+                });
+              } catch (error) {
+                if (cleanupWorkspace) {
+                  await cleanupWorkspace();
+                }
+                const execErr = isExecError(error) ? error : null;
+                const message =
+                  execErr?.stderr?.trim() ||
+                  (error instanceof Error
+                    ? error.message
+                    : "PR checkout failed");
+                throw new Error(
+                  message
+                    ? `Failed to checkout PR #${prNumber}: ${message}`
+                    : `Failed to checkout PR #${prNumber}`
+                );
               }
-              const execErr = isExecError(error) ? error : null;
-              const message =
-                execErr?.stderr?.trim() ||
-                (error instanceof Error ? error.message : "Git clone failed");
-              throw new Error(
-                message ? `Git clone failed: ${message}` : "Git clone failed"
-              );
+            } else {
+              // Regular clone with optional branch
+              const cloneArgs = ["clone"];
+              if (branch) {
+                cloneArgs.push("--branch", branch, "--single-branch");
+              }
+              cloneArgs.push(repoUrl, resolvedWorkspacePath);
+              try {
+                await execFileAsync("git", cloneArgs, { cwd: workspaceRoot });
+              } catch (error) {
+                if (cleanupWorkspace) {
+                  await cleanupWorkspace();
+                }
+                const execErr = isExecError(error) ? error : null;
+                const message =
+                  execErr?.stderr?.trim() ||
+                  (error instanceof Error ? error.message : "Git clone failed");
+                throw new Error(
+                  message ? `Git clone failed: ${message}` : "Git clone failed"
+                );
+              }
             }
 
             try {

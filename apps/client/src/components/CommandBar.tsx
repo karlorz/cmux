@@ -99,6 +99,21 @@ const EMPTY_TEAM_LIST: Team[] = [];
 
 const isDevEnvironment = import.meta.env.DEV;
 
+// Parse GitHub PR URL and extract owner, repo, and PR number
+function parsePrUrl(url: string): {
+  owner?: string;
+  repo?: string;
+  prNumber?: number;
+} | null {
+  const match = url.match(/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/i);
+  if (!match) return null;
+  return {
+    owner: match[1],
+    repo: match[2],
+    prNumber: parseInt(match[3], 10),
+  };
+}
+
 const baseCommandItemClassName =
   "flex items-center gap-2 px-3 py-2.5 mx-1 rounded-md cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 data-[selected=true]:bg-neutral-100 dark:data-[selected=true]:bg-neutral-800 data-[selected=true]:text-neutral-900 dark:data-[selected=true]:text-neutral-100";
 const taskCommandItemClassName =
@@ -683,7 +698,7 @@ export function CommandBar({
   }, [open]);
 
   const createLocalWorkspace = useCallback(
-    async (projectFullName: string) => {
+    async (projectFullNameOrPrUrl: string) => {
       if (isCreatingLocalWorkspace) {
         return;
       }
@@ -699,7 +714,24 @@ export function CommandBar({
       let reservedTaskRunId: Id<"taskRuns"> | null = null;
 
       try {
-        const repoUrl = `https://github.com/${projectFullName}.git`;
+        // Check if the input is a PR URL
+        const prInfo = parsePrUrl(projectFullNameOrPrUrl);
+        let projectFullName: string;
+        let repoUrl: string;
+        let prNumber: number | undefined;
+
+        if (prInfo && prInfo.owner && prInfo.repo && prInfo.prNumber) {
+          // It's a PR URL
+          projectFullName = `${prInfo.owner}/${prInfo.repo}`;
+          repoUrl = `https://github.com/${projectFullName}.git`;
+          prNumber = prInfo.prNumber;
+        } else {
+          // It's a regular project name
+          projectFullName = projectFullNameOrPrUrl;
+          repoUrl = `https://github.com/${projectFullName}.git`;
+          prNumber = undefined;
+        }
+
         const reservation = await reserveLocalWorkspace({
           teamSlugOrId,
           projectFullName,
@@ -721,6 +753,7 @@ export function CommandBar({
               teamSlugOrId,
               projectFullName,
               repoUrl,
+              prNumber,
               taskId: reservation.taskId,
               taskRunId: reservation.taskRunId,
               workspaceName: reservation.workspaceName,
