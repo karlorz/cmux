@@ -365,6 +365,17 @@ export type SetupInstanceBody = {
     snapshotId?: string | ('snapshot_pmo7bxv7' | 'snapshot_qbpom27i');
 };
 
+export type ForceWakeVmResponse = {
+    success: boolean;
+    instanceId: string;
+    status: string;
+    vscodeUrl?: string;
+};
+
+export type ForceWakeVmBody = {
+    taskRunId: string;
+};
+
 export type CreateEnvironmentResponse = {
     id: string;
     snapshotId: string;
@@ -1574,6 +1585,41 @@ export type PostApiMorphSetupInstanceResponses = {
 };
 
 export type PostApiMorphSetupInstanceResponse = PostApiMorphSetupInstanceResponses[keyof PostApiMorphSetupInstanceResponses];
+
+export type PostApiMorphForceWakeVmData = {
+    body: ForceWakeVmBody;
+    path?: never;
+    query?: never;
+    url: '/api/morph/force-wake-vm';
+};
+
+export type PostApiMorphForceWakeVmErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden - user does not own this task run
+     */
+    403: unknown;
+    /**
+     * Task run not found or has no Morph instance
+     */
+    404: unknown;
+    /**
+     * Failed to wake VM
+     */
+    500: unknown;
+};
+
+export type PostApiMorphForceWakeVmResponses = {
+    /**
+     * VM woken successfully
+     */
+    200: ForceWakeVmResponse;
+};
+
+export type PostApiMorphForceWakeVmResponse = PostApiMorphForceWakeVmResponses[keyof PostApiMorphForceWakeVmResponses];
 
 export type GetApiIframePreflightData = {
     body?: never;

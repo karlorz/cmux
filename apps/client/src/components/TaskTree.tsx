@@ -10,6 +10,7 @@ import { useOpenWithActions } from "@/hooks/useOpenWithActions";
 import { useTaskRename } from "@/hooks/useTaskRename";
 import { isElectron } from "@/lib/electron";
 import { isFakeConvexId } from "@/lib/fakeConvexId";
+import { WWW_ORIGIN } from "@/lib/wwwOrigin";
 import type { AnnotatedTaskRun, TaskRunWithChildren } from "@/types/task";
 import { ContextMenu } from "@base-ui-components/react/context-menu";
 import { api } from "@cmux/convex/api";
@@ -20,6 +21,7 @@ import {
   type RunPullRequestState,
 } from "@cmux/shared/pull-request-state";
 import { Link, useLocation, type LinkProps } from "@tanstack/react-router";
+import { useUser } from "@stackframe/react";
 import clsx from "clsx";
 import { useMutation, useQuery as useConvexQuery } from "convex/react";
 import { toast } from "sonner";
@@ -45,6 +47,7 @@ import {
   Globe,
   Monitor,
   Pencil,
+  Power,
   TerminalSquare,
   Loader2,
   XCircle,
@@ -1069,6 +1072,58 @@ function TaskRunTreeInner({
     onArchiveToggle(run._id, true);
   }, [onArchiveToggle, run._id]);
 
+  const user = useUser({ or: "redirect" });
+  const [isWakingVM, setIsWakingVM] = useState(false);
+
+  const handleForceWakeVM = useCallback(async () => {
+    if (isWakingVM) return;
+
+    const toastId = toast.loading("Waking VM...", {
+      description: "Resuming the paused VM instance",
+    });
+    setIsWakingVM(true);
+
+    try {
+      const stackHeaders = await user.getAuthHeaders();
+      const response = await fetch(`${WWW_ORIGIN}/api/morph/force-wake-vm`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...stackHeaders,
+        },
+        body: JSON.stringify({ taskRunId: run._id }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || `Failed with status ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      // Poll for VM to be ready
+      if (result.status === "ready") {
+        toast.success("VM is ready!", {
+          id: toastId,
+          description: "The VM has been successfully resumed",
+        });
+      } else {
+        toast.success("VM wake initiated", {
+          id: toastId,
+          description: "The VM is starting up. This may take a moment.",
+        });
+      }
+    } catch (error) {
+      console.error("Failed to wake VM:", error);
+      toast.error("Failed to wake VM", {
+        id: toastId,
+        description: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    } finally {
+      setIsWakingVM(false);
+    }
+  }, [isWakingVM, run._id, user]);
+
   const isLocalWorkspaceRunEntry = run.isLocalWorkspace;
   const isCloudWorkspaceRunEntry = run.isCloudWorkspace;
 
@@ -1250,6 +1305,7 @@ function TaskRunTreeInner({
   const hasOpenWithActions = openWithActions.length > 0;
   const hasPortActions = portActions.length > 0;
   const canCopyBranch = Boolean(copyRunBranch);
+  const canForceWakeVM = run.vscode?.provider === "morph" && run.vscode?.url;
   const hasCollapsibleContent =
     hasChildren ||
     hasActiveVSCode ||
@@ -1369,6 +1425,20 @@ function TaskRunTreeInner({
                     </ContextMenu.Popup>
                   </ContextMenu.Positioner>
                 </ContextMenu.SubmenuRoot>
+              ) : null}
+              {canForceWakeVM ? (
+                <ContextMenu.Item
+                  className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700 data-[disabled]:opacity-50 data-[disabled]:cursor-not-allowed"
+                  onClick={handleForceWakeVM}
+                  disabled={isWakingVM}
+                >
+                  {isWakingVM ? (
+                    <Loader2 className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300 animate-spin" />
+                  ) : (
+                    <Power className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                  )}
+                  <span>Force wake VM</span>
+                </ContextMenu.Item>
               ) : null}
               <ContextMenu.Item
                 className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"

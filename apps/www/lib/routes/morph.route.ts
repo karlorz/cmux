@@ -46,6 +46,21 @@ const SetupInstanceResponse = z
   })
   .openapi("SetupInstanceResponse");
 
+const ForceWakeVMBody = z
+  .object({
+    taskRunId: z.string(),
+  })
+  .openapi("ForceWakeVMBody");
+
+const ForceWakeVMResponse = z
+  .object({
+    success: z.boolean(),
+    instanceId: z.string(),
+    status: z.string(),
+    vscodeUrl: z.string().optional(),
+  })
+  .openapi("ForceWakeVMResponse");
+
 morphRouter.openapi(
   createRoute({
     method: "post" as const,
@@ -385,6 +400,147 @@ morphRouter.openapi(
     } catch (error) {
       console.error("Failed to setup Morph instance:", error);
       return c.text("Failed to setup instance", 500);
+    }
+  }
+);
+
+morphRouter.openapi(
+  createRoute({
+    method: "post" as const,
+    path: "/morph/force-wake-vm",
+    tags: ["Morph"],
+    summary: "Force wake a paused Morph VM for a task run",
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: ForceWakeVMBody,
+          },
+        },
+        required: true,
+      },
+    },
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: ForceWakeVMResponse,
+          },
+        },
+        description: "VM woken successfully",
+      },
+      401: { description: "Unauthorized" },
+      403: { description: "Forbidden - user does not own this task run" },
+      404: { description: "Task run not found or has no Morph instance" },
+      500: { description: "Failed to wake VM" },
+    },
+  }),
+  async (c) => {
+    const user = await stackServerAppJs.getUser({ tokenStore: c.req.raw });
+    if (!user) {
+      return c.text("Unauthorized", 401);
+    }
+    const { accessToken } = await user.getAuthJson();
+    if (!accessToken) return c.text("Unauthorized", 401);
+
+    const { taskRunId } = c.req.valid("json");
+    const convex = getConvex({ accessToken });
+
+    try {
+      // Get the task run
+      const taskRun = await convex.query.taskRuns.get({ id: taskRunId });
+      if (!taskRun) {
+        return c.text("Task run not found", 404);
+      }
+
+      // Verify user owns the task run (check via task)
+      const task = await convex.query.tasks.get({ id: taskRun.taskId });
+      if (!task) {
+        return c.text("Task not found", 404);
+      }
+
+      // Verify team access
+      const team = await verifyTeamAccess({ req: c.req.raw, teamSlugOrId: task.teamId });
+
+      // Verify user is member of the team
+      if (task.teamId !== team.uuid) {
+        return c.text("Forbidden: Task does not belong to this team", 403);
+      }
+
+      // Check if task run has a Morph vscode instance
+      if (!taskRun.vscode || taskRun.vscode.provider !== "morph") {
+        return c.text("Task run does not have a Morph instance", 404);
+      }
+
+      // Extract morph instance ID from the vscode URL
+      const vscodeUrl = taskRun.vscode.url;
+      if (!vscodeUrl) {
+        return c.text("Task run has no VSCode URL", 404);
+      }
+
+      const { extractMorphInstanceInfo } = await import("@cmux/shared");
+      const morphInfo = extractMorphInstanceInfo(vscodeUrl);
+      if (!morphInfo) {
+        return c.text("Could not extract Morph instance ID from URL", 404);
+      }
+
+      const instanceId = morphInfo.instanceId;
+      console.log(`Force waking Morph instance: ${instanceId} for task run: ${taskRunId}`);
+
+      // Create Morph client and get the instance
+      const client = new MorphCloudClient({
+        apiKey: env.MORPH_API_KEY,
+      });
+
+      const instance = await client.instances.get({ instanceId });
+
+      // Verify the instance belongs to the same team (security check)
+      const meta = instance.metadata;
+      const instanceTeamId = meta?.teamId;
+      if (!instanceTeamId || instanceTeamId !== team.uuid) {
+        return c.text(
+          "Forbidden: Instance does not belong to this team",
+          403
+        );
+      }
+
+      // Resume the instance if it's paused
+      if (instance.status === "paused") {
+        console.log(`Resuming paused instance: ${instanceId}`);
+        await instance.resume();
+
+        // Wait for the instance to be ready (with timeout)
+        const maxWaitTime = 60000; // 60 seconds
+        const pollInterval = 2000; // 2 seconds
+        const startTime = Date.now();
+
+        while (Date.now() - startTime < maxWaitTime) {
+          await instance.refresh();
+          if (instance.status === "ready") {
+            break;
+          }
+          await new Promise(resolve => setTimeout(resolve, pollInterval));
+        }
+
+        if (instance.status !== "ready") {
+          console.warn(`Instance ${instanceId} did not reach ready state within timeout`);
+        }
+      }
+
+      // Get the VSCode URL
+      const resumedVscodeUrl = instance.networking.httpServices.find(
+        (service) => service.port === 39378
+      )?.url;
+
+      return c.json({
+        success: true,
+        instanceId,
+        status: instance.status,
+        vscodeUrl: resumedVscodeUrl ? `${resumedVscodeUrl}/?folder=/root/workspace` : undefined,
+      });
+    } catch (error) {
+      console.error("Failed to force wake VM:", error);
+      return c.text(`Failed to wake VM: ${error instanceof Error ? error.message : String(error)}`, 500);
     }
   }
 );
