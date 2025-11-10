@@ -33,6 +33,7 @@ import {
   TASK_RUN_IFRAME_SANDBOX,
   preloadTaskRunIframes,
 } from "../lib/preloadTaskRunIframes";
+import { persistentIframeManager } from "@/lib/persistentIframeManager";
 import {
   createTerminalTab,
   terminalTabsQueryKey,
@@ -172,6 +173,55 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/task/$taskId/")({
 
       if (tabs) {
         queryClient.setQueryData<TerminalTabId[]>(tabsKey, tabs);
+      }
+    })();
+
+    // Preload VNC browser iframe asynchronously
+    void (async () => {
+      try {
+        const taskRuns = await queryClient.ensureQueryData(
+          convexQuery(api.taskRuns.getByTask, {
+            teamSlugOrId: opts.params.teamSlugOrId,
+            taskId: opts.params.taskId,
+          })
+        );
+
+        if (!taskRuns?.length) {
+          return;
+        }
+
+        const taskRunIndex = buildTaskRunIndex(taskRuns);
+        const searchParams = new URLSearchParams(opts.location.search);
+        const runIdParam = searchParams.get("runId");
+        const parsedRunId = runIdParam
+          ? typedZid("taskRuns").safeParse(runIdParam)
+          : null;
+        const selectedRun = parsedRunId?.success
+          ? (taskRunIndex.get(parsedRunId.data) ?? taskRuns[0])
+          : taskRuns[0];
+
+        const rawBrowserUrl =
+          selectedRun?.vscode?.url ?? selectedRun?.vscode?.workspaceUrl ?? null;
+        if (!rawBrowserUrl) {
+          return;
+        }
+
+        const browserUrl = toMorphVncUrl(rawBrowserUrl);
+        if (!browserUrl) {
+          return;
+        }
+
+        const browserPersistKey = getTaskRunBrowserPersistKey(selectedRun._id);
+        await persistentIframeManager.preloadIframe(
+          browserPersistKey,
+          browserUrl,
+          {
+            allow: TASK_RUN_IFRAME_ALLOW,
+            sandbox: TASK_RUN_IFRAME_SANDBOX,
+          }
+        );
+      } catch (error) {
+        console.error("Failed to preload VNC browser iframe", error);
       }
     })();
   },
