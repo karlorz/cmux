@@ -7,6 +7,8 @@ import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { env } from "@/lib/utils/www-env";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { MorphCloudClient } from "morphcloud";
+import { api } from "@cmux/convex/api";
+import type { Id } from "@cmux/convex/dataModel";
 import { getConvex } from "../utils/get-convex";
 import { selectGitIdentity } from "../utils/gitIdentity";
 import { stackServerAppJs } from "../utils/stack";
@@ -45,6 +47,185 @@ const SetupInstanceResponse = z
     removedRepos: z.array(z.string()),
   })
   .openapi("SetupInstanceResponse");
+
+const ResumeInstanceBody = z
+  .object({
+    teamSlugOrId: z.string(),
+    taskRunId: z.string(),
+  })
+  .openapi("ResumeInstanceBody");
+
+const ResumeInstanceResponse = z
+  .object({
+    success: z.boolean(),
+    message: z.string(),
+    instanceId: z.optional(z.string()),
+    status: z.optional(z.string()),
+  })
+  .openapi("ResumeInstanceResponse");
+
+morphRouter.openapi(
+  createRoute({
+    method: "post" as const,
+    path: "/morph/resume-instance",
+    tags: ["Morph"],
+    summary: "Resume a paused Morph VM instance for a task run",
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: ResumeInstanceBody,
+          },
+        },
+        required: true,
+      },
+    },
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: ResumeInstanceResponse,
+          },
+        },
+        description: "VM resume operation completed",
+      },
+      401: { description: "Unauthorized" },
+      403: { description: "Forbidden - VM does not belong to team" },
+      404: { description: "Task run not found or no Morph VM associated" },
+      500: { description: "Failed to resume instance" },
+    },
+  }),
+  async (c) => {
+    const user = await stackServerAppJs.getUser({ tokenStore: c.req.raw });
+    if (!user) {
+      return c.text("Unauthorized", 401);
+    }
+    const { accessToken } = await user.getAuthJson();
+    if (!accessToken) return c.text("Unauthorized", 401);
+
+    const { teamSlugOrId, taskRunId } = c.req.valid("json");
+    const convex = getConvex({ accessToken });
+
+    // Verify team access
+    const team = await verifyTeamAccess({ req: c.req.raw, teamSlugOrId });
+
+    try {
+      // Fetch the task run to get the instance ID
+      const taskRun = await convex.query(api.taskRuns.get, {
+        teamSlugOrId,
+        id: taskRunId as Id<"taskRuns">,
+      });
+
+      if (!taskRun) {
+        return c.json(
+          {
+            success: false,
+            message: "Task run not found",
+          },
+          404
+        );
+      }
+
+      // Verify the task run belongs to the team
+      if (taskRun.teamId !== team.uuid) {
+        return c.json(
+          {
+            success: false,
+            message: "Task run does not belong to this team",
+          },
+          403
+        );
+      }
+
+      // Check if task run has a Morph vscode provider
+      if (taskRun.vscode?.provider !== "morph") {
+        return c.json(
+          {
+            success: false,
+            message: "Task run does not use Morph provider",
+          },
+          404
+        );
+      }
+
+      // Get the instance ID from the vscode.url
+      const vscodeUrl = taskRun.vscode?.url;
+      if (!vscodeUrl) {
+        return c.json(
+          {
+            success: false,
+            message: "No VSCode URL found for this task run",
+          },
+          404
+        );
+      }
+
+      // Extract instance ID from URL (format: https://{instanceId}.morphvm.com/...)
+      const urlMatch = vscodeUrl.match(/https:\/\/([^.]+)\.morphvm\.com/);
+      if (!urlMatch || !urlMatch[1]) {
+        return c.json(
+          {
+            success: false,
+            message: "Could not extract instance ID from VSCode URL",
+          },
+          500
+        );
+      }
+
+      const instanceId = urlMatch[1];
+
+      // Initialize Morph client and get instance
+      const client = new MorphCloudClient({
+        apiKey: env.MORPH_API_KEY,
+      });
+
+      const instance = await client.instances.get({ instanceId });
+
+      // Verify instance belongs to the team
+      const meta = instance.metadata;
+      const instanceTeamId = meta?.teamId;
+      if (!instanceTeamId || instanceTeamId !== team.uuid) {
+        return c.json(
+          {
+            success: false,
+            message: "VM instance does not belong to this team",
+          },
+          403
+        );
+      }
+
+      // Check current status
+      if (instance.status === "ready") {
+        return c.json({
+          success: true,
+          message: "VM is already running",
+          instanceId,
+          status: instance.status,
+        });
+      }
+
+      // Resume the instance
+      await instance.resume();
+
+      return c.json({
+        success: true,
+        message: "VM resume initiated successfully",
+        instanceId,
+        status: "resuming",
+      });
+    } catch (error) {
+      console.error("Failed to resume Morph instance:", error);
+      return c.json(
+        {
+          success: false,
+          message:
+            error instanceof Error ? error.message : "Failed to resume instance",
+        },
+        500
+      );
+    }
+  }
+);
 
 morphRouter.openapi(
   createRoute({

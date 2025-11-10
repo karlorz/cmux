@@ -350,6 +350,18 @@ export type GithubInstallStateRequest = {
     returnUrl?: string;
 };
 
+export type ResumeInstanceResponse = {
+    success: boolean;
+    message: string;
+    instanceId?: string;
+    status?: string;
+};
+
+export type ResumeInstanceBody = {
+    teamSlugOrId: string;
+    taskRunId: string;
+};
+
 export type SetupInstanceResponse = {
     instanceId: string;
     vscodeUrl: string;
@@ -1561,6 +1573,41 @@ export type PostApiIntegrationsGithubInstallStateResponses = {
 };
 
 export type PostApiIntegrationsGithubInstallStateResponse = PostApiIntegrationsGithubInstallStateResponses[keyof PostApiIntegrationsGithubInstallStateResponses];
+
+export type PostApiMorphResumeInstanceData = {
+    body: ResumeInstanceBody;
+    path?: never;
+    query?: never;
+    url: '/api/morph/resume-instance';
+};
+
+export type PostApiMorphResumeInstanceErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden - VM does not belong to team
+     */
+    403: unknown;
+    /**
+     * Task run not found or no Morph VM associated
+     */
+    404: unknown;
+    /**
+     * Failed to resume instance
+     */
+    500: unknown;
+};
+
+export type PostApiMorphResumeInstanceResponses = {
+    /**
+     * VM resume operation completed
+     */
+    200: ResumeInstanceResponse;
+};
+
+export type PostApiMorphResumeInstanceResponse = PostApiMorphResumeInstanceResponses[keyof PostApiMorphResumeInstanceResponses];
 
 export type PostApiMorphSetupInstanceData = {
     body: SetupInstanceBody;

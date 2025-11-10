@@ -6,6 +6,7 @@ import {
 } from "@/components/ui/tooltip";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { useArchiveTask } from "@/hooks/useArchiveTask";
+import { useForceWakeVM } from "@/hooks/useForceWakeVM";
 import { useOpenWithActions } from "@/hooks/useOpenWithActions";
 import { useTaskRename } from "@/hooks/useTaskRename";
 import { isElectron } from "@/lib/electron";
@@ -45,6 +46,7 @@ import {
   Globe,
   Monitor,
   Pencil,
+  Power,
   TerminalSquare,
   Loader2,
   XCircle,
@@ -1239,6 +1241,13 @@ function TaskRunTreeInner({
     networking: run.networking,
   });
 
+  // Force wake VM hook - only for Morph VMs
+  const isMorphVM = run.vscode?.provider === "morph";
+  const { forceWakeVM, isWaking } = useForceWakeVM({
+    teamSlugOrId,
+    taskRunId: run._id,
+  });
+
   const shouldRenderDiffLink = true;
   const shouldRenderBrowserLink = run.vscode?.provider === "morph";
   const shouldRenderTerminalLink = shouldRenderBrowserLink;
@@ -1369,6 +1378,20 @@ function TaskRunTreeInner({
                     </ContextMenu.Popup>
                   </ContextMenu.Positioner>
                 </ContextMenu.SubmenuRoot>
+              ) : null}
+              {isMorphVM ? (
+                <ContextMenu.Item
+                  className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700 data-[disabled]:opacity-50 data-[disabled]:cursor-not-allowed"
+                  onClick={forceWakeVM}
+                  disabled={isWaking}
+                >
+                  {isWaking ? (
+                    <Loader2 className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300 animate-spin" />
+                  ) : (
+                    <Power className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                  )}
+                  <span>Force wake VM</span>
+                </ContextMenu.Item>
               ) : null}
               <ContextMenu.Item
                 className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
