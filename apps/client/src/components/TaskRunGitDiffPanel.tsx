@@ -5,6 +5,13 @@ import { gitDiffQueryOptions } from "@/queries/git-diff";
 import { normalizeGitRef } from "@/lib/refWithOrigin";
 import type { TaskRunWithChildren } from "@/types/task";
 import type { Doc } from "@cmux/convex/dataModel";
+import type { GitDiffViewerProps } from "./git-diff-viewer";
+
+const panelGitDiffViewerClassNames: GitDiffViewerProps["classNames"] = {
+  fileDiffRow: {
+    button: "top-0",
+  },
+};
 
 export interface TaskRunGitDiffPanelProps {
   task: Doc<"tasks"> | null | undefined;
@@ -97,7 +104,10 @@ export function TaskRunGitDiffPanel({ task, selectedRun }: TaskRunGitDiffPanelPr
 
   return (
     <div className="h-full overflow-auto">
-      <MonacoGitDiffViewer diffs={allDiffs} />
+      <MonacoGitDiffViewer
+        diffs={allDiffs}
+        classNames={panelGitDiffViewerClassNames}
+      />
     </div>
   );
 }
