@@ -7,6 +7,7 @@ import { env } from "@/lib/utils/www-env";
 import { api } from "@cmux/convex/api";
 import { RESERVED_CMUX_PORT_SET } from "@cmux/shared/utils/reserved-cmux-ports";
 import { parseGithubRepoUrl } from "@cmux/shared/utils/parse-github-repo-url";
+import { parseGithubPullRequestUrl } from "@cmux/shared/utils/parse-github-pr-url";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { MorphCloudClient } from "morphcloud";
@@ -48,6 +49,7 @@ const StartSandboxBody = z
     branch: z.string().optional(),
     newBranch: z.string().optional(),
     depth: z.number().optional().default(1),
+    pullRequestUrl: z.string().url().optional(),
   })
   .openapi("StartSandboxBody");
 
@@ -168,6 +170,26 @@ sandboxesRouter.openapi(
 
       // Parse repo URL once if provided
       const parsedRepoUrl = body.repoUrl ? parseGithubRepoUrl(body.repoUrl) : null;
+      const parsedPullRequest = body.pullRequestUrl
+        ? parseGithubPullRequestUrl(body.pullRequestUrl)
+        : null;
+
+      if (body.pullRequestUrl && !parsedPullRequest) {
+        return c.text("Invalid GitHub pull request URL", 400);
+      }
+
+      if (parsedPullRequest && !parsedRepoUrl) {
+        return c.text("Pull request URL requires a repository", 400);
+      }
+
+      if (
+        parsedPullRequest &&
+        parsedRepoUrl &&
+        parsedPullRequest.repoFullName.toLowerCase() !==
+          parsedRepoUrl.fullName.toLowerCase()
+      ) {
+        return c.text("Pull request URL must match the repository", 400);
+      }
 
       // Load workspace config if we're in cloud mode with a repository (not an environment)
       let workspaceConfig: { maintenanceScript?: string; envVarsContent?: string } | null = null;
@@ -323,6 +345,7 @@ sandboxesRouter.openapi(
           depth: Math.max(1, Math.floor(body.depth ?? 1)),
           baseBranch: body.branch || "main",
           newBranch: body.newBranch ?? "",
+          pullRequestUrl: parsedPullRequest?.url ?? undefined,
         };
       }
 

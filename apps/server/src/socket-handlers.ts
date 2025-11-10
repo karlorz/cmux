@@ -22,6 +22,7 @@ import {
   isLoopbackHostname,
   LOCAL_VSCODE_PLACEHOLDER_ORIGIN,
   type IframePreflightResult,
+  parseGithubPullRequestUrl,
 } from "@cmux/shared";
 import {
   type PullRequestActionResult,
@@ -660,6 +661,7 @@ export function setupSocketHandlers(
           projectFullName,
           repoUrl: explicitRepoUrl,
           branch: requestedBranch,
+          pullRequestUrl: rawPullRequestUrl,
           taskId: providedTaskId,
           taskRunId: providedTaskRunId,
           workspaceName: providedWorkspaceName,
@@ -684,6 +686,36 @@ export function setupSocketHandlers(
             error: "Invalid repository name.",
           });
           return;
+        }
+
+        let normalizedPullRequestUrl: string | undefined;
+        if (rawPullRequestUrl) {
+          const parsedPull = parseGithubPullRequestUrl(rawPullRequestUrl);
+          if (!parsedPull) {
+            callback({
+              success: false,
+              error: "Invalid GitHub pull request URL.",
+            });
+            return;
+          }
+          if (!projectFullName) {
+            callback({
+              success: false,
+              error: "Pull request URL requires a repository.",
+            });
+            return;
+          }
+          if (
+            parsedPull.repoFullName.toLowerCase() !==
+            projectFullName.toLowerCase()
+          ) {
+            callback({
+              success: false,
+              error: "Pull request does not belong to the selected repository.",
+            });
+            return;
+          }
+          normalizedPullRequestUrl = parsedPull.url;
         }
 
         const repoUrl =
@@ -1011,6 +1043,40 @@ export function setupSocketHandlers(
             });
           }
 
+          if (normalizedPullRequestUrl) {
+            serverLogger.info(
+              `[create-local-workspace] Checking out pull request ${normalizedPullRequestUrl} with gh`
+            );
+            try {
+              await execFileAsync(
+                "gh",
+                ["pr", "checkout", normalizedPullRequestUrl],
+                {
+                  cwd: resolvedWorkspacePath,
+                  maxBuffer: 10 * 1024 * 1024,
+                }
+              );
+            } catch (error) {
+              if (cleanupWorkspace) {
+                await cleanupWorkspace();
+              }
+              const execErr = isExecError(error) ? error : null;
+              const stderr = execErr?.stderr?.trim() ?? "";
+              const stdout = execErr?.stdout?.trim() ?? "";
+              const message =
+                stderr ||
+                stdout ||
+                (error instanceof Error
+                  ? error.message
+                  : "gh pr checkout failed");
+              throw new Error(
+                message
+                  ? `Failed to checkout pull request: ${message}`
+                  : "Failed to checkout pull request"
+              );
+            }
+          }
+
           const parsedEnvVars = await writeEnvVariablesIfPresent();
 
           await convex.mutation(api.taskRuns.updateWorktreePath, {
@@ -1128,6 +1194,7 @@ export function setupSocketHandlers(
           environmentId,
           projectFullName,
           repoUrl,
+          pullRequestUrl: rawPullRequestUrl,
           taskId: providedTaskId,
         } = parsed.data;
         const teamSlugOrId = requestedTeamSlugOrId || safeTeam;
@@ -1136,6 +1203,36 @@ export function setupSocketHandlers(
         let taskId: Id<"tasks"> | undefined = providedTaskId;
         let taskRunId: Id<"taskRuns"> | null = null;
         let responded = false;
+
+        let normalizedPullRequestUrl: string | undefined;
+        if (rawPullRequestUrl) {
+          const parsedPull = parseGithubPullRequestUrl(rawPullRequestUrl);
+          if (!parsedPull) {
+            callback({
+              success: false,
+              error: "Invalid GitHub pull request URL.",
+            });
+            return;
+          }
+          if (!projectFullName) {
+            callback({
+              success: false,
+              error: "Pull request URL requires a repository.",
+            });
+            return;
+          }
+          if (
+            parsedPull.repoFullName.toLowerCase() !==
+            projectFullName.toLowerCase()
+          ) {
+            callback({
+              success: false,
+              error: "Pull request does not belong to the selected repository.",
+            });
+            return;
+          }
+          normalizedPullRequestUrl = parsedPull.url;
+        }
 
         try {
           if (!taskId) {
@@ -1204,6 +1301,9 @@ export function setupSocketHandlers(
               taskRunId,
               taskRunJwt,
               isCloudWorkspace: true,
+              ...(normalizedPullRequestUrl
+                ? { pullRequestUrl: normalizedPullRequestUrl }
+                : {}),
               ...(environmentId
                 ? { environmentId }
                 : { projectFullName, repoUrl }),
