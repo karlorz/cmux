@@ -106,7 +106,7 @@ interface TaskTreeProps {
 }
 
 interface SidebarArchiveOverlayProps {
-  icon: ReactNode;
+  icon: ReactNode | null;
   label: string;
   onArchive: () => void;
 }
@@ -135,9 +135,11 @@ function SidebarArchiveOverlay({
         </TooltipTrigger>
         <TooltipContent side="right">{label}</TooltipContent>
       </Tooltip>
-      <div className="flex items-center justify-center group-hover:pointer-events-none group-hover:opacity-0 group-data-[focus-visible=true]:pointer-events-none group-data-[focus-visible=true]:opacity-0 peer-focus-visible:pointer-events-none peer-focus-visible:opacity-0">
-        {icon}
-      </div>
+      {icon && (
+        <div className="flex items-center justify-center group-hover:pointer-events-none group-hover:opacity-0 group-data-[focus-visible=true]:pointer-events-none group-data-[focus-visible=true]:opacity-0 peer-focus-visible:pointer-events-none peer-focus-visible:opacity-0">
+          {icon}
+        </div>
+      )}
     </div>
   );
 }
@@ -651,7 +653,7 @@ function TaskTreeInner({
   })();
 
   const taskMetaIcon =
-    !task.isArchived && taskLeadingIcon ? (
+    !task.isArchived ? (
       <SidebarArchiveOverlay
         icon={taskLeadingIcon}
         label="Archive task"
@@ -1183,7 +1185,7 @@ function TaskRunTreeInner({
   const runLeadingIcon = pullRequestIcon ?? statusIconWithTooltip;
 
   const runMetaIcon =
-    !run.isArchived && runLeadingIcon ? (
+    !run.isArchived ? (
       <SidebarArchiveOverlay
         icon={runLeadingIcon}
         label="Archive task run"
