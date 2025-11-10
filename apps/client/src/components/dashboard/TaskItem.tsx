@@ -44,7 +44,7 @@ export const TaskItem = memo(function TaskItem({
   } = useTaskRename({
     taskId: task._id,
     teamSlugOrId,
-    currentText: task.text,
+    currentText: task.pullRequestTitle?.trim() || task.text,
     canRename,
   });
 
@@ -218,7 +218,9 @@ export const TaskItem = memo(function TaskItem({
                   )}
                 />
               ) : (
-                <span className="text-[14px] truncate min-w-0">{task.text}</span>
+                <span className="text-[14px] truncate min-w-0">
+                  {task.pullRequestTitle?.trim() || task.text}
+                </span>
               )}
               {(task.projectFullName ||
                 (task.baseBranch && task.baseBranch !== "main")) && (

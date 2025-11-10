@@ -199,7 +199,7 @@ export const setCompleted = authMutation({
 });
 
 export const update = authMutation({
-  args: { teamSlugOrId: v.string(), id: v.id("tasks"), text: v.string() },
+  args: { teamSlugOrId: v.string(), id: v.id("tasks"), pullRequestTitle: v.string() },
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
@@ -207,7 +207,7 @@ export const update = authMutation({
     if (task === null || task.teamId !== teamId || task.userId !== userId) {
       throw new Error("Task not found or unauthorized");
     }
-    await ctx.db.patch(args.id, { text: args.text, updatedAt: Date.now() });
+    await ctx.db.patch(args.id, { pullRequestTitle: args.pullRequestTitle, updatedAt: Date.now() });
   },
 });
 

@@ -466,7 +466,7 @@ function TaskTreeInner({
   } = useTaskRename({
     taskId: task._id,
     teamSlugOrId,
-    currentText: task.text ?? "",
+    currentText: task.pullRequestTitle?.trim() || task.text || "",
     canRename: canRenameTask,
   });
 
@@ -485,12 +485,13 @@ function TaskTreeInner({
   }, [unarchive, task._id]);
 
   const inferredBranch = getTaskBranch(task);
-  const trimmedTaskText = (task.text ?? "").trim();
   const trimmedPullRequestTitle = task.pullRequestTitle?.trim();
+  const trimmedTaskText = (task.text ?? "").trim();
+  // Show PR title over user prompt, but respect if PR title exists (means user may have renamed it)
   const taskTitleValue =
-    trimmedTaskText ||
     trimmedPullRequestTitle ||
     task.pullRequestTitle ||
+    trimmedTaskText ||
     task.text;
   const taskSecondaryParts: string[] = [];
   if (inferredBranch) {
@@ -499,9 +500,7 @@ function TaskTreeInner({
   if (task.projectFullName) {
     taskSecondaryParts.push(task.projectFullName);
   }
-  if (trimmedPullRequestTitle && trimmedPullRequestTitle !== taskTitleValue) {
-    taskSecondaryParts.push(trimmedPullRequestTitle);
-  }
+  // Don't show PR title in secondary if it's already shown as the main title
   const taskSecondary = taskSecondaryParts.join(" • ");
   const taskListPaddingLeft = 10 + level * 4;
   const taskTitleClassName = clsx(
