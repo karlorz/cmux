@@ -44,10 +44,13 @@ const StartSandboxBody = z
     taskRunJwt: z.string().optional(),
     isCloudWorkspace: z.boolean().optional(),
     // Optional hydration parameters to clone a repo into the sandbox on start
+    projectFullName: z.string().optional(),
     repoUrl: z.string().optional(),
     branch: z.string().optional(),
     newBranch: z.string().optional(),
     depth: z.number().optional().default(1),
+    pullRequestNumber: z.number().int().positive().optional(),
+    pullRequestUrl: z.string().url().optional(),
   })
   .openapi("StartSandboxBody");
 
@@ -143,6 +146,13 @@ sandboxesRouter.openapi(
       });
     } catch {
       /* noop */
+    }
+
+    if (
+      (body.pullRequestNumber !== undefined || body.pullRequestUrl) &&
+      !body.projectFullName
+    ) {
+      return c.text("Pull request checkout requires projectFullName", 400);
     }
 
     try {
@@ -323,6 +333,11 @@ sandboxesRouter.openapi(
           depth: Math.max(1, Math.floor(body.depth ?? 1)),
           baseBranch: body.branch || "main",
           newBranch: body.newBranch ?? "",
+          pullRequestNumber:
+            body.pullRequestNumber !== undefined
+              ? Math.floor(body.pullRequestNumber)
+              : undefined,
+          pullRequestUrl: body.pullRequestUrl ?? undefined,
         };
       }
 

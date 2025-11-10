@@ -13,6 +13,8 @@ export interface HydrateRepoConfig {
   depth: number;
   baseBranch: string;
   newBranch: string;
+  pullRequestNumber?: number;
+  pullRequestUrl?: string;
 }
 
 const MORPH_WORKSPACE_PATH = "/root/workspace";
@@ -49,6 +51,12 @@ export const hydrateWorkspace = async ({
     envVars.CMUX_MASKED_CLONE_URL = repo.maskedCloneUrl;
     envVars.CMUX_BASE_BRANCH = repo.baseBranch;
     envVars.CMUX_NEW_BRANCH = repo.newBranch;
+    if (repo.pullRequestNumber !== undefined) {
+      envVars.CMUX_PULL_REQUEST_NUMBER = String(repo.pullRequestNumber);
+    }
+    if (repo.pullRequestUrl) {
+      envVars.CMUX_PULL_REQUEST_URL = repo.pullRequestUrl;
+    }
   }
 
   // Build the command to write and execute the script

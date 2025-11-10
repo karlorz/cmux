@@ -660,6 +660,8 @@ export function setupSocketHandlers(
           projectFullName,
           repoUrl: explicitRepoUrl,
           branch: requestedBranch,
+          pullRequestNumber,
+          pullRequestUrl,
           taskId: providedTaskId,
           taskRunId: providedTaskRunId,
           workspaceName: providedWorkspaceName,
@@ -686,12 +688,33 @@ export function setupSocketHandlers(
           return;
         }
 
+        const normalizedPullRequestNumber =
+          typeof pullRequestNumber === "number" ? pullRequestNumber : undefined;
+        const normalizedPullRequestUrl =
+          pullRequestUrl ??
+          (projectFullName && normalizedPullRequestNumber !== undefined
+            ? `https://github.com/${projectFullName}/pull/${normalizedPullRequestNumber}`
+            : undefined);
+        const hasPullRequest =
+          normalizedPullRequestNumber !== undefined ||
+          Boolean(normalizedPullRequestUrl);
+        if (hasPullRequest && !projectFullName) {
+          callback({
+            success: false,
+            error: "Pull request checkout requires a repository.",
+          });
+          return;
+        }
+
         const repoUrl =
           explicitRepoUrl ??
           (projectFullName
             ? `https://github.com/${projectFullName}.git`
             : undefined);
-        const branch = requestedBranch?.trim();
+        const gitCloneBranch = requestedBranch?.trim() || undefined;
+        const descriptorBranch = normalizedPullRequestNumber
+          ? `PR #${normalizedPullRequestNumber}`
+          : gitCloneBranch;
 
         let workspaceConfig: WorkspaceConfigResponse | null = null;
         if (projectFullName) {
@@ -737,7 +760,7 @@ export function setupSocketHandlers(
                 teamSlugOrId,
                 projectFullName: projectFullName ?? undefined,
                 repoUrl,
-                branch,
+                branch: descriptorBranch,
               }
             );
             taskId = reservation.taskId;
@@ -755,8 +778,8 @@ export function setupSocketHandlers(
               ? `Local workspace ${workspaceName} (${projectFullName})`
               : `Local workspace ${workspaceName}`;
             descriptor =
-              branch && branch.length > 0
-                ? `${descriptorBase} [${branch}]`
+              descriptorBranch && descriptorBranch.length > 0
+                ? `${descriptorBase} [${descriptorBranch}]`
                 : descriptorBase;
           }
 
@@ -952,8 +975,8 @@ export function setupSocketHandlers(
               await cleanupWorkspace();
             }
             const cloneArgs = ["clone"];
-            if (branch) {
-              cloneArgs.push("--branch", branch, "--single-branch");
+            if (gitCloneBranch && !hasPullRequest) {
+              cloneArgs.push("--branch", gitCloneBranch, "--single-branch");
             }
             cloneArgs.push(repoUrl, resolvedWorkspacePath);
             try {
@@ -988,6 +1011,34 @@ export function setupSocketHandlers(
                   ? `Git clone failed to produce a checkout: ${error.message}`
                   : "Git clone failed to produce a checkout"
               );
+            }
+
+            if (hasPullRequest && projectFullName) {
+              const prIdentifier =
+                normalizedPullRequestNumber !== undefined
+                  ? normalizedPullRequestNumber.toString()
+                  : normalizedPullRequestUrl!;
+              const ghArgs = ["pr", "checkout", prIdentifier];
+              ghArgs.push("--repo", projectFullName);
+              try {
+                await execFileAsync("gh", ghArgs, {
+                  cwd: resolvedWorkspacePath,
+                });
+              } catch (error) {
+                if (cleanupWorkspace) {
+                  await cleanupWorkspace();
+                }
+                const execErr = isExecError(error) ? error : null;
+                const message =
+                  execErr?.stderr?.trim() ||
+                  execErr?.stdout?.trim() ||
+                  (error instanceof Error ? error.message : undefined);
+                throw new Error(
+                  message
+                    ? `Failed to checkout pull request: ${message}`
+                    : "Failed to checkout pull request"
+                );
+              }
             }
           } else {
             try {
@@ -1128,6 +1179,8 @@ export function setupSocketHandlers(
           environmentId,
           projectFullName,
           repoUrl,
+          pullRequestNumber,
+          pullRequestUrl,
           taskId: providedTaskId,
         } = parsed.data;
         const teamSlugOrId = requestedTeamSlugOrId || safeTeam;
@@ -1136,6 +1189,16 @@ export function setupSocketHandlers(
         let taskId: Id<"tasks"> | undefined = providedTaskId;
         let taskRunId: Id<"taskRuns"> | null = null;
         let responded = false;
+
+        const hasPullRequest =
+          pullRequestNumber !== undefined || Boolean(pullRequestUrl);
+        if (hasPullRequest && !projectFullName) {
+          callback({
+            success: false,
+            error: "Pull request checkout requires a repository.",
+          });
+          return;
+        }
 
         try {
           if (!taskId) {
@@ -1206,7 +1269,14 @@ export function setupSocketHandlers(
               isCloudWorkspace: true,
               ...(environmentId
                 ? { environmentId }
-                : { projectFullName, repoUrl }),
+                : {
+                    projectFullName,
+                    repoUrl,
+                    ...(pullRequestNumber !== undefined
+                      ? { pullRequestNumber }
+                      : {}),
+                    ...(pullRequestUrl ? { pullRequestUrl } : {}),
+                  }),
             },
           });
 

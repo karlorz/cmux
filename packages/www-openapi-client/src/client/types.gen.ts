@@ -482,10 +482,13 @@ export type StartSandboxBody = {
     taskRunId?: string;
     taskRunJwt?: string;
     isCloudWorkspace?: boolean;
+    projectFullName?: string;
     repoUrl?: string;
     branch?: string;
     newBranch?: string;
     depth?: number;
+    pullRequestNumber?: number;
+    pullRequestUrl?: string;
 };
 
 export type UpdateSandboxEnvResponse = {

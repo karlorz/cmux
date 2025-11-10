@@ -14,6 +14,8 @@ interface HydrateConfig {
   depth: number;
   baseBranch?: string;
   newBranch?: string;
+  pullRequestNumber?: number;
+  pullRequestUrl?: string;
 }
 
 function log(message: string, level: "info" | "error" | "debug" = "info") {
@@ -74,6 +76,15 @@ function getConfig(): HydrateConfig {
   const maskedCloneUrl = process.env.CMUX_MASKED_CLONE_URL;
   const baseBranch = process.env.CMUX_BASE_BRANCH;
   const newBranch = process.env.CMUX_NEW_BRANCH;
+  const pullRequestNumberRaw = process.env.CMUX_PULL_REQUEST_NUMBER;
+  const pullRequestUrl = process.env.CMUX_PULL_REQUEST_URL;
+  const parsedPullNumber = pullRequestNumberRaw
+    ? Number.parseInt(pullRequestNumberRaw, 10)
+    : undefined;
+  const pullRequestNumber =
+    parsedPullNumber !== undefined && Number.isFinite(parsedPullNumber)
+      ? parsedPullNumber
+      : undefined;
 
   return {
     workspacePath,
@@ -85,6 +96,8 @@ function getConfig(): HydrateConfig {
     depth,
     baseBranch,
     newBranch,
+    pullRequestNumber,
+    pullRequestUrl,
   };
 }
 
@@ -220,6 +233,32 @@ function checkoutBranch(workspacePath: string, baseBranch: string, newBranch?: s
   }
 }
 
+function checkoutPullRequest(config: HydrateConfig) {
+  if (
+    config.pullRequestNumber === undefined &&
+    !config.pullRequestUrl
+  ) {
+    return;
+  }
+
+  const identifier =
+    config.pullRequestNumber !== undefined
+      ? config.pullRequestNumber.toString()
+      : config.pullRequestUrl!;
+  const repoArg = config.repoFull ? ` --repo "${config.repoFull}"` : "";
+
+  log(`Checking out pull request ${identifier}`);
+  const { exitCode, stderr } = exec(
+    `gh pr checkout "${identifier}"${repoArg}`,
+    { cwd: config.workspacePath, throwOnError: false }
+  );
+
+  if (exitCode !== 0) {
+    log(`Failed to checkout pull request: ${stderr}`, "error");
+    throw new Error(`Failed to checkout pull request ${identifier}`);
+  }
+}
+
 function hydrateSubdirectories(workspacePath: string) {
   log("Checking for subdirectory git repositories");
 
@@ -275,6 +314,8 @@ async function main() {
       if (config.baseBranch) {
         checkoutBranch(config.workspacePath, config.baseBranch, config.newBranch);
       }
+
+      checkoutPullRequest(config);
 
       // List files for verification
       log("Listing workspace contents:");
