@@ -90,6 +90,11 @@ export async function ensureVSCodeServeWeb(
       {
         detached: false,
         stdio: ["ignore", "pipe", "pipe"],
+        env: {
+          ...process.env,
+          // Override host VS Code IPC hook for securely launched serve-web process.
+          VSCODE_IPC_HOOK_CLI: "undefined",
+        },
       }
     );
 
