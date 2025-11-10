@@ -19,9 +19,28 @@ import {
   aggregatePullRequestState,
   type RunPullRequestState,
 } from "@cmux/shared/pull-request-state";
-import { Link, useLocation, type LinkProps } from "@tanstack/react-router";
+import {
+  postApiMorphForceWakeMutation,
+} from "@cmux/www-openapi-client/react-query";
+import type {
+  Options,
+  PostApiMorphForceWakeData,
+  PostApiMorphForceWakeResponse,
+} from "@cmux/www-openapi-client";
+import {
+  Link,
+  useLocation,
+  type LinkProps,
+} from "@tanstack/react-router";
+import {
+  useMutation as useQueryMutation,
+  type DefaultError,
+} from "@tanstack/react-query";
 import clsx from "clsx";
-import { useMutation, useQuery as useConvexQuery } from "convex/react";
+import {
+  useMutation as useConvexMutation,
+  useQuery as useConvexQuery,
+} from "convex/react";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -48,6 +67,7 @@ import {
   TerminalSquare,
   Loader2,
   XCircle,
+  Zap,
 } from "lucide-react";
 import {
   Fragment,
@@ -104,6 +124,10 @@ interface TaskTreeProps {
   teamSlugOrId: string;
 }
 
+interface ForceWakeToastContext {
+  toastId?: string | number;
+}
+
 interface SidebarArchiveOverlayProps {
   icon: ReactNode;
   label: string;
@@ -139,6 +163,25 @@ function SidebarArchiveOverlay({
       </Tooltip>
     </div>
   );
+}
+
+function describeApiError(error: unknown): string | undefined {
+  if (!error) {
+    return undefined;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string") {
+      return message;
+    }
+  }
+  return undefined;
 }
 
 // Extract the display text logic to avoid re-creating it on every render
@@ -375,11 +418,12 @@ function TaskTreeInner({
     });
   }, [isOptimisticTask, task._id, teamSlugOrId]);
 
-  const archiveTaskRun = useMutation(api.taskRuns.archive).withOptimisticUpdate(
-    (localStore, args) => {
-      if (!args.taskId) {
-        return;
-      }
+  const archiveTaskRun =
+    useConvexMutation(api.taskRuns.archive).withOptimisticUpdate(
+      (localStore, args) => {
+        if (!args.taskId) {
+          return;
+        }
       const variants: Array<{
         teamSlugOrId: string;
         taskId: Id<"tasks">;
@@ -408,8 +452,8 @@ function TaskTreeInner({
           localStore.setQuery(api.taskRuns.getByTask, variant, updated);
         }
       }
-    }
-  );
+      }
+    );
 
   const handleRunArchiveToggle = useCallback(
     async (runId: Id<"taskRuns">, shouldArchive: boolean) => {
@@ -1226,6 +1270,8 @@ function TaskRunTreeInner({
     return run.networking.filter((service) => service.status === "running");
   }, [run.networking]);
 
+  const isMorphWorkspace = run.vscode?.provider === "morph";
+
   const {
     actions: openWithActions,
     executeOpenAction,
@@ -1239,8 +1285,49 @@ function TaskRunTreeInner({
     networking: run.networking,
   });
 
+  const forceWakeMutation = useQueryMutation<
+    PostApiMorphForceWakeResponse,
+    DefaultError,
+    Options<PostApiMorphForceWakeData>,
+    ForceWakeToastContext
+  >({
+    ...postApiMorphForceWakeMutation(),
+    onMutate: () => {
+      const toastId = toast.loading("Forcing workspace wake…");
+      return { toastId };
+    },
+    onSuccess: (data, _variables, context) => {
+      const title =
+        data.status === "already_ready"
+          ? "Workspace already awake"
+          : "Workspace resumed";
+      toast.success(title, {
+        id: context?.toastId,
+        description: data.message ?? "Workspace should be ready shortly.",
+      });
+    },
+    onError: (error, _variables, context) => {
+      toast.error("Failed to wake workspace", {
+        id: context?.toastId,
+        description: describeApiError(error),
+      });
+    },
+  });
+
+  const handleForceWake = useCallback(() => {
+    if (!isMorphWorkspace) {
+      return;
+    }
+    forceWakeMutation.mutate({
+      body: {
+        teamSlugOrId,
+        taskRunId: run._id,
+      },
+    });
+  }, [forceWakeMutation, isMorphWorkspace, run._id, teamSlugOrId]);
+
   const shouldRenderDiffLink = true;
-  const shouldRenderBrowserLink = run.vscode?.provider === "morph";
+  const shouldRenderBrowserLink = isMorphWorkspace;
   const shouldRenderTerminalLink = shouldRenderBrowserLink;
   const shouldRenderPullRequestLink = Boolean(
     (run.pullRequestUrl && run.pullRequestUrl !== "pending") ||
@@ -1397,6 +1484,9 @@ function TaskRunTreeInner({
         environmentError={run.environmentError}
         onArchiveToggle={onArchiveToggle}
         showRunNumbers={showRunNumbers}
+        showForceWakeButton={isMorphWorkspace}
+        onForceWake={handleForceWake}
+        isForceWakePending={forceWakeMutation.isPending}
       />
     </div>
   );
@@ -1448,6 +1538,51 @@ function TaskRunDetailLink({
   );
 }
 
+interface TaskRunDetailButtonProps {
+  icon: ReactNode;
+  label: string;
+  indentLevel: number;
+  onClick?: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+}
+
+function TaskRunDetailButton({
+  icon,
+  label,
+  indentLevel,
+  onClick,
+  disabled,
+  loading,
+}: TaskRunDetailButtonProps) {
+  const isDisabled = disabled || loading;
+  return (
+    <button
+      type="button"
+      className={clsx(
+        "flex items-center justify-between gap-2 px-2 py-1 text-xs rounded-md hover:bg-neutral-200/45 dark:hover:bg-neutral-800/45 cursor-default mt-px",
+        isDisabled && "opacity-70 cursor-not-allowed"
+      )}
+      style={{ paddingLeft: `${24 + indentLevel * 8}px` }}
+      onClick={() => {
+        if (isDisabled) {
+          return;
+        }
+        onClick?.();
+      }}
+      disabled={isDisabled}
+    >
+      <span className="flex min-w-0 items-center">
+        {icon}
+        <span className="text-neutral-600 dark:text-neutral-400">{label}</span>
+      </span>
+      {loading ? (
+        <Loader2 className="ml-2 h-3 w-3 shrink-0 animate-spin text-neutral-500" />
+      ) : null}
+    </button>
+  );
+}
+
 interface TaskRunDetailsProps {
   run: AnnotatedTaskRun;
   level: number;
@@ -1466,6 +1601,9 @@ interface TaskRunDetailsProps {
   };
   onArchiveToggle: (runId: Id<"taskRuns">, archive: boolean) => void;
   showRunNumbers: boolean;
+  showForceWakeButton: boolean;
+  onForceWake?: () => void;
+  isForceWakePending?: boolean;
 }
 
 function TaskRunDetails({
@@ -1483,6 +1621,9 @@ function TaskRunDetails({
   environmentError,
   onArchiveToggle,
   showRunNumbers,
+  showForceWakeButton,
+  onForceWake,
+  isForceWakePending,
 }: TaskRunDetailsProps) {
   if (!isExpanded) {
     return null;
@@ -1567,6 +1708,17 @@ function TaskRunDetails({
           icon={<TerminalSquare className="w-3 h-3 mr-2 text-neutral-400" />}
           label="Terminals"
           indentLevel={indentLevel}
+        />
+      ) : null}
+
+      {showForceWakeButton ? (
+        <TaskRunDetailButton
+          icon={<Zap className="w-3 h-3 mr-2 text-neutral-400" />}
+          label="Force wake VM"
+          indentLevel={indentLevel}
+          onClick={onForceWake}
+          disabled={!onForceWake || Boolean(isForceWakePending)}
+          loading={Boolean(isForceWakePending)}
         />
       ) : null}
 

@@ -365,6 +365,17 @@ export type SetupInstanceBody = {
     snapshotId?: string | ('snapshot_pmo7bxv7' | 'snapshot_qbpom27i');
 };
 
+export type ForceWakeVmResponse = {
+    instanceId: string;
+    status: 'already_ready' | 'resumed';
+    message?: string;
+};
+
+export type ForceWakeVmBody = {
+    teamSlugOrId: string;
+    taskRunId: string;
+};
+
 export type CreateEnvironmentResponse = {
     id: string;
     snapshotId: string;
@@ -1588,6 +1599,45 @@ export type PostApiMorphSetupInstanceResponses = {
 };
 
 export type PostApiMorphSetupInstanceResponse = PostApiMorphSetupInstanceResponses[keyof PostApiMorphSetupInstanceResponses];
+
+export type PostApiMorphForceWakeData = {
+    body: ForceWakeVmBody;
+    path?: never;
+    query?: never;
+    url: '/api/morph/force-wake';
+};
+
+export type PostApiMorphForceWakeErrors = {
+    /**
+     * Invalid task run or Morph instance metadata
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Workspace ownership mismatch
+     */
+    403: unknown;
+    /**
+     * Task run or Morph instance not found
+     */
+    404: unknown;
+    /**
+     * Failed to resume Morph instance
+     */
+    500: unknown;
+};
+
+export type PostApiMorphForceWakeResponses = {
+    /**
+     * Workspace is awake or has been resumed
+     */
+    200: ForceWakeVmResponse;
+};
+
+export type PostApiMorphForceWakeResponse = PostApiMorphForceWakeResponses[keyof PostApiMorphForceWakeResponses];
 
 export type GetApiIframePreflightData = {
     body?: never;
