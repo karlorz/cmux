@@ -2,6 +2,7 @@ import { MacDownloadLink } from "@/components/mac-download-link";
 import { SiteHeader } from "@/components/site-header";
 import {
   ArrowRight,
+  CheckCircle2,
   Cloud,
   GitPullRequest,
   Layers,
@@ -31,6 +32,117 @@ const heroHighlights = [
   {
     title: "Preview environments for quick verification",
     description: "Tasks launches browser previews so you can verify that the code works on dev server.",
+  },
+];
+
+const taskBoardColumns = [
+  {
+    id: "workspaces",
+    title: "Workspaces",
+    description: "Set up isolated sandboxes, secrets, and VS Code contexts before agents attach.",
+    accent: "from-sky-500/50 via-cyan-500/40 to-indigo-500/30",
+    icon: Layers,
+    tasks: [
+      {
+        title: "Provision payments-monorepo snapshot",
+        description: "New docker + seed data workspace for 4 agents tackling pricing cleanup.",
+        meta: "Workspace #18",
+        tags: ["Docker", "Seed DB"],
+      },
+      {
+        title: "Pin notary service env",
+        description: "Sync staging secrets, run health checks, and wait for approval.",
+        meta: "Workspace #05",
+        tags: ["Secrets", "Checks"],
+      },
+      {
+        title: "Create patch-only workspace",
+        description: "Read-only docs run so copy updates never touch prod data.",
+        meta: "Workspace #22",
+        tags: ["Docs", "Safe mode"],
+      },
+    ],
+  },
+  {
+    id: "ready",
+    title: "Ready to review",
+    description: "Agents finished, diffs attached, preview links live for sign-off.",
+    accent: "from-emerald-500/40 via-teal-500/40 to-lime-500/30",
+    icon: GitPullRequest,
+    tasks: [
+      {
+        title: "Payments onboarding polish",
+        description: "Claude + Codex tightened the modal spacing and screenshot bundle.",
+        meta: "Run #231",
+        tags: ["Next.js", "UI"],
+      },
+      {
+        title: "AI sync worker observability",
+        description: "Gemini CLI attached tracing diff plus log buckets.",
+        meta: "Run #229",
+        tags: ["Tracing", "Ops"],
+      },
+      {
+        title: "Docs refresh + release notes",
+        description: "Amp CLI added August release notes and timeline SVGs.",
+        meta: "Run #228",
+        tags: ["Docs"],
+      },
+    ],
+  },
+  {
+    id: "progress",
+    title: "In progress",
+    description: "Live agent sessions with terminals streaming inside cmux.",
+    accent: "from-amber-500/40 via-orange-500/40 to-rose-500/30",
+    icon: Terminal,
+    tasks: [
+      {
+        title: "Database failover automation",
+        description: "Gemini CLI is iterating on the migration plan + tests.",
+        meta: "Run #233",
+        tags: ["Postgres", "CLI"],
+      },
+      {
+        title: "SAML SSO fixes",
+        description: "Claude Code hunting down assertion drift with live preview.",
+        meta: "Run #224",
+        tags: ["Auth"],
+      },
+      {
+        title: "Edge router perf sweep",
+        description: "Codex tuning cache TTLs and benchmarking in sandbox.",
+        meta: "Run #216",
+        tags: ["Edge", "Perf"],
+      },
+    ],
+  },
+  {
+    id: "merged",
+    title: "Merged",
+    description: "Signed-off runs that already landed via the crown evaluator.",
+    accent: "from-purple-500/40 via-violet-500/40 to-pink-500/30",
+    icon: CheckCircle2,
+    tasks: [
+      {
+        title: "Audit logging cleanup",
+        description: "Merged with verification + browser preview notes.",
+        meta: "Merged 2h ago",
+        tags: ["Security"],
+      },
+      {
+        title: "Composer packaging updates",
+        description: "Cross-platform CLI packaging fix is live.",
+        meta: "Merged yesterday",
+        tags: ["Release"],
+      },
+      {
+        title: "Preview proxy GPU support",
+        description: "New NV containers now default for AI previews.",
+        meta: "Merged this week",
+        tags: ["GPU", "Infra"],
+      },
+    ],
   },
 ];
 
@@ -304,6 +416,72 @@ export default async function LandingPage() {
               className="h-full w-full object-cover"
               priority
             />
+          </div>
+        </section>
+
+        <section id="nav-tasks" className="mx-auto max-w-6xl px-4 pb-20 sm:px-6 scroll-mt-32">
+          <div className="space-y-4 text-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-300/80">
+              Task board
+            </p>
+            <h2 className="text-2xl font-semibold text-white sm:text-3xl">
+              See every task at a glance
+            </h2>
+            <p className="mx-auto max-w-3xl text-sm text-neutral-400 sm:text-base">
+              cmux keeps parallel agent work organized into focused columns so you always know what
+              still needs a workspace, what&apos;s being worked, what&apos;s ready for review, and what already shipped.
+            </p>
+          </div>
+          <div className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {taskBoardColumns.map((column) => {
+              const Icon = column.icon;
+              return (
+                <article
+                  key={column.id}
+                  className="flex flex-col gap-4 rounded-3xl border border-white/10 bg-white/5 p-4"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={`rounded-2xl bg-gradient-to-br ${column.accent} p-3 text-white`}>
+                      <Icon className="h-4 w-4" aria-hidden />
+                    </div>
+                    <div className="space-y-1">
+                      <h3 className="text-base font-semibold text-white">{column.title}</h3>
+                      <p className="text-xs text-neutral-400">{column.description}</p>
+                    </div>
+                  </div>
+                  <ul className="space-y-3">
+                    {column.tasks.map((task) => (
+                      <li
+                        key={task.title}
+                        className="rounded-2xl border border-white/10 bg-black/30 p-4 text-left"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-white">{task.title}</p>
+                          {task.meta ? (
+                            <span className="text-[11px] font-medium uppercase tracking-wide text-sky-200">
+                              {task.meta}
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="mt-1 text-xs text-neutral-400">{task.description}</p>
+                        {task.tags?.length ? (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {task.tags.map((tag) => (
+                              <span
+                                key={`${task.title}-${tag}`}
+                                className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-400"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+              );
+            })}
           </div>
         </section>
 
