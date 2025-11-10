@@ -497,6 +497,20 @@ export type UpdateSandboxEnvBody = {
     envVarsContent: string;
 };
 
+export type ValidateMaintenanceResponse = {
+    status: 'skipped' | 'passed' | 'failed';
+    exitCode?: number;
+    stdout?: string;
+    stderr?: string;
+    durationMs: number;
+    message?: string;
+};
+
+export type ValidateMaintenanceBody = {
+    teamSlugOrId: string;
+    maintenanceScript?: string;
+};
+
 export type CreateTeamResponse = {
     /**
      * Stack team ID
@@ -2029,6 +2043,39 @@ export type PostApiSandboxesByIdEnvResponses = {
 };
 
 export type PostApiSandboxesByIdEnvResponse = PostApiSandboxesByIdEnvResponses[keyof PostApiSandboxesByIdEnvResponses];
+
+export type PostApiSandboxesByIdMaintenanceValidateData = {
+    body: ValidateMaintenanceBody;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/sandboxes/{id}/maintenance/validate';
+};
+
+export type PostApiSandboxesByIdMaintenanceValidateErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Failed to run validation
+     */
+    500: unknown;
+};
+
+export type PostApiSandboxesByIdMaintenanceValidateResponses = {
+    /**
+     * Validation result
+     */
+    200: ValidateMaintenanceResponse;
+};
+
+export type PostApiSandboxesByIdMaintenanceValidateResponse = PostApiSandboxesByIdMaintenanceValidateResponses[keyof PostApiSandboxesByIdMaintenanceValidateResponses];
 
 export type PostApiSandboxesByIdStopData = {
     body?: never;

@@ -23,6 +23,7 @@ import {
   allocateScriptIdentifiers,
   runMaintenanceAndDevScripts,
 } from "./sandboxes/startDevAndMaintenanceScript";
+import { singleQuote } from "./sandboxes/shell";
 import {
   encodeEnvContentForEnvctl,
   envctlLoadCommand,
@@ -72,6 +73,24 @@ const UpdateSandboxEnvResponse = z
     applied: z.literal(true),
   })
   .openapi("UpdateSandboxEnvResponse");
+
+const ValidateMaintenanceBody = z
+  .object({
+    teamSlugOrId: z.string(),
+    maintenanceScript: z.string().optional(),
+  })
+  .openapi("ValidateMaintenanceBody");
+
+const ValidateMaintenanceResponse = z
+  .object({
+    status: z.enum(["skipped", "passed", "failed"]),
+    exitCode: z.number().optional(),
+    stdout: z.string().optional(),
+    stderr: z.string().optional(),
+    durationMs: z.number(),
+    message: z.string().optional(),
+  })
+  .openapi("ValidateMaintenanceResponse");
 
 // Start a new sandbox (currently Morph-backed)
 sandboxesRouter.openapi(
@@ -378,6 +397,50 @@ sandboxesRouter.openapi(
   },
 );
 
+const VALIDATION_LOG_LIMIT = 6_000;
+
+const truncateLog = (value?: string | null): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  if (value.length <= VALIDATION_LOG_LIMIT) {
+    return value;
+  }
+  const tail = value.slice(-VALIDATION_LOG_LIMIT);
+  const dropped = value.length - VALIDATION_LOG_LIMIT;
+  return `${tail}\n\n[output truncated (${dropped} chars removed)]`;
+};
+
+type MorphInstanceForValidation = Awaited<
+  ReturnType<MorphCloudClient["instances"]["get"]>
+>;
+
+async function runMaintenanceValidation(
+  instance: MorphInstanceForValidation,
+  script: string,
+) {
+  const heredoc = `CMUX_VALIDATE_${Date.now().toString(36)}_${Math.random()
+    .toString(36)
+    .slice(2)}`;
+  const command = `
+set -euo pipefail
+TEMP_SCRIPT=$(mktemp /var/tmp/cmux-maintenance-validate-XXXXXX.sh)
+cat <<'${heredoc}' > "$TEMP_SCRIPT"
+#!/bin/zsh
+set -euxo pipefail
+cd /root/workspace
+${script}
+${heredoc}
+chmod +x "$TEMP_SCRIPT"
+"$TEMP_SCRIPT"
+STATUS=$?
+rm -f "$TEMP_SCRIPT"
+exit $STATUS
+`;
+
+  return instance.exec(`bash -lc ${singleQuote(command)}`);
+}
+
 sandboxesRouter.openapi(
   createRoute({
     method: "post" as const,
@@ -462,6 +525,103 @@ sandboxesRouter.openapi(
         error,
       );
       return c.text("Failed to apply environment variables", 500);
+    }
+  },
+);
+
+sandboxesRouter.openapi(
+  createRoute({
+    method: "post" as const,
+    path: "/sandboxes/{id}/maintenance/validate",
+    tags: ["Sandboxes"],
+    summary: "Run the maintenance script inside a sandbox to validate it",
+    request: {
+      params: z.object({ id: z.string() }),
+      body: {
+        content: {
+          "application/json": {
+            schema: ValidateMaintenanceBody,
+          },
+        },
+        required: true,
+      },
+    },
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: ValidateMaintenanceResponse,
+          },
+        },
+        description: "Validation result",
+      },
+      401: { description: "Unauthorized" },
+      403: { description: "Forbidden" },
+      500: { description: "Failed to run validation" },
+    },
+  }),
+  async (c) => {
+    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+    if (!accessToken) return c.text("Unauthorized", 401);
+
+    const { id } = c.req.valid("param");
+    const body = c.req.valid("json");
+    const trimmedScript = body.maintenanceScript?.trim() ?? "";
+
+    if (!trimmedScript) {
+      return c.json({
+        status: "skipped" as const,
+        durationMs: 0,
+        message: "No maintenance script provided",
+      });
+    }
+
+    try {
+      const team = await verifyTeamAccess({
+        accessToken,
+        teamSlugOrId: body.teamSlugOrId,
+      });
+
+      const client = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
+      const instance = await client.instances.get({ instanceId: id });
+
+      const metadataTeamId = instance.metadata?.teamId;
+      if (metadataTeamId && metadataTeamId !== team.uuid) {
+        return c.text(
+          "Forbidden: Sandbox does not belong to this team",
+          403,
+        );
+      }
+
+      const startedAt = Date.now();
+      const result = await runMaintenanceValidation(instance, trimmedScript);
+      const durationMs = Date.now() - startedAt;
+      const exitCode =
+        typeof result.exit_code === "number" ? result.exit_code : undefined;
+      const status = exitCode === 0 ? "passed" : "failed";
+
+      return c.json({
+        status,
+        exitCode,
+        stdout: truncateLog(result.stdout),
+        stderr: truncateLog(result.stderr),
+        durationMs,
+        message:
+          status === "passed"
+            ? "Maintenance script completed successfully"
+            : exitCode === undefined
+              ? "Maintenance script did not finish running"
+              : `Maintenance script exited with code ${exitCode}`,
+      });
+    } catch (error) {
+      if (error instanceof HTTPException) {
+        throw error;
+      }
+      console.error(
+        "[sandboxes.validateMaintenance] Failed to validate maintenance script",
+        error,
+      );
+      return c.text("Failed to validate maintenance script", 500);
     }
   },
 );

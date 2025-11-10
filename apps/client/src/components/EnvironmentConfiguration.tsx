@@ -20,6 +20,7 @@ import { validateExposedPorts } from "@cmux/shared/utils/validate-exposed-ports"
 import {
   postApiEnvironmentsMutation,
   postApiSandboxesByIdEnvMutation,
+  postApiSandboxesByIdMaintenanceValidateMutation,
   postApiEnvironmentsByIdSnapshotsMutation,
 } from "@cmux/www-openapi-client/react-query";
 import { Accordion, AccordionItem } from "@heroui/react";
@@ -48,6 +49,21 @@ import {
 } from "react";
 import TextareaAutosize from "react-textarea-autosize";
 import { toast } from "sonner";
+
+type ValidationStatus = "idle" | "running" | "passed" | "failed" | "skipped";
+
+const formatValidationOutput = ({
+  stdout,
+  stderr,
+}: {
+  stdout?: string | null;
+  stderr?: string | null;
+}): string | null => {
+  if (stdout && stderr) {
+    return `${stdout}\n\n[stderr]\n${stderr}`;
+  }
+  return stdout ?? stderr ?? null;
+};
 
 export function EnvironmentConfiguration({
   selectedRepos,
@@ -211,6 +227,53 @@ export function EnvironmentConfiguration({
     postApiSandboxesByIdEnvMutation()
   );
   const applySandboxEnv = applySandboxEnvMutation.mutate;
+  const validateMaintenanceMutation = useRQMutation(
+    postApiSandboxesByIdMaintenanceValidateMutation()
+  );
+  const [validationStatus, setValidationStatus] =
+    useState<ValidationStatus>("idle");
+  const [validationDetails, setValidationDetails] = useState<{
+    message: string;
+    output?: string | null;
+    validatedAt?: number;
+  } | null>(null);
+  const [lastValidatedScript, setLastValidatedScript] =
+    useState<string | null>(null);
+  const trimmedMaintenanceScript = maintenanceScript.trim();
+  const trimmedDevScript = devScript.trim();
+  const requiresMaintenanceValidation =
+    mode === "snapshot" && trimmedMaintenanceScript.length > 0;
+  const validationSatisfied =
+    !requiresMaintenanceValidation ||
+    validationStatus === "passed" ||
+    validationStatus === "skipped";
+  const validationBlocked = mode === "snapshot" && !validationSatisfied;
+  const canValidateMaintenance = Boolean(instanceId) && !isProvisioning;
+
+  useEffect(() => {
+    if (
+      validationStatus === "idle" ||
+      validationStatus === "running" ||
+      lastValidatedScript === null
+    ) {
+      return;
+    }
+    if (trimmedMaintenanceScript !== lastValidatedScript) {
+      setValidationStatus("idle");
+      setValidationDetails(null);
+      setLastValidatedScript(null);
+    }
+  }, [
+    lastValidatedScript,
+    trimmedMaintenanceScript,
+    validationStatus,
+  ]);
+
+  useEffect(() => {
+    setValidationStatus("idle");
+    setValidationDetails(null);
+    setLastValidatedScript(null);
+  }, [instanceId, mode]);
 
   useEffect(() => {
     if (pendingFocusIndex !== null) {
@@ -315,6 +378,73 @@ export function EnvironmentConfiguration({
     };
   }, [applySandboxEnv, envVars, instanceId, teamSlugOrId]);
 
+  const handleValidateMaintenance = useCallback(() => {
+    if (!instanceId) {
+      toast.error("Workspace is still provisioning. Try again once it is ready.");
+      return;
+    }
+    setValidationStatus("running");
+    setValidationDetails({ message: "Validation in progress…" });
+    validateMaintenanceMutation.mutate(
+      {
+        path: { id: instanceId },
+        body: {
+          teamSlugOrId,
+          maintenanceScript: trimmedMaintenanceScript,
+        },
+      },
+      {
+        onSuccess: (result) => {
+          const nextStatus = result.status as ValidationStatus;
+          const message =
+            result.message ??
+            (nextStatus === "skipped"
+              ? "No maintenance script configured."
+              : nextStatus === "passed"
+                ? "Maintenance script completed successfully."
+                : "Maintenance script failed.");
+          const output = formatValidationOutput({
+            stdout: result.stdout,
+            stderr: result.stderr,
+          });
+          setValidationStatus(nextStatus);
+          setValidationDetails({
+            message,
+            output,
+            validatedAt:
+              nextStatus === "failed" ? undefined : Date.now(),
+          });
+          if (nextStatus === "failed") {
+            setLastValidatedScript(null);
+            toast.error("Maintenance validation failed");
+            return;
+          }
+          setLastValidatedScript(trimmedMaintenanceScript);
+          toast.success(
+            nextStatus === "skipped"
+              ? "No maintenance script to validate"
+              : "Maintenance script validated"
+          );
+        },
+        onError: (error) => {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Failed to validate maintenance script";
+          setValidationStatus("failed");
+          setValidationDetails({ message });
+          setLastValidatedScript(null);
+          toast.error(message);
+        },
+      }
+    );
+  }, [
+    instanceId,
+    teamSlugOrId,
+    trimmedMaintenanceScript,
+    validateMaintenanceMutation,
+  ]);
+
   const onSnapshot = async (): Promise<void> => {
     if (!instanceId) {
       console.error("Missing instanceId for snapshot");
@@ -324,6 +454,14 @@ export function EnvironmentConfiguration({
       console.error("Environment name is required");
       return;
     }
+    if (
+      mode === "snapshot" &&
+      requiresMaintenanceValidation &&
+      !validationSatisfied
+    ) {
+      toast.error("Run maintenance validation before creating a snapshot.");
+      return;
+    }
 
     const envVarsContent = formatEnvVarsContent(
       envVars
@@ -331,8 +469,8 @@ export function EnvironmentConfiguration({
         .map((r) => ({ name: r.name, value: r.value }))
     );
 
-    const normalizedMaintenanceScript = maintenanceScript.trim();
-    const normalizedDevScript = devScript.trim();
+    const normalizedMaintenanceScript = trimmedMaintenanceScript;
+    const normalizedDevScript = trimmedDevScript;
     const requestMaintenanceScript =
       normalizedMaintenanceScript.length > 0
         ? normalizedMaintenanceScript
@@ -452,6 +590,36 @@ export function EnvironmentConfiguration({
     () => <WorkspaceLoadingIndicator variant="browser" status="error" />,
     []
   );
+  const validationMessageText = useMemo(() => {
+    if (validationStatus === "running") {
+      return "Validation in progress…";
+    }
+    if (validationDetails?.message) {
+      return validationDetails.message;
+    }
+    if (trimmedMaintenanceScript.length === 0) {
+      return "No maintenance script configured.";
+    }
+    if (!canValidateMaintenance) {
+      return "Workspace is still provisioning. Validation will be available soon.";
+    }
+    return "Run the maintenance script before creating a snapshot.";
+  }, [
+    canValidateMaintenance,
+    trimmedMaintenanceScript.length,
+    validationDetails?.message,
+    validationStatus,
+  ]);
+  const validationTimestampLabel = useMemo(() => {
+    if (!validationDetails?.validatedAt) {
+      return null;
+    }
+    try {
+      return new Date(validationDetails.validatedAt).toLocaleTimeString();
+    } catch {
+      return null;
+    }
+  }, [validationDetails?.validatedAt]);
 
   const renderVscodePreview = () => {
     if (!vscodeUrl) {
@@ -700,6 +868,79 @@ export function EnvironmentConfiguration({
           ? "Update configuration for the new snapshot version."
           : "Set up your environment name and variables."}
       </p>
+
+      {mode === "snapshot" && (
+        <div
+          className={clsx(
+            "mt-4 rounded-lg border p-4 transition-colors",
+            validationStatus === "failed"
+              ? "border-red-300 bg-red-50 dark:border-red-900/50 dark:bg-red-950/30"
+              : validationStatus === "passed" || validationStatus === "skipped"
+                ? "border-green-300 bg-green-50 dark:border-green-900/40 dark:bg-green-950/20"
+                : "border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950"
+          )}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                Validate maintenance script
+              </p>
+              <p
+                className={clsx(
+                  "text-xs",
+                  validationStatus === "failed"
+                    ? "text-red-600 dark:text-red-400"
+                    : validationStatus === "passed" ||
+                        validationStatus === "skipped"
+                      ? "text-green-600 dark:text-green-400"
+                      : "text-neutral-600 dark:text-neutral-400"
+                )}
+              >
+                {validationMessageText}
+              </p>
+              {validationTimestampLabel && (
+                <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                  Last run at {validationTimestampLabel}
+                </p>
+              )}
+            </div>
+            <div className="flex flex-col items-end gap-1">
+              <button
+                type="button"
+                onClick={handleValidateMaintenance}
+                disabled={!canValidateMaintenance || validationStatus === "running"}
+                className={clsx(
+                  "inline-flex items-center gap-2 rounded-md border px-3 py-1 text-xs font-medium transition-colors",
+                  !canValidateMaintenance || validationStatus === "running"
+                    ? "border-neutral-200 text-neutral-400 dark:border-neutral-800 dark:text-neutral-600 cursor-not-allowed"
+                    : "border-neutral-300 text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900"
+                )}
+              >
+                {validationStatus === "running" ? (
+                  <>
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Validating…
+                  </>
+                ) : validationDetails?.validatedAt ? (
+                  "Re-run validation"
+                ) : (
+                  "Run validation"
+                )}
+              </button>
+              {!canValidateMaintenance && (
+                <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                  Workspace is still provisioning.
+                </p>
+              )}
+            </div>
+          </div>
+          {validationDetails?.output && (
+            <pre className="mt-3 max-h-48 overflow-auto rounded-md bg-neutral-950/70 px-3 py-2 text-[11px] text-neutral-100">
+              {validationDetails.output}
+            </pre>
+          )}
+        </div>
+      )}
 
       <div className="mt-6 space-y-4">
         <div className="space-y-2">
@@ -984,7 +1225,8 @@ export function EnvironmentConfiguration({
             disabled={
               isProvisioning ||
               createEnvironmentMutation.isPending ||
-              createSnapshotMutation.isPending
+              createSnapshotMutation.isPending ||
+              (mode === "snapshot" && !validationSatisfied)
             }
             className="inline-flex items-center rounded-md bg-neutral-900 text-white disabled:bg-neutral-300 dark:disabled:bg-neutral-700 disabled:cursor-not-allowed px-4 py-2 text-sm hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
           >
@@ -1003,6 +1245,11 @@ export function EnvironmentConfiguration({
               "Snapshot environment"
             )}
           </button>
+          {validationBlocked && (
+            <p className="mt-2 text-xs text-red-500">
+              Run maintenance validation before creating a snapshot.
+            </p>
+          )}
         </div>
       </div>
     </div>
