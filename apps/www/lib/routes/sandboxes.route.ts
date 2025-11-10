@@ -239,49 +239,6 @@ sandboxesRouter.openapi(
         return c.text("VSCode or worker service not found", 500);
       }
 
-      // Get environment variables from the environment if configured
-      const environmentEnvVarsContent = await environmentEnvVarsPromise;
-
-      // Prepare environment variables including task JWT if present
-      // Workspace env vars take precedence if no environment is configured
-      let envVarsToApply = environmentEnvVarsContent || workspaceConfig?.envVarsContent || "";
-
-      // Add CMUX task-related env vars if present
-      if (body.taskRunId) {
-        envVarsToApply += `\nCMUX_TASK_RUN_ID="${body.taskRunId}"`;
-      }
-      if (body.taskRunJwt) {
-        envVarsToApply += `\nCMUX_TASK_RUN_JWT="${body.taskRunJwt}"`;
-      }
-
-      // Apply all environment variables if any
-      if (envVarsToApply.trim().length > 0) {
-        try {
-          const encodedEnv = encodeEnvContentForEnvctl(envVarsToApply);
-          const loadRes = await instance.exec(envctlLoadCommand(encodedEnv));
-          if (loadRes.exit_code === 0) {
-            console.log(
-              `[sandboxes.start] Applied environment variables via envctl`,
-              {
-                hasEnvironmentVars: Boolean(environmentEnvVarsContent),
-                hasWorkspaceVars: Boolean(workspaceConfig?.envVarsContent),
-                hasTaskRunId: Boolean(body.taskRunId),
-                hasTaskRunJwt: Boolean(body.taskRunJwt),
-              },
-            );
-          } else {
-            console.error(
-              `[sandboxes.start] Env var bootstrap failed exit=${loadRes.exit_code} stderr=${(loadRes.stderr || "").slice(0, 200)}`,
-            );
-          }
-        } catch (error) {
-          console.error(
-            "[sandboxes.start] Failed to apply environment variables",
-            error,
-          );
-        }
-      }
-
       const configureGitIdentityTask = gitIdentityPromise
         .then(([who, gh]) => {
           const { name, email } = selectGitIdentity(who, gh);
@@ -335,6 +292,49 @@ sandboxesRouter.openapi(
         console.error(`[sandboxes.start] Hydration failed:`, error);
         await instance.stop().catch(() => { });
         return c.text("Failed to hydrate sandbox", 500);
+      }
+
+      // Get environment variables from the environment if configured
+      const environmentEnvVarsContent = await environmentEnvVarsPromise;
+
+      // Prepare environment variables including task JWT if present
+      // Workspace env vars take precedence if no environment is configured
+      let envVarsToApply = environmentEnvVarsContent || workspaceConfig?.envVarsContent || "";
+
+      // Add CMUX task-related env vars if present
+      if (body.taskRunId) {
+        envVarsToApply += `\nCMUX_TASK_RUN_ID="${body.taskRunId}"`;
+      }
+      if (body.taskRunJwt) {
+        envVarsToApply += `\nCMUX_TASK_RUN_JWT="${body.taskRunJwt}"`;
+      }
+
+      // Apply all environment variables if any
+      if (envVarsToApply.trim().length > 0) {
+        try {
+          const encodedEnv = encodeEnvContentForEnvctl(envVarsToApply);
+          const loadRes = await instance.exec(envctlLoadCommand(encodedEnv));
+          if (loadRes.exit_code === 0) {
+            console.log(
+              `[sandboxes.start] Applied environment variables via envctl`,
+              {
+                hasEnvironmentVars: Boolean(environmentEnvVarsContent),
+                hasWorkspaceVars: Boolean(workspaceConfig?.envVarsContent),
+                hasTaskRunId: Boolean(body.taskRunId),
+                hasTaskRunJwt: Boolean(body.taskRunJwt),
+              },
+            );
+          } else {
+            console.error(
+              `[sandboxes.start] Env var bootstrap failed exit=${loadRes.exit_code} stderr=${(loadRes.stderr || "").slice(0, 200)}`,
+            );
+          }
+        } catch (error) {
+          console.error(
+            "[sandboxes.start] Failed to apply environment variables",
+            error,
+          );
+        }
       }
 
       if (maintenanceScript || devScript) {
