@@ -651,7 +651,7 @@ function TaskTreeInner({
   })();
 
   const taskMetaIcon =
-    !task.isArchived && taskLeadingIcon ? (
+    !task.isArchived && (taskLeadingIcon || isLocalWorkspace || isCloudWorkspace) ? (
       <SidebarArchiveOverlay
         icon={taskLeadingIcon}
         label="Archive task"
@@ -1183,7 +1183,7 @@ function TaskRunTreeInner({
   const runLeadingIcon = pullRequestIcon ?? statusIconWithTooltip;
 
   const runMetaIcon =
-    !run.isArchived && runLeadingIcon ? (
+    !run.isArchived && (runLeadingIcon || isLocalWorkspaceRunEntry || isCloudWorkspaceRunEntry) ? (
       <SidebarArchiveOverlay
         icon={runLeadingIcon}
         label="Archive task run"
