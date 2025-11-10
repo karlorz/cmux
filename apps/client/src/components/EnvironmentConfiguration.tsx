@@ -189,10 +189,6 @@ export function EnvironmentConfiguration({
   const browserPersistKey = `${basePersistKey}:browser`;
 
   useEffect(() => {
-    // Auto-switch to split view when browser becomes available
-    if (browserUrl && viewMode === "vscode-only") {
-      setViewMode("split");
-    }
     // Switch away from browser-only if browser is unavailable
     if (!browserUrl && viewMode === "browser-only") {
       setViewMode("vscode-only");
@@ -465,6 +461,8 @@ export function EnvironmentConfiguration({
       );
     }
 
+    const isNotFullScreen = viewMode !== "vscode-only";
+
     return (
       <div className="relative h-full" aria-busy={showVscodeOverlay}>
         <div
@@ -493,6 +491,13 @@ export function EnvironmentConfiguration({
             </div>
           )}
         </div>
+        {/* Dimming overlay when not in full screen mode */}
+        <div
+          className={clsx(
+            "absolute inset-0 bg-black/20 dark:bg-black/30 pointer-events-none transition-opacity duration-300",
+            isNotFullScreen ? "opacity-100" : "opacity-0"
+          )}
+        />
         <PersistentWebView
           persistKey={vscodePersistKey}
           src={vscodeUrl}
@@ -905,49 +910,6 @@ export function EnvironmentConfiguration({
           </AccordionItem>
 
           <AccordionItem
-            key="browser-vnc-setup"
-            aria-label="Browser VNC Setup"
-            title="Browser VNC Setup"
-          >
-            <div className="space-y-3 pb-4">
-              <p className="text-sm text-neutral-600 dark:text-neutral-400">
-                The browser preview uses VNC to show a live desktop environment.
-                Configure your browser settings for browser agent functionality.
-              </p>
-              <div className="bg-neutral-100 dark:bg-neutral-900 rounded-md p-3 space-y-2">
-                <h4 className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-                  Initial Setup Instructions:
-                </h4>
-                <ul className="text-xs text-neutral-600 dark:text-neutral-400 space-y-1.5 list-disc list-inside">
-                  <li>
-                    Click the{" "}
-                    <span className="font-mono bg-neutral-200 dark:bg-neutral-800 px-1 py-0.5 rounded">
-                      Split view
-                    </span>{" "}
-                    icon above to see both VS Code and Browser VNC
-                  </li>
-                  <li>
-                    In the browser VNC view (bottom panel), configure browser
-                    settings for authentication
-                  </li>
-                  <li>
-                    Set up any required browser extensions or preferences for
-                    agent automation
-                  </li>
-                  <li>
-                    Take screenshots and verify agent can interact with the
-                    browser properly
-                  </li>
-                </ul>
-              </div>
-              <p className="text-xs text-neutral-500 dark:text-neutral-500">
-                Tip: Use the split view to work in VS Code while monitoring
-                browser agent actions in real-time.
-              </p>
-            </div>
-          </AccordionItem>
-
-          <AccordionItem
             key="install-dependencies"
             aria-label="Install dependencies"
             title="Install dependencies"
@@ -1018,6 +980,21 @@ export function EnvironmentConfiguration({
               </div>
             </div>
           </AccordionItem>
+
+          <AccordionItem
+            key="browser-vnc-setup"
+            aria-label="Browser VNC Setup"
+            title="Browser VNC Setup"
+          >
+            <div className="space-y-2">
+              <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-3">
+                Use the split view to access the browser VNC environment. Configure browser settings and extensions for agent automation.
+              </p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-500">
+                Examples: Set up authentication, install browser extensions, configure preferences, and freeze browser setup for agents.
+              </p>
+            </div>
+          </AccordionItem>
         </Accordion>
 
         <div className="pt-2">
@@ -1032,8 +1009,8 @@ export function EnvironmentConfiguration({
             className="inline-flex items-center rounded-md bg-neutral-900 text-white disabled:bg-neutral-300 dark:disabled:bg-neutral-700 disabled:cursor-not-allowed px-4 py-2 text-sm hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
           >
             {isProvisioning ||
-            createEnvironmentMutation.isPending ||
-            createSnapshotMutation.isPending ? (
+              createEnvironmentMutation.isPending ||
+              createSnapshotMutation.isPending ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 {mode === "snapshot"
