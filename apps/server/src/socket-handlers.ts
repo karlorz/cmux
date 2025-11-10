@@ -118,6 +118,65 @@ function buildPlaceholderWorkspaceUrl(folderPath: string): string {
   return buildServeWebWorkspaceUrl(LOCAL_VSCODE_PLACEHOLDER_ORIGIN, folderPath);
 }
 
+let cachedLoginShell: string | null = null;
+
+function getUserLoginShell(): string {
+  if (cachedLoginShell) {
+    return cachedLoginShell;
+  }
+
+  try {
+    const userShell = os.userInfo().shell;
+    if (userShell && userShell.trim().length > 0) {
+      cachedLoginShell = userShell.trim();
+      return cachedLoginShell;
+    }
+  } catch {
+    // Ignore errors when resolving user info; fall back to env/defaults below.
+  }
+
+  const envShell = process.env.SHELL?.trim();
+  if (envShell && envShell.length > 0) {
+    cachedLoginShell = envShell;
+    return cachedLoginShell;
+  }
+
+  if (process.platform === "win32") {
+    cachedLoginShell = process.env.COMSPEC?.trim() ?? "cmd.exe";
+    return cachedLoginShell;
+  }
+
+  cachedLoginShell = "/bin/zsh";
+  return cachedLoginShell;
+}
+
+function getLoginShellInvocation(command: string): {
+  executable: string;
+  args: string[];
+} {
+  const shellExecutable = getUserLoginShell();
+
+  if (process.platform === "win32") {
+    const lowerShell = shellExecutable.toLowerCase();
+    if (lowerShell.includes("powershell")) {
+      return {
+        executable: shellExecutable,
+        args: ["-NoLogo", "-NoProfile", "-Command", command],
+      };
+    }
+
+    return {
+      executable: shellExecutable,
+      args: ["/d", "/s", "/c", command],
+    };
+  }
+
+  return {
+    executable: shellExecutable,
+    args: ["-l", "-c", command],
+  };
+}
+
 export function setupSocketHandlers(
   rt: RealtimeServer,
   gitDiffManager: GitDiffManager,
@@ -840,15 +899,19 @@ export function setupSocketHandlers(
 
             // Fire and forget - run in background without blocking
             void (async () => {
-              serverLogger.info(
-                `[create-local-workspace] Running local maintenance script for ${workspaceName} in background`
-              );
-
               const scriptPreamble = "set -euo pipefail";
               const maintenancePayload = `${scriptPreamble}\n${maintenanceScript}`;
+              const {
+                executable: shellExecutable,
+                args: shellArgs,
+              } = getLoginShellInvocation(maintenancePayload);
+
+              serverLogger.info(
+                `[create-local-workspace] Running local maintenance script for ${workspaceName} in background (shell: ${shellExecutable})`
+              );
 
               try {
-                await execFileAsync("zsh", ["-lc", maintenancePayload], {
+                await execFileAsync(shellExecutable, shellArgs, {
                   cwd: resolvedWorkspacePath,
                   env: {
                     ...process.env,
