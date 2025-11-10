@@ -19,6 +19,8 @@ import {
   aggregatePullRequestState,
   type RunPullRequestState,
 } from "@cmux/shared/pull-request-state";
+import { extractMorphInstanceInfo } from "@cmux/shared/utils/morph-instance";
+import { postApiMorphForceWake } from "@cmux/www-openapi-client";
 import { Link, useLocation, type LinkProps } from "@tanstack/react-router";
 import clsx from "clsx";
 import { useMutation, useQuery as useConvexQuery } from "convex/react";
@@ -48,6 +50,7 @@ import {
   TerminalSquare,
   Loader2,
   XCircle,
+  Zap,
 } from "lucide-react";
 import {
   Fragment,
@@ -1069,6 +1072,46 @@ function TaskRunTreeInner({
     onArchiveToggle(run._id, true);
   }, [onArchiveToggle, run._id]);
 
+  const handleForceWakeVM = useCallback(async () => {
+    const vscodeUrl = run.vscode?.url || run.vscode?.workspaceUrl;
+    if (!vscodeUrl) {
+      toast.error("Cannot wake VM: No VSCode URL found");
+      return;
+    }
+
+    const morphInfo = extractMorphInstanceInfo(vscodeUrl);
+    if (!morphInfo) {
+      toast.error("Cannot wake VM: Unable to extract instance ID from URL");
+      return;
+    }
+
+    const toastId = toast.loading("Waking VM...", {
+      description: "This may take a moment",
+    });
+
+    try {
+      await postApiMorphForceWake({
+        body: {
+          teamSlugOrId,
+          instanceId: morphInfo.instanceId,
+        },
+        throwOnError: true,
+      });
+
+      toast.success("VM is awake!", {
+        id: toastId,
+        description: "Your environment is ready to use",
+      });
+    } catch (error) {
+      console.error("Failed to wake VM:", error);
+      toast.error("Failed to wake VM", {
+        id: toastId,
+        description:
+          error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  }, [run.vscode, teamSlugOrId]);
+
   const isLocalWorkspaceRunEntry = run.isLocalWorkspace;
   const isCloudWorkspaceRunEntry = run.isCloudWorkspace;
 
@@ -1369,6 +1412,15 @@ function TaskRunTreeInner({
                     </ContextMenu.Popup>
                   </ContextMenu.Positioner>
                 </ContextMenu.SubmenuRoot>
+              ) : null}
+              {run.vscode?.provider === "morph" ? (
+                <ContextMenu.Item
+                  className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                  onClick={handleForceWakeVM}
+                >
+                  <Zap className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                  <span>Force wake VM</span>
+                </ContextMenu.Item>
               ) : null}
               <ContextMenu.Item
                 className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"

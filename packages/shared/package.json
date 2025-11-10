@@ -86,6 +86,10 @@
       "import": "./src/utils/format-env-vars-content.ts",
       "types": "./src/utils/format-env-vars-content.ts"
     },
+    "./utils/morph-instance": {
+      "import": "./src/utils/morph-instance.ts",
+      "types": "./src/utils/morph-instance.ts"
+    },
     "./pull-request-state": {
       "import": "./src/pull-request-state.ts",
       "types": "./src/pull-request-state.ts"

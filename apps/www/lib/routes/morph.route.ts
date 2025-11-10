@@ -46,6 +46,21 @@ const SetupInstanceResponse = z
   })
   .openapi("SetupInstanceResponse");
 
+const ForceWakeInstanceBody = z
+  .object({
+    teamSlugOrId: z.string(),
+    instanceId: z.string(),
+  })
+  .openapi("ForceWakeInstanceBody");
+
+const ForceWakeInstanceResponse = z
+  .object({
+    instanceId: z.string(),
+    status: z.enum(["awake", "waking"]),
+    timestamp: z.string().datetime(),
+  })
+  .openapi("ForceWakeInstanceResponse");
+
 morphRouter.openapi(
   createRoute({
     method: "post" as const,
@@ -385,6 +400,86 @@ morphRouter.openapi(
     } catch (error) {
       console.error("Failed to setup Morph instance:", error);
       return c.text("Failed to setup instance", 500);
+    }
+  }
+);
+
+morphRouter.openapi(
+  createRoute({
+    method: "post" as const,
+    path: "/morph/force-wake",
+    tags: ["Morph"],
+    summary: "Force wake a paused Morph instance",
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: ForceWakeInstanceBody,
+          },
+        },
+        required: true,
+      },
+    },
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: ForceWakeInstanceResponse,
+          },
+        },
+        description: "Instance woken successfully",
+      },
+      401: { description: "Unauthorized" },
+      403: { description: "Forbidden: Instance does not belong to this team" },
+      404: { description: "Instance not found" },
+      500: { description: "Failed to wake instance" },
+    },
+  }),
+  async (c) => {
+    // Authenticate user
+    const user = await stackServerAppJs.getUser({ tokenStore: c.req.raw });
+    if (!user) {
+      return c.text("Unauthorized", 401);
+    }
+    const { accessToken } = await user.getAuthJson();
+    if (!accessToken) return c.text("Unauthorized", 401);
+
+    // Extract request body
+    const { teamSlugOrId, instanceId } = c.req.valid("json");
+
+    // Verify team access
+    const team = await verifyTeamAccess({ req: c.req.raw, teamSlugOrId });
+
+    try {
+      // Get Morph client
+      const client = new MorphCloudClient({
+        apiKey: env.MORPH_API_KEY,
+      });
+
+      // Get instance and verify ownership
+      const instance = await client.instances.get({ instanceId });
+      const meta = instance.metadata;
+      const instanceTeamId = meta?.teamId;
+      if (!instanceTeamId || instanceTeamId !== team.uuid) {
+        return c.text(
+          "Forbidden: Instance does not belong to this team",
+          403
+        );
+      }
+
+      // Force wake the instance
+      await instance.setWakeOn(true, true);
+
+      console.log(`Successfully force woke Morph instance: ${instanceId}`);
+
+      return c.json({
+        instanceId,
+        status: "awake" as const,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("Failed to force wake Morph instance:", error);
+      return c.text("Failed to wake instance", 500);
     }
   }
 );

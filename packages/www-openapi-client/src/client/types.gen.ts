@@ -365,6 +365,17 @@ export type SetupInstanceBody = {
     snapshotId?: string | ('snapshot_pmo7bxv7' | 'snapshot_qbpom27i');
 };
 
+export type ForceWakeInstanceResponse = {
+    instanceId: string;
+    status: 'awake' | 'waking';
+    timestamp: string;
+};
+
+export type ForceWakeInstanceBody = {
+    teamSlugOrId: string;
+    instanceId: string;
+};
+
 export type CreateEnvironmentResponse = {
     id: string;
     snapshotId: string;
@@ -1588,6 +1599,41 @@ export type PostApiMorphSetupInstanceResponses = {
 };
 
 export type PostApiMorphSetupInstanceResponse = PostApiMorphSetupInstanceResponses[keyof PostApiMorphSetupInstanceResponses];
+
+export type PostApiMorphForceWakeData = {
+    body: ForceWakeInstanceBody;
+    path?: never;
+    query?: never;
+    url: '/api/morph/force-wake';
+};
+
+export type PostApiMorphForceWakeErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden: Instance does not belong to this team
+     */
+    403: unknown;
+    /**
+     * Instance not found
+     */
+    404: unknown;
+    /**
+     * Failed to wake instance
+     */
+    500: unknown;
+};
+
+export type PostApiMorphForceWakeResponses = {
+    /**
+     * Instance woken successfully
+     */
+    200: ForceWakeInstanceResponse;
+};
+
+export type PostApiMorphForceWakeResponse = PostApiMorphForceWakeResponses[keyof PostApiMorphForceWakeResponses];
 
 export type GetApiIframePreflightData = {
     body?: never;
