@@ -15,11 +15,13 @@ import { ContextMenu } from "@base-ui-components/react/context-menu";
 import { api } from "@cmux/convex/api";
 import { type Doc, type Id } from "@cmux/convex/dataModel";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
+import { postApiMorphTaskRunsByTaskRunIdForceWakeMutation } from "@cmux/www-openapi-client/react-query";
 import {
   aggregatePullRequestState,
   type RunPullRequestState,
 } from "@cmux/shared/pull-request-state";
 import { Link, useLocation, type LinkProps } from "@tanstack/react-router";
+import { useMutation as useRQMutation } from "@tanstack/react-query";
 import clsx from "clsx";
 import { useMutation, useQuery as useConvexQuery } from "convex/react";
 import { toast } from "sonner";
@@ -47,6 +49,7 @@ import {
   Pencil,
   TerminalSquare,
   Loader2,
+  Power,
   XCircle,
 } from "lucide-react";
 import {
@@ -170,6 +173,26 @@ function flattenRuns(
   };
   traverse(runs);
   return acc;
+}
+
+function getForceWakeErrorMessage(error: unknown): string {
+  const fallback = "Failed to wake workspace";
+  if (error && typeof error === "object" && "data" in error) {
+    const payload = (error as { data?: unknown }).data;
+    if (payload && typeof payload === "object") {
+      const details = payload as { error?: string; message?: string };
+      const apiError =
+        (typeof details.error === "string" && details.error.trim()) ||
+        (typeof details.message === "string" && details.message.trim());
+      if (apiError) {
+        return apiError;
+      }
+    }
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return fallback;
 }
 
 function findRunInTree(
@@ -1226,6 +1249,10 @@ function TaskRunTreeInner({
     return run.networking.filter((service) => service.status === "running");
   }, [run.networking]);
 
+  const forceWakeVmMutation = useRQMutation(
+    postApiMorphTaskRunsByTaskRunIdForceWakeMutation()
+  );
+
   const {
     actions: openWithActions,
     executeOpenAction,
@@ -1238,6 +1265,11 @@ function TaskRunTreeInner({
     branch: run.newBranch,
     networking: run.networking,
   });
+
+  const canForceWakeVm =
+    run.vscode?.provider === "morph" &&
+    run.vscode?.status !== "running" &&
+    Boolean(run.vscode?.url || run.vscode?.workspaceUrl);
 
   const shouldRenderDiffLink = true;
   const shouldRenderBrowserLink = run.vscode?.provider === "morph";
@@ -1258,6 +1290,37 @@ function TaskRunTreeInner({
     shouldRenderTerminalLink ||
     shouldRenderPullRequestLink ||
     shouldRenderPreviewLink;
+
+  const handleForceWakeVm = useCallback(async () => {
+    if (!canForceWakeVm || forceWakeVmMutation.isPending) {
+      return;
+    }
+    const toastId = toast.loading("Waking workspace…");
+    try {
+      const response = await forceWakeVmMutation.mutateAsync({
+        path: { taskRunId: run._id },
+        body: { teamSlugOrId },
+      });
+      const durationLabel =
+        response.readyInMs && response.readyInMs > 0
+          ? `Ready in ${(response.readyInMs / 1000).toFixed(1)}s`
+          : undefined;
+      toast.success(
+        response.resumed ? "Workspace resumed" : "Workspace already awake",
+        {
+          id: toastId,
+          description: durationLabel ?? `Status: ${response.currentStatus}`,
+        }
+      );
+    } catch (error) {
+      toast.error(getForceWakeErrorMessage(error), { id: toastId });
+    }
+  }, [
+    canForceWakeVm,
+    forceWakeVmMutation,
+    run._id,
+    teamSlugOrId,
+  ]);
 
   return (
     <div className={clsx({ hidden: run.isArchived })}>
@@ -1369,6 +1432,17 @@ function TaskRunTreeInner({
                     </ContextMenu.Popup>
                   </ContextMenu.Positioner>
                 </ContextMenu.SubmenuRoot>
+              ) : null}
+              {canForceWakeVm ? (
+                <ContextMenu.Item
+                  className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                  onClick={() => {
+                    void handleForceWakeVm();
+                  }}
+                >
+                  <Power className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                  <span>Force wake VM</span>
+                </ContextMenu.Item>
               ) : null}
               <ContextMenu.Item
                 className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"

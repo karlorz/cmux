@@ -350,6 +350,20 @@ export type GithubInstallStateRequest = {
     returnUrl?: string;
 };
 
+export type ForceWakeVmResponse = {
+    instanceId: string;
+    previousStatus: string;
+    currentStatus: string;
+    resumed: boolean;
+    ready: boolean;
+    polls: number;
+    readyInMs?: number;
+};
+
+export type ForceWakeVmBody = {
+    teamSlugOrId: string;
+};
+
 export type SetupInstanceResponse = {
     instanceId: string;
     vscodeUrl: string;
@@ -1547,6 +1561,55 @@ export type PostApiIntegrationsGithubInstallStateResponses = {
 };
 
 export type PostApiIntegrationsGithubInstallStateResponse = PostApiIntegrationsGithubInstallStateResponses[keyof PostApiIntegrationsGithubInstallStateResponses];
+
+export type PostApiMorphTaskRunsByTaskRunIdForceWakeData = {
+    body: ForceWakeVmBody;
+    path: {
+        taskRunId: string;
+    };
+    query?: never;
+    url: '/api/morph/task-runs/{taskRunId}/force-wake';
+};
+
+export type PostApiMorphTaskRunsByTaskRunIdForceWakeErrors = {
+    /**
+     * Invalid payload
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Task run or instance not found
+     */
+    404: unknown;
+    /**
+     * Task run is not backed by a Morph workspace
+     */
+    409: unknown;
+    /**
+     * Failed to resume or fetch instance state
+     */
+    500: unknown;
+    /**
+     * Instance is still waking up
+     */
+    504: unknown;
+};
+
+export type PostApiMorphTaskRunsByTaskRunIdForceWakeResponses = {
+    /**
+     * VM is awake and ready
+     */
+    200: ForceWakeVmResponse;
+};
+
+export type PostApiMorphTaskRunsByTaskRunIdForceWakeResponse = PostApiMorphTaskRunsByTaskRunIdForceWakeResponses[keyof PostApiMorphTaskRunsByTaskRunIdForceWakeResponses];
 
 export type PostApiMorphSetupInstanceData = {
     body: SetupInstanceBody;
