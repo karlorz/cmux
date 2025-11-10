@@ -23,6 +23,7 @@ import { Link, useLocation, type LinkProps } from "@tanstack/react-router";
 import clsx from "clsx";
 import { useMutation, useQuery as useConvexQuery } from "convex/react";
 import { toast } from "sonner";
+import { postApiSandboxesByIdResume } from "@cmux/www-openapi-client";
 import {
   AlertTriangle,
   Archive as ArchiveIcon,
@@ -48,6 +49,7 @@ import {
   TerminalSquare,
   Loader2,
   XCircle,
+  Play,
 } from "lucide-react";
 import {
   Fragment,
@@ -1259,6 +1261,45 @@ function TaskRunTreeInner({
     shouldRenderPullRequestLink ||
     shouldRenderPreviewLink;
 
+  // Check if this is a Morph VM that could be woken
+  const morphInstanceId = run.vscode?.provider === "morph" ? run.vscode.containerName : null;
+  const canForceWakeVM = Boolean(morphInstanceId && run.vscode?.status !== "running");
+
+  const handleForceWakeVM = useCallback(async () => {
+    if (!morphInstanceId) {
+      toast.error("No VM instance found");
+      return;
+    }
+
+    const toastId = toast.loading("Waking VM...", {
+      description: "This may take up to 60 seconds",
+    });
+
+    try {
+      const response = await postApiSandboxesByIdResume({
+        path: { id: morphInstanceId },
+        body: { teamSlugOrId },
+      });
+
+      if (response.error) {
+        throw new Error(response.error as string);
+      }
+
+      toast.success("VM is ready!", {
+        id: toastId,
+        description: response.data?.vscodeUrl ? "VSCode is now accessible" : undefined,
+      });
+
+      // Refresh the page to update the UI
+      window.location.reload();
+    } catch (error) {
+      toast.error("Failed to wake VM", {
+        id: toastId,
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  }, [morphInstanceId, teamSlugOrId]);
+
   return (
     <div className={clsx({ hidden: run.isArchived })}>
       <ContextMenu.Root>
@@ -1369,6 +1410,15 @@ function TaskRunTreeInner({
                     </ContextMenu.Popup>
                   </ContextMenu.Positioner>
                 </ContextMenu.SubmenuRoot>
+              ) : null}
+              {canForceWakeVM ? (
+                <ContextMenu.Item
+                  className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                  onClick={handleForceWakeVM}
+                >
+                  <Play className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                  <span>Force wake VM</span>
+                </ContextMenu.Item>
               ) : null}
               <ContextMenu.Item
                 className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"

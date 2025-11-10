@@ -474,6 +474,118 @@ sandboxesRouter.openapi(
   },
 );
 
+// Resume a paused sandbox
+sandboxesRouter.openapi(
+  createRoute({
+    method: "post" as const,
+    path: "/sandboxes/{id}/resume",
+    tags: ["Sandboxes"],
+    summary: "Resume a paused sandbox instance",
+    request: {
+      params: z.object({ id: z.string() }),
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              teamSlugOrId: z.string(),
+            }),
+          },
+        },
+        required: true,
+      },
+    },
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              status: z.string(),
+              vscodeUrl: z.string().optional(),
+              workerUrl: z.string().optional(),
+            }),
+          },
+        },
+        description: "Sandbox resumed successfully",
+      },
+      401: { description: "Unauthorized" },
+      403: { description: "Forbidden - user does not own this VM" },
+      404: { description: "Not found" },
+      500: { description: "Failed to resume sandbox" },
+    },
+  }),
+  async (c) => {
+    const id = c.req.valid("param").id;
+    const { teamSlugOrId } = c.req.valid("json");
+
+    const user = await stackServerAppJs.getUser({ tokenStore: c.req.raw });
+    if (!user) return c.text("Unauthorized", 401);
+
+    const { accessToken } = await user.getAuthJson();
+    if (!accessToken) return c.text("Unauthorized", 401);
+
+    try {
+      // Verify team access
+      const team = await verifyTeamAccess({
+        req: c.req.raw,
+        teamSlugOrId,
+      });
+
+      const client = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
+      const instance = await client.instances.get({ instanceId: id });
+
+      // Security: Verify instance belongs to team or user
+      const metadata = instance.metadata;
+      const metadataTeamId = metadata?.teamId;
+      const metadataUserId = metadata?.userId;
+
+      if (metadataTeamId !== team.uuid && metadataUserId !== user.id) {
+        return c.text("Forbidden: You do not have permission to resume this VM", 403);
+      }
+
+      // Resume the instance if paused
+      if (instance.status === "paused") {
+        await instance.resume();
+      }
+
+      // Wait for instance to be ready (with timeout)
+      const maxWaitTime = 60000; // 60 seconds
+      const pollInterval = 2000; // 2 seconds
+      const startTime = Date.now();
+
+      while (Date.now() - startTime < maxWaitTime) {
+        const refreshedInstance = await client.instances.get({ instanceId: id });
+
+        if (refreshedInstance.status === "ready") {
+          const vscodeService = refreshedInstance.networking.httpServices.find(
+            (s) => s.port === 39378,
+          );
+          const workerService = refreshedInstance.networking.httpServices.find(
+            (s) => s.port === 39377,
+          );
+
+          return c.json({
+            status: "ready",
+            vscodeUrl: vscodeService?.url,
+            workerUrl: workerService?.url,
+          });
+        }
+
+        if (refreshedInstance.status === "error") {
+          return c.text("VM failed to resume", 500);
+        }
+
+        // Wait before polling again
+        await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      }
+
+      return c.text("VM resume timed out", 500);
+    } catch (error) {
+      console.error("Failed to resume sandbox:", error);
+      return c.text("Failed to resume sandbox", 500);
+    }
+  },
+);
+
 // Query status of sandbox
 sandboxesRouter.openapi(
   createRoute({
