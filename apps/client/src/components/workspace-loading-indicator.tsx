@@ -35,9 +35,9 @@ const VARIANT_COPY: Record<
   browser: {
     loadingTitle: "Launching browser preview",
     loadingDescription:
-      "Preparing the in-browser environment. Available in cloud workspaces.",
+      "Preparing the VNC browser environment. Use this to configure the browser for authentication, screenshots, and testing with the browser agent.",
     errorTitle: "We couldn't launch the browser preview",
-    errorDescription: "Refresh the page or switch to cloud mode, then try again.",
+    errorDescription: "Refresh the page or switch to cloud mode, then try again. Ensure the browser VNC is properly configured.",
   },
 };
 

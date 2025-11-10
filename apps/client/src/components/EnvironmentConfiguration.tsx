@@ -4,6 +4,7 @@ import { WorkspaceLoadingIndicator } from "@/components/workspace-loading-indica
 import { ScriptTextareaField } from "@/components/ScriptTextareaField";
 import { SCRIPT_COPY } from "@/components/scriptCopy";
 import { ResizableColumns } from "@/components/ResizableColumns";
+import { ResizableRows } from "@/components/ResizableRows";
 import { parseEnvBlock } from "@/lib/parseEnvBlock";
 import {
   TASK_RUN_IFRAME_ALLOW,
@@ -31,7 +32,9 @@ import type { PersistentIframeStatus } from "@/components/persistent-iframe";
 import {
   ArrowLeft,
   Code2,
+  Columns2,
   Loader2,
+  Maximize2,
   Minus,
   Monitor,
   Plus,
@@ -168,8 +171,8 @@ export function EnvironmentConfiguration({
     null
   );
   const lastSubmittedEnvContent = useRef<string | null>(null);
-  const [activePreview, setActivePreview] = useState<"vscode" | "browser">(
-    "vscode"
+  const [activePreview, setActivePreview] = useState<"vscode" | "browser" | "split">(
+    "split"
   );
   const [vscodeStatus, setVscodeStatus] =
     useState<PersistentIframeStatus>("loading");
@@ -186,7 +189,7 @@ export function EnvironmentConfiguration({
   const vscodePersistKey = `${basePersistKey}:vscode`;
   const browserPersistKey = `${basePersistKey}:browser`;
   useEffect(() => {
-    if (!browserUrl && activePreview === "browser") {
+    if (!browserUrl && (activePreview === "browser" || activePreview === "split")) {
       setActivePreview("vscode");
     }
   }, [activePreview, browserUrl]);
@@ -230,8 +233,8 @@ export function EnvironmentConfiguration({
   }, [pendingFocusIndex, envVars]);
 
   const handlePreviewSelect = useCallback(
-    (view: "vscode" | "browser") => {
-      if (view === "browser" && !browserUrl) {
+    (view: "vscode" | "browser" | "split") => {
+      if ((view === "browser" || view === "split") && !browserUrl) {
         return;
       }
       setActivePreview(view);
@@ -573,7 +576,7 @@ export function EnvironmentConfiguration({
   };
 
   const previewButtonClass = useCallback(
-    (view: "vscode" | "browser", disabled: boolean) =>
+    (view: "vscode" | "browser" | "split", disabled: boolean) =>
       clsx(
         "inline-flex h-7 w-7 items-center justify-center focus:outline-none text-neutral-600 dark:text-neutral-300",
         disabled
@@ -595,11 +598,22 @@ export function EnvironmentConfiguration({
       <div className="flex items-center gap-1.5">
         <button
           type="button"
+          onClick={() => handlePreviewSelect("split")}
+          className={previewButtonClass("split", !isBrowserAvailable)}
+          aria-pressed={activePreview === "split"}
+          aria-label="Show split view"
+          title="Show split view (VS Code & Browser)"
+          disabled={!isBrowserAvailable}
+        >
+          <Columns2 className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
           onClick={() => handlePreviewSelect("vscode")}
           className={previewButtonClass("vscode", false)}
           aria-pressed={activePreview === "vscode"}
-          aria-label="Show VS Code workspace"
-          title="Show VS Code workspace"
+          aria-label="Show VS Code workspace fullscreen"
+          title="Show VS Code workspace fullscreen"
         >
           <Code2 className="h-3.5 w-3.5" />
         </button>
@@ -608,8 +622,8 @@ export function EnvironmentConfiguration({
           onClick={() => handlePreviewSelect("browser")}
           className={previewButtonClass("browser", !isBrowserAvailable)}
           aria-pressed={activePreview === "browser"}
-          aria-label="Show browser preview"
-          title="Show browser preview"
+          aria-label="Show browser preview fullscreen"
+          title="Show browser preview fullscreen"
           disabled={!isBrowserAvailable}
         >
           <Monitor className="h-3.5 w-3.5" />
@@ -1021,17 +1035,28 @@ export function EnvironmentConfiguration({
             </h3>
             <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
               {mode === "snapshot"
-                ? "Creating instance from snapshot. Once ready, VS Code and the browser will appear here so you can test your changes."
-                : "Your development environment is launching. Once ready, VS Code and the browser will appear here so you can configure and test your setup."}
+                ? "Creating instance from snapshot. Once ready, VS Code and the browser will appear here so you can test your changes. Use the browser VNC to set up authentication, capture screenshots, and prepare for browser agent testing."
+                : "Your development environment is launching. Once ready, VS Code and the browser will appear here so you can configure and test your setup. Use the browser VNC to set up authentication, capture screenshots, and prepare for browser agent testing."}
             </p>
           </div>
         </div>
       ) : (
         <div className="flex h-full flex-col">
           <div className="flex-1 min-h-0">
-            {activePreview === "browser"
-              ? renderBrowserPreview()
-              : renderVscodePreview()}
+            {activePreview === "split" ? (
+              <ResizableRows
+                storageKey={`${basePersistKey}:split`}
+                defaultTopHeight={50}
+                minTop={20}
+                maxTop={80}
+                top={renderVscodePreview()}
+                bottom={renderBrowserPreview()}
+              />
+            ) : activePreview === "browser" ? (
+              renderBrowserPreview()
+            ) : (
+              renderVscodePreview()
+            )}
           </div>
         </div>
       )}
