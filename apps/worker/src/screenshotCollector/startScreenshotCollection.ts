@@ -245,24 +245,53 @@ export async function startScreenshotCollection(
   await logToScreenshotCollector(
     `Using merge base ${mergeBase} from ${baseBranch}`
   );
+
+  const currentHeadSha = await runCommandCapture(
+    "git",
+    ["rev-parse", "HEAD"],
+    { cwd: workspaceDir }
+  );
+  const trimmedHeadSha = currentHeadSha.split("\n")[0]?.trim() || "unknown";
+  await logToScreenshotCollector(
+    `Current HEAD: ${trimmedHeadSha}`
+  );
+
+  if (trimmedHeadSha === mergeBase) {
+    await logToScreenshotCollector(
+      `WARNING: HEAD is the same as merge base - no commits have been made on this branch yet`
+    );
+  }
+
   log("INFO", "Git repository selected for screenshots", {
     workspaceRoot,
     selectedRepository: workspaceDir,
     repositoryCandidates: repoCandidates,
     baseBranch,
     mergeBase,
+    headSha: trimmedHeadSha,
   });
+
+  const diffCommand = `git diff --name-only ${mergeBase}..HEAD`;
+  await logToScreenshotCollector(`Running: ${diffCommand}`);
+
+  const diffOutput = await runCommandCapture(
+    "git",
+    ["diff", "--name-only", `${mergeBase}..HEAD`],
+    { cwd: workspaceDir }
+  );
+
+  await logToScreenshotCollector(
+    `Diff output (${diffOutput.length} chars): ${diffOutput || "(empty)"}`
+  );
 
   let changedFiles =
     options.changedFiles && options.changedFiles.length > 0
       ? options.changedFiles
-      : parseFileList(
-          await runCommandCapture(
-            "git",
-            ["diff", "--name-only", `${mergeBase}..HEAD`],
-            { cwd: workspaceDir }
-          )
-        );
+      : parseFileList(diffOutput);
+
+  await logToScreenshotCollector(
+    `Parsed ${changedFiles.length} changed file(s) from diff: ${changedFiles.join(", ") || "(none)"}`
+  );
 
   let usedWorkingTreeFallback = false;
 
@@ -275,22 +304,39 @@ export async function startScreenshotCollection(
       mergeBase,
     });
 
+    await logToScreenshotCollector(`Running: git diff --name-only HEAD`);
     const trackedDiffOutput = await runCommandCapture(
       "git",
       ["diff", "--name-only", "HEAD"],
       { cwd: workspaceDir }
+    );
+    await logToScreenshotCollector(
+      `Tracked changes output (${trackedDiffOutput.length} chars): ${trackedDiffOutput || "(empty)"}`
+    );
+
+    await logToScreenshotCollector(
+      `Running: git ls-files --others --exclude-standard`
     );
     const untrackedOutput = await runCommandCapture(
       "git",
       ["ls-files", "--others", "--exclude-standard"],
       { cwd: workspaceDir }
     );
+    await logToScreenshotCollector(
+      `Untracked files output (${untrackedOutput.length} chars): ${untrackedOutput || "(empty)"}`
+    );
 
     const trackedFiles = parseFileList(trackedDiffOutput);
     const untrackedFiles = parseFileList(untrackedOutput);
+    await logToScreenshotCollector(
+      `Found ${trackedFiles.length} tracked and ${untrackedFiles.length} untracked file(s)`
+    );
     const combined = new Set<string>([...trackedFiles, ...untrackedFiles]);
     changedFiles = Array.from(combined);
     usedWorkingTreeFallback = true;
+    await logToScreenshotCollector(
+      `Working tree fallback: ${changedFiles.length} total file(s): ${changedFiles.join(", ") || "(none)"}`
+    );
   }
 
   if (changedFiles.length === 0) {
