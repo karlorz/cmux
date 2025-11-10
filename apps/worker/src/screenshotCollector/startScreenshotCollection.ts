@@ -264,6 +264,60 @@ export async function startScreenshotCollection(
           )
         );
 
+  const resolveChangedFilesFromCommits = async () => {
+    try {
+      const aheadRaw = await runCommandCapture(
+        "git",
+        ["rev-list", "--count", `${mergeBase}..HEAD`],
+        { cwd: workspaceDir }
+      );
+      const aheadCount = Number.parseInt(
+        aheadRaw.split("\n")[0]?.trim() ?? "0",
+        10
+      );
+      if (!Number.isFinite(aheadCount) || aheadCount <= 0) {
+        return;
+      }
+
+      const diffTreeOutput = await runCommandCapture(
+        "git",
+        [
+          "diff-tree",
+          "--no-commit-id",
+          "--name-only",
+          "-r",
+          `${mergeBase}..HEAD`,
+        ],
+        { cwd: workspaceDir }
+      );
+      const diffTreeFiles = parseFileList(diffTreeOutput);
+      if (diffTreeFiles.length === 0) {
+        return;
+      }
+      changedFiles = diffTreeFiles;
+      await logToScreenshotCollector(
+        `Detected ${diffTreeFiles.length} changed file(s) across ${aheadCount} commit(s) since merge base`
+      );
+    } catch (commitDiffError) {
+      const message =
+        commitDiffError instanceof Error
+          ? commitDiffError.message
+          : String(commitDiffError ?? "unknown commit diff error");
+      await logToScreenshotCollector(
+        `Failed to resolve changed files from commits: ${message}`
+      );
+      log("WARN", "Unable to resolve changed files from commit history", {
+        error: message,
+        baseBranch,
+        mergeBase,
+      });
+    }
+  };
+
+  if (changedFiles.length === 0) {
+    await resolveChangedFilesFromCommits();
+  }
+
   let usedWorkingTreeFallback = false;
 
   if (changedFiles.length === 0) {
