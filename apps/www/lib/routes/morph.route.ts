@@ -5,6 +5,12 @@ import {
 } from "@/lib/utils/morph-defaults";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { env } from "@/lib/utils/www-env";
+import { api } from "@cmux/convex/api";
+import {
+  extractMorphInstanceInfo,
+  type MorphInstanceInfo,
+} from "@cmux/shared";
+import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { MorphCloudClient } from "morphcloud";
 import { getConvex } from "../utils/get-convex";
@@ -45,6 +51,23 @@ const SetupInstanceResponse = z
     removedRepos: z.array(z.string()),
   })
   .openapi("SetupInstanceResponse");
+
+const ForceWakeTaskRunBody = z
+  .object({
+    teamSlugOrId: z.string(),
+    waitSeconds: z.number().int().min(30).max(600).optional(),
+  })
+  .openapi("ForceWakeTaskRunBody");
+
+const ForceWakeTaskRunResponse = z
+  .object({
+    instanceId: z.string(),
+    status: z.literal("ready"),
+    resumed: z.boolean(),
+    vscodeUrl: z.string().nullable(),
+    workerUrl: z.string().nullable(),
+  })
+  .openapi("ForceWakeTaskRunResponse");
 
 morphRouter.openapi(
   createRoute({
@@ -385,6 +408,170 @@ morphRouter.openapi(
     } catch (error) {
       console.error("Failed to setup Morph instance:", error);
       return c.text("Failed to setup instance", 500);
+    }
+  }
+);
+
+const DEFAULT_WAKE_TIMEOUT_SECONDS = 300;
+
+morphRouter.openapi(
+  createRoute({
+    method: "post" as const,
+    path: "/morph/task-runs/{taskRunId}/wake",
+    tags: ["Morph"],
+    summary: "Resume a Morph VM that backs a specific task run",
+    request: {
+      params: z.object({
+        taskRunId: z.string(),
+      }),
+      body: {
+        content: {
+          "application/json": {
+            schema: ForceWakeTaskRunBody,
+          },
+        },
+        required: true,
+      },
+    },
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: ForceWakeTaskRunResponse,
+          },
+        },
+        description: "Morph VM resumed and ready",
+      },
+      400: { description: "Run is not connected to a Morph VM" },
+      401: { description: "Unauthorized" },
+      403: { description: "Instance ownership mismatch" },
+      404: { description: "Task run or Morph instance not found" },
+      409: { description: "Instance cannot be resumed right now" },
+      500: { description: "Failed to resume Morph instance" },
+    },
+  }),
+  async (c) => {
+    const user = await stackServerAppJs.getUser({ tokenStore: c.req.raw });
+    if (!user) {
+      return c.text("Unauthorized", 401);
+    }
+    const { accessToken } = await user.getAuthJson();
+    if (!accessToken) {
+      return c.text("Unauthorized", 401);
+    }
+
+    const { taskRunId } = c.req.valid("param");
+    const { teamSlugOrId, waitSeconds } = c.req.valid("json");
+
+    const parsedTaskRunResult = typedZid("taskRuns").safeParse(taskRunId);
+    if (!parsedTaskRunResult.success) {
+      return c.text("Invalid task run id", 400);
+    }
+    const parsedTaskRunId = parsedTaskRunResult.data;
+
+    const convex = getConvex({ accessToken });
+    const run = await convex.query(api.taskRuns.get, {
+      teamSlugOrId,
+      id: parsedTaskRunId,
+    });
+
+    if (!run) {
+      return c.text("Task run not found", 404);
+    }
+
+    if (!run.vscode || run.vscode.provider !== "morph") {
+      return c.text("Task run is not associated with a Morph workspace", 400);
+    }
+
+    const candidateUrls: (string | undefined)[] = [
+      run.vscode.url,
+      run.vscode.workspaceUrl,
+      run.vscode.ports?.vscode,
+      run.vscode.ports?.proxy,
+      ...(run.networking?.map((service) => service.url) ?? []),
+    ];
+
+    const morphInfo = candidateUrls.reduce<MorphInstanceInfo | null>(
+      (acc, url) => acc ?? (url ? extractMorphInstanceInfo(url) : null),
+      null
+    );
+
+    if (!morphInfo) {
+      return c.text("Unable to locate Morph VM for this task run", 400);
+    }
+
+    const timeoutSeconds =
+      waitSeconds && Number.isFinite(waitSeconds)
+        ? Math.min(Math.max(waitSeconds, 30), 600)
+        : DEFAULT_WAKE_TIMEOUT_SECONDS;
+
+    try {
+      const client = new MorphCloudClient({
+        apiKey: env.MORPH_API_KEY,
+      });
+      const instance = await client.instances.get({
+        instanceId: morphInfo.instanceId,
+      });
+
+      const metadata =
+        (instance as unknown as { metadata?: Record<string, string> })
+          .metadata ?? {};
+      if (metadata.teamId && metadata.teamId !== run.teamId) {
+        return c.text("Instance belongs to a different team", 403);
+      }
+      if (metadata.userId && metadata.userId !== user.id) {
+        return c.text("Instance belongs to a different user", 403);
+      }
+
+      if (instance.status === "saving") {
+        return c.text(
+          "Morph VM is currently saving a snapshot. Try again shortly.",
+          409
+        );
+      }
+      if (instance.status === "error") {
+        return c.text(
+          "Morph VM is in an error state. Please recreate the workspace.",
+          409
+        );
+      }
+
+      let resumed = false;
+      if (instance.status === "paused") {
+        await instance.resume();
+        resumed = true;
+      }
+
+      await instance.waitUntilReady(timeoutSeconds);
+      try {
+        await instance.setWakeOn(true, true);
+      } catch (error) {
+        console.warn(
+          `[morph.forceWake][${instance.id}] Failed to enable wake-on settings`,
+          error
+        );
+      }
+
+      const vscodeService = instance.networking.httpServices.find(
+        (service) => service.port === 39378
+      );
+      const workerService = instance.networking.httpServices.find(
+        (service) => service.port === 39377
+      );
+
+      return c.json({
+        instanceId: instance.id,
+        status: "ready",
+        resumed,
+        vscodeUrl: vscodeService?.url ?? null,
+        workerUrl: workerService?.url ?? null,
+      });
+    } catch (error) {
+      console.error(
+        `[morph.forceWake][${morphInfo.instanceId}] Failed to resume instance`,
+        error
+      );
+      return c.text("Failed to wake Morph instance", 500);
     }
   }
 );

@@ -19,7 +19,11 @@ import {
   aggregatePullRequestState,
   type RunPullRequestState,
 } from "@cmux/shared/pull-request-state";
+import {
+  postApiMorphTaskRunsByTaskRunIdWakeMutation,
+} from "@cmux/www-openapi-client/react-query";
 import { Link, useLocation, type LinkProps } from "@tanstack/react-router";
+import { useMutation as useRQMutation } from "@tanstack/react-query";
 import clsx from "clsx";
 import { useMutation, useQuery as useConvexQuery } from "convex/react";
 import { toast } from "sonner";
@@ -47,6 +51,7 @@ import {
   Pencil,
   TerminalSquare,
   Loader2,
+  Zap,
   XCircle,
 } from "lucide-react";
 import {
@@ -202,6 +207,29 @@ function collectRunIds(
   for (const child of node.children) {
     collectRunIds(child, true, acc);
   }
+}
+
+function formatForceWakeError(error: unknown): string {
+  if (typeof error === "string" && error.trim().length > 0) {
+    return error;
+  }
+  if (error && typeof error === "object") {
+    const withMessage = error as { message?: unknown };
+    if (
+      typeof withMessage.message === "string" &&
+      withMessage.message.trim().length > 0
+    ) {
+      return withMessage.message;
+    }
+    const withError = error as { error?: unknown };
+    if (
+      typeof withError.error === "string" &&
+      withError.error.trim().length > 0
+    ) {
+      return withError.error;
+    }
+  }
+  return "Failed to wake Morph VM";
 }
 
 function applyArchiveStateToNode(
@@ -449,6 +477,18 @@ function TaskTreeInner({
   const handlePrefetch = useCallback(() => {
     prefetchTaskRuns();
   }, [prefetchTaskRuns]);
+
+  const forceWakeVmMutation = useRQMutation(
+    postApiMorphTaskRunsByTaskRunIdWakeMutation()
+  );
+  const forceWakeVm = useCallback(
+    (runId: Id<"taskRuns">) =>
+      forceWakeVmMutation.mutateAsync({
+        path: { taskRunId: runId },
+        body: { teamSlugOrId },
+      }),
+    [forceWakeVmMutation, teamSlugOrId]
+  );
 
   const { archiveWithUndo, unarchive } = useArchiveTask(teamSlugOrId);
 
@@ -804,16 +844,17 @@ function TaskTreeInner({
         </ContextMenu.Root>
 
         {isExpanded ? (
-          <TaskRunsContent
-            taskId={task._id}
-            teamSlugOrId={teamSlugOrId}
-            level={level}
-            runs={taskRuns}
-            isLoading={runsLoading}
-            onArchiveToggle={handleRunArchiveToggle}
-            hasVisibleRuns={hasVisibleRuns}
-            showRunNumbers={showRunNumbers}
-          />
+        <TaskRunsContent
+          taskId={task._id}
+          teamSlugOrId={teamSlugOrId}
+          level={level}
+          runs={taskRuns}
+          isLoading={runsLoading}
+          onArchiveToggle={handleRunArchiveToggle}
+          hasVisibleRuns={hasVisibleRuns}
+          showRunNumbers={showRunNumbers}
+          onForceWakeVm={forceWakeVm}
+        />
         ) : null}
       </div>
     </TaskRunExpansionContext.Provider>
@@ -829,6 +870,7 @@ interface TaskRunsContentProps {
   onArchiveToggle: (runId: Id<"taskRuns">, archive: boolean) => void;
   hasVisibleRuns: boolean;
   showRunNumbers: boolean;
+  onForceWakeVm: (runId: Id<"taskRuns">) => Promise<unknown>;
 }
 
 function TaskRunsContent({
@@ -840,6 +882,7 @@ function TaskRunsContent({
   onArchiveToggle,
   hasVisibleRuns,
   showRunNumbers,
+  onForceWakeVm,
 }: TaskRunsContentProps) {
   const location = useLocation();
   const optimisticTask = isFakeConvexId(taskId);
@@ -937,6 +980,7 @@ function TaskRunsContent({
           }
           onArchiveToggle={onArchiveToggle}
           showRunNumbers={showRunNumbers}
+          onForceWakeVm={onForceWakeVm}
         />
       ))}
     </div>
@@ -982,6 +1026,7 @@ interface TaskRunTreeProps {
   isDefaultSelected?: boolean;
   onArchiveToggle: (runId: Id<"taskRuns">, archive: boolean) => void;
   showRunNumbers: boolean;
+  onForceWakeVm: (runId: Id<"taskRuns">) => Promise<unknown>;
 }
 
 function TaskRunTreeInner({
@@ -992,6 +1037,7 @@ function TaskRunTreeInner({
   isDefaultSelected = false,
   onArchiveToggle,
   showRunNumbers,
+  onForceWakeVm,
 }: TaskRunTreeProps) {
   const location = useLocation();
   const { expandedRuns, setRunExpanded } = useTaskRunExpansionContext();
@@ -1039,6 +1085,9 @@ function TaskRunTreeInner({
   }, [isExpanded, isRunSelected, run._id, setRunExpanded]);
 
   const hasChildren = run.children.length > 0;
+  const [isForceWakePending, setIsForceWakePending] = useState(false);
+  const canForceWakeVm =
+    Boolean(onForceWakeVm) && run.vscode?.provider === "morph";
 
   // Memoize the display text to avoid recalculating on every render
   const baseDisplayText = useMemo(() => {
@@ -1068,6 +1117,26 @@ function TaskRunTreeInner({
   const handleArchiveRun = useCallback(() => {
     onArchiveToggle(run._id, true);
   }, [onArchiveToggle, run._id]);
+  const handleForceWakeVm = useCallback(() => {
+    if (!onForceWakeVm || isForceWakePending) {
+      return;
+    }
+    setIsForceWakePending(true);
+    try {
+      const wakePromise = onForceWakeVm(run._id);
+      void toast.promise(wakePromise, {
+        loading: "Waking Morph VM…",
+        success: "Morph VM is ready.",
+        error: (error) => formatForceWakeError(error),
+      });
+      wakePromise.finally(() => {
+        setIsForceWakePending(false);
+      });
+    } catch (error) {
+      setIsForceWakePending(false);
+      toast.error(formatForceWakeError(error));
+    }
+  }, [isForceWakePending, onForceWakeVm, run._id]);
 
   const isLocalWorkspaceRunEntry = run.isLocalWorkspace;
   const isCloudWorkspaceRunEntry = run.isCloudWorkspace;
@@ -1370,6 +1439,16 @@ function TaskRunTreeInner({
                   </ContextMenu.Positioner>
                 </ContextMenu.SubmenuRoot>
               ) : null}
+              {canForceWakeVm ? (
+                <ContextMenu.Item
+                  disabled={isForceWakePending}
+                  className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[disabled]:opacity-60 data-[disabled]:pointer-events-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                  onClick={handleForceWakeVm}
+                >
+                  <Zap className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                  <span>{isForceWakePending ? "Waking VM…" : "Force wake VM"}</span>
+                </ContextMenu.Item>
+              ) : null}
               <ContextMenu.Item
                 className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
                 onClick={handleArchiveRun}
@@ -1397,6 +1476,7 @@ function TaskRunTreeInner({
         environmentError={run.environmentError}
         onArchiveToggle={onArchiveToggle}
         showRunNumbers={showRunNumbers}
+        onForceWakeVm={onForceWakeVm}
       />
     </div>
   );
@@ -1466,6 +1546,7 @@ interface TaskRunDetailsProps {
   };
   onArchiveToggle: (runId: Id<"taskRuns">, archive: boolean) => void;
   showRunNumbers: boolean;
+  onForceWakeVm: (runId: Id<"taskRuns">) => Promise<unknown>;
 }
 
 function TaskRunDetails({
@@ -1483,6 +1564,7 @@ function TaskRunDetails({
   environmentError,
   onArchiveToggle,
   showRunNumbers,
+  onForceWakeVm,
 }: TaskRunDetailsProps) {
   if (!isExpanded) {
     return null;
@@ -1649,6 +1731,7 @@ function TaskRunDetails({
               teamSlugOrId={teamSlugOrId}
               onArchiveToggle={onArchiveToggle}
               showRunNumbers={showRunNumbers}
+              onForceWakeVm={onForceWakeVm}
             />
           ))}
         </div>

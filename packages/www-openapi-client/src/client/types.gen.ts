@@ -365,6 +365,19 @@ export type SetupInstanceBody = {
     snapshotId?: string | ('snapshot_pmo7bxv7' | 'snapshot_qbpom27i');
 };
 
+export type ForceWakeTaskRunResponse = {
+    instanceId: string;
+    status: 'ready';
+    resumed: boolean;
+    vscodeUrl: string | null;
+    workerUrl: string | null;
+};
+
+export type ForceWakeTaskRunBody = {
+    teamSlugOrId: string;
+    waitSeconds?: number;
+};
+
 export type CreateEnvironmentResponse = {
     id: string;
     snapshotId: string;
@@ -1574,6 +1587,51 @@ export type PostApiMorphSetupInstanceResponses = {
 };
 
 export type PostApiMorphSetupInstanceResponse = PostApiMorphSetupInstanceResponses[keyof PostApiMorphSetupInstanceResponses];
+
+export type PostApiMorphTaskRunsByTaskRunIdWakeData = {
+    body: ForceWakeTaskRunBody;
+    path: {
+        taskRunId: string;
+    };
+    query?: never;
+    url: '/api/morph/task-runs/{taskRunId}/wake';
+};
+
+export type PostApiMorphTaskRunsByTaskRunIdWakeErrors = {
+    /**
+     * Run is not connected to a Morph VM
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Instance ownership mismatch
+     */
+    403: unknown;
+    /**
+     * Task run or Morph instance not found
+     */
+    404: unknown;
+    /**
+     * Instance cannot be resumed right now
+     */
+    409: unknown;
+    /**
+     * Failed to resume Morph instance
+     */
+    500: unknown;
+};
+
+export type PostApiMorphTaskRunsByTaskRunIdWakeResponses = {
+    /**
+     * Morph VM resumed and ready
+     */
+    200: ForceWakeTaskRunResponse;
+};
+
+export type PostApiMorphTaskRunsByTaskRunIdWakeResponse = PostApiMorphTaskRunsByTaskRunIdWakeResponses[keyof PostApiMorphTaskRunsByTaskRunIdWakeResponses];
 
 export type GetApiIframePreflightData = {
     body?: never;
