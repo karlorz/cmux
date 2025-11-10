@@ -118,6 +118,50 @@ function buildPlaceholderWorkspaceUrl(folderPath: string): string {
   return buildServeWebWorkspaceUrl(LOCAL_VSCODE_PLACEHOLDER_ORIGIN, folderPath);
 }
 
+function resolveUserLoginShell(): string {
+  const envShell = process.env.SHELL?.trim();
+  if (envShell) {
+    return envShell;
+  }
+
+  try {
+    const userShell = os.userInfo().shell?.trim();
+    if (userShell) {
+      return userShell;
+    }
+  } catch (error) {
+    serverLogger.warn("Failed to read user shell from os.userInfo()", error);
+  }
+
+  if (process.platform === "win32") {
+    return process.env.COMSPEC ?? "cmd.exe";
+  }
+
+  return "/bin/bash";
+}
+
+function buildLoginShellInvocation(payload: string): {
+  executable: string;
+  args: string[];
+} {
+  const shellExecutable = resolveUserLoginShell();
+  if (process.platform === "win32") {
+    const lowerShell = shellExecutable.toLowerCase();
+    if (lowerShell.includes("powershell") || lowerShell.includes("pwsh")) {
+      return { executable: shellExecutable, args: ["-Command", payload] };
+    }
+    return {
+      executable: shellExecutable,
+      args: ["/d", "/s", "/c", payload],
+    };
+  }
+
+  return {
+    executable: shellExecutable,
+    args: ["-lc", payload],
+  };
+}
+
 export function setupSocketHandlers(
   rt: RealtimeServer,
   gitDiffManager: GitDiffManager,
@@ -848,7 +892,9 @@ export function setupSocketHandlers(
               const maintenancePayload = `${scriptPreamble}\n${maintenanceScript}`;
 
               try {
-                await execFileAsync("zsh", ["-lc", maintenancePayload], {
+                const { executable, args } =
+                  buildLoginShellInvocation(maintenancePayload);
+                await execFileAsync(executable, args, {
                   cwd: resolvedWorkspacePath,
                   env: {
                     ...process.env,
