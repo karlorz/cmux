@@ -1,3 +1,4 @@
+import { GithubConnectionRequiredError, isGithubConnectionRequiredPayload } from "@cmux/shared";
 import { dockerLogger } from "../utils/fileLogger";
 import { getWwwClient } from "../utils/wwwClient";
 import { getWwwOpenApiModule } from "../utils/wwwOpenApiModule";
@@ -68,9 +69,25 @@ export class CmuxVSCodeInstance extends VSCodeInstance {
           : {}),
       },
     });
-    const data = startRes.data;
+    const { data, error, response } = startRes as {
+      data?: typeof startRes.data;
+      error?: unknown;
+      response: Response;
+    };
     if (!data) {
-      throw new Error("Failed to start sandbox");
+      if (
+        isGithubConnectionRequiredPayload(error) ||
+        response.status === 428
+      ) {
+        throw new GithubConnectionRequiredError(
+          isGithubConnectionRequiredPayload(error) ? error.message : undefined,
+        );
+      }
+      throw new Error(
+        typeof error === "string" && error.trim().length > 0
+          ? error
+          : "Failed to start sandbox",
+      );
     }
 
     this.sandboxId = data.instanceId;

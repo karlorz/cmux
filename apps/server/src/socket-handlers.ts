@@ -22,6 +22,8 @@ import {
   isLoopbackHostname,
   LOCAL_VSCODE_PLACEHOLDER_ORIGIN,
   type IframePreflightResult,
+  GithubConnectionRequiredError,
+  isGithubConnectionRequiredPayload,
 } from "@cmux/shared";
 import {
   type PullRequestActionResult,
@@ -1210,9 +1212,27 @@ export function setupSocketHandlers(
             },
           });
 
-          const data = startRes.data;
+          const { data, error, response } = startRes as {
+            data?: typeof startRes.data;
+            error?: unknown;
+            response: Response;
+          };
           if (!data) {
-            throw new Error("Failed to start sandbox");
+            if (
+              isGithubConnectionRequiredPayload(error) ||
+              response.status === 428
+            ) {
+              throw new GithubConnectionRequiredError(
+                isGithubConnectionRequiredPayload(error)
+                  ? error.message
+                  : undefined
+              );
+            }
+            throw new Error(
+              typeof error === "string" && error.trim().length > 0
+                ? error
+                : "Failed to start sandbox"
+            );
           }
 
           const sandboxId = data.instanceId;

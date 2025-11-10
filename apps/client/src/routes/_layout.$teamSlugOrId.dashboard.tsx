@@ -20,12 +20,14 @@ import {
 } from "@/components/ui/tooltip";
 import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
 import { useSocket } from "@/contexts/socket/use-socket";
+import { useGithubConnectionToast } from "@/hooks/useGithubConnectionToast";
 import { createFakeConvexId } from "@/lib/fakeConvexId";
 import { attachTaskLifecycleListeners } from "@/lib/socket/taskLifecycleListeners";
 import { branchesQueryOptions } from "@/queries/branches";
 import { api } from "@cmux/convex/api";
 import type { Doc, Id } from "@cmux/convex/dataModel";
 import type { ProviderStatusResponse, TaskAcknowledged, TaskError, TaskStarted } from "@cmux/shared";
+import { isGithubConnectionRequiredMessage } from "@cmux/shared";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
@@ -82,6 +84,7 @@ function DashboardComponent() {
   const { socket } = useSocket();
   const { theme } = useTheme();
   const { addTaskToExpand } = useExpandTasks();
+  const showGithubConnectionToast = useGithubConnectionToast(teamSlugOrId);
 
   const [selectedProject, setSelectedProject] = useState<string[]>(() => {
     const stored = localStorage.getItem(`selectedProject-${teamSlugOrId}`);
@@ -124,6 +127,35 @@ function DashboardComponent() {
 
   // Ref to access editor API
   const editorApiRef = useRef<EditorApi | null>(null);
+  const lastSubmittedPromptRef = useRef<string>("");
+
+  const restorePendingPrompt = useCallback(() => {
+    const pending = lastSubmittedPromptRef.current;
+    if (!pending) {
+      return;
+    }
+    lastSubmittedPromptRef.current = "";
+    setTaskDescription(pending);
+    if (editorApiRef.current?.clear) {
+      editorApiRef.current.clear();
+    }
+    if (editorApiRef.current?.insertText) {
+      editorApiRef.current.insertText(pending);
+      editorApiRef.current.focus?.();
+    }
+  }, [setTaskDescription]);
+
+  const discardPendingPrompt = useCallback(() => {
+    lastSubmittedPromptRef.current = "";
+  }, []);
+
+  const handleGithubConnectionFailure = useCallback(
+    (message?: string) => {
+      restorePendingPrompt();
+      showGithubConnectionToast(message);
+    },
+    [restorePendingPrompt, showGithubConnectionToast],
+  );
 
   const persistAgentSelection = useCallback((agents: string[]) => {
     try {
@@ -417,6 +449,8 @@ function DashboardComponent() {
     try {
       // Extract content including images from the editor
       const content = editorApiRef.current?.getContent();
+      const submittedText = content?.text || taskDescription;
+      lastSubmittedPromptRef.current = submittedText;
       const images = content?.images || [];
 
       // Upload images to Convex storage first
@@ -484,15 +518,24 @@ function DashboardComponent() {
       const handleStartTaskAck = (response: TaskAcknowledged | TaskStarted | TaskError) => {
         if ("error" in response) {
           console.error("Task start error:", response.error);
-          toast.error(`Task start error: ${JSON.stringify(response.error)}`);
+          if (isGithubConnectionRequiredMessage(response.error)) {
+            handleGithubConnectionFailure(response.error);
+          } else {
+            toast.error(`Task start error: ${response.error}`);
+          }
           return;
         }
 
         attachTaskLifecycleListeners(socket, response.taskId, {
           onStarted: (payload) => {
             console.log("Task started:", payload);
+            discardPendingPrompt();
           },
           onFailed: (payload) => {
+            if (isGithubConnectionRequiredMessage(payload.error)) {
+              handleGithubConnectionFailure(payload.error);
+              return;
+            }
             toast.error(`Task failed to start: ${payload.error}`);
           },
         });
@@ -534,6 +577,8 @@ function DashboardComponent() {
     isEnvSelected,
     theme,
     generateUploadUrl,
+    discardPendingPrompt,
+    handleGithubConnectionFailure,
   ]);
 
   // Fetch repos on mount if none exist

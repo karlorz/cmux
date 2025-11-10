@@ -16,8 +16,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useGithubConnectionToast } from "@/hooks/useGithubConnectionToast";
 import { api } from "@cmux/convex/api";
-import { DEFAULT_MORPH_SNAPSHOT_ID, type MorphSnapshotId } from "@cmux/shared";
+import { DEFAULT_MORPH_SNAPSHOT_ID, GITHUB_CONNECTION_REQUIRED_ERROR_CODE, type MorphSnapshotId } from "@cmux/shared";
 import { isElectron } from "@/lib/electron";
 import {
   getApiIntegrationsGithubReposOptions,
@@ -40,6 +41,7 @@ import {
   type ReactNode,
 } from "react";
 import { RepositoryAdvancedOptions } from "./RepositoryAdvancedOptions";
+import { toast } from "sonner";
 
 function ConnectionIcon({ type }: { type?: string }) {
   if (type && type.includes("gitlab")) {
@@ -148,6 +150,7 @@ export function RepositoryPicker({
       hasConnections: false,
     }
   );
+  const showGithubConnectionToast = useGithubConnectionToast(teamSlugOrId);
 
   const setupInstanceMutation = useRQMutation(
     postApiMorphSetupInstanceMutation()
@@ -266,7 +269,22 @@ export function RepositoryPicker({
             console.log("Removed repos:", data.removedRepos);
           },
           onError: (error) => {
+            const isGithubError =
+              typeof error === "object" &&
+              error !== null &&
+              "code" in error &&
+              (error as { code?: string }).code ===
+                GITHUB_CONNECTION_REQUIRED_ERROR_CODE;
+            if (isGithubError) {
+              const message =
+                typeof (error as { message?: string }).message === "string"
+                  ? (error as { message?: string }).message
+                  : undefined;
+              showGithubConnectionToast(message);
+              return;
+            }
             console.error("Failed to setup instance:", error);
+            toast.error("Failed to setup instance");
           },
         }
       );
@@ -279,6 +297,7 @@ export function RepositoryPicker({
       setupInstanceMutation,
       setupManualInstanceMutation,
       teamSlugOrId,
+      showGithubConnectionToast,
     ]
   );
 

@@ -5,6 +5,7 @@ import { stackServerAppJs } from "@/lib/utils/stack";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { env } from "@/lib/utils/www-env";
 import { api } from "@cmux/convex/api";
+import { createGithubConnectionRequiredPayload } from "@cmux/shared";
 import { RESERVED_CMUX_PORT_SET } from "@cmux/shared/utils/reserved-cmux-ports";
 import { parseGithubRepoUrl } from "@cmux/shared/utils/parse-github-repo-url";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
@@ -100,6 +101,7 @@ sandboxesRouter.openapi(
         description: "Sandbox started successfully",
       },
       401: { description: "Unauthorized" },
+      428: { description: "GitHub connection required" },
       500: { description: "Failed to start sandbox" },
     },
   }),
@@ -211,7 +213,7 @@ sandboxesRouter.openapi(
       const gitIdentityPromise = githubAccessTokenPromise.then(
         ({ githubAccessToken }) => {
           if (!githubAccessToken) {
-            throw new Error("GitHub access token not found");
+            return null;
           }
           return fetchGitIdentityInputs(convex, githubAccessToken);
         },
@@ -283,7 +285,11 @@ sandboxesRouter.openapi(
       }
 
       const configureGitIdentityTask = gitIdentityPromise
-        .then(([who, gh]) => {
+        .then((identity) => {
+          if (!identity) {
+            return;
+          }
+          const [who, gh] = identity;
           const { name, email } = selectGitIdentity(who, gh);
           return configureGitIdentity(instance, { name, email });
         })
@@ -300,7 +306,12 @@ sandboxesRouter.openapi(
         console.error(
           `[sandboxes.start] GitHub access token error: ${githubAccessTokenError}`,
         );
-        return c.text("Failed to resolve GitHub credentials", 401);
+        const payload = createGithubConnectionRequiredPayload(
+          githubAccessTokenError.includes("account")
+            ? "Connect a GitHub account to cmux before starting a cloud workspace."
+            : undefined,
+        );
+        return c.json(payload, 428);
       }
 
       // Sandboxes run as the requesting user, so prefer their OAuth scope over GitHub App installation tokens.
