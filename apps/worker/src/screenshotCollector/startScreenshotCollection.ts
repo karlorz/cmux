@@ -253,16 +253,42 @@ export async function startScreenshotCollection(
     mergeBase,
   });
 
-  let changedFiles =
-    options.changedFiles && options.changedFiles.length > 0
-      ? options.changedFiles
-      : parseFileList(
-          await runCommandCapture(
-            "git",
-            ["diff", "--name-only", `${mergeBase}..HEAD`],
-            { cwd: workspaceDir }
-          )
-        );
+  // Check if HEAD is the same as merge base
+  const headCommitRaw = await runCommandCapture("git", ["rev-parse", "HEAD"], {
+    cwd: workspaceDir,
+  });
+  const headCommit = headCommitRaw.split("\n")[0]?.trim();
+  const isHeadAtMergeBase = headCommit === mergeBase;
+
+  if (isHeadAtMergeBase) {
+    await logToScreenshotCollector(
+      `HEAD (${headCommit}) is at merge base; no committed changes on this branch yet`
+    );
+    log("INFO", "HEAD is at merge base for screenshot collection", {
+      baseBranch,
+      mergeBase,
+      headCommit,
+    });
+  }
+
+  let changedFiles: string[];
+  if (options.changedFiles && options.changedFiles.length > 0) {
+    changedFiles = options.changedFiles;
+    await logToScreenshotCollector(
+      `Using ${changedFiles.length} changed file(s) from options: ${changedFiles.join(", ")}`
+    );
+  } else {
+    const diffCommand = `git diff --name-only ${mergeBase}..HEAD`;
+    const diffOutput = await runCommandCapture(
+      "git",
+      ["diff", "--name-only", `${mergeBase}..HEAD`],
+      { cwd: workspaceDir }
+    );
+    changedFiles = parseFileList(diffOutput);
+    await logToScreenshotCollector(
+      `Ran '${diffCommand}' → found ${changedFiles.length} file(s)${changedFiles.length > 0 ? `: ${changedFiles.join(", ")}` : ""}`
+    );
+  }
 
   let usedWorkingTreeFallback = false;
 
@@ -273,6 +299,7 @@ export async function startScreenshotCollection(
     log("INFO", "Falling back to working tree diff for screenshots", {
       baseBranch,
       mergeBase,
+      isHeadAtMergeBase,
     });
 
     const trackedDiffOutput = await runCommandCapture(
@@ -294,12 +321,21 @@ export async function startScreenshotCollection(
   }
 
   if (changedFiles.length === 0) {
-    const reason =
+    let reason =
       "No changes detected in branch commits or working tree; skipping screenshots";
+
+    if (isHeadAtMergeBase) {
+      reason =
+        `HEAD is at merge base ${mergeBase.slice(0, 8)} with no working tree changes. ` +
+        `Please commit your changes first, or ensure you're on a branch with commits ahead of ${baseBranch}.`;
+    }
+
     await logToScreenshotCollector(reason);
     log("INFO", reason, {
       baseBranch,
       mergeBase,
+      headCommit,
+      isHeadAtMergeBase,
     });
     return { status: "skipped", reason };
   }
