@@ -691,6 +691,40 @@ export class RepositoryManager {
     }
   }
 
+  /**
+   * Checkout a pull request using the GitHub CLI (gh pr checkout)
+   * @param repoPath - Path to the git repository
+   * @param pullNumber - The PR number to checkout
+   * @returns The branch name that was checked out
+   */
+  async checkoutPullRequest(
+    repoPath: string,
+    pullNumber: number
+  ): Promise<string> {
+    serverLogger.info(
+      `Checking out PR #${pullNumber} in ${repoPath} using gh CLI...`
+    );
+    try {
+      // Use gh pr checkout which handles fetching and checking out the PR branch
+      await this.executeGitCommand(`gh pr checkout ${pullNumber}`, {
+        cwd: repoPath,
+        encoding: "utf8",
+      });
+      serverLogger.info(`Successfully checked out PR #${pullNumber}`);
+
+      // Get the current branch name after checkout
+      const currentBranch = await this.getCurrentBranch(repoPath);
+      serverLogger.info(`Checked out branch: ${currentBranch}`);
+
+      return currentBranch;
+    } catch (error) {
+      serverLogger.error(`Failed to checkout PR #${pullNumber}:`, error);
+      throw new Error(
+        `Failed to checkout PR #${pullNumber}: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
   private async pullLatestChanges(
     repoPath: string,
     branch: string

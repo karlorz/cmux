@@ -660,6 +660,7 @@ export function setupSocketHandlers(
           projectFullName,
           repoUrl: explicitRepoUrl,
           branch: requestedBranch,
+          pullNumber,
           taskId: providedTaskId,
           taskRunId: providedTaskRunId,
           workspaceName: providedWorkspaceName,
@@ -754,10 +755,13 @@ export function setupSocketHandlers(
             const descriptorBase = projectFullName
               ? `Local workspace ${workspaceName} (${projectFullName})`
               : `Local workspace ${workspaceName}`;
-            descriptor =
-              branch && branch.length > 0
-                ? `${descriptorBase} [${branch}]`
-                : descriptorBase;
+            if (pullNumber) {
+              descriptor = `${descriptorBase} [PR #${pullNumber}]`;
+            } else if (branch && branch.length > 0) {
+              descriptor = `${descriptorBase} [${branch}]`;
+            } else {
+              descriptor = descriptorBase;
+            }
           }
 
           const workspaceRoot = process.env.CMUX_WORKSPACE_DIR
@@ -952,7 +956,8 @@ export function setupSocketHandlers(
               await cleanupWorkspace();
             }
             const cloneArgs = ["clone"];
-            if (branch) {
+            // Only use branch flag if no pullNumber is provided
+            if (branch && !pullNumber) {
               cloneArgs.push("--branch", branch, "--single-branch");
             }
             cloneArgs.push(repoUrl, resolvedWorkspacePath);
@@ -969,6 +974,36 @@ export function setupSocketHandlers(
               throw new Error(
                 message ? `Git clone failed: ${message}` : "Git clone failed"
               );
+            }
+
+            // If pullNumber is provided, checkout the PR using gh CLI
+            if (pullNumber) {
+              try {
+                serverLogger.info(
+                  `[create-local-workspace] Checking out PR #${pullNumber} using gh CLI`
+                );
+                await execFileAsync("gh", ["pr", "checkout", String(pullNumber)], {
+                  cwd: resolvedWorkspacePath,
+                });
+                serverLogger.info(
+                  `[create-local-workspace] Successfully checked out PR #${pullNumber}`
+                );
+              } catch (error) {
+                if (cleanupWorkspace) {
+                  await cleanupWorkspace();
+                }
+                const execErr = isExecError(error) ? error : null;
+                const message =
+                  execErr?.stderr?.trim() ||
+                  (error instanceof Error
+                    ? error.message
+                    : "PR checkout failed");
+                throw new Error(
+                  message
+                    ? `Failed to checkout PR #${pullNumber}: ${message}`
+                    : `Failed to checkout PR #${pullNumber}`
+                );
+              }
             }
 
             try {

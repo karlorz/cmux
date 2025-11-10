@@ -99,6 +99,39 @@ const EMPTY_TEAM_LIST: Team[] = [];
 
 const isDevEnvironment = import.meta.env.DEV;
 
+/**
+ * Parse a GitHub PR URL and extract owner, repo, and PR number
+ * Supports formats like:
+ * - https://github.com/owner/repo/pull/123
+ * - github.com/owner/repo/pull/123
+ */
+function parseGitHubPRUrl(url: string): {
+  owner: string;
+  repo: string;
+  pullNumber: number;
+  projectFullName: string;
+} | null {
+  const trimmed = url.trim();
+  // Match GitHub PR URLs
+  const match = trimmed.match(
+    /(?:https?:\/\/)?github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/pull\/(\d+)/i
+  );
+  if (!match) {
+    return null;
+  }
+  const [, owner, repo, pullNumberStr] = match;
+  const pullNumber = Number.parseInt(pullNumberStr, 10);
+  if (!owner || !repo || Number.isNaN(pullNumber) || pullNumber <= 0) {
+    return null;
+  }
+  return {
+    owner,
+    repo,
+    pullNumber,
+    projectFullName: `${owner}/${repo}`,
+  };
+}
+
 const baseCommandItemClassName =
   "flex items-center gap-2 px-3 py-2.5 mx-1 rounded-md cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 data-[selected=true]:bg-neutral-100 dark:data-[selected=true]:bg-neutral-800 data-[selected=true]:text-neutral-900 dark:data-[selected=true]:text-neutral-100";
 const taskCommandItemClassName =
@@ -683,7 +716,7 @@ export function CommandBar({
   }, [open]);
 
   const createLocalWorkspace = useCallback(
-    async (projectFullName: string) => {
+    async (projectFullName: string, pullNumber?: number) => {
       if (isCreatingLocalWorkspace) {
         return;
       }
@@ -721,6 +754,7 @@ export function CommandBar({
               teamSlugOrId,
               projectFullName,
               repoUrl,
+              pullNumber,
               taskId: reservation.taskId,
               taskRunId: reservation.taskRunId,
               workspaceName: reservation.workspaceName,
@@ -932,7 +966,7 @@ export function CommandBar({
   );
 
   const createCloudWorkspaceFromRepo = useCallback(
-    async (projectFullName: string) => {
+    async (projectFullName: string, pullNumber?: number) => {
       if (isCreatingCloudWorkspace) {
         return;
       }
@@ -949,9 +983,12 @@ export function CommandBar({
         const repoUrl = `https://github.com/${projectFullName}.git`;
 
         // Create task in Convex for repo-based cloud workspace
+        const taskText = pullNumber
+          ? `Cloud Workspace: ${projectFullName} (PR #${pullNumber})`
+          : `Cloud Workspace: ${projectFullName}`;
         const taskId = await createTask({
           teamSlugOrId,
-          text: `Cloud Workspace: ${projectFullName}`,
+          text: taskText,
           projectFullName,
           baseBranch: undefined,
           environmentId: undefined, // No environment for repo-based cloud workspaces
@@ -968,6 +1005,7 @@ export function CommandBar({
               teamSlugOrId,
               projectFullName,
               repoUrl,
+              pullNumber,
               taskId,
               theme,
             },
@@ -2116,6 +2154,18 @@ export function CommandBar({
       ),
     [rootCommandsToRender, rootSuggestionsToRender]
   );
+
+  // Detect PR URLs in search input when on workspace pages
+  const prUrlInfo = useMemo(() => {
+    if (
+      (activePage === "local-workspaces" || activePage === "cloud-workspaces") &&
+      search
+    ) {
+      return parseGitHubPRUrl(search);
+    }
+    return null;
+  }, [activePage, search]);
+
   const localWorkspaceSuggestionsToRender = useMemo(
     () => (!hasSearchQuery ? localWorkspaceSuggestedEntries : []),
     [hasSearchQuery, localWorkspaceSuggestedEntries]
@@ -2585,6 +2635,35 @@ export function CommandBar({
                     </div>
                   ) : (
                     <>
+                      {prUrlInfo ? (
+                        <Command.Group>
+                          <Command.Item
+                            value={`pr-${prUrlInfo.projectFullName}-${prUrlInfo.pullNumber}`}
+                            onSelect={() => {
+                              clearCommandInput();
+                              closeCommand();
+                              void createLocalWorkspace(
+                                prUrlInfo.projectFullName,
+                                prUrlInfo.pullNumber
+                              );
+                            }}
+                            className={baseCommandItemClassName}
+                          >
+                            <GitPullRequest className="h-4 w-4 shrink-0" />
+                            <span className="flex-1 truncate">
+                              Open PR #{prUrlInfo.pullNumber} from{" "}
+                              {prUrlInfo.projectFullName}
+                            </span>
+                          </Command.Item>
+                        </Command.Group>
+                      ) : null}
+                      {prUrlInfo &&
+                      (localWorkspaceSuggestionsToRender.length > 0 ||
+                        localWorkspaceCommandsToRender.length > 0) ? (
+                        <div className="px-2">
+                          <hr className="border-neutral-200 dark:border-neutral-800" />
+                        </div>
+                      ) : null}
                       {localWorkspaceSuggestionsToRender.length > 0 ? (
                         <Command.Group>
                           {localWorkspaceSuggestionsToRender.map((entry) =>
@@ -2626,6 +2705,35 @@ export function CommandBar({
                     </div>
                   ) : (
                     <>
+                      {prUrlInfo ? (
+                        <Command.Group>
+                          <Command.Item
+                            value={`pr-cloud-${prUrlInfo.projectFullName}-${prUrlInfo.pullNumber}`}
+                            onSelect={() => {
+                              clearCommandInput();
+                              closeCommand();
+                              void createCloudWorkspaceFromRepo(
+                                prUrlInfo.projectFullName,
+                                prUrlInfo.pullNumber
+                              );
+                            }}
+                            className={baseCommandItemClassName}
+                          >
+                            <GitPullRequest className="h-4 w-4 shrink-0" />
+                            <span className="flex-1 truncate">
+                              Open PR #{prUrlInfo.pullNumber} from{" "}
+                              {prUrlInfo.projectFullName}
+                            </span>
+                          </Command.Item>
+                        </Command.Group>
+                      ) : null}
+                      {prUrlInfo &&
+                      (cloudWorkspaceSuggestionsToRender.length > 0 ||
+                        cloudWorkspaceCommandsToRender.length > 0) ? (
+                        <div className="px-2">
+                          <hr className="border-neutral-200 dark:border-neutral-800" />
+                        </div>
+                      ) : null}
                       {cloudWorkspaceSuggestionsToRender.length > 0 ? (
                         <Command.Group>
                           {cloudWorkspaceSuggestionsToRender.map((entry) =>
