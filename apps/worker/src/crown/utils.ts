@@ -17,10 +17,32 @@ export async function runCommandCapture(
   args: readonly string[],
   options: CommandOptions = {}
 ): Promise<string> {
+  const shouldMergeEnv = Boolean(options.env) || command === "git";
+  let mergedEnv: NodeJS.ProcessEnv | undefined;
+
+  if (shouldMergeEnv) {
+    mergedEnv = { ...process.env, ...options.env };
+  } else {
+    mergedEnv = options.env;
+  }
+
+  if (command === "git" && mergedEnv) {
+    const providedEnv = options.env ?? {};
+    const maybeDelete = (key: string) => {
+      if (!(key in providedEnv)) {
+        delete mergedEnv[key];
+      }
+    };
+    maybeDelete("GIT_DIR");
+    maybeDelete("GIT_WORK_TREE");
+    maybeDelete("GIT_INDEX_FILE");
+    maybeDelete("GIT_COMMON_DIR");
+  }
+
   try {
     const { stdout } = await execFileAsync(command, args, {
       cwd: options.cwd,
-      env: options.env,
+      env: mergedEnv,
     });
     return typeof stdout === "string" ? stdout : String(stdout);
   } catch (error) {
