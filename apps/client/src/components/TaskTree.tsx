@@ -1504,16 +1504,16 @@ function TaskRunDetails({
         className="max-w-sm p-3 z-[var(--z-global-blocking)]"
       >
         <div className="space-y-1.5">
-          <p className="font-medium text-sm text-neutral-200">
+          <p className="font-medium text-sm text-neutral-50">
             Scripts error
           </p>
           {environmentError?.maintenanceError && (
-            <p className="text-xs text-neutral-400">
+            <p className="text-xs text-neutral-200">
               Maintenance: {environmentError.maintenanceError}
             </p>
           )}
           {environmentError?.devError && (
-            <p className="text-xs text-neutral-400">
+            <p className="text-xs text-neutral-200">
               Dev: {environmentError.devError}
             </p>
           )}
