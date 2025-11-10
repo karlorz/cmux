@@ -16,6 +16,7 @@ export { iframePreflightRouter } from "./iframe-preflight.route";
 export { morphRouter } from "./morph.route";
 export { sandboxesRouter } from "./sandboxes.route";
 export { teamsRouter } from "./teams.route";
+export { taskRunsRouter } from "./task-runs.route";
 export { usersRouter } from "./users.route";
 export { branchRouter } from "./branch.route";
 export { codeReviewRouter } from "./code-review.route";

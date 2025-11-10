@@ -19,7 +19,9 @@ import {
   aggregatePullRequestState,
   type RunPullRequestState,
 } from "@cmux/shared/pull-request-state";
+import { postApiTaskRunsByTaskRunIdForceWakeMutation } from "@cmux/www-openapi-client/react-query";
 import { Link, useLocation, type LinkProps } from "@tanstack/react-router";
+import { useMutation as useRQMutation } from "@tanstack/react-query";
 import clsx from "clsx";
 import { useMutation, useQuery as useConvexQuery } from "convex/react";
 import { toast } from "sonner";
@@ -47,6 +49,7 @@ import {
   Pencil,
   TerminalSquare,
   Loader2,
+  Power,
   XCircle,
 } from "lucide-react";
 import {
@@ -995,6 +998,9 @@ function TaskRunTreeInner({
 }: TaskRunTreeProps) {
   const location = useLocation();
   const { expandedRuns, setRunExpanded } = useTaskRunExpansionContext();
+  const forceWakeMutation = useRQMutation(
+    postApiTaskRunsByTaskRunIdForceWakeMutation(),
+  );
   const defaultExpanded = Boolean(run.isCrowned);
   const isExpanded = expandedRuns[run._id] ?? defaultExpanded;
   const runIdFromSearch = useMemo(() => {
@@ -1240,7 +1246,8 @@ function TaskRunTreeInner({
   });
 
   const shouldRenderDiffLink = true;
-  const shouldRenderBrowserLink = run.vscode?.provider === "morph";
+  const isMorphProvider = run.vscode?.provider === "morph";
+  const shouldRenderBrowserLink = isMorphProvider;
   const shouldRenderTerminalLink = shouldRenderBrowserLink;
   const shouldRenderPullRequestLink = Boolean(
     (run.pullRequestUrl && run.pullRequestUrl !== "pending") ||
@@ -1258,6 +1265,80 @@ function TaskRunTreeInner({
     shouldRenderTerminalLink ||
     shouldRenderPullRequestLink ||
     shouldRenderPreviewLink;
+
+  const canForceWakeVm =
+    isMorphProvider && run.vscode?.status === "stopped";
+  const showForceWakeVmAction =
+    isMorphProvider && (canForceWakeVm || forceWakeMutation.isPending);
+
+  const handleForceWakeVm = useCallback(
+    (event: MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!isMorphProvider) {
+        return;
+      }
+      if (forceWakeMutation.isPending) {
+        return;
+      }
+      const toastId = toast.loading("Waking VM…");
+      forceWakeMutation.mutate(
+        {
+          body: { teamSlugOrId },
+          path: { taskRunId: run._id },
+        },
+        {
+          onSuccess: (response) => {
+            const outcomeLabel =
+              response.outcome === "resumed"
+                ? "Workspace woke up"
+                : "Workspace already running";
+            const description =
+              response.status && response.status !== "ready"
+                ? `Instance status: ${response.status}`
+                : undefined;
+            toast.success(outcomeLabel, {
+              id: toastId,
+              description,
+            });
+          },
+          onError: (error) => {
+            toast.error(
+              getForceWakeErrorMessage(error) ??
+                "Failed to wake workspace",
+              {
+                id: toastId,
+              },
+            );
+          },
+        },
+      );
+    },
+    [forceWakeMutation, isMorphProvider, run._id, teamSlugOrId],
+  );
+
+  const forceWakeButton = showForceWakeVmAction ? (
+    <Tooltip delayDuration={0}>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label="Force wake VM"
+          className="flex h-6 w-6 items-center justify-center rounded-md text-neutral-500 transition hover:bg-white/70 hover:text-neutral-900 disabled:opacity-60 dark:text-neutral-400 dark:hover:bg-white/10 dark:hover:text-white"
+          onClick={handleForceWakeVm}
+          disabled={forceWakeMutation.isPending}
+        >
+          {forceWakeMutation.isPending ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Power className="h-3.5 w-3.5" />
+          )}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="left" sideOffset={6}>
+        Force wake VM
+      </TooltipContent>
+    </Tooltip>
+  ) : null;
 
   return (
     <div className={clsx({ hidden: run.isArchived })}>
@@ -1302,6 +1383,7 @@ function TaskRunTreeInner({
               titleClassName="text-[13px] text-neutral-700 dark:text-neutral-300"
               titleSuffix={runNumberSuffix ?? undefined}
               meta={leadingContent}
+              trailing={forceWakeButton ?? undefined}
             />
           </Link>
         </ContextMenu.Trigger>
@@ -1664,5 +1746,28 @@ export interface VSCodeIconProps {
 // Prevent unnecessary re-renders of large trees during unrelated state changes
 export const TaskTree = memo(TaskTreeInner);
 const TaskRunTree = memo(TaskRunTreeInner);
+
+function getForceWakeErrorMessage(error: unknown): string | undefined {
+  if (error instanceof Error) {
+    return error.message || undefined;
+  }
+  if (
+    error &&
+    typeof error === "object" &&
+    "error" in error &&
+    typeof (error as { error?: unknown }).error === "string"
+  ) {
+    return (error as { error: string }).error;
+  }
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof (error as { message?: unknown }).message === "string"
+  ) {
+    return (error as { message: string }).message;
+  }
+  return undefined;
+}
 
 export type { AnnotatedTaskRun, TaskRunWithChildren } from "./task-tree/types";

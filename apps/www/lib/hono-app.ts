@@ -18,6 +18,7 @@ import {
   healthRouter,
   morphRouter,
   sandboxesRouter,
+  taskRunsRouter,
   teamsRouter,
   usersRouter,
   iframePreflightRouter,
@@ -118,6 +119,7 @@ app.route("/", morphRouter);
 app.route("/", iframePreflightRouter);
 app.route("/", environmentsRouter);
 app.route("/", sandboxesRouter);
+app.route("/", taskRunsRouter);
 app.route("/", teamsRouter);
 app.route("/", branchRouter);
 app.route("/", codeReviewRouter);
