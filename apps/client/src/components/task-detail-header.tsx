@@ -708,6 +708,12 @@ function SocketActions({
           Boolean(result.repoFullName?.trim()) &&
           Boolean(result.number),
       );
+
+      // Collect all PR URLs for copying
+      const prUrls = actionable
+        .map((pr) => pr.url)
+        .filter((url): url is string => Boolean(url));
+
       toast.success(openedLabel, {
         id: context?.toastId,
         description: summarizeResults(response.results),
@@ -718,6 +724,16 @@ function SocketActions({
               onClick: () => navigateToPrs(actionable),
             }
             : undefined,
+        cancel: prUrls.length > 0 ? {
+          label: "Copy URL",
+          onClick: () => {
+            const urlText = prUrls.join("\n");
+            clipboard.copy(urlText);
+            toast.success("Copied to clipboard", {
+              description: prUrls.length === 1 ? "PR URL copied" : `${prUrls.length} PR URLs copied`,
+            });
+          },
+        } : undefined,
       });
     },
     onError: (error, _variables, context) => {
