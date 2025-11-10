@@ -127,6 +127,21 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/task/$taskId/")({
         ? (taskRunIndex.get(parsedRunId.data) ?? taskRuns[0])
         : taskRuns[0];
 
+      const selectedRunId = selectedRun?._id ?? null;
+      const rawBrowserUrl =
+        selectedRun?.vscode?.url ?? selectedRun?.vscode?.workspaceUrl ?? null;
+      const browserUrl = rawBrowserUrl ? toMorphVncUrl(rawBrowserUrl) : null;
+
+      if (selectedRunId && browserUrl) {
+        void preloadTaskRunIframes([
+          {
+            url: browserUrl,
+            taskRunId: selectedRunId,
+            kind: "browser",
+          },
+        ]);
+      }
+
       const rawWorkspaceUrl = selectedRun?.vscode?.workspaceUrl ?? null;
       if (!rawWorkspaceUrl) {
         return;
@@ -569,6 +584,18 @@ function TaskDetailPage() {
     : null;
   const hasBrowserView = Boolean(browserUrl);
   const isMorphProvider = selectedRun?.vscode?.provider === "morph";
+
+  useEffect(() => {
+    if (selectedRunId && browserUrl) {
+      void preloadTaskRunIframes([
+        {
+          url: browserUrl,
+          taskRunId: selectedRunId,
+          kind: "browser",
+        },
+      ]);
+    }
+  }, [browserUrl, selectedRunId]);
 
   const handleBrowserStatusChange = useCallback(
     (status: PersistentIframeStatus) => {

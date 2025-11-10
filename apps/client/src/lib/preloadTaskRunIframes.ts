@@ -1,6 +1,9 @@
 import { PERMISSIVE_IFRAME_ALLOW, PERMISSIVE_IFRAME_SANDBOX } from "./iframePermissions";
 import { persistentIframeManager } from "./persistentIframeManager";
-import { getTaskRunPersistKey } from "./persistent-webview-keys";
+import {
+  getTaskRunBrowserPersistKey,
+  getTaskRunPersistKey,
+} from "./persistent-webview-keys";
 
 /**
  * Preload iframes for task runs
@@ -11,11 +14,23 @@ export const TASK_RUN_IFRAME_ALLOW = PERMISSIVE_IFRAME_ALLOW;
 
 export const TASK_RUN_IFRAME_SANDBOX = PERMISSIVE_IFRAME_SANDBOX;
 
+type TaskRunIframeKind = "workspace" | "browser";
+
+function resolvePersistKey(
+  taskRunId: string,
+  kind: TaskRunIframeKind = "workspace"
+): string {
+  if (kind === "browser") {
+    return getTaskRunBrowserPersistKey(taskRunId);
+  }
+  return getTaskRunPersistKey(taskRunId);
+}
+
 export async function preloadTaskRunIframes(
-  data: { url: string; taskRunId: string }[]
+  data: { url: string; taskRunId: string; kind?: TaskRunIframeKind }[]
 ): Promise<void> {
-  const entries = data.map(({ url, taskRunId }) => {
-    const key = getTaskRunPersistKey(taskRunId);
+  const entries = data.map(({ url, taskRunId, kind }) => {
+    const key = resolvePersistKey(taskRunId, kind);
     return {
       key,
       url,
@@ -34,12 +49,17 @@ export async function preloadTaskRunIframes(
  */
 export async function preloadTaskRunIframe(
   taskRunId: string,
-  url: string
+  url: string,
+  kind: TaskRunIframeKind = "workspace"
 ): Promise<void> {
-  await persistentIframeManager.preloadIframe(getTaskRunPersistKey(taskRunId), url, {
-    allow: TASK_RUN_IFRAME_ALLOW,
-    sandbox: TASK_RUN_IFRAME_SANDBOX,
-  });
+  await persistentIframeManager.preloadIframe(
+    resolvePersistKey(taskRunId, kind),
+    url,
+    {
+      allow: TASK_RUN_IFRAME_ALLOW,
+      sandbox: TASK_RUN_IFRAME_SANDBOX,
+    }
+  );
 }
 
 /**
