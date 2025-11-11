@@ -21,6 +21,7 @@ import {
 import type { PanelConfig, PanelType, PanelPosition } from "@/lib/panel-config";
 import {
   getTaskRunBrowserPersistKey,
+  getTaskRunBrowserWebContentsPersistKey,
   getTaskRunPersistKey,
 } from "@/lib/persistent-webview-keys";
 import {
@@ -567,6 +568,9 @@ function TaskDetailPage() {
   const browserPersistKey = selectedRunId
     ? getTaskRunBrowserPersistKey(selectedRunId)
     : null;
+  const browserWebContentsPersistKey = selectedRunId
+    ? getTaskRunBrowserWebContentsPersistKey(selectedRunId)
+    : null;
   const hasBrowserView = Boolean(browserUrl);
   const isMorphProvider = selectedRun?.vscode?.provider === "morph";
 
@@ -656,6 +660,7 @@ function TaskDetailPage() {
       rawWorkspaceUrl,
       browserUrl,
       browserPersistKey,
+      browserWebContentsPersistKey,
       browserStatus,
       setBrowserStatus: handleBrowserStatusChange,
       browserPlaceholder,
@@ -688,6 +693,7 @@ function TaskDetailPage() {
       rawWorkspaceUrl,
       browserUrl,
       browserPersistKey,
+      browserWebContentsPersistKey,
       browserStatus,
       handleBrowserStatusChange,
       browserPlaceholder,

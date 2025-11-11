@@ -13,6 +13,7 @@ import {
 import clsx from "clsx";
 import type { PanelType } from "@/lib/panel-config";
 import { PANEL_LABELS } from "@/lib/panel-config";
+import { isElectron } from "@/lib/electron";
 import type { PersistentIframeStatus } from "@/components/persistent-iframe";
 import type { Doc, Id } from "@cmux/convex/dataModel";
 import type { TaskRunWithChildren } from "@/types/task";
@@ -169,6 +170,7 @@ interface PanelFactoryProps {
   // Browser panel props
   browserUrl?: string | null;
   browserPersistKey?: string | null;
+  browserWebContentsPersistKey?: string | null;
   browserStatus?: PersistentIframeStatus;
   setBrowserStatus?: (status: PersistentIframeStatus) => void;
   browserPlaceholder?: {
@@ -556,6 +558,7 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
       const {
         browserUrl,
         browserPersistKey,
+        browserWebContentsPersistKey,
         setBrowserStatus,
         browserPlaceholder,
         selectedRun,
@@ -569,40 +572,21 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
 
       if (!PersistentWebView || !WorkspaceLoadingIndicator) return null;
       const shouldShowBrowserLoader = Boolean(selectedRun) && isMorphProvider && (!browserUrl || !browserPersistKey);
+      const showElectronBrowserPreview = Boolean(
+        isElectron && browserUrl && browserWebContentsPersistKey
+      );
 
-      return panelWrapper(
-        <Globe2 className="size-3" aria-hidden />,
-        PANEL_LABELS.browser,
-        <div className={clsx("relative flex-1", isExpanded && "h-full")} aria-busy={isBrowserBusy}>
-          {browserUrl && browserPersistKey ? (
-            <PersistentWebView
-              key={browserPersistKey}
-              persistKey={browserPersistKey}
-              src={browserUrl}
-              className="flex h-full"
-              iframeClassName={clsx("select-none")}
-              persistentWrapperClassName={isExpanded ? "z-[var(--z-maximized-iframe)]" : undefined}
-              allow={TASK_RUN_IFRAME_ALLOW}
-              sandbox={TASK_RUN_IFRAME_SANDBOX}
-              retainOnUnmount
-              onStatusChange={setBrowserStatus}
-              fallback={
-                <WorkspaceLoadingIndicator variant="browser" status="loading" />
-              }
-              fallbackClassName="bg-neutral-50 dark:bg-black"
-              errorFallback={
-                <WorkspaceLoadingIndicator variant="browser" status="error" />
-              }
-              errorFallbackClassName="bg-neutral-50/95 dark:bg-black/95"
-              loadTimeoutMs={45_000}
-              isExpanded={isExpanded}
-              isAnyPanelExpanded={isAnyPanelExpanded}
-            />
-          ) : shouldShowBrowserLoader ? (
+      const renderPlaceholder = () => {
+        if (shouldShowBrowserLoader) {
+          return (
             <div className="flex h-full items-center justify-center">
               <WorkspaceLoadingIndicator variant="browser" status="loading" />
             </div>
-          ) : browserPlaceholder ? (
+          );
+        }
+
+        if (browserPlaceholder) {
+          return (
             <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-neutral-500 dark:text-neutral-400">
               <div className="text-sm font-medium text-neutral-600 dark:text-neutral-200">
                 {browserPlaceholder.title}
@@ -613,7 +597,109 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
                 </p>
               ) : null}
             </div>
-          ) : null}
+          );
+        }
+
+        return null;
+      };
+
+      const renderElectronPreview = () => {
+        if (!showElectronBrowserPreview || !browserUrl || !browserWebContentsPersistKey) {
+          return null;
+        }
+
+        return (
+          <div className="flex flex-col gap-2 rounded-lg border border-dashed border-neutral-200/80 bg-white/80 p-2 text-xs text-neutral-600 dark:border-neutral-800/70 dark:bg-neutral-950/50 dark:text-neutral-200">
+            <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
+              <span className="text-xs font-semibold uppercase tracking-normal text-neutral-600 dark:text-neutral-200">
+                Electron WebContents Preview
+              </span>
+              <span className="text-[10px] font-medium text-neutral-500 dark:text-neutral-400">
+                Experimental
+              </span>
+            </div>
+            <div className="relative flex-1 min-h-[140px]">
+              <PersistentWebView
+                key={`${browserWebContentsPersistKey}-electron`}
+                persistKey={browserWebContentsPersistKey}
+                src={browserUrl}
+                requestUrl={browserUrl}
+                className="flex h-full"
+                iframeClassName="select-none"
+                persistentWrapperClassName={
+                  isExpanded ? "z-[var(--z-maximized-iframe)]" : undefined
+                }
+                allow={TASK_RUN_IFRAME_ALLOW}
+                sandbox={TASK_RUN_IFRAME_SANDBOX}
+                retainOnUnmount
+                fallback={
+                  <WorkspaceLoadingIndicator
+                    variant="browser"
+                    status="loading"
+                  />
+                }
+                fallbackClassName="bg-neutral-50 dark:bg-black"
+                errorFallback={
+                  <WorkspaceLoadingIndicator
+                    variant="browser"
+                    status="error"
+                  />
+                }
+                errorFallbackClassName="bg-neutral-50/95 dark:bg-black/95"
+                loadTimeoutMs={45_000}
+                forceWebContentsViewIfElectron
+                isExpanded={isExpanded}
+                isAnyPanelExpanded={isAnyPanelExpanded}
+              />
+            </div>
+          </div>
+        );
+      };
+
+      return panelWrapper(
+        <Globe2 className="size-3" aria-hidden />,
+        PANEL_LABELS.browser,
+        <div className={clsx("relative flex-1", isExpanded && "h-full")} aria-busy={isBrowserBusy}>
+          {browserUrl && browserPersistKey ? (
+            <div className="flex h-full min-h-0 flex-col gap-3">
+              <div className="relative flex-1 min-h-0">
+                <PersistentWebView
+                  key={browserPersistKey}
+                  persistKey={browserPersistKey}
+                  src={browserUrl}
+                  className="flex h-full"
+                  iframeClassName={clsx("select-none")}
+                  persistentWrapperClassName={
+                    isExpanded ? "z-[var(--z-maximized-iframe)]" : undefined
+                  }
+                  allow={TASK_RUN_IFRAME_ALLOW}
+                  sandbox={TASK_RUN_IFRAME_SANDBOX}
+                  retainOnUnmount
+                  onStatusChange={setBrowserStatus}
+                  fallback={
+                    <WorkspaceLoadingIndicator
+                      variant="browser"
+                      status="loading"
+                    />
+                  }
+                  fallbackClassName="bg-neutral-50 dark:bg-black"
+                  errorFallback={
+                    <WorkspaceLoadingIndicator
+                      variant="browser"
+                      status="error"
+                    />
+                  }
+                  errorFallbackClassName="bg-neutral-50/95 dark:bg-black/95"
+                  loadTimeoutMs={45_000}
+                  isExpanded={isExpanded}
+                  isAnyPanelExpanded={isAnyPanelExpanded}
+                />
+              </div>
+              {renderElectronPreview()}
+            </div>
+          ) : (
+            renderPlaceholder()
+          )}
         </div>
       );
     }
@@ -651,6 +737,7 @@ export const RenderPanel = React.memo(RenderPanelComponent, (prevProps, nextProp
   if (prevProps.type === "workspace" || prevProps.type === "browser") {
     if (prevProps.workspacePersistKey !== nextProps.workspacePersistKey ||
       prevProps.browserPersistKey !== nextProps.browserPersistKey ||
+      prevProps.browserWebContentsPersistKey !== nextProps.browserWebContentsPersistKey ||
       prevProps.workspaceUrl !== nextProps.workspaceUrl ||
       prevProps.workspacePlaceholder?.title !== nextProps.workspacePlaceholder?.title ||
       prevProps.workspacePlaceholder?.description !== nextProps.workspacePlaceholder?.description ||
