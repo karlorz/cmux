@@ -157,3 +157,18 @@ export function toMorphXtermBaseUrl(sourceUrl: string): string | null {
 
   return proxiedUrl.toString();
 }
+
+export function toMorphBrowserUrl(sourceUrl: string): string | null {
+  const components = parseMorphUrl(sourceUrl);
+
+  if (!components) {
+    return null;
+  }
+
+  const browserUrl = createMorphPortUrl(components, 39381);
+  browserUrl.pathname = "/";
+  browserUrl.search = "";
+  browserUrl.hash = "";
+
+  return browserUrl.toString();
+}
