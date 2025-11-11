@@ -10,6 +10,10 @@ import type {
   WorkerTerminalFailed,
 } from "@cmux/shared/worker-schemas";
 import { parse as parseDotenv } from "dotenv";
+import { execFile } from "node:child_process";
+import { promises as fs } from "node:fs";
+import * as path from "node:path";
+import { promisify } from "node:util";
 import { sanitizeTmuxSessionName } from "./sanitizeTmuxSessionName";
 import {
   generateNewBranchName,
@@ -38,6 +42,11 @@ import rawSwitchBranchScript from "./utils/switch-branch.ts?raw";
 const SWITCH_BRANCH_BUN_SCRIPT = rawSwitchBranchScript;
 
 const { getApiEnvironmentsByIdVars } = await getWwwOpenApiModule();
+const execFileAsync = promisify(execFile);
+const REMOTE_WORKSPACE_PATH = "/root/workspace";
+
+const shellQuote = (value: string): string =>
+  `'${value.replace(/'/g, "'\\''")}'`;
 
 export interface AgentSpawnResult {
   agentName: string;
@@ -65,6 +74,10 @@ export async function spawnAgent(
     }>;
     theme?: "dark" | "light" | "system";
     newBranch?: string; // Optional pre-generated branch name
+    localRepoOverlay?: {
+      archivePath: string;
+      repoPath: string;
+    };
   },
   teamSlugOrId: string
 ): Promise<AgentSpawnResult> {
@@ -408,6 +421,35 @@ export async function spawnAgent(
 
       worktreePath = workspaceResult.worktreePath;
 
+      if (options.localRepoOverlay) {
+        try {
+          await extractArchiveToHost(
+            options.localRepoOverlay.archivePath,
+            worktreePath
+          );
+          serverLogger.info(
+            `[AgentSpawner] Applied local repository overlay to ${worktreePath}`
+          );
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Failed to apply local repository overlay";
+          serverLogger.error(
+            `[AgentSpawner] ${message} for ${worktreePath}:`,
+            error
+          );
+          return {
+            agentName: agent.name,
+            terminalId: "",
+            taskRunId,
+            worktreePath: "",
+            success: false,
+            error: message,
+          };
+        }
+      }
+
       serverLogger.info(
         `[AgentSpawner] Creating DockerVSCodeInstance for ${agent.name}`
       );
@@ -453,6 +495,36 @@ export async function spawnAgent(
             err
           )
         );
+    }
+
+    if (options.localRepoOverlay && options.isCloudMode) {
+      try {
+        await uploadArchiveToWorker(
+          vscodeInstance,
+          options.localRepoOverlay.archivePath
+        );
+        serverLogger.info(
+          `[AgentSpawner] Applied local repository overlay inside remote workspace`
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to apply local repository overlay";
+        serverLogger.error(
+          `[AgentSpawner] ${message} for remote workspace:`,
+          error
+        );
+        await vscodeInstance.stop().catch(() => undefined);
+        return {
+          agentName: agent.name,
+          terminalId: "",
+          taskRunId,
+          worktreePath: "",
+          success: false,
+          error: message,
+        };
+      }
     }
 
     // Start file watching for real-time diff updates
@@ -950,6 +1022,10 @@ export async function spawnAllAgents(
       altText: string;
     }>;
     theme?: "dark" | "light" | "system";
+    localRepoOverlay?: {
+      archivePath: string;
+      repoPath: string;
+    };
   },
   teamSlugOrId: string
 ): Promise<AgentSpawnResult[]> {
@@ -993,4 +1069,68 @@ export async function spawnAllAgents(
   );
 
   return results;
+}
+
+async function extractArchiveToHost(
+  archivePath: string,
+  destination: string
+): Promise<void> {
+  await execFileAsync("tar", ["-xf", archivePath, "-C", destination]);
+}
+
+async function uploadArchiveToWorker(
+  vscodeInstance: VSCodeInstance,
+  archivePath: string
+): Promise<void> {
+  let baseUrl: string | null = null;
+  if (vscodeInstance instanceof DockerVSCodeInstance) {
+    const workerPort = vscodeInstance.getPorts()?.worker;
+    if (!workerPort) {
+      throw new Error("Worker port unavailable for Docker instance");
+    }
+    baseUrl = `http://localhost:${workerPort}`;
+  } else if (vscodeInstance instanceof CmuxVSCodeInstance) {
+    baseUrl = vscodeInstance.getWorkerBaseUrl();
+  }
+
+  if (!baseUrl) {
+    throw new Error("Worker upload endpoint unavailable");
+  }
+
+  const normalizedBase = baseUrl.replace(/\/$/, "");
+  const remotePath = `/tmp/cmux-local-overlay-${Date.now()}.tar`;
+  const buffer = await fs.readFile(archivePath);
+  const formData = new FormData();
+  formData.append("archive", new Blob([buffer]), path.basename(remotePath));
+  formData.append("path", remotePath);
+
+  const response = await fetch(`${normalizedBase}/upload-archive`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(
+      errorText || `Upload failed with status ${response.status}`
+    );
+  }
+
+  const workerSocket = vscodeInstance.getWorkerSocket();
+  const extractCommand = `tar -xf ${shellQuote(remotePath)} -C ${REMOTE_WORKSPACE_PATH} && rm -f ${shellQuote(remotePath)}`;
+  const execResult = await workerExec({
+    workerSocket,
+    command: "bash",
+    args: ["-lc", extractCommand],
+    cwd: REMOTE_WORKSPACE_PATH,
+    env: {},
+    timeout: 180_000,
+  });
+
+  if (execResult.exitCode !== 0) {
+    const stderr = execResult.stderr?.trim();
+    const stdout = execResult.stdout?.trim();
+    const detail = stderr || stdout || "unknown error";
+    throw new Error(`Failed to extract archive in worker: ${detail}`);
+  }
 }

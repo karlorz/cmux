@@ -34,6 +34,7 @@ export const StartTaskSchema = z.object({
   branch: z.string().optional(),
   taskDescription: z.string(),
   projectFullName: z.string(),
+  localRepoPath: z.string().optional(),
   taskId: typedZid("tasks"),
   selectedAgents: z.array(z.string()).optional(),
   isCloudMode: z.boolean().optional().default(false),
@@ -423,6 +424,33 @@ export const DefaultRepoSchema = z.object({
   localPath: z.string(),
 });
 
+export const SearchLocalPathsRequestSchema = z.object({
+  query: z.string(),
+  limit: z.number().int().positive().max(20).optional(),
+});
+
+export const LocalPathSuggestionSchema = z.object({
+  path: z.string(),
+  displayPath: z.string(),
+  isGitRepo: z.boolean(),
+});
+
+export const SearchLocalPathsResponseSchema = z.object({
+  results: z.array(LocalPathSuggestionSchema),
+});
+
+export const ResolveLocalRepoRequestSchema = z.object({
+  path: z.string(),
+});
+
+export const ResolveLocalRepoResponseSchema = z.object({
+  success: z.boolean(),
+  repoFullName: z.string().optional(),
+  repoUrl: z.string().optional(),
+  resolvedPath: z.string().optional(),
+  error: z.string().optional(),
+});
+
 // Type exports
 export type CreateTerminal = z.infer<typeof CreateTerminalSchema>;
 export type TerminalInput = z.infer<typeof TerminalInputSchema>;
@@ -485,6 +513,21 @@ export type ProviderStatusResponse = z.infer<
   typeof ProviderStatusResponseSchema
 >;
 export type DefaultRepo = z.infer<typeof DefaultRepoSchema>;
+export type SearchLocalPathsRequest = z.infer<
+  typeof SearchLocalPathsRequestSchema
+>;
+export type LocalPathSuggestion = z.infer<
+  typeof LocalPathSuggestionSchema
+>;
+export type SearchLocalPathsResponse = z.infer<
+  typeof SearchLocalPathsResponseSchema
+>;
+export type ResolveLocalRepoRequest = z.infer<
+  typeof ResolveLocalRepoRequestSchema
+>;
+export type ResolveLocalRepoResponse = z.infer<
+  typeof ResolveLocalRepoResponseSchema
+>;
 
 // Socket.io event map types
 export interface ClientToServerEvents {
@@ -516,6 +559,14 @@ export interface ClientToServerEvents {
     callback: (response: OpenInEditorResponse) => void
   ) => void;
   "list-files": (data: ListFilesRequest) => void;
+  "search-local-paths": (
+    data: SearchLocalPathsRequest,
+    callback: (response: SearchLocalPathsResponse) => void
+  ) => void;
+  "resolve-local-repo": (
+    data: ResolveLocalRepoRequest,
+    callback: (response: ResolveLocalRepoResponse) => void
+  ) => void;
   // GitHub operations
   "github-test-auth": (
     callback: (response: GitHubAuthResponse) => void

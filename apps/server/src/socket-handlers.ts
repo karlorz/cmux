@@ -22,6 +22,8 @@ import {
   isLoopbackHostname,
   LOCAL_VSCODE_PLACEHOLDER_ORIGIN,
   type IframePreflightResult,
+  ResolveLocalRepoRequestSchema,
+  SearchLocalPathsRequestSchema,
 } from "@cmux/shared";
 import {
   type PullRequestActionResult,
@@ -57,6 +59,11 @@ import { refreshGitHubData } from "./utils/refreshGitHubData";
 import { runWithAuth, runWithAuthToken } from "./utils/requestContext";
 import { getWwwClient } from "./utils/wwwClient";
 import { getWwwOpenApiModule } from "./utils/wwwOpenApiModule";
+import {
+  createGitArchive,
+  resolveLocalRepo,
+  suggestLocalPaths,
+} from "./utils/localRepo";
 import { DockerVSCodeInstance } from "./vscode/DockerVSCodeInstance";
 import {
   getVSCodeServeWebBaseUrl,
@@ -437,6 +444,13 @@ export function setupSocketHandlers(
       const taskData = taskDataParseResult.data;
       serverLogger.info("starting task!", taskData);
       const taskId = taskData.taskId;
+      if (taskData.environmentId && taskData.localRepoPath) {
+        callback({
+          taskId,
+          error: "Local repository overrides are not supported for environments",
+        });
+        return;
+      }
       try {
         // For local mode, ensure Docker is running before attempting to spawn
         if (!taskData.isCloudMode) {
@@ -472,7 +486,46 @@ export function setupSocketHandlers(
         });
 
         (async () => {
+          type LocalArchiveHandle = {
+            archivePath: string;
+            repoPath: string;
+            cleanup: () => Promise<void>;
+          };
+          let localArchive: LocalArchiveHandle | null = null;
           try {
+            if (taskData.localRepoPath) {
+              const resolution = await resolveLocalRepo(taskData.localRepoPath);
+              if (
+                taskData.projectFullName &&
+                taskData.projectFullName !== resolution.repoFullName
+              ) {
+                serverLogger.warn(
+                  `[start-task] Selected project ${taskData.projectFullName} does not match resolved local repo ${resolution.repoFullName}`
+                );
+              }
+              const tempDir = await fs.mkdtemp(
+                path.join(os.tmpdir(), "cmux-local-repo-")
+              );
+              const archivePath = path.join(tempDir, "repo.tar");
+              await createGitArchive(resolution.repoRoot, archivePath);
+              localArchive = {
+                archivePath,
+                repoPath: resolution.repoRoot,
+                cleanup: async () => {
+                  await fs
+                    .rm(tempDir, { recursive: true, force: true })
+                    .catch(() => undefined);
+                },
+              };
+              if (!taskData.repoUrl) {
+                taskData.repoUrl = resolution.repoUrl;
+              }
+            }
+
+            if (!taskData.environmentId && !taskData.repoUrl) {
+              throw new Error("Repository URL is required for this task");
+            }
+
             // Generate PR title early from the task description
             let generatedTitle: string | null = null;
             try {
@@ -509,6 +562,12 @@ export function setupSocketHandlers(
                 images: taskData.images,
                 theme: taskData.theme,
                 environmentId: taskData.environmentId,
+                localRepoOverlay: localArchive
+                  ? {
+                      archivePath: localArchive.archivePath,
+                      repoPath: localArchive.repoPath,
+                    }
+                  : undefined,
               },
               safeTeam
             );
@@ -599,6 +658,15 @@ export function setupSocketHandlers(
               taskId,
               error: error instanceof Error ? error.message : "Unknown error",
             });
+          } finally {
+            if (localArchive) {
+              await localArchive.cleanup().catch((cleanupError) => {
+                serverLogger.warn(
+                  "Failed to clean up local archive:",
+                  cleanupError
+                );
+              });
+            }
           }
         })();
       } catch (error) {
@@ -1868,6 +1936,50 @@ export function setupSocketHandlers(
         socket.emit("list-files-response", {
           files: [],
           error: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    });
+
+    socket.on("search-local-paths", (rawData, callback) => {
+      const parsed = SearchLocalPathsRequestSchema.safeParse(rawData);
+      if (!parsed.success) {
+        callback({ results: [] });
+        return;
+      }
+      void (async () => {
+        try {
+          const limit = parsed.data.limit ?? 6;
+          const results = await suggestLocalPaths(parsed.data.query, limit);
+          callback({ results });
+        } catch (error) {
+          serverLogger.error("search-local-paths failed:", error);
+          callback({ results: [] });
+        }
+      })();
+    });
+
+    socket.on("resolve-local-repo", async (rawData, callback) => {
+      const parsed = ResolveLocalRepoRequestSchema.safeParse(rawData);
+      if (!parsed.success) {
+        callback({ success: false, error: "Invalid request" });
+        return;
+      }
+      try {
+        const resolution = await resolveLocalRepo(parsed.data.path);
+        callback({
+          success: true,
+          repoFullName: resolution.repoFullName,
+          repoUrl: resolution.repoUrl,
+          resolvedPath: resolution.repoRoot,
+        });
+      } catch (error) {
+        serverLogger.error("resolve-local-repo failed:", error);
+        callback({
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to resolve repository",
         });
       }
     });

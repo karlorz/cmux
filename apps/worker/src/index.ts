@@ -80,7 +80,7 @@ app.get("/health", (_req, res) => {
 
 // Configure multer for file uploads
 const upload = multer({
-  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB limit
+  limits: { fileSize: 512 * 1024 * 1024 }, // 512MB limit for archives/images
   storage: multer.memoryStorage(),
 });
 
@@ -121,6 +121,35 @@ app.post("/upload-image", upload.single("image"), async (req, res) => {
     });
   } catch (error) {
     log("ERROR", "Failed to upload image", error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Upload failed",
+    });
+  }
+});
+
+app.post("/upload-archive", upload.single("archive"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    const destinationPath = req.body.path;
+    if (!destinationPath) {
+      return res.status(400).json({ error: "No path specified" });
+    }
+
+    const dir = path.dirname(destinationPath);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(destinationPath, req.file.buffer);
+
+    const stats = await fs.stat(destinationPath);
+    log("INFO", `Archive uploaded to ${destinationPath}`, {
+      size: stats.size,
+    });
+
+    res.json({ success: true, path: destinationPath, size: stats.size });
+  } catch (error) {
+    log("ERROR", "Failed to upload archive", error);
     res.status(500).json({
       error: error instanceof Error ? error.message : "Upload failed",
     });

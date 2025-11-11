@@ -12,7 +12,10 @@ import { WorkspaceSetupPanel } from "@/components/WorkspaceSetupPanel";
 import { GitHubIcon } from "@/components/icons/github";
 import { useTheme } from "@/components/theme/use-theme";
 import { TitleBar } from "@/components/TitleBar";
-import type { SelectOption } from "@/components/ui/searchable-select";
+import type {
+  SelectOption,
+  SelectOptionObject,
+} from "@/components/ui/searchable-select";
 import {
   Tooltip,
   TooltipContent,
@@ -25,13 +28,20 @@ import { attachTaskLifecycleListeners } from "@/lib/socket/taskLifecycleListener
 import { branchesQueryOptions } from "@/queries/branches";
 import { api } from "@cmux/convex/api";
 import type { Doc, Id } from "@cmux/convex/dataModel";
-import type { ProviderStatusResponse, TaskAcknowledged, TaskError, TaskStarted } from "@cmux/shared";
+import type {
+  ProviderStatusResponse,
+  ResolveLocalRepoResponse,
+  SearchLocalPathsResponse,
+  TaskAcknowledged,
+  TaskError,
+  TaskStarted,
+} from "@cmux/shared";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useAction, useMutation } from "convex/react";
-import { Server as ServerIcon } from "lucide-react";
+import { Folder, Server as ServerIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -52,6 +62,49 @@ const DEFAULT_AGENT_SELECTION = DEFAULT_AGENTS.filter((agent) =>
 );
 
 const AGENT_SELECTION_SCHEMA = z.array(z.string());
+
+const LOCAL_PATH_PREFIX = "__local__:";
+
+const encodeLocalPathValue = (path: string): string =>
+  `${LOCAL_PATH_PREFIX}${encodeURIComponent(path)}`;
+
+const decodeLocalPathValue = (value: string): string | null => {
+  if (!value.startsWith(LOCAL_PATH_PREFIX)) {
+    return null;
+  }
+  try {
+    return decodeURIComponent(value.slice(LOCAL_PATH_PREFIX.length));
+  } catch {
+    return null;
+  }
+};
+
+const looksLikeLocalPath = (input: string): boolean => {
+  const trimmed = input.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith("/") || trimmed.startsWith("~")) {
+    return true;
+  }
+  if (trimmed.startsWith("./") || trimmed.startsWith("../")) {
+    return true;
+  }
+  if (/^[a-zA-Z]:\\/.test(trimmed)) {
+    return true;
+  }
+  return trimmed.includes("/") || trimmed.includes("\\");
+};
+
+const loadLocalOverrides = (key: string): Record<string, string> => {
+  if (typeof window === "undefined") {
+    return {};
+  }
+  try {
+    const stored = localStorage.getItem(key);
+    return stored ? JSON.parse(stored) : {};
+  } catch {
+    return {};
+  }
+};
 
 const filterKnownAgents = (agents: string[]): string[] =>
   agents.filter((agent) => KNOWN_AGENT_NAMES.has(agent));
@@ -109,6 +162,75 @@ function DashboardComponent() {
     setSelectedAgentsState(agents);
   }, [setSelectedAgentsState]);
 
+  const overridesStorageKey = `localRepoOverrides-${teamSlugOrId}`;
+  const [localRepoOverrides, setLocalRepoOverrides] = useState<Record<string, string>>(() =>
+    loadLocalOverrides(overridesStorageKey)
+  );
+  const [projectSearchTerm, setProjectSearchTerm] = useState("");
+  const [localPathOptions, setLocalPathOptions] = useState<SelectOptionObject[]>([]);
+
+  useEffect(() => {
+    setLocalRepoOverrides(loadLocalOverrides(overridesStorageKey));
+  }, [overridesStorageKey]);
+
+  const persistLocalRepoOverrides = useCallback(
+    (updater: (prev: Record<string, string>) => Record<string, string>) => {
+      setLocalRepoOverrides((prev) => {
+        const next = updater(prev);
+        if (typeof window !== "undefined") {
+          localStorage.setItem(overridesStorageKey, JSON.stringify(next));
+        }
+        return next;
+      });
+    },
+    [overridesStorageKey]
+  );
+
+  const updateLocalRepoOverride = useCallback(
+    (repoFullName: string, path: string) => {
+      persistLocalRepoOverrides((prev) => ({
+        ...prev,
+        [repoFullName]: path,
+      }));
+    },
+    [persistLocalRepoOverrides]
+  );
+
+  const createLocalPathOption = useCallback(
+    (
+      label: string,
+      encodedValue: string,
+      isGitRepo: boolean
+    ): SelectOptionObject => ({
+      label,
+      value: encodedValue,
+      icon: (
+        <Folder className="w-4 h-4 text-neutral-600 dark:text-neutral-300" />
+      ),
+      iconKey: "local",
+      warning: isGitRepo
+        ? undefined
+        : {
+            tooltip: "Directory does not contain a .git folder",
+          },
+    }),
+    []
+  );
+
+  // Fetch repos from Convex
+  const reposByOrgQuery = useQuery({
+    ...convexQuery(api.github.getReposByOrg, { teamSlugOrId }),
+    refetchOnMount: "always",
+    refetchOnWindowFocus: false,
+  });
+  const reposByOrg = useMemo(
+    () => reposByOrgQuery.data || {},
+    [reposByOrgQuery.data]
+  );
+
+  const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
+  const addManualRepo = useAction(api.github_http.addManualRepo);
+
   const [taskDescription, setTaskDescription] = useState<string>("");
   const [isCloudMode, setIsCloudMode] = useState<boolean>(() => {
     const stored = localStorage.getItem("isCloudMode");
@@ -160,6 +282,73 @@ function DashboardComponent() {
     setTaskDescription(value);
   }, []);
 
+  const handleLocalPathInput = useCallback(
+    async (rawPath: string): Promise<boolean> => {
+      if (!socket) {
+        toast.error("Socket not connected");
+        return false;
+      }
+      const trimmed = rawPath.trim();
+      if (!trimmed) {
+        return false;
+      }
+
+      return await new Promise((resolve) => {
+        socket.emit(
+          "resolve-local-repo",
+          { path: trimmed },
+          async (response: ResolveLocalRepoResponse) => {
+            if (!response?.success || !response.repoFullName || !response.repoUrl || !response.resolvedPath) {
+              if (response?.error) {
+                toast.error(response.error);
+              }
+              resolve(false);
+              return;
+            }
+            try {
+              const result = await addManualRepo({
+                teamSlugOrId,
+                repoUrl: response.repoUrl,
+              });
+              if (result.success) {
+                await reposByOrgQuery.refetch();
+              }
+              setSelectedProject([response.repoFullName]);
+              localStorage.setItem(
+                `selectedProject-${teamSlugOrId}`,
+                JSON.stringify([response.repoFullName])
+              );
+              setSelectedBranch([]);
+              updateLocalRepoOverride(response.repoFullName, response.resolvedPath);
+              setProjectSearchTerm("");
+              setLocalPathOptions([]);
+              toast.success(`Linked ${response.repoFullName} to local path`);
+              resolve(true);
+            } catch (error) {
+              const message =
+                error instanceof Error
+                  ? error.message
+                  : "Failed to add repository";
+              toast.error(message);
+              resolve(false);
+            }
+          }
+        );
+      });
+    },
+    [
+      addManualRepo,
+      reposByOrgQuery,
+      setLocalPathOptions,
+      setProjectSearchTerm,
+      setSelectedBranch,
+      setSelectedProject,
+      socket,
+      teamSlugOrId,
+      updateLocalRepoOverride,
+    ]
+  );
+
   // Fetch branches for selected repo from Convex
   const isEnvSelected = useMemo(
     () => (selectedProject[0] || "").startsWith("env:"),
@@ -197,6 +386,12 @@ function DashboardComponent() {
   // Callback for project selection changes
   const handleProjectChange = useCallback(
     (newProjects: string[]) => {
+      const next = newProjects[0] ?? "";
+      const decodedLocalPath = decodeLocalPathValue(next);
+      if (decodedLocalPath) {
+        void handleLocalPathInput(decodedLocalPath);
+        return;
+      }
       setSelectedProject(newProjects);
       localStorage.setItem(`selectedProject-${teamSlugOrId}`, JSON.stringify(newProjects));
       if (newProjects[0] !== selectedProject[0]) {
@@ -208,7 +403,7 @@ function DashboardComponent() {
         localStorage.setItem("isCloudMode", JSON.stringify(true));
       }
     },
-    [selectedProject, teamSlugOrId]
+    [handleLocalPathInput, selectedProject, teamSlugOrId]
   );
 
   // Callback for branch selection changes
@@ -226,16 +421,6 @@ function DashboardComponent() {
     [persistAgentSelection, setSelectedAgents],
   );
 
-  // Fetch repos from Convex
-  const reposByOrgQuery = useQuery({
-    ...convexQuery(api.github.getReposByOrg, { teamSlugOrId }),
-    refetchOnMount: "always",
-    refetchOnWindowFocus: false,
-  });
-  const reposByOrg = useMemo(
-    () => reposByOrgQuery.data || {},
-    [reposByOrgQuery.data]
-  );
 
   // Socket-based functions to fetch data from GitHub
   // Removed unused fetchRepos function - functionality is handled by Convex queries
@@ -347,9 +532,6 @@ function DashboardComponent() {
       }
     }
   );
-  const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
-  const addManualRepo = useAction(api.github_http.addManualRepo);
-
   const effectiveSelectedBranch = useMemo(() => {
     if (selectedBranch.length > 0) {
       return selectedBranch;
@@ -413,6 +595,8 @@ function DashboardComponent() {
     const environmentId = envSelected
       ? (projectFullName.replace(/^env:/, "") as Id<"environments">)
       : undefined;
+    const localRepoOverride =
+      !envSelected && projectFullName ? localRepoOverrides[projectFullName] : undefined;
 
     try {
       // Extract content including images from the editor
@@ -511,6 +695,7 @@ function DashboardComponent() {
             selectedAgents.length > 0 ? selectedAgents : undefined,
           isCloudMode: envSelected ? true : isCloudMode,
           ...(environmentId ? { environmentId } : {}),
+          ...(localRepoOverride ? { localRepoPath: localRepoOverride } : {}),
           images: images.length > 0 ? images : undefined,
           theme,
         },
@@ -534,6 +719,7 @@ function DashboardComponent() {
     isEnvSelected,
     theme,
     generateUploadUrl,
+    localRepoOverrides,
   ]);
 
   // Fetch repos on mount if none exist
@@ -562,6 +748,57 @@ function DashboardComponent() {
       window.removeEventListener("focus", handleFocus);
     };
   }, [checkProviderStatus]);
+
+  useEffect(() => {
+    if (!socket) {
+      setLocalPathOptions([]);
+      return;
+    }
+    const trimmed = projectSearchTerm.trim();
+    if (!trimmed || !looksLikeLocalPath(trimmed)) {
+      setLocalPathOptions([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      socket.emit(
+        "search-local-paths",
+        { query: trimmed },
+        (response: SearchLocalPathsResponse) => {
+          if (cancelled) {
+            return;
+          }
+          const seen = new Set<string>();
+          const nextOptions: SelectOptionObject[] = [];
+          const encodedInput = encodeLocalPathValue(trimmed);
+          nextOptions.push(
+            createLocalPathOption(`Use “${trimmed}”`, encodedInput, true)
+          );
+          seen.add(encodedInput);
+          for (const result of response.results ?? []) {
+            const value = encodeLocalPathValue(result.path);
+            if (seen.has(value)) {
+              continue;
+            }
+            nextOptions.push(
+              createLocalPathOption(
+                result.displayPath,
+                value,
+                result.isGitRepo
+              )
+            );
+            seen.add(value);
+          }
+          setLocalPathOptions(nextOptions);
+        }
+      );
+    }, 200);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [createLocalPathOption, projectSearchTerm, socket]);
 
   // Format repos for multiselect
   // Fetch environments
@@ -621,6 +858,14 @@ function DashboardComponent() {
     }));
 
     const options: SelectOption[] = [];
+    if (localPathOptions.length > 0) {
+      options.push({
+        label: "Local paths",
+        value: "__heading-local",
+        heading: true,
+      });
+      options.push(...localPathOptions);
+    }
     if (envOptions.length > 0) {
       options.push({
         label: "Environments",
@@ -637,9 +882,8 @@ function DashboardComponent() {
       });
       options.push(...repoOptions);
     }
-
     return options;
-  }, [reposByOrg, environmentsQuery.data]);
+  }, [environmentsQuery.data, localPathOptions, reposByOrg]);
 
   const selectedRepoFullName = useMemo(() => {
     if (!selectedProject[0] || isEnvSelected) return null;
@@ -680,10 +924,14 @@ function DashboardComponent() {
   // Handle paste of GitHub repo URL in the project search field
   const handleProjectSearchPaste = useCallback(
     async (input: string) => {
+      const trimmedInput = input.trim();
+      if (looksLikeLocalPath(trimmedInput)) {
+        return await handleLocalPathInput(trimmedInput);
+      }
       try {
         const result = await addManualRepo({
           teamSlugOrId,
-          repoUrl: input,
+          repoUrl: trimmedInput,
         });
 
         if (result.success) {
@@ -708,7 +956,7 @@ function DashboardComponent() {
         return false; // Don't close dropdown if it's not a valid GitHub URL
       }
     },
-    [addManualRepo, teamSlugOrId, reposByOrgQuery]
+    [addManualRepo, handleLocalPathInput, teamSlugOrId, reposByOrgQuery]
   );
 
   // Listen for VSCode spawned events
@@ -896,6 +1144,7 @@ function DashboardComponent() {
               selectedProject={selectedProject}
               onProjectChange={handleProjectChange}
               onProjectSearchPaste={handleProjectSearchPaste}
+              onProjectSearchChange={setProjectSearchTerm}
               branchOptions={branchOptions}
               selectedBranch={effectiveSelectedBranch}
               onBranchChange={handleBranchChange}
@@ -971,6 +1220,7 @@ type DashboardMainCardProps = {
   selectedProject: string[];
   onProjectChange: (newProjects: string[]) => void;
   onProjectSearchPaste?: (value: string) => boolean | Promise<boolean>;
+  onProjectSearchChange?: (value: string) => void;
   branchOptions: string[];
   selectedBranch: string[];
   onBranchChange: (newBranches: string[]) => void;
@@ -999,6 +1249,7 @@ function DashboardMainCard({
   selectedProject,
   onProjectChange,
   onProjectSearchPaste,
+  onProjectSearchChange,
   branchOptions,
   selectedBranch,
   onBranchChange,
@@ -1034,6 +1285,7 @@ function DashboardMainCard({
           selectedProject={selectedProject}
           onProjectChange={onProjectChange}
           onProjectSearchPaste={onProjectSearchPaste}
+          onProjectSearchChange={onProjectSearchChange}
           branchOptions={branchOptions}
           selectedBranch={selectedBranch}
           onBranchChange={onBranchChange}

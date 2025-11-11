@@ -66,6 +66,7 @@ export interface SearchableSelectProps {
   value: string[];
   onChange: (value: string[]) => void;
   onSearchPaste?: (value: string) => boolean | Promise<boolean>;
+  onSearchChange?: (value: string) => void;
   placeholder?: string;
   singleSelect?: boolean;
   className?: string;
@@ -234,6 +235,7 @@ const SearchableSelect = forwardRef<
     value,
     onChange,
     onSearchPaste,
+    onSearchChange,
     placeholder = "Select",
     singleSelect = false,
     className,
@@ -268,10 +270,18 @@ const SearchableSelect = forwardRef<
   const allowValueCountAdjustments = !singleSelect && resolvedMaxPerValue > 1;
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const [search, setSearch] = useState("");
+  const [searchState, setSearchState] = useState("");
+  const setSearch = useCallback(
+    (next: string) => {
+      setSearchState(next);
+      onSearchChange?.(next);
+    },
+    [onSearchChange]
+  );
   const [_recalcTick, setRecalcTick] = useState(0);
   // Popover width is fixed; no need to track trigger width
   const pendingFocusRef = useRef<string | null>(null);
+  const search = searchState;
 
   const countByValue = useMemo(() => {
     const map = new Map<string, number>();
@@ -505,7 +515,7 @@ const SearchableSelect = forwardRef<
         setOpen(false);
       },
     }),
-    [filteredOptions, open, rowVirtualizer]
+    [filteredOptions, open, rowVirtualizer, setSearch]
   );
 
   const updateValueCount = (val: string, nextCount: number) => {
