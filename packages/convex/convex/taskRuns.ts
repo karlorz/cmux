@@ -1545,3 +1545,71 @@ export const getRunningContainersByCleanupPriority = authQuery({
     };
   },
 });
+
+export const getScreenshotsForPr = internalQuery({
+  args: {
+    teamId: v.string(),
+    repoFullName: v.string(),
+    prNumber: v.number(),
+  },
+  handler: async (ctx, args) => {
+    // Query recent task runs (within last 24 hours) that might have created this PR
+    const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+    const recentRuns = await ctx.db
+      .query("taskRuns")
+      .withIndex("by_team_user")
+      .filter((q) => q.eq(q.field("teamId"), args.teamId))
+      .filter((q) => q.gte(q.field("createdAt"), oneDayAgo))
+      .collect();
+
+    // Find runs that have this PR in their pullRequests array
+    const matchingRuns = recentRuns.filter((run) => {
+      if (!run.pullRequests) return false;
+      return run.pullRequests.some(
+        (pr) =>
+          pr.repoFullName === args.repoFullName && pr.number === args.prNumber,
+      );
+    });
+
+    if (matchingRuns.length === 0) {
+      return [];
+    }
+
+    // Use the most recent matching run
+    matchingRuns.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    const run = matchingRuns[0];
+
+    if (!run) {
+      return [];
+    }
+
+    // Get screenshot sets for this run
+    const screenshotSets = await ctx.db
+      .query("taskRunScreenshotSets")
+      .withIndex("by_run_capturedAt", (q) => q.eq("runId", run._id))
+      .collect();
+
+    if (screenshotSets.length === 0) {
+      return [];
+    }
+
+    // Sort by captured time (most recent first) and take the latest set
+    screenshotSets.sort((a, b) => b.capturedAt - a.capturedAt);
+    const latestSet = screenshotSets[0];
+
+    if (!latestSet || latestSet.status !== "completed") {
+      return [];
+    }
+
+    // Get URLs for all images in the latest set
+    const screenshotUrls = await Promise.all(
+      latestSet.images.map(async (image) => {
+        const url = await ctx.storage.getUrl(image.storageId);
+        return url;
+      }),
+    );
+
+    // Filter out any null URLs
+    return screenshotUrls.filter((url): url is string => url !== null);
+  },
+});

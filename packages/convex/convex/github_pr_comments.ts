@@ -1,5 +1,6 @@
 "use node";
 import { v } from "convex/values";
+import { Octokit } from "octokit";
 import { fetchInstallationAccessToken } from "../_shared/githubApp";
 import { internalAction } from "./_generated/server";
 
@@ -28,47 +29,24 @@ export const addPrReaction = internalAction({
         return { ok: false, error: "Failed to get access token" };
       }
 
-      const response = await fetch(
-        `https://api.github.com/repos/${repoFullName}/issues/${prNumber}/reactions`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            Accept: "application/vnd.github+json",
-            "Content-Type": "application/json",
-            "User-Agent": "cmux-github-bot",
-          },
-          body: JSON.stringify({ content }),
-        },
-      );
+      const octokit = new Octokit({ auth: accessToken });
+      const [owner, repo] = repoFullName.split("/");
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(
-          "[github_pr_comments] Failed to add reaction",
-          {
-            installationId,
-            repoFullName,
-            prNumber,
-            status: response.status,
-            error: errorText,
-          },
-        );
-        return {
-          ok: false,
-          error: `GitHub API error: ${response.status}`,
-        };
-      }
+      const response = await octokit.rest.reactions.createForIssue({
+        owner,
+        repo,
+        issue_number: prNumber,
+        content,
+      });
 
-      const data = await response.json();
       console.log("[github_pr_comments] Successfully added reaction", {
         installationId,
         repoFullName,
         prNumber,
-        reactionId: data.id,
+        reactionId: response.data.id,
       });
 
-      return { ok: true, reactionId: data.id };
+      return { ok: true, reactionId: response.data.id };
     } catch (error) {
       console.error(
         "[github_pr_comments] Unexpected error adding reaction",
@@ -121,47 +99,24 @@ export const addPrComment = internalAction({
         }
       }
 
-      const response = await fetch(
-        `https://api.github.com/repos/${repoFullName}/issues/${prNumber}/comments`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            Accept: "application/vnd.github+json",
-            "Content-Type": "application/json",
-            "User-Agent": "cmux-github-bot",
-          },
-          body: JSON.stringify({ body: commentBody }),
-        },
-      );
+      const octokit = new Octokit({ auth: accessToken });
+      const [owner, repo] = repoFullName.split("/");
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(
-          "[github_pr_comments] Failed to add comment",
-          {
-            installationId,
-            repoFullName,
-            prNumber,
-            status: response.status,
-            error: errorText,
-          },
-        );
-        return {
-          ok: false,
-          error: `GitHub API error: ${response.status}`,
-        };
-      }
+      const response = await octokit.rest.issues.createComment({
+        owner,
+        repo,
+        issue_number: prNumber,
+        body: commentBody,
+      });
 
-      const data = await response.json();
       console.log("[github_pr_comments] Successfully added comment", {
         installationId,
         repoFullName,
         prNumber,
-        commentId: data.id,
+        commentId: response.data.id,
       });
 
-      return { ok: true, commentId: data.id };
+      return { ok: true, commentId: response.data.id };
     } catch (error) {
       console.error(
         "[github_pr_comments] Unexpected error adding comment",

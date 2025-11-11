@@ -507,7 +507,7 @@ export const githubWebhook = httpAction(async (_ctx, req) => {
           ) {
             const prNumber = Number(prPayload.pull_request?.number ?? 0);
             if (prNumber) {
-              await _ctx.runAction(internal.github_pr_comments.addPrReaction, {
+            await _ctx.runAction(internal.github_pr_comments.addPrReaction, {
                 installationId: installation,
                 repoFullName,
                 prNumber,
@@ -524,13 +524,22 @@ export const githubWebhook = httpAction(async (_ctx, req) => {
             const prNumber = Number(prPayload.pull_request?.number ?? 0);
             const prUrl = String(prPayload.pull_request?.html_url ?? "");
             if (prNumber && prUrl) {
+              // Fetch screenshots for this PR
+              const screenshots = await _ctx.runQuery(
+                internal.taskRuns.getScreenshotsForPr,
+                {
+                  teamId,
+                  repoFullName,
+                  prNumber,
+                },
+              );
+
               await _ctx.runAction(internal.github_pr_comments.addPrComment, {
                 installationId: installation,
                 repoFullName,
                 prNumber,
                 prUrl,
-                // TODO: Pass screenshots from the run that created this PR
-                screenshots: undefined,
+                screenshots: screenshots.length > 0 ? screenshots : undefined,
               });
             }
           }
