@@ -18,6 +18,13 @@ import {
   type VSCodeServeWebHandle,
 } from "./vscode/serveWeb";
 
+const SERVER_PROCESS_TITLE = "cmux-server";
+
+// Give the process a unique title so `pkill node` doesn't take the server down.
+if (typeof process !== "undefined" && process.title !== SERVER_PROCESS_TITLE) {
+  process.title = SERVER_PROCESS_TITLE;
+}
+
 const execAsync = promisify(exec);
 
 export type GitRepoInfo = {
