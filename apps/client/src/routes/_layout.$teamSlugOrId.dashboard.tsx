@@ -122,6 +122,7 @@ function DashboardComponent() {
     const stored = localStorage.getItem("isCloudMode");
     return stored ? JSON.parse(stored) : true;
   });
+  const [isStartingTask, setIsStartingTask] = useState<boolean>(false);
 
   const [, setDockerReady] = useState<boolean | null>(null);
   const [providerStatus, setProviderStatus] =
@@ -391,6 +392,12 @@ function DashboardComponent() {
   }, [selectedBranch, branchNames, remoteDefaultBranch]);
 
   const handleStartTask = useCallback(async () => {
+    // Prevent duplicate task starts
+    if (isStartingTask) {
+      console.log("Task is already starting, ignoring duplicate request");
+      return;
+    }
+
     // For local mode, perform a fresh docker check right before starting
     if (!isEnvSelected && !isCloudMode) {
       // Always check Docker status when in local mode, regardless of current state
@@ -428,6 +435,9 @@ function DashboardComponent() {
       console.error("Socket not connected");
       return;
     }
+
+    // Set starting flag
+    setIsStartingTask(true);
 
     // Use the effective selected branch (respects available branches and sensible defaults)
     const branch = effectiveSelectedBranch[0];
@@ -544,6 +554,9 @@ function DashboardComponent() {
       console.log("Task created:", taskId);
     } catch (error) {
       console.error("Error starting task:", error);
+    } finally {
+      // Reset starting flag after task creation completes (success or failure)
+      setIsStartingTask(false);
     }
   }, [
     selectedProject,
@@ -559,6 +572,7 @@ function DashboardComponent() {
     isEnvSelected,
     theme,
     generateUploadUrl,
+    isStartingTask,
   ]);
 
   // Fetch repos on mount if none exist
@@ -891,12 +905,14 @@ function DashboardComponent() {
   );
 
   const canSubmit = useMemo(() => {
+    if (isStartingTask) return false; // Disable if task is already starting
     if (!selectedProject[0]) return false;
     if (!taskDescription.trim()) return false;
     if (selectedAgents.length === 0) return false;
     if (isEnvSelected) return true; // no branch required when environment selected
     return !!effectiveSelectedBranch[0];
   }, [
+    isStartingTask,
     selectedProject,
     taskDescription,
     selectedAgents,
@@ -943,6 +959,7 @@ function DashboardComponent() {
               providerStatus={providerStatus}
               canSubmit={canSubmit}
               onStartTask={handleStartTask}
+              isStartingTask={isStartingTask}
             />
             {shouldShowWorkspaceSetup ? (
               <WorkspaceSetupPanel
@@ -1020,6 +1037,7 @@ type DashboardMainCardProps = {
   providerStatus: ProviderStatusResponse | null;
   canSubmit: boolean;
   onStartTask: () => void;
+  isStartingTask: boolean;
 };
 
 function DashboardMainCard({
@@ -1048,6 +1066,7 @@ function DashboardMainCard({
   providerStatus,
   canSubmit,
   onStartTask,
+  isStartingTask,
 }: DashboardMainCardProps) {
   return (
     <div className="relative bg-white dark:bg-neutral-700/50 border border-neutral-500/15 dark:border-neutral-500/15 rounded-2xl transition-all">
@@ -1085,6 +1104,7 @@ function DashboardMainCard({
         <DashboardStartTaskButton
           canSubmit={canSubmit}
           onStartTask={onStartTask}
+          disabledReason={isStartingTask ? "Starting task..." : undefined}
         />
       </DashboardInputFooter>
     </div>
