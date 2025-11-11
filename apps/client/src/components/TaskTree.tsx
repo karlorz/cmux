@@ -482,6 +482,26 @@ function TaskTreeInner({
     canRename: canRenameTask,
   });
 
+  const handleTaskLinkClick = useCallback(
+    (event: MouseEvent<HTMLAnchorElement>) => {
+      if (
+        event.defaultPrevented ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+      if (isRenaming) {
+        event.preventDefault();
+        return;
+      }
+      handleToggle(event);
+    },
+    [handleToggle, isRenaming]
+  );
+
   const handleCopyDescription = useCallback(() => {
     if (navigator?.clipboard?.writeText) {
       navigator.clipboard.writeText(task.text);
@@ -553,6 +573,25 @@ function TaskTreeInner({
   const isCrownEvaluating = task.crownEvaluationStatus === "in_progress";
   const isLocalWorkspace = task.isLocalWorkspace;
   const isCloudWorkspace = task.isCloudWorkspace;
+  const isWorkspaceTask = isLocalWorkspace || isCloudWorkspace;
+
+  const workspaceRunTarget = useMemo(() => {
+    if (!isWorkspaceTask) {
+      return null;
+    }
+    const candidateRuns =
+      activeRunsFlat.length > 0 ? activeRunsFlat : flattenedRuns;
+
+    if (candidateRuns.length === 0) {
+      return null;
+    }
+
+    return (
+      candidateRuns.find(
+        (run) => run.isLocalWorkspace || run.isCloudWorkspace
+      ) ?? candidateRuns[0]
+    );
+  }, [activeRunsFlat, flattenedRuns, isWorkspaceTask]);
 
   const taskLeadingIcon = (() => {
     if (isCrownEvaluating) {
@@ -664,53 +703,65 @@ function TaskTreeInner({
     taskLeadingIcon
   );
 
+  const renderSidebarListItem = () => (
+    <SidebarListItem
+      paddingLeft={taskListPaddingLeft}
+      toggle={{
+        expanded: isExpanded,
+        onToggle: handleToggle,
+        visible: canExpand,
+      }}
+      title={taskTitleContent}
+      titleClassName={taskTitleClassName}
+      secondary={taskSecondary || undefined}
+      meta={taskMetaIcon || undefined}
+      className={clsx(isRenaming && "pr-2")}
+    />
+  );
+
+  const isWorkspaceLink =
+    Boolean(isWorkspaceTask && workspaceRunTarget?._id);
+
+  const taskLinkElement = isWorkspaceLink ? (
+    <Link
+      to="/$teamSlugOrId/task/$taskId/run/$runId/vscode"
+      params={{
+        teamSlugOrId,
+        taskId: task._id,
+        runId: workspaceRunTarget!._id,
+      }}
+      activeOptions={{ exact: true }}
+      className="group block"
+      data-focus-visible={isTaskLinkFocusVisible ? "true" : undefined}
+      onMouseEnter={handlePrefetch}
+      onFocus={handleTaskLinkFocus}
+      onBlur={handleTaskLinkBlur}
+      onClick={handleTaskLinkClick}
+    >
+      {renderSidebarListItem()}
+    </Link>
+  ) : (
+    <Link
+      to="/$teamSlugOrId/task/$taskId"
+      params={{ teamSlugOrId, taskId: task._id }}
+      search={{ runId: undefined }}
+      activeOptions={{ exact: true }}
+      className="group block"
+      data-focus-visible={isTaskLinkFocusVisible ? "true" : undefined}
+      onMouseEnter={handlePrefetch}
+      onFocus={handleTaskLinkFocus}
+      onBlur={handleTaskLinkBlur}
+      onClick={handleTaskLinkClick}
+    >
+      {renderSidebarListItem()}
+    </Link>
+  );
+
   return (
     <TaskRunExpansionContext.Provider value={expansionContextValue}>
       <div className="select-none flex flex-col">
         <ContextMenu.Root>
-          <ContextMenu.Trigger>
-            <Link
-              to="/$teamSlugOrId/task/$taskId"
-              params={{ teamSlugOrId, taskId: task._id }}
-              search={{ runId: undefined }}
-              activeOptions={{ exact: true }}
-              className="group block"
-              data-focus-visible={isTaskLinkFocusVisible ? "true" : undefined}
-              onMouseEnter={handlePrefetch}
-              onFocus={handleTaskLinkFocus}
-              onBlur={handleTaskLinkBlur}
-              onClick={(event) => {
-                if (
-                  event.defaultPrevented ||
-                  event.metaKey ||
-                  event.ctrlKey ||
-                  event.shiftKey ||
-                  event.altKey
-                ) {
-                  return;
-                }
-                if (isRenaming) {
-                  event.preventDefault();
-                  return;
-                }
-                handleToggle(event);
-              }}
-            >
-              <SidebarListItem
-                paddingLeft={taskListPaddingLeft}
-                toggle={{
-                  expanded: isExpanded,
-                  onToggle: handleToggle,
-                  visible: canExpand,
-              }}
-              title={taskTitleContent}
-              titleClassName={taskTitleClassName}
-              secondary={taskSecondary || undefined}
-              meta={taskMetaIcon || undefined}
-              className={clsx(isRenaming && "pr-2")}
-            />
-          </Link>
-          </ContextMenu.Trigger>
+          <ContextMenu.Trigger>{taskLinkElement}</ContextMenu.Trigger>
           {isRenaming && renameError ? (
             <div
               className="mt-1 text-[11px] text-red-500 dark:text-red-400"
