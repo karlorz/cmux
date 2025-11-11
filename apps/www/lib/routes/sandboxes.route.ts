@@ -337,6 +337,8 @@ sandboxesRouter.openapi(
         return c.text("Failed to hydrate sandbox", 500);
       }
 
+      await configureGitIdentityTask;
+
       if (maintenanceScript || devScript) {
         (async () => {
           await runMaintenanceAndDevScripts({
@@ -355,8 +357,6 @@ sandboxesRouter.openapi(
           );
         });
       }
-
-      await configureGitIdentityTask;
 
       return c.json({
         instanceId: instance.id,
