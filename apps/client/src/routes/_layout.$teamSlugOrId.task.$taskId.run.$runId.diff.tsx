@@ -747,6 +747,8 @@ function RunDiffPage() {
   const taskRunId = selectedRun?._id ?? runId;
   const restartTaskPersistenceKey = `restart-task-${taskId}-${runId}`;
 
+  const navigate = useNavigate();
+
   const handleOpenLocalWorkspace = useCallback(() => {
     if (!socket) {
       toast.error("Socket not connected");
@@ -780,22 +782,16 @@ function RunDiffPage() {
             description: `Opening workspace at ${response.workspacePath}`,
           });
 
-          // Try to open the workspace in the user's local editor
-          if (response.workspacePath && socket) {
-            socket.emit(
-              "open-in-editor",
-              {
-                editor: "cursor",
-                path: response.workspacePath,
+          // Navigate to the vscode view for this task run
+          if (response.taskRunId) {
+            navigate({
+              to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+              params: {
+                teamSlugOrId,
+                taskId,
+                runId: response.taskRunId,
               },
-              (openResponse) => {
-                if (!openResponse.success) {
-                  toast.info("Workspace ready, but couldn't open editor automatically", {
-                    description: response.workspacePath,
-                  });
-                }
-              }
-            );
+            });
           }
         } else {
           toast.error(response.error || "Failed to create workspace", {
@@ -804,7 +800,7 @@ function RunDiffPage() {
         }
       }
     );
-  }, [socket, teamSlugOrId, primaryRepo, selectedRun?.newBranch]);
+  }, [socket, teamSlugOrId, primaryRepo, selectedRun?.newBranch, navigate, taskId]);
 
   // 404 if selected run is missing
   if (!selectedRun) {
@@ -821,6 +817,9 @@ function RunDiffPage() {
     Boolean(primaryRepo) && Boolean(baseRef) && Boolean(headRef);
   const shouldPrefixDiffs = repoFullNames.length > 1;
 
+  // Only show the "Open local workspace" button for regular tasks (not local/cloud workspaces)
+  const isWorkspace = task?.isLocalWorkspace || task?.isCloudWorkspace;
+
   return (
     <FloatingPane>
       <div className="flex h-full min-h-0 flex-col relative isolate">
@@ -834,7 +833,7 @@ function RunDiffPage() {
             onCollapseAll={diffControls?.collapseAll}
             onExpandAllChecks={expandAllChecks}
             onCollapseAllChecks={collapseAllChecks}
-            onOpenLocalWorkspace={handleOpenLocalWorkspace}
+            onOpenLocalWorkspace={isWorkspace ? undefined : handleOpenLocalWorkspace}
             teamSlugOrId={teamSlugOrId}
           />
           {task?.text && (
