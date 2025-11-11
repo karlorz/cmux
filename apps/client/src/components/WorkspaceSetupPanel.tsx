@@ -67,6 +67,9 @@ export function WorkspaceSetupPanel({
     ensureInitialEnvVars(),
   );
   const [areEnvValuesHidden, setAreEnvValuesHidden] = useState(true);
+  const [activeEnvValueIndex, setActiveEnvValueIndex] = useState<number | null>(
+    null,
+  );
 
   const originalConfigRef = useRef<{ script: string; envContent: string }>({
     script: "",
@@ -352,9 +355,10 @@ export function WorkspaceSetupPanel({
                     <button
                       type="button"
                       className="inline-flex items-center gap-1 rounded-md border border-neutral-200 bg-white px-2 py-1 text-[11px] font-medium text-neutral-700 transition-colors hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-                      onClick={() =>
-                        setAreEnvValuesHidden((previous) => !previous)
-                      }
+                      onClick={() => {
+                        setActiveEnvValueIndex(null);
+                        setAreEnvValuesHidden((previous) => !previous);
+                      }}
                       aria-pressed={!areEnvValuesHidden}
                       aria-label={
                         areEnvValuesHidden
@@ -388,8 +392,11 @@ export function WorkspaceSetupPanel({
 
                     <div className="space-y-1.5">
                       {envVars.map((row, idx) => {
+                        const isEditingValue = activeEnvValueIndex === idx;
                         const shouldMaskValue =
-                          areEnvValuesHidden && row.value.trim().length > 0;
+                          areEnvValuesHidden &&
+                          row.value.trim().length > 0 &&
+                          !isEditingValue;
                         const envRow = row as EnvVarWithRowKey;
                         const rowKey = ensureWorkspaceEnvVarRowKey(envRow);
                         return (
@@ -434,16 +441,23 @@ export function WorkspaceSetupPanel({
                               placeholder="secret-value"
                               readOnly={shouldMaskValue}
                               aria-readonly={shouldMaskValue || undefined}
+                              onFocus={() => setActiveEnvValueIndex(idx)}
+                              onBlur={() => {
+                                setActiveEnvValueIndex((current) =>
+                                  current === idx ? null : current,
+                                );
+                              }}
                               className="w-full rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-[11px] font-mono text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-600 dark:focus:border-neutral-600 transition"
                             />
                             <button
                               type="button"
                               className="inline-flex h-6 w-6 items-center justify-center text-neutral-400 transition-colors hover:text-neutral-600 dark:text-neutral-500 dark:hover:text-neutral-300"
-                              onClick={() =>
+                              onClick={() => {
+                                setActiveEnvValueIndex(null);
                                 updateEnvVars((prev) =>
                                   prev.filter((_, i) => i !== idx),
-                                )
-                              }
+                                );
+                              }}
                               aria-label="Remove variable"
                             >
                               <Minus className="h-3.5 w-3.5" />
