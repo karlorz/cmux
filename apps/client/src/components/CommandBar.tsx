@@ -95,6 +95,98 @@ const compactStrings = (values: ReadonlyArray<unknown>): string[] => {
   return out;
 };
 
+const GITHUB_PR_URL_REGEX =
+  /https?:\/\/(?:www\.)?github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)/i;
+
+type GithubPrMatch = {
+  repoFullName: string;
+  repoFullNameLower: string;
+  number: number;
+  normalizedUrl: string;
+  matchedUrl: string;
+  rawInput: string;
+};
+
+const decodeUriComponentSafe = (segment: string): string => {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+};
+
+const parseGithubPrUrlFromText = (input: string): GithubPrMatch | null => {
+  if (!input) return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(GITHUB_PR_URL_REGEX);
+  if (!match) return null;
+  const ownerRaw = match[1];
+  const repoRaw = match[2];
+  const numberRaw = match[3];
+  if (!ownerRaw || !repoRaw || !numberRaw) {
+    return null;
+  }
+  const owner = decodeUriComponentSafe(ownerRaw);
+  const repo = decodeUriComponentSafe(repoRaw);
+  const number = Number.parseInt(numberRaw, 10);
+  if (!Number.isFinite(number)) {
+    return null;
+  }
+  const repoFullName = `${owner}/${repo}`;
+  return {
+    repoFullName,
+    repoFullNameLower: repoFullName.toLowerCase(),
+    number,
+    normalizedUrl: `https://github.com/${owner}/${repo}/pull/${number}`,
+    matchedUrl: match[0],
+    rawInput: trimmed,
+  };
+};
+
+const doesTaskRunMatchGithubPr = (
+  run: Doc<"taskRuns">,
+  pr: GithubPrMatch
+): boolean => {
+  const repoTarget = pr.repoFullNameLower;
+  const numberTarget = pr.number;
+
+  for (const record of run.pullRequests ?? []) {
+    const recordRepo = record.repoFullName?.toLowerCase();
+    const recordNumber =
+      typeof record.number === "number" ? record.number : undefined;
+
+    if (recordRepo === repoTarget && recordNumber === numberTarget) {
+      return true;
+    }
+
+    if (record.url) {
+      const parsedRecord = parseGithubPrUrlFromText(record.url);
+      if (
+        parsedRecord &&
+        parsedRecord.repoFullNameLower === repoTarget &&
+        parsedRecord.number === numberTarget
+      ) {
+        return true;
+      }
+    }
+  }
+
+  const aggregateUrl = run.pullRequestUrl;
+  if (aggregateUrl && aggregateUrl !== "pending") {
+    const parsedAggregate = parseGithubPrUrlFromText(aggregateUrl);
+    if (
+      parsedAggregate &&
+      parsedAggregate.repoFullNameLower === repoTarget &&
+      parsedAggregate.number === numberTarget
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 const EMPTY_TEAM_LIST: Team[] = [];
 
 const isDevEnvironment = import.meta.env.DEV;
@@ -286,6 +378,10 @@ export function CommandBar({
 }: CommandBarProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const githubPrSearch = useMemo(
+    () => parseGithubPrUrlFromText(search),
+    [search]
+  );
   const [openedWithShift, setOpenedWithShift] = useState(false);
   const clearCommandInput = useCallback(() => {
     setSearch("");
@@ -662,6 +758,88 @@ export function CommandBar({
     : "Sign in to view teams.";
 
   const allTasks = useQuery(api.tasks.getTasksWithTaskRuns, { teamSlugOrId });
+  const pullRequestMatchEntries = useMemo<CommandListEntry[]>(() => {
+    if (!githubPrSearch || !allTasks) {
+      return [];
+    }
+
+    const entries: CommandListEntry[] = [];
+
+    for (const task of allTasks) {
+      const run = task.selectedTaskRun;
+      if (!run) continue;
+      if (!doesTaskRunMatchGithubPr(run, githubPrSearch)) {
+        continue;
+      }
+
+      const title =
+        task.pullRequestTitle ||
+        task.text ||
+        `Task ${String(task._id).slice(-4)}`;
+      const repoLabel = `${githubPrSearch.repoFullName} #${githubPrSearch.number}`;
+      const statusLabel = task.isCompleted ? "completed" : "in progress";
+      const statusClassName = task.isCompleted
+        ? "text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+        : "text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400";
+      const keywords = compactStrings([
+        title,
+        task.text,
+        task.pullRequestTitle,
+        repoLabel,
+        githubPrSearch.repoFullName,
+        `${githubPrSearch.repoFullName} ${githubPrSearch.number}`,
+        `#${githubPrSearch.number}`,
+        String(githubPrSearch.number),
+        githubPrSearch.rawInput,
+        githubPrSearch.matchedUrl,
+        githubPrSearch.normalizedUrl,
+        "pr",
+        "pull request",
+        "github",
+      ]);
+
+      entries.push({
+        value: `pr-match:task:${task._id}:run:${run._id}`,
+        label: `${title} ${repoLabel}`,
+        keywords,
+        searchText: buildSearchText(title, keywords, [
+          repoLabel,
+          githubPrSearch.rawInput,
+          githubPrSearch.matchedUrl,
+          githubPrSearch.normalizedUrl,
+        ]),
+        className: taskCommandItemClassName,
+        execute: async () => {
+          closeCommand();
+          await navigate({
+            to: "/$teamSlugOrId/task/$taskId/run/$runId/pr",
+            params: {
+              teamSlugOrId,
+              taskId: task._id,
+              runId: run._id,
+            },
+          });
+        },
+        renderContent: () => (
+          <>
+            <span className="flex h-5 w-5 items-center justify-center rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-200 group-data-[selected=true]:bg-purple-200/70 dark:group-data-[selected=true]:bg-purple-800/70">
+              <GitPullRequest className="h-3.5 w-3.5" />
+            </span>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-sm">{title}</span>
+              <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                {repoLabel}
+              </span>
+            </div>
+            <span className={statusClassName}>{statusLabel}</span>
+          </>
+        ),
+        trackUsage: false,
+      });
+    }
+
+    return entries;
+  }, [allTasks, closeCommand, githubPrSearch, navigate, teamSlugOrId]);
   const reserveLocalWorkspace = useMutation(api.localWorkspaces.reserve);
   const createTask = useMutation(api.tasks.create);
   const failTaskRun = useMutation(api.taskRuns.fail);
@@ -1922,8 +2100,13 @@ export function CommandBar({
         ]
       : [];
 
-    return [...baseEntries, ...taskEntries, ...electronEntries];
-  }, [allTasks, handleSelect, stackUser]);
+    return [
+      ...pullRequestMatchEntries,
+      ...baseEntries,
+      ...taskEntries,
+      ...electronEntries,
+    ];
+  }, [allTasks, handleSelect, pullRequestMatchEntries, stackUser]);
 
   const localWorkspaceEntries = useMemo<CommandListEntry[]>(() => {
     return localWorkspaceOptions.map((option) => {
