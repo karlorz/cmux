@@ -1,8 +1,10 @@
 import { api } from "@cmux/convex/api";
 import type { Doc } from "@cmux/convex/dataModel";
 import { useQuery } from "convex/react";
-import { memo, useMemo, useState } from "react";
+import clsx from "clsx";
+import { memo, useCallback, useMemo, useState } from "react";
 import { TaskItem } from "./TaskItem";
+import { ChevronRight } from "lucide-react";
 
 type TaskCategoryKey =
   | "workspaces"
@@ -92,6 +94,15 @@ const categorizeTasks = (
   return buckets;
 };
 
+const createCollapsedCategoryState = (
+  defaultValue = false,
+): Record<TaskCategoryKey, boolean> => ({
+  workspaces: defaultValue,
+  ready_to_review: defaultValue,
+  in_progress: defaultValue,
+  merged: defaultValue,
+});
+
 export const TaskList = memo(function TaskList({
   teamSlugOrId,
 }: {
@@ -110,6 +121,16 @@ export const TaskList = memo(function TaskList({
   );
   const categoryBuckets =
     categorizedTasks ?? createEmptyCategoryBuckets();
+  const [collapsedCategories, setCollapsedCategories] = useState<
+    Record<TaskCategoryKey, boolean>
+  >(() => createCollapsedCategoryState());
+
+  const toggleCategoryCollapse = useCallback((categoryKey: TaskCategoryKey) => {
+    setCollapsedCategories((prev) => ({
+      ...prev,
+      [categoryKey]: !prev[categoryKey],
+    }));
+  }, []);
 
   return (
     <div className="mt-6 w-full">
@@ -166,13 +187,14 @@ export const TaskList = memo(function TaskList({
           </div>
         ) : (
           <div className="mt-1 w-full">
-            {CATEGORY_ORDER.map((categoryKey, index) => (
+            {CATEGORY_ORDER.map((categoryKey) => (
               <TaskCategorySection
                 key={categoryKey}
                 categoryKey={categoryKey}
                 tasks={categoryBuckets[categoryKey]}
                 teamSlugOrId={teamSlugOrId}
-                showDivider={index !== 0}
+                collapsed={collapsedCategories[categoryKey]}
+                onToggle={toggleCategoryCollapse}
               />
             ))}
           </div>
@@ -186,40 +208,67 @@ function TaskCategorySection({
   categoryKey,
   tasks,
   teamSlugOrId,
-  showDivider,
+  collapsed,
+  onToggle,
 }: {
   categoryKey: TaskCategoryKey;
   tasks: Doc<"tasks">[];
   teamSlugOrId: string;
-  showDivider: boolean;
+  collapsed: boolean;
+  onToggle: (key: TaskCategoryKey) => void;
 }) {
   const meta = CATEGORY_META[categoryKey];
-  const sectionClassName = showDivider
-    ? "w-full"
-    : "w-full";
+  const handleToggle = useCallback(() => onToggle(categoryKey), [categoryKey, onToggle]);
+  const contentId = `task-category-${categoryKey}`;
+  const toggleLabel = collapsed ? `Expand ${meta.title}` : `Collapse ${meta.title}`;
   return (
-    <div className={sectionClassName}>
-      <div className="sticky top-0 z-10 flex w-full flex-wrap items-center gap-2 border-y border-neutral-200 dark:border-neutral-800 bg-neutral-100 dark:bg-neutral-900 px-4 py-2 text-sm font-medium text-neutral-900 dark:text-neutral-100">
-        <span className="tracking-wide">{meta.title}</span>
-        <span className="text-sm text-neutral-500 dark:text-neutral-400">
-          {tasks.length}
-        </span>
-      </div>
-      {tasks.length > 0 ? (
-        <div className="flex flex-col w-full">
-          {tasks.map((task) => (
-            <TaskItem
-              key={task._id}
-              task={task}
-              teamSlugOrId={teamSlugOrId}
+    <div className="w-full">
+      <div className="sticky top-0 z-10 flex w-full border-y border-neutral-200 dark:border-neutral-800 bg-neutral-100 dark:bg-neutral-800 select-none">
+        <div className="flex w-full items-center pr-4">
+          <button
+            type="button"
+            onClick={handleToggle}
+            aria-label={toggleLabel}
+            aria-expanded={!collapsed}
+            aria-controls={contentId}
+            className="flex h-9 w-9 items-center justify-center text-neutral-500 hover:text-black dark:text-neutral-400 dark:hover:text-neutral-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-300 dark:focus-visible:outline-neutral-700 transition-colors"
+          >
+            <ChevronRight
+              className={clsx(
+                "h-3 w-3 transition-transform duration-200",
+                !collapsed && "rotate-90",
+              )}
+              aria-hidden="true"
             />
-          ))}
+          </button>
+          <div className="flex items-center gap-2 text-xs font-semibold tracking-tight text-neutral-900 dark:text-neutral-100">
+            <span>{meta.title}</span>
+            <span className="text-xs text-neutral-500 dark:text-neutral-400">
+              {tasks.length}
+            </span>
+          </div>
         </div>
-      ) : (
-        <p className="mt-3 text-sm font-medium text-neutral-500 dark:text-neutral-400 select-none">
-          {meta.emptyLabel}
-        </p>
-      )}
+      </div>
+      {collapsed
+        ? null
+        : tasks.length > 0 ? (
+            <div
+              id={contentId}
+              className="flex flex-col w-full"
+            >
+              {tasks.map((task) => (
+                <TaskItem
+                  key={task._id}
+                  task={task}
+                  teamSlugOrId={teamSlugOrId}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm font-medium text-neutral-500 dark:text-neutral-400 select-none">
+              {meta.emptyLabel}
+            </p>
+          )}
     </div>
   );
 }
