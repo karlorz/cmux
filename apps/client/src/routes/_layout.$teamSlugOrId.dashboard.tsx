@@ -1050,7 +1050,7 @@ function DashboardMainCard({
   onStartTask,
 }: DashboardMainCardProps) {
   return (
-    <div className="relative bg-white dark:bg-neutral-700/50 border border-neutral-500/15 dark:border-neutral-500/15 rounded-2xl transition-all">
+    <div className="relative group bg-white dark:bg-neutral-700/50 border border-neutral-500/15 dark:border-neutral-500/15 rounded-2xl transition-all hover:border-neutral-500/25 dark:hover:border-neutral-500/25 hover:shadow-lg dark:hover:shadow-neutral-900/20">
       <DashboardInput
         ref={editorApiRef}
         onTaskDescriptionChange={onTaskDescriptionChange}
