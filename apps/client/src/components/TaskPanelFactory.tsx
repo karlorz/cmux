@@ -22,6 +22,8 @@ import type { WorkspaceLoadingIndicatorProps } from "./workspace-loading-indicat
 import type { TaskRunTerminalPaneProps } from "./TaskRunTerminalPane";
 import type { TaskRunGitDiffPanelProps } from "./TaskRunGitDiffPanel";
 import { shouldUseServerIframePreflight } from "@/hooks/useIframePreflight";
+import { ElectronPreviewBrowser } from "@/components/electron-preview-browser";
+import { isElectron } from "@/lib/electron";
 
 type PanelPosition = "topLeft" | "topRight" | "bottomLeft" | "bottomRight";
 
@@ -169,6 +171,7 @@ interface PanelFactoryProps {
   // Browser panel props
   browserUrl?: string | null;
   browserPersistKey?: string | null;
+  browserWebContentsPersistKey?: string | null;
   browserStatus?: PersistentIframeStatus;
   setBrowserStatus?: (status: PersistentIframeStatus) => void;
   browserPlaceholder?: {
@@ -346,6 +349,47 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
 
   const panelStyle: CSSProperties | undefined =
     isAnyPanelExpanded && !isExpanded ? { visibility: "hidden" } : undefined;
+
+  const isBrowserPanel = type === "browser";
+  const browserNetworkingServices =
+    isBrowserPanel && props.selectedRun?.networking
+      ? props.selectedRun.networking
+      : null;
+
+  const browserDefaultNetworkingTarget = (() => {
+    if (!browserNetworkingServices?.length) {
+      return null;
+    }
+    const running = browserNetworkingServices.find(
+      (service) => service.status === "running" && Boolean(service.url)
+    );
+    const fallback = browserNetworkingServices.find((service) =>
+      Boolean(service.url)
+    );
+    const chosen = running ?? fallback;
+    if (!chosen || !chosen.url) {
+      return null;
+    }
+    const displayUrl =
+      typeof chosen.port === "number" && Number.isFinite(chosen.port)
+        ? `http://localhost:${chosen.port}`
+        : chosen.url;
+    return {
+      port: chosen.port,
+      remoteUrl: chosen.url,
+      displayUrl,
+    };
+  })();
+
+  const browserRunningPorts =
+    browserNetworkingServices?.filter(
+      (service) => service.status === "running"
+    ) ?? null;
+
+  const browserWebContentsPersistKey =
+    isBrowserPanel && props.browserWebContentsPersistKey
+      ? props.browserWebContentsPersistKey
+      : null;
 
   const renderExpandButton = () => {
     if (!onToggleExpand) {
@@ -568,52 +612,143 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
       } = props;
 
       if (!PersistentWebView || !WorkspaceLoadingIndicator) return null;
-      const shouldShowBrowserLoader = Boolean(selectedRun) && isMorphProvider && (!browserUrl || !browserPersistKey);
+      const shouldShowBrowserLoader =
+        Boolean(selectedRun) &&
+        isMorphProvider &&
+        (!browserUrl || !browserPersistKey);
+      const showWebContentsBrowser = Boolean(
+        isElectron &&
+          browserWebContentsPersistKey &&
+          selectedRun &&
+          isMorphProvider
+      );
+      const resolvedWebContentsPersistKey = showWebContentsBrowser
+        ? browserWebContentsPersistKey
+        : null;
+      const webContentsDisplayUrl =
+        browserDefaultNetworkingTarget?.displayUrl ?? "https://example.com/";
+      const webContentsRequestUrl =
+        browserDefaultNetworkingTarget?.remoteUrl ?? undefined;
+      const runningPorts = browserRunningPorts ?? undefined;
+      const hasRunningPorts = Boolean(runningPorts?.length);
 
       return panelWrapper(
         <Globe2 className="size-3" aria-hidden />,
         PANEL_LABELS.browser,
-        <div className={clsx("relative flex-1", isExpanded && "h-full")} aria-busy={isBrowserBusy}>
-          {browserUrl && browserPersistKey ? (
-            <PersistentWebView
-              key={browserPersistKey}
-              persistKey={browserPersistKey}
-              src={browserUrl}
-              className="flex h-full"
-              iframeClassName={clsx("select-none")}
-              persistentWrapperClassName={isExpanded ? "z-[var(--z-maximized-iframe)]" : undefined}
-              allow={TASK_RUN_IFRAME_ALLOW}
-              sandbox={TASK_RUN_IFRAME_SANDBOX}
-              retainOnUnmount
-              onStatusChange={setBrowserStatus}
-              fallback={
-                <WorkspaceLoadingIndicator variant="browser" status="loading" />
-              }
-              fallbackClassName="bg-neutral-50 dark:bg-black"
-              errorFallback={
-                <WorkspaceLoadingIndicator variant="browser" status="error" />
-              }
-              errorFallbackClassName="bg-neutral-50/95 dark:bg-black/95"
-              loadTimeoutMs={45_000}
-              isExpanded={isExpanded}
-              isAnyPanelExpanded={isAnyPanelExpanded}
-            />
-          ) : shouldShowBrowserLoader ? (
-            <div className="flex h-full items-center justify-center">
-              <WorkspaceLoadingIndicator variant="browser" status="loading" />
-            </div>
-          ) : browserPlaceholder ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-neutral-500 dark:text-neutral-400">
-              <div className="text-sm font-medium text-neutral-600 dark:text-neutral-200">
-                {browserPlaceholder.title}
-              </div>
-              {browserPlaceholder.description ? (
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                  {browserPlaceholder.description}
-                </p>
+        <div
+          className={clsx("relative flex-1", isExpanded && "h-full")}
+          aria-busy={isBrowserBusy}
+        >
+          <div
+            className={clsx(
+              "flex h-full flex-col gap-3",
+              showWebContentsBrowser ? "min-h-[520px]" : undefined
+            )}
+          >
+            <div
+              className={clsx(
+                "relative flex-1",
+                showWebContentsBrowser ? "flex-[0.55] min-h-[220px]" : "flex-1"
+              )}
+            >
+              {browserUrl && browserPersistKey ? (
+                <PersistentWebView
+                  key={browserPersistKey}
+                  persistKey={browserPersistKey}
+                  src={browserUrl}
+                  className="flex h-full"
+                  iframeClassName={clsx("select-none")}
+                  persistentWrapperClassName={
+                    isExpanded ? "z-[var(--z-maximized-iframe)]" : undefined
+                  }
+                  allow={TASK_RUN_IFRAME_ALLOW}
+                  sandbox={TASK_RUN_IFRAME_SANDBOX}
+                  retainOnUnmount
+                  onStatusChange={setBrowserStatus}
+                  fallback={
+                    <WorkspaceLoadingIndicator
+                      variant="browser"
+                      status="loading"
+                    />
+                  }
+                  fallbackClassName="bg-neutral-50 dark:bg-black"
+                  errorFallback={
+                    <WorkspaceLoadingIndicator
+                      variant="browser"
+                      status="error"
+                    />
+                  }
+                  errorFallbackClassName="bg-neutral-50/95 dark:bg-black/95"
+                  loadTimeoutMs={45_000}
+                  isExpanded={isExpanded}
+                  isAnyPanelExpanded={isAnyPanelExpanded}
+                />
+              ) : shouldShowBrowserLoader ? (
+                <div className="flex h-full items-center justify-center">
+                  <WorkspaceLoadingIndicator
+                    variant="browser"
+                    status="loading"
+                  />
+                </div>
+              ) : browserPlaceholder ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-neutral-500 dark:text-neutral-400">
+                  <div className="text-sm font-medium text-neutral-600 dark:text-neutral-200">
+                    {browserPlaceholder.title}
+                  </div>
+                  {browserPlaceholder.description ? (
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                      {browserPlaceholder.description}
+                    </p>
+                  ) : null}
+                </div>
               ) : null}
             </div>
-          ) : null}
+            {showWebContentsBrowser && resolvedWebContentsPersistKey ? (
+              <div className="flex flex-1 min-h-[220px] flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+                <div className="flex items-center justify-between border-b border-neutral-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 dark:border-neutral-800 dark:text-neutral-400">
+                  <span>WebContents Browser</span>
+                  {browserDefaultNetworkingTarget?.port ? (
+                    <span className="text-[11px] font-normal text-neutral-400 dark:text-neutral-500">
+                      Default port {browserDefaultNetworkingTarget.port}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="flex-1 min-h-0">
+                  <ElectronPreviewBrowser
+                    persistKey={resolvedWebContentsPersistKey}
+                    src={webContentsDisplayUrl}
+                    requestUrl={webContentsRequestUrl}
+                  />
+                </div>
+                <div className="border-t border-neutral-200 bg-neutral-50/80 px-3 py-2 text-[11px] text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900/40 dark:text-neutral-400">
+                  {hasRunningPorts ? (
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span className="uppercase tracking-wide text-[10px] text-neutral-500 dark:text-neutral-500">
+                        Ports
+                      </span>
+                      {(runningPorts ?? []).map((service) => (
+                        <span
+                          key={service.port}
+                          className="rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-medium text-neutral-700 shadow-sm dark:bg-neutral-800 dark:text-neutral-200"
+                        >
+                          {service.port}
+                        </span>
+                      ))}
+                      <span className="opacity-80">
+                        Visit <code>http://localhost:PORT</code> above or enter
+                        any URL.
+                      </span>
+                    </div>
+                  ) : (
+                    <span>
+                      Expose a port in the workspace to browse it directly, or
+                      paste any URL above.
+                    </span>
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
         </div>
       );
     }
@@ -651,6 +786,7 @@ export const RenderPanel = React.memo(RenderPanelComponent, (prevProps, nextProp
   if (prevProps.type === "workspace" || prevProps.type === "browser") {
     if (prevProps.workspacePersistKey !== nextProps.workspacePersistKey ||
       prevProps.browserPersistKey !== nextProps.browserPersistKey ||
+      prevProps.browserWebContentsPersistKey !== nextProps.browserWebContentsPersistKey ||
       prevProps.workspaceUrl !== nextProps.workspaceUrl ||
       prevProps.workspacePlaceholder?.title !== nextProps.workspacePlaceholder?.title ||
       prevProps.workspacePlaceholder?.description !== nextProps.workspacePlaceholder?.description ||
