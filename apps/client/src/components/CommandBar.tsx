@@ -95,6 +95,117 @@ const compactStrings = (values: ReadonlyArray<unknown>): string[] => {
   return out;
 };
 
+const dedupeStrings = (values: ReadonlyArray<string>): string[] => {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    if (seen.has(value)) continue;
+    seen.add(value);
+    result.push(value);
+  }
+  return result;
+};
+
+const normalizeRepoComponent = (value: string): string =>
+  value.trim().replace(/\.git$/i, "");
+
+const normalizeRepoFullName = (owner: string, repo: string): string =>
+  `${owner}/${normalizeRepoComponent(repo)}`;
+
+const githubPullRequestUrlRegex =
+  /^https?:\/\/(?:www\.)?github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:[/?#]|$)/i;
+
+type GithubPullRequestIdentifier = {
+  owner: string;
+  repo: string;
+  repoFullName: string;
+  normalizedRepoFullName: string;
+  number: number;
+};
+
+const parseGithubPullRequestUrl = (
+  value: string
+): GithubPullRequestIdentifier | null => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(githubPullRequestUrlRegex);
+  if (!match) return null;
+  const [, owner, repo, numberPart] = match;
+  const number = Number.parseInt(numberPart ?? "", 10);
+  if (!Number.isFinite(number)) return null;
+  const repoFullName = normalizeRepoFullName(owner, repo);
+  return {
+    owner,
+    repo: normalizeRepoComponent(repo),
+    repoFullName,
+    normalizedRepoFullName: repoFullName.toLowerCase(),
+    number,
+  };
+};
+
+const buildPullRequestSearchTerms = (
+  run: Doc<"taskRuns"> | null | undefined
+): string[] => {
+  if (!run) return [];
+
+  const terms = new Set<string>();
+  const addTerm = (value: unknown) => {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed) return;
+      terms.add(trimmed);
+      return;
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      terms.add(String(value));
+    }
+  };
+
+  const addFromUrl = (rawUrl: string) => {
+    const trimmed = rawUrl.trim();
+    if (!trimmed || trimmed === "pending") return;
+    addTerm(trimmed);
+    const parsed = parseGithubPullRequestUrl(trimmed);
+    if (parsed) {
+      addTerm(parsed.repoFullName);
+      addTerm(`${parsed.repoFullName}#${parsed.number}`);
+      addTerm(`#${parsed.number}`);
+      addTerm(parsed.number);
+    }
+  };
+
+  if (typeof run.pullRequestUrl === "string") {
+    addFromUrl(run.pullRequestUrl);
+  }
+
+  if (Array.isArray(run.pullRequests)) {
+    for (const pr of run.pullRequests) {
+      if (!pr) continue;
+      if (typeof pr.url === "string") {
+        addFromUrl(pr.url);
+      }
+      if (typeof pr.repoFullName === "string") {
+        addTerm(pr.repoFullName);
+        if (typeof pr.number === "number" && Number.isFinite(pr.number)) {
+          addTerm(`${pr.repoFullName}#${pr.number}`);
+          addTerm(`#${pr.number}`);
+          addTerm(pr.number);
+        }
+      } else if (typeof pr.number === "number" && Number.isFinite(pr.number)) {
+        addTerm(`#${pr.number}`);
+        addTerm(pr.number);
+      }
+    }
+  }
+
+  if (typeof run.pullRequestNumber === "number" && Number.isFinite(run.pullRequestNumber)) {
+    addTerm(`#${run.pullRequestNumber}`);
+    addTerm(run.pullRequestNumber);
+  }
+
+  return Array.from(terms);
+};
+
 const EMPTY_TEAM_LIST: Team[] = [];
 
 const isDevEnvironment = import.meta.env.DEV;
@@ -105,6 +216,8 @@ const taskCommandItemClassName =
   "flex items-center gap-3 px-3 py-2.5 mx-1 rounded-md cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 data-[selected=true]:bg-neutral-100 dark:data-[selected=true]:bg-neutral-800 data-[selected=true]:text-neutral-900 dark:data-[selected=true]:text-neutral-100 group";
 const placeholderClassName =
   "flex items-center gap-3 px-3 py-2.5 mx-1 rounded-md text-sm text-neutral-500 dark:text-neutral-400";
+
+const MAX_PINNED_TASKS = 9;
 
 const COMMAND_LIST_VIRTUALIZATION_THRESHOLD = 40;
 const COMMAND_LIST_ESTIMATED_ROW_HEIGHT = 44;
@@ -286,6 +399,7 @@ export function CommandBar({
 }: CommandBarProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const hasSearchQuery = search.trim().length > 0;
   const [openedWithShift, setOpenedWithShift] = useState(false);
   const clearCommandInput = useCallback(() => {
     setSearch("");
@@ -662,6 +776,15 @@ export function CommandBar({
     : "Sign in to view teams.";
 
   const allTasks = useQuery(api.tasks.getTasksWithTaskRuns, { teamSlugOrId });
+  const tasksForCommandEntries = useMemo(() => {
+    if (!allTasks || allTasks.length === 0) {
+      return [];
+    }
+    if (hasSearchQuery) {
+      return allTasks;
+    }
+    return allTasks.slice(0, MAX_PINNED_TASKS);
+  }, [allTasks, hasSearchQuery]);
   const reserveLocalWorkspace = useMutation(api.localWorkspaces.reserve);
   const createTask = useMutation(api.tasks.create);
   const failTaskRun = useMutation(api.taskRuns.fail);
@@ -1772,30 +1895,34 @@ export function CommandBar({
     ];
 
     const taskEntries =
-      allTasks && allTasks.length > 0
-        ? allTasks.slice(0, 9).flatMap<CommandListEntry>((task, index) => {
+      tasksForCommandEntries.length > 0
+        ? tasksForCommandEntries.flatMap<CommandListEntry>((task, index) => {
             const title =
               task.pullRequestTitle || task.text || `Task ${index + 1}`;
-            const keywords = compactStrings([
-              title,
-              task.text,
-              task.pullRequestTitle,
-              `task ${index + 1}`,
+            const run = task.selectedTaskRun;
+            const pullRequestKeywords = buildPullRequestSearchTerms(run);
+            const baseKeywords = dedupeStrings([
+              ...compactStrings([
+                title,
+                task.text,
+                task.pullRequestTitle,
+                `task ${index + 1}`,
+              ]),
+              ...pullRequestKeywords,
             ]);
-            const baseSearch = buildSearchText(title, keywords, [
+            const baseSearch = buildSearchText(title, baseKeywords, [
               `${index + 1}`,
             ]);
             const statusLabel = task.isCompleted ? "completed" : "in progress";
             const statusClassName = task.isCompleted
               ? "text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
               : "text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400";
-            const run = task.selectedTaskRun;
 
             const entriesForTask: CommandListEntry[] = [
               {
                 value: `${index + 1}:task:${task._id}`,
                 label: title,
-                keywords,
+                keywords: baseKeywords,
                 searchText: baseSearch,
                 className: taskCommandItemClassName,
                 execute: () => handleSelect(`task:${task._id}`),
@@ -1812,7 +1939,11 @@ export function CommandBar({
             ];
 
             if (run) {
-              const vsKeywords = [...keywords, "vs", "vscode"];
+              const vsKeywords = dedupeStrings([
+                ...baseKeywords,
+                "vs",
+                "vscode",
+              ]);
               entriesForTask.push({
                 value: `${index + 1} vs:task:${task._id}`,
                 label: `${title} (VS)`,
@@ -1835,7 +1966,11 @@ export function CommandBar({
                 ),
               });
 
-              const diffKeywords = [...keywords, "git", "diff"];
+              const diffKeywords = dedupeStrings([
+                ...baseKeywords,
+                "git",
+                "diff",
+              ]);
               entriesForTask.push({
                 value: `${index + 1} git diff:task:${task._id}`,
                 label: `${title} (git diff)`,
@@ -1862,6 +1997,7 @@ export function CommandBar({
             return entriesForTask;
           })
         : [];
+
 
     const electronEntries = isElectron
       ? [
@@ -1923,7 +2059,7 @@ export function CommandBar({
       : [];
 
     return [...baseEntries, ...taskEntries, ...electronEntries];
-  }, [allTasks, handleSelect, stackUser]);
+  }, [handleSelect, stackUser, tasksForCommandEntries]);
 
   const localWorkspaceEntries = useMemo<CommandListEntry[]>(() => {
     return localWorkspaceOptions.map((option) => {
@@ -2053,8 +2189,6 @@ export function CommandBar({
     () => filterCommandItems(search, teamCommandEntries),
     [search, teamCommandEntries]
   );
-
-  const hasSearchQuery = search.trim().length > 0;
 
   const rootSuggestedEntries = useMemo(
     () => selectSuggestedItems(rootSuggestionHistory, filteredRootEntries, 5),
