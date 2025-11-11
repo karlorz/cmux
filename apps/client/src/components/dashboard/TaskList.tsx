@@ -2,9 +2,9 @@ import { api } from "@cmux/convex/api";
 import type { Doc } from "@cmux/convex/dataModel";
 import { useQuery } from "convex/react";
 import clsx from "clsx";
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TaskItem } from "./TaskItem";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Search } from "lucide-react";
 
 type TaskCategoryKey =
   | "workspaces"
@@ -75,13 +75,24 @@ const sortByRecentUpdate = (tasks: Doc<"tasks">[]): Doc<"tasks">[] => {
 };
 
 const categorizeTasks = (
-  tasks: Doc<"tasks">[] | undefined
+  tasks: Doc<"tasks">[] | undefined,
+  searchQuery?: string
 ): Record<TaskCategoryKey, Doc<"tasks">[]> | null => {
   if (!tasks) {
     return null;
   }
   const buckets = createEmptyCategoryBuckets();
+  const query = searchQuery?.toLowerCase().trim();
+
   for (const task of tasks) {
+    // Filter by search query if provided
+    if (query && task.text) {
+      const taskText = task.text.toLowerCase();
+      if (!taskText.includes(query)) {
+        continue;
+      }
+    }
+
     const key = getTaskCategory(task);
     buckets[key].push(task);
   }
@@ -111,9 +122,48 @@ export const TaskList = memo(function TaskList({
     archived: true,
   });
   const [tab, setTab] = useState<"all" | "archived">("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const categorizedTasks = useMemo(() => categorizeTasks(allTasks), [allTasks]);
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Handle Cmd+F / Ctrl+F keyboard shortcut
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "f") {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  const categorizedTasks = useMemo(
+    () => categorizeTasks(allTasks, debouncedSearchQuery),
+    [allTasks, debouncedSearchQuery]
+  );
   const categoryBuckets = categorizedTasks ?? createEmptyCategoryBuckets();
+
+  const filteredArchivedTasks = useMemo(() => {
+    if (!archivedTasks || !debouncedSearchQuery) {
+      return archivedTasks;
+    }
+    const query = debouncedSearchQuery.toLowerCase().trim();
+    return archivedTasks.filter((task) =>
+      task.text?.toLowerCase().includes(query)
+    );
+  }, [archivedTasks, debouncedSearchQuery]);
+
   const [collapsedCategories, setCollapsedCategories] = useState<
     Record<TaskCategoryKey, boolean>
   >(() => createCollapsedCategoryState());
@@ -128,45 +178,60 @@ export const TaskList = memo(function TaskList({
   return (
     <div className="mt-6 w-full">
       <div className="mb-3 px-4">
-        <div className="flex items-end gap-2.5 select-none">
-          <button
-            className={
-              "text-sm font-medium transition-colors " +
-              (tab === "all"
-                ? "text-neutral-900 dark:text-neutral-100"
-                : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200")
-            }
-            onMouseDown={() => setTab("all")}
-            onClick={() => setTab("all")}
-          >
-            Tasks
-          </button>
-          <button
-            className={
-              "text-sm font-medium transition-colors " +
-              (tab === "archived"
-                ? "text-neutral-900 dark:text-neutral-100"
-                : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200")
-            }
-            onMouseDown={() => setTab("archived")}
-            onClick={() => setTab("archived")}
-          >
-            Archived
-          </button>
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-end gap-2.5 select-none">
+            <button
+              className={
+                "text-sm font-medium transition-colors " +
+                (tab === "all"
+                  ? "text-neutral-900 dark:text-neutral-100"
+                  : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200")
+              }
+              onMouseDown={() => setTab("all")}
+              onClick={() => setTab("all")}
+            >
+              Tasks
+            </button>
+            <button
+              className={
+                "text-sm font-medium transition-colors " +
+                (tab === "archived"
+                  ? "text-neutral-900 dark:text-neutral-100"
+                  : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200")
+              }
+              onMouseDown={() => setTab("archived")}
+              onClick={() => setTab("archived")}
+            >
+              Archived
+            </button>
+          </div>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-400 dark:text-neutral-500 pointer-events-none" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Search tasks..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-7 w-64 pl-8 pr-3 text-sm rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-600 transition-shadow"
+            />
+          </div>
         </div>
       </div>
       <div className="flex flex-col gap-1 w-full">
         {tab === "archived" ? (
-          archivedTasks === undefined ? (
+          filteredArchivedTasks === undefined ? (
             <div className="text-sm text-neutral-500 dark:text-neutral-400 py-2 select-none">
               Loading...
             </div>
-          ) : archivedTasks.length === 0 ? (
+          ) : filteredArchivedTasks.length === 0 ? (
             <div className="text-sm text-neutral-500 dark:text-neutral-400 py-2 select-none">
-              No archived tasks
+              {debouncedSearchQuery
+                ? "No matching archived tasks"
+                : "No archived tasks"}
             </div>
           ) : (
-            archivedTasks.map((task) => (
+            filteredArchivedTasks.map((task) => (
               <TaskItem
                 key={task._id}
                 task={task}
