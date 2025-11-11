@@ -1,5 +1,9 @@
 import { OpenWithDropdown } from "@/components/OpenWithDropdown";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useArchiveTask } from "@/hooks/useArchiveTask";
 import { useTaskRename } from "@/hooks/useTaskRename";
 import { isFakeConvexId } from "@/lib/fakeConvexId";
@@ -12,7 +16,16 @@ import { useNavigate } from "@tanstack/react-router";
 import clsx from "clsx";
 import { useQuery as useConvexQuery, useMutation } from "convex/react";
 // Read team slug from path to avoid route type coupling
-import { Archive, ArchiveRestore, Check, Copy, Pencil, Pin } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  Check,
+  Copy,
+  GitMerge,
+  Monitor,
+  Pencil,
+  Pin,
+} from "lucide-react";
 import { memo, useCallback, useMemo } from "react";
 
 interface TaskItemProps {
@@ -173,7 +186,7 @@ export const TaskItem = memo(function TaskItem({
         <ContextMenu.Trigger>
           <div
             className={clsx(
-              "relative flex w-full items-center gap-2.5 px-3 py-2 cursor-default select-none",
+              "relative flex w-full items-center gap-2.5 pl-9 pr-3 py-2 cursor-default select-none",
               isOptimisticUpdate
                 ? "bg-white/50 dark:bg-neutral-900/30 animate-pulse"
                 : "bg-white dark:bg-neutral-900/50 hover:bg-neutral-50/90 dark:hover:bg-neutral-600/60",
@@ -181,16 +194,22 @@ export const TaskItem = memo(function TaskItem({
             )}
             onClick={handleClick}
           >
-            <div
-              className={clsx(
-                "w-1.5 h-1.5 rounded-full flex-shrink-0",
-                task.isCompleted
-                  ? "bg-green-500"
-                  : isOptimisticUpdate
-                    ? "bg-yellow-500"
-                    : "bg-blue-500 animate-pulse"
-              )}
-            />
+            {task.mergeStatus === "pr_merged" ? (
+              <GitMerge className="w-3 h-3 text-purple-500 dark:text-purple-400 flex-shrink-0" />
+            ) : task.isCloudWorkspace || task.isLocalWorkspace ? (
+              <Monitor className="w-3 h-3 text-neutral-500 dark:text-neutral-400 flex-shrink-0" />
+            ) : (
+              <div
+                className={clsx(
+                  "w-1.5 h-1.5 rounded-full flex-shrink-0",
+                  task.isCompleted
+                    ? "bg-green-500"
+                    : isOptimisticUpdate
+                      ? "bg-yellow-500"
+                      : "bg-blue-500 animate-pulse"
+                )}
+              />
+            )}
             <div className="flex-1 min-w-0 flex items-center gap-2">
               {isRenaming ? (
                 <input
@@ -224,19 +243,19 @@ export const TaskItem = memo(function TaskItem({
               )}
               {(task.projectFullName ||
                 (task.baseBranch && task.baseBranch !== "main")) && (
-                  <span className="text-[11px] text-neutral-400 dark:text-neutral-500 flex-shrink-0 ml-auto mr-0">
-                    {task.projectFullName && (
-                      <span>{task.projectFullName.split("/")[1]}</span>
-                    )}
-                    {task.projectFullName &&
-                      task.baseBranch &&
-                      task.baseBranch !== "main" &&
-                      "/"}
-                    {task.baseBranch && task.baseBranch !== "main" && (
-                      <span>{task.baseBranch}</span>
-                    )}
-                  </span>
-                )}
+                <span className="text-[11px] text-neutral-400 dark:text-neutral-500 flex-shrink-0 ml-auto mr-0">
+                  {task.projectFullName && (
+                    <span>{task.projectFullName.split("/")[1]}</span>
+                  )}
+                  {task.projectFullName &&
+                    task.baseBranch &&
+                    task.baseBranch !== "main" &&
+                    "/"}
+                  {task.baseBranch && task.baseBranch !== "main" && (
+                    <span>{task.baseBranch}</span>
+                  )}
+                </span>
+              )}
             </div>
             {task.updatedAt && (
               <span className="text-[11px] text-neutral-400 dark:text-neutral-500 flex-shrink-0 ml-auto mr-0 tabular-nums">
@@ -249,7 +268,7 @@ export const TaskItem = memo(function TaskItem({
           </div>
         </ContextMenu.Trigger>
         {renameError && (
-          <div className="mt-1 px-3 text-[11px] text-red-500 dark:text-red-400">
+          <div className="mt-1 pl-9 pr-3 text-[11px] text-red-500 dark:text-red-400">
             {renameError}
           </div>
         )}

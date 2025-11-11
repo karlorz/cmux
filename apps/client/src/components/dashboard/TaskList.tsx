@@ -73,12 +73,12 @@ const sortByRecentUpdate = (tasks: Doc<"tasks">[]): Doc<"tasks">[] => {
   }
   return [...tasks].sort(
     (a, b) =>
-      (b.updatedAt ?? b.createdAt ?? 0) - (a.updatedAt ?? a.createdAt ?? 0),
+      (b.updatedAt ?? b.createdAt ?? 0) - (a.updatedAt ?? a.createdAt ?? 0)
   );
 };
 
 const categorizeTasks = (
-  tasks: Doc<"tasks">[] | undefined,
+  tasks: Doc<"tasks">[] | undefined
 ): Record<TaskCategoryKey, Doc<"tasks">[]> | null => {
   if (!tasks) {
     return null;
@@ -95,7 +95,7 @@ const categorizeTasks = (
 };
 
 const createCollapsedCategoryState = (
-  defaultValue = false,
+  defaultValue = false
 ): Record<TaskCategoryKey, boolean> => ({
   workspaces: defaultValue,
   ready_to_review: defaultValue,
@@ -115,12 +115,8 @@ export const TaskList = memo(function TaskList({
   });
   const [tab, setTab] = useState<"all" | "archived">("all");
 
-  const categorizedTasks = useMemo(
-    () => categorizeTasks(allTasks),
-    [allTasks],
-  );
-  const categoryBuckets =
-    categorizedTasks ?? createEmptyCategoryBuckets();
+  const categorizedTasks = useMemo(() => categorizeTasks(allTasks), [allTasks]);
+  const categoryBuckets = categorizedTasks ?? createEmptyCategoryBuckets();
   const [collapsedCategories, setCollapsedCategories] = useState<
     Record<TaskCategoryKey, boolean>
   >(() => createCollapsedCategoryState());
@@ -186,7 +182,7 @@ export const TaskList = memo(function TaskList({
             Loading...
           </div>
         ) : (
-          <div className="mt-1 w-full">
+          <div className="mt-1 w-full flex flex-col space-y-[-1px] transform -translate-y-px">
             {CATEGORY_ORDER.map((categoryKey) => (
               <TaskCategorySection
                 key={categoryKey}
@@ -218,12 +214,20 @@ function TaskCategorySection({
   onToggle: (key: TaskCategoryKey) => void;
 }) {
   const meta = CATEGORY_META[categoryKey];
-  const handleToggle = useCallback(() => onToggle(categoryKey), [categoryKey, onToggle]);
+  const handleToggle = useCallback(
+    () => onToggle(categoryKey),
+    [categoryKey, onToggle]
+  );
   const contentId = `task-category-${categoryKey}`;
-  const toggleLabel = collapsed ? `Expand ${meta.title}` : `Collapse ${meta.title}`;
+  const toggleLabel = collapsed
+    ? `Expand ${meta.title}`
+    : `Collapse ${meta.title}`;
   return (
     <div className="w-full">
-      <div className="sticky top-0 z-10 flex w-full border-y border-neutral-200 dark:border-neutral-800 bg-neutral-100 dark:bg-neutral-800 select-none">
+      <div
+        className="sticky top-0 z-10 flex w-full border-y border-neutral-200 dark:border-neutral-900 bg-neutral-100 dark:bg-neutral-800 select-none"
+        onDoubleClick={handleToggle}
+      >
         <div className="flex w-full items-center pr-4">
           <button
             type="button"
@@ -236,7 +240,7 @@ function TaskCategorySection({
             <ChevronRight
               className={clsx(
                 "h-3 w-3 transition-transform duration-200",
-                !collapsed && "rotate-90",
+                !collapsed && "rotate-90"
               )}
               aria-hidden="true"
             />
@@ -249,26 +253,17 @@ function TaskCategorySection({
           </div>
         </div>
       </div>
-      {collapsed
-        ? null
-        : tasks.length > 0 ? (
-            <div
-              id={contentId}
-              className="flex flex-col w-full"
-            >
-              {tasks.map((task) => (
-                <TaskItem
-                  key={task._id}
-                  task={task}
-                  teamSlugOrId={teamSlugOrId}
-                />
-              ))}
-            </div>
-          ) : (
-            <p className="mt-3 text-sm font-medium text-neutral-500 dark:text-neutral-400 select-none">
-              {meta.emptyLabel}
-            </p>
-          )}
+      {collapsed ? null : tasks.length > 0 ? (
+        <div id={contentId} className="flex flex-col w-full">
+          {tasks.map((task) => (
+            <TaskItem key={task._id} task={task} teamSlugOrId={teamSlugOrId} />
+          ))}
+        </div>
+      ) : (
+        <p className="mt-3 text-sm font-medium text-neutral-500 dark:text-neutral-400 select-none">
+          {meta.emptyLabel}
+        </p>
+      )}
     </div>
   );
 }
