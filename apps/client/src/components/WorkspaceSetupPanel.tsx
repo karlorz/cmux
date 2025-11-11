@@ -1,11 +1,16 @@
 import { parseEnvBlock } from "@/lib/parseEnvBlock";
 import { ensureInitialEnvVars, type EnvVar } from "@/types/environment";
 import { formatEnvVarsContent } from "@cmux/shared/utils/format-env-vars-content";
+import { type WorkspaceConfigResponse } from "@cmux/www-openapi-client";
 import {
   getApiWorkspaceConfigsOptions,
   postApiWorkspaceConfigsMutation,
 } from "@cmux/www-openapi-client/react-query";
-import { useQuery, useMutation as useRQMutation } from "@tanstack/react-query";
+import {
+  useQuery,
+  useMutation as useRQMutation,
+  type UseQueryResult,
+} from "@tanstack/react-query";
 import { AlertTriangle, ChevronDown, ChevronRight, Minus, Plus } from "lucide-react";
 import {
   useCallback,
@@ -28,7 +33,7 @@ export function WorkspaceSetupPanel({
   teamSlugOrId,
   projectFullName,
 }: WorkspaceSetupPanelProps) {
-  const configQuery = useQuery({
+  const configQuery: UseQueryResult<WorkspaceConfigResponse | null, Error> = useQuery({
     ...getApiWorkspaceConfigsOptions({
       query: {
         teamSlugOrId,
@@ -51,6 +56,7 @@ export function WorkspaceSetupPanel({
   });
 
   const hasInitializedFromServerRef = useRef(false);
+  const hasShownLoadErrorRef = useRef(false);
 
   const [isExpanded, setIsExpanded] = useState(() => {
     const saved = localStorage.getItem('workspace-setup-expanded');
@@ -72,6 +78,36 @@ export function WorkspaceSetupPanel({
       return next;
     });
   }, []);
+
+  const loadErrorMessage = useMemo(() => {
+    const rawError = configQuery.error as unknown;
+    if (!rawError) return null;
+    if (rawError instanceof Error) {
+      return rawError.message || "Failed to load workspace setup";
+    }
+    if (typeof rawError === "string") {
+      return rawError;
+    }
+    return "Failed to load workspace setup";
+  }, [configQuery.error]);
+
+  useEffect(() => {
+    if (!configQuery.error) {
+      hasShownLoadErrorRef.current = false;
+      return;
+    }
+    if (hasShownLoadErrorRef.current) {
+      return;
+    }
+    console.warn(
+      "[WorkspaceSetupPanel] Failed to load saved workspace setup",
+      configQuery.error,
+    );
+    toast.error(
+      "Can't load saved workspace setup right now. You can still edit and save new values.",
+    );
+    hasShownLoadErrorRef.current = true;
+  }, [configQuery.error]);
 
   useEffect(() => {
     if (configQuery.isPending) return;
@@ -144,7 +180,9 @@ export function WorkspaceSetupPanel({
   const isConfigured =
     originalConfigRef.current.script.length > 0 ||
     originalConfigRef.current.envContent.length > 0;
-  const shouldShowSetupWarning = !configQuery.isPending && !isConfigured;
+  const loadFailed = Boolean(configQuery.error);
+  const shouldShowSetupWarning =
+    !configQuery.isPending && !loadFailed && !isConfigured;
 
   const handleSave = useCallback(() => {
     if (!projectFullName) return;
@@ -218,10 +256,6 @@ export function WorkspaceSetupPanel({
     [updateEnvVars],
   );
 
-  if (configQuery.error) {
-    throw configQuery.error;
-  }
-
   if (!projectFullName) {
     return null;
   }
@@ -293,6 +327,39 @@ export function WorkspaceSetupPanel({
               </p>
             ) : (
               <div className="mt-1.5 space-y-1">
+                {configQuery.isError ? (
+                  <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle
+                          className="mt-0.5 h-3.5 w-3.5 text-red-600 dark:text-red-400"
+                          aria-hidden="true"
+                        />
+                        <div>
+                          <p className="font-medium text-[11px]">
+                            Unable to load saved workspace setup.
+                          </p>
+                          <p className="text-[11px] text-red-700 dark:text-red-200">
+                            {loadErrorMessage ?? "Failed to load workspace setup"}
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0"
+                        onClick={() => configQuery.refetch()}
+                        disabled={configQuery.isRefetching}
+                      >
+                        {configQuery.isRefetching ? "Retrying…" : "Retry"}
+                      </Button>
+                    </div>
+                    <p className="mt-1 text-[11px] text-red-700/90 dark:text-red-200/80">
+                      You can continue editing locally; saving will recreate the setup once the service recovers.
+                    </p>
+                  </div>
+                ) : null}
                 {/* Setup Script Section */}
                 <div className="space-y-1 pt-1">
                   <div className="flex flex-col gap-0.5">

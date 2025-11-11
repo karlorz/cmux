@@ -9,6 +9,7 @@ import { HTTPException } from "hono/http-exception";
 import { randomBytes } from "node:crypto";
 
 export const workspaceConfigsRouter = new OpenAPIHono();
+const WORKSPACE_CONFIGS_LOG_PREFIX = "[workspace-configs]";
 
 const WorkspaceConfigResponse = z
   .object({
@@ -79,16 +80,47 @@ workspaceConfigsRouter.openapi(
     });
 
     const convex = getConvex({ accessToken });
-    const config = await convex.query(api.workspaceConfigs.get, {
-      teamSlugOrId: query.teamSlugOrId,
-      projectFullName: query.projectFullName,
-    });
+    const config = await convex
+      .query(api.workspaceConfigs.get, {
+        teamSlugOrId: query.teamSlugOrId,
+        projectFullName: query.projectFullName,
+      })
+      .catch((error) => {
+        console.error(
+          `${WORKSPACE_CONFIGS_LOG_PREFIX}: Failed to query workspace config`,
+          {
+            teamSlugOrId: query.teamSlugOrId,
+            projectFullName: query.projectFullName,
+            error,
+          },
+        );
+        throw new HTTPException(500, {
+          message: `Unable to load workspace config for ${query.projectFullName} (team ${query.teamSlugOrId})`,
+          cause: error,
+        });
+      });
 
     if (!config) {
       return c.json(null);
     }
 
-    const envVarsContent = await loadEnvVarsContent(config.dataVaultKey);
+    const envVarsContent = await loadEnvVarsContent(
+      config.dataVaultKey,
+    ).catch((error) => {
+      console.error(
+        `${WORKSPACE_CONFIGS_LOG_PREFIX}: Failed to load env vars for workspace config`,
+        {
+          teamSlugOrId: query.teamSlugOrId,
+          projectFullName: config.projectFullName,
+          dataVaultKey: config.dataVaultKey,
+          error,
+        },
+      );
+      throw new HTTPException(500, {
+        message: `Unable to read workspace secrets for ${config.projectFullName}`,
+        cause: error,
+      });
+    });
 
     return c.json({
       projectFullName: config.projectFullName,
@@ -140,14 +172,42 @@ workspaceConfigsRouter.openapi(
     });
 
     const convex = getConvex({ accessToken });
-    const existing = await convex.query(api.workspaceConfigs.get, {
-      teamSlugOrId: body.teamSlugOrId,
-      projectFullName: body.projectFullName,
-    });
+    const existing = await convex
+      .query(api.workspaceConfigs.get, {
+        teamSlugOrId: body.teamSlugOrId,
+        projectFullName: body.projectFullName,
+      })
+      .catch((error) => {
+        console.error(
+          `${WORKSPACE_CONFIGS_LOG_PREFIX}: Failed to read existing workspace config`,
+          {
+            teamSlugOrId: body.teamSlugOrId,
+            projectFullName: body.projectFullName,
+            error,
+          },
+        );
+        throw new HTTPException(500, {
+          message: `Unable to load existing workspace config for ${body.projectFullName} (team ${body.teamSlugOrId})`,
+          cause: error,
+        });
+      });
 
-    const store = await stackServerAppJs.getDataVaultStore(
-      "cmux-snapshot-envs",
-    );
+    const store = await stackServerAppJs
+      .getDataVaultStore("cmux-snapshot-envs")
+      .catch((error) => {
+        console.error(
+          `${WORKSPACE_CONFIGS_LOG_PREFIX}: Failed to access data vault store`,
+          {
+            teamSlugOrId: body.teamSlugOrId,
+            projectFullName: body.projectFullName,
+            error,
+          },
+        );
+        throw new HTTPException(500, {
+          message: `Unable to access secure workspace storage for ${body.projectFullName}`,
+          cause: error,
+        });
+      });
     const envVarsContent = body.envVarsContent ?? "";
     let dataVaultKey = existing?.dataVaultKey;
     if (!dataVaultKey) {
@@ -159,18 +219,42 @@ workspaceConfigsRouter.openapi(
         secret: env.STACK_DATA_VAULT_SECRET,
       });
     } catch (error) {
+      console.error(
+        `${WORKSPACE_CONFIGS_LOG_PREFIX}: Failed to persist env vars`,
+        {
+          teamSlugOrId: body.teamSlugOrId,
+          projectFullName: body.projectFullName,
+          dataVaultKey,
+          error,
+        },
+      );
       throw new HTTPException(500, {
-        message: "Failed to persist environment variables",
+        message: `Unable to persist env vars for ${body.projectFullName}`,
         cause: error,
       });
     }
 
-    await convex.mutation(api.workspaceConfigs.upsert, {
-      teamSlugOrId: body.teamSlugOrId,
-      projectFullName: body.projectFullName,
-      maintenanceScript: body.maintenanceScript,
-      dataVaultKey,
-    });
+    await convex
+      .mutation(api.workspaceConfigs.upsert, {
+        teamSlugOrId: body.teamSlugOrId,
+        projectFullName: body.projectFullName,
+        maintenanceScript: body.maintenanceScript,
+        dataVaultKey,
+      })
+      .catch((error) => {
+        console.error(
+          `${WORKSPACE_CONFIGS_LOG_PREFIX}: Failed to upsert workspace config`,
+          {
+            teamSlugOrId: body.teamSlugOrId,
+            projectFullName: body.projectFullName,
+            error,
+          },
+        );
+        throw new HTTPException(500, {
+          message: `Unable to save workspace config for ${body.projectFullName}`,
+          cause: error,
+        });
+      });
 
     return c.json({
       projectFullName: body.projectFullName,
