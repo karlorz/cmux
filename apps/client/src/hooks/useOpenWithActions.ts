@@ -92,6 +92,10 @@ export function useOpenWithActions({
               path: worktreePath,
             },
             (response) => {
+              if (!response) {
+                reject(new Error("No response from server"));
+                return;
+              }
               if (response.success) {
                 resolve();
               } else {

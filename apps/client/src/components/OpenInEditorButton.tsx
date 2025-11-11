@@ -92,6 +92,10 @@ export function OpenInEditorButton({ workspacePath }: OpenInEditorButtonProps) {
           path: workspacePath,
         },
         (response) => {
+          if (!response) {
+            console.error("Failed to open editor: No response from server");
+            return;
+          }
           if (!response.success) {
             console.error("Failed to open editor:", response.error);
           }
