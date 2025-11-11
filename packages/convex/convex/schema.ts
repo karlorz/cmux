@@ -953,6 +953,109 @@ const convexSchema = defineSchema({
     .index("by_statusId", ["statusId"])
     .index("by_sha_context", ["sha", "context", "updatedAt"])
     .index("by_sha", ["sha", "updatedAt"]),
+
+  // Preview configurations for teams (used for automatic PR screenshots)
+  previewConfigs: defineTable({
+    teamId: v.string(),
+    userId: v.string(), // User who created the config
+    name: v.string(), // Human-friendly name for this config
+
+    // Selected repositories to apply this config to
+    selectedRepos: v.array(v.string()), // Array of repo fullNames (e.g., ["owner/repo1", "owner/repo2"])
+
+    // Scripts to run in the sandbox
+    maintenanceScript: v.optional(v.string()), // Script to run once on setup
+    devScript: v.optional(v.string()), // Script to start dev server
+
+    // Environment configuration
+    dataVaultKey: v.string(), // Key for Stack DataBook (stores encrypted env vars)
+    browser: v.optional(v.string()), // Browser to use for screenshots (e.g., "chrome", "firefox")
+    exposedPorts: v.optional(v.array(v.number())), // Ports to expose from dev server
+
+    // Status and metadata
+    isActive: v.optional(v.boolean()), // Whether this config is active
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_team", ["teamId", "createdAt"])
+    .index("by_team_user", ["teamId", "userId"])
+    .index("by_team_active", ["teamId", "isActive", "createdAt"]),
+
+  // Preview jobs triggered by PR webhooks
+  previewJobs: defineTable({
+    teamId: v.string(),
+    previewConfigId: v.id("previewConfigs"),
+
+    // PR information
+    repoFullName: v.string(),
+    prNumber: v.number(),
+    prTitle: v.string(),
+    baseBranch: v.string(),
+    headBranch: v.string(),
+    baseSha: v.string(),
+    headSha: v.string(),
+
+    // Job status
+    state: v.union(
+      v.literal("pending"),
+      v.literal("running"),
+      v.literal("completed"),
+      v.literal("failed")
+    ),
+
+    // Sandbox information
+    sandboxInstanceId: v.optional(v.string()), // morphvm_* prefix for Morph instances
+
+    // Timestamps
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+
+    // Results
+    screenshotSetId: v.optional(v.id("previewScreenshotSets")),
+    errorMessage: v.optional(v.string()),
+
+    // GitHub comment tracking
+    githubCommentId: v.optional(v.number()), // GitHub comment ID for the preview comment
+    githubCommentedAt: v.optional(v.number()),
+  })
+    .index("by_team", ["teamId", "createdAt"])
+    .index("by_config", ["previewConfigId", "createdAt"])
+    .index("by_team_repo_pr", ["teamId", "repoFullName", "prNumber", "createdAt"])
+    .index("by_state", ["state", "createdAt"])
+    .index("by_repo_pr", ["repoFullName", "prNumber", "createdAt"]),
+
+  // Screenshot sets for preview jobs
+  previewScreenshotSets: defineTable({
+    previewJobId: v.id("previewJobs"),
+    teamId: v.string(),
+    repoFullName: v.string(),
+    prNumber: v.number(),
+    commitSha: v.string(),
+
+    status: v.union(
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("skipped")
+    ),
+
+    images: v.array(
+      v.object({
+        storageId: v.id("_storage"),
+        mimeType: v.string(),
+        fileName: v.optional(v.string()),
+        url: v.optional(v.string()), // Public URL for the screenshot
+        description: v.optional(v.string()), // Description of what's in the screenshot
+      })
+    ),
+
+    capturedAt: v.number(),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_job", ["previewJobId", "capturedAt"])
+    .index("by_team_repo_pr", ["teamId", "repoFullName", "prNumber", "capturedAt"]),
 });
 
 export default convexSchema;
