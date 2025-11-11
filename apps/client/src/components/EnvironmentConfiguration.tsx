@@ -51,6 +51,8 @@ import {
 import TextareaAutosize from "react-textarea-autosize";
 import { toast } from "sonner";
 
+const MASKED_ENV_VALUE = "••••••••••••••••";
+
 export function EnvironmentConfiguration({
   selectedRepos,
   teamSlugOrId,
@@ -877,7 +879,7 @@ export function EnvironmentConfiguration({
                       className="w-full min-w-0 self-start rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700"
                     />
                     <TextareaAutosize
-                      value={row.value}
+                      value={areEnvValuesHidden ? MASKED_ENV_VALUE : row.value}
                       onChange={(e) => {
                         const v = e.target.value;
                         updateEnvVars((prev) => {
@@ -889,10 +891,9 @@ export function EnvironmentConfiguration({
                       placeholder="I9JU23NF394R6HH"
                       minRows={1}
                       maxRows={10}
-                      className={clsx(
-                        "w-full min-w-0 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 resize-none transition",
-                        areEnvValuesHidden && "blur-sm"
-                      )}
+                      readOnly={areEnvValuesHidden}
+                      aria-readonly={areEnvValuesHidden || undefined}
+                      className="w-full min-w-0 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 resize-none transition"
                     />
                     <div className="self-start flex items-center justify-end w-[44px]">
                       <button

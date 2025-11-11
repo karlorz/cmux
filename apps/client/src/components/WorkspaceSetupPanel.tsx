@@ -18,6 +18,8 @@ import {
 import { toast } from "sonner";
 import { Button } from "./ui/button";
 
+const MASKED_ENV_VALUE = "••••••••••••••••";
+
 type WorkspaceSetupPanelProps = {
   teamSlugOrId: string;
   projectFullName: string | null;
@@ -377,7 +379,7 @@ export function WorkspaceSetupPanel({
                           />
                           <input
                             type="text"
-                            value={row.value}
+                            value={areEnvValuesHidden ? MASKED_ENV_VALUE : row.value}
                             onChange={(event) => {
                               const value = event.target.value;
                               updateEnvVars((prev) => {
@@ -387,7 +389,9 @@ export function WorkspaceSetupPanel({
                               });
                             }}
                             placeholder="secret-value"
-                            className={`w-full rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-[11px] font-mono text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-600 dark:focus:border-neutral-600 transition ${areEnvValuesHidden ? "blur-sm" : ""}`}
+                            readOnly={areEnvValuesHidden}
+                            aria-readonly={areEnvValuesHidden || undefined}
+                            className="w-full rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-[11px] font-mono text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-600 dark:focus:border-neutral-600 transition"
                           />
                           <button
                             type="button"
