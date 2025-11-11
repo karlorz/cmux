@@ -31,6 +31,8 @@ import type { PersistentIframeStatus } from "@/components/persistent-iframe";
 import {
   ArrowLeft,
   Code2,
+  Eye,
+  EyeOff,
   Loader2,
   Minus,
   Monitor,
@@ -109,6 +111,7 @@ export function EnvironmentConfiguration({
   const [envVars, setEnvVars] = useState<EnvVar[]>(() =>
     ensureInitialEnvVars(persistedState?.envVars ?? initialEnvVars)
   );
+  const [hiddenVars, setHiddenVars] = useState<Set<number>>(new Set());
   const [maintenanceScript, setMaintenanceScript] = useState(
     () => persistedState?.maintenanceScript ?? initialMaintenanceScript
   );
@@ -141,6 +144,17 @@ export function EnvironmentConfiguration({
     },
     [persistConfig]
   );
+  const toggleVarVisibility = useCallback((index: number) => {
+    setHiddenVars((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  }, []);
   const updateMaintenanceScript = useCallback(
     (value: string) => {
       setMaintenanceScript(value);
@@ -783,6 +797,7 @@ export function EnvironmentConfiguration({
                           )
                           .map((r) => [r.name, r] as const)
                       );
+                      const startIndex = map.size;
                       for (const it of items) {
                         if (!it.name) continue;
                         const existing = map.get(it.name);
@@ -801,6 +816,16 @@ export function EnvironmentConfiguration({
                       }
                       const next = Array.from(map.values());
                       next.push({ name: "", value: "", isSecret: true });
+                      // Hide newly pasted variables with values
+                      setHiddenVars((prevHidden) => {
+                        const nextHidden = new Set(prevHidden);
+                        for (let i = startIndex; i < next.length - 1; i++) {
+                          if (next[i]!.value.trim().length > 0) {
+                            nextHidden.add(i);
+                          }
+                        }
+                        return nextHidden;
+                      });
                       setPendingFocusIndex(next.length - 1);
                       return next;
                     });
@@ -811,22 +836,28 @@ export function EnvironmentConfiguration({
               <div
                 className="grid gap-3 text-xs text-neutral-500 dark:text-neutral-500 items-center pb-1"
                 style={{
-                  gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.4fr) 44px",
+                  gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.4fr) 44px 44px",
                 }}
               >
                 <span>Key</span>
                 <span>Value</span>
                 <span className="w-[44px]" />
+                <span className="w-[44px]" />
               </div>
 
               <div className="space-y-2">
-                {envVars.map((row, idx) => (
+                {envVars.map((row, idx) => {
+                  const isHidden = hiddenVars.has(idx);
+                  const hasValue = row.value.trim().length > 0;
+                  const displayValue = isHidden && hasValue ? "••••••••••••••••" : row.value;
+
+                  return (
                   <div
                     key={idx}
                     className="grid gap-3 items-center"
                     style={{
                       gridTemplateColumns:
-                        "minmax(0, 1fr) minmax(0, 1.4fr) 44px",
+                        "minmax(0, 1fr) minmax(0, 1.4fr) 44px 44px",
                     }}
                   >
                     <input
@@ -847,8 +878,9 @@ export function EnvironmentConfiguration({
                       className="w-full min-w-0 self-start rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700"
                     />
                     <TextareaAutosize
-                      value={row.value}
+                      value={displayValue}
                       onChange={(e) => {
+                        if (isHidden) return;
                         const v = e.target.value;
                         updateEnvVars((prev) => {
                           const next = [...prev];
@@ -856,11 +888,35 @@ export function EnvironmentConfiguration({
                           return next;
                         });
                       }}
+                      onFocus={() => {
+                        if (isHidden && hasValue) {
+                          toggleVarVisibility(idx);
+                        }
+                      }}
                       placeholder="I9JU23NF394R6HH"
                       minRows={1}
                       maxRows={10}
-                      className="w-full min-w-0 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 resize-none"
+                      readOnly={isHidden && hasValue}
+                      className={clsx(
+                        "w-full min-w-0 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 resize-none",
+                        isHidden && hasValue && "cursor-pointer select-none"
+                      )}
                     />
+                    <div className="self-start flex items-center justify-end w-[44px]">
+                      <button
+                        type="button"
+                        onClick={() => toggleVarVisibility(idx)}
+                        disabled={!hasValue}
+                        className="h-10 w-[44px] rounded-md border border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 grid place-items-center hover:bg-neutral-50 dark:hover:bg-neutral-900 disabled:opacity-30 disabled:cursor-not-allowed"
+                        aria-label={isHidden ? "Show value" : "Hide value"}
+                      >
+                        {isHidden ? (
+                          <Eye className="w-4 h-4" />
+                        ) : (
+                          <EyeOff className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
                     <div className="self-start flex items-center justify-end w-[44px]">
                       <button
                         type="button"
@@ -871,6 +927,20 @@ export function EnvironmentConfiguration({
                               ? next
                               : [{ name: "", value: "", isSecret: true }];
                           });
+                          setHiddenVars((prev) => {
+                            const next = new Set(prev);
+                            next.delete(idx);
+                            // Adjust indices for remaining items
+                            const adjusted = new Set<number>();
+                            for (const i of next) {
+                              if (i > idx) {
+                                adjusted.add(i - 1);
+                              } else if (i < idx) {
+                                adjusted.add(i);
+                              }
+                            }
+                            return adjusted;
+                          });
                         }}
                         className="h-10 w-[44px] rounded-md border border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 grid place-items-center hover:bg-neutral-50 dark:hover:bg-neutral-900"
                         aria-label="Remove variable"
@@ -879,7 +949,8 @@ export function EnvironmentConfiguration({
                       </button>
                     </div>
                   </div>
-                ))}
+                );
+                })}
               </div>
 
               <div className="pt-2">
