@@ -37,6 +37,9 @@ export interface VSCodeClientToServerEvents {
   // Health check
   "vscode:ping": (callback: (data: { timestamp: number }) => void) => void;
 
+  // Readiness signal from VSCode extension to worker
+  "vscode:ready": (data: { timestamp: number }) => void;
+
   // Create terminal
   "vscode:create-terminal": (
     data: {

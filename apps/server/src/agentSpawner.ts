@@ -573,7 +573,7 @@ export async function spawnAgent(
             `[AgentSpawner] Timeout waiting for worker connection`
           );
           resolve();
-        }, 30000); // 30 second timeout
+        }, 90000); // 90 second timeout (increased from 30s to allow for extension installation)
 
         vscodeInstance.once("worker-connected", () => {
           clearTimeout(timeout);
@@ -886,10 +886,10 @@ exit $EXIT_CODE
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         serverLogger.error(
-          `[AgentSpawner] Timeout waiting for terminal creation response after 30s`
+          `[AgentSpawner] Timeout waiting for terminal creation response after 90s`
         );
         reject(new Error("Timeout waiting for terminal creation"));
-      }, 30000);
+      }, 90000); // 90 second timeout (increased from 30s to allow for VSCode readiness)
 
       workerSocket.emit(
         "worker:create-terminal",

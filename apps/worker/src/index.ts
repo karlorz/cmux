@@ -153,6 +153,10 @@ let mainServerSocket: Socket<
   WorkerToServerEvents
 > | null = null;
 
+// Track VSCode extension readiness
+let vscodeExtensionReady = false;
+const vscodeReadyCallbacks: Array<() => void> = [];
+
 // Track active file watchers by taskRunId
 const activeFileWatchers: Map<string, FileWatcher> = new Map();
 
@@ -383,6 +387,27 @@ managementIO.on("connection", (socket) => {
             );
           }
         }
+      }
+
+      log(
+        "INFO",
+        "Waiting for VSCode extension to be ready before creating terminal",
+        {
+          terminalId: validated.terminalId,
+          vscodeExtensionReady,
+        },
+        WORKER_ID
+      );
+
+      // Wait for VSCode extension to be ready (60s timeout)
+      const isReady = await waitForVSCodeReady(60000);
+      if (!isReady) {
+        log(
+          "WARNING",
+          "VSCode extension not ready, proceeding with terminal creation anyway",
+          { terminalId: validated.terminalId },
+          WORKER_ID
+        );
       }
 
       log(
@@ -914,6 +939,38 @@ managementIO.on("connection", (socket) => {
   });
 });
 
+/**
+ * Wait for VSCode extension to be ready
+ */
+function waitForVSCodeReady(timeoutMs: number = 60000): Promise<boolean> {
+  if (vscodeExtensionReady) {
+    log("INFO", "VSCode extension already ready");
+    return Promise.resolve(true);
+  }
+
+  return new Promise((resolve) => {
+    log("INFO", `Waiting for VSCode extension to be ready (timeout: ${timeoutMs}ms)`);
+
+    const timeout = setTimeout(() => {
+      log("WARNING", "Timeout waiting for VSCode extension readiness");
+      // Remove callback if still in array
+      const idx = vscodeReadyCallbacks.indexOf(callback);
+      if (idx !== -1) {
+        vscodeReadyCallbacks.splice(idx, 1);
+      }
+      resolve(false);
+    }, timeoutMs);
+
+    const callback = () => {
+      clearTimeout(timeout);
+      log("INFO", "VSCode extension is ready");
+      resolve(true);
+    };
+
+    vscodeReadyCallbacks.push(callback);
+  });
+}
+
 // Client socket server
 vscodeIO.on("connection", (socket) => {
   console.log(
@@ -923,8 +980,22 @@ vscodeIO.on("connection", (socket) => {
     socket.handshake.headers.referer || "unknown"
   );
 
+  // Handle VSCode readiness signal
+  socket.on("vscode:ready", (data) => {
+    log("INFO", "Received vscode:ready signal", data);
+    vscodeExtensionReady = true;
+
+    // Call all waiting callbacks
+    while (vscodeReadyCallbacks.length > 0) {
+      const callback = vscodeReadyCallbacks.shift();
+      if (callback) callback();
+    }
+  });
+
   socket.on("disconnect", () => {
     console.log(`Client disconnected from worker ${WORKER_ID}:`, socket.id);
+    // Reset readiness state on disconnect
+    vscodeExtensionReady = false;
   });
 });
 

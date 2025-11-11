@@ -346,6 +346,12 @@ async function setupDefaultTerminal() {
     // await vscode.commands.executeCommand("workbench.action.terminal.focus");
 
     log("Terminal setup complete");
+
+    // Notify worker that VSCode is fully ready
+    if (workerSocket && workerSocket.connected) {
+      log("Emitting vscode-ready signal to worker");
+      workerSocket.emit("vscode:ready", { timestamp: Date.now() });
+    }
   }, 100);
 }
 
