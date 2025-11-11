@@ -660,6 +660,7 @@ export function setupSocketHandlers(
           projectFullName,
           repoUrl: explicitRepoUrl,
           branch: requestedBranch,
+          prNumber,
           taskId: providedTaskId,
           taskRunId: providedTaskRunId,
           workspaceName: providedWorkspaceName,
@@ -951,24 +952,70 @@ export function setupSocketHandlers(
             if (cleanupWorkspace) {
               await cleanupWorkspace();
             }
-            const cloneArgs = ["clone"];
-            if (branch) {
-              cloneArgs.push("--branch", branch, "--single-branch");
-            }
-            cloneArgs.push(repoUrl, resolvedWorkspacePath);
-            try {
-              await execFileAsync("git", cloneArgs, { cwd: workspaceRoot });
-            } catch (error) {
-              if (cleanupWorkspace) {
-                await cleanupWorkspace();
+
+            // Handle PR checkout differently
+            if (prNumber && projectFullName) {
+              // Clone the repo first without branch specification
+              const cloneArgs = ["clone", repoUrl, resolvedWorkspacePath];
+              try {
+                await execFileAsync("git", cloneArgs, { cwd: workspaceRoot });
+              } catch (error) {
+                if (cleanupWorkspace) {
+                  await cleanupWorkspace();
+                }
+                const execErr = isExecError(error) ? error : null;
+                const message =
+                  execErr?.stderr?.trim() ||
+                  (error instanceof Error ? error.message : "Git clone failed");
+                throw new Error(
+                  message ? `Git clone failed: ${message}` : "Git clone failed"
+                );
               }
-              const execErr = isExecError(error) ? error : null;
-              const message =
-                execErr?.stderr?.trim() ||
-                (error instanceof Error ? error.message : "Git clone failed");
-              throw new Error(
-                message ? `Git clone failed: ${message}` : "Git clone failed"
-              );
+
+              // Use gh pr checkout to check out the PR
+              try {
+                await execFileAsync(
+                  "gh",
+                  ["pr", "checkout", String(prNumber)],
+                  { cwd: resolvedWorkspacePath }
+                );
+              } catch (error) {
+                if (cleanupWorkspace) {
+                  await cleanupWorkspace();
+                }
+                const execErr = isExecError(error) ? error : null;
+                const message =
+                  execErr?.stderr?.trim() ||
+                  (error instanceof Error
+                    ? error.message
+                    : "PR checkout failed");
+                throw new Error(
+                  message
+                    ? `gh pr checkout failed: ${message}`
+                    : "gh pr checkout failed"
+                );
+              }
+            } else {
+              // Normal clone with optional branch
+              const cloneArgs = ["clone"];
+              if (branch) {
+                cloneArgs.push("--branch", branch, "--single-branch");
+              }
+              cloneArgs.push(repoUrl, resolvedWorkspacePath);
+              try {
+                await execFileAsync("git", cloneArgs, { cwd: workspaceRoot });
+              } catch (error) {
+                if (cleanupWorkspace) {
+                  await cleanupWorkspace();
+                }
+                const execErr = isExecError(error) ? error : null;
+                const message =
+                  execErr?.stderr?.trim() ||
+                  (error instanceof Error ? error.message : "Git clone failed");
+                throw new Error(
+                  message ? `Git clone failed: ${message}` : "Git clone failed"
+                );
+              }
             }
 
             try {
@@ -1128,6 +1175,8 @@ export function setupSocketHandlers(
           environmentId,
           projectFullName,
           repoUrl,
+          branch,
+          prNumber,
           taskId: providedTaskId,
         } = parsed.data;
         const teamSlugOrId = requestedTeamSlugOrId || safeTeam;
@@ -1206,7 +1255,7 @@ export function setupSocketHandlers(
               isCloudWorkspace: true,
               ...(environmentId
                 ? { environmentId }
-                : { projectFullName, repoUrl }),
+                : { projectFullName, repoUrl, branch, prNumber }),
             },
           });
 

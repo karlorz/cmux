@@ -18,7 +18,7 @@ import type {
   CreateLocalWorkspaceResponse,
   CreateCloudWorkspaceResponse,
 } from "@cmux/shared";
-import { deriveRepoBaseName } from "@cmux/shared";
+import { deriveRepoBaseName, parseGitHubUrl, isGitHubUrl } from "@cmux/shared";
 import { useUser, type Team } from "@stackframe/react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
@@ -683,7 +683,7 @@ export function CommandBar({
   }, [open]);
 
   const createLocalWorkspace = useCallback(
-    async (projectFullName: string) => {
+    async (projectFullName: string, branch?: string, prNumber?: number) => {
       if (isCreatingLocalWorkspace) {
         return;
       }
@@ -704,6 +704,7 @@ export function CommandBar({
           teamSlugOrId,
           projectFullName,
           repoUrl,
+          branch,
         });
         if (!reservation) {
           throw new Error("Unable to reserve workspace name");
@@ -721,6 +722,8 @@ export function CommandBar({
               teamSlugOrId,
               projectFullName,
               repoUrl,
+              branch,
+              prNumber,
               taskId: reservation.taskId,
               taskRunId: reservation.taskRunId,
               workspaceName: reservation.workspaceName,
@@ -839,10 +842,10 @@ export function CommandBar({
   );
 
   const handleLocalWorkspaceSelect = useCallback(
-    (projectFullName: string) => {
+    (projectFullName: string, branch?: string, prNumber?: number) => {
       clearCommandInput();
       closeCommand();
-      void createLocalWorkspace(projectFullName);
+      void createLocalWorkspace(projectFullName, branch, prNumber);
     },
     [clearCommandInput, closeCommand, createLocalWorkspace]
   );
@@ -932,7 +935,7 @@ export function CommandBar({
   );
 
   const createCloudWorkspaceFromRepo = useCallback(
-    async (projectFullName: string) => {
+    async (projectFullName: string, branch?: string, prNumber?: number) => {
       if (isCreatingCloudWorkspace) {
         return;
       }
@@ -947,13 +950,19 @@ export function CommandBar({
 
       try {
         const repoUrl = `https://github.com/${projectFullName}.git`;
+        let taskText = `Cloud Workspace: ${projectFullName}`;
+        if (prNumber) {
+          taskText += ` (PR #${prNumber})`;
+        } else if (branch) {
+          taskText += ` (${branch})`;
+        }
 
         // Create task in Convex for repo-based cloud workspace
         const taskId = await createTask({
           teamSlugOrId,
-          text: `Cloud Workspace: ${projectFullName}`,
+          text: taskText,
           projectFullName,
-          baseBranch: undefined,
+          baseBranch: branch,
           environmentId: undefined, // No environment for repo-based cloud workspaces
           isCloudWorkspace: true,
         });
@@ -968,6 +977,8 @@ export function CommandBar({
               teamSlugOrId,
               projectFullName,
               repoUrl,
+              branch,
+              prNumber,
               taskId,
               theme,
             },
@@ -2004,6 +2015,81 @@ export function CommandBar({
     isCreatingCloudWorkspace,
   ]);
 
+  // GitHub URL detection for workspace pages
+  const githubUrlEntry = useMemo<CommandListEntry | null>(() => {
+    // Only show on workspace pages when search contains a GitHub URL
+    if (activePage !== "local-workspaces" && activePage !== "cloud-workspaces") {
+      return null;
+    }
+
+    if (!search || !isGitHubUrl(search)) {
+      return null;
+    }
+
+    const urlInfo = parseGitHubUrl(search);
+    if (!urlInfo) {
+      return null;
+    }
+
+    let label = urlInfo.projectFullName;
+    let description = "Create workspace";
+
+    if (urlInfo.type === "pr") {
+      label = `${urlInfo.projectFullName} (PR #${urlInfo.prNumber})`;
+      description = "Create workspace and checkout PR";
+    } else if (urlInfo.type === "branch" && urlInfo.branch) {
+      label = `${urlInfo.projectFullName} (${urlInfo.branch})`;
+      description = "Create workspace with branch";
+    }
+
+    const isLocal = activePage === "local-workspaces";
+    const disabled = isLocal ? isCreatingLocalWorkspace : isCreatingCloudWorkspace;
+
+    return {
+      value: `github-url:${search}`,
+      label,
+      keywords: [urlInfo.projectFullName, "github", "url"],
+      searchText: buildSearchText(label, [urlInfo.projectFullName, "github"]),
+      className: baseCommandItemClassName,
+      disabled,
+      execute: () => {
+        clearCommandInput();
+        closeCommand();
+        if (isLocal) {
+          void createLocalWorkspace(
+            urlInfo.projectFullName,
+            urlInfo.branch,
+            urlInfo.prNumber
+          );
+        } else {
+          void createCloudWorkspaceFromRepo(
+            urlInfo.projectFullName,
+            urlInfo.branch,
+            urlInfo.prNumber
+          );
+        }
+      },
+      renderContent: () => (
+        <>
+          <GitPullRequest className="h-4 w-4 text-violet-500" />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate text-sm font-medium">{label}</span>
+            <span className="truncate text-xs text-neutral-500">{description}</span>
+          </div>
+        </>
+      ),
+    };
+  }, [
+    activePage,
+    search,
+    isCreatingLocalWorkspace,
+    isCreatingCloudWorkspace,
+    clearCommandInput,
+    closeCommand,
+    createLocalWorkspace,
+    createCloudWorkspaceFromRepo,
+  ]);
+
   const {
     history: rootSuggestionHistory,
     record: recordRootUsage,
@@ -2120,18 +2206,26 @@ export function CommandBar({
     () => (!hasSearchQuery ? localWorkspaceSuggestedEntries : []),
     [hasSearchQuery, localWorkspaceSuggestedEntries]
   );
-  const localWorkspaceCommandsToRender = useMemo(
-    () =>
+  const localWorkspaceCommandsToRender = useMemo(() => {
+    const baseEntries =
       hasSearchQuery || localWorkspaceSuggestionsToRender.length === 0
         ? filteredLocalWorkspaceEntries
-        : localWorkspaceRemainingEntries,
-    [
-      filteredLocalWorkspaceEntries,
-      hasSearchQuery,
-      localWorkspaceRemainingEntries,
-      localWorkspaceSuggestionsToRender.length,
-    ]
-  );
+        : localWorkspaceRemainingEntries;
+
+    // Inject GitHub URL entry at the top if present
+    if (githubUrlEntry && activePage === "local-workspaces") {
+      return [githubUrlEntry, ...baseEntries];
+    }
+
+    return baseEntries;
+  }, [
+    filteredLocalWorkspaceEntries,
+    hasSearchQuery,
+    localWorkspaceRemainingEntries,
+    localWorkspaceSuggestionsToRender.length,
+    githubUrlEntry,
+    activePage,
+  ]);
   const localWorkspaceVisibleValues = useMemo(
     () =>
       [
@@ -2166,18 +2260,26 @@ export function CommandBar({
     () => (!hasSearchQuery ? cloudWorkspaceSuggestedEntries : []),
     [hasSearchQuery, cloudWorkspaceSuggestedEntries]
   );
-  const cloudWorkspaceCommandsToRender = useMemo(
-    () =>
+  const cloudWorkspaceCommandsToRender = useMemo(() => {
+    const baseEntries =
       hasSearchQuery || cloudWorkspaceSuggestionsToRender.length === 0
         ? filteredCloudWorkspaceEntries
-        : cloudWorkspaceRemainingEntries,
-    [
-      filteredCloudWorkspaceEntries,
-      hasSearchQuery,
-      cloudWorkspaceRemainingEntries,
-      cloudWorkspaceSuggestionsToRender.length,
-    ]
-  );
+        : cloudWorkspaceRemainingEntries;
+
+    // Inject GitHub URL entry at the top if present
+    if (githubUrlEntry && activePage === "cloud-workspaces") {
+      return [githubUrlEntry, ...baseEntries];
+    }
+
+    return baseEntries;
+  }, [
+    filteredCloudWorkspaceEntries,
+    hasSearchQuery,
+    cloudWorkspaceRemainingEntries,
+    cloudWorkspaceSuggestionsToRender.length,
+    githubUrlEntry,
+    activePage,
+  ]);
   const cloudWorkspaceVisibleValues = useMemo(
     () =>
       [
