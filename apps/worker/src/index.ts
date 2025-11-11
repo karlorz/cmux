@@ -44,6 +44,11 @@ import { FileWatcher, computeGitDiff, getFileWithDiff } from "./fileWatcher";
 import { log } from "./logger";
 import { startScreenshotCollection } from "./screenshotCollector/startScreenshotCollection";
 
+// Use a distinct process title so blanket pkill node commands do not terminate the worker.
+if (process.title !== "cmux-worker") {
+  process.title = "cmux-worker";
+}
+
 const execAsync = promisify(exec);
 
 const Terminal = xtermHeadless.Terminal;
