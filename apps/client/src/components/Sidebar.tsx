@@ -18,7 +18,6 @@ import CmuxLogo from "./logo/cmux-logo";
 import { SidebarNavLink } from "./sidebar/SidebarNavLink";
 import { SidebarPullRequestList } from "./sidebar/SidebarPullRequestList";
 import { SidebarSectionLink } from "./sidebar/SidebarSectionLink";
-import { SIDEBAR_SCROLL_CONTAINER_ATTR } from "./sidebar/const";
 
 interface SidebarProps {
   tasks: Doc<"tasks">[] | undefined;
@@ -210,10 +209,6 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
 
   const resetWidth = useCallback(() => setWidth(DEFAULT_WIDTH), []);
 
-  const scrollContainerProps = {
-    [SIDEBAR_SCROLL_CONTAINER_ATTR]: "",
-  };
-
   return (
     <div
       ref={containerRef}
@@ -257,7 +252,10 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
         </Link>
       </div>
       <nav className="grow flex flex-col overflow-hidden">
-        <div className="flex-1 overflow-y-auto pb-8" {...scrollContainerProps}>
+        <div
+          className="flex-1 overflow-y-auto pb-8"
+          data-sidebar-scroll-container=""
+        >
           <ul className="flex flex-col gap-px">
             {navItems.map((item) => (
               <li key={item.label}>
