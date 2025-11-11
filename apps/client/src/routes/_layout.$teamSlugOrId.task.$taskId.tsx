@@ -13,6 +13,7 @@ import clsx from "clsx";
 import { Suspense, useEffect } from "react";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { useQuery } from "convex/react";
+import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/task/$taskId")({
   component: TaskDetailPage,
@@ -68,6 +69,12 @@ function TaskDetailPage() {
     taskId,
   });
   const clipboard = useClipboard({ timeout: 2000 });
+  const { addTaskToExpand } = useExpandTasks();
+
+  // Focus and expand the task in the sidebar
+  useEffect(() => {
+    addTaskToExpand(taskId);
+  }, [taskId, addTaskToExpand]);
 
   // Get the deepest matched child to extract runId if present
   const childMatches = useChildMatches();
