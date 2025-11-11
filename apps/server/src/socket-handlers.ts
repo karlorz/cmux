@@ -1638,6 +1638,58 @@ export function setupSocketHandlers(
       try {
         const { editor, path } = OpenInEditorSchema.parse(data);
 
+        // Ensure the directory exists before trying to open it
+        // If it doesn't exist, try to set it up
+        try {
+          const fs = await import("node:fs/promises");
+          await fs.access(path);
+
+          // Directory exists, now check if it needs a git pull
+          const repoManager = RepositoryManager.getInstance();
+          try {
+            // Check if this is a git worktree
+            await fs.access(path + "/.git");
+
+            // Try to fetch and pull latest changes
+            serverLogger.info(`[open-in-editor] Fetching latest changes for ${path}`);
+            try {
+              const currentBranch = await repoManager.getCurrentBranch(path);
+              await repoManager.updateRemoteBranchIfStale(path, currentBranch);
+
+              // Check if working directory is clean before pulling
+              const { stdout: statusOut } = await repoManager.executeGitCommand(
+                `git status --porcelain`,
+                { cwd: path }
+              );
+              const isClean = statusOut.trim().length === 0;
+
+              if (isClean) {
+                // Only pull if clean to avoid merge conflicts
+                await repoManager.executeGitCommand(
+                  `git reset --hard origin/${currentBranch}`,
+                  { cwd: path }
+                );
+                serverLogger.info(`[open-in-editor] Updated ${path} to latest changes`);
+              } else {
+                serverLogger.info(`[open-in-editor] Skipping pull for ${path} - working directory has uncommitted changes`);
+              }
+            } catch (gitError) {
+              // Non-fatal: if git operations fail, still try to open the editor
+              serverLogger.warn(`[open-in-editor] Failed to update worktree: ${gitError}`);
+            }
+          } catch {
+            // Not a git directory, that's fine
+          }
+        } catch {
+          const errorMessage = `Directory not found: ${path}. The worktree needs to be set up locally first. Please run the task locally or clone the repository.`;
+          serverLogger.error(errorMessage);
+          socket.emit("open-in-editor-error", { error: errorMessage });
+          if (callback) {
+            callback({ success: false, error: errorMessage });
+          }
+          return;
+        }
+
         let command: string[];
         switch (editor) {
           case "vscode":

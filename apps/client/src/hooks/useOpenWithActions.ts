@@ -58,6 +58,7 @@ export function useOpenWithActions({
             vscodeUrl,
             localServeWebOrigin,
           );
+          // For VS Code web, always use /root/workspace as it's the path inside the container
           const vscodeUrlWithWorkspace = `${normalizedUrl}?folder=/root/workspace`;
           window.open(vscodeUrlWithWorkspace, "_blank", "noopener,noreferrer");
           resolve();
