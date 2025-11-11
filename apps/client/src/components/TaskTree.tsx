@@ -1609,6 +1609,15 @@ function TaskRunDetails({
           icon={<GitPullRequest className="w-3 h-3 mr-2 text-neutral-400" />}
           label="Pull Request"
           indentLevel={indentLevel}
+          onClick={(event) => {
+            event.preventDefault();
+            const prUrl = run.pullRequestUrl && run.pullRequestUrl !== "pending"
+              ? run.pullRequestUrl
+              : run.pullRequests?.find((pr) => pr.url)?.url;
+            if (prUrl) {
+              window.open(prUrl, "_blank", "noopener,noreferrer");
+            }
+          }}
         />
       ) : null}
 
