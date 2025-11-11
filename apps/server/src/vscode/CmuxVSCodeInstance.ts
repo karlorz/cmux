@@ -18,6 +18,7 @@ export class CmuxVSCodeInstance extends VSCodeInstance {
   private sandboxId: string | null = null;
   private workerUrl: string | null = null;
   private vscodeBaseUrl: string | null = null;
+  private workspacePath: string | null = null;
   private provider: VSCodeInstanceInfo["provider"] = "morph";
   private repoUrl?: string;
   private branch?: string;
@@ -76,6 +77,7 @@ export class CmuxVSCodeInstance extends VSCodeInstance {
     this.sandboxId = data.instanceId;
     this.vscodeBaseUrl = data.vscodeUrl;
     this.workerUrl = data.workerUrl;
+    this.workspacePath = data.workspacePath;
     this.provider = data.provider || "morph";
 
     const workspaceUrl = this.getWorkspaceUrl(this.vscodeBaseUrl);
@@ -176,5 +178,9 @@ export class CmuxVSCodeInstance extends VSCodeInstance {
 
   getName(): string {
     return this.sandboxId || this.instanceId;
+  }
+
+  getWorkspacePath(): string | null {
+    return this.workspacePath;
   }
 }

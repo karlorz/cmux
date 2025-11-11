@@ -57,6 +57,7 @@ const StartSandboxResponse = z
     vscodeUrl: z.string(),
     workerUrl: z.string(),
     provider: z.enum(["morph"]).default("morph"),
+    workspacePath: z.string(),
   })
   .openapi("StartSandboxResponse");
 
@@ -358,11 +359,17 @@ sandboxesRouter.openapi(
 
       await configureGitIdentityTask;
 
+      // Determine workspace path
+      // For single repo: /root/workspace
+      // For environments without repo or multi-repo: /root/workspace (but may contain subdirectories)
+      const workspacePath = "/root/workspace";
+
       return c.json({
         instanceId: instance.id,
         vscodeUrl: vscodeService.url,
         workerUrl: workerService.url,
         provider: "morph",
+        workspacePath,
       });
     } catch (error) {
       if (error instanceof HTTPException) {

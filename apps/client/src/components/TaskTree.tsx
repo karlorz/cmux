@@ -1254,6 +1254,7 @@ function TaskRunTreeInner({
   } = useOpenWithActions({
     vscodeUrl,
     worktreePath: run.worktreePath,
+    cloudWorktreePath: run.cloudWorktreePath,
     branch: run.newBranch,
     networking: run.networking,
   });

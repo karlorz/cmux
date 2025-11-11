@@ -445,6 +445,22 @@ export async function spawnAgent(
 
     if (options.isCloudMode && vscodeInstance instanceof CmuxVSCodeInstance) {
       console.log("[AgentSpawner] [isCloudMode] Setting up devcontainer");
+
+      // Get and store the cloud workspace path
+      const cloudWorktreePath = vscodeInstance.getWorkspacePath();
+      if (cloudWorktreePath) {
+        await retryOnOptimisticConcurrency(() =>
+          getConvex().mutation(api.taskRuns.updateCloudWorktreePath, {
+            teamSlugOrId,
+            id: taskRunId,
+            cloudWorktreePath,
+          })
+        );
+        serverLogger.info(
+          `[AgentSpawner] Stored cloud worktree path: ${cloudWorktreePath}`
+        );
+      }
+
       void vscodeInstance
         .setupDevcontainer()
         .catch((err) =>

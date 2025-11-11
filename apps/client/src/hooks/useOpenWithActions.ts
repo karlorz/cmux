@@ -22,6 +22,7 @@ type PortAction = {
 type UseOpenWithActionsArgs = {
   vscodeUrl?: string | null;
   worktreePath?: string | null;
+  cloudWorktreePath?: string | null;
   branch?: string | null;
   networking?: NetworkingInfo;
 };
@@ -29,6 +30,7 @@ type UseOpenWithActionsArgs = {
 export function useOpenWithActions({
   vscodeUrl,
   worktreePath,
+  cloudWorktreePath,
   branch,
   networking,
 }: UseOpenWithActionsArgs) {
@@ -58,7 +60,9 @@ export function useOpenWithActions({
             vscodeUrl,
             localServeWebOrigin,
           );
-          const vscodeUrlWithWorkspace = `${normalizedUrl}?folder=/root/workspace`;
+          // Use cloudWorktreePath if available, otherwise fall back to /root/workspace
+          const workspaceFolderPath = cloudWorktreePath || "/root/workspace";
+          const vscodeUrlWithWorkspace = `${normalizedUrl}?folder=${encodeURIComponent(workspaceFolderPath)}`;
           window.open(vscodeUrlWithWorkspace, "_blank", "noopener,noreferrer");
           resolve();
         } else if (
@@ -104,7 +108,7 @@ export function useOpenWithActions({
         }
       });
     },
-    [socket, worktreePath, vscodeUrl, localServeWebOrigin]
+    [socket, worktreePath, cloudWorktreePath, vscodeUrl, localServeWebOrigin]
   );
 
   const handleCopyBranch = useCallback(() => {
