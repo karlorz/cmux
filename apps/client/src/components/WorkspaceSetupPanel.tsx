@@ -19,6 +19,40 @@ import { toast } from "sonner";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
+const SECRET_PLACEHOLDER = "••••••••••••••••••••••";
+
+type EnvVarRow = EnvVar & {
+  clientId: string;
+  isValueRevealed: boolean;
+};
+
+const generateEnvVarId = () => {
+  const cryptoRef = typeof globalThis !== "undefined" ? globalThis.crypto : undefined;
+  if (cryptoRef && typeof cryptoRef.randomUUID === "function") {
+    return cryptoRef.randomUUID();
+  }
+  return `env-${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const createEnvVarRow = (row?: Partial<EnvVarRow>): EnvVarRow => {
+  const value = row?.value ?? "";
+  return {
+    name: row?.name ?? "",
+    value,
+    isSecret: row?.isSecret ?? true,
+    clientId: row?.clientId ?? generateEnvVarId(),
+    isValueRevealed: row?.isValueRevealed ?? value.length === 0,
+  };
+};
+
+const toEnvVarRows = (rows?: EnvVar[]) =>
+  ensureInitialEnvVars(rows).map((row) =>
+    createEnvVarRow({
+      ...row,
+      isValueRevealed: row.value.length === 0,
+    }),
+  );
+
 type WorkspaceSetupPanelProps = {
   teamSlugOrId: string;
   projectFullName: string | null;
@@ -41,9 +75,7 @@ export function WorkspaceSetupPanel({
   const saveMutation = useRQMutation(postApiWorkspaceConfigsMutation());
 
   const [maintenanceScript, setMaintenanceScript] = useState("");
-  const [envVars, setEnvVars] = useState<EnvVar[]>(() =>
-    ensureInitialEnvVars(),
-  );
+  const [envVars, setEnvVars] = useState<EnvVarRow[]>(() => toEnvVarRows());
 
   const originalConfigRef = useRef<{ script: string; envContent: string }>({
     script: "",
@@ -60,7 +92,7 @@ export function WorkspaceSetupPanel({
   useEffect(() => {
     if (!projectFullName) return;
     setMaintenanceScript("");
-    setEnvVars(ensureInitialEnvVars());
+    setEnvVars(toEnvVarRows());
     originalConfigRef.current = { script: "", envContent: "" };
     hasInitializedFromServerRef.current = false;
   }, [projectFullName]);
@@ -97,7 +129,7 @@ export function WorkspaceSetupPanel({
     );
 
     setMaintenanceScript(nextScript);
-    setEnvVars(ensureInitialEnvVars(parsedEnvVars));
+    setEnvVars(toEnvVarRows(parsedEnvVars));
     originalConfigRef.current = {
       script: nextScript.trim(),
       envContent: normalizedEnvContent,
@@ -109,23 +141,25 @@ export function WorkspaceSetupPanel({
   }, [configQuery.data, configQuery.isPending, configQuery.error]);
 
   const updateEnvVars = useCallback(
-    (updater: (prev: EnvVar[]) => EnvVar[]) => {
+    (updater: (prev: EnvVarRow[]) => EnvVarRow[]) => {
       setEnvVars((prev) => {
         const updated = updater(prev);
         // Always ensure at least 1 row exists
-        return updated.length === 0
-          ? [
-            {
-              name: "",
-              value: "",
-              isSecret: true,
-            },
-          ]
-          : updated;
+        return updated.length === 0 ? [createEnvVarRow()] : updated;
       });
     },
     [],
   );
+
+  const toggleEnvVarVisibility = useCallback((clientId: string) => {
+    setEnvVars((prev) =>
+      prev.map((row) =>
+        row.clientId === clientId
+          ? { ...row, isValueRevealed: !row.isValueRevealed }
+          : row,
+      ),
+    );
+  }, []);
 
   const currentEnvContent = useMemo(() => {
     const filtered = envVars
@@ -206,11 +240,24 @@ export function WorkspaceSetupPanel({
         );
         for (const entry of entries) {
           if (!entry.name) continue;
-          map.set(entry.name, {
-            name: entry.name,
-            value: entry.value,
-            isSecret: true,
-          });
+          const existing = map.get(entry.name);
+          if (existing) {
+            map.set(entry.name, {
+              ...existing,
+              value: entry.value,
+              isValueRevealed: false,
+            });
+          } else {
+            map.set(
+              entry.name,
+              createEnvVarRow({
+                name: entry.name,
+                value: entry.value,
+                isSecret: true,
+                isValueRevealed: false,
+              }),
+            );
+          }
         }
         return Array.from(map.values());
       });
@@ -337,56 +384,83 @@ export function WorkspaceSetupPanel({
                     </div>
 
                     <div className="space-y-1.5">
-                      {envVars.map((row, idx) => (
-                        <div
-                          key={idx}
-                          className="grid gap-2 items-center"
-                          style={{
-                            gridTemplateColumns: "3fr 7fr 36px",
-                          }}
-                        >
-                          <input
-                            type="text"
-                            value={row.name}
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              updateEnvVars((prev) => {
-                                const next = [...prev];
-                                next[idx] = { ...next[idx]!, name: value };
-                                return next;
-                              });
+                      {envVars.map((row, idx) => {
+                        const shouldMaskValue =
+                          row.value.length > 0 && !row.isValueRevealed;
+                        return (
+                          <div
+                            key={row.clientId}
+                            className="grid gap-2 items-center"
+                            style={{
+                              gridTemplateColumns: "3fr 7fr 36px",
                             }}
-                            placeholder="EXAMPLE_KEY"
-                            className="w-full rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-[11px] font-mono text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-600 dark:focus:border-neutral-600"
-                          />
-                          <input
-                            type="text"
-                            value={row.value}
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              updateEnvVars((prev) => {
-                                const next = [...prev];
-                                next[idx] = { ...next[idx]!, value };
-                                return next;
-                              });
-                            }}
-                            placeholder="secret-value"
-                            className="w-full rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-[11px] font-mono text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-600 dark:focus:border-neutral-600"
-                          />
-                          <button
-                            type="button"
-                            className="inline-flex h-6 w-6 items-center justify-center text-neutral-400 transition-colors hover:text-neutral-600 dark:text-neutral-500 dark:hover:text-neutral-300"
-                            onClick={() =>
-                              updateEnvVars((prev) =>
-                                prev.filter((_, i) => i !== idx),
-                              )
-                            }
-                            aria-label="Remove variable"
                           >
-                            <Minus className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ))}
+                            <input
+                              type="text"
+                              value={row.name}
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                updateEnvVars((prev) => {
+                                  const next = [...prev];
+                                  next[idx] = { ...next[idx]!, name: value };
+                                  return next;
+                                });
+                              }}
+                              placeholder="EXAMPLE_KEY"
+                              className="w-full rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-[11px] font-mono text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-600 dark:focus:border-neutral-600"
+                            />
+                            <div className="relative">
+                              <input
+                                type="text"
+                                value={row.value}
+                                onChange={(event) => {
+                                  const value = event.target.value;
+                                  updateEnvVars((prev) => {
+                                    const next = [...prev];
+                                    next[idx] = { ...next[idx]!, value };
+                                    return next;
+                                  });
+                                }}
+                                placeholder="secret-value"
+                                readOnly={shouldMaskValue}
+                                className={`w-full rounded-md border border-neutral-200 bg-white px-2 py-1.5 pr-16 text-[11px] font-mono text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-600 dark:focus:border-neutral-600 ${shouldMaskValue ? "text-transparent caret-transparent" : ""
+                                  }`}
+                              />
+                              {shouldMaskValue ? (
+                                <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center font-mono text-[11px] text-neutral-500 dark:text-neutral-400">
+                                  {SECRET_PLACEHOLDER}
+                                </span>
+                              ) : null}
+                              <button
+                                type="button"
+                                className="absolute inset-y-0 right-1.5 rounded px-2 text-[10px] font-semibold uppercase tracking-wide text-neutral-500 transition-colors hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-neutral-400 focus-visible:ring-offset-1 focus-visible:ring-offset-white dark:focus-visible:ring-neutral-600 dark:focus-visible:ring-offset-neutral-900"
+                                onClick={() =>
+                                  toggleEnvVarVisibility(row.clientId)
+                                }
+                                aria-label={
+                                  row.isValueRevealed
+                                    ? "Hide value"
+                                    : "Reveal value"
+                                }
+                              >
+                                {row.isValueRevealed ? "Hide" : "Reveal"}
+                              </button>
+                            </div>
+                            <button
+                              type="button"
+                              className="inline-flex h-6 w-6 items-center justify-center text-neutral-400 transition-colors hover:text-neutral-600 dark:text-neutral-500 dark:hover:text-neutral-300"
+                              onClick={() =>
+                                updateEnvVars((prev) =>
+                                  prev.filter((_, i) => i !== idx),
+                                )
+                              }
+                              aria-label="Remove variable"
+                            >
+                              <Minus className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -399,11 +473,7 @@ export function WorkspaceSetupPanel({
                     onClick={() =>
                       updateEnvVars((prev) => [
                         ...prev,
-                        {
-                          name: "",
-                          value: "",
-                          isSecret: true,
-                        },
+                        createEnvVarRow(),
                       ])
                     }
                   >
