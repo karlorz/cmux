@@ -10,7 +10,9 @@ import {
   GitHubMergeBranchSchema,
   GitHubSyncPrStateSchema,
   ListFilesRequestSchema,
+  LocalRepoSuggestionRequestSchema,
   OpenInEditorSchema,
+  ResolveLocalRepoRequestSchema,
   SpawnFromCommentSchema,
   StartTaskSchema,
   CreateLocalWorkspaceSchema,
@@ -57,6 +59,11 @@ import { refreshGitHubData } from "./utils/refreshGitHubData";
 import { runWithAuth, runWithAuthToken } from "./utils/requestContext";
 import { getWwwClient } from "./utils/wwwClient";
 import { getWwwOpenApiModule } from "./utils/wwwOpenApiModule";
+import {
+  createGitArchive,
+  resolveLocalRepo,
+  suggestLocalDirectories,
+} from "./utils/localRepo";
 import { DockerVSCodeInstance } from "./vscode/DockerVSCodeInstance";
 import {
   getVSCodeServeWebBaseUrl,
@@ -88,6 +95,41 @@ function isExecError(error: unknown): error is ExecError {
     ("stderr" in error || "stdout" in error)
   );
 }
+
+async function uploadArchiveToStorage(
+  archivePath: string,
+  teamSlugOrId: string
+): Promise<string> {
+  const convex = getConvex();
+  const uploadUrl = await convex.mutation(api.storage.generateUploadUrl, {
+    teamSlugOrId,
+  });
+  const data = await fs.readFile(archivePath);
+  const response = await fetch(uploadUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: data,
+  });
+  if (!response.ok) {
+    throw new Error(`Archive upload failed with status ${response.status}`);
+  }
+  const json = (await response.json()) as { storageId?: string };
+  if (!json.storageId) {
+    throw new Error("Upload response missing storageId");
+  }
+  return json.storageId;
+}
+
+async function cleanupArchiveFile(archivePath: string): Promise<void> {
+  const dir = path.dirname(archivePath);
+  await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+}
+
+type PreparedLocalRepoArchive = {
+  archivePath: string;
+  storageId?: string;
+  localPath: string;
+};
 
 const GitSocketDiffRequestSchema = z.object({
   headRef: z.string(),
@@ -161,6 +203,49 @@ export function setupSocketHandlers(
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         callback({ ok: false, error: msg });
+      }
+    });
+
+    socket.on("search-local-paths", async (data, callback) => {
+      if (!callback) {
+        return;
+      }
+      try {
+        const parsed = LocalRepoSuggestionRequestSchema.parse(data);
+        const suggestions = await suggestLocalDirectories(
+          parsed.query,
+          parsed.limit ?? 8
+        );
+        callback({ suggestions });
+      } catch (error) {
+        serverLogger.error("Failed to search local paths:", error);
+        callback({ suggestions: [] });
+      }
+    });
+
+    socket.on("resolve-local-repo", async (data, callback) => {
+      if (!callback) {
+        return;
+      }
+      try {
+        const parsed = ResolveLocalRepoRequestSchema.parse(data);
+        const info = await resolveLocalRepo(parsed.path);
+        callback({
+          success: true,
+          path: info.path,
+          repoFullName: info.repoFullName,
+          remoteUrl: info.remoteUrl,
+          currentBranch: info.currentBranch,
+          defaultBranch: info.defaultBranch,
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unknown error resolving local repo";
+        serverLogger.error("Failed to resolve local repo:", error);
+        callback({
+          success: false,
+          error: message,
+        });
       }
     });
 
@@ -437,6 +522,7 @@ export function setupSocketHandlers(
       const taskData = taskDataParseResult.data;
       serverLogger.info("starting task!", taskData);
       const taskId = taskData.taskId;
+      let localRepoArchive: PreparedLocalRepoArchive | null = null;
       try {
         // For local mode, ensure Docker is running before attempting to spawn
         if (!taskData.isCloudMode) {
@@ -462,6 +548,40 @@ export function setupSocketHandlers(
               taskId,
               error:
                 "Unable to verify Docker status. Ensure Docker is running or switch to Cloud mode.",
+            });
+            return;
+          }
+        }
+
+        if (taskData.localRepoPath) {
+          try {
+            const resolvedRepo = await resolveLocalRepo(taskData.localRepoPath);
+            const { archivePath } = await createGitArchive(resolvedRepo.path);
+            localRepoArchive = {
+              archivePath,
+              localPath: resolvedRepo.path,
+            };
+            if (taskData.isCloudMode) {
+              localRepoArchive.storageId = await uploadArchiveToStorage(
+                archivePath,
+                safeTeam
+              );
+            }
+          } catch (error) {
+            serverLogger.error(
+              "Failed to prepare local repo archive:",
+              error
+            );
+            if (localRepoArchive) {
+              await cleanupArchiveFile(localRepoArchive.archivePath);
+              localRepoArchive = null;
+            }
+            callback({
+              taskId,
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Failed to prepare local repository archive",
             });
             return;
           }
@@ -509,6 +629,7 @@ export function setupSocketHandlers(
                 images: taskData.images,
                 theme: taskData.theme,
                 environmentId: taskData.environmentId,
+                localRepoArchive: localRepoArchive ?? undefined,
               },
               safeTeam
             );
@@ -599,9 +720,28 @@ export function setupSocketHandlers(
               taskId,
               error: error instanceof Error ? error.message : "Unknown error",
             });
+          } finally {
+            const archiveToCleanup = localRepoArchive as
+              | PreparedLocalRepoArchive
+              | null;
+            if (archiveToCleanup) {
+              await cleanupArchiveFile(archiveToCleanup.archivePath);
+              if (localRepoArchive === archiveToCleanup) {
+                localRepoArchive = null;
+              }
+            }
           }
         })();
       } catch (error) {
+        const archiveToCleanup = localRepoArchive as
+          | PreparedLocalRepoArchive
+          | null;
+        if (archiveToCleanup) {
+          await cleanupArchiveFile(archiveToCleanup.archivePath);
+          if (localRepoArchive === archiveToCleanup) {
+            localRepoArchive = null;
+          }
+        }
         serverLogger.error("Error in start-task:", error);
         callback({
           taskId,

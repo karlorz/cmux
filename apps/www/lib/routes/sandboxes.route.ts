@@ -5,6 +5,7 @@ import { stackServerAppJs } from "@/lib/utils/stack";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { env } from "@/lib/utils/www-env";
 import { api } from "@cmux/convex/api";
+import type { Id } from "@cmux/convex/dataModel";
 import { RESERVED_CMUX_PORT_SET } from "@cmux/shared/utils/reserved-cmux-ports";
 import { parseGithubRepoUrl } from "@cmux/shared/utils/parse-github-repo-url";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
@@ -15,9 +16,10 @@ import {
   configureGithubAccess,
   configureGitIdentity,
   fetchGitIdentityInputs,
+  type MorphInstance,
 } from "./sandboxes/git";
 import type { HydrateRepoConfig } from "./sandboxes/hydration";
-import { hydrateWorkspace } from "./sandboxes/hydration";
+import { hydrateWorkspace, MORPH_WORKSPACE_PATH } from "./sandboxes/hydration";
 import { resolveTeamAndSnapshot } from "./sandboxes/snapshot";
 import {
   allocateScriptIdentifiers,
@@ -27,6 +29,7 @@ import {
   encodeEnvContentForEnvctl,
   envctlLoadCommand,
 } from "./utils/ensure-env-vars";
+import { maskSensitive, singleQuote } from "./sandboxes/shell";
 
 export const sandboxesRouter = new OpenAPIHono();
 
@@ -48,6 +51,7 @@ const StartSandboxBody = z
     branch: z.string().optional(),
     newBranch: z.string().optional(),
     depth: z.number().optional().default(1),
+    repoArchiveStorageId: z.string().optional(),
   })
   .openapi("StartSandboxBody");
 
@@ -72,6 +76,29 @@ const UpdateSandboxEnvResponse = z
     applied: z.literal(true),
   })
   .openapi("UpdateSandboxEnvResponse");
+
+async function applyLocalArchiveToWorkspace(
+  instance: MorphInstance,
+  archiveUrl: string
+): Promise<void> {
+  console.log(
+    `[sandboxes.start] Applying local repo archive overlay from ${maskSensitive(archiveUrl)}`
+  );
+  const command = `
+set -euo pipefail
+TMP_ARCHIVE=$(mktemp /tmp/cmux-local-archive-XXXXXX.tar)
+curl -fsSL ${singleQuote(archiveUrl)} -o "$TMP_ARCHIVE"
+tar -xf "$TMP_ARCHIVE" -C ${singleQuote(MORPH_WORKSPACE_PATH)}
+rm -f "$TMP_ARCHIVE"
+`;
+  const result = await instance.exec(`bash -lc ${singleQuote(command)}`);
+  if (result.exit_code !== 0) {
+    const errorOutput = result.stderr || result.stdout || "Unknown error";
+    throw new Error(
+      `Failed to apply local repo archive: ${maskSensitive(errorOutput).slice(0, 500)}`
+    );
+  }
+}
 
 // Start a new sandbox (currently Morph-backed)
 sandboxesRouter.openapi(
@@ -192,6 +219,21 @@ sandboxesRouter.openapi(
           }
         } catch (error) {
           console.error(`[sandboxes.start] Failed to load workspace config for ${parsedRepoUrl.fullName}`, error);
+        }
+      }
+
+      let repoArchiveUrl: string | null = null;
+      if (body.repoArchiveStorageId) {
+        try {
+          repoArchiveUrl = await convex.query(api.storage.getUrl, {
+            teamSlugOrId: body.teamSlugOrId,
+            storageId: body.repoArchiveStorageId as Id<"_storage">,
+          });
+        } catch (error) {
+          console.error(
+            "[sandboxes.start] Failed to resolve repo archive URL",
+            error
+          );
         }
       }
 
@@ -335,6 +377,19 @@ sandboxesRouter.openapi(
         console.error(`[sandboxes.start] Hydration failed:`, error);
         await instance.stop().catch(() => { });
         return c.text("Failed to hydrate sandbox", 500);
+      }
+
+      if (repoArchiveUrl) {
+        try {
+          await applyLocalArchiveToWorkspace(instance, repoArchiveUrl);
+        } catch (error) {
+          console.error(
+            "[sandboxes.start] Failed to apply local repo archive overlay:",
+            error
+          );
+          await instance.stop().catch(() => {});
+          return c.text("Failed to apply repository archive", 500);
+        }
       }
 
       if (maintenanceScript || devScript) {

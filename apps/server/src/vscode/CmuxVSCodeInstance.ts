@@ -24,6 +24,7 @@ export class CmuxVSCodeInstance extends VSCodeInstance {
   private newBranch?: string;
   private environmentId?: string;
   private taskRunJwt?: string;
+  private repoArchiveStorageId?: string;
 
   constructor(config: VSCodeInstanceConfig) {
     super(config);
@@ -39,6 +40,7 @@ export class CmuxVSCodeInstance extends VSCodeInstance {
     this.newBranch = cfg.newBranch;
     this.environmentId = cfg.environmentId;
     this.taskRunJwt = cfg.taskRunJwt;
+    this.repoArchiveStorageId = cfg.repoArchiveStorageId;
   }
 
   async start(): Promise<VSCodeInstanceInfo> {
@@ -65,6 +67,9 @@ export class CmuxVSCodeInstance extends VSCodeInstance {
             newBranch: this.newBranch,
             depth: 1,
           }
+          : {}),
+        ...(this.repoArchiveStorageId
+          ? { repoArchiveStorageId: this.repoArchiveStorageId }
           : {}),
       },
     });

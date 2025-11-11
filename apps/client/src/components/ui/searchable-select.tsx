@@ -66,6 +66,7 @@ export interface SearchableSelectProps {
   value: string[];
   onChange: (value: string[]) => void;
   onSearchPaste?: (value: string) => boolean | Promise<boolean>;
+  onSearchChange?: (value: string) => void;
   placeholder?: string;
   singleSelect?: boolean;
   className?: string;
@@ -234,6 +235,7 @@ const SearchableSelect = forwardRef<
     value,
     onChange,
     onSearchPaste,
+    onSearchChange,
     placeholder = "Select",
     singleSelect = false,
     className,
@@ -525,6 +527,7 @@ const SearchableSelect = forwardRef<
     }
     // Clear search input upon selecting a value (covers mouse and keyboard selection)
     setSearch("");
+    onSearchChange?.("");
     if (singleSelect) {
       onChange([val]);
       setOpen(false);
@@ -587,11 +590,32 @@ const SearchableSelect = forwardRef<
                 showIcon={false}
                 placeholder={onSearchPaste ? "Search or paste a repo link..." : "Search..."}
                 value={search}
-                onValueChange={setSearch}
-                onKeyDown={(e) => {
+                onValueChange={(next) => {
+                  setSearch(next);
+                  onSearchChange?.(next);
+                }}
+                onKeyDown={async (e) => {
                   if (e.key === "Enter") {
-                    // Clear the search box when pressing Enter
+                    e.preventDefault();
+                    const trimmed = search.trim();
+                    if (trimmed && onSearchPaste) {
+                      try {
+                        const handled = await onSearchPaste(trimmed);
+                        if (handled) {
+                          setSearch("");
+                          onSearchChange?.("");
+                          setOpen(false);
+                          return;
+                        }
+                      } catch (error) {
+                        console.error(
+                          "Failed to handle search submission:",
+                          error
+                        );
+                      }
+                    }
                     setSearch("");
+                    onSearchChange?.("");
                   }
                 }}
                 onPaste={async (event) => {
@@ -607,6 +631,7 @@ const SearchableSelect = forwardRef<
                     const handled = await onSearchPaste(trimmed);
                     if (handled) {
                       setSearch("");
+                      onSearchChange?.("");
                       setOpen(false);
                     }
                   } catch (error) {

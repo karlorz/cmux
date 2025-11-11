@@ -19,6 +19,8 @@ export interface VSCodeInstanceConfig {
   environmentId?: Id<"environments"> | string;
   // Optional: JWT token for crown workflow authentication
   taskRunJwt?: string;
+  // Optional: overlay repo archive uploaded to Convex storage
+  repoArchiveStorageId?: string;
 }
 
 export interface VSCodeInstanceInfo {

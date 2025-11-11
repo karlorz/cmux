@@ -25,13 +25,19 @@ import { attachTaskLifecycleListeners } from "@/lib/socket/taskLifecycleListener
 import { branchesQueryOptions } from "@/queries/branches";
 import { api } from "@cmux/convex/api";
 import type { Doc, Id } from "@cmux/convex/dataModel";
-import type { ProviderStatusResponse, TaskAcknowledged, TaskError, TaskStarted } from "@cmux/shared";
+import type {
+  LocalRepoSuggestion,
+  ProviderStatusResponse,
+  TaskAcknowledged,
+  TaskError,
+  TaskStarted,
+} from "@cmux/shared";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useAction, useMutation } from "convex/react";
-import { Server as ServerIcon } from "lucide-react";
+import { Folder, Server as ServerIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -76,6 +82,22 @@ const parseStoredAgentSelection = (stored: string | null): string[] => {
   }
 };
 
+const LOCAL_REPO_OPTION_PREFIX = "__local__:";
+
+function isLikelyLocalRepoPath(input: string): boolean {
+  const trimmed = input.trim();
+  if (!trimmed) return false;
+  if (
+    trimmed.startsWith("~") ||
+    trimmed.startsWith("/") ||
+    trimmed.startsWith("./") ||
+    trimmed.startsWith("../")
+  ) {
+    return true;
+  }
+  return /^[a-zA-Z]:[\\/]/.test(trimmed);
+}
+
 function DashboardComponent() {
   const { teamSlugOrId } = Route.useParams();
   const searchParams = Route.useSearch() as { environmentId?: string };
@@ -88,6 +110,13 @@ function DashboardComponent() {
     return stored ? JSON.parse(stored) : [];
   });
   const [selectedBranch, setSelectedBranch] = useState<string[]>([]);
+  const [projectSearchInput, setProjectSearchInput] = useState("");
+  const [localRepoSuggestions, setLocalRepoSuggestions] = useState<
+    LocalRepoSuggestion[]
+  >([]);
+  const [selectedLocalRepoPath, setSelectedLocalRepoPath] = useState<
+    string | null
+  >(null);
 
   const [selectedAgents, setSelectedAgentsState] = useState<string[]>(() => {
     const storedAgents = parseStoredAgentSelection(
@@ -144,6 +173,56 @@ function DashboardComponent() {
     }
   }, []);
 
+  const resolveAndSelectLocalRepo = useCallback(
+    async (inputPath: string) => {
+      if (!socket) {
+        toast.error("Not connected to the server yet. Please try again.");
+        return false;
+      }
+      return await new Promise<boolean>((resolve) => {
+        socket.emit(
+          "resolve-local-repo",
+          { path: inputPath },
+          (response?: {
+            success: boolean;
+            path?: string;
+            repoFullName?: string;
+            currentBranch?: string;
+            error?: string;
+          }) => {
+            if (
+              !response?.success ||
+              !response.path ||
+              !response.repoFullName
+            ) {
+              const message =
+                response?.error ??
+                "Unable to resolve local repository. Ensure it is a valid git repo.";
+              toast.error(message);
+              resolve(false);
+              return;
+            }
+            setSelectedProject([response.repoFullName]);
+            localStorage.setItem(
+              `selectedProject-${teamSlugOrId}`,
+              JSON.stringify([response.repoFullName])
+            );
+            setSelectedLocalRepoPath(response.path);
+            if (response.currentBranch) {
+              setSelectedBranch([response.currentBranch]);
+            }
+            resolve(true);
+          }
+        );
+      });
+    },
+    [socket, teamSlugOrId, setSelectedBranch, setSelectedProject]
+  );
+
+  const handleProjectSearchChange = useCallback((value: string) => {
+    setProjectSearchInput(value);
+  }, []);
+
   // Preselect environment if provided in URL search params
   useEffect(() => {
     if (searchParams?.environmentId) {
@@ -152,8 +231,36 @@ function DashboardComponent() {
       localStorage.setItem(`selectedProject-${teamSlugOrId}`, JSON.stringify([val]));
       setIsCloudMode(true);
       localStorage.setItem("isCloudMode", JSON.stringify(true));
+      setSelectedLocalRepoPath(null);
     }
   }, [searchParams?.environmentId, teamSlugOrId]);
+
+  useEffect(() => {
+    if (!socket) {
+      setLocalRepoSuggestions([]);
+      return;
+    }
+    const query = projectSearchInput.trim();
+    if (!isLikelyLocalRepoPath(query)) {
+      setLocalRepoSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    const handle = window.setTimeout(() => {
+      socket.emit(
+        "search-local-paths",
+        { query, limit: 8 },
+        (response?: { suggestions?: LocalRepoSuggestion[] }) => {
+          if (cancelled) return;
+          setLocalRepoSuggestions(response?.suggestions ?? []);
+        }
+      );
+    }, 200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [projectSearchInput, socket]);
 
   // Callback for task description changes
   const handleTaskDescriptionChange = useCallback((value: string) => {
@@ -197,18 +304,26 @@ function DashboardComponent() {
   // Callback for project selection changes
   const handleProjectChange = useCallback(
     (newProjects: string[]) => {
+      const nextValue = newProjects[0] ?? "";
+      if (nextValue.startsWith(LOCAL_REPO_OPTION_PREFIX)) {
+        const decoded = decodeURIComponent(
+          nextValue.slice(LOCAL_REPO_OPTION_PREFIX.length)
+        );
+        void resolveAndSelectLocalRepo(decoded);
+        return;
+      }
+      setSelectedLocalRepoPath(null);
       setSelectedProject(newProjects);
       localStorage.setItem(`selectedProject-${teamSlugOrId}`, JSON.stringify(newProjects));
-      if (newProjects[0] !== selectedProject[0]) {
+      if (nextValue !== selectedProject[0]) {
         setSelectedBranch([]);
       }
-      // If selecting an environment, enforce cloud mode
-      if ((newProjects[0] || "").startsWith("env:")) {
+      if (nextValue.startsWith("env:")) {
         setIsCloudMode(true);
         localStorage.setItem("isCloudMode", JSON.stringify(true));
       }
     },
-    [selectedProject, teamSlugOrId]
+    [resolveAndSelectLocalRepo, selectedProject, teamSlugOrId]
   );
 
   // Callback for branch selection changes
@@ -511,6 +626,7 @@ function DashboardComponent() {
             selectedAgents.length > 0 ? selectedAgents : undefined,
           isCloudMode: envSelected ? true : isCloudMode,
           ...(environmentId ? { environmentId } : {}),
+          ...(selectedLocalRepoPath ? { localRepoPath: selectedLocalRepoPath } : {}),
           images: images.length > 0 ? images : undefined,
           theme,
         },
@@ -534,6 +650,7 @@ function DashboardComponent() {
     isEnvSelected,
     theme,
     generateUploadUrl,
+    selectedLocalRepoPath,
   ]);
 
   // Fetch repos on mount if none exist
@@ -641,6 +758,31 @@ function DashboardComponent() {
     return options;
   }, [reposByOrg, environmentsQuery.data]);
 
+  const combinedProjectOptions = useMemo(() => {
+    if (localRepoSuggestions.length === 0) {
+      return projectOptions;
+    }
+    const suggestionOptions: SelectOption[] = localRepoSuggestions.map(
+      (suggestion) => ({
+        label: suggestion.displayName,
+        value: `${LOCAL_REPO_OPTION_PREFIX}${encodeURIComponent(suggestion.path)}`,
+        icon: (
+          <Folder className="w-4 h-4 text-neutral-600 dark:text-neutral-300" />
+        ),
+        iconKey: "local",
+      })
+    );
+    return [
+      {
+        label: "Local repositories",
+        value: "__heading-local",
+        heading: true,
+      },
+      ...suggestionOptions,
+      ...projectOptions,
+    ];
+  }, [localRepoSuggestions, projectOptions]);
+
   const selectedRepoFullName = useMemo(() => {
     if (!selectedProject[0] || isEnvSelected) return null;
     return selectedProject[0];
@@ -680,10 +822,14 @@ function DashboardComponent() {
   // Handle paste of GitHub repo URL in the project search field
   const handleProjectSearchPaste = useCallback(
     async (input: string) => {
+      const trimmedInput = input.trim();
+      if (isLikelyLocalRepoPath(trimmedInput)) {
+        return await resolveAndSelectLocalRepo(trimmedInput);
+      }
       try {
         const result = await addManualRepo({
           teamSlugOrId,
-          repoUrl: input,
+          repoUrl: trimmedInput,
         });
 
         if (result.success) {
@@ -693,6 +839,7 @@ function DashboardComponent() {
           // Select the newly added repo
           setSelectedProject([result.fullName]);
           localStorage.setItem(`selectedProject-${teamSlugOrId}`, JSON.stringify([result.fullName]));
+          setSelectedLocalRepoPath(null);
 
           toast.success(`Added ${result.fullName} to repositories`);
           return true;
@@ -708,7 +855,7 @@ function DashboardComponent() {
         return false; // Don't close dropdown if it's not a valid GitHub URL
       }
     },
-    [addManualRepo, teamSlugOrId, reposByOrgQuery]
+    [addManualRepo, teamSlugOrId, reposByOrgQuery, resolveAndSelectLocalRepo]
   );
 
   // Listen for VSCode spawned events
@@ -749,6 +896,7 @@ function DashboardComponent() {
         `selectedProject-${teamSlugOrId}`,
         JSON.stringify([data.repoFullName])
       );
+      setSelectedLocalRepoPath(data.localPath ?? null);
 
       // Set the selected branch
       if (data.branch) {
@@ -892,10 +1040,11 @@ function DashboardComponent() {
               lexicalRepoUrl={lexicalRepoUrl}
               lexicalEnvironmentId={lexicalEnvironmentId}
               lexicalBranch={lexicalBranch}
-              projectOptions={projectOptions}
+              projectOptions={combinedProjectOptions}
               selectedProject={selectedProject}
               onProjectChange={handleProjectChange}
               onProjectSearchPaste={handleProjectSearchPaste}
+              onProjectSearchChange={handleProjectSearchChange}
               branchOptions={branchOptions}
               selectedBranch={effectiveSelectedBranch}
               onBranchChange={handleBranchChange}
@@ -971,6 +1120,7 @@ type DashboardMainCardProps = {
   selectedProject: string[];
   onProjectChange: (newProjects: string[]) => void;
   onProjectSearchPaste?: (value: string) => boolean | Promise<boolean>;
+  onProjectSearchChange?: (value: string) => void;
   branchOptions: string[];
   selectedBranch: string[];
   onBranchChange: (newBranches: string[]) => void;
@@ -999,6 +1149,7 @@ function DashboardMainCard({
   selectedProject,
   onProjectChange,
   onProjectSearchPaste,
+  onProjectSearchChange,
   branchOptions,
   selectedBranch,
   onBranchChange,
@@ -1034,6 +1185,7 @@ function DashboardMainCard({
           selectedProject={selectedProject}
           onProjectChange={onProjectChange}
           onProjectSearchPaste={onProjectSearchPaste}
+          onProjectSearchChange={onProjectSearchChange}
           branchOptions={branchOptions}
           selectedBranch={selectedBranch}
           onBranchChange={onBranchChange}

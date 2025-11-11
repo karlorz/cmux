@@ -34,6 +34,7 @@ import { VSCodeInstance } from "./vscode/VSCodeInstance";
 import { getWorktreePath, setupProjectWorkspace } from "./workspace";
 import { workerExec } from "./utils/workerExec";
 import rawSwitchBranchScript from "./utils/switch-branch.ts?raw";
+import { applyArchiveToDirectory } from "./utils/localRepo";
 
 const SWITCH_BRANCH_BUN_SCRIPT = rawSwitchBranchScript;
 
@@ -48,6 +49,12 @@ export interface AgentSpawnResult {
   success: boolean;
   error?: string;
 }
+
+export type LocalRepoArchivePayload = {
+  archivePath: string;
+  storageId?: string;
+  localPath: string;
+};
 
 export async function spawnAgent(
   agent: AgentConfig,
@@ -65,6 +72,7 @@ export async function spawnAgent(
     }>;
     theme?: "dark" | "light" | "system";
     newBranch?: string; // Optional pre-generated branch name
+    localRepoArchive?: LocalRepoArchivePayload;
   },
   teamSlugOrId: string
 ): Promise<AgentSpawnResult> {
@@ -374,6 +382,7 @@ export async function spawnAgent(
         newBranch,
         environmentId: options.environmentId,
         taskRunJwt,
+        repoArchiveStorageId: options.localRepoArchive?.storageId,
       });
 
       worktreePath = "/root/workspace";
@@ -407,6 +416,34 @@ export async function spawnAgent(
       }
 
       worktreePath = workspaceResult.worktreePath;
+
+      if (options.localRepoArchive?.archivePath) {
+        serverLogger.info(
+          `[AgentSpawner] Applying local repo archive to ${worktreePath}`
+        );
+        try {
+          await applyArchiveToDirectory(
+            options.localRepoArchive.archivePath,
+            worktreePath
+          );
+        } catch (error) {
+          serverLogger.error(
+            "[AgentSpawner] Failed to apply local repo archive:",
+            error
+          );
+          return {
+            agentName: agent.name,
+            terminalId: "",
+            taskRunId,
+            worktreePath: "",
+            success: false,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Failed to apply local repo archive",
+          };
+        }
+      }
 
       serverLogger.info(
         `[AgentSpawner] Creating DockerVSCodeInstance for ${agent.name}`
@@ -950,6 +987,7 @@ export async function spawnAllAgents(
       altText: string;
     }>;
     theme?: "dark" | "light" | "system";
+    localRepoArchive?: LocalRepoArchivePayload | null;
   },
   teamSlugOrId: string
 ): Promise<AgentSpawnResult[]> {
@@ -986,6 +1024,7 @@ export async function spawnAllAgents(
         {
           ...options,
           newBranch: branchNames[index],
+          localRepoArchive: options.localRepoArchive ?? undefined,
         },
         teamSlugOrId
       )

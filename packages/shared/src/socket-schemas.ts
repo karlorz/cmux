@@ -37,6 +37,7 @@ export const StartTaskSchema = z.object({
   taskId: typedZid("tasks"),
   selectedAgents: z.array(z.string()).optional(),
   isCloudMode: z.boolean().optional().default(false),
+  localRepoPath: z.string().optional(),
   images: z
     .array(
       z.object({
@@ -423,6 +424,35 @@ export const DefaultRepoSchema = z.object({
   localPath: z.string(),
 });
 
+export const LocalRepoSuggestionSchema = z.object({
+  path: z.string(),
+  displayName: z.string(),
+  isGitRepo: z.boolean(),
+});
+
+export const LocalRepoSuggestionRequestSchema = z.object({
+  query: z.string(),
+  limit: z.number().int().min(1).max(50).optional(),
+});
+
+export const LocalRepoSuggestionResponseSchema = z.object({
+  suggestions: z.array(LocalRepoSuggestionSchema),
+});
+
+export const ResolveLocalRepoRequestSchema = z.object({
+  path: z.string(),
+});
+
+export const ResolveLocalRepoResponseSchema = z.object({
+  success: z.boolean(),
+  path: z.string().optional(),
+  repoFullName: z.string().optional(),
+  remoteUrl: z.string().optional(),
+  currentBranch: z.string().optional(),
+  defaultBranch: z.string().optional(),
+  error: z.string().optional(),
+});
+
 // Type exports
 export type CreateTerminal = z.infer<typeof CreateTerminalSchema>;
 export type TerminalInput = z.infer<typeof TerminalInputSchema>;
@@ -485,6 +515,13 @@ export type ProviderStatusResponse = z.infer<
   typeof ProviderStatusResponseSchema
 >;
 export type DefaultRepo = z.infer<typeof DefaultRepoSchema>;
+export type LocalRepoSuggestion = z.infer<typeof LocalRepoSuggestionSchema>;
+export type LocalRepoSuggestionResponse = z.infer<
+  typeof LocalRepoSuggestionResponseSchema
+>;
+export type ResolveLocalRepoResponse = z.infer<
+  typeof ResolveLocalRepoResponseSchema
+>;
 
 // Socket.io event map types
 export interface ClientToServerEvents {
@@ -516,6 +553,14 @@ export interface ClientToServerEvents {
     callback: (response: OpenInEditorResponse) => void
   ) => void;
   "list-files": (data: ListFilesRequest) => void;
+  "search-local-paths": (
+    data: z.infer<typeof LocalRepoSuggestionRequestSchema>,
+    callback: (response: z.infer<typeof LocalRepoSuggestionResponseSchema>) => void
+  ) => void;
+  "resolve-local-repo": (
+    data: z.infer<typeof ResolveLocalRepoRequestSchema>,
+    callback: (response: z.infer<typeof ResolveLocalRepoResponseSchema>) => void
+  ) => void;
   // GitHub operations
   "github-test-auth": (
     callback: (response: GitHubAuthResponse) => void

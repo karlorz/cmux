@@ -15,7 +15,7 @@ export interface HydrateRepoConfig {
   newBranch: string;
 }
 
-const MORPH_WORKSPACE_PATH = "/root/workspace";
+export const MORPH_WORKSPACE_PATH = "/root/workspace";
 
 const getHydrateScript = (): string => {
   const __dirname = dirname(fileURLToPath(import.meta.url));
