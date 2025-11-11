@@ -47,6 +47,7 @@ const StartSandboxBody = z
     repoUrl: z.string().optional(),
     branch: z.string().optional(),
     newBranch: z.string().optional(),
+    pullRequestUrl: z.string().optional(),
     depth: z.number().optional().default(1),
   })
   .openapi("StartSandboxBody");
@@ -140,6 +141,7 @@ sandboxesRouter.openapi(
         hasSnapshotId: Boolean(body.snapshotId),
         repoUrl: body.repoUrl,
         branch: body.branch,
+        pullRequestUrl: body.pullRequestUrl,
       });
     } catch {
       /* noop */
@@ -330,6 +332,7 @@ sandboxesRouter.openapi(
         await hydrateWorkspace({
           instance,
           repo: repoConfig,
+          pullRequestUrl: body.pullRequestUrl,
         });
       } catch (error) {
         console.error(`[sandboxes.start] Hydration failed:`, error);

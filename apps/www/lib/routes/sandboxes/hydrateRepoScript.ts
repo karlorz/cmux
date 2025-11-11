@@ -14,6 +14,7 @@ interface HydrateConfig {
   depth: number;
   baseBranch?: string;
   newBranch?: string;
+  pullRequestUrl?: string;
 }
 
 function log(message: string, level: "info" | "error" | "debug" = "info") {
@@ -74,6 +75,7 @@ function getConfig(): HydrateConfig {
   const maskedCloneUrl = process.env.CMUX_MASKED_CLONE_URL;
   const baseBranch = process.env.CMUX_BASE_BRANCH;
   const newBranch = process.env.CMUX_NEW_BRANCH;
+  const pullRequestUrl = process.env.CMUX_PULL_REQUEST_URL;
 
   return {
     workspacePath,
@@ -85,6 +87,7 @@ function getConfig(): HydrateConfig {
     depth,
     baseBranch,
     newBranch,
+    pullRequestUrl,
   };
 }
 
@@ -220,6 +223,70 @@ function checkoutBranch(workspacePath: string, baseBranch: string, newBranch?: s
   }
 }
 
+function parsePrNumber(prUrl: string): number | null {
+  const match = prUrl.match(/\/pull\/(\d+)/i);
+  if (!match) {
+    return null;
+  }
+  const parsed = Number.parseInt(match[1], 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function checkoutPullRequest(workspacePath: string, prUrl: string) {
+  const trimmedUrl = prUrl.trim();
+  if (!trimmedUrl) {
+    return;
+  }
+
+  log(`Checking out pull request: ${trimmedUrl}`);
+  const checkout = exec(`gh pr checkout "${trimmedUrl}"`, {
+    cwd: workspacePath,
+    throwOnError: false,
+  });
+
+  if (checkout.exitCode === 0) {
+    log("Pull request checkout succeeded via gh");
+    return;
+  }
+
+  log(
+    `gh pr checkout failed (exit ${checkout.exitCode}); attempting git fallback`,
+    "debug",
+  );
+
+  const prNumber = parsePrNumber(trimmedUrl);
+  if (!prNumber) {
+    log("Unable to parse PR number for fallback checkout", "error");
+    return;
+  }
+
+  const fallbackBranch = `cmux-pr-${prNumber}`;
+  const fetchRes = exec(
+    `git fetch origin pull/${prNumber}/head:${fallbackBranch}`,
+    { cwd: workspacePath, throwOnError: false },
+  );
+  if (fetchRes.exitCode !== 0) {
+    log(
+      `Fallback fetch failed (exit ${fetchRes.exitCode}): ${fetchRes.stderr.slice(0, 200)}`,
+      "error",
+    );
+    return;
+  }
+
+  const switchRes = exec(`git checkout "${fallbackBranch}"`, {
+    cwd: workspacePath,
+    throwOnError: false,
+  });
+  if (switchRes.exitCode === 0) {
+    log(`Checked out fallback branch ${fallbackBranch}`);
+  } else {
+    log(
+      `Failed to checkout fallback branch ${fallbackBranch}: ${switchRes.stderr.slice(0, 200)}`,
+      "error",
+    );
+  }
+}
+
 function hydrateSubdirectories(workspacePath: string) {
   log("Checking for subdirectory git repositories");
 
@@ -274,6 +341,10 @@ async function main() {
       // Checkout branch
       if (config.baseBranch) {
         checkoutBranch(config.workspacePath, config.baseBranch, config.newBranch);
+      }
+
+      if (config.pullRequestUrl) {
+        checkoutPullRequest(config.workspacePath, config.pullRequestUrl);
       }
 
       // List files for verification

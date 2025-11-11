@@ -18,7 +18,10 @@ import type {
   CreateLocalWorkspaceResponse,
   CreateCloudWorkspaceResponse,
 } from "@cmux/shared";
-import { deriveRepoBaseName } from "@cmux/shared";
+import {
+  deriveRepoBaseName,
+  parseGithubWorkspaceTarget,
+} from "@cmux/shared";
 import { useUser, type Team } from "@stackframe/react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
@@ -167,6 +170,22 @@ type CloudWorkspaceOption =
       repoBaseName: string;
       keywords: string[];
     };
+
+type WorkspaceCheckoutRequest = {
+  projectFullName: string;
+  branch?: string;
+  descriptorLabel?: string;
+  pullRequestUrl?: string;
+};
+
+type GithubWorkspaceAction = {
+  kind: "branch" | "pull-request";
+  valueKey: string;
+  title: string;
+  subtitle: string;
+  searchTokens: string[];
+  request: WorkspaceCheckoutRequest;
+};
 
 type CommandListEntry = {
   value: string;
@@ -683,7 +702,12 @@ export function CommandBar({
   }, [open]);
 
   const createLocalWorkspace = useCallback(
-    async (projectFullName: string) => {
+    async ({
+      projectFullName,
+      branch,
+      descriptorLabel,
+      pullRequestUrl,
+    }: WorkspaceCheckoutRequest) => {
       if (isCreatingLocalWorkspace) {
         return;
       }
@@ -700,10 +724,19 @@ export function CommandBar({
 
       try {
         const repoUrl = `https://github.com/${projectFullName}.git`;
+        const normalizedBranch = branch?.trim() || undefined;
+        const normalizedDescriptorLabel =
+          descriptorLabel?.trim() || undefined;
+        const normalizedPullRequestUrl =
+          pullRequestUrl && pullRequestUrl.trim().length > 0
+            ? pullRequestUrl.trim()
+            : undefined;
         const reservation = await reserveLocalWorkspace({
           teamSlugOrId,
           projectFullName,
           repoUrl,
+          branch: normalizedBranch,
+          descriptorLabel: normalizedDescriptorLabel,
         });
         if (!reservation) {
           throw new Error("Unable to reserve workspace name");
@@ -721,6 +754,9 @@ export function CommandBar({
               teamSlugOrId,
               projectFullName,
               repoUrl,
+              branch: normalizedBranch,
+              descriptorLabel: normalizedDescriptorLabel,
+              pullRequestUrl: normalizedPullRequestUrl,
               taskId: reservation.taskId,
               taskRunId: reservation.taskRunId,
               workspaceName: reservation.workspaceName,
@@ -839,10 +875,10 @@ export function CommandBar({
   );
 
   const handleLocalWorkspaceSelect = useCallback(
-    (projectFullName: string) => {
+    (request: WorkspaceCheckoutRequest) => {
       clearCommandInput();
       closeCommand();
-      void createLocalWorkspace(projectFullName);
+      void createLocalWorkspace(request);
     },
     [clearCommandInput, closeCommand, createLocalWorkspace]
   );
@@ -932,7 +968,12 @@ export function CommandBar({
   );
 
   const createCloudWorkspaceFromRepo = useCallback(
-    async (projectFullName: string) => {
+    async ({
+      projectFullName,
+      branch,
+      descriptorLabel,
+      pullRequestUrl,
+    }: WorkspaceCheckoutRequest) => {
       if (isCreatingCloudWorkspace) {
         return;
       }
@@ -947,11 +988,22 @@ export function CommandBar({
 
       try {
         const repoUrl = `https://github.com/${projectFullName}.git`;
+        const normalizedBranch = branch?.trim() || undefined;
+        const normalizedDescriptorLabel =
+          descriptorLabel?.trim() || undefined;
+        const normalizedPullRequestUrl =
+          pullRequestUrl && pullRequestUrl.trim().length > 0
+            ? pullRequestUrl.trim()
+            : undefined;
+        const descriptorSuffix = normalizedDescriptorLabel
+          ? ` [${normalizedDescriptorLabel}]`
+          : "";
+        const taskTitle = `Cloud Workspace: ${projectFullName}${descriptorSuffix}`;
 
         // Create task in Convex for repo-based cloud workspace
         const taskId = await createTask({
           teamSlugOrId,
-          text: `Cloud Workspace: ${projectFullName}`,
+          text: taskTitle,
           projectFullName,
           baseBranch: undefined,
           environmentId: undefined, // No environment for repo-based cloud workspaces
@@ -968,6 +1020,9 @@ export function CommandBar({
               teamSlugOrId,
               projectFullName,
               repoUrl,
+              branch: normalizedBranch,
+              descriptorLabel: normalizedDescriptorLabel,
+              pullRequestUrl: normalizedPullRequestUrl,
               taskId,
               theme,
             },
@@ -1018,7 +1073,9 @@ export function CommandBar({
       if (option.type === "environment") {
         void createCloudWorkspaceFromEnvironment(option.environmentId);
       } else {
-        void createCloudWorkspaceFromRepo(option.fullName);
+        void createCloudWorkspaceFromRepo({
+          projectFullName: option.fullName,
+        });
       }
     },
     [
@@ -1925,8 +1982,55 @@ export function CommandBar({
     return [...baseEntries, ...taskEntries, ...electronEntries];
   }, [allTasks, handleSelect, stackUser]);
 
+  const trimmedSearch = search.trim();
+  const githubWorkspaceAction = useMemo<GithubWorkspaceAction | null>(() => {
+    if (!trimmedSearch || !trimmedSearch.toLowerCase().includes("github.com")) {
+      return null;
+    }
+    const target = parseGithubWorkspaceTarget(trimmedSearch);
+    if (!target || (target.type !== "branch" && target.type !== "pull-request")) {
+      return null;
+    }
+    const projectFullName = target.fullName;
+    const searchTokens = [
+      projectFullName,
+      trimmedSearch,
+      "github",
+    ];
+
+    if (target.type === "branch") {
+      searchTokens.push(target.branch);
+      return {
+        kind: "branch",
+        valueKey: `branch:${encodeURIComponent(projectFullName)}:${encodeURIComponent(target.branch)}`,
+        title: `${projectFullName} @ ${target.branch}`,
+        subtitle: "Create workspace from GitHub branch link",
+        searchTokens,
+        request: {
+          projectFullName,
+          branch: target.branch,
+          descriptorLabel: target.branch,
+        },
+      };
+    }
+
+    searchTokens.push(`pr ${target.prNumber}`);
+    return {
+      kind: "pull-request",
+      valueKey: `pr:${encodeURIComponent(projectFullName)}:${target.prNumber}`,
+      title: `${projectFullName} PR #${target.prNumber}`,
+      subtitle: "Create workspace from GitHub pull request",
+      searchTokens,
+      request: {
+        projectFullName,
+        descriptorLabel: `PR #${target.prNumber}`,
+        pullRequestUrl: target.url,
+      },
+    };
+  }, [trimmedSearch]);
+
   const localWorkspaceEntries = useMemo<CommandListEntry[]>(() => {
-    return localWorkspaceOptions.map((option) => {
+    const entries = localWorkspaceOptions.map((option) => {
       const value = `local-workspace:${option.fullName}`;
       return {
         value,
@@ -1937,7 +2041,10 @@ export function CommandBar({
         ]),
         className: baseCommandItemClassName,
         disabled: isCreatingLocalWorkspace,
-        execute: () => handleLocalWorkspaceSelect(option.fullName),
+        execute: () =>
+          handleLocalWorkspaceSelect({
+            projectFullName: option.fullName,
+          }),
         renderContent: () => (
           <>
             <GitHubIcon className="h-4 w-4 text-neutral-500" />
@@ -1948,14 +2055,47 @@ export function CommandBar({
         ),
       };
     });
+
+    if (githubWorkspaceAction) {
+      entries.unshift({
+        value: `local-workspace-github:${githubWorkspaceAction.valueKey}`,
+        label: githubWorkspaceAction.title,
+        keywords: githubWorkspaceAction.searchTokens,
+        searchText: buildSearchText(
+          githubWorkspaceAction.title,
+          githubWorkspaceAction.searchTokens,
+          [trimmedSearch]
+        ),
+        className: baseCommandItemClassName,
+        disabled: isCreatingLocalWorkspace,
+        execute: () => handleLocalWorkspaceSelect(githubWorkspaceAction.request),
+        renderContent: () => (
+          <>
+            <GitHubIcon className="h-4 w-4 text-neutral-500" />
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-sm">
+                {githubWorkspaceAction.title}
+              </span>
+              <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                {githubWorkspaceAction.subtitle}
+              </span>
+            </div>
+          </>
+        ),
+      });
+    }
+
+    return entries;
   }, [
+    githubWorkspaceAction,
     handleLocalWorkspaceSelect,
     isCreatingLocalWorkspace,
     localWorkspaceOptions,
+    trimmedSearch,
   ]);
 
   const cloudWorkspaceEntries = useMemo<CommandListEntry[]>(() => {
-    return cloudWorkspaceOptions.map((option) => {
+    const entries = cloudWorkspaceOptions.map((option) => {
       if (option.type === "environment") {
         const value = `cloud-workspace-env:${option.environmentId}`;
         return {
@@ -1998,10 +2138,50 @@ export function CommandBar({
         };
       }
     });
+
+    if (githubWorkspaceAction) {
+      entries.unshift({
+        value: `cloud-workspace-github:${githubWorkspaceAction.valueKey}`,
+        label: githubWorkspaceAction.title,
+        keywords: githubWorkspaceAction.searchTokens,
+        searchText: buildSearchText(
+          githubWorkspaceAction.title,
+          githubWorkspaceAction.searchTokens,
+          [trimmedSearch]
+        ),
+        className: baseCommandItemClassName,
+        disabled: isCreatingCloudWorkspace,
+        execute: () => {
+          clearCommandInput();
+          closeCommand();
+          void createCloudWorkspaceFromRepo(githubWorkspaceAction.request);
+        },
+        renderContent: () => (
+          <>
+            <GitHubIcon className="h-4 w-4 text-neutral-500" />
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-sm">
+                {githubWorkspaceAction.title}
+              </span>
+              <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                {githubWorkspaceAction.subtitle}
+              </span>
+            </div>
+          </>
+        ),
+      });
+    }
+
+    return entries;
   }, [
     cloudWorkspaceOptions,
+    clearCommandInput,
+    createCloudWorkspaceFromRepo,
+    closeCommand,
+    githubWorkspaceAction,
     handleCloudWorkspaceSelect,
     isCreatingCloudWorkspace,
+    trimmedSearch,
   ]);
 
   const {
@@ -2054,7 +2234,7 @@ export function CommandBar({
     [search, teamCommandEntries]
   );
 
-  const hasSearchQuery = search.trim().length > 0;
+  const hasSearchQuery = trimmedSearch.length > 0;
 
   const rootSuggestedEntries = useMemo(
     () => selectSuggestedItems(rootSuggestionHistory, filteredRootEntries, 5),
