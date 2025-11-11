@@ -34,11 +34,11 @@ export function EnvironmentName({
 
   return (
     <span
-      className="text-[11px] text-neutral-400 dark:text-neutral-500 flex-shrink-0 ml-auto mr-0 transition-opacity duration-200"
+      className="block min-w-0 truncate text-[11px] text-neutral-400 dark:text-neutral-500 transition-opacity duration-200"
       style={{ opacity: isVisible ? 1 : 0 }}
+      title={environment.name}
     >
       {environment.name}
     </span>
   );
 }
-

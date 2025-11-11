@@ -184,6 +184,15 @@ export const TaskItem = memo(function TaskItem({
     [unarchive, task._id]
   );
 
+  const repoName = task.projectFullName?.split("/")[1];
+  const branchName =
+    task.baseBranch && task.baseBranch !== "main" ? task.baseBranch : undefined;
+  const projectBranchLabel = repoName
+    ? branchName
+      ? `${repoName}/${branchName}`
+      : repoName
+    : branchName;
+
   return (
     <div className="relative group w-full">
       <ContextMenu.Root>
@@ -260,31 +269,27 @@ export const TaskItem = memo(function TaskItem({
                   )}
                 />
               ) : (
-                <span className="text-[13px] font-medium truncate min-w-0">
+                <span
+                  className="block min-w-0 truncate text-[13px] font-medium"
+                  title={task.text}
+                >
                   {task.text}
                 </span>
               )}
             </div>
-            <div className="text-[11px] text-neutral-400 dark:text-neutral-500 flex-shrink-0 text-right flex items-center justify-end gap-2">
+            <div className="text-[11px] text-neutral-400 dark:text-neutral-500 text-right flex items-center justify-end gap-2 overflow-hidden whitespace-nowrap min-w-0">
               {task.environmentId && (
                 <EnvironmentName
                   environmentId={task.environmentId}
                   teamSlugOrId={teamSlugOrId}
                 />
               )}
-              {(task.projectFullName ||
-                (task.baseBranch && task.baseBranch !== "main")) && (
-                <span>
-                  {task.projectFullName && (
-                    <span>{task.projectFullName.split("/")[1]}</span>
-                  )}
-                  {task.projectFullName &&
-                    task.baseBranch &&
-                    task.baseBranch !== "main" &&
-                    "/"}
-                  {task.baseBranch && task.baseBranch !== "main" && (
-                    <span>{task.baseBranch}</span>
-                  )}
+              {projectBranchLabel && (
+                <span
+                  className="block min-w-0 truncate"
+                  title={projectBranchLabel}
+                >
+                  {projectBranchLabel}
                 </span>
               )}
             </div>
