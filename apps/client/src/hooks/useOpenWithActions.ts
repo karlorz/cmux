@@ -1,5 +1,5 @@
 import { useSocket } from "@/contexts/socket/use-socket";
-import type { Doc } from "@cmux/convex/dataModel";
+import type { Doc, Id } from "@cmux/convex/dataModel";
 import { editorIcons, type EditorType } from "@/components/ui/dropdown-types";
 import { useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
@@ -24,6 +24,7 @@ type UseOpenWithActionsArgs = {
   worktreePath?: string | null;
   branch?: string | null;
   networking?: NetworkingInfo;
+  taskRunId?: Id<"taskRuns"> | null;
 };
 
 export function useOpenWithActions({
@@ -31,6 +32,7 @@ export function useOpenWithActions({
   worktreePath,
   branch,
   networking,
+  taskRunId,
 }: UseOpenWithActionsArgs) {
   const { socket, availableEditors } = useSocket();
   const localServeWeb = useLocalVSCodeServeWebQuery();
@@ -49,6 +51,8 @@ export function useOpenWithActions({
       socket.off("open-in-editor-error", handleOpenInEditorError);
     };
   }, [socket]);
+
+  const hasWorkspaceTarget = Boolean(worktreePath) || Boolean(taskRunId);
 
   const handleOpenInEditor = useCallback(
     (editor: EditorType): Promise<void> => {
@@ -74,7 +78,7 @@ export function useOpenWithActions({
             "alacritty",
             "xcode",
           ].includes(editor) &&
-          worktreePath
+          hasWorkspaceTarget
         ) {
           socket.emit(
             "open-in-editor",
@@ -89,7 +93,8 @@ export function useOpenWithActions({
                 | "ghostty"
                 | "alacritty"
                 | "xcode",
-              path: worktreePath,
+              path: worktreePath ?? "",
+              taskRunId: taskRunId ?? undefined,
             },
             (response) => {
               if (response.success) {
@@ -104,7 +109,7 @@ export function useOpenWithActions({
         }
       });
     },
-    [socket, worktreePath, vscodeUrl, localServeWebOrigin]
+    [socket, worktreePath, taskRunId, vscodeUrl, localServeWebOrigin, hasWorkspaceTarget]
   );
 
   const handleCopyBranch = useCallback(() => {
@@ -125,47 +130,47 @@ export function useOpenWithActions({
       {
         id: "vscode",
         name: "VS Code (local)",
-        enabled: Boolean(worktreePath) && (availableEditors?.vscode ?? true),
+        enabled: hasWorkspaceTarget && (availableEditors?.vscode ?? true),
       },
       {
         id: "cursor",
         name: "Cursor",
-        enabled: Boolean(worktreePath) && (availableEditors?.cursor ?? true),
+        enabled: hasWorkspaceTarget && (availableEditors?.cursor ?? true),
       },
       {
         id: "windsurf",
         name: "Windsurf",
-        enabled: Boolean(worktreePath) && (availableEditors?.windsurf ?? true),
+        enabled: hasWorkspaceTarget && (availableEditors?.windsurf ?? true),
       },
       {
         id: "finder",
         name: "Finder",
-        enabled: Boolean(worktreePath) && (availableEditors?.finder ?? true),
+        enabled: hasWorkspaceTarget && (availableEditors?.finder ?? true),
       },
       {
         id: "iterm",
         name: "iTerm",
-        enabled: Boolean(worktreePath) && (availableEditors?.iterm ?? false),
+        enabled: hasWorkspaceTarget && (availableEditors?.iterm ?? false),
       },
       {
         id: "terminal",
         name: "Terminal",
-        enabled: Boolean(worktreePath) && (availableEditors?.terminal ?? false),
+        enabled: hasWorkspaceTarget && (availableEditors?.terminal ?? false),
       },
       {
         id: "ghostty",
         name: "Ghostty",
-        enabled: Boolean(worktreePath) && (availableEditors?.ghostty ?? false),
+        enabled: hasWorkspaceTarget && (availableEditors?.ghostty ?? false),
       },
       {
         id: "alacritty",
         name: "Alacritty",
-        enabled: Boolean(worktreePath) && (availableEditors?.alacritty ?? false),
+        enabled: hasWorkspaceTarget && (availableEditors?.alacritty ?? false),
       },
       {
         id: "xcode",
         name: "Xcode",
-        enabled: Boolean(worktreePath) && (availableEditors?.xcode ?? false),
+        enabled: hasWorkspaceTarget && (availableEditors?.xcode ?? false),
       },
     ];
 
@@ -176,7 +181,7 @@ export function useOpenWithActions({
         name: item.name,
         Icon: editorIcons[item.id] ?? null,
       }));
-  }, [availableEditors, vscodeUrl, worktreePath]);
+  }, [availableEditors, hasWorkspaceTarget, vscodeUrl]);
 
   const portActions = useMemo<PortAction[]>(() => {
     if (!networking) return [];

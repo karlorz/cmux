@@ -82,6 +82,13 @@ interface ExecError extends Error {
 }
 
 const isWindows = process.platform === "win32";
+const CLOUD_WORKSPACE_PATH_PREFIX = "/root/workspace";
+
+function isLikelyCloudWorkspacePath(
+  candidate: string | undefined | null
+): boolean {
+  return Boolean(candidate && candidate.startsWith(CLOUD_WORKSPACE_PATH_PREFIX));
+}
 
 function sanitizeShellPath(candidate: string | undefined | null): string | null {
   if (!candidate) {
@@ -1636,41 +1643,90 @@ export function setupSocketHandlers(
 
     socket.on("open-in-editor", async (data, callback) => {
       try {
-        const { editor, path } = OpenInEditorSchema.parse(data);
+        const { editor, path, taskRunId } = OpenInEditorSchema.parse(data);
+
+        let workspacePath: string | null = path;
+
+        const ensureWorkspace = async (): Promise<void> => {
+          if (!taskRunId) {
+            return;
+          }
+
+          const shouldEnsure =
+            isLikelyCloudWorkspacePath(workspacePath) || !workspacePath;
+
+          if (shouldEnsure) {
+            const ensured = await ensureRunWorktreeAndBranch(
+              taskRunId,
+              safeTeam
+            );
+            workspacePath = ensured.worktreePath;
+            return;
+          }
+
+          if (workspacePath) {
+            try {
+              await fs.access(workspacePath);
+            } catch {
+              serverLogger.warn(
+                `[open-in-editor] Workspace path missing (${workspacePath}), recreating from cloud run ${taskRunId}`
+              );
+              const ensured = await ensureRunWorktreeAndBranch(
+                taskRunId,
+                safeTeam
+              );
+              workspacePath = ensured.worktreePath;
+            }
+          }
+        };
+
+        await ensureWorkspace();
+
+        if (!workspacePath) {
+          throw new Error("Workspace path is not available to open");
+        }
+
+        try {
+          await fs.access(workspacePath);
+        } catch {
+          throw new Error(
+            `Workspace path ${workspacePath} does not exist or is inaccessible`
+          );
+        }
 
         let command: string[];
         switch (editor) {
           case "vscode":
-            command = ["code", path];
+            command = ["code", workspacePath];
             break;
           case "cursor":
-            command = ["cursor", path];
+            command = ["cursor", workspacePath];
             break;
           case "windsurf":
-            command = ["windsurf", path];
+            command = ["windsurf", workspacePath];
             break;
           case "finder": {
             if (process.platform !== "darwin") {
               throw new Error("Finder is only supported on macOS");
             }
             // Use macOS 'open' to open the folder in Finder
-            command = ["open", path];
+            command = ["open", workspacePath];
             break;
           }
           case "iterm":
-            command = ["open", "-a", "iTerm", path];
+            command = ["open", "-a", "iTerm", workspacePath];
             break;
           case "terminal":
-            command = ["open", "-a", "Terminal", path];
+            command = ["open", "-a", "Terminal", workspacePath];
             break;
           case "ghostty":
-            command = ["open", "-a", "Ghostty", path];
+            command = ["open", "-a", "Ghostty", workspacePath];
             break;
           case "alacritty":
-            command = ["alacritty", "--working-directory", path];
+            command = ["alacritty", "--working-directory", workspacePath];
             break;
           case "xcode":
-            command = ["open", "-a", "Xcode", path];
+            command = ["open", "-a", "Xcode", workspacePath];
             break;
           default:
             throw new Error(`Unknown editor: ${editor}`);
@@ -1682,7 +1738,9 @@ export function setupSocketHandlers(
 
         childProcess.on("close", (code) => {
           if (code === 0) {
-            serverLogger.info(`Successfully opened ${path} in ${editor}`);
+            serverLogger.info(
+              `Successfully opened ${workspacePath} in ${editor}`
+            );
             // Send success callback
             if (callback) {
               callback({ success: true });

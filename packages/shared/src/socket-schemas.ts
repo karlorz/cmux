@@ -220,6 +220,7 @@ export const OpenInEditorSchema = z.object({
     "xcode",
   ]),
   path: z.string(),
+  taskRunId: typedZid("taskRuns").optional(),
 });
 
 export const AvailableEditorsSchema = z.object({

@@ -1,4 +1,5 @@
 import { useSocket } from "@/contexts/socket/use-socket";
+import type { Id } from "@cmux/convex/dataModel";
 import { ChevronDown, ExternalLink } from "lucide-react";
 import { useEffect, useRef, useState, useMemo } from "react";
 
@@ -14,14 +15,19 @@ type EditorType =
   | "xcode";
 
 interface OpenInEditorButtonProps {
-  workspacePath: string;
+  workspacePath?: string | null;
+  taskRunId?: Id<"taskRuns"> | null;
 }
 
-export function OpenInEditorButton({ workspacePath }: OpenInEditorButtonProps) {
+export function OpenInEditorButton({
+  workspacePath,
+  taskRunId,
+}: OpenInEditorButtonProps) {
   const [selectedEditor, setSelectedEditor] = useState<EditorType>("cursor");
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { socket, availableEditors } = useSocket();
+  const hasWorkspaceTarget = Boolean(workspacePath) || Boolean(taskRunId);
 
   const editors = useMemo(() => {
     const items: Array<{ id: EditorType; name: string }> = [];
@@ -84,12 +90,13 @@ export function OpenInEditorButton({ workspacePath }: OpenInEditorButtonProps) {
   }, [socket]);
 
   const handleOpenInEditor = () => {
-    if (workspacePath && socket) {
+    if (hasWorkspaceTarget && socket) {
       socket.emit(
         "open-in-editor",
         {
           editor: selectedEditor,
-          path: workspacePath,
+          path: workspacePath ?? "",
+          taskRunId: taskRunId ?? undefined,
         },
         (response) => {
           if (!response.success) {
@@ -106,9 +113,12 @@ export function OpenInEditorButton({ workspacePath }: OpenInEditorButtonProps) {
         <button
           onClick={handleOpenInEditor}
           className="flex items-center gap-2 px-3 py-0 h-full text-sm bg-transparent hover:bg-neutral-700 text-neutral-200 transition-colors flex-1 select-none"
+          disabled={!hasWorkspaceTarget}
         >
           <ExternalLink className="w-4 h-4" />
-          Open in {editors.find((e) => e.id === selectedEditor)?.name}
+          {hasWorkspaceTarget
+            ? `Open in ${editors.find((e) => e.id === selectedEditor)?.name}`
+            : "Workspace unavailable"}
         </button>
         <div className="w-px h-4 bg-neutral-600" />
         <button

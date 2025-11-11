@@ -1,12 +1,14 @@
 import { Dropdown } from "@/components/ui/dropdown";
 import { useOpenWithActions } from "@/hooks/useOpenWithActions";
 import { isElectron } from "@/lib/electron";
+import type { Id } from "@cmux/convex/dataModel";
 import clsx from "clsx";
 import { EllipsisVertical, ExternalLink, GitBranch, Globe } from "lucide-react";
 
 interface OpenWithDropdownProps {
   vscodeUrl?: string | null;
   worktreePath?: string | null;
+  taskRunId?: Id<"taskRuns"> | null;
   branch?: string | null;
   networking?: Parameters<typeof useOpenWithActions>[0]["networking"];
   className?: string;
@@ -16,6 +18,7 @@ interface OpenWithDropdownProps {
 export function OpenWithDropdown({
   vscodeUrl,
   worktreePath,
+  taskRunId,
   branch,
   networking,
   className,
@@ -30,6 +33,7 @@ export function OpenWithDropdown({
   } = useOpenWithActions({
     vscodeUrl,
     worktreePath,
+    taskRunId,
     branch,
     networking,
   });

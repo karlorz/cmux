@@ -392,6 +392,7 @@ export const TaskItem = memo(function TaskItem({
           <OpenWithDropdown
             vscodeUrl={vscodeUrl}
             worktreePath={runWithVSCode?.worktreePath || task.worktreePath}
+            taskRunId={runWithVSCode?._id ?? null}
             branch={task.baseBranch}
             className="group-hover:opacity-100 aria-expanded:opacity-100 opacity-0"
           />
