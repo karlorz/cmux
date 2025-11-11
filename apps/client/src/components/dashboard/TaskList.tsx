@@ -1,11 +1,11 @@
 import { api } from "@cmux/convex/api";
 import type { Doc } from "@cmux/convex/dataModel";
-import { useLocalStorage } from "@mantine/hooks";
+import { useLocalStorage, useDebouncedValue } from "@mantine/hooks";
 import { useQuery } from "convex/react";
 import clsx from "clsx";
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState, useRef, useEffect } from "react";
 import { TaskItem } from "./TaskItem";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Search } from "lucide-react";
 
 type TaskCategoryKey =
   | "workspaces"
@@ -76,13 +76,28 @@ const sortByRecentUpdate = (tasks: Doc<"tasks">[]): Doc<"tasks">[] => {
 };
 
 const categorizeTasks = (
-  tasks: Doc<"tasks">[] | undefined
+  tasks: Doc<"tasks">[] | undefined,
+  searchQuery?: string
 ): Record<TaskCategoryKey, Doc<"tasks">[]> | null => {
   if (!tasks) {
     return null;
   }
   const buckets = createEmptyCategoryBuckets();
+  const normalizedQuery = searchQuery?.toLowerCase().trim();
+
   for (const task of tasks) {
+    // Filter by search query if provided
+    if (normalizedQuery) {
+      const matchesText = task.text?.toLowerCase().includes(normalizedQuery);
+      const matchesDescription = task.description?.toLowerCase().includes(normalizedQuery);
+      const matchesProject = task.projectFullName?.toLowerCase().includes(normalizedQuery);
+      const matchesBranch = task.baseBranch?.toLowerCase().includes(normalizedQuery);
+
+      if (!matchesText && !matchesDescription && !matchesProject && !matchesBranch) {
+        continue;
+      }
+    }
+
     const key = getTaskCategory(task);
     buckets[key].push(task);
   }
@@ -112,8 +127,26 @@ export const TaskList = memo(function TaskList({
     archived: true,
   });
   const [tab, setTab] = useState<"all" | "archived">("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery] = useDebouncedValue(searchQuery, 300);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const categorizedTasks = useMemo(() => categorizeTasks(allTasks), [allTasks]);
+  const categorizedTasks = useMemo(
+    () => categorizeTasks(allTasks, debouncedSearchQuery),
+    [allTasks, debouncedSearchQuery]
+  );
+  const filteredArchivedTasks = useMemo(() => {
+    if (!archivedTasks || !debouncedSearchQuery) return archivedTasks;
+    const normalizedQuery = debouncedSearchQuery.toLowerCase().trim();
+    return archivedTasks.filter((task) => {
+      const matchesText = task.text?.toLowerCase().includes(normalizedQuery);
+      const matchesDescription = task.description?.toLowerCase().includes(normalizedQuery);
+      const matchesProject = task.projectFullName?.toLowerCase().includes(normalizedQuery);
+      const matchesBranch = task.baseBranch?.toLowerCase().includes(normalizedQuery);
+      return matchesText || matchesDescription || matchesProject || matchesBranch;
+    });
+  }, [archivedTasks, debouncedSearchQuery]);
+
   const categoryBuckets = categorizedTasks ?? createEmptyCategoryBuckets();
   const collapsedStorageKey = useMemo(
     () => `dashboard-collapsed-categories-${teamSlugOrId}`,
@@ -137,6 +170,19 @@ export const TaskList = memo(function TaskList({
       [categoryKey]: !prev[categoryKey],
     }));
   }, [setCollapsedCategories]);
+
+  // Cmd+F / Ctrl+F keyboard shortcut
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   return (
     <div className="mt-6 w-full">
@@ -168,18 +214,31 @@ export const TaskList = memo(function TaskList({
           </button>
         </div>
       </div>
+      <div className="mb-3 px-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400 dark:text-neutral-500 pointer-events-none" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search tasks... (Cmd+F)"
+            className="w-full h-9 pl-9 pr-3 text-sm bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-500 dark:placeholder:text-neutral-400"
+          />
+        </div>
+      </div>
       <div className="flex flex-col gap-1 w-full">
         {tab === "archived" ? (
           archivedTasks === undefined ? (
             <div className="text-sm text-neutral-500 dark:text-neutral-400 py-2 select-none">
               Loading...
             </div>
-          ) : archivedTasks.length === 0 ? (
+          ) : filteredArchivedTasks && filteredArchivedTasks.length === 0 ? (
             <div className="text-sm text-neutral-500 dark:text-neutral-400 py-2 select-none">
-              No archived tasks
+              {debouncedSearchQuery ? "No archived tasks match your search" : "No archived tasks"}
             </div>
           ) : (
-            archivedTasks.map((task) => (
+            filteredArchivedTasks?.map((task) => (
               <TaskItem
                 key={task._id}
                 task={task}
