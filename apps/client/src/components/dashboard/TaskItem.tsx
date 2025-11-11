@@ -184,6 +184,17 @@ export const TaskItem = memo(function TaskItem({
     [unarchive, task._id]
   );
 
+  const repoName = task.projectFullName
+    ? task.projectFullName.split("/").pop() ?? task.projectFullName
+    : undefined;
+  const branchName =
+    task.baseBranch && task.baseBranch !== "main" ? task.baseBranch : undefined;
+  const projectBranchLabel = repoName
+    ? branchName
+      ? `${repoName}/${branchName}`
+      : repoName
+    : branchName ?? null;
+
   return (
     <div className="relative group w-full">
       <ContextMenu.Root>
@@ -233,7 +244,7 @@ export const TaskItem = memo(function TaskItem({
                 />
               )}
             </div>
-            <div className="min-w-0 flex items-center">
+            <div className="min-w-0 flex items-center whitespace-nowrap">
               {isRenaming ? (
                 <input
                   ref={renameInputRef}
@@ -260,31 +271,22 @@ export const TaskItem = memo(function TaskItem({
                   )}
                 />
               ) : (
-                <span className="text-[13px] font-medium truncate min-w-0">
+                <span className="text-[13px] font-medium truncate min-w-0 block whitespace-nowrap">
                   {task.text}
                 </span>
               )}
             </div>
-            <div className="text-[11px] text-neutral-400 dark:text-neutral-500 flex-shrink-0 text-right flex items-center justify-end gap-2">
+            <div className="text-[11px] text-neutral-400 dark:text-neutral-500 text-right flex items-center justify-end gap-2 min-w-0 overflow-hidden">
               {task.environmentId && (
                 <EnvironmentName
                   environmentId={task.environmentId}
                   teamSlugOrId={teamSlugOrId}
+                  className="min-w-0 truncate whitespace-nowrap text-ellipsis"
                 />
               )}
-              {(task.projectFullName ||
-                (task.baseBranch && task.baseBranch !== "main")) && (
-                <span>
-                  {task.projectFullName && (
-                    <span>{task.projectFullName.split("/")[1]}</span>
-                  )}
-                  {task.projectFullName &&
-                    task.baseBranch &&
-                    task.baseBranch !== "main" &&
-                    "/"}
-                  {task.baseBranch && task.baseBranch !== "main" && (
-                    <span>{task.baseBranch}</span>
-                  )}
+              {projectBranchLabel && (
+                <span className="block min-w-0 truncate whitespace-nowrap text-ellipsis">
+                  {projectBranchLabel}
                 </span>
               )}
             </div>
