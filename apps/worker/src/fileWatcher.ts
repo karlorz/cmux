@@ -1,5 +1,6 @@
 import { exec } from "node:child_process";
 import { promises as fs, watch, type FSWatcher } from "node:fs";
+import ignore from "ignore";
 import * as path from "node:path";
 import { promisify } from "node:util";
 import { log } from "./logger";
@@ -32,7 +33,7 @@ export class FileWatcher {
   private pendingChanges: Map<string, FileChange> = new Map();
   private debounceTimer: NodeJS.Timeout | null = null;
   private lastGitStatus: Map<string, string> = new Map();
-  private gitIgnorePatterns: string[] = [];
+  private gitIgnoreMatcher: ReturnType<typeof ignore> | null = null;
 
   constructor(options: FileWatcherOptions) {
     this.watchPath = options.watchPath;
@@ -78,52 +79,48 @@ export class FileWatcher {
 
   private async loadGitIgnorePatterns(): Promise<void> {
     const searchPath = this.gitRepoPath || this.watchPath;
+    const matcher = ignore();
 
     try {
       const gitIgnorePath = path.join(searchPath, ".gitignore");
       const gitIgnoreContent = await fs.readFile(gitIgnorePath, "utf-8");
-
-      this.gitIgnorePatterns = gitIgnoreContent
-        .split("\n")
-        .filter((line) => line.trim() && !line.startsWith("#"))
-        .map((pattern) => pattern.trim());
-
-      // Always ignore .git directory
-      this.gitIgnorePatterns.push(".git");
-    } catch (error) {
-      // No gitignore file, just ignore .git
-      this.gitIgnorePatterns = [".git"];
+      matcher.add(gitIgnoreContent);
+    } catch {
+      // No .gitignore available; fall through with defaults
     }
+
+    matcher.add([
+      ".git/",
+      "**/.git/**",
+      "node_modules/",
+      "**/node_modules/**",
+      "dist/",
+      "**/dist/**",
+      "build/",
+      "**/build/**",
+      ".next/",
+      "**/.next/**",
+      ".cache/",
+      "**/.cache/**",
+    ]);
+
+    this.gitIgnoreMatcher = matcher;
   }
 
   private shouldIgnore(filePath: string): boolean {
-    if (!this.gitIgnore) return false;
-
-    const relativePath = path.relative(this.watchPath, filePath);
-
-    // Check against gitignore patterns (simplified check)
-    for (const pattern of this.gitIgnorePatterns) {
-      if (relativePath.includes(pattern)) {
-        return true;
-      }
+    if (!this.gitIgnore || !this.gitIgnoreMatcher) {
+      return false;
     }
 
-    // Ignore common build/temp directories
-    const ignoreDirs = [
-      "node_modules",
-      ".git",
-      "dist",
-      "build",
-      ".next",
-      ".cache",
-    ];
-    for (const dir of ignoreDirs) {
-      if (relativePath.includes(dir)) {
-        return true;
-      }
+    const relativePath = path
+      .relative(this.watchPath, filePath)
+      .replace(/\\/g, "/");
+
+    if (!relativePath || relativePath.startsWith("..")) {
+      return false;
     }
 
-    return false;
+    return this.gitIgnoreMatcher.ignores(relativePath);
   }
 
   private async updateGitStatus(): Promise<void> {
