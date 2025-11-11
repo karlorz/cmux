@@ -12,20 +12,20 @@ const DEFAULT_AGENT_NAME = "local-workspace";
 const DEFAULT_WORKSPACE_DESCRIPTOR = ({
   workspaceName,
   projectFullName,
-  branch,
+  contextLabel,
 }: {
   workspaceName: string;
   projectFullName?: string | null;
-  branch?: string | null;
+  contextLabel?: string | null;
 }) => {
   const descriptorBase = projectFullName
     ? `Local workspace ${workspaceName} (${projectFullName})`
     : `Local workspace ${workspaceName}`;
-  if (!branch) {
+  if (!contextLabel) {
     return descriptorBase;
   }
-  const trimmedBranch = branch.trim();
-  return trimmedBranch ? `${descriptorBase} [${trimmedBranch}]` : descriptorBase;
+  const trimmedLabel = contextLabel.trim();
+  return trimmedLabel ? `${descriptorBase} [${trimmedLabel}]` : descriptorBase;
 };
 
 export const nextSequence = authQuery({
@@ -57,11 +57,12 @@ export const reserve = authMutation({
     projectFullName: v.optional(v.string()),
     repoUrl: v.optional(v.string()),
     branch: v.optional(v.string()),
+    referenceLabel: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
-    const { projectFullName, repoUrl, branch } = args;
+    const { projectFullName, repoUrl, branch, referenceLabel } = args;
 
     const existingSetting = await ctx.db
       .query("workspaceSettings")
@@ -77,7 +78,7 @@ export const reserve = authMutation({
     const descriptor = DEFAULT_WORKSPACE_DESCRIPTOR({
       workspaceName,
       projectFullName,
-      branch,
+      contextLabel: referenceLabel ?? branch,
     });
 
     if (existingSetting) {

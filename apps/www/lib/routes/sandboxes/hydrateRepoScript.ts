@@ -14,6 +14,9 @@ interface HydrateConfig {
   depth: number;
   baseBranch?: string;
   newBranch?: string;
+  pullRequestUrl?: string;
+  pullRequestNumber?: number;
+  referenceLabel?: string;
 }
 
 function log(message: string, level: "info" | "error" | "debug" = "info") {
@@ -74,6 +77,13 @@ function getConfig(): HydrateConfig {
   const maskedCloneUrl = process.env.CMUX_MASKED_CLONE_URL;
   const baseBranch = process.env.CMUX_BASE_BRANCH;
   const newBranch = process.env.CMUX_NEW_BRANCH;
+  const pullRequestUrl = process.env.CMUX_PULL_REQUEST_URL;
+  const pullRequestNumberRaw = process.env.CMUX_PULL_REQUEST_NUMBER;
+  const pullRequestNumber =
+    pullRequestNumberRaw && !Number.isNaN(Number(pullRequestNumberRaw))
+      ? Number.parseInt(pullRequestNumberRaw, 10)
+      : undefined;
+  const referenceLabel = process.env.CMUX_REFERENCE_LABEL;
 
   return {
     workspacePath,
@@ -85,6 +95,9 @@ function getConfig(): HydrateConfig {
     depth,
     baseBranch,
     newBranch,
+    pullRequestUrl,
+    pullRequestNumber,
+    referenceLabel,
   };
 }
 
@@ -220,6 +233,24 @@ function checkoutBranch(workspacePath: string, baseBranch: string, newBranch?: s
   }
 }
 
+function checkoutPullRequest(workspacePath: string, config: HydrateConfig): boolean {
+  if (!config.pullRequestNumber) {
+    return false;
+  }
+
+  const prNumber = config.pullRequestNumber;
+  const branchName = `cmux/pr-${prNumber}`;
+  const label = config.referenceLabel ? ` (${config.referenceLabel})` : "";
+  log(`Checking out pull request #${prNumber}${label}`);
+
+  exec(
+    `git fetch origin pull/${prNumber}/head:${branchName}`,
+    { cwd: workspacePath }
+  );
+  exec(`git checkout "${branchName}"`, { cwd: workspacePath });
+  return true;
+}
+
 function hydrateSubdirectories(workspacePath: string) {
   log("Checking for subdirectory git repositories");
 
@@ -271,8 +302,10 @@ async function main() {
         fetchUpdates(config.workspacePath);
       }
 
-      // Checkout branch
-      if (config.baseBranch) {
+      const prCheckedOut = checkoutPullRequest(config.workspacePath, config);
+
+      // Checkout branch if no PR was targeted
+      if (!prCheckedOut && config.baseBranch) {
         checkoutBranch(config.workspacePath, config.baseBranch, config.newBranch);
       }
 

@@ -22,6 +22,7 @@ import {
   isLoopbackHostname,
   LOCAL_VSCODE_PLACEHOLDER_ORIGIN,
   type IframePreflightResult,
+  parseGithubReference,
 } from "@cmux/shared";
 import {
   type PullRequestActionResult,
@@ -660,12 +661,24 @@ export function setupSocketHandlers(
           projectFullName,
           repoUrl: explicitRepoUrl,
           branch: requestedBranch,
+          referenceLabel,
+          pullRequestUrl,
+          pullRequestNumber,
           taskId: providedTaskId,
           taskRunId: providedTaskRunId,
           workspaceName: providedWorkspaceName,
           descriptor: providedDescriptor,
         } = parsed.data;
         const teamSlugOrId = requestedTeamSlugOrId || safeTeam;
+        const branch = requestedBranch?.trim();
+        const normalizedPullRequestUrl =
+          pullRequestUrl ??
+          (pullRequestNumber && projectFullName
+            ? `https://github.com/${projectFullName}/pull/${pullRequestNumber}`
+            : null);
+        const pullRequestTarget = normalizedPullRequestUrl
+          ? parseGithubReference(normalizedPullRequestUrl)
+          : null;
 
         if (projectFullName && projectFullName.startsWith("env:")) {
           callback({
@@ -686,12 +699,57 @@ export function setupSocketHandlers(
           return;
         }
 
+        if (pullRequestTarget && pullRequestTarget.type !== "pull") {
+          callback({
+            success: false,
+            error: "Unsupported GitHub URL type for workspace creation.",
+          });
+          return;
+        }
+
+        if (pullRequestTarget && !projectFullName) {
+          callback({
+            success: false,
+            error: "Pull request URL requires a repository selection.",
+          });
+          return;
+        }
+
+        if (
+          pullRequestTarget &&
+          projectFullName &&
+          pullRequestTarget.fullName.toLowerCase() !==
+            projectFullName.toLowerCase()
+        ) {
+          callback({
+            success: false,
+            error: "Pull request URL does not match the selected repository.",
+          });
+          return;
+        }
+
+        if (
+          pullRequestTarget &&
+          pullRequestNumber &&
+          pullRequestTarget.prNumber !== pullRequestNumber
+        ) {
+          serverLogger.warn(
+            "[create-local-workspace] Pull request number mismatch between URL and payload",
+            {
+              providedNumber: pullRequestNumber,
+              parsedNumber: pullRequestTarget.prNumber,
+            }
+          );
+        }
+
         const repoUrl =
           explicitRepoUrl ??
           (projectFullName
             ? `https://github.com/${projectFullName}.git`
             : undefined);
-        const branch = requestedBranch?.trim();
+        const descriptorContext =
+          referenceLabel ??
+          (pullRequestTarget ? `PR #${pullRequestTarget.prNumber}` : branch);
 
         let workspaceConfig: WorkspaceConfigResponse | null = null;
         if (projectFullName) {
@@ -738,6 +796,7 @@ export function setupSocketHandlers(
                 projectFullName: projectFullName ?? undefined,
                 repoUrl,
                 branch,
+                referenceLabel: descriptorContext ?? undefined,
               }
             );
             taskId = reservation.taskId;
@@ -754,19 +813,71 @@ export function setupSocketHandlers(
             const descriptorBase = projectFullName
               ? `Local workspace ${workspaceName} (${projectFullName})`
               : `Local workspace ${workspaceName}`;
-            descriptor =
-              branch && branch.length > 0
-                ? `${descriptorBase} [${branch}]`
-                : descriptorBase;
+            if (descriptorContext && descriptorContext.trim().length > 0) {
+              descriptor = `${descriptorBase} [${descriptorContext.trim()}]`;
+            } else {
+              descriptor = descriptorBase;
+            }
           }
 
-          const workspaceRoot = process.env.CMUX_WORKSPACE_DIR
-            ? path.resolve(process.env.CMUX_WORKSPACE_DIR)
-            : path.join(os.homedir(), "cmux", "local-workspaces");
-          const resolvedWorkspacePath = path.join(
-            workspaceRoot,
-            workspaceName
-          );
+        const workspaceRoot = process.env.CMUX_WORKSPACE_DIR
+          ? path.resolve(process.env.CMUX_WORKSPACE_DIR)
+          : path.join(os.homedir(), "cmux", "local-workspaces");
+        const resolvedWorkspacePath = path.join(
+          workspaceRoot,
+          workspaceName
+        );
+        const checkoutPullRequestInWorkspace = async (): Promise<void> => {
+          if (!pullRequestTarget) {
+            return;
+          }
+
+          const prIdentifier = `${pullRequestTarget.fullName}#${pullRequestTarget.prNumber}`;
+          const checkoutTarget =
+            normalizedPullRequestUrl ??
+            `https://github.com/${pullRequestTarget.fullName}/pull/${pullRequestTarget.prNumber}`;
+
+          try {
+            await execFileAsync("gh", ["pr", "checkout", checkoutTarget], {
+              cwd: resolvedWorkspacePath,
+              env: process.env,
+            });
+            serverLogger.info(
+              `[create-local-workspace] Checked out pull request via gh for ${prIdentifier}`
+            );
+            return;
+          } catch (error) {
+            serverLogger.warn(
+              `[create-local-workspace] gh pr checkout failed for ${prIdentifier}`,
+              error instanceof Error ? error.message : error
+            );
+          }
+
+          const fallbackBranch = `cmux/pr-${pullRequestTarget.prNumber}`;
+          try {
+            await execFileAsync(
+              "git",
+              [
+                "fetch",
+                "origin",
+                `pull/${pullRequestTarget.prNumber}/head:${fallbackBranch}`,
+              ],
+              { cwd: resolvedWorkspacePath }
+            );
+            await execFileAsync("git", ["checkout", fallbackBranch], {
+              cwd: resolvedWorkspacePath,
+            });
+            serverLogger.info(
+              `[create-local-workspace] Checked out pull request via git fetch for ${prIdentifier}`
+            );
+          } catch (error) {
+            throw new Error(
+              error instanceof Error
+                ? `Failed to checkout pull request #${pullRequestTarget.prNumber}: ${error.message}`
+                : `Failed to checkout pull request #${pullRequestTarget.prNumber}`
+            );
+          }
+        };
           workspacePath = resolvedWorkspacePath;
 
           await fs.mkdir(workspaceRoot, { recursive: true });
@@ -952,7 +1063,7 @@ export function setupSocketHandlers(
               await cleanupWorkspace();
             }
             const cloneArgs = ["clone"];
-            if (branch) {
+            if (branch && !pullRequestTarget) {
               cloneArgs.push("--branch", branch, "--single-branch");
             }
             cloneArgs.push(repoUrl, resolvedWorkspacePath);
@@ -988,6 +1099,10 @@ export function setupSocketHandlers(
                   ? `Git clone failed to produce a checkout: ${error.message}`
                   : "Git clone failed to produce a checkout"
               );
+            }
+
+            if (pullRequestTarget) {
+              await checkoutPullRequestInWorkspace();
             }
           } else {
             try {
@@ -1128,9 +1243,75 @@ export function setupSocketHandlers(
           environmentId,
           projectFullName,
           repoUrl,
+          branch: requestedBranch,
+          referenceLabel,
+          pullRequestUrl,
+          pullRequestNumber,
           taskId: providedTaskId,
         } = parsed.data;
         const teamSlugOrId = requestedTeamSlugOrId || safeTeam;
+        const branch = requestedBranch?.trim();
+        const normalizedPullRequestUrl =
+          pullRequestUrl ??
+          (pullRequestNumber && projectFullName
+            ? `https://github.com/${projectFullName}/pull/${pullRequestNumber}`
+            : null);
+        const pullRequestTarget = normalizedPullRequestUrl
+          ? parseGithubReference(normalizedPullRequestUrl)
+          : null;
+
+        if (environmentId && (branch || pullRequestTarget)) {
+          callback({
+            success: false,
+            error: "Branches and pull requests are only supported for repository workspaces.",
+          });
+          return;
+        }
+
+        if (pullRequestTarget && pullRequestTarget.type !== "pull") {
+          callback({
+            success: false,
+            error: "Unsupported GitHub URL type for workspace creation.",
+          });
+          return;
+        }
+
+        if (pullRequestTarget && !projectFullName) {
+          callback({
+            success: false,
+            error: "Pull request URL requires a repository selection.",
+          });
+          return;
+        }
+
+        if (
+          pullRequestTarget &&
+          projectFullName &&
+          pullRequestTarget.fullName.toLowerCase() !==
+            projectFullName.toLowerCase()
+        ) {
+          callback({
+            success: false,
+            error: "Pull request URL does not match the selected repository.",
+          });
+          return;
+        }
+
+        if (
+          pullRequestTarget &&
+          pullRequestNumber &&
+          pullRequestTarget.prNumber !== pullRequestNumber
+        ) {
+          serverLogger.warn(
+            "[create-cloud-workspace] Pull request number mismatch between URL and payload",
+            {
+              providedNumber: pullRequestNumber,
+              parsedNumber: pullRequestTarget.prNumber,
+            }
+          );
+        }
+
+        const effectiveBranch = pullRequestTarget ? undefined : branch;
 
         const convex = getConvex();
         let taskId: Id<"tasks"> | undefined = providedTaskId;
@@ -1206,7 +1387,14 @@ export function setupSocketHandlers(
               isCloudWorkspace: true,
               ...(environmentId
                 ? { environmentId }
-                : { projectFullName, repoUrl }),
+                : {
+                    projectFullName,
+                    repoUrl,
+                    branch: effectiveBranch,
+                    referenceLabel,
+                    pullRequestUrl: normalizedPullRequestUrl ?? undefined,
+                    pullRequestNumber: pullRequestTarget?.prNumber ?? undefined,
+                  }),
             },
           });
 
