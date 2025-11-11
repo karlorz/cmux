@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { resolveTeamIdLoose } from "../_shared/team";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { authMutation, authQuery, taskIdWithFake } from "./users/utils";
@@ -625,6 +625,18 @@ export const recordScreenshotResult = internalMutation({
     }
 
     await ctx.db.patch(args.taskId, patch);
+
+    if (args.status === "completed" && screenshots.length > 0) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.github_pr_comments.postScreenshotComment,
+        {
+          taskId: args.taskId,
+          taskRunId: args.runId,
+          screenshotSetId,
+        },
+      );
+    }
 
     return screenshotSetId;
   },

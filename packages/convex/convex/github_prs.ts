@@ -302,6 +302,22 @@ export const getPullRequest = authQuery({
   },
 });
 
+export const getByTeamRepoNumberInternal = internalQuery({
+  args: {
+    teamId: v.string(),
+    repoFullName: v.string(),
+    number: v.number(),
+  },
+  handler: async (ctx, { teamId, repoFullName, number }) => {
+    return await ctx.db
+      .query("pullRequests")
+      .withIndex("by_team_repo_number", (q) =>
+        q.eq("teamId", teamId).eq("repoFullName", repoFullName).eq("number", number),
+      )
+      .first();
+  },
+});
+
 // Helper to look up a provider connection for a repository owner
 export const getConnectionForOwnerInternal = internalQuery({
   args: { owner: v.string() },

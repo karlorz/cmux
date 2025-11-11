@@ -22,8 +22,10 @@ const DEBUG_FLAGS = {
 };
 
 const FEATURE_FLAGS = {
-  githubEyesReactionOnPrOpen: false,
+  githubEyesReactionOnPrOpen: true,
 };
+
+const CMUX_REPO_FULL_NAME = "cmux/cmux";
 
 async function verifySignature(
   secret: string,
@@ -486,6 +488,8 @@ export const githubWebhook = httpAction(async (_ctx, req) => {
           const repoFullName = String(prPayload.repository?.full_name ?? "");
           const installation = Number(prPayload.installation?.id ?? 0);
           if (!repoFullName || !installation) break;
+          const repoMatchesTarget =
+            repoFullName.trim().toLowerCase() === CMUX_REPO_FULL_NAME;
           const conn = await _ctx.runQuery(
             internal.github_app.getProviderConnectionByInstallationId,
             { installationId: installation },
@@ -502,6 +506,7 @@ export const githubWebhook = httpAction(async (_ctx, req) => {
           // Add eyes emoji reaction when a new PR is opened
           if (
             FEATURE_FLAGS.githubEyesReactionOnPrOpen &&
+            repoMatchesTarget &&
             prPayload.action === "opened"
           ) {
             const prNumber = Number(prPayload.pull_request?.number ?? 0);

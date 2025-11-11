@@ -310,9 +310,12 @@ const convexSchema = defineSchema({
     ),
     createdAt: v.number(),
     updatedAt: v.number(),
+    publicShareToken: v.optional(v.string()),
+    publicShareEnabledAt: v.optional(v.number()),
   })
     .index("by_task_capturedAt", ["taskId", "capturedAt"])
-    .index("by_run_capturedAt", ["runId", "capturedAt"]),
+    .index("by_run_capturedAt", ["runId", "capturedAt"])
+    .index("by_public_share_token", ["publicShareToken"]),
   taskVersions: defineTable({
     taskId: v.id("tasks"),
     version: v.number(),

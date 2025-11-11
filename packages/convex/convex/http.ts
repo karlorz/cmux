@@ -15,6 +15,7 @@ import { githubSetup } from "./github_setup";
 import { githubWebhook } from "./github_webhook";
 import { reportEnvironmentError } from "./taskRuns_http";
 import { stackWebhook } from "./stack_webhook";
+import { serveSharedScreenshot } from "./public_screenshots_http";
 
 const http = httpRouter();
 
@@ -88,6 +89,12 @@ http.route({
   path: "/github_setup",
   method: "GET",
   handler: githubSetup,
+});
+
+http.route({
+  path: "/public/screenshots",
+  method: "GET",
+  handler: serveSharedScreenshot,
 });
 
 http.route({
