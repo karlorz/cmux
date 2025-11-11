@@ -22,6 +22,7 @@ import {
   isLoopbackHostname,
   LOCAL_VSCODE_PLACEHOLDER_ORIGIN,
   type IframePreflightResult,
+  parseGithubTarget,
 } from "@cmux/shared";
 import {
   type PullRequestActionResult,
@@ -657,15 +658,17 @@ export function setupSocketHandlers(
 
         const {
           teamSlugOrId: requestedTeamSlugOrId,
-          projectFullName,
+          projectFullName: initialProjectFullName,
           repoUrl: explicitRepoUrl,
           branch: requestedBranch,
+          pullRequestUrl: requestedPullRequestUrl,
           taskId: providedTaskId,
           taskRunId: providedTaskRunId,
           workspaceName: providedWorkspaceName,
           descriptor: providedDescriptor,
         } = parsed.data;
         const teamSlugOrId = requestedTeamSlugOrId || safeTeam;
+        let projectFullName = initialProjectFullName ?? null;
 
         if (projectFullName && projectFullName.startsWith("env:")) {
           callback({
@@ -684,6 +687,37 @@ export function setupSocketHandlers(
             error: "Invalid repository name.",
           });
           return;
+        }
+
+        const pullRequestUrl = requestedPullRequestUrl?.trim();
+        let normalizedPullRequestUrl: string | null = null;
+        let pullRequestNumber: number | null = null;
+
+        if (pullRequestUrl) {
+          const parsedTarget = parseGithubTarget(pullRequestUrl);
+          if (!parsedTarget || parsedTarget.type !== "pull") {
+            callback({
+              success: false,
+              error: "Invalid pull request URL.",
+            });
+            return;
+          }
+
+          if (
+            projectFullName &&
+            projectFullName !== parsedTarget.fullName
+          ) {
+            callback({
+              success: false,
+              error:
+                "Pull request does not belong to the selected repository.",
+            });
+            return;
+          }
+
+          projectFullName = parsedTarget.fullName;
+          normalizedPullRequestUrl = parsedTarget.pullRequestUrl;
+          pullRequestNumber = parsedTarget.pullRequestNumber;
         }
 
         const repoUrl =
@@ -754,10 +788,14 @@ export function setupSocketHandlers(
             const descriptorBase = projectFullName
               ? `Local workspace ${workspaceName} (${projectFullName})`
               : `Local workspace ${workspaceName}`;
-            descriptor =
-              branch && branch.length > 0
-                ? `${descriptorBase} [${branch}]`
-                : descriptorBase;
+            const descriptorTag = pullRequestNumber
+              ? `PR #${pullRequestNumber}`
+              : branch && branch.length > 0
+                ? branch
+                : null;
+            descriptor = descriptorTag
+              ? `${descriptorBase} [${descriptorTag}]`
+              : descriptorBase;
           }
 
           const workspaceRoot = process.env.CMUX_WORKSPACE_DIR
@@ -989,6 +1027,34 @@ export function setupSocketHandlers(
                   : "Git clone failed to produce a checkout"
               );
             }
+
+            if (normalizedPullRequestUrl) {
+              try {
+                await execFileAsync(
+                  "gh",
+                  ["pr", "checkout", normalizedPullRequestUrl],
+                  {
+                    cwd: resolvedWorkspacePath,
+                  }
+                );
+              } catch (error) {
+                if (cleanupWorkspace) {
+                  await cleanupWorkspace();
+                }
+                const execErr = isExecError(error) ? error : null;
+                const message =
+                  execErr?.stderr?.trim() ||
+                  execErr?.stdout?.trim() ||
+                  (error instanceof Error
+                    ? error.message
+                    : "Unable to checkout pull request");
+                throw new Error(
+                  message
+                    ? `Failed to checkout pull request: ${message}`
+                    : "Failed to checkout pull request"
+                );
+              }
+            }
           } else {
             try {
               await fs.mkdir(resolvedWorkspacePath, { recursive: false });
@@ -1126,11 +1192,17 @@ export function setupSocketHandlers(
         const {
           teamSlugOrId: requestedTeamSlugOrId,
           environmentId,
-          projectFullName,
-          repoUrl,
+          projectFullName: initialProjectFullName,
+          repoUrl: explicitRepoUrl,
+          branch: requestedBranch,
+          pullRequestUrl: requestedPullRequestUrl,
           taskId: providedTaskId,
         } = parsed.data;
         const teamSlugOrId = requestedTeamSlugOrId || safeTeam;
+        let projectFullName = initialProjectFullName ?? null;
+        const branch = requestedBranch?.trim();
+        const pullRequestUrl = requestedPullRequestUrl?.trim();
+        let normalizedPullRequestUrl: string | null = null;
 
         const convex = getConvex();
         let taskId: Id<"tasks"> | undefined = providedTaskId;
@@ -1141,6 +1213,28 @@ export function setupSocketHandlers(
           if (!taskId) {
             throw new Error("taskId is required for cloud workspace creation");
           }
+
+          if (pullRequestUrl) {
+            const parsedTarget = parseGithubTarget(pullRequestUrl);
+            if (!parsedTarget || parsedTarget.type !== "pull") {
+              throw new Error("Invalid pull request URL.");
+            }
+            if (
+              projectFullName &&
+              projectFullName !== parsedTarget.fullName
+            ) {
+              throw new Error(
+                "Pull request does not belong to the selected repository."
+              );
+            }
+            projectFullName = parsedTarget.fullName;
+            normalizedPullRequestUrl = parsedTarget.pullRequestUrl;
+          }
+          const repoUrl =
+            explicitRepoUrl ??
+            (projectFullName
+              ? `https://github.com/${projectFullName}.git`
+              : undefined);
 
           // Create a taskRun for the workspace
           const now = Date.now();
@@ -1192,9 +1286,8 @@ export function setupSocketHandlers(
               : `[create-cloud-workspace] Starting Morph sandbox for repo ${projectFullName}`
           );
 
-          const startRes = await postApiSandboxesStart({
-            client: getWwwClient(),
-            body: {
+          const sandboxBody: Parameters<typeof postApiSandboxesStart>[0]["body"] =
+            {
               teamSlugOrId,
               ttlSeconds: 60 * 60,
               metadata: {
@@ -1204,10 +1297,24 @@ export function setupSocketHandlers(
               taskRunId,
               taskRunJwt,
               isCloudWorkspace: true,
-              ...(environmentId
-                ? { environmentId }
-                : { projectFullName, repoUrl }),
-            },
+            };
+
+          if (environmentId) {
+            sandboxBody.environmentId = environmentId;
+          } else if (projectFullName && repoUrl) {
+            sandboxBody.projectFullName = projectFullName;
+            sandboxBody.repoUrl = repoUrl;
+            if (branch) {
+              sandboxBody.branch = branch;
+            }
+            if (normalizedPullRequestUrl) {
+              sandboxBody.pullRequestUrl = normalizedPullRequestUrl;
+            }
+          }
+
+          const startRes = await postApiSandboxesStart({
+            client: getWwwClient(),
+            body: sandboxBody,
           });
 
           const data = startRes.data;
