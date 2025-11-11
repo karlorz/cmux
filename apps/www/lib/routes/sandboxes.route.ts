@@ -48,6 +48,7 @@ const StartSandboxBody = z
     branch: z.string().optional(),
     newBranch: z.string().optional(),
     depth: z.number().optional().default(1),
+    pullRequestNumber: z.number().int().positive().optional(),
   })
   .openapi("StartSandboxBody");
 
@@ -140,6 +141,7 @@ sandboxesRouter.openapi(
         hasSnapshotId: Boolean(body.snapshotId),
         repoUrl: body.repoUrl,
         branch: body.branch,
+        pullRequestNumber: body.pullRequestNumber,
       });
     } catch {
       /* noop */
@@ -323,6 +325,7 @@ sandboxesRouter.openapi(
           depth: Math.max(1, Math.floor(body.depth ?? 1)),
           baseBranch: body.branch || "main",
           newBranch: body.newBranch ?? "",
+          pullRequestNumber: body.pullRequestNumber,
         };
       }
 

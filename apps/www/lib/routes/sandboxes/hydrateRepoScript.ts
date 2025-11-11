@@ -14,6 +14,7 @@ interface HydrateConfig {
   depth: number;
   baseBranch?: string;
   newBranch?: string;
+  pullRequestNumber?: number;
 }
 
 function log(message: string, level: "info" | "error" | "debug" = "info") {
@@ -74,6 +75,9 @@ function getConfig(): HydrateConfig {
   const maskedCloneUrl = process.env.CMUX_MASKED_CLONE_URL;
   const baseBranch = process.env.CMUX_BASE_BRANCH;
   const newBranch = process.env.CMUX_NEW_BRANCH;
+  const prEnv = process.env.CMUX_PULL_REQUEST_NUMBER;
+  const pullRequestNumber =
+    typeof prEnv === "string" ? Number.parseInt(prEnv, 10) : undefined;
 
   return {
     workspacePath,
@@ -85,6 +89,9 @@ function getConfig(): HydrateConfig {
     depth,
     baseBranch,
     newBranch,
+    pullRequestNumber: Number.isFinite(pullRequestNumber)
+      ? pullRequestNumber
+      : undefined,
   };
 }
 
@@ -220,6 +227,34 @@ function checkoutBranch(workspacePath: string, baseBranch: string, newBranch?: s
   }
 }
 
+function checkoutPullRequest(workspacePath: string, pullRequestNumber: number) {
+  const localBranch = `cmux/pr-${pullRequestNumber}`;
+  log(`Fetching pull request #${pullRequestNumber}`);
+  const fetchResult = exec(
+    `git fetch origin pull/${pullRequestNumber}/head:${localBranch}`,
+    { cwd: workspacePath, throwOnError: false }
+  );
+
+  if (fetchResult.exitCode !== 0) {
+    throw new Error(
+      `Failed to fetch pull request #${pullRequestNumber}: ${fetchResult.stderr}`
+    );
+  }
+
+  const checkoutResult = exec(`git checkout "${localBranch}"`, {
+    cwd: workspacePath,
+    throwOnError: false,
+  });
+
+  if (checkoutResult.exitCode !== 0) {
+    throw new Error(
+      `Failed to checkout pull request #${pullRequestNumber}: ${checkoutResult.stderr}`
+    );
+  }
+
+  log(`Checked out pull request #${pullRequestNumber} into ${localBranch}`);
+}
+
 function hydrateSubdirectories(workspacePath: string) {
   log("Checking for subdirectory git repositories");
 
@@ -274,6 +309,10 @@ async function main() {
       // Checkout branch
       if (config.baseBranch) {
         checkoutBranch(config.workspacePath, config.baseBranch, config.newBranch);
+      }
+
+      if (typeof config.pullRequestNumber === "number") {
+        checkoutPullRequest(config.workspacePath, config.pullRequestNumber);
       }
 
       // List files for verification

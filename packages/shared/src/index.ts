@@ -15,6 +15,7 @@ export * from "./utils/reserved-cmux-ports";
 export * from "./utils/morph-instance";
 export * from "./utils/is-local-host";
 export * from "./utils/local-vscode-placeholder";
+export * from "./utils/parse-github-target";
 export * from "./utils/anthropic";
 export * from "./utils/validate-exposed-ports";
 export * from "./utils/generate-workspace-name";
