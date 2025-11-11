@@ -2,6 +2,7 @@ import {
   SERVER_TERMINAL_CONFIG,
   WorkerConfigureGitSchema,
   WorkerCreateTerminalSchema,
+  WorkerUploadFilesSchema,
   WorkerExecSchema,
   WorkerStartScreenshotCollectionSchema,
   type ClientToServerEvents,
@@ -774,6 +775,30 @@ managementIO.on("connection", (socket) => {
         workerId: WORKER_ID,
         error:
           error instanceof Error ? error.message : "Failed to configure git",
+      });
+    }
+  });
+
+  socket.on("worker:upload-files", async (data, callback) => {
+    try {
+      const validated = WorkerUploadFilesSchema.parse(data);
+      for (const file of validated.files) {
+        const destinationDir = path.dirname(file.destinationPath);
+        await fs.mkdir(destinationDir, { recursive: true });
+        await fs.writeFile(
+          file.destinationPath,
+          Buffer.from(file.content, "base64")
+        );
+        if (file.mode) {
+          await fs.chmod(file.destinationPath, parseInt(file.mode, 8));
+        }
+      }
+      callback?.({ success: true });
+    } catch (error) {
+      log("ERROR", "worker:upload-files failed", error, WORKER_ID);
+      callback?.({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   });

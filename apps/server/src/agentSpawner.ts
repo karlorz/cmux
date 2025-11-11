@@ -31,6 +31,12 @@ import { getWwwOpenApiModule } from "./utils/wwwOpenApiModule";
 import { CmuxVSCodeInstance } from "./vscode/CmuxVSCodeInstance";
 import { DockerVSCodeInstance } from "./vscode/DockerVSCodeInstance";
 import { VSCodeInstance } from "./vscode/VSCodeInstance";
+import {
+  applyBundleToLocalWorktree,
+  createLocalRepoBundle,
+  type LocalRepoBundle,
+} from "./localRepo";
+import path from "node:path";
 import { getWorktreePath, setupProjectWorkspace } from "./workspace";
 import { workerExec } from "./utils/workerExec";
 import rawSwitchBranchScript from "./utils/switch-branch.ts?raw";
@@ -38,6 +44,96 @@ import rawSwitchBranchScript from "./utils/switch-branch.ts?raw";
 const SWITCH_BRANCH_BUN_SCRIPT = rawSwitchBranchScript;
 
 const { getApiEnvironmentsByIdVars } = await getWwwOpenApiModule();
+
+type WorkerSocketType = ReturnType<VSCodeInstance["getWorkerSocket"]>;
+const REMOTE_WORKSPACE_ROOT = "/root/workspace";
+
+const uploadFilesToWorker = async (
+  workerSocket: WorkerSocketType,
+  files: Array<{ destinationPath: string; content: Buffer; mode?: string }>
+) => {
+  await new Promise<void>((resolve, reject) => {
+    workerSocket.emit(
+      "worker:upload-files",
+      {
+        files: files.map((file) => ({
+          sourcePath: file.destinationPath,
+          destinationPath: file.destinationPath,
+          content: file.content.toString("base64"),
+          mode: file.mode,
+        })),
+      },
+      (response?: { success: boolean; error?: string }) => {
+        if (!response || response.success) {
+          resolve();
+        } else {
+          reject(
+            new Error(response?.error || "Worker upload failed")
+          );
+        }
+      }
+    );
+  });
+};
+
+const applyBundleToCloudWorkspace = async (
+  bundle: LocalRepoBundle,
+  vscodeInstance: VSCodeInstance
+) => {
+  if (!bundle) return;
+  const workerSocket = vscodeInstance.getWorkerSocket();
+  await workerExec({
+    workerSocket,
+    command: "bash",
+    args: ["-lc", "cd /root/workspace && git reset --hard && git clean -fdx"],
+    cwd: REMOTE_WORKSPACE_ROOT,
+  });
+  const uploadPayload: Array<{ destinationPath: string; content: Buffer }> = [
+    {
+      destinationPath: "/tmp/cmux-local-archive.tar",
+      content: bundle.archive,
+    },
+  ];
+  if (bundle.diffPatch) {
+    uploadPayload.push({
+      destinationPath: "/tmp/cmux-local.patch",
+      content: Buffer.from(bundle.diffPatch, "utf-8"),
+    });
+  }
+  await uploadFilesToWorker(workerSocket, uploadPayload);
+  await workerExec({
+    workerSocket,
+    command: "bash",
+    args: [
+      "-lc",
+      "tar -xf /tmp/cmux-local-archive.tar -C /root/workspace && rm -f /tmp/cmux-local-archive.tar",
+    ],
+    cwd: REMOTE_WORKSPACE_ROOT,
+  });
+  if (bundle.diffPatch) {
+    await workerExec({
+      workerSocket,
+      command: "bash",
+      args: [
+        "-lc",
+        "cd /root/workspace && git apply --allow-empty --whitespace=nowarn /tmp/cmux-local.patch && rm -f /tmp/cmux-local.patch",
+      ],
+      cwd: REMOTE_WORKSPACE_ROOT,
+    });
+  }
+  if (bundle.untrackedFiles.length > 0) {
+    const untrackedUploads = bundle.untrackedFiles.map((file) => ({
+      destinationPath: path
+        .posix.join(
+          REMOTE_WORKSPACE_ROOT,
+          file.relativePath.replace(/\\/g, "/")
+        )
+        .replace(/\/+/g, "/"),
+      content: file.content,
+    }));
+    await uploadFilesToWorker(workerSocket, untrackedUploads);
+  }
+};
 
 export interface AgentSpawnResult {
   agentName: string;
@@ -65,6 +161,8 @@ export async function spawnAgent(
     }>;
     theme?: "dark" | "light" | "system";
     newBranch?: string; // Optional pre-generated branch name
+    localRepoPath?: string;
+    localRepoBundle?: LocalRepoBundle | null;
   },
   teamSlugOrId: string
 ): Promise<AgentSpawnResult> {
@@ -77,6 +175,7 @@ export async function spawnAgent(
     const newBranch =
       options.newBranch ||
       (await generateNewBranchName(options.taskDescription, teamSlugOrId));
+    const localRepoBundle = options.localRepoBundle || null;
     serverLogger.info(
       `[AgentSpawner] New Branch: ${newBranch}, Base Branch: ${
         options.branch ?? "(auto)"
@@ -407,6 +506,9 @@ export async function spawnAgent(
       }
 
       worktreePath = workspaceResult.worktreePath;
+      if (localRepoBundle) {
+        await applyBundleToLocalWorktree(localRepoBundle, worktreePath);
+      }
 
       serverLogger.info(
         `[AgentSpawner] Creating DockerVSCodeInstance for ${agent.name}`
@@ -453,6 +555,10 @@ export async function spawnAgent(
             err
           )
         );
+    }
+
+    if (localRepoBundle && options.isCloudMode) {
+      await applyBundleToCloudWorkspace(localRepoBundle, vscodeInstance);
     }
 
     // Start file watching for real-time diff updates
@@ -950,9 +1056,17 @@ export async function spawnAllAgents(
       altText: string;
     }>;
     theme?: "dark" | "light" | "system";
+    localRepoPath?: string;
   },
   teamSlugOrId: string
 ): Promise<AgentSpawnResult[]> {
+  let localRepoBundle: LocalRepoBundle | null = null;
+  if (options.localRepoPath) {
+    serverLogger.info(
+      "[AgentSpawner] Preparing local repository bundle for sync"
+    );
+    localRepoBundle = await createLocalRepoBundle(options.localRepoPath);
+  }
   // If selectedAgents is provided, map each entry to an AgentConfig to preserve duplicates
   const agentsToSpawn = options.selectedAgents
     ? options.selectedAgents
@@ -986,6 +1100,7 @@ export async function spawnAllAgents(
         {
           ...options,
           newBranch: branchNames[index],
+          localRepoBundle,
         },
         teamSlugOrId
       )

@@ -20,12 +20,14 @@ import { toast } from "sonner";
 type WorkspaceCreationButtonsProps = {
   teamSlugOrId: string;
   selectedProject: string[];
+  selectedRepoFullName?: string | null;
   isEnvSelected: boolean;
 };
 
 export function WorkspaceCreationButtons({
   teamSlugOrId,
   selectedProject,
+  selectedRepoFullName = null,
   isEnvSelected,
 }: WorkspaceCreationButtonsProps) {
   const { socket } = useSocket();
@@ -43,7 +45,7 @@ export function WorkspaceCreationButtons({
       return;
     }
 
-    if (selectedProject.length === 0) {
+    if (selectedProject.length === 0 && !selectedRepoFullName) {
       toast.error("Please select a repository first");
       return;
     }
@@ -53,7 +55,11 @@ export function WorkspaceCreationButtons({
       return;
     }
 
-    const projectFullName = selectedProject[0];
+    const projectFullName = selectedRepoFullName ?? selectedProject[0];
+    if (!projectFullName) {
+      toast.error("Please select a repository first");
+      return;
+    }
     const repoUrl = `https://github.com/${projectFullName}.git`;
 
     setIsCreatingLocal(true);
@@ -192,7 +198,8 @@ export function WorkspaceCreationButtons({
     theme,
   ]);
 
-  const canCreateLocal = selectedProject.length > 0 && !isEnvSelected;
+  const canCreateLocal =
+    (selectedProject.length > 0 || selectedRepoFullName) && !isEnvSelected;
   const canCreateCloud = selectedProject.length > 0 && isEnvSelected;
 
   const SHOW_WORKSPACE_BUTTONS = false;

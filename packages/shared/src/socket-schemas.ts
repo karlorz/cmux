@@ -48,6 +48,59 @@ export const StartTaskSchema = z.object({
     .optional(),
   theme: z.enum(["dark", "light", "system"]).optional(),
   environmentId: typedZid("environments").optional(),
+  localRepoPath: z.string().optional(),
+});
+
+// Local repository helper schemas
+export const LocalPathSuggestionsRequestSchema = z.object({
+  query: z.string(),
+});
+
+export const LocalPathSuggestionSchema = z.object({
+  path: z.string(),
+  displayPath: z.string(),
+  isRepository: z.boolean().optional(),
+});
+
+export const LocalPathSuggestionsResponseSchema = z.object({
+  suggestions: z.array(LocalPathSuggestionSchema),
+});
+
+export const LocalRepoInspectRequestSchema = z.object({
+  path: z.string(),
+});
+
+export const LocalRepoInspectResponseSchema = z.object({
+  success: z.boolean(),
+  path: z.string().optional(),
+  repoRoot: z.string().optional(),
+  displayPath: z.string().optional(),
+  repoFullName: z.string().optional(),
+  repoUrl: z.string().optional(),
+  provider: z.enum(["github", "gitlab", "bitbucket", "unknown"]).optional(),
+  currentBranch: z.string().optional(),
+  defaultBranch: z.string().optional(),
+  error: z.string().optional(),
+  reason: z.string().optional(),
+});
+
+export const LocalRepoBranchesRequestSchema = z.object({
+  path: z.string(),
+});
+
+export const LocalRepoBranchesResponseSchema = z.object({
+  success: z.boolean(),
+  branches: z
+    .array(
+      z.object({
+        name: z.string(),
+        isCurrent: z.boolean().optional(),
+      })
+    )
+    .optional(),
+  currentBranch: z.string().optional(),
+  defaultBranch: z.string().optional(),
+  error: z.string().optional(),
 });
 
 export const CreateLocalWorkspaceSchema = z.object({
@@ -437,6 +490,25 @@ export type CreateCloudWorkspace = z.infer<typeof CreateCloudWorkspaceSchema>;
 export type CreateCloudWorkspaceResponse = z.infer<
   typeof CreateCloudWorkspaceResponseSchema
 >;
+export type LocalPathSuggestionsRequest = z.infer<
+  typeof LocalPathSuggestionsRequestSchema
+>;
+export type LocalPathSuggestion = z.infer<typeof LocalPathSuggestionSchema>;
+export type LocalPathSuggestionsResponse = z.infer<
+  typeof LocalPathSuggestionsResponseSchema
+>;
+export type LocalRepoInspectRequest = z.infer<
+  typeof LocalRepoInspectRequestSchema
+>;
+export type LocalRepoInspectResponse = z.infer<
+  typeof LocalRepoInspectResponseSchema
+>;
+export type LocalRepoBranchesRequest = z.infer<
+  typeof LocalRepoBranchesRequestSchema
+>;
+export type LocalRepoBranchesResponse = z.infer<
+  typeof LocalRepoBranchesResponseSchema
+>;
 export type TerminalCreated = z.infer<typeof TerminalCreatedSchema>;
 export type TerminalOutput = z.infer<typeof TerminalOutputSchema>;
 export type TerminalExit = z.infer<typeof TerminalExitSchema>;
@@ -577,6 +649,18 @@ export interface ClientToServerEvents {
   "archive-task": (
     data: ArchiveTask,
     callback: (response: { success: boolean; error?: string }) => void
+  ) => void;
+  "local-path-suggestions": (
+    data: LocalPathSuggestionsRequest,
+    callback: (response: LocalPathSuggestionsResponse) => void
+  ) => void;
+  "local-repo-inspect": (
+    data: LocalRepoInspectRequest,
+    callback: (response: LocalRepoInspectResponse) => void
+  ) => void;
+  "local-repo-branches": (
+    data: LocalRepoBranchesRequest,
+    callback: (response: LocalRepoBranchesResponse) => void
   ) => void;
   "spawn-from-comment": (
     data: SpawnFromComment,

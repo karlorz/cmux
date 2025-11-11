@@ -10,6 +10,9 @@ import {
   GitHubMergeBranchSchema,
   GitHubSyncPrStateSchema,
   ListFilesRequestSchema,
+  LocalPathSuggestionsRequestSchema,
+  LocalRepoInspectRequestSchema,
+  LocalRepoBranchesRequestSchema,
   OpenInEditorSchema,
   SpawnFromCommentSchema,
   StartTaskSchema,
@@ -72,6 +75,11 @@ import {
   splitRepoFullName,
   toPullRequestActionResult,
 } from "./pullRequestState";
+import {
+  getLocalRepoBranches,
+  inspectLocalRepoPath,
+  listLocalPathSuggestions,
+} from "./localRepo";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -509,6 +517,7 @@ export function setupSocketHandlers(
                 images: taskData.images,
                 theme: taskData.theme,
                 environmentId: taskData.environmentId,
+                localRepoPath: taskData.localRepoPath,
               },
               safeTeam
             );
@@ -1868,6 +1877,54 @@ export function setupSocketHandlers(
         socket.emit("list-files-response", {
           files: [],
           error: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    });
+
+    socket.on("local-path-suggestions", async (data, callback) => {
+      try {
+        const { query } = LocalPathSuggestionsRequestSchema.parse(data);
+        const suggestions = await listLocalPathSuggestions(query);
+        callback({ suggestions });
+      } catch (error) {
+        serverLogger.error(
+          "Error listing local path suggestions:",
+          error
+        );
+        callback({ suggestions: [] });
+      }
+    });
+
+    socket.on("local-repo-inspect", async (data, callback) => {
+      try {
+        const { path: repoPath } = LocalRepoInspectRequestSchema.parse(data);
+        const result = await inspectLocalRepoPath(repoPath);
+        callback(result);
+      } catch (error) {
+        serverLogger.error("Error inspecting local repo:", error);
+        callback({
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to inspect local repo",
+        });
+      }
+    });
+
+    socket.on("local-repo-branches", async (data, callback) => {
+      try {
+        const { path: repoPath } = LocalRepoBranchesRequestSchema.parse(data);
+        const result = await getLocalRepoBranches(repoPath);
+        callback(result);
+      } catch (error) {
+        serverLogger.error("Error reading local repo branches:", error);
+        callback({
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to list local branches",
         });
       }
     });

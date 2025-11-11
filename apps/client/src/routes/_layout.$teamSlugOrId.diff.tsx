@@ -7,11 +7,16 @@ import {
 import { useSocket } from "@/contexts/socket/use-socket";
 import { branchesQueryOptions } from "@/queries/branches";
 import { gitDiffQueryOptions } from "@/queries/git-diff";
+import {
+  LOCAL_REPO_ENTRY_PREFIX,
+  loadLocalRepoEntries,
+  type LocalRepoEntry,
+} from "@/lib/local-repo-store";
 import { api } from "@cmux/convex/api";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery as useRQ } from "@tanstack/react-query";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { ArrowLeftRight, GitBranch } from "lucide-react";
+import { ArrowLeftRight, FolderOpen, GitBranch } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -39,6 +44,16 @@ function DashboardDiffPage() {
       return null;
     }
   });
+  const [localRepoEntries] = useState<LocalRepoEntry[]>(() =>
+    loadLocalRepoEntries(teamSlugOrId)
+  );
+  const localRepoEntryMap = useMemo(() => {
+    const map = new Map<string, LocalRepoEntry>();
+    for (const entry of localRepoEntries) {
+      map.set(entry.id, entry);
+    }
+    return map;
+  }, [localRepoEntries]);
 
   useEffect(() => {
     if (selectedProject) return;
@@ -67,6 +82,14 @@ function DashboardDiffPage() {
     return () => {};
   }, [selectedProject]);
 
+  const resolvedRepoFullName = useMemo(() => {
+    if (!selectedProject) return "";
+    if (selectedProject.startsWith(LOCAL_REPO_ENTRY_PREFIX)) {
+      return localRepoEntryMap.get(selectedProject)?.repoFullName ?? "";
+    }
+    return selectedProject;
+  }, [localRepoEntryMap, selectedProject]);
+
   const isEnvironmentProject =
     !!selectedProject && selectedProject.startsWith("env:");
 
@@ -77,10 +100,22 @@ function DashboardDiffPage() {
   const branchesQuery = useRQ({
     ...branchesQueryOptions({
       teamSlugOrId,
-      repoFullName: selectedProject || "",
+      repoFullName: resolvedRepoFullName,
     }),
-    enabled: !!selectedProject && !isEnvironmentProject,
+    enabled: Boolean(resolvedRepoFullName) && !isEnvironmentProject,
   });
+
+  const localRepoOptions = useMemo(() => {
+    if (localRepoEntries.length === 0) return [];
+    return localRepoEntries.map((entry) => ({
+      label: `${entry.repoFullName} (local)`,
+      value: entry.id,
+      icon: (
+        <FolderOpen className="w-4 h-4 text-neutral-600 dark:text-neutral-300" />
+      ),
+      iconKey: "local",
+    }));
+  }, [localRepoEntries]);
 
   const projectOptions: SelectOption[] = useMemo(() => {
     const byOrg =
@@ -103,6 +138,14 @@ function DashboardDiffPage() {
       iconKey: "github",
     }));
     const opts: SelectOption[] = [];
+    if (localRepoOptions.length > 0) {
+      opts.push({
+        label: "Local repositories",
+        value: "__heading-local-repo",
+        heading: true,
+      });
+      opts.push(...localRepoOptions);
+    }
     if (repoOptions.length > 0) {
       opts.push({
         label: "Repositories",
@@ -112,7 +155,7 @@ function DashboardDiffPage() {
       opts.push(...repoOptions);
     }
     return opts;
-  }, [reposByOrgQuery.data]);
+  }, [localRepoOptions, reposByOrgQuery.data]);
 
   const branchOptions: SelectOption[] = useMemo(() => {
     const names = (branchesQuery.data?.branches ?? []).map((branch) => branch.name);
@@ -152,14 +195,15 @@ function DashboardDiffPage() {
     setSearch({ ref1: search.ref2, ref2: search.ref1 });
   }, [search.ref1, search.ref2, setSearch]);
 
-  const bothSelected = !!search.ref1 && !!search.ref2 && !!selectedProject;
+  const bothSelected =
+    !!search.ref1 && !!search.ref2 && !!resolvedRepoFullName;
   const diffsQuery = useRQ({
     ...gitDiffQueryOptions({
-      repoFullName: selectedProject!,
+      repoFullName: resolvedRepoFullName,
       baseRef: search.ref1,
       headRef: search.ref2!,
     }),
-    enabled: Boolean(selectedProject && search.ref1 && search.ref2),
+    enabled: Boolean(resolvedRepoFullName && search.ref1 && search.ref2),
   });
 
   useEffect(() => {

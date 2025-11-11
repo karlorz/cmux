@@ -21,17 +21,42 @@ import {
 import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
 import { useSocket } from "@/contexts/socket/use-socket";
 import { createFakeConvexId } from "@/lib/fakeConvexId";
+import {
+  LOCAL_REPO_ENTRY_PREFIX,
+  LOCAL_SUGGESTION_PREFIX,
+  decodeSuggestionPathValue,
+  deriveFallbackRepoFullName,
+  encodeSuggestionPath,
+  formatDisplayPath,
+  getLocalRepoEntryId,
+  loadLocalRepoEntries,
+  looksLikePath,
+  persistLocalRepoEntries,
+  type LocalRepoEntry,
+} from "@/lib/local-repo-store";
+import {
+  fetchLocalPathSuggestions,
+  fetchLocalRepoBranches,
+  inspectLocalRepo,
+} from "@/lib/local-repos";
 import { attachTaskLifecycleListeners } from "@/lib/socket/taskLifecycleListeners";
 import { branchesQueryOptions } from "@/queries/branches";
 import { api } from "@cmux/convex/api";
 import type { Doc, Id } from "@cmux/convex/dataModel";
-import type { ProviderStatusResponse, TaskAcknowledged, TaskError, TaskStarted } from "@cmux/shared";
+import type {
+  LocalPathSuggestion,
+  LocalRepoInspectResponse,
+  ProviderStatusResponse,
+  TaskAcknowledged,
+  TaskError,
+  TaskStarted,
+} from "@cmux/shared";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useAction, useMutation } from "convex/react";
-import { Server as ServerIcon } from "lucide-react";
+import { FolderOpen, Server as ServerIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -76,12 +101,63 @@ const parseStoredAgentSelection = (stored: string | null): string[] => {
   }
 };
 
+type SelectedProjectContext =
+  | { kind: "none" }
+  | { kind: "environment"; environmentId: Id<"environments"> }
+  | { kind: "local"; entry: LocalRepoEntry }
+  | { kind: "repo"; repoFullName: string };
+
+const buildLocalRepoEntry = (
+  inspection: LocalRepoInspectResponse,
+  fallbackPath: string
+): LocalRepoEntry => {
+  const repoRoot = inspection.repoRoot || inspection.path || fallbackPath;
+  const repoFullName =
+    inspection.repoFullName?.trim() || deriveFallbackRepoFullName(repoRoot);
+  return {
+    id: getLocalRepoEntryId(repoRoot),
+    path: repoRoot,
+    displayPath: formatDisplayPath(repoRoot, inspection.displayPath),
+    repoFullName,
+    repoUrl: inspection.repoUrl,
+    provider: inspection.provider ?? "unknown",
+    currentBranch: inspection.currentBranch,
+    defaultBranch: inspection.defaultBranch,
+  };
+};
+
+const getSelectedProjectContext = (
+  value: string | undefined,
+  entryMap: Map<string, LocalRepoEntry>
+): SelectedProjectContext => {
+  if (!value) return { kind: "none" } as const;
+  if (value.startsWith("env:")) {
+    return {
+      kind: "environment",
+      environmentId: value.replace(/^env:/, "") as Id<"environments">,
+    };
+  }
+  if (value.startsWith(LOCAL_REPO_ENTRY_PREFIX)) {
+    const entry = entryMap.get(value);
+    if (entry) {
+      return { kind: "local", entry };
+    }
+  }
+  return { kind: "repo", repoFullName: value };
+};
+
 function DashboardComponent() {
   const { teamSlugOrId } = Route.useParams();
   const searchParams = Route.useSearch() as { environmentId?: string };
   const { socket } = useSocket();
   const { theme } = useTheme();
   const { addTaskToExpand } = useExpandTasks();
+  const [localRepoEntries, setLocalRepoEntries] = useState<LocalRepoEntry[]>(() =>
+    loadLocalRepoEntries(teamSlugOrId)
+  );
+  const [projectSearchQuery, setProjectSearchQuery] = useState("");
+  const [localPathSuggestions, setLocalPathSuggestions] = useState<LocalPathSuggestion[]>([]);
+  const [isResolvingLocalRepo, setIsResolvingLocalRepo] = useState(false);
 
   const [selectedProject, setSelectedProject] = useState<string[]>(() => {
     const stored = localStorage.getItem(`selectedProject-${teamSlugOrId}`);
@@ -115,6 +191,52 @@ function DashboardComponent() {
     return stored ? JSON.parse(stored) : true;
   });
 
+  useEffect(() => {
+    persistLocalRepoEntries(teamSlugOrId, localRepoEntries);
+  }, [localRepoEntries, teamSlugOrId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (!looksLikePath(projectSearchQuery)) {
+      setLocalPathSuggestions([]);
+      return;
+    }
+    let canceled = false;
+    const handle = window.setTimeout(() => {
+      fetchLocalPathSuggestions(projectSearchQuery)
+        .then((suggestions) => {
+          if (!canceled) {
+            setLocalPathSuggestions(suggestions);
+          }
+        })
+        .catch(() => {
+          if (!canceled) {
+            setLocalPathSuggestions([]);
+          }
+        });
+    }, 200);
+    return () => {
+      canceled = true;
+      window.clearTimeout(handle);
+    };
+  }, [projectSearchQuery]);
+
+  const localRepoEntryMap = useMemo(() => {
+    const map = new Map<string, LocalRepoEntry>();
+    for (const entry of localRepoEntries) {
+      map.set(entry.id, entry);
+    }
+    return map;
+  }, [localRepoEntries]);
+
+  const selectedProjectValue = selectedProject[0];
+  const selectedProjectContext = useMemo(
+    () => getSelectedProjectContext(selectedProjectValue, localRepoEntryMap),
+    [selectedProjectValue, localRepoEntryMap]
+  );
+
   const [, setDockerReady] = useState<boolean | null>(null);
   const [providerStatus, setProviderStatus] =
     useState<ProviderStatusResponse | null>(null);
@@ -144,6 +266,69 @@ function DashboardComponent() {
     }
   }, []);
 
+  const handleProjectSearchChange = useCallback((value: string) => {
+    setProjectSearchQuery(value);
+  }, []);
+
+  const upsertLocalRepoEntry = useCallback((entry: LocalRepoEntry) => {
+    setLocalRepoEntries((prev) => {
+      const index = prev.findIndex((existing) => existing.id === entry.id);
+      if (index !== -1) {
+        const copy = [...prev];
+        copy[index] = entry;
+        return copy;
+      }
+      return [...prev, entry];
+    });
+  }, []);
+
+  const handleLocalRepoSelectionFromPath = useCallback(
+    async (rawPath: string): Promise<boolean> => {
+      const normalized = rawPath.trim();
+      if (!normalized) return false;
+      setIsResolvingLocalRepo(true);
+      try {
+        const inspection = await inspectLocalRepo(normalized);
+        if (!inspection.success || !inspection.repoRoot) {
+          const message =
+            inspection.error ||
+            inspection.reason ||
+            "Failed to open local repository";
+          toast.error(message);
+          return false;
+        }
+        const entry = buildLocalRepoEntry(inspection, normalized);
+        upsertLocalRepoEntry(entry);
+        setSelectedProject([entry.id]);
+        setSelectedBranch(
+          entry.currentBranch ? [entry.currentBranch] : []
+        );
+        localStorage.setItem(
+          `selectedProject-${teamSlugOrId}`,
+          JSON.stringify([entry.id])
+        );
+        setProjectSearchQuery("");
+        setLocalPathSuggestions([]);
+        toast.success(`Added ${entry.repoFullName} from local path`);
+        return true;
+      } catch (error) {
+        console.error("Failed to inspect local repo:", error);
+        toast.error(
+          error instanceof Error ? error.message : "Failed to read local repo"
+        );
+        return false;
+      } finally {
+        setIsResolvingLocalRepo(false);
+      }
+    },
+    [
+      teamSlugOrId,
+      upsertLocalRepoEntry,
+      setSelectedProject,
+      setSelectedBranch,
+    ]
+  );
+
   // Preselect environment if provided in URL search params
   useEffect(() => {
     if (searchParams?.environmentId) {
@@ -161,19 +346,35 @@ function DashboardComponent() {
   }, []);
 
   // Fetch branches for selected repo from Convex
-  const isEnvSelected = useMemo(
-    () => (selectedProject[0] || "").startsWith("env:"),
-    [selectedProject]
-  );
+  const isEnvSelected = selectedProjectContext.kind === "environment";
 
   const branchesQuery = useQuery({
     ...branchesQueryOptions({
       teamSlugOrId,
-      repoFullName: selectedProject[0] || "",
+      repoFullName:
+        selectedProjectContext.kind === "repo"
+          ? selectedProjectContext.repoFullName
+          : selectedProjectValue || "",
     }),
-    enabled: !!selectedProject[0] && !isEnvSelected,
+    enabled: selectedProjectContext.kind === "repo" && !isEnvSelected,
   });
-  const branchSummary = useMemo(() => {
+  const localBranchesQuery = useQuery({
+    queryKey: [
+      "local-branches",
+      teamSlugOrId,
+      selectedProjectContext.kind === "local"
+        ? selectedProjectContext.entry.path
+        : null,
+    ],
+    queryFn: async () => {
+      if (selectedProjectContext.kind !== "local") {
+        return null;
+      }
+      return await fetchLocalRepoBranches(selectedProjectContext.entry.path);
+    },
+    enabled: selectedProjectContext.kind === "local",
+  });
+  const remoteBranchSummary = useMemo(() => {
     const data = branchesQuery.data;
     if (!data?.branches) {
       return { names: [] as string[], defaultName: undefined as string | undefined };
@@ -192,23 +393,68 @@ function DashboardComponent() {
     };
   }, [branchesQuery.data]);
 
+  const localBranchSummary = useMemo(() => {
+    if (selectedProjectContext.kind !== "local") {
+      return { names: [] as string[], defaultName: undefined as string | undefined };
+    }
+    const data = localBranchesQuery.data;
+    if (!data || data === null || !data.success || !data.branches) {
+      const fallback =
+        selectedProjectContext.entry.defaultBranch ??
+        selectedProjectContext.entry.currentBranch;
+      return {
+        names: [] as string[],
+        defaultName: fallback,
+      };
+    }
+    const names = data.branches.map((branch) => branch.name);
+    const preferred =
+      data.defaultBranch && names.includes(data.defaultBranch)
+        ? data.defaultBranch
+        : data.currentBranch && names.includes(data.currentBranch)
+          ? data.currentBranch
+          : undefined;
+    return {
+      names,
+      defaultName: preferred,
+    };
+  }, [localBranchesQuery.data, selectedProjectContext]);
+
+  const branchSummary =
+    selectedProjectContext.kind === "local"
+      ? localBranchSummary
+      : remoteBranchSummary;
+
   const branchNames = branchSummary.names;
   const remoteDefaultBranch = branchSummary.defaultName;
+  const branchesLoading =
+    selectedProjectContext.kind === "local"
+      ? localBranchesQuery.isPending
+      : branchesQuery.isPending;
+  const projectsLoading = reposByOrgQuery.isLoading || isResolvingLocalRepo;
   // Callback for project selection changes
   const handleProjectChange = useCallback(
     (newProjects: string[]) => {
+      const nextValue = newProjects[0];
+      if (nextValue?.startsWith(LOCAL_SUGGESTION_PREFIX)) {
+        const decodedPath = decodeSuggestionPathValue(
+          nextValue.slice(LOCAL_SUGGESTION_PREFIX.length)
+        );
+        void handleLocalRepoSelectionFromPath(decodedPath);
+        return;
+      }
       setSelectedProject(newProjects);
       localStorage.setItem(`selectedProject-${teamSlugOrId}`, JSON.stringify(newProjects));
-      if (newProjects[0] !== selectedProject[0]) {
+      if (nextValue !== selectedProject[0]) {
         setSelectedBranch([]);
       }
       // If selecting an environment, enforce cloud mode
-      if ((newProjects[0] || "").startsWith("env:")) {
+      if ((nextValue || "").startsWith("env:")) {
         setIsCloudMode(true);
         localStorage.setItem("isCloudMode", JSON.stringify(true));
       }
     },
-    [selectedProject, teamSlugOrId]
+    [handleLocalRepoSelectionFromPath, selectedProject, teamSlugOrId]
   );
 
   // Callback for branch selection changes
@@ -397,7 +643,10 @@ function DashboardComponent() {
       }
     }
 
-    if (!selectedProject[0] || !taskDescription.trim()) {
+    if (
+      selectedProjectContext.kind === "none" ||
+      !taskDescription.trim()
+    ) {
       console.error("Please select a project and enter a task description");
       return;
     }
@@ -408,11 +657,21 @@ function DashboardComponent() {
 
     // Use the effective selected branch (respects available branches and sensible defaults)
     const branch = effectiveSelectedBranch[0];
-    const projectFullName = selectedProject[0];
-    const envSelected = projectFullName.startsWith("env:");
-    const environmentId = envSelected
-      ? (projectFullName.replace(/^env:/, "") as Id<"environments">)
-      : undefined;
+    const envSelected = selectedProjectContext.kind === "environment";
+    const environmentId =
+      selectedProjectContext.kind === "environment"
+        ? selectedProjectContext.environmentId
+        : undefined;
+    const projectFullName =
+      selectedProjectContext.kind === "repo"
+        ? selectedProjectContext.repoFullName
+        : selectedProjectContext.kind === "local"
+          ? selectedProjectContext.entry.repoFullName
+          : selectedProjectValue || "";
+    const localRepoPath =
+      selectedProjectContext.kind === "local"
+        ? selectedProjectContext.entry.path
+        : undefined;
 
     try {
       // Extract content including images from the editor
@@ -478,7 +737,14 @@ function DashboardComponent() {
 
       const repoUrl = envSelected
         ? undefined
-        : `https://github.com/${projectFullName}.git`;
+        : selectedProjectContext.kind === "local"
+          ? selectedProjectContext.entry.repoUrl ??
+            (selectedProjectContext.entry.repoFullName.includes("/")
+              ? `https://github.com/${selectedProjectContext.entry.repoFullName}.git`
+              : undefined)
+          : selectedProjectContext.kind === "repo"
+            ? `https://github.com/${selectedProjectContext.repoFullName}.git`
+            : undefined;
 
       // For socket.io, we need to send the content text (which includes image references) and the images
       const handleStartTaskAck = (response: TaskAcknowledged | TaskStarted | TaskError) => {
@@ -511,6 +777,7 @@ function DashboardComponent() {
             selectedAgents.length > 0 ? selectedAgents : undefined,
           isCloudMode: envSelected ? true : isCloudMode,
           ...(environmentId ? { environmentId } : {}),
+          ...(localRepoPath ? { localRepoPath } : {}),
           images: images.length > 0 ? images : undefined,
           theme,
         },
@@ -521,7 +788,8 @@ function DashboardComponent() {
       console.error("Error starting task:", error);
     }
   }, [
-    selectedProject,
+    selectedProjectContext,
+    selectedProjectValue,
     taskDescription,
     socket,
     effectiveSelectedBranch,
@@ -568,6 +836,34 @@ function DashboardComponent() {
   const environmentsQuery = useQuery(
     convexQuery(api.environments.list, { teamSlugOrId })
   );
+
+  const localRepoSelectOptions = useMemo(() => {
+    if (localRepoEntries.length === 0) return [];
+    return [...localRepoEntries]
+      .sort((a, b) => a.repoFullName.localeCompare(b.repoFullName))
+      .map((entry) => ({
+        label: `${entry.repoFullName} (local)`,
+        value: entry.id,
+        icon: (
+          <FolderOpen className="w-4 h-4 text-neutral-600 dark:text-neutral-300" />
+        ),
+        iconKey: "local",
+      }));
+  }, [localRepoEntries]);
+
+  const localSuggestionOptions = useMemo(() => {
+    if (!looksLikePath(projectSearchQuery)) {
+      return [];
+    }
+    return localPathSuggestions.map((suggestion) => ({
+      label: suggestion.displayPath,
+      value: `${LOCAL_SUGGESTION_PREFIX}${encodeSuggestionPath(suggestion.path)}`,
+      icon: (
+        <FolderOpen className="w-4 h-4 text-neutral-500 dark:text-neutral-400" />
+      ),
+      iconKey: "local-suggestion",
+    }));
+  }, [localPathSuggestions, projectSearchQuery]);
 
   const projectOptions = useMemo(() => {
     // Repo options as objects with GitHub icon
@@ -629,6 +925,14 @@ function DashboardComponent() {
       });
       options.push(...envOptions);
     }
+    if (localRepoSelectOptions.length > 0) {
+      options.push({
+        label: "Local repositories",
+        value: "__heading-local-repo",
+        heading: true,
+      });
+      options.push(...localRepoSelectOptions);
+    }
     if (repoOptions.length > 0) {
       options.push({
         label: "Repositories",
@@ -637,14 +941,27 @@ function DashboardComponent() {
       });
       options.push(...repoOptions);
     }
+    if (localSuggestionOptions.length > 0) {
+      options.push({
+        label: "Local paths",
+        value: "__heading-local-paths",
+        heading: true,
+      });
+      options.push(...localSuggestionOptions);
+    }
 
     return options;
-  }, [reposByOrg, environmentsQuery.data]);
+  }, [reposByOrg, environmentsQuery.data, localRepoSelectOptions, localSuggestionOptions]);
 
   const selectedRepoFullName = useMemo(() => {
-    if (!selectedProject[0] || isEnvSelected) return null;
-    return selectedProject[0];
-  }, [selectedProject, isEnvSelected]);
+    if (selectedProjectContext.kind === "repo") {
+      return selectedProjectContext.repoFullName;
+    }
+    if (selectedProjectContext.kind === "local") {
+      return selectedProjectContext.entry.repoFullName;
+    }
+    return null;
+  }, [selectedProjectContext]);
 
   const shouldShowWorkspaceSetup = !!selectedRepoFullName && !isEnvSelected;
 
@@ -680,6 +997,9 @@ function DashboardComponent() {
   // Handle paste of GitHub repo URL in the project search field
   const handleProjectSearchPaste = useCallback(
     async (input: string) => {
+      if (looksLikePath(input)) {
+        return await handleLocalRepoSelectionFromPath(input);
+      }
       try {
         const result = await addManualRepo({
           teamSlugOrId,
@@ -708,7 +1028,7 @@ function DashboardComponent() {
         return false; // Don't close dropdown if it's not a valid GitHub URL
       }
     },
-    [addManualRepo, teamSlugOrId, reposByOrgQuery]
+    [addManualRepo, teamSlugOrId, reposByOrgQuery, handleLocalRepoSelectionFromPath]
   );
 
   // Listen for VSCode spawned events
@@ -836,22 +1156,32 @@ function DashboardComponent() {
 
   // Handle Command+Enter keyboard shortcut
   const handleSubmit = useCallback(() => {
-    if (selectedProject[0] && taskDescription.trim()) {
+    if (selectedProjectContext.kind !== "none" && taskDescription.trim()) {
       void handleStartTask();
     }
-  }, [selectedProject, taskDescription, handleStartTask]);
+  }, [selectedProjectContext.kind, taskDescription, handleStartTask]);
 
   // Memoized computed values for editor props
-  const lexicalEnvironmentId = useMemo(() => {
-    if (!selectedProject[0] || !isEnvSelected) return undefined;
-    return selectedProject[0].replace(/^env:/, "") as Id<"environments">;
-  }, [selectedProject, isEnvSelected]);
+  const lexicalEnvironmentId =
+    selectedProjectContext.kind === "environment"
+      ? selectedProjectContext.environmentId
+      : undefined;
 
   const lexicalRepoUrl = useMemo(() => {
-    if (!selectedProject[0]) return undefined;
-    if (isEnvSelected) return undefined;
-    return `https://github.com/${selectedProject[0]}.git`;
-  }, [selectedProject, isEnvSelected]);
+    if (selectedProjectContext.kind === "repo") {
+      return `https://github.com/${selectedProjectContext.repoFullName}.git`;
+    }
+    if (selectedProjectContext.kind === "local") {
+      if (selectedProjectContext.entry.repoUrl) {
+        return selectedProjectContext.entry.repoUrl;
+      }
+      const slug = selectedProjectContext.entry.repoFullName;
+      return slug.includes("/")
+        ? `https://github.com/${slug}.git`
+        : undefined;
+    }
+    return undefined;
+  }, [selectedProjectContext]);
 
   const lexicalBranch = useMemo(
     () => effectiveSelectedBranch[0],
@@ -859,16 +1189,17 @@ function DashboardComponent() {
   );
 
   const canSubmit = useMemo(() => {
-    if (!selectedProject[0]) return false;
+    if (selectedProjectContext.kind === "none") {
+      return false;
+    }
     if (!taskDescription.trim()) return false;
     if (selectedAgents.length === 0) return false;
-    if (isEnvSelected) return true; // no branch required when environment selected
+    if (selectedProjectContext.kind === "environment") return true;
     return !!effectiveSelectedBranch[0];
   }, [
-    selectedProject,
+    selectedProjectContext,
     taskDescription,
     selectedAgents,
-    isEnvSelected,
     effectiveSelectedBranch,
   ]);
 
@@ -882,6 +1213,7 @@ function DashboardComponent() {
             <WorkspaceCreationButtons
               teamSlugOrId={teamSlugOrId}
               selectedProject={selectedProject}
+              selectedRepoFullName={selectedRepoFullName}
               isEnvSelected={isEnvSelected}
             />
 
@@ -896,6 +1228,7 @@ function DashboardComponent() {
               selectedProject={selectedProject}
               onProjectChange={handleProjectChange}
               onProjectSearchPaste={handleProjectSearchPaste}
+              onProjectSearchChange={handleProjectSearchChange}
               branchOptions={branchOptions}
               selectedBranch={effectiveSelectedBranch}
               onBranchChange={handleBranchChange}
@@ -903,11 +1236,15 @@ function DashboardComponent() {
               onAgentChange={handleAgentChange}
               isCloudMode={isCloudMode}
               onCloudModeToggle={handleCloudModeToggle}
-              isLoadingProjects={reposByOrgQuery.isLoading}
-              isLoadingBranches={branchesQuery.isPending}
+              isLoadingProjects={projectsLoading}
+              isLoadingBranches={branchesLoading}
               teamSlugOrId={teamSlugOrId}
               cloudToggleDisabled={isEnvSelected}
-              branchDisabled={isEnvSelected || !selectedProject[0]}
+              branchDisabled={
+                isEnvSelected ||
+                (selectedProjectContext.kind !== "repo" &&
+                  selectedProjectContext.kind !== "local")
+              }
               providerStatus={providerStatus}
               canSubmit={canSubmit}
               onStartTask={handleStartTask}
@@ -971,6 +1308,7 @@ type DashboardMainCardProps = {
   selectedProject: string[];
   onProjectChange: (newProjects: string[]) => void;
   onProjectSearchPaste?: (value: string) => boolean | Promise<boolean>;
+  onProjectSearchChange?: (value: string) => void;
   branchOptions: string[];
   selectedBranch: string[];
   onBranchChange: (newBranches: string[]) => void;
@@ -999,6 +1337,7 @@ function DashboardMainCard({
   selectedProject,
   onProjectChange,
   onProjectSearchPaste,
+  onProjectSearchChange,
   branchOptions,
   selectedBranch,
   onBranchChange,
@@ -1034,6 +1373,7 @@ function DashboardMainCard({
           selectedProject={selectedProject}
           onProjectChange={onProjectChange}
           onProjectSearchPaste={onProjectSearchPaste}
+          onProjectSearchChange={onProjectSearchChange}
           branchOptions={branchOptions}
           selectedBranch={selectedBranch}
           onBranchChange={onBranchChange}

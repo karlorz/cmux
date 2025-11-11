@@ -240,7 +240,10 @@ export interface ServerToWorkerEvents {
   "worker:terminal-input": (data: WorkerTerminalInput) => void;
 
   // File operations
-  "worker:upload-files": (data: WorkerUploadFiles) => void;
+  "worker:upload-files": (
+    data: WorkerUploadFiles,
+    callback: (response: { success: boolean; error?: string }) => void
+  ) => void;
 
   // Git configuration
   "worker:configure-git": (data: WorkerConfigureGit) => void;
