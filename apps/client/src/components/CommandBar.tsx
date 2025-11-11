@@ -196,6 +196,210 @@ type FocusSnapshot = {
   };
 };
 
+type TaskWithSelectedRun =
+  (typeof api.tasks.getTasksWithTaskRuns._returnType)[number];
+type SelectedTaskRun = NonNullable<TaskWithSelectedRun["selectedTaskRun"]>;
+
+type ParsedGitHubPullRequest = {
+  repoOwner: string;
+  repoName: string;
+  repoFullName: string;
+  prNumber: number;
+};
+
+type MatchedTaskRunPullRequest = {
+  task: TaskWithSelectedRun;
+  run: SelectedTaskRun;
+  repoFullName: string;
+  prNumber: number;
+  url?: string;
+  state?: string | null;
+};
+
+const TASK_PR_VALUE_PREFIX = "task-pr:";
+
+function parseGitHubPullRequestUrl(
+  input?: string | null
+): ParsedGitHubPullRequest | null {
+  if (!input) return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  let candidate = trimmed;
+  if (!/^[a-zA-Z][a-zA-Z\d+.-]*:\/\//.test(candidate)) {
+    if (candidate.startsWith("github.com/")) {
+      candidate = `https://${candidate}`;
+    } else if (candidate.startsWith("www.github.com/")) {
+      candidate = `https://${candidate}`;
+    } else {
+      return null;
+    }
+  }
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(candidate);
+  } catch {
+    return null;
+  }
+
+  const hostname = parsedUrl.hostname.toLowerCase();
+  if (hostname !== "github.com" && hostname !== "www.github.com") {
+    return null;
+  }
+
+  const segments = parsedUrl.pathname.split("/").filter(Boolean);
+  if (segments.length < 4) return null;
+  const [owner, repo, rawType, numberSegment] = segments;
+  const type = rawType.toLowerCase();
+  if (type !== "pull" && type !== "pulls") {
+    return null;
+  }
+
+  const prNumber = Number.parseInt(numberSegment, 10);
+  if (!Number.isFinite(prNumber)) {
+    return null;
+  }
+
+  return {
+    repoOwner: owner,
+    repoName: repo,
+    repoFullName: `${owner}/${repo}`,
+    prNumber,
+  };
+}
+
+const normalizeRepoFullName = (value?: string | null) =>
+  value?.trim().toLowerCase() ?? null;
+
+function findTaskRunByPullRequest(
+  tasks: TaskWithSelectedRun[],
+  target: ParsedGitHubPullRequest
+): MatchedTaskRunPullRequest | null {
+  const normalizedTargetRepo = normalizeRepoFullName(target.repoFullName);
+  if (!normalizedTargetRepo) {
+    return null;
+  }
+
+  for (const task of tasks) {
+    const run = task.selectedTaskRun;
+    if (!run) continue;
+    const match = matchRunAgainstPullRequest(
+      task,
+      run,
+      normalizedTargetRepo,
+      target
+    );
+    if (match) {
+      return match;
+    }
+  }
+
+  return null;
+}
+
+function matchRunAgainstPullRequest(
+  task: TaskWithSelectedRun,
+  run: SelectedTaskRun,
+  normalizedTargetRepo: string,
+  target: ParsedGitHubPullRequest
+): MatchedTaskRunPullRequest | null {
+  const prRecords = run.pullRequests ?? [];
+  for (const record of prRecords) {
+    const recordRepo = normalizeRepoFullName(record.repoFullName);
+    if (recordRepo !== normalizedTargetRepo) continue;
+
+    const parsedRecordUrl = record.url
+      ? parseGitHubPullRequestUrl(record.url)
+      : null;
+    const recordNumber =
+      typeof record.number === "number"
+        ? record.number
+        : parsedRecordUrl?.prNumber ?? null;
+
+    if (recordNumber === target.prNumber) {
+      return {
+        task,
+        run,
+        repoFullName: record.repoFullName,
+        prNumber: recordNumber,
+        url: record.url ?? run.pullRequestUrl ?? undefined,
+        state: record.state ?? run.pullRequestState ?? undefined,
+      };
+    }
+  }
+
+  const aggregatedUrlInfo = parseGitHubPullRequestUrl(run.pullRequestUrl);
+  if (
+    aggregatedUrlInfo &&
+    normalizeRepoFullName(aggregatedUrlInfo.repoFullName) ===
+      normalizedTargetRepo &&
+    aggregatedUrlInfo.prNumber === target.prNumber
+  ) {
+    return {
+      task,
+      run,
+      repoFullName: aggregatedUrlInfo.repoFullName,
+      prNumber: aggregatedUrlInfo.prNumber,
+      url: run.pullRequestUrl ?? undefined,
+      state: run.pullRequestState ?? undefined,
+    };
+  }
+
+  if (
+    typeof run.pullRequestNumber === "number" &&
+    run.pullRequestNumber === target.prNumber
+  ) {
+    const candidateRepoFullName =
+      prRecords.find(
+        (record) =>
+          normalizeRepoFullName(record.repoFullName) === normalizedTargetRepo
+      )?.repoFullName ??
+      aggregatedUrlInfo?.repoFullName ??
+      task.projectFullName ??
+      target.repoFullName;
+
+    if (
+      candidateRepoFullName &&
+      normalizeRepoFullName(candidateRepoFullName) === normalizedTargetRepo
+    ) {
+      return {
+        task,
+        run,
+        repoFullName: candidateRepoFullName,
+        prNumber: run.pullRequestNumber,
+        url: run.pullRequestUrl ?? undefined,
+        state: run.pullRequestState ?? undefined,
+      };
+    }
+  }
+
+  return null;
+}
+
+function buildTaskPrCommandValue(
+  taskId: Id<"tasks">,
+  runId: Id<"taskRuns">
+): string {
+  return `${TASK_PR_VALUE_PREFIX}${taskId}:${runId}`;
+}
+
+function parseTaskPrCommandValue(
+  value: string
+): { taskId: Id<"tasks">; runId: Id<"taskRuns"> } | null {
+  if (!value.startsWith(TASK_PR_VALUE_PREFIX)) {
+    return null;
+  }
+  const [taskId, runId] = value.slice(TASK_PR_VALUE_PREFIX.length).split(":");
+  if (!taskId || !runId) {
+    return null;
+  }
+  return {
+    taskId: taskId as Id<"tasks">,
+    runId: runId as Id<"taskRuns">,
+  };
+}
+
 function VirtualizedCommandItems({
   entries,
   virtualizer,
@@ -1295,6 +1499,23 @@ export function CommandBar({
         } catch {
           // Silently fail preloading
         }
+      } else if (value?.startsWith(TASK_PR_VALUE_PREFIX)) {
+        const parsed = parseTaskPrCommandValue(value);
+        if (!parsed) {
+          return;
+        }
+        try {
+          await router.preloadRoute({
+            to: "/$teamSlugOrId/task/$taskId/run/$runId/pr",
+            params: {
+              teamSlugOrId,
+              taskId: parsed.taskId,
+              runId: parsed.runId,
+            },
+          });
+        } catch {
+          // ignore preload errors
+        }
       }
     },
     [router, teamSlugOrId, allTasks, preloadTeamDashboard]
@@ -1419,6 +1640,20 @@ export function CommandBar({
         });
       } else if (value === "dev:webcontents") {
         navigate({ to: "/debug-webcontents" });
+      } else if (value.startsWith(TASK_PR_VALUE_PREFIX)) {
+        const parsed = parseTaskPrCommandValue(value);
+        if (!parsed) {
+          toast.error("Unable to open that pull request");
+          return;
+        }
+        navigate({
+          to: "/$teamSlugOrId/task/$taskId/run/$runId/pr",
+          params: {
+            teamSlugOrId,
+            taskId: parsed.taskId,
+            runId: parsed.runId,
+          },
+        });
       } else if (value.startsWith("team:")) {
         const [teamId, slugPart] = value.slice(5).split(":");
         const targetTeamSlugOrId = slugPart || teamId;
@@ -2004,6 +2239,83 @@ export function CommandBar({
     isCreatingCloudWorkspace,
   ]);
 
+  const parsedGitHubPullRequestFromSearch = useMemo(
+    () => parseGitHubPullRequestUrl(search),
+    [search]
+  );
+
+  const githubPullRequestEntry = useMemo<CommandListEntry | null>(() => {
+    if (!parsedGitHubPullRequestFromSearch || !allTasks?.length) {
+      return null;
+    }
+    const match = findTaskRunByPullRequest(
+      allTasks,
+      parsedGitHubPullRequestFromSearch
+    );
+    if (!match) {
+      return null;
+    }
+    const { task, run, repoFullName, prNumber, url, state } = match;
+    const value = buildTaskPrCommandValue(task._id, run._id);
+    const taskTitle =
+      task.pullRequestTitle?.trim() || task.text || "Task run";
+    const statusLabel = state ?? run.pullRequestState ?? null;
+    const statusClassName = !statusLabel
+      ? ""
+      : clsx(
+          "text-xs px-2 py-0.5 rounded-full",
+          statusLabel === "open"
+            ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+            : statusLabel === "draft"
+              ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300"
+              : statusLabel === "merged"
+                ? "bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300"
+                : statusLabel === "closed"
+                  ? "bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300"
+                  : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300"
+        );
+    const keywords = compactStrings([
+      repoFullName,
+      `${prNumber}`,
+      taskTitle,
+      task.text,
+      task.pullRequestTitle,
+      run.newBranch,
+      url,
+    ]);
+    return {
+      value,
+      label: `${repoFullName} #${prNumber}`,
+      keywords,
+      searchText: buildSearchText(
+        `${repoFullName} #${prNumber}`,
+        keywords,
+        [url, parsedGitHubPullRequestFromSearch.repoFullName]
+      ),
+      className: taskCommandItemClassName,
+      execute: () => handleSelect(value),
+      trackUsage: false,
+      renderContent: () => (
+        <>
+          <GitPullRequest className="h-4 w-4 text-green-500" />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate text-sm">{taskTitle}</span>
+            <span className="truncate text-xs text-neutral-500 dark:text-neutral-400">
+              {repoFullName} · PR #{prNumber}
+            </span>
+          </div>
+          {statusLabel ? (
+            <span className={statusClassName}>{statusLabel}</span>
+          ) : null}
+        </>
+      ),
+    };
+  }, [
+    allTasks,
+    handleSelect,
+    parsedGitHubPullRequestFromSearch,
+  ]);
+
   const {
     history: rootSuggestionHistory,
     record: recordRootUsage,
@@ -2036,10 +2348,16 @@ export function CommandBar({
     );
   }, [cloudWorkspaceEntries, pruneCloudWorkspaceHistory]);
 
-  const filteredRootEntries = useMemo(
-    () => filterCommandItems(search, rootCommandEntries),
-    [rootCommandEntries, search]
-  );
+  const filteredRootEntries = useMemo(() => {
+    const baseEntries = filterCommandItems(search, rootCommandEntries);
+    if (!githubPullRequestEntry) {
+      return baseEntries;
+    }
+    const deduped = baseEntries.filter(
+      (entry) => entry.value !== githubPullRequestEntry.value
+    );
+    return [githubPullRequestEntry, ...deduped];
+  }, [githubPullRequestEntry, rootCommandEntries, search]);
 
   const filteredLocalWorkspaceEntries = useMemo(
     () => filterCommandItems(search, localWorkspaceEntries),
