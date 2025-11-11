@@ -118,6 +118,76 @@ function buildPlaceholderWorkspaceUrl(folderPath: string): string {
   return buildServeWebWorkspaceUrl(LOCAL_VSCODE_PLACEHOLDER_ORIGIN, folderPath);
 }
 
+const normalizeGithubPullRequestUrl = (
+  value?: string | null
+): string | null => {
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const withScheme =
+    trimmed.startsWith("http://") || trimmed.startsWith("https://")
+      ? trimmed
+      : trimmed.startsWith("github.com/")
+        ? `https://${trimmed}`
+        : trimmed;
+
+  try {
+    const url = new URL(withScheme);
+    const hostname = url.hostname.toLowerCase();
+    if (
+      hostname !== "github.com" &&
+      hostname !== "www.github.com" &&
+      !hostname.endsWith(".github.com")
+    ) {
+      return null;
+    }
+    const segments = url.pathname
+      .split("/")
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+    if (segments.length < 4) {
+      return null;
+    }
+    const section = segments[2]?.toLowerCase();
+    if (section !== "pull" && section !== "pulls") {
+      return null;
+    }
+    const prMatch = segments[3]?.match(/^\d+/);
+    if (!prMatch) {
+      return null;
+    }
+    const owner = segments[0];
+    const repo = segments[1];
+    if (!owner || !repo) {
+      return null;
+    }
+    return `https://github.com/${owner}/${repo}/pull/${prMatch[0]}`;
+  } catch {
+    return null;
+  }
+};
+
+const pullRequestUrlToProjectFullName = (url: string): string | null => {
+  try {
+    const parsed = new URL(url);
+    const segments = parsed.pathname
+      .split("/")
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+    if (segments.length >= 2) {
+      return `${segments[0]}/${segments[1]}`;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+
 export function setupSocketHandlers(
   rt: RealtimeServer,
   gitDiffManager: GitDiffManager,
@@ -660,6 +730,7 @@ export function setupSocketHandlers(
           projectFullName,
           repoUrl: explicitRepoUrl,
           branch: requestedBranch,
+          pullRequestUrl: requestedPullRequestUrl,
           taskId: providedTaskId,
           taskRunId: providedTaskRunId,
           workspaceName: providedWorkspaceName,
@@ -692,6 +763,30 @@ export function setupSocketHandlers(
             ? `https://github.com/${projectFullName}.git`
             : undefined);
         const branch = requestedBranch?.trim();
+        const pullRequestUrl = normalizeGithubPullRequestUrl(
+          requestedPullRequestUrl
+        );
+        if (requestedPullRequestUrl && !pullRequestUrl) {
+          callback({
+            success: false,
+            error: "Invalid pull request URL.",
+          });
+          return;
+        }
+        if (pullRequestUrl && projectFullName) {
+          const prProjectFullName =
+            pullRequestUrlToProjectFullName(pullRequestUrl);
+          if (
+            prProjectFullName &&
+            prProjectFullName.toLowerCase() !== projectFullName.toLowerCase()
+          ) {
+            callback({
+              success: false,
+              error: "Pull request URL must match the requested repository.",
+            });
+            return;
+          }
+        }
 
         let workspaceConfig: WorkspaceConfigResponse | null = null;
         if (projectFullName) {
@@ -971,6 +1066,34 @@ export function setupSocketHandlers(
               );
             }
 
+            if (pullRequestUrl) {
+              try {
+                await execFileAsync(
+                  "gh",
+                  ["pr", "checkout", pullRequestUrl],
+                  {
+                    cwd: resolvedWorkspacePath,
+                  }
+                );
+              } catch (error) {
+                if (cleanupWorkspace) {
+                  await cleanupWorkspace();
+                }
+                const execErr = isExecError(error) ? error : null;
+                const message =
+                  execErr?.stderr?.trim() ||
+                  execErr?.stdout?.trim() ||
+                  (error instanceof Error
+                    ? error.message
+                    : "gh pr checkout failed");
+                throw new Error(
+                  message
+                    ? `gh pr checkout failed: ${message}`
+                    : "gh pr checkout failed"
+                );
+              }
+            }
+
             try {
               await execFileAsync(
                 "git",
@@ -988,6 +1111,42 @@ export function setupSocketHandlers(
                   ? `Git clone failed to produce a checkout: ${error.message}`
                   : "Git clone failed to produce a checkout"
               );
+            }
+
+            if (branch && !pullRequestUrl) {
+              try {
+                await execFileAsync("git", ["checkout", branch], {
+                  cwd: resolvedWorkspacePath,
+                });
+              } catch (error) {
+                try {
+                  await execFileAsync(
+                    "git",
+                    ["checkout", "-b", branch, `origin/${branch}`],
+                    {
+                      cwd: resolvedWorkspacePath,
+                    }
+                  );
+                } catch (checkoutError) {
+                  if (cleanupWorkspace) {
+                    await cleanupWorkspace();
+                  }
+                  const execErr = isExecError(checkoutError)
+                    ? checkoutError
+                    : null;
+                  const message =
+                    execErr?.stderr?.trim() ||
+                    execErr?.stdout?.trim() ||
+                    (checkoutError instanceof Error
+                      ? checkoutError.message
+                      : `Failed to checkout branch ${branch}`);
+                  throw new Error(
+                    message
+                      ? `Failed to checkout branch ${branch}: ${message}`
+                      : `Failed to checkout branch ${branch}`
+                  );
+                }
+              }
             }
           } else {
             try {
@@ -1128,9 +1287,36 @@ export function setupSocketHandlers(
           environmentId,
           projectFullName,
           repoUrl,
+          branch: requestedBranch,
+          pullRequestUrl: requestedPullRequestUrl,
           taskId: providedTaskId,
         } = parsed.data;
         const teamSlugOrId = requestedTeamSlugOrId || safeTeam;
+        const branch = requestedBranch?.trim();
+        const pullRequestUrl = normalizeGithubPullRequestUrl(
+          requestedPullRequestUrl
+        );
+        if (requestedPullRequestUrl && !pullRequestUrl) {
+          callback({
+            success: false,
+            error: "Invalid pull request URL.",
+          });
+          return;
+        }
+        if (pullRequestUrl && projectFullName) {
+          const prProjectFullName =
+            pullRequestUrlToProjectFullName(pullRequestUrl);
+          if (
+            prProjectFullName &&
+            prProjectFullName.toLowerCase() !== projectFullName.toLowerCase()
+          ) {
+            callback({
+              success: false,
+              error: "Pull request URL must match the requested repository.",
+            });
+            return;
+          }
+        }
 
         const convex = getConvex();
         let taskId: Id<"tasks"> | undefined = providedTaskId;
@@ -1206,7 +1392,12 @@ export function setupSocketHandlers(
               isCloudWorkspace: true,
               ...(environmentId
                 ? { environmentId }
-                : { projectFullName, repoUrl }),
+                : {
+                    projectFullName,
+                    repoUrl,
+                    branch,
+                    pullRequestUrl: pullRequestUrl ?? undefined,
+                  }),
             },
           });
 
