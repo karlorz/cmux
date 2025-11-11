@@ -514,6 +514,33 @@ export const githubWebhook = httpAction(async (_ctx, req) => {
               });
             }
           }
+
+          // Trigger preview screenshot job for opened/synchronize PRs
+          if (
+            prPayload.action === "opened" ||
+            prPayload.action === "synchronize"
+          ) {
+            const pr = prPayload.pull_request;
+            if (pr) {
+              const prNumber = Number(pr.number ?? 0);
+              const headSha = String(pr.head?.sha ?? "");
+              const headBranch = String(pr.head?.ref ?? "");
+              const baseBranch = String(pr.base?.ref ?? "");
+
+              if (prNumber && headSha && teamId) {
+                await _ctx.runMutation(internal.preview.triggerPreviewFromWebhook, {
+                  teamId,
+                  repoFullName,
+                  pullRequestNumber: prNumber,
+                  pullRequestTitle: pr.title ?? undefined,
+                  pullRequestDescription: pr.body ?? undefined,
+                  headSha,
+                  headBranch,
+                  baseBranch,
+                });
+              }
+            }
+          }
         } catch (err) {
           console.error("github_webhook pull_request handler failed", {
             err,

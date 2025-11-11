@@ -953,6 +953,95 @@ const convexSchema = defineSchema({
     .index("by_statusId", ["statusId"])
     .index("by_sha_context", ["sha", "context", "updatedAt"])
     .index("by_sha", ["sha", "updatedAt"]),
+
+  // Preview.new - Repository preview configurations
+  previewConfigurations: defineTable({
+    // Team scoping
+    teamId: v.string(),
+    userId: v.string(), // User who created the configuration
+
+    // Repository info
+    repoFullName: v.string(), // e.g., "owner/repo"
+    installationId: v.number(), // GitHub App installation ID
+    repositoryId: v.optional(v.number()), // GitHub repository ID
+
+    // Configuration
+    devScript: v.optional(v.string()), // Command to start dev server (e.g., "npm run dev")
+    maintenanceScript: v.optional(v.string()), // Setup command (e.g., "npm install")
+    environmentVariables: v.optional(
+      v.array(
+        v.object({
+          key: v.string(),
+          value: v.string(),
+        })
+      )
+    ),
+    browser: v.optional(v.string()), // Browser to use (chrome, firefox, etc.)
+    baseUrls: v.optional(v.array(v.string())), // Base URLs to screenshot (e.g., ["http://localhost:3000"])
+
+    // Status
+    isActive: v.boolean(), // Whether this configuration is active
+
+    // Timestamps
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_team", ["teamId", "updatedAt"])
+    .index("by_team_repo", ["teamId", "repoFullName"])
+    .index("by_repo", ["repoFullName"]),
+
+  // Preview.new - Screenshot jobs for PRs
+  previewScreenshotJobs: defineTable({
+    // Team scoping
+    teamId: v.string(),
+    previewConfigId: v.id("previewConfigurations"),
+
+    // PR info
+    repoFullName: v.string(),
+    pullRequestNumber: v.number(),
+    pullRequestTitle: v.optional(v.string()),
+    pullRequestDescription: v.optional(v.string()),
+    headSha: v.string(),
+    headBranch: v.string(),
+    baseBranch: v.string(),
+
+    // Job status
+    status: v.union(
+      v.literal("pending"),
+      v.literal("running"),
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("skipped")
+    ),
+    errorMessage: v.optional(v.string()),
+
+    // VM info
+    sandboxInstanceId: v.optional(v.string()), // Morph instance ID
+    vscodeUrl: v.optional(v.string()),
+
+    // Changed files (for context)
+    changedFiles: v.optional(v.array(v.string())),
+    gitDiff: v.optional(v.string()), // Full git diff for agent context
+
+    // Screenshots
+    screenshotStorageIds: v.optional(v.array(v.id("_storage"))),
+    screenshotCount: v.optional(v.number()),
+
+    // GitHub comment
+    githubCommentId: v.optional(v.number()), // GitHub comment ID
+    githubCommentUrl: v.optional(v.string()),
+
+    // Timestamps
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_team", ["teamId", "updatedAt"])
+    .index("by_pr", ["repoFullName", "pullRequestNumber", "updatedAt"])
+    .index("by_config", ["previewConfigId", "updatedAt"])
+    .index("by_status", ["status", "updatedAt"])
+    .index("by_sha", ["headSha"]),
 });
 
 export default convexSchema;
