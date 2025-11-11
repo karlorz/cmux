@@ -1,6 +1,9 @@
 import { getAccessTokenFromRequest } from "@/lib/utils/auth";
+import {
+  safeGetDataVaultValue,
+  safeSetDataVaultValue,
+} from "@/lib/utils/data-vault-operations";
 import { getConvex } from "@/lib/utils/get-convex";
-import { stackServerAppJs } from "@/lib/utils/stack";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { env } from "@/lib/utils/www-env";
 import { api } from "@cmux/convex/api";
@@ -231,11 +234,18 @@ environmentsRouter.openapi(
 
       const persistDataVaultPromise = (async () => {
         const dataVaultKey = `env_${randomBytes(16).toString("hex")}`;
-        const store =
-          await stackServerAppJs.getDataVaultStore("cmux-snapshot-envs");
-        await store.setValue(dataVaultKey, body.envVarsContent, {
-          secret: env.STACK_DATA_VAULT_SECRET,
-        });
+        const success = await safeSetDataVaultValue(
+          "cmux-snapshot-envs",
+          dataVaultKey,
+          body.envVarsContent
+        );
+
+        if (!success) {
+          throw new Error(
+            "Failed to persist environment variables to secure storage"
+          );
+        }
+
         return { dataVaultKey };
       })();
 
@@ -464,18 +474,13 @@ environmentsRouter.openapi(
         return c.text("Environment not found", 404);
       }
 
-      // Retrieve environment variables from StackAuth DataBook
-      const store =
-        await stackServerAppJs.getDataVaultStore("cmux-snapshot-envs");
-      const envVarsContent = await store.getValue(environment.dataVaultKey, {
-        secret: env.STACK_DATA_VAULT_SECRET,
-      });
+      // Retrieve environment variables from StackAuth DataVault
+      const envVarsContent = await safeGetDataVaultValue(
+        "cmux-snapshot-envs",
+        environment.dataVaultKey
+      );
 
-      if (!envVarsContent) {
-        return c.json({ envVarsContent: "" });
-      }
-
-      return c.json({ envVarsContent });
+      return c.json({ envVarsContent: envVarsContent ?? "" });
     } catch (error) {
       console.error("Failed to get environment variables:", error);
       return c.text("Failed to get environment variables", 500);

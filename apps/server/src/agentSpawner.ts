@@ -226,29 +226,59 @@ export async function spawnAgent(
 
     if (options.environmentId) {
       try {
+        serverLogger.info(
+          `[AgentSpawner] Attempting to load environment variables for environment ${String(
+            options.environmentId
+          )}`
+        );
+
         const envRes = await getApiEnvironmentsByIdVars({
           client: getWwwClient(),
           path: { id: String(options.environmentId) },
           query: { teamSlugOrId },
         });
+
         const envContent = envRes.data?.envVarsContent;
-        if (envContent && envContent.trim().length > 0) {
-          const parsed = parseDotenv(envContent);
-          if (Object.keys(parsed).length > 0) {
-            const preserved = {
-              CMUX_PROMPT: envVars.CMUX_PROMPT,
-              CMUX_TASK_RUN_ID: envVars.CMUX_TASK_RUN_ID,
-              PROMPT: envVars.PROMPT,
-            };
-            envVars = {
-              ...envVars,
-              ...parsed,
-              ...preserved,
-            };
-            serverLogger.info(
-              `[AgentSpawner] Injected ${Object.keys(parsed).length} env vars from environment ${String(
+
+        if (!envContent || envContent.trim().length === 0) {
+          serverLogger.warn(
+            `[AgentSpawner] No environment variables found for environment ${String(
+              options.environmentId
+            )}, continuing without them`
+          );
+        } else {
+          try {
+            const parsed = parseDotenv(envContent);
+            if (Object.keys(parsed).length > 0) {
+              const preserved = {
+                CMUX_PROMPT: envVars.CMUX_PROMPT,
+                CMUX_TASK_RUN_ID: envVars.CMUX_TASK_RUN_ID,
+                CMUX_TASK_RUN_JWT: envVars.CMUX_TASK_RUN_JWT,
+                PROMPT: envVars.PROMPT,
+              };
+              envVars = {
+                ...envVars,
+                ...parsed,
+                ...preserved,
+              };
+              serverLogger.info(
+                `[AgentSpawner] Successfully injected ${Object.keys(parsed).length} env vars from environment ${String(
+                  options.environmentId
+                )}`
+              );
+            } else {
+              serverLogger.warn(
+                `[AgentSpawner] Environment variables content was empty after parsing for ${String(
+                  options.environmentId
+                )}`
+              );
+            }
+          } catch (parseError) {
+            serverLogger.error(
+              `[AgentSpawner] Failed to parse environment variables for ${String(
                 options.environmentId
-              )}`
+              )}, continuing without them`,
+              parseError
             );
           }
         }
@@ -256,9 +286,10 @@ export async function spawnAgent(
         serverLogger.error(
           `[AgentSpawner] Failed to load environment env vars for ${String(
             options.environmentId
-          )}`,
+          )}, continuing without them. Agent will still spawn but may be missing required configuration.`,
           error
         );
+        // Continue execution - don't let environment loading failures block agent spawning
       }
     }
 
