@@ -376,7 +376,44 @@ export async function spawnAgent(
         taskRunJwt,
       });
 
-      worktreePath = "/root/workspace";
+      let hostWorktreePath: string | null = null;
+      if (options.repoUrl) {
+        try {
+          const worktreeInfo = await getWorktreePath(
+            {
+              repoUrl: options.repoUrl,
+              branch: newBranch,
+            },
+            teamSlugOrId
+          );
+
+          const workspaceResult = await setupProjectWorkspace({
+            repoUrl: options.repoUrl,
+            // If not provided, setupProjectWorkspace detects default from origin
+            branch: options.branch,
+            worktreeInfo,
+          });
+
+          if (workspaceResult.success && workspaceResult.worktreePath) {
+            hostWorktreePath = workspaceResult.worktreePath;
+          } else {
+            serverLogger.warn(
+              `[AgentSpawner] Failed to set up host workspace for cloud run ${taskRunId}: ${workspaceResult.error || "unknown error"}`
+            );
+          }
+        } catch (error) {
+          serverLogger.warn(
+            `[AgentSpawner] Unable to prepare host worktree for cloud run ${taskRunId}`,
+            error
+          );
+        }
+      } else {
+        serverLogger.warn(
+          `[AgentSpawner] Cloud run ${taskRunId} missing repoUrl; falling back to container workspace path for open-with`
+        );
+      }
+
+      worktreePath = hostWorktreePath ?? "/root/workspace";
     } else {
       // For Docker, set up worktree as before
       const worktreeInfo = await getWorktreePath(
