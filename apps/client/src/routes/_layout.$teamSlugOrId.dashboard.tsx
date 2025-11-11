@@ -40,6 +40,7 @@ import { Server as ServerIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/dashboard")({
   component: DashboardComponent,
@@ -87,6 +88,12 @@ function DashboardComponent() {
   const { socket } = useSocket();
   const { theme } = useTheme();
   const { addTaskToExpand } = useExpandTasks();
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const debouncedSearchQuery = useDebouncedValue(searchQuery, 300);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const [selectedProject, setSelectedProject] = useState<string[]>(() => {
     const stored = localStorage.getItem(`selectedProject-${teamSlugOrId}`);
@@ -795,21 +802,40 @@ function DashboardComponent() {
     };
   }, [socket, teamSlugOrId]);
 
-  // Global keydown handler for autofocus
+  // Global keydown handler for autofocus and search
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // Handle Cmd/Ctrl + F for search
+      if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        setIsSearchFocused(true);
+        return;
+      }
+
+      // Handle Escape to clear search when search is focused
+      if (e.key === "Escape" && isSearchFocused) {
+        e.preventDefault();
+        setSearchQuery("");
+        searchInputRef.current?.blur();
+        setIsSearchFocused(false);
+        return;
+      }
+
       // Skip if already focused on an input, textarea, or contenteditable that's NOT the editor
       const activeElement = document.activeElement;
       const isEditor =
         activeElement?.getAttribute("data-cmux-input") === "true";
       const isCommentInput = activeElement?.id === "cmux-comments-root";
+      const isSearchInput = activeElement === searchInputRef.current;
       if (
         !isEditor &&
         (activeElement?.tagName === "INPUT" ||
           activeElement?.tagName === "TEXTAREA" ||
           activeElement?.getAttribute("contenteditable") === "true" ||
           activeElement?.closest('[contenteditable="true"]') ||
-          isCommentInput)
+          isCommentInput ||
+          isSearchInput)
       ) {
         return;
       }
@@ -862,7 +888,7 @@ function DashboardComponent() {
     return () => {
       document.removeEventListener("keydown", handleGlobalKeyDown);
     };
-  }, []);
+  }, [isSearchFocused]);
 
   // Do not pre-disable UI on Docker status; handle fresh check on submit
 
@@ -986,7 +1012,14 @@ function DashboardComponent() {
 
           {/* Task List */}
           <div className="w-full">
-            <TaskList teamSlugOrId={teamSlugOrId} />
+            <TaskList
+              teamSlugOrId={teamSlugOrId}
+              searchQuery={debouncedSearchQuery}
+              searchInputRef={searchInputRef}
+              isSearchFocused={isSearchFocused}
+              setIsSearchFocused={setIsSearchFocused}
+              setSearchQuery={setSearchQuery}
+            />
           </div>
         </div>
       </div>
