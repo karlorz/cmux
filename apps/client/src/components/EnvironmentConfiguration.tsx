@@ -1,14 +1,9 @@
 import { GitHubIcon } from "@/components/icons/github";
-import { PersistentWebView } from "@/components/persistent-webview";
-import { WorkspaceLoadingIndicator } from "@/components/workspace-loading-indicator";
 import { ScriptTextareaField } from "@/components/ScriptTextareaField";
 import { SCRIPT_COPY } from "@/components/scriptCopy";
 import { ResizableColumns } from "@/components/ResizableColumns";
+import { EnvironmentSetupSplitView } from "@/components/EnvironmentSetupSplitView";
 import { parseEnvBlock } from "@/lib/parseEnvBlock";
-import {
-  TASK_RUN_IFRAME_ALLOW,
-  TASK_RUN_IFRAME_SANDBOX,
-} from "@/lib/preloadTaskRunIframes";
 import {
   ensureInitialEnvVars,
   type EnvVar,
@@ -26,25 +21,18 @@ import { Accordion, AccordionItem } from "@heroui/react";
 import { useMutation as useRQMutation } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import type { Id } from "@cmux/convex/dataModel";
-import clsx from "clsx";
-import type { PersistentIframeStatus } from "@/components/persistent-iframe";
 import {
   ArrowLeft,
-  Code2,
   Loader2,
   Minus,
-  Monitor,
   Plus,
   Settings,
-  X,
 } from "lucide-react";
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
 import TextareaAutosize from "react-textarea-autosize";
 import { toast } from "sonner";
@@ -63,7 +51,6 @@ export function EnvironmentConfiguration({
   initialDevScript = "",
   initialExposedPorts = "",
   initialEnvVars,
-  onHeaderControlsChange,
   persistedState = null,
   onPersistStateChange,
   onBackToRepositorySelection,
@@ -82,7 +69,6 @@ export function EnvironmentConfiguration({
   initialDevScript?: string;
   initialExposedPorts?: string;
   initialEnvVars?: EnvVar[];
-  onHeaderControlsChange?: (controls: ReactNode | null) => void;
   persistedState?: EnvironmentConfigDraft | null;
   onPersistStateChange?: (partial: Partial<EnvironmentConfigDraft>) => void;
   onBackToRepositorySelection?: () => void;
@@ -168,38 +154,6 @@ export function EnvironmentConfiguration({
     null
   );
   const lastSubmittedEnvContent = useRef<string | null>(null);
-  const [activePreview, setActivePreview] = useState<"vscode" | "browser">(
-    "vscode"
-  );
-  const [vscodeStatus, setVscodeStatus] =
-    useState<PersistentIframeStatus>("loading");
-  const [vscodeError, setVscodeError] = useState<string | null>(null);
-  const [browserStatus, setBrowserStatus] =
-    useState<PersistentIframeStatus>("loading");
-  const [browserError, setBrowserError] = useState<string | null>(null);
-  const basePersistKey = useMemo(() => {
-    if (instanceId) return `env-config:${instanceId}`;
-    if (vscodeUrl) return `env-config:${vscodeUrl}`;
-    if (browserUrl) return `env-config:${browserUrl}`;
-    return "env-config";
-  }, [browserUrl, instanceId, vscodeUrl]);
-  const vscodePersistKey = `${basePersistKey}:vscode`;
-  const browserPersistKey = `${basePersistKey}:browser`;
-  useEffect(() => {
-    if (!browserUrl && activePreview === "browser") {
-      setActivePreview("vscode");
-    }
-  }, [activePreview, browserUrl]);
-
-  useEffect(() => {
-    setVscodeStatus("loading");
-    setVscodeError(null);
-  }, [vscodeUrl]);
-
-  useEffect(() => {
-    setBrowserStatus("loading");
-    setBrowserError(null);
-  }, [browserUrl]);
 
   const createEnvironmentMutation = useRQMutation(
     postApiEnvironmentsMutation()
@@ -229,43 +183,21 @@ export function EnvironmentConfiguration({
     }
   }, [pendingFocusIndex, envVars]);
 
-  const handlePreviewSelect = useCallback(
-    (view: "vscode" | "browser") => {
-      if (view === "browser" && !browserUrl) {
-        return;
-      }
-      setActivePreview(view);
-    },
-    [browserUrl]
-  );
-
   const handleVscodeLoad = useCallback(() => {
-    setVscodeError(null);
-    setVscodeStatus("loaded");
+    console.log("VS Code workspace loaded");
   }, []);
 
   const handleVscodeError = useCallback((error: Error) => {
     console.error("Failed to load VS Code workspace iframe", error);
-    setVscodeError(
-      "We couldn’t load VS Code. Try reloading or restarting the environment."
-    );
-    setVscodeStatus("error");
   }, []);
 
   const handleBrowserLoad = useCallback(() => {
-    setBrowserError(null);
-    setBrowserStatus("loaded");
+    console.log("Browser VNC loaded");
   }, []);
 
   const handleBrowserError = useCallback((error: Error) => {
     console.error("Failed to load browser workspace iframe", error);
-    setBrowserError(
-      "We couldn’t load the browser. Try reloading or restarting the environment."
-    );
-    setBrowserStatus("error");
   }, []);
-
-  // no-op placeholder removed; using onSnapshot instead
 
   useEffect(() => {
     lastSubmittedEnvContent.current = null;
@@ -439,203 +371,6 @@ export function EnvironmentConfiguration({
     }
   };
 
-  const isBrowserAvailable = Boolean(browserUrl);
-  const showVscodeOverlay =
-    vscodeStatus !== "loaded" || vscodeError !== null;
-  const showBrowserOverlay =
-    browserStatus !== "loaded" || browserError !== null;
-  const browserLoadingFallback = useMemo(
-    () => <WorkspaceLoadingIndicator variant="browser" status="loading" />,
-    []
-  );
-  const browserErrorFallback = useMemo(
-    () => <WorkspaceLoadingIndicator variant="browser" status="error" />,
-    []
-  );
-
-  const renderVscodePreview = () => {
-    if (!vscodeUrl) {
-      return (
-        <div className="flex h-full items-center justify-center px-6 text-center">
-          <div className="space-y-3">
-            <Loader2 className="w-6 h-6 mx-auto animate-spin text-neutral-500 dark:text-neutral-400" />
-            <p className="text-sm text-neutral-600 dark:text-neutral-400">
-              Waiting for the VS Code workspace URL...
-            </p>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="relative h-full" aria-busy={showVscodeOverlay}>
-        <div
-          aria-hidden={!showVscodeOverlay}
-          className={clsx(
-            "absolute inset-0 z-[var(--z-low)] flex items-center justify-center backdrop-blur-sm transition-opacity duration-300",
-            "bg-white/60 dark:bg-neutral-950/60",
-            showVscodeOverlay
-              ? "opacity-100 pointer-events-auto"
-              : "opacity-0 pointer-events-none"
-          )}
-        >
-          {vscodeError ? (
-            <div className="text-center max-w-sm px-6">
-              <X className="w-8 h-8 mx-auto mb-3 text-red-500" />
-              <p className="text-sm text-neutral-700 dark:text-neutral-300">
-                {vscodeError}
-              </p>
-            </div>
-          ) : (
-            <div className="text-center">
-              <Loader2 className="w-6 h-6 mx-auto mb-3 animate-spin text-neutral-500 dark:text-neutral-400" />
-              <p className="text-sm text-neutral-700 dark:text-neutral-300">
-                Loading VS Code...
-              </p>
-            </div>
-          )}
-        </div>
-        <PersistentWebView
-          persistKey={vscodePersistKey}
-          src={vscodeUrl}
-          className="absolute inset-0"
-          iframeClassName="w-full h-full border-0"
-          allow={TASK_RUN_IFRAME_ALLOW}
-          sandbox={TASK_RUN_IFRAME_SANDBOX}
-          retainOnUnmount
-          onLoad={handleVscodeLoad}
-          onError={handleVscodeError}
-          onStatusChange={setVscodeStatus}
-          loadTimeoutMs={60_000}
-          fallbackClassName="bg-neutral-50 dark:bg-neutral-950"
-          errorFallbackClassName="bg-neutral-50 dark:bg-neutral-950"
-        />
-      </div>
-    );
-  };
-
-  const renderBrowserPreview = () => {
-    if (!browserUrl) {
-      return (
-        <div className="flex h-full items-center justify-center px-6 text-center">
-          <div className="space-y-3">
-            <Loader2 className="w-6 h-6 mx-auto animate-spin text-neutral-500 dark:text-neutral-400" />
-            <p className="text-sm text-neutral-600 dark:text-neutral-400">
-              Waiting for the workspace browser to be ready...
-            </p>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="relative h-full" aria-busy={showBrowserOverlay}>
-        <PersistentWebView
-          persistKey={browserPersistKey}
-          src={browserUrl}
-          className="absolute inset-0"
-          iframeClassName="w-full h-full border-0"
-          allow={TASK_RUN_IFRAME_ALLOW}
-          sandbox={TASK_RUN_IFRAME_SANDBOX}
-          retainOnUnmount
-          onLoad={handleBrowserLoad}
-          onError={handleBrowserError}
-          onStatusChange={setBrowserStatus}
-          fallback={browserLoadingFallback}
-          fallbackClassName="bg-neutral-50 dark:bg-neutral-950"
-          errorFallback={browserErrorFallback}
-          errorFallbackClassName="bg-neutral-50/95 dark:bg-neutral-950/95"
-          loadTimeoutMs={60_000}
-        />
-        <div
-          aria-hidden={!showBrowserOverlay}
-          className={clsx(
-            "absolute inset-0 z-[var(--z-low)] flex items-center justify-center backdrop-blur-sm transition-opacity duration-300",
-            "bg-white/60 dark:bg-neutral-950/60",
-            showBrowserOverlay
-              ? "opacity-100 pointer-events-auto"
-              : "opacity-0 pointer-events-none"
-          )}
-        >
-          {browserError ? (
-            <div className="text-center max-w-sm px-6">
-              <X className="w-8 h-8 mx-auto mb-3 text-red-500" />
-              <p className="text-sm text-neutral-700 dark:text-neutral-300">
-                {browserError}
-              </p>
-            </div>
-          ) : (
-            <WorkspaceLoadingIndicator variant="browser" status="loading" />
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const previewButtonClass = useCallback(
-    (view: "vscode" | "browser", disabled: boolean) =>
-      clsx(
-        "inline-flex h-7 w-7 items-center justify-center focus:outline-none text-neutral-600 dark:text-neutral-300",
-        disabled
-          ? "opacity-50 cursor-not-allowed"
-          : "cursor-pointer hover:text-neutral-900 dark:hover:text-neutral-100",
-        view === activePreview && !disabled
-          ? "text-neutral-900 dark:text-neutral-100"
-          : undefined
-      ),
-    [activePreview]
-  );
-
-  const headerControls = useMemo(() => {
-    if (isProvisioning) {
-      return null;
-    }
-
-    return (
-      <div className="flex items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => handlePreviewSelect("vscode")}
-          className={previewButtonClass("vscode", false)}
-          aria-pressed={activePreview === "vscode"}
-          aria-label="Show VS Code workspace"
-          title="Show VS Code workspace"
-        >
-          <Code2 className="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={() => handlePreviewSelect("browser")}
-          className={previewButtonClass("browser", !isBrowserAvailable)}
-          aria-pressed={activePreview === "browser"}
-          aria-label="Show browser preview"
-          title="Show browser preview"
-          disabled={!isBrowserAvailable}
-        >
-          <Monitor className="h-3.5 w-3.5" />
-        </button>
-      </div>
-    );
-  }, [
-    activePreview,
-    handlePreviewSelect,
-    isBrowserAvailable,
-    isProvisioning,
-    previewButtonClass,
-  ]);
-
-  useEffect(() => {
-    if (!onHeaderControlsChange) {
-      return;
-    }
-    onHeaderControlsChange(headerControls ?? null);
-  }, [headerControls, onHeaderControlsChange]);
-
-  useEffect(() => {
-    return () => {
-      onHeaderControlsChange?.(null);
-    };
-  }, [onHeaderControlsChange]);
 
   const leftPane = (
     <div className="h-full p-6 overflow-y-auto">
@@ -1027,13 +762,15 @@ export function EnvironmentConfiguration({
           </div>
         </div>
       ) : (
-        <div className="flex h-full flex-col">
-          <div className="flex-1 min-h-0">
-            {activePreview === "browser"
-              ? renderBrowserPreview()
-              : renderVscodePreview()}
-          </div>
-        </div>
+        <EnvironmentSetupSplitView
+          vscodeUrl={vscodeUrl}
+          browserUrl={browserUrl}
+          instanceId={instanceId}
+          onVscodeLoad={handleVscodeLoad}
+          onVscodeError={handleVscodeError}
+          onBrowserLoad={handleBrowserLoad}
+          onBrowserError={handleBrowserError}
+        />
       )}
     </div>
   );

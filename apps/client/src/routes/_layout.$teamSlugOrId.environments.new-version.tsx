@@ -181,7 +181,6 @@ function NewSnapshotVersionPage() {
                 : ""
             }
             initialEnvVars={initialEnvVars}
-            onHeaderControlsChange={setHeaderActions}
             onEnvironmentSaved={handleEnvironmentSaved}
           />
         )}

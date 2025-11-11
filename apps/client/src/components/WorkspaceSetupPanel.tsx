@@ -314,6 +314,24 @@ export function WorkspaceSetupPanel({
                   />
                 </div>
 
+                {/* Browser VNC Setup Section */}
+                <div className="space-y-1 pt-1">
+                  <div className="flex flex-col gap-0.5">
+                    <p className="text-xs font-medium text-neutral-900 dark:text-neutral-100">
+                      Browser VNC Setup
+                    </p>
+                    <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                      Configure the browser in the split view below for browser agent screenshots and authentication.
+                      Login to websites, set up cookies, and configure browser extensions that agents will use during task execution.
+                    </p>
+                  </div>
+                  <div className="rounded-md bg-neutral-50 dark:bg-neutral-900 px-3 py-2 text-[11px] text-neutral-600 dark:text-neutral-400">
+                    <p className="font-medium mb-1">Tip: Use the split view</p>
+                    <p>The VSCode instance (top) and Browser VNC (bottom) are shown in a resizable split view.
+                    Click the icons in the top right to switch between split view, VSCode only, or Browser only.</p>
+                  </div>
+                </div>
+
                 {/* Environment Variables Section */}
                 <div className="space-y-1 pt-1" onPasteCapture={handleEnvPaste}>
                   <div className="flex flex-col gap-0.5">

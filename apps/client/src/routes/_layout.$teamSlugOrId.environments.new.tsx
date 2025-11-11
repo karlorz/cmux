@@ -237,7 +237,6 @@ function EnvironmentsPage() {
             vscodeUrl={derivedVscodeUrl}
             browserUrl={derivedBrowserUrl}
             isProvisioning={false}
-            onHeaderControlsChange={setHeaderActions}
             persistedState={draft?.config}
             onPersistStateChange={handlePersistConfig}
             onBackToRepositorySelection={handleBackToRepositorySelection}
