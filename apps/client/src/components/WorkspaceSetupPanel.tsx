@@ -5,8 +5,15 @@ import {
   getApiWorkspaceConfigsOptions,
   postApiWorkspaceConfigsMutation,
 } from "@cmux/www-openapi-client/react-query";
-import { useQuery, useMutation as useRQMutation } from "@tanstack/react-query";
-import { AlertTriangle, ChevronDown, ChevronRight, Minus, Plus } from "lucide-react";
+import { useMutation as useRQMutation, useQuery } from "@tanstack/react-query";
+import {
+  AlertCircle,
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  Minus,
+  Plus,
+} from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -51,6 +58,7 @@ export function WorkspaceSetupPanel({
   });
 
   const hasInitializedFromServerRef = useRef(false);
+  const hasShownLoadErrorRef = useRef(false);
 
   const [isExpanded, setIsExpanded] = useState(() => {
     const saved = localStorage.getItem('workspace-setup-expanded');
@@ -72,6 +80,24 @@ export function WorkspaceSetupPanel({
       return next;
     });
   }, []);
+
+  const loadErrorMessage = configQuery.error
+    ? configQuery.error.message || "Failed to load workspace configuration."
+    : null;
+
+  useEffect(() => {
+    if (configQuery.error) {
+      if (!hasShownLoadErrorRef.current) {
+        hasShownLoadErrorRef.current = true;
+        toast.error(
+          "We couldn't load the saved workspace setup. You can keep editing and try again shortly.",
+        );
+      }
+      return;
+    }
+
+    hasShownLoadErrorRef.current = false;
+  }, [configQuery.error]);
 
   useEffect(() => {
     if (configQuery.isPending) return;
@@ -144,7 +170,8 @@ export function WorkspaceSetupPanel({
   const isConfigured =
     originalConfigRef.current.script.length > 0 ||
     originalConfigRef.current.envContent.length > 0;
-  const shouldShowSetupWarning = !configQuery.isPending && !isConfigured;
+  const shouldShowSetupWarning =
+    !configQuery.isPending && !configQuery.error && !isConfigured;
 
   const handleSave = useCallback(() => {
     if (!projectFullName) return;
@@ -218,10 +245,6 @@ export function WorkspaceSetupPanel({
     [updateEnvVars],
   );
 
-  if (configQuery.error) {
-    throw configQuery.error;
-  }
-
   if (!projectFullName) {
     return null;
   }
@@ -287,7 +310,34 @@ export function WorkspaceSetupPanel({
               <span className="font-semibold">{projectFullName}</span>.
             </p>
 
-            {configQuery.isPending ? (
+            {configQuery.error ? (
+              <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-[11px] text-red-700 dark:border-red-900 dark:bg-red-950/70 dark:text-red-200">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 mt-0.5" aria-hidden />
+                  <div className="flex-1 space-y-1">
+                    <p className="text-xs font-semibold">
+                      We couldn&apos;t load the saved workspace setup
+                    </p>
+                    <p className="text-[11px] text-red-700 dark:text-red-200">
+                      {loadErrorMessage ??
+                        "The workspace configuration service is unreachable. Keep editing locally or try again once it recovers."}
+                    </p>
+                    <div className="flex items-center gap-2 pt-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          void configQuery.refetch();
+                        }}
+                        disabled={configQuery.isRefetching}
+                      >
+                        {configQuery.isRefetching ? "Retrying…" : "Retry"}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : configQuery.isPending ? (
               <p className="mt-3 text-[11px] text-neutral-500 dark:text-neutral-400">
                 Loading saved configuration…
               </p>
