@@ -660,6 +660,7 @@ export function setupSocketHandlers(
           projectFullName,
           repoUrl: explicitRepoUrl,
           branch: requestedBranch,
+          prNumber,
           taskId: providedTaskId,
           taskRunId: providedTaskRunId,
           workspaceName: providedWorkspaceName,
@@ -754,10 +755,13 @@ export function setupSocketHandlers(
             const descriptorBase = projectFullName
               ? `Local workspace ${workspaceName} (${projectFullName})`
               : `Local workspace ${workspaceName}`;
-            descriptor =
-              branch && branch.length > 0
-                ? `${descriptorBase} [${branch}]`
-                : descriptorBase;
+            if (prNumber) {
+              descriptor = `${descriptorBase} [PR #${prNumber}]`;
+            } else if (branch && branch.length > 0) {
+              descriptor = `${descriptorBase} [${branch}]`;
+            } else {
+              descriptor = descriptorBase;
+            }
           }
 
           const workspaceRoot = process.env.CMUX_WORKSPACE_DIR
@@ -951,24 +955,52 @@ export function setupSocketHandlers(
             if (cleanupWorkspace) {
               await cleanupWorkspace();
             }
-            const cloneArgs = ["clone"];
-            if (branch) {
-              cloneArgs.push("--branch", branch, "--single-branch");
-            }
-            cloneArgs.push(repoUrl, resolvedWorkspacePath);
-            try {
-              await execFileAsync("git", cloneArgs, { cwd: workspaceRoot });
-            } catch (error) {
-              if (cleanupWorkspace) {
-                await cleanupWorkspace();
+
+            // For PRs, clone the repo first without specific branch, then checkout the PR
+            if (prNumber) {
+              try {
+                // Clone the repository
+                await execFileAsync("git", ["clone", repoUrl, resolvedWorkspacePath], {
+                  cwd: workspaceRoot
+                });
+
+                // Check out the PR using gh pr checkout
+                await execFileAsync("gh", ["pr", "checkout", String(prNumber)], {
+                  cwd: resolvedWorkspacePath,
+                });
+              } catch (error) {
+                if (cleanupWorkspace) {
+                  await cleanupWorkspace();
+                }
+                const execErr = isExecError(error) ? error : null;
+                const message =
+                  execErr?.stderr?.trim() ||
+                  (error instanceof Error ? error.message : "PR checkout failed");
+                throw new Error(
+                  message ? `PR checkout failed: ${message}` : "PR checkout failed"
+                );
               }
-              const execErr = isExecError(error) ? error : null;
-              const message =
-                execErr?.stderr?.trim() ||
-                (error instanceof Error ? error.message : "Git clone failed");
-              throw new Error(
-                message ? `Git clone failed: ${message}` : "Git clone failed"
-              );
+            } else {
+              // Regular branch or default clone
+              const cloneArgs = ["clone"];
+              if (branch) {
+                cloneArgs.push("--branch", branch, "--single-branch");
+              }
+              cloneArgs.push(repoUrl, resolvedWorkspacePath);
+              try {
+                await execFileAsync("git", cloneArgs, { cwd: workspaceRoot });
+              } catch (error) {
+                if (cleanupWorkspace) {
+                  await cleanupWorkspace();
+                }
+                const execErr = isExecError(error) ? error : null;
+                const message =
+                  execErr?.stderr?.trim() ||
+                  (error instanceof Error ? error.message : "Git clone failed");
+                throw new Error(
+                  message ? `Git clone failed: ${message}` : "Git clone failed"
+                );
+              }
             }
 
             try {

@@ -62,6 +62,7 @@ import {
   useSuggestionHistory,
 } from "./command-bar/useSuggestionHistory";
 import clsx from "clsx";
+import { parseGitHubUrl, looksLikeGitHubUrl } from "@/lib/github-url-parser";
 
 interface CommandBarProps {
   teamSlugOrId: string;
@@ -683,7 +684,7 @@ export function CommandBar({
   }, [open]);
 
   const createLocalWorkspace = useCallback(
-    async (projectFullName: string) => {
+    async (projectFullName: string, options?: { branch?: string; prNumber?: number }) => {
       if (isCreatingLocalWorkspace) {
         return;
       }
@@ -704,6 +705,7 @@ export function CommandBar({
           teamSlugOrId,
           projectFullName,
           repoUrl,
+          branch: options?.branch,
         });
         if (!reservation) {
           throw new Error("Unable to reserve workspace name");
@@ -721,6 +723,8 @@ export function CommandBar({
               teamSlugOrId,
               projectFullName,
               repoUrl,
+              branch: options?.branch,
+              prNumber: options?.prNumber,
               taskId: reservation.taskId,
               taskRunId: reservation.taskRunId,
               workspaceName: reservation.workspaceName,
@@ -839,10 +843,10 @@ export function CommandBar({
   );
 
   const handleLocalWorkspaceSelect = useCallback(
-    (projectFullName: string) => {
+    (projectFullName: string, options?: { branch?: string; prNumber?: number }) => {
       clearCommandInput();
       closeCommand();
-      void createLocalWorkspace(projectFullName);
+      void createLocalWorkspace(projectFullName, options);
     },
     [clearCommandInput, closeCommand, createLocalWorkspace]
   );
@@ -1926,29 +1930,85 @@ export function CommandBar({
   }, [allTasks, handleSelect, stackUser]);
 
   const localWorkspaceEntries = useMemo<CommandListEntry[]>(() => {
-    return localWorkspaceOptions.map((option) => {
-      const value = `local-workspace:${option.fullName}`;
-      return {
-        value,
-        label: option.fullName,
-        keywords: option.keywords,
-        searchText: buildSearchText(option.fullName, option.keywords, [
-          option.repoBaseName,
-        ]),
-        className: baseCommandItemClassName,
-        disabled: isCreatingLocalWorkspace,
-        execute: () => handleLocalWorkspaceSelect(option.fullName),
-        renderContent: () => (
-          <>
-            <GitHubIcon className="h-4 w-4 text-neutral-500" />
-            <div className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-sm">{option.fullName}</span>
-            </div>
-          </>
-        ),
-      };
-    });
+    const entries: CommandListEntry[] = [];
+
+    // Check if the search input is a GitHub URL
+    if (activePage === "local-workspaces" && search.trim() && looksLikeGitHubUrl(search)) {
+      const parsed = parseGitHubUrl(search);
+      if (parsed) {
+        const isPR = parsed.type === "pr";
+        const isBranch = parsed.type === "branch";
+
+        let label = parsed.fullName;
+        if (isPR) {
+          label = `${parsed.fullName} (PR #${parsed.prNumber})`;
+        } else if (isBranch) {
+          label = `${parsed.fullName} (${parsed.branch})`;
+        }
+
+        const value = `github-url:${parsed.originalUrl}`;
+        entries.push({
+          value,
+          label,
+          keywords: [],
+          searchText: buildSearchText(label, [parsed.fullName]),
+          className: baseCommandItemClassName,
+          disabled: isCreatingLocalWorkspace,
+          execute: () => {
+            if (isPR) {
+              handleLocalWorkspaceSelect(parsed.fullName, { prNumber: parsed.prNumber });
+            } else if (isBranch) {
+              handleLocalWorkspaceSelect(parsed.fullName, { branch: parsed.branch });
+            } else {
+              handleLocalWorkspaceSelect(parsed.fullName);
+            }
+          },
+          renderContent: () => (
+            <>
+              {isPR ? (
+                <GitPullRequest className="h-4 w-4 text-neutral-500" />
+              ) : (
+                <GitHubIcon className="h-4 w-4 text-neutral-500" />
+              )}
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-sm">{label}</span>
+              </div>
+            </>
+          ),
+        });
+      }
+    }
+
+    // Add regular workspace options
+    entries.push(
+      ...localWorkspaceOptions.map((option) => {
+        const value = `local-workspace:${option.fullName}`;
+        return {
+          value,
+          label: option.fullName,
+          keywords: option.keywords,
+          searchText: buildSearchText(option.fullName, option.keywords, [
+            option.repoBaseName,
+          ]),
+          className: baseCommandItemClassName,
+          disabled: isCreatingLocalWorkspace,
+          execute: () => handleLocalWorkspaceSelect(option.fullName),
+          renderContent: () => (
+            <>
+              <GitHubIcon className="h-4 w-4 text-neutral-500" />
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-sm">{option.fullName}</span>
+              </div>
+            </>
+          ),
+        };
+      })
+    );
+
+    return entries;
   }, [
+    activePage,
+    search,
     handleLocalWorkspaceSelect,
     isCreatingLocalWorkspace,
     localWorkspaceOptions,
