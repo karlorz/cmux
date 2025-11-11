@@ -892,7 +892,7 @@ def main():
         # Check worker
         result = run_ssh_command(
             current_instance,
-            "ps aux | grep 'node /builtins/build/index.js' | grep -v grep",
+            "ps aux | grep -E \"(cmux-worker-runtime|node) /builtins/build/index.js\" | grep -v grep",
             sudo=True,
             print_output=False,
         )

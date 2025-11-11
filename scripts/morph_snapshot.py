@@ -729,7 +729,7 @@ def main() -> None:
                 "systemctl is-enabled cmux.service || true",
                 "systemctl is-active cmux.service || true",
                 "systemctl status cmux.service --no-pager -l | tail -n 80 || true",
-                "ps aux | rg -n 'openvscode-server|node /builtins/build/index.js' -N || true",
+                "ps aux | rg -n 'openvscode-server|(cmux-worker-runtime|node) /builtins/build/index.js' -N || true",
                 "ss -lntp | rg -n ':39378' -N || true",
                 "ss -lntp | rg -n ':39379' -N || true",
                 "ss -lntp | rg -n ':39380' -N || true",

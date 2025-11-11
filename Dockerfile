@@ -139,6 +139,8 @@ grep " node-v${NODE_VERSION}-linux-${node_arch}.tar.xz$" SHASUMS256.txt | sha256
 tar -xJf "node-v${NODE_VERSION}-linux-${node_arch}.tar.xz" -C /usr/local --strip-components=1
 cd /
 ln -sf /usr/local/bin/node /usr/bin/node
+ln -sf /usr/local/bin/node /usr/local/bin/cmux-worker-runtime
+ln -sf /usr/local/bin/cmux-worker-runtime /usr/bin/cmux-worker-runtime
 ln -sf /usr/local/bin/npm /usr/bin/npm
 ln -sf /usr/local/bin/npx /usr/bin/npx
 ln -sf /usr/local/bin/corepack /usr/bin/corepack
@@ -652,6 +654,8 @@ grep " node-v${NODE_VERSION}-linux-${node_arch}.tar.xz$" SHASUMS256.txt | sha256
 tar -xJf "node-v${NODE_VERSION}-linux-${node_arch}.tar.xz" -C /usr/local --strip-components=1
 cd /
 ln -sf /usr/local/bin/node /usr/bin/node
+ln -sf /usr/local/bin/node /usr/local/bin/cmux-worker-runtime
+ln -sf /usr/local/bin/cmux-worker-runtime /usr/bin/cmux-worker-runtime
 ln -sf /usr/local/bin/npm /usr/bin/npm
 ln -sf /usr/local/bin/npx /usr/bin/npx
 ln -sf /usr/local/bin/corepack /usr/bin/corepack

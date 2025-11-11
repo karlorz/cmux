@@ -277,7 +277,7 @@ docker_exec_args=(
 if [[ "$KEEP_CONTAINER_RUNNING" == true || "$WAIT_FOR_USER_EXIT" == true ]]; then
   docker_exec_args+=("--env" "BROWSER_AGENT_SKIP_STOP=1")
 fi
-docker exec "${docker_exec_args[@]}" "$CONTAINER_NAME" node /builtins/build/runBrowserAgentFromPrompt.js
+docker exec "${docker_exec_args[@]}" "$CONTAINER_NAME" cmux-worker-runtime /builtins/build/runBrowserAgentFromPrompt.js
 
 echo "Browser agent run completed."
 print_access_table

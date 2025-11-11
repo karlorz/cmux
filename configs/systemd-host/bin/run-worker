@@ -15,4 +15,18 @@ export NODE_PATH="${CMUX_HOME}/builtins/build/node_modules${NODE_PATH:+:${NODE_P
 
 mkdir -p "${CMUX_HOME}/workspace" /var/log/cmux
 
-exec /usr/local/bin/node "${CMUX_HOME}/builtins/build/index.js"
+WORKER_RUNTIME_BIN="${CMUX_WORKER_RUNTIME_BIN:-}"
+if [[ -z "${WORKER_RUNTIME_BIN}" ]]; then
+  if command -v cmux-worker-runtime >/dev/null 2>&1; then
+    WORKER_RUNTIME_BIN="$(command -v cmux-worker-runtime)"
+  else
+    WORKER_RUNTIME_BIN="$(command -v node || true)"
+  fi
+fi
+
+if [[ -z "${WORKER_RUNTIME_BIN}" ]]; then
+  echo "cmux worker runtime not found" >&2
+  exit 1
+fi
+
+exec "${WORKER_RUNTIME_BIN}" "${CMUX_HOME}/builtins/build/index.js"

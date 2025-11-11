@@ -11,9 +11,10 @@ Environment=NODE_ENV=production
 Environment=NODE_PATH=/builtins/build/node_modules
 Environment=WORKER_PORT=39377
 Environment=IS_SANDBOX=true
+Environment=CMUX_WORKER_RUNTIME_BIN=/usr/local/bin/cmux-worker-runtime
 LogsDirectory=cmux
 ExecStartPre=/bin/mkdir -p /var/log/cmux
-ExecStart=/bin/bash -lc 'cd /root/workspace && exec /usr/bin/node /builtins/build/index.js'
+ExecStart=/bin/bash -lc 'cd /root/workspace && exec "$CMUX_WORKER_RUNTIME_BIN" /builtins/build/index.js'
 Restart=on-failure
 RestartSec=2
 StandardOutput=append:/var/log/cmux/worker.log
