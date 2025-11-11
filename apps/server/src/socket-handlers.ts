@@ -22,6 +22,7 @@ import {
   isLoopbackHostname,
   LOCAL_VSCODE_PLACEHOLDER_ORIGIN,
   type IframePreflightResult,
+  parseGithubWorkspaceTarget,
 } from "@cmux/shared";
 import {
   type PullRequestActionResult,
@@ -660,6 +661,7 @@ export function setupSocketHandlers(
           projectFullName,
           repoUrl: explicitRepoUrl,
           branch: requestedBranch,
+          pullRequestUrl: requestedPullRequestUrl,
           taskId: providedTaskId,
           taskRunId: providedTaskRunId,
           workspaceName: providedWorkspaceName,
@@ -686,12 +688,48 @@ export function setupSocketHandlers(
           return;
         }
 
+        const pullRequestUrlInput = requestedPullRequestUrl?.trim();
+        let pullRequestInfo:
+          | ReturnType<typeof parseGithubWorkspaceTarget>
+          | null = null;
+
+        if (pullRequestUrlInput) {
+          const parsedTarget = parseGithubWorkspaceTarget(
+            pullRequestUrlInput
+          );
+          if (!parsedTarget || parsedTarget.type !== "pull-request") {
+            callback({
+              success: false,
+              error: "Invalid pull request URL.",
+            });
+            return;
+          }
+          if (!projectFullName) {
+            callback({
+              success: false,
+              error:
+                "A repository must be specified when providing a pull request URL.",
+            });
+            return;
+          }
+          if (parsedTarget.fullName !== projectFullName) {
+            callback({
+              success: false,
+              error:
+                "Pull request repository does not match the selected repository.",
+            });
+            return;
+          }
+          pullRequestInfo = parsedTarget;
+        }
+
         const repoUrl =
           explicitRepoUrl ??
           (projectFullName
             ? `https://github.com/${projectFullName}.git`
             : undefined);
         const branch = requestedBranch?.trim();
+        const shouldCloneSpecificBranch = Boolean(branch && !pullRequestInfo);
 
         let workspaceConfig: WorkspaceConfigResponse | null = null;
         if (projectFullName) {
@@ -952,7 +990,7 @@ export function setupSocketHandlers(
               await cleanupWorkspace();
             }
             const cloneArgs = ["clone"];
-            if (branch) {
+            if (shouldCloneSpecificBranch && branch) {
               cloneArgs.push("--branch", branch, "--single-branch");
             }
             cloneArgs.push(repoUrl, resolvedWorkspacePath);
@@ -988,6 +1026,31 @@ export function setupSocketHandlers(
                   ? `Git clone failed to produce a checkout: ${error.message}`
                   : "Git clone failed to produce a checkout"
               );
+            }
+
+            if (pullRequestInfo) {
+              try {
+                await execFileAsync(
+                  "gh",
+                  ["pr", "checkout", pullRequestInfo.url],
+                  {
+                    cwd: resolvedWorkspacePath,
+                  }
+                );
+              } catch (error) {
+                if (cleanupWorkspace) {
+                  await cleanupWorkspace();
+                }
+                const execErr = isExecError(error) ? error : null;
+                const message =
+                  execErr?.stderr?.trim() ||
+                  (error instanceof Error ? error.message : "");
+                throw new Error(
+                  message
+                    ? `Failed to checkout pull request #${pullRequestInfo.prNumber}: ${message}`
+                    : `Failed to checkout pull request #${pullRequestInfo.prNumber}`
+                );
+              }
             }
           } else {
             try {
@@ -1128,9 +1191,46 @@ export function setupSocketHandlers(
           environmentId,
           projectFullName,
           repoUrl,
+          branch: requestedBranch,
+          pullRequestUrl: requestedPullRequestUrl,
           taskId: providedTaskId,
         } = parsed.data;
         const teamSlugOrId = requestedTeamSlugOrId || safeTeam;
+        const branch = requestedBranch?.trim();
+        const pullRequestUrlInput = requestedPullRequestUrl?.trim();
+        let cloudPullRequestInfo:
+          | ReturnType<typeof parseGithubWorkspaceTarget>
+          | null = null;
+
+        if (pullRequestUrlInput) {
+          const parsedTarget = parseGithubWorkspaceTarget(
+            pullRequestUrlInput
+          );
+          if (!parsedTarget || parsedTarget.type !== "pull-request") {
+            callback({
+              success: false,
+              error: "Invalid pull request URL.",
+            });
+            return;
+          }
+          if (!projectFullName) {
+            callback({
+              success: false,
+              error:
+                "A repository must be specified when providing a pull request URL.",
+            });
+            return;
+          }
+          if (parsedTarget.fullName !== projectFullName) {
+            callback({
+              success: false,
+              error:
+                "Pull request repository does not match the selected repository.",
+            });
+            return;
+          }
+          cloudPullRequestInfo = parsedTarget;
+        }
 
         const convex = getConvex();
         let taskId: Id<"tasks"> | undefined = providedTaskId;
@@ -1206,7 +1306,14 @@ export function setupSocketHandlers(
               isCloudWorkspace: true,
               ...(environmentId
                 ? { environmentId }
-                : { projectFullName, repoUrl }),
+                : {
+                    projectFullName,
+                    repoUrl,
+                    ...(branch ? { branch } : {}),
+                    ...(cloudPullRequestInfo
+                      ? { pullRequestUrl: cloudPullRequestInfo.url }
+                      : {}),
+                  }),
             },
           });
 

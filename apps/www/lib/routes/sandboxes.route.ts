@@ -15,6 +15,7 @@ import {
   configureGithubAccess,
   configureGitIdentity,
   fetchGitIdentityInputs,
+  type MorphInstance,
 } from "./sandboxes/git";
 import type { HydrateRepoConfig } from "./sandboxes/hydration";
 import { hydrateWorkspace } from "./sandboxes/hydration";
@@ -27,8 +28,29 @@ import {
   encodeEnvContentForEnvctl,
   envctlLoadCommand,
 } from "./utils/ensure-env-vars";
+import { maskSensitive, singleQuote } from "./sandboxes/shell";
 
 export const sandboxesRouter = new OpenAPIHono();
+
+const SANDBOX_WORKSPACE_PATH = "/root/workspace";
+
+const checkoutPullRequestInWorkspace = async (
+  instance: MorphInstance,
+  pullRequestUrl: string,
+) => {
+  console.log(
+    `[sandboxes.start] Checking out pull request via gh pr checkout`,
+  );
+  const command = `cd ${SANDBOX_WORKSPACE_PATH} && gh pr checkout ${singleQuote(
+    pullRequestUrl,
+  )}`;
+  const result = await instance.exec(`bash -lc ${singleQuote(command)}`);
+  if (result.exit_code !== 0) {
+    const stderr = maskSensitive(result.stderr || "").trim();
+    const stdout = maskSensitive(result.stdout || "").trim();
+    throw new Error(stderr || stdout || "gh pr checkout failed");
+  }
+};
 
 const StartSandboxBody = z
   .object({
@@ -47,6 +69,7 @@ const StartSandboxBody = z
     repoUrl: z.string().optional(),
     branch: z.string().optional(),
     newBranch: z.string().optional(),
+    pullRequestUrl: z.string().optional(),
     depth: z.number().optional().default(1),
   })
   .openapi("StartSandboxBody");
@@ -335,6 +358,22 @@ sandboxesRouter.openapi(
         console.error(`[sandboxes.start] Hydration failed:`, error);
         await instance.stop().catch(() => { });
         return c.text("Failed to hydrate sandbox", 500);
+      }
+
+      if (repoConfig && body.pullRequestUrl) {
+        console.log(
+          `[sandboxes.start] Checking out pull request ${body.pullRequestUrl}`,
+        );
+        try {
+          await checkoutPullRequestInWorkspace(instance, body.pullRequestUrl);
+        } catch (error) {
+          console.error(
+            "[sandboxes.start] Pull request checkout failed:",
+            error,
+          );
+          await instance.stop().catch(() => { });
+          return c.text("Failed to checkout pull request", 500);
+        }
       }
 
       if (maintenanceScript || devScript) {
