@@ -21,6 +21,7 @@ type PortAction = {
 
 type UseOpenWithActionsArgs = {
   vscodeUrl?: string | null;
+  workspaceUrl?: string | null;
   worktreePath?: string | null;
   branch?: string | null;
   networking?: NetworkingInfo;
@@ -28,6 +29,7 @@ type UseOpenWithActionsArgs = {
 
 export function useOpenWithActions({
   vscodeUrl,
+  workspaceUrl,
   worktreePath,
   branch,
   networking,
@@ -50,16 +52,41 @@ export function useOpenWithActions({
     };
   }, [socket]);
 
+  const buildRemoteWorkspaceUrl = useCallback(() => {
+    const rewrite = (url: string) =>
+      rewriteLocalWorkspaceUrlIfNeeded(url, localServeWebOrigin);
+
+    if (workspaceUrl) {
+      return rewrite(workspaceUrl);
+    }
+
+    if (!vscodeUrl) {
+      return null;
+    }
+
+    const normalized = rewrite(vscodeUrl);
+    try {
+      const url = new URL(normalized);
+      if (!url.searchParams.has("folder")) {
+        url.searchParams.set("folder", "/root/workspace");
+      }
+      return url.toString();
+    } catch {
+      const separator = normalized.includes("?") ? "&" : "?";
+      return `${normalized}${separator}folder=/root/workspace`;
+    }
+  }, [vscodeUrl, workspaceUrl, localServeWebOrigin]);
+
   const handleOpenInEditor = useCallback(
     (editor: EditorType): Promise<void> => {
       return new Promise((resolve, reject) => {
-        if (editor === "vscode-remote" && vscodeUrl) {
-          const normalizedUrl = rewriteLocalWorkspaceUrlIfNeeded(
-            vscodeUrl,
-            localServeWebOrigin,
-          );
-          const vscodeUrlWithWorkspace = `${normalizedUrl}?folder=/root/workspace`;
-          window.open(vscodeUrlWithWorkspace, "_blank", "noopener,noreferrer");
+        if (editor === "vscode-remote") {
+          const targetUrl = buildRemoteWorkspaceUrl();
+          if (!targetUrl) {
+            reject(new Error("Workspace URL is not available"));
+            return;
+          }
+          window.open(targetUrl, "_blank", "noopener,noreferrer");
           resolve();
         } else if (
           socket &&
@@ -104,7 +131,7 @@ export function useOpenWithActions({
         }
       });
     },
-    [socket, worktreePath, vscodeUrl, localServeWebOrigin]
+    [socket, worktreePath, buildRemoteWorkspaceUrl]
   );
 
   const handleCopyBranch = useCallback(() => {
@@ -121,7 +148,11 @@ export function useOpenWithActions({
 
   const openWithActions = useMemo<OpenWithAction[]>(() => {
     const baseItems: Array<{ id: EditorType; name: string; enabled: boolean }> = [
-      { id: "vscode-remote", name: "VS Code (web)", enabled: Boolean(vscodeUrl) },
+      {
+        id: "vscode-remote",
+        name: "VS Code (web)",
+        enabled: Boolean(workspaceUrl || vscodeUrl),
+      },
       {
         id: "vscode",
         name: "VS Code (local)",
@@ -176,7 +207,7 @@ export function useOpenWithActions({
         name: item.name,
         Icon: editorIcons[item.id] ?? null,
       }));
-  }, [availableEditors, vscodeUrl, worktreePath]);
+  }, [availableEditors, vscodeUrl, workspaceUrl, worktreePath]);
 
   const portActions = useMemo<PortAction[]>(() => {
     if (!networking) return [];

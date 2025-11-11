@@ -98,9 +98,15 @@ export const TaskItem = memo(function TaskItem({
   const hasActiveVSCode = runWithVSCode?.vscode?.status === "running";
 
   // Generate the VSCode URL if available
-  const vscodeUrl = useMemo(() => {
+  const workspaceUrl = useMemo(() => {
     if (hasActiveVSCode && runWithVSCode?.vscode?.workspaceUrl) {
       return runWithVSCode.vscode.workspaceUrl;
+    }
+    return null;
+  }, [hasActiveVSCode, runWithVSCode]);
+  const vscodeUrl = useMemo(() => {
+    if (hasActiveVSCode && runWithVSCode?.vscode?.url) {
+      return runWithVSCode.vscode.url;
     }
     return null;
   }, [hasActiveVSCode, runWithVSCode]);
@@ -322,6 +328,7 @@ export const TaskItem = memo(function TaskItem({
           {/* Open with dropdown - always appears on hover */}
           <OpenWithDropdown
             vscodeUrl={vscodeUrl}
+            workspaceUrl={workspaceUrl}
             worktreePath={runWithVSCode?.worktreePath || task.worktreePath}
             branch={task.baseBranch}
             className="group-hover:opacity-100 aria-expanded:opacity-100 opacity-0"

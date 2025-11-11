@@ -1238,6 +1238,10 @@ function TaskRunTreeInner({
     () => (hasActiveVSCode && run.vscode?.url) || null,
     [hasActiveVSCode, run]
   );
+  const workspaceUrl = useMemo(
+    () => (hasActiveVSCode && run.vscode?.workspaceUrl) || null,
+    [hasActiveVSCode, run]
+  );
 
   // Collect running preview ports
   const previewServices = useMemo(() => {
@@ -1253,6 +1257,7 @@ function TaskRunTreeInner({
     executePortAction,
   } = useOpenWithActions({
     vscodeUrl,
+    workspaceUrl,
     worktreePath: run.worktreePath,
     branch: run.newBranch,
     networking: run.networking,
