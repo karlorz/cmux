@@ -21,7 +21,15 @@ export const env = createEnv({
    * What object holds the environment variables at runtime. This is usually
    * `process.env` or `import.meta.env`.
    */
-  runtimeEnv: import.meta.env,
+  runtimeEnv: {
+    ...import.meta.env,
+    // Default NEXT_PUBLIC_WWW_ORIGIN to VITE_VERCEL_URL if not set
+    NEXT_PUBLIC_WWW_ORIGIN:
+      import.meta.env.NEXT_PUBLIC_WWW_ORIGIN ||
+      (import.meta.env.VITE_VERCEL_URL
+        ? `https://${import.meta.env.VITE_VERCEL_URL}`
+        : undefined),
+  },
 
   /**
    * By default, this library will feed the environment variables directly to
