@@ -660,6 +660,7 @@ export function setupSocketHandlers(
           projectFullName,
           repoUrl: explicitRepoUrl,
           branch: requestedBranch,
+          pullRequestUrl: requestedPullRequestUrl,
           taskId: providedTaskId,
           taskRunId: providedTaskRunId,
           workspaceName: providedWorkspaceName,
@@ -692,6 +693,29 @@ export function setupSocketHandlers(
             ? `https://github.com/${projectFullName}.git`
             : undefined);
         const branch = requestedBranch?.trim();
+        const pullRequestUrl = requestedPullRequestUrl
+          ? requestedPullRequestUrl.trim().replace(/\/+$/, "")
+          : undefined;
+
+        if (pullRequestUrl && !projectFullName) {
+          callback({
+            success: false,
+            error: "Pull request checkout requires a repository.",
+          });
+          return;
+        }
+
+        if (pullRequestUrl && projectFullName) {
+          const expectedPrefix = `https://github.com/${projectFullName}/pull/`;
+          if (!pullRequestUrl.startsWith(expectedPrefix)) {
+            callback({
+              success: false,
+              error:
+                "Pull request URL must belong to the selected repository.",
+            });
+            return;
+          }
+        }
 
         let workspaceConfig: WorkspaceConfigResponse | null = null;
         if (projectFullName) {
@@ -952,7 +976,7 @@ export function setupSocketHandlers(
               await cleanupWorkspace();
             }
             const cloneArgs = ["clone"];
-            if (branch) {
+            if (branch && !pullRequestUrl) {
               cloneArgs.push("--branch", branch, "--single-branch");
             }
             cloneArgs.push(repoUrl, resolvedWorkspacePath);
@@ -988,6 +1012,29 @@ export function setupSocketHandlers(
                   ? `Git clone failed to produce a checkout: ${error.message}`
                   : "Git clone failed to produce a checkout"
               );
+            }
+
+            if (pullRequestUrl) {
+              const targetPullRequestUrl = pullRequestUrl;
+              try {
+                await execFileAsync("gh", ["pr", "checkout", targetPullRequestUrl], {
+                  cwd: resolvedWorkspacePath,
+                });
+              } catch (error) {
+                if (cleanupWorkspace) {
+                  await cleanupWorkspace();
+                }
+                const execErr = isExecError(error) ? error : null;
+                const message =
+                  execErr?.stderr?.trim() ||
+                  execErr?.stdout?.trim() ||
+                  (error instanceof Error ? error.message : "gh pr checkout failed");
+                throw new Error(
+                  message
+                    ? `gh pr checkout failed: ${message}`
+                    : "gh pr checkout failed"
+                );
+              }
             }
           } else {
             try {
@@ -1128,9 +1175,35 @@ export function setupSocketHandlers(
           environmentId,
           projectFullName,
           repoUrl,
+          branch: requestedBranch,
+          pullRequestUrl: requestedPullRequestUrl,
           taskId: providedTaskId,
         } = parsed.data;
         const teamSlugOrId = requestedTeamSlugOrId || safeTeam;
+        const branch = requestedBranch?.trim();
+        const pullRequestUrl = requestedPullRequestUrl
+          ? requestedPullRequestUrl.trim().replace(/\/+$/, "")
+          : undefined;
+
+        if (pullRequestUrl && !projectFullName) {
+          callback({
+            success: false,
+            error: "Pull request checkout requires a repository.",
+          });
+          return;
+        }
+
+        if (pullRequestUrl && projectFullName) {
+          const expectedPrefix = `https://github.com/${projectFullName}/pull/`;
+          if (!pullRequestUrl.startsWith(expectedPrefix)) {
+            callback({
+              success: false,
+              error:
+                "Pull request URL must belong to the selected repository.",
+            });
+            return;
+          }
+        }
 
         const convex = getConvex();
         let taskId: Id<"tasks"> | undefined = providedTaskId;
@@ -1206,7 +1279,12 @@ export function setupSocketHandlers(
               isCloudWorkspace: true,
               ...(environmentId
                 ? { environmentId }
-                : { projectFullName, repoUrl }),
+                : {
+                    projectFullName,
+                    repoUrl,
+                    branch: branch ?? undefined,
+                    pullRequestUrl: pullRequestUrl ?? undefined,
+                  }),
             },
           });
 
