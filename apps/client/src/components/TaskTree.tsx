@@ -315,6 +315,9 @@ function TaskTreeInner({
     [location.pathname, task._id]
   );
 
+  // Ref for scrolling to the selected task
+  const taskLinkRef = useRef<HTMLAnchorElement>(null);
+
   const [expandedRuns, setExpandedRuns] = useState<TaskRunExpansionState>({});
   const setRunExpanded = useCallback(
     (runId: Id<"taskRuns">, expanded: boolean) => {
@@ -338,6 +341,22 @@ function TaskTreeInner({
   const [isExpanded, setIsExpanded] = useState<boolean>(
     isTaskSelected || defaultExpanded
   );
+
+  // Scroll to selected task when it becomes selected
+  useEffect(() => {
+    if (isTaskSelected && taskLinkRef.current) {
+      // Use a small delay to ensure the element is fully rendered and expanded
+      const timeoutId = setTimeout(() => {
+        taskLinkRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+          inline: "nearest",
+        });
+      }, 100);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [isTaskSelected]);
   const isOptimisticTask = isFakeConvexId(task._id);
   const canRenameTask = !isOptimisticTask;
   const taskRuns = useConvexQuery(
@@ -670,6 +689,7 @@ function TaskTreeInner({
         <ContextMenu.Root>
           <ContextMenu.Trigger>
             <Link
+              ref={taskLinkRef}
               to="/$teamSlugOrId/task/$taskId"
               params={{ teamSlugOrId, taskId: task._id }}
               search={{ runId: undefined }}
@@ -1011,6 +1031,9 @@ function TaskRunTreeInner({
   const { expandedRuns, setRunExpanded } = useTaskRunExpansionContext();
   const defaultExpanded = Boolean(run.isCrowned);
   const isExpanded = expandedRuns[run._id] ?? defaultExpanded;
+
+  // Ref for scrolling to the selected run
+  const runLinkRef = useRef<HTMLAnchorElement>(null);
   const runIdFromSearch = useMemo(() => {
     if (
       location.search &&
@@ -1051,6 +1074,22 @@ function TaskRunTreeInner({
       setRunExpanded(run._id, true);
     }
   }, [isExpanded, isRunSelected, run._id, setRunExpanded]);
+
+  // Scroll to selected run when it becomes selected
+  useEffect(() => {
+    if (isRunSelected && runLinkRef.current) {
+      // Use a small delay to ensure the element is fully rendered and expanded
+      const timeoutId = setTimeout(() => {
+        runLinkRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+          inline: "nearest",
+        });
+      }, 100);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [isRunSelected]);
 
   const hasChildren = run.children.length > 0;
 
@@ -1293,6 +1332,7 @@ function TaskRunTreeInner({
       <ContextMenu.Root>
         <ContextMenu.Trigger>
           <Link
+            ref={runLinkRef}
             to="/$teamSlugOrId/task/$taskId"
             params={{
               teamSlugOrId,
