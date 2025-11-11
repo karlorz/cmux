@@ -133,7 +133,7 @@ function SidebarArchiveOverlay({
             <ArchiveIcon className="w-3 h-3" />
           </button>
         </TooltipTrigger>
-        <TooltipContent side="right">{label}</TooltipContent>
+        <TooltipContent side="right">Archive</TooltipContent>
       </Tooltip>
       <div className="flex items-center justify-center group-hover:pointer-events-none group-hover:opacity-0 group-data-[focus-visible=true]:pointer-events-none group-data-[focus-visible=true]:opacity-0 peer-focus-visible:pointer-events-none peer-focus-visible:opacity-0">
         {icon}
@@ -567,7 +567,7 @@ function TaskTreeInner({
           <TooltipContent
             side="right"
             sideOffset={6}
-            className="max-w-sm p-3 text-left z-[var(--z-overlay)]"
+            className="max-w-sm p-3 text-left"
           >
             <p className="font-medium text-sm">Selecting best implementation</p>
             <p className="text-xs text-muted-foreground">
