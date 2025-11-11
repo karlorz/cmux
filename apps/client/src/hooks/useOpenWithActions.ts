@@ -91,8 +91,15 @@ export function useOpenWithActions({
                 | "xcode",
               path: worktreePath,
             },
-            (response) => {
-              if (response.success) {
+            (response?: { success?: boolean; error?: string }) => {
+              // Some servers don't send an acknowledgement; treat missing or
+              // partial responses as success to avoid crashing the toast flow.
+              if (!response || typeof response !== "object") {
+                resolve();
+                return;
+              }
+
+              if (response.success !== false) {
                 resolve();
               } else {
                 reject(new Error(response.error || "Failed to open editor"));
