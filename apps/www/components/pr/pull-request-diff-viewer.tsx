@@ -2635,7 +2635,7 @@ function HeatmapThresholdControl({
             value={selectedModel}
             onChange={handleModelSelectChange}
             aria-label="Heatmap model preference"
-            className="w-full appearance-none border border-neutral-300 bg-white px-2 py-1 text-xs font-semibold text-neutral-800 transition focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            className="w-full appearance-none border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-800 transition focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
           >
             {HEATMAP_MODEL_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
