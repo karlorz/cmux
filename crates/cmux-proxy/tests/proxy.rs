@@ -5,14 +5,19 @@ use std::time::Duration;
 
 use cmux_proxy::ProxyConfig;
 use futures_util::{SinkExt, StreamExt};
-use hyper::body::to_bytes;
-use hyper::client::HttpConnector;
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Client, Request, Response, Server, StatusCode};
+use http_body_util::BodyExt;
+use hyper::body::Incoming;
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper::{Request, Response, StatusCode};
+use hyper_util::client::legacy::{connect::HttpConnector, Client};
+use hyper_util::rt::{TokioExecutor, TokioIo};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 use tokio::time::timeout;
+use bytes::Bytes;
+use http_body_util::{Empty, Full};
 
 async fn start_upstream_real_ws_echo() -> (SocketAddr, tokio::task::JoinHandle<()>) {
     use tokio_tungstenite::accept_async;
@@ -141,10 +146,11 @@ async fn start_upstream_ws_like_upgrade_echo() -> SocketAddr {
                         Ok(mut upgraded) => {
                             let mut buf = [0u8; 1024];
                             loop {
-                                match upgraded.read(&mut buf).await {
+                                match TokioIo::new(&mut upgraded).read(&mut buf).await {
                                     Ok(0) => break,
                                     Ok(n) => {
-                                        if upgraded.write_all(&buf[..n]).await.is_err() {
+                                        use tokio::io::AsyncWriteExt;
+                                        if TokioIo::new(&mut upgraded).write_all(&buf[..n]).await.is_err() {
                                             break;
                                         }
                                     }

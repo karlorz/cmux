@@ -36,7 +36,7 @@ pub fn list_remote_branches(opts: GitListRemoteBranchesOptions) -> Result<Vec<Br
   // Iterate remote refs and assemble info
   let refs = repo.references()?;
   let mut out: Vec<BranchInfo> = Vec::new();
-  let mut iter = refs.all()?;
+  let iter = refs.all()?;
 
   // Determine origin/HEAD target branch (short name)
   let mut origin_head_short: Option<String> = None;
@@ -51,7 +51,7 @@ pub fn list_remote_branches(opts: GitListRemoteBranchesOptions) -> Result<Vec<Br
     }
   }
 
-  while let Some(r) = iter.next() {
+  for r in iter {
     let r = match r {
       Ok(v) => v,
       Err(_) => continue,
@@ -76,7 +76,7 @@ pub fn list_remote_branches(opts: GitListRemoteBranchesOptions) -> Result<Vec<Br
           .map(|sig| sig.time)
           .or_else(|| commit.author().ok().map(|sig| sig.time));
         if let Some(t) = t {
-          last_ts = Some((t.seconds as i64) * 1000);
+          last_ts = Some(t.seconds * 1000);
         }
       }
     }

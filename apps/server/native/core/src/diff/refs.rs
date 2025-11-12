@@ -32,7 +32,7 @@ fn oid_from_rev_parse(repo: &Repository, rev: &str) -> anyhow::Result<ObjectId> 
 }
 
 fn is_binary(data: &[u8]) -> bool {
-  data.iter().any(|&b| b == 0) || std::str::from_utf8(data).is_err()
+  data.contains(&0) || std::str::from_utf8(data).is_err()
 }
 
 fn collect_tree_blobs(repo: &Repository, tree_id: ObjectId, prefix: &str, out: &mut HashMap<String, ObjectId>) -> anyhow::Result<()> {
@@ -127,7 +127,7 @@ fn find_merge_parent_on_base(
     let first_parent = parents_iter.next().map(|p| p.detach());
     let rest: Vec<ObjectId> = parents_iter.map(|p| p.detach()).collect();
     if let Some(p1) = first_parent {
-      if rest.iter().any(|p| *p == head_tip) {
+      if rest.contains(&head_tip) {
         return Some((base_tip, p1));
       }
       if ancestor_candidate.is_none()
@@ -413,8 +413,8 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
       if include && !bin {
         let old_str = String::from_utf8_lossy(old_data.as_ref().unwrap()).into_owned();
         let new_str = String::from_utf8_lossy(new_data.as_ref().unwrap()).into_owned();
-        let old_sz = old_str.as_bytes().len();
-        let new_sz = new_str.as_bytes().len();
+        let old_sz = old_str.len();
+        let new_sz = new_str.len();
         e.oldSize = Some(old_sz as i32);
         e.newSize = Some(new_sz as i32);
         if old_sz + new_sz <= max_bytes {
@@ -558,7 +558,7 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
               if include {
                 // new content from head
                 if let Ok(buf) = crate::util::run_git(&cwd, &["show", &format!("{}:{}", head_oid, path)]) {
-                  let new_sz = buf.as_bytes().len();
+                  let new_sz = buf.len();
                   e.newSize = Some(new_sz as i32);
                   e.oldSize = Some(0);
                   if new_sz <= max_bytes { e.newContent = Some(buf.clone()); e.oldContent = Some(String::new()); e.additions = buf.lines().count() as i32; e.contentOmitted = Some(false);} else { e.contentOmitted = Some(true); }
@@ -574,7 +574,7 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
               if include {
                 let old_s = crate::util::run_git(&cwd, &["show", &format!("{}:{}", compare_base_oid, path)]).unwrap_or_default();
                 let new_s = crate::util::run_git(&cwd, &["show", &format!("{}:{}", head_oid, path)]).unwrap_or_default();
-                let old_sz = old_s.as_bytes().len(); let new_sz = new_s.as_bytes().len();
+                let old_sz = old_s.len(); let new_sz = new_s.len();
                 e.oldSize = Some(old_sz as i32); e.newSize = Some(new_sz as i32);
                 if old_sz + new_sz <= max_bytes {
                   let diff = TextDiff::from_lines(&old_s, &new_s);
@@ -591,7 +591,7 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
               let mut e = DiffEntry{ filePath: path.clone(), status: "deleted".into(), additions: 0, deletions: 0, isBinary: false, ..Default::default() };
               if include {
                 if let Ok(buf) = crate::util::run_git(&cwd, &["show", &format!("{}:{}", compare_base_oid, path)]) {
-                  let old_sz = buf.as_bytes().len(); e.oldSize = Some(old_sz as i32);
+                  let old_sz = buf.len(); e.oldSize = Some(old_sz as i32);
                   if old_sz <= max_bytes { e.oldContent = Some(buf.clone()); e.newContent = Some(String::new()); e.deletions = buf.lines().count() as i32; e.contentOmitted = Some(false);} else { e.contentOmitted = Some(true); }
                 }
               }
@@ -605,7 +605,7 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
               let mut e = DiffEntry{ filePath: newp.clone(), oldPath: Some(oldp.clone()), status: "renamed".into(), additions: 0, deletions: 0, isBinary: false, ..Default::default() };
               if include {
                 let new_s = crate::util::run_git(&cwd, &["show", &format!("{}:{}", head_oid, newp)]).unwrap_or_default();
-                let new_sz = new_s.as_bytes().len(); e.newSize = Some(new_sz as i32); e.oldSize = Some(new_sz as i32);
+                let new_sz = new_s.len(); e.newSize = Some(new_sz as i32); e.oldSize = Some(new_sz as i32);
                 if new_sz <= max_bytes { e.oldContent = Some(new_s.clone()); e.newContent = Some(new_s); e.contentOmitted = Some(false);} else { e.contentOmitted = Some(true); }
               }
               fallback.push(e);
