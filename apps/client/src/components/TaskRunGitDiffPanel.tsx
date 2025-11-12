@@ -1,17 +1,38 @@
 import { useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { MonacoGitDiffViewer } from "./monaco/monaco-git-diff-viewer";
+import { RunScreenshotGallery } from "./RunScreenshotGallery";
 import { gitDiffQueryOptions } from "@/queries/git-diff";
 import { normalizeGitRef } from "@/lib/refWithOrigin";
 import type { TaskRunWithChildren } from "@/types/task";
-import type { Doc } from "@cmux/convex/dataModel";
+import type { Doc, Id } from "@cmux/convex/dataModel";
+
+interface ScreenshotImage {
+  storageId: Id<"_storage">;
+  mimeType: string;
+  fileName?: string | null;
+  commitSha?: string | null;
+  url?: string | null;
+}
+
+interface RunScreenshotSet {
+  _id: Id<"taskRunScreenshotSets">;
+  taskId: Id<"tasks">;
+  runId: Id<"taskRuns">;
+  status: "completed" | "failed" | "skipped";
+  commitSha?: string | null;
+  capturedAt: number;
+  error?: string | null;
+  images: ScreenshotImage[];
+}
 
 export interface TaskRunGitDiffPanelProps {
   task: Doc<"tasks"> | null | undefined;
   selectedRun: TaskRunWithChildren | null | undefined;
+  screenshotSets?: RunScreenshotSet[] | null;
 }
 
-export function TaskRunGitDiffPanel({ task, selectedRun }: TaskRunGitDiffPanelProps) {
+export function TaskRunGitDiffPanel({ task, selectedRun, screenshotSets }: TaskRunGitDiffPanelProps) {
   const normalizedBaseBranch = useMemo(() => {
     const candidate = task?.baseBranch;
     if (candidate && candidate.trim()) {
@@ -95,9 +116,23 @@ export function TaskRunGitDiffPanel({ task, selectedRun }: TaskRunGitDiffPanelPr
     );
   }
 
+  const filteredScreenshotSets = useMemo(() => {
+    return screenshotSets?.filter((set) => set.images.length > 0) ?? [];
+  }, [screenshotSets]);
+
   return (
-    <div className="relative h-full min-h-0 overflow-auto">
-      <MonacoGitDiffViewer diffs={allDiffs} />
+    <div className="relative h-full min-h-0 overflow-auto flex flex-col">
+      {filteredScreenshotSets.length > 0 && (
+        <div className="flex-shrink-0 border-b border-neutral-200 dark:border-neutral-800">
+          <RunScreenshotGallery
+            screenshotSets={filteredScreenshotSets}
+            highlightedSetId={selectedRun?.latestScreenshotSetId ?? null}
+          />
+        </div>
+      )}
+      <div className="flex-1 min-h-0 overflow-auto">
+        <MonacoGitDiffViewer diffs={allDiffs} />
+      </div>
     </div>
   );
 }

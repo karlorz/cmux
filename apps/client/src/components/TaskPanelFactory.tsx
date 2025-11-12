@@ -177,6 +177,23 @@ interface PanelFactoryProps {
   } | null;
   isMorphProvider?: boolean;
   isBrowserBusy?: boolean;
+  // Git diff panel props
+  screenshotSets?: Array<{
+    _id: Id<"taskRunScreenshotSets">;
+    taskId: Id<"tasks">;
+    runId: Id<"taskRuns">;
+    status: "completed" | "failed" | "skipped";
+    commitSha?: string | null;
+    capturedAt: number;
+    error?: string | null;
+    images: Array<{
+      storageId: Id<"_storage">;
+      mimeType: string;
+      fileName?: string | null;
+      commitSha?: string | null;
+      url?: string | null;
+    }>;
+  }> | null;
   // Additional components
   TaskRunChatPane?: React.ComponentType<TaskRunChatPaneProps>;
   PersistentWebView?: React.ComponentType<PersistentWebViewProps>;
@@ -619,14 +636,14 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
     }
 
     case "gitDiff": {
-      const { task, selectedRun, TaskRunGitDiffPanel } = props;
+      const { task, selectedRun, TaskRunGitDiffPanel, screenshotSets } = props;
       if (!TaskRunGitDiffPanel) return null;
 
       return panelWrapper(
         <GitCompare className="size-3" aria-hidden />,
         PANEL_LABELS.gitDiff,
         <div className="relative flex-1 min-h-0 overflow-auto">
-          <TaskRunGitDiffPanel key={selectedRun?._id} task={task} selectedRun={selectedRun} />
+          <TaskRunGitDiffPanel key={selectedRun?._id} task={task} selectedRun={selectedRun} screenshotSets={screenshotSets} />
         </div>
       );
     }

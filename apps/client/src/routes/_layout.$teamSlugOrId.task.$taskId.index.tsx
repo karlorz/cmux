@@ -472,6 +472,19 @@ function TaskDetailPage() {
   }, [selectedRunId]);
   const headerTaskRunId = selectedRunId ?? taskRuns?.[0]?._id ?? null;
 
+  // Fetch screenshot data for the selected run
+  const runDiffContext = useQuery(
+    api.taskRuns.getRunDiffContext,
+    selectedRunId && task
+      ? {
+          teamSlugOrId,
+          taskId,
+          runId: selectedRunId,
+        }
+      : "skip"
+  );
+  const screenshotSets = runDiffContext?.screenshotSets ?? null;
+
   const rawWorkspaceUrl = selectedRun?.vscode?.workspaceUrl ?? null;
   const workspaceUrl = rawWorkspaceUrl
     ? toProxyWorkspaceUrl(rawWorkspaceUrl, localServeWeb.data?.baseUrl)
@@ -669,6 +682,7 @@ function TaskDetailPage() {
       browserPlaceholder,
       isMorphProvider,
       isBrowserBusy,
+      screenshotSets,
       TaskRunChatPane,
       PersistentWebView,
       WorkspaceLoadingIndicator,
@@ -701,6 +715,7 @@ function TaskDetailPage() {
       browserPlaceholder,
       isMorphProvider,
       isBrowserBusy,
+      screenshotSets,
       handlePanelClose,
     ]
   );
