@@ -153,6 +153,7 @@ interface PanelFactoryProps {
   workspaceUrl?: string | null;
   workspacePersistKey?: string | null;
   selectedRun?: TaskRunWithChildren | null;
+  screenshotSets?: import("./TaskRunGitDiffPanel").RunScreenshotSet[];
   editorStatus?: PersistentIframeStatus;
   setEditorStatus?: (status: PersistentIframeStatus) => void;
   onEditorLoad?: () => void;
@@ -619,14 +620,19 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
     }
 
     case "gitDiff": {
-      const { task, selectedRun, TaskRunGitDiffPanel } = props;
+      const { task, selectedRun, screenshotSets, TaskRunGitDiffPanel } = props;
       if (!TaskRunGitDiffPanel) return null;
 
       return panelWrapper(
         <GitCompare className="size-3" aria-hidden />,
         PANEL_LABELS.gitDiff,
         <div className="relative flex-1 min-h-0 overflow-auto">
-          <TaskRunGitDiffPanel key={selectedRun?._id} task={task} selectedRun={selectedRun} />
+          <TaskRunGitDiffPanel
+            key={selectedRun?._id}
+            task={task}
+            selectedRun={selectedRun}
+            screenshotSets={screenshotSets}
+          />
         </div>
       );
     }

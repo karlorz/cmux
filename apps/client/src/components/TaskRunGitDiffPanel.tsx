@@ -1,17 +1,40 @@
 import { useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { MonacoGitDiffViewer } from "./monaco/monaco-git-diff-viewer";
+import { RunScreenshotGallery } from "./RunScreenshotGallery";
 import { gitDiffQueryOptions } from "@/queries/git-diff";
 import { normalizeGitRef } from "@/lib/refWithOrigin";
 import type { TaskRunWithChildren } from "@/types/task";
-import type { Doc } from "@cmux/convex/dataModel";
+import type { Doc, Id } from "@cmux/convex/dataModel";
+
+type ScreenshotStatus = "completed" | "failed" | "skipped";
+
+interface ScreenshotImage {
+  storageId: Id<"_storage">;
+  mimeType: string;
+  fileName?: string | null;
+  commitSha?: string | null;
+  url?: string | null;
+}
+
+export interface RunScreenshotSet {
+  _id: Id<"taskRunScreenshotSets">;
+  taskId: Id<"tasks">;
+  runId: Id<"taskRuns">;
+  status: ScreenshotStatus;
+  commitSha?: string | null;
+  capturedAt: number;
+  error?: string | null;
+  images: ScreenshotImage[];
+}
 
 export interface TaskRunGitDiffPanelProps {
   task: Doc<"tasks"> | null | undefined;
   selectedRun: TaskRunWithChildren | null | undefined;
+  screenshotSets?: RunScreenshotSet[];
 }
 
-export function TaskRunGitDiffPanel({ task, selectedRun }: TaskRunGitDiffPanelProps) {
+export function TaskRunGitDiffPanel({ task, selectedRun, screenshotSets = [] }: TaskRunGitDiffPanelProps) {
   const normalizedBaseBranch = useMemo(() => {
     const candidate = task?.baseBranch;
     if (candidate && candidate.trim()) {
@@ -97,6 +120,12 @@ export function TaskRunGitDiffPanel({ task, selectedRun }: TaskRunGitDiffPanelPr
 
   return (
     <div className="relative h-full min-h-0 overflow-auto">
+      {screenshotSets.length > 0 && (
+        <RunScreenshotGallery
+          screenshotSets={screenshotSets}
+          highlightedSetId={selectedRun?.latestScreenshotSetId ?? null}
+        />
+      )}
       <MonacoGitDiffViewer diffs={allDiffs} />
     </div>
   );

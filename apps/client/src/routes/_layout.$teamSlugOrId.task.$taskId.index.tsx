@@ -462,6 +462,18 @@ function TaskDetailPage() {
   }, [search.runId, taskRunIndex, taskRuns]);
 
   const selectedRunId = selectedRun?._id ?? null;
+
+  const screenshotSets = useQuery(
+    api.taskRuns.getRunDiffContext,
+    selectedRunId && taskId
+      ? {
+          teamSlugOrId,
+          taskId,
+          runId: selectedRunId,
+        }
+      : "skip"
+  )?.screenshotSets ?? [];
+
   useEffect(() => {
     const previousRunId = previousSelectedRunIdRef.current;
     if (previousRunId === selectedRunId) {
@@ -653,6 +665,7 @@ function TaskDetailPage() {
       workspaceUrl,
       workspacePersistKey,
       selectedRun: selectedRun ?? null,
+      screenshotSets,
       editorStatus,
       setEditorStatus: handleWorkspaceStatusChange,
       onEditorLoad,
@@ -685,6 +698,7 @@ function TaskDetailPage() {
       workspaceUrl,
       workspacePersistKey,
       selectedRun,
+      screenshotSets,
       editorStatus,
       handleWorkspaceStatusChange,
       onEditorLoad,
