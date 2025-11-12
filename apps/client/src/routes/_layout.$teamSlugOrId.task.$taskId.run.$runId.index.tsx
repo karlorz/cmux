@@ -1,8 +1,8 @@
 import { api } from "@cmux/convex/api";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { convexQuery } from "@convex-dev/react-query";
-import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { useQuery } from "convex/react";
 import clsx from "clsx";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PersistentWebView } from "@/components/persistent-webview";
@@ -71,14 +71,12 @@ function TaskRunComponent() {
   const { taskRunId, taskId, teamSlugOrId } = Route.useParams();
   const { addTaskToExpand } = useExpandTasks();
   const localServeWeb = useLocalVSCodeServeWebQuery();
-  const taskRun = useSuspenseQuery(
-    convexQuery(api.taskRuns.get, {
-      teamSlugOrId,
-      id: taskRunId,
-    })
-  );
+  const taskRun = useQuery(api.taskRuns.get, {
+    teamSlugOrId,
+    id: taskRunId,
+  });
 
-  const rawWorkspaceUrl = taskRun?.data?.vscode?.workspaceUrl ?? null;
+  const rawWorkspaceUrl = taskRun?.vscode?.workspaceUrl ?? null;
   const workspaceUrl = rawWorkspaceUrl
     ? toProxyWorkspaceUrl(rawWorkspaceUrl, localServeWeb.data?.baseUrl)
     : null;
@@ -87,7 +85,7 @@ function TaskRunComponent() {
     : false;
   const persistKey = getTaskRunPersistKey(taskRunId);
   const hasWorkspace = workspaceUrl !== null;
-  const isLocalWorkspace = taskRun?.data?.vscode?.provider === "other";
+  const isLocalWorkspace = taskRun?.vscode?.provider === "other";
   const [iframeStatus, setIframeStatus] =
     useState<PersistentIframeStatus>("loading");
 
