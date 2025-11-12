@@ -1,17 +1,44 @@
 import { useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { MonacoGitDiffViewer } from "./monaco/monaco-git-diff-viewer";
+import { RunScreenshotGallery } from "./RunScreenshotGallery";
 import { gitDiffQueryOptions } from "@/queries/git-diff";
 import { normalizeGitRef } from "@/lib/refWithOrigin";
 import type { TaskRunWithChildren } from "@/types/task";
-import type { Doc } from "@cmux/convex/dataModel";
+import type { Doc, Id } from "@cmux/convex/dataModel";
+
+interface ScreenshotImage {
+  storageId: Id<"_storage">;
+  mimeType: string;
+  fileName?: string | null;
+  commitSha?: string | null;
+  url?: string | null;
+}
+
+interface RunScreenshotSet {
+  _id: Id<"taskRunScreenshotSets">;
+  taskId: Id<"tasks">;
+  runId: Id<"taskRuns">;
+  status: "completed" | "failed" | "skipped";
+  commitSha?: string | null;
+  capturedAt: number;
+  error?: string | null;
+  images: ScreenshotImage[];
+}
 
 export interface TaskRunGitDiffPanelProps {
   task: Doc<"tasks"> | null | undefined;
   selectedRun: TaskRunWithChildren | null | undefined;
+  screenshotSets?: RunScreenshotSet[];
+  isScreenshotLoading?: boolean;
 }
 
-export function TaskRunGitDiffPanel({ task, selectedRun }: TaskRunGitDiffPanelProps) {
+export function TaskRunGitDiffPanel({
+  task,
+  selectedRun,
+  screenshotSets = [],
+  isScreenshotLoading = false,
+}: TaskRunGitDiffPanelProps) {
   const normalizedBaseBranch = useMemo(() => {
     const candidate = task?.baseBranch;
     if (candidate && candidate.trim()) {
@@ -97,6 +124,16 @@ export function TaskRunGitDiffPanel({ task, selectedRun }: TaskRunGitDiffPanelPr
 
   return (
     <div className="relative h-full min-h-0 overflow-auto">
+      {isScreenshotLoading ? (
+        <div className="border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-950/40 px-3.5 py-3 text-sm text-neutral-500 dark:text-neutral-400">
+          Loading screenshots...
+        </div>
+      ) : (
+        <RunScreenshotGallery
+          screenshotSets={screenshotSets}
+          highlightedSetId={selectedRun?.latestScreenshotSetId ?? null}
+        />
+      )}
       <MonacoGitDiffViewer diffs={allDiffs} />
     </div>
   );
