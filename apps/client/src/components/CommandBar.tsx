@@ -841,10 +841,10 @@ export function CommandBar({
   const handleLocalWorkspaceSelect = useCallback(
     (projectFullName: string) => {
       clearCommandInput();
-      closeCommand();
+      setActivePage("root");
       void createLocalWorkspace(projectFullName);
     },
-    [clearCommandInput, closeCommand, createLocalWorkspace]
+    [clearCommandInput, setActivePage, createLocalWorkspace]
   );
 
   const createCloudWorkspaceFromEnvironment = useCallback(
@@ -1014,7 +1014,7 @@ export function CommandBar({
   const handleCloudWorkspaceSelect = useCallback(
     (option: CloudWorkspaceOption) => {
       clearCommandInput();
-      closeCommand();
+      setActivePage("root");
       if (option.type === "environment") {
         void createCloudWorkspaceFromEnvironment(option.environmentId);
       } else {
@@ -1023,7 +1023,7 @@ export function CommandBar({
     },
     [
       clearCommandInput,
-      closeCommand,
+      setActivePage,
       createCloudWorkspaceFromEnvironment,
       createCloudWorkspaceFromRepo,
     ]
@@ -1451,6 +1451,9 @@ export function CommandBar({
           to: "/$teamSlugOrId/dashboard",
           params: { teamSlugOrId: targetTeamSlugOrId },
         });
+        // Navigate back to root instead of closing when on teams page
+        setActivePage("root");
+        return;
       } else if (value.startsWith("task:")) {
         const parts = value.slice(5).split(":");
         const taskId = parts[0] as Id<"tasks">;
@@ -1512,6 +1515,7 @@ export function CommandBar({
       stackUser,
       stackTeams,
       closeCommand,
+      setActivePage,
     ]
   );
 
