@@ -8,7 +8,7 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{
     body::Body,
     client::Client,
-    http::{HeaderMap, HeaderValue, Method, Request, Response, StatusCode, Uri},
+    http::{HeaderMap, HeaderValue, Method, Request, Response, StatusCode, Uri, Version},
 };
 use std::sync::Arc;
 use tokio::io::{copy_bidirectional, AsyncWriteExt};
@@ -48,7 +48,8 @@ where
     });
 
     let builder = hyper::Server::bind(&listen)
-        .http1_only(true)
+        .http1_keepalive(true)
+        .http2_adaptive_window(true)
         .serve(make_svc);
     let listen_addr = builder.local_addr();
     let server = builder.with_graceful_shutdown(shutdown);
@@ -114,7 +115,8 @@ where
         });
 
         let builder = hyper::Server::bind(&listen_addr)
-            .http1_only(true)
+            .http1_keepalive(true)
+            .http2_adaptive_window(true)
             .serve(make_svc);
         let local = builder.local_addr();
         bound_addrs.push(local);
@@ -601,16 +603,16 @@ async fn handle_connect(
     info!(client = %remote_addr, %target, "tcp tunnel via CONNECT");
 
     // Respond that the connection is established; then upgrade to a raw tunnel
-    let resp = Response::builder()
-        .status(StatusCode::OK)
-        .header(CONNECTION, HeaderValue::from_static("upgrade"))
-        .body(Body::empty())
-        .map_err(|_| {
-            response_with(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to build CONNECT response".into(),
-            )
-        })?;
+    let mut resp_builder = Response::builder().status(StatusCode::OK);
+    if req.version() == Version::HTTP_11 {
+        resp_builder = resp_builder.header(CONNECTION, HeaderValue::from_static("upgrade"));
+    }
+    let resp = resp_builder.body(Body::empty()).map_err(|_| {
+        response_with(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to build CONNECT response".into(),
+        )
+    })?;
 
     tokio::spawn(async move {
         match hyper::upgrade::on(&mut req).await {

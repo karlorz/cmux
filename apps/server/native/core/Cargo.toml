@@ -11,16 +11,23 @@ fuzz-tests = []
 crate-type = ["cdylib"]
 
 [dependencies]
+anyhow = "1"
+base64 = "0.21"
+bytes = "1"
+dashmap = "5"
+dirs-next = "2"
+gix = { version = "0.66", default-features = true, features = ["status", "revision"] }
+hyper = { version = "0.14", features = ["full"] }
+hyper-rustls = { version = "0.24", default-features = false, features = ["http1", "http2", "tokio-runtime", "webpki-roots"] }
+http = "0.2"
 napi = { version = "2", default-features = false, features = ["napi4", "tokio_rt"] }
 napi-derive = "2"
-anyhow = "1"
+once_cell = "1"
 rayon = "1.10"
-dirs-next = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
-gix = { version = "0.66", default-features = true, features = ["status", "revision"] }
 similar = "2"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "net", "time", "sync"] }
 
 [dev-dependencies]
 tempfile = "3"
