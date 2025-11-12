@@ -111,6 +111,6 @@
     "@xterm/xterm": "^5.5.0",
     "typescript": "^5.9.3",
     "socket.io": "^4.8.1",
-    "vitest": "^3.2.4"
+    "vitest": "^4.0.8"
   }
 }
