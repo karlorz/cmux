@@ -913,6 +913,57 @@ exit $EXIT_CODE
       );
     });
 
+    // For opencode agents, submit the prompt via curl after the process has started
+    if (agent.name.toLowerCase().includes("opencode")) {
+      serverLogger.info(
+        `[AgentSpawner] Waiting for opencode server to be ready before submitting prompt`
+      );
+
+      // Wait a few seconds for the opencode server to start
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+
+      serverLogger.info(
+        `[AgentSpawner] Submitting prompt to opencode server via curl`
+      );
+
+      try {
+        const { exitCode, stdout, stderr } = await workerExec({
+          workerSocket,
+          command: "curl",
+          args: [
+            "-sS",
+            "-X",
+            "POST",
+            "http://127.0.0.1:4096/tui/submit-prompt",
+            "-H",
+            "Content-Type: application/json",
+            "-d",
+            JSON.stringify({ prompt: processedTaskDescription }),
+          ],
+          cwd: "/root/workspace",
+          env: {},
+          timeout: 10000,
+        });
+
+        if (exitCode !== 0) {
+          serverLogger.error(
+            `[AgentSpawner] Failed to submit prompt to opencode (exit ${exitCode})`,
+            { stdout, stderr }
+          );
+        } else {
+          serverLogger.info(
+            `[AgentSpawner] Successfully submitted prompt to opencode`,
+            { stdout }
+          );
+        }
+      } catch (error) {
+        serverLogger.error(
+          `[AgentSpawner] Error submitting prompt to opencode:`,
+          error
+        );
+      }
+    }
+
     return {
       agentName: agent.name,
       terminalId,
