@@ -8,7 +8,7 @@ import { normalizeGitRef } from "@/lib/refWithOrigin";
 import type { TaskRunWithChildren } from "@/types/task";
 import type { Doc, Id } from "@cmux/convex/dataModel";
 
-export interface TaskRunGitDiffPanelProps {
+export interface TaskRunGitDiffPanelWithScreenshotsProps {
   task: Doc<"tasks"> | null | undefined;
   selectedRun: TaskRunWithChildren | null | undefined;
   screenshotSets?: ScreenshotSet[];
@@ -17,14 +17,14 @@ export interface TaskRunGitDiffPanelProps {
   screenshotsPosition?: "top" | "bottom" | "inline";
 }
 
-export function TaskRunGitDiffPanel({
+export function TaskRunGitDiffPanelWithScreenshots({
   task,
   selectedRun,
   screenshotSets = [],
   highlightedSetId,
-  showScreenshots = false,
+  showScreenshots = true,
   screenshotsPosition = "top",
-}: TaskRunGitDiffPanelProps) {
+}: TaskRunGitDiffPanelWithScreenshotsProps) {
   const [screenshotsExpanded, setScreenshotsExpanded] = useState(true);
 
   const normalizedBaseBranch = useMemo(() => {
@@ -77,6 +77,7 @@ export function TaskRunGitDiffPanel({
 
   const isLoading = diffQueries.some((query) => query.isLoading);
   const hasError = diffQueries.some((query) => query.isError);
+
   const hasScreenshots = screenshotSets.length > 0;
 
   if (!selectedRun || !normalizedHeadBranch) {
@@ -111,7 +112,7 @@ export function TaskRunGitDiffPanel({
     );
   }
 
-  // Inline screenshots with collapsible header
+  // Inline screenshots within the diff viewer
   if (screenshotsPosition === "inline" && showScreenshots && hasScreenshots) {
     return (
       <div className="relative h-full min-h-0 overflow-auto">
