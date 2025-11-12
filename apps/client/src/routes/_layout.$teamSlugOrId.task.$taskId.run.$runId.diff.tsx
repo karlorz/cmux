@@ -22,7 +22,7 @@ import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { convexQuery } from "@convex-dev/react-query";
 import { Switch } from "@heroui/react";
-import { useQuery as useRQ } from "@tanstack/react-query";
+import { useQuery as useRQ, useMutation as useRQMutation } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { Command } from "lucide-react";
@@ -42,6 +42,12 @@ import type { EditorApi } from "@/components/dashboard/DashboardInput";
 import LexicalEditor from "@/components/lexical/LexicalEditor";
 import { useCombinedWorkflowData, WorkflowRunsSection } from "@/components/WorkflowRunsSection";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
+import { MergeButton, type MergeMethod } from "@/components/ui/merge-button";
+import { postApiIntegrationsGithubPrsMergeSimpleMutation } from "@cmux/www-openapi-client/react-query";
+import type { PostApiIntegrationsGithubPrsMergeSimpleData, PostApiIntegrationsGithubPrsMergeSimpleResponse, Options } from "@cmux/www-openapi-client";
+
+const RUN_PENDING_STATUSES = new Set(["in_progress", "queued", "waiting", "pending"]);
+const RUN_PASSING_CONCLUSIONS = new Set(["success", "neutral", "skipped"]);
 
 const paramsSchema = z.object({
   taskId: typedZid("tasks"),
@@ -646,6 +652,74 @@ function RunDiffPage() {
     ) as Array<{ repoFullName: string; number: number; url?: string }> | undefined;
   }, [selectedRun]);
 
+  // Get the first PR for merge operations (we'll use the primary repo's PR)
+  const primaryPR = useMemo(() => {
+    if (!pullRequests || pullRequests.length === 0) return undefined;
+    return pullRequests[0];
+  }, [pullRequests]);
+
+  // Fetch workflow data for the primary PR to check test status
+  const workflowDataForMerge = useCombinedWorkflowData({
+    teamSlugOrId,
+    repoFullName: primaryPR?.repoFullName || '',
+    prNumber: primaryPR?.number || 0,
+    headSha: undefined,
+  });
+
+  // Check if tests allow merge (same logic as PR detail view)
+  const { checksAllowMerge, checksDisabledReason } = useMemo(() => {
+    if (!primaryPR) {
+      return {
+        checksAllowMerge: false,
+        checksDisabledReason: "No pull request available",
+      } as const;
+    }
+
+    if (workflowDataForMerge.isLoading) {
+      return {
+        checksAllowMerge: false,
+        checksDisabledReason: "Loading check status...",
+      } as const;
+    }
+
+    const runs = workflowDataForMerge.allRuns;
+    if (runs.length === 0) {
+      return {
+        checksAllowMerge: true,
+        checksDisabledReason: undefined,
+      } as const;
+    }
+
+    const hasPending = runs.some((run) => {
+      const status = run.status;
+      return typeof status === "string" && RUN_PENDING_STATUSES.has(status);
+    });
+
+    if (hasPending) {
+      return {
+        checksAllowMerge: false,
+        checksDisabledReason: "Tests are still running. Wait for all required checks to finish before merging.",
+      } as const;
+    }
+
+    const allPassing = runs.every((run) => {
+      const conclusion = run.conclusion;
+      return typeof conclusion === "string" && RUN_PASSING_CONCLUSIONS.has(conclusion);
+    });
+
+    if (!allPassing) {
+      return {
+        checksAllowMerge: false,
+        checksDisabledReason: "Some tests have not passed yet. Fix the failing checks before merging.",
+      } as const;
+    }
+
+    return {
+      checksAllowMerge: true,
+      checksDisabledReason: undefined,
+    } as const;
+  }, [primaryPR, workflowDataForMerge.allRuns, workflowDataForMerge.isLoading]);
+
   // Track expanded state for each PR's checks
   const [checksExpandedByRepo, setChecksExpandedByRepo] = useState<Record<string, boolean | null>>({});
 
@@ -802,6 +876,53 @@ function RunDiffPage() {
     );
   }, [socket, teamSlugOrId, primaryRepo, selectedRun?.newBranch, navigate, taskId]);
 
+  // Merge PR mutation
+  const mergePrMutation = useRQMutation<
+    PostApiIntegrationsGithubPrsMergeSimpleResponse,
+    Error,
+    Options<PostApiIntegrationsGithubPrsMergeSimpleData>
+  >({
+    ...postApiIntegrationsGithubPrsMergeSimpleMutation(),
+    onSuccess: (data) => {
+      toast.success(data.message || `PR #${primaryPR?.number} merged successfully`);
+    },
+    onError: (error) => {
+      toast.error(`Failed to merge PR: ${error instanceof Error ? error.message : String(error)}`);
+    },
+  });
+
+  // Handle merge PR
+  const handleMergePR = useCallback((method: MergeMethod) => {
+    if (!primaryPR) {
+      toast.error("No pull request available to merge");
+      return;
+    }
+
+    if (mergePrMutation.isPending || !checksAllowMerge) {
+      return;
+    }
+
+    const [owner, repo] = primaryPR.repoFullName.split('/');
+    if (!owner || !repo) {
+      toast.error("Invalid repository name");
+      return;
+    }
+
+    mergePrMutation.mutate({
+      body: {
+        teamSlugOrId,
+        owner,
+        repo,
+        number: primaryPR.number,
+        method,
+      },
+    });
+  }, [primaryPR, mergePrMutation, checksAllowMerge, teamSlugOrId]);
+
+  // Determine if merge button should be disabled
+  const mergeDisabled = mergePrMutation.isPending || !checksAllowMerge;
+  const mergeDisabledReason = !checksAllowMerge ? checksDisabledReason : undefined;
+
   // 404 if selected run is missing
   if (!selectedRun) {
     return (
@@ -861,6 +982,20 @@ function RunDiffPage() {
                   />
                 ))}
               </Suspense>
+            )}
+            {primaryPR && (
+              <div className="border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-950/40 px-3.5 py-3 flex items-center gap-2">
+                <span className="text-xs text-neutral-600 dark:text-neutral-400">
+                  Ready to merge?
+                </span>
+                <MergeButton
+                  onMerge={handleMergePR}
+                  isOpen={true}
+                  disabled={mergeDisabled}
+                  isLoading={mergePrMutation.isPending}
+                  disabledReason={mergeDisabledReason}
+                />
+              </div>
             )}
             {screenshotSetsLoading ? (
               <div className="border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-950/40 px-3.5 py-3 text-sm text-neutral-500 dark:text-neutral-400">
