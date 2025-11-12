@@ -8,12 +8,14 @@ import { TaskItem } from "./TaskItem";
 import { ChevronRight } from "lucide-react";
 
 type TaskCategoryKey =
+  | "pinned"
   | "workspaces"
   | "ready_to_review"
   | "in_progress"
   | "merged";
 
 const CATEGORY_ORDER: TaskCategoryKey[] = [
+  "pinned",
   "workspaces",
   "ready_to_review",
   "in_progress",
@@ -24,6 +26,10 @@ const CATEGORY_META: Record<
   TaskCategoryKey,
   { title: string; emptyLabel: string }
 > = {
+  pinned: {
+    title: "Pinned",
+    emptyLabel: "No pinned tasks yet.",
+  },
   workspaces: {
     title: "Workspaces",
     emptyLabel: "No workspace sessions yet.",
@@ -46,6 +52,7 @@ const createEmptyCategoryBuckets = (): Record<
   TaskCategoryKey,
   Doc<"tasks">[]
 > => ({
+  pinned: [],
   workspaces: [],
   ready_to_review: [],
   in_progress: [],
@@ -53,6 +60,9 @@ const createEmptyCategoryBuckets = (): Record<
 });
 
 const getTaskCategory = (task: Doc<"tasks">): TaskCategoryKey => {
+  if (task.isPinned) {
+    return "pinned";
+  }
   if (task.isCloudWorkspace || task.isLocalWorkspace) {
     return "workspaces";
   }
@@ -95,6 +105,7 @@ const categorizeTasks = (
 const createCollapsedCategoryState = (
   defaultValue = false
 ): Record<TaskCategoryKey, boolean> => ({
+  pinned: defaultValue,
   workspaces: defaultValue,
   ready_to_review: defaultValue,
   in_progress: defaultValue,
@@ -193,16 +204,22 @@ export const TaskList = memo(function TaskList({
           </div>
         ) : (
           <div className="mt-1 w-full flex flex-col space-y-[-1px] transform -translate-y-px">
-            {CATEGORY_ORDER.map((categoryKey) => (
-              <TaskCategorySection
-                key={categoryKey}
-                categoryKey={categoryKey}
-                tasks={categoryBuckets[categoryKey]}
-                teamSlugOrId={teamSlugOrId}
-                collapsed={Boolean(collapsedCategories[categoryKey])}
-                onToggle={toggleCategoryCollapse}
-              />
-            ))}
+            {CATEGORY_ORDER.map((categoryKey) => {
+              // Hide pinned category if it's empty
+              if (categoryKey === "pinned" && categoryBuckets[categoryKey].length === 0) {
+                return null;
+              }
+              return (
+                <TaskCategorySection
+                  key={categoryKey}
+                  categoryKey={categoryKey}
+                  tasks={categoryBuckets[categoryKey]}
+                  teamSlugOrId={teamSlugOrId}
+                  collapsed={Boolean(collapsedCategories[categoryKey])}
+                  onToggle={toggleCategoryCollapse}
+                />
+              );
+            })}
           </div>
         )}
       </div>

@@ -2,10 +2,12 @@ import { TaskTree } from "@/components/TaskTree";
 import { TaskTreeSkeleton } from "@/components/TaskTreeSkeleton";
 import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
 import { isElectron } from "@/lib/electron";
+import { api } from "@cmux/convex/api";
 import { type Doc } from "@cmux/convex/dataModel";
 import type { LinkProps } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
 import { Home, Plus, Server, Settings } from "lucide-react";
+import { useQuery } from "convex/react";
 import {
   useCallback,
   useEffect,
@@ -80,6 +82,10 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
   });
 
   const { expandTaskIds } = useExpandTasks();
+
+  // Fetch pinned tasks and runs
+  const pinnedTasks = useQuery(api.tasks.getPinnedTasks, { teamSlugOrId });
+  const pinnedRuns = useQuery(api.taskRuns.getPinnedRuns, { teamSlugOrId });
 
   useEffect(() => {
     localStorage.setItem("sidebarWidth", String(width));
@@ -280,6 +286,43 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
               <SidebarPullRequestList teamSlugOrId={teamSlugOrId} />
             </div>
           </div>
+
+          {/* Pinned section - only show if there are pinned items */}
+          {(pinnedTasks && pinnedTasks.length > 0) ||
+          (pinnedRuns && pinnedRuns.length > 0) ? (
+            <div className="mt-2 flex flex-col gap-0.5">
+              <div className="pl-2 pr-3 py-1.5 text-xs font-medium text-neutral-600 dark:text-neutral-400 select-none">
+                Pinned
+              </div>
+              <div className="ml-2 pt-px space-y-px">
+                {pinnedTasks === undefined ? (
+                  <TaskTreeSkeleton count={2} />
+                ) : pinnedTasks && pinnedTasks.length > 0 ? (
+                  pinnedTasks.map((task) => (
+                    <TaskTree
+                      key={task._id}
+                      task={task}
+                      defaultExpanded={expandTaskIds?.includes(task._id) ?? false}
+                      teamSlugOrId={teamSlugOrId}
+                    />
+                  ))
+                ) : null}
+                {pinnedRuns === undefined ? (
+                  <TaskTreeSkeleton count={1} />
+                ) : pinnedRuns && pinnedRuns.length > 0 ? (
+                  pinnedRuns.map((run) => (
+                    <div
+                      key={run._id}
+                      className="pl-2 pr-3 py-1.5 text-xs text-neutral-600 dark:text-neutral-300 select-none truncate"
+                    >
+                      {/* TODO: Render pinned run */}
+                      Pinned Run {run._id}
+                    </div>
+                  ))
+                ) : null}
+              </div>
+            </div>
+          ) : null}
 
           <div className="mt-2 flex flex-col gap-0.5">
             <SidebarSectionLink

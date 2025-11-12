@@ -777,3 +777,57 @@ export const getByIdInternal = internalQuery({
     return await ctx.db.get(args.id);
   },
 });
+
+export const togglePin = authMutation({
+  args: { teamSlugOrId: v.string(), id: v.id("tasks") },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const task = await ctx.db.get(args.id);
+    if (task === null || task.teamId !== teamId || task.userId !== userId) {
+      throw new Error("Task not found or unauthorized");
+    }
+    await ctx.db.patch(args.id, {
+      isPinned: !task.isPinned,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const setPin = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    id: v.id("tasks"),
+    isPinned: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const task = await ctx.db.get(args.id);
+    if (task === null || task.teamId !== teamId || task.userId !== userId) {
+      throw new Error("Task not found or unauthorized");
+    }
+    await ctx.db.patch(args.id, {
+      isPinned: args.isPinned,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const getPinnedTasks = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const pinnedTasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_team_user_pinned", (idx) =>
+        idx.eq("teamId", teamId).eq("userId", userId).eq("isPinned", true),
+      )
+      .filter((q) => q.neq(q.field("isArchived"), true))
+      .collect();
+    return pinnedTasks.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  },
+});

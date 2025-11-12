@@ -189,6 +189,17 @@ export const TaskItem = memo(function TaskItem({
     [unarchive, task._id]
   );
 
+  const togglePin = useMutation(api.tasks.togglePin);
+
+  const handleTogglePin = useCallback(() => {
+    togglePin({
+      teamSlugOrId,
+      id: task._id,
+    }).catch((error) => {
+      console.error("Failed to toggle pin:", error);
+    });
+  }, [togglePin, teamSlugOrId, task._id]);
+
   return (
     <div className="relative group w-full">
       <ContextMenu.Root>
@@ -331,6 +342,13 @@ export const TaskItem = memo(function TaskItem({
         <ContextMenu.Portal>
           <ContextMenu.Positioner className="outline-none z-[var(--z-context-menu)]">
             <ContextMenu.Popup className="origin-[var(--transform-origin)] rounded-md bg-white dark:bg-neutral-800 py-1 text-neutral-900 dark:text-neutral-100 shadow-lg shadow-gray-200 outline-1 outline-neutral-200 transition-[opacity] data-[ending-style]:opacity-0 dark:shadow-none dark:-outline-offset-1 dark:outline-neutral-700">
+              <ContextMenu.Item
+                className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                onClick={handleTogglePin}
+              >
+                <Pin className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                <span>{task.isPinned ? "Unpin Task" : "Pin Task"}</span>
+              </ContextMenu.Item>
               <ContextMenu.Item
                 className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
                 onClick={handleCopyFromMenu}

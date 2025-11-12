@@ -95,6 +95,7 @@ const convexSchema = defineSchema({
     text: v.string(),
     isCompleted: v.boolean(),
     isArchived: v.optional(v.boolean()),
+    isPinned: v.optional(v.boolean()), // Whether this task is pinned
     isLocalWorkspace: v.optional(v.boolean()),
     isCloudWorkspace: v.optional(v.boolean()),
     description: v.optional(v.string()),
@@ -160,7 +161,8 @@ const convexSchema = defineSchema({
   })
     .index("by_created", ["createdAt"])
     .index("by_user", ["userId", "createdAt"])
-    .index("by_team_user", ["teamId", "userId"]),
+    .index("by_team_user", ["teamId", "userId"])
+    .index("by_team_user_pinned", ["teamId", "userId", "isPinned"]),
 
   taskRuns: defineTable({
     taskId: v.id("tasks"),
@@ -175,6 +177,7 @@ const convexSchema = defineSchema({
       v.literal("failed")
     ),
     isArchived: v.optional(v.boolean()), // Whether this run is hidden from default views
+    isPinned: v.optional(v.boolean()), // Whether this task run is pinned
     isLocalWorkspace: v.optional(v.boolean()),
     isCloudWorkspace: v.optional(v.boolean()),
     // Optional log retained for backward compatibility; no longer written to.
@@ -288,7 +291,8 @@ const convexSchema = defineSchema({
     .index("by_vscode_status", ["vscode.status"])
     .index("by_vscode_container_name", ["vscode.containerName"])
     .index("by_user", ["userId", "createdAt"])
-    .index("by_team_user", ["teamId", "userId"]),
+    .index("by_team_user", ["teamId", "userId"])
+    .index("by_team_user_pinned", ["teamId", "userId", "isPinned"]),
   taskRunScreenshotSets: defineTable({
     taskId: v.id("tasks"),
     runId: v.id("taskRuns"),

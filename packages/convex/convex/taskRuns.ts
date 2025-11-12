@@ -1545,3 +1545,65 @@ export const getRunningContainersByCleanupPriority = authQuery({
     };
   },
 });
+
+export const togglePin = authMutation({
+  args: { teamSlugOrId: v.string(), id: v.id("taskRuns") },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const taskRun = await ctx.db.get(args.id);
+    if (
+      taskRun === null ||
+      taskRun.teamId !== teamId ||
+      taskRun.userId !== userId
+    ) {
+      throw new Error("Task run not found or unauthorized");
+    }
+    await ctx.db.patch(args.id, {
+      isPinned: !taskRun.isPinned,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const setPin = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    id: v.id("taskRuns"),
+    isPinned: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const taskRun = await ctx.db.get(args.id);
+    if (
+      taskRun === null ||
+      taskRun.teamId !== teamId ||
+      taskRun.userId !== userId
+    ) {
+      throw new Error("Task run not found or unauthorized");
+    }
+    await ctx.db.patch(args.id, {
+      isPinned: args.isPinned,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const getPinnedRuns = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const pinnedRuns = await ctx.db
+      .query("taskRuns")
+      .withIndex("by_team_user_pinned", (idx) =>
+        idx.eq("teamId", teamId).eq("userId", userId).eq("isPinned", true),
+      )
+      .filter((q) => q.neq(q.field("isArchived"), true))
+      .collect();
+    return pinnedRuns.sort((a, b) => b.updatedAt - a.updatedAt);
+  },
+});
