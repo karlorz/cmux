@@ -3,8 +3,30 @@ import { createRequire } from "node:module";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
+export interface ProxyOptions {
+  listenPort: number;
+  enableHttp2?: boolean;
+  enableWebsockets?: boolean;
+  maxConnections?: number;
+  idleTimeoutMs?: number;
+  keepaliveMs?: number;
+  headerRoutingEnabled?: boolean;
+  workspaceIsolation?: boolean;
+}
+
+export interface ProxyStats {
+  totalRequests: bigint;
+  activeConnections: bigint;
+  websocketConnections: bigint;
+  http2Connections: bigint;
+  bytesTransferred: bigint;
+}
+
 export interface NativeCoreModule {
   getTime?: () => Promise<string>;
+  startProxyServer?: (options: ProxyOptions) => Promise<void>;
+  stopProxyServer?: () => Promise<void>;
+  getProxyStats?: () => Promise<ProxyStats>;
 }
 
 function tryLoadNative(): NativeCoreModule | null {

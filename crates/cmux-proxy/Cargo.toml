@@ -6,14 +6,27 @@ edition = "2021"
 [dependencies]
 # Async runtime
 tokio = { version = "1", features = ["full"] }
-# HTTP server/client
-hyper = { version = "0.14", features = ["full"] }
-http = "0.2"
+# HTTP server/client with HTTP/2 support
+hyper = { version = "1.5", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
+http = "1.1"
+http-body-util = "0.1"
 bytes = "1"
+# TLS support for HTTP/2
+rustls = { version = "0.23", features = ["std"] }
+tokio-rustls = "0.26"
+hyper-rustls = { version = "0.27", features = ["http2"] }
+# WebSocket support
+tokio-tungstenite = "0.24"
+tungstenite = "0.24"
+# CLI and logging
 clap = { version = "4", features = ["derive", "env"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 futures-util = "0.3"
+# Utilities
+tower = { version = "0.5", features = ["full"] }
+tower-http = { version = "0.6", features = ["full"] }
 
 [profile.release]
 opt-level = 3
