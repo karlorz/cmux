@@ -3,8 +3,8 @@ import { getTaskRunPreviewPersistKey } from "@/lib/persistent-webview-keys";
 import { api } from "@cmux/convex/api";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery as useConvexQuery } from "convex/react";
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useQuery as useConvexQuery, useMutation } from "convex/react";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import z from "zod";
 import { TaskRunTerminalSession } from "@/components/task-run-terminal-session";
 import { toMorphXtermBaseUrl } from "@/lib/toProxyWorkspaceUrl";
@@ -22,7 +22,7 @@ import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 const paramsSchema = z.object({
   taskId: typedZid("tasks"),
   runId: typedZid("taskRuns"),
-  port: z.string(),
+  previewId: z.string(),
 });
 
 const CLOUD_TMUX_BOOTSTRAP_SCRIPT = `set -euo pipefail
@@ -48,7 +48,7 @@ tmux select-window -t cmux:0 >/dev/null 2>&1 || true
 exec tmux attach -t cmux`;
 
 export const Route = createFileRoute(
-  "/_layout/$teamSlugOrId/task/$taskId/run/$runId/preview/$port"
+  "/_layout/$teamSlugOrId/task/$taskId/run/$runId/preview/$previewId"
 )({
   component: PreviewPage,
   params: {
@@ -57,7 +57,7 @@ export const Route = createFileRoute(
       return {
         taskId: params.taskId,
         runId: params.runId,
-        port: params.port,
+        previewId: params.previewId,
       };
     },
   },
@@ -135,24 +135,95 @@ export const Route = createFileRoute(
 });
 
 function PreviewPage() {
-  const { taskId, teamSlugOrId, runId, port } = Route.useParams();
+  const { taskId, teamSlugOrId, runId, previewId } = Route.useParams();
 
   const taskRuns = useConvexQuery(api.taskRuns.getByTask, {
     teamSlugOrId,
     taskId,
   });
+  
+  const updatePreviewUrl = useMutation(api.taskRuns.updateCustomPreviewUrl).withOptimisticUpdate(
+    (localStore, args) => {
+      // Update all queries that might have this task run
+      const taskRunsQuery = localStore.getQuery(api.taskRuns.getByTask, {
+        teamSlugOrId: args.teamSlugOrId,
+        taskId,
+      });
+      
+      if (taskRunsQuery) {
+        localStore.setQuery(
+          api.taskRuns.getByTask,
+          { teamSlugOrId: args.teamSlugOrId, taskId },
+          taskRunsQuery.map((r) =>
+            r._id === args.runId
+              ? {
+                  ...r,
+                  customPreviews: (r.customPreviews || []).map((preview, i) =>
+                    i === args.index ? { ...preview, url: args.url } : preview
+                  ),
+                }
+              : r
+          )
+        );
+      }
+    }
+  );
 
   // Get the specific run
   const selectedRun = useMemo(() => {
     return taskRuns?.find((run) => run._id === runId);
   }, [runId, taskRuns]);
+  
+  // Check if this is a custom preview (not a port)
+  const isCustomPreview = useMemo(() => {
+    const index = Number.parseInt(previewId, 10);
+    return !Number.isNaN(index) && selectedRun?.customPreviews && index < selectedRun.customPreviews.length;
+  }, [previewId, selectedRun]);
+  
+  const handleUserNavigate = useCallback((url: string) => {
+    const index = Number.parseInt(previewId, 10);
+    if (!Number.isNaN(index) && isCustomPreview) {
+      void updatePreviewUrl({
+        teamSlugOrId,
+        runId,
+        index,
+        url,
+      }).catch((error) => {
+        console.error("Failed to update preview URL", error);
+      });
+    }
+  }, [previewId, isCustomPreview, updatePreviewUrl, teamSlugOrId, runId]);
 
-  // Find the service URL for the requested port
+  // Find the service URL - check if previewId is a port or custom preview
   const { previewUrl, displayUrl } = useMemo(() => {
-    if (!selectedRun?.networking) {
+    if (!selectedRun) {
       return { previewUrl: null, displayUrl: null };
     }
-    const portNum = Number.parseInt(port, 10);
+
+    // Try parsing as index for custom preview
+    const index = Number.parseInt(previewId, 10);
+    if (!Number.isNaN(index) && selectedRun.customPreviews) {
+      const customPreview = selectedRun.customPreviews[index];
+      if (customPreview) {
+        return {
+          previewUrl: customPreview.url,
+          displayUrl: customPreview.url,
+        };
+      }
+      // Index exists but preview not yet synced (optimistic)
+      if (index === selectedRun.customPreviews.length) {
+        return {
+          previewUrl: "about:blank",
+          displayUrl: "about:blank",
+        };
+      }
+    }
+
+    // Fall back to port-based preview
+    if (!selectedRun.networking) {
+      return { previewUrl: null, displayUrl: null };
+    }
+    const portNum = Number.parseInt(previewId, 10);
     if (Number.isNaN(portNum)) {
       return { previewUrl: null, displayUrl: null };
     }
@@ -169,11 +240,11 @@ function PreviewPage() {
       previewUrl: service.url,
       displayUrl: isElectron ? electronDisplayUrl : service.url,
     };
-  }, [selectedRun, port]);
+  }, [selectedRun, previewId]);
 
   const persistKey = useMemo(() => {
-    return getTaskRunPreviewPersistKey(runId, port);
-  }, [runId, port]);
+    return getTaskRunPreviewPersistKey(runId, previewId);
+  }, [runId, previewId]);
 
   // Terminal setup
   const vscodeInfo = selectedRun?.vscode;
@@ -256,6 +327,7 @@ function PreviewPage() {
             borderRadius={paneBorderRadius}
             terminalVisible={isTerminalVisible}
             onToggleTerminal={toggleTerminal}
+            onUserNavigate={handleUserNavigate}
             renderBelowAddressBar={() =>
               isTerminalVisible &&
               baseUrl &&
@@ -287,7 +359,7 @@ function PreviewPage() {
           <div className="text-center">
             <p className="mb-2 text-sm text-neutral-500 dark:text-neutral-400">
               {selectedRun
-                ? `Port ${port} is not available for this run`
+                ? `Preview ${previewId} is not available for this run`
                 : "Loading..."}
             </p>
             {selectedRun?.networking && selectedRun.networking.length > 0 && (
