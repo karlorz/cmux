@@ -11,6 +11,7 @@ import { stackClientApp } from "../../lib/stack";
 import { authJsonQueryOptions } from "../convex/authJsonQueryOptions";
 import { setGlobalSocket, socketBoot } from "./socket-boot";
 import { WebSocketContext } from "./socket-context";
+import { normalizeAuthJson } from "./normalizeAuthJson";
 import { env } from "@/client-env";
 
 export interface SocketContextType {
@@ -29,7 +30,11 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({
   url = env.NEXT_PUBLIC_SERVER_ORIGIN || "http://localhost:9776",
 }) => {
   const authJsonQuery = useQuery(authJsonQueryOptions());
-  const authToken = authJsonQuery.data?.accessToken;
+  const normalizedAuth = useMemo(
+    () => normalizeAuthJson(authJsonQuery.data),
+    [authJsonQuery.data]
+  );
+  const authToken = normalizedAuth.authToken;
   const location = useLocation();
   const [socket, setSocket] = React.useState<
     SocketContextType["socket"] | null
@@ -37,6 +42,8 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({
   const [isConnected, setIsConnected] = React.useState(false);
   const [availableEditors, setAvailableEditors] =
     React.useState<SocketContextType["availableEditors"]>(null);
+  const lastAuthSignatureRef = React.useRef<string | null>(null);
+  const lastSocketRef = React.useRef<MainServerSocket | null>(null);
 
   // Derive the current teamSlugOrId from the first URL segment, ignoring the team-picker route
   const teamSlugOrId = React.useMemo(() => {
@@ -57,20 +64,19 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({
       // Fetch full auth JSON for server to forward as x-stack-auth
       const user = await cachedGetUser(stackClientApp);
       const authJson = user ? await user.getAuthJson() : undefined;
-
-      const query: Record<string, string> = { auth: authToken };
-      if (teamSlugOrId) {
-        query.team = teamSlugOrId;
-      }
-      if (authJson) {
-        query.auth_json = JSON.stringify(authJson);
+      const normalizedForConnect = normalizeAuthJson(authJson ?? null);
+      const effectiveAuthToken =
+        normalizedForConnect.authToken ?? authToken;
+      if (!effectiveAuthToken) {
+        console.warn("[Socket] Unable to determine auth token for connect");
+        return;
       }
 
       const newSocket = connectToMainServer({
         url,
-        authToken,
+        authToken: effectiveAuthToken,
         teamSlugOrId,
-        authJson,
+        authJson: normalizedForConnect.authJson,
       });
 
       createdSocket = newSocket;
@@ -114,6 +120,38 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({
       socketBoot.reset();
     };
   }, [url, authToken, teamSlugOrId]);
+
+  useEffect(() => {
+    if (lastSocketRef.current !== socket) {
+      lastSocketRef.current = socket;
+      lastAuthSignatureRef.current = null;
+    }
+  }, [socket]);
+
+  useEffect(() => {
+    if (
+      !socket ||
+      !normalizedAuth.authToken ||
+      !normalizedAuth.serializedAuthJson
+    ) {
+      return;
+    }
+
+    const signature = `${normalizedAuth.authToken}:${normalizedAuth.serializedAuthJson}`;
+    if (lastAuthSignatureRef.current === signature) {
+      return;
+    }
+
+    lastAuthSignatureRef.current = signature;
+    socket.emit("auth-update-token", {
+      authToken: normalizedAuth.authToken,
+      authJson: normalizedAuth.serializedAuthJson,
+    });
+  }, [
+    socket,
+    normalizedAuth.authToken,
+    normalizedAuth.serializedAuthJson,
+  ]);
 
   const contextValue: SocketContextType = useMemo(
     () => ({

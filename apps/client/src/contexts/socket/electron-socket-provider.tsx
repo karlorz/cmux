@@ -9,12 +9,17 @@ import { authJsonQueryOptions } from "../convex/authJsonQueryOptions";
 import { setGlobalSocket, socketBoot } from "./socket-boot";
 import { ElectronSocketContext } from "./socket-context";
 import type { SocketContextType } from "./types";
+import { normalizeAuthJson } from "./normalizeAuthJson";
 
 export const ElectronSocketProvider: React.FC<React.PropsWithChildren> = ({
   children,
 }) => {
   const authJsonQuery = useQuery(authJsonQueryOptions());
-  const authToken = authJsonQuery.data?.accessToken;
+  const normalizedAuth = useMemo(
+    () => normalizeAuthJson(authJsonQuery.data),
+    [authJsonQuery.data]
+  );
+  const authToken = normalizedAuth.authToken;
   const location = useLocation();
   const [socket, setSocket] = React.useState<
     SocketContextType["socket"] | null
@@ -22,6 +27,8 @@ export const ElectronSocketProvider: React.FC<React.PropsWithChildren> = ({
   const [isConnected, setIsConnected] = React.useState(false);
   const [availableEditors, setAvailableEditors] =
     React.useState<SocketContextType["availableEditors"]>(null);
+  const lastAuthSignatureRef = React.useRef<string | null>(null);
+  const lastSocketRef = React.useRef<MainServerSocket | null>(null);
   const teamSlugOrId = React.useMemo(() => {
     const pathname = location.pathname || "";
     const seg = pathname.split("/").filter(Boolean)[0];
@@ -42,12 +49,22 @@ export const ElectronSocketProvider: React.FC<React.PropsWithChildren> = ({
       const user = await cachedGetUser(stackClientApp);
       const authJson = user ? await user.getAuthJson() : undefined;
 
-      const query: Record<string, string> = { auth: authToken };
+      const normalizedForConnect = normalizeAuthJson(authJson ?? null);
+      const effectiveAuthToken =
+        normalizedForConnect.authToken ?? authToken;
+      if (!effectiveAuthToken) {
+        console.warn(
+          "[ElectronSocket] Unable to determine auth token for connect"
+        );
+        return;
+      }
+
+      const query: Record<string, string> = { auth: effectiveAuthToken };
       if (teamSlugOrId) {
         query.team = teamSlugOrId;
       }
-      if (authJson) {
-        query.auth_json = JSON.stringify(authJson);
+      if (normalizedForConnect.serializedAuthJson) {
+        query.auth_json = normalizedForConnect.serializedAuthJson;
       }
 
       if (disposed) return;
@@ -100,6 +117,38 @@ export const ElectronSocketProvider: React.FC<React.PropsWithChildren> = ({
       socketBoot.reset();
     };
   }, [authToken, teamSlugOrId]);
+
+  useEffect(() => {
+    if (lastSocketRef.current !== socket) {
+      lastSocketRef.current = socket;
+      lastAuthSignatureRef.current = null;
+    }
+  }, [socket]);
+
+  useEffect(() => {
+    if (
+      !socket ||
+      !normalizedAuth.authToken ||
+      !normalizedAuth.serializedAuthJson
+    ) {
+      return;
+    }
+
+    const signature = `${normalizedAuth.authToken}:${normalizedAuth.serializedAuthJson}`;
+    if (lastAuthSignatureRef.current === signature) {
+      return;
+    }
+
+    lastAuthSignatureRef.current = signature;
+    socket.emit("auth-update-token", {
+      authToken: normalizedAuth.authToken,
+      authJson: normalizedAuth.serializedAuthJson,
+    });
+  }, [
+    socket,
+    normalizedAuth.authToken,
+    normalizedAuth.serializedAuthJson,
+  ]);
 
   const contextValue = useMemo<SocketContextType>(
     () => ({

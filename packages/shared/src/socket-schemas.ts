@@ -97,6 +97,13 @@ export const CreateCloudWorkspaceResponseSchema = z.object({
   error: z.string().optional(),
 });
 
+export const AuthUpdateTokenSchema = z.object({
+  authToken: z.string().min(1),
+  authJson: z
+    .union([z.string(), z.record(z.string(), z.unknown())])
+    .optional(),
+});
+
 // Server to Client Events
 export const TerminalCreatedSchema = z.object({
   terminalId: z.string(),
@@ -485,9 +492,11 @@ export type ProviderStatusResponse = z.infer<
   typeof ProviderStatusResponseSchema
 >;
 export type DefaultRepo = z.infer<typeof DefaultRepoSchema>;
+export type AuthUpdateToken = z.infer<typeof AuthUpdateTokenSchema>;
 
 // Socket.io event map types
 export interface ClientToServerEvents {
+  "auth-update-token": (data: AuthUpdateToken) => void;
   // Terminal operations
   "start-task": (
     data: StartTask,

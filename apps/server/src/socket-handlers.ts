@@ -3,6 +3,7 @@ import type { Id } from "@cmux/convex/dataModel";
 import type { WorkspaceConfigResponse } from "@cmux/www-openapi-client";
 import {
   ArchiveTaskSchema,
+  AuthUpdateTokenSchema,
   GitFullDiffRequestSchema,
   GitHubCreateDraftPrSchema,
   GitHubFetchBranchesSchema,
@@ -217,8 +218,31 @@ export function setupSocketHandlers(
       return;
     }
 
+    let currentAuthToken = token;
+    let currentAuthHeaderJson = tokenJson;
+
     socket.use((_, next) => {
-      runWithAuth(token, tokenJson, () => next());
+      runWithAuth(currentAuthToken, currentAuthHeaderJson, () => next());
+    });
+    socket.on("auth-update-token", (rawData) => {
+      try {
+        const parsed = AuthUpdateTokenSchema.parse(rawData ?? {});
+        currentAuthToken = parsed.authToken;
+        if (parsed.authJson !== undefined) {
+          currentAuthHeaderJson =
+            typeof parsed.authJson === "string"
+              ? parsed.authJson
+              : JSON.stringify(parsed.authJson);
+        }
+        serverLogger.debug("Updated auth token for socket", {
+          socketId: socket.id,
+        });
+      } catch (error) {
+        serverLogger.warn("Failed to update auth token from socket", {
+          socketId: socket.id,
+          error,
+        });
+      }
     });
     serverLogger.info("Client connected:", socket.id);
 

@@ -2,10 +2,16 @@ import { cachedGetUser } from "@/lib/cachedGetUser";
 import { stackClientApp } from "@/lib/stack";
 import { queryOptions } from "@tanstack/react-query";
 
-export type AuthJson = { accessToken: string | null } | null;
+export type AuthJsonPayload = {
+  accessToken: string | null;
+  refreshedAccessToken?: string | null;
+  [key: string]: unknown;
+};
+
+export type AuthJson = AuthJsonPayload | null;
 
 export interface StackUserLike {
-  getAuthJson: () => Promise<{ accessToken: string | null }>;
+  getAuthJson: () => Promise<AuthJsonPayload>;
 }
 
 // Refresh every 9 minutes to beat the ~10 minute Stack access token expiry window
