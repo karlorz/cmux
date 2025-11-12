@@ -16,7 +16,10 @@ export const env = createEnv({
     NEXT_PUBLIC_WWW_ORIGIN: z
       .string()
       .min(1)
-      .default(() => {
+      .refine((s) => {
+        if (s) {
+          return s;
+        }
         const vercelUrl = import.meta.env.VITE_VERCEL_URL;
         if (!vercelUrl) {
           return undefined;
