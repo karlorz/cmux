@@ -13,7 +13,18 @@ export const env = createEnv({
     NEXT_PUBLIC_STACK_PROJECT_ID: z.string().min(1),
     NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY: z.string().min(1),
     NEXT_PUBLIC_GITHUB_APP_SLUG: z.string().optional(),
-    NEXT_PUBLIC_WWW_ORIGIN: z.string().min(1),
+    NEXT_PUBLIC_WWW_ORIGIN: z
+      .string()
+      .min(1)
+      .default(() => {
+        const vercelUrl = import.meta.env.VITE_VERCEL_URL;
+        if (!vercelUrl) {
+          return undefined;
+        }
+        return vercelUrl.startsWith("http")
+          ? vercelUrl
+          : `https://${vercelUrl}`;
+      }),
     NEXT_PUBLIC_SERVER_ORIGIN: z.string().optional(),
   },
 
@@ -23,14 +34,6 @@ export const env = createEnv({
    */
   runtimeEnv: {
     ...import.meta.env,
-    // Default NEXT_PUBLIC_WWW_ORIGIN to VITE_VERCEL_URL if not set
-    NEXT_PUBLIC_WWW_ORIGIN:
-      import.meta.env.NEXT_PUBLIC_WWW_ORIGIN ||
-      (import.meta.env.VITE_VERCEL_URL
-        ? import.meta.env.VITE_VERCEL_URL.startsWith("http")
-          ? import.meta.env.VITE_VERCEL_URL
-          : `https://${import.meta.env.VITE_VERCEL_URL}`
-        : undefined),
   },
 
   /**
