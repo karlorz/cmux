@@ -73,7 +73,7 @@ print_access_table() {
   local base_url="http://localhost:${OPENVSCODE_PORT}"
   local workspace_url="${base_url}/?folder=/root/workspace"
   local logs_url="${base_url}/?folder=/var/log/cmux"
-  local novnc_url="http://localhost:${NOVNC_PORT}/vnc.html?autoconnect=1&resize=scale"
+  local novnc_url="http://localhost:${NOVNC_PORT}/vnc.html?autoconnect=1&resize=scale&reconnect=1&reconnect_delay=1000"
   local column1_width=32
   local column2_width=70
   local separator1 separator2
