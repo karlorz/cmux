@@ -1,6 +1,5 @@
 import { api } from "@cmux/convex/api";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
-import { convexQuery } from "@convex-dev/react-query";
 import { useClipboard } from "@mantine/hooks";
 import {
   createFileRoute,
