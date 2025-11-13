@@ -774,6 +774,10 @@ export function registerWebContentsViewHandlers({
               initialUrl: proxySourceUrl,
               persistKey,
               logger,
+              loopbackBypassUrls:
+                rendererBaseUrl && rendererBaseUrl.length > 0
+                  ? [rendererBaseUrl]
+                  : undefined,
             });
           } catch (error) {
             logger.warn("Failed to enable preview proxy", {

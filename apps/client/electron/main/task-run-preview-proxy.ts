@@ -38,6 +38,7 @@ interface ProxyContext {
   session: Session;
   webContentsId: number;
   persistKey?: string;
+  loopbackBypassTargets: Set<string>;
 }
 
 interface ProxyTarget {
@@ -51,6 +52,7 @@ interface ConfigureOptions {
   initialUrl: string;
   persistKey?: string;
   logger: Logger;
+  loopbackBypassUrls?: string[];
 }
 
 let proxyServer: ProxyServer | null = null;
@@ -129,7 +131,8 @@ export function releasePreviewProxy(webContentsId: number): void {
 export async function configurePreviewProxyForView(
   options: ConfigureOptions
 ): Promise<() => void> {
-  const { webContents, initialUrl, persistKey, logger } = options;
+  const { webContents, initialUrl, persistKey, logger, loopbackBypassUrls } =
+    options;
   const route = deriveRoute(initialUrl);
   if (!route) {
     logger.warn("Preview proxy skipped; unable to parse cmux host", {
@@ -150,6 +153,7 @@ export async function configurePreviewProxyForView(
     session: webContents.session,
     webContentsId: webContents.id,
     persistKey,
+    loopbackBypassTargets: buildLoopbackBypassTargets(loopbackBypassUrls),
   };
 
   contextsByUsername.set(username, context);
@@ -447,7 +451,9 @@ function rewriteTarget(url: URL, context: ProxyContext): ProxyTarget {
   const rewritten = new URL(url.toString());
   let secure = rewritten.protocol === "https:";
 
-  if (context.route && isLoopbackHostname(rewritten.hostname)) {
+  const bypassLoopbackRewrite = shouldBypassLoopbackRewrite(url, context);
+
+  if (context.route && isLoopbackHostname(rewritten.hostname) && !bypassLoopbackRewrite) {
     const requestedPort = determineRequestedPort(url);
     rewritten.protocol = "https:";
     rewritten.hostname = buildCmuxHost(context.route, requestedPort);
@@ -485,6 +491,46 @@ function determineRequestedPort(url: URL): number {
 function buildCmuxHost(route: ProxyRoute, port: number): string {
   const safePort = Number.isFinite(port) && port > 0 ? Math.floor(port) : 80;
   return `cmux-${route.morphId}-${route.scope}-${safePort}.${route.domainSuffix}`;
+}
+
+function buildLoopbackBypassTargets(urls?: string[]): Set<string> {
+  const targets = new Set<string>();
+  if (!Array.isArray(urls) || urls.length === 0) {
+    return targets;
+  }
+
+  for (const candidate of urls) {
+    if (typeof candidate !== "string" || candidate.trim().length === 0) {
+      continue;
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(candidate);
+    } catch {
+      continue;
+    }
+    if (!isLoopbackHostname(parsed.hostname)) {
+      continue;
+    }
+    const port = determineRequestedPort(parsed);
+    targets.add(`${parsed.hostname.toLowerCase()}:${port}`);
+  }
+
+  return targets;
+}
+
+function shouldBypassLoopbackRewrite(
+  url: URL,
+  context: ProxyContext
+): boolean {
+  if (context.loopbackBypassTargets.size === 0) {
+    return false;
+  }
+  if (!isLoopbackHostname(url.hostname)) {
+    return false;
+  }
+  const key = `${url.hostname.toLowerCase()}:${determineRequestedPort(url)}`;
+  return context.loopbackBypassTargets.has(key);
 }
 
 function forwardHttpRequest(
