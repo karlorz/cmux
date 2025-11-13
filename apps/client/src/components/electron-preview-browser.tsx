@@ -34,6 +34,7 @@ interface ElectronPreviewBrowserProps {
   terminalVisible?: boolean;
   onToggleTerminal?: () => void;
   renderBelowAddressBar?: () => React.ReactNode;
+  onUserNavigate?: (url: string) => void;
 }
 
 interface NativeViewHandle {
@@ -92,6 +93,7 @@ export function ElectronPreviewBrowser({
   terminalVisible = false,
   onToggleTerminal,
   renderBelowAddressBar,
+  onUserNavigate,
 }: ElectronPreviewBrowserProps) {
   const resolvedSrc = isElectron ? src : requestUrl ?? src;
   const [viewHandle, setViewHandle] = useState<NativeViewHandle | null>(null);
@@ -257,12 +259,16 @@ export function ElectronPreviewBrowser({
     setIsEditing(false);
     isNavigatingRef.current = true;
     inputRef.current?.blur();
+    
+    // Notify parent of user navigation
+    onUserNavigate?.(target);
+    
     void window.cmux?.webContentsView
       ?.loadURL(viewHandle.id, target)
       .catch((error: unknown) => {
         console.warn("Failed to navigate WebContentsView", error);
       });
-  }, [addressValue, viewHandle]);
+  }, [addressValue, viewHandle, onUserNavigate]);
 
   const handleSubmit = useCallback(
     (event: React.FormEvent<HTMLFormElement>) => {
