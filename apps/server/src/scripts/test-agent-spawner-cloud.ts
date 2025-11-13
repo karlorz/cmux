@@ -3,10 +3,10 @@ import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { spawnAgent } from "src/agentSpawner";
 import { getConvex } from "src/utils/convexClient";
 
-const agentConfig = AGENT_CONFIGS.find((agent) => agent.name === "codex/gpt-5");
+const agentConfig = AGENT_CONFIGS.find((agent) => agent.name === "codex/gpt-5.1");
 
 if (!agentConfig) {
-  throw new Error("Agent config not found");
+  throw new Error("Agent config not found for codex/gpt-5.1");
 }
 
 console.log("Running with agent config:", agentConfig);

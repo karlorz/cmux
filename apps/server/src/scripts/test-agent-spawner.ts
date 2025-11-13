@@ -17,10 +17,10 @@ async function main() {
   }
 
   const agentConfig = AGENT_CONFIGS.find(
-    (agent) => agent.name === "codex/gpt-5"
+    (agent) => agent.name === "codex/gpt-5.1"
   );
   if (!agentConfig) {
-    console.error("Could not find codex/gpt-5 agent config");
+    console.error("Could not find codex/gpt-5.1 agent config");
     process.exit(1);
   }
 
