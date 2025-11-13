@@ -94,78 +94,6 @@ async function stopMorphInstance(
   });
 }
 
-async function resolveRepositoryDirectory(
-  morphClient: ReturnType<typeof createMorphCloudClient>,
-  instanceId: string,
-  searchRoot: string,
-  preferredRepoDir?: string,
-): Promise<string> {
-  const repoDetectionScript = `
-set -euo pipefail
-ROOT="${searchRoot}"
-PREFERRED="${preferredRepoDir ?? ""}"
-
-if [ ! -d "$ROOT" ]; then
-  exit 2
-fi
-
-if [ -n "$PREFERRED" ] && [ -d "$PREFERRED" ]; then
-  if git -C "$PREFERRED" rev-parse --show-toplevel >/dev/null 2>&1; then
-    git -C "$PREFERRED" rev-parse --show-toplevel
-    exit 0
-  fi
-fi
-
-if git -C "$ROOT" rev-parse --show-toplevel >/dev/null 2>&1; then
-  git -C "$ROOT" rev-parse --show-toplevel
-  exit 0
-fi
-
-FIRST_GIT=$(find "$ROOT" -mindepth 1 -maxdepth 4 -type d -name .git 2>/dev/null | sort | head -n 1 || true)
-
-if [ -n "$FIRST_GIT" ]; then
-  REPO_DIR="$(dirname "$FIRST_GIT")"
-  if git -C "$REPO_DIR" rev-parse --show-toplevel >/dev/null 2>&1; then
-    git -C "$REPO_DIR" rev-parse --show-toplevel
-    exit 0
-  fi
-fi
-
-exit 3
-`.trim();
-
-  const resolveResponse = await execInstanceInstanceIdExecPost({
-    client: morphClient,
-    path: { instance_id: instanceId },
-    body: {
-      command: ["bash", "-lc", repoDetectionScript],
-    },
-  });
-
-  if (resolveResponse.error) {
-    throw new Error("Failed to run repository detection script");
-  }
-
-  const resolveResult = resolveResponse.data;
-  if (!resolveResult || resolveResult.exit_code !== 0) {
-    throw new Error(
-      `Unable to locate git repository under ${searchRoot} (exit ${resolveResult?.exit_code ?? "unknown"})`,
-    );
-  }
-
-  const repoDir = resolveResult.stdout
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .pop();
-
-  if (!repoDir) {
-    throw new Error(`Repository detection script returned no path for ${searchRoot}`);
-  }
-
-  return repoDir;
-}
-
 async function triggerWorkerScreenshotCollection(
   workerUrl: string,
 ): Promise<void> {
@@ -346,37 +274,8 @@ export async function runPreviewJob(
       stateReason: "Fetching latest changes",
     });
 
-    console.log("[preview-jobs] Validating pre-cloned repository root", {
-      previewRunId,
-      repoFullName: run.repoFullName,
-      repoSearchRoot,
-    });
-
-    // Verify the repo search root exists
-    const verifyDirResponse = await execInstanceInstanceIdExecPost({
-      client: morphClient,
-      path: { instance_id: instance.id },
-      body: {
-        command: ["test", "-d", repoSearchRoot],
-      },
-    });
-
-    if (verifyDirResponse.data?.exit_code !== 0) {
-      throw new Error(
-        `Repository directory ${repoSearchRoot} not found in snapshot. Expected pre-cloned repository at /root/workspace.`
-      );
-    }
-
-    const [, repoName] = run.repoFullName.split("/");
-    const preferredRepoDir =
-      repoName && repoName.length > 0 ? `${repoSearchRoot}/${repoName}` : undefined;
-
-    const repoDir = await resolveRepositoryDirectory(
-      morphClient,
-      instance.id,
-      repoSearchRoot,
-      preferredRepoDir,
-    );
+    // The repository is always at /root/workspace directly
+    const repoDir = repoSearchRoot;
 
     console.log("[preview-jobs] Using pre-cloned repository", {
       previewRunId,
@@ -384,9 +283,34 @@ export async function runPreviewJob(
       repoDir,
     });
 
+    console.log("[preview-jobs] Starting GitHub authentication setup", {
+      previewRunId,
+      hasInstallationId: Boolean(run.repoInstallationId),
+    });
+
     // Get GitHub App installation token for fetching from private repos
     if (run.repoInstallationId) {
-      const accessToken = await fetchInstallationAccessToken(run.repoInstallationId);
+      console.log("[preview-jobs] Fetching installation access token", {
+        previewRunId,
+        installationId: run.repoInstallationId,
+      });
+
+      let accessToken: string | null = null;
+      try {
+        accessToken = await fetchInstallationAccessToken(run.repoInstallationId);
+      } catch (error) {
+        console.error("[preview-jobs] Failed to fetch installation token", {
+          previewRunId,
+          installationId: run.repoInstallationId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      console.log("[preview-jobs] Installation token fetch result", {
+        previewRunId,
+        hasToken: Boolean(accessToken),
+      });
+
       if (accessToken) {
         // Configure GitHub authentication using gh CLI (same approach as cloud workspaces)
         const ghAuthResponse = await execInstanceInstanceIdExecPost({
@@ -419,7 +343,16 @@ export async function runPreviewJob(
           installationId: run.repoInstallationId,
         });
       }
+    } else {
+      console.log("[preview-jobs] No installation ID, skipping GitHub authentication", {
+        previewRunId,
+      });
     }
+
+    console.log("[preview-jobs] Starting git fetch from origin", {
+      previewRunId,
+      repoDir,
+    });
 
     // Fetch the latest changes from origin (fetch all refs)
     const fetchResponse = await execInstanceInstanceIdExecPost({
@@ -445,6 +378,12 @@ export async function runPreviewJob(
     console.log("[preview-jobs] Fetched latest changes from origin", {
       previewRunId,
       headSha: run.headSha,
+    });
+
+    console.log("[preview-jobs] Starting git checkout", {
+      previewRunId,
+      headSha: run.headSha,
+      repoDir,
     });
 
     // Step 3: Checkout the PR commit
