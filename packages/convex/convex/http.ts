@@ -6,7 +6,11 @@ import {
   crownWorkerFinalize,
   crownWorkerComplete,
 } from "./crown_http";
-import { createScreenshotUploadUrl, uploadScreenshot } from "./screenshots_http";
+import {
+  createScreenshotUploadUrl,
+  getRunScreenshots,
+  uploadScreenshot,
+} from "./screenshots_http";
 import {
   codeReviewFileCallback,
   codeReviewJobCallback,
@@ -70,6 +74,12 @@ http.route({
   path: "/api/screenshots/upload-url",
   method: "POST",
   handler: createScreenshotUploadUrl,
+});
+
+http.route({
+  path: "/api/screenshots/run-summary",
+  method: "POST",
+  handler: getRunScreenshots,
 });
 
 http.route({

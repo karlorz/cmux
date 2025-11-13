@@ -1,5 +1,7 @@
+import type { RunScreenshotSet, RunScreenshotsResponse } from "@cmux/shared";
 import { z } from "zod";
 import { log } from "../logger";
+import { convexRequest } from "./convex";
 import { execAsync, WORKSPACE_ROOT } from "./utils";
 import type {
   CandidateData,
@@ -7,6 +9,107 @@ import type {
   PullRequestMetadata,
   WorkerRunContext,
 } from "./types";
+
+const MAX_PR_SCREENSHOTS = 4;
+const COMPLETED_STATUS_FILTER = ["completed"] as const;
+
+type PrScreenshot = {
+  url: string;
+  fileName?: string | null;
+  commitSha?: string | null;
+  capturedAt?: number;
+};
+
+function selectScreenshotsForPr(
+  screenshotSets: RunScreenshotSet[]
+): PrScreenshot[] {
+  const sortedSets = [...screenshotSets].sort(
+    (a, b) => b.capturedAt - a.capturedAt
+  );
+
+  const selected: PrScreenshot[] = [];
+  for (const set of sortedSets) {
+    if (set.status !== "completed") {
+      continue;
+    }
+    for (const image of set.images) {
+      if (!image.url) continue;
+      selected.push({
+        url: image.url,
+        fileName: image.fileName ?? null,
+        commitSha: image.commitSha ?? set.commitSha ?? null,
+        capturedAt: set.capturedAt,
+      });
+      if (selected.length >= MAX_PR_SCREENSHOTS) {
+        return selected;
+      }
+    }
+  }
+
+  return selected;
+}
+
+function buildScreenshotSection(
+  agentName: string,
+  screenshots: PrScreenshot[]
+): string {
+  const plural = screenshots.length === 1 ? "screenshot" : "screenshots";
+  const entries = screenshots
+    .map((shot, index) => {
+      const captionParts: string[] = [];
+      if (shot.fileName) {
+        captionParts.push(shot.fileName);
+      }
+      if (shot.commitSha) {
+        captionParts.push(`commit ${shot.commitSha.slice(0, 7)}`);
+      }
+      if (shot.capturedAt) {
+        captionParts.push(new Date(shot.capturedAt).toISOString());
+      }
+      const caption =
+        captionParts.length > 0
+          ? `\n<sub>${captionParts.join(" • ")}</sub>`
+          : "";
+      return `**Screenshot ${index + 1}**\n\n![Screenshot ${index + 1}](${shot.url})${caption}`;
+    })
+    .join("\n\n");
+
+  return `### Screenshots
+Captured by **${agentName}** using cmux.
+
+<details>
+<summary>View ${screenshots.length} ${plural}</summary>
+
+${entries}
+
+</details>`;
+}
+
+async function fetchScreenshotsForRun(options: {
+  token: string;
+  taskId: string;
+  runId: string;
+  convexUrl?: string;
+}): Promise<PrScreenshot[]> {
+  const { token, taskId, runId, convexUrl } = options;
+  const response = await convexRequest<RunScreenshotsResponse>(
+    "/api/screenshots/run-summary",
+    token,
+    {
+      taskId,
+      runId,
+      limit: MAX_PR_SCREENSHOTS,
+      statusFilter: COMPLETED_STATUS_FILTER,
+    },
+    convexUrl
+  );
+
+  if (!response?.ok) {
+    return [];
+  }
+
+  return selectScreenshotsForPr(response.screenshotSets ?? []);
+}
 
 export function buildPullRequestTitle(prompt: string): string {
   const base = prompt.trim() || "cmux changes";
@@ -21,6 +124,7 @@ export function buildPullRequestBody({
   branch,
   taskId,
   runId,
+  screenshots,
 }: {
   summary?: string;
   prompt: string;
@@ -28,9 +132,10 @@ export function buildPullRequestBody({
   branch: string;
   taskId: string;
   runId: string;
+  screenshots?: PrScreenshot[];
 }): string {
   const bodySummary = summary?.trim() || "Summary not available.";
-  return `## 🏆 Crown Winner: ${agentName}
+  const baseBody = `## 🏆 Crown Winner: ${agentName}
 
 ### Task Description
 ${prompt}
@@ -44,6 +149,13 @@ ${bodySummary}
 - **Run ID**: ${runId}
 - **Branch**: ${branch}
 - **Created**: ${new Date().toISOString()}`;
+
+  const screenshotSection =
+    screenshots && screenshots.length > 0
+      ? buildScreenshotSection(agentName, screenshots)
+      : null;
+
+  return screenshotSection ? `${baseBody}\n\n${screenshotSection}` : baseBody;
 }
 
 function mapGhState(
@@ -109,13 +221,30 @@ export async function createPullRequest(options: {
 
   const baseBranch = check.task.baseBranch || "main";
   const prTitle = buildPullRequestTitle(check.task.text);
+  const effectiveTaskId = context.taskId ?? check.taskId;
+  const prScreenshots = await fetchScreenshotsForRun({
+    token: context.token,
+    taskId: effectiveTaskId,
+    runId: winner.runId,
+    convexUrl: context.convexUrl,
+  });
+
+  if (prScreenshots.length > 0) {
+    log("INFO", "Including screenshots in pull request body", {
+      taskId: check.taskId,
+      runId: winner.runId,
+      screenshotCount: prScreenshots.length,
+    });
+  }
+
   const prBody = buildPullRequestBody({
     summary,
     prompt: check.task.text,
     agentName: winner.agentName,
     branch,
-    taskId: context.taskId ?? check.taskId,
+    taskId: effectiveTaskId,
     runId: winner.runId,
+    screenshots: prScreenshots,
   });
 
   const script = `set -e

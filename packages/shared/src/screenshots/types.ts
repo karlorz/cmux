@@ -56,3 +56,38 @@ export const ScreenshotUploadUrlResponseSchema = z.object({
 export type ScreenshotUploadUrlResponse = z.infer<
   typeof ScreenshotUploadUrlResponseSchema
 >;
+
+export const RunScreenshotImageSchema = ScreenshotStoredImageSchema.extend({
+  url: z.string().nullable(),
+});
+export type RunScreenshotImage = z.infer<typeof RunScreenshotImageSchema>;
+
+export const RunScreenshotSetSchema = z.object({
+  id: typedZid("taskRunScreenshotSets"),
+  status: z.enum(["completed", "failed", "skipped"]),
+  commitSha: z.string().optional(),
+  capturedAt: z.number(),
+  error: z.string().optional(),
+  images: z.array(RunScreenshotImageSchema),
+});
+export type RunScreenshotSet = z.infer<typeof RunScreenshotSetSchema>;
+
+export const RunScreenshotsRequestSchema = z.object({
+  taskId: typedZid("tasks"),
+  runId: typedZid("taskRuns"),
+  limit: z.number().int().min(1).max(20).optional(),
+  statusFilter: z
+    .array(z.enum(["completed", "failed", "skipped"]))
+    .optional(),
+});
+export type RunScreenshotsRequest = z.infer<
+  typeof RunScreenshotsRequestSchema
+>;
+
+export const RunScreenshotsResponseSchema = z.object({
+  ok: z.literal(true),
+  screenshotSets: z.array(RunScreenshotSetSchema),
+});
+export type RunScreenshotsResponse = z.infer<
+  typeof RunScreenshotsResponseSchema
+>;

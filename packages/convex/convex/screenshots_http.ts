@@ -1,4 +1,5 @@
 import {
+  RunScreenshotsRequestSchema,
   ScreenshotUploadPayloadSchema,
   ScreenshotUploadUrlRequestSchema,
 } from "@cmux/shared/convex-safe";
@@ -150,4 +151,82 @@ export const createScreenshotUploadUrl = httpAction(async (ctx, req) => {
 
   const uploadUrl = await ctx.storage.generateUploadUrl();
   return jsonResponse({ ok: true, uploadUrl });
+});
+
+export const getRunScreenshots = httpAction(async (ctx, req) => {
+  const auth = await getWorkerAuth(req, { loggerPrefix: "[screenshots]" });
+  if (!auth) {
+    throw jsonResponse({ code: 401, message: "Unauthorized" }, 401);
+  }
+
+  const parsed = await ensureJsonRequest(req);
+  if (parsed instanceof Response) return parsed;
+
+  const validation = RunScreenshotsRequestSchema.safeParse(parsed.json);
+  if (!validation.success) {
+    console.warn(
+      "[screenshots] Invalid run screenshot request payload",
+      validation.error
+    );
+    return jsonResponse({ code: 400, message: "Invalid input" }, 400);
+  }
+
+  const data = validation.data;
+  const normalizedLimit = Math.max(1, Math.min(20, data.limit ?? 4));
+
+  const run = await ctx.runQuery(internal.taskRuns.getById, {
+    id: data.runId,
+  });
+  if (!run) {
+    return jsonResponse({ code: 404, message: "Task run not found" }, 404);
+  }
+
+  if (
+    run.teamId !== auth.payload.teamId ||
+    run.userId !== auth.payload.userId ||
+    run.taskId !== data.taskId
+  ) {
+    return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
+  }
+
+  const rawSets = await ctx.db
+    .query("taskRunScreenshotSets")
+    .withIndex("by_run_capturedAt", (q) => q.eq("runId", data.runId))
+    .order("desc")
+    .take(20);
+
+  const filteredSets = data.statusFilter
+    ? rawSets.filter((set) => data.statusFilter?.includes(set.status))
+    : rawSets;
+  const limitedSets = filteredSets.slice(0, normalizedLimit);
+
+  const screenshotSets = await Promise.all(
+    limitedSets.map(async (set) => {
+      const images = await Promise.all(
+        set.images.map(async (image) => {
+          const url = await ctx.storage.getUrl(image.storageId);
+          return {
+            storageId: image.storageId,
+            mimeType: image.mimeType,
+            fileName: image.fileName,
+            commitSha: image.commitSha,
+            url: url ?? null,
+          };
+        })
+      );
+      return {
+        id: set._id,
+        status: set.status,
+        commitSha: set.commitSha ?? undefined,
+        capturedAt: set.capturedAt,
+        error: set.error ?? undefined,
+        images,
+      };
+    })
+  );
+
+  return jsonResponse({
+    ok: true,
+    screenshotSets,
+  });
 });
