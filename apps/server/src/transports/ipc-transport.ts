@@ -102,6 +102,17 @@ export function createIPCTransport(): RealtimeServer {
     disconnect(): void {
       sockets.delete(this.sender.id);
       serverLogger.info("IPC client disconnected:", this.id);
+      const disconnectHandler = this.handlers.get("disconnect");
+      if (disconnectHandler) {
+        try {
+          disconnectHandler();
+        } catch (error) {
+          serverLogger.error(
+            "IPC disconnect handler threw an error:",
+            error instanceof Error ? error.message : String(error)
+          );
+        }
+      }
     }
   }
 

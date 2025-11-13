@@ -5,6 +5,7 @@ export interface RealtimeSocket {
   handshake: {
     query: Record<string, string | string[] | undefined>;
   };
+  on(event: "disconnect", handler: () => void): void;
   on<E extends keyof ClientToServerEvents>(
     event: E,
     handler: ClientToServerEvents[E]

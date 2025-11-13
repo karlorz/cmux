@@ -55,6 +55,7 @@ import { getOctokit } from "./utils/octokit";
 import { checkAllProvidersStatus } from "./utils/providerStatus";
 import { refreshGitHubData } from "./utils/refreshGitHubData";
 import { runWithAuth, runWithAuthToken } from "./utils/requestContext";
+import { createStackAuthState } from "./utils/stackAuthState";
 import { getWwwClient } from "./utils/wwwClient";
 import { getWwwOpenApiModule } from "./utils/wwwOpenApiModule";
 import { DockerVSCodeInstance } from "./vscode/DockerVSCodeInstance";
@@ -217,9 +218,38 @@ export function setupSocketHandlers(
       return;
     }
 
-    socket.use((_, next) => {
-      runWithAuth(token, tokenJson, () => next());
+    const stackAuth = createStackAuthState({
+      initialAccessToken: token,
+      initialAuthJson: tokenJson,
+      label: `socket:${socket.id}`,
     });
+    stackAuth.start();
+
+    const runWithSocketAuth = <T>(fn: () => T) => {
+      const snapshot = stackAuth.getSnapshot();
+      if (!snapshot.token) {
+        throw new Error("Missing auth token in socket context");
+      }
+      return runWithAuth(snapshot.token, snapshot.authJson, fn, {
+        tokenSource: stackAuth,
+      });
+    };
+
+    const runWithSocketAuthToken = <T>(fn: () => T) => {
+      const snapshot = stackAuth.getSnapshot();
+      if (!snapshot.token) {
+        throw new Error("Missing auth token in socket context");
+      }
+      return runWithAuthToken(snapshot.token, fn, {
+        tokenSource: stackAuth,
+        authHeaderJson: snapshot.authJson,
+      });
+    };
+
+    socket.use((_, next) => {
+      runWithSocketAuth(() => next());
+    });
+    socket.on("disconnect", () => stackAuth.stop());
     serverLogger.info("Client connected:", socket.id);
 
     // Rust N-API test endpoint
@@ -333,16 +363,10 @@ export function setupSocketHandlers(
     // Kick off initial GitHub data refresh only after an authenticated connection
     const qAuth = socket.handshake.query?.auth;
     const qTeam = socket.handshake.query?.team;
-    const qAuthJson = socket.handshake.query?.auth_json;
     const initialToken = Array.isArray(qAuth)
       ? qAuth[0]
       : typeof qAuth === "string"
         ? qAuth
-        : undefined;
-    const initialAuthJson = Array.isArray(qAuthJson)
-      ? qAuthJson[0]
-      : typeof qAuthJson === "string"
-        ? qAuthJson
         : undefined;
     const initialTeam = Array.isArray(qTeam)
       ? qTeam[0]
@@ -352,7 +376,7 @@ export function setupSocketHandlers(
     const safeTeam = initialTeam || "default";
     if (!hasRefreshedGithub && initialToken) {
       hasRefreshedGithub = true;
-      runWithAuth(initialToken, initialAuthJson, () => {
+      runWithSocketAuth(() => {
         if (!initialTeam) {
           serverLogger.warn(
             "No team provided on socket handshake; skipping initial GitHub refresh"
@@ -366,7 +390,7 @@ export function setupSocketHandlers(
       // Start Docker container state sync after first authenticated connection
       if (!dockerEventsStarted) {
         dockerEventsStarted = true;
-        runWithAuth(initialToken, initialAuthJson, () => {
+        runWithSocketAuth(() => {
           serverLogger.info(
             "Starting Docker container state sync after authenticated connect"
           );
@@ -2005,7 +2029,7 @@ export function setupSocketHandlers(
           callback({ success: true, repos: reposByOrg });
 
           // Refresh in the background to add any new repos
-          runWithAuthToken(initialToken, () =>
+          runWithSocketAuthToken(() =>
             refreshGitHubData({ teamSlugOrId }).catch((error) => {
               serverLogger.error("Background refresh failed:", error);
             })
@@ -2014,7 +2038,7 @@ export function setupSocketHandlers(
         }
 
         // If no repos exist, do a full fetch
-        await runWithAuthToken(initialToken, () =>
+        await runWithSocketAuthToken(() =>
           refreshGitHubData({ teamSlugOrId })
         );
         const reposByOrg = await getConvex().query(api.github.getReposByOrg, {
