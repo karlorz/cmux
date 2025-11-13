@@ -7,6 +7,8 @@ export const env = createEnv({
     // Public origin used across the app; prefer this for WWW base URL
     NEXT_PUBLIC_WWW_ORIGIN: z.string().min(1).optional(),
     NEXT_PUBLIC_CONVEX_URL: z.string().min(1),
+    NEXT_PUBLIC_STACK_PROJECT_ID: z.string().min(1),
+    NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY: z.string().min(1),
   },
   // Handle both Node and Vite/Bun
   runtimeEnv: { ...import.meta.env, ...process.env },
@@ -21,4 +23,24 @@ export function getWwwBaseUrl(): string {
     env.NEXT_PUBLIC_WWW_ORIGIN ||
     "http://localhost:9779";
   return normalizeOrigin(rawOrigin);
+}
+
+export function getStackOAuthConfig(): {
+  projectId: string;
+  publishableClientKey: string;
+} {
+  const projectId =
+    process.env.NEXT_PUBLIC_STACK_PROJECT_ID ||
+    env.NEXT_PUBLIC_STACK_PROJECT_ID;
+  const publishableClientKey =
+    process.env.NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY ||
+    env.NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY;
+
+  if (!projectId || !publishableClientKey) {
+    throw new Error(
+      "Stack OAuth configuration is missing NEXT_PUBLIC_STACK_PROJECT_ID or NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY"
+    );
+  }
+
+  return { projectId, publishableClientKey };
 }

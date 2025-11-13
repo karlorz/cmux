@@ -22,6 +22,7 @@ import { serverLogger } from "./utils/fileLogger";
 import {
   getAuthHeaderJson,
   getAuthToken,
+  getStackTokenManager,
   runWithAuth,
 } from "./utils/requestContext";
 import { getEditorSettingsUpload } from "./utils/editorSettings";
@@ -73,6 +74,7 @@ export async function spawnAgent(
     // re-enter the auth context inside async event handlers later.
     const capturedAuthToken = getAuthToken();
     const capturedAuthHeaderJson = getAuthHeaderJson();
+    const capturedStackTokens = getStackTokenManager();
 
     const newBranch =
       options.newBranch ||
@@ -484,16 +486,20 @@ export async function spawnAgent(
         }
 
         // Mark the run as failed with error message
-        await runWithAuth(capturedAuthToken, capturedAuthHeaderJson, async () =>
-          retryOnOptimisticConcurrency(() =>
-            getConvex().mutation(api.taskRuns.fail, {
-              teamSlugOrId,
-              id: taskRunId,
-              errorMessage: data.errorMessage || "Terminal failed",
-              // WorkerTerminalFailed does not include exitCode in schema; default to 1
-              exitCode: 1,
-            })
-          )
+        await runWithAuth(
+          capturedAuthToken,
+          capturedAuthHeaderJson,
+          async () =>
+            retryOnOptimisticConcurrency(() =>
+              getConvex().mutation(api.taskRuns.fail, {
+                teamSlugOrId,
+                id: taskRunId,
+                errorMessage: data.errorMessage || "Terminal failed",
+                // WorkerTerminalFailed does not include exitCode in schema; default to 1
+                exitCode: 1,
+              })
+            ),
+          { stackTokens: capturedStackTokens }
         );
 
         serverLogger.info(

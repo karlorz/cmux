@@ -2,6 +2,7 @@ import { ipcMain, webContents } from "electron";
 import type { RealtimeServer, RealtimeSocket } from "../realtime";
 import { serverLogger } from "../utils/fileLogger";
 import { runWithAuth } from "../utils/requestContext";
+import { resolveStackTokenManager } from "../utils/stackTokens";
 
 const PREFIX = "cmux";
 
@@ -19,13 +20,26 @@ export function createIPCTransport(): RealtimeServer {
       const socket = new IPCSocket(event.sender, meta);
       sockets.set(webContentsId, socket);
 
-      // Run auth and trigger connection handlers
-      runWithAuth(meta.auth, meta.auth_json, () => {
-        serverLogger.info("IPC client connected:", webContentsId);
-
-        // Call all connection handlers
-        connectionHandlers.forEach((handler) => handler(socket));
+      const stackTokens = resolveStackTokenManager({
+        accessToken: meta.auth,
+        authJson: meta.auth_json,
       });
+      const effectiveToken = stackTokens?.getAccessToken() ?? meta.auth;
+      const effectiveAuthJson =
+        stackTokens?.getAuthHeaderJson() ?? meta.auth_json;
+
+      // Run auth and trigger connection handlers
+      runWithAuth(
+        effectiveToken,
+        effectiveAuthJson,
+        () => {
+          serverLogger.info("IPC client connected:", webContentsId);
+
+          // Call all connection handlers
+          connectionHandlers.forEach((handler) => handler(socket));
+        },
+        { stackTokens }
+      );
 
       return { success: true };
     }

@@ -55,6 +55,7 @@ import { getOctokit } from "./utils/octokit";
 import { checkAllProvidersStatus } from "./utils/providerStatus";
 import { refreshGitHubData } from "./utils/refreshGitHubData";
 import { runWithAuth, runWithAuthToken } from "./utils/requestContext";
+import { resolveStackTokenManager } from "./utils/stackTokens";
 import { getWwwClient } from "./utils/wwwClient";
 import { getWwwOpenApiModule } from "./utils/wwwOpenApiModule";
 import { DockerVSCodeInstance } from "./vscode/DockerVSCodeInstance";
@@ -209,16 +210,28 @@ export function setupSocketHandlers(
       : typeof qJson === "string"
         ? qJson
         : undefined;
+    const stackTokens = resolveStackTokenManager({
+      accessToken: token,
+      authJson: qJson ?? tokenJson,
+    });
+    const effectiveToken = stackTokens?.getAccessToken() ?? token;
+    const effectiveAuthJson =
+      stackTokens?.getAuthHeaderJson() ?? tokenJson ?? undefined;
 
     // authenticate the token
-    if (!token) {
+    if (!effectiveToken) {
       // disconnect the socket
       socket.disconnect();
       return;
     }
 
     socket.use((_, next) => {
-      runWithAuth(token, tokenJson, () => next());
+      runWithAuth(
+        effectiveToken,
+        effectiveAuthJson,
+        () => next(),
+        { stackTokens }
+      );
     });
     serverLogger.info("Client connected:", socket.id);
 
@@ -331,19 +344,9 @@ export function setupSocketHandlers(
     }
 
     // Kick off initial GitHub data refresh only after an authenticated connection
-    const qAuth = socket.handshake.query?.auth;
     const qTeam = socket.handshake.query?.team;
-    const qAuthJson = socket.handshake.query?.auth_json;
-    const initialToken = Array.isArray(qAuth)
-      ? qAuth[0]
-      : typeof qAuth === "string"
-        ? qAuth
-        : undefined;
-    const initialAuthJson = Array.isArray(qAuthJson)
-      ? qAuthJson[0]
-      : typeof qAuthJson === "string"
-        ? qAuthJson
-        : undefined;
+    const initialToken = effectiveToken;
+    const initialAuthJson = effectiveAuthJson;
     const initialTeam = Array.isArray(qTeam)
       ? qTeam[0]
       : typeof qTeam === "string"
@@ -352,26 +355,36 @@ export function setupSocketHandlers(
     const safeTeam = initialTeam || "default";
     if (!hasRefreshedGithub && initialToken) {
       hasRefreshedGithub = true;
-      runWithAuth(initialToken, initialAuthJson, () => {
-        if (!initialTeam) {
-          serverLogger.warn(
-            "No team provided on socket handshake; skipping initial GitHub refresh"
-          );
-          return;
-        }
-        refreshGitHubData({ teamSlugOrId: initialTeam }).catch((error) => {
-          serverLogger.error("Background refresh failed:", error);
-        });
-      });
+      runWithAuth(
+        initialToken,
+        initialAuthJson,
+        () => {
+          if (!initialTeam) {
+            serverLogger.warn(
+              "No team provided on socket handshake; skipping initial GitHub refresh"
+            );
+            return;
+          }
+          refreshGitHubData({ teamSlugOrId: initialTeam }).catch((error) => {
+            serverLogger.error("Background refresh failed:", error);
+          });
+        },
+        { stackTokens }
+      );
       // Start Docker container state sync after first authenticated connection
       if (!dockerEventsStarted) {
         dockerEventsStarted = true;
-        runWithAuth(initialToken, initialAuthJson, () => {
-          serverLogger.info(
-            "Starting Docker container state sync after authenticated connect"
-          );
-          DockerVSCodeInstance.startContainerStateSync();
-        });
+        runWithAuth(
+          initialToken,
+          initialAuthJson,
+          () => {
+            serverLogger.info(
+              "Starting Docker container state sync after authenticated connect"
+            );
+            DockerVSCodeInstance.startContainerStateSync();
+          },
+          { stackTokens }
+        );
       }
     } else if (!initialToken) {
       serverLogger.info(
@@ -2005,17 +2018,24 @@ export function setupSocketHandlers(
           callback({ success: true, repos: reposByOrg });
 
           // Refresh in the background to add any new repos
-          runWithAuthToken(initialToken, () =>
-            refreshGitHubData({ teamSlugOrId }).catch((error) => {
-              serverLogger.error("Background refresh failed:", error);
-            })
+          runWithAuth(
+            initialToken,
+            initialAuthJson,
+            () =>
+              refreshGitHubData({ teamSlugOrId }).catch((error) => {
+                serverLogger.error("Background refresh failed:", error);
+              }),
+            { stackTokens }
           );
           return;
         }
 
         // If no repos exist, do a full fetch
-        await runWithAuthToken(initialToken, () =>
-          refreshGitHubData({ teamSlugOrId })
+        await runWithAuth(
+          initialToken,
+          initialAuthJson,
+          () => refreshGitHubData({ teamSlugOrId }),
+          { stackTokens }
         );
         const reposByOrg = await getConvex().query(api.github.getReposByOrg, {
           teamSlugOrId,

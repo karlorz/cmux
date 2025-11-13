@@ -9,6 +9,7 @@ import { Server as SocketIOServer } from "socket.io";
 import type { RealtimeServer, RealtimeSocket } from "../realtime";
 import { serverLogger } from "../utils/fileLogger";
 import { runWithAuth } from "../utils/requestContext";
+import { resolveStackTokenManager } from "../utils/stackTokens";
 
 export function createSocketIOTransport(
   httpServer: HttpServer
@@ -71,7 +72,19 @@ export function createSocketIOTransport(
       : typeof qJson === "string"
         ? qJson
         : undefined;
-    runWithAuth(token, tokenJson, () => next());
+    const stackTokens = resolveStackTokenManager({
+      accessToken: token,
+      authJson: qJson ?? tokenJson,
+    });
+    const effectiveToken = stackTokens?.getAccessToken() ?? token;
+    const effectiveAuthJson =
+      stackTokens?.getAuthHeaderJson() ?? tokenJson ?? undefined;
+    runWithAuth(
+      effectiveToken,
+      effectiveAuthJson,
+      () => next(),
+      { stackTokens }
+    );
   });
 
   return {
