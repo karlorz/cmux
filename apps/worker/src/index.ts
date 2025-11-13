@@ -21,6 +21,10 @@ import type { Id } from "@cmux/convex/dataModel";
 
 import { getWorkerServerSocketOptions } from "@cmux/shared/node/socket";
 import { startAmpProxy } from "@cmux/shared/src/providers/amp/start-amp-proxy.ts";
+import {
+  pollOpencodeSession,
+  submitOpencodePrompt,
+} from "@cmux/shared/src/providers/opencode/session";
 import { handleWorkerTaskCompletion } from "./crown/workflow";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import * as xtermHeadless from "@xterm/headless";
@@ -1271,6 +1275,50 @@ async function createTerminal(
       );
     }
   }
+
+  // Handle OpenCode session polling and prompt submission
+  if (options.agentModel?.startsWith("opencode/")) {
+    log("INFO", "Detected OpenCode agent, setting up session polling", {
+      agentModel: options.agentModel,
+    });
+
+    // Run session polling and prompt submission in background
+    (async () => {
+      try {
+        log("INFO", "Polling OpenCode session endpoint...");
+        await pollOpencodeSession({
+          hostname: "127.0.0.1",
+          port: 4096,
+          pollIntervalMs: 1000,
+          maxAttempts: 60,
+        });
+
+        log("INFO", "OpenCode session is ready");
+
+        // Submit the prompt if we have one
+        if (promptValue) {
+          log("INFO", "Submitting prompt to OpenCode TUI", {
+            promptLength: promptValue.length,
+          });
+
+          await submitOpencodePrompt(promptValue, {
+            hostname: "127.0.0.1",
+            port: 4096,
+          });
+
+          log("INFO", "Prompt submitted successfully to OpenCode");
+        } else {
+          log("WARN", "No prompt value available to submit to OpenCode");
+        }
+      } catch (error) {
+        log("ERROR", "Failed to poll OpenCode session or submit prompt", {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+      }
+    })();
+  }
+
   childProcess.stderr.on("data", (data: Buffer) => {
     // Accumulate stderr during startup window for diagnostic error reporting
     if (Date.now() <= stopErrorCaptureAt && initialStderrBuffer.length < 8000) {
