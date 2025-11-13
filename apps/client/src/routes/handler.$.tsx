@@ -4,6 +4,9 @@ import { createFileRoute, useLocation } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/handler/$")({
   component: HandlerComponent,
+  staticData: {
+    title: "Handler",
+  },
 });
 
 function HandlerComponent() {

@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { SIDEBAR_PRS_DEFAULT_LIMIT } from "@/components/sidebar/const";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { ExpandTasksProvider } from "@/contexts/expand-tasks/ExpandTasksProvider";
+import { NavigationHistoryProvider } from "@/contexts/navigation-history";
 import { cachedGetUser } from "@/lib/cachedGetUser";
 import { setLastTeamSlugOrId } from "@/lib/lastTeam";
 import { stackClientApp } from "@/lib/stack";
@@ -14,6 +15,9 @@ import { Suspense, useEffect, useMemo } from "react";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId")({
   component: LayoutComponentWrapper,
+  staticData: {
+    title: "Team Workspace",
+  },
   beforeLoad: async ({ params, location }) => {
     const user = await cachedGetUser(stackClientApp);
     if (!user) {
@@ -125,9 +129,9 @@ function LayoutComponentWrapper() {
     setLastTeamSlugOrId(teamSlugOrId);
   }, [teamSlugOrId]);
   return (
-    <>
+    <NavigationHistoryProvider>
       <LayoutComponent />
       <CmuxComments teamSlugOrId={teamSlugOrId} />
-    </>
+    </NavigationHistoryProvider>
   );
 }

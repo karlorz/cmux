@@ -32,6 +32,9 @@ export const Route = createFileRoute(
 )({
   component: NewSnapshotVersionPage,
   validateSearch: searchSchema,
+  staticData: {
+    title: "New Environment Version",
+  },
 });
 
 function NewSnapshotVersionPage() {

@@ -8,6 +8,9 @@ import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/electron-web-contents")({
   component: ElectronWebContentsPage,
+  staticData: {
+    title: "Electron WebContents",
+  },
 });
 
 interface ElectronWebContentsPageProps {

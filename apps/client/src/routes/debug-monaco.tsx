@@ -89,6 +89,9 @@ function computeDiffStats(original: string, modified: string) {
 
 export const Route = createFileRoute("/debug-monaco")({
   component: DebugMonacoPage,
+  staticData: {
+    title: "Debug Monaco",
+  },
 });
 
 function DebugMonacoPage() {
@@ -126,4 +129,3 @@ function DebugMonacoPage() {
     </div>
   );
 }
-

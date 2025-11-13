@@ -69,6 +69,9 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/environments/new")(
   {
     component: EnvironmentsPage,
     validateSearch: searchSchema,
+    staticData: {
+      title: "New Environment",
+    },
   }
 );
 

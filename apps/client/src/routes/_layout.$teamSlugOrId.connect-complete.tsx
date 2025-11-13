@@ -5,6 +5,9 @@ import { useEffect, useRef, useState } from "react";
 export const Route = createFileRoute("/_layout/$teamSlugOrId/connect-complete")(
   {
     component: ConnectComplete,
+    staticData: {
+      title: "GitHub Connect Complete",
+    },
   }
 );
 

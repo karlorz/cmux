@@ -51,6 +51,9 @@ export const Route = createFileRoute(
   "/_layout/$teamSlugOrId/task/$taskId/run/$runId/preview/$previewId"
 )({
   component: PreviewPage,
+  staticData: {
+    title: "Run Preview",
+  },
   params: {
     parse: paramsSchema.parse,
     stringify: (params) => {

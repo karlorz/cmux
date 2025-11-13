@@ -17,6 +17,9 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/diff")({
   component: DashboardDiffPage,
+  staticData: {
+    title: "Diff Viewer",
+  },
 });
 
 type DiffSearch = {

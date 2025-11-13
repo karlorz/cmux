@@ -15,6 +15,9 @@ import { useQuery } from "convex/react";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/task/$taskId")({
   component: TaskDetailPage,
+  staticData: {
+    title: "Task Detail",
+  },
   parseParams: (params) => ({
     ...params,
     taskId: typedZid("tasks").parse(params.taskId),

@@ -31,6 +31,9 @@ export const Route = createFileRoute(
   "/_layout/$teamSlugOrId/task/$taskId/run/$runId/vscode"
 )({
   component: VSCodeComponent,
+  staticData: {
+    title: "Run VS Code",
+  },
   params: {
     parse: paramsSchema.parse,
     stringify: (params) => {

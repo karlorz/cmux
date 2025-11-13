@@ -11,6 +11,9 @@ import {
 
 export const Route = createFileRoute("/_layout")({
   component: Layout,
+  staticData: {
+    title: "App Shell",
+  },
   beforeLoad: async ({ context }) => {
     const user = await cachedGetUser(stackClientApp);
     if (!user) {

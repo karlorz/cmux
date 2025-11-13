@@ -44,6 +44,9 @@ import { z } from "zod";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/dashboard")({
   component: DashboardComponent,
+  staticData: {
+    title: "Dashboard",
+  },
   loader: async (opts) => {
     const { teamSlugOrId } = opts.params;
     // Prewarm queries used in the dashboard

@@ -19,6 +19,9 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/environments/")({
     });
   },
   component: EnvironmentsListPage,
+  staticData: {
+    title: "Environment List",
+  },
 });
 
 function EnvironmentsListPage() {

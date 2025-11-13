@@ -76,6 +76,9 @@ export const Route = createFileRoute(
     );
   },
   component: EnvironmentDetailsPage,
+  staticData: {
+    title: "Environment Details",
+  },
   validateSearch: () => ({}),
 });
 

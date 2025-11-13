@@ -589,6 +589,9 @@ const FILE_LABEL_ZONE_HEIGHT = 32;
 
 export const Route = createFileRoute("/monaco-single-buffer")({
   component: MonacoSingleBufferRoute,
+  staticData: {
+    title: "Monaco Single Buffer",
+  },
 });
 
 function MonacoSingleBufferRoute() {

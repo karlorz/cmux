@@ -15,4 +15,7 @@ export const Route = createFileRoute("/sign-in")({
     }
   },
   component: SignInComponent,
+  staticData: {
+    title: "Sign In",
+  },
 });

@@ -70,6 +70,9 @@ const paramsSchema = z.object({
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/task/$taskId/")({
   component: TaskDetailPage,
+  staticData: {
+    title: "Task Overview",
+  },
   params: {
     parse: paramsSchema.parse,
     stringify: (params) => ({

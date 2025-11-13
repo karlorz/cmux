@@ -16,6 +16,9 @@ const errorSearchSchema = z.object({
 export const Route = createFileRoute("/electron-error" as any)({
   validateSearch: errorSearchSchema,
   component: ElectronErrorPage,
+  staticData: {
+    title: "Electron Error",
+  },
 });
 
 interface ErrorDisplay {

@@ -26,6 +26,9 @@ export const Route = createFileRoute(
   "/_layout/$teamSlugOrId/task/$taskId/run/$runId/"
 )({
   component: TaskRunComponent,
+  staticData: {
+    title: "Run Overview",
+  },
   parseParams: (params) => ({
     ...params,
     taskRunId: typedZid("taskRuns").parse(params.runId),

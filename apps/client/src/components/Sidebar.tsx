@@ -1,5 +1,10 @@
 import { TaskTree } from "@/components/TaskTree";
 import { TaskTreeSkeleton } from "@/components/TaskTreeSkeleton";
+import { Dropdown } from "@/components/ui/dropdown";
+import {
+  useNavigationHistory,
+  type NavigationHistoryEntry,
+} from "@/contexts/navigation-history";
 import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
 import { isElectron } from "@/lib/electron";
 import { type Doc } from "@cmux/convex/dataModel";
@@ -7,7 +12,7 @@ import { api } from "@cmux/convex/api";
 import { useQuery } from "convex/react";
 import type { LinkProps } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
-import { Home, Plus, Server, Settings } from "lucide-react";
+import { ArrowLeft, ArrowRight, Clock3, Home, Plus, Server, Settings } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -16,6 +21,7 @@ import {
   type ComponentType,
   type CSSProperties,
 } from "react";
+import clsx from "clsx";
 import CmuxLogo from "./logo/cmux-logo";
 import { SidebarNavLink } from "./sidebar/SidebarNavLink";
 import { SidebarPullRequestList } from "./sidebar/SidebarPullRequestList";
@@ -241,6 +247,7 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
           {/* <Terminals */}
           <CmuxLogo height={32} />
         </Link>
+        {isElectron ? <ElectronNavigationControls /> : null}
         <div className="grow"></div>
         <Link
           to="/$teamSlugOrId/dashboard"
@@ -364,4 +371,97 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
       />
     </div>
   );
+}
+
+function ElectronNavigationControls() {
+  const {
+    canGoBack,
+    canGoForward,
+    goBack,
+    goForward,
+    recentEntries,
+    currentEntry,
+    navigateTo,
+  } = useNavigationHistory();
+
+  const buttonClassName =
+    "size-7 rounded-full flex items-center justify-center text-neutral-600 dark:text-neutral-300 transition-colors bg-transparent hover:bg-neutral-200/70 dark:hover:bg-neutral-800 disabled:opacity-40 disabled:hover:bg-transparent";
+
+  return (
+    <div
+      className="ml-2 flex items-center gap-1"
+      style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
+    >
+      <button
+        type="button"
+        onClick={goBack}
+        disabled={!canGoBack}
+        className={buttonClassName}
+        aria-label="Go back"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={goForward}
+        disabled={!canGoForward}
+        className={buttonClassName}
+        aria-label="Go forward"
+      >
+        <ArrowRight className="h-3.5 w-3.5" />
+      </button>
+      <Dropdown.Root>
+        <Dropdown.Trigger
+          className={buttonClassName}
+          aria-label="Recent pages"
+        >
+          <Clock3 className="h-3.5 w-3.5" />
+        </Dropdown.Trigger>
+        <Dropdown.Portal>
+          <Dropdown.Positioner side="bottom" align="start" sideOffset={6}>
+            <Dropdown.Popup className="w-[280px] max-w-[70vw]">
+              <Dropdown.Arrow />
+              <div className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                Recent pages
+              </div>
+              {recentEntries.length === 0 ? (
+                <Dropdown.Item disabled className="text-neutral-500">
+                  Navigation history is empty
+                </Dropdown.Item>
+              ) : (
+                recentEntries.map((entry) => {
+                  const isCurrent = currentEntry?.key === entry.key;
+                  return (
+                    <Dropdown.Item
+                      key={`${entry.key}-${entry.visitedAt}`}
+                      onClick={() => navigateTo(entry)}
+                      className="flex flex-col gap-0.5 py-2.5"
+                    >
+                      <span
+                        className={clsx(
+                          "text-sm text-neutral-800 dark:text-neutral-200",
+                          isCurrent &&
+                            "text-neutral-900 dark:text-neutral-50 font-semibold"
+                        )}
+                      >
+                        {entry.title}
+                      </span>
+                      <span className="text-xs text-neutral-500 dark:text-neutral-500 truncate">
+                        {formatHistoryPath(entry)}
+                      </span>
+                    </Dropdown.Item>
+                  );
+                })
+              )}
+            </Dropdown.Popup>
+          </Dropdown.Positioner>
+        </Dropdown.Portal>
+      </Dropdown.Root>
+    </div>
+  );
+}
+
+function formatHistoryPath(entry: NavigationHistoryEntry) {
+  const hash = entry.hash === "#" ? "" : entry.hash;
+  return `${entry.pathname}${entry.searchStr}${hash ?? ""}`;
 }

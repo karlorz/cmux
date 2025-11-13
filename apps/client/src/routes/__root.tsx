@@ -18,6 +18,9 @@ export const Route = createRootRouteWithContext<{
   auth: StackClientApp<true, string>;
 }>()({
   component: RootComponent,
+  staticData: {
+    title: "cmux Client",
+  },
 });
 
 function ToasterWithTheme() {

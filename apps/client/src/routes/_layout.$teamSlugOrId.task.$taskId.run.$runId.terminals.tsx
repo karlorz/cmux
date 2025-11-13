@@ -33,6 +33,9 @@ export const Route = createFileRoute(
   "/_layout/$teamSlugOrId/task/$taskId/run/$runId/terminals"
 )({
   component: TaskRunTerminals,
+  staticData: {
+    title: "Run Terminals",
+  },
   params: {
     parse: paramsSchema.parse,
     stringify: (params) => ({

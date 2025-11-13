@@ -6,6 +6,9 @@ export const Route = createFileRoute(
   "/_layout/$teamSlugOrId/prs/$owner/$repo/$number"
 )({
   component: PRDetailsRoute,
+  staticData: {
+    title: "Pull Request Detail",
+  },
   loader: async (opts) => {
     const { teamSlugOrId, owner, repo, number } = opts.params;
     void preloadPullRequestDetail({

@@ -17,6 +17,9 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/settings")({
   component: SettingsComponent,
+  staticData: {
+    title: "Team Settings",
+  },
 });
 
 function SettingsComponent() {

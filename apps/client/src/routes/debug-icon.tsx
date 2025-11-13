@@ -6,6 +6,9 @@ import { useMemo, useState } from "react";
 
 export const Route = createFileRoute("/debug-icon")({
   component: DebugIconPage,
+  staticData: {
+    title: "Debug Icons",
+  },
 });
 
 function NumberInput({

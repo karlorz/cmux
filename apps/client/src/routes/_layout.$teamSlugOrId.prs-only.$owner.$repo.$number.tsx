@@ -7,6 +7,9 @@ export const Route = createFileRoute(
   "/_layout/$teamSlugOrId/prs-only/$owner/$repo/$number"
 )({
   component: PROnlyRoute,
+  staticData: {
+    title: "Pull Request Review",
+  },
   loader: async (opts) => {
     const { teamSlugOrId, owner, repo, number } = opts.params;
     void preloadPullRequestDetail({

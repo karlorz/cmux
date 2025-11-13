@@ -3,6 +3,9 @@ import z from "zod";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/environments")({
   component: EnvironmentsLayout,
+  staticData: {
+    title: "Environments",
+  },
   validateSearch: (search: Record<string, unknown>) => {
     const step = z.enum(["select", "configure"]).optional().parse(search.step);
     const selectedRepos = z

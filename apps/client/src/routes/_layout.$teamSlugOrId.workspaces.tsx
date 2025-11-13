@@ -13,6 +13,9 @@ import { useMemo } from "react";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/workspaces")({
   component: WorkspacesRoute,
+  staticData: {
+    title: "Workspaces",
+  },
   loader: async ({ params }) => {
     const { teamSlugOrId } = params;
     void convexQueryClient.queryClient.ensureQueryData(

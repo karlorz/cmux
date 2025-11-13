@@ -497,6 +497,9 @@ export const Route = createFileRoute(
   "/_layout/$teamSlugOrId/task/$taskId/run/$runId/diff",
 )({
   component: RunDiffPage,
+  staticData: {
+    title: "Run Diff",
+  },
   params: {
     parse: paramsSchema.parse,
     stringify: (params) => {

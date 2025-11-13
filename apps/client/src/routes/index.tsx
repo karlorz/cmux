@@ -15,4 +15,7 @@ export const Route = createFileRoute("/")({
     throw redirect({ to: "/team-picker" });
   },
   component: () => null,
+  staticData: {
+    title: "Start",
+  },
 });

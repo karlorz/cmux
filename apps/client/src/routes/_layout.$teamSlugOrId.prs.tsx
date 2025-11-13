@@ -10,6 +10,9 @@ import { useMemo, useState } from "react";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/prs")({
   component: PRsPage,
+  staticData: {
+    title: "Pull Requests",
+  },
   loader: async (opts) => {
     const { teamSlugOrId } = opts.params;
     convexQueryClient.convexClient.prewarmQuery({

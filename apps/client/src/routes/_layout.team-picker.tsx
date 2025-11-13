@@ -21,6 +21,9 @@ import type React from "react";
 
 export const Route = createFileRoute("/_layout/team-picker")({
   component: TeamPicker,
+  staticData: {
+    title: "Team Picker",
+  },
 });
 
 function TeamPicker() {
