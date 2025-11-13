@@ -17,6 +17,7 @@ import {
   webFrameMain,
   type BrowserWindowConstructorOptions,
   type MenuItemConstructorOptions,
+  type WebContents,
 } from "electron";
 import { startEmbeddedServer } from "./embedded-server";
 import { registerWebContentsViewHandlers } from "./web-contents-view";
@@ -95,6 +96,15 @@ let pendingProtocolUrl: string | null = null;
 let mainWindow: BrowserWindow | null = null;
 let previewReloadMenuItem: MenuItem | null = null;
 let previewReloadMenuVisible = false;
+
+function resolveTargetWindow(): BrowserWindow | null {
+  return (
+    BrowserWindow.getFocusedWindow() ??
+    mainWindow ??
+    BrowserWindow.getAllWindows()[0] ??
+    null
+  );
+}
 
 function getTimestamp(): string {
   return new Date().toISOString();
@@ -228,11 +238,7 @@ function sendShortcutToFocusedWindow(
   payload?: unknown
 ): boolean {
   try {
-    const target =
-      BrowserWindow.getFocusedWindow() ??
-      mainWindow ??
-      BrowserWindow.getAllWindows()[0] ??
-      null;
+    const target = resolveTargetWindow();
     if (!target || target.isDestroyed()) {
       return false;
     }
@@ -242,6 +248,30 @@ function sendShortcutToFocusedWindow(
     mainWarn("Failed to dispatch shortcut event", { eventName, error });
     return false;
   }
+}
+
+function navigateHistory(
+  direction: "back" | "forward",
+  contents?: WebContents | null
+): boolean {
+  const targetContents =
+    contents && !contents.isDestroyed()
+      ? contents
+      : resolveTargetWindow()?.webContents ?? null;
+
+  if (!targetContents || targetContents.isDestroyed()) {
+    return false;
+  }
+
+  if (direction === "back") {
+    if (!targetContents.canGoBack()) return false;
+    targetContents.goBack();
+    return true;
+  }
+
+  if (!targetContents.canGoForward()) return false;
+  targetContents.goForward();
+  return true;
 }
 
 function setPreviewReloadMenuVisibility(visible: boolean): void {
@@ -730,46 +760,60 @@ app.whenReady().then(async () => {
     error: mainError,
   });
 
-  // Register before-input-event handlers for preview browser shortcuts
-  // These fire before web content sees them, so they work even in WebContentsViews
+  // Register before-input-event handlers for preview browser shortcuts and
+  // global history navigation. These fire before web content sees them, so they
+  // work even in WebContentsViews.
+  const isMac = process.platform === "darwin";
   app.on("web-contents-created", (_event, contents) => {
     contents.on("before-input-event", (e, input) => {
       if (input.type !== "keyDown") return;
 
-      // Only handle preview shortcuts when preview is visible
-      if (!previewReloadMenuVisible) return;
-
-      const isMac = process.platform === "darwin";
       const modKey = isMac ? input.meta : input.control;
-      if (!modKey || input.alt || input.shift) return;
+      const isPrimaryShortcut = Boolean(modKey) && !input.alt && !input.shift;
 
-      const key = input.key.toLowerCase();
+      if (previewReloadMenuVisible && isPrimaryShortcut) {
+        const key = input.key.toLowerCase();
 
-      // cmd+l: focus address bar
-      if (key === "l") {
-        e.preventDefault();
-        sendShortcutToFocusedWindow("preview-focus-address");
-        return;
+        // cmd+l: focus address bar
+        if (key === "l") {
+          e.preventDefault();
+          sendShortcutToFocusedWindow("preview-focus-address");
+          return;
+        }
+
+        // cmd+[: go back
+        if (input.key === "[") {
+          e.preventDefault();
+          sendShortcutToFocusedWindow("preview-back");
+          return;
+        }
+
+        // cmd+]: go forward
+        if (input.key === "]") {
+          e.preventDefault();
+          sendShortcutToFocusedWindow("preview-forward");
+          return;
+        }
+
+        // cmd+r: reload
+        if (key === "r") {
+          e.preventDefault();
+          sendShortcutToFocusedWindow("preview-reload");
+          return;
+        }
       }
 
-      // cmd+[: go back
+      if (!isPrimaryShortcut) return;
+
       if (input.key === "[") {
-        e.preventDefault();
-        sendShortcutToFocusedWindow("preview-back");
+        const navigated = navigateHistory("back", contents);
+        if (navigated) e.preventDefault();
         return;
       }
 
-      // cmd+]: go forward
       if (input.key === "]") {
-        e.preventDefault();
-        sendShortcutToFocusedWindow("preview-forward");
-        return;
-      }
-
-      // cmd+r: reload
-      if (key === "r") {
-        e.preventDefault();
-        sendShortcutToFocusedWindow("preview-reload");
+        const navigated = navigateHistory("forward", contents);
+        if (navigated) e.preventDefault();
         return;
       }
     });
@@ -887,11 +931,6 @@ app.whenReady().then(async () => {
     } else {
       template.push({ label: "File", submenu: [{ role: "quit" }] });
     }
-    const resolveTargetWindow = () =>
-      BrowserWindow.getFocusedWindow() ??
-      mainWindow ??
-      BrowserWindow.getAllWindows()[0] ??
-      null;
     const viewMenu: MenuItemConstructorOptions = {
       label: "View",
       submenu: [
@@ -952,8 +991,28 @@ app.whenReady().then(async () => {
         { role: "toggleDevTools" },
       ],
     };
+    const historyMenu: MenuItemConstructorOptions = {
+      label: "History",
+      submenu: [
+        {
+          label: "Back",
+          accelerator: "CommandOrControl+[",
+          click: () => {
+            navigateHistory("back");
+          },
+        },
+        {
+          label: "Forward",
+          accelerator: "CommandOrControl+]",
+          click: () => {
+            navigateHistory("forward");
+          },
+        },
+      ],
+    };
     template.push(
       { role: "editMenu" },
+      historyMenu,
       {
         label: "Commands",
         submenu: [
