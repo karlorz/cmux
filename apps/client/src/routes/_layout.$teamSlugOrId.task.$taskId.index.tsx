@@ -41,10 +41,11 @@ import {
   type TerminalTabId,
 } from "@/queries/terminals";
 import { api } from "@cmux/convex/api";
+import type { CreateLocalWorkspaceResponse } from "@cmux/shared";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "convex/react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Plus,
@@ -57,6 +58,8 @@ import {
 import z from "zod";
 import { useLocalVSCodeServeWebQuery } from "@/queries/local-vscode-serve-web";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
+import { useSocket } from "@/contexts/socket/use-socket";
+import { toast } from "sonner";
 
 type TaskRunListItem = (typeof api.taskRuns.getByTask._returnType)[number];
 type IframeStatusEntry = {
@@ -292,6 +295,8 @@ function EmptyPanelSlot({
 function TaskDetailPage() {
   const { taskId, teamSlugOrId } = Route.useParams();
   const search = Route.useSearch();
+  const navigate = useNavigate();
+  const { socket } = useSocket();
   const localServeWeb = useLocalVSCodeServeWebQuery();
   const task = useQuery(api.tasks.getById, {
     teamSlugOrId,
@@ -460,6 +465,21 @@ function TaskDetailPage() {
     }
     return taskRuns[0];
   }, [search.runId, taskRunIndex, taskRuns]);
+
+  const primaryRepo = useMemo(() => {
+    const trimmedProject = task?.projectFullName?.trim();
+    if (trimmedProject) {
+      return trimmedProject;
+    }
+    const selectedRepos = selectedRun?.environment?.selectedRepos ?? [];
+    for (const repo of selectedRepos) {
+      const trimmedRepo = repo?.trim();
+      if (trimmedRepo) {
+        return trimmedRepo;
+      }
+    }
+    return null;
+  }, [task?.projectFullName, selectedRun]);
 
   const selectedRunId = selectedRun?._id ?? null;
   useEffect(() => {
@@ -645,6 +665,66 @@ function TaskDetailPage() {
     [activePanelPositions]
   );
 
+  const handleOpenLocalWorkspace = useCallback(() => {
+    if (!socket) {
+      toast.error("Socket not connected");
+      return;
+    }
+
+    if (!primaryRepo) {
+      toast.error("No repository information available");
+      return;
+    }
+
+    if (!selectedRun?.newBranch) {
+      toast.error("No branch information available");
+      return;
+    }
+
+    const loadingToast = toast.loading("Creating local workspace...");
+
+    socket.emit(
+      "create-local-workspace",
+      {
+        teamSlugOrId,
+        projectFullName: primaryRepo,
+        repoUrl: `https://github.com/${primaryRepo}.git`,
+        branch: selectedRun.newBranch,
+      },
+      (response: CreateLocalWorkspaceResponse) => {
+        if (response.success && response.workspacePath) {
+          toast.success("Workspace created successfully!", {
+            id: loadingToast,
+            description: `Opening workspace at ${response.workspacePath}`,
+          });
+
+          const nextTaskId = response.taskId ?? taskId;
+          if (nextTaskId && response.taskRunId) {
+            navigate({
+              to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+              params: {
+                teamSlugOrId,
+                taskId: nextTaskId,
+                runId: response.taskRunId,
+              },
+            });
+          }
+        } else {
+          toast.error(response.error || "Failed to create workspace", {
+            id: loadingToast,
+          });
+        }
+      }
+    );
+  }, [
+    socket,
+    primaryRepo,
+    selectedRun?.newBranch,
+    teamSlugOrId,
+    navigate,
+    taskId,
+  ]);
+
   const panelProps = useMemo(
     () => ({
       task: task ?? null,
@@ -709,6 +789,8 @@ function TaskDetailPage() {
     ]
   );
 
+  const isWorkspaceTask = task?.isLocalWorkspace || task?.isCloudWorkspace;
+
   return (
     <FloatingPane>
       <div className="flex h-full min-h-0 flex-col bg-neutral-50 dark:bg-black">
@@ -719,6 +801,9 @@ function TaskDetailPage() {
           taskRunId={headerTaskRunId}
           teamSlugOrId={teamSlugOrId}
           onPanelSettings={handleOpenPanelSettings}
+          onOpenLocalWorkspace={
+            isWorkspaceTask ? undefined : handleOpenLocalWorkspace
+          }
         />
         <PanelConfigModal
           isOpen={isPanelSettingsOpen}
