@@ -55,13 +55,20 @@ import {
 import { toast } from "sonner";
 import {
   buildSearchText,
-  filterCommandItems,
+  buildCommandSearchIndex,
+  filterCommandItemsWithIndex,
+  type CommandSearchIndex,
+  type SearchableCommandItem,
 } from "./command-bar/commandSearch";
 import {
   buildScopeKey,
   selectSuggestedItems,
   useSuggestionHistory,
 } from "./command-bar/useSuggestionHistory";
+import {
+  useCommandSearchWorker,
+  type RunCommandSearch,
+} from "./command-bar/useCommandSearchWorker";
 import clsx from "clsx";
 
 interface CommandBarProps {
@@ -116,7 +123,7 @@ const COMMAND_LIST_SCROLL_PADDING_TOP_PX = 4;
 const COMMAND_LIST_SCROLL_PADDING_BOTTOM_PX =
   COMMAND_LIST_SCROLL_PADDING_TOP_PX;
 const TASK_SHORTCUT_LIMIT = 9;
-const COMMAND_LIST_FILTER_LIMIT = 400;
+const COMMAND_LIST_FILTER_LIMIT = 20;
 const adjustContainerScrollForChild = (
   container: HTMLElement,
   target: HTMLElement
@@ -284,6 +291,143 @@ function CommandHighlightListener({
   return null;
 }
 
+type SearchableEntry = SearchableCommandItem;
+
+type WorkerFilterOptions<TEntry extends SearchableEntry> = {
+  entries: TEntry[];
+  query: string;
+  limit?: number;
+  enabled: boolean;
+  runSearch: RunCommandSearch;
+};
+
+type DatasetState = {
+  key: number;
+  entries: SearchableEntry[];
+  index: CommandSearchIndex<SearchableEntry>;
+  needsSync: boolean;
+};
+
+function useWorkerFilteredCommandEntries<TEntry extends SearchableEntry>({
+  entries,
+  query,
+  limit,
+  enabled,
+  runSearch,
+}: WorkerFilterOptions<TEntry>): TEntry[] {
+  const entryMap = useMemo(() => {
+    const map = new Map<string, TEntry>();
+    for (const entry of entries) {
+      map.set(entry.value, entry);
+    }
+    return map;
+  }, [entries]);
+
+  const workerSearchItems = useMemo<SearchableEntry[]>(
+    () =>
+      entries.map((entry) => ({
+        value: entry.value,
+        searchText: entry.searchText,
+      })),
+    [entries]
+  );
+
+  const datasetStateRef = useRef<DatasetState>({
+    key: 0,
+    entries: workerSearchItems,
+    index: buildCommandSearchIndex(workerSearchItems),
+    needsSync: true,
+  });
+
+  const [filteredEntries, setFilteredEntries] = useState<TEntry[]>(entries);
+
+  useEffect(() => {
+    if (datasetStateRef.current.entries !== workerSearchItems) {
+      datasetStateRef.current = {
+        key: datasetStateRef.current.key + 1,
+        entries: workerSearchItems,
+        index: buildCommandSearchIndex(workerSearchItems),
+        needsSync: true,
+      };
+    }
+
+    const datasetState = datasetStateRef.current;
+    const trimmedQuery = query.trim();
+
+    if (!enabled || trimmedQuery.length === 0) {
+      setFilteredEntries(entries);
+      return;
+    }
+
+    if (entries.length === 0) {
+      setFilteredEntries([]);
+      return;
+    }
+
+    let cancelled = false;
+    const shouldSync = datasetState.needsSync;
+    const datasetKey = datasetState.key;
+    const itemsPayload = shouldSync ? workerSearchItems : undefined;
+
+    runSearch({
+      datasetKey,
+      query,
+      limit,
+      items: itemsPayload,
+      index: datasetState.index,
+    })
+      .then((values) => {
+        if (cancelled) {
+          return;
+        }
+        const orderedEntries: TEntry[] = [];
+        for (const value of values) {
+          const entry = entryMap.get(value);
+          if (entry) {
+            orderedEntries.push(entry);
+          }
+        }
+        setFilteredEntries(orderedEntries);
+        if (shouldSync && datasetStateRef.current.key === datasetKey) {
+          datasetStateRef.current.needsSync = false;
+        }
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        console.error("Command search worker failed", error);
+        const fallbackItems = filterCommandItemsWithIndex(
+          query,
+          datasetState.index,
+          { limit }
+        );
+        const orderedEntries: TEntry[] = [];
+        for (const item of fallbackItems) {
+          const entry = entryMap.get(item.value);
+          if (entry) {
+            orderedEntries.push(entry);
+          }
+        }
+        setFilteredEntries(orderedEntries);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    entries,
+    entryMap,
+    enabled,
+    limit,
+    query,
+    runSearch,
+    workerSearchItems,
+  ]);
+
+  return filteredEntries;
+}
+
 export function CommandBar({
   teamSlugOrId,
   stateResetDelayMs = 30_000,
@@ -311,7 +455,6 @@ export function CommandBar({
   const openRef = useRef<boolean>(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const commandListRef = useRef<HTMLDivElement | null>(null);
-  const previousSearchRef = useRef(search);
   const skipNextCloseRef = useRef(false);
   const stateResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -320,6 +463,7 @@ export function CommandBar({
   const prevFocusSnapshotRef = useRef<FocusSnapshot | null>(null);
   const navigate = useNavigate();
   const router = useRouter();
+  const runCommandSearch = useCommandSearchWorker();
   const { setTheme, theme } = useTheme();
   const { addTaskToExpand } = useExpandTasks();
   const { socket } = useSocket();
@@ -338,6 +482,14 @@ export function CommandBar({
   const filterQuery = deferredSearch;
   const trimmedFilterQuery = filterQuery.trim();
   const hasSearchQuery = trimmedFilterQuery.length > 0;
+  const previousQueryRef = useRef<{
+    search: string;
+    filterQuery: string;
+    firstValue?: string;
+  }>({ search, filterQuery, firstValue: undefined });
+  const isLocalWorkspacePage = activePage === "local-workspaces";
+  const isCloudWorkspacePage = activePage === "cloud-workspaces";
+  const isTeamsPage = activePage === "teams";
   const updateCommandListMaxHeight = useCallback(() => {
     const inputHeight = inputRef.current?.offsetHeight ?? 0;
     const availableHeight =
@@ -421,6 +573,10 @@ export function CommandBar({
     setActivePage("root");
     setCommandValue(undefined);
   }, [clearCommandInput]);
+  const handleSearchChange = useCallback((value: string) => {
+    setCommandValue(undefined);
+    setSearch(value);
+  }, []);
 
   const scheduleCommandStateReset = useCallback(() => {
     if (stateResetDelayMs <= 0) {
@@ -1794,9 +1950,12 @@ export function CommandBar({
                 task.pullRequestTitle,
                 `task ${displayIndex}`,
               ]);
-              const baseSearch = buildSearchText(title, keywords, [
-                `${displayIndex}`,
-              ]);
+              const baseSearch = buildSearchText(
+                title,
+                keywords,
+                [`${displayIndex}`],
+                { priority: [`${displayIndex}`] }
+              );
               const statusLabel = task.isCompleted
                 ? "completed"
                 : "in progress";
@@ -1831,11 +1990,22 @@ export function CommandBar({
                   value: `${displayIndex} vs:task:${task._id}`,
                   label: `${title} (VS)`,
                   keywords: vsKeywords,
-                  searchText: buildSearchText(`${title} VS`, vsKeywords, [
-                    `${displayIndex} vs`,
-                    `${displayIndex}vs`,
-                    `${displayIndex}v`,
-                  ]),
+                  searchText: buildSearchText(
+                    `${title} VS`,
+                    vsKeywords,
+                    [
+                      `${displayIndex} vs`,
+                      `${displayIndex}vs`,
+                      `${displayIndex}v`,
+                    ],
+                    {
+                      priority: [
+                        `${displayIndex}v`,
+                        `${displayIndex} vs`,
+                        `${displayIndex}vs`,
+                      ],
+                    }
+                  ),
                   className: taskCommandItemClassName,
                   execute: () => handleSelect(`task:${task._id}:vs`),
                   renderContent: () => (
@@ -1861,7 +2031,14 @@ export function CommandBar({
                       `${displayIndex} git diff`,
                       `${displayIndex}gitdiff`,
                       `${displayIndex}gd`,
-                    ]
+                    ],
+                    {
+                      priority: [
+                        `${displayIndex}gd`,
+                        `${displayIndex} git diff`,
+                        `${displayIndex}diff`,
+                      ],
+                    }
                   ),
                   className: taskCommandItemClassName,
                   execute: () => handleSelect(`task:${task._id}:gitdiff`),
@@ -1896,9 +2073,12 @@ export function CommandBar({
                 task.pullRequestTitle,
                 `task ${displayIndex}`,
               ]);
-              const baseSearch = buildSearchText(title, keywords, [
-                `${displayIndex}`,
-              ]);
+              const baseSearch = buildSearchText(
+                title,
+                keywords,
+                [`${displayIndex}`],
+                { priority: [`${displayIndex}`] }
+              );
               const statusLabel = task.isCompleted
                 ? "completed"
                 : "in progress";
@@ -1935,11 +2115,22 @@ export function CommandBar({
                   value: `search:task:${task._id}:vs`,
                   label: `${title} (VS)`,
                   keywords: vsKeywords,
-                  searchText: buildSearchText(`${title} VS`, vsKeywords, [
-                    `${displayIndex} vs`,
-                    `${displayIndex}vs`,
-                    `${displayIndex}v`,
-                  ]),
+                  searchText: buildSearchText(
+                    `${title} VS`,
+                    vsKeywords,
+                    [
+                      `${displayIndex} vs`,
+                      `${displayIndex}vs`,
+                      `${displayIndex}v`,
+                    ],
+                    {
+                      priority: [
+                        `${displayIndex}v`,
+                        `${displayIndex} vs`,
+                        `${displayIndex}vs`,
+                      ],
+                    }
+                  ),
                   searchOnly: true,
                   className: taskCommandItemClassName,
                   execute: () => handleSelect(`task:${task._id}:vs`),
@@ -1966,7 +2157,14 @@ export function CommandBar({
                       `${displayIndex} git diff`,
                       `${displayIndex}gitdiff`,
                       `${displayIndex}gd`,
-                    ]
+                    ],
+                    {
+                      priority: [
+                        `${displayIndex}gd`,
+                        `${displayIndex} git diff`,
+                        `${displayIndex}diff`,
+                      ],
+                    }
                   ),
                   searchOnly: true,
                   className: taskCommandItemClassName,
@@ -2162,43 +2360,61 @@ export function CommandBar({
     );
   }, [cloudWorkspaceEntries, pruneCloudWorkspaceHistory]);
 
+  const workerFilteredRootEntries = useWorkerFilteredCommandEntries({
+    entries: rootCommandEntries,
+    query: filterQuery,
+    limit: COMMAND_LIST_FILTER_LIMIT,
+    enabled: hasSearchQuery && rootCommandEntries.length > 0,
+    runSearch: runCommandSearch,
+  });
   const filteredRootEntries = useMemo(() => {
-    const filtered = filterCommandItems(filterQuery, rootCommandEntries, {
-      limit: COMMAND_LIST_FILTER_LIMIT,
-    });
     if (!hasSearchQuery) {
-      return filtered.filter((entry) => !entry.searchOnly);
+      return rootCommandEntries.filter((entry) => !entry.searchOnly);
     }
-    return filtered;
-  }, [filterQuery, hasSearchQuery, rootCommandEntries]);
-  const isLocalWorkspacePage = activePage === "local-workspaces";
-  const isCloudWorkspacePage = activePage === "cloud-workspaces";
-  const isTeamsPage = activePage === "teams";
+    return workerFilteredRootEntries;
+  }, [hasSearchQuery, rootCommandEntries, workerFilteredRootEntries]);
 
+  const workerFilteredLocalWorkspaceEntries = useWorkerFilteredCommandEntries({
+    entries: localWorkspaceEntries,
+    query: filterQuery,
+    limit: COMMAND_LIST_FILTER_LIMIT,
+    enabled: isLocalWorkspacePage && localWorkspaceEntries.length > 0,
+    runSearch: runCommandSearch,
+  });
   const filteredLocalWorkspaceEntries = useMemo(() => {
     if (!isLocalWorkspacePage) {
       return [];
     }
-    return filterCommandItems(filterQuery, localWorkspaceEntries, {
-      limit: COMMAND_LIST_FILTER_LIMIT,
-    });
-  }, [filterQuery, isLocalWorkspacePage, localWorkspaceEntries]);
+    return workerFilteredLocalWorkspaceEntries;
+  }, [isLocalWorkspacePage, workerFilteredLocalWorkspaceEntries]);
+
+  const workerFilteredCloudWorkspaceEntries = useWorkerFilteredCommandEntries({
+    entries: cloudWorkspaceEntries,
+    query: filterQuery,
+    limit: COMMAND_LIST_FILTER_LIMIT,
+    enabled: isCloudWorkspacePage && cloudWorkspaceEntries.length > 0,
+    runSearch: runCommandSearch,
+  });
   const filteredCloudWorkspaceEntries = useMemo(() => {
     if (!isCloudWorkspacePage) {
       return [];
     }
-    return filterCommandItems(filterQuery, cloudWorkspaceEntries, {
-      limit: COMMAND_LIST_FILTER_LIMIT,
-    });
-  }, [cloudWorkspaceEntries, filterQuery, isCloudWorkspacePage]);
+    return workerFilteredCloudWorkspaceEntries;
+  }, [isCloudWorkspacePage, workerFilteredCloudWorkspaceEntries]);
+
+  const workerFilteredTeamEntries = useWorkerFilteredCommandEntries({
+    entries: teamCommandEntries,
+    query: filterQuery,
+    limit: COMMAND_LIST_FILTER_LIMIT,
+    enabled: isTeamsPage && teamCommandEntries.length > 0,
+    runSearch: runCommandSearch,
+  });
   const filteredTeamEntries = useMemo(() => {
     if (!isTeamsPage) {
       return [];
     }
-    return filterCommandItems(filterQuery, teamCommandEntries, {
-      limit: COMMAND_LIST_FILTER_LIMIT,
-    });
-  }, [filterQuery, isTeamsPage, teamCommandEntries]);
+    return workerFilteredTeamEntries;
+  }, [isTeamsPage, workerFilteredTeamEntries]);
 
   const rootSuggestedEntries = useMemo(
     () => selectSuggestedItems(rootSuggestionHistory, filteredRootEntries, 5),
@@ -2607,18 +2823,7 @@ export function CommandBar({
     teamVisibleValues,
   ]);
 
-  useEffect(() => {
-    if (!open) {
-      previousSearchRef.current = search;
-      return;
-    }
-
-    if (previousSearchRef.current === search) {
-      return;
-    }
-
-    previousSearchRef.current = search;
-
+  useLayoutEffect(() => {
     let availableValues: string[] = [];
     if (activePage === "root") {
       availableValues = rootVisibleValues;
@@ -2630,12 +2835,32 @@ export function CommandBar({
       availableValues = teamVisibleValues;
     }
 
-    if (availableValues.length === 0) {
-      setCommandValue(undefined);
+    const firstValue = availableValues[0];
+
+    if (!open) {
+      previousQueryRef.current = { search, filterQuery, firstValue };
       return;
     }
 
-    const firstValue = availableValues[0];
+    if (availableValues.length === 0) {
+      if (commandValue !== undefined) {
+        setCommandValue(undefined);
+      }
+      previousQueryRef.current = { search, filterQuery, firstValue: undefined };
+      return;
+    }
+
+    const previous = previousQueryRef.current;
+    const searchChanged = previous.search !== search;
+    const filterChanged = previous.filterQuery !== filterQuery;
+    const firstValueChanged = previous.firstValue !== firstValue;
+
+    if (!searchChanged && !filterChanged && !firstValueChanged) {
+      return;
+    }
+
+    previousQueryRef.current = { search, filterQuery, firstValue };
+
     if (commandValue !== firstValue) {
       setCommandValue(firstValue);
     }
@@ -2648,6 +2873,7 @@ export function CommandBar({
     open,
     rootVisibleValues,
     scrollCommandItemIntoView,
+    filterQuery,
     search,
     teamVisibleValues,
   ]);
@@ -2707,7 +2933,7 @@ export function CommandBar({
             <h2 className="sr-only">Command Menu</h2>
             <Command.Input
               value={search}
-              onValueChange={setSearch}
+              onValueChange={handleSearchChange}
               placeholder="Type a command or search..."
               ref={inputRef}
               className="w-full px-4 py-3 text-sm bg-transparent border-b border-neutral-200 dark:border-neutral-700 outline-none placeholder:text-neutral-500 dark:placeholder:text-neutral-400"
