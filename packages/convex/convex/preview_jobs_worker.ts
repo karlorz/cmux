@@ -527,8 +527,7 @@ export async function runPreviewJob(
 
       if (accessToken) {
         const escapedToken = singleQuote(accessToken);
-
-        // Configure GitHub authentication using gh CLI with retry logic (same approach as cloud workspaces)
+        
         let lastError: Error | undefined;
         let authSucceeded = false;
         const maxRetries = 5;
