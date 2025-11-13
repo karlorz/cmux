@@ -152,8 +152,9 @@ function getActiveBrowserWindow(): BrowserWindow | null {
 
 function updateHistoryMenuState(target?: BrowserWindow | null): void {
   if (!historyBackMenuItem && !historyForwardMenuItem) return;
-  const window =
-    target && !target.isDestroyed() ? target : getActiveBrowserWindow();
+  const focusableTarget =
+    target && !target.isDestroyed() && target.isFocused() ? target : null;
+  const window = focusableTarget ?? getActiveBrowserWindow();
   const contents = window && !window.isDestroyed() ? window.webContents : null;
   const canGoBack = Boolean(contents?.canGoBack?.());
   const canGoForward = Boolean(contents?.canGoForward?.());
