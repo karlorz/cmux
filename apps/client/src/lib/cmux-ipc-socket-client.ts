@@ -1,4 +1,7 @@
-import type { ClientToServerEvents, ServerToClientEvents } from "@cmux/shared";
+import type {
+  ClientToServerEventsWithAuth,
+  ServerToClientEvents,
+} from "@cmux/shared";
 
 type EventHandler = (...args: unknown[]) => void;
 
@@ -68,7 +71,7 @@ export class CmuxIpcSocketClient {
     return this;
   }
 
-  emit<E extends keyof ClientToServerEvents>(
+  emit<E extends keyof ClientToServerEventsWithAuth>(
     event: E | string,
     ...args: unknown[]
   ) {

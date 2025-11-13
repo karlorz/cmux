@@ -6,6 +6,7 @@ import {
 import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
 import { useSocket } from "@/contexts/socket/use-socket";
 import { useTheme } from "@/components/theme/use-theme";
+import { emitWithAuth } from "@/lib/socket/emitWithAuth";
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
 import type {
@@ -71,8 +72,9 @@ export function WorkspaceCreationButtons({
 
       addTaskToExpand(reservation.taskId);
 
-      await new Promise<void>((resolve) => {
-        socket.emit(
+      await new Promise<void>((resolve, reject) => {
+        emitWithAuth(
+          socket,
           "create-local-workspace",
           {
             teamSlugOrId,
@@ -95,7 +97,11 @@ export function WorkspaceCreationButtons({
             }
             resolve();
           }
-        );
+        ).then((emitted) => {
+          if (!emitted) {
+            reject(new Error("Failed to request local workspace creation"));
+          }
+        });
       });
     } catch (error) {
       console.error("Error creating local workspace:", error);
@@ -153,8 +159,9 @@ export function WorkspaceCreationButtons({
       // Hint the sidebar to auto-expand this task once it appears
       addTaskToExpand(taskId);
 
-      await new Promise<void>((resolve) => {
-        socket.emit(
+      await new Promise<void>((resolve, reject) => {
+        emitWithAuth(
+          socket,
           "create-cloud-workspace",
           {
             teamSlugOrId,
@@ -172,7 +179,11 @@ export function WorkspaceCreationButtons({
             }
             resolve();
           }
-        );
+        ).then((emitted) => {
+          if (!emitted) {
+            reject(new Error("Failed to request cloud workspace creation"));
+          }
+        });
       });
 
       console.log("Cloud workspace created:", taskId);

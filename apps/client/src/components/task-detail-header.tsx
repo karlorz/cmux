@@ -4,6 +4,7 @@ import { MergeButton, type MergeMethod } from "@/components/ui/merge-button";
 import { useSocketSuspense } from "@/contexts/socket/use-socket";
 import { isElectron } from "@/lib/electron";
 import { cn } from "@/lib/utils";
+import { emitWithAuth } from "@/lib/socket/emitWithAuth";
 import { normalizeGitRef } from "@/lib/refWithOrigin";
 import { gitDiffQueryOptions } from "@/queries/git-diff";
 import type { Doc, Id } from "@cmux/convex/dataModel";
@@ -791,11 +792,19 @@ function SocketActions({
         throw new Error("Socket unavailable");
       }
       return new Promise<PullRequestActionResponse>((resolve, reject) => {
-        socket.emit("github-create-draft-pr", { taskRunId }, (resp) => {
+        emitWithAuth(socket, "github-create-draft-pr", { taskRunId }, (resp) => {
           if (resp.success) {
             resolve(resp);
           } else {
             reject(new SocketMutationError(resp.error ?? draftErrorLabel, resp));
+          }
+        }).then((emitted) => {
+          if (!emitted) {
+            reject(
+              new SocketMutationError("Failed to request draft PR", {
+                error: "Failed to request draft PR",
+              })
+            );
           }
         });
       });
@@ -870,7 +879,7 @@ function SocketActions({
         throw new Error("Socket unavailable");
       }
       return new Promise<MergeBranchResponse>((resolve, reject) => {
-        socket.emit("github-merge-branch", { taskRunId }, (resp) => {
+        emitWithAuth(socket, "github-merge-branch", { taskRunId }, (resp) => {
           if (resp.success) {
             resolve(resp);
           } else {
@@ -879,6 +888,14 @@ function SocketActions({
                 resp.error ?? mergeBranchErrorLabel,
                 resp,
               ),
+            );
+          }
+        }).then((emitted) => {
+          if (!emitted) {
+            reject(
+              new SocketMutationError("Failed to request merge", {
+                error: "Failed to request merge",
+              })
             );
           }
         });

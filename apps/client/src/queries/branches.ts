@@ -1,4 +1,5 @@
 import { waitForConnectedSocket } from "@/contexts/socket/socket-boot";
+import { emitWithAuth } from "@/lib/socket/emitWithAuth";
 import { queryOptions } from "@tanstack/react-query";
 import type { GitHubBranchesResponse } from "@cmux/shared";
 
@@ -14,7 +15,8 @@ export function branchesQueryOptions({
     queryFn: async () => {
       const socket = await waitForConnectedSocket();
       return await new Promise<GitHubBranchesResponse>((resolve, reject) => {
-        socket.emit(
+        emitWithAuth(
+          socket,
           "github-fetch-branches",
           { teamSlugOrId, repo: repoFullName },
           (response: GitHubBranchesResponse) => {
@@ -24,7 +26,11 @@ export function branchesQueryOptions({
               reject(new Error(response.error || "Failed to load branches"));
             }
           }
-        );
+        ).then((emitted) => {
+          if (!emitted) {
+            reject(new Error("Failed to request branch list"));
+          }
+        });
       });
     },
     staleTime: 10_000,

@@ -1,5 +1,6 @@
 import { editorIcons } from "@/components/ui/dropdown-types";
 import { useSocket } from "@/contexts/socket/use-socket";
+import { emitWithAuth } from "@/lib/socket/emitWithAuth";
 import { Menu } from "@base-ui-components/react/menu";
 import clsx from "clsx";
 import { Check, ChevronDown } from "lucide-react";
@@ -147,14 +148,19 @@ export function OpenEditorSplitButton({
           ].includes(editor) &&
           worktreePath
         ) {
-          socket.emit(
+          emitWithAuth(
+            socket,
             "open-in-editor",
             { editor, path: worktreePath },
             (response: { success: boolean; error?: string }) => {
               if (response.success) resolve();
               else reject(new Error(response.error || "Failed to open editor"));
             }
-          );
+          ).then((emitted) => {
+            if (!emitted) {
+              reject(new Error("Unable to send open-editor request"));
+            }
+          });
         } else {
           reject(new Error("Unable to open editor"));
         }

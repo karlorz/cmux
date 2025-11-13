@@ -1,4 +1,5 @@
 import { useSocket } from "@/contexts/socket/use-socket";
+import { emitWithAuth } from "@/lib/socket/emitWithAuth";
 import { ChevronDown, ExternalLink } from "lucide-react";
 import { useEffect, useRef, useState, useMemo } from "react";
 
@@ -85,7 +86,8 @@ export function OpenInEditorButton({ workspacePath }: OpenInEditorButtonProps) {
 
   const handleOpenInEditor = () => {
     if (workspacePath && socket) {
-      socket.emit(
+      emitWithAuth(
+        socket,
         "open-in-editor",
         {
           editor: selectedEditor,
@@ -96,7 +98,11 @@ export function OpenInEditorButton({ workspacePath }: OpenInEditorButtonProps) {
             console.error("Failed to open editor:", response.error);
           }
         }
-      );
+      ).then((emitted) => {
+        if (!emitted) {
+          console.error("Failed to send open-in-editor request");
+        }
+      });
     }
   };
 

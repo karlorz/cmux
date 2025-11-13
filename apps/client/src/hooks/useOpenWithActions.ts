@@ -1,4 +1,5 @@
 import { useSocket } from "@/contexts/socket/use-socket";
+import { emitWithAuth } from "@/lib/socket/emitWithAuth";
 import type { Doc } from "@cmux/convex/dataModel";
 import { editorIcons, type EditorType } from "@/components/ui/dropdown-types";
 import { useCallback, useEffect, useMemo } from "react";
@@ -76,7 +77,8 @@ export function useOpenWithActions({
           ].includes(editor) &&
           worktreePath
         ) {
-          socket.emit(
+          emitWithAuth(
+            socket,
             "open-in-editor",
             {
               editor: editor as
@@ -98,7 +100,11 @@ export function useOpenWithActions({
                 reject(new Error(response.error || "Failed to open editor"));
               }
             }
-          );
+          ).then((emitted) => {
+            if (!emitted) {
+              reject(new Error("Unable to send open-editor request"));
+            }
+          });
         } else {
           reject(new Error("Unable to open editor"));
         }

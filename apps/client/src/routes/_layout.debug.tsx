@@ -1,5 +1,6 @@
 import { FloatingPane } from "@/components/floating-pane";
 import { useSocket } from "@/contexts/socket/use-socket";
+import { emitWithAuth } from "@/lib/socket/emitWithAuth";
 import { stackClientApp } from "@/lib/stack";
 import { createFileRoute } from "@tanstack/react-router";
 
@@ -36,7 +37,7 @@ function DebugComponent() {
 
         <button
           onClick={() => {
-            socket?.emit("rust-get-time", (res) => {
+            void emitWithAuth(socket, "rust-get-time", (res) => {
               if (res.ok) {
                 console.log("Rust time (ms since epoch):", res.time);
                 alert(`Rust time: ${new Date(Number(res.time)).toISOString()}`);
@@ -58,9 +59,14 @@ function DebugComponent() {
               typeof window !== "undefined"
                 ? window.location.pathname.split("/")[1] || "default"
                 : "default";
-            socket?.emit("github-fetch-repos", { teamSlugOrId }, (data) => {
-              console.log(data);
-            });
+            void emitWithAuth(
+              socket,
+              "github-fetch-repos",
+              { teamSlugOrId },
+              (data) => {
+                console.log(data);
+              }
+            );
           }}
         >
           refetch github

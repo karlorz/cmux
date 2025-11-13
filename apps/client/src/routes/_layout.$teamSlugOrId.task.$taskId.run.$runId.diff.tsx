@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
 import { useSocket } from "@/contexts/socket/use-socket";
+import { emitWithAuth } from "@/lib/socket/emitWithAuth";
 import { normalizeGitRef } from "@/lib/refWithOrigin";
 import { cn } from "@/lib/utils";
 import { gitDiffQueryOptions } from "@/queries/git-diff";
@@ -210,7 +211,8 @@ const RestartTaskForm = memo(function RestartTaskForm({
         setFollowUpText("");
       };
 
-      socket.emit(
+      const emitted = await emitWithAuth(
+        socket,
         "start-task",
         {
           ...(repoUrl ? { repoUrl } : {}),
@@ -225,6 +227,11 @@ const RestartTaskForm = memo(function RestartTaskForm({
         },
         handleRestartAck,
       );
+
+      if (!emitted) {
+        toast.error("Failed to start follow-up task");
+        return;
+      }
 
       toast.success("Started follow-up task", {
         action: {
@@ -749,7 +756,7 @@ function RunDiffPage() {
 
   const navigate = useNavigate();
 
-  const handleOpenLocalWorkspace = useCallback(() => {
+  const handleOpenLocalWorkspace = useCallback(async () => {
     if (!socket) {
       toast.error("Socket not connected");
       return;
@@ -767,7 +774,8 @@ function RunDiffPage() {
 
     const loadingToast = toast.loading("Creating local workspace...");
 
-    socket.emit(
+    const emitted = await emitWithAuth(
+      socket,
       "create-local-workspace",
       {
         teamSlugOrId,
@@ -782,7 +790,6 @@ function RunDiffPage() {
             description: `Opening workspace at ${response.workspacePath}`,
           });
 
-          // Navigate to the vscode view for this task run
           if (response.taskRunId) {
             navigate({
               to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
@@ -800,6 +807,10 @@ function RunDiffPage() {
         }
       }
     );
+
+    if (!emitted) {
+      toast.error("Failed to create workspace", { id: loadingToast });
+    }
   }, [socket, teamSlugOrId, primaryRepo, selectedRun?.newBranch, navigate, taskId]);
 
   // 404 if selected run is missing

@@ -10,6 +10,7 @@ import {
 } from "@cmux/shared";
 import { WWW_ORIGIN } from "@/lib/wwwOrigin";
 import { useSocket } from "@/contexts/socket/use-socket";
+import { emitWithAuth } from "@/lib/socket/emitWithAuth";
 import { useUser } from "@stackframe/react";
 
 export type IframePreflightPhase =
@@ -398,7 +399,7 @@ export function useIframePreflight({
               reject(new Error("Socket is not connected."));
               return;
             }
-            socket.emit("iframe-preflight", { url }, (response) => {
+            emitWithAuth(socket, "iframe-preflight", { url }, (response) => {
               if (cancelled || controller.signal.aborted) {
                 return;
               }
@@ -407,6 +408,10 @@ export function useIframePreflight({
                 return;
               }
               reject(new Error("Preflight response was malformed."));
+            }).then((emitted) => {
+              if (!emitted) {
+                reject(new Error("Failed to request iframe preflight."));
+              }
             });
           }
         );

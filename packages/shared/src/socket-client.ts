@@ -1,6 +1,6 @@
 import { io, type Socket } from "socket.io-client";
 import type {
-  ClientToServerEvents,
+  ClientToServerEventsWithAuth,
   ServerToClientEvents,
 } from "./socket-schemas";
 import type {
@@ -29,20 +29,20 @@ export function buildMainClientQuery(
 
 export function connectToMainServer(
   params: MainServerClientParams
-): Socket<ServerToClientEvents, ClientToServerEvents> {
+): Socket<ServerToClientEvents, ClientToServerEventsWithAuth> {
   // Prefer WebSocket, but allow polling fallback to survive tricky dev setups
   const { url, transports = ["websocket", "polling"], ...rest } = params;
   const query = buildMainClientQuery(rest);
   return io(url, { transports, query }) as Socket<
     ServerToClientEvents,
-    ClientToServerEvents
+    ClientToServerEventsWithAuth
   >;
 }
 
 // Typed socket aliases for consumers
 export type MainServerSocket = Socket<
   ServerToClientEvents,
-  ClientToServerEvents
+  ClientToServerEventsWithAuth
 >;
 
 export interface WorkerManagementClientParams {

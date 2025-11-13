@@ -1,4 +1,5 @@
 import { useSocket } from "@/contexts/socket/use-socket";
+import { emitWithAuth } from "@/lib/socket/emitWithAuth";
 import type { ProviderStatus, ProviderStatusResponse } from "@cmux/shared";
 import { AlertCircle, CheckCircle2, RefreshCw, XCircle } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -12,7 +13,7 @@ export function ProviderStatusSettings() {
     if (!socket) return;
 
     setLoading(true);
-    socket.emit("check-provider-status", (response) => {
+    void emitWithAuth(socket, "check-provider-status", (response) => {
       setLoading(false);
       if (response.success) {
         setStatus(response);

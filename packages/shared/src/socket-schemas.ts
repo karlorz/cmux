@@ -7,6 +7,8 @@ import type {
 } from "./pull-request-state";
 import type { IframePreflightResult } from "./iframe-preflight";
 
+export type SocketAuthHeaders = Record<string, string>;
+
 // Client to Server Events
 export const CreateTerminalSchema = z.object({
   id: z.string().optional(),
@@ -591,6 +593,14 @@ export interface ClientToServerEvents {
     }) => void
   ) => void;
 }
+
+type AppendSocketAuth<T> = T extends (...args: infer P) => infer R
+  ? (auth: SocketAuthHeaders, ...args: P) => R
+  : never;
+
+export type ClientToServerEventsWithAuth = {
+  [K in keyof ClientToServerEvents]: AppendSocketAuth<ClientToServerEvents[K]>;
+};
 
 export interface ServerToClientEvents {
   "git-status-response": (data: GitStatusResponse) => void;

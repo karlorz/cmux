@@ -1,5 +1,6 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useSocket } from "@/contexts/socket/use-socket";
+import { emitWithAuth } from "@/lib/socket/emitWithAuth";
 import type { ProviderStatus, ProviderStatusResponse } from "@cmux/shared";
 import { useNavigate } from "@tanstack/react-router";
 import clsx from "clsx";
@@ -15,7 +16,7 @@ export function ProviderStatusPills({ teamSlugOrId }: { teamSlugOrId: string }) 
   const checkProviderStatus = useCallback(() => {
     if (!socket) return;
 
-    socket.emit("check-provider-status", (response) => {
+    void emitWithAuth(socket, "check-provider-status", (response) => {
       if (response.success) {
         setStatus(response);
         // Delay visibility to create fade-in effect

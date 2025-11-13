@@ -22,6 +22,7 @@ import {
   isLoopbackHostname,
   LOCAL_VSCODE_PLACEHOLDER_ORIGIN,
   type IframePreflightResult,
+  type SocketAuthHeaders,
 } from "@cmux/shared";
 import {
   type PullRequestActionResult,
@@ -187,6 +188,92 @@ function buildPlaceholderWorkspaceUrl(folderPath: string): string {
   return buildServeWebWorkspaceUrl(LOCAL_VSCODE_PLACEHOLDER_ORIGIN, folderPath);
 }
 
+function firstQueryValue(
+  value: string | string[] | undefined
+): string | undefined {
+  if (Array.isArray(value)) {
+    return typeof value[0] === "string" ? value[0] : undefined;
+  }
+  return typeof value === "string" ? value : undefined;
+}
+
+function isSocketAuthHeadersCandidate(
+  value: unknown
+): value is SocketAuthHeaders {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value)
+  ) {
+    return false;
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length === 0) {
+    return false;
+  }
+
+  let hasStackKey = false;
+
+  for (const [rawKey, rawValue] of entries) {
+    if (typeof rawValue !== "string") {
+      return false;
+    }
+    const key = rawKey.toLowerCase();
+    if (key === "authorization" || key === "x-stack-auth") {
+      hasStackKey = true;
+    }
+  }
+
+  return hasStackKey;
+}
+
+function parseBearerToken(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  return trimmed.toLowerCase().startsWith("bearer ")
+    ? trimmed.slice(7).trim()
+    : trimmed;
+}
+
+function extractAuthContextFromHeaders(headers: SocketAuthHeaders): {
+  authToken?: string;
+  authHeaderJson?: string;
+} {
+  const normalized = new Map<string, string>();
+  for (const [key, rawValue] of Object.entries(headers)) {
+    if (typeof rawValue === "string") {
+      normalized.set(key.toLowerCase(), rawValue);
+    }
+  }
+
+  const authHeaderJson = normalized.get("x-stack-auth") ?? undefined;
+  let authToken = parseBearerToken(normalized.get("authorization"));
+
+  if (!authToken && authHeaderJson) {
+    try {
+      const parsed = JSON.parse(authHeaderJson) as {
+        accessToken?: string | null;
+      };
+      if (typeof parsed.accessToken === "string" && parsed.accessToken) {
+        authToken = parsed.accessToken;
+      }
+    } catch (error) {
+      serverLogger.warn("Failed to parse x-stack-auth header", { error });
+    }
+  }
+
+  return {
+    authToken: authToken ?? undefined,
+    authHeaderJson,
+  };
+}
+
 export function setupSocketHandlers(
   rt: RealtimeServer,
   gitDiffManager: GitDiffManager,
@@ -196,29 +283,34 @@ export function setupSocketHandlers(
   let dockerEventsStarted = false;
 
   rt.onConnection((socket) => {
-    // Ensure every packet runs within the auth context associated with this socket
-    const q = socket.handshake.query?.auth;
-    const token = Array.isArray(q)
-      ? q[0]
-      : typeof q === "string"
-        ? q
-        : undefined;
-    const qJson = socket.handshake.query?.auth_json;
-    const tokenJson = Array.isArray(qJson)
-      ? qJson[0]
-      : typeof qJson === "string"
-        ? qJson
-        : undefined;
+    const handshakeAuthToken = firstQueryValue(socket.handshake.query?.auth);
+    const handshakeAuthJson = firstQueryValue(
+      socket.handshake.query?.auth_json
+    );
+    const handshakeTeam = firstQueryValue(socket.handshake.query?.team);
+    const safeTeam = handshakeTeam || "default";
 
-    // authenticate the token
-    if (!token) {
-      // disconnect the socket
+    if (!handshakeAuthToken) {
       socket.disconnect();
       return;
     }
 
-    socket.use((_, next) => {
-      runWithAuth(token, tokenJson, () => next());
+    socket.use((packet, next) => {
+      const inlineAuthCandidate = packet[1];
+      if (isSocketAuthHeadersCandidate(inlineAuthCandidate)) {
+        const { authToken, authHeaderJson } = extractAuthContextFromHeaders(
+          inlineAuthCandidate
+        );
+        packet.splice(1, 1);
+        runWithAuth(
+          authToken ?? handshakeAuthToken,
+          authHeaderJson ?? handshakeAuthJson,
+          () => next()
+        );
+        return;
+      }
+
+      runWithAuth(handshakeAuthToken, handshakeAuthJson, () => next());
     });
     serverLogger.info("Client connected:", socket.id);
 
@@ -331,35 +423,18 @@ export function setupSocketHandlers(
     }
 
     // Kick off initial GitHub data refresh only after an authenticated connection
-    const qAuth = socket.handshake.query?.auth;
-    const qTeam = socket.handshake.query?.team;
-    const qAuthJson = socket.handshake.query?.auth_json;
-    const initialToken = Array.isArray(qAuth)
-      ? qAuth[0]
-      : typeof qAuth === "string"
-        ? qAuth
-        : undefined;
-    const initialAuthJson = Array.isArray(qAuthJson)
-      ? qAuthJson[0]
-      : typeof qAuthJson === "string"
-        ? qAuthJson
-        : undefined;
-    const initialTeam = Array.isArray(qTeam)
-      ? qTeam[0]
-      : typeof qTeam === "string"
-        ? qTeam
-        : undefined;
-    const safeTeam = initialTeam || "default";
+    const initialToken = handshakeAuthToken;
+    const initialAuthJson = handshakeAuthJson;
     if (!hasRefreshedGithub && initialToken) {
       hasRefreshedGithub = true;
       runWithAuth(initialToken, initialAuthJson, () => {
-        if (!initialTeam) {
+        if (!handshakeTeam) {
           serverLogger.warn(
             "No team provided on socket handshake; skipping initial GitHub refresh"
           );
           return;
         }
-        refreshGitHubData({ teamSlugOrId: initialTeam }).catch((error) => {
+        refreshGitHubData({ teamSlugOrId: handshakeTeam }).catch((error) => {
           serverLogger.error("Background refresh failed:", error);
         });
       });

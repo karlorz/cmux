@@ -1,4 +1,5 @@
 import { useSocket } from "@/contexts/socket/use-socket";
+import { emitWithAuth } from "@/lib/socket/emitWithAuth";
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
 import type { SpawnFromComment } from "@cmux/shared";
@@ -697,19 +698,24 @@ export function CmuxComments({ teamSlugOrId }: { teamSlugOrId: string }) {
         commentId,
       };
 
-      socket.emit("spawn-from-comment", spawnData, (response) => {
-        if (response.success) {
-          console.log("Agents spawned successfully:", response);
-          // Optionally navigate to the task page
-          if (response.taskId) {
-            // Could navigate to /task/{taskId} if desired
-            console.log("Task created:", response.taskId);
+      const emitted = await emitWithAuth(
+        socket,
+        "spawn-from-comment",
+        spawnData,
+        (response) => {
+          if (response.success) {
+            console.log("Agents spawned successfully:", response);
+            if (response.taskId) {
+              console.log("Task created:", response.taskId);
+            }
+          } else {
+            console.error("Failed to spawn agents:", response.error);
           }
-        } else {
-          console.error("Failed to spawn agents:", response.error);
-          // Optionally show an error notification
         }
-      });
+      );
+      if (!emitted) {
+        console.error("Failed to send spawn-from-comment request");
+      }
     }
 
     setCommentDraft("");

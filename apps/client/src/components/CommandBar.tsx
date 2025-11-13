@@ -7,6 +7,7 @@ import { copyAllElectronLogs } from "@/lib/electron-logs/electron-logs";
 import { setLastTeamSlugOrId } from "@/lib/lastTeam";
 import { stackClientApp } from "@/lib/stack";
 import { preloadTaskRunIframes } from "@/lib/preloadTaskRunIframes";
+import { emitWithAuth } from "@/lib/socket/emitWithAuth";
 import {
   rewriteLocalWorkspaceUrlIfNeeded,
   toProxyWorkspaceUrl,
@@ -714,8 +715,9 @@ export function CommandBar({
 
         addTaskToExpand(reservation.taskId);
 
-        await new Promise<void>((resolve) => {
-          socket.emit(
+        await new Promise<void>((resolve, reject) => {
+          emitWithAuth(
+            socket,
             "create-local-workspace",
             {
               teamSlugOrId,
@@ -808,7 +810,11 @@ export function CommandBar({
                 resolve();
               }
             }
-          );
+          ).then((emitted) => {
+            if (!emitted) {
+              reject(new Error("Failed to request local workspace creation"));
+            }
+          });
         });
       } catch (error) {
         const message =
@@ -881,8 +887,9 @@ export function CommandBar({
         // Hint the sidebar to auto-expand this task once it appears
         addTaskToExpand(taskId);
 
-        await new Promise<void>((resolve) => {
-          socket.emit(
+        await new Promise<void>((resolve, reject) => {
+          emitWithAuth(
+            socket,
             "create-cloud-workspace",
             {
               teamSlugOrId,
@@ -909,7 +916,11 @@ export function CommandBar({
                 resolve();
               }
             }
-          );
+          ).then((emitted) => {
+            if (!emitted) {
+              reject(new Error("Failed to request cloud workspace creation"));
+            }
+          });
         });
 
         console.log("Cloud workspace created:", taskId);
@@ -961,8 +972,9 @@ export function CommandBar({
         // Hint the sidebar to auto-expand this task once it appears
         addTaskToExpand(taskId);
 
-        await new Promise<void>((resolve) => {
-          socket.emit(
+        await new Promise<void>((resolve, reject) => {
+          emitWithAuth(
+            socket,
             "create-cloud-workspace",
             {
               teamSlugOrId,
@@ -990,7 +1002,11 @@ export function CommandBar({
                 resolve();
               }
             }
-          );
+          ).then((emitted) => {
+            if (!emitted) {
+              reject(new Error("Failed to request cloud workspace creation"));
+            }
+          });
         });
 
         console.log("Cloud workspace created:", taskId);

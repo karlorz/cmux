@@ -1,4 +1,7 @@
-import type { ClientToServerEvents, ServerToClientEvents } from "@cmux/shared";
+import type {
+  ClientToServerEventsWithAuth,
+  ServerToClientEvents,
+} from "@cmux/shared";
 
 // IPC Socket client that mimics Socket.IO API but uses Electron IPC
 export class IPCSocketClient {
@@ -127,7 +130,7 @@ export class IPCSocketClient {
 
   private pendingCallbacks = new Map<string, (response: unknown) => void>();
 
-  emit<E extends keyof ClientToServerEvents>(
+  emit<E extends keyof ClientToServerEventsWithAuth>(
     event: E | string,
     ...args: unknown[]
   ): this {

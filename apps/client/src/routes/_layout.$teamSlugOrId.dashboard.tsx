@@ -21,6 +21,7 @@ import {
 import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
 import { useSocket } from "@/contexts/socket/use-socket";
 import { createFakeConvexId } from "@/lib/fakeConvexId";
+import { emitWithAuth } from "@/lib/socket/emitWithAuth";
 import { attachTaskLifecycleListeners } from "@/lib/socket/taskLifecycleListeners";
 import { branchesQueryOptions } from "@/queries/branches";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
@@ -282,7 +283,7 @@ function DashboardComponent() {
   const checkProviderStatus = useCallback(() => {
     if (!socket) return;
 
-    socket.emit("check-provider-status", (response) => {
+    void emitWithAuth(socket, "check-provider-status", (response) => {
       if (!response) return;
       setProviderStatus(response);
 
@@ -414,12 +415,22 @@ function DashboardComponent() {
       // Always check Docker status when in local mode, regardless of current state
       if (socket) {
         const ready = await new Promise<boolean>((resolve) => {
-          socket.emit("check-provider-status", (response) => {
+          let settled = false;
+          emitWithAuth(socket, "check-provider-status", (response) => {
+            if (settled) {
+              return;
+            }
             const isRunning = !!response?.dockerStatus?.isRunning;
             if (typeof isRunning === "boolean") {
               setDockerReady(isRunning);
             }
+            settled = true;
             resolve(isRunning);
+          }).then((emitted) => {
+            if (!emitted && !settled) {
+              settled = true;
+              resolve(false);
+            }
           });
         });
 
@@ -542,12 +553,13 @@ function DashboardComponent() {
         console.log("Task acknowledged:", response);
       };
 
-      socket.emit(
+      const emitted = await emitWithAuth(
+        socket,
         "start-task",
         {
           ...(repoUrl ? { repoUrl } : {}),
           ...(envSelected ? {} : { branch }),
-          taskDescription: content?.text || taskDescription, // Use content.text which includes image references
+          taskDescription: content?.text || taskDescription,
           projectFullName,
           taskId,
           selectedAgents:
@@ -559,6 +571,10 @@ function DashboardComponent() {
         },
         handleStartTaskAck
       );
+      if (!emitted) {
+        toast.error("Failed to emit start-task request");
+        return;
+      }
       console.log("Task created:", taskId);
     } catch (error) {
       console.error("Error starting task:", error);
