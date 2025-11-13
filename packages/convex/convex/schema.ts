@@ -536,7 +536,8 @@ const convexSchema = defineSchema({
   }).index("by_team_user", ["teamId", "userId"]),
   workspaceConfigs: defineTable({
     projectFullName: v.string(),
-    environmentId: v.optional(v.id("environments")),
+    maintenanceScript: v.optional(v.string()),
+    dataVaultKey: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
     userId: v.string(),
