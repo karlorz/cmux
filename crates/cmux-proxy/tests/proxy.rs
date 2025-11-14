@@ -33,30 +33,27 @@ async fn start_upstream_real_ws_echo() -> (SocketAddr, tokio::task::JoinHandle<(
     let handle = tokio::spawn(async move {
         // Accept a single WebSocket connection and echo frames
         if let Ok((stream, _addr)) = listener.accept().await {
-            match accept_async(stream).await {
-                Ok(mut ws) => {
-                    while let Some(msg) = ws.next().await {
-                        match msg {
-                            Ok(m) => {
-                                if m.is_close() {
+            if let Ok(mut ws) = accept_async(stream).await {
+                while let Some(msg) = ws.next().await {
+                    match msg {
+                        Ok(m) => {
+                            if m.is_close() {
+                                break;
+                            }
+                            if m.is_text() || m.is_binary() {
+                                if ws.send(m).await.is_err() {
                                     break;
                                 }
-                                if m.is_text() || m.is_binary() {
-                                    if ws.send(m).await.is_err() {
-                                        break;
-                                    }
-                                } else if let tungstenite::Message::Ping(p) = m {
-                                    // Reply to ping with pong
-                                    if ws.send(tungstenite::Message::Pong(p)).await.is_err() {
-                                        break;
-                                    }
+                            } else if let tungstenite::Message::Ping(p) = m {
+                                // Reply to ping with pong
+                                if ws.send(tungstenite::Message::Pong(p)).await.is_err() {
+                                    break;
                                 }
                             }
-                            Err(_) => break,
                         }
+                        Err(_) => break,
                     }
                 }
-                Err(_) => {}
             }
         }
     });
@@ -79,27 +76,24 @@ async fn start_upstream_real_ws_echo_multi() -> (SocketAddr, tokio::task::JoinHa
                 Err(_) => break,
             };
             tokio::spawn(async move {
-                match accept_async(stream).await {
-                    Ok(mut ws) => {
-                        while let Some(msg) = ws.next().await {
-                            match msg {
-                                Ok(m) => {
-                                    if m.is_close() {
+                if let Ok(mut ws) = accept_async(stream).await {
+                    while let Some(msg) = ws.next().await {
+                        match msg {
+                            Ok(m) => {
+                                if m.is_close() {
+                                    break;
+                                }
+                                if m.is_text() || m.is_binary() {
+                                    if ws.send(m).await.is_err() {
                                         break;
                                     }
-                                    if m.is_text() || m.is_binary() {
-                                        if ws.send(m).await.is_err() {
-                                            break;
-                                        }
-                                    } else if let tungstenite::Message::Ping(p) = m {
-                                        let _ = ws.send(tungstenite::Message::Pong(p)).await;
-                                    }
+                                } else if let tungstenite::Message::Ping(p) = m {
+                                    let _ = ws.send(tungstenite::Message::Pong(p)).await;
                                 }
-                                Err(_) => break,
                             }
+                            Err(_) => break,
                         }
                     }
-                    Err(_) => {}
                 }
             });
         }
@@ -199,26 +193,23 @@ async fn start_upstream_ws_like_upgrade_echo() -> SocketAddr {
                             .unwrap();
 
                         tokio::spawn(async move {
-                            match hyper::upgrade::on(&mut req).await {
-                                Ok(mut upgraded) => {
-                                    let mut buf = [0u8; 1024];
-                                    loop {
-                                        match TokioIo::new(&mut upgraded).read(&mut buf).await {
-                                            Ok(0) => break,
-                                            Ok(n) => {
-                                                if TokioIo::new(&mut upgraded)
-                                                    .write_all(&buf[..n])
-                                                    .await
-                                                    .is_err()
-                                                {
-                                                    break;
-                                                }
+                            if let Ok(mut upgraded) = hyper::upgrade::on(&mut req).await {
+                                let mut buf = [0u8; 1024];
+                                loop {
+                                    match TokioIo::new(&mut upgraded).read(&mut buf).await {
+                                        Ok(0) => break,
+                                        Ok(n) => {
+                                            if TokioIo::new(&mut upgraded)
+                                                .write_all(&buf[..n])
+                                                .await
+                                                .is_err()
+                                            {
+                                                break;
                                             }
-                                            Err(_) => break,
                                         }
+                                        Err(_) => break,
                                     }
                                 }
-                                Err(_) => {}
                             }
                         });
 
@@ -618,10 +609,14 @@ async fn test_concurrent_websocket_connections() {
     let n = 16usize;
     let mut tasks = Vec::new();
     for i in 0..n {
-        let proxy_addr = proxy_addr.clone();
+        let proxy_addr_copy = proxy_addr;
         let ws_port = ws_addr.port();
         tasks.push(tokio::spawn(async move {
-            let url = format!("ws://{}:{}/ws", proxy_addr.ip(), proxy_addr.port());
+            let url = format!(
+                "ws://{}:{}/ws",
+                proxy_addr_copy.ip(),
+                proxy_addr_copy.port()
+            );
             let mut req = url.into_client_request().unwrap();
             req.headers_mut()
                 .insert("X-Cmux-Port-Internal", ws_port.to_string().parse().unwrap());

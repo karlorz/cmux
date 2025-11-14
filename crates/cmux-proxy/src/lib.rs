@@ -18,7 +18,7 @@ use hyper::body::Incoming;
 use hyper::server::conn::{http1, http2};
 use hyper::service::service_fn;
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
-use hyper_util::rt::{TokioExecutor, TokioIo};
+use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
 use std::sync::Arc;
 use tokio::io::{copy_bidirectional, AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
@@ -33,6 +33,194 @@ type BoxBody =
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 const HTTP2_PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 const HOST_OVERRIDE_HEADER: &str = "X-Cmux-Host-Override";
+const HTTP2_KEEP_ALIVE_INTERVAL_SECS: u64 = 30;
+const HTTP2_KEEP_ALIVE_TIMEOUT_SECS: u64 = 10;
+
+trait ClientKeepAliveConfig {
+    fn set_pool_max_idle_per_host(&mut self, max: usize);
+    fn set_http2_keep_alive_interval(&mut self, interval: Option<Duration>);
+    fn set_http2_keep_alive_timeout(&mut self, timeout: Duration);
+    fn set_http2_keep_alive_while_idle(&mut self, enabled: bool);
+}
+
+impl ClientKeepAliveConfig for hyper_util::client::legacy::Builder {
+    fn set_pool_max_idle_per_host(&mut self, max: usize) {
+        self.pool_max_idle_per_host(max);
+    }
+
+    fn set_http2_keep_alive_interval(&mut self, interval: Option<Duration>) {
+        self.http2_keep_alive_interval(interval);
+    }
+
+    fn set_http2_keep_alive_timeout(&mut self, timeout: Duration) {
+        self.http2_keep_alive_timeout(timeout);
+    }
+
+    fn set_http2_keep_alive_while_idle(&mut self, enabled: bool) {
+        self.http2_keep_alive_while_idle(enabled);
+    }
+}
+
+trait Http1ServerConfig {
+    fn set_keep_alive(&mut self, val: bool);
+    fn set_preserve_header_case(&mut self, val: bool);
+    fn set_title_case_headers(&mut self, val: bool);
+}
+
+impl Http1ServerConfig for http1::Builder {
+    fn set_keep_alive(&mut self, val: bool) {
+        self.keep_alive(val);
+    }
+
+    fn set_preserve_header_case(&mut self, val: bool) {
+        self.preserve_header_case(val);
+    }
+
+    fn set_title_case_headers(&mut self, val: bool) {
+        self.title_case_headers(val);
+    }
+}
+
+trait Http2ServerConfig {
+    fn set_keep_alive_interval(&mut self, interval: Option<Duration>);
+    fn set_keep_alive_timeout(&mut self, timeout: Duration);
+}
+
+impl<E> Http2ServerConfig for http2::Builder<E> {
+    fn set_keep_alive_interval(&mut self, interval: Option<Duration>) {
+        self.keep_alive_interval(interval);
+    }
+
+    fn set_keep_alive_timeout(&mut self, timeout: Duration) {
+        self.keep_alive_timeout(timeout);
+    }
+}
+
+fn configure_http_client_builder(builder: &mut impl ClientKeepAliveConfig) {
+    builder.set_pool_max_idle_per_host(8);
+    builder
+        .set_http2_keep_alive_interval(Some(Duration::from_secs(HTTP2_KEEP_ALIVE_INTERVAL_SECS)));
+    builder.set_http2_keep_alive_timeout(Duration::from_secs(HTTP2_KEEP_ALIVE_TIMEOUT_SECS));
+    builder.set_http2_keep_alive_while_idle(true);
+}
+
+fn configure_http1_server_builder(builder: &mut impl Http1ServerConfig) {
+    builder.set_keep_alive(true);
+    builder.set_preserve_header_case(true);
+    builder.set_title_case_headers(true);
+}
+
+fn configure_http2_server_builder(builder: &mut impl Http2ServerConfig) {
+    builder.set_keep_alive_interval(Some(Duration::from_secs(HTTP2_KEEP_ALIVE_INTERVAL_SECS)));
+    builder.set_keep_alive_timeout(Duration::from_secs(HTTP2_KEEP_ALIVE_TIMEOUT_SECS));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Default)]
+    struct RecordingClientBuilder {
+        pool_max_idle: Option<usize>,
+        interval: Option<Option<Duration>>,
+        timeout: Option<Duration>,
+        while_idle: Option<bool>,
+    }
+
+    impl ClientKeepAliveConfig for RecordingClientBuilder {
+        fn set_pool_max_idle_per_host(&mut self, max: usize) {
+            self.pool_max_idle = Some(max);
+        }
+
+        fn set_http2_keep_alive_interval(&mut self, interval: Option<Duration>) {
+            self.interval = Some(interval);
+        }
+
+        fn set_http2_keep_alive_timeout(&mut self, timeout: Duration) {
+            self.timeout = Some(timeout);
+        }
+
+        fn set_http2_keep_alive_while_idle(&mut self, enabled: bool) {
+            self.while_idle = Some(enabled);
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingHttp1Builder {
+        keep_alive: Option<bool>,
+        preserve_header_case: Option<bool>,
+        title_case_headers: Option<bool>,
+    }
+
+    impl Http1ServerConfig for RecordingHttp1Builder {
+        fn set_keep_alive(&mut self, val: bool) {
+            self.keep_alive = Some(val);
+        }
+
+        fn set_preserve_header_case(&mut self, val: bool) {
+            self.preserve_header_case = Some(val);
+        }
+
+        fn set_title_case_headers(&mut self, val: bool) {
+            self.title_case_headers = Some(val);
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingHttp2Builder {
+        interval: Option<Option<Duration>>,
+        timeout: Option<Duration>,
+    }
+
+    impl Http2ServerConfig for RecordingHttp2Builder {
+        fn set_keep_alive_interval(&mut self, interval: Option<Duration>) {
+            self.interval = Some(interval);
+        }
+
+        fn set_keep_alive_timeout(&mut self, timeout: Duration) {
+            self.timeout = Some(timeout);
+        }
+    }
+
+    #[test]
+    fn configures_http_client_builder_keep_alive() {
+        let mut builder = RecordingClientBuilder::default();
+        configure_http_client_builder(&mut builder);
+        assert_eq!(builder.pool_max_idle, Some(8));
+        assert_eq!(
+            builder.interval,
+            Some(Some(Duration::from_secs(HTTP2_KEEP_ALIVE_INTERVAL_SECS)))
+        );
+        assert_eq!(
+            builder.timeout,
+            Some(Duration::from_secs(HTTP2_KEEP_ALIVE_TIMEOUT_SECS))
+        );
+        assert_eq!(builder.while_idle, Some(true));
+    }
+
+    #[test]
+    fn configures_http1_server_builder_with_keep_alive_and_headers() {
+        let mut builder = RecordingHttp1Builder::default();
+        configure_http1_server_builder(&mut builder);
+        assert_eq!(builder.keep_alive, Some(true));
+        assert_eq!(builder.preserve_header_case, Some(true));
+        assert_eq!(builder.title_case_headers, Some(true));
+    }
+
+    #[test]
+    fn configures_http2_server_builder_keep_alive() {
+        let mut builder = RecordingHttp2Builder::default();
+        configure_http2_server_builder(&mut builder);
+        assert_eq!(
+            builder.interval,
+            Some(Some(Duration::from_secs(HTTP2_KEEP_ALIVE_INTERVAL_SECS)))
+        );
+        assert_eq!(
+            builder.timeout,
+            Some(Duration::from_secs(HTTP2_KEEP_ALIVE_TIMEOUT_SECS))
+        );
+    }
+}
 
 struct BufferedStream {
     stream: TcpStream,
@@ -119,9 +307,9 @@ where
     // Hyper client for proxying HTTP/1.1
     let mut connector = HttpConnector::new();
     connector.set_connect_timeout(Some(Duration::from_secs(5)));
-    let client: Client<HttpConnector, BoxBody> = Client::builder(TokioExecutor::new())
-        .pool_max_idle_per_host(8)
-        .build(connector);
+    let mut client_builder = Client::builder(TokioExecutor::new());
+    configure_http_client_builder(&mut client_builder);
+    let client: Client<HttpConnector, BoxBody> = client_builder.build(connector);
 
     let listen = cfg.listen;
     let std_listener = StdTcpListener::bind(listen).expect("bind");
@@ -175,9 +363,9 @@ where
     // Prepare shared client and shutdown notifier
     let mut connector = HttpConnector::new();
     connector.set_connect_timeout(Some(Duration::from_secs(5)));
-    let client: Client<HttpConnector, BoxBody> = Client::builder(TokioExecutor::new())
-        .pool_max_idle_per_host(8)
-        .build(connector);
+    let mut client_builder = Client::builder(TokioExecutor::new());
+    configure_http_client_builder(&mut client_builder);
+    let client: Client<HttpConnector, BoxBody> = client_builder.build(connector);
 
     let notify = Arc::new(Notify::new());
     let notify_clone = notify.clone();
@@ -280,13 +468,14 @@ async fn serve_client_stream(
         service_fn(move |req| handle(svc_client.clone(), svc_cfg.clone(), remote_addr, req));
 
     if client_prefers_http2 {
-        http2::Builder::new(TokioExecutor::new())
-            .serve_connection(io, service)
-            .await?;
+        let mut builder = http2::Builder::new(TokioExecutor::new());
+        configure_http2_server_builder(&mut builder);
+        builder.timer(TokioTimer::new());
+        builder.serve_connection(io, service).await?;
     } else {
-        http1::Builder::new()
-            .preserve_header_case(true)
-            .title_case_headers(true)
+        let mut builder = http1::Builder::new();
+        configure_http1_server_builder(&mut builder);
+        builder
             .serve_connection(io, service)
             .with_upgrades()
             .await?;
@@ -323,6 +512,7 @@ async fn sniff_http2_preface(stream: TcpStream) -> io::Result<(BufferedStream, b
     Ok((BufferedStream::new(stream, buffer), is_http2))
 }
 
+#[allow(clippy::result_large_err)]
 fn get_port_from_header(headers: &HeaderMap) -> Result<u16, Response<BoxBody>> {
     const HDR: &str = "X-Cmux-Port-Internal";
     if let Some(val) = headers.get(HDR) {
@@ -395,6 +585,7 @@ pub fn workspace_ip_from_name(name: &str) -> Option<std::net::Ipv4Addr> {
     Some(Ipv4Addr::new(127, 18, b2, b3))
 }
 
+#[allow(clippy::result_large_err)]
 fn upstream_host_from_headers(
     headers: &HeaderMap,
     default_host: &str,
@@ -594,6 +785,7 @@ fn host_is_local_allowed(host: &str) -> bool {
     false
 }
 
+#[allow(clippy::result_large_err)]
 fn enforce_local_host_header(
     headers: &HeaderMap,
     host_override: Option<&str>,
@@ -692,7 +884,7 @@ async fn handle_http(
     new_req.headers_mut().remove("x-cmux-workspace-internal");
     new_req.headers_mut().remove(HOST_OVERRIDE_HEADER);
     if let Some(host) = host_override.as_ref() {
-        if let Ok(value) = HeaderValue::from_str(&host) {
+        if let Ok(value) = HeaderValue::from_str(host.as_str()) {
             new_req.headers_mut().insert(HOST, value);
         }
     }
@@ -795,7 +987,7 @@ async fn handle_upgrade(
     proxied_req.headers_mut().remove("transfer-encoding");
     proxied_req.headers_mut().remove("trailers");
     if let Some(host) = host_override {
-        if let Ok(value) = HeaderValue::from_str(&host) {
+        if let Ok(value) = HeaderValue::from_str(host.as_str()) {
             proxied_req.headers_mut().insert(HOST, value);
         }
     }
