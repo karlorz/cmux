@@ -89,6 +89,14 @@ export async function runMaintenanceAndDevScripts({
 set -eux
 cd ${WORKSPACE_ROOT}
 
+# Source zshrc to ensure envctl hooks and PATH are loaded
+if [ -f ~/.zshrc ]; then
+  source ~/.zshrc
+fi
+
+# Ensure PATH includes common binary locations
+export PATH="/root/.bun/bin:/usr/local/bin:/usr/local/cargo/bin:/root/.local/bin:\${PATH}"
+
 echo "=== Maintenance Script Started at \\$(date) ==="
 ${maintenanceScript}
 echo "=== Maintenance Script Completed at \\$(date) ==="
@@ -100,6 +108,14 @@ echo "=== Maintenance Script Completed at \\$(date) ==="
     ? `#!/bin/zsh
 set -ux
 cd ${WORKSPACE_ROOT}
+
+# Source zshrc to ensure envctl hooks and PATH are loaded
+if [ -f ~/.zshrc ]; then
+  source ~/.zshrc
+fi
+
+# Ensure PATH includes common binary locations
+export PATH="/root/.bun/bin:/usr/local/bin:/usr/local/cargo/bin:/root/.local/bin:\${PATH}"
 
 echo "=== Dev Script Started at \\$(date) ==="
 ${devScript}
