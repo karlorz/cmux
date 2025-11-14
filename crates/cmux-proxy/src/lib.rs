@@ -3,7 +3,7 @@ use std::{
     convert::Infallible,
     future::Future,
     io,
-    net::{SocketAddr, TcpListener as StdTcpListener},
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener as StdTcpListener},
     pin::Pin,
     str::FromStr,
     task::{Context, Poll},
@@ -28,7 +28,8 @@ use tracing::{error, info, warn};
 
 use http::header::{CONNECTION, HOST, UPGRADE};
 
-type BoxBody = http_body_util::combinators::BoxBody<Bytes, Box<dyn std::error::Error + Send + Sync>>;
+type BoxBody =
+    http_body_util::combinators::BoxBody<Bytes, Box<dyn std::error::Error + Send + Sync>>;
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 const HTTP2_PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 const HOST_OVERRIDE_HEADER: &str = "X-Cmux-Host-Override";
@@ -124,9 +125,7 @@ where
 
     let listen = cfg.listen;
     let std_listener = StdTcpListener::bind(listen).expect("bind");
-    std_listener
-        .set_nonblocking(true)
-        .expect("set nonblocking");
+    std_listener.set_nonblocking(true).expect("set nonblocking");
     let listen_addr = std_listener.local_addr().expect("local addr");
     let listener = TcpListener::from_std(std_listener).expect("to tokio listener");
 
@@ -223,7 +222,7 @@ where
         };
 
         bound_addrs.push(actual_addr);
-        
+
         join_set.spawn(async move {
             info!("proxy listening on {}", actual_addr);
 
@@ -234,7 +233,7 @@ where
                             Ok((stream, remote_addr)) => {
                                 let client = client.clone();
                                 let upstream = upstream.clone();
-                                
+
                                 tokio::spawn(async move {
                                     let cfg = ProxyConfig {
                                         listen: actual_addr,
@@ -277,9 +276,8 @@ async fn serve_client_stream(
     let io = TokioIo::new(buffered_stream);
     let svc_client = client.clone();
     let svc_cfg = cfg.clone();
-    let service = service_fn(move |req| {
-        handle(svc_client.clone(), svc_cfg.clone(), remote_addr, req)
-    });
+    let service =
+        service_fn(move |req| handle(svc_client.clone(), svc_cfg.clone(), remote_addr, req));
 
     if client_prefers_http2 {
         http2::Builder::new(TokioExecutor::new())
@@ -320,8 +318,8 @@ async fn sniff_http2_preface(stream: TcpStream) -> io::Result<(BufferedStream, b
         }
     }
 
-    let is_http2 = buffer.len() >= HTTP2_PREFACE.len()
-        && buffer[..HTTP2_PREFACE.len()] == *HTTP2_PREFACE;
+    let is_http2 =
+        buffer.len() >= HTTP2_PREFACE.len() && buffer[..HTTP2_PREFACE.len()] == *HTTP2_PREFACE;
     Ok((BufferedStream::new(stream, buffer), is_http2))
 }
 
@@ -496,7 +494,11 @@ fn strip_hop_by_hop_headers(h: &mut HeaderMap) {
 }
 
 #[allow(clippy::result_large_err)]
-fn build_upstream_uri(upstream_host: &str, port: u16, orig: &Uri) -> Result<Uri, Response<BoxBody>> {
+fn build_upstream_uri(
+    upstream_host: &str,
+    port: u16,
+    orig: &Uri,
+) -> Result<Uri, Response<BoxBody>> {
     let path_and_query = orig.path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
     let uri_str = format!("http://{}:{}{}", upstream_host, port, path_and_query);
     Uri::from_str(&uri_str)
@@ -538,6 +540,84 @@ fn parse_workspace_port_from_host(headers: &HeaderMap) -> Option<(String, u16)> 
         Err(_) => return None,
     };
     Some((ws_part.to_string(), port))
+}
+
+fn host_without_port(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    if trimmed.starts_with('[') {
+        if let Some(end_idx) = trimmed.find(']') {
+            return trimmed[1..end_idx].to_string();
+        }
+        return trimmed.to_string();
+    }
+
+    let colon_count = trimmed.chars().filter(|c| *c == ':').count();
+    if colon_count == 1 {
+        if let Some((host, _port)) = trimmed.rsplit_once(':') {
+            return host.to_string();
+        }
+    }
+
+    trimmed.to_string()
+}
+
+fn host_is_local_allowed(host: &str) -> bool {
+    if host.is_empty() {
+        return true;
+    }
+    let host_only = host_without_port(host);
+    if host_only.is_empty() {
+        return true;
+    }
+    let host_lc = host_only.to_ascii_lowercase();
+
+    if host_lc == "localhost" || host_lc.ends_with(".localhost") {
+        return true;
+    }
+
+    if let Ok(ipv4) = host_lc.parse::<Ipv4Addr>() {
+        if ipv4.is_loopback() {
+            return true;
+        }
+    }
+
+    if let Ok(ipv6) = host_lc.parse::<Ipv6Addr>() {
+        if ipv6.is_loopback() {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn enforce_local_host_header(
+    headers: &HeaderMap,
+    host_override: Option<&str>,
+) -> Result<(), Response<BoxBody>> {
+    if host_override.is_some() {
+        return Ok(());
+    }
+
+    if let Some(value) = headers.get(HOST) {
+        let host = value.to_str().map_err(|_| {
+            response_with(
+                StatusCode::BAD_REQUEST,
+                "invalid Host header (not UTF-8)".to_string(),
+            )
+        })?;
+        if !host_is_local_allowed(host) {
+            return Err(response_with(
+                StatusCode::BAD_GATEWAY,
+                "Host header requires X-Cmux-Host-Override".to_string(),
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 fn response_with(status: StatusCode, msg: String) -> Response<BoxBody> {
@@ -585,17 +665,24 @@ async fn handle_http(
     req: Request<Incoming>,
 ) -> Result<Response<BoxBody>, Response<BoxBody>> {
     let (mut parts, incoming) = req.into_parts();
-    
+
     let port = get_port_from_header(&parts.headers)?;
     let upstream_host = upstream_host_from_headers(
         &parts.headers,
         &cfg.upstream_host,
         cfg.allow_default_upstream,
     )?;
-    
+    let host_override = parts
+        .headers
+        .get(HOST_OVERRIDE_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    enforce_local_host_header(&parts.headers, host_override.as_deref())?;
+
     parts.uri = build_upstream_uri(&upstream_host, port, &parts.uri)?;
     parts.version = Version::HTTP_11;
-    
+
     // Convert incoming body to BoxBody
     let proxied_body: BoxBody = incoming_to_box(incoming);
     let mut new_req = Request::from_parts(parts, proxied_body);
@@ -603,14 +690,8 @@ async fn handle_http(
     // Strip internal headers
     new_req.headers_mut().remove("x-cmux-port-internal");
     new_req.headers_mut().remove("x-cmux-workspace-internal");
-    let host_override = new_req
-        .headers()
-        .get(HOST_OVERRIDE_HEADER)
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
     new_req.headers_mut().remove(HOST_OVERRIDE_HEADER);
-    if let Some(host) = host_override {
+    if let Some(host) = host_override.as_ref() {
         if let Ok(value) = HeaderValue::from_str(&host) {
             new_req.headers_mut().insert(HOST, value);
         }
@@ -664,7 +745,7 @@ async fn handle_upgrade(
 ) -> Result<Response<BoxBody>, Response<BoxBody>> {
     // Treat as reverse-proxied upgrade (e.g., WebSocket). We forward the request to upstream,
     // then mirror the 101 response headers to the client and tunnel bytes between both upgrades.
-    
+
     let port = get_port_from_header(req.headers())?;
     let upstream_host = upstream_host_from_headers(
         req.headers(),
@@ -678,23 +759,26 @@ async fn handle_upgrade(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
-    
+    enforce_local_host_header(req.headers(), host_override.as_deref())?;
+
     // Build proxied request for upstream - need to clone headers before consuming req
     let mut proxied_req_builder = Request::builder()
         .method(req.method())
         .uri(upstream_uri)
         .version(req.version());
-    
+
     // Copy headers
     for (name, value) in req.headers().iter() {
         if !name.as_str().eq_ignore_ascii_case("x-cmux-port-internal")
-            && !name.as_str().eq_ignore_ascii_case("x-cmux-workspace-internal")
+            && !name
+                .as_str()
+                .eq_ignore_ascii_case("x-cmux-workspace-internal")
             && !name.as_str().eq_ignore_ascii_case(HOST_OVERRIDE_HEADER)
         {
             proxied_req_builder = proxied_req_builder.header(name, value);
         }
     }
-    
+
     let (parts, incoming) = req.into_parts();
     let proxied_body: BoxBody = incoming_to_box(incoming);
     let mut proxied_req = proxied_req_builder.body(proxied_body).map_err(|_| {
@@ -764,7 +848,7 @@ async fn handle_upgrade(
 
     // Reconstruct the original request for upgrade
     let original_req = Request::from_parts(parts, ());
-    
+
     // Spawn tunnel after returning the 101 to the client
     tokio::spawn(async move {
         match future::try_join(
@@ -776,9 +860,7 @@ async fn handle_upgrade(
             Ok((client_upgraded, upstream_upgraded)) => {
                 let mut client_io = TokioIo::new(client_upgraded);
                 let mut upstream_io = TokioIo::new(upstream_upgraded);
-                if let Err(e) =
-                    copy_bidirectional(&mut client_io, &mut upstream_io).await
-                {
+                if let Err(e) = copy_bidirectional(&mut client_io, &mut upstream_io).await {
                     warn!(%e, "upgrade tunnel error");
                 }
                 // Try to shutdown both sides
@@ -810,7 +892,7 @@ async fn handle_connect(
 
     // Consume request to get parts for upgrade later
     let (parts, _incoming) = req.into_parts();
-    
+
     // Respond that the connection is established; then upgrade to a raw tunnel
     let resp = Response::builder()
         .status(StatusCode::OK)

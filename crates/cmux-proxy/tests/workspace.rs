@@ -62,9 +62,7 @@ async fn start_upstream_http_on_fixed(ip: Ipv4Addr, port: u16, body: &'static st
             tokio::spawn(async move {
                 let service = service_fn(move |_req: Request<Incoming>| {
                     let response_bytes = response_bytes.clone();
-                    async move {
-                        Ok::<_, Infallible>(Response::new(Full::new(response_bytes)))
-                    }
+                    async move { Ok::<_, Infallible>(Response::new(Full::new(response_bytes))) }
                 });
                 if let Err(err) = AutoBuilder::new(TokioExecutor::new())
                     .serve_connection(TokioIo::new(stream), service)

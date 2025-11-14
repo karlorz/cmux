@@ -3,9 +3,11 @@ use std::io::ErrorKind;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
+use bytes::Bytes;
 use cmux_proxy::ProxyConfig;
 use futures_util::{FutureExt, SinkExt, StreamExt};
 use http_body_util::BodyExt;
+use http_body_util::{Empty, Full};
 use hyper::body::Incoming;
 use hyper::client::conn::http2;
 use hyper::server::conn::http1;
@@ -17,8 +19,6 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 use tokio::time::{sleep, timeout};
-use bytes::Bytes;
-use http_body_util::{Empty, Full};
 
 type TestRequestBody = Empty<Bytes>;
 
@@ -337,11 +337,7 @@ async fn test_http_proxy_routes_by_header() {
     assert!(s.contains("ok:GET:/hello"), "unexpected body: {}", s);
 
     // Same request but with a custom host should fail without override
-    let url_custom = format!(
-        "http://{}:{}/hello",
-        proxy_addr.ip(),
-        proxy_addr.port()
-    );
+    let url_custom = format!("http://{}:{}/hello", proxy_addr.ip(), proxy_addr.port());
     let req_custom = Request::builder()
         .method("GET")
         .uri(url_custom)

@@ -2,8 +2,8 @@
 mod linux_only {
     use std::env;
     use std::io::{Read, Write};
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::net::TcpListener as StdTcpListener;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::path::{Path, PathBuf};
     use std::process::{Command, Stdio};
     use std::sync::OnceLock;
@@ -97,7 +97,8 @@ mod linux_only {
         ensure_loopback(ws_ip).await;
 
         // Start a plain TCP echo server bound to the workspace IP
-        let listener = StdTcpListener::bind(SocketAddr::from((ws_ip, 0))).expect("bind workspace ip");
+        let listener =
+            StdTcpListener::bind(SocketAddr::from((ws_ip, 0))).expect("bind workspace ip");
         let addr = listener.local_addr().unwrap();
         std::thread::spawn(move || {
             if let Ok((mut s, _)) = listener.accept() {
@@ -150,7 +151,8 @@ mod linux_only {
         ensure_loopback(ws_ip).await;
 
         // Start echo server on workspace IP
-        let listener = StdTcpListener::bind(SocketAddr::from((ws_ip, 0))).expect("bind workspace ip");
+        let listener =
+            StdTcpListener::bind(SocketAddr::from((ws_ip, 0))).expect("bind workspace ip");
         let addr = listener.local_addr().unwrap();
         std::thread::spawn(move || {
             if let Ok((mut s, _)) = listener.accept() {
