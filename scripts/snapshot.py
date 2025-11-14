@@ -930,7 +930,6 @@ async def task_install_base_packages(ctx: TaskContext) -> None:
             python3-websockify websockify \
             xvfb \
             x11-xserver-utils xterm novnc \
-            x11vnc \
             tmux \
             gh \
             zsh \
@@ -2068,13 +2067,13 @@ async def task_check_vnc(ctx: TaskContext) -> None:
     cmd = textwrap.dedent(
         """
         # Verify VNC binaries are installed
-        vncserver -version
+        Xvnc -version
         if ! command -v websockify >/dev/null 2>&1; then
           echo "websockify not installed" >&2
           exit 1
         fi
         websockify --help >/dev/null
-        
+
         # Verify VNC endpoint is accessible
         sleep 5
         for attempt in $(seq 1 15); do

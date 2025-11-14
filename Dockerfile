@@ -484,7 +484,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   kmod \
   util-linux \
   xvfb \
-  x11vnc \
+  tigervnc-standalone-server \
+  tigervnc-common \
   fluxbox \
   websockify \
   novnc \
