@@ -2,9 +2,9 @@ import { TaskTree } from "@/components/TaskTree";
 import { TaskTreeSkeleton } from "@/components/TaskTreeSkeleton";
 import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
 import { isElectron } from "@/lib/electron";
-import { type Doc } from "@cmux/convex/dataModel";
+import { type Doc, type Id } from "@cmux/convex/dataModel";
 import { api } from "@cmux/convex/api";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import type { LinkProps } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
 import { Home, Plus, Server, Settings } from "lucide-react";
@@ -85,6 +85,13 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
 
   // Fetch pinned items
   const pinnedData = useQuery(api.tasks.getPinned, { teamSlugOrId });
+
+  // Drag and drop state
+  const [draggedTaskId, setDraggedTaskId] = useState<Id<"tasks"> | null>(null);
+  const [dragOverTaskId, setDragOverTaskId] = useState<Id<"tasks"> | null>(null);
+
+  // Mutation for updating sort order
+  const updateSortOrder = useMutation(api.tasks.updateSortOrder);
 
   useEffect(() => {
     localStorage.setItem("sidebarWidth", String(width));
@@ -214,6 +221,61 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
 
   const resetWidth = useCallback(() => setWidth(DEFAULT_WIDTH), []);
 
+  // Drag and drop handlers
+  const handleDragStart = useCallback((taskId: Id<"tasks">) => {
+    setDraggedTaskId(taskId);
+  }, []);
+
+  const handleDragOver = useCallback((taskId: Id<"tasks">) => {
+    setDragOverTaskId(taskId);
+  }, []);
+
+  const handleDragEnd = useCallback(() => {
+    if (draggedTaskId === null || dragOverTaskId === null || draggedTaskId === dragOverTaskId) {
+      setDraggedTaskId(null);
+      setDragOverTaskId(null);
+      return;
+    }
+
+    // Determine which list we're reordering (pinned or regular)
+    const draggedIsPinned = pinnedData?.some(t => t._id === draggedTaskId);
+    const dragOverIsPinned = pinnedData?.some(t => t._id === dragOverTaskId);
+
+    // Only allow reordering within the same section
+    if (draggedIsPinned !== dragOverIsPinned) {
+      setDraggedTaskId(null);
+      setDragOverTaskId(null);
+      return;
+    }
+
+    // Get the appropriate task list
+    const taskList = draggedIsPinned
+      ? (pinnedData ?? [])
+      : (tasks?.filter(t => !t.pinned) ?? []);
+
+    // Find indices
+    const draggedIndex = taskList.findIndex(t => t._id === draggedTaskId);
+    const dragOverIndex = taskList.findIndex(t => t._id === dragOverTaskId);
+
+    if (draggedIndex === -1 || dragOverIndex === -1) {
+      setDraggedTaskId(null);
+      setDragOverTaskId(null);
+      return;
+    }
+
+    // Create new order
+    const newOrder = [...taskList];
+    const [draggedTask] = newOrder.splice(draggedIndex, 1);
+    newOrder.splice(dragOverIndex, 0, draggedTask);
+
+    // Update sort order on backend
+    const taskIds = newOrder.map(t => t._id);
+    updateSortOrder({ teamSlugOrId, taskIds }).catch(console.error);
+
+    setDraggedTaskId(null);
+    setDragOverTaskId(null);
+  }, [draggedTaskId, dragOverTaskId, pinnedData, tasks, teamSlugOrId, updateSortOrder]);
+
   return (
     <div
       ref={containerRef}
@@ -311,6 +373,11 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
                           task={task}
                           defaultExpanded={expandTaskIds?.includes(task._id) ?? false}
                           teamSlugOrId={teamSlugOrId}
+                          onDragStart={handleDragStart}
+                          onDragOver={handleDragOver}
+                          onDragEnd={handleDragEnd}
+                          isDragging={draggedTaskId === task._id}
+                          isDragOver={dragOverTaskId === task._id}
                         />
                       ))}
                       {/* Horizontal divider after pinned items */}
@@ -329,6 +396,11 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
                         task={task}
                         defaultExpanded={expandTaskIds?.includes(task._id) ?? false}
                         teamSlugOrId={teamSlugOrId}
+                        onDragStart={handleDragStart}
+                        onDragOver={handleDragOver}
+                        onDragEnd={handleDragEnd}
+                        isDragging={draggedTaskId === task._id}
+                        isDragOver={dragOverTaskId === task._id}
                       />
                     ))}
                 </>

@@ -107,6 +107,12 @@ interface TaskTreeProps {
   // When true, expand the task node on initial mount
   defaultExpanded?: boolean;
   teamSlugOrId: string;
+  // Drag and drop props
+  onDragStart?: (taskId: Id<"tasks">) => void;
+  onDragOver?: (taskId: Id<"tasks">) => void;
+  onDragEnd?: () => void;
+  isDragging?: boolean;
+  isDragOver?: boolean;
 }
 
 interface SidebarArchiveOverlayProps {
@@ -311,6 +317,11 @@ function TaskTreeInner({
   level = 0,
   defaultExpanded = false,
   teamSlugOrId,
+  onDragStart,
+  onDragOver,
+  onDragEnd,
+  isDragging,
+  isDragOver,
 }: TaskTreeProps) {
   // Get the current route to determine if this task is selected
   const location = useLocation();
@@ -752,7 +763,37 @@ function TaskTreeInner({
 
   return (
     <TaskRunExpansionContext.Provider value={expansionContextValue}>
-      <div className="select-none flex flex-col">
+      <div
+        className="select-none flex flex-col"
+        draggable={onDragStart !== undefined}
+        onDragStart={(e) => {
+          if (onDragStart) {
+            e.stopPropagation();
+            onDragStart(task._id);
+          }
+        }}
+        onDragOver={(e) => {
+          if (onDragOver) {
+            e.preventDefault();
+            e.stopPropagation();
+            onDragOver(task._id);
+          }
+        }}
+        onDragEnd={(e) => {
+          if (onDragEnd) {
+            e.stopPropagation();
+            onDragEnd();
+          }
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        style={{
+          opacity: isDragging ? 0.5 : 1,
+          cursor: onDragStart ? "grab" : undefined,
+        }}
+      >
         <ContextMenu.Root>
           <ContextMenu.Trigger>
             <Link
@@ -761,7 +802,10 @@ function TaskTreeInner({
               params={{ teamSlugOrId, taskId: task._id }}
               search={{ runId: undefined }}
               activeOptions={{ exact: true }}
-              className="group block"
+              className={clsx(
+                "group block",
+                isDragOver && "bg-neutral-100 dark:bg-neutral-900 rounded"
+              )}
               data-focus-visible={isTaskLinkFocusVisible ? "true" : undefined}
               onMouseEnter={handlePrefetch}
               onFocus={handleTaskLinkFocus}
