@@ -232,6 +232,7 @@ RUN --mount=type=secret,id=github_token,required=false if [ -z "${CODE_RELEASE}"
 
 # Copy package files for monorepo dependency installation
 WORKDIR /cmux
+ENV BUN_INSTALL_CACHE_DIR=/cmux/node_modules/.bun
 COPY package.json bun.lock .npmrc ./
 COPY --parents apps/*/package.json packages/*/package.json scripts/package.json ./
 
@@ -681,6 +682,7 @@ RUN curl -fsSL https://bun.sh/install | bash && \
   bunx --version
 
 ENV PATH="/usr/local/bin:$PATH"
+ENV BUN_INSTALL_CACHE_DIR=/cmux/node_modules/.bun
 
 RUN --mount=type=cache,target=/root/.bun/install/cache \
   bun add -g @openai/codex@0.50.0 @anthropic-ai/claude-code@2.0.27 @google/gemini-cli@0.1.21 opencode-ai@0.6.4 codebuff @devcontainers/cli @sourcegraph/amp
