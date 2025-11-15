@@ -14,6 +14,7 @@ import { MergeButton, type MergeMethod } from "@/components/ui/merge-button";
 import { postApiIntegrationsGithubPrsCloseMutation, postApiIntegrationsGithubPrsMergeSimpleMutation } from "@cmux/www-openapi-client/react-query";
 import type { PostApiIntegrationsGithubPrsCloseData, PostApiIntegrationsGithubPrsCloseResponse, PostApiIntegrationsGithubPrsMergeSimpleData, PostApiIntegrationsGithubPrsMergeSimpleResponse, Options } from "@cmux/www-openapi-client";
 import { useCombinedWorkflowData, WorkflowRunsBadge, WorkflowRunsSection } from "@/components/WorkflowRunsSection";
+import { RunScreenshotGallery } from "@/components/RunScreenshotGallery";
 
 const RUN_PENDING_STATUSES = new Set(["in_progress", "queued", "waiting", "pending"]);
 const RUN_PASSING_CONCLUSIONS = new Set(["success", "neutral", "skipped"]);
@@ -135,6 +136,12 @@ export function PullRequestDetailView({
   const clipboard = useClipboard({ timeout: 2000 });
 
   const currentPR = useConvexQuery(api.github_prs.getPullRequest, {
+    teamSlugOrId,
+    repoFullName: `${owner}/${repo}`,
+    number: Number(number),
+  });
+
+  const prContext = useConvexQuery(api.github_prs.getPullRequestContext, {
     teamSlugOrId,
     repoFullName: `${owner}/${repo}`,
     number: Number(number),
@@ -492,6 +499,14 @@ export function PullRequestDetailView({
             </div>
           </div>
           <div className="bg-white dark:bg-neutral-950">
+            {prContext?.screenshotSets && prContext.screenshotSets.length > 0 && (
+              <div className="border-b border-neutral-200 dark:border-neutral-800">
+                <RunScreenshotGallery
+                  screenshotSets={prContext.screenshotSets}
+                  highlightedSetId={null}
+                />
+              </div>
+            )}
             <Suspense fallback={null}>
               <WorkflowRunsSection
                 allRuns={workflowData.allRuns}

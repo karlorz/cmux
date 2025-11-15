@@ -302,6 +302,94 @@ export const getPullRequest = authQuery({
   },
 });
 
+export const getPullRequestContext = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    repoFullName: v.string(),
+    number: v.number(),
+  },
+  handler: async (ctx, { teamSlugOrId, repoFullName, number }) => {
+    const userId = ctx.identity.subject;
+    const teamId = await getTeamId(ctx, teamSlugOrId);
+
+    const pr = await ctx.db
+      .query("pullRequests")
+      .withIndex("by_team_repo_number", (q) =>
+        q.eq("teamId", teamId).eq("repoFullName", repoFullName).eq("number", number)
+      )
+      .first();
+
+    if (!pr) {
+      return {
+        pullRequest: null,
+        screenshotSets: [],
+      };
+    }
+
+    // Find all task runs that reference this PR
+    const allTaskRuns = await ctx.db
+      .query("taskRuns")
+      .filter((q) => q.eq(q.field("teamId"), teamId))
+      .filter((q) => q.eq(q.field("userId"), userId))
+      .collect();
+
+    // Filter to runs that have this PR in their pullRequests array
+    const relevantRuns = allTaskRuns.filter((run) =>
+      run.pullRequests?.some(
+        (prRef) =>
+          prRef.repoFullName === repoFullName && prRef.number === number
+      )
+    );
+
+    if (relevantRuns.length === 0) {
+      return {
+        pullRequest: pr,
+        screenshotSets: [],
+      };
+    }
+
+    // Fetch screenshot sets for all relevant runs
+    const allScreenshotSets = await Promise.all(
+      relevantRuns.map(async (run) => {
+        const sets = await ctx.db
+          .query("taskRunScreenshotSets")
+          .withIndex("by_run_capturedAt", (q) => q.eq("runId", run._id))
+          .collect();
+        return sets;
+      })
+    );
+
+    // Flatten, sort by most recent, and limit to 20
+    const flattenedSets = allScreenshotSets.flat();
+    flattenedSets.sort((a, b) => b.capturedAt - a.capturedAt);
+    const trimmedScreenshotSets = flattenedSets.slice(0, 20);
+
+    // Resolve storage URLs for images
+    const screenshotSets = await Promise.all(
+      trimmedScreenshotSets.map(async (set) => {
+        const imagesWithUrls = await Promise.all(
+          set.images.map(async (image) => {
+            const url = await ctx.storage.getUrl(image.storageId);
+            return {
+              ...image,
+              url: url ?? undefined,
+            };
+          })
+        );
+        return {
+          ...set,
+          images: imagesWithUrls,
+        };
+      })
+    );
+
+    return {
+      pullRequest: pr,
+      screenshotSets,
+    };
+  },
+});
+
 // Helper to look up a provider connection for a repository owner
 export const getConnectionForOwnerInternal = internalQuery({
   args: { owner: v.string() },
