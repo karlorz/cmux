@@ -2,7 +2,7 @@ import {
   DEFAULT_MORPH_SNAPSHOT_ID,
   MORPH_SNAPSHOT_PRESETS,
   type MorphSnapshotId,
-} from "@/lib/utils/morph-defaults";
+} from "@cmux/shared";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { env } from "@/lib/utils/www-env";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";

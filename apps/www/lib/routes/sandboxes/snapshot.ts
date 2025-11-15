@@ -1,4 +1,4 @@
-import { DEFAULT_MORPH_SNAPSHOT_ID } from "@/lib/utils/morph-defaults";
+import { DEFAULT_MORPH_SNAPSHOT_ID } from "@cmux/shared";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { api } from "@cmux/convex/api";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
