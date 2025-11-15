@@ -1005,21 +1005,33 @@ function buildCmuxHost(route: ProxyRoute, port: number): string {
   return `cmux-${route.morphId}-${route.scope}-${safePort}.${route.domainSuffix}`;
 }
 
+function shouldAttemptHttp2(target: ProxyTarget): boolean {
+  if (!target.secure) {
+    return false;
+  }
+  if (target.cmuxProxy) {
+    return true;
+  }
+  const hostname = target.url.hostname.toLowerCase();
+  return hostname.endsWith(DEFAULT_MORPH_DOMAIN_SUFFIX);
+}
+
 async function forwardHttpRequest(
   clientReq: IncomingMessage,
   clientRes: ServerResponse,
   target: ProxyTarget,
   context: ProxyContext
 ): Promise<void> {
-  if (target.cmuxProxy) {
+  if (shouldAttemptHttp2(target)) {
     try {
-      await forwardHttpRequestViaHttp2(clientReq, clientRes, target);
+      await forwardHttpRequestViaHttp2(clientReq, clientRes, target, context);
       return;
     } catch (error) {
       proxyWarn("http2-forward-failed", {
         error,
         persistKey: context.persistKey,
         username: context.username,
+        host: target.url.hostname,
       });
       if (clientRes.writableEnded) {
         return;
@@ -1104,7 +1116,8 @@ function forwardHttpRequestViaHttp1(
 async function forwardHttpRequestViaHttp2(
   clientReq: IncomingMessage,
   clientRes: ServerResponse,
-  target: ProxyTarget
+  target: ProxyTarget,
+  context: ProxyContext
 ): Promise<void> {
   const session = await getHttp2SessionFor(target);
   const headers = buildHttp2Headers(clientReq.headers, target);
@@ -1115,6 +1128,22 @@ async function forwardHttpRequestViaHttp2(
 
   await new Promise<void>((resolve, reject) => {
     const upstreamReq: ClientHttp2Stream = session.request(headers);
+    const logHttp2 = (event: string, data?: Record<string, unknown>) => {
+      proxyLog("http2-forward", {
+        event,
+        targetHost: target.url.hostname,
+        targetPort: target.connectPort,
+        persistKey: context.persistKey,
+        username: context.username,
+        streamId: upstreamReq.id,
+        ...(data ?? {}),
+      });
+    };
+
+    logHttp2("request-start", {
+      method: headers[":method"],
+      path: headers[":path"],
+    });
 
     upstreamReq.on("response", (upstreamHeaders) => {
       const status = Number(upstreamHeaders[":status"] ?? 502);
@@ -1132,6 +1161,10 @@ async function forwardHttpRequestViaHttp2(
       if (!clientRes.headersSent) {
         clientRes.writeHead(status, responseHeaders);
       }
+      logHttp2("response-headers", {
+        status,
+        headerCount: Object.keys(responseHeaders).length,
+      });
     });
 
     upstreamReq.on("data", (chunk) => {
@@ -1144,10 +1177,14 @@ async function forwardHttpRequestViaHttp2(
       if (!clientRes.writableEnded) {
         clientRes.end();
       }
+      logHttp2("response-end");
       resolve();
     });
 
     upstreamReq.on("error", (error) => {
+      logHttp2("stream-error", {
+        message: (error as Error).message,
+      });
       if (!clientRes.headersSent) {
         clientRes.writeHead(502);
         clientRes.end("Bad Gateway");
@@ -1160,6 +1197,7 @@ async function forwardHttpRequestViaHttp2(
 
     clientReq.pipe(upstreamReq);
     clientReq.on("aborted", () => {
+      logHttp2("client-aborted");
       upstreamReq.close(HTTP2_CANCEL_CODE);
     });
   });
