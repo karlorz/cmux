@@ -279,6 +279,7 @@ export async function runPreviewJob(
   }
 
   const { run, config } = payload;
+  let taskRunId: Id<"taskRuns"> | null = run.taskRunId ?? null;
 
   if (!config.environmentId) {
     console.warn("[preview-jobs] Preview config missing environmentId; skipping run", {
@@ -326,7 +327,65 @@ export async function runPreviewJob(
 
   const snapshotId = environment.morphSnapshotId;
   let instance: InstanceModel | null = null;
+  let taskRunUserId: string | undefined;
 
+  if (!taskRunId) {
+    console.log("[preview-jobs] No taskRun linked to preview run, creating one now", {
+      previewRunId,
+      repoFullName: run.repoFullName,
+      prNumber: run.prNumber,
+    });
+
+    const taskId = await ctx.runMutation(internal.tasks.createForPreview, {
+      teamId: run.teamId,
+      userId: config.createdByUserId,
+      previewRunId,
+      repoFullName: run.repoFullName,
+      prNumber: run.prNumber,
+      prUrl: run.prUrl,
+      headSha: run.headSha,
+      baseBranch: config.repoDefaultBranch,
+    });
+
+    const { taskRunId: createdTaskRunId } = await ctx.runMutation(
+      internal.taskRuns.createForPreview,
+      {
+        taskId,
+        teamId: run.teamId,
+        userId: config.createdByUserId,
+        prUrl: run.prUrl,
+        environmentId: config.environmentId,
+      },
+    );
+
+    await ctx.runMutation(internal.previewRuns.linkTaskRun, {
+      previewRunId,
+      taskRunId: createdTaskRunId,
+    });
+
+    taskRunId = createdTaskRunId;
+
+    console.log("[preview-jobs] Created and linked task/taskRun for preview run", {
+      previewRunId,
+      taskId,
+      taskRunId,
+    });
+  }
+
+  if (taskRunId) {
+    const taskRun = await ctx.runQuery(internal.taskRuns.getById, {
+      id: taskRunId,
+    });
+    taskRunUserId = taskRun?.userId ?? config.createdByUserId;
+    if (!taskRunUserId) {
+      console.warn("[preview-jobs] Task run missing userId", {
+        previewRunId,
+        taskRunId,
+      });
+    }
+  }
+
+  const keepInstanceForTaskRun = Boolean(taskRunId);
   console.log("[preview-jobs] Launching Morph instance", {
     previewRunId,
     snapshotId,
@@ -344,11 +403,11 @@ export async function runPreviewJob(
 
   try {
     // Generate JWT for screenshot upload authentication if we have a taskRunId
-    const previewJwt = run.taskRunId
+    const previewJwt = taskRunId
       ? await new SignJWT({
-          taskRunId: run.taskRunId,
+          taskRunId,
           teamId: run.teamId,
-          userId: (await ctx.runQuery(internal.taskRuns.getById, { id: run.taskRunId }))?.userId,
+          userId: taskRunUserId ?? config.createdByUserId,
         })
           .setProtectedHeader({ alg: "HS256" })
           .setIssuedAt()
@@ -365,10 +424,10 @@ export async function runPreviewJob(
         prNumber: String(run.prNumber),
         headSha: run.headSha,
         // Pass minimal preview job flag - worker will fetch rest from Convex
-        ...(run.taskRunId && previewJwt
+        ...(taskRunId && previewJwt
           ? {
               previewJob: "true",
-              previewTaskRunId: run.taskRunId,
+              previewTaskRunId: taskRunId,
               previewToken: previewJwt,
               previewConvexUrl: env.BASE_APP_URL,
             }
@@ -392,6 +451,12 @@ export async function runPreviewJob(
     const vscodeUrl = vscodeService?.url
       ? `${vscodeService.url}?folder=/root/workspace`
       : null;
+
+    await ctx.runMutation(internal.previewRuns.updateInstanceMetadata, {
+      previewRunId,
+      morphInstanceId: instance.id,
+      clearStoppedAt: true,
+    });
 
     console.log("[preview-jobs] Worker service ready", {
       previewRunId,
@@ -657,8 +722,8 @@ export async function runPreviewJob(
     console.log("[preview-jobs] Morph instance started with preview data, worker will auto-run screenshots and post to GitHub", {
       previewRunId,
       instanceId: instance.id,
-      hasTaskRunId: Boolean(run.taskRunId),
-      previewMetadataSet: Boolean(run.taskRunId && previewJwt),
+      hasTaskRunId: Boolean(taskRunId),
+      previewMetadataSet: Boolean(taskRunId && previewJwt),
     });
 
     // Worker will call /api/preview/complete when screenshots are done
@@ -685,7 +750,7 @@ export async function runPreviewJob(
 
     throw error;
   } finally {
-    if (instance) {
+    if (instance && !keepInstanceForTaskRun) {
       try {
         await stopMorphInstance(morphClient, instance.id);
       } catch (stopError) {
@@ -695,6 +760,12 @@ export async function runPreviewJob(
           error: stopError,
         });
       }
+    } else if (instance) {
+      console.log("[preview-jobs] Leaving Morph instance running for preview task run", {
+        previewRunId,
+        instanceId: instance.id,
+        taskRunId,
+      });
     }
   }
 }

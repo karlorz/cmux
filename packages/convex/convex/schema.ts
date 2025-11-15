@@ -592,6 +592,8 @@ const convexSchema = defineSchema({
     completedAt: v.optional(v.number()),
     screenshotSetId: v.optional(v.id("previewScreenshotSets")),
     githubCommentUrl: v.optional(v.string()),
+    morphInstanceId: v.optional(v.string()),
+    morphInstanceStoppedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
