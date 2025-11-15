@@ -4,7 +4,11 @@ import http, {
   type ServerResponse,
 } from "node:http";
 import https from "node:https";
-import http2 from "node:http2";
+import http2, {
+  type Http2Server,
+  type Http2ServerRequest,
+  type IncomingHttpHeaders as Http2IncomingHeaders,
+} from "node:http2";
 import net, { type Socket } from "node:net";
 import tls, { type TLSSocket } from "node:tls";
 import { randomBytes, createHash } from "node:crypto";
@@ -87,6 +91,10 @@ const ENABLE_TLS_MITM =
   process.env.CMUX_PREVIEW_TLS_MITM === undefined ||
   process.env.CMUX_PREVIEW_TLS_MITM === "" ||
   process.env.CMUX_PREVIEW_TLS_MITM === "1";
+const ENABLE_DOWNSTREAM_HTTP2 = envFlagEnabled(
+  process.env.CMUX_PREVIEW_DOWNSTREAM_HTTP2,
+  false
+);
 
 interface ProxyRoute {
   morphId: string;
@@ -135,6 +143,7 @@ let startingProxy: Promise<number> | null = null;
 let proxyLoggingEnabled = DEFAULT_PROXY_LOGGING_ENABLED;
 const http2Sessions = new Map<string, ClientHttp2Session>();
 const pendingHttp2Sessions = new Map<string, Promise<ClientHttp2Session>>();
+let http2DownstreamServer: Http2Server | null = null;
 
 export function setPreviewProxyLoggingEnabled(enabled: boolean): void {
   proxyLoggingEnabled = Boolean(enabled);
@@ -364,13 +373,30 @@ async function startProxyServer(logger: Logger): Promise<number> {
     const candidatePort = startPort + i;
     const server = http.createServer();
     attachServerHandlers(server);
+    const http2Server = ENABLE_DOWNSTREAM_HTTP2 ? http2.createServer() : null;
+    if (http2Server) {
+      attachHttp2DownstreamHandlers(http2Server);
+    }
     try {
       await listen(server, candidatePort);
       proxyServer = server;
+      http2DownstreamServer = http2Server;
       proxyLogger = logger;
       console.log(`[cmux-preview-proxy] listening on port ${candidatePort}`);
       logger.log("Preview proxy listening", { port: candidatePort });
       proxyLog("listening", { port: candidatePort });
+      server.on("close", () => {
+        if (http2Server) {
+          try {
+            http2Server.close();
+          } catch (error) {
+            console.error("Failed to close preview proxy http2 server", error);
+          }
+          if (http2DownstreamServer === http2Server) {
+            http2DownstreamServer = null;
+          }
+        }
+      });
       return candidatePort;
     } catch (error) {
       server.removeAllListeners();
@@ -379,6 +405,13 @@ async function startProxyServer(logger: Logger): Promise<number> {
       } catch (error) {
         console.error("Failed to close preview proxy server", error);
         // ignore close failure
+      }
+      if (http2Server) {
+        try {
+          http2Server.close();
+        } catch (error) {
+          console.error("Failed to close preview proxy http2 server", error);
+        }
       }
       if ((error as NodeJS.ErrnoException).code === "EADDRINUSE") {
         continue;
@@ -419,6 +452,33 @@ function attachServerHandlers(server: ProxyServer) {
   server.on("clientError", (error, socket) => {
     proxyLogger?.warn("Proxy client error", { error });
     socket.end();
+  });
+}
+
+function attachHttp2DownstreamHandlers(server: Http2Server) {
+  server.on("request", (req, res) => {
+    handleHttpRequest(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse
+    );
+  });
+  server.on("stream", (stream, headers) => {
+    const method = (headers[":method"] ?? "").toString().toUpperCase();
+    if (method === "CONNECT") {
+      proxyWarn("http2-connect-not-supported", {
+        authority: headers[":authority"],
+      });
+      stream.respond({ ":status": 405 });
+      stream.end();
+    }
+  });
+  server.on("sessionError", (error) => {
+    proxyWarn("http2-downstream-session-error", {
+      error,
+    });
+  });
+  server.on("error", (error) => {
+    proxyWarn("http2-downstream-error", { error });
   });
 }
 
@@ -520,7 +580,42 @@ function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
     return;
   }
 
+  const isLoopbackRequest =
+    context.route && isLoopbackHostname(target.hostname);
+  const isEncryptedSocket =
+    Boolean((req.socket as TLSSocket | undefined)?.encrypted) ||
+    req.httpVersionMajor >= 2;
+  if (ENABLE_DOWNSTREAM_HTTP2 && isLoopbackRequest && !isEncryptedSocket) {
+    const redirectUrl = new URL(target.toString());
+    redirectUrl.protocol = "https:";
+    proxyLog("http-redirect-https", {
+      host: target.hostname,
+      persistKey: context.persistKey,
+      location: redirectUrl.toString(),
+    });
+    res.writeHead(308, {
+      Location: redirectUrl.toString(),
+    });
+    res.end();
+    return;
+  }
+
   const rewritten = rewriteTarget(target, context);
+  const isHttp2Downstream = req.httpVersionMajor >= 2;
+  const downstreamStreamId = isHttp2Downstream
+    ? (req as unknown as Http2ServerRequest).stream.id
+    : undefined;
+  if (isHttp2Downstream) {
+    proxyLog("http2-downstream", {
+      event: "request-start",
+      streamId: downstreamStreamId,
+      method: req.method,
+      url: req.url,
+      host: req.headers.host,
+      persistKey: context.persistKey,
+    });
+  }
+
   proxyLog("http-request", {
     username: context.username,
     requestedHost: target.hostname,
@@ -529,16 +624,34 @@ function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
     rewrittenPort: rewritten.connectPort,
     persistKey: context.persistKey,
   });
-  void forwardHttpRequest(req, res, rewritten, context).catch((error) => {
-    proxyWarn("http-forward-error", {
-      error,
-      persistKey: context.persistKey,
+  void forwardHttpRequest(req, res, rewritten, context)
+    .then(() => {
+      if (isHttp2Downstream) {
+        proxyLog("http2-downstream", {
+          event: "response-complete",
+          streamId: downstreamStreamId,
+          persistKey: context.persistKey,
+        });
+      }
+    })
+    .catch((error) => {
+      proxyWarn("http-forward-error", {
+        error,
+        persistKey: context.persistKey,
+      });
+      if (!res.headersSent) {
+        res.writeHead(502);
+      }
+      res.end("Bad Gateway");
+      if (isHttp2Downstream) {
+        proxyLog("http2-downstream", {
+          event: "response-error",
+          streamId: downstreamStreamId,
+          persistKey: context.persistKey,
+          message: (error as Error).message,
+        });
+      }
     });
-    if (!res.headersSent) {
-      res.writeHead(502);
-    }
-    res.end("Bad Gateway");
-  });
 }
 
 function handleConnect(req: IncomingMessage, socket: Socket, head: Buffer) {
@@ -582,7 +695,7 @@ function handleConnect(req: IncomingMessage, socket: Socket, head: Buffer) {
       rewrittenPort: rewritten.connectPort,
       persistKey: context.persistKey,
     });
-    establishMitmTunnel(socket, head, target.hostname, target.port, context, rewritten);
+    establishMitmTunnel(socket, head, target.hostname, context);
     return;
   }
 
@@ -1228,7 +1341,7 @@ function buildHttp2Headers(
 }
 
 function buildHttp1Headers(
-  source: IncomingHttpHeaders,
+  source: IncomingHttpHeaders | Http2IncomingHeaders,
   target: ProxyTarget
 ): { headers: Record<string, string>; setHost?: boolean } {
   const headers: Record<string, string> = {};
@@ -1237,6 +1350,7 @@ function buildHttp1Headers(
     const lowerKey = key.toLowerCase();
     if (lowerKey === "proxy-authorization") continue;
     if (lowerKey === "host" && target.cmuxProxy) continue;
+    if (lowerKey.startsWith(":")) continue;
     if (Array.isArray(value)) {
       headers[lowerKey] = value.join(", ");
     } else {
@@ -1527,9 +1641,7 @@ function establishMitmTunnel(
   clientSocket: Socket,
   head: Buffer,
   originalHostname: string,
-  originalPort: number,
-  context: ProxyContext,
-  target: ProxyTarget
+  context: ProxyContext
 ) {
   if (!proxyServer) {
     clientSocket.write("HTTP/1.1 500 Internal Server Error\r\n\r\n");
@@ -1539,64 +1651,110 @@ function establishMitmTunnel(
   const server = proxyServer;
 
   const secureContext = getSecureContextForHostname(originalHostname);
+  const CLASSIFY_TIMEOUT_MS = 250;
+  const MITM_HANDSHAKE_TIMEOUT_MS = 5_000;
   let buffered = head;
   let settled = false;
+  let classificationTimeout: NodeJS.Timeout | null = null;
+
+  const clearClassificationTimeout = () => {
+    if (classificationTimeout) {
+      clearTimeout(classificationTimeout);
+      classificationTimeout = null;
+    }
+  };
 
   const cleanup = () => {
     settled = true;
+    clearClassificationTimeout();
     clientSocket.removeListener("data", handleData);
     clientSocket.removeListener("error", handleClientError);
     clientSocket.removeListener("close", handleClientClose);
   };
 
-  const handleTlsTunnel = (initial: Buffer) => {
+  const handleTlsTunnel = (initial: Buffer, alpnProtocols?: string[]) => {
+    const allowHttp2 =
+      ENABLE_DOWNSTREAM_HTTP2 && containsHttp2Protocol(alpnProtocols);
+    const supportedAlpn: string[] = allowHttp2
+      ? ["h2", "http/1.1"]
+      : ["http/1.1"];
+    const initialHex = initial.toString("hex");
     const tlsSocket = new tls.TLSSocket(clientSocket, {
       isServer: true,
       secureContext,
+      ALPNProtocols: supportedAlpn,
     });
     attachContextToSocket(tlsSocket, context);
     if (initial.length > 0) {
       tlsSocket.unshift(initial);
     }
+    tlsSocket.resume();
+    proxyLog("mitm-tls-init", {
+      host: originalHostname,
+      persistKey: context.persistKey,
+      offeredAlpn: alpnProtocols?.join(",") ?? null,
+      allowHttp2,
+    });
+    let handshakeTimeout: NodeJS.Timeout | null = setTimeout(() => {
+      handshakeTimeout = null;
+      proxyWarn("mitm-tls-timeout", {
+        host: originalHostname,
+        persistKey: context.persistKey,
+      });
+      tlsSocket.destroy(new Error("TLS handshake timeout"));
+    }, MITM_HANDSHAKE_TIMEOUT_MS);
+    const clearHandshakeTimeout = () => {
+      if (handshakeTimeout) {
+        clearTimeout(handshakeTimeout);
+        handshakeTimeout = null;
+      }
+    };
     tlsSocket.on("error", (error) => {
+      clearHandshakeTimeout();
       proxyLogger?.warn("MITM TLS error", {
         error,
         host: originalHostname,
-        initialHead: initial.toString("hex"),
+        initialHead: initialHex,
       });
       tlsSocket.destroy();
     });
     tlsSocket.once("secure", () => {
+      clearHandshakeTimeout();
+      const negotiated = tlsSocket.alpnProtocol || "http/1.1";
+      if (negotiated === "h2") {
+        proxyLog("mitm-http2-secure", {
+          host: originalHostname,
+          alpn: negotiated,
+          persistKey: context.persistKey,
+        });
+        if (!ENABLE_DOWNSTREAM_HTTP2 || !http2DownstreamServer) {
+          proxyWarn("http2-server-missing", {
+            host: originalHostname,
+            persistKey: context.persistKey,
+          });
+          proxyLog("mitm-http2-fallback-http1", {
+            host: originalHostname,
+            persistKey: context.persistKey,
+          });
+          server.emit("connection", tlsSocket);
+          return;
+        }
+        http2DownstreamServer.emit("connection", tlsSocket);
+        return;
+      }
       proxyLog("mitm-tls-secure", {
         host: originalHostname,
+        alpn: negotiated,
+        persistKey: context.persistKey,
       });
       server.emit("connection", tlsSocket);
-    });
-  };
-
-  const handleHttp2Bypass = (initial: Buffer, alpnProtocols?: string[]) => {
-    proxyLog("connect-http2-bypass", {
-      username: context.username,
-      requestedHost: originalHostname,
-      requestedPort: originalPort,
-      rewrittenHost: target.url.hostname,
-      rewrittenPort: target.connectPort,
-      persistKey: context.persistKey,
-      alpnProtocols,
-    });
-    proxyLog("mitm-http2-bypass", {
-      host: originalHostname,
-      targetHost: target.url.hostname,
-      alpnProtocols,
-    });
-    forwardConnectTunnel(clientSocket, initial, target, {
-      clientResponseAlreadySent: true,
     });
   };
 
   const handlePlainTunnel = (initial: Buffer) => {
     proxyLog("mitm-plain-tunnel", {
       host: originalHostname,
+      persistKey: context.persistKey,
     });
     attachContextToSocket(clientSocket, context);
     if (initial.length > 0) {
@@ -1615,12 +1773,21 @@ function establishMitmTunnel(
       handlePlainTunnel(buffered);
       return true;
     }
-    if (containsHttp2Protocol(result.alpnProtocols)) {
-      handleHttp2Bypass(buffered, result.alpnProtocols);
-      return true;
-    }
-    handleTlsTunnel(buffered);
+    handleTlsTunnel(buffered, result.alpnProtocols);
     return true;
+  };
+
+  const handleClassificationTimeout = () => {
+    if (settled) {
+      return;
+    }
+    proxyLog("mitm-classify-timeout", {
+      host: originalHostname,
+      bufferedBytes: buffered.length,
+      persistKey: context.persistKey,
+    });
+    cleanup();
+    handleTlsTunnel(buffered);
   };
 
   const handleData = (chunk: Buffer) => {
@@ -1653,6 +1820,11 @@ function establishMitmTunnel(
   clientSocket.once("error", handleClientError);
   clientSocket.once("close", handleClientClose);
   clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+  clientSocket.resume();
+  classificationTimeout = setTimeout(
+    handleClassificationTimeout,
+    CLASSIFY_TIMEOUT_MS
+  );
 
   if (!classify()) {
     clientSocket.on("data", handleData);
