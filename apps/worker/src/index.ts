@@ -249,7 +249,7 @@ app.post("/api/run-task-screenshots", async (req, res) => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${process.env.CMUX_TASK_RUN_JWT_SECRET ?? ""}`,
+            "x-cmux-token": data.token,
           },
           body: JSON.stringify({
             taskRunId,
@@ -763,7 +763,7 @@ managementIO.on("connection", (socket) => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${process.env.CMUX_TASK_RUN_JWT_SECRET ?? ""}`,
+            "x-cmux-token": data.token,
           },
           body: JSON.stringify({
             taskRunId,

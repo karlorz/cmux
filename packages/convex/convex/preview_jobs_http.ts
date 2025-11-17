@@ -1,4 +1,5 @@
 import { createMorphCloudClient, stopInstanceInstanceInstanceIdDelete } from "@cmux/morphcloud-openapi-client";
+import { env } from "../_shared/convex-env";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { httpAction, type ActionCtx } from "./_generated/server";
@@ -292,7 +293,12 @@ export const createScreenshotSet = httpAction(async (ctx, req) => {
  */
 export const completePreviewJob = httpAction(async (ctx, req) => {
   const workerAuth = await getWorkerAuth(req, { loggerPrefix: "[preview-jobs-http]" });
-  if (!workerAuth) {
+  const authHeader = req.headers.get("authorization") ?? "";
+  const [, bearerToken] = authHeader.split(" ");
+  const bearerAuthorized =
+    bearerToken && bearerToken === env.CMUX_TASK_RUN_JWT_SECRET;
+
+  if (!workerAuth && !bearerAuthorized) {
     console.error("[preview-jobs-http] Unauthorized complete request");
     return jsonResponse({ error: "Unauthorized" }, 401);
   }
