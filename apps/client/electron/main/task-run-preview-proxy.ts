@@ -92,11 +92,6 @@ const HTTPS1_KEEP_ALIVE_AGENT = new https.Agent({
   maxFreeSockets: 64,
 });
 
-const ENABLE_TLS_MITM =
-  process.env.CMUX_PREVIEW_TLS_MITM === undefined ||
-  process.env.CMUX_PREVIEW_TLS_MITM === "" ||
-  process.env.CMUX_PREVIEW_TLS_MITM === "1";
-
 interface ProxyRoute {
   morphId: string;
   scope: string;
@@ -152,28 +147,6 @@ export function setPreviewProxyLoggingEnabled(enabled: boolean): void {
 const contextsByUsername = new Map<string, ProxyContext>();
 const contextsByWebContentsId = new Map<number, ProxyContext>();
 const contextsByAuthToken = new Map<string, ProxyContext>();
-const SOCKET_CONTEXT_SYMBOL = Symbol("cmuxPreviewProxyContext");
-
-type ContextAwareSocket = (Socket | TLSSocket) & {
-  [SOCKET_CONTEXT_SYMBOL]?: ProxyContext;
-};
-
-function attachContextToSocket(
-  socket: Socket | TLSSocket,
-  context: ProxyContext
-): void {
-  (socket as ContextAwareSocket)[SOCKET_CONTEXT_SYMBOL] = context;
-}
-
-function getContextForSocket(
-  socket: Socket | TLSSocket | undefined
-): ProxyContext | null {
-  if (!socket) {
-    return null;
-  }
-  const stored = (socket as ContextAwareSocket)[SOCKET_CONTEXT_SYMBOL];
-  return stored ?? null;
-}
 
 function logPreviewProxyToConsole(
   level: "log" | "warn",
@@ -510,7 +483,7 @@ function monitorHttp2Session(originKey: string, session: ClientHttp2Session) {
 }
 
 function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
-  const context = authenticateRequest(req.headers, req.socket);
+  const context = authenticateRequest(req.headers);
   if (!context) {
     respondProxyAuthRequired(res);
     return;
@@ -549,7 +522,7 @@ function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
 }
 
 function handleConnect(req: IncomingMessage, socket: Socket, head: Buffer) {
-  const context = authenticateRequest(req.headers, req.socket);
+  const context = authenticateRequest(req.headers);
   if (!context) {
     respondProxyAuthRequiredSocket(socket);
     return;
@@ -569,39 +542,6 @@ function handleConnect(req: IncomingMessage, socket: Socket, head: Buffer) {
   targetUrl.port = String(target.port);
   const rewritten = rewriteTarget(targetUrl, context);
 
-  const tlsCandidate = shouldInterceptTls(target.hostname, context, head);
-  proxyLog("connect-classify", {
-    username: context.username,
-    requestedHost: target.hostname,
-    requestedPort: target.port,
-    route: context.route
-      ? `${context.route.morphId}:${context.route.scope}`
-      : null,
-    headLength: head.length,
-    headSample: head.length > 0 ? head.subarray(0, 8).toString("hex") : "",
-    tlsCandidate,
-  });
-
-  if (tlsCandidate) {
-    proxyLog("connect-mitm", {
-      username: context.username,
-      requestedHost: target.hostname,
-      requestedPort: target.port,
-      rewrittenHost: rewritten.url.hostname,
-      rewrittenPort: rewritten.connectPort,
-      persistKey: context.persistKey,
-    });
-    establishMitmTunnel(
-      socket,
-      head,
-      target.hostname,
-      target.port,
-      context,
-      rewritten
-    );
-    return;
-  }
-
   proxyLog("connect-request", {
     username: context.username,
     requestedHost: target.hostname,
@@ -613,181 +553,8 @@ function handleConnect(req: IncomingMessage, socket: Socket, head: Buffer) {
   forwardConnectTunnel(socket, head, rewritten);
 }
 
-function shouldInterceptTls(
-  hostname: string,
-  context: ProxyContext,
-  _head: Buffer
-): boolean {
-  if (!ENABLE_TLS_MITM) {
-    return false;
-  }
-  if (!context.route || !isLoopbackHostname(hostname)) {
-    return false;
-  }
-  return true;
-}
-
-function looksLikeTlsHandshake(data: Buffer): boolean {
-  const first = data[0];
-  const versionMajor = data[1];
-  if (first !== 0x16) {
-    return false;
-  }
-  if (versionMajor !== 0x03) {
-    return false;
-  }
-  return true;
-}
-
-type MitmInitialClassification =
-  | { kind: "need-more" }
-  | { kind: "plain" }
-  | { kind: "tls"; alpnProtocols?: string[] };
-
-function classifyMitmInitialBytes(buffer: Buffer): MitmInitialClassification {
-  if (buffer.length < 3) {
-    return { kind: "need-more" };
-  }
-  if (!looksLikeTlsHandshake(buffer)) {
-    return { kind: "plain" };
-  }
-  const clientHello = parseClientHello(buffer);
-  if (!clientHello) {
-    return { kind: "need-more" };
-  }
-  if (!clientHello.isTls) {
-    return { kind: "plain" };
-  }
-  return { kind: "tls", alpnProtocols: clientHello.alpnProtocols };
-}
-
-interface ClientHelloInfo {
-  isTls: boolean;
-  alpnProtocols?: string[];
-}
-
-function parseClientHello(buffer: Buffer): ClientHelloInfo | null {
-  if (buffer.length < 5) {
-    return null;
-  }
-  if (buffer[0] !== 0x16) {
-    return { isTls: false };
-  }
-  const recordLength = buffer.readUInt16BE(3);
-  if (buffer.length < 5 + recordLength) {
-    return null;
-  }
-  if (buffer.length < 9) {
-    return null;
-  }
-  const handshakeType = buffer[5];
-  if (handshakeType !== 0x01) {
-    return { isTls: true };
-  }
-  const handshakeLength = buffer.readUIntBE(6, 3);
-  const handshakeEnd = 9 + handshakeLength;
-  if (buffer.length < handshakeEnd) {
-    return null;
-  }
-  const clientHello = buffer.subarray(9, handshakeEnd);
-  if (clientHello.length < 34) {
-    return null;
-  }
-  let offset = 0;
-  offset += 2; // legacy_version
-  offset += 32; // random
-  if (offset >= clientHello.length) {
-    return null;
-  }
-  const sessionIdLength = clientHello[offset] ?? 0;
-  offset += 1;
-  if (offset + sessionIdLength > clientHello.length) {
-    return null;
-  }
-  offset += sessionIdLength;
-  if (offset + 2 > clientHello.length) {
-    return null;
-  }
-  const cipherSuitesLength = clientHello.readUInt16BE(offset);
-  offset += 2;
-  if (offset + cipherSuitesLength > clientHello.length) {
-    return null;
-  }
-  offset += cipherSuitesLength;
-  if (offset >= clientHello.length) {
-    return null;
-  }
-  const compressionMethodsLength = clientHello[offset] ?? 0;
-  offset += 1;
-  if (offset + compressionMethodsLength > clientHello.length) {
-    return null;
-  }
-  offset += compressionMethodsLength;
-  if (offset + 2 > clientHello.length) {
-    return null;
-  }
-  const extensionsLength = clientHello.readUInt16BE(offset);
-  offset += 2;
-  if (offset + extensionsLength > clientHello.length) {
-    return null;
-  }
-  const extensionsEnd = offset + extensionsLength;
-  const alpnProtocols: string[] = [];
-  let foundAlpn = false;
-  while (offset + 4 <= extensionsEnd) {
-    const extensionType = clientHello.readUInt16BE(offset);
-    offset += 2;
-    const extensionSize = clientHello.readUInt16BE(offset);
-    offset += 2;
-    if (offset + extensionSize > extensionsEnd) {
-      return null;
-    }
-    if (extensionType === 0x0010 && extensionSize >= 2) {
-      const listLength = clientHello.readUInt16BE(offset);
-      let cursor = offset + 2;
-      const listEnd = cursor + listLength;
-      if (listEnd > offset + extensionSize) {
-        return null;
-      }
-      while (cursor < listEnd) {
-        const nameLength = clientHello[cursor];
-        cursor += 1;
-        if (!nameLength || cursor + nameLength > listEnd) {
-          break;
-        }
-        const protocol = clientHello
-          .subarray(cursor, cursor + nameLength)
-          .toString("utf8");
-        alpnProtocols.push(protocol);
-        cursor += nameLength;
-      }
-      foundAlpn = alpnProtocols.length > 0;
-    }
-    offset += extensionSize;
-  }
-  return {
-    isTls: true,
-    alpnProtocols: foundAlpn ? alpnProtocols : undefined,
-  };
-}
-
-function containsHttp2Protocol(protocols: string[] | undefined): boolean {
-  if (!protocols || protocols.length === 0) {
-    return false;
-  }
-  return protocols.some((protocol) => {
-    if (!protocol) return false;
-    const normalized = protocol.toLowerCase();
-    return (
-      normalized === "h2" ||
-      normalized.startsWith("h2-") ||
-      normalized === "h2c"
-    );
-  });
-}
-
 function handleUpgrade(req: IncomingMessage, socket: Socket, head: Buffer) {
-  const context = authenticateRequest(req.headers, req.socket);
+  const context = authenticateRequest(req.headers);
   if (!context) {
     respondProxyAuthRequiredSocket(socket);
     proxyWarn("upgrade-auth-required", {
@@ -828,16 +595,9 @@ function handleUpgrade(req: IncomingMessage, socket: Socket, head: Buffer) {
   forwardUpgradeRequest(req, socket, head, rewritten);
 }
 
-function authenticateRequest(
-  headers: IncomingHttpHeaders,
-  socket?: Socket | TLSSocket
-): ProxyContext | null {
+function authenticateRequest(headers: IncomingHttpHeaders): ProxyContext | null {
   const token = extractBasicToken(headers["proxy-authorization"]);
   if (!token) {
-    const socketContext = getContextForSocket(socket);
-    if (socketContext) {
-      return socketContext;
-    }
     return null;
   }
   const cached = contextsByAuthToken.get(token);
@@ -1542,141 +1302,6 @@ function forwardConnectTunnel(
     return;
   }
   establishDirectConnect(clientSocket, head, target, options);
-}
-
-function establishMitmTunnel(
-  clientSocket: Socket,
-  head: Buffer,
-  originalHostname: string,
-  originalPort: number,
-  context: ProxyContext,
-  target: ProxyTarget
-) {
-  if (!proxyServer) {
-    clientSocket.write("HTTP/1.1 500 Internal Server Error\r\n\r\n");
-    clientSocket.end();
-    return;
-  }
-  const server = proxyServer;
-
-  const secureContext = tls.createSecureContext();
-  let buffered = head;
-  let settled = false;
-
-  const cleanup = () => {
-    settled = true;
-    clientSocket.removeListener("data", handleData);
-    clientSocket.removeListener("error", handleClientError);
-    clientSocket.removeListener("close", handleClientClose);
-  };
-
-  const handleTlsTunnel = (initial: Buffer) => {
-    const tlsSocket = new tls.TLSSocket(clientSocket, {
-      isServer: true,
-      secureContext,
-    });
-    attachContextToSocket(tlsSocket, context);
-    if (initial.length > 0) {
-      tlsSocket.unshift(initial);
-    }
-    tlsSocket.on("error", (error) => {
-      proxyLogger?.warn("MITM TLS error", {
-        error,
-        host: originalHostname,
-        initialHead: initial.toString("hex"),
-      });
-      tlsSocket.destroy();
-    });
-    tlsSocket.once("secure", () => {
-      proxyLog("mitm-tls-secure", {
-        host: originalHostname,
-      });
-      server.emit("connection", tlsSocket);
-    });
-  };
-
-  const handleHttp2Bypass = (initial: Buffer, alpnProtocols?: string[]) => {
-    proxyLog("connect-http2-bypass", {
-      username: context.username,
-      requestedHost: originalHostname,
-      requestedPort: originalPort,
-      rewrittenHost: target.url.hostname,
-      rewrittenPort: target.connectPort,
-      persistKey: context.persistKey,
-      alpnProtocols,
-    });
-    proxyLog("mitm-http2-bypass", {
-      host: originalHostname,
-      targetHost: target.url.hostname,
-      alpnProtocols,
-    });
-    forwardConnectTunnel(clientSocket, initial, target, {
-      clientResponseAlreadySent: true,
-    });
-  };
-
-  const handlePlainTunnel = (initial: Buffer) => {
-    proxyLog("mitm-plain-tunnel", {
-      host: originalHostname,
-    });
-    attachContextToSocket(clientSocket, context);
-    if (initial.length > 0) {
-      clientSocket.unshift(initial);
-    }
-    server.emit("connection", clientSocket);
-  };
-
-  const classify = () => {
-    const result = classifyMitmInitialBytes(buffered);
-    if (result.kind === "need-more") {
-      return false;
-    }
-    cleanup();
-    if (result.kind === "plain") {
-      handlePlainTunnel(buffered);
-      return true;
-    }
-    if (containsHttp2Protocol(result.alpnProtocols)) {
-      handleHttp2Bypass(buffered, result.alpnProtocols);
-      return true;
-    }
-    handleTlsTunnel(buffered);
-    return true;
-  };
-
-  const handleData = (chunk: Buffer) => {
-    buffered = buffered.length === 0 ? chunk : Buffer.concat([buffered, chunk]);
-    if (classify()) {
-      return;
-    }
-  };
-
-  const handleClientError = (error: Error) => {
-    if (settled) {
-      return;
-    }
-    proxyLogger?.warn("MITM tunnel client error", {
-      error,
-      host: originalHostname,
-    });
-    cleanup();
-    clientSocket.destroy();
-  };
-
-  const handleClientClose = () => {
-    if (settled) {
-      return;
-    }
-    cleanup();
-  };
-
-  clientSocket.once("error", handleClientError);
-  clientSocket.once("close", handleClientClose);
-  clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
-
-  if (!classify()) {
-    clientSocket.on("data", handleData);
-  }
 }
 
 function deriveRoute(url: string): ProxyRoute | null {
