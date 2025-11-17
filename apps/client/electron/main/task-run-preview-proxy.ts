@@ -786,6 +786,17 @@ function containsHttp2Protocol(protocols: string[] | undefined): boolean {
   });
 }
 
+function containsHttp3Protocol(protocols: string[] | undefined): boolean {
+  if (!protocols || protocols.length === 0) {
+    return false;
+  }
+  return protocols.some((protocol) => {
+    if (!protocol) return false;
+    const normalized = protocol.toLowerCase();
+    return normalized === "h3" || normalized.startsWith("h3-");
+  });
+}
+
 function handleUpgrade(req: IncomingMessage, socket: Socket, head: Buffer) {
   const context = authenticateRequest(req.headers, req.socket);
   if (!context) {
@@ -1635,6 +1646,16 @@ function establishMitmTunnel(
     if (result.kind === "plain") {
       handlePlainTunnel(buffered);
       return true;
+    }
+    if (containsHttp3Protocol(result.alpnProtocols)) {
+      proxyWarn("mitm-http3-detected", {
+        host: originalHostname,
+        alpnProtocols: result.alpnProtocols,
+        message:
+          "HTTP/3 (h3) detected in ALPN but not supported - falling back to TLS tunnel",
+      });
+      // HTTP/3 uses QUIC (UDP), not TLS/TCP, so this shouldn't happen in practice
+      // But if h3 is advertised in ALPN over TLS, we'll treat it as a regular TLS tunnel
     }
     if (containsHttp2Protocol(result.alpnProtocols)) {
       handleHttp2Bypass(buffered, result.alpnProtocols);
