@@ -1,5 +1,15 @@
 import { electronAPI } from "@electron-toolkit/preload";
 import { contextBridge, ipcRenderer } from "electron";
+import * as Sentry from "@sentry/electron/preload";
+import {
+  ELECTRON_SENTRY_DSN,
+  SENTRY_TRACES_SAMPLE_RATE,
+} from "../../sentry.config";
+
+Sentry.init({
+  dsn: ELECTRON_SENTRY_DSN,
+  tracesSampleRate: SENTRY_TRACES_SAMPLE_RATE,
+});
 import type {
   ElectronDevToolsMode,
   ElectronWebContentsEvent,

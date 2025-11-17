@@ -8,6 +8,11 @@
 import { createHash } from "node:crypto";
 import { appendFileSync } from "node:fs";
 import { app } from "electron";
+import * as Sentry from "@sentry/electron/main";
+import {
+  ELECTRON_SENTRY_DSN,
+  SENTRY_TRACES_SAMPLE_RATE,
+} from "../../sentry.config";
 
 import { clearLogDirectory } from "./log-management/clear-log-directory";
 import { resolveLogFilePath } from "./log-management/log-paths";
@@ -44,6 +49,13 @@ function safeFormat(v: unknown): string {
     }
   }
 }
+
+Sentry.init({
+  dsn: ELECTRON_SENTRY_DSN,
+  release: app.getVersion(),
+  environment: process.env.NODE_ENV ?? "development",
+  tracesSampleRate: SENTRY_TRACES_SAMPLE_RATE,
+});
 
 clearLogDirectory();
 

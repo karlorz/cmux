@@ -1,10 +1,13 @@
 import { StrictMode } from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "./app";
+import { initSentry } from "./sentry";
 
 import "./antd-overrides.css";
 import "./zindex.css";
 import "./index.css";
+
+void initSentry();
 
 // Global error logging to help diagnose loader stalls
 // Logs both synchronous render errors and async unhandled rejections.
