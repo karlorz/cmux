@@ -400,6 +400,96 @@ async function stopMorphInstance(
   });
 }
 
+async function ensureTmuxSession({
+  morphClient,
+  instanceId,
+  repoDir,
+  previewRunId,
+}: {
+  morphClient: ReturnType<typeof createMorphCloudClient>;
+  instanceId: string;
+  repoDir: string;
+  previewRunId: Id<"previewRuns">;
+}): Promise<void> {
+  const sessionCmd = [
+    "bash",
+    "-lc",
+    `tmux has-session -t cmux 2>/dev/null || tmux new-session -d -s cmux -c ${singleQuote(repoDir)}`,
+  ];
+  const response = await execInstanceInstanceIdExecPost({
+    client: morphClient,
+    path: { instance_id: instanceId },
+    body: { command: sessionCmd },
+  });
+  if (response.error || response.data?.exit_code !== 0) {
+    console.warn("[preview-jobs] Failed to ensure tmux session", {
+      previewRunId,
+      exitCode: response.data?.exit_code,
+      stdout: sliceOutput(response.data?.stdout),
+      stderr: sliceOutput(response.data?.stderr),
+      error: response.error,
+    });
+  }
+}
+
+async function runScriptInTmuxWindow({
+  morphClient,
+  instanceId,
+  repoDir,
+  windowName,
+  scriptContent,
+  previewRunId,
+}: {
+  morphClient: ReturnType<typeof createMorphCloudClient>;
+  instanceId: string;
+  repoDir: string;
+  windowName: string;
+  scriptContent: string;
+  previewRunId: Id<"previewRuns">;
+}): Promise<void> {
+  const trimmed = scriptContent.trim();
+  if (!trimmed) {
+    return;
+  }
+
+  const scriptBase64 = stringToBase64(trimmed);
+  const command = [
+    "bash",
+    "-lc",
+    [
+      `SESSION=\"cmux\"`,
+      `WINDOW=${singleQuote(windowName)}`,
+      `tmux has-session -t \"$SESSION\" 2>/dev/null || tmux new-session -d -s \"$SESSION\" -c ${singleQuote(repoDir)}`,
+      `tmux new-window -t \"$SESSION\" -n \"$WINDOW\" -c ${singleQuote(repoDir)}`,
+      `echo '${scriptBase64}' | base64 -d > /tmp/cmux-${windowName}.sh`,
+      `chmod +x /tmp/cmux-${windowName}.sh`,
+      `tmux send-keys -t \"$SESSION\":\"$WINDOW\" "bash /tmp/cmux-${windowName}.sh" C-m`,
+    ].join(" && "),
+  ];
+
+  const response = await execInstanceInstanceIdExecPost({
+    client: morphClient,
+    path: { instance_id: instanceId },
+    body: { command },
+  });
+
+  if (response.error || response.data?.exit_code !== 0) {
+    console.warn("[preview-jobs] Failed to start tmux window", {
+      previewRunId,
+      windowName,
+      exitCode: response.data?.exit_code,
+      stdout: sliceOutput(response.data?.stdout),
+      stderr: sliceOutput(response.data?.stderr),
+      error: response.error,
+    });
+  } else {
+    console.log("[preview-jobs] Started tmux window", {
+      previewRunId,
+      windowName,
+    });
+  }
+}
+
 export async function runPreviewJob(
   ctx: ActionCtx,
   previewRunId: Id<"previewRuns">,
@@ -929,6 +1019,36 @@ export async function runPreviewJob(
         previewRunId,
         taskRunId,
       });
+
+      // Start tmux session and run maintenance/dev scripts if provided
+      await ensureTmuxSession({
+        morphClient,
+        instanceId: instance.id,
+        repoDir,
+        previewRunId,
+      });
+
+      if (environment.maintenanceScript) {
+        await runScriptInTmuxWindow({
+          morphClient,
+          instanceId: instance.id,
+          repoDir,
+          windowName: "maintenance",
+          scriptContent: environment.maintenanceScript,
+          previewRunId,
+        });
+      }
+
+      if (environment.devScript) {
+        await runScriptInTmuxWindow({
+          morphClient,
+          instanceId: instance.id,
+          repoDir,
+          windowName: "devserver",
+          scriptContent: environment.devScript,
+          previewRunId,
+        });
+      }
 
       // Verify task run exists before triggering screenshots
       console.log("[preview-jobs] Verifying task run is queryable", {
