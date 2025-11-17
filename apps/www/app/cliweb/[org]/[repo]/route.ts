@@ -151,12 +151,15 @@ async function cloneRepository({
 }) {
   const repoUrl = `https://github.com/${org}/${repo}.git`;
   const safeRepoPath = `${WORKSPACE_DIR}/${repo}`;
-  const command = `
+const command = `
 set -e
 mkdir -p ${WORKSPACE_DIR}
 cd ${WORKSPACE_DIR}
 rm -rf ${singleQuote(repo)}
+(bun add -g opencode-ai@latest >/tmp/opencode-install.log 2>&1) &
+INSTALL_PID=$!
 git clone --depth=1 ${singleQuote(repoUrl)} ${singleQuote(repo)}
+wait $INSTALL_PID
 `;
   const result = await instance.exec(`bash -lc ${singleQuote(command)}`);
   if (result.exit_code !== 0) {
@@ -190,7 +193,7 @@ async function createTerminalSession({
         "-lc",
         `cd ${singleQuote(
           repoPath
-        )} && (bunx opencode-ai@latest || true); exec /bin/bash`,
+        )} && (bunx opencode-ai --port 4096 --hostname 0.0.0.0 || true); exec /bin/bash`,
       ],
     }),
   });
