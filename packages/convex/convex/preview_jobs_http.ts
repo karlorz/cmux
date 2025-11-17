@@ -1,25 +1,15 @@
 import { createMorphCloudClient, stopInstanceInstanceInstanceIdDelete } from "@cmux/morphcloud-openapi-client";
-import { env } from "../_shared/convex-env";
 import { internal } from "./_generated/api";
-import { httpAction, type ActionCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
+import { httpAction, type ActionCtx } from "./_generated/server";
 import { runPreviewJob } from "./preview_jobs_worker";
+import { getWorkerAuth } from "./users/utils/getWorkerAuth";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
   });
-}
-
-function verifyAuth(req: Request): boolean {
-  const authHeader = req.headers.get("authorization");
-  if (!authHeader) return false;
-
-  const [scheme, token] = authHeader.split(" ");
-  if (scheme !== "Bearer") return false;
-
-  return token === env.CMUX_TASK_RUN_JWT_SECRET;
 }
 
 async function stopPreviewInstance(
@@ -36,7 +26,7 @@ async function stopPreviewInstance(
     });
     return;
   }
-  const morphApiKey = env.MORPH_API_KEY;
+  const morphApiKey = process.env.MORPH_API_KEY;
   if (!morphApiKey) {
     console.warn("[preview-jobs-http] Cannot stop Morph instance without MORPH_API_KEY", {
       previewRunId: previewRun._id,
@@ -100,7 +90,8 @@ async function stopPreviewInstance(
 }
 
 export const dispatchPreviewJob = httpAction(async (ctx, req) => {
-  if (!verifyAuth(req)) {
+  const workerAuth = await getWorkerAuth(req, { loggerPrefix: "[preview-jobs-http]" });
+  if (!workerAuth) {
     console.error("[preview-jobs-http] Unauthorized dispatch request");
     return jsonResponse({ error: "Unauthorized" }, 401);
   }
@@ -156,7 +147,8 @@ export const dispatchPreviewJob = httpAction(async (ctx, req) => {
  * HTTP action for www API to update preview run status
  */
 export const updatePreviewStatus = httpAction(async (ctx, req) => {
-  if (!verifyAuth(req)) {
+  const auth = await getWorkerAuth(req, { loggerPrefix: "[preview-jobs-http]" });
+  if (!auth) {
     console.error("[preview-jobs-http] Unauthorized request");
     return jsonResponse({ error: "Unauthorized" }, 401);
   }
@@ -216,7 +208,8 @@ export const updatePreviewStatus = httpAction(async (ctx, req) => {
  * HTTP action for www API to create screenshot set
  */
 export const createScreenshotSet = httpAction(async (ctx, req) => {
-  if (!verifyAuth(req)) {
+  const auth = await getWorkerAuth(req, { loggerPrefix: "[preview-jobs-http]" });
+  if (!auth) {
     console.error("[preview-jobs-http] Unauthorized request");
     return jsonResponse({ error: "Unauthorized" }, 401);
   }
@@ -298,7 +291,8 @@ export const createScreenshotSet = httpAction(async (ctx, req) => {
  * Copies screenshots from task run to preview run and posts GitHub comment
  */
 export const completePreviewJob = httpAction(async (ctx, req) => {
-  if (!verifyAuth(req)) {
+  const workerAuth = await getWorkerAuth(req, { loggerPrefix: "[preview-jobs-http]" });
+  if (!workerAuth) {
     console.error("[preview-jobs-http] Unauthorized complete request");
     return jsonResponse({ error: "Unauthorized" }, 401);
   }

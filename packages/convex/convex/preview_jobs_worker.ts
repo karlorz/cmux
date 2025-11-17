@@ -890,7 +890,6 @@ export async function runPreviewJob(
         `CMUX_TASK_RUN_JWT="${previewJwt}"`,
         `CONVEX_SITE_URL="${convexUrl}"`,
         `CONVEX_URL="${convexUrl}"`,
-        `NEXT_PUBLIC_CONVEX_URL="${convexUrl}"`,
       ];
       const envVarsContent = envLines.join("\n");
       if (envVarsContent.length === 0) {
