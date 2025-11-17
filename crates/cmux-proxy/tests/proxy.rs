@@ -332,7 +332,14 @@ async fn test_http_proxy_routes_by_header() {
         .await
         .expect("resp custom timeout")
         .unwrap();
-    assert_eq!(resp_custom.status(), StatusCode::BAD_GATEWAY);
+    assert_eq!(resp_custom.status(), StatusCode::OK);
+    let custom_body = resp_custom.into_body().collect().await.unwrap().to_bytes();
+    let custom_str = String::from_utf8(custom_body.to_vec()).unwrap();
+    assert!(
+        custom_str.contains("ok:GET:/hello"),
+        "unexpected body: {}",
+        custom_str
+    );
 
     // Missing header -> 400
     let url2 = format!("http://{}:{}/missing", proxy_addr.ip(), proxy_addr.port());

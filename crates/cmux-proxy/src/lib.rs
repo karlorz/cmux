@@ -118,6 +118,7 @@ fn configure_http2_server_builder(builder: &mut impl Http2ServerConfig) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use http::{header::HOST, HeaderMap, HeaderValue};
 
     #[derive(Default)]
     struct RecordingClientBuilder {
@@ -219,6 +220,16 @@ mod tests {
             builder.timeout,
             Some(Duration::from_secs(HTTP2_KEEP_ALIVE_TIMEOUT_SECS))
         );
+    }
+
+    #[test]
+    fn allows_non_local_host_without_override() {
+        let mut headers = HeaderMap::new();
+        headers.insert(HOST, HeaderValue::from_static("example.com"));
+
+        let result = enforce_local_host_header(&headers, None);
+
+        assert!(result.is_ok());
     }
 }
 
@@ -802,10 +813,10 @@ fn enforce_local_host_header(
             )
         })?;
         if !host_is_local_allowed(host) {
-            return Err(response_with(
-                StatusCode::BAD_GATEWAY,
-                "Host header requires X-Cmux-Host-Override".to_string(),
-            ));
+            warn!(
+                %host,
+                "Non-local Host header without override; forwarding with default behavior"
+            );
         }
     }
 
