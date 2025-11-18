@@ -70,6 +70,7 @@ VNC_HTTP_PORT = 39380
 CDP_HTTP_PORT = 39381
 XTERM_HTTP_PORT = 39383
 CDP_PROXY_BINARY_NAME = "cmux-cdp-proxy"
+VNC_PROXY_BINARY_NAME = "cmux-vnc-proxy"
 MORPH_SNAPSHOT_MANIFEST_PATH = (
     Path(__file__).resolve().parent.parent / "packages/shared/src/morph-snapshots.json"
 )
@@ -1279,7 +1280,6 @@ async def task_install_base_packages(ctx: TaskContext) -> None:
             build-essential make pkg-config g++ libssl-dev \
             ruby-full perl software-properties-common \
             tigervnc-standalone-server tigervnc-common \
-            python3-websockify websockify \
             xvfb \
             x11-xserver-utils xterm novnc \
             tmux \
@@ -1890,7 +1890,7 @@ async def task_install_service_scripts(ctx: TaskContext) -> None:
 @registry.task(
     name="build-cdp-proxy",
     deps=("install-service-scripts", "install-go-toolchain"),
-    description="Build and install Chrome DevTools proxy binary",
+    description="Build and install Chrome DevTools and VNC proxy binaries",
 )
 async def task_build_cdp_proxy(ctx: TaskContext) -> None:
     repo = shlex.quote(ctx.remote_repo_root)
@@ -1903,6 +1903,12 @@ async def task_build_cdp_proxy(ctx: TaskContext) -> None:
         go build -trimpath -o /usr/local/lib/cmux/{CDP_PROXY_BINARY_NAME} .
         if [ ! -x /usr/local/lib/cmux/{CDP_PROXY_BINARY_NAME} ]; then
           echo "Failed to build {CDP_PROXY_BINARY_NAME}" >&2
+          exit 1
+        fi
+        cd {repo}/scripts/vnc-proxy
+        go build -trimpath -o /usr/local/lib/cmux/{VNC_PROXY_BINARY_NAME} .
+        if [ ! -x /usr/local/lib/cmux/{VNC_PROXY_BINARY_NAME} ]; then
+          echo "Failed to build {VNC_PROXY_BINARY_NAME}" >&2
           exit 1
         fi
         """
@@ -1939,7 +1945,7 @@ async def task_install_systemd_units(ctx: TaskContext) -> None:
         install -Dm0644 {repo}/configs/systemd/cmux-devtools.service /usr/lib/systemd/system/cmux-devtools.service
         install -Dm0644 {repo}/configs/systemd/cmux-xvfb.service /usr/lib/systemd/system/cmux-xvfb.service
         install -Dm0644 {repo}/configs/systemd/cmux-tigervnc.service /usr/lib/systemd/system/cmux-tigervnc.service
-        install -Dm0644 {repo}/configs/systemd/cmux-websockify.service /usr/lib/systemd/system/cmux-websockify.service
+        install -Dm0644 {repo}/configs/systemd/cmux-vnc-proxy.service /usr/lib/systemd/system/cmux-vnc-proxy.service
         install -Dm0644 {repo}/configs/systemd/cmux-cdp-proxy.service /usr/lib/systemd/system/cmux-cdp-proxy.service
         install -Dm0644 {repo}/configs/systemd/cmux-xterm.service /usr/lib/systemd/system/cmux-xterm.service
         install -Dm0644 {repo}/configs/systemd/cmux-memory-setup.service /usr/lib/systemd/system/cmux-memory-setup.service
@@ -1957,7 +1963,7 @@ async def task_install_systemd_units(ctx: TaskContext) -> None:
         ln -sf /usr/lib/systemd/system/cmux-dockerd.service /etc/systemd/system/cmux.target.wants/cmux-dockerd.service
         ln -sf /usr/lib/systemd/system/cmux-devtools.service /etc/systemd/system/cmux.target.wants/cmux-devtools.service
         ln -sf /usr/lib/systemd/system/cmux-tigervnc.service /etc/systemd/system/cmux.target.wants/cmux-tigervnc.service
-        ln -sf /usr/lib/systemd/system/cmux-websockify.service /etc/systemd/system/cmux.target.wants/cmux-websockify.service
+        ln -sf /usr/lib/systemd/system/cmux-vnc-proxy.service /etc/systemd/system/cmux.target.wants/cmux-vnc-proxy.service
         ln -sf /usr/lib/systemd/system/cmux-cdp-proxy.service /etc/systemd/system/cmux.target.wants/cmux-cdp-proxy.service
         ln -sf /usr/lib/systemd/system/cmux-xterm.service /etc/systemd/system/cmux.target.wants/cmux-xterm.service
         ln -sf /usr/lib/systemd/system/cmux-memory-setup.service /etc/systemd/system/multi-user.target.wants/cmux-memory-setup.service
@@ -2446,11 +2452,10 @@ async def task_check_vnc(ctx: TaskContext) -> None:
         """
         # Verify VNC binaries are installed
         vncserver -version
-        if ! command -v websockify >/dev/null 2>&1; then
-          echo "websockify not installed" >&2
+        if [ ! -x /usr/local/lib/cmux/cmux-vnc-proxy ]; then
+          echo "cmux-vnc-proxy binary missing" >&2
           exit 1
         fi
-        websockify --help >/dev/null
         
         # Verify VNC endpoint is accessible
         sleep 5
@@ -2463,15 +2468,52 @@ async def task_check_vnc(ctx: TaskContext) -> None:
         done
         echo "ERROR: VNC endpoint not reachable after 30s" >&2
         systemctl status cmux-tigervnc.service --no-pager || true
-        systemctl status cmux-websockify.service --no-pager || true
+        systemctl status cmux-vnc-proxy.service --no-pager || true
         systemctl status cmux-devtools.service --no-pager || true
         tail -n 40 /var/log/cmux/chrome.log || true
         tail -n 40 /var/log/cmux/tigervnc.log || true
-        tail -n 40 /var/log/cmux/websockify.log || true
+        tail -n 40 /var/log/cmux/vnc-proxy.log || true
         exit 1
         """
     )
     await ctx.run("check-vnc", cmd)
+
+    websocket_cmd = textwrap.dedent(
+        """
+        python3 - <<'PY'
+import base64
+import os
+import socket
+import sys
+
+host = "127.0.0.1"
+port = 39380
+path = "/websockify"
+
+key = base64.b64encode(os.urandom(16)).decode()
+request = (
+    f"GET {path} HTTP/1.1\\r\\n"
+    f"Host: {host}:{port}\\r\\n"
+    "Upgrade: websocket\\r\\n"
+    "Connection: Upgrade\\r\\n"
+    f"Sec-WebSocket-Key: {key}\\r\\n"
+    "Sec-WebSocket-Version: 13\\r\\n"
+    "\\r\\n"
+)
+
+with socket.create_connection((host, port), timeout=5) as sock:
+    sock.settimeout(5)
+    sock.sendall(request.encode("ascii"))
+    resp = sock.recv(1024).decode("latin1", "replace")
+
+status_line = resp.splitlines()[0] if resp else ""
+if not status_line.startswith("HTTP/1.1 101"):
+    print(f"Unexpected websocket response: {status_line!r}", file=sys.stderr)
+    sys.exit(1)
+PY
+        """
+    )
+    await ctx.run("check-vnc-websocket-upgrade", websocket_cmd)
 
 
 @registry.task(
