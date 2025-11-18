@@ -445,7 +445,6 @@ export const completePreviewJob = httpAction(async (ctx, req) => {
       message: error instanceof Error ? error.message : String(error),
     }, 500);
   } finally {
-    console.log("[preview-jobs-http] online")
     if (shouldStopInstance && previewRun) {
       await stopPreviewInstance(ctx, previewRun);
     }
