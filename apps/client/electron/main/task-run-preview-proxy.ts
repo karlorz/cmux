@@ -402,7 +402,7 @@ export async function configurePreviewProxyForView(
   try {
     await webContents.session.setProxy({
       mode: "fixed_servers",
-      proxyRules: `http=127.0.0.1:${ports.httpPort};https=https://127.0.0.1:${ports.httpsPort}`,
+      proxyRules: `http=127.0.0.1:${ports.httpPort};https=127.0.0.1:${ports.httpPort}`,
       proxyBypassRules: "<-loopback>",
     });
     proxyLog("session-proxy-configured", {
@@ -525,41 +525,41 @@ async function startProxyServers(logger: Logger): Promise<ProxyPorts> {
   }
 }
 
-function listenWithRetry(
+async function listenWithRetry(
   server: ProxyHttpServer | ProxyHttpsServer,
   startPort: number,
   maxAttempts: number,
   protocol: "http" | "https"
 ): Promise<number> {
-  return new Promise((resolve, reject) => {
-    let attempt = 0;
-    const tryListen = () => {
-      const candidatePort = startPort + attempt;
-      listen(server, candidatePort)
-        .then(() => resolve(candidatePort))
-        .catch((error) => {
-          if ((error as NodeJS.ErrnoException).code === "EADDRINUSE") {
-            attempt += 1;
-            if (attempt >= maxAttempts) {
-              reject(
-                new Error(`Unable to bind ${protocol} preview proxy port`)
-              );
-              return;
-            }
-            tryListen();
-            return;
-          }
-          reject(error);
-        });
-    };
-    tryListen();
-  });
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const candidatePort = startPort + attempt;
+    try {
+      return await listen(server, candidatePort);
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === "EADDRINUSE") {
+        lastError = err;
+        continue;
+      }
+      throw err;
+    }
+  }
+  try {
+    return await listen(server, 0);
+  } catch (fallbackError) {
+    const message = `Unable to bind ${protocol} preview proxy port`;
+    if (lastError) {
+      throw new Error(message, { cause: lastError });
+    }
+    throw new Error(message, { cause: fallbackError as Error });
+  }
 }
 
 function listen(
   server: ProxyHttpServer | ProxyHttpsServer,
   port: number
-): Promise<void> {
+): Promise<number> {
   return new Promise((resolve, reject) => {
     const handleError = (error: Error) => {
       server.off("listening", handleListening);
@@ -567,7 +567,12 @@ function listen(
     };
     const handleListening = () => {
       server.off("error", handleError);
-      resolve();
+      const address = server.address();
+      if (address && typeof address === "object") {
+        resolve(address.port);
+        return;
+      }
+      resolve(port);
     };
     server.once("error", handleError);
     server.once("listening", handleListening);
