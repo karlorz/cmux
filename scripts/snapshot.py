@@ -231,11 +231,20 @@ class TaskContext:
             else command_with_env
         )
         if self.exec_client is not None:
-            return await self.exec_client.run(
-                label,
-                command_to_run,
-                timeout=timeout,
-            )
+            try:
+                return await self.exec_client.run(
+                    label,
+                    command_to_run,
+                    timeout=timeout,
+                )
+            except Exception as exc:
+                # Best-effort: capture recent exec daemon logs to aid debugging.
+                log_tail = await self._collect_execd_log()
+                if log_tail:
+                    raise RuntimeError(
+                        f"{exc}\n\ncmux-execd.log (tail):\n{log_tail}".rstrip()
+                    ) from exc
+                raise
         return await _run_command(self, label, command_to_run, timeout=timeout)
 
     async def run_via_ssh(
@@ -261,6 +270,21 @@ class TaskContext:
             return f"{self.environment_prelude}\n{command}"
         quoted = " ".join(shlex.quote(str(part)) for part in command)
         return f"{self.environment_prelude}\n{quoted}"
+
+    async def _collect_execd_log(self) -> str | None:
+        """Best-effort tail of the exec daemon log without using the exec service."""
+        log_path = "/var/log/cmux-execd.log"
+        try:
+            result = await self.instance.aexec(
+                ["bash", "-lc", f'if [ -f {log_path} ]; then tail -n 200 {log_path}; fi'],
+                timeout=5,
+            )
+        except Exception:
+            return None
+        if result.exit_code not in (0, None):
+            return None
+        output = result.stdout.strip()
+        return output or None
 
 
 @dataclass(frozen=True)
@@ -411,11 +435,11 @@ async def _await_instance_ready(instance: Instance, *, console: Console) -> None
 
 def _stop_instance(instance: Instance, console: Console) -> None:
     try:
-        console.info(f"Pausing instance {instance.id}...")
-        instance.pause()
-        console.info(f"Instance {instance.id} paused")
+        console.info(f"Stopping instance {instance.id}...")
+        instance.stop()
+        console.info(f"Instance {instance.id} stopped")
     except Exception as exc:  # noqa: BLE001
-        console.always(f"Failed to pause instance {instance.id}: {exc}")
+        console.always(f"Failed to stop instance {instance.id}: {exc}")
 
 
 def _shell_command(command: Command) -> list[str]:
@@ -1994,10 +2018,18 @@ async def task_check_ssh_service(ctx: TaskContext) -> None:
     cmd = textwrap.dedent(
         """
         set -euo pipefail
-        status_output="$(systemctl status ssh --no-pager)"
+        status_output="$(systemctl status ssh --no-pager || true)"
         printf '%s\n' "$status_output"
-        if ! printf '%s\n' "$status_output" | grep -Fq "active (running)"; then
+        if ! systemctl is-active --quiet ssh; then
+          echo "ssh service not active; attempting restart..." >&2
+          systemctl restart ssh || true
+          sleep 2
+          status_output="$(systemctl status ssh --no-pager || true)"
+          printf '%s\n' "$status_output"
+        fi
+        if ! systemctl is-active --quiet ssh; then
           echo "ERROR: ssh service status did not report active (running)" >&2
+          journalctl -u ssh --no-pager -n 50 || true
           exit 1
         fi
         """
