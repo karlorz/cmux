@@ -3,6 +3,10 @@ Sentry.init({
   dsn: "https://6112bebb24a138e3efe0faee803521fe@o4507547940749312.ingest.us.sentry.io/4510383103344640",
 });
 
+setTimeout(() => {
+  myUndefinedFunction();
+}, 5000);
+
 import path, { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -37,7 +41,6 @@ import {
   jwtVerify,
   type JWTPayload,
 } from "jose";
-import { promises as fs } from "node:fs";
 import { collectAllLogs } from "./log-management/collect-logs";
 import { ensureLogDirectory } from "./log-management/log-paths";
 import {
@@ -87,13 +90,6 @@ const LOG_ROTATION: LogRotationOptions = {
   maxBackups: 3,
 };
 
-process.on("uncaughtException", (error) => {
-  console.error("[ElectronMain] Uncaught exception", error);
-});
-
-process.on("unhandledRejection", (reason) => {
-  console.error("[ElectronMain] Unhandled rejection", reason);
-});
 
 let rendererLoaded = false;
 let pendingProtocolUrl: string | null = null;
@@ -494,28 +490,6 @@ function registerAutoUpdateIpcHandlers(): void {
   });
 }
 
-// Write critical errors to a file to aid debugging packaged crashes
-async function writeFatalLog(...args: unknown[]) {
-  try {
-    const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    const base = app.getPath("userData");
-    const file = path.join(base, `fatal-${ts}.log`);
-    const msg = formatArgs(args);
-    await fs.writeFile(file, msg + "\n", { encoding: "utf8" });
-  } catch (error) {
-    console.error("Failed to write fatal log", error);
-    // ignore
-  }
-}
-
-process.on("uncaughtException", (err) => {
-  console.error("[MAIN] uncaughtException", err);
-  void writeFatalLog("uncaughtException", err);
-});
-process.on("unhandledRejection", (reason) => {
-  console.error("[MAIN] unhandledRejection", reason);
-  void writeFatalLog("unhandledRejection", reason);
-});
 
 function setupAutoUpdates(): void {
   if (!app.isPackaged) {

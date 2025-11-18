@@ -30,14 +30,14 @@ function createExternalizeDepsPlugin(
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const repoRoot = resolve(__dirname, "..", "..");
 
-const SentryVitePlugin = sentryVitePlugin({
+const SentryVitePlugin = process.env.SENTRY_AUTH_TOKEN ? sentryVitePlugin({
   org: "manaflow",
   project: "cmux-client-electron",
   authToken: process.env.SENTRY_AUTH_TOKEN,
   sourcemaps: {
     filesToDeleteAfterUpload: ["**/*.map"],
   },
-});
+}) : undefined;
 
 export default defineConfig({
   main: {
