@@ -55,6 +55,7 @@ export const WorkerTaskRunContextSchema = z.object({
   taskRunToken: z.string(),
   prompt: z.string(),
   convexUrl: z.string(),
+  isPreviewJob: z.boolean().optional(),
 });
 
 // Terminal operation schemas for server<>worker communication
@@ -188,12 +189,9 @@ export const WorkerStartScreenshotCollectionSchema = z.object({
 });
 
 export const WorkerRunTaskScreenshotsSchema = z.object({
-  taskId: typedZid("tasks"),
-  taskRunId: typedZid("taskRuns"),
   token: z.string(),
-  convexUrl: z.string(),
   anthropicApiKey: z.string().optional(),
-  taskRunJwt: z.string().optional(),
+  convexUrl: z.string().min(1).optional(),
 });
 
 // Server to Worker Events

@@ -141,6 +141,37 @@ export const updateStatus = internalMutation({
   },
 });
 
+export const updateInstanceMetadata = internalMutation({
+  args: {
+    previewRunId: v.id("previewRuns"),
+    morphInstanceId: v.optional(v.string()),
+    morphInstanceStoppedAt: v.optional(v.number()),
+    clearStoppedAt: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.previewRunId);
+    if (!run) {
+      throw new Error("Preview run not found");
+    }
+
+    const patch: Record<string, unknown> = {
+      updatedAt: Date.now(),
+    };
+
+    if ("morphInstanceId" in args) {
+      patch.morphInstanceId = args.morphInstanceId;
+    }
+
+    if (args.clearStoppedAt) {
+      patch.morphInstanceStoppedAt = undefined;
+    } else if ("morphInstanceStoppedAt" in args) {
+      patch.morphInstanceStoppedAt = args.morphInstanceStoppedAt;
+    }
+
+    await ctx.db.patch(run._id, patch);
+  },
+});
+
 export const getRunWithConfig = internalQuery({
   args: {
     previewRunId: v.id("previewRuns"),
@@ -155,6 +186,19 @@ export const getRunWithConfig = internalQuery({
       return null;
     }
     return { run, config } as const;
+  },
+});
+
+export const getByTaskRunId = internalQuery({
+  args: {
+    taskRunId: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db
+      .query("previewRuns")
+      .filter((q) => q.eq(q.field("taskRunId"), args.taskRunId))
+      .first();
+    return run ?? null;
   },
 });
 

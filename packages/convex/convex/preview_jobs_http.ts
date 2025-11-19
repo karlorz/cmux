@@ -1,8 +1,10 @@
+import { createMorphCloudClient, stopInstanceInstanceInstanceIdDelete } from "@cmux/morphcloud-openapi-client";
 import { env } from "../_shared/convex-env";
 import { internal } from "./_generated/api";
-import { httpAction } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
+import { httpAction, type ActionCtx } from "./_generated/server";
 import { runPreviewJob } from "./preview_jobs_worker";
+import { getWorkerAuth } from "./users/utils/getWorkerAuth";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -11,18 +13,82 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-function verifyAuth(req: Request): boolean {
-  const authHeader = req.headers.get("authorization");
-  if (!authHeader) return false;
+async function stopPreviewInstance(
+  ctx: ActionCtx,
+  previewRun: Doc<"previewRuns">,
+): Promise<void> {
+  if (!previewRun?.morphInstanceId) {
+    return;
+  }
+  if (previewRun.morphInstanceStoppedAt) {
+    console.log("[preview-jobs-http] Morph instance already stopped", {
+      previewRunId: previewRun._id,
+      morphInstanceId: previewRun.morphInstanceId,
+    });
+    return;
+  }
+  const morphApiKey = process.env.MORPH_API_KEY;
+  if (!morphApiKey) {
+    console.warn("[preview-jobs-http] Cannot stop Morph instance without MORPH_API_KEY", {
+      previewRunId: previewRun._id,
+      morphInstanceId: previewRun.morphInstanceId,
+    });
+    return;
+  }
 
-  const [scheme, token] = authHeader.split(" ");
-  if (scheme !== "Bearer") return false;
+  const morphClient = createMorphCloudClient({ auth: morphApiKey });
+  const stoppedAt = Date.now();
 
-  return token === env.CMUX_TASK_RUN_JWT_SECRET;
+  try {
+    await stopInstanceInstanceInstanceIdDelete({
+      client: morphClient,
+      path: { instance_id: previewRun.morphInstanceId },
+    });
+  } catch (error) {
+    console.error("[preview-jobs-http] Failed to stop Morph instance", {
+      previewRunId: previewRun._id,
+      morphInstanceId: previewRun.morphInstanceId,
+      error,
+    });
+  }
+
+  try {
+    await ctx.runMutation(internal.previewRuns.updateInstanceMetadata, {
+      previewRunId: previewRun._id,
+      morphInstanceStoppedAt: stoppedAt,
+    });
+  } catch (error) {
+    console.error("[preview-jobs-http] Failed to record Morph instance stop time", {
+      previewRunId: previewRun._id,
+      error,
+    });
+  }
+
+  if (previewRun.taskRunId) {
+    try {
+      await ctx.runMutation(internal.taskRuns.updateVSCodeMetadataInternal, {
+        taskRunId: previewRun.taskRunId,
+        vscode: {
+          provider: "morph",
+          status: "stopped",
+          containerName: previewRun.morphInstanceId,
+          stoppedAt,
+        },
+        networking: [],
+      });
+    } catch (error) {
+      console.error("[preview-jobs-http] Failed to update task run VSCode metadata after stop", {
+        previewRunId: previewRun._id,
+        taskRunId: previewRun.taskRunId,
+        error,
+      });
+    }
+  }
 }
 
 export const dispatchPreviewJob = httpAction(async (ctx, req) => {
-  if (!verifyAuth(req)) {
+  const workerAuth = await getWorkerAuth(req, { loggerPrefix: "[preview-jobs-http]" });
+  if (!workerAuth) {
     console.error("[preview-jobs-http] Unauthorized dispatch request");
     return jsonResponse({ error: "Unauthorized" }, 401);
   }
@@ -78,7 +144,8 @@ export const dispatchPreviewJob = httpAction(async (ctx, req) => {
  * HTTP action for www API to update preview run status
  */
 export const updatePreviewStatus = httpAction(async (ctx, req) => {
-  if (!verifyAuth(req)) {
+  const auth = await getWorkerAuth(req, { loggerPrefix: "[preview-jobs-http]" });
+  if (!auth) {
     console.error("[preview-jobs-http] Unauthorized request");
     return jsonResponse({ error: "Unauthorized" }, 401);
   }
@@ -138,7 +205,8 @@ export const updatePreviewStatus = httpAction(async (ctx, req) => {
  * HTTP action for www API to create screenshot set
  */
 export const createScreenshotSet = httpAction(async (ctx, req) => {
-  if (!verifyAuth(req)) {
+  const auth = await getWorkerAuth(req, { loggerPrefix: "[preview-jobs-http]" });
+  if (!auth) {
     console.error("[preview-jobs-http] Unauthorized request");
     return jsonResponse({ error: "Unauthorized" }, 401);
   }
@@ -212,5 +280,173 @@ export const createScreenshotSet = httpAction(async (ctx, req) => {
       error: err,
     });
     return jsonResponse({ error: "Failed to create screenshot set" }, 500);
+  }
+});
+
+/**
+ * HTTP action called by worker when preview job screenshots are complete
+ * Copies screenshots from task run to preview run and posts GitHub comment
+ */
+export const completePreviewJob = httpAction(async (ctx, req) => {
+  const workerAuth = await getWorkerAuth(req, { loggerPrefix: "[preview-jobs-http]" });
+  const authHeader = req.headers.get("authorization") ?? "";
+  const [, bearerToken] = authHeader.split(" ");
+  const bearerAuthorized =
+    bearerToken && bearerToken === env.CMUX_TASK_RUN_JWT_SECRET;
+
+  if (!workerAuth && !bearerAuthorized) {
+    console.error("[preview-jobs-http] Unauthorized complete request");
+    return jsonResponse({ error: "Unauthorized" }, 401);
+  }
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return jsonResponse({ error: "Invalid JSON" }, 400);
+  }
+
+  if (
+    !body ||
+    typeof body !== "object" ||
+    !("taskRunId" in body)
+  ) {
+    return jsonResponse({ error: "Missing taskRunId" }, 400);
+  }
+
+  const { taskRunId } = body as { taskRunId: string };
+
+  console.log("[preview-jobs-http] Completing preview job", {
+    taskRunId,
+  });
+
+  let previewRun: Doc<"previewRuns"> | null = null;
+  let shouldStopInstance = false;
+
+  try {
+    // Find preview run by taskRunId
+    previewRun = await ctx.runQuery(internal.previewRuns.getByTaskRunId, {
+      taskRunId: taskRunId as Id<"taskRuns">,
+    });
+
+    if (!previewRun) {
+      console.error("[preview-jobs-http] Preview run not found for task run", {
+        taskRunId,
+      });
+      return jsonResponse({ error: "Preview run not found" }, 404);
+    }
+    shouldStopInstance = true;
+
+    // Get task run to check for screenshots
+    const taskRun = await ctx.runQuery(internal.taskRuns.getById, {
+      id: taskRunId as Id<"taskRuns">,
+    });
+
+    if (!taskRun) {
+      console.error("[preview-jobs-http] Task run not found", {
+        taskRunId,
+      });
+      return jsonResponse({ error: "Task run not found" }, 404);
+    }
+
+    if (!taskRun.latestScreenshotSetId) {
+      console.log("[preview-jobs-http] No screenshots found for task run", {
+        taskRunId,
+      });
+      return jsonResponse({
+        success: true,
+        skipped: true,
+        reason: "No screenshots available"
+      });
+    }
+
+    // Get the task run screenshot set
+    const taskScreenshotSet = await ctx.runQuery(
+      internal.github_pr_queries.getScreenshotSet,
+      {
+        screenshotSetId: taskRun.latestScreenshotSetId,
+      }
+    );
+
+    if (!taskScreenshotSet) {
+      console.error("[preview-jobs-http] Screenshot set not found", {
+        taskRunId,
+        screenshotSetId: taskRun.latestScreenshotSetId,
+      });
+      return jsonResponse({ error: "Screenshot set not found" }, 404);
+    }
+
+    console.log("[preview-jobs-http] Found screenshot set for task run", {
+      taskRunId,
+      previewRunId: previewRun._id,
+      screenshotSetId: taskRun.latestScreenshotSetId,
+      imageCount: taskScreenshotSet.images.length,
+    });
+
+    // Post GitHub comment if we have installation ID
+    if (previewRun.repoInstallationId) {
+      const commentResult = await ctx.runAction(
+        internal.github_pr_comments.postPreviewCommentWithTaskScreenshots,
+        {
+          installationId: previewRun.repoInstallationId,
+          repoFullName: previewRun.repoFullName,
+          prNumber: previewRun.prNumber,
+          taskRunId: taskRunId as Id<"taskRuns">,
+          previewRunId: previewRun._id,
+        }
+      );
+
+      if (commentResult.ok) {
+        console.log("[preview-jobs-http] Successfully posted GitHub comment", {
+          taskRunId,
+          previewRunId: previewRun._id,
+          commentUrl: commentResult.commentUrl,
+        });
+        return jsonResponse({
+          success: true,
+          commentUrl: commentResult.commentUrl,
+        });
+      } else {
+        console.error("[preview-jobs-http] Failed to post GitHub comment", {
+          taskRunId,
+          previewRunId: previewRun._id,
+          error: commentResult.error,
+        });
+        return jsonResponse({
+          success: false,
+          error: `Failed to post GitHub comment: ${commentResult.error}`,
+        }, 500);
+      }
+    } else {
+      console.log("[preview-jobs-http] No GitHub installation ID, skipping comment", {
+        taskRunId,
+        previewRunId: previewRun._id,
+      });
+
+      // Update preview run status to completed even without posting comment
+      await ctx.runMutation(internal.previewRuns.updateStatus, {
+        previewRunId: previewRun._id,
+        status: "completed",
+      });
+
+      return jsonResponse({
+        success: true,
+        skipped: true,
+        reason: "No GitHub installation ID",
+      });
+    }
+  } catch (error) {
+    console.error("[preview-jobs-http] Failed to complete preview job", {
+      taskRunId,
+      error,
+    });
+    return jsonResponse({
+      error: "Failed to complete preview job",
+      message: error instanceof Error ? error.message : String(error),
+    }, 500);
+  } finally {
+    if (shouldStopInstance && previewRun) {
+      await stopPreviewInstance(ctx, previewRun);
+    }
   }
 });

@@ -174,11 +174,13 @@ const convexSchema = defineSchema({
       v.literal("pending"),
       v.literal("running"),
       v.literal("completed"),
-      v.literal("failed")
+      v.literal("failed"),
+      v.literal("skipped")
     ),
     isArchived: v.optional(v.boolean()), // Whether this run is hidden from default views
     isLocalWorkspace: v.optional(v.boolean()),
     isCloudWorkspace: v.optional(v.boolean()),
+    isPreviewJob: v.optional(v.boolean()), // Whether this is a preview job that should auto-run screenshots
     // Optional log retained for backward compatibility; no longer written to.
     log: v.optional(v.string()), // CLI output log (deprecated)
     worktreePath: v.optional(v.string()), // Path to the git worktree for this run
@@ -592,6 +594,8 @@ const convexSchema = defineSchema({
     completedAt: v.optional(v.number()),
     screenshotSetId: v.optional(v.id("previewScreenshotSets")),
     githubCommentUrl: v.optional(v.string()),
+    morphInstanceId: v.optional(v.string()),
+    morphInstanceStoppedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
