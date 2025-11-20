@@ -45,6 +45,7 @@ import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "convex/react";
 import { createFileRoute } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Plus,
@@ -62,6 +63,11 @@ type TaskRunListItem = (typeof api.taskRuns.getByTask._returnType)[number];
 type IframeStatusEntry = {
   status: PersistentIframeStatus;
   url: string | null;
+};
+
+type ResumeTaskRunSandboxResponse = {
+  instanceId: string;
+  status: "resumed" | "already_ready";
 };
 
 const paramsSchema = z.object({
@@ -316,6 +322,8 @@ function TaskDetailPage() {
   const [iframeStatusByKey, setIframeStatusByKey] = useState<
     Record<string, IframeStatusEntry>
   >({});
+  const [isMorphWorkspaceResuming, setIsMorphWorkspaceResuming] =
+    useState(false);
   const previousSelectedRunIdRef = useRef<string | null>(null);
 
   const handleToggleExpand = useCallback((position: PanelPosition) => {
@@ -490,6 +498,73 @@ function TaskDetailPage() {
       ]);
     }
   }, [selectedRunId, workspaceUrl]);
+
+  const handleResumeMorphWorkspace = useCallback(() => {
+    if (!selectedRun || isMorphWorkspaceResuming) {
+      return;
+    }
+
+    const resumePromise = (async () => {
+      const response = await fetch("/api/sandboxes/task-run/resume", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          teamSlugOrId,
+          taskRunId: selectedRun._id,
+        }),
+      });
+
+      const rawBody = await response.text();
+      let parsedBody: unknown = null;
+      if (rawBody) {
+        try {
+          parsedBody = JSON.parse(rawBody);
+        } catch {
+          parsedBody = rawBody;
+        }
+      }
+
+      if (!response.ok) {
+        const message =
+          parsedBody && typeof parsedBody === "object" && "error" in parsedBody
+            ? (parsedBody as { error?: unknown }).error
+            : typeof parsedBody === "string"
+              ? parsedBody
+              : rawBody;
+        throw new Error(
+          typeof message === "string" && message.length > 0
+            ? message
+            : "Failed to resume workspace"
+        );
+      }
+
+      if (!parsedBody || typeof parsedBody !== "object") {
+        throw new Error("Failed to parse resume response");
+      }
+
+      return parsedBody as ResumeTaskRunSandboxResponse;
+    })();
+
+    setIsMorphWorkspaceResuming(true);
+    resumePromise.finally(() => {
+      setIsMorphWorkspaceResuming(false);
+    });
+
+    toast.promise(resumePromise, {
+      loading: "Resuming workspace…",
+      success: (payload) =>
+        payload.status === "already_ready"
+          ? "Workspace already running"
+          : "Workspace resumed",
+      error: (err) =>
+        err instanceof Error && err.message
+          ? err.message
+          : "Failed to resume workspace",
+    });
+  }, [isMorphWorkspaceResuming, selectedRun, teamSlugOrId]);
 
   const updateIframeStatus = useCallback(
     (
@@ -679,6 +754,8 @@ function TaskDetailPage() {
       onClose: handlePanelClose,
       teamSlugOrId,
       taskId,
+      onResumeMorphWorkspace: handleResumeMorphWorkspace,
+      isMorphWorkspaceResuming,
     }),
     [
       task,
@@ -706,6 +783,8 @@ function TaskDetailPage() {
       handlePanelClose,
       teamSlugOrId,
       taskId,
+      handleResumeMorphWorkspace,
+      isMorphWorkspaceResuming,
     ]
   );
 

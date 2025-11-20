@@ -5,8 +5,10 @@ import { stackServerAppJs } from "@/lib/utils/stack";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { env } from "@/lib/utils/www-env";
 import { api } from "@cmux/convex/api";
+import type { Id } from "@cmux/convex/dataModel";
 import { RESERVED_CMUX_PORT_SET } from "@cmux/shared/utils/reserved-cmux-ports";
 import { parseGithubRepoUrl } from "@cmux/shared/utils/parse-github-repo-url";
+import { extractMorphInstanceInfo } from "@cmux/shared";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { MorphCloudClient } from "morphcloud";
@@ -72,6 +74,20 @@ const UpdateSandboxEnvResponse = z
     applied: z.literal(true),
   })
   .openapi("UpdateSandboxEnvResponse");
+
+const ResumeTaskRunSandboxBody = z
+  .object({
+    teamSlugOrId: z.string(),
+    taskRunId: z.string(),
+  })
+  .openapi("ResumeTaskRunSandboxBody");
+
+const ResumeTaskRunSandboxResponse = z
+  .object({
+    instanceId: z.string(),
+    status: z.enum(["resumed", "already_ready"] as const),
+  })
+  .openapi("ResumeTaskRunSandboxResponse");
 
 // Start a new sandbox (currently Morph-backed)
 sandboxesRouter.openapi(
@@ -496,6 +512,107 @@ sandboxesRouter.openapi(
     } catch (error) {
       console.error("Failed to stop sandbox:", error);
       return c.text("Failed to stop sandbox", 500);
+    }
+  },
+);
+
+sandboxesRouter.openapi(
+  createRoute({
+    method: "post" as const,
+    path: "/sandboxes/task-run/resume",
+    tags: ["Sandboxes"],
+    summary: "Resume a Morph sandbox for the selected task run",
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: ResumeTaskRunSandboxBody,
+          },
+        },
+        required: true,
+      },
+    },
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: ResumeTaskRunSandboxResponse,
+          },
+        },
+        description: "Instance resumed or already running",
+      },
+      400: { description: "Unable to resume workspace" },
+      401: { description: "Unauthorized" },
+      403: { description: "Instance does not belong to this team or task run" },
+      404: { description: "Task run not found" },
+      500: { description: "Failed to resume instance" },
+    },
+  }),
+  async (c) => {
+    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+    if (!accessToken) return c.text("Unauthorized", 401);
+
+    const body = c.req.valid("json");
+    const taskRunId = body.taskRunId as Id<"taskRuns">;
+
+    try {
+      const convex = getConvex({ accessToken });
+      const run = await convex.query(api.taskRuns.get, {
+        teamSlugOrId: body.teamSlugOrId,
+        id: taskRunId,
+      });
+
+      if (!run || !run.vscode) {
+        return c.text("Task run not found", 404);
+      }
+
+      if (run.vscode.provider !== "morph") {
+        return c.text("Task run does not use a Morph workspace", 400);
+      }
+
+      const workspaceUrl = run.vscode.workspaceUrl || run.vscode.url;
+      if (!workspaceUrl) {
+        return c.text("Workspace URL is not available", 400);
+      }
+
+      const instanceInfo = extractMorphInstanceInfo(workspaceUrl);
+      if (!instanceInfo) {
+        return c.text("Unable to resolve Morph instance from workspace URL", 400);
+      }
+
+      const client = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
+      const instance = await client.instances.get({
+        instanceId: instanceInfo.instanceId,
+      });
+
+      const metadataTeamId = instance.metadata?.teamId;
+      if (metadataTeamId && metadataTeamId !== run.teamId) {
+        return c.text(
+          "Forbidden: Instance does not belong to this team",
+          403
+        );
+      }
+
+      const alreadyReady = instance.status === "ready";
+      if (!alreadyReady) {
+        await instance.resume();
+      }
+
+      await convex.mutation(api.taskRuns.updateVSCodeStatus, {
+        teamSlugOrId: body.teamSlugOrId,
+        id: taskRunId,
+        status: "running",
+      });
+
+      return c.json({
+        instanceId: instance.id,
+        status: alreadyReady ? "already_ready" : "resumed",
+      });
+    } catch (error) {
+      console.error("Failed to resume Morph instance:", error);
+      const message =
+        error instanceof Error ? error.message : "Unknown error";
+      return c.text(`Failed to resume instance: ${message}`, 500);
     }
   },
 );

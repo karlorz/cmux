@@ -9,6 +9,7 @@ import {
   X,
   Maximize2,
   Minimize2,
+  RefreshCw,
 } from "lucide-react";
 import clsx from "clsx";
 import type { PanelType } from "@/lib/panel-config";
@@ -186,6 +187,8 @@ interface PanelFactoryProps {
   // Constants
   TASK_RUN_IFRAME_ALLOW?: string;
   TASK_RUN_IFRAME_SANDBOX?: string;
+  onResumeMorphWorkspace?: () => void;
+  isMorphWorkspaceResuming?: boolean;
   // Git diff panel props
   teamSlugOrId?: string;
   taskId?: Id<"tasks">;
@@ -372,7 +375,12 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
     );
   };
 
-  const panelWrapper = (icon: ReactNode, title: string, content: ReactNode) => (
+  const panelWrapper = (
+    icon: ReactNode,
+    title: string,
+    content: ReactNode,
+    actions?: ReactNode
+  ) => (
     <div
       className={panelClassName}
       style={panelStyle}
@@ -414,6 +422,9 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
           </h2>
         </div>
         {renderExpandButton()}
+        {actions ? (
+          <div className="flex items-center gap-1 px-1">{actions}</div>
+        ) : null}
         {onClose && (
           <button
             type="button"
@@ -481,6 +492,8 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
         WorkspaceLoadingIndicator,
         TASK_RUN_IFRAME_ALLOW,
         TASK_RUN_IFRAME_SANDBOX,
+        onResumeMorphWorkspace,
+        isMorphWorkspaceResuming,
         rawWorkspaceUrl,
       } = props;
 
@@ -490,6 +503,31 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
       const disablePreflight = rawWorkspaceUrl
         ? shouldUseServerIframePreflight(rawWorkspaceUrl)
         : false;
+
+      const shouldShowResumeAction =
+        Boolean(
+          selectedRun &&
+            selectedRun.vscode?.provider === "morph" &&
+            selectedRun.vscode.status === "stopped" &&
+            onResumeMorphWorkspace
+        );
+
+      const resumeAction = shouldShowResumeAction ? (
+        <button
+          type="button"
+          onClick={onResumeMorphWorkspace}
+          disabled={Boolean(isMorphWorkspaceResuming)}
+          className={clsx(
+            "flex items-center gap-1 rounded-full border px-3 py-0.5 text-xs font-semibold transition-colors",
+            isMorphWorkspaceResuming
+              ? "border-neutral-200 text-neutral-400 dark:border-neutral-600"
+              : "border-neutral-300 text-neutral-700 hover:border-neutral-400 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:border-neutral-500 dark:hover:bg-neutral-800"
+          )}
+        >
+          <RefreshCw className="size-3" aria-hidden />
+          Resume
+        </button>
+      ) : null;
 
       return panelWrapper(
         <Code2 className="size-3" aria-hidden />,
@@ -535,7 +573,8 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
               ) : null}
             </div>
           ) : null}
-        </div>
+        </div>,
+        resumeAction
       );
     }
 

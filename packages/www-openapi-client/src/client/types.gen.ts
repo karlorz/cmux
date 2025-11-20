@@ -497,6 +497,16 @@ export type UpdateSandboxEnvBody = {
     envVarsContent: string;
 };
 
+export type ResumeTaskRunSandboxResponse = {
+    instanceId: string;
+    status: 'resumed' | 'already_ready';
+};
+
+export type ResumeTaskRunSandboxBody = {
+    teamSlugOrId: string;
+    taskRunId: string;
+};
+
 export type CreateTeamResponse = {
     /**
      * Stack team ID
@@ -2062,6 +2072,45 @@ export type PostApiSandboxesByIdStopResponses = {
 };
 
 export type PostApiSandboxesByIdStopResponse = PostApiSandboxesByIdStopResponses[keyof PostApiSandboxesByIdStopResponses];
+
+export type PostApiSandboxesTaskRunResumeData = {
+    body: ResumeTaskRunSandboxBody;
+    path?: never;
+    query?: never;
+    url: '/api/sandboxes/task-run/resume';
+};
+
+export type PostApiSandboxesTaskRunResumeErrors = {
+    /**
+     * Unable to resume workspace
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Instance does not belong to this team or task run
+     */
+    403: unknown;
+    /**
+     * Task run not found
+     */
+    404: unknown;
+    /**
+     * Failed to resume instance
+     */
+    500: unknown;
+};
+
+export type PostApiSandboxesTaskRunResumeResponses = {
+    /**
+     * Instance resumed or already running
+     */
+    200: ResumeTaskRunSandboxResponse;
+};
+
+export type PostApiSandboxesTaskRunResumeResponse = PostApiSandboxesTaskRunResumeResponses[keyof PostApiSandboxesTaskRunResumeResponses];
 
 export type GetApiSandboxesByIdStatusData = {
     body?: never;
