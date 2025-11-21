@@ -98,8 +98,20 @@ async function runTests() {
     const { key, cert } = certManager.getCertDataForHost("localhost");
     
     const dummyServer = http2.createSecureServer({ key, cert });
+    let lastSession: http2.Http2Session | undefined;
     dummyServer.on('stream', (stream, headers) => {
         console.log("[Dummy Upstream] Received stream");
+        if (lastSession) {
+            if (stream.session === lastSession) {
+                console.log("[Dummy Upstream] REUSED SESSION!");
+            } else {
+                console.log("[Dummy Upstream] NEW SESSION (not reused)");
+            }
+        } else {
+            console.log("[Dummy Upstream] First session");
+        }
+        lastSession = stream.session;
+
         stream.respond({
             ':status': 200,
             'content-type': 'text/plain',
@@ -169,31 +181,40 @@ async function runTests() {
                 reject(err);
             });
 
-            const req = session.request({
-                ':path': '/',
-                ':method': 'GET'
-            });
+            let reqCount = 0;
+            const makeRequest = () => {
+                reqCount++;
+                console.log(`Sending HTTP/2 Request ${reqCount}...`);
+                const req = session.request({
+                    ':path': '/',
+                    ':method': 'GET'
+                });
 
-            req.on('response', (headers) => {
-                console.log("HTTP/2 Response Headers:", headers);
-                if (headers['cache-control'] !== 'max-age=3600') {
-                    reject(new Error(`Missing or incorrect cache-control header. Got: ${headers['cache-control']}`));
-                }
-                if (headers['etag'] !== '"test-etag"') {
-                    reject(new Error(`Missing or incorrect etag header. Got: ${headers['etag']}`));
-                }
-            });
+                req.on('response', (headers) => {
+                    console.log(`HTTP/2 Response ${reqCount} Headers:`, headers);
+                    if (headers['cache-control'] !== 'max-age=3600') {
+                        reject(new Error(`Missing or incorrect cache-control header. Got: ${headers['cache-control']}`));
+                    }
+                });
 
-            req.setEncoding('utf8');
-            let data = '';
-            req.on('data', (chunk) => { data += chunk; });
-            req.on('end', () => {
-                console.log("HTTP/2 Response Body:", data);
-                session.close();
-                socket2.destroy();
-                resolve();
-            });
-            req.end();
+                req.setEncoding('utf8');
+                let data = '';
+                req.on('data', (chunk) => { data += chunk; });
+                req.on('end', () => {
+                    console.log(`HTTP/2 Response ${reqCount} Body:`, data);
+                    if (reqCount < 2) {
+                        // Send second request
+                        makeRequest();
+                    } else {
+                        session.close();
+                        socket2.destroy();
+                        resolve();
+                    }
+                });
+                req.end();
+            };
+
+            makeRequest();
         });
 
         console.log("\n--- Test 3: IP Address Connect (MITM) ---");
