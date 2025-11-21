@@ -2473,7 +2473,6 @@ export function CommandBar({
             ? "opacity-100 pointer-events-auto"
             : "opacity-0 pointer-events-none"
         )}
-        aria-hidden={!open}
         onClick={closeCommand}
       />
       <div
@@ -2481,7 +2480,6 @@ export function CommandBar({
           "fixed inset-x-0 top-[230px] z-[var(--z-commandbar)] flex items-start justify-center pointer-events-none",
           open ? "opacity-100" : "opacity-0"
         )}
-        aria-hidden={!open}
       >
         <div
           className={`w-full max-w-2xl h-auto max-h-[475px] bg-white dark:bg-neutral-900 rounded-xl shadow-2xl border border-neutral-200 dark:border-neutral-700 overflow-hidden flex flex-col ${
@@ -2489,7 +2487,6 @@ export function CommandBar({
               ? "opacity-100 pointer-events-auto"
               : "opacity-0 pointer-events-none"
           }`}
-          aria-hidden={!open}
         >
           <Command
             value={commandValue}
