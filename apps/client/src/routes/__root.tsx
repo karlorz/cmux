@@ -16,6 +16,7 @@ import {
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import { useEffect, useRef, useState } from "react";
 import { toast, Toaster } from "sonner";
+import { useTeamIdFromPathname } from "../hooks/useTeamIdFromPathname";
 
 const AUTO_UPDATE_TOAST_ID = "auto-update-toast";
 
@@ -127,6 +128,7 @@ function useAutoUpdateNotifications() {
 function PosthogTracking({ locationKey }: { locationKey: string }) {
   const user = useUser({ or: "return-null" });
   const previousUserId = useRef<string | null>(null);
+  const { teamId } = useTeamIdFromPathname({ enabled: Boolean(user) });
 
   useEffect(() => {
     initPosthog();
@@ -148,10 +150,10 @@ function PosthogTracking({ locationKey }: { locationKey: string }) {
     identifyPosthogUser(user.id, {
       email: user.primaryEmail ?? undefined,
       name: user.displayName ?? undefined,
-      team_id: user.selectedTeam?.id ?? undefined,
+      team_id: teamId ?? undefined,
     });
     previousUserId.current = user.id;
-  }, [user]);
+  }, [teamId, user]);
 
   return null;
 }
