@@ -5,6 +5,7 @@ import { Geist } from "next/font/google";
 
 import { stackServerApp } from "@/lib/utils/stack";
 import { StackProvider, StackTheme } from "@stackframe/stack";
+import { SentryScopeProvider } from "@/components/providers/sentry-scope-provider";
 
 import clsx from "clsx";
 import "./globals.css";
@@ -67,7 +68,10 @@ export default function RootLayout({
         }}
       >
         <StackTheme>
-          <StackProvider app={stackServerApp}>{children}</StackProvider>
+          <StackProvider app={stackServerApp}>
+            <SentryScopeProvider />
+            {children}
+          </StackProvider>
         </StackTheme>
       </body>
     </html>
