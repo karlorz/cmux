@@ -48,6 +48,10 @@ import {
   startPreviewProxy,
 } from "./task-run-preview-proxy";
 import { normalizeBrowserUrl } from "@cmux/shared";
+import {
+  ELECTRON_WINDOW_FOCUS_EVENT,
+  type ElectronRendererEventMap,
+} from "../../src/types/electron-events";
 
 // Use a cookieable HTTPS origin intercepted locally instead of a custom scheme.
 const PARTITION = "persist:cmux";
@@ -733,6 +737,16 @@ app.on("browser-window-created", (_event, window) => {
 
 app.on("browser-window-focus", (_event, window) => {
   updateHistoryMenuState(window);
+  try {
+    const payload: ElectronRendererEventMap[typeof ELECTRON_WINDOW_FOCUS_EVENT] =
+      { windowId: window.id };
+    window.webContents.send(
+      `cmux:event:${ELECTRON_WINDOW_FOCUS_EVENT}`,
+      payload
+    );
+  } catch (error) {
+    mainWarn("Failed to emit window focus event to renderer", error);
+  }
 });
 
 app.on("login", (event, webContents, _request, authInfo, callback) => {

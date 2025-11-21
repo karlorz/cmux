@@ -22,6 +22,7 @@ import {
 } from "@/queries/local-vscode-serve-web";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { useWebviewActions } from "@/hooks/useWebviewActions";
+import { useElectronWindowFocus } from "@/hooks/useElectronWindowFocus";
 
 const paramsSchema = z.object({
   taskId: typedZid("tasks"),
@@ -132,12 +133,20 @@ function VSCodeComponent() {
 
   const isEditorBusy = !hasWorkspace || iframeStatus !== "loaded";
 
-  useEffect(() => {
+  const focusWebviewIfReady = useCallback(() => {
     if (!workspaceUrl) return;
     if (iframeStatus !== "loaded") return;
     console.log("focusing webview");
     void webviewActions.focus();
-  }, [webviewActions, iframeStatus, workspaceUrl]);
+  }, [iframeStatus, webviewActions, workspaceUrl]);
+
+  useEffect(() => {
+    focusWebviewIfReady();
+  }, [focusWebviewIfReady]);
+
+  useElectronWindowFocus(() => {
+    focusWebviewIfReady();
+  });
 
   return (
     <div className="flex flex-col grow bg-neutral-50 dark:bg-black">
