@@ -6,11 +6,14 @@ use crate::models::{
 use crate::service::SandboxService;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::sync::Arc;
 use tokio::fs;
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 use tracing::{info, warn};
@@ -20,6 +23,12 @@ use which::which;
 const NETWORK_BASE: Ipv4Addr = Ipv4Addr::new(10, 201, 0, 0);
 const HOST_IF_PREFIX: &str = "vethh";
 const NS_IF_PREFIX: &str = "vethn";
+
+#[derive(Deserialize)]
+struct BwrapStatus {
+    #[serde(rename = "child-pid")]
+    child_pid: u32,
+}
 
 #[derive(Clone, Debug)]
 struct SandboxHandle {
@@ -35,6 +44,7 @@ struct SandboxHandle {
 struct SandboxEntry {
     handle: SandboxHandle,
     child: Arc<Mutex<Child>>,
+    inner_pid: u32,
 }
 
 pub struct BubblewrapService {
@@ -44,6 +54,29 @@ pub struct BubblewrapService {
     bubblewrap_path: String,
     ip_path: String,
     nsenter_path: String,
+}
+
+fn nsenter_args(pid: u32, workdir: Option<&str>, command: &[String]) -> Vec<String> {
+    let mut args = vec![
+        "--target".to_string(),
+        pid.to_string(),
+        "--mount".to_string(),
+        "--uts".to_string(),
+        "--ipc".to_string(),
+        "--net".to_string(),
+        "--pid".to_string(),
+    ];
+
+    if let Some(dir) = workdir {
+        args.push(format!("--wd={}", dir));
+    } else {
+        args.push("--wd=/workspace".to_string());
+    }
+
+    args.push("--".to_string());
+    args.extend_from_slice(command);
+
+    args
 }
 
 impl BubblewrapService {
@@ -91,14 +124,17 @@ impl BubblewrapService {
         request: &CreateSandboxRequest,
         workspace: &Path,
         id: &Uuid,
-    ) -> SandboxResult<Child> {
+    ) -> SandboxResult<(Child, u32)> {
         let workspace_str = workspace
             .to_str()
-            .ok_or_else(|| SandboxError::InvalidRequest("workspace path is not valid UTF-8".into()))?
+            .ok_or_else(|| {
+                SandboxError::InvalidRequest("workspace path is not valid UTF-8".into())
+            })?
             .to_owned();
 
         let mut command = Command::new(&self.bubblewrap_path);
         command.kill_on_drop(true);
+        command.stdout(Stdio::piped());
         command.args([
             "--die-with-parent",
             "--unshare-net",
@@ -121,6 +157,8 @@ impl BubblewrapService {
             "/workspace",
             "--hostname",
             &Self::default_name(id),
+            "--json-status-fd",
+            "1",
         ]);
 
         for path in &request.read_only_paths {
@@ -137,8 +175,21 @@ impl BubblewrapService {
 
         command.args(["--", "/bin/sh", "-c", "ip link set lo up && sleep infinity"]);
 
-        let child = command.spawn()?;
-        Ok(child)
+        let mut child = command.spawn()?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| SandboxError::Internal("failed to capture bwrap stdout".into()))?;
+
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        reader.read_line(&mut line).await?;
+
+        let status: BwrapStatus = serde_json::from_str(&line).map_err(|e| {
+            SandboxError::Internal(format!("failed to parse bwrap status: {e}, line: {line}"))
+        })?;
+
+        Ok((child, status.child_pid))
     }
 
     async fn configure_network(
@@ -152,10 +203,20 @@ impl BubblewrapService {
         let host_cidr = format!("{}/{}", lease.host, lease.cidr);
         let sandbox_cidr = format!("{}/{}", lease.sandbox, lease.cidr);
 
-        run_command(&self.ip_path, &["link", "add", &host_if, "type", "veth", "peer", "name", &ns_if]).await?;
+        run_command(
+            &self.ip_path,
+            &[
+                "link", "add", &host_if, "type", "veth", "peer", "name", &ns_if,
+            ],
+        )
+        .await?;
         run_command(&self.ip_path, &["addr", "add", &host_cidr, "dev", &host_if]).await?;
         run_command(&self.ip_path, &["link", "set", &host_if, "up"]).await?;
-        run_command(&self.ip_path, &["link", "set", &ns_if, "netns", &formatted_pid]).await?;
+        run_command(
+            &self.ip_path,
+            &["link", "set", &ns_if, "netns", &formatted_pid],
+        )
+        .await?;
 
         run_command(
             &self.nsenter_path,
@@ -176,12 +237,32 @@ impl BubblewrapService {
 
         run_command(
             &self.nsenter_path,
-            &["--target", &formatted_pid, "--net", "--", "ip", "link", "set", &ns_if, "up"],
+            &[
+                "--target",
+                &formatted_pid,
+                "--net",
+                "--",
+                "ip",
+                "link",
+                "set",
+                &ns_if,
+                "up",
+            ],
         )
         .await?;
         run_command(
             &self.nsenter_path,
-            &["--target", &formatted_pid, "--net", "--", "ip", "link", "set", "lo", "up"],
+            &[
+                "--target",
+                &formatted_pid,
+                "--net",
+                "--",
+                "ip",
+                "link",
+                "set",
+                "lo",
+                "up",
+            ],
         )
         .await?;
         run_command(
@@ -214,7 +295,10 @@ impl BubblewrapService {
         let delete_result =
             run_command(&self.ip_path, &["link", "del", &network.host_interface]).await;
         if let Err(error) = delete_result {
-            warn!("failed to delete interface {}: {error}", network.host_interface);
+            warn!(
+                "failed to delete interface {}: {error}",
+                network.host_interface
+            );
         }
     }
 
@@ -271,8 +355,8 @@ impl SandboxService for BubblewrapService {
             pool.allocate()?
         };
 
-        let mut child = match self.spawn_bubblewrap(&request, &workspace, &id).await {
-            Ok(child) => child,
+        let (mut child, inner_pid) = match self.spawn_bubblewrap(&request, &workspace, &id).await {
+            Ok(res) => res,
             Err(error) => {
                 let mut pool = self.ip_pool.lock().await;
                 pool.release(&lease);
@@ -280,8 +364,7 @@ impl SandboxService for BubblewrapService {
             }
         };
 
-        let pid = child.id().ok_or(SandboxError::ProcessNotStarted)?;
-        let network = match self.configure_network(pid, &lease, &id).await {
+        let network = match self.configure_network(inner_pid, &lease, &id).await {
             Ok(net) => net,
             Err(error) => {
                 let _ = child.kill().await;
@@ -305,6 +388,7 @@ impl SandboxService for BubblewrapService {
         let entry = SandboxEntry {
             handle,
             child: Arc::new(Mutex::new(child)),
+            inner_pid,
         };
 
         let summary = {
@@ -361,36 +445,16 @@ impl SandboxService for BubblewrapService {
         }
         .ok_or(SandboxError::NotFound(id))?;
 
-        let pid = {
-            let child = entry.child.lock().await;
-            child.id().ok_or(SandboxError::ProcessNotStarted)?
-        };
-
         let mut command = Command::new(&self.nsenter_path);
-        command.args([
-            "--target",
-            &pid.to_string(),
-            "--mount",
-            "--uts",
-            "--ipc",
-            "--net",
-            "--pid",
-        ]);
-
         for env in &exec.env {
             command.env(&env.key, &env.value);
         }
 
-        if let Some(dir) = &exec.workdir {
-            command.args(["--wd", dir]);
-        } else {
-            command.args(["--wd", "/workspace"]);
-        }
-
-        command.arg("--");
-        for arg in &exec.command {
-            command.arg(arg);
-        }
+        command.args(nsenter_args(
+            entry.inner_pid,
+            exec.workdir.as_deref(),
+            &exec.command,
+        ));
 
         command.kill_on_drop(true);
         let output = command.output().await?;
@@ -490,5 +554,32 @@ mod tests {
         let (host_if, ns_if) = make_interface_names(&id);
         assert!(host_if.len() <= 15);
         assert!(ns_if.len() <= 15);
+    }
+
+    #[test]
+    fn nsenter_args_defaults() {
+        let args = nsenter_args(123, None, &["ls".to_string()]);
+        assert!(args.contains(&"--target".to_string()));
+        assert!(args.contains(&"123".to_string()));
+        assert!(args.contains(&"--wd=/workspace".to_string()));
+
+        // Verify structure: --target 123 ... --wd=/workspace -- ls
+        let wd_idx = args.iter().position(|s| s == "--wd=/workspace").unwrap();
+        let double_dash_idx = args.iter().position(|s| s == "--").unwrap();
+        let ls_idx = args.iter().position(|s| s == "ls").unwrap();
+
+        assert!(wd_idx < double_dash_idx);
+        assert!(double_dash_idx < ls_idx);
+    }
+
+    #[test]
+    fn nsenter_args_custom_workdir() {
+        let args = nsenter_args(123, Some("/custom"), &["ls".to_string()]);
+        assert!(args.contains(&"--wd=/custom".to_string()));
+
+        let wd_idx = args.iter().position(|s| s == "--wd=/custom").unwrap();
+        let double_dash_idx = args.iter().position(|s| s == "--").unwrap();
+
+        assert!(wd_idx < double_dash_idx);
     }
 }

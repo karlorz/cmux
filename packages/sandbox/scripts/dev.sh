@@ -27,4 +27,4 @@ docker run --privileged -d \
   /usr/local/bin/cmux-sandboxd --bind 0.0.0.0 --port "${PORT}" --data-dir /var/lib/cmux/sandboxes
 
 echo "Attaching shell; type 'exit' to leave and 'docker stop ${CONTAINER_NAME}' to stop container"
-docker exec -it -e TERM=xterm-256color "${CONTAINER_NAME}" bash -l
+docker exec --detach-keys="ctrl-^" -it -e TERM=xterm-256color "${CONTAINER_NAME}" bash -l

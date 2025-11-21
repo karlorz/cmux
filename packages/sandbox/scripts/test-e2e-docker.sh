@@ -79,5 +79,33 @@ if [[ -z "${healthy}" ]]; then
 fi
 
 echo "Creating sandbox via cmux CLI..."
-docker exec "${CONTAINER_NAME}" cmux --base-url "http://127.0.0.1:${PORT}" sandboxes create --name e2e --workspace /tmp/e2e | tee /tmp/cmux-e2e-create.log
+CREATE_OUTPUT=$(docker exec "${CONTAINER_NAME}" cmux --base-url "http://127.0.0.1:${PORT}" sandboxes create --name e2e --workspace /tmp/e2e)
+echo "${CREATE_OUTPUT}"
+# Extract ID from JSON output (assuming "id": "UUID")
+ID=$(echo "${CREATE_OUTPUT}" | grep '"id":' | head -n1 | cut -d '"' -f 4)
+echo "Created sandbox ID: ${ID}"
+
 docker exec "${CONTAINER_NAME}" cmux --base-url "http://127.0.0.1:${PORT}" sandboxes list | tee /tmp/cmux-e2e-list.log
+
+echo "Executing command in sandbox..."
+# We expect "stdout": "hi\n" in the JSON response
+EXEC_OUTPUT=$(docker exec "${CONTAINER_NAME}" cmux --base-url "http://127.0.0.1:${PORT}" sandboxes exec "${ID}" "echo" "hi")
+echo "${EXEC_OUTPUT}"
+
+if echo "${EXEC_OUTPUT}" | grep -q "hi"; then
+  echo "Exec test passed!"
+else
+  echo "Exec test failed!"
+  exit 1
+fi
+
+echo "Testing network connectivity..."
+NET_OUTPUT=$(docker exec "${CONTAINER_NAME}" cmux --base-url "http://127.0.0.1:${PORT}" sandboxes exec "${ID}" "curl" "-I" "https://example.com" || true)
+echo "${NET_OUTPUT}"
+if echo "${NET_OUTPUT}" | grep -q "HTTP/2 200"; then
+  echo "Network test passed!"
+else
+  echo "Network test failed!"
+  echo "${NET_OUTPUT}"
+  exit 1
+fi

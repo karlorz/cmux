@@ -26,6 +26,13 @@ start_buildkitd() {
 start_dockerd
 start_buildkitd
 
+echo "enabling ip forwarding"
+echo 1 > /proc/sys/net/ipv4/ip_forward
+
+echo "setting up nat for cmux sandboxes"
+iptables -t nat -C POSTROUTING -s 10.201.0.0/16 -j MASQUERADE 2>/dev/null || \
+  iptables -t nat -A POSTROUTING -s 10.201.0.0/16 -j MASQUERADE
+
 if command -v docker >/dev/null 2>&1; then
   for _ in $(seq 1 20); do
     if docker info >/dev/null 2>&1; then

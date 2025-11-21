@@ -32,7 +32,10 @@ impl MockService {
 
 #[async_trait::async_trait]
 impl SandboxService for MockService {
-    async fn create(&self, request: CreateSandboxRequest) -> cmux_sandbox::errors::SandboxResult<SandboxSummary> {
+    async fn create(
+        &self,
+        request: CreateSandboxRequest,
+    ) -> cmux_sandbox::errors::SandboxResult<SandboxSummary> {
         let summary = SandboxSummary {
             id: Uuid::new_v4(),
             name: request.name.unwrap_or_else(|| "mock".to_string()),
@@ -60,10 +63,7 @@ impl SandboxService for MockService {
         Ok(self.sandboxes.lock().await.clone())
     }
 
-    async fn get(
-        &self,
-        id: Uuid,
-    ) -> cmux_sandbox::errors::SandboxResult<Option<SandboxSummary>> {
+    async fn get(&self, id: Uuid) -> cmux_sandbox::errors::SandboxResult<Option<SandboxSummary>> {
         let guard = self.sandboxes.lock().await;
         self.record("get").await;
         Ok(guard.iter().find(|s| s.id == id).cloned())
@@ -177,14 +177,16 @@ async fn cli_can_list_and_create_via_http() {
     assert!(list_after.contains("\"demo\""));
 
     assert!(service.calls.lock().await.contains(&"create"));
-    assert!(service
-        .calls
-        .lock()
-        .await
-        .iter()
-        .filter(|c| **c == "list")
-        .count()
-        >= 2);
+    assert!(
+        service
+            .calls
+            .lock()
+            .await
+            .iter()
+            .filter(|c| **c == "list")
+            .count()
+            >= 2
+    );
 
     // ensure we captured the user-visible trajectory format: <command, output>
     assert_eq!(transcript.len(), 3);

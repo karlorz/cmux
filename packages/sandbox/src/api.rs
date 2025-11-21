@@ -39,15 +39,13 @@ pub struct ApiDoc;
 pub fn build_router(service: Arc<dyn SandboxService>) -> Router {
     let openapi = ApiDoc::openapi();
     let state = AppState::new(service);
-    let swagger_routes: Router<AppState> = SwaggerUi::new("/docs").url("/openapi.json", openapi).into();
+    let swagger_routes: Router<AppState> =
+        SwaggerUi::new("/docs").url("/openapi.json", openapi).into();
 
     Router::new()
         .route("/healthz", get(health))
         .route("/sandboxes", get(list_sandboxes).post(create_sandbox))
-        .route(
-            "/sandboxes/{id}",
-            get(get_sandbox).delete(delete_sandbox),
-        )
+        .route("/sandboxes/{id}", get(get_sandbox).delete(delete_sandbox))
         .route("/sandboxes/{id}/exec", post(exec_sandbox))
         .merge(swagger_routes)
         .with_state(state)

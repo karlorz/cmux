@@ -2,8 +2,8 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde::Serialize;
-use utoipa::ToSchema;
 use thiserror::Error;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 #[derive(Debug, Error)]
@@ -20,6 +20,8 @@ pub enum SandboxError {
     InvalidRequest(String),
     #[error("process failed to start")]
     ProcessNotStarted,
+    #[error("internal error: {0}")]
+    Internal(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -39,6 +41,7 @@ impl IntoResponse for SandboxError {
             SandboxError::IpPoolExhausted => StatusCode::INSUFFICIENT_STORAGE,
             SandboxError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
             SandboxError::ProcessNotStarted => StatusCode::INTERNAL_SERVER_ERROR,
+            SandboxError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
             SandboxError::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
 

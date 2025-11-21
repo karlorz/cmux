@@ -116,9 +116,7 @@ async fn main() -> anyhow::Result<()> {
                 let resolved_name = args.name.or(args.positional_name);
                 let body = CreateSandboxRequest {
                     name: resolved_name,
-                    workspace: args
-                        .workspace
-                        .map(|p| p.to_string_lossy().to_string()),
+                    workspace: args.workspace.map(|p| p.to_string_lossy().to_string()),
                     read_only_paths: args
                         .read_only_paths
                         .iter()
@@ -177,7 +175,10 @@ where
 {
     let status = response.status();
     if !status.is_success() {
-        let text = response.text().await.unwrap_or_else(|_| String::from("unknown error"));
+        let text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| String::from("unknown error"));
         return Err(anyhow::anyhow!("request failed: {status} - {text}"));
     }
 

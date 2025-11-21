@@ -1,6 +1,6 @@
 use clap::Parser;
-use cmux_sandbox::build_router;
 use cmux_sandbox::bubblewrap::BubblewrapService;
+use cmux_sandbox::build_router;
 use cmux_sandbox::DEFAULT_HTTP_PORT;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
