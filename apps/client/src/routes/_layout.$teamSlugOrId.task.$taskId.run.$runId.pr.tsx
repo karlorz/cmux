@@ -1,5 +1,6 @@
 import { FloatingPane } from "@/components/floating-pane";
 import { PersistentWebView } from "@/components/persistent-webview";
+import { RunScreenshotGallery } from "@/components/RunScreenshotGallery";
 import { getTaskRunPullRequestPersistKey } from "@/lib/persistent-webview-keys";
 import { api } from "@cmux/convex/api";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
@@ -9,6 +10,8 @@ import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import z from "zod";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
+import { convexQuery } from "@convex-dev/react-query";
+import { useQuery as useRQ } from "@tanstack/react-query";
 
 const paramsSchema = z.object({
   taskId: typedZid("tasks"),
@@ -29,7 +32,7 @@ export const Route = createFileRoute(
     },
   },
   loader: async (opts) => {
-    const { teamSlugOrId, taskId } = opts.params;
+    const { teamSlugOrId, taskId, runId } = opts.params;
     convexQueryClient.convexClient.prewarmQuery({
       query: api.taskRuns.getByTask,
       args: {
@@ -41,6 +44,11 @@ export const Route = createFileRoute(
     convexQueryClient.convexClient.prewarmQuery({
       query: api.tasks.getById,
       args: { teamSlugOrId, id: taskId },
+    });
+
+    convexQueryClient.convexClient.prewarmQuery({
+      query: api.taskRuns.getRunDiffContext,
+      args: { teamSlugOrId, taskId, runId },
     });
   },
 });
@@ -62,6 +70,20 @@ function RunPullRequestPage() {
   const selectedRun = useMemo(() => {
     return taskRuns?.find((run) => run._id === runId);
   }, [runId, taskRuns]);
+
+  // Fetch screenshot sets for this run
+  const runDiffContextQuery = useRQ({
+    ...convexQuery(api.taskRuns.getRunDiffContext, {
+      teamSlugOrId,
+      taskId,
+      runId,
+    }),
+    enabled: Boolean(teamSlugOrId && taskId && runId),
+  });
+
+  const screenshotSets = runDiffContextQuery.data?.screenshotSets ?? [];
+  const screenshotSetsLoading =
+    runDiffContextQuery.isLoading && screenshotSets.length === 0;
 
   const pullRequests = useMemo(
     () => selectedRun?.pullRequests ?? [],
@@ -157,6 +179,18 @@ function RunPullRequestPage() {
                 <span className="font-medium">{task.text}</span>
               </div>
             </div>
+          )}
+
+          {/* Screenshots */}
+          {screenshotSetsLoading ? (
+            <div className="border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-950/40 px-3.5 py-3 text-sm text-neutral-500 dark:text-neutral-400">
+              Loading screenshots...
+            </div>
+          ) : (
+            <RunScreenshotGallery
+              screenshotSets={screenshotSets}
+              highlightedSetId={selectedRun?.latestScreenshotSetId ?? null}
+            />
           )}
 
           {/* Main content */}
