@@ -1,4 +1,4 @@
-import type { ClientToServerEvents, ServerToClientEvents } from "@cmux/shared";
+import type { ClientToServerEvents, ServerToClientEvents, VSCodeServerToClientEvents, VSCodeClientToServerEvents } from "@cmux/shared";
 import * as http from "http";
 import { execFile, execSync } from "node:child_process";
 import { Server } from "socket.io";
@@ -15,7 +15,7 @@ console.log("[cmux] Extension module loaded");
 // Socket.IO server instance
 let ioServer: Server | null = null;
 let httpServer: http.Server | null = null;
-let workerSocket: Socket<ServerToClientEvents, ClientToServerEvents> | null =
+let workerSocket: Socket<VSCodeServerToClientEvents, VSCodeClientToServerEvents> | null =
   null;
 
 // Track active terminals
@@ -282,10 +282,11 @@ async function setupDefaultTerminal() {
     return;
   }
 
-  // Wait for tmux sessions to exist (they may be created by orchestrator for cloud workspaces)
-  const hasSessions = await waitForTmuxSessions(20, 1000);
+  // Verify tmux session exists (should exist since we're called after the event)
+  // This is a final safety check, not a polling loop
+  const hasSessions = await hasTmuxSessions();
   if (!hasSessions) {
-    log("No tmux sessions found after waiting; skipping terminal setup and attach");
+    log("No tmux sessions found; will retry on next session creation event");
     return;
   }
 
@@ -372,9 +373,16 @@ function connectToWorker() {
   // Set up event handlers only once
   workerSocket.once("connect", () => {
     log("Connected to worker socket server");
-    // Setup default terminal on first connection
+    log("Waiting for tmux session creation event from worker...");
+  });
+
+  // Listen for tmux session creation event
+  // This ensures we only set up the terminal after the tmux session actually exists
+  workerSocket.on("vscode:tmux-session-created", (data) => {
+    log("Received tmux session created event", data);
+    // Setup default terminal when tmux session is ready
     if (!isSetupComplete) {
-      log("Setting up default terminal...");
+      log("Setting up default terminal after tmux session creation...");
       setupDefaultTerminal();
     }
   });

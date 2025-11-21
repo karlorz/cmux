@@ -9,6 +9,8 @@ import {
   type ServerToClientEvents,
   type ServerToWorkerEvents,
   type SocketData,
+  type VSCodeClientToServerEvents,
+  type VSCodeServerToClientEvents,
   type WorkerHeartbeat,
   type WorkerRegister,
   type WorkerStartScreenshotCollection,
@@ -133,10 +135,10 @@ const httpServer = createServer(app);
 // Socket.IO server with namespaces
 const io = new Server(httpServer, getWorkerServerSocketOptions());
 
-// Client namespace
+// Client namespace (VSCode extension)
 const vscodeIO = io.of("/vscode") as Namespace<
-  ClientToServerEvents,
-  ServerToClientEvents,
+  VSCodeClientToServerEvents,
+  VSCodeServerToClientEvents,
   InterServerEvents,
   SocketData
 >;
@@ -1165,6 +1167,17 @@ async function createTerminal(
 
   // Increment active terminal count
   log("INFO", "Terminal created", {
+    terminalId,
+  });
+
+  // Emit event to VSCode extension that tmux session is ready
+  // This allows the extension to wait for the actual session creation
+  // before attempting to attach, preventing race conditions
+  vscodeIO.emit("vscode:tmux-session-created", {
+    sessionName: "cmux", // The default session name
+    terminalId,
+  });
+  log("INFO", "Notified VSCode extension of tmux session creation", {
     terminalId,
   });
 

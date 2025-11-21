@@ -25,6 +25,12 @@ export interface VSCodeServerToClientEvents {
 
   "vscode:terminal-closed": (data: { terminalId: string }) => void;
 
+  // Tmux session events
+  "vscode:tmux-session-created": (data: {
+    sessionName: string;
+    terminalId: string;
+  }) => void;
+
   // Command execution results
   "vscode:command-result": (data: {
     commandId: string;
