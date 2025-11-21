@@ -4,7 +4,7 @@ import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
 import { isElectron } from "@/lib/electron";
 import { type Doc } from "@cmux/convex/dataModel";
 import { api } from "@cmux/convex/api";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import type { LinkProps } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
 import { Home, Plus, Server, Settings } from "lucide-react";
@@ -13,9 +13,25 @@ import {
   useEffect,
   useRef,
   useState,
+  useMemo,
   type ComponentType,
   type CSSProperties,
 } from "react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import CmuxLogo from "./logo/cmux-logo";
 import { SidebarNavLink } from "./sidebar/SidebarNavLink";
 import { SidebarPullRequestList } from "./sidebar/SidebarPullRequestList";
@@ -85,6 +101,61 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
 
   // Fetch pinned items
   const pinnedData = useQuery(api.tasks.getPinned, { teamSlugOrId });
+
+  // Mutation to update display order
+  const updateDisplayOrder = useMutation(api.tasks.updateDisplayOrder);
+
+  // Sort tasks by displayOrder
+  const sortedTasks = useMemo(() => {
+    if (!tasks) return undefined;
+    return [...tasks].sort((a, b) => {
+      const orderA = a.displayOrder ?? Number.MAX_SAFE_INTEGER;
+      const orderB = b.displayOrder ?? Number.MAX_SAFE_INTEGER;
+      return orderA - orderB;
+    });
+  }, [tasks]);
+
+  // Sort pinned tasks by displayOrder
+  const sortedPinnedData = useMemo(() => {
+    if (!pinnedData) return undefined;
+    return [...pinnedData].sort((a, b) => {
+      const orderA = a.displayOrder ?? Number.MAX_SAFE_INTEGER;
+      const orderB = b.displayOrder ?? Number.MAX_SAFE_INTEGER;
+      return orderA - orderB;
+    });
+  }, [pinnedData]);
+
+  // Set up drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+
+      if (!over || active.id === over.id) return;
+
+      const isPinned = (active.id as string).startsWith("pinned-");
+      const targetList = isPinned ? sortedPinnedData : sortedTasks;
+
+      if (!targetList) return;
+
+      const oldIndex = targetList.findIndex((task) => task._id === active.id);
+      const newIndex = targetList.findIndex((task) => task._id === over.id);
+
+      if (oldIndex === -1 || newIndex === -1) return;
+
+      const reorderedTasks = arrayMove(targetList, oldIndex, newIndex);
+      const taskIds = reorderedTasks.map((task) => task._id);
+
+      updateDisplayOrder({ teamSlugOrId, taskIds });
+    },
+    [sortedTasks, sortedPinnedData, teamSlugOrId, updateDisplayOrder],
+  );
 
   useEffect(() => {
     localStorage.setItem("sidebarWidth", String(width));
@@ -297,47 +368,65 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
           </div>
 
           <div className="ml-2 pt-px">
-            <div className="space-y-px">
-              {tasks === undefined ? (
-                <TaskTreeSkeleton count={5} />
-              ) : tasks && tasks.length > 0 ? (
-                <>
-                  {/* Pinned items at the top */}
-                  {pinnedData && pinnedData.length > 0 && (
-                    <>
-                      {pinnedData.map((task) => (
-                        <TaskTree
-                          key={task._id}
-                          task={task}
-                          defaultExpanded={expandTaskIds?.includes(task._id) ?? false}
-                          teamSlugOrId={teamSlugOrId}
-                        />
-                      ))}
-                      {/* Horizontal divider after pinned items */}
-                      <hr className="mx-2 border-t border-neutral-200 dark:border-neutral-800" />
-                    </>
-                  )}
-                  {/* Regular (non-pinned) tasks */}
-                  {tasks
-                    .filter((task) => {
-                      // Only filter out directly pinned tasks
-                      return !task.pinned;
-                    })
-                    .map((task) => (
-                      <TaskTree
-                        key={task._id}
-                        task={task}
-                        defaultExpanded={expandTaskIds?.includes(task._id) ?? false}
-                        teamSlugOrId={teamSlugOrId}
-                      />
-                    ))}
-                </>
-              ) : (
-                <p className="pl-2 pr-3 py-1.5 text-xs text-neutral-500 dark:text-neutral-400 select-none">
-                  No recent tasks
-                </p>
-              )}
-            </div>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <div className="space-y-px">
+                {sortedTasks === undefined ? (
+                  <TaskTreeSkeleton count={5} />
+                ) : sortedTasks && sortedTasks.length > 0 ? (
+                  <>
+                    {/* Pinned items at the top */}
+                    {sortedPinnedData && sortedPinnedData.length > 0 && (
+                      <>
+                        <SortableContext
+                          items={sortedPinnedData.map((task) => task._id)}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          {sortedPinnedData.map((task) => (
+                            <TaskTree
+                              key={task._id}
+                              task={task}
+                              defaultExpanded={expandTaskIds?.includes(task._id) ?? false}
+                              teamSlugOrId={teamSlugOrId}
+                            />
+                          ))}
+                        </SortableContext>
+                        {/* Horizontal divider after pinned items */}
+                        <hr className="mx-2 border-t border-neutral-200 dark:border-neutral-800" />
+                      </>
+                    )}
+                    {/* Regular (non-pinned) tasks */}
+                    <SortableContext
+                      items={sortedTasks
+                        .filter((task) => !task.pinned)
+                        .map((task) => task._id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {sortedTasks
+                        .filter((task) => {
+                          // Only filter out directly pinned tasks
+                          return !task.pinned;
+                        })
+                        .map((task) => (
+                          <TaskTree
+                            key={task._id}
+                            task={task}
+                            defaultExpanded={expandTaskIds?.includes(task._id) ?? false}
+                            teamSlugOrId={teamSlugOrId}
+                          />
+                        ))}
+                    </SortableContext>
+                  </>
+                ) : (
+                  <p className="pl-2 pr-3 py-1.5 text-xs text-neutral-500 dark:text-neutral-400 select-none">
+                    No recent tasks
+                  </p>
+                )}
+              </div>
+            </DndContext>
           </div>
         </div>
       </nav>

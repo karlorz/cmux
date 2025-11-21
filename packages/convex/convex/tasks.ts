@@ -32,9 +32,18 @@ export const get = authQuery({
       );
     }
 
-    // Note: order by createdAt desc, fallback to insertion order if not present
+    // Note: order by displayOrder first, then createdAt desc, fallback to insertion order if not present
     const results = await q.collect();
-    return results.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+    return results.sort((a, b) => {
+      // Sort by displayOrder first (lower numbers first)
+      const orderA = a.displayOrder ?? Number.MAX_SAFE_INTEGER;
+      const orderB = b.displayOrder ?? Number.MAX_SAFE_INTEGER;
+      if (orderA !== orderB) {
+        return orderA - orderB;
+      }
+      // If displayOrder is the same, sort by createdAt descending
+      return (b.createdAt ?? 0) - (a.createdAt ?? 0);
+    });
   },
 });
 
@@ -55,7 +64,16 @@ export const getPinned = authQuery({
       .filter((q) => q.neq(q.field("isArchived"), true))
       .collect();
 
-    return pinnedTasks.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+    return pinnedTasks.sort((a, b) => {
+      // Sort by displayOrder first (lower numbers first)
+      const orderA = a.displayOrder ?? Number.MAX_SAFE_INTEGER;
+      const orderB = b.displayOrder ?? Number.MAX_SAFE_INTEGER;
+      if (orderA !== orderB) {
+        return orderA - orderB;
+      }
+      // If displayOrder is the same, sort by updatedAt descending
+      return (b.updatedAt ?? 0) - (a.updatedAt ?? 0);
+    });
   },
 });
 
@@ -87,9 +105,16 @@ export const getTasksWithTaskRuns = authQuery({
     }
 
     const tasks = await q.collect();
-    const sortedTasks = tasks.sort(
-      (a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0),
-    );
+    const sortedTasks = tasks.sort((a, b) => {
+      // Sort by displayOrder first (lower numbers first)
+      const orderA = a.displayOrder ?? Number.MAX_SAFE_INTEGER;
+      const orderB = b.displayOrder ?? Number.MAX_SAFE_INTEGER;
+      if (orderA !== orderB) {
+        return orderA - orderB;
+      }
+      // If displayOrder is the same, sort by createdAt descending
+      return (b.createdAt ?? 0) - (a.createdAt ?? 0);
+    });
 
     const tasksWithRuns = await Promise.all(
       sortedTasks.map(async (task) => {
@@ -348,6 +373,30 @@ export const unpin = authMutation({
       throw new Error("Task not found or unauthorized");
     }
     await ctx.db.patch(args.id, { pinned: false, updatedAt: Date.now() });
+  },
+});
+
+export const updateDisplayOrder = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    taskIds: v.array(v.id("tasks")),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    // Update each task with its new display order
+    await Promise.all(
+      args.taskIds.map(async (taskId, index) => {
+        const task = await ctx.db.get(taskId);
+        if (task && task.teamId === teamId && task.userId === userId) {
+          await ctx.db.patch(taskId, {
+            displayOrder: index,
+            updatedAt: Date.now(),
+          });
+        }
+      }),
+    );
   },
 });
 

@@ -68,6 +68,8 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { VSCodeIcon } from "./icons/VSCodeIcon";
 import { SidebarListItem } from "./sidebar/SidebarListItem";
 import { annotateAgentOrdinals } from "./task-tree/annotateAgentOrdinals";
@@ -312,6 +314,22 @@ function TaskTreeInner({
   defaultExpanded = false,
   teamSlugOrId,
 }: TaskTreeProps) {
+  // Set up drag and drop
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: task._id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
   // Get the current route to determine if this task is selected
   const location = useLocation();
   const isTaskSelected = useMemo(
@@ -752,7 +770,7 @@ function TaskTreeInner({
 
   return (
     <TaskRunExpansionContext.Provider value={expansionContextValue}>
-      <div className="select-none flex flex-col">
+      <div ref={setNodeRef} style={style} className="select-none flex flex-col">
         <ContextMenu.Root>
           <ContextMenu.Trigger>
             <Link
@@ -766,6 +784,8 @@ function TaskTreeInner({
               onMouseEnter={handlePrefetch}
               onFocus={handleTaskLinkFocus}
               onBlur={handleTaskLinkBlur}
+              {...attributes}
+              {...listeners}
               onClick={(event) => {
                 if (
                   event.defaultPrevented ||
