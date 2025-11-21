@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import clsx from "clsx";
 import { Button } from "@/components/ui/button";
 import type { Doc } from "@cmux/convex/dataModel";
@@ -22,17 +22,9 @@ export function ResumeWorkspaceOverlay({
 }: ResumeWorkspaceOverlayProps) {
   const taskRunId = taskRun?._id ?? "";
 
-  const resumableInstanceId = useMemo(() => {
-    if (!taskRun?.vscode) return null;
-    if (taskRun.vscode.provider !== "morph") return null;
-    if (taskRun.vscode.status !== "stopped") return null;
-    return taskRun.vscode.containerName ?? null;
-  }, [taskRun]);
-
   const pauseStatusQuery = useMorphInstancePauseQuery({
     taskRunId,
     teamSlugOrId,
-    enabled: Boolean(resumableInstanceId && taskRunId),
   });
 
   const isPaused = pauseStatusQuery.data?.paused === true;
@@ -44,7 +36,7 @@ export function ResumeWorkspaceOverlay({
   });
 
   const handleResume = useCallback(async () => {
-    if (!taskRun || !resumableInstanceId) {
+    if (!taskRun || !isPaused) {
       return;
     }
 
@@ -52,9 +44,9 @@ export function ResumeWorkspaceOverlay({
       path: { taskRunId },
       body: { teamSlugOrId },
     });
-  }, [resumeWorkspace, resumableInstanceId, taskRun, taskRunId, teamSlugOrId]);
+  }, [resumeWorkspace, isPaused, taskRun, taskRunId, teamSlugOrId]);
 
-  if (!resumableInstanceId || !isPaused) {
+  if (!isPaused) {
     return null;
   }
 

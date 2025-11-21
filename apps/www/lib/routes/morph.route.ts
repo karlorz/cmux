@@ -18,6 +18,7 @@ import {
   configureGitIdentity,
   fetchGitIdentityInputs,
 } from "./sandboxes/git";
+import { typedZid } from "@cmux/shared/utils/typed-zid";
 
 export const morphRouter = new OpenAPIHono();
 
@@ -139,6 +140,9 @@ morphRouter.openapi(
     try {
       const client = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
       const instance = await client.instances.get({ instanceId });
+      void (async () => {
+        await instance.setWakeOn(true, true);
+      })();
 
       const metadataTeamId = (
         instance as unknown as {
@@ -174,7 +178,7 @@ morphRouter.openapi(
     summary: "Check if the Morph instance backing a task run is paused",
     request: {
       params: z.object({
-        taskRunId: z.string(),
+        taskRunId: typedZid("taskRuns"),
       }),
       body: {
         content: {
@@ -215,7 +219,7 @@ morphRouter.openapi(
 
     const taskRun = await convex.query(api.taskRuns.get, {
       teamSlugOrId,
-      id: taskRunId as Id<"taskRuns">,
+      id: taskRunId,
     });
 
     if (!taskRun) {
