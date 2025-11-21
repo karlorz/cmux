@@ -1396,8 +1396,9 @@ function TaskRunTreeInner({
     teamSlugOrId,
   });
 
+  const canResumeWorkspace = run.vscode?.provider === "morph";
+
   const handleResumeWorkspace = useCallback(() => {
-    console.log("resumeWorkspace.isPending", resumeWorkspace.isPending);
     if (resumeWorkspace.isPending) {
       return;
     }
@@ -1499,14 +1500,16 @@ function TaskRunTreeInner({
                   Copy branch name
                 </ContextMenu.Item>
               ) : null}
-              <ContextMenu.Item
-                className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
-                onClick={handleResumeWorkspace}
-                disabled={resumeWorkspace.isPending}
-              >
-                <Play className="w-3.5 h-3.5" />
-                {resumeWorkspace.isPending ? "Resuming…" : "Resume workspace"}
-              </ContextMenu.Item>
+              {canResumeWorkspace ? (
+                <ContextMenu.Item
+                  className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                  onClick={handleResumeWorkspace}
+                  disabled={resumeWorkspace.isPending}
+                >
+                  <Play className="w-3.5 h-3.5" />
+                  {resumeWorkspace.isPending ? "Resuming…" : "Resume VM"}
+                </ContextMenu.Item>
+              ) : null}
               {hasOpenWithActions ? (
                 <ContextMenu.SubmenuRoot>
                   <ContextMenu.SubmenuTrigger className="flex items-center gap-2 cursor-default py-1.5 pr-4 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700">

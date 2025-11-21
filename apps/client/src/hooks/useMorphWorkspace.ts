@@ -5,9 +5,7 @@ import {
   type PostApiMorphTaskRunsByTaskRunIdResumeData,
   type PostApiMorphTaskRunsByTaskRunIdResumeResponse,
 } from "@cmux/www-openapi-client";
-import {
-  postApiMorphTaskRunsByTaskRunIdResumeMutation,
-} from "@cmux/www-openapi-client/react-query";
+import { postApiMorphTaskRunsByTaskRunIdResumeMutation } from "@cmux/www-openapi-client/react-query";
 import { toast } from "sonner";
 import { queryClient } from "@/query-client";
 
@@ -24,10 +22,7 @@ interface UseResumeMorphWorkspaceArgs {
   onError?: (error: unknown) => void;
 }
 
-export function morphPauseQueryKey(
-  taskRunId: string,
-  teamSlugOrId: string
-) {
+export function morphPauseQueryKey(taskRunId: string, teamSlugOrId: string) {
   return ["morph", "task-run", taskRunId, "paused", teamSlugOrId] as const;
 }
 
@@ -82,9 +77,7 @@ export function useResumeMorphWorkspace({
     },
     onError: (error, _variables, context) => {
       const message =
-        error instanceof Error
-          ? error.message
-          : "Failed to resume workspace.";
+        error instanceof Error ? error.message : "Failed to resume VM.";
       toast.error(message, { id: context?.toastId });
       onError?.(error);
     },

@@ -62,7 +62,7 @@ export function ResumeWorkspaceOverlay({
           Workspace paused
         </p>
         <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-400">
-          Resume your Morph workspace to reconnect VS Code.
+          Resume your VM to reconnect VS Code.
         </p>
         <Button
           className="mt-3"
@@ -70,7 +70,7 @@ export function ResumeWorkspaceOverlay({
           disabled={resumeWorkspace.isPending}
           variant="default"
         >
-          {resumeWorkspace.isPending ? "Resuming…" : "Resume workspace"}
+          {resumeWorkspace.isPending ? "Resuming…" : "Resume VM"}
         </Button>
       </div>
     </div>
