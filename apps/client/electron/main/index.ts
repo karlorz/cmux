@@ -224,7 +224,22 @@ function setupConsoleFileMirrors(): void {
 }
 
 function setupPreviewProxyCertificateTrust(): void {
-  // Certificate trust setup removed
+  app.on(
+    "certificate-error",
+    (event, _webContents, url, error, certificate, callback) => {
+      // Trust the self-signed certificate for the preview proxy
+      if (
+        error === "net::ERR_CERT_AUTHORITY_INVALID" &&
+        certificate.issuerName === "Cmux Preview Proxy CA"
+      ) {
+        event.preventDefault();
+        callback(true);
+        mainLog("Trusted preview proxy certificate", { url });
+      } else {
+        callback(false);
+      }
+    }
+  );
 }
 
 function resolveResourcePath(rel: string) {
