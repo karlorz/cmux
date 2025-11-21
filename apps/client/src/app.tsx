@@ -1,5 +1,5 @@
 import { Providers } from "./providers";
-import { RouterProviderWithAuth } from "./router-provider";
+import { RouterProviderWithAuth } from "./router";
 
 import "./antd-overrides.css";
 import "./zindex.css";
