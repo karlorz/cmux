@@ -1,11 +1,7 @@
-import type { ReactNode } from "react";
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { JetBrains_Mono } from "next/font/google";
 import { Geist } from "next/font/google";
-
-import { stackServerApp } from "@/lib/utils/stack";
-import { StackProvider, StackTheme } from "@stackframe/stack";
-import { SentryScopeProvider } from "@/components/providers/sentry-scope-provider";
 
 import clsx from "clsx";
 import "./globals.css";
@@ -67,12 +63,7 @@ export default function RootLayout({
             '"JetBrains Mono","SFMono-Regular","Menlo","Consolas","ui-monospace","Monaco","Courier New",monospace',
         }}
       >
-        <StackTheme>
-          <StackProvider app={stackServerApp}>
-            <SentryScopeProvider />
-            {children}
-          </StackProvider>
-        </StackTheme>
+        {children}
       </body>
     </html>
   );

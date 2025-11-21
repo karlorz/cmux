@@ -45,7 +45,7 @@ export function SentryScope() {
   const user = useUser({ or: "return-null" });
   const location = useLocation();
 
-  const teams = useMemo(() => user?.useTeams() ?? [], [user]);
+  const teams = user?.useTeams() ?? [];
   const selectedTeamId = user?.selectedTeam?.id;
 
   const teamSlugOrId = useMemo(
@@ -53,10 +53,7 @@ export function SentryScope() {
     [location.pathname]
   );
 
-  const teamId = useMemo(
-    () => resolveTeamId(teamSlugOrId, teams, selectedTeamId),
-    [teamSlugOrId, teams, selectedTeamId]
-  );
+  const teamId = resolveTeamId(teamSlugOrId, teams, selectedTeamId);
 
   const userId = user?.id;
   const userEmail = user?.primaryEmail ?? undefined;
