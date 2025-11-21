@@ -63,15 +63,15 @@ impl SandboxService for MockService {
         Ok(self.sandboxes.lock().await.clone())
     }
 
-    async fn get(&self, id: Uuid) -> cmux_sandbox::errors::SandboxResult<Option<SandboxSummary>> {
+    async fn get(&self, id: String) -> cmux_sandbox::errors::SandboxResult<Option<SandboxSummary>> {
         let guard = self.sandboxes.lock().await;
         self.record("get").await;
-        Ok(guard.iter().find(|s| s.id == id).cloned())
+        Ok(guard.iter().find(|s| s.id.to_string() == id).cloned())
     }
 
     async fn exec(
         &self,
-        _id: Uuid,
+        _id: String,
         _exec: ExecRequest,
     ) -> cmux_sandbox::errors::SandboxResult<ExecResponse> {
         Ok(ExecResponse {
@@ -81,12 +81,20 @@ impl SandboxService for MockService {
         })
     }
 
+    async fn attach(
+        &self,
+        _id: String,
+        _socket: axum::extract::ws::WebSocket,
+    ) -> cmux_sandbox::errors::SandboxResult<()> {
+        Ok(())
+    }
+
     async fn delete(
         &self,
-        id: Uuid,
+        id: String,
     ) -> cmux_sandbox::errors::SandboxResult<Option<SandboxSummary>> {
         let mut guard = self.sandboxes.lock().await;
-        if let Some(pos) = guard.iter().position(|s| s.id == id) {
+        if let Some(pos) = guard.iter().position(|s| s.id.to_string() == id) {
             let summary = guard.remove(pos);
             self.record("delete").await;
             return Ok(Some(summary));

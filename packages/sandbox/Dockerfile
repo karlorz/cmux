@@ -84,7 +84,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   curl \
   bash \
   tini \
+  python3 \
+  python3-venv \
   && rm -rf /var/lib/apt/lists/*
+
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    mv /root/.local/bin/uv /usr/local/bin/uv
 
 RUN update-alternatives --set iptables /usr/sbin/iptables-legacy || true
 RUN mkdir -p /var/lib/cmux/sandboxes

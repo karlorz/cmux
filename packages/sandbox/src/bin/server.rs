@@ -32,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
         .parse()
         .map_err(|error| anyhow::anyhow!("invalid bind address: {error}"))?;
 
-    let service = Arc::new(BubblewrapService::new(options.data_dir).await?);
+    let service = Arc::new(BubblewrapService::new(options.data_dir, options.port).await?);
     let app = build_router(service);
 
     let addr = SocketAddr::new(bind_ip, options.port);

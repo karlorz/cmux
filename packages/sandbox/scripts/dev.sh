@@ -26,5 +26,14 @@ docker run --privileged -d \
   "${IMAGE_NAME}" \
   /usr/local/bin/cmux-sandboxd --bind 0.0.0.0 --port "${PORT}" --data-dir /var/lib/cmux/sandboxes
 
+echo "Waiting for cmux-sandboxd to be ready on port ${PORT}..."
+for i in {1..30}; do
+  if curl -s "http://127.0.0.1:${PORT}/healthz" >/dev/null; then
+    echo "cmux-sandboxd is up!"
+    break
+  fi
+  sleep 0.5
+done
+
 echo "Attaching shell; type 'exit' to leave and 'docker stop ${CONTAINER_NAME}' to stop container"
 docker exec --detach-keys="ctrl-^" -it -e TERM=xterm-256color "${CONTAINER_NAME}" bash -l

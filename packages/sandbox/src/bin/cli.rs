@@ -3,11 +3,14 @@ use cmux_sandbox::models::{
     CreateSandboxRequest, EnvVar, ExecRequest, ExecResponse, SandboxSummary,
 };
 use cmux_sandbox::DEFAULT_HTTP_PORT;
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
+use futures::{SinkExt, StreamExt};
 use reqwest::Client;
 use serde::Serialize;
 use std::path::PathBuf;
 use std::time::Duration;
-use uuid::Uuid;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
 #[derive(Parser, Debug)]
 #[command(name = "cmux", about = "cmux sandbox controller")]
@@ -22,8 +25,10 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    #[command(subcommand)]
+    #[command(subcommand, alias = "s", alias = "sandbox")]
     Sandboxes(SandboxCommand),
+    /// Create a new sandbox and attach to it immediately
+    New,
     /// Fetch the OpenAPI document from the server
     Openapi,
 }
@@ -31,15 +36,20 @@ enum Command {
 #[derive(Subcommand, Debug)]
 enum SandboxCommand {
     /// List known sandboxes
+    #[command(alias = "ls")]
     List,
     /// Create a new sandbox
     Create(CreateArgs),
+    /// Create a new sandbox and attach to it immediately
+    New,
     /// Inspect a sandbox
-    Show { id: Uuid },
+    Show { id: String },
     /// Execute a command inside a sandbox
     Exec(ExecArgs),
+    /// Attach to a shell in the sandbox (SSH-like)
+    Ssh { id: String },
     /// Tear down a sandbox
-    Delete { id: Uuid },
+    Delete { id: String },
 }
 
 #[derive(Args, Debug)]
@@ -61,7 +71,7 @@ struct CreateArgs {
 
 #[derive(Args, Debug)]
 struct ExecArgs {
-    id: Uuid,
+    id: String,
     #[arg(trailing_var_arg = true, required = true)]
     command: Vec<String>,
     #[arg(long)]
@@ -105,6 +115,20 @@ async fn main() -> anyhow::Result<()> {
             let value: serde_json::Value = parse_response(response).await?;
             print_json(&value)?;
         }
+        Command::New => {
+            let body = CreateSandboxRequest {
+                name: Some("interactive".into()),
+                workspace: None,
+                read_only_paths: vec![],
+                tmpfs: vec![],
+                env: vec![],
+            };
+            let url = format!("{}/sandboxes", cli.base_url.trim_end_matches('/'));
+            let response = client.post(url).json(&body).send().await?;
+            let summary: SandboxSummary = parse_response(response).await?;
+            eprintln!("Created sandbox {}", summary.id);
+            handle_ssh(&cli.base_url, &summary.id.to_string()).await?;
+        }
         Command::Sandboxes(cmd) => match cmd {
             SandboxCommand::List => {
                 let url = format!("{}/sandboxes", cli.base_url.trim_end_matches('/'));
@@ -130,6 +154,20 @@ async fn main() -> anyhow::Result<()> {
                 let response = client.post(url).json(&body).send().await?;
                 let summary: SandboxSummary = parse_response(response).await?;
                 print_json(&summary)?;
+            }
+            SandboxCommand::New => {
+                let body = CreateSandboxRequest {
+                    name: Some("interactive".into()),
+                    workspace: None,
+                    read_only_paths: vec![],
+                    tmpfs: vec![],
+                    env: vec![],
+                };
+                let url = format!("{}/sandboxes", cli.base_url.trim_end_matches('/'));
+                let response = client.post(url).json(&body).send().await?;
+                let summary: SandboxSummary = parse_response(response).await?;
+                eprintln!("Created sandbox {}", summary.id);
+                handle_ssh(&cli.base_url, &summary.id.to_string()).await?;
             }
             SandboxCommand::Show { id } => {
                 let url = format!("{}/sandboxes/{id}", cli.base_url.trim_end_matches('/'));
@@ -157,6 +195,9 @@ async fn main() -> anyhow::Result<()> {
                 let result: ExecResponse = parse_response(response).await?;
                 print_json(&result)?;
             }
+            SandboxCommand::Ssh { id } => {
+                handle_ssh(&cli.base_url, &id).await?;
+            }
             SandboxCommand::Delete { id } => {
                 let url = format!("{}/sandboxes/{id}", cli.base_url.trim_end_matches('/'));
                 let response = client.delete(url).send().await?;
@@ -166,6 +207,118 @@ async fn main() -> anyhow::Result<()> {
         },
     }
 
+    Ok(())
+}
+
+struct RawModeGuard;
+
+impl RawModeGuard {
+    fn new() -> anyhow::Result<Self> {
+        enable_raw_mode()?;
+        Ok(Self)
+    }
+}
+
+impl Drop for RawModeGuard {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
+    }
+}
+
+async fn handle_ssh(base_url: &str, id: &str) -> anyhow::Result<()> {
+    let ws_url = base_url
+        .replace("http://", "ws://")
+        .replace("https://", "wss://")
+        .trim_end_matches('/')
+        .to_string();
+    let url = format!("{}/sandboxes/{}/attach", ws_url, id);
+
+    let (ws_stream, _) = connect_async(url).await?;
+    eprintln!("Connected to sandbox shell. Press Ctrl+D to exit, or ~. to disconnect.");
+
+    let _guard = RawModeGuard::new()?;
+
+    let (mut write, mut read) = ws_stream.split();
+    let mut stdin = tokio::io::stdin();
+    let mut stdout = tokio::io::stdout();
+    let mut buf = [0u8; 1024];
+
+    // State for escape sequence detection
+    let mut newline = true;
+    let mut tilde_seen = false;
+
+    loop {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                break;
+            }
+            msg = read.next() => {
+                match msg {
+                    Some(Ok(Message::Binary(data))) => {
+                        stdout.write_all(&data).await?;
+                        stdout.flush().await?;
+                        // Simple heuristic: if we received a newline at the end, next input is start of line.
+                        // This is imperfect because of local echo vs remote echo, but useful for ~ detection.
+                        if let Some(&last) = data.last() {
+                             if last == b'\r' || last == b'\n' {
+                                 newline = true;
+                             } else {
+                                 newline = false;
+                             }
+                        }
+                    }
+                    Some(Ok(Message::Text(text))) => {
+                        stdout.write_all(text.as_bytes()).await?;
+                        stdout.flush().await?;
+                        if text.ends_with('\r') || text.ends_with('\n') {
+                            newline = true;
+                        } else {
+                            newline = false;
+                        }
+                    }
+                    Some(Ok(Message::Close(_))) | Some(Err(_)) | None => {
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            res = stdin.read(&mut buf) => {
+                match res {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let data = &buf[..n];
+                        for &b in data {
+                            if tilde_seen {
+                                if b == b'.' {
+                                    // ~. -> Disconnect
+                                    // Restore terminal first (by dropping guard, which happens on return)
+                                    // But we are in loop. simple break works.
+                                    return Ok(());
+                                } else {
+                                    // Not a dot, so send the tilde and the current char
+                                    write.send(Message::Binary(vec![b'~'])).await?;
+                                    write.send(Message::Binary(vec![b])).await?;
+                                    tilde_seen = false;
+                                    newline = b == b'\r' || b == b'\n';
+                                }
+                            } else {
+                                if newline && b == b'~' {
+                                    tilde_seen = true;
+                                } else {
+                                    write.send(Message::Binary(vec![b])).await?;
+                                    newline = b == b'\r' || b == b'\n';
+                                }
+                            }
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        }
+    }
+
+    // Guard dropped here, disabling raw mode
+    eprintln!();
     Ok(())
 }
 
@@ -194,6 +347,7 @@ fn print_json<T: Serialize>(value: &T) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
 
     #[test]
     fn parses_env_value() {
@@ -210,7 +364,7 @@ mod tests {
     #[test]
     fn exec_single_string_is_wrapped_in_shell() {
         let args = ExecArgs {
-            id: Uuid::nil(),
+            id: "nil".to_string(),
             command: vec!["echo 123".into()],
             workdir: None,
             env: Vec::new(),

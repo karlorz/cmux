@@ -3,9 +3,11 @@ use crate::models::{
     CreateSandboxRequest, ExecRequest, ExecResponse, HealthResponse, SandboxSummary,
 };
 use crate::service::{AppState, SandboxService};
+use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::Path;
 use axum::http::StatusCode;
-use axum::routing::{get, post};
+use axum::response::Response;
+use axum::routing::{any, get, post};
 use axum::{Json, Router};
 use std::sync::Arc;
 use utoipa::OpenApi as UtoipaOpenApi;
@@ -47,6 +49,7 @@ pub fn build_router(service: Arc<dyn SandboxService>) -> Router {
         .route("/sandboxes", get(list_sandboxes).post(create_sandbox))
         .route("/sandboxes/{id}", get(get_sandbox).delete(delete_sandbox))
         .route("/sandboxes/{id}/exec", post(exec_sandbox))
+        .route("/sandboxes/{id}/attach", any(attach_sandbox))
         .merge(swagger_routes)
         .with_state(state)
 }
@@ -95,7 +98,7 @@ async fn list_sandboxes(
     get,
     path = "/sandboxes/{id}",
     params(
-        ("id" = Uuid, Path, description = "Sandbox identifier")
+        ("id" = String, Path, description = "Sandbox identifier (UUID or short ID)")
     ),
     responses(
         (status = 200, description = "Sandbox detail", body = SandboxSummary),
@@ -104,11 +107,11 @@ async fn list_sandboxes(
 )]
 async fn get_sandbox(
     state: axum::extract::State<AppState>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<String>,
 ) -> SandboxResult<Json<SandboxSummary>> {
-    match state.service.get(id).await? {
+    match state.service.get(id.clone()).await? {
         Some(summary) => Ok(Json(summary)),
-        None => Err(SandboxError::NotFound(id)),
+        None => Err(SandboxError::NotFound(Uuid::nil())), // TODO: Better error
     }
 }
 
@@ -116,7 +119,7 @@ async fn get_sandbox(
     post,
     path = "/sandboxes/{id}/exec",
     params(
-        ("id" = Uuid, Path, description = "Sandbox identifier")
+        ("id" = String, Path, description = "Sandbox identifier (UUID or short ID)")
     ),
     request_body = ExecRequest,
     responses(
@@ -126,18 +129,30 @@ async fn get_sandbox(
 )]
 async fn exec_sandbox(
     state: axum::extract::State<AppState>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<String>,
     Json(request): Json<ExecRequest>,
 ) -> SandboxResult<Json<ExecResponse>> {
     let response = state.service.exec(id, request).await?;
     Ok(Json(response))
 }
 
+async fn attach_sandbox(
+    state: axum::extract::State<AppState>,
+    Path(id): Path<String>,
+    ws: WebSocketUpgrade,
+) -> Response {
+    ws.on_upgrade(move |socket| async move {
+        if let Err(e) = state.service.attach(id, socket).await {
+            tracing::error!("attach failed: {e}");
+        }
+    })
+}
+
 #[utoipa::path(
     delete,
     path = "/sandboxes/{id}",
     params(
-        ("id" = Uuid, Path, description = "Sandbox identifier")
+        ("id" = String, Path, description = "Sandbox identifier (UUID or short ID)")
     ),
     responses(
         (status = 200, description = "Sandbox stopped", body = SandboxSummary),
@@ -146,11 +161,11 @@ async fn exec_sandbox(
 )]
 async fn delete_sandbox(
     state: axum::extract::State<AppState>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<String>,
 ) -> SandboxResult<Json<SandboxSummary>> {
-    match state.service.delete(id).await? {
+    match state.service.delete(id.clone()).await? {
         Some(summary) => Ok(Json(summary)),
-        None => Err(SandboxError::NotFound(id)),
+        None => Err(SandboxError::NotFound(Uuid::nil())), // TODO: Better error handling
     }
 }
 
@@ -160,11 +175,13 @@ mod tests {
     use crate::models::{SandboxNetwork, SandboxStatus};
     use async_trait::async_trait;
     use axum::body::Body;
+    use axum::extract::ws::WebSocket;
     use axum::http::Request;
     use chrono::Utc;
     use std::sync::Arc;
     use tokio::sync::Mutex;
     use tower::ServiceExt;
+    use uuid::Uuid;
 
     #[derive(Clone, Default)]
     struct MockService {
@@ -183,11 +200,11 @@ mod tests {
             Ok(vec![fake_summary("mock-list".into())])
         }
 
-        async fn get(&self, _id: Uuid) -> SandboxResult<Option<SandboxSummary>> {
+        async fn get(&self, _id: String) -> SandboxResult<Option<SandboxSummary>> {
             Ok(Some(fake_summary("mock-one".into())))
         }
 
-        async fn exec(&self, _id: Uuid, _exec: ExecRequest) -> SandboxResult<ExecResponse> {
+        async fn exec(&self, _id: String, _exec: ExecRequest) -> SandboxResult<ExecResponse> {
             Ok(ExecResponse {
                 exit_code: 0,
                 stdout: "ok".into(),
@@ -195,7 +212,11 @@ mod tests {
             })
         }
 
-        async fn delete(&self, _id: Uuid) -> SandboxResult<Option<SandboxSummary>> {
+        async fn attach(&self, _id: String, _socket: WebSocket) -> SandboxResult<()> {
+            Ok(())
+        }
+
+        async fn delete(&self, _id: String) -> SandboxResult<Option<SandboxSummary>> {
             Ok(Some(fake_summary("mock-delete".into())))
         }
     }

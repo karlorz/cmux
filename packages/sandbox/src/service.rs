@@ -1,16 +1,17 @@
 use crate::errors::SandboxResult;
 use crate::models::{CreateSandboxRequest, ExecRequest, ExecResponse, SandboxSummary};
 use async_trait::async_trait;
+use axum::extract::ws::WebSocket;
 use std::sync::Arc;
-use uuid::Uuid;
 
 #[async_trait]
 pub trait SandboxService: Send + Sync + 'static {
     async fn create(&self, request: CreateSandboxRequest) -> SandboxResult<SandboxSummary>;
     async fn list(&self) -> SandboxResult<Vec<SandboxSummary>>;
-    async fn get(&self, id: Uuid) -> SandboxResult<Option<SandboxSummary>>;
-    async fn exec(&self, id: Uuid, exec: ExecRequest) -> SandboxResult<ExecResponse>;
-    async fn delete(&self, id: Uuid) -> SandboxResult<Option<SandboxSummary>>;
+    async fn get(&self, id: String) -> SandboxResult<Option<SandboxSummary>>;
+    async fn exec(&self, id: String, exec: ExecRequest) -> SandboxResult<ExecResponse>;
+    async fn attach(&self, id: String, socket: WebSocket) -> SandboxResult<()>;
+    async fn delete(&self, id: String) -> SandboxResult<Option<SandboxSummary>>;
 }
 
 #[derive(Clone)]

@@ -5,9 +5,12 @@ use crate::models::{
 };
 use crate::service::SandboxService;
 use async_trait::async_trait;
+use axum::extract::ws::{Message, WebSocket};
 use chrono::{DateTime, Utc};
+use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::io::{Read, Write};
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -54,6 +57,7 @@ pub struct BubblewrapService {
     bubblewrap_path: String,
     ip_path: String,
     nsenter_path: String,
+    port: u16,
 }
 
 fn nsenter_args(pid: u32, workdir: Option<&str>, command: &[String]) -> Vec<String> {
@@ -80,7 +84,7 @@ fn nsenter_args(pid: u32, workdir: Option<&str>, command: &[String]) -> Vec<Stri
 }
 
 impl BubblewrapService {
-    pub async fn new(workspace_root: PathBuf) -> SandboxResult<Self> {
+    pub async fn new(workspace_root: PathBuf, port: u16) -> SandboxResult<Self> {
         if !workspace_root.exists() {
             fs::create_dir_all(&workspace_root).await?;
         }
@@ -96,6 +100,7 @@ impl BubblewrapService {
             bubblewrap_path,
             ip_path,
             nsenter_path,
+            port,
         })
     }
 
@@ -119,11 +124,36 @@ impl BubblewrapService {
         self.workspace_root.join(id.to_string()).join("workspace")
     }
 
+    async fn resolve_id(&self, id_str: &str) -> SandboxResult<Uuid> {
+        // 1. Try parsing as full UUID
+        if let Ok(uuid) = Uuid::parse_str(id_str) {
+            return Ok(uuid);
+        }
+
+        // 2. Try searching by prefix
+        let guard = self.sandboxes.lock().await;
+        let mut matched = None;
+        for (uuid, _) in guard.iter() {
+            let simple = uuid.simple().to_string();
+            if simple.starts_with(id_str) {
+                if matched.is_some() {
+                    return Err(SandboxError::InvalidRequest(format!(
+                        "ambiguous short id: {id_str}"
+                    )));
+                }
+                matched = Some(*uuid);
+            }
+        }
+
+        matched.ok_or_else(|| SandboxError::InvalidRequest(format!("sandbox not found: {id_str}")))
+    }
+
     async fn spawn_bubblewrap(
         &self,
         request: &CreateSandboxRequest,
         workspace: &Path,
         id: &Uuid,
+        lease: &IpLease,
     ) -> SandboxResult<(Child, u32)> {
         let workspace_str = workspace
             .to_str()
@@ -172,6 +202,11 @@ impl BubblewrapService {
         for env in &request.env {
             command.env(&env.key, &env.value);
         }
+
+        command.env(
+            "CMUX_SANDBOX_URL",
+            format!("http://{}:{}", lease.host, self.port),
+        );
 
         command.args(["--", "/bin/sh", "-c", "ip link set lo up && sleep infinity"]);
 
@@ -355,7 +390,10 @@ impl SandboxService for BubblewrapService {
             pool.allocate()?
         };
 
-        let (mut child, inner_pid) = match self.spawn_bubblewrap(&request, &workspace, &id).await {
+        let (mut child, inner_pid) = match self
+            .spawn_bubblewrap(&request, &workspace, &id, &lease)
+            .await
+        {
             Ok(res) => res,
             Err(error) => {
                 let mut pool = self.ip_pool.lock().await;
@@ -417,7 +455,12 @@ impl SandboxService for BubblewrapService {
         Ok(results)
     }
 
-    async fn get(&self, id: Uuid) -> SandboxResult<Option<SandboxSummary>> {
+    async fn get(&self, id_str: String) -> SandboxResult<Option<SandboxSummary>> {
+        let id = match self.resolve_id(&id_str).await {
+            Ok(id) => id,
+            Err(_) => return Ok(None),
+        };
+
         let entry = {
             let sandboxes = self.sandboxes.lock().await;
             sandboxes.get(&id).cloned()
@@ -432,7 +475,9 @@ impl SandboxService for BubblewrapService {
         Ok(None)
     }
 
-    async fn exec(&self, id: Uuid, exec: ExecRequest) -> SandboxResult<ExecResponse> {
+    async fn exec(&self, id_str: String, exec: ExecRequest) -> SandboxResult<ExecResponse> {
+        let id = self.resolve_id(&id_str).await?;
+
         if exec.command.is_empty() {
             return Err(SandboxError::InvalidRequest(
                 "exec.command must not be empty".into(),
@@ -469,7 +514,120 @@ impl SandboxService for BubblewrapService {
         })
     }
 
-    async fn delete(&self, id: Uuid) -> SandboxResult<Option<SandboxSummary>> {
+    async fn attach(&self, id_str: String, mut socket: WebSocket) -> SandboxResult<()> {
+        let id = self.resolve_id(&id_str).await?;
+        let entry = {
+            let sandboxes = self.sandboxes.lock().await;
+            sandboxes.get(&id).cloned()
+        }
+        .ok_or(SandboxError::NotFound(id))?;
+
+        let system = NativePtySystem::default();
+        let pair = system
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|e| SandboxError::Internal(format!("failed to open pty: {e}")))?;
+
+        let mut cmd = CommandBuilder::new(&self.nsenter_path);
+        cmd.args(nsenter_args(
+            entry.inner_pid,
+            None,
+            &["/bin/bash".to_string(), "-i".to_string()],
+        ));
+        cmd.env("TERM", "xterm-256color");
+
+        let mut child = pair
+            .slave
+            .spawn_command(cmd)
+            .map_err(|e| SandboxError::Internal(format!("failed to spawn pty command: {e}")))?;
+        // Release slave so it closes when child exits
+        drop(pair.slave);
+
+        let mut reader = pair
+            .master
+            .try_clone_reader()
+            .map_err(|e| SandboxError::Internal(format!("failed to clone pty reader: {e}")))?;
+        let mut writer = pair
+            .master
+            .take_writer()
+            .map_err(|e| SandboxError::Internal(format!("failed to take pty writer: {e}")))?;
+
+        let (tx_out, mut rx_out) = tokio::sync::mpsc::channel::<Vec<u8>>(32);
+        let (tx_in, mut rx_in) = tokio::sync::mpsc::channel::<Vec<u8>>(32);
+
+        // Reader thread
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 1024];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if tx_out.blocking_send(buf[..n].to_vec()).is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+
+        // Writer thread
+
+        std::thread::spawn(move || {
+            while let Some(data) = rx_in.blocking_recv() {
+                if writer.write_all(&data).is_err() {
+                    break;
+                }
+
+                let _ = writer.flush();
+            }
+        });
+
+        // WebSocket bridge
+        loop {
+            tokio::select! {
+                msg = socket.recv() => {
+                    match msg {
+                        Some(Ok(Message::Text(text))) => {
+                            if tx_in.send(text.as_bytes().to_vec()).await.is_err() {
+                                break;
+                            }
+                        }
+                        Some(Ok(Message::Binary(data))) => {
+                            if tx_in.send(data.into()).await.is_err() {
+                                break;
+                            }
+                        }
+                        Some(Ok(Message::Close(_))) | None => break,
+                        _ => {}
+                    }
+                }
+                data = rx_out.recv() => {
+                    match data {
+                        Some(d) => {
+                            if socket.send(Message::Binary(d.into())).await.is_err() {
+                                break;
+                            }
+                        }
+                        None => break,
+                    }
+                }
+            }
+        }
+
+        // Kill child on exit
+        let _ = child.kill();
+        let _ = child.wait();
+
+        Ok(())
+    }
+
+    async fn delete(&self, id_str: String) -> SandboxResult<Option<SandboxSummary>> {
+        let id = self.resolve_id(&id_str).await?;
         let entry = {
             let mut sandboxes = self.sandboxes.lock().await;
             sandboxes.remove(&id)
