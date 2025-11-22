@@ -43,6 +43,7 @@ pub struct SandboxNetwork {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct SandboxSummary {
     pub id: Uuid,
+    pub index: usize,
     pub name: String,
     pub created_at: DateTime<Utc>,
     pub workspace: String,

@@ -14,6 +14,7 @@ use std::io::{Read, Write};
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::fs;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -36,6 +37,7 @@ struct BwrapStatus {
 #[derive(Clone, Debug)]
 struct SandboxHandle {
     id: Uuid,
+    index: usize,
     name: String,
     workspace: PathBuf,
     network: SandboxNetwork,
@@ -58,6 +60,7 @@ pub struct BubblewrapService {
     ip_path: String,
     nsenter_path: String,
     port: u16,
+    next_index: AtomicUsize,
 }
 
 fn nsenter_args(pid: u32, workdir: Option<&str>, command: &[String]) -> Vec<String> {
@@ -101,6 +104,7 @@ impl BubblewrapService {
             ip_path,
             nsenter_path,
             port,
+            next_index: AtomicUsize::new(0),
         })
     }
 
@@ -130,7 +134,17 @@ impl BubblewrapService {
             return Ok(uuid);
         }
 
-        // 2. Try searching by prefix
+        // 2. Try parsing as integer index
+        if let Ok(index) = id_str.parse::<usize>() {
+            let guard = self.sandboxes.lock().await;
+            for (uuid, entry) in guard.iter() {
+                if entry.handle.index == index {
+                    return Ok(*uuid);
+                }
+            }
+        }
+
+        // 3. Try searching by prefix
         let guard = self.sandboxes.lock().await;
         let mut matched = None;
         for (uuid, _) in guard.iter() {
@@ -378,6 +392,7 @@ fn make_interface_names(id: &Uuid) -> (String, String) {
 impl SandboxService for BubblewrapService {
     async fn create(&self, request: CreateSandboxRequest) -> SandboxResult<SandboxSummary> {
         let id = Uuid::new_v4();
+        let index = self.next_index.fetch_add(1, Ordering::Relaxed);
         let name = request
             .name
             .clone()
@@ -416,6 +431,7 @@ impl SandboxService for BubblewrapService {
 
         let handle = SandboxHandle {
             id,
+            index,
             name,
             workspace,
             network,
@@ -451,6 +467,9 @@ impl SandboxService for BubblewrapService {
             let mut child = entry.child.lock().await;
             results.push(Self::workspace_summary(&entry, &mut child).await?);
         }
+        
+        // Sort by index to keep stable order
+        results.sort_by_key(|s| s.index);
 
         Ok(results)
     }
@@ -576,20 +595,25 @@ impl SandboxService for BubblewrapService {
         });
 
         // Writer thread
-
         std::thread::spawn(move || {
             while let Some(data) = rx_in.blocking_recv() {
                 if writer.write_all(&data).is_err() {
                     break;
                 }
-
                 let _ = writer.flush();
             }
         });
 
+        let mut ticker = tokio::time::interval(std::time::Duration::from_millis(100));
+
         // WebSocket bridge
         loop {
             tokio::select! {
+                _ = ticker.tick() => {
+                    if let Ok(Some(_)) = child.try_wait() {
+                        break;
+                    }
+                }
                 msg = socket.recv() => {
                     match msg {
                         Some(Ok(Message::Text(text))) => {
@@ -680,6 +704,7 @@ impl SandboxHandle {
     fn to_summary(&self, status: SandboxStatus) -> SandboxSummary {
         SandboxSummary {
             id: self.id,
+            index: self.index,
             name: self.name.clone(),
             created_at: self.created_at,
             workspace: self.workspace.to_string_lossy().to_string(),

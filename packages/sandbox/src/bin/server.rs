@@ -6,7 +6,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 #[derive(Parser, Debug)]
 #[command(name = "cmux-sandboxd", author, version)]
@@ -20,12 +20,15 @@ struct Options {
     /// Directory used for sandbox workspaces
     #[arg(long, default_value = "/var/lib/cmux/sandboxes")]
     data_dir: PathBuf,
+    /// Directory used for logs
+    #[arg(long, default_value = "/var/log/cmux", env = "CMUX_SANDBOX_LOG_DIR")]
+    log_dir: PathBuf,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let options = Options::parse();
-    init_tracing();
+    let _guard = init_tracing(&options.log_dir);
 
     let bind_ip: IpAddr = options
         .bind
@@ -47,12 +50,39 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn init_tracing() {
+fn init_tracing(log_dir: &PathBuf) -> Option<tracing_appender::non_blocking::WorkerGuard> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
+
+    let stdout_layer = tracing_subscriber::fmt::layer().with_target(false);
+
+    // Try to create log dir
+    if let Err(e) = std::fs::create_dir_all(log_dir) {
+        eprintln!(
+            "Failed to create log directory {:?}: {}. Logging to file disabled.",
+            log_dir, e
+        );
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(stdout_layer)
+            .init();
+        return None;
+    }
+
+    let file_appender = tracing_appender::rolling::daily(log_dir, "cmux-sandboxd.log");
+    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+
+    let file_layer = tracing_subscriber::fmt::layer()
+        .with_writer(non_blocking)
         .with_target(false)
+        .with_ansi(false);
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(stdout_layer)
+        .with(file_layer)
         .init();
+
+    Some(guard)
 }
 
 async fn shutdown_signal() {

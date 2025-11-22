@@ -31,6 +31,17 @@ enum Command {
     New,
     /// Fetch the OpenAPI document from the server
     Openapi,
+
+    /// List known sandboxes (alias for 'sandboxes list')
+    #[command(alias = "ls")]
+    Ls,
+
+    /// Attach to a shell in the sandbox (SSH-like)
+    #[command(alias = "a", alias = "attach")]
+    Attach {
+        /// Sandbox ID or index (optional, defaults to last connected)
+        id: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -96,6 +107,29 @@ fn parse_env(raw: &str) -> Result<EnvVar, String> {
     })
 }
 
+fn get_config_dir() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(home).join(".cmux")
+}
+
+fn get_last_sandbox() -> Option<String> {
+    let path = get_config_dir().join("last_sandbox");
+    if path.exists() {
+        std::fs::read_to_string(path).ok().map(|s| s.trim().to_string())
+    } else {
+        None
+    }
+}
+
+fn save_last_sandbox(id: &str) {
+    let dir = get_config_dir();
+    if !dir.exists() {
+        let _ = std::fs::create_dir_all(&dir);
+    }
+    let path = dir.join("last_sandbox");
+    let _ = std::fs::write(path, id);
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -127,7 +161,25 @@ async fn main() -> anyhow::Result<()> {
             let response = client.post(url).json(&body).send().await?;
             let summary: SandboxSummary = parse_response(response).await?;
             eprintln!("Created sandbox {}", summary.id);
+            save_last_sandbox(&summary.id.to_string());
             handle_ssh(&cli.base_url, &summary.id.to_string()).await?;
+        }
+        Command::Ls => {
+            let url = format!("{}/sandboxes", cli.base_url.trim_end_matches('/'));
+            let response = client.get(url).send().await?;
+            let sandboxes: Vec<SandboxSummary> = parse_response(response).await?;
+            print_json(&sandboxes)?;
+        }
+        Command::Attach { id } => {
+            let target_id = if let Some(id) = id {
+                id
+            } else {
+                get_last_sandbox().ok_or_else(|| {
+                    anyhow::anyhow!("No sandbox ID provided and no previous sandbox found")
+                })?
+            };
+            save_last_sandbox(&target_id);
+            handle_ssh(&cli.base_url, &target_id).await?;
         }
         Command::Sandboxes(cmd) => match cmd {
             SandboxCommand::List => {
@@ -141,11 +193,8 @@ async fn main() -> anyhow::Result<()> {
                 let body = CreateSandboxRequest {
                     name: resolved_name,
                     workspace: args.workspace.map(|p| p.to_string_lossy().to_string()),
-                    read_only_paths: args
-                        .read_only_paths
-                        .iter()
-                        .map(|p| p.to_string_lossy().to_string())
-                        .collect(),
+                    read_only_paths:
+                        args.read_only_paths.iter().map(|p| p.to_string_lossy().to_string()).collect(),
                     tmpfs: args.tmpfs,
                     env: args.env,
                 };
@@ -167,6 +216,7 @@ async fn main() -> anyhow::Result<()> {
                 let response = client.post(url).json(&body).send().await?;
                 let summary: SandboxSummary = parse_response(response).await?;
                 eprintln!("Created sandbox {}", summary.id);
+                save_last_sandbox(&summary.id.to_string());
                 handle_ssh(&cli.base_url, &summary.id.to_string()).await?;
             }
             SandboxCommand::Show { id } => {
@@ -196,6 +246,7 @@ async fn main() -> anyhow::Result<()> {
                 print_json(&result)?;
             }
             SandboxCommand::Ssh { id } => {
+                save_last_sandbox(&id);
                 handle_ssh(&cli.base_url, &id).await?;
             }
             SandboxCommand::Delete { id } => {
