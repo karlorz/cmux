@@ -99,6 +99,18 @@ else
   exit 1
 fi
 
+echo "Testing default working directory..."
+PWD_OUTPUT=$(docker exec "${CONTAINER_NAME}" cmux --base-url "http://127.0.0.1:${PORT}" sandboxes exec "${ID}" "pwd")
+echo "${PWD_OUTPUT}"
+# We verify the JSON contains the correct stdout. 
+# The output of pwd has a newline, so in JSON it becomes "/workspace\n"
+if echo "${PWD_OUTPUT}" | grep -q '"stdout": "/workspace\\n"'; then
+  echo "Default workdir test passed!"
+else
+  echo "Default workdir test failed! Expected /workspace"
+  exit 1
+fi
+
 echo "Testing network connectivity..."
 NET_OUTPUT=$(docker exec "${CONTAINER_NAME}" cmux --base-url "http://127.0.0.1:${PORT}" sandboxes exec "${ID}" "curl" "-I" "https://example.com" || true)
 echo "${NET_OUTPUT}"
