@@ -168,6 +168,7 @@ impl BubblewrapService {
         workspace: &Path,
         id: &Uuid,
         lease: &IpLease,
+        index: usize,
     ) -> SandboxResult<(Child, u32)> {
         let workspace_str = workspace
             .to_str()
@@ -201,7 +202,7 @@ impl BubblewrapService {
             "--chdir",
             "/workspace",
             "--hostname",
-            &Self::default_name(id),
+            &format!("sandbox-{}", index),
             "--json-status-fd",
             "1",
         ]);
@@ -426,7 +427,7 @@ impl SandboxService for BubblewrapService {
         };
 
         let (mut child, inner_pid) = match self
-            .spawn_bubblewrap(&request, &workspace, &id, &lease)
+            .spawn_bubblewrap(&request, &workspace, &id, &lease, index)
             .await
         {
             Ok(res) => res,
