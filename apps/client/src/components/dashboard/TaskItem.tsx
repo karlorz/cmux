@@ -261,7 +261,7 @@ export const TaskItem = memo(function TaskItem({
             search={{ runId: undefined }}
             onClick={handleLinkClick}
             className={clsx(
-              "relative grid w-full items-center py-2 pr-3 cursor-default select-none group",
+              "relative grid w-full items-center py-2 pl-4 pr-3 cursor-default select-none group",
               "grid-cols-[24px_36px_1fr_minmax(120px,auto)_58px]",
               isOptimisticUpdate
                 ? "bg-white/50 dark:bg-neutral-900/30 animate-pulse"
