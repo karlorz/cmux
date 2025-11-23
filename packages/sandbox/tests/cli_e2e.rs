@@ -337,10 +337,9 @@ async fn cli_uploads_cwd_respecting_gitignore() {
     // loop { msg = read.next() ... }
     //
     // If server closes socket, `read.next()` returns None or Close. CLI exits.
-    // So `cmux new` should return successfully after upload and a brief connect attempt. 
-    
     Command::new(assert_cmd::cargo::cargo_bin!("cmux"))
         .env("CMUX_SANDBOX_URL", &base_url)
+        .env("HOME", dir_path)
         .current_dir(dir_path)
         .arg("new")
         .assert()
@@ -403,6 +402,7 @@ async fn cli_uploads_large_file() {
     
     Command::new(assert_cmd::cargo::cargo_bin!("cmux"))
         .env("CMUX_SANDBOX_URL", &base_url)
+        .env("HOME", dir_path)
         .current_dir(dir_path)
         .arg("new")
         .assert()

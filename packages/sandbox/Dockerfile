@@ -121,6 +121,15 @@ RUN curl -fsSL https://bun.sh/install | bash && \
     mv /root/.bun/bin/bun /usr/local/bin/bun && \
     rm -rf /root/.bun
 
+ENV BUN_INSTALL_GLOBAL_DIR=/usr/local/lib/bun
+ENV BUN_INSTALL_BIN=/usr/local/bin
+
+RUN bun add -g \
+    @openai/codex \
+    @anthropic-ai/claude-code \
+    @google/gemini-cli \
+    opencode-ai
+
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
     mv /root/.local/bin/uv /usr/local/bin/uv
 
