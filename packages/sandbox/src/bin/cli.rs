@@ -26,7 +26,7 @@ use rustls::ServerConfig;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 
 #[derive(Parser, Debug)]
-#[command(name = "cmux", about = "cmux sandbox controller")]
+#[command(name = "cmux", version, about = "cmux sandbox controller")]
 struct Cli {
     /// Base URL for the sandbox daemon (http or https)
     #[arg(long, env = "CMUX_SANDBOX_URL", default_value_t = default_base_url())]
@@ -41,7 +41,7 @@ enum Command {
     #[command(subcommand, alias = "s", alias = "sandbox")]
     Sandboxes(SandboxCommand),
     /// Create a new sandbox and attach to it immediately
-    New,
+    New(NewArgs),
     /// Fetch the OpenAPI document from the server
     Openapi,
 
@@ -88,7 +88,7 @@ enum SandboxCommand {
     /// Create a new sandbox
     Create(CreateArgs),
     /// Create a new sandbox and attach to it immediately
-    New,
+    New(NewArgs),
     /// Inspect a sandbox
     Show { id: String },
     /// Execute a command inside a sandbox
@@ -125,6 +125,13 @@ struct ExecArgs {
     workdir: Option<String>,
     #[arg(short = 'e', long = "env", value_parser = parse_env)]
     env: Vec<EnvVar>,
+}
+
+#[derive(Args, Debug)]
+struct NewArgs {
+    /// Path to the project directory to upload (defaults to current directory)
+    #[arg(default_value = ".")]
+    path: PathBuf,
 }
 
 fn default_base_url() -> String {
@@ -194,7 +201,7 @@ async fn run() -> anyhow::Result<()> {
             let value: serde_json::Value = parse_response(response).await?;
             print_json(&value)?;
         }
-        Command::New => {
+        Command::New(args) => {
             let body = CreateSandboxRequest {
                 name: Some("interactive".into()),
                 workspace: None,
@@ -207,9 +214,9 @@ async fn run() -> anyhow::Result<()> {
             let summary: SandboxSummary = parse_response(response).await?;
             eprintln!("Created sandbox {}", summary.id);
 
-            // Upload current directory
-            eprintln!("Uploading current directory...");
-            let tarball = pack_current_dir()?;
+            // Upload directory
+            eprintln!("Uploading directory: {}", args.path.display());
+            let tarball = pack_directory(&args.path)?;
             let url = format!("{}/sandboxes/{}/files", cli.base_url.trim_end_matches('/'), summary.id);
             let response = client.post(url).body(tarball).send().await?;
             if !response.status().is_success() {
@@ -281,7 +288,7 @@ async fn run() -> anyhow::Result<()> {
                 let summary: SandboxSummary = parse_response(response).await?;
                 print_json(&summary)?;
             }
-            SandboxCommand::New => {
+            SandboxCommand::New(args) => {
                 let body = CreateSandboxRequest {
                     name: Some("interactive".into()),
                     workspace: None,
@@ -294,9 +301,9 @@ async fn run() -> anyhow::Result<()> {
                 let summary: SandboxSummary = parse_response(response).await?;
                 eprintln!("Created sandbox {}", summary.id);
 
-                // Upload current directory
-                eprintln!("Uploading current directory...");
-                let tarball = pack_current_dir()?;
+                // Upload directory
+                eprintln!("Uploading directory: {}", args.path.display());
+                let tarball = pack_directory(&args.path)?;
                 let url = format!("{}/sandboxes/{}/files", cli.base_url.trim_end_matches('/'), summary.id);
                 let response = client.post(url).body(tarball).send().await?;
                 if !response.status().is_success() {
@@ -435,26 +442,26 @@ where
     Ok(response.json::<T>().await?)
 }
 
-fn pack_current_dir() -> anyhow::Result<Vec<u8>> {
+fn pack_directory(path: &std::path::Path) -> anyhow::Result<Vec<u8>> {
     let mut tar = Builder::new(Vec::new());
-    let cwd = std::env::current_dir()?;
+    let root = path.canonicalize()?;
     
-    let walker = WalkBuilder::new(&cwd).hidden(false).git_ignore(true).build();
+    let walker = WalkBuilder::new(&root).hidden(false).git_ignore(true).build();
 
     for result in walker {
         let entry = result?;
-        let path = entry.path();
+        let entry_path = entry.path();
         
-        if path == cwd {
+        if entry_path == root {
             continue;
         }
 
-        let relative_path = path.strip_prefix(&cwd)?;
+        let relative_path = entry_path.strip_prefix(&root)?;
         
-        if path.is_dir() {
-            tar.append_dir(relative_path, path)?;
+        if entry_path.is_dir() {
+            tar.append_dir(relative_path, entry_path)?;
         } else {
-             tar.append_path_with_name(path, relative_path)?;
+             tar.append_path_with_name(entry_path, relative_path)?;
         }
     }
     
