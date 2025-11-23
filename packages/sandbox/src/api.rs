@@ -4,9 +4,9 @@ use crate::models::{
 };
 use crate::service::{AppState, SandboxService};
 use axum::extract::ws::WebSocketUpgrade;
-use axum::extract::{Path, Query};
+use axum::extract::{DefaultBodyLimit, Path, Query};
 use axum::http::StatusCode;
-use axum::body::Bytes;
+use axum::body::Body;
 use axum::response::Response;
 use axum::routing::{any, get, post};
 use axum::{Json, Router};
@@ -63,7 +63,7 @@ pub fn build_router(service: Arc<dyn SandboxService>) -> Router {
         .route("/sandboxes", get(list_sandboxes).post(create_sandbox))
         .route("/sandboxes/{id}", get(get_sandbox).delete(delete_sandbox))
         .route("/sandboxes/{id}/exec", post(exec_sandbox))
-        .route("/sandboxes/{id}/files", post(upload_files))
+        .route("/sandboxes/{id}/files", post(upload_files).layer(DefaultBodyLimit::disable()))
         .route("/sandboxes/{id}/attach", any(attach_sandbox))
         .route("/sandboxes/{id}/proxy", any(proxy_sandbox))
         .merge(swagger_routes)
@@ -167,9 +167,9 @@ async fn exec_sandbox(
 async fn upload_files(
     state: axum::extract::State<AppState>,
     Path(id): Path<String>,
-    body: Bytes,
+    body: Body,
 ) -> SandboxResult<StatusCode> {
-    state.service.upload_archive(id, body.to_vec()).await?;
+    state.service.upload_archive(id, body).await?;
     Ok(StatusCode::OK)
 }
 
@@ -275,7 +275,7 @@ mod tests {
             Ok(())
         }
 
-        async fn upload_archive(&self, _id: String, _archive: Vec<u8>) -> SandboxResult<()> {
+        async fn upload_archive(&self, _id: String, _archive: Body) -> SandboxResult<()> {
             Ok(())
         }
 

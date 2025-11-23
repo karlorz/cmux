@@ -5,8 +5,10 @@ use crate::models::{
 };
 use crate::service::SandboxService;
 use async_trait::async_trait;
+use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket};
 use chrono::{DateTime, Utc};
+use futures::StreamExt;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -284,6 +286,18 @@ alias g=git
         Ok(())
     }
 
+    async fn setup_gitconfig(&self, root_merged: &Path) -> SandboxResult<()> {
+        let root_home = root_merged.join("root");
+        fs::create_dir_all(&root_home).await?;
+        
+        let gitconfig = root_home.join(".gitconfig");
+        let content = r#"[safe]
+	directory = *
+"#;
+        fs::write(&gitconfig, content).await?;
+        Ok(())
+    }
+
     async fn spawn_bubblewrap(
         &self,
         request: &CreateSandboxRequest,
@@ -304,6 +318,7 @@ alias g=git
         let root_merged = system_dir.join("root-merged");
         fs::create_dir_all(&root_merged).await?;
         self.setup_bashrc(&root_merged).await?;
+        self.setup_gitconfig(&root_merged).await?;
 
         // Ensure we have valid DNS and hosts file in the overlay
         self.setup_dns(&etc_merged).await?;
@@ -907,7 +922,7 @@ impl SandboxService for BubblewrapService {
         Ok(())
     }
 
-    async fn upload_archive(&self, id_str: String, archive: Vec<u8>) -> SandboxResult<()> {
+    async fn upload_archive(&self, id_str: String, archive: Body) -> SandboxResult<()> {
         let id = self.resolve_id(&id_str).await?;
         let entry = {
             let sandboxes = self.sandboxes.lock().await;
@@ -917,12 +932,33 @@ impl SandboxService for BubblewrapService {
 
         let workspace = entry.handle.workspace;
         
-        tokio::task::spawn_blocking(move || {
-            let mut ar = tar::Archive::new(&archive[..]);
-            ar.unpack(&workspace).map_err(|e| SandboxError::Internal(format!("failed to unpack archive: {e}")))
-        })
-        .await
-        .map_err(|e| SandboxError::Internal(format!("join error: {e}")))?
+        let tar_path = find_binary("tar")?;
+
+        let mut command = Command::new(tar_path);
+        command.args(["-x", "-C"]);
+        command.arg(&workspace);
+        command.stdin(Stdio::piped());
+        command.stdout(Stdio::null());
+        command.stderr(Stdio::piped());
+
+        let mut child = command.spawn().map_err(|e| SandboxError::Internal(format!("failed to spawn tar: {e}")))?;
+        let mut stdin = child.stdin.take().ok_or(SandboxError::Internal("failed to open tar stdin".into()))?;
+
+        let mut stream = archive.into_data_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|e| SandboxError::Internal(format!("stream error: {e}")))?;
+            stdin.write_all(&chunk).await.map_err(|e| SandboxError::Internal(format!("failed to write to tar: {e}")))?;
+        }
+        drop(stdin);
+
+        let output = child.wait_with_output().await.map_err(|e| SandboxError::Internal(format!("failed to wait for tar: {e}")))?;
+        
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(SandboxError::Internal(format!("tar failed: {stderr}")));
+        }
+
+        Ok(())
     }
 
     async fn delete(&self, id_str: String) -> SandboxResult<Option<SandboxSummary>> {

@@ -1,4 +1,5 @@
 use assert_cmd::Command;
+use axum::body::Body;
 use cmux_sandbox::build_router;
 use cmux_sandbox::models::{
     CreateSandboxRequest,
@@ -110,11 +111,12 @@ impl SandboxService for MockService {
     async fn upload_archive(
         &self,
         _id: String,
-        archive: Vec<u8>,
+        archive: Body,
     ) -> cmux_sandbox::errors::SandboxResult<()> {
         self.record("upload_archive").await;
+        let bytes = axum::body::to_bytes(archive, usize::MAX).await.unwrap().to_vec();
         let mut guard = self.archives.lock().await;
-        guard.push(archive);
+        guard.push(bytes);
         Ok(())
     }
 
@@ -365,6 +367,54 @@ async fn cli_uploads_cwd_respecting_gitignore() {
         assert!(entries.iter().any(|e| e.contains("included.txt")), "included.txt missing");
         assert!(entries.iter().any(|e| e.contains(".gitignore")), ".gitignore missing");
         assert!(!entries.iter().any(|e| e.contains("ignored.txt")), "ignored.txt should be ignored");
+    }
+
+    server.abort();
+    let _ = server.await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cli_uploads_large_file() {
+    let service = Arc::new(MockService::new());
+    let app = build_router(service.clone());
+    let listener = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async {
+                tokio::signal::ctrl_c().await.ok();
+            })
+            .await
+            .ok();
+    });
+
+    let base_url = format!("http://{}", addr);
+    
+    // Setup temp dir
+    let temp_dir = tempfile::tempdir().unwrap();
+    let dir_path = temp_dir.path();
+    
+    // Create a 5MB file
+    let large_data = vec![0u8; 5 * 1024 * 1024];
+    std::fs::write(dir_path.join("large.bin"), &large_data).unwrap();
+    
+    Command::new(assert_cmd::cargo::cargo_bin!("cmux"))
+        .env("CMUX_SANDBOX_URL", &base_url)
+        .current_dir(dir_path)
+        .arg("new")
+        .assert()
+        .success();
+
+    // Check uploaded archive size
+    {
+        let archives = service.archives.lock().await;
+        assert_eq!(archives.len(), 1);
+        let data = &archives[0];
+        // The tar archive will be slightly larger than 5MB
+        assert!(data.len() >= 5 * 1024 * 1024);
     }
 
     server.abort();
