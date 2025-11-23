@@ -78,6 +78,15 @@ enum Command {
     /// Internal helper to proxy stdin/stdout to a TCP address
     #[command(name = "_internal-proxy", hide = true)]
     InternalProxy { address: String },
+
+    /// Start the sandbox server container
+    Start,
+    /// Stop the sandbox server container
+    Stop,
+    /// Restart the sandbox server container
+    Restart,
+    /// Show status of the sandbox server
+    Status,
 }
 
 #[derive(Subcommand, Debug)]
@@ -264,6 +273,19 @@ async fn run() -> anyhow::Result<()> {
         }
         Command::Browser { id } => {
             handle_browser(cli.base_url, id).await?;
+        }
+        Command::Start => {
+            handle_server_start().await?;
+        }
+        Command::Stop => {
+            handle_server_stop().await?;
+        }
+        Command::Restart => {
+            handle_server_stop().await?;
+            handle_server_start().await?;
+        }
+        Command::Status => {
+            handle_server_status(&cli.base_url).await?;
         }
         Command::Sandboxes(cmd) => match cmd {
             SandboxCommand::List => {
@@ -548,6 +570,148 @@ fn generate_ca() -> anyhow::Result<rcgen::Certificate> {
     params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     params.distinguished_name.push(DnType::CommonName, "cmux-sandbox-ca");
     Ok(rcgen::Certificate::from_params(params)?)
+}
+
+async fn handle_server_start() -> anyhow::Result<()> {
+    let container_name = std::env::var("CONTAINER_NAME").unwrap_or_else(|_| "cmux-sandbox-dev-run".into());
+    let port = std::env::var("CMUX_SANDBOX_PORT").unwrap_or_else(|_| "46831".into());
+    let image_name = std::env::var("IMAGE_NAME").unwrap_or_else(|_| "cmux-sandbox-dev".into());
+
+    // Check if container is already running
+    let output = tokio::process::Command::new("docker")
+        .args(["ps", "--filter", &format!("name=^/{}$", container_name), "--format", "{{.Names}}"])
+        .output()
+        .await?;
+    
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    if output_str.trim() == container_name {
+        eprintln!("Server container '{}' is already running.", container_name);
+        return Ok(());
+    }
+
+    eprintln!("Starting server container '{}' on port {}...", container_name, port);
+
+    // Force remove existing stopped container if any
+    let _ = tokio::process::Command::new("docker")
+        .args(["rm", "-f", &container_name])
+        .output()
+        .await;
+
+    let status = tokio::process::Command::new("docker")
+        .args([
+            "run",
+            "--privileged",
+            "-d",
+            "--name", &container_name,
+            "--cgroupns=host",
+            "--tmpfs", "/run",
+            "--tmpfs", "/run/lock",
+            "-v", "/sys/fs/cgroup:/sys/fs/cgroup:rw",
+            "--dns", "1.1.1.1",
+            "--dns", "8.8.8.8",
+            "-e", &format!("CMUX_SANDBOX_PORT={}", port),
+            "-p", &format!("{}:{}", port, port),
+            "-v", "cmux-sandbox-docker:/var/lib/docker",
+            "-v", "cmux-sandbox-data:/var/lib/cmux/sandboxes",
+            "--entrypoint", "/usr/local/bin/bootstrap-dind.sh",
+            &image_name,
+            "/usr/local/bin/cmux-sandboxd",
+            "--bind", "0.0.0.0",
+            "--port", &port,
+            "--data-dir", "/var/lib/cmux/sandboxes",
+        ])
+        .status()
+        .await?;
+
+    if !status.success() {
+        return Err(anyhow::anyhow!("Failed to start container"));
+    }
+
+    eprintln!("Waiting for server to be ready...");
+    for _ in 0..30 {
+        if reqwest::get(format!("http://127.0.0.1:{}/healthz", port)).await.is_ok() {
+            eprintln!("Server is up!");
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+
+    Err(anyhow::anyhow!("Server failed to start within 15s"))
+}
+
+async fn handle_server_stop() -> anyhow::Result<()> {
+    let container_name = std::env::var("CONTAINER_NAME").unwrap_or_else(|_| "cmux-sandbox-dev-run".into());
+    eprintln!("Stopping server container '{}'...", container_name);
+    let status = tokio::process::Command::new("docker")
+        .args(["rm", "-f", &container_name])
+        .status()
+        .await?;
+    
+    if status.success() {
+        eprintln!("Server stopped.");
+    } else {
+        eprintln!("Failed to stop server (maybe it wasn't running?)");
+    }
+    Ok(())
+}
+
+async fn handle_server_status(base_url: &str) -> anyhow::Result<()> {
+    let container_name = std::env::var("CONTAINER_NAME").unwrap_or_else(|_| "cmux-sandbox-dev-run".into());
+    
+    println!("cmux CLI version: {}", env!("CARGO_PKG_VERSION"));
+    println!("Server URL: {}", base_url);
+    println!("----------------------------------------");
+
+    // 1. Check Docker Container
+    let output = tokio::process::Command::new("docker")
+        .args(["inspect", "--format", "{{.State.Status}}", &container_name])
+        .output()
+        .await;
+
+    let container_status = match output {
+        Ok(o) if o.status.success() => {
+            let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            if s == "running" {
+                format!("✅ Running ({})", container_name)
+            } else {
+                format!("⚠️  State: {} ({})", s, container_name)
+            }
+        }
+        _ => format!("❌ Not found / Stopped ({})", container_name),
+    };
+    println!("Container: {}", container_status);
+
+    // 2. Check Server Health
+    let client = Client::builder().timeout(Duration::from_secs(2)).build()?;
+    let health_url = format!("{}/healthz", base_url.trim_end_matches('/'));
+    let server_health = match client.get(&health_url).send().await {
+        Ok(resp) if resp.status().is_success() => "✅ Healthy".to_string(),
+        Ok(resp) => format!("⚠️  Unhealthy (Status: {})", resp.status()),
+        Err(e) => format!("❌ Unreachable ({})", e),
+    };
+    println!("Server:    {}", server_health);
+
+    // 3. Check Sandboxes (only if server is healthy)
+    if server_health.contains("✅") {
+        let sandboxes_url = format!("{}/sandboxes", base_url.trim_end_matches('/'));
+        match client.get(&sandboxes_url).send().await {
+            Ok(resp) => {
+                if let Ok(sandboxes) = resp.json::<Vec<SandboxSummary>>().await {
+                    println!("Sandboxes: {} active", sandboxes.len());
+                    for s in sandboxes {
+                        println!("  - [{}] {} ({:?})", s.id, s.name, s.status);
+                    }
+                } else {
+                    println!("Sandboxes: ❓ Failed to parse response");
+                }
+            }
+            Err(_) => println!("Sandboxes: ❓ Failed to fetch"),
+        }
+    } else {
+        println!("Sandboxes: (server unreachable)");
+    }
+
+    Ok(())
 }
 
 async fn handle_connection(
