@@ -10,7 +10,10 @@ use agent_client_protocol::{
 };
 use anyhow::Result;
 use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode, KeyModifiers},
+    event::{
+        DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode, KeyModifiers,
+        MouseEventKind,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -147,6 +150,10 @@ struct App<'a> {
     textarea: TextArea<'a>,
     client_connection: Option<Arc<ClientSideConnection>>,
     session_id: Option<SessionId>,
+    /// User-controlled scroll offset from bottom. 0 = at bottom (auto-scroll), >0 = scrolled up
+    scroll_offset_from_bottom: u16,
+    /// Cached total lines for scroll calculations
+    cached_total_lines: u16,
 }
 
 impl<'a> App<'a> {
@@ -164,7 +171,31 @@ impl<'a> App<'a> {
             textarea,
             client_connection: None,
             session_id: None,
+            scroll_offset_from_bottom: 0,
+            cached_total_lines: 0,
         }
+    }
+
+    /// Scroll up by the given number of lines
+    fn scroll_up(&mut self, lines: u16) {
+        let max_scroll = self.cached_total_lines;
+        self.scroll_offset_from_bottom =
+            self.scroll_offset_from_bottom.saturating_add(lines).min(max_scroll);
+    }
+
+    /// Scroll down by the given number of lines
+    fn scroll_down(&mut self, lines: u16) {
+        self.scroll_offset_from_bottom = self.scroll_offset_from_bottom.saturating_sub(lines);
+    }
+
+    /// Scroll to the very top
+    fn scroll_to_top(&mut self) {
+        self.scroll_offset_from_bottom = self.cached_total_lines;
+    }
+
+    /// Scroll to the very bottom (auto-scroll mode)
+    fn scroll_to_bottom(&mut self) {
+        self.scroll_offset_from_bottom = 0;
     }
 
     fn on_session_update(&mut self, notification: SessionNotification) {
@@ -527,7 +558,7 @@ async fn run_app<B: ratatui::backend::Backend>(
     let mut reader = EventStream::new();
 
     loop {
-        terminal.draw(|f| ui(f, &app))?;
+        terminal.draw(|f| ui(f, &mut app))?;
 
         tokio::select! {
             Some(event) = rx.recv() => {
@@ -537,25 +568,56 @@ async fn run_app<B: ratatui::backend::Backend>(
             }
             Some(Ok(event)) = reader.next() => {
                 // log_debug(&format!("Event: {:?}", event));
-                if let Event::Key(key) = event {
-                     if key.modifiers.contains(KeyModifiers::CONTROL) {
-                         match key.code {
-                            KeyCode::Char('q') | KeyCode::Char('c') | KeyCode::Char('d') => return Ok(()),
-                            KeyCode::Char('j') => { app.textarea.insert_newline(); },
-                            _ => { app.textarea.input(key); }
+                match event {
+                    Event::Key(key) => {
+                        if key.modifiers.contains(KeyModifiers::CONTROL) {
+                            match key.code {
+                                KeyCode::Char('q') | KeyCode::Char('c') | KeyCode::Char('d') => return Ok(()),
+                                KeyCode::Char('j') => { app.textarea.insert_newline(); },
+                                _ => { app.textarea.input(key); }
+                            }
+                        } else {
+                            match key.code {
+                                KeyCode::Enter => {
+                                    app.send_message().await;
+                                }
+                                KeyCode::PageUp => {
+                                    app.scroll_up(10);
+                                }
+                                KeyCode::PageDown => {
+                                    app.scroll_down(10);
+                                }
+                                KeyCode::Home => {
+                                    app.scroll_to_top();
+                                }
+                                KeyCode::End => {
+                                    app.scroll_to_bottom();
+                                }
+                                _ => {
+                                    app.textarea.input(key);
+                                }
+                            }
                         }
-                    } else if key.code == KeyCode::Enter {
-                        app.send_message().await;
-                    } else {
-                        app.textarea.input(key);
                     }
+                    Event::Mouse(mouse_event) => {
+                        match mouse_event.kind {
+                            MouseEventKind::ScrollUp => {
+                                app.scroll_up(3);
+                            }
+                            MouseEventKind::ScrollDown => {
+                                app.scroll_down(3);
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
     }
 }
 
-fn ui(f: &mut ratatui::Frame, app: &App) {
+fn ui(f: &mut ratatui::Frame, app: &mut App) {
     // Calculate dynamic height based on line count
     // +2 accounts for top and bottom borders
     // Clamp between 3 (1 line) and 12 (10 lines)
@@ -612,11 +674,18 @@ fn ui(f: &mut ratatui::Frame, app: &App) {
         }
     }
 
-    // Auto-scroll to bottom approximation
-    // We count total lines generated.
+    // Calculate scroll offset
     let total_lines = lines.len() as u16;
     let view_height = chunks[0].height;
-    let scroll_offset = total_lines.saturating_sub(view_height);
+
+    // Update cached total lines for scroll calculations
+    app.cached_total_lines = total_lines.saturating_sub(view_height);
+
+    // Calculate actual scroll offset from top
+    // scroll_offset_from_bottom == 0 means we're at the bottom (auto-scroll)
+    // scroll_offset_from_bottom > 0 means we're scrolled up
+    let max_scroll = total_lines.saturating_sub(view_height);
+    let scroll_offset = max_scroll.saturating_sub(app.scroll_offset_from_bottom);
 
     let history_paragraph = Paragraph::new(lines)
         .wrap(Wrap { trim: false })
