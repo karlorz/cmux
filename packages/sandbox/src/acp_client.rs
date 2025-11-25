@@ -1158,8 +1158,13 @@ async fn run_demo_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>)
 
         // Wait for at least one event
         if let Some(Ok(event)) = reader.next().await {
-            if process_demo_event(&mut app, event) {
-                return Ok(());
+            // Track scroll delta for batched processing
+            let mut scroll_delta: i32 = 0;
+
+            if let Some(exit) = process_demo_event(&mut app, event, &mut scroll_delta) {
+                if exit {
+                    return Ok(());
+                }
             }
 
             // Drain any additional pending events to batch scroll operations
@@ -1167,22 +1172,32 @@ async fn run_demo_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>)
             while let Ok(Some(Ok(event))) =
                 tokio::time::timeout(std::time::Duration::from_millis(5), reader.next()).await
             {
-                if process_demo_event(&mut app, event) {
-                    return Ok(());
+                if let Some(exit) = process_demo_event(&mut app, event, &mut scroll_delta) {
+                    if exit {
+                        return Ok(());
+                    }
                 }
+            }
+
+            // Apply accumulated scroll
+            if scroll_delta > 0 {
+                app.scroll_up(scroll_delta as u16);
+            } else if scroll_delta < 0 {
+                app.scroll_down((-scroll_delta) as u16);
             }
         }
     }
 }
 
-/// Process a single event, returns true if should exit
-fn process_demo_event(app: &mut App, event: Event) -> bool {
+/// Process a single event. Returns Some(true) to exit, Some(false) to continue, None for scroll events.
+/// Scroll events accumulate into scroll_delta for batched processing.
+fn process_demo_event(app: &mut App, event: Event, scroll_delta: &mut i32) -> Option<bool> {
     match event {
         Event::Key(key) => {
             if key.modifiers.contains(KeyModifiers::CONTROL) {
                 match key.code {
                     KeyCode::Char('q') | KeyCode::Char('c') | KeyCode::Char('d') => {
-                        return true;
+                        return Some(true);
                     }
                     _ => {}
                 }
@@ -1192,19 +1207,22 @@ fn process_demo_event(app: &mut App, event: Event) -> bool {
                     KeyCode::PageDown => app.scroll_down(10),
                     KeyCode::Home => app.scroll_to_top(),
                     KeyCode::End => app.scroll_to_bottom(),
-                    KeyCode::Char('q') => return true,
+                    KeyCode::Char('q') => return Some(true),
                     _ => {}
                 }
             }
+            Some(false)
         }
-        Event::Mouse(mouse_event) => match mouse_event.kind {
-            MouseEventKind::ScrollUp => app.scroll_up(1),
-            MouseEventKind::ScrollDown => app.scroll_down(1),
-            _ => {}
-        },
-        _ => {}
+        Event::Mouse(mouse_event) => {
+            match mouse_event.kind {
+                MouseEventKind::ScrollUp => *scroll_delta += 1,
+                MouseEventKind::ScrollDown => *scroll_delta -= 1,
+                _ => {}
+            }
+            None // Scroll events are batched, don't signal exit
+        }
+        _ => Some(false),
     }
-    false
 }
 
 fn create_demo_chat_entries() -> Vec<ChatEntry> {
