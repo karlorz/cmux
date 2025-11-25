@@ -72,6 +72,13 @@ pub enum MuxCommand {
     ScrollToBottom,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandMatch {
+    pub command: MuxCommand,
+    pub score: i64,
+    pub label_indices: Vec<usize>,
+}
+
 impl MuxCommand {
     /// Returns all available commands.
     pub fn all() -> &'static [MuxCommand] {
@@ -444,13 +451,52 @@ impl MuxCommand {
 
     /// Check if this command matches a query string (for filtering in palette).
     pub fn matches(&self, query: &str) -> bool {
-        if query.is_empty() {
-            return true;
+        self.fuzzy_match(query).is_some()
+    }
+
+    pub(crate) fn fuzzy_match(&self, query: &str) -> Option<CommandMatch> {
+        let trimmed = query.trim();
+
+        if trimmed.is_empty() {
+            return Some(CommandMatch {
+                command: *self,
+                score: 0,
+                label_indices: Vec::new(),
+            });
         }
-        let query_lower = query.to_lowercase();
-        self.label().to_lowercase().contains(&query_lower)
-            || self.description().to_lowercase().contains(&query_lower)
-            || self.category().to_lowercase().contains(&query_lower)
+
+        let label_match = smart_match(trimmed, self.label());
+        let description_match = smart_match(trimmed, self.description());
+        let category_match = smart_match(trimmed, self.category());
+
+        let mut best_score: Option<i64> = None;
+
+        if let Some(m) = &label_match {
+            best_score = Some(m.score + 200);
+        }
+
+        if let Some(m) = description_match {
+            let weighted = m.score + 100;
+            if best_score.is_none_or(|s| weighted > s) {
+                best_score = Some(weighted);
+            }
+        }
+
+        if let Some(m) = category_match {
+            let weighted = m.score + 50;
+            if best_score.is_none_or(|s| weighted > s) {
+                best_score = Some(weighted);
+            }
+        }
+
+        let score = best_score?;
+        let label_indices = label_match.map(|m| m.indices).unwrap_or_default();
+
+        Some(CommandMatch {
+            command: *self,
+            score,
+            label_indices,
+        })
     }
 
     /// Try to match a key event to a command.
@@ -513,6 +559,136 @@ fn format_keybinding(modifiers: KeyModifiers, keycode: KeyCode) -> String {
     parts.join("+")
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FuzzyMatch {
+    score: i64,
+    indices: Vec<usize>,
+}
+
+/// Normalize whitespace in a string: replace all whitespace variants with regular space
+/// and collapse multiple spaces into one.
+fn normalize_whitespace(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_whitespace() { ' ' } else { c })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn smart_match(query: &str, candidate: &str) -> Option<FuzzyMatch> {
+    // Normalize whitespace (handles non-breaking spaces, tabs, etc.)
+    let query_normalized = normalize_whitespace(query);
+    let candidate_normalized = normalize_whitespace(candidate);
+
+    // Case-insensitive comparison
+    let query_lower = query_normalized.to_lowercase();
+    let candidate_lower = candidate_normalized.to_lowercase();
+
+    // 1. Substring Match (on normalized strings)
+    if candidate_lower.contains(&query_lower) {
+        // For substring match, highlight all characters in the candidate
+        // since we're matching the full normalized query
+        let indices: Vec<usize> = candidate.char_indices().map(|(idx, _)| idx).collect();
+
+        return Some(FuzzyMatch {
+            score: 1000 + query.len() as i64, // Prefer longer matches
+            indices,
+        });
+    }
+
+    // 2. Fuzzy Match (Subsequence) on normalized strings
+    // Match query chars against candidate chars, treating all whitespace as equivalent
+    let mut score = 0;
+    let mut indices = Vec::new();
+    let mut query_chars = query_lower.chars().peekable();
+    let mut last_match_pos: Option<usize> = None;
+    let mut consecutive_matches = 0;
+
+    for (idx, ch) in candidate.char_indices() {
+        // Normalize the character for comparison
+        let ch_lower = ch.to_lowercase().next().unwrap_or(ch);
+        let ch_normalized = if ch_lower.is_whitespace() {
+            ' '
+        } else {
+            ch_lower
+        };
+
+        if let Some(&q_char) = query_chars.peek() {
+            // Also normalize the query char for comparison
+            let q_normalized = if q_char.is_whitespace() { ' ' } else { q_char };
+
+            if ch_normalized == q_normalized {
+                // Match found
+                indices.push(idx);
+                query_chars.next(); // Advance query
+
+                // Scoring
+                let mut char_score = 10;
+
+                // Bonus for start of word (boundary)
+                if is_boundary(candidate, idx) {
+                    char_score += 10;
+                }
+
+                // Bonus for consecutive matches
+                if let Some(last) = last_match_pos {
+                    if idx == last + ch.len_utf8() {
+                        consecutive_matches += 1;
+                        char_score += 5 * consecutive_matches; // Growing bonus
+                    } else {
+                        consecutive_matches = 0;
+                        // Penalty for gaps
+                        let gap = idx.saturating_sub(last + 1);
+                        char_score -= (gap as i64).min(5);
+                    }
+                } else {
+                    // First match
+                    if idx == 0 {
+                        char_score += 10; // Bonus for matching start of string
+                    }
+                }
+
+                score += char_score;
+                last_match_pos = Some(idx);
+            }
+        }
+    }
+
+    if query_chars.peek().is_none() {
+        // All query chars matched
+        Some(FuzzyMatch { score, indices })
+    } else {
+        None
+    }
+}
+
+fn is_boundary(text: &str, byte_idx: usize) -> bool {
+    if byte_idx == 0 {
+        return true;
+    }
+
+    let mut chars_before = text[..byte_idx].chars();
+    let mut chars_after = text[byte_idx..].chars();
+
+    let prev = chars_before.next_back();
+    let current = chars_after.next();
+
+    if let Some(prev_char) = prev {
+        if prev_char.is_whitespace() || prev_char == '-' || prev_char == '_' || prev_char == '/' {
+            return true;
+        }
+
+        if let Some(curr_char) = current {
+            if prev_char.is_lowercase() && curr_char.is_uppercase() {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -541,9 +717,56 @@ mod tests {
     #[test]
     fn command_matching_works() {
         assert!(MuxCommand::SplitHorizontal.matches("split"));
+        assert!(MuxCommand::SplitHorizontal.matches("splt"));
         assert!(MuxCommand::SplitHorizontal.matches("horizontal"));
         assert!(MuxCommand::SplitHorizontal.matches("pane"));
         assert!(!MuxCommand::SplitHorizontal.matches("xyz"));
+    }
+
+    #[test]
+    fn fuzzy_matching_provides_indices() {
+        let result = MuxCommand::SplitHorizontal
+            .fuzzy_match("splith")
+            .expect("should match fuzzily");
+        assert_eq!(result.label_indices.len(), 6);
+    }
+
+    #[test]
+    fn fuzzy_matching_handles_spaces_and_stuttered_terms() {
+        let result = MuxCommand::FocusMainArea.fuzzy_match("fmain ar");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn fuzzy_matching_handles_full_phrase() {
+        let result = MuxCommand::FocusMainArea.fuzzy_match("Focus Main Area");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn fuzzy_matching_various_patterns() {
+        // These should all match "Focus Main Area"
+        let patterns_that_should_match = [
+            "fma",                           // First letters of each word
+            "FMA",                           // Uppercase first letters
+            "Focus Main Area",               // Exact match
+            "focus main area",               // Lowercase exact
+            "fmainarea",                     // First letter + rest concatenated
+            "focusmainarea",                 // All words concatenated (no spaces)
+            "focus",                         // Just first word
+            "main area",                     // Substring
+            "foc main",                      // Partial first word + second word
+            "Focus\u{00A0}Main\u{00A0}Area", // Non-breaking spaces (pasted from web)
+        ];
+
+        for pattern in patterns_that_should_match {
+            let result = MuxCommand::FocusMainArea.fuzzy_match(pattern);
+            assert!(
+                result.is_some(),
+                "Pattern '{}' should match 'Focus Main Area'",
+                pattern
+            );
+        }
     }
 
     #[test]

@@ -459,6 +459,7 @@ fn render_command_palette(f: &mut Frame, app: &MuxApp) {
 
     let mut lines: Vec<Line<'_>> = Vec::new();
     let mut current_category: Option<&str> = None;
+    let mut selected_line_index: Option<usize> = None;
 
     for item in app.command_palette.get_items() {
         match item {
@@ -477,7 +478,13 @@ fn render_command_palette(f: &mut Frame, app: &MuxApp) {
             PaletteItem::Command {
                 command,
                 is_highlighted,
+                label_highlights,
             } => {
+                // Track the line index of the selected item
+                if is_highlighted {
+                    selected_line_index = Some(lines.len());
+                }
+
                 let prefix = if is_highlighted { "▶ " } else { "  " };
                 let keybinding = command.keybinding_str();
 
@@ -494,12 +501,22 @@ fn render_command_palette(f: &mut Frame, app: &MuxApp) {
                 // Calculate padding for right-aligned keybinding
                 let label = command.label();
                 let kb_width = keybinding.len();
-                let label_width = items_area.width as usize - kb_width - 4;
+                let label_width = items_area
+                    .width
+                    .saturating_sub(4)
+                    .saturating_sub(kb_width as u16) as usize;
 
-                let mut spans = vec![
-                    Span::styled(prefix, style),
-                    Span::styled(format!("{:<width$}", label, width = label_width), style),
-                ];
+                let mut spans = vec![Span::styled(prefix, style)];
+                let mut label_spans =
+                    highlighted_spans(label, &label_highlights, style, is_highlighted);
+
+                let label_len = label.chars().count();
+                let padding = label_width.saturating_sub(label_len);
+                if padding > 0 {
+                    label_spans.push(Span::styled(" ".repeat(padding), style));
+                }
+
+                spans.append(&mut label_spans);
 
                 if !keybinding.is_empty() {
                     spans.push(Span::styled(keybinding, kb_style));
@@ -510,10 +527,15 @@ fn render_command_palette(f: &mut Frame, app: &MuxApp) {
         }
     }
 
-    // Handle scrolling
+    // Handle scrolling - ensure selected item is visible
     let visible_lines = items_area.height as usize;
-    let scroll_offset = if app.command_palette.selected_index >= visible_lines {
-        app.command_palette.selected_index - visible_lines + 1
+    let scroll_offset = if let Some(selected_line) = selected_line_index {
+        if selected_line >= visible_lines {
+            // Selected item is below visible area - scroll to show it at bottom
+            selected_line - visible_lines + 1
+        } else {
+            0
+        }
     } else {
         0
     };
@@ -533,6 +555,51 @@ fn render_command_palette(f: &mut Frame, app: &MuxApp) {
         Style::default().fg(Color::DarkGray),
     ));
     f.render_widget(help, help_area);
+}
+
+fn highlighted_spans<'a>(
+    text: &'a str,
+    highlights: &[usize],
+    base_style: Style,
+    is_selected: bool,
+) -> Vec<Span<'a>> {
+    if highlights.is_empty() {
+        return vec![Span::styled(text.to_string(), base_style)];
+    }
+
+    let mut sorted_indices = highlights.to_vec();
+    sorted_indices.sort_unstable();
+    sorted_indices.dedup();
+
+    let mut spans: Vec<Span<'a>> = Vec::new();
+    let mut last_idx = 0usize;
+
+    for idx in sorted_indices {
+        if idx > text.len() {
+            continue;
+        }
+
+        if idx > last_idx {
+            spans.push(Span::styled(text[last_idx..idx].to_string(), base_style));
+        }
+
+        if let Some(ch) = text[idx..].chars().next() {
+            let mut highlight_style = base_style.add_modifier(Modifier::BOLD);
+            if is_selected {
+                highlight_style = highlight_style.add_modifier(Modifier::UNDERLINED);
+            }
+            spans.push(Span::styled(ch.to_string(), highlight_style));
+            last_idx = idx + ch.len_utf8();
+        } else {
+            last_idx = idx;
+        }
+    }
+
+    if last_idx < text.len() {
+        spans.push(Span::styled(text[last_idx..].to_string(), base_style));
+    }
+
+    spans
 }
 
 /// Render help overlay showing all keybindings.
