@@ -19,80 +19,14 @@ use crate::acp_client::logging::log_debug;
 use crate::acp_client::provider::AcpProvider;
 use crate::acp_client::state::{App, ConnectionState, PaletteCommand, UiMode};
 use crate::acp_client::ui::ui;
+use crate::acp_client::workspace_sync::WorkspaceSyncStatus;
 
-pub async fn run_chat_tui(
-    base_url: String,
-    sandbox_id: String,
-    provider: AcpProvider,
-) -> Result<()> {
-    let mut stdout = std::io::stdout();
-    execute!(
-        stdout,
-        EnterAlternateScreen,
-        EnableMouseCapture,
-        EnableBracketedPaste
-    )?;
-    enable_raw_mode()?;
-
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    let local = tokio::task::LocalSet::new();
-    let res = local
-        .run_until(run_main_loop(&mut terminal, base_url, sandbox_id, provider))
-        .await;
-
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        DisableMouseCapture,
-        LeaveAlternateScreen,
-        DisableBracketedPaste
-    )?;
-    terminal.show_cursor()?;
-
-    match res {
-        Ok(_) => Ok(()),
-        Err(e) => {
-            eprintln!("\n\x1b[31mError: {}\x1b[0m", e);
-            if let Ok(logs) = std::fs::read_to_string("/tmp/cmux-chat.log") {
-                let lines: Vec<&str> = logs.lines().rev().take(5).collect();
-                if !lines.is_empty() {
-                    eprintln!("\nRecent logs:");
-                    for line in lines.iter().rev() {
-                        eprintln!("  {}", line);
-                    }
-                }
-            }
-            Err(anyhow::anyhow!(e))
-        }
-    }
-}
-
-async fn run_main_loop<B: ratatui::backend::Backend>(
-    terminal: &mut Terminal<B>,
+fn spawn_provider_tasks(
+    tx: mpsc::UnboundedSender<AppEvent>,
     base_url: String,
     sandbox_id: String,
     initial_provider: AcpProvider,
-) -> Result<()> {
-    log_debug(&format!(
-        "Starting run_main_loop with provider: {}",
-        initial_provider.display_name()
-    ));
-    let (tx, rx) = mpsc::unbounded_channel();
-
-    let mut app = App::new(
-        initial_provider,
-        tx.clone(),
-        base_url.clone(),
-        sandbox_id.clone(),
-    );
-    app.connection_state = ConnectionState::Connecting;
-
-    for provider in AcpProvider::all() {
-        app.providers_loading.push(*provider);
-    }
-
+) {
     for provider in AcpProvider::all() {
         let tx_clone = tx.clone();
         let base_url_clone = base_url.clone();
@@ -132,6 +66,141 @@ async fn run_main_loop<B: ratatui::backend::Backend>(
             });
         }
     }
+}
+
+pub async fn run_chat_tui(
+    base_url: String,
+    sandbox_id: String,
+    provider: AcpProvider,
+) -> Result<()> {
+    run_chat_tui_with_workspace_status(base_url, sandbox_id, provider, None).await
+}
+
+pub async fn run_chat_tui_with_workspace_status(
+    base_url: String,
+    sandbox_id: String,
+    provider: AcpProvider,
+    workspace_status_rx: Option<mpsc::UnboundedReceiver<WorkspaceSyncStatus>>,
+) -> Result<()> {
+    let mut stdout = std::io::stdout();
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        EnableMouseCapture,
+        EnableBracketedPaste
+    )?;
+    enable_raw_mode()?;
+
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    let local = tokio::task::LocalSet::new();
+    let res = local
+        .run_until(run_main_loop(
+            &mut terminal,
+            base_url,
+            sandbox_id,
+            provider,
+            workspace_status_rx,
+        ))
+        .await;
+
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        DisableMouseCapture,
+        LeaveAlternateScreen,
+        DisableBracketedPaste
+    )?;
+    terminal.show_cursor()?;
+
+    match res {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            eprintln!("\n\x1b[31mError: {}\x1b[0m", e);
+            if let Ok(logs) = std::fs::read_to_string("/tmp/cmux-chat.log") {
+                let lines: Vec<&str> = logs.lines().rev().take(5).collect();
+                if !lines.is_empty() {
+                    eprintln!("\nRecent logs:");
+                    for line in lines.iter().rev() {
+                        eprintln!("  {}", line);
+                    }
+                }
+            }
+            Err(anyhow::anyhow!(e))
+        }
+    }
+}
+
+async fn run_main_loop<B: ratatui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    base_url: String,
+    sandbox_id: String,
+    initial_provider: AcpProvider,
+    workspace_status_rx: Option<mpsc::UnboundedReceiver<WorkspaceSyncStatus>>,
+) -> Result<()> {
+    log_debug(&format!(
+        "Starting run_main_loop with provider: {}",
+        initial_provider.display_name()
+    ));
+    let (tx, rx) = mpsc::unbounded_channel();
+
+    let provider_tasks_started = workspace_status_rx.is_none();
+
+    if let Some(mut workspace_rx) = workspace_status_rx {
+        let tx_clone = tx.clone();
+        let base_url_clone = base_url.clone();
+        let sandbox_id_clone = sandbox_id.clone();
+        let initial_provider_clone = initial_provider;
+        let mut tasks_started = provider_tasks_started;
+        tokio::task::spawn_local(async move {
+            while let Some(status) = workspace_rx.recv().await {
+                let is_done = matches!(
+                    status,
+                    WorkspaceSyncStatus::Completed | WorkspaceSyncStatus::Failed(_)
+                );
+                let _ = tx_clone.send(AppEvent::WorkspaceSyncStatus(status));
+                if !tasks_started && is_done {
+                    tasks_started = true;
+                    spawn_provider_tasks(
+                        tx_clone.clone(),
+                        base_url_clone.clone(),
+                        sandbox_id_clone.clone(),
+                        initial_provider_clone,
+                    );
+                }
+            }
+            if !tasks_started {
+                spawn_provider_tasks(
+                    tx_clone,
+                    base_url_clone,
+                    sandbox_id_clone,
+                    initial_provider_clone,
+                );
+            }
+        });
+    }
+
+    let mut app = App::new(
+        initial_provider,
+        tx.clone(),
+        base_url.clone(),
+        sandbox_id.clone(),
+    );
+    app.connection_state = ConnectionState::Connecting;
+
+    for provider in AcpProvider::all() {
+        app.providers_loading.push(*provider);
+    }
+
+    if provider_tasks_started {
+        spawn_provider_tasks(
+            tx.clone(),
+            base_url.clone(),
+            sandbox_id.clone(),
+            initial_provider,
+        );
+    }
 
     log_debug("Running App UI loop...");
     run_app(terminal, app, rx).await?;
@@ -155,6 +224,9 @@ async fn run_app<B: ratatui::backend::Backend>(
                     AppEvent::SessionUpdate(notification) => app.on_session_update(*notification),
                     AppEvent::DebugMessage { direction, message } => {
                         app.add_debug_message(&direction, &message);
+                    }
+                    AppEvent::WorkspaceSyncStatus(status) => {
+                        app.update_workspace_sync_state(status);
                     }
                     AppEvent::ProviderSwitchComplete { provider, connection, session_id, model_state } => {
                         log_debug(&format!("Provider switch complete: {}", provider.display_name()));

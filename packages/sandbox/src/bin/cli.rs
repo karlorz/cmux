@@ -413,7 +413,8 @@ async fn run() -> anyhow::Result<()> {
             }
 
             // Upload auth files
-            if let Err(e) = upload_auth_files(&client, &cli.base_url, &summary.id.to_string()).await
+            if let Err(e) =
+                upload_auth_files(&client, &cli.base_url, &summary.id.to_string(), true).await
             {
                 eprintln!("Warning: Failed to upload auth files: {}", e);
             }
@@ -503,34 +504,58 @@ async fn run() -> anyhow::Result<()> {
                 let response = client.post(url).json(&body).send().await?;
                 let summary: SandboxSummary = parse_response(response).await?;
                 eprintln!("Created sandbox {}", summary.id);
+                let sandbox_id = summary.id.to_string();
 
-                // Upload directory (current directory)
                 let current_dir = std::env::current_dir()?;
-                eprintln!("Uploading directory: {}", current_dir.display());
-                let body = stream_directory(current_dir);
-                let url = format!(
-                    "{}/sandboxes/{}/files",
-                    cli.base_url.trim_end_matches('/'),
-                    summary.id
-                );
-                let response = client.post(url).body(body).send().await?;
-                if !response.status().is_success() {
-                    eprintln!("Failed to upload files: {}", response.status());
-                } else {
-                    eprintln!("Files uploaded.");
-                }
+                let (workspace_status_tx, workspace_status_rx) =
+                    tokio::sync::mpsc::unbounded_channel();
 
-                // Upload auth files
-                if let Err(e) =
-                    upload_auth_files(&client, &cli.base_url, &summary.id.to_string()).await
-                {
-                    eprintln!("Warning: Failed to upload auth files: {}", e);
-                }
+                let _ = workspace_status_tx.send(cmux_sandbox::WorkspaceSyncStatus::InProgress);
 
-                save_last_sandbox(&summary.id.to_string());
-                cmux_sandbox::run_chat_tui(cli.base_url, summary.id.to_string(), provider)
-                    .await
-                    .map_err(|e| anyhow::anyhow!(e))?;
+                let sync_base_url = cli.base_url.clone();
+                let sync_client = client.clone();
+                let sync_id = sandbox_id.clone();
+                let sync_dir = current_dir.clone();
+                let sync_status_tx = workspace_status_tx.clone();
+
+                tokio::spawn(async move {
+                    let workspace_result = upload_workspace_directory(
+                        &sync_client,
+                        &sync_base_url,
+                        &sync_id,
+                        sync_dir,
+                    )
+                    .await;
+
+                    if let Err(e) = workspace_result {
+                        let _ = sync_status_tx.send(cmux_sandbox::WorkspaceSyncStatus::Failed(
+                            format!("Workspace upload failed: {e}"),
+                        ));
+                        return;
+                    }
+
+                    let auth_result =
+                        upload_auth_files(&sync_client, &sync_base_url, &sync_id, false).await;
+
+                    if let Err(e) = auth_result {
+                        let _ = sync_status_tx.send(cmux_sandbox::WorkspaceSyncStatus::Failed(
+                            format!("Auth files upload failed: {e}"),
+                        ));
+                        return;
+                    }
+
+                    let _ = sync_status_tx.send(cmux_sandbox::WorkspaceSyncStatus::Completed);
+                });
+
+                save_last_sandbox(&sandbox_id);
+                cmux_sandbox::run_chat_tui_with_workspace_status(
+                    cli.base_url,
+                    sandbox_id,
+                    provider,
+                    Some(workspace_status_rx),
+                )
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?;
             }
         }
         Command::Auth(args) => match args.command {
@@ -612,7 +637,8 @@ async fn run() -> anyhow::Result<()> {
 
                     // Upload auth files
                     if let Err(e) =
-                        upload_auth_files(&client, &cli.base_url, &summary.id.to_string()).await
+                        upload_auth_files(&client, &cli.base_url, &summary.id.to_string(), true)
+                            .await
                     {
                         eprintln!("Warning: Failed to upload auth files: {}", e);
                     }
@@ -1509,7 +1535,31 @@ where
     }
     Ok(())
 }
-async fn upload_auth_files(client: &Client, base_url: &str, id: &str) -> anyhow::Result<()> {
+
+async fn upload_workspace_directory(
+    client: &Client,
+    base_url: &str,
+    id: &str,
+    path: PathBuf,
+) -> anyhow::Result<()> {
+    let body = stream_directory(path);
+    let url = format!("{}/sandboxes/{}/files", base_url.trim_end_matches('/'), id);
+    let response = client.post(url).body(body).send().await?;
+    if !response.status().is_success() {
+        return Err(anyhow::anyhow!(
+            "Failed to upload files: {}",
+            response.status()
+        ));
+    }
+    Ok(())
+}
+
+async fn upload_auth_files(
+    client: &Client,
+    base_url: &str,
+    id: &str,
+    log_progress: bool,
+) -> anyhow::Result<()> {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
     let home_path = PathBuf::from(home);
     let mut files_to_upload = Vec::new();
@@ -1525,7 +1575,9 @@ async fn upload_auth_files(client: &Client, base_url: &str, id: &str) -> anyhow:
         return Ok(());
     }
 
-    eprintln!("Uploading {} auth files...", files_to_upload.len());
+    if log_progress {
+        eprintln!("Uploading {} auth files...", files_to_upload.len());
+    }
 
     // Create a temporary directory structure for the tar
     // We'll upload to /workspace/__cmux_auth_temp and then move

@@ -14,6 +14,7 @@ use crate::acp_client::connection::connect_to_provider;
 use crate::acp_client::events::AppEvent;
 use crate::acp_client::markdown::normalize_code_fences;
 use crate::acp_client::provider::AcpProvider;
+use crate::acp_client::workspace_sync::WorkspaceSyncStatus;
 
 #[derive(Clone)]
 pub(crate) enum ChatEntry {
@@ -104,6 +105,14 @@ impl SwitchPaletteItem {
     }
 }
 
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) enum WorkspaceSyncState {
+    Idle,
+    Syncing,
+    Completed,
+    Failed(String),
+}
+
 pub(crate) struct App<'a> {
     pub(crate) history: Vec<ChatEntry>,
     pub(crate) textarea: TextArea<'a>,
@@ -125,6 +134,7 @@ pub(crate) struct App<'a> {
     pub(crate) provider_models: HashMap<AcpProvider, Option<Vec<(String, String)>>>,
     pub(crate) providers_loading: Vec<AcpProvider>,
     pub(crate) pending_model_switch: Option<ModelId>,
+    pub(crate) workspace_sync_state: WorkspaceSyncState,
 }
 
 impl<'a> App<'a> {
@@ -168,6 +178,7 @@ impl<'a> App<'a> {
             provider_models: HashMap::new(),
             providers_loading: vec![],
             pending_model_switch: None,
+            workspace_sync_state: WorkspaceSyncState::Idle,
         }
     }
 
@@ -507,6 +518,20 @@ impl<'a> App<'a> {
 
     pub(crate) fn scroll_to_bottom(&mut self) {
         self.scroll_offset_from_bottom = 0;
+    }
+
+    pub(crate) fn update_workspace_sync_state(&mut self, status: WorkspaceSyncStatus) {
+        let new_state = match status {
+            WorkspaceSyncStatus::InProgress => WorkspaceSyncState::Syncing,
+            WorkspaceSyncStatus::Completed => WorkspaceSyncState::Completed,
+            WorkspaceSyncStatus::Failed(error) => WorkspaceSyncState::Failed(error),
+        };
+
+        if self.workspace_sync_state == new_state {
+            return;
+        }
+
+        self.workspace_sync_state = new_state;
     }
 
     pub(crate) fn on_session_update(&mut self, notification: SessionNotification) {

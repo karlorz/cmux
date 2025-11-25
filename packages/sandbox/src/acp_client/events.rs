@@ -3,6 +3,7 @@ use std::sync::Arc;
 use agent_client_protocol::{ModelId, SessionId, SessionModelState, SessionNotification};
 
 use crate::acp_client::provider::AcpProvider;
+use crate::acp_client::workspace_sync::WorkspaceSyncStatus;
 
 pub(crate) enum AppEvent {
     SessionUpdate(Box<SessionNotification>),
@@ -44,4 +45,5 @@ pub(crate) enum AppEvent {
     ProviderModelsLoadFailed {
         provider: AcpProvider,
     },
+    WorkspaceSyncStatus(WorkspaceSyncStatus),
 }

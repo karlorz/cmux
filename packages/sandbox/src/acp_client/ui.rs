@@ -8,7 +8,7 @@ use tui_textarea::TextArea;
 
 use crate::acp_client::markdown::markdown_to_lines;
 use crate::acp_client::state::{
-    App, ChatEntry, ConnectionState, PaletteCommand, SwitchPaletteItem, UiMode,
+    App, ChatEntry, ConnectionState, PaletteCommand, SwitchPaletteItem, UiMode, WorkspaceSyncState,
 };
 
 /// Detect if terminal is in dark mode (cached at startup)
@@ -138,6 +138,9 @@ pub(crate) fn ui(f: &mut ratatui::Frame, app: &mut App) {
     let connecting_style = ratatui::style::Style::default()
         .fg(ratatui::style::Color::Yellow)
         .add_modifier(ratatui::style::Modifier::BOLD);
+    let error_style = ratatui::style::Style::default()
+        .fg(ratatui::style::Color::Red)
+        .add_modifier(ratatui::style::Modifier::BOLD);
     let debug_indicator_style = ratatui::style::Style::default().fg(ratatui::style::Color::Yellow);
 
     let mut status_spans = vec![Span::styled(
@@ -163,6 +166,16 @@ pub(crate) fn ui(f: &mut ratatui::Frame, app: &mut App) {
         ConnectionState::SwitchingProvider(_) => {
             status_spans.push(Span::styled(" (loading...)", connecting_style));
         }
+    }
+
+    match &app.workspace_sync_state {
+        WorkspaceSyncState::Syncing => {
+            status_spans.push(Span::styled(" │ syncing workspace...", connecting_style));
+        }
+        WorkspaceSyncState::Failed(_) => {
+            status_spans.push(Span::styled(" │ workspace sync failed", error_style));
+        }
+        WorkspaceSyncState::Idle | WorkspaceSyncState::Completed => {}
     }
 
     if app.debug_mode {
