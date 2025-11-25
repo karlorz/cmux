@@ -1,0 +1,239 @@
+name: Scheduled Release PR
+
+on:
+  schedule:
+    - cron: "30 12 * * *" # 4:30 AM PST
+    - cron: "0 3 * * *"   # 7:00 PM PST
+  workflow_dispatch:
+
+concurrency:
+  group: scheduled-release-pr
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  NODE_VERSION: "24"
+  DEFAULT_BRANCH: "main"
+
+jobs:
+  prepare-release:
+    name: Prepare release pull request
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          ref: ${{ env.DEFAULT_BRANCH }}
+
+      - name: Check for changes since last release
+        id: release_changes
+        run: |
+          set -euo pipefail
+          last_tag=$(git describe --tags --match "v[0-9]*" --abbrev=0 2>/dev/null || echo "")
+
+          if [ -z "$last_tag" ]; then
+            echo "No release tags found. Proceeding with release." >> "$GITHUB_STEP_SUMMARY"
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git diff --quiet "$last_tag"..HEAD; then
+            echo "No changes since last release ($last_tag)." >> "$GITHUB_STEP_SUMMARY"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Changes detected since last release ($last_tag)." >> "$GITHUB_STEP_SUMMARY"
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js
+        if: steps.release_changes.outputs.proceed == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Determine next version
+        id: version
+        if: steps.release_changes.outputs.proceed == 'true'
+        env:
+          DEFAULT_BRANCH: ${{ env.DEFAULT_BRANCH }}
+        run: |
+          set -euo pipefail
+          git checkout "$DEFAULT_BRANCH"
+          git pull --ff-only origin "$DEFAULT_BRANCH"
+
+          node <<'EOS' >> "$GITHUB_OUTPUT"
+          import { execSync } from 'node:child_process';
+          import { readFileSync } from 'node:fs';
+          import { join } from 'node:path';
+
+          const run = (command) => {
+            try {
+              return execSync(command, { encoding: 'utf8' }).trim();
+            } catch (error) {
+              return '';
+            }
+          };
+
+          const semverPattern = /^\d+\.\d+\.\d+$/;
+
+          const compare = (left, right) => {
+            const [lMajor, lMinor, lPatch] = left.split('.').map((part) => Number.parseInt(part, 10));
+            const [rMajor, rMinor, rPatch] = right.split('.').map((part) => Number.parseInt(part, 10));
+
+            if (lMajor !== rMajor) return lMajor > rMajor ? 1 : -1;
+            if (lMinor !== rMinor) return lMinor > rMinor ? 1 : -1;
+            if (lPatch !== rPatch) return lPatch > rPatch ? 1 : -1;
+            return 0;
+          };
+
+          const tagsRaw = run("git tag --list 'v[0-9]*'");
+          const tags = tagsRaw
+            .split(/\r?\n/)
+            .map((tag) => tag.trim())
+            .filter(Boolean)
+            .map((tag) => (tag.startsWith('v') ? tag.slice(1) : tag))
+            .filter((tag) => semverPattern.test(tag));
+
+          const packagePath = join('apps', 'client', 'package.json');
+          const packageVersion = JSON.parse(readFileSync(packagePath, 'utf8')).version;
+          if (typeof packageVersion !== 'string' || !semverPattern.test(packageVersion)) {
+            throw new Error('apps/client/package.json must contain a valid semver version');
+          }
+
+          const highestTag = tags.sort(compare)[tags.length - 1] ?? '';
+          const baseVersion = highestTag && compare(highestTag, packageVersion) > 0 ? highestTag : packageVersion;
+
+          const [major, minor, patch] = baseVersion.split('.').map((part) => Number.parseInt(part, 10));
+          const newVersion = `${major}.${minor}.${patch + 1}`;
+
+          if (!semverPattern.test(newVersion)) {
+            throw new Error(`Calculated version ${newVersion} is not valid semver`);
+          }
+
+          const localTagCheck = run(`git rev-parse -q --verify refs/tags/v${newVersion}`);
+          if (localTagCheck) {
+            throw new Error(`Tag v${newVersion} already exists locally`);
+          }
+
+          const remoteTagCheck = run(`git ls-remote --tags origin refs/tags/v${newVersion}`);
+          if (remoteTagCheck) {
+            throw new Error(`Tag v${newVersion} already exists on origin`);
+          }
+
+          const branchName = `chore/release-v${newVersion}`;
+
+          console.log(`base_version=${baseVersion}`);
+          console.log(`new_version=${newVersion}`);
+          console.log(`release_branch=${branchName}`);
+          EOS
+
+      - name: Update version and commit
+        if: steps.release_changes.outputs.proceed == 'true'
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.new_version }}
+          RELEASE_BRANCH: ${{ steps.version.outputs.release_branch }}
+          DEFAULT_BRANCH: ${{ env.DEFAULT_BRANCH }}
+        run: |
+          set -euo pipefail
+          git checkout -B "$RELEASE_BRANCH" "origin/$DEFAULT_BRANCH"
+
+          node <<'EOS'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { join } from 'node:path';
+
+          const packagePath = join('apps', 'client', 'package.json');
+          const packageJson = JSON.parse(readFileSync(packagePath, 'utf8'));
+          packageJson.version = process.env.NEW_VERSION;
+          writeFileSync(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
+          EOS
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add apps/client/package.json
+          if git diff --cached --quiet; then
+            echo "No version changes to commit" >> "$GITHUB_STEP_SUMMARY"
+          else
+            git commit -m "chore: release v${NEW_VERSION}"
+          fi
+
+      - name: Push release branch
+        if: steps.release_changes.outputs.proceed == 'true'
+        env:
+          RELEASE_BRANCH: ${{ steps.version.outputs.release_branch }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}"
+          git push --force-with-lease origin "$RELEASE_BRANCH"
+
+      - name: Create or update draft pull request
+        if: steps.release_changes.outputs.proceed == 'true'
+        id: create_or_update_draft_pull_request
+        uses: actions/github-script@v7
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.new_version }}
+          RELEASE_BRANCH: ${{ steps.version.outputs.release_branch }}
+          DEFAULT_BRANCH: ${{ env.DEFAULT_BRANCH }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { NEW_VERSION, RELEASE_BRANCH, DEFAULT_BRANCH } = process.env;
+            const { owner, repo } = context.repo;
+            const head = `${owner}:${RELEASE_BRANCH}`;
+            const title = `chore: release v${NEW_VERSION}`;
+            const body = [
+              `Automated release preparation for v${NEW_VERSION}.`,
+              '',
+              'This PR bumps the version for the next release. Merge to tag and publish.',
+            ].join('\n');
+
+            const existing = await github.paginate(github.rest.pulls.list, {
+              owner,
+              repo,
+              state: 'open',
+              head,
+            });
+
+            if (existing.length > 0) {
+              const pr = existing[0];
+              await github.rest.pulls.update({
+                owner,
+                repo,
+                pull_number: pr.number,
+                title,
+                body,
+                base: DEFAULT_BRANCH,
+                draft: true,
+              });
+              core.setOutput('pull_number', pr.number);
+              return;
+            }
+
+            const pr = await github.rest.pulls.create({
+              owner,
+              repo,
+              head: RELEASE_BRANCH,
+              base: DEFAULT_BRANCH,
+              title,
+              body,
+              draft: true,
+            });
+            core.setOutput('pull_number', pr.number);
+
+      - name: Summarize outcome
+        if: steps.release_changes.outputs.proceed == 'true'
+        run: |
+          pr_number="${{ steps.create_or_update_draft_pull_request.outputs.pull_number }}"
+          echo "Created or updated draft release PR for v${{ steps.version.outputs.new_version }}" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$pr_number" ]; then
+            echo "Pull request #: $pr_number" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Skip release (no changes)
+        if: steps.release_changes.outputs.proceed == 'false'
+        run: echo "Skipping release because no changes were detected since the last tag."
