@@ -414,7 +414,7 @@ fn render_status_bar(f: &mut Frame, app: &mut MuxApp, area: Rect) {
 }
 
 /// Render the command palette overlay.
-fn render_command_palette(f: &mut Frame, app: &MuxApp) {
+fn render_command_palette(f: &mut Frame, app: &mut MuxApp) {
     let area = f.area();
 
     let palette_width = 70u16.min(area.width.saturating_sub(4));
@@ -458,33 +458,28 @@ fn render_command_palette(f: &mut Frame, app: &MuxApp) {
     );
 
     let mut lines: Vec<Line<'_>> = Vec::new();
-    let mut current_category: Option<&str> = None;
-    let mut selected_line_index: Option<usize> = None;
 
-    for item in app.command_palette.get_items() {
+    let (items, selected_line_index) = app.command_palette.get_items();
+
+    for item in items {
         match item {
             PaletteItem::Header(text) => {
-                if current_category.is_some() {
+                if text.is_empty() {
                     lines.push(Line::raw("")); // Spacing between categories
+                } else {
+                    lines.push(Line::styled(
+                        format!("─ {} ─", text),
+                        Style::default()
+                            .fg(Color::DarkGray)
+                            .add_modifier(Modifier::BOLD),
+                    ));
                 }
-                lines.push(Line::styled(
-                    format!("─ {} ─", text),
-                    Style::default()
-                        .fg(Color::DarkGray)
-                        .add_modifier(Modifier::BOLD),
-                ));
-                current_category = Some(Box::leak(text.into_boxed_str()));
             }
             PaletteItem::Command {
                 command,
                 is_highlighted,
                 label_highlights,
             } => {
-                // Track the line index of the selected item
-                if is_highlighted {
-                    selected_line_index = Some(lines.len());
-                }
-
                 let prefix = if is_highlighted { "▶ " } else { "  " };
                 let keybinding = command.keybinding_str();
 
@@ -527,19 +522,14 @@ fn render_command_palette(f: &mut Frame, app: &MuxApp) {
         }
     }
 
-    // Handle scrolling - ensure selected item is visible
+    // Adjust scroll to keep selected item visible
     let visible_lines = items_area.height as usize;
-    let scroll_offset = if let Some(selected_line) = selected_line_index {
-        if selected_line >= visible_lines {
-            // Selected item is below visible area - scroll to show it at bottom
-            selected_line - visible_lines + 1
-        } else {
-            0
-        }
-    } else {
-        0
-    };
+    if let Some(selected_line) = selected_line_index {
+        app.command_palette
+            .adjust_scroll(selected_line, visible_lines);
+    }
 
+    let scroll_offset = app.command_palette.scroll_offset;
     let paragraph = Paragraph::new(lines).scroll((scroll_offset as u16, 0));
     f.render_widget(paragraph, items_area);
 

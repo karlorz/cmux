@@ -21,6 +21,7 @@ pub struct CommandPalette<'a> {
     pub visible: bool,
     pub search_input: TextArea<'a>,
     pub selected_index: usize,
+    pub scroll_offset: usize,
     filtered_commands: Vec<CommandMatch>,
 }
 
@@ -40,6 +41,7 @@ impl<'a> CommandPalette<'a> {
             visible: false,
             search_input,
             selected_index: 0,
+            scroll_offset: 0,
             filtered_commands: MuxCommand::all()
                 .iter()
                 .filter_map(|cmd| cmd.fuzzy_match(""))
@@ -56,6 +58,7 @@ impl<'a> CommandPalette<'a> {
         self.search_input
             .set_cursor_line_style(ratatui::style::Style::default());
         self.selected_index = 0;
+        self.scroll_offset = 0;
         self.update_filtered_commands();
     }
 
@@ -102,6 +105,7 @@ impl<'a> CommandPalette<'a> {
         if old_query != new_query {
             self.update_filtered_commands();
             self.selected_index = 0;
+            self.scroll_offset = 0;
         }
     }
 
@@ -138,9 +142,12 @@ impl<'a> CommandPalette<'a> {
     }
 
     /// Get palette items grouped by category for rendering.
-    pub fn get_items(&self) -> Vec<PaletteItem> {
+    /// Returns (items, selected_line_index) where selected_line_index is the
+    /// line number of the currently selected item (accounting for headers/spacers).
+    pub fn get_items(&self) -> (Vec<PaletteItem>, Option<usize>) {
         let mut items = Vec::new();
         let mut current_category: Option<&str> = None;
+        let mut selected_line_index = None;
 
         for (idx, matched) in self.filtered_commands.iter().enumerate() {
             let category = matched.command.category();
@@ -148,10 +155,16 @@ impl<'a> CommandPalette<'a> {
             // Add category header if it changed
             if current_category != Some(category) {
                 if current_category.is_some() {
-                    // Add spacing between categories (represented as empty header)
+                    // Add spacing between categories
+                    items.push(PaletteItem::Header(String::new()));
                 }
                 items.push(PaletteItem::Header(category.to_string()));
                 current_category = Some(category);
+            }
+
+            // Track line index of selected item
+            if idx == self.selected_index {
+                selected_line_index = Some(items.len());
             }
 
             items.push(PaletteItem::Command {
@@ -161,7 +174,21 @@ impl<'a> CommandPalette<'a> {
             });
         }
 
-        items
+        (items, selected_line_index)
+    }
+
+    /// Update scroll offset to keep selected item visible.
+    /// Call this after navigation with the visible height.
+    pub fn adjust_scroll(&mut self, selected_line: usize, visible_height: usize) {
+        // If selected item is above the visible area, scroll up
+        if selected_line < self.scroll_offset {
+            self.scroll_offset = selected_line;
+        }
+        // If selected item is below the visible area, scroll down
+        else if selected_line >= self.scroll_offset + visible_height {
+            self.scroll_offset = selected_line - visible_height + 1;
+        }
+        // Otherwise, keep current scroll position (don't jump)
     }
 
     /// Get count of filtered commands.
