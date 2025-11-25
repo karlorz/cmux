@@ -2,7 +2,7 @@ use tokio::sync::mpsc;
 
 use crate::mux::commands::MuxCommand;
 use crate::mux::events::MuxEvent;
-use crate::mux::layout::{Direction, NavDirection, Pane, PaneId, Workspace};
+use crate::mux::layout::{Direction, NavDirection, Pane, PaneId, SandboxId, WorkspaceManager};
 use crate::mux::palette::CommandPalette;
 use crate::mux::sidebar::Sidebar;
 use crate::mux::terminal::{SharedTerminalManager, TerminalBuffer};
@@ -17,8 +17,8 @@ pub enum FocusArea {
 
 /// The main application state for the multiplexer.
 pub struct MuxApp<'a> {
-    // Core state
-    pub workspace: Workspace,
+    // Core state - WorkspaceManager holds all sandbox workspaces
+    pub workspace_manager: WorkspaceManager,
     pub sidebar: Sidebar,
     pub command_palette: CommandPalette<'a>,
     pub focus: FocusArea,
@@ -45,8 +45,8 @@ pub struct MuxApp<'a> {
     // Terminal manager for handling sandbox connections
     pub terminal_manager: Option<SharedTerminalManager>,
 
-    // Currently selected sandbox ID (for terminal attachment)
-    pub selected_sandbox_id: Option<String>,
+    // Sandbox we need to connect to once available
+    pub pending_connect: Option<String>,
 
     // Flag to indicate we need to create a sandbox on startup
     pub needs_initial_sandbox: bool,
@@ -55,7 +55,7 @@ pub struct MuxApp<'a> {
 impl<'a> MuxApp<'a> {
     pub fn new(base_url: String, event_tx: mpsc::UnboundedSender<MuxEvent>) -> Self {
         Self {
-            workspace: Workspace::new(),
+            workspace_manager: WorkspaceManager::new(),
             sidebar: Sidebar::new(),
             command_palette: CommandPalette::new(),
             focus: FocusArea::MainArea,
@@ -67,8 +67,38 @@ impl<'a> MuxApp<'a> {
             renaming_tab: false,
             rename_input: None,
             terminal_manager: None,
-            selected_sandbox_id: None,
+            pending_connect: None,
             needs_initial_sandbox: false,
+        }
+    }
+
+    /// Get the currently selected sandbox ID.
+    pub fn selected_sandbox_id(&self) -> Option<SandboxId> {
+        self.workspace_manager.active_sandbox_id
+    }
+
+    /// Get the currently selected sandbox ID as a string.
+    pub fn selected_sandbox_id_string(&self) -> Option<String> {
+        self.workspace_manager
+            .active_sandbox_id
+            .map(|id| id.to_string())
+    }
+
+    /// Select a sandbox by its ID string and switch to its workspace.
+    pub fn select_sandbox(&mut self, sandbox_id_str: &str) -> bool {
+        if let Ok(sandbox_id) = sandbox_id_str.parse::<SandboxId>() {
+            if self.workspace_manager.has_sandbox(sandbox_id) {
+                self.workspace_manager.select_sandbox(sandbox_id);
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Add a new sandbox and create its workspace.
+    pub fn add_sandbox(&mut self, sandbox_id_str: &str, name: &str) {
+        if let Ok(sandbox_id) = sandbox_id_str.parse::<SandboxId>() {
+            self.workspace_manager.add_sandbox(sandbox_id, name);
         }
     }
 
@@ -85,9 +115,21 @@ impl<'a> MuxApp<'a> {
         guard.get_buffer(pane_id).cloned()
     }
 
-    /// Get the active pane ID
+    /// Get the active pane ID from the active workspace.
     pub fn active_pane_id(&self) -> Option<PaneId> {
-        self.workspace.active_tab().and_then(|tab| tab.active_pane)
+        self.workspace_manager
+            .active_tab()
+            .and_then(|tab| tab.active_pane)
+    }
+
+    /// Get the active tab from the active workspace.
+    pub fn active_tab(&self) -> Option<&crate::mux::layout::Tab> {
+        self.workspace_manager.active_tab()
+    }
+
+    /// Get the active tab from the active workspace mutably.
+    pub fn active_tab_mut(&mut self) -> Option<&mut crate::mux::layout::Tab> {
+        self.workspace_manager.active_tab_mut()
     }
 
     /// Set a status message that will be displayed temporarily.
@@ -110,21 +152,21 @@ impl<'a> MuxApp<'a> {
             // Navigation
             MuxCommand::FocusLeft => {
                 if self.focus == FocusArea::MainArea {
-                    if let Some(tab) = self.workspace.active_tab_mut() {
+                    if let Some(tab) = self.active_tab_mut() {
                         tab.navigate(NavDirection::Left);
                     }
                 }
             }
             MuxCommand::FocusRight => {
                 if self.focus == FocusArea::MainArea {
-                    if let Some(tab) = self.workspace.active_tab_mut() {
+                    if let Some(tab) = self.active_tab_mut() {
                         tab.navigate(NavDirection::Right);
                     }
                 }
             }
             MuxCommand::FocusUp => {
                 if self.focus == FocusArea::MainArea {
-                    if let Some(tab) = self.workspace.active_tab_mut() {
+                    if let Some(tab) = self.active_tab_mut() {
                         tab.navigate(NavDirection::Up);
                     }
                 } else if self.focus == FocusArea::Sidebar {
@@ -133,7 +175,7 @@ impl<'a> MuxApp<'a> {
             }
             MuxCommand::FocusDown => {
                 if self.focus == FocusArea::MainArea {
-                    if let Some(tab) = self.workspace.active_tab_mut() {
+                    if let Some(tab) = self.active_tab_mut() {
                         tab.navigate(NavDirection::Down);
                     }
                 } else if self.focus == FocusArea::Sidebar {
@@ -149,49 +191,53 @@ impl<'a> MuxApp<'a> {
                 self.focus = FocusArea::MainArea;
             }
             MuxCommand::NextPane => {
-                if let Some(tab) = self.workspace.active_tab_mut() {
+                if let Some(tab) = self.active_tab_mut() {
                     tab.next_pane();
                 }
             }
             MuxCommand::PrevPane => {
-                if let Some(tab) = self.workspace.active_tab_mut() {
+                if let Some(tab) = self.active_tab_mut() {
                     tab.prev_pane();
                 }
             }
-            MuxCommand::NextTab => self.workspace.next_tab(),
-            MuxCommand::PrevTab => self.workspace.prev_tab(),
-            MuxCommand::GoToTab1 => self.workspace.go_to_tab(0),
-            MuxCommand::GoToTab2 => self.workspace.go_to_tab(1),
-            MuxCommand::GoToTab3 => self.workspace.go_to_tab(2),
-            MuxCommand::GoToTab4 => self.workspace.go_to_tab(3),
-            MuxCommand::GoToTab5 => self.workspace.go_to_tab(4),
-            MuxCommand::GoToTab6 => self.workspace.go_to_tab(5),
-            MuxCommand::GoToTab7 => self.workspace.go_to_tab(6),
-            MuxCommand::GoToTab8 => self.workspace.go_to_tab(7),
-            MuxCommand::GoToTab9 => self.workspace.go_to_tab(8),
+            MuxCommand::NextTab => self.workspace_manager.next_tab(),
+            MuxCommand::PrevTab => self.workspace_manager.prev_tab(),
+            MuxCommand::GoToTab1 => self.workspace_manager.go_to_tab(0),
+            MuxCommand::GoToTab2 => self.workspace_manager.go_to_tab(1),
+            MuxCommand::GoToTab3 => self.workspace_manager.go_to_tab(2),
+            MuxCommand::GoToTab4 => self.workspace_manager.go_to_tab(3),
+            MuxCommand::GoToTab5 => self.workspace_manager.go_to_tab(4),
+            MuxCommand::GoToTab6 => self.workspace_manager.go_to_tab(5),
+            MuxCommand::GoToTab7 => self.workspace_manager.go_to_tab(6),
+            MuxCommand::GoToTab8 => self.workspace_manager.go_to_tab(7),
+            MuxCommand::GoToTab9 => self.workspace_manager.go_to_tab(8),
 
-            // Pane management
+            // Pane management - new tabs/splits belong to the active sandbox
             MuxCommand::SplitHorizontal => {
-                if let Some(tab) = self.workspace.active_tab_mut() {
+                if let Some(tab) = self.active_tab_mut() {
                     tab.split(Direction::Horizontal, Pane::terminal(None, "Terminal"));
                     self.set_status("Split horizontally");
+                    // Auto-connect the new pane to the sandbox terminal
+                    let _ = self.event_tx.send(MuxEvent::ConnectActivePaneToSandbox);
                 }
             }
             MuxCommand::SplitVertical => {
-                if let Some(tab) = self.workspace.active_tab_mut() {
+                if let Some(tab) = self.active_tab_mut() {
                     tab.split(Direction::Vertical, Pane::terminal(None, "Terminal"));
                     self.set_status("Split vertically");
+                    // Auto-connect the new pane to the sandbox terminal
+                    let _ = self.event_tx.send(MuxEvent::ConnectActivePaneToSandbox);
                 }
             }
             MuxCommand::ClosePane => {
-                if let Some(tab) = self.workspace.active_tab_mut() {
+                if let Some(tab) = self.active_tab_mut() {
                     if tab.close_active_pane() {
                         self.set_status("Pane closed");
                     }
                 }
             }
             MuxCommand::ToggleZoom => {
-                if let Some(tab) = self.workspace.active_tab() {
+                if let Some(tab) = self.active_tab() {
                     if self.zoomed_pane.is_some() {
                         self.zoomed_pane = None;
                         self.set_status("Zoom off");
@@ -208,33 +254,38 @@ impl<'a> MuxApp<'a> {
                 self.set_status("Pane swapping not yet implemented");
             }
             MuxCommand::ResizeLeft => {
-                if let Some(tab) = self.workspace.active_tab_mut() {
+                if let Some(tab) = self.active_tab_mut() {
                     tab.resize(NavDirection::Left, 0.05);
                 }
             }
             MuxCommand::ResizeRight => {
-                if let Some(tab) = self.workspace.active_tab_mut() {
+                if let Some(tab) = self.active_tab_mut() {
                     tab.resize(NavDirection::Right, 0.05);
                 }
             }
             MuxCommand::ResizeUp => {
-                if let Some(tab) = self.workspace.active_tab_mut() {
+                if let Some(tab) = self.active_tab_mut() {
                     tab.resize(NavDirection::Up, 0.05);
                 }
             }
             MuxCommand::ResizeDown => {
-                if let Some(tab) = self.workspace.active_tab_mut() {
+                if let Some(tab) = self.active_tab_mut() {
                     tab.resize(NavDirection::Down, 0.05);
                 }
             }
 
-            // Tab management
+            // Tab management - tabs belong to the active sandbox workspace
             MuxCommand::NewTab => {
-                self.workspace.new_tab();
-                self.set_status("New tab created");
+                if self.workspace_manager.new_tab().is_some() {
+                    self.set_status("New tab created");
+                    // Auto-connect the new pane to the sandbox terminal
+                    let _ = self.event_tx.send(MuxEvent::ConnectActivePaneToSandbox);
+                } else {
+                    self.set_status("No sandbox selected");
+                }
             }
             MuxCommand::CloseTab => {
-                if self.workspace.close_active_tab() {
+                if self.workspace_manager.close_active_tab() {
                     self.set_status("Tab closed");
                 }
             }
@@ -242,10 +293,10 @@ impl<'a> MuxApp<'a> {
                 self.start_tab_rename();
             }
             MuxCommand::MoveTabLeft => {
-                self.workspace.move_tab_left();
+                self.workspace_manager.move_tab_left();
             }
             MuxCommand::MoveTabRight => {
-                self.workspace.move_tab_right();
+                self.workspace_manager.move_tab_right();
             }
 
             // Sidebar - Ctrl+S toggles focus between sidebar and main area
@@ -264,10 +315,33 @@ impl<'a> MuxApp<'a> {
             MuxCommand::SelectSandbox => {
                 if self.focus == FocusArea::Sidebar {
                     if let Some(sandbox) = self.sidebar.selected_sandbox() {
-                        self.selected_sandbox_id = Some(sandbox.id.to_string());
-                        self.set_status(format!("Selected: {}", sandbox.name));
+                        let sandbox_id_str = sandbox.id.to_string();
+                        let sandbox_name = sandbox.name.clone();
+                        // Select the sandbox and switch to its workspace
+                        self.select_sandbox(&sandbox_id_str);
+                        self.set_status(format!("Selected: {}", sandbox_name));
                         // Switch to main area after selection
                         self.focus = FocusArea::MainArea;
+                    }
+                }
+            }
+            MuxCommand::NextSandbox => {
+                if let Some(sandbox_id) = self.workspace_manager.next_sandbox() {
+                    // Also update sidebar selection to match
+                    let sandbox_id_str = sandbox_id.to_string();
+                    self.sidebar.select_by_id(&sandbox_id_str);
+                    if let Some(ws) = self.workspace_manager.active_workspace() {
+                        self.set_status(format!("Switched to: {}", ws.name));
+                    }
+                }
+            }
+            MuxCommand::PrevSandbox => {
+                if let Some(sandbox_id) = self.workspace_manager.prev_sandbox() {
+                    // Also update sidebar selection to match
+                    let sandbox_id_str = sandbox_id.to_string();
+                    self.sidebar.select_by_id(&sandbox_id_str);
+                    if let Some(ws) = self.workspace_manager.active_workspace() {
+                        self.set_status(format!("Switched to: {}", ws.name));
                     }
                 }
             }
@@ -296,18 +370,20 @@ impl<'a> MuxApp<'a> {
                 self.set_status("Creating new session...");
             }
             MuxCommand::AttachSandbox => {
-                if let Some(sandbox_id) = &self.selected_sandbox_id {
+                if let Some(sandbox_id) = self.selected_sandbox_id_string() {
                     self.set_status(format!("Attaching to sandbox: {}", sandbox_id));
                 } else if let Some(sandbox) = self.sidebar.selected_sandbox() {
-                    self.selected_sandbox_id = Some(sandbox.id.to_string());
-                    self.set_status(format!("Attaching to sandbox: {}", sandbox.name));
+                    let sandbox_id_str = sandbox.id.to_string();
+                    let sandbox_name = sandbox.name.clone();
+                    self.select_sandbox(&sandbox_id_str);
+                    self.set_status(format!("Attaching to sandbox: {}", sandbox_name));
                 } else {
                     self.set_status("No sandbox selected");
                 }
             }
             MuxCommand::DetachSandbox => {
                 self.set_status("Detaching from sandbox...");
-                self.selected_sandbox_id = None;
+                // Don't clear workspace_manager.active_sandbox_id - just show status
             }
 
             // UI
@@ -342,7 +418,7 @@ impl<'a> MuxApp<'a> {
 
     /// Start tab rename mode.
     fn start_tab_rename(&mut self) {
-        if let Some(tab) = self.workspace.active_tab() {
+        if let Some(tab) = self.active_tab() {
             let mut input = tui_textarea::TextArea::default();
             input.insert_str(&tab.name);
             self.rename_input = Some(input);
@@ -356,7 +432,7 @@ impl<'a> MuxApp<'a> {
             if let Some(input) = &self.rename_input {
                 let new_name = input.lines().join("");
                 if !new_name.is_empty() {
-                    self.workspace.rename_active_tab(new_name);
+                    self.workspace_manager.rename_active_tab(new_name);
                 }
             }
         }
@@ -368,16 +444,53 @@ impl<'a> MuxApp<'a> {
     pub fn handle_event(&mut self, event: MuxEvent) {
         match event {
             MuxEvent::SandboxesRefreshed(sandboxes) => {
-                self.sidebar.set_sandboxes(sandboxes);
+                let had_active = self.selected_sandbox_id().is_some();
+                // Update sidebar
+                self.sidebar.set_sandboxes(sandboxes.clone());
+                // Sync workspace manager with sandboxes
+                for sandbox in &sandboxes {
+                    let sandbox_id_str = sandbox.id.to_string();
+                    self.add_sandbox(&sandbox_id_str, &sandbox.name);
+                }
+                // Ensure selection stays in sync with available sandboxes
+                if let Some(active_id) = self.selected_sandbox_id_string() {
+                    self.sidebar.select_by_id(&active_id);
+                } else if let Some(first) = sandboxes.first() {
+                    let id_str = first.id.to_string();
+                    self.sidebar.select_by_id(&id_str);
+                    self.pending_connect.get_or_insert(id_str);
+                }
+
+                if !had_active {
+                    if let Some(active_id) = self.selected_sandbox_id_string() {
+                        self.pending_connect.get_or_insert(active_id);
+                    }
+                }
             }
             MuxEvent::SandboxRefreshFailed(error) => {
                 self.sidebar.set_error(error.clone());
                 self.set_status(format!("Error: {}", error));
             }
             MuxEvent::SandboxCreated(sandbox) => {
+                // Add the new sandbox to workspace manager
+                let sandbox_id_str = sandbox.id.to_string();
+                // Keep sidebar in sync immediately without waiting for refresh
+                self.sidebar
+                    .sandboxes
+                    .retain(|existing| existing.id != sandbox.id);
+                self.sidebar.sandboxes.push(sandbox.clone());
+                self.sidebar.select_by_id(&sandbox_id_str);
+                self.add_sandbox(&sandbox_id_str, &sandbox.name);
+                self.workspace_manager
+                    .select_sandbox(crate::mux::layout::SandboxId::from_uuid(sandbox.id));
+                self.pending_connect = Some(sandbox_id_str.clone());
                 self.set_status(format!("Created sandbox: {}", sandbox.name));
             }
             MuxEvent::SandboxDeleted(id) => {
+                // Remove the sandbox from workspace manager
+                if let Ok(sandbox_id) = id.parse::<SandboxId>() {
+                    self.workspace_manager.remove_sandbox(sandbox_id);
+                }
                 self.set_status(format!("Deleted sandbox: {}", id));
             }
             MuxEvent::SandboxConnectionChanged {
@@ -401,10 +514,81 @@ impl<'a> MuxApp<'a> {
                 self.set_status(message);
             }
             MuxEvent::ConnectToSandbox { sandbox_id } => {
-                // This is handled in the runner, just update status here
-                self.selected_sandbox_id = Some(sandbox_id.clone());
+                // Select the sandbox and update workspace
+                self.select_sandbox(&sandbox_id);
                 self.set_status(format!("Connecting to sandbox: {}", sandbox_id));
             }
+            MuxEvent::ConnectActivePaneToSandbox => {
+                // This is handled in the runner, just acknowledge here
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{SandboxNetwork, SandboxStatus, SandboxSummary};
+    use chrono::Utc;
+    use uuid::Uuid;
+
+    #[test]
+    fn sandbox_created_sets_pending_and_selection() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = MuxApp::new("http://localhost".to_string(), tx);
+        let sandbox = sample_sandbox("demo");
+
+        app.handle_event(MuxEvent::SandboxCreated(sandbox.clone()));
+
+        assert_eq!(
+            app.pending_connect,
+            Some(sandbox.id.to_string()),
+            "pending_connect should point at the new sandbox"
+        );
+        assert_eq!(
+            app.selected_sandbox_id_string(),
+            Some(sandbox.id.to_string())
+        );
+        assert_eq!(
+            app.sidebar.selected_sandbox().map(|s| s.id),
+            Some(sandbox.id)
+        );
+    }
+
+    #[test]
+    fn refresh_without_selection_queues_connect() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = MuxApp::new("http://localhost".to_string(), tx);
+        let sandbox = sample_sandbox("demo");
+
+        app.handle_event(MuxEvent::SandboxesRefreshed(vec![sandbox.clone()]));
+
+        assert_eq!(app.pending_connect, Some(sandbox.id.to_string()));
+        assert_eq!(
+            app.sidebar.selected_sandbox().map(|s| s.id),
+            Some(sandbox.id)
+        );
+        assert_eq!(
+            app.selected_sandbox_id_string(),
+            Some(sandbox.id.to_string())
+        );
+    }
+
+    fn sample_sandbox(name: &str) -> SandboxSummary {
+        SandboxSummary {
+            id: Uuid::new_v4(),
+            index: 0,
+            name: name.to_string(),
+            created_at: Utc::now(),
+            workspace: "/workspace".to_string(),
+            status: SandboxStatus::Running,
+            network: SandboxNetwork {
+                host_interface: "veth0".to_string(),
+                sandbox_interface: "eth0".to_string(),
+                host_ip: "10.0.0.1".to_string(),
+                sandbox_ip: "10.0.0.2".to_string(),
+                cidr: 24,
+            },
         }
     }
 }

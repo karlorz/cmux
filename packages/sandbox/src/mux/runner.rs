@@ -2,7 +2,8 @@ use anyhow::Result;
 use crossterm::{
     event::{
         DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-        Event, EventStream, KeyCode, KeyModifiers,
+        Event, EventStream, KeyCode, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
+        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -32,7 +33,8 @@ pub async fn run_mux_tui(base_url: String, workspace_path: Option<PathBuf>) -> R
         stdout,
         EnterAlternateScreen,
         EnableMouseCapture,
-        EnableBracketedPaste
+        EnableBracketedPaste,
+        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::all())
     )?;
     enable_raw_mode()?;
 
@@ -46,7 +48,8 @@ pub async fn run_mux_tui(base_url: String, workspace_path: Option<PathBuf>) -> R
         terminal.backend_mut(),
         DisableMouseCapture,
         LeaveAlternateScreen,
-        DisableBracketedPaste
+        DisableBracketedPaste,
+        PopKeyboardEnhancementFlags
     )?;
     terminal.show_cursor()?;
 
@@ -125,6 +128,7 @@ async fn run_main_loop<B: ratatui::backend::Backend>(
                         )));
                     }
 
+                    let _ = init_tx.send(MuxEvent::SandboxCreated(summary.clone()));
                     let _ = init_tx.send(MuxEvent::Notification {
                         message: format!("Created sandbox: {}", sandbox_id),
                         level: crate::mux::events::NotificationLevel::Info,
@@ -169,37 +173,21 @@ async fn run_app<B: ratatui::backend::Backend>(
 
         tokio::select! {
             Some(event) = event_rx.recv() => {
-                // Handle connect to sandbox request
-                if let MuxEvent::ConnectToSandbox { ref sandbox_id } = event {
-                    if let Some(pane_id) = app.active_pane_id() {
-                        let manager = terminal_manager.clone();
-                        let sandbox_id = sandbox_id.clone();
-                        let (rows, cols) = preferred_size_for_pane(&app, pane_id).unwrap_or_else(|| {
-                            let (fallback_cols, fallback_rows) =
-                                crossterm::terminal::size().unwrap_or((80, 24));
-                            (fallback_rows, fallback_cols)
-                        });
-                        let event_tx = app.event_tx.clone();
-
-                        tokio::spawn(async move {
-                            if let Err(e) = connect_to_sandbox(
-                                manager,
-                                pane_id,
-                                sandbox_id.clone(),
-                                cols,
-                                rows,
-                            ).await {
-                                let _ = event_tx.send(MuxEvent::Error(format!(
-                                    "Failed to connect to sandbox: {}",
-                                    e
-                                )));
-                            }
-                        });
+                match &event {
+                    MuxEvent::ConnectToSandbox { sandbox_id } => {
+                        app.pending_connect = Some(sandbox_id.clone());
+                        try_consume_pending_connection(&mut app, &terminal_manager);
                     }
-                }
-                // Handle sandbox creation request
-                else if let MuxEvent::Notification { ref message, .. } = event {
-                    if message.contains("Creating sandbox") {
+                    MuxEvent::ConnectActivePaneToSandbox => {
+                        let target = app
+                            .selected_sandbox_id_string()
+                            .or_else(|| app.pending_connect.clone());
+                        if let Some(sandbox_id) = target {
+                            app.pending_connect = Some(sandbox_id);
+                            try_consume_pending_connection(&mut app, &terminal_manager);
+                        }
+                    }
+                    MuxEvent::Notification { message, .. } if message.contains("Creating sandbox") => {
                         // Spawn sandbox creation task
                         let manager = terminal_manager.clone();
                         let event_tx = app.event_tx.clone();
@@ -238,7 +226,8 @@ async fn run_app<B: ratatui::backend::Backend>(
                                 }
                             });
                         }
-                    } else if message.contains("Refreshing sandboxes") {
+                    }
+                    MuxEvent::Notification { message, .. } if message.contains("Refreshing sandboxes") => {
                         // Trigger a refresh
                         let url = base_url.clone();
                         let tx = app.event_tx.clone();
@@ -246,8 +235,10 @@ async fn run_app<B: ratatui::backend::Backend>(
                             let _ = refresh_sandboxes(&url, &tx).await;
                         });
                     }
+                    _ => {}
                 }
                 app.handle_event(event);
+                try_consume_pending_connection(&mut app, &terminal_manager);
             }
             Some(Ok(event)) = reader.next() => {
                 if handle_input(&mut app, event, &terminal_manager).await {
@@ -258,6 +249,85 @@ async fn run_app<B: ratatui::backend::Backend>(
     }
 
     Ok(())
+}
+
+fn fallback_terminal_size() -> (u16, u16) {
+    let (fallback_cols, fallback_rows) = crossterm::terminal::size().unwrap_or((80, 24));
+    (fallback_rows, fallback_cols)
+}
+
+fn connect_active_pane_to_sandbox(
+    app: &MuxApp<'_>,
+    terminal_manager: &crate::mux::terminal::SharedTerminalManager,
+    sandbox_id: &str,
+) {
+    let Some(pane_id) = app.active_pane_id() else {
+        return;
+    };
+
+    if let Ok(guard) = terminal_manager.try_lock() {
+        if guard.is_connected(pane_id) {
+            return;
+        }
+    }
+
+    let (rows, cols) = preferred_size_for_pane(app, pane_id).unwrap_or_else(fallback_terminal_size);
+    let manager = terminal_manager.clone();
+    let event_tx = app.event_tx.clone();
+    let sandbox_id = sandbox_id.to_string();
+
+    tokio::spawn(async move {
+        if let Err(e) = connect_to_sandbox(manager, pane_id, sandbox_id, cols, rows).await {
+            let _ = event_tx.send(MuxEvent::Error(format!(
+                "Failed to connect to sandbox: {}",
+                e
+            )));
+        }
+    });
+}
+
+fn try_consume_pending_connection(
+    app: &mut MuxApp<'_>,
+    terminal_manager: &crate::mux::terminal::SharedTerminalManager,
+) {
+    let Some(sandbox_id) = app.pending_connect.clone() else {
+        return;
+    };
+
+    if !app.select_sandbox(&sandbox_id) {
+        return;
+    }
+
+    app.sidebar.select_by_id(&sandbox_id);
+
+    let Some(pane_id) = app.active_pane_id() else {
+        return;
+    };
+
+    if let Some(tab) = app.active_tab_mut() {
+        if let Some(pane) = tab.layout.find_pane_mut(pane_id) {
+            if let PaneContent::Terminal {
+                sandbox_id: pane_sandbox,
+                ..
+            } = &mut pane.content
+            {
+                *pane_sandbox = Some(sandbox_id.clone());
+            }
+        }
+    }
+
+    let already_connected = terminal_manager
+        .try_lock()
+        .map(|guard| guard.is_connected(pane_id))
+        .unwrap_or(false);
+
+    if already_connected {
+        app.pending_connect = None;
+        return;
+    }
+
+    connect_active_pane_to_sandbox(app, terminal_manager, &sandbox_id);
+    app.pending_connect = None;
 }
 
 fn pane_content_dimensions(pane: &crate::mux::layout::Pane) -> Option<(u16, u16)> {
@@ -276,7 +346,7 @@ fn preferred_size_for_pane(
     app: &MuxApp<'_>,
     pane_id: crate::mux::layout::PaneId,
 ) -> Option<(u16, u16)> {
-    let tab = app.workspace.active_tab()?;
+    let tab = app.active_tab()?;
     let pane = tab.layout.find_pane(pane_id)?;
     pane_content_dimensions(pane)
 }
@@ -285,7 +355,7 @@ fn sync_terminal_sizes(
     app: &MuxApp<'_>,
     terminal_manager: &crate::mux::terminal::SharedTerminalManager,
 ) {
-    let Some(tab) = app.workspace.active_tab() else {
+    let Some(tab) = app.active_tab() else {
         return;
     };
 
@@ -318,6 +388,9 @@ async fn handle_input(
 ) -> bool {
     match event {
         Event::Key(key) => {
+            if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+                return false;
+            }
             // Handle tab rename mode
             if app.renaming_tab {
                 match key.code {
@@ -402,49 +475,16 @@ async fn handle_input(
                     match key.code {
                         KeyCode::Up | KeyCode::Char('k') => {
                             app.sidebar.select_previous();
+                            // Auto-switch workspace on selection change
+                            select_sidebar_sandbox(app, terminal_manager).await;
                         }
                         KeyCode::Down | KeyCode::Char('j') => {
                             app.sidebar.select_next();
+                            // Auto-switch workspace on selection change
+                            select_sidebar_sandbox(app, terminal_manager).await;
                         }
-                        KeyCode::Enter => {
-                            // Select sandbox and connect terminal
-                            if let Some(sandbox) = app.sidebar.selected_sandbox() {
-                                let sandbox_id = sandbox.id.to_string();
-                                let sandbox_name = sandbox.name.clone();
-                                app.selected_sandbox_id = Some(sandbox_id.clone());
-                                app.set_status(format!("Selected: {}", sandbox_name));
-
-                                // Connect to the sandbox terminal
-                                if let Some(pane_id) = app.active_pane_id() {
-                                    let manager = terminal_manager.clone();
-                                    let (cols, rows) =
-                                        crossterm::terminal::size().unwrap_or((80, 24));
-                                    let event_tx = app.event_tx.clone();
-
-                                    tokio::spawn(async move {
-                                        if let Err(e) = connect_to_sandbox(
-                                            manager,
-                                            pane_id,
-                                            sandbox_id.clone(),
-                                            cols,
-                                            rows,
-                                        )
-                                        .await
-                                        {
-                                            let _ = event_tx.send(MuxEvent::Error(format!(
-                                                "Failed to connect: {}",
-                                                e
-                                            )));
-                                        }
-                                    });
-                                }
-                            }
-                            app.focus = FocusArea::MainArea;
-                        }
-                        KeyCode::Esc => {
-                            app.focus = FocusArea::MainArea;
-                        }
-                        KeyCode::Tab => {
+                        KeyCode::Enter | KeyCode::Esc | KeyCode::Tab => {
+                            // Just focus the main area
                             app.focus = FocusArea::MainArea;
                         }
                         _ => {}
@@ -475,28 +515,28 @@ async fn handle_input(
                             KeyCode::Char('h')
                                 if !key.modifiers.contains(KeyModifiers::CONTROL) =>
                             {
-                                if let Some(tab) = app.workspace.active_tab_mut() {
+                                if let Some(tab) = app.active_tab_mut() {
                                     tab.navigate(crate::mux::layout::NavDirection::Left);
                                 }
                             }
                             KeyCode::Char('j')
                                 if !key.modifiers.contains(KeyModifiers::CONTROL) =>
                             {
-                                if let Some(tab) = app.workspace.active_tab_mut() {
+                                if let Some(tab) = app.active_tab_mut() {
                                     tab.navigate(crate::mux::layout::NavDirection::Down);
                                 }
                             }
                             KeyCode::Char('k')
                                 if !key.modifiers.contains(KeyModifiers::CONTROL) =>
                             {
-                                if let Some(tab) = app.workspace.active_tab_mut() {
+                                if let Some(tab) = app.active_tab_mut() {
                                     tab.navigate(crate::mux::layout::NavDirection::Up);
                                 }
                             }
                             KeyCode::Char('l')
                                 if !key.modifiers.contains(KeyModifiers::CONTROL) =>
                             {
-                                if let Some(tab) = app.workspace.active_tab_mut() {
+                                if let Some(tab) = app.active_tab_mut() {
                                     tab.navigate(crate::mux::layout::NavDirection::Right);
                                 }
                             }
@@ -551,6 +591,37 @@ async fn handle_input(
     }
 
     false
+}
+
+/// Select the currently highlighted sandbox in the sidebar and switch to its workspace.
+/// Also connects the terminal if there's an active pane.
+async fn select_sidebar_sandbox(
+    app: &mut MuxApp<'_>,
+    terminal_manager: &crate::mux::terminal::SharedTerminalManager,
+) {
+    if let Some(sandbox) = app.sidebar.selected_sandbox() {
+        let sandbox_id = sandbox.id.to_string();
+        let sandbox_name = sandbox.name.clone();
+
+        // Select the sandbox (switches workspace to this sandbox)
+        app.select_sandbox(&sandbox_id);
+        app.set_status(format!("Selected: {}", sandbox_name));
+
+        // Connect to the sandbox terminal
+        if let Some(pane_id) = app.active_pane_id() {
+            let manager = terminal_manager.clone();
+            let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+            let event_tx = app.event_tx.clone();
+
+            tokio::spawn(async move {
+                if let Err(e) =
+                    connect_to_sandbox(manager, pane_id, sandbox_id.clone(), cols, rows).await
+                {
+                    let _ = event_tx.send(MuxEvent::Error(format!("Failed to connect: {}", e)));
+                }
+            });
+        }
+    }
 }
 
 /// Convert a key event to terminal input bytes

@@ -1,6 +1,40 @@
 use ratatui::layout::Rect;
 use uuid::Uuid;
 
+/// Unique identifier for a sandbox.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SandboxId(pub Uuid);
+
+impl SandboxId {
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    pub fn from_uuid(uuid: Uuid) -> Self {
+        Self(uuid)
+    }
+}
+
+impl Default for SandboxId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Display for SandboxId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::str::FromStr for SandboxId {
+    type Err = uuid::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(Uuid::parse_str(s)?))
+    }
+}
+
 /// Unique identifier for a pane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PaneId(pub Uuid);
@@ -562,7 +596,116 @@ impl Tab {
     }
 }
 
+/// A workspace for a single sandbox containing all its tabs/splits.
+/// Each sandbox has its own independent workspace.
+#[derive(Debug)]
+pub struct SandboxWorkspace {
+    /// The sandbox this workspace belongs to
+    pub sandbox_id: SandboxId,
+    /// Display name for this sandbox
+    pub name: String,
+    /// Tabs in this workspace
+    pub tabs: Vec<Tab>,
+    /// Currently active tab index
+    pub active_tab_index: usize,
+}
+
+impl SandboxWorkspace {
+    pub fn new(sandbox_id: SandboxId, name: impl Into<String>) -> Self {
+        Self {
+            sandbox_id,
+            name: name.into(),
+            tabs: vec![Tab::new("Tab 1")],
+            active_tab_index: 0,
+        }
+    }
+
+    /// Get the active tab.
+    pub fn active_tab(&self) -> Option<&Tab> {
+        self.tabs.get(self.active_tab_index)
+    }
+
+    /// Get the active tab mutably.
+    pub fn active_tab_mut(&mut self) -> Option<&mut Tab> {
+        self.tabs.get_mut(self.active_tab_index)
+    }
+
+    /// Create a new tab in this sandbox workspace.
+    pub fn new_tab(&mut self) -> TabId {
+        let tab_num = self.tabs.len() + 1;
+        let tab = Tab::new(format!("Tab {}", tab_num));
+        let id = tab.id;
+        self.tabs.push(tab);
+        self.active_tab_index = self.tabs.len() - 1;
+        id
+    }
+
+    /// Close the active tab.
+    pub fn close_active_tab(&mut self) -> bool {
+        if self.tabs.len() <= 1 {
+            return false;
+        }
+
+        self.tabs.remove(self.active_tab_index);
+        if self.active_tab_index >= self.tabs.len() {
+            self.active_tab_index = self.tabs.len() - 1;
+        }
+        true
+    }
+
+    /// Switch to the next tab.
+    pub fn next_tab(&mut self) {
+        if !self.tabs.is_empty() {
+            self.active_tab_index = (self.active_tab_index + 1) % self.tabs.len();
+        }
+    }
+
+    /// Switch to the previous tab.
+    pub fn prev_tab(&mut self) {
+        if !self.tabs.is_empty() {
+            self.active_tab_index = if self.active_tab_index == 0 {
+                self.tabs.len() - 1
+            } else {
+                self.active_tab_index - 1
+            };
+        }
+    }
+
+    /// Go to a specific tab by index (0-based).
+    pub fn go_to_tab(&mut self, index: usize) {
+        if index < self.tabs.len() {
+            self.active_tab_index = index;
+        }
+    }
+
+    /// Move the active tab left.
+    pub fn move_tab_left(&mut self) {
+        if self.active_tab_index > 0 {
+            self.tabs
+                .swap(self.active_tab_index, self.active_tab_index - 1);
+            self.active_tab_index -= 1;
+        }
+    }
+
+    /// Move the active tab right.
+    pub fn move_tab_right(&mut self) {
+        if self.active_tab_index < self.tabs.len() - 1 {
+            self.tabs
+                .swap(self.active_tab_index, self.active_tab_index + 1);
+            self.active_tab_index += 1;
+        }
+    }
+
+    /// Rename the active tab.
+    pub fn rename_active_tab(&mut self, name: impl Into<String>) {
+        if let Some(tab) = self.active_tab_mut() {
+            tab.name = name.into();
+        }
+    }
+}
+
 /// The workspace containing all tabs.
+/// This is kept for backwards compatibility but now wraps SandboxWorkspace.
 #[derive(Debug)]
 pub struct Workspace {
     pub tabs: Vec<Tab>,
@@ -664,6 +807,208 @@ impl Workspace {
         if let Some(tab) = self.active_tab_mut() {
             tab.name = name.into();
         }
+    }
+}
+
+/// Manager for all sandbox workspaces.
+/// The main area always shows the currently selected sandbox's workspace.
+#[derive(Debug)]
+pub struct WorkspaceManager {
+    /// Map of sandbox ID to its workspace
+    workspaces: std::collections::HashMap<SandboxId, SandboxWorkspace>,
+    /// Currently selected sandbox ID (the one shown in the main area)
+    pub active_sandbox_id: Option<SandboxId>,
+    /// Order of sandboxes in the sidebar
+    sandbox_order: Vec<SandboxId>,
+}
+
+impl Default for WorkspaceManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl WorkspaceManager {
+    pub fn new() -> Self {
+        Self {
+            workspaces: std::collections::HashMap::new(),
+            active_sandbox_id: None,
+            sandbox_order: Vec::new(),
+        }
+    }
+
+    /// Add or update a sandbox workspace.
+    pub fn add_sandbox(&mut self, sandbox_id: SandboxId, name: impl Into<String>) {
+        use std::collections::hash_map::Entry;
+        if let Entry::Vacant(e) = self.workspaces.entry(sandbox_id) {
+            let workspace = SandboxWorkspace::new(sandbox_id, name);
+            e.insert(workspace);
+            self.sandbox_order.push(sandbox_id);
+            // If this is the first sandbox, make it active
+            if self.active_sandbox_id.is_none() {
+                self.active_sandbox_id = Some(sandbox_id);
+            }
+        }
+    }
+
+    /// Remove a sandbox workspace.
+    pub fn remove_sandbox(&mut self, sandbox_id: SandboxId) {
+        self.workspaces.remove(&sandbox_id);
+        self.sandbox_order.retain(|&id| id != sandbox_id);
+        // If we removed the active sandbox, select another one
+        if self.active_sandbox_id == Some(sandbox_id) {
+            self.active_sandbox_id = self.sandbox_order.first().copied();
+        }
+    }
+
+    /// Select a sandbox as the active one (shown in main area).
+    pub fn select_sandbox(&mut self, sandbox_id: SandboxId) {
+        if self.workspaces.contains_key(&sandbox_id) {
+            self.active_sandbox_id = Some(sandbox_id);
+        }
+    }
+
+    /// Get the active sandbox's workspace.
+    pub fn active_workspace(&self) -> Option<&SandboxWorkspace> {
+        self.active_sandbox_id
+            .and_then(|id| self.workspaces.get(&id))
+    }
+
+    /// Get the active sandbox's workspace mutably.
+    pub fn active_workspace_mut(&mut self) -> Option<&mut SandboxWorkspace> {
+        self.active_sandbox_id
+            .and_then(|id| self.workspaces.get_mut(&id))
+    }
+
+    /// Get a specific sandbox's workspace.
+    pub fn get_workspace(&self, sandbox_id: SandboxId) -> Option<&SandboxWorkspace> {
+        self.workspaces.get(&sandbox_id)
+    }
+
+    /// Get a specific sandbox's workspace mutably.
+    pub fn get_workspace_mut(&mut self, sandbox_id: SandboxId) -> Option<&mut SandboxWorkspace> {
+        self.workspaces.get_mut(&sandbox_id)
+    }
+
+    /// Get all sandbox IDs in order.
+    pub fn sandbox_ids(&self) -> &[SandboxId] {
+        &self.sandbox_order
+    }
+
+    /// Get the number of sandboxes.
+    pub fn sandbox_count(&self) -> usize {
+        self.workspaces.len()
+    }
+
+    /// Check if a sandbox exists.
+    pub fn has_sandbox(&self, sandbox_id: SandboxId) -> bool {
+        self.workspaces.contains_key(&sandbox_id)
+    }
+
+    /// Get the active tab from the active workspace.
+    pub fn active_tab(&self) -> Option<&Tab> {
+        self.active_workspace().and_then(|ws| ws.active_tab())
+    }
+
+    /// Get the active tab from the active workspace mutably.
+    pub fn active_tab_mut(&mut self) -> Option<&mut Tab> {
+        self.active_workspace_mut()
+            .and_then(|ws| ws.active_tab_mut())
+    }
+
+    /// Create a new tab in the active workspace.
+    pub fn new_tab(&mut self) -> Option<TabId> {
+        self.active_workspace_mut().map(|ws| ws.new_tab())
+    }
+
+    /// Close the active tab in the active workspace.
+    pub fn close_active_tab(&mut self) -> bool {
+        self.active_workspace_mut()
+            .map(|ws| ws.close_active_tab())
+            .unwrap_or(false)
+    }
+
+    /// Switch to the next tab in the active workspace.
+    pub fn next_tab(&mut self) {
+        if let Some(ws) = self.active_workspace_mut() {
+            ws.next_tab();
+        }
+    }
+
+    /// Switch to the previous tab in the active workspace.
+    pub fn prev_tab(&mut self) {
+        if let Some(ws) = self.active_workspace_mut() {
+            ws.prev_tab();
+        }
+    }
+
+    /// Go to a specific tab in the active workspace.
+    pub fn go_to_tab(&mut self, index: usize) {
+        if let Some(ws) = self.active_workspace_mut() {
+            ws.go_to_tab(index);
+        }
+    }
+
+    /// Move the active tab left in the active workspace.
+    pub fn move_tab_left(&mut self) {
+        if let Some(ws) = self.active_workspace_mut() {
+            ws.move_tab_left();
+        }
+    }
+
+    /// Move the active tab right in the active workspace.
+    pub fn move_tab_right(&mut self) {
+        if let Some(ws) = self.active_workspace_mut() {
+            ws.move_tab_right();
+        }
+    }
+
+    /// Rename the active tab in the active workspace.
+    pub fn rename_active_tab(&mut self, name: impl Into<String>) {
+        if let Some(ws) = self.active_workspace_mut() {
+            ws.rename_active_tab(name);
+        }
+    }
+
+    /// Update sandbox name.
+    pub fn update_sandbox_name(&mut self, sandbox_id: SandboxId, name: impl Into<String>) {
+        if let Some(ws) = self.workspaces.get_mut(&sandbox_id) {
+            ws.name = name.into();
+        }
+    }
+
+    /// Switch to the next sandbox in the order.
+    pub fn next_sandbox(&mut self) -> Option<SandboxId> {
+        if self.sandbox_order.is_empty() {
+            return None;
+        }
+        let current_idx = self
+            .active_sandbox_id
+            .and_then(|id| self.sandbox_order.iter().position(|&sid| sid == id))
+            .unwrap_or(0);
+        let next_idx = (current_idx + 1) % self.sandbox_order.len();
+        let next_id = self.sandbox_order[next_idx];
+        self.active_sandbox_id = Some(next_id);
+        Some(next_id)
+    }
+
+    /// Switch to the previous sandbox in the order.
+    pub fn prev_sandbox(&mut self) -> Option<SandboxId> {
+        if self.sandbox_order.is_empty() {
+            return None;
+        }
+        let current_idx = self
+            .active_sandbox_id
+            .and_then(|id| self.sandbox_order.iter().position(|&sid| sid == id))
+            .unwrap_or(0);
+        let prev_idx = if current_idx == 0 {
+            self.sandbox_order.len() - 1
+        } else {
+            current_idx - 1
+        };
+        let prev_id = self.sandbox_order[prev_idx];
+        self.active_sandbox_id = Some(prev_id);
+        Some(prev_id)
     }
 }
 

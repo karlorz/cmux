@@ -27,6 +27,8 @@ pub enum MuxEvent {
     },
     /// Request to connect to a sandbox (used for auto-connect on startup)
     ConnectToSandbox { sandbox_id: String },
+    /// Request to connect the active pane to the active sandbox's terminal
+    ConnectActivePaneToSandbox,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

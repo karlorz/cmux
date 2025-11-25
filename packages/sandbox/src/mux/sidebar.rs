@@ -84,6 +84,18 @@ impl Sidebar {
         self.visible = !self.visible;
     }
 
+    /// Select a sandbox by its ID string.
+    pub fn select_by_id(&mut self, id_str: &str) {
+        if let Some(idx) = self
+            .sandboxes
+            .iter()
+            .position(|s| s.id.to_string() == id_str)
+        {
+            self.selected_index = idx;
+            self.ensure_visible();
+        }
+    }
+
     /// Get status icon for a sandbox.
     pub fn status_icon(status: &SandboxStatus) -> &'static str {
         match status {

@@ -51,6 +51,8 @@ pub enum MuxCommand {
     // Sidebar
     ToggleSidebar,
     SelectSandbox,
+    NextSandbox,
+    PrevSandbox,
 
     // Sandbox management
     NewSandbox,
@@ -127,6 +129,8 @@ impl MuxCommand {
             // Sidebar
             MuxCommand::ToggleSidebar,
             MuxCommand::SelectSandbox,
+            MuxCommand::NextSandbox,
+            MuxCommand::PrevSandbox,
             // Sandbox management
             MuxCommand::NewSandbox,
             MuxCommand::DeleteSandbox,
@@ -189,6 +193,8 @@ impl MuxCommand {
             MuxCommand::MoveTabRight => "Move Tab Right",
             MuxCommand::ToggleSidebar => "Toggle Sidebar",
             MuxCommand::SelectSandbox => "Select Sandbox",
+            MuxCommand::NextSandbox => "Next Sandbox",
+            MuxCommand::PrevSandbox => "Previous Sandbox",
             MuxCommand::NewSandbox => "New Sandbox",
             MuxCommand::DeleteSandbox => "Delete Sandbox",
             MuxCommand::RefreshSandboxes => "Refresh Sandboxes",
@@ -248,6 +254,8 @@ impl MuxCommand {
             MuxCommand::MoveTabRight => "Move current tab to the right",
             MuxCommand::ToggleSidebar => "Toggle focus between sidebar and main workspace",
             MuxCommand::SelectSandbox => "Select a sandbox from the list",
+            MuxCommand::NextSandbox => "Switch to the next sandbox workspace",
+            MuxCommand::PrevSandbox => "Switch to the previous sandbox workspace",
             MuxCommand::NewSandbox => "Create a new sandbox",
             MuxCommand::DeleteSandbox => "Delete the selected sandbox",
             MuxCommand::RefreshSandboxes => "Refresh the sandbox list",
@@ -308,7 +316,10 @@ impl MuxCommand {
             | MuxCommand::MoveTabLeft
             | MuxCommand::MoveTabRight => "Tabs",
 
-            MuxCommand::ToggleSidebar | MuxCommand::SelectSandbox => "Sidebar",
+            MuxCommand::ToggleSidebar
+            | MuxCommand::SelectSandbox
+            | MuxCommand::NextSandbox
+            | MuxCommand::PrevSandbox => "Sidebar",
 
             MuxCommand::NewSandbox | MuxCommand::DeleteSandbox | MuxCommand::RefreshSandboxes => {
                 "Sandbox"
@@ -418,6 +429,13 @@ impl MuxCommand {
             MuxCommand::ToggleSidebar => Some((KeyModifiers::CONTROL, KeyCode::Char('s'))),
             // SelectSandbox has no global keybinding - Enter is handled contextually in sidebar focus
             MuxCommand::SelectSandbox => None,
+            // Alt+Shift+{ and Alt+Shift+} for sandbox switching
+            MuxCommand::NextSandbox => {
+                Some((KeyModifiers::ALT | KeyModifiers::SHIFT, KeyCode::Char('}')))
+            }
+            MuxCommand::PrevSandbox => {
+                Some((KeyModifiers::ALT | KeyModifiers::SHIFT, KeyCode::Char('{')))
+            }
 
             // Sandbox management - use Alt
             MuxCommand::NewSandbox => Some((KeyModifiers::ALT, KeyCode::Char('n'))),

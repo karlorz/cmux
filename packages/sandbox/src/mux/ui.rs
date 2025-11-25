@@ -142,13 +142,21 @@ fn render_sidebar(f: &mut Frame, app: &MuxApp, area: Rect) {
 
 /// Render the tab bar.
 fn render_tab_bar(f: &mut Frame, app: &MuxApp, area: Rect) {
-    let tab_titles: Vec<Line<'_>> = app
-        .workspace
+    // Get workspace from workspace manager
+    let Some(workspace) = app.workspace_manager.active_workspace() else {
+        // No active sandbox, show placeholder
+        let placeholder =
+            Paragraph::new(" No sandbox selected ").style(Style::default().fg(Color::DarkGray));
+        f.render_widget(placeholder, area);
+        return;
+    };
+
+    let tab_titles: Vec<Line<'_>> = workspace
         .tabs
         .iter()
         .enumerate()
         .map(|(idx, tab)| {
-            let style = if idx == app.workspace.active_tab_index {
+            let style = if idx == workspace.active_tab_index {
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD)
@@ -160,7 +168,7 @@ fn render_tab_bar(f: &mut Frame, app: &MuxApp, area: Rect) {
         .collect();
 
     let tabs = Tabs::new(tab_titles)
-        .select(app.workspace.active_tab_index)
+        .select(workspace.active_tab_index)
         .divider(Span::raw("│"))
         .highlight_style(
             Style::default()
@@ -174,9 +182,12 @@ fn render_tab_bar(f: &mut Frame, app: &MuxApp, area: Rect) {
 /// Render the main workspace area with panes.
 fn render_workspace(f: &mut Frame, app: &mut MuxApp, area: Rect) {
     // First, calculate areas (needs mutable borrow)
-    if let Some(tab) = app.workspace.active_tab_mut() {
+    // Capture zoomed_pane first to avoid borrow issues
+    let zoomed_pane = app.zoomed_pane;
+
+    if let Some(tab) = app.active_tab_mut() {
         tab.layout.calculate_areas(area);
-        if let Some(zoomed_id) = app.zoomed_pane {
+        if let Some(zoomed_id) = zoomed_pane {
             if let Some(pane) = tab.layout.find_pane_mut(zoomed_id) {
                 pane.area = Some(area);
             }
@@ -184,14 +195,19 @@ fn render_workspace(f: &mut Frame, app: &mut MuxApp, area: Rect) {
     }
 
     // Now get immutable references for rendering
-    let Some(tab) = app.workspace.active_tab() else {
+    let Some(tab) = app.active_tab() else {
+        // No active tab, show placeholder
+        let placeholder = Paragraph::new("Select a sandbox from the sidebar (Tab to switch)")
+            .style(Style::default().fg(Color::DarkGray))
+            .alignment(Alignment::Center);
+        f.render_widget(placeholder, area);
         return;
     };
 
     let is_main_focused = app.focus == FocusArea::MainArea;
 
     // If zoomed, only render the zoomed pane
-    if let Some(zoomed_id) = app.zoomed_pane {
+    if let Some(zoomed_id) = zoomed_pane {
         if let Some(pane) = tab.layout.find_pane(zoomed_id) {
             let terminal_buffer = app.get_terminal_buffer(pane.id);
             render_pane(
@@ -366,8 +382,16 @@ fn render_status_bar(f: &mut Frame, app: &mut MuxApp, area: Rect) {
     ));
     spans.push(Span::raw(" "));
 
+    // Active sandbox info
+    if let Some(workspace) = app.workspace_manager.active_workspace() {
+        spans.push(Span::styled(
+            format!("[{}] ", workspace.name),
+            Style::default().fg(Color::Green),
+        ));
+    }
+
     // Pane info
-    if let Some(tab) = app.workspace.active_tab() {
+    if let Some(tab) = app.active_tab() {
         let pane_count = tab.layout.pane_count();
         spans.push(Span::styled(
             format!(
@@ -381,14 +405,21 @@ fn render_status_bar(f: &mut Frame, app: &mut MuxApp, area: Rect) {
     }
 
     // Tab info
-    spans.push(Span::styled(
-        format!(
-            "Tab {}/{}",
-            app.workspace.active_tab_index + 1,
-            app.workspace.tabs.len()
-        ),
-        Style::default().fg(Color::DarkGray),
-    ));
+    if let Some(workspace) = app.workspace_manager.active_workspace() {
+        spans.push(Span::styled(
+            format!(
+                "Tab {}/{}",
+                workspace.active_tab_index + 1,
+                workspace.tabs.len()
+            ),
+            Style::default().fg(Color::DarkGray),
+        ));
+    } else {
+        spans.push(Span::styled(
+            "No sandbox",
+            Style::default().fg(Color::DarkGray),
+        ));
+    }
 
     // Status message
     if let Some((msg, _)) = &app.status_message {
