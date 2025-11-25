@@ -104,9 +104,9 @@ struct ChatArgs {
     #[arg(long)]
     demo: bool,
 
-    /// ACP provider to use (codex, opencode, claude, gemini)
-    #[arg(long, short = 'a', value_enum, default_value_t = AcpProvider::default())]
-    acp: AcpProvider,
+    /// ACP provider to use (codex, opencode, claude, gemini). Defaults to last used provider.
+    #[arg(long, short = 'a', value_enum)]
+    acp: Option<AcpProvider>,
 }
 
 #[derive(Args, Debug)]
@@ -485,7 +485,12 @@ async fn run() -> anyhow::Result<()> {
                     .map_err(|e| anyhow::anyhow!(e))?;
             } else {
                 check_server_reachable(&client, &cli.base_url).await?;
-                eprintln!("Using ACP provider: {}", args.acp.display_name());
+                // Use explicitly provided ACP provider, or fall back to last used, or default
+                let provider = args
+                    .acp
+                    .or_else(cmux_sandbox::load_last_provider)
+                    .unwrap_or_default();
+                eprintln!("Using ACP provider: {}", provider.display_name());
 
                 let body = CreateSandboxRequest {
                     name: Some("interactive".into()),
@@ -523,7 +528,7 @@ async fn run() -> anyhow::Result<()> {
                 }
 
                 save_last_sandbox(&summary.id.to_string());
-                cmux_sandbox::run_chat_tui(cli.base_url, summary.id.to_string(), args.acp)
+                cmux_sandbox::run_chat_tui(cli.base_url, summary.id.to_string(), provider)
                     .await
                     .map_err(|e| anyhow::anyhow!(e))?;
             }

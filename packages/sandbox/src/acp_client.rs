@@ -1,19 +1,20 @@
 use agent_client_protocol::{
     Agent, Client, ClientCapabilities, ClientSideConnection, ContentBlock, CreateTerminalRequest,
     CreateTerminalResponse, Error, FileSystemCapability, InitializeRequest,
-    KillTerminalCommandRequest, KillTerminalCommandResponse, NewSessionRequest, PermissionOptionId,
-    Plan, PlanEntryPriority, PlanEntryStatus, PromptRequest, ReadTextFileRequest,
-    ReadTextFileResponse, ReleaseTerminalRequest, ReleaseTerminalResponse,
+    KillTerminalCommandRequest, KillTerminalCommandResponse, ModelId, NewSessionRequest,
+    PermissionOptionId, Plan, PlanEntryPriority, PlanEntryStatus, PromptRequest,
+    ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalRequest, ReleaseTerminalResponse,
     RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse, SessionId,
-    SessionNotification, SessionUpdate, TerminalOutputRequest, TerminalOutputResponse, TextContent,
-    ToolCall, ToolCallStatus, ToolCallUpdate, ToolKind, WaitForTerminalExitRequest,
-    WaitForTerminalExitResponse, WriteTextFileRequest, WriteTextFileResponse, V1,
+    SessionModelState, SessionNotification, SessionUpdate, SetSessionModelRequest,
+    TerminalOutputRequest, TerminalOutputResponse, TextContent, ToolCall, ToolCallStatus,
+    ToolCallUpdate, ToolKind, WaitForTerminalExitRequest, WaitForTerminalExitResponse,
+    WriteTextFileRequest, WriteTextFileResponse, V1,
 };
 use anyhow::Result;
 use clap::ValueEnum;
 
 /// Available ACP (Agent Client Protocol) providers
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, ValueEnum)]
 pub enum AcpProvider {
     /// OpenAI Codex CLI ACP - `codex-acp`
     #[default]
@@ -69,7 +70,73 @@ impl AcpProvider {
             AcpProvider::Gemini => "gemini",
         }
     }
+
+    /// Parse a short name back to AcpProvider
+    pub fn from_short_name(name: &str) -> Option<AcpProvider> {
+        match name {
+            "codex" => Some(AcpProvider::Codex),
+            "opencode" => Some(AcpProvider::Opencode),
+            "claude" => Some(AcpProvider::Claude),
+            "gemini" => Some(AcpProvider::Gemini),
+            _ => None,
+        }
+    }
 }
+
+use std::collections::HashMap;
+use std::path::PathBuf;
+
+/// Get the cmux config directory (~/.cmux)
+fn get_config_dir() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(home).join(".cmux")
+}
+
+/// Load the last used ACP provider from config
+pub fn load_last_provider() -> Option<AcpProvider> {
+    let path = get_config_dir().join("last_acp_provider");
+    if path.exists() {
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|s| AcpProvider::from_short_name(s.trim()))
+    } else {
+        None
+    }
+}
+
+/// Save the last used ACP provider to config
+fn save_last_provider(provider: AcpProvider) {
+    let dir = get_config_dir();
+    if !dir.exists() {
+        let _ = std::fs::create_dir_all(&dir);
+    }
+    let path = dir.join("last_acp_provider");
+    let _ = std::fs::write(path, provider.short_name());
+}
+
+/// Load the last used model ID for a specific provider
+fn load_last_model(provider: AcpProvider) -> Option<String> {
+    let path = get_config_dir().join(format!("last_model_{}", provider.short_name()));
+    if path.exists() {
+        std::fs::read_to_string(path)
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    } else {
+        None
+    }
+}
+
+/// Save the last used model ID for a specific provider
+fn save_last_model(provider: AcpProvider, model_id: &str) {
+    let dir = get_config_dir();
+    if !dir.exists() {
+        let _ = std::fs::create_dir_all(&dir);
+    }
+    let path = dir.join(format!("last_model_{}", provider.short_name()));
+    let _ = std::fs::write(path, model_id);
+}
+
 use crossterm::{
     event::{
         DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
@@ -126,11 +193,34 @@ enum AppEvent {
         provider: AcpProvider,
         connection: Arc<ClientSideConnection>,
         session_id: SessionId,
+        model_state: Option<SessionModelState>,
     },
     /// Provider switch failed
     ProviderSwitchFailed {
         provider: AcpProvider,
         error: String,
+    },
+    /// Model switch completed successfully
+    ModelSwitchComplete {
+        model_id: ModelId,
+    },
+    /// Model switch failed
+    ModelSwitchFailed {
+        error: String,
+    },
+    /// ACP request error (prompt, tool calls, etc.)
+    RequestError {
+        error: String,
+    },
+    /// Models loaded for a provider (for the model picker)
+    ProviderModelsLoaded {
+        provider: AcpProvider,
+        /// List of (model_id, display_name) pairs
+        models: Vec<(String, String)>,
+    },
+    /// Failed to load models for a provider
+    ProviderModelsLoadFailed {
+        provider: AcpProvider,
     },
 }
 
@@ -257,44 +347,42 @@ enum ConnectionState {
 }
 
 /// UI mode for the application
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum UiMode {
     /// Normal chat mode
     Chat,
     /// Main command palette (Ctrl+O) - searchable list of commands
-    MainPalette { search: String },
-    /// ACP provider selection palette (Ctrl+M or from main palette)
-    ProviderPalette { search: String },
+    MainPalette,
+    /// Unified provider/model selection palette (Ctrl+M)
+    SwitchPalette,
 }
 
 /// Commands available in the main palette
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PaletteCommand {
     ToggleDebugMode,
-    SwitchProvider,
+    SwitchProviderModel,
 }
 
 impl PaletteCommand {
     fn all() -> &'static [PaletteCommand] {
         &[
             PaletteCommand::ToggleDebugMode,
-            PaletteCommand::SwitchProvider,
+            PaletteCommand::SwitchProviderModel,
         ]
     }
 
     fn label(&self) -> &'static str {
         match self {
             PaletteCommand::ToggleDebugMode => "Toggle Debug Mode",
-            PaletteCommand::SwitchProvider => "Switch ACP Provider",
+            PaletteCommand::SwitchProviderModel => "Switch Provider / Model",
         }
     }
 
     fn description(&self) -> &'static str {
         match self {
             PaletteCommand::ToggleDebugMode => "Show/hide raw ACP protocol messages",
-            PaletteCommand::SwitchProvider => {
-                "Change the AI provider (Codex, Claude, Gemini, OpenCode)"
-            }
+            PaletteCommand::SwitchProviderModel => "Change AI provider or model",
         }
     }
 
@@ -305,6 +393,32 @@ impl PaletteCommand {
         let query_lower = query.to_lowercase();
         self.label().to_lowercase().contains(&query_lower)
             || self.description().to_lowercase().contains(&query_lower)
+    }
+}
+
+/// Item types in the unified switch palette
+#[derive(Clone, PartialEq, Eq)]
+enum SwitchPaletteItem {
+    /// Section header (not selectable)
+    Header(String),
+    /// Provider option
+    Provider(AcpProvider),
+    /// Model option (provider, model_id, display_name)
+    Model {
+        provider: AcpProvider,
+        id: String,
+        name: String,
+    },
+    /// Loading indicator (not selectable)
+    Loading(AcpProvider),
+}
+
+impl SwitchPaletteItem {
+    fn is_selectable(&self) -> bool {
+        !matches!(
+            self,
+            SwitchPaletteItem::Header(_) | SwitchPaletteItem::Loading(_)
+        )
     }
 }
 
@@ -322,6 +436,8 @@ struct App<'a> {
     ui_mode: UiMode,
     /// Selected index in command palette
     palette_selection: usize,
+    /// Palette search input (reused for both palettes)
+    palette_input: TextArea<'a>,
     /// Connection state
     connection_state: ConnectionState,
     /// Debug mode - show raw ACP messages
@@ -334,6 +450,17 @@ struct App<'a> {
     base_url: String,
     /// Sandbox ID for connections
     sandbox_id: String,
+    /// Available models from the current provider (if supported)
+    model_state: Option<SessionModelState>,
+    /// Whether a model switch is in progress
+    model_switching: bool,
+    /// Cached models per provider for the model picker
+    /// None = not loaded yet, Some(vec) = loaded (may be empty)
+    provider_models: HashMap<AcpProvider, Option<Vec<(String, String)>>>,
+    /// Providers currently being loaded for model discovery
+    providers_loading: Vec<AcpProvider>,
+    /// Pending model to switch to after provider switch completes
+    pending_model_switch: Option<ModelId>,
 }
 
 impl<'a> App<'a> {
@@ -351,6 +478,11 @@ impl<'a> App<'a> {
         );
         textarea
             .set_placeholder_text("Type a message and press Enter to send. Ctrl+J for new line.");
+
+        let mut palette_input = TextArea::default();
+        palette_input.set_placeholder_text("Type to search...");
+        palette_input.set_cursor_line_style(ratatui::style::Style::default());
+
         Self {
             history: vec![],
             textarea,
@@ -360,12 +492,18 @@ impl<'a> App<'a> {
             current_provider: provider,
             ui_mode: UiMode::Chat,
             palette_selection: 0,
+            palette_input,
             connection_state: ConnectionState::Connecting,
             debug_mode: false,
             debug_messages: vec![],
             event_tx,
             base_url,
             sandbox_id,
+            model_state: None,
+            model_switching: false,
+            provider_models: HashMap::new(),
+            providers_loading: vec![],
+            pending_model_switch: None,
         }
     }
 
@@ -384,22 +522,135 @@ impl<'a> App<'a> {
 
     /// Open the main command palette (Ctrl+O)
     fn open_main_palette(&mut self) {
-        self.ui_mode = UiMode::MainPalette {
-            search: String::new(),
-        };
+        self.ui_mode = UiMode::MainPalette;
         self.palette_selection = 0;
+        self.palette_input = TextArea::default();
+        self.palette_input.set_placeholder_text("Type to search...");
+        self.palette_input
+            .set_cursor_line_style(ratatui::style::Style::default());
     }
 
-    /// Open the provider palette (Ctrl+M)
-    fn open_provider_palette(&mut self) {
-        self.ui_mode = UiMode::ProviderPalette {
-            search: String::new(),
-        };
-        // Pre-select the current provider
-        self.palette_selection = AcpProvider::all()
+    /// Open the unified switch palette (Ctrl+M) for providers and models
+    fn open_switch_palette(&mut self) {
+        self.ui_mode = UiMode::SwitchPalette;
+        self.palette_input = TextArea::default();
+        self.palette_input
+            .set_placeholder_text("Type to filter providers/models...");
+        self.palette_input
+            .set_cursor_line_style(ratatui::style::Style::default());
+
+        // Pre-select current provider or model
+        let items = self.get_switch_palette_items();
+        let selectable: Vec<_> = items
             .iter()
-            .position(|p| *p == self.current_provider)
-            .unwrap_or(0);
+            .enumerate()
+            .filter(|(_, item)| item.is_selectable())
+            .collect();
+
+        // Try to find current model first, then current provider
+        self.palette_selection = 0;
+        if let Some(ref model_state) = self.model_state {
+            let current_model_id = &model_state.current_model_id;
+            if let Some(pos) = selectable.iter().position(|(_, item)| {
+                matches!(item, SwitchPaletteItem::Model { id, .. } if id == &*current_model_id.0)
+            }) {
+                self.palette_selection = pos;
+                return;
+            }
+        }
+        // Fall back to current provider
+        if let Some(pos) = selectable.iter().position(|(_, item)| {
+            matches!(item, SwitchPaletteItem::Provider(p) if *p == self.current_provider)
+        }) {
+            self.palette_selection = pos;
+        }
+    }
+
+    /// Get items for the unified switch palette
+    /// Shows all providers and models from all providers
+    fn get_switch_palette_items(&self) -> Vec<SwitchPaletteItem> {
+        let search = self.palette_search();
+        let search_lower = search.to_lowercase();
+        let mut items = Vec::new();
+
+        // Show each provider with its models underneath
+        for provider in AcpProvider::all() {
+            let provider_matches = search.is_empty()
+                || provider
+                    .display_name()
+                    .to_lowercase()
+                    .contains(&search_lower);
+
+            // Get models for this provider
+            let models = self.get_models_for_provider(*provider);
+
+            // Check if any models match the search
+            let matching_models: Vec<_> = models
+                .iter()
+                .filter(|(_, name)| {
+                    search.is_empty() || name.to_lowercase().contains(&search_lower)
+                })
+                .collect();
+
+            // Check if this provider is still loading
+            let is_loading = self.providers_loading.contains(provider);
+
+            // Include this section if provider matches or any models match
+            if provider_matches || !matching_models.is_empty() || (search.is_empty() && is_loading)
+            {
+                // Add provider as header
+                items.push(SwitchPaletteItem::Header(
+                    provider.display_name().to_string(),
+                ));
+                items.push(SwitchPaletteItem::Provider(*provider));
+
+                // Add models or loading indicator
+                if is_loading && models.is_empty() {
+                    items.push(SwitchPaletteItem::Loading(*provider));
+                } else if !matching_models.is_empty() {
+                    for (id, name) in matching_models {
+                        items.push(SwitchPaletteItem::Model {
+                            provider: *provider,
+                            id: id.clone(),
+                            name: name.clone(),
+                        });
+                    }
+                }
+            }
+        }
+
+        items
+    }
+
+    /// Get models for a specific provider
+    fn get_models_for_provider(&self, provider: AcpProvider) -> Vec<(String, String)> {
+        // First check cached models
+        if let Some(Some(models)) = self.provider_models.get(&provider) {
+            return models.clone();
+        }
+
+        // For current provider, use model_state if available
+        if provider == self.current_provider {
+            if let Some(ref model_state) = self.model_state {
+                return model_state
+                    .available_models
+                    .iter()
+                    .map(|m| (m.model_id.0.to_string(), m.name.clone()))
+                    .collect();
+            }
+        }
+
+        vec![]
+    }
+
+    /// Get the current model name (if available)
+    fn current_model_name(&self) -> Option<&str> {
+        self.model_state.as_ref().and_then(|s| {
+            s.available_models
+                .iter()
+                .find(|m| m.model_id == s.current_model_id)
+                .map(|m| m.name.as_str())
+        })
     }
 
     /// Close any palette
@@ -407,24 +658,26 @@ impl<'a> App<'a> {
         self.ui_mode = UiMode::Chat;
     }
 
-    /// Get filtered items count for current palette
+    /// Get the current search query from the palette input
+    fn palette_search(&self) -> String {
+        self.palette_input.lines().join("")
+    }
+
+    /// Get filtered selectable items count for current palette
     fn filtered_items_count(&self) -> usize {
-        match &self.ui_mode {
-            UiMode::MainPalette { search } => PaletteCommand::all()
-                .iter()
-                .filter(|c| c.matches(search))
-                .count(),
-            UiMode::ProviderPalette { search } => {
-                if search.is_empty() {
-                    AcpProvider::all().len()
-                } else {
-                    let search_lower = search.to_lowercase();
-                    AcpProvider::all()
-                        .iter()
-                        .filter(|p| p.display_name().to_lowercase().contains(&search_lower))
-                        .count()
-                }
+        match self.ui_mode {
+            UiMode::MainPalette => {
+                let search = self.palette_search();
+                PaletteCommand::all()
+                    .iter()
+                    .filter(|c| c.matches(&search))
+                    .count()
             }
+            UiMode::SwitchPalette => self
+                .get_switch_palette_items()
+                .iter()
+                .filter(|item| item.is_selectable())
+                .count(),
             UiMode::Chat => 0,
         }
     }
@@ -445,52 +698,23 @@ impl<'a> App<'a> {
         }
     }
 
-    /// Handle character input in palette search
-    fn palette_input(&mut self, c: char) {
-        match &mut self.ui_mode {
-            UiMode::MainPalette { search } | UiMode::ProviderPalette { search } => {
-                search.push(c);
-                self.palette_selection = 0; // Reset selection on search change
-            }
-            UiMode::Chat => {}
-        }
-    }
-
-    /// Handle backspace in palette search
-    fn palette_backspace(&mut self) {
-        match &mut self.ui_mode {
-            UiMode::MainPalette { search } | UiMode::ProviderPalette { search } => {
-                search.pop();
-                self.palette_selection = 0; // Reset selection on search change
-            }
-            UiMode::Chat => {}
-        }
-    }
-
-    /// Handle Option+Backspace (delete whole word) in palette search
-    fn palette_delete_word(&mut self) {
-        match &mut self.ui_mode {
-            UiMode::MainPalette { search } | UiMode::ProviderPalette { search } => {
-                // Delete trailing whitespace first
-                while search.ends_with(' ') {
-                    search.pop();
-                }
-                // Then delete until we hit whitespace or empty
-                while !search.is_empty() && !search.ends_with(' ') {
-                    search.pop();
-                }
-                self.palette_selection = 0; // Reset selection on search change
-            }
-            UiMode::Chat => {}
+    /// Handle input in palette search and reset selection
+    fn palette_handle_input(&mut self, input: impl Into<tui_textarea::Input>) {
+        let old_search = self.palette_search();
+        self.palette_input.input(input);
+        let new_search = self.palette_search();
+        if old_search != new_search {
+            self.palette_selection = 0; // Reset selection on search change
         }
     }
 
     /// Execute selected command in main palette
     fn execute_main_palette_selection(&mut self) -> Option<PaletteCommand> {
-        if let UiMode::MainPalette { search } = &self.ui_mode {
+        if self.ui_mode == UiMode::MainPalette {
+            let search = self.palette_search();
             let filtered: Vec<_> = PaletteCommand::all()
                 .iter()
-                .filter(|c| c.matches(search))
+                .filter(|c| c.matches(&search))
                 .collect();
             if let Some(cmd) = filtered.get(self.palette_selection) {
                 let cmd = **cmd;
@@ -502,49 +726,84 @@ impl<'a> App<'a> {
         None
     }
 
-    /// Select provider in provider palette
-    /// Initiates async provider switch if a new provider was selected
-    fn execute_provider_palette_selection(&mut self) {
-        if let UiMode::ProviderPalette { search } = &self.ui_mode {
-            let filtered: Vec<_> = if search.is_empty() {
-                AcpProvider::all().to_vec()
-            } else {
-                let search_lower = search.to_lowercase();
-                AcpProvider::all()
-                    .iter()
-                    .filter(|p| p.display_name().to_lowercase().contains(&search_lower))
-                    .copied()
-                    .collect()
-            };
-            if let Some(selected) = filtered.get(self.palette_selection) {
-                let selected = *selected;
-                self.ui_mode = UiMode::Chat;
-                if selected != self.current_provider {
-                    // Start async provider switch - update provider name immediately for UI
-                    let old_provider = self.current_provider;
-                    self.current_provider = selected;
-                    self.connection_state = ConnectionState::SwitchingProvider(old_provider);
-                    self.start_provider_switch(selected);
-                    return;
+    /// Execute selection in unified switch palette
+    /// Initiates async provider or model switch based on selection
+    fn execute_switch_palette_selection(&mut self) {
+        if self.ui_mode != UiMode::SwitchPalette {
+            return;
+        }
+
+        let items = self.get_switch_palette_items();
+        let selectable: Vec<_> = items
+            .into_iter()
+            .filter(|item| item.is_selectable())
+            .collect();
+
+        if let Some(selected) = selectable.get(self.palette_selection) {
+            match selected {
+                SwitchPaletteItem::Provider(provider) => {
+                    let provider = *provider;
+                    self.ui_mode = UiMode::Chat;
+                    if provider != self.current_provider {
+                        // Start async provider switch
+                        let old_provider = self.current_provider;
+                        self.current_provider = provider;
+                        self.connection_state = ConnectionState::SwitchingProvider(old_provider);
+                        self.start_provider_switch(provider);
+                        return;
+                    }
                 }
+                SwitchPaletteItem::Model { provider, id, .. } => {
+                    let model_id = ModelId::from(id.clone());
+                    self.ui_mode = UiMode::Chat;
+
+                    // If selecting a model from a different provider, switch provider first
+                    if *provider != self.current_provider {
+                        // Store the desired model to switch to after provider switch
+                        let old_provider = self.current_provider;
+                        self.current_provider = *provider;
+                        self.connection_state = ConnectionState::SwitchingProvider(old_provider);
+                        // The model switch will happen after provider switch completes
+                        // We'll handle this by saving the target model
+                        self.start_provider_switch_with_model(*provider, Some(model_id));
+                        return;
+                    }
+
+                    // Same provider - just switch model
+                    if let Some(ref model_state) = self.model_state {
+                        if model_id != model_state.current_model_id {
+                            self.model_switching = true;
+                            self.start_model_switch(model_id);
+                            return;
+                        }
+                    }
+                }
+                SwitchPaletteItem::Header(_) | SwitchPaletteItem::Loading(_) => {} // Not selectable
             }
         }
         self.ui_mode = UiMode::Chat;
     }
 
     /// Start connecting to a new provider in the background
-    fn start_provider_switch(&self, provider: AcpProvider) {
+    fn start_provider_switch(&mut self, provider: AcpProvider) {
+        self.start_provider_switch_with_model(provider, None);
+    }
+
+    /// Start connecting to a new provider with an optional model to switch to after
+    fn start_provider_switch_with_model(&mut self, provider: AcpProvider, model: Option<ModelId>) {
+        self.pending_model_switch = model;
         let tx = self.event_tx.clone();
         let base_url = self.base_url.clone();
         let sandbox_id = self.sandbox_id.clone();
 
         tokio::task::spawn_local(async move {
             match connect_to_provider(&base_url, &sandbox_id, provider, tx.clone()).await {
-                Ok((connection, session_id)) => {
+                Ok((connection, session_id, model_state)) => {
                     let _ = tx.send(AppEvent::ProviderSwitchComplete {
                         provider,
                         connection,
                         session_id,
+                        model_state,
                     });
                 }
                 Err(e) => {
@@ -556,6 +815,38 @@ impl<'a> App<'a> {
                 }
             }
         });
+    }
+
+    /// Start switching to a new model in the background
+    fn start_model_switch(&self, model_id: ModelId) {
+        let tx = self.event_tx.clone();
+        let conn = self.client_connection.clone();
+        let session_id = self.session_id.clone();
+
+        if let (Some(conn), Some(session_id)) = (conn, session_id) {
+            let model_id_clone = model_id.clone();
+            tokio::task::spawn_local(async move {
+                let request = SetSessionModelRequest {
+                    session_id,
+                    model_id: model_id_clone.clone(),
+                    meta: None,
+                };
+
+                match Agent::set_session_model(&*conn, request).await {
+                    Ok(_) => {
+                        let _ = tx.send(AppEvent::ModelSwitchComplete {
+                            model_id: model_id_clone,
+                        });
+                    }
+                    Err(e) => {
+                        log_debug(&format!("Model switch failed: {}", e));
+                        let _ = tx.send(AppEvent::ModelSwitchFailed {
+                            error: e.to_string(),
+                        });
+                    }
+                }
+            });
+        }
     }
 
     /// Toggle debug mode
@@ -706,9 +997,9 @@ impl<'a> App<'a> {
 
     async fn send_message(&mut self) {
         // Clone connection and session_id early to drop the borrow of self
-        let (conn, session_id) =
+        let (conn, session_id, tx) =
             if let (Some(conn), Some(session_id)) = (&self.client_connection, &self.session_id) {
-                (conn.clone(), session_id.clone())
+                (conn.clone(), session_id.clone(), self.event_tx.clone())
             } else {
                 return;
             };
@@ -746,6 +1037,9 @@ impl<'a> App<'a> {
             // We are using `Agent` trait method `prompt`.
             if let Err(error) = Agent::prompt(&*conn, request).await {
                 log_debug(&format!("Prompt failed: {}", error));
+                let _ = tx.send(AppEvent::RequestError {
+                    error: error.to_string(),
+                });
             }
         });
     }
@@ -952,14 +1246,18 @@ impl tokio::io::AsyncWrite for WsWrite {
     }
 }
 
-/// Connect to an ACP provider and return the connection and session ID.
+/// Connect to an ACP provider and return the connection, session ID, and model state.
 /// This function can be called from background tasks for provider switching.
 async fn connect_to_provider(
     base_url: &str,
     sandbox_id: &str,
     provider: AcpProvider,
     tx: mpsc::UnboundedSender<AppEvent>,
-) -> Result<(Arc<ClientSideConnection>, SessionId)> {
+) -> Result<(
+    Arc<ClientSideConnection>,
+    SessionId,
+    Option<SessionModelState>,
+)> {
     log_debug(&format!(
         "Connecting to provider: {}",
         provider.display_name()
@@ -1037,9 +1335,64 @@ async fn connect_to_provider(
             meta: None,
         })
         .await?;
-    log_debug("New Session started");
+    log_debug(&format!(
+        "New Session started, models: {:?}",
+        new_session_res.models
+    ));
 
-    Ok((client_conn, new_session_res.session_id))
+    Ok((
+        client_conn,
+        new_session_res.session_id,
+        new_session_res.models,
+    ))
+}
+
+/// Fetch models from a provider without keeping the connection.
+/// Used for background model discovery.
+async fn fetch_provider_models(
+    base_url: &str,
+    sandbox_id: &str,
+    provider: AcpProvider,
+    tx: mpsc::UnboundedSender<AppEvent>,
+) {
+    log_debug(&format!(
+        "Fetching models for provider: {}",
+        provider.display_name()
+    ));
+
+    // Create a dummy tx for the connection (we don't care about debug messages)
+    let dummy_tx = tx.clone();
+
+    match connect_to_provider(base_url, sandbox_id, provider, dummy_tx).await {
+        Ok((_connection, _session_id, model_state)) => {
+            let models: Vec<(String, String)> = model_state
+                .map(|state| {
+                    state
+                        .available_models
+                        .into_iter()
+                        .map(|m| (m.model_id.0.to_string(), m.name))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            log_debug(&format!(
+                "Loaded {} models for {}",
+                models.len(),
+                provider.display_name()
+            ));
+
+            let _ = tx.send(AppEvent::ProviderModelsLoaded { provider, models });
+            // Connection will be dropped here, closing the websocket
+        }
+        Err(e) => {
+            log_debug(&format!(
+                "Failed to fetch models for {}: {}",
+                provider.display_name(),
+                e
+            ));
+            let _ = tx.send(AppEvent::ProviderModelsLoadFailed { provider });
+        }
+    }
 }
 
 async fn run_main_loop<B: ratatui::backend::Backend>(
@@ -1054,14 +1407,65 @@ async fn run_main_loop<B: ratatui::backend::Backend>(
     ));
     let (tx, rx) = mpsc::unbounded_channel();
 
-    // Connect to initial provider
-    let (client_conn, session_id) =
-        connect_to_provider(&base_url, &sandbox_id, initial_provider, tx.clone()).await?;
+    // Create app immediately in Connecting state
+    let mut app = App::new(
+        initial_provider,
+        tx.clone(),
+        base_url.clone(),
+        sandbox_id.clone(),
+    );
+    // Start with Connecting state - UI shows immediately
+    app.connection_state = ConnectionState::Connecting;
 
-    let mut app = App::new(initial_provider, tx, base_url, sandbox_id);
-    app.client_connection = Some(client_conn);
-    app.session_id = Some(session_id);
-    app.connection_state = ConnectionState::Connected;
+    // Mark all providers as loading
+    for provider in AcpProvider::all() {
+        app.providers_loading.push(*provider);
+    }
+
+    // Spawn connections to ALL providers in parallel
+    // The initial_provider connection will be kept for the main session
+    // Other providers are just for model discovery
+    for provider in AcpProvider::all() {
+        let tx_clone = tx.clone();
+        let base_url_clone = base_url.clone();
+        let sandbox_id_clone = sandbox_id.clone();
+        let provider = *provider;
+
+        if provider == initial_provider {
+            // For the initial provider, keep the connection for the main session
+            tokio::task::spawn_local(async move {
+                match connect_to_provider(
+                    &base_url_clone,
+                    &sandbox_id_clone,
+                    provider,
+                    tx_clone.clone(),
+                )
+                .await
+                {
+                    Ok((connection, session_id, model_state)) => {
+                        let _ = tx_clone.send(AppEvent::ProviderSwitchComplete {
+                            provider,
+                            connection,
+                            session_id,
+                            model_state,
+                        });
+                    }
+                    Err(e) => {
+                        log_debug(&format!("Initial provider connection failed: {}", e));
+                        let _ = tx_clone.send(AppEvent::ProviderSwitchFailed {
+                            provider,
+                            error: e.to_string(),
+                        });
+                    }
+                }
+            });
+        } else {
+            // For other providers, just fetch models and close the connection
+            tokio::task::spawn_local(async move {
+                fetch_provider_models(&base_url_clone, &sandbox_id_clone, provider, tx_clone).await;
+            });
+        }
+    }
 
     log_debug("Running App UI loop...");
     run_app(terminal, app, rx).await?;
@@ -1086,99 +1490,198 @@ async fn run_app<B: ratatui::backend::Backend>(
                     AppEvent::DebugMessage { direction, message } => {
                         app.add_debug_message(&direction, &message);
                     }
-                    AppEvent::ProviderSwitchComplete { provider, connection, session_id } => {
+                    AppEvent::ProviderSwitchComplete { provider, connection, session_id, model_state } => {
                         log_debug(&format!("Provider switch complete: {}", provider.display_name()));
+                        let was_initial_connection = app.connection_state == ConnectionState::Connecting;
                         app.current_provider = provider;
                         app.client_connection = Some(connection);
                         app.session_id = Some(session_id);
+                        app.model_state = model_state.clone();
                         app.connection_state = ConnectionState::Connected;
-                        // Clear history for new provider session
-                        app.history.clear();
+
+                        // Cache models for this provider and remove from loading list
+                        if let Some(ref state) = model_state {
+                            let models: Vec<(String, String)> = state
+                                .available_models
+                                .iter()
+                                .map(|m| (m.model_id.0.to_string(), m.name.clone()))
+                                .collect();
+                            app.provider_models.insert(provider, Some(models));
+                        }
+                        app.providers_loading.retain(|p| *p != provider);
+
+                        // Clear history for provider switch (but not initial connection)
+                        if !was_initial_connection {
+                            app.history.clear();
+                        }
+
+                        // Save last used provider
+                        save_last_provider(provider);
+
+                        // Check if there's a pending model switch
+                        if let Some(pending_model) = app.pending_model_switch.take() {
+                            app.model_switching = true;
+                            app.start_model_switch(pending_model);
+                        } else {
+                            // Try to restore last used model for this provider
+                            if let Some(ref state) = model_state {
+                                if let Some(last_model_id) = load_last_model(provider) {
+                                    // Check if the model is still available
+                                    if state.available_models.iter().any(|m| *m.model_id.0 == last_model_id) {
+                                        // Switch to the last used model if it's different from current
+                                        if *state.current_model_id.0 != last_model_id {
+                                            app.model_switching = true;
+                                            app.start_model_switch(ModelId::from(last_model_id));
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     AppEvent::ProviderSwitchFailed { provider, error } => {
                         log_debug(&format!("Provider switch failed for {}: {}", provider.display_name(), error));
+                        let was_initial_connection = app.connection_state == ConnectionState::Connecting;
                         // Revert to old provider (stored in SwitchingProvider state)
                         if let ConnectionState::SwitchingProvider(old_provider) = app.connection_state {
                             app.current_provider = old_provider;
+                            app.connection_state = ConnectionState::Connected;
+                        } else if was_initial_connection {
+                            // Initial connection failed - stay in a failed state but allow retrying
+                            app.connection_state = ConnectionState::Connected;
                         }
-                        app.connection_state = ConnectionState::Connected;
+                        // Remove from loading list and mark as failed (empty models)
+                        app.providers_loading.retain(|p| *p != provider);
+                        app.provider_models.insert(provider, Some(vec![]));
+                        // Clear pending model switch
+                        app.pending_model_switch = None;
+                        // Add error message to chat (only for the current provider, not background loads)
+                        if provider == app.current_provider {
+                            app.history.push(ChatEntry::Message {
+                                role: "System".to_string(),
+                                text: format!("Failed to connect to {}: {}", provider.display_name(), error),
+                                normalized_markdown: None,
+                            });
+                        }
+                    }
+                    AppEvent::ModelSwitchComplete { model_id } => {
+                        log_debug(&format!("Model switch complete: {}", model_id));
+                        app.model_switching = false;
+                        // Update current model in state
+                        if let Some(ref mut model_state) = app.model_state {
+                            model_state.current_model_id = model_id.clone();
+                        }
+                        // Save last used model for this provider
+                        save_last_model(app.current_provider, &model_id.0);
+                    }
+                    AppEvent::ModelSwitchFailed { error } => {
+                        log_debug(&format!("Model switch failed: {}", error));
+                        app.model_switching = false;
                         // Add error message to chat
                         app.history.push(ChatEntry::Message {
                             role: "System".to_string(),
-                            text: format!("Failed to switch to {}: {}", provider.display_name(), error),
+                            text: format!("Failed to switch model: {}", error),
                             normalized_markdown: None,
                         });
+                    }
+                    AppEvent::RequestError { error } => {
+                        log_debug(&format!("Request error: {}", error));
+                        // Add error message to chat
+                        app.history.push(ChatEntry::Message {
+                            role: "Error".to_string(),
+                            text: error,
+                            normalized_markdown: None,
+                        });
+                    }
+                    AppEvent::ProviderModelsLoaded { provider, models } => {
+                        log_debug(&format!("Loaded {} models for {}", models.len(), provider.display_name()));
+                        // Cache the models for this provider
+                        app.provider_models.insert(provider, Some(models));
+                        // Remove from loading list
+                        app.providers_loading.retain(|p| *p != provider);
+                    }
+                    AppEvent::ProviderModelsLoadFailed { provider } => {
+                        log_debug(&format!("Failed to load models for {}", provider.display_name()));
+                        // Mark as loaded but with empty list
+                        app.provider_models.insert(provider, Some(vec![]));
+                        // Remove from loading list
+                        app.providers_loading.retain(|p| *p != provider);
                     }
                 }
             }
             Some(Ok(event)) = reader.next() => {
-                match &app.ui_mode {
-                    UiMode::MainPalette { .. } => {
+                match app.ui_mode {
+                    UiMode::MainPalette => {
                         // Handle main command palette input
                         if let Event::Key(key) = event {
                             if key.modifiers.contains(KeyModifiers::CONTROL) {
                                 match key.code {
+                                    // Navigation
                                     KeyCode::Char('p') | KeyCode::Char('k') => app.palette_up(),
                                     KeyCode::Char('n') | KeyCode::Char('j') => app.palette_down(),
+                                    // Close palette
                                     KeyCode::Char('c') | KeyCode::Char('g') => app.close_palette(),
                                     KeyCode::Char('o') => app.close_palette(), // Toggle: close if already open
+                                    // Safe to pass through: Ctrl+U (undo), Ctrl+R (redo),
+                                    // Ctrl+W (delete word), Ctrl+A (start), Ctrl+E (end),
+                                    // Ctrl+H (backspace), Ctrl+D (delete char)
+                                    KeyCode::Char('u') | KeyCode::Char('r') |
+                                    KeyCode::Char('w') | KeyCode::Char('a') | KeyCode::Char('e') |
+                                    KeyCode::Char('h') | KeyCode::Char('d') => {
+                                        app.palette_handle_input(key);
+                                    }
+                                    // Ignore other Ctrl combinations to avoid conflicts
                                     _ => {}
-                                }
-                            } else if key.modifiers.contains(KeyModifiers::ALT) {
-                                if key.code == KeyCode::Backspace {
-                                    app.palette_delete_word();
                                 }
                             } else {
                                 match key.code {
                                     KeyCode::Esc => app.close_palette(),
                                     KeyCode::Up => app.palette_up(),
                                     KeyCode::Down => app.palette_down(),
-                                    KeyCode::Backspace => app.palette_backspace(),
                                     KeyCode::Enter => {
                                         if let Some(cmd) = app.execute_main_palette_selection() {
                                             match cmd {
                                                 PaletteCommand::ToggleDebugMode => {
                                                     app.toggle_debug_mode();
                                                 }
-                                                PaletteCommand::SwitchProvider => {
-                                                    app.open_provider_palette();
+                                                PaletteCommand::SwitchProviderModel => {
+                                                    app.open_switch_palette();
                                                 }
                                             }
                                         }
                                     }
-                                    KeyCode::Char(c) => app.palette_input(c),
-                                    _ => {}
+                                    _ => { app.palette_handle_input(key); }
                                 }
                             }
                         }
                     }
-                    UiMode::ProviderPalette { .. } => {
-                        // Handle provider palette input
+                    UiMode::SwitchPalette => {
+                        // Handle unified provider/model palette input
                         if let Event::Key(key) = event {
                             if key.modifiers.contains(KeyModifiers::CONTROL) {
                                 match key.code {
+                                    // Navigation
                                     KeyCode::Char('p') | KeyCode::Char('k') => app.palette_up(),
                                     KeyCode::Char('n') | KeyCode::Char('j') => app.palette_down(),
+                                    // Close palette
                                     KeyCode::Char('c') | KeyCode::Char('g') => app.close_palette(),
                                     KeyCode::Char('m') => app.close_palette(), // Toggle: close if already open
+                                    // Safe to pass through editing shortcuts
+                                    KeyCode::Char('u') | KeyCode::Char('r') |
+                                    KeyCode::Char('w') | KeyCode::Char('a') | KeyCode::Char('e') |
+                                    KeyCode::Char('h') | KeyCode::Char('d') => {
+                                        app.palette_handle_input(key);
+                                    }
                                     _ => {}
-                                }
-                            } else if key.modifiers.contains(KeyModifiers::ALT) {
-                                if key.code == KeyCode::Backspace {
-                                    app.palette_delete_word();
                                 }
                             } else {
                                 match key.code {
                                     KeyCode::Esc => app.close_palette(),
                                     KeyCode::Up => app.palette_up(),
                                     KeyCode::Down => app.palette_down(),
-                                    KeyCode::Backspace => app.palette_backspace(),
                                     KeyCode::Enter => {
-                                        // This now triggers async provider switch
-                                        app.execute_provider_palette_selection();
+                                        app.execute_switch_palette_selection();
                                     }
-                                    KeyCode::Char(c) => app.palette_input(c),
-                                    _ => {}
+                                    _ => { app.palette_handle_input(key); }
                                 }
                             }
                         }
@@ -1192,7 +1695,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                                             return Ok(());
                                         }
                                         KeyCode::Char('j') => { app.textarea.insert_newline(); },
-                                        KeyCode::Char('m') => { app.open_provider_palette(); },
+                                        KeyCode::Char('m') => { app.open_switch_palette(); },
                                         KeyCode::Char('o') => { app.open_main_palette(); },
                                         _ => { app.textarea.input(key); }
                                     }
@@ -1377,12 +1880,23 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
         provider_style,
     )];
 
+    // Show current model if available
+    if let Some(model_name) = app.current_model_name() {
+        let model_style = ratatui::style::Style::default().fg(ratatui::style::Color::Magenta);
+        status_spans.push(Span::styled(" / ", hint_style));
+        status_spans.push(Span::styled(model_name.to_string(), model_style));
+    }
+
     // Show connection state
     match &app.connection_state {
         ConnectionState::Connecting => {
             status_spans.push(Span::styled(" (connecting...)", connecting_style));
         }
-        ConnectionState::Connected => {}
+        ConnectionState::Connected => {
+            if app.model_switching {
+                status_spans.push(Span::styled(" (switching model...)", connecting_style));
+            }
+        }
         ConnectionState::SwitchingProvider(_) => {
             status_spans.push(Span::styled(" (loading...)", connecting_style));
         }
@@ -1393,6 +1907,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
         status_spans.push(Span::styled(" [DEBUG]", debug_indicator_style));
     }
 
+    // Show hints
     status_spans.push(Span::styled(" │ ^O: commands │ ^M: switch", hint_style));
 
     let status_line = Line::from(status_spans);
@@ -1400,65 +1915,95 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
     f.render_widget(status_paragraph, status_area);
 
     // Render palette overlay if active
-    match &app.ui_mode {
-        UiMode::MainPalette { search } => {
+    match app.ui_mode {
+        UiMode::MainPalette => {
+            let search = app.palette_search();
             render_searchable_palette(
                 f,
                 " Commands ",
-                search,
+                &app.palette_input,
                 app.palette_selection,
                 PaletteCommand::all()
                     .iter()
-                    .filter(|c| c.matches(search))
-                    .map(|c| {
-                        (
-                            c.label().to_string(),
-                            Some(c.description().to_string()),
-                            false,
-                        )
+                    .filter(|c| c.matches(&search))
+                    .map(|c| PaletteItem::Simple {
+                        label: c.label().to_string(),
+                        description: Some(c.description().to_string()),
+                        is_current: false,
                     })
                     .collect(),
             );
         }
-        UiMode::ProviderPalette { search } => {
-            let search_lower = search.to_lowercase();
-            let items: Vec<_> = AcpProvider::all()
+        UiMode::SwitchPalette => {
+            let items = app.get_switch_palette_items();
+            let palette_items: Vec<_> = items
                 .iter()
-                .filter(|p| {
-                    search.is_empty() || p.display_name().to_lowercase().contains(&search_lower)
-                })
-                .map(|p| {
-                    let is_current = *p == app.current_provider;
-                    (p.display_name().to_string(), None, is_current)
+                .map(|item| match item {
+                    SwitchPaletteItem::Header(text) => PaletteItem::Header(text.clone()),
+                    SwitchPaletteItem::Provider(p) => PaletteItem::Simple {
+                        label: format!("Switch to {}", p.display_name()),
+                        description: None,
+                        is_current: *p == app.current_provider,
+                    },
+                    SwitchPaletteItem::Model { provider, id, name } => {
+                        let is_current = *provider == app.current_provider
+                            && app
+                                .model_state
+                                .as_ref()
+                                .is_some_and(|s| &*s.current_model_id.0 == id);
+                        PaletteItem::Simple {
+                            label: format!("  {}", name),
+                            description: None,
+                            is_current,
+                        }
+                    }
+                    SwitchPaletteItem::Loading(_) => PaletteItem::Loading,
                 })
                 .collect();
             render_searchable_palette(
                 f,
-                " Select ACP Provider ",
-                search,
+                " Switch Provider / Model ",
+                &app.palette_input,
                 app.palette_selection,
-                items,
+                palette_items,
             );
         }
         UiMode::Chat => {}
     }
 }
 
-/// Render a searchable palette overlay
+/// Item types for palette rendering
+enum PaletteItem {
+    /// Section header (not selectable)
+    Header(String),
+    /// Normal selectable item
+    Simple {
+        label: String,
+        description: Option<String>,
+        is_current: bool,
+    },
+    /// Loading indicator (not selectable)
+    Loading,
+}
+
+/// Render a searchable palette overlay with scrolling support
 fn render_searchable_palette(
     f: &mut ratatui::Frame,
     title: &str,
-    search: &str,
-    selection: usize,
-    items: Vec<(String, Option<String>, bool)>, // (label, description, is_current)
+    search_input: &TextArea<'_>,
+    selection: usize, // Index into selectable items only
+    items: Vec<PaletteItem>,
 ) {
     use ratatui::widgets::Clear;
 
     let area = f.area();
 
-    // Calculate palette dimensions
+    // Calculate palette dimensions - cap at reasonable size for scrolling
     let palette_width = 70u16.min(area.width.saturating_sub(4));
-    let palette_height = (items.len() as u16 + 6).min(area.height.saturating_sub(4)); // +6 for borders, search, padding
+    let max_items_height = 15u16; // Max visible items
+    let palette_height = (items.len() as u16 + 7)
+        .min(max_items_height + 7)
+        .min(area.height.saturating_sub(4));
 
     // Center the palette
     let x = (area.width.saturating_sub(palette_width)) / 2;
@@ -1469,75 +2014,20 @@ fn render_searchable_palette(
     // Clear the area behind the palette
     f.render_widget(Clear, palette_area);
 
-    // Build palette content
-    let mut palette_lines: Vec<Line<'_>> = Vec::new();
+    // Split palette area into: search input (1 line), spacing, items, help text
+    let inner_area = ratatui::layout::Rect::new(
+        palette_area.x + 1,
+        palette_area.y + 1,
+        palette_area.width.saturating_sub(2),
+        palette_area.height.saturating_sub(2),
+    );
 
-    // Search box
-    let search_display = if search.is_empty() {
-        "Type to search...".to_string()
-    } else {
-        search.to_string()
-    };
-    let search_style = if search.is_empty() {
-        ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray)
-    } else {
-        ratatui::style::Style::default().fg(ratatui::style::Color::White)
-    };
-    palette_lines.push(Line::from(vec![
-        Span::styled(
-            " > ",
-            ratatui::style::Style::default().fg(ratatui::style::Color::Cyan),
-        ),
-        Span::styled(search_display, search_style),
-    ]));
-    palette_lines.push(Line::from("")); // Spacing
+    let search_area = ratatui::layout::Rect::new(inner_area.x, inner_area.y, inner_area.width, 1);
 
-    // Items
-    for (i, (label, description, is_current)) in items.iter().enumerate() {
-        let is_selected = i == selection;
+    let items_start_y = inner_area.y + 2; // +2 for search and spacing
+    let items_height = inner_area.height.saturating_sub(4); // -4 for search, spacing, and help lines
 
-        let prefix = if is_selected { "▶ " } else { "  " };
-        let suffix = if *is_current { " ●" } else { "" };
-
-        let style = if is_selected {
-            ratatui::style::Style::default()
-                .fg(ratatui::style::Color::Cyan)
-                .add_modifier(ratatui::style::Modifier::BOLD)
-        } else if *is_current {
-            ratatui::style::Style::default().fg(ratatui::style::Color::Green)
-        } else {
-            ratatui::style::Style::default()
-        };
-
-        let mut spans = vec![Span::styled(
-            format!("{}{}{}", prefix, label, suffix),
-            style,
-        )];
-
-        // Add description if present
-        if let Some(desc) = description {
-            spans.push(Span::styled(
-                format!("  {}", desc),
-                ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray),
-            ));
-        }
-
-        palette_lines.push(Line::from(spans));
-    }
-
-    if items.is_empty() {
-        palette_lines.push(Line::styled(
-            "  No matches",
-            ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray),
-        ));
-    }
-
-    palette_lines.push(Line::from("")); // Padding
-    palette_lines.push(Line::styled(
-        " ↑↓: navigate │ Enter: select │ Esc: cancel",
-        ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray),
-    ));
-
+    // Render the outer block first
     let palette_block = Block::default()
         .title(title)
         .title_style(
@@ -1547,9 +2037,148 @@ fn render_searchable_palette(
         )
         .borders(Borders::ALL)
         .border_style(ratatui::style::Style::default().fg(ratatui::style::Color::Cyan));
+    f.render_widget(palette_block, palette_area);
 
-    let palette_paragraph = Paragraph::new(palette_lines).block(palette_block);
-    f.render_widget(palette_paragraph, palette_area);
+    // Render search input with ">" prefix
+    let search_prefix = Paragraph::new(Line::from(Span::styled(
+        ">",
+        ratatui::style::Style::default().fg(ratatui::style::Color::Cyan),
+    )));
+    let prefix_area = ratatui::layout::Rect::new(search_area.x, search_area.y, 2, 1);
+    f.render_widget(search_prefix, prefix_area);
+
+    // Render the TextArea input
+    let input_area =
+        ratatui::layout::Rect::new(search_area.x + 2, search_area.y, search_area.width - 2, 1);
+    f.render_widget(search_input, input_area);
+
+    // Build item lines and track which line index corresponds to the selected item
+    let mut palette_lines: Vec<Line<'_>> = Vec::new();
+    let mut selectable_index = 0usize;
+    let mut selected_line_index: Option<usize> = None;
+
+    for item in items.iter() {
+        match item {
+            PaletteItem::Header(text) => {
+                // Header style - dimmed, not selectable
+                palette_lines.push(Line::styled(
+                    format!("─ {} ─", text),
+                    ratatui::style::Style::default()
+                        .fg(ratatui::style::Color::DarkGray)
+                        .add_modifier(ratatui::style::Modifier::BOLD),
+                ));
+            }
+            PaletteItem::Loading => {
+                // Loading indicator - dimmed, not selectable
+                palette_lines.push(Line::styled(
+                    "    Loading...",
+                    ratatui::style::Style::default()
+                        .fg(ratatui::style::Color::Yellow)
+                        .add_modifier(ratatui::style::Modifier::ITALIC),
+                ));
+            }
+            PaletteItem::Simple {
+                label,
+                description,
+                is_current,
+            } => {
+                let is_selected = selectable_index == selection;
+                if is_selected {
+                    selected_line_index = Some(palette_lines.len());
+                }
+
+                let prefix = if is_selected { "▶ " } else { "  " };
+                let suffix = if *is_current { " ●" } else { "" };
+
+                let style = if is_selected {
+                    ratatui::style::Style::default()
+                        .fg(ratatui::style::Color::Cyan)
+                        .add_modifier(ratatui::style::Modifier::BOLD)
+                } else if *is_current {
+                    ratatui::style::Style::default().fg(ratatui::style::Color::Green)
+                } else {
+                    ratatui::style::Style::default()
+                };
+
+                let mut spans = vec![Span::styled(
+                    format!("{}{}{}", prefix, label, suffix),
+                    style,
+                )];
+
+                // Add description if present
+                if let Some(desc) = description {
+                    spans.push(Span::styled(
+                        format!("  {}", desc),
+                        ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray),
+                    ));
+                }
+
+                palette_lines.push(Line::from(spans));
+                selectable_index += 1;
+            }
+        }
+    }
+
+    if items.is_empty() {
+        palette_lines.push(Line::styled(
+            "  No matches",
+            ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray),
+        ));
+    }
+
+    // Calculate scroll offset to keep selected item visible
+    let total_lines = palette_lines.len() as u16;
+    let view_height = items_height;
+    let scroll_offset = if let Some(selected_idx) = selected_line_index {
+        let selected_idx = selected_idx as u16;
+        if selected_idx >= view_height {
+            // Scroll so selected item is at the bottom of the view
+            (selected_idx + 1).saturating_sub(view_height)
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+
+    // Show scroll indicators if needed
+    let needs_scroll_up = scroll_offset > 0;
+    let needs_scroll_down = scroll_offset + view_height < total_lines;
+
+    // Render items with scroll
+    let items_area =
+        ratatui::layout::Rect::new(inner_area.x, items_start_y, inner_area.width, items_height);
+    let items_paragraph = Paragraph::new(palette_lines).scroll((scroll_offset, 0));
+    f.render_widget(items_paragraph, items_area);
+
+    // Render scroll indicators on the right edge
+    if needs_scroll_up {
+        let up_indicator = Paragraph::new("▲")
+            .style(ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray));
+        let up_area =
+            ratatui::layout::Rect::new(items_area.x + items_area.width - 1, items_area.y, 1, 1);
+        f.render_widget(up_indicator, up_area);
+    }
+    if needs_scroll_down {
+        let down_indicator = Paragraph::new("▼")
+            .style(ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray));
+        let down_area = ratatui::layout::Rect::new(
+            items_area.x + items_area.width - 1,
+            items_area.y + items_area.height - 1,
+            1,
+            1,
+        );
+        f.render_widget(down_indicator, down_area);
+    }
+
+    // Render help text at the bottom
+    let help_y = palette_area.y + palette_area.height - 2;
+    let help_area = ratatui::layout::Rect::new(inner_area.x, help_y, inner_area.width, 1);
+    let help_text = Paragraph::new(Line::styled(
+        "↑↓: navigate │ Enter: select │ Esc: cancel",
+        ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray),
+    ));
+    f.render_widget(help_text, help_area);
 }
 
 fn render_message<'a>(
@@ -1573,6 +2202,58 @@ fn render_message<'a>(
             let prefix_style =
                 ratatui::style::Style::default().add_modifier(ratatui::style::Modifier::BOLD);
             render_markdown_message(lines, role, text, normalized_markdown, prefix_style);
+        }
+        "Error" => {
+            // Red styling for errors
+            let prefix_style = ratatui::style::Style::default()
+                .fg(ratatui::style::Color::Red)
+                .add_modifier(ratatui::style::Modifier::BOLD);
+            let text_style = ratatui::style::Style::default().fg(ratatui::style::Color::Red);
+            let prefix = "Error: ";
+            let mut first = true;
+            for text_line in text.lines() {
+                if first {
+                    lines.push(Line::from(vec![
+                        Span::styled(prefix.to_string(), prefix_style),
+                        Span::styled(text_line.to_owned(), text_style),
+                    ]));
+                    first = false;
+                } else {
+                    lines.push(Line::styled(text_line.to_owned(), text_style));
+                }
+            }
+            if first {
+                lines.push(Line::from(vec![Span::styled(
+                    prefix.to_string(),
+                    prefix_style,
+                )]));
+            }
+        }
+        "System" => {
+            // Yellow/warning styling for system messages
+            let prefix_style = ratatui::style::Style::default()
+                .fg(ratatui::style::Color::Yellow)
+                .add_modifier(ratatui::style::Modifier::BOLD);
+            let text_style = ratatui::style::Style::default().fg(ratatui::style::Color::Yellow);
+            let prefix = "System: ";
+            let mut first = true;
+            for text_line in text.lines() {
+                if first {
+                    lines.push(Line::from(vec![
+                        Span::styled(prefix.to_string(), prefix_style),
+                        Span::styled(text_line.to_owned(), text_style),
+                    ]));
+                    first = false;
+                } else {
+                    lines.push(Line::styled(text_line.to_owned(), text_style));
+                }
+            }
+            if first {
+                lines.push(Line::from(vec![Span::styled(
+                    prefix.to_string(),
+                    prefix_style,
+                )]));
+            }
         }
         _ => {
             let prefix = format!("{}: ", role);
