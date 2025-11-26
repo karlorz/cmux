@@ -1132,7 +1132,7 @@ pub struct MuxConnectionSender {
 
 impl MuxConnectionSender {
     /// Send a message to the multiplexed connection.
-    fn send(&self, msg: MuxClientMessage) -> bool {
+    pub fn send(&self, msg: MuxClientMessage) -> bool {
         self.tx.send(msg).is_ok()
     }
 }
@@ -1580,6 +1580,12 @@ pub async fn establish_mux_connection(manager: SharedTerminalManager) -> anyhow:
                             };
 
                             match server_msg {
+                                MuxServerMessage::SandboxCreated(summary) => {
+                                    let _ = event_tx_clone.send(MuxEvent::SandboxCreated(summary));
+                                }
+                                MuxServerMessage::SandboxList { sandboxes } => {
+                                    let _ = event_tx_clone.send(MuxEvent::SandboxesRefreshed(sandboxes));
+                                }
                                 MuxServerMessage::Attached { session_id } => {
                                     // Session is now attached - this is handled via pending_attaches
                                     // in connect_to_sandbox
@@ -1715,6 +1721,39 @@ pub async fn connect_to_sandbox(
     });
 
     Ok(())
+}
+
+/// Request sandbox creation via the multiplexed WebSocket connection.
+/// The server will respond with a SandboxCreated message.
+pub async fn request_create_sandbox(
+    manager: SharedTerminalManager,
+    name: Option<String>,
+) -> anyhow::Result<()> {
+    // Ensure the multiplexed connection is established
+    establish_mux_connection(manager.clone()).await?;
+
+    let mgr = manager.lock().await;
+    if let Some(sender) = mgr.get_mux_sender() {
+        sender.send(MuxClientMessage::CreateSandbox { name });
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("Mux connection not established"))
+    }
+}
+
+/// Request sandbox list via the multiplexed WebSocket connection.
+/// The server will respond with a SandboxList message.
+pub async fn request_list_sandboxes(manager: SharedTerminalManager) -> anyhow::Result<()> {
+    // Ensure the multiplexed connection is established
+    establish_mux_connection(manager.clone()).await?;
+
+    let mgr = manager.lock().await;
+    if let Some(sender) = mgr.get_mux_sender() {
+        sender.send(MuxClientMessage::ListSandboxes);
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("Mux connection not established"))
+    }
 }
 
 #[cfg(test)]

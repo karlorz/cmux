@@ -18,7 +18,9 @@ use crate::mux::commands::MuxCommand;
 use crate::mux::events::MuxEvent;
 use crate::mux::layout::{ClosedTabInfo, PaneContent, PaneExitOutcome};
 use crate::mux::state::{FocusArea, MuxApp};
-use crate::mux::terminal::{connect_to_sandbox, create_terminal_manager};
+use crate::mux::terminal::{
+    connect_to_sandbox, create_terminal_manager, request_create_sandbox, request_list_sandboxes,
+};
 use crate::mux::ui::ui;
 
 /// Run the multiplexer TUI.
@@ -163,7 +165,6 @@ async fn run_app<B: ratatui::backend::Backend>(
     terminal_manager: crate::mux::terminal::SharedTerminalManager,
 ) -> Result<()> {
     let mut reader = EventStream::new();
-    let base_url = app.base_url.clone();
 
     loop {
         terminal.draw(|f| ui(f, &mut app))?;
@@ -186,66 +187,32 @@ async fn run_app<B: ratatui::backend::Backend>(
                         }
                     }
                     MuxEvent::Notification { message, .. } if message.contains("Creating sandbox") => {
-                        // Spawn sandbox creation task - creates via REST API then emits SandboxCreated
-                        let url = base_url.clone();
+                        // Send CreateSandbox via WebSocket - server responds with SandboxCreated
+                        let manager = terminal_manager.clone();
                         let event_tx = app.event_tx.clone();
                         tokio::spawn(async move {
-                            let client = reqwest::Client::new();
-                            let api_url = format!("{}/sandboxes", url.trim_end_matches('/'));
-                            let body = crate::models::CreateSandboxRequest {
-                                name: Some("interactive".to_string()),
-                                workspace: None,
-                                read_only_paths: vec![],
-                                tmpfs: vec![],
-                                env: vec![],
-                            };
-
-                            match client.post(&api_url).json(&body).send().await {
-                                Ok(response) if response.status().is_success() => {
-                                    match response.json::<crate::models::SandboxSummary>().await {
-                                        Ok(summary) => {
-                                            let sandbox_id = summary.id.to_string();
-                                            // Send SandboxCreated which sets up workspace/tab/pane
-                                            let _ = event_tx.send(MuxEvent::SandboxCreated(summary));
-                                            // Request connection to the new sandbox
-                                            let _ = event_tx.send(MuxEvent::ConnectToSandbox { sandbox_id });
-                                            // Refresh to show the new sandbox in sidebar
-                                            let _ = event_tx.send(MuxEvent::Notification {
-                                                message: "Refreshing sandboxes...".to_string(),
-                                                level: crate::mux::events::NotificationLevel::Info,
-                                            });
-                                        }
-                                        Err(e) => {
-                                            let _ = event_tx.send(MuxEvent::Error(format!(
-                                                "Failed to parse sandbox response: {}",
-                                                e
-                                            )));
-                                        }
-                                    }
-                                }
-                                Ok(response) => {
-                                    let status = response.status();
-                                    let text = response.text().await.unwrap_or_default();
-                                    let _ = event_tx.send(MuxEvent::Error(format!(
-                                        "Failed to create sandbox: {} - {}",
-                                        status, text
-                                    )));
-                                }
-                                Err(e) => {
-                                    let _ = event_tx.send(MuxEvent::Error(format!(
-                                        "Failed to create sandbox: {}",
-                                        e
-                                    )));
-                                }
+                            if let Err(e) =
+                                request_create_sandbox(manager, Some("interactive".to_string()))
+                                    .await
+                            {
+                                let _ = event_tx.send(MuxEvent::Error(format!(
+                                    "Failed to create sandbox: {}",
+                                    e
+                                )));
                             }
                         });
                     }
                     MuxEvent::Notification { message, .. } if message.contains("Refreshing sandboxes") => {
-                        // Trigger a refresh
-                        let url = base_url.clone();
-                        let tx = app.event_tx.clone();
+                        // Request sandbox list via WebSocket - server responds with SandboxList
+                        let manager = terminal_manager.clone();
+                        let event_tx = app.event_tx.clone();
                         tokio::spawn(async move {
-                            let _ = refresh_sandboxes(&url, &tx).await;
+                            if let Err(e) = request_list_sandboxes(manager).await {
+                                let _ = event_tx.send(MuxEvent::Error(format!(
+                                    "Failed to refresh sandboxes: {}",
+                                    e
+                                )));
+                            }
                         });
                     }
                     MuxEvent::TerminalExited { pane_id, sandbox_id } => {

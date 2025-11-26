@@ -86,6 +86,14 @@ pub type PtySessionId = String;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum MuxClientMessage {
+    /// Create a new sandbox.
+    CreateSandbox {
+        /// Optional name for the sandbox.
+        #[serde(default)]
+        name: Option<String>,
+    },
+    /// List all sandboxes.
+    ListSandboxes,
     /// Attach to a sandbox's terminal, creating a new PTY session.
     Attach {
         session_id: PtySessionId,
@@ -119,6 +127,10 @@ pub enum MuxClientMessage {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum MuxServerMessage {
+    /// Sandbox was successfully created.
+    SandboxCreated(SandboxSummary),
+    /// List of all sandboxes.
+    SandboxList { sandboxes: Vec<SandboxSummary> },
     /// PTY session was successfully attached.
     Attached { session_id: PtySessionId },
     /// Output data from a PTY session.

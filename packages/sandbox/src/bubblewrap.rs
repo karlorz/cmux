@@ -1257,6 +1257,47 @@ impl SandboxService for BubblewrapService {
                     };
 
                     match client_msg {
+                        MuxClientMessage::CreateSandbox { name } => {
+                            debug!("mux_attach: create sandbox request name={:?}", name);
+                            match self
+                                .create(CreateSandboxRequest {
+                                    name,
+                                    workspace: None,
+                                    read_only_paths: vec![],
+                                    tmpfs: vec![],
+                                    env: vec![],
+                                })
+                                .await
+                            {
+                                Ok(summary) => {
+                                    let _ =
+                                        output_tx.send(MuxServerMessage::SandboxCreated(summary));
+                                }
+                                Err(e) => {
+                                    let _ = output_tx.send(MuxServerMessage::Error {
+                                        session_id: None,
+                                        message: format!("Failed to create sandbox: {e}"),
+                                    });
+                                }
+                            }
+                        }
+
+                        MuxClientMessage::ListSandboxes => {
+                            debug!("mux_attach: list sandboxes request");
+                            match self.list().await {
+                                Ok(sandboxes) => {
+                                    let _ =
+                                        output_tx.send(MuxServerMessage::SandboxList { sandboxes });
+                                }
+                                Err(e) => {
+                                    let _ = output_tx.send(MuxServerMessage::Error {
+                                        session_id: None,
+                                        message: format!("Failed to list sandboxes: {e}"),
+                                    });
+                                }
+                            }
+                        }
+
                         MuxClientMessage::Attach {
                             session_id,
                             sandbox_id,
