@@ -45,15 +45,18 @@ pub async fn run_mux_tui(base_url: String, workspace_path: Option<PathBuf>) -> R
 
     let result = run_main_loop(&mut terminal, base_url, workspace_path).await;
 
-    disable_raw_mode()?;
-    execute!(
+    // Cleanup must happen in reverse order, and PopKeyboardEnhancementFlags
+    // must be sent BEFORE LeaveAlternateScreen to properly restore terminal state.
+    // Use let _ to ignore errors during cleanup to ensure all steps run.
+    let _ = disable_raw_mode();
+    let _ = execute!(
         terminal.backend_mut(),
-        DisableMouseCapture,
-        LeaveAlternateScreen,
+        PopKeyboardEnhancementFlags,
         DisableBracketedPaste,
-        PopKeyboardEnhancementFlags
-    )?;
-    terminal.show_cursor()?;
+        DisableMouseCapture,
+        LeaveAlternateScreen
+    );
+    let _ = terminal.show_cursor();
 
     result
 }

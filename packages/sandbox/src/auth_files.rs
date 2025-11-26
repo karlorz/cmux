@@ -192,7 +192,10 @@ pub async fn upload_auth_files_with_list(
     let url = format!("{}/sandboxes/{}/files", base_url.trim_end_matches('/'), id);
     let response = client.post(url).body(body).send().await?;
     if !response.status().is_success() {
-        return Err(anyhow!("Failed to upload auth files: {}", response.status()));
+        return Err(anyhow!(
+            "Failed to upload auth files: {}",
+            response.status()
+        ));
     }
 
     let move_script = r#"

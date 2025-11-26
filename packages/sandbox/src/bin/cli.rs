@@ -4,8 +4,7 @@ use cmux_sandbox::models::{
 };
 use cmux_sandbox::{
     auth_files::{upload_auth_files, AUTH_FILES},
-    AcpProvider,
-    DEFAULT_HTTP_PORT,
+    AcpProvider, DEFAULT_HTTP_PORT,
 };
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use futures::{SinkExt, StreamExt};
