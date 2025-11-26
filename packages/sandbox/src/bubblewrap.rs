@@ -563,6 +563,13 @@ fi
         // Socket path for open-url (mapped from /var/run/cmux to /run/cmux inside sandbox)
         command.env("CMUX_OPEN_URL_SOCKET", "/run/cmux/open-url.sock");
 
+        // SSH agent forwarding: if the socket exists in the container, bind-mount it into the sandbox
+        let ssh_socket_path = Path::new("/ssh-agent.sock");
+        if ssh_socket_path.exists() {
+            command.args(["--bind", "/ssh-agent.sock", "/ssh-agent.sock"]);
+            command.env("SSH_AUTH_SOCK", "/ssh-agent.sock");
+        }
+
         command.args(["--", "/bin/sh", "-c", "ip link set lo up && sleep infinity"]);
 
         let mut child = command.spawn()?;
@@ -738,6 +745,11 @@ fi
         cmd.env("LANG", "C.UTF-8");
         cmd.env("LC_ALL", "C.UTF-8");
         cmd.env("IS_SANDBOX", "1");
+        // SSH agent forwarding
+        let ssh_socket_path = Path::new("/ssh-agent.sock");
+        if ssh_socket_path.exists() {
+            cmd.env("SSH_AUTH_SOCK", "/ssh-agent.sock");
+        }
         // Apply sandbox-specific env vars
         for e in env {
             cmd.env(&e.key, &e.value);
@@ -1161,6 +1173,11 @@ impl SandboxService for BubblewrapService {
         cmd.env("LANG", "C.UTF-8");
         cmd.env("LC_ALL", "C.UTF-8");
         cmd.env("IS_SANDBOX", "1");
+        // SSH agent forwarding
+        let ssh_socket_path = Path::new("/ssh-agent.sock");
+        if ssh_socket_path.exists() {
+            cmd.env("SSH_AUTH_SOCK", "/ssh-agent.sock");
+        }
 
         let mut child = pair
             .slave

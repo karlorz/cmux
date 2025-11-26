@@ -1125,44 +1125,66 @@ async fn handle_server_start() -> anyhow::Result<()> {
 
     let docker_volume = format!("{}-sandbox-docker:/var/lib/docker", volume_prefix);
     let data_volume = format!("{}-sandbox-data:/var/lib/cmux/sandboxes", volume_prefix);
+    let port_mapping = format!("{}:{}", port, port);
+    let port_env = format!("CMUX_SANDBOX_PORT={}", port);
+
+    // Build docker args
+    let mut docker_args = vec![
+        "run",
+        "--privileged",
+        "-d",
+        "--name",
+        &container_name,
+        "--cgroupns=host",
+        "--tmpfs",
+        "/run",
+        "--tmpfs",
+        "/run/lock",
+        "-v",
+        "/sys/fs/cgroup:/sys/fs/cgroup:rw",
+        "--dns",
+        "1.1.1.1",
+        "--dns",
+        "8.8.8.8",
+        "-e",
+        &port_env,
+        "-p",
+        &port_mapping,
+        "-v",
+        &docker_volume,
+        "-v",
+        &data_volume,
+    ];
+
+    // Add SSH agent forwarding if SSH_AUTH_SOCK is set and socket exists
+    // Works with: macOS launchd agent, Docker Desktop, OrbStack
+    let ssh_volume = std::env::var("SSH_AUTH_SOCK")
+        .ok()
+        .filter(|path| std::path::Path::new(path).exists())
+        .map(|path| format!("{}:/ssh-agent.sock", path));
+    if let Some(ref volume) = ssh_volume {
+        eprintln!("SSH agent forwarding enabled");
+        docker_args.push("-v");
+        docker_args.push(volume);
+        docker_args.push("-e");
+        docker_args.push("SSH_AUTH_SOCK=/ssh-agent.sock");
+    }
+
+    docker_args.extend([
+        "--entrypoint",
+        "/usr/local/bin/bootstrap-dind.sh",
+        &image_name,
+        "/usr/local/bin/cmux-sandboxd",
+        "--bind",
+        "0.0.0.0",
+        "--port",
+        &port,
+        "--data-dir",
+        "/var/lib/cmux/sandboxes",
+    ]);
 
     let status = tokio::process::Command::new("docker")
-        .args([
-            "run",
-            "--privileged",
-            "-d",
-            "--name",
-            &container_name,
-            "--cgroupns=host",
-            "--tmpfs",
-            "/run",
-            "--tmpfs",
-            "/run/lock",
-            "-v",
-            "/sys/fs/cgroup:/sys/fs/cgroup:rw",
-            "--dns",
-            "1.1.1.1",
-            "--dns",
-            "8.8.8.8",
-            "-e",
-            &format!("CMUX_SANDBOX_PORT={}", port),
-            "-p",
-            &format!("{}:{}", port, port),
-            "-v",
-            &docker_volume,
-            "-v",
-            &data_volume,
-            "--entrypoint",
-            "/usr/local/bin/bootstrap-dind.sh",
-            &image_name,
-            "/usr/local/bin/cmux-sandboxd",
-            "--bind",
-            "0.0.0.0",
-            "--port",
-            &port,
-            "--data-dir",
-            "/var/lib/cmux/sandboxes",
-        ])
+        .args(&docker_args)
         .status()
         .await?;
 

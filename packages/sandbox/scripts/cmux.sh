@@ -12,6 +12,17 @@ docker build -t "${IMAGE_NAME}" -f "${ROOT_DIR}/packages/sandbox/Dockerfile" "${
 
 echo "Starting container ${CONTAINER_NAME} with Docker-in-Docker, buildkit, cmux-sandboxd, and cmux CLI on port ${PORT}"
 docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+
+# Build SSH agent forwarding args if SSH_AUTH_SOCK is set and the socket exists
+# Mount to /ssh-agent.sock (not /run) to avoid being hidden by --tmpfs /run
+# Works with: macOS launchd agent, Docker Desktop, OrbStack
+SSH_AGENT_ARGS=""
+if [ -n "${SSH_AUTH_SOCK:-}" ] && [ -e "${SSH_AUTH_SOCK}" ]; then
+  SSH_AGENT_ARGS="-v ${SSH_AUTH_SOCK}:/ssh-agent.sock -e SSH_AUTH_SOCK=/ssh-agent.sock"
+  echo "SSH agent forwarding enabled (${SSH_AUTH_SOCK})"
+fi
+
+# shellcheck disable=SC2086
 docker run --privileged -d \
   --name "${CONTAINER_NAME}" \
   --cgroupns=host \
@@ -22,6 +33,7 @@ docker run --privileged -d \
   -p "${PORT}:${PORT}" \
   -v cmux-sandbox-docker:/var/lib/docker \
   -v cmux-sandbox-data:/var/lib/cmux/sandboxes \
+  ${SSH_AGENT_ARGS} \
   --entrypoint /usr/local/bin/bootstrap-dind.sh \
   "${IMAGE_NAME}" \
   /usr/local/bin/cmux-sandboxd --bind 0.0.0.0 --port "${PORT}" --data-dir /var/lib/cmux/sandboxes

@@ -105,6 +105,20 @@ pub const SYNC_FILES: &[SyncFileDef] = &[
         sandbox_path: "/root/.env",
         is_dir: false,
     },
+    // Git config
+    SyncFileDef {
+        name: "Git Config",
+        host_path: ".gitconfig",
+        sandbox_path: "/root/.gitconfig",
+        is_dir: false,
+    },
+    // SSH keys and config
+    SyncFileDef {
+        name: "SSH Dir",
+        host_path: ".ssh",
+        sandbox_path: "/root/.ssh",
+        is_dir: true,
+    },
     // OpenCode
     SyncFileDef {
         name: "OpenCode Auth",
@@ -275,6 +289,14 @@ pub async fn upload_sync_files_with_list(
         if [ -d /workspace/__cmux_sync_temp ]; then
             cp -r /workspace/__cmux_sync_temp/root/. /root/ 2>/dev/null || true
             rm -rf /workspace/__cmux_sync_temp
+            # Fix SSH permissions (SSH is picky about this)
+            if [ -d /root/.ssh ]; then
+                chmod 700 /root/.ssh
+                chmod 600 /root/.ssh/* 2>/dev/null || true
+                chmod 644 /root/.ssh/*.pub 2>/dev/null || true
+                chmod 644 /root/.ssh/known_hosts 2>/dev/null || true
+                chmod 644 /root/.ssh/config 2>/dev/null || true
+            fi
         fi
     "#;
 
