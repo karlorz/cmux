@@ -1,12 +1,18 @@
+use async_trait::async_trait;
+use axum::body::Body;
 use clap::Parser;
 use cmux_sandbox::bubblewrap::BubblewrapService;
 use cmux_sandbox::build_router;
+use cmux_sandbox::errors::{SandboxError, SandboxResult};
+use cmux_sandbox::models::{CreateSandboxRequest, ExecRequest, ExecResponse, SandboxSummary};
+use cmux_sandbox::service::SandboxService;
 use cmux_sandbox::DEFAULT_HTTP_PORT;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, UnixListener};
+use tokio::time::{sleep, Duration};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 #[derive(Parser, Debug)]
@@ -38,34 +44,7 @@ async fn main() -> anyhow::Result<()> {
     let options = Options::parse();
     let _guard = init_tracing(&options.log_dir);
 
-    let bind_ip: IpAddr = options
-        .bind
-        .parse()
-        .map_err(|error| anyhow::anyhow!("invalid bind address: {error}"))?;
-
-    // Create broadcast channel for URL open requests
-    // URLs from sandboxes are broadcast to all connected mux clients
-    let (url_tx, _) = tokio::sync::broadcast::channel::<String>(64);
-
-    let service = Arc::new(BubblewrapService::new(options.data_dir, options.port).await?);
-    let app = build_router(service, url_tx.clone());
-
-    // Start the Unix socket listener for open-url requests from sandboxes
-    let socket_path = options.open_url_socket.clone();
-    tokio::spawn(async move {
-        if let Err(e) = run_open_url_socket(&socket_path, url_tx).await {
-            tracing::error!("open-url socket failed: {e}");
-        }
-    });
-
-    let addr = SocketAddr::new(bind_ip, options.port);
-    let listener = TcpListener::bind(addr).await?;
-    tracing::info!("cmux-sandboxd listening on http://{}", addr);
-    tracing::info!("HTTP/1.1 and HTTP/2 are enabled");
-
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    run_server(options).await;
 
     Ok(())
 }
@@ -110,6 +89,85 @@ async fn shutdown_signal() {
         tracing::error!("failed to listen for shutdown signal: {error}");
     }
     tracing::info!("shutdown signal received");
+}
+
+async fn run_server(options: Options) {
+    let bind_ip = parse_bind_ip(&options.bind);
+    // Create broadcast channel for URL open requests
+    // URLs from sandboxes are broadcast to all connected mux clients
+    let (url_tx, _) = tokio::sync::broadcast::channel::<String>(64);
+
+    let service = build_service(&options).await;
+    let app = build_router(service, url_tx.clone());
+
+    // Start the Unix socket listener for open-url requests from sandboxes
+    let socket_path = options.open_url_socket.clone();
+    tokio::spawn(async move {
+        if let Err(e) = run_open_url_socket(&socket_path, url_tx).await {
+            tracing::error!("open-url socket failed: {e}");
+        }
+    });
+
+    let addr = SocketAddr::new(bind_ip, options.port);
+    let retry_delay = Duration::from_secs(5);
+
+    loop {
+        match TcpListener::bind(addr).await {
+            Ok(listener) => {
+                tracing::info!("cmux-sandboxd listening on http://{}", addr);
+                tracing::info!("HTTP/1.1 and HTTP/2 are enabled");
+
+                match axum::serve(listener, app.clone())
+                    .with_graceful_shutdown(shutdown_signal())
+                    .await
+                {
+                    Ok(()) => {
+                        tracing::info!("server shut down gracefully");
+                        break;
+                    }
+                    Err(error) => {
+                        tracing::error!(?error, "server error; restarting");
+                    }
+                }
+            }
+            Err(error) => {
+                tracing::error!(?error, %addr, "failed to bind listener");
+            }
+        }
+
+        tracing::info!(
+            "retrying server startup in {} seconds",
+            retry_delay.as_secs()
+        );
+        sleep(retry_delay).await;
+    }
+}
+
+fn parse_bind_ip(bind: &str) -> IpAddr {
+    match bind.parse() {
+        Ok(ip) => ip,
+        Err(error) => {
+            tracing::error!(
+                ?error,
+                %bind,
+                "invalid bind address; defaulting to 0.0.0.0"
+            );
+            IpAddr::V4(Ipv4Addr::UNSPECIFIED)
+        }
+    }
+}
+
+async fn build_service(options: &Options) -> Arc<dyn SandboxService> {
+    match BubblewrapService::new(options.data_dir.clone(), options.port).await {
+        Ok(service) => Arc::new(service),
+        Err(error) => {
+            tracing::error!(
+                ?error,
+                "failed to initialize bubblewrap service; running in degraded mode"
+            );
+            Arc::new(UnavailableSandboxService::new(error.to_string()))
+        }
+    }
 }
 
 /// Run a Unix socket listener for open-url requests from sandboxes.
@@ -190,4 +248,77 @@ async fn handle_open_url_connection(
     }
 
     Ok(())
+}
+
+#[derive(Clone)]
+struct UnavailableSandboxService {
+    reason: String,
+}
+
+impl UnavailableSandboxService {
+    fn new(reason: String) -> Self {
+        Self { reason }
+    }
+
+    fn error(&self, operation: &str) -> SandboxError {
+        SandboxError::Internal(format!(
+            "{operation} unavailable: sandbox service failed to start ({})",
+            self.reason
+        ))
+    }
+}
+
+#[async_trait]
+impl SandboxService for UnavailableSandboxService {
+    async fn create(&self, _request: CreateSandboxRequest) -> SandboxResult<SandboxSummary> {
+        Err(self.error("create sandbox"))
+    }
+
+    async fn list(&self) -> SandboxResult<Vec<SandboxSummary>> {
+        Err(self.error("list sandboxes"))
+    }
+
+    async fn get(&self, _id: String) -> SandboxResult<Option<SandboxSummary>> {
+        Err(self.error("get sandbox"))
+    }
+
+    async fn exec(&self, _id: String, _exec: ExecRequest) -> SandboxResult<ExecResponse> {
+        Err(self.error("exec sandbox command"))
+    }
+
+    async fn attach(
+        &self,
+        _id: String,
+        _socket: axum::extract::ws::WebSocket,
+        _initial_size: Option<(u16, u16)>,
+        _command: Option<Vec<String>>,
+        _tty: bool,
+    ) -> SandboxResult<()> {
+        Err(self.error("attach sandbox session"))
+    }
+
+    async fn mux_attach(
+        &self,
+        _socket: axum::extract::ws::WebSocket,
+        _url_rx: tokio::sync::broadcast::Receiver<String>,
+    ) -> SandboxResult<()> {
+        Err(self.error("mux attach"))
+    }
+
+    async fn proxy(
+        &self,
+        _id: String,
+        _port: u16,
+        _socket: axum::extract::ws::WebSocket,
+    ) -> SandboxResult<()> {
+        Err(self.error("proxy sandbox port"))
+    }
+
+    async fn upload_archive(&self, _id: String, _archive: Body) -> SandboxResult<()> {
+        Err(self.error("upload archive"))
+    }
+
+    async fn delete(&self, _id: String) -> SandboxResult<Option<SandboxSummary>> {
+        Err(self.error("delete sandbox"))
+    }
 }

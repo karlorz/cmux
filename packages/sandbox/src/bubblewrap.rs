@@ -506,17 +506,19 @@ fi
             "1",
         ]);
 
+        let usr_overlay = path_to_string(&usr_merged, "usr overlay")?;
+        let etc_overlay = path_to_string(&etc_merged, "etc overlay")?;
+        let var_overlay = path_to_string(&var_merged, "var overlay")?;
+
         // Bind overlays
-        command.args(["--bind", usr_merged.to_str().unwrap(), "/usr"]);
-        command.args(["--bind", etc_merged.to_str().unwrap(), "/etc"]);
-        command.args(["--bind", var_merged.to_str().unwrap(), "/var"]);
+        command.args(["--bind", &usr_overlay, "/usr"]);
+        command.args(["--bind", &etc_overlay, "/etc"]);
+        command.args(["--bind", &var_overlay, "/var"]);
 
         // Note: setup_bashrc wrote to root-merged/root/.bashrc
-        command.args([
-            "--bind",
-            root_merged.join("root").to_str().unwrap(),
-            "/root",
-        ]);
+        let root_overlay = root_merged.join("root");
+        let root_overlay = path_to_string(&root_overlay, "root overlay")?;
+        command.args(["--bind", &root_overlay, "/root"]);
 
         // Hide sensitive host paths exposed via /var overlay
         command.args(["--tmpfs", "/var/lib/docker"]);
@@ -820,6 +822,15 @@ fn find_binary(name: &str) -> SandboxResult<String> {
         .to_string_lossy()
         .to_string();
     Ok(binary_path)
+}
+
+fn path_to_string(path: &Path, context: &str) -> SandboxResult<String> {
+    path.to_str().map(|value| value.to_string()).ok_or_else(|| {
+        SandboxError::Internal(format!(
+            "{context} path is not valid UTF-8: {}",
+            path.display()
+        ))
+    })
 }
 
 fn make_interface_names(id: &Uuid) -> (String, String) {
@@ -1735,6 +1746,8 @@ async fn mount_overlay(system_dir: &Path, name: &str, lower: &str) -> SandboxRes
         work.to_string_lossy()
     );
 
+    let merged_path = path_to_string(&merged, "merged overlay")?;
+
     run_command(
         "mount",
         &[
@@ -1743,7 +1756,7 @@ async fn mount_overlay(system_dir: &Path, name: &str, lower: &str) -> SandboxRes
             "overlay",
             "-o",
             &opts,
-            merged.to_str().unwrap(),
+            merged_path.as_str(),
         ],
     )
     .await?;
