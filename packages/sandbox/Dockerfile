@@ -27,6 +27,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
   --mount=type=cache,target=/usr/local/cargo/git \
   cargo install --locked cargo-chef
 COPY packages/sandbox/Cargo.toml packages/sandbox/Cargo.lock ./
+COPY packages/sandbox/benches ./benches
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM rust-base AS acp-builder
@@ -45,12 +46,13 @@ ENV CARGO_TERM_COLOR=never \
   CARGO_PROFILE_RELEASE_STRIP=symbols \
   CARGO_TARGET_DIR=/workspace/target
 
+COPY packages/sandbox/Cargo.toml packages/sandbox/Cargo.lock ./
+COPY packages/sandbox/benches ./benches
 COPY --from=chef /workspace/recipe.json recipe.json
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
   --mount=type=cache,target=/usr/local/cargo/git \
   cargo chef cook --release --recipe-path recipe.json
 
-COPY packages/sandbox/Cargo.toml packages/sandbox/Cargo.lock ./
 COPY packages/sandbox/src ./src
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \

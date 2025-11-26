@@ -1285,26 +1285,56 @@ impl MuxConnectionSender {
     }
 }
 
+/// Lightweight view of the terminal buffer tailored for rendering.
+#[derive(Clone)]
+pub struct TerminalRenderView {
+    pub lines: Arc<[ratatui::text::Line<'static>]>,
+    pub cursor: Option<(u16, u16)>,
+    pub cursor_visible: bool,
+    pub has_content: bool,
+}
+
+struct RenderCache {
+    height: usize,
+    scroll_offset: usize,
+    generation: u64,
+    lines: Arc<[ratatui::text::Line<'static>]>,
+    cursor: Option<(u16, u16)>,
+    cursor_visible: bool,
+    has_content: bool,
+}
+
+impl RenderCache {
+    fn is_valid(&self, height: usize, generation: u64, scroll_offset: usize) -> bool {
+        self.height == height
+            && self.generation == generation
+            && self.scroll_offset == scroll_offset
+    }
+
+    fn as_view(&self) -> TerminalRenderView {
+        TerminalRenderView {
+            lines: self.lines.clone(),
+            cursor: self.cursor,
+            cursor_visible: self.cursor_visible,
+            has_content: self.has_content,
+        }
+    }
+}
+
 /// Terminal output buffer for rendering - now using VirtualTerminal
 pub struct TerminalBuffer {
     pub terminal: VirtualTerminal,
     parser: Parser,
+    render_cache: Option<RenderCache>,
+    generation: u64,
 }
 
 impl std::fmt::Debug for TerminalBuffer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TerminalBuffer")
             .field("terminal", &self.terminal)
+            .field("generation", &self.generation)
             .finish()
-    }
-}
-
-impl Clone for TerminalBuffer {
-    fn clone(&self) -> Self {
-        Self {
-            terminal: self.terminal.clone(),
-            parser: Parser::new(),
-        }
     }
 }
 
@@ -1319,6 +1349,8 @@ impl TerminalBuffer {
         Self {
             terminal: VirtualTerminal::new(24, 80),
             parser: Parser::new(),
+            render_cache: None,
+            generation: 0,
         }
     }
 
@@ -1326,32 +1358,44 @@ impl TerminalBuffer {
         Self {
             terminal: VirtualTerminal::new(rows, cols),
             parser: Parser::new(),
+            render_cache: None,
+            generation: 0,
         }
+    }
+
+    fn mark_dirty(&mut self) {
+        self.render_cache = None;
+        self.generation = self.generation.wrapping_add(1);
     }
 
     /// Process raw terminal data
     pub fn process(&mut self, data: &[u8]) {
         self.parser.advance(&mut self.terminal, data);
+        self.mark_dirty();
     }
 
     /// Resize the terminal
     pub fn resize(&mut self, rows: usize, cols: usize) {
         self.terminal.resize(rows, cols);
+        self.mark_dirty();
     }
 
     /// Scroll view up
     pub fn scroll_up(&mut self, n: usize) {
         self.terminal.scroll_view_up(n);
+        self.mark_dirty();
     }
 
     /// Scroll view down
     pub fn scroll_down(&mut self, n: usize) {
         self.terminal.scroll_view_down(n);
+        self.mark_dirty();
     }
 
     /// Scroll to bottom
     pub fn scroll_to_bottom(&mut self) {
         self.terminal.scroll_to_bottom();
+        self.mark_dirty();
     }
 
     /// Clear the terminal
@@ -1360,6 +1404,7 @@ impl TerminalBuffer {
         let cols = self.terminal.cols;
         self.terminal = VirtualTerminal::new(rows, cols);
         self.parser = Parser::new();
+        self.mark_dirty();
     }
 
     /// Drain pending responses that should be sent back to the PTY
@@ -1368,17 +1413,20 @@ impl TerminalBuffer {
     }
 
     /// Check if the terminal has any content
-    pub fn has_content(&self) -> bool {
-        // Check if any cell has non-space content
-        for row in &self.terminal.grid {
-            for cell in row {
-                if cell.c != ' ' {
-                    return true;
-                }
-            }
+    pub fn has_content(&mut self) -> bool {
+        if let Some(cache) = &self.render_cache {
+            return cache.has_content;
         }
-        // Also check scrollback
-        !self.terminal.scrollback.is_empty()
+
+        if !self.terminal.scrollback.is_empty() {
+            return true;
+        }
+
+        let default_style = Style::default();
+        self.terminal.grid.iter().any(|row| {
+            row.iter()
+                .any(|cell| cell.c != ' ' || cell.style != default_style)
+        })
     }
 
     /// Get cursor position (row, col) - returns None if scrolled away from bottom
@@ -1399,44 +1447,81 @@ impl TerminalBuffer {
         self.terminal.cursor_visible && self.terminal.scroll_offset == 0
     }
 
-    /// Get visible lines as ratatui Lines with styling
-    pub fn visible_lines(&self, height: usize) -> Vec<ratatui::text::Line<'static>> {
+    /// Build a cached render view for the given height.
+    pub fn render_view(&mut self, height: usize) -> TerminalRenderView {
+        if let Some(cache) = &self.render_cache {
+            if cache.is_valid(height, self.generation, self.terminal.scroll_offset) {
+                return cache.as_view();
+            }
+        }
+
         let cell_lines = self.terminal.visible_lines(height);
-        cell_lines
-            .into_iter()
-            .map(|cells| {
-                let mut spans: Vec<ratatui::text::Span<'static>> = Vec::new();
-                let mut current_style = Style::default();
-                let mut current_text = String::new();
+        let mut lines: Vec<ratatui::text::Line<'static>> = Vec::with_capacity(cell_lines.len());
+        let mut has_content = !self.terminal.scrollback.is_empty();
+        let default_style = Style::default();
 
-                for cell in cells {
-                    // Skip wide character spacers - they don't contribute to output
-                    // The wide character in the previous cell already takes up 2 columns visually
-                    if cell.wide_spacer {
-                        continue;
-                    }
+        for cells in cell_lines {
+            let mut spans: Vec<ratatui::text::Span<'static>> = Vec::new();
+            let mut current_style = Style::default();
+            let mut current_text = String::new();
 
-                    if cell.style == current_style {
-                        current_text.push(cell.c);
-                    } else {
-                        if !current_text.is_empty() {
-                            spans.push(ratatui::text::Span::styled(
-                                std::mem::take(&mut current_text),
-                                current_style,
-                            ));
-                        }
-                        current_style = cell.style;
-                        current_text.push(cell.c);
-                    }
+            for cell in cells {
+                if cell.wide_spacer {
+                    continue;
                 }
 
-                if !current_text.is_empty() {
-                    spans.push(ratatui::text::Span::styled(current_text, current_style));
+                if !has_content && (cell.c != ' ' || cell.style != default_style) {
+                    has_content = true;
                 }
 
-                ratatui::text::Line::from(spans)
-            })
-            .collect()
+                if cell.style == current_style {
+                    current_text.push(cell.c);
+                } else {
+                    if !current_text.is_empty() {
+                        spans.push(ratatui::text::Span::styled(
+                            std::mem::take(&mut current_text),
+                            current_style,
+                        ));
+                    }
+                    current_style = cell.style;
+                    current_text.push(cell.c);
+                }
+            }
+
+            if !current_text.is_empty() {
+                spans.push(ratatui::text::Span::styled(current_text, current_style));
+            }
+
+            lines.push(ratatui::text::Line::from(spans));
+        }
+
+        let cursor = self.cursor_position();
+        let cursor_visible = self.cursor_visible();
+        let lines: Arc<[ratatui::text::Line<'static>]> = lines.into();
+
+        let cache = RenderCache {
+            height,
+            scroll_offset: self.terminal.scroll_offset,
+            generation: self.generation,
+            lines: lines.clone(),
+            cursor,
+            cursor_visible,
+            has_content,
+        };
+        self.render_cache = Some(cache);
+
+        TerminalRenderView {
+            lines,
+            cursor,
+            cursor_visible,
+            has_content,
+        }
+    }
+
+    /// Get visible lines as ratatui Lines with styling
+    pub fn visible_lines(&mut self, height: usize) -> Vec<ratatui::text::Line<'static>> {
+        let view = self.render_view(height);
+        view.lines.as_ref().to_vec()
     }
 }
 
@@ -1550,21 +1635,25 @@ impl TerminalManager {
 
     /// Handle output by session ID (used by the mux connection handler).
     /// Automatically sends any pending responses back to the PTY.
-    pub fn handle_output_by_session(&mut self, session_id: &PtySessionId, data: Vec<u8>) {
-        if let Some(&pane_id) = self.session_to_pane.get(session_id) {
-            let responses = self.handle_output(pane_id, data);
-            // Send any pending responses back to the PTY
-            if !responses.is_empty() {
-                if let Some(sender) = &self.mux_sender {
-                    for response in responses {
-                        sender.send(MuxClientMessage::Input {
-                            session_id: session_id.clone(),
-                            data: response,
-                        });
-                    }
+    pub fn handle_output_by_session(
+        &mut self,
+        session_id: &PtySessionId,
+        data: Vec<u8>,
+    ) -> Option<PaneId> {
+        let pane_id = *self.session_to_pane.get(session_id)?;
+        let responses = self.handle_output(pane_id, data);
+        // Send any pending responses back to the PTY
+        if !responses.is_empty() {
+            if let Some(sender) = &self.mux_sender {
+                for response in responses {
+                    sender.send(MuxClientMessage::Input {
+                        session_id: session_id.clone(),
+                        data: response,
+                    });
                 }
             }
         }
+        Some(pane_id)
     }
 
     /// Get pane ID for a session ID
@@ -1770,13 +1859,11 @@ pub async fn establish_mux_connection(manager: SharedTerminalManager) -> anyhow:
                                 MuxServerMessage::Output { session_id, data } => {
                                     let pane_id = {
                                         let mut mgr = manager_clone.lock().await;
-                                        mgr.handle_output_by_session(&session_id, data.clone());
-                                        mgr.get_pane_for_session(&session_id)
+                                        mgr.handle_output_by_session(&session_id, data)
                                     };
                                     if let Some(pane_id) = pane_id {
                                         let _ = event_tx_clone.send(MuxEvent::TerminalOutput {
                                             pane_id,
-                                            data,
                                         });
                                     }
                                 }

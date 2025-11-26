@@ -15,10 +15,7 @@ pub enum MuxEvent {
     /// Connection to a sandbox changed.
     SandboxConnectionChanged { sandbox_id: String, connected: bool },
     /// Terminal output received.
-    TerminalOutput {
-        pane_id: crate::mux::layout::PaneId,
-        data: Vec<u8>,
-    },
+    TerminalOutput { pane_id: crate::mux::layout::PaneId },
     /// An error occurred.
     Error(String),
     /// A system notification to display.

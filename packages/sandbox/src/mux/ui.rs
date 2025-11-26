@@ -217,15 +217,7 @@ fn render_workspace(f: &mut Frame, app: &mut MuxApp, area: Rect) {
     // If zoomed, only render the zoomed pane
     if let Some(zoomed_id) = zoomed_pane {
         if let Some(pane) = tab.layout.find_pane(zoomed_id) {
-            let terminal_buffer = app.get_terminal_buffer(pane.id);
-            render_pane(
-                f,
-                pane,
-                area,
-                true,
-                is_main_focused,
-                terminal_buffer.as_ref(),
-            );
+            render_pane(f, pane, area, true, is_main_focused, app);
             return;
         }
     }
@@ -248,15 +240,7 @@ fn render_layout_node(
         LayoutNode::Pane(pane) => {
             if let Some(area) = pane.area {
                 let is_active = active_pane_id == Some(pane.id);
-                let terminal_buffer = app.get_terminal_buffer(pane.id);
-                render_pane(
-                    f,
-                    pane,
-                    area,
-                    is_active,
-                    is_main_focused,
-                    terminal_buffer.as_ref(),
-                );
+                render_pane(f, pane, area, is_active, is_main_focused, app);
             }
         }
         LayoutNode::Split { first, second, .. } => {
@@ -273,7 +257,7 @@ fn render_pane(
     area: Rect,
     is_active: bool,
     is_main_focused: bool,
-    terminal_buffer: Option<&crate::mux::terminal::TerminalBuffer>,
+    app: &MuxApp,
 ) {
     let border_style = if is_active && is_main_focused {
         Style::default().fg(Color::Cyan)
@@ -310,19 +294,18 @@ fn render_pane(
         }
         crate::mux::layout::PaneContent::Terminal { sandbox_id, .. } => {
             // Check if we have terminal output to display
-            if let Some(buffer) = terminal_buffer {
-                if buffer.has_content() {
+            let height = inner_area.height as usize;
+            if let Some(view) = app.get_terminal_view(pane.id, height) {
+                if view.has_content {
                     // Render terminal output with proper styling
-                    let height = inner_area.height as usize;
-                    let visible_lines = buffer.visible_lines(height);
-                    let paragraph = Paragraph::new(visible_lines);
+                    let paragraph = Paragraph::new(view.lines.to_vec());
                     f.render_widget(paragraph, inner_area);
 
                     // Set cursor position only if:
                     // 1. Pane is active
                     // 2. Main area is focused (not sidebar or command palette)
                     if is_active && is_main_focused {
-                        if let Some((cursor_row, cursor_col)) = buffer.cursor_position() {
+                        if let Some((cursor_row, cursor_col)) = view.cursor {
                             // Ensure cursor is within visible area
                             let cursor_x = inner_area.x + cursor_col;
                             let cursor_y = inner_area.y + cursor_row;

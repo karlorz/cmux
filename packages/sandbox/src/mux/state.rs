@@ -5,7 +5,7 @@ use crate::mux::events::MuxEvent;
 use crate::mux::layout::{Direction, NavDirection, Pane, PaneId, SandboxId, WorkspaceManager};
 use crate::mux::palette::CommandPalette;
 use crate::mux::sidebar::Sidebar;
-use crate::mux::terminal::{SharedTerminalManager, TerminalBuffer};
+use crate::mux::terminal::{SharedTerminalManager, TerminalRenderView};
 
 /// Which area of the UI has focus.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,12 +107,13 @@ impl<'a> MuxApp<'a> {
         self.terminal_manager = Some(manager);
     }
 
-    /// Get the terminal buffer for a pane (blocking version for UI rendering)
-    pub fn get_terminal_buffer(&self, pane_id: PaneId) -> Option<TerminalBuffer> {
+    /// Get a render-ready snapshot of the terminal for a pane.
+    pub fn get_terminal_view(&self, pane_id: PaneId, height: usize) -> Option<TerminalRenderView> {
         let manager = self.terminal_manager.as_ref()?;
         // We need to use try_lock for non-async context
-        let guard = manager.try_lock().ok()?;
-        guard.get_buffer(pane_id).cloned()
+        let mut guard = manager.try_lock().ok()?;
+        let buffer = guard.get_buffer_mut(pane_id)?;
+        Some(buffer.render_view(height))
     }
 
     /// Get the active pane ID from the active workspace.
