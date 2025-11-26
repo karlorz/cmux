@@ -1292,6 +1292,7 @@ pub struct TerminalRenderView {
     pub cursor: Option<(u16, u16)>,
     pub cursor_visible: bool,
     pub has_content: bool,
+    pub changed_lines: Arc<[usize]>,
 }
 
 struct RenderCache {
@@ -1302,6 +1303,7 @@ struct RenderCache {
     cursor: Option<(u16, u16)>,
     cursor_visible: bool,
     has_content: bool,
+    changed_lines: Arc<[usize]>,
 }
 
 impl RenderCache {
@@ -1317,6 +1319,7 @@ impl RenderCache {
             cursor: self.cursor,
             cursor_visible: self.cursor_visible,
             has_content: self.has_content,
+            changed_lines: self.changed_lines.clone(),
         }
     }
 }
@@ -1499,6 +1502,24 @@ impl TerminalBuffer {
         let cursor_visible = self.cursor_visible();
         let lines: Arc<[ratatui::text::Line<'static>]> = lines.into();
 
+        // Compute damage vs previous cache (line-level)
+        let changed_lines: Arc<[usize]> = if let Some(cache) = &self.render_cache {
+            if cache.height == height && cache.lines.len() == lines.len() {
+                let mut changed = Vec::new();
+                for (idx, (new_line, old_line)) in lines.iter().zip(cache.lines.iter()).enumerate()
+                {
+                    if new_line != old_line {
+                        changed.push(idx);
+                    }
+                }
+                changed.into()
+            } else {
+                (0..lines.len()).collect::<Vec<_>>().into()
+            }
+        } else {
+            (0..lines.len()).collect::<Vec<_>>().into()
+        };
+
         let cache = RenderCache {
             height,
             scroll_offset: self.terminal.scroll_offset,
@@ -1507,6 +1528,7 @@ impl TerminalBuffer {
             cursor,
             cursor_visible,
             has_content,
+            changed_lines: changed_lines.clone(),
         };
         self.render_cache = Some(cache);
 
@@ -1515,6 +1537,7 @@ impl TerminalBuffer {
             cursor,
             cursor_visible,
             has_content,
+            changed_lines,
         }
     }
 

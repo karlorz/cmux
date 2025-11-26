@@ -202,8 +202,14 @@ fn render_workspace(f: &mut Frame, app: &mut MuxApp, area: Rect) {
         }
     }
 
-    // Now get immutable references for rendering
-    let Some(tab) = app.active_tab() else {
+    // Snapshot layout info without holding a long borrow
+    let (layout_snapshot, active_pane_id) = if let Some(tab) = app.active_tab() {
+        (Some(tab.layout.clone()), tab.active_pane)
+    } else {
+        (None, None)
+    };
+
+    let Some(layout) = layout_snapshot else {
         // No active tab, show placeholder
         let placeholder = Paragraph::new("Select a sandbox from the sidebar (Tab to switch)")
             .style(Style::default().fg(Color::DarkGray))
@@ -216,16 +222,14 @@ fn render_workspace(f: &mut Frame, app: &mut MuxApp, area: Rect) {
 
     // If zoomed, only render the zoomed pane
     if let Some(zoomed_id) = zoomed_pane {
-        if let Some(pane) = tab.layout.find_pane(zoomed_id) {
+        if let Some(pane) = layout.find_pane(zoomed_id) {
             render_pane(f, pane, area, true, is_main_focused, app);
             return;
         }
     }
 
     // Render all panes
-    let active_pane_id = tab.active_pane;
-    let layout_clone = tab.layout.clone();
-    render_layout_node(f, &layout_clone, active_pane_id, is_main_focused, app);
+    render_layout_node(f, &layout, active_pane_id, is_main_focused, app);
 }
 
 /// Recursively render layout nodes.
@@ -234,7 +238,7 @@ fn render_layout_node(
     node: &LayoutNode,
     active_pane_id: Option<crate::mux::layout::PaneId>,
     is_main_focused: bool,
-    app: &MuxApp,
+    app: &mut MuxApp,
 ) {
     match node {
         LayoutNode::Pane(pane) => {
@@ -257,7 +261,7 @@ fn render_pane(
     area: Rect,
     is_active: bool,
     is_main_focused: bool,
-    app: &MuxApp,
+    app: &mut MuxApp,
 ) {
     let border_style = if is_active && is_main_focused {
         Style::default().fg(Color::Cyan)
@@ -297,9 +301,65 @@ fn render_pane(
             let height = inner_area.height as usize;
             if let Some(view) = app.get_terminal_view(pane.id, height) {
                 if view.has_content {
-                    // Render terminal output with proper styling
-                    let paragraph = Paragraph::new(view.lines.to_vec());
-                    f.render_widget(paragraph, inner_area);
+                    // Render terminal output
+                    let buf = f.buffer_mut();
+                    let previous = app.last_terminal_views.get(&pane.id);
+                    let visible_rows = height.min(view.lines.len());
+
+                    let changed = view.changed_lines.as_ref();
+
+                    for row in 0..visible_rows {
+                        let row_changed = previous.is_none() || changed.binary_search(&row).is_ok();
+                        if !row_changed {
+                            continue;
+                        }
+
+                        let line = &view.lines[row];
+                        let mut x = inner_area.x;
+                        let max_width = inner_area.width;
+                        let y = inner_area.y + row as u16;
+
+                        for span in &line.spans {
+                            let (next_x, _) = buf.set_span(
+                                x,
+                                y,
+                                span,
+                                max_width.saturating_sub(x.saturating_sub(inner_area.x)),
+                            );
+                            x = next_x;
+                            if x >= inner_area.x + inner_area.width {
+                                break;
+                            }
+                        }
+
+                        // Clear remaining cells in this row to avoid old characters lingering
+                        if x < inner_area.x + inner_area.width {
+                            for col in x..inner_area.x + inner_area.width {
+                                if let Some(cell) = buf.cell_mut((col, y)) {
+                                    cell.set_symbol(" ");
+                                    cell.set_style(Style::default());
+                                }
+                            }
+                        }
+                    }
+
+                    // Clear leftover rows if the area shrank
+                    if let Some(prev) = previous {
+                        let prev_rows = prev.lines.len();
+                        if prev_rows > visible_rows {
+                            for row in visible_rows..prev_rows.min(inner_area.height as usize) {
+                                let y = inner_area.y + row as u16;
+                                for col in inner_area.x..inner_area.x + inner_area.width {
+                                    if let Some(cell) = buf.cell_mut((col, y)) {
+                                        cell.set_symbol(" ");
+                                        cell.set_style(Style::default());
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    app.last_terminal_views.insert(pane.id, view.clone());
 
                     // Set cursor position only if:
                     // 1. Pane is active

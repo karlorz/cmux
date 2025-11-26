@@ -50,6 +50,10 @@ pub struct MuxApp<'a> {
 
     // Flag to indicate we need to create a sandbox on startup
     pub needs_initial_sandbox: bool,
+
+    // Last rendered terminal views per pane for damage-aware drawing
+    pub last_terminal_views:
+        std::collections::HashMap<PaneId, crate::mux::terminal::TerminalRenderView>,
 }
 
 impl<'a> MuxApp<'a> {
@@ -69,6 +73,7 @@ impl<'a> MuxApp<'a> {
             terminal_manager: None,
             pending_connect: None,
             needs_initial_sandbox: false,
+            last_terminal_views: std::collections::HashMap::new(),
         }
     }
 

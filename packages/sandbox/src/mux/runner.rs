@@ -13,6 +13,7 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::sync::mpsc;
+use tokio::time::MissedTickBehavior;
 
 use crate::mux::commands::MuxCommand;
 use crate::mux::events::MuxEvent;
@@ -167,6 +168,8 @@ async fn run_app<B: ratatui::backend::Backend>(
     let mut reader = EventStream::new();
     let mut redraw_needed = true;
     let mut status_tick = tokio::time::interval(Duration::from_millis(33));
+    let mut render_tick = tokio::time::interval(Duration::from_millis(8));
+    render_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
     loop {
         tokio::select! {
@@ -176,6 +179,11 @@ async fn run_app<B: ratatui::backend::Backend>(
                 if had_status && app.status_message.is_none() {
                     redraw_needed = true;
                 }
+            }
+            _ = render_tick.tick(), if redraw_needed => {
+                terminal.draw(|f| ui(f, &mut app))?;
+                sync_terminal_sizes(&app, &terminal_manager);
+                redraw_needed = false;
             }
             Some(event) = event_rx.recv() => {
                 match &event {
@@ -241,12 +249,6 @@ async fn run_app<B: ratatui::backend::Backend>(
                 }
                 redraw_needed = true;
             }
-        }
-
-        if redraw_needed {
-            terminal.draw(|f| ui(f, &mut app))?;
-            sync_terminal_sizes(&app, &terminal_manager);
-            redraw_needed = false;
         }
     }
 
