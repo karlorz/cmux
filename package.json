@@ -24,7 +24,7 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "monaco-editor": "^0.53.0",
-    "convex": "1.27.1"
+    "convex": "1.29.3"
   },
   "private": true,
   "scripts": {
@@ -51,7 +51,8 @@
     "generate-openapi-client": "cd apps/www && bun run generate-openapi-client",
     "generate-morphcloud-openapi-client": "cd packages/morphcloud-openapi-client && bun run generate",
     "build:mac-arm64-prod": "bash scripts/build-prod-mac-arm64.sh",
-    "convex:deploy:prod": "(cd packages/convex && bun run deploy:prod)"
+    "convex:deploy:prod": "(cd packages/convex && bun run deploy:prod)",
+    "convex:setup": "bun run --env-file .env --cwd packages/convex setup"
   },
   "type": "module",
   "workspaces": [
