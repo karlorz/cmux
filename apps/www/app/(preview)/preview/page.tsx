@@ -11,6 +11,23 @@ type PageProps = {
 
 type StackTeam = Awaited<ReturnType<typeof stackServerApp.listTeams>>[number];
 
+type PreviewConfigListItem = {
+  id: string;
+  repoFullName: string;
+  environmentId: string | null;
+  repoInstallationId: number | null;
+  repoDefaultBranch: string | null;
+  status: "active" | "paused" | "disabled";
+  lastRunAt: number | null;
+  teamSlugOrId: string;
+  teamName: string;
+};
+
+type TeamOption = {
+  slugOrId: string;
+  displayName: string;
+};
+
 function getTeamSlugOrId(team: StackTeam): string {
   const candidate = team as unknown as {
     slug?: string | null;
@@ -20,12 +37,19 @@ function getTeamSlugOrId(team: StackTeam): string {
   return candidate.slug ?? candidate.teamId ?? candidate.id ?? "";
 }
 
+function getTeamDisplayName(team: StackTeam): string {
+  const candidate = team as unknown as {
+    displayName?: string | null;
+    name?: string | null;
+  };
+  return candidate.displayName ?? candidate.name ?? getTeamSlugOrId(team);
+}
+
 function serializeProviderConnections(
   connections: Array<{
     installationId: number;
     accountLogin: string | null | undefined;
     accountType: string | null | undefined;
-    type: string | null | undefined;
     isActive: boolean;
   }>
 ) {
@@ -48,9 +72,10 @@ export default async function PreviewLandingPage({ searchParams }: PageProps) {
 
         <PreviewDashboard
           selectedTeamSlugOrId=""
-          hasGithubAppInstallation={false}
-          providerConnections={[]}
+          teamOptions={[]}
+          providerConnectionsByTeam={{}}
           isAuthenticated={false}
+          previewConfigs={[]}
         />
       </div>
     );
@@ -79,16 +104,55 @@ export default async function PreviewLandingPage({ searchParams }: PageProps) {
   const selectedTeam =
     teams.find((team) => getTeamSlugOrId(team) === searchTeam) ?? teams[0];
   const selectedTeamSlugOrId = selectedTeam ? getTeamSlugOrId(selectedTeam) : "";
+  const teamOptions: TeamOption[] = teams.map((team) => ({
+    slugOrId: getTeamSlugOrId(team),
+    displayName: getTeamDisplayName(team),
+  }));
 
   const convex = getConvex({ accessToken });
-  const providerConnections = selectedTeamSlugOrId
-    ? await convex.query(api.github.listProviderConnections, {
-        teamSlugOrId: selectedTeamSlugOrId,
+  const [providerConnectionsByTeamEntries, previewConfigs] = await Promise.all([
+    Promise.all(
+      teams.map(async (team) => {
+        const teamSlugOrId = getTeamSlugOrId(team);
+        const connections = await convex.query(api.github.listProviderConnections, {
+          teamSlugOrId,
+        });
+        const serialized = serializeProviderConnections(connections);
+        return [teamSlugOrId, serialized] as const;
+      }),
+    ),
+    Promise.all(
+      teams.map(async (team) => {
+        const teamSlugOrId = getTeamSlugOrId(team);
+        try {
+          const configs = await convex.query(api.previewConfigs.listByTeam, {
+            teamSlugOrId,
+          });
+          return configs.map(
+            (config): PreviewConfigListItem => ({
+              id: config._id,
+              repoFullName: config.repoFullName,
+              environmentId: config.environmentId ?? null,
+              repoInstallationId: config.repoInstallationId ?? null,
+              repoDefaultBranch: config.repoDefaultBranch ?? null,
+              status: config.status ?? "active",
+              lastRunAt: config.lastRunAt ?? null,
+              teamSlugOrId,
+              teamName: getTeamDisplayName(team),
+            })
+          );
+        } catch (error) {
+          console.error("[PreviewLandingPage] Failed to load preview configs", {
+            teamSlugOrId,
+            error,
+          });
+          return [];
+        }
       })
-    : [];
-
-  const hasGithubAppInstallation = providerConnections.some(
-    (connection) => connection.isActive,
+    ).then((results) => results.flat()),
+  ]);
+  const providerConnectionsByTeam = Object.fromEntries(
+    providerConnectionsByTeamEntries,
   );
 
   return (
@@ -97,9 +161,10 @@ export default async function PreviewLandingPage({ searchParams }: PageProps) {
 
       <PreviewDashboard
         selectedTeamSlugOrId={selectedTeamSlugOrId}
-        hasGithubAppInstallation={hasGithubAppInstallation}
-        providerConnections={serializeProviderConnections(providerConnections)}
+        teamOptions={teamOptions}
+        providerConnectionsByTeam={providerConnectionsByTeam}
         isAuthenticated={true}
+        previewConfigs={previewConfigs}
       />
     </div>
   );

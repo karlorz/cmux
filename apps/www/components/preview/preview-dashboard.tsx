@@ -13,6 +13,7 @@ import {
   User,
 } from "lucide-react";
 import Link from "next/link";
+import clsx from "clsx";
 import { Button } from "@/components/ui/button";
 
 type ProviderConnection = {
@@ -28,21 +29,46 @@ type RepoSearchResult = {
   updated_at?: string | null;
 };
 
+type PreviewConfigStatus = "active" | "paused" | "disabled";
+
+type PreviewConfigListItem = {
+  id: string;
+  repoFullName: string;
+  environmentId: string | null;
+  repoInstallationId: number | null;
+  repoDefaultBranch: string | null;
+  status: PreviewConfigStatus;
+  lastRunAt: number | null;
+  teamSlugOrId: string;
+  teamName: string;
+};
+
+type TeamOption = {
+  slugOrId: string;
+  displayName: string;
+};
+
 type PreviewDashboardProps = {
   selectedTeamSlugOrId: string;
-  hasGithubAppInstallation: boolean;
-  providerConnections: ProviderConnection[];
+  teamOptions: TeamOption[];
+  providerConnectionsByTeam: Record<string, ProviderConnection[]>;
   isAuthenticated: boolean;
+  previewConfigs: PreviewConfigListItem[];
 };
 
 export function PreviewDashboard({
   selectedTeamSlugOrId,
-  hasGithubAppInstallation,
-  providerConnections,
+  teamOptions,
+  providerConnectionsByTeam,
   isAuthenticated,
+  previewConfigs,
 }: PreviewDashboardProps) {
+  const [selectedTeamSlugOrIdState, setSelectedTeamSlugOrIdState] = useState(
+    () => selectedTeamSlugOrId || teamOptions[0]?.slugOrId || "",
+  );
   const [isInstallingApp, setIsInstallingApp] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [configError, setConfigError] = useState<string | null>(null);
 
   // Repository selection state
   const [selectedInstallationId, setSelectedInstallationId] = useState<number | null>(null);
@@ -50,16 +76,32 @@ export function PreviewDashboard({
   const [repos, setRepos] = useState<RepoSearchResult[]>([]);
   const [isLoadingRepos, setIsLoadingRepos] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
+  const [configs, setConfigs] = useState<PreviewConfigListItem[]>(previewConfigs);
+  const [updatingConfigId, setUpdatingConfigId] = useState<string | null>(null);
 
   // Public URL input state
   const [repoUrlInput, setRepoUrlInput] = useState("");
 
-  const activeConnections = providerConnections.filter((c) => c.isActive);
+  const currentProviderConnections =
+    providerConnectionsByTeam[selectedTeamSlugOrIdState] ?? [];
+  const activeConnections = currentProviderConnections.filter((c) => c.isActive);
+  const hasGithubAppInstallation = activeConnections.length > 0;
+  const canSearchRepos =
+    isAuthenticated &&
+    Boolean(selectedTeamSlugOrIdState) &&
+    hasGithubAppInstallation &&
+    activeConnections.length > 0;
   const searchPlaceholder = !isAuthenticated
     ? "Sign in to search your GitHub repos"
-    : !hasGithubAppInstallation
-      ? "Install the GitHub App to search your repos"
-      : "Search installed repositories";
+    : !selectedTeamSlugOrIdState
+      ? "Select a team to search repos"
+      : !hasGithubAppInstallation
+        ? "Install the GitHub App to search your repos"
+        : "Search installed repositories";
+
+  useEffect(() => {
+    setConfigs(previewConfigs);
+  }, [previewConfigs]);
 
   // Parse GitHub URL to extract owner/repo
   const parseGithubUrl = useCallback((input: string): string | null => {
@@ -83,29 +125,162 @@ export function PreviewDashboard({
     return null;
   }, []);
 
-  const handleStartPreview = useCallback(() => {
+  const formatLastRun = useCallback((timestamp: number | null) => {
+    if (!timestamp) return "No runs yet";
+    const diffMs = Date.now() - timestamp;
+    if (diffMs < 60_000) return "Just now";
+    const diffMinutes = Math.floor(diffMs / 60_000);
+    if (diffMinutes < 60) return `${diffMinutes}m ago`;
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
+  }, []);
+
+  const handleOpenConfig = useCallback((config: PreviewConfigListItem) => {
+    const params = new URLSearchParams({
+      repo: config.repoFullName,
+      team: config.teamSlugOrId,
+    });
+    if (config.repoInstallationId !== null) {
+      params.set("installationId", String(config.repoInstallationId));
+    }
+    window.location.href = `/preview/configure?${params.toString()}`;
+  }, []);
+
+  const handleDeleteConfig = useCallback(
+    async (config: PreviewConfigListItem) => {
+      setUpdatingConfigId(config.id);
+      setConfigError(null);
+      try {
+        const response = await fetch("/api/preview/configs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            previewConfigId: config.id,
+            teamSlugOrId: config.teamSlugOrId,
+            repoFullName: config.repoFullName,
+            status: "disabled",
+          }),
+        });
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+        setConfigs((previous) => previous.filter((item) => item.id !== config.id));
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to delete preview configuration";
+        setConfigError(message);
+      } finally {
+        setUpdatingConfigId(null);
+      }
+    },
+    []
+  );
+
+  const handleTeamChange = useCallback(
+    (nextTeam: string) => {
+      setSelectedTeamSlugOrIdState(nextTeam);
+      setSelectedInstallationId(null);
+      setRepos([]);
+      setRepoSearch("");
+      setErrorMessage(null);
+    },
+    []
+  );
+
+  const handleStartPreview = useCallback(async () => {
+    if (!selectedTeamSlugOrIdState) {
+      setErrorMessage("Select a team before continuing.");
+      return;
+    }
+
     const repoName = parseGithubUrl(repoUrlInput);
     if (!repoName) {
       setErrorMessage("Please enter a valid GitHub URL or owner/repo");
       return;
     }
+    const params = new URLSearchParams({ repo: repoName });
+    params.set("team", selectedTeamSlugOrIdState);
+    const configurePath = `/preview/configure?${params.toString()}`;
+
+    if (!isAuthenticated) {
+      setErrorMessage(null);
+      setIsNavigating(true);
+      window.location.href = `/handler/sign-in?after_auth_return_to=${encodeURIComponent(configurePath)}`;
+      return;
+    }
+
+    if (!hasGithubAppInstallation) {
+      setErrorMessage(null);
+      setIsInstallingApp(true);
+      setIsNavigating(true);
+
+      try {
+        try {
+          sessionStorage.setItem("pr_review_return_url", configurePath);
+        } catch (storageError) {
+          console.warn("[PreviewDashboard] Failed to persist return URL", storageError);
+        }
+
+        const response = await fetch("/api/integrations/github/install-state", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            teamSlugOrId: selectedTeamSlugOrIdState,
+            returnUrl: new URL(configurePath, window.location.origin).toString(),
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+
+        const payload = (await response.json()) as { state: string };
+        const githubAppSlug = process.env.NEXT_PUBLIC_GITHUB_APP_SLUG;
+        if (!githubAppSlug) {
+          throw new Error("GitHub App slug is not configured");
+        }
+
+        const url = new URL(`https://github.com/apps/${githubAppSlug}/installations/new`);
+        url.searchParams.set("state", payload.state);
+        window.location.href = url.toString();
+        return;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to start GitHub App install";
+        setErrorMessage(message);
+        setIsInstallingApp(false);
+        setIsNavigating(false);
+        return;
+      }
+    }
+
     setErrorMessage(null);
     setIsNavigating(true);
-    const params = new URLSearchParams({ repo: repoName });
-    if (selectedTeamSlugOrId) {
-      params.set("team", selectedTeamSlugOrId);
-    }
-    window.location.href = `/preview/configure?${params.toString()}`;
-  }, [repoUrlInput, parseGithubUrl, selectedTeamSlugOrId]);
+    window.location.href = configurePath;
+  }, [
+    repoUrlInput,
+    parseGithubUrl,
+    selectedTeamSlugOrIdState,
+    hasGithubAppInstallation,
+    isAuthenticated,
+  ]);
 
   // Auto-select first connection
   useEffect(() => {
-    if (activeConnections.length > 0 && !selectedInstallationId) {
+    if (activeConnections.length > 0) {
       setSelectedInstallationId(activeConnections[0]?.installationId ?? null);
+    } else {
+      setSelectedInstallationId(null);
     }
-  }, [activeConnections, selectedInstallationId]);
+  }, [activeConnections]);
 
   const handleInstallGithubApp = async () => {
+    if (!selectedTeamSlugOrIdState) {
+      setErrorMessage("Select a team first");
+      return;
+    }
     setIsInstallingApp(true);
     setErrorMessage(null);
     try {
@@ -120,7 +295,7 @@ export function PreviewDashboard({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          teamSlugOrId: selectedTeamSlugOrId,
+          teamSlugOrId: selectedTeamSlugOrIdState,
           returnUrl: currentUrl,
         }),
       });
@@ -144,7 +319,7 @@ export function PreviewDashboard({
   };
 
   const handleSearchRepos = useCallback(async () => {
-    if (selectedInstallationId === null) {
+    if (!selectedTeamSlugOrIdState || selectedInstallationId === null) {
       setRepos([]);
       return;
     }
@@ -152,7 +327,7 @@ export function PreviewDashboard({
     setErrorMessage(null);
     try {
       const params = new URLSearchParams({
-        team: selectedTeamSlugOrId,
+        team: selectedTeamSlugOrIdState,
         installationId: String(selectedInstallationId),
       });
       if (repoSearch.trim()) {
@@ -170,7 +345,7 @@ export function PreviewDashboard({
     } finally {
       setIsLoadingRepos(false);
     }
-  }, [repoSearch, selectedTeamSlugOrId, selectedInstallationId]);
+  }, [repoSearch, selectedTeamSlugOrIdState, selectedInstallationId]);
 
   // Auto-load repos when installation changes
   useEffect(() => {
@@ -185,10 +360,16 @@ export function PreviewDashboard({
     const params = new URLSearchParams({
       repo: repoName,
       installationId: String(selectedInstallationId ?? ""),
-      team: selectedTeamSlugOrId,
+      team: selectedTeamSlugOrIdState,
     });
     window.location.href = `/preview/configure?${params.toString()}`;
-  }, [selectedInstallationId, selectedTeamSlugOrId]);
+  }, [selectedInstallationId, selectedTeamSlugOrIdState]);
+
+  useEffect(() => {
+    if (!selectedTeamSlugOrIdState && teamOptions[0]) {
+      setSelectedTeamSlugOrIdState(teamOptions[0].slugOrId);
+    }
+  }, [selectedTeamSlugOrIdState, teamOptions]);
 
   return (
     <div className="mx-auto w-full max-w-[1200px] px-6 py-12">
@@ -214,7 +395,10 @@ export function PreviewDashboard({
         </div>
       </div>
 
-      <div className="relative mb-12 overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur">
+      <div
+        id="setup-preview"
+        className="relative mb-12 overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur"
+      >
         <div className="absolute -left-32 -top-24 h-64 w-64 rounded-full bg-sky-500/20 blur-3xl" />
         <div className="absolute -right-28 bottom-0 h-56 w-56 rounded-full bg-purple-500/20 blur-3xl" />
         <div className="relative space-y-4">
@@ -237,14 +421,14 @@ export function PreviewDashboard({
                   type="text"
                   value={repoUrlInput}
                   onChange={(e) => setRepoUrlInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleStartPreview()}
+                  onKeyDown={(e) => e.key === "Enter" && void handleStartPreview()}
                   placeholder="https://github.com/owner/repo"
                   className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2.5 pl-10 text-sm text-white placeholder:text-neutral-500 focus:border-white/20 focus:outline-none focus:ring-1 focus:ring-sky-500/50"
                 />
               </div>
               <Button
-                onClick={handleStartPreview}
-                disabled={!repoUrlInput.trim() || isNavigating}
+                onClick={() => void handleStartPreview()}
+                disabled={!repoUrlInput.trim() || isNavigating || !selectedTeamSlugOrIdState}
                 className="bg-white text-black hover:bg-neutral-200"
               >
                 {isNavigating ? "Loading…" : "Start"}
@@ -261,6 +445,29 @@ export function PreviewDashboard({
         {/* Left Column: Import Git Repository */}
         <div className="flex flex-col">
           <h2 className="text-xl font-semibold text-white">Choose a repository</h2>
+          {isAuthenticated && teamOptions.length > 0 ? (
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+              <label className="text-sm text-neutral-300">Team</label>
+              <div className="relative min-w-[220px]">
+                <select
+                  value={selectedTeamSlugOrIdState}
+                  onChange={(e) => handleTeamChange(e.target.value)}
+                  className="w-full appearance-none rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white focus:border-white/20 focus:outline-none focus:ring-1 focus:ring-sky-500/50"
+                >
+                  {teamOptions.map((team) => (
+                    <option key={team.slugOrId} value={team.slugOrId}>
+                      {team.displayName}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute right-3 top-3">
+                  <svg className="h-4 w-4 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <div className="mt-6 flex-1 rounded-xl border border-white/10 bg-neutral-900/30 p-6">
             {!isAuthenticated ? (
@@ -335,14 +542,19 @@ export function PreviewDashboard({
                         onChange={(e) => setRepoSearch(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && void handleSearchRepos()}
                         placeholder={searchPlaceholder}
-                        className="w-full rounded-lg border border-white/10 bg-white/5 pl-9 pr-3 py-2.5 text-sm text-white focus:border-white/20 focus:outline-none focus:ring-1 focus:ring-sky-500/50"
+                        disabled={!canSearchRepos}
+                        className="w-full rounded-lg border border-white/10 bg-white/5 pl-9 pr-3 py-2.5 text-sm text-white focus:border-white/20 focus:outline-none focus:ring-1 focus:ring-sky-500/50 disabled:cursor-not-allowed disabled:opacity-50"
                       />
                    </div>
                 </div>
 
                 {/* Repo List */}
                 <div className="min-h-[300px]">
-                  {isLoadingRepos ? (
+                  {!canSearchRepos ? (
+                    <div className="flex h-full min-h-[200px] items-center justify-center text-sm text-neutral-400">
+                      Select a team and install the GitHub App to search repositories.
+                    </div>
+                  ) : isLoadingRepos ? (
                     <div className="flex justify-center py-12">
                       <Loader2 className="h-6 w-6 animate-spin text-neutral-500" />
                     </div>
@@ -368,7 +580,7 @@ export function PreviewDashboard({
                           </div>
                           <Button
                             onClick={() => handleContinue(repo.full_name)}
-                            disabled={isNavigating}
+                            disabled={isNavigating || !selectedInstallationId}
                             size="sm"
                             className="bg-white text-black hover:bg-neutral-200"
                           >
@@ -386,6 +598,7 @@ export function PreviewDashboard({
                     </div>
                   )}
                 </div>
+
               </div>
             )}
           </div>
@@ -433,6 +646,93 @@ export function PreviewDashboard({
           </div>
         </div>
       </div>
+
+      {isAuthenticated ? (
+        <div className="mt-10 rounded-2xl border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-white">Preview configs</p>
+              <p className="text-sm text-neutral-300">
+                Update or delete existing preview setups across your teams.
+              </p>
+            </div>
+            {configError ? (
+              <span className="text-xs text-red-400">{configError}</span>
+            ) : null}
+          </div>
+
+          {configs.length === 0 ? (
+            <div className="rounded-xl border border-white/10 bg-black/30 p-5 text-sm text-neutral-300">
+              No preview configs yet. Choose a repository to create one.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {configs.map((config) => (
+                <div
+                  key={config.id}
+                  className="flex flex-col gap-3 rounded-xl border border-white/10 bg-black/30 p-5 md:flex-row md:items-center md:justify-between"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Github className="h-4 w-4 text-white" />
+                      <span className="text-sm font-semibold text-white">{config.repoFullName}</span>
+                      <span className="rounded-full border border-white/10 bg-white/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-neutral-200">
+                        {config.teamName}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
+                      <span>Last run: {formatLastRun(config.lastRunAt)}</span>
+                      <span
+                        className={clsx(
+                          "rounded-full border px-2 py-0.5 font-medium capitalize",
+                          config.status === "active"
+                            ? "border-emerald-500/50 bg-emerald-500/20 text-emerald-100"
+                            : config.status === "paused"
+                              ? "border-amber-500/50 bg-amber-500/20 text-amber-100"
+                              : "border-neutral-500/50 bg-neutral-500/20 text-neutral-100"
+                        )}
+                      >
+                        {config.status}
+                      </span>
+                      {config.environmentId ? (
+                        <span className="rounded-md bg-white/10 px-2 py-0.5 text-[11px] text-neutral-200">
+                          Env {config.environmentId.slice(0, 6)}…
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => handleOpenConfig(config)}
+                      className="border-white/30 bg-white/10 text-white hover:border-white/60 hover:bg-white/20"
+                    >
+                      Update
+                    </Button>
+                    <Button
+                      onClick={() => void handleDeleteConfig(config)}
+                      disabled={updatingConfigId === config.id}
+                      className={clsx(
+                        "bg-red-500 text-white hover:bg-red-600",
+                        updatingConfigId === config.id && "opacity-70"
+                      )}
+                    >
+                      {updatingConfigId === config.id ? (
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>Deleting…</span>
+                        </div>
+                      ) : (
+                        "Delete"
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
