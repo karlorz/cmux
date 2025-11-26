@@ -47,16 +47,22 @@ pub async fn run_mux_tui(base_url: String, workspace_path: Option<PathBuf>) -> R
 
     // Cleanup must happen in reverse order, and PopKeyboardEnhancementFlags
     // must be sent BEFORE LeaveAlternateScreen to properly restore terminal state.
-    // Use let _ to ignore errors during cleanup to ensure all steps run.
-    let _ = disable_raw_mode();
-    let _ = execute!(
+    // Print errors but continue cleanup to ensure all steps run.
+    if let Err(e) = disable_raw_mode() {
+        eprintln!("Warning: failed to disable raw mode: {e}");
+    }
+    if let Err(e) = execute!(
         terminal.backend_mut(),
         PopKeyboardEnhancementFlags,
         DisableBracketedPaste,
         DisableMouseCapture,
         LeaveAlternateScreen
-    );
-    let _ = terminal.show_cursor();
+    ) {
+        eprintln!("Warning: failed to restore terminal state: {e}");
+    }
+    if let Err(e) = terminal.show_cursor() {
+        eprintln!("Warning: failed to show cursor: {e}");
+    }
 
     result
 }
