@@ -17,7 +17,7 @@ use tokio::time::MissedTickBehavior;
 
 use crate::mux::commands::MuxCommand;
 use crate::mux::events::{MuxEvent, NotificationLevel};
-use crate::mux::layout::{ClosedTabInfo, PaneContent, PaneExitOutcome};
+use crate::mux::layout::{ClosedTabInfo, PaneContent, PaneExitOutcome, SandboxId};
 use crate::mux::state::{FocusArea, MuxApp};
 use crate::mux::terminal::{
     connect_to_sandbox, create_terminal_manager, request_create_sandbox, request_list_sandboxes,
@@ -275,7 +275,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                 redraw_needed = true;
             }
             Some(Ok(event)) = reader.next() => {
-                if handle_input(&mut app, event, &terminal_manager).await {
+                if handle_input(&mut app, event, &terminal_manager) {
                     break;
                 }
                 redraw_needed = true;
@@ -475,7 +475,7 @@ fn handle_terminal_exit_for_pane(
 }
 
 /// Handle input events. Returns true if the app should quit.
-async fn handle_input(
+fn handle_input(
     app: &mut MuxApp<'_>,
     event: Event,
     terminal_manager: &crate::mux::terminal::SharedTerminalManager,
@@ -570,12 +570,24 @@ async fn handle_input(
                         KeyCode::Up | KeyCode::Char('k') => {
                             app.sidebar.select_previous();
                             // Auto-switch workspace on selection change
-                            select_sidebar_sandbox(app, terminal_manager).await;
+                            select_sidebar_sandbox(app);
                         }
                         KeyCode::Down | KeyCode::Char('j') => {
                             app.sidebar.select_next();
                             // Auto-switch workspace on selection change
-                            select_sidebar_sandbox(app, terminal_manager).await;
+                            select_sidebar_sandbox(app);
+                        }
+                        KeyCode::Backspace => {
+                            if let Some((sandbox_id, sandbox_name)) = remove_selected_sandbox(app) {
+                                let base_url = app.base_url.clone();
+                                let event_tx = app.event_tx.clone();
+
+                                app.set_status(format!("Deleting sandbox: {}", sandbox_name));
+
+                                tokio::spawn(async move {
+                                    delete_sidebar_sandbox(base_url, sandbox_id, event_tx).await;
+                                });
+                            }
                         }
                         KeyCode::Enter | KeyCode::Esc | KeyCode::Tab => {
                             // Just focus the main area
@@ -688,34 +700,106 @@ async fn handle_input(
 }
 
 /// Select the currently highlighted sandbox in the sidebar and switch to its workspace.
-/// Also connects the terminal if there's an active pane.
-async fn select_sidebar_sandbox(
-    app: &mut MuxApp<'_>,
-    terminal_manager: &crate::mux::terminal::SharedTerminalManager,
-) {
+fn select_sidebar_sandbox(app: &mut MuxApp<'_>) {
     if let Some(sandbox) = app.sidebar.selected_sandbox() {
         let sandbox_id = sandbox.id.to_string();
         let sandbox_name = sandbox.name.clone();
 
         // Select the sandbox (switches workspace to this sandbox)
-        app.select_sandbox(&sandbox_id);
-        app.set_status(format!("Selected: {}", sandbox_name));
-
-        // Connect to the sandbox terminal
-        if let Some(pane_id) = app.active_pane_id() {
-            let manager = terminal_manager.clone();
-            let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
-            let event_tx = app.event_tx.clone();
-
-            tokio::spawn(async move {
-                if let Err(e) =
-                    connect_to_sandbox(manager, pane_id, sandbox_id.clone(), cols, rows).await
-                {
-                    let _ = event_tx.send(MuxEvent::Error(format!("Failed to connect: {}", e)));
-                }
-            });
+        if app.select_sandbox(&sandbox_id) {
+            app.set_status(format!("Selected: {}", sandbox_name));
         }
     }
+}
+
+async fn delete_sidebar_sandbox(
+    base_url: String,
+    sandbox_id: String,
+    event_tx: mpsc::UnboundedSender<MuxEvent>,
+) {
+    let client = reqwest::Client::new();
+    let url = format!(
+        "{}/sandboxes/{}",
+        base_url.trim_end_matches('/'),
+        sandbox_id
+    );
+
+    let result = client.delete(&url).send().await;
+
+    match result {
+        Ok(response) if response.status().is_success() => {
+            let _ = event_tx.send(MuxEvent::SandboxDeleted(sandbox_id.clone()));
+            if let Err(error) = refresh_sandboxes(&base_url, &event_tx).await {
+                let _ = event_tx.send(MuxEvent::Error(format!(
+                    "Failed to refresh sandboxes: {}",
+                    error
+                )));
+            }
+        }
+        Ok(response) => {
+            let _ = event_tx.send(MuxEvent::Error(format!(
+                "Failed to delete sandbox: {}",
+                response.status()
+            )));
+            if let Err(error) = refresh_sandboxes(&base_url, &event_tx).await {
+                let _ = event_tx.send(MuxEvent::Error(format!(
+                    "Failed to refresh sandboxes: {}",
+                    error
+                )));
+            }
+        }
+        Err(error) => {
+            let _ = event_tx.send(MuxEvent::Error(format!(
+                "Failed to delete sandbox: {}",
+                error
+            )));
+        }
+    }
+}
+
+fn remove_selected_sandbox(app: &mut MuxApp<'_>) -> Option<(String, String)> {
+    if app.sidebar.sandboxes.is_empty() {
+        return None;
+    }
+
+    let current_index = app
+        .sidebar
+        .selected_index
+        .min(app.sidebar.sandboxes.len().saturating_sub(1));
+
+    let sandbox = app.sidebar.sandboxes.remove(current_index);
+    let sandbox_id = sandbox.id.to_string();
+    let sandbox_name = sandbox.name.clone();
+    let sandbox_uuid = SandboxId::from_uuid(sandbox.id);
+
+    app.workspace_manager.remove_sandbox(sandbox_uuid);
+    app.focus = FocusArea::Sidebar;
+
+    if let Some(pending) = &app.pending_connect {
+        if pending == &sandbox_id {
+            app.pending_connect = None;
+        }
+    }
+
+    if app.sidebar.sandboxes.is_empty() {
+        app.sidebar.selected_index = 0;
+        app.workspace_manager.active_sandbox_id = None;
+        return Some((sandbox_id, sandbox_name));
+    }
+
+    let next_index = if current_index < app.sidebar.sandboxes.len() {
+        current_index
+    } else {
+        app.sidebar.sandboxes.len() - 1
+    };
+
+    app.sidebar.selected_index = next_index;
+
+    let next_selected_id = app.sidebar.sandboxes[next_index].id.to_string();
+    let _ = app.select_sandbox(&next_selected_id);
+    app.sidebar.select_by_id(&next_selected_id);
+
+    Some((sandbox_id, sandbox_name))
 }
 
 /// Convert a key event to terminal input bytes

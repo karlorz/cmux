@@ -1,5 +1,9 @@
+use std::collections::VecDeque;
+
+use chrono::Utc;
 use tokio::sync::mpsc;
 
+use crate::models::{SandboxNetwork, SandboxStatus, SandboxSummary};
 use crate::mux::commands::MuxCommand;
 use crate::mux::events::MuxEvent;
 use crate::mux::layout::{Direction, NavDirection, Pane, PaneId, SandboxId, WorkspaceManager};
@@ -48,6 +52,9 @@ pub struct MuxApp<'a> {
     // Sandbox we need to connect to once available
     pub pending_connect: Option<String>,
 
+    // Locally created placeholder sandboxes awaiting server confirmation
+    pub pending_placeholder_sandboxes: VecDeque<SandboxId>,
+
     // Flag to indicate we need to create a sandbox on startup
     pub needs_initial_sandbox: bool,
 
@@ -72,6 +79,7 @@ impl<'a> MuxApp<'a> {
             rename_input: None,
             terminal_manager: None,
             pending_connect: None,
+            pending_placeholder_sandboxes: VecDeque::new(),
             needs_initial_sandbox: false,
             last_terminal_views: std::collections::HashMap::new(),
         }
@@ -359,6 +367,7 @@ impl<'a> MuxApp<'a> {
                     message: "Creating sandbox...".to_string(),
                     level: crate::mux::events::NotificationLevel::Info,
                 });
+                self.add_placeholder_sandbox("Creating sandbox");
             }
             MuxCommand::DeleteSandbox => {
                 if let Some(sandbox) = self.sidebar.selected_sandbox() {
@@ -458,6 +467,20 @@ impl<'a> MuxApp<'a> {
                     let sandbox_id_str = sandbox.id.to_string();
                     self.add_sandbox(&sandbox_id_str, &sandbox.name);
                 }
+                // Re-append pending placeholders so they stay visible during creation
+                for placeholder_id in self.pending_placeholder_sandboxes.iter().copied() {
+                    if self
+                        .sidebar
+                        .sandboxes
+                        .iter()
+                        .any(|sandbox| sandbox.id == placeholder_id.0)
+                    {
+                        continue;
+                    }
+                    if let Some(summary) = self.placeholder_summary(placeholder_id) {
+                        self.sidebar.sandboxes.push(summary);
+                    }
+                }
                 // Ensure selection stays in sync with available sandboxes
                 if let Some(active_id) = self.selected_sandbox_id_string() {
                     self.sidebar.select_by_id(&active_id);
@@ -478,6 +501,10 @@ impl<'a> MuxApp<'a> {
                 self.set_status(format!("Error: {}", error));
             }
             MuxEvent::SandboxCreated(sandbox) => {
+                // Drop one placeholder entry to keep the list responsive
+                if let Some(placeholder_id) = self.pending_placeholder_sandboxes.pop_front() {
+                    self.remove_local_sandbox(placeholder_id);
+                }
                 // Add the new sandbox to workspace manager
                 let sandbox_id_str = sandbox.id.to_string();
                 // Keep sidebar in sync immediately without waiting for refresh
@@ -493,10 +520,8 @@ impl<'a> MuxApp<'a> {
                 self.set_status(format!("Created sandbox: {}", sandbox.name));
             }
             MuxEvent::SandboxDeleted(id) => {
-                // Remove the sandbox from workspace manager
-                if let Ok(sandbox_id) = id.parse::<SandboxId>() {
-                    self.workspace_manager.remove_sandbox(sandbox_id);
-                }
+                self.remove_sandbox_by_id_string(&id);
+                self.focus = FocusArea::Sidebar;
                 self.set_status(format!("Deleted sandbox: {}", id));
             }
             MuxEvent::SandboxConnectionChanged {
@@ -531,6 +556,101 @@ impl<'a> MuxApp<'a> {
                 // Cleanup is handled in the runner where terminal state is available
             }
         }
+    }
+
+    /// Add a local placeholder sandbox for immediate UI feedback while creation runs.
+    pub fn add_placeholder_sandbox(&mut self, name: impl Into<String>) {
+        let sandbox_id = SandboxId::new();
+        let name = name.into();
+        let summary = SandboxSummary {
+            id: sandbox_id.0,
+            index: self.sidebar.sandboxes.len(),
+            name: name.clone(),
+            created_at: Utc::now(),
+            workspace: "/workspace".to_string(),
+            status: SandboxStatus::Unknown,
+            network: SandboxNetwork {
+                host_interface: "pending".to_string(),
+                sandbox_interface: "pending".to_string(),
+                host_ip: "0.0.0.0".to_string(),
+                sandbox_ip: "0.0.0.0".to_string(),
+                cidr: 24,
+            },
+        };
+
+        self.sidebar.sandboxes.push(summary);
+        let id_str = sandbox_id.to_string();
+        self.sidebar.select_by_id(&id_str);
+        self.workspace_manager.add_sandbox(sandbox_id, name.clone());
+        self.workspace_manager.select_sandbox(sandbox_id);
+        self.pending_placeholder_sandboxes.push_back(sandbox_id);
+    }
+
+    fn remove_local_sandbox(&mut self, sandbox_id: SandboxId) {
+        self.remove_sandbox_by_id_string(&sandbox_id.to_string());
+    }
+
+    fn remove_sandbox_by_id_string(&mut self, id: &str) {
+        let removed_index = self
+            .sidebar
+            .sandboxes
+            .iter()
+            .position(|sandbox| sandbox.id.to_string() == id);
+
+        if let Ok(sandbox_id) = id.parse::<SandboxId>() {
+            self.workspace_manager.remove_sandbox(sandbox_id);
+        }
+
+        self.sidebar
+            .sandboxes
+            .retain(|sandbox| sandbox.id.to_string() != id);
+
+        if let Some(pending) = &self.pending_connect {
+            if pending == id {
+                self.pending_connect = None;
+            }
+        }
+
+        if self.sidebar.sandboxes.is_empty() {
+            self.sidebar.selected_index = 0;
+            self.workspace_manager.active_sandbox_id = None;
+        } else if let Some(idx) = removed_index {
+            let next_index = if idx < self.sidebar.sandboxes.len() {
+                idx
+            } else {
+                self.sidebar.sandboxes.len() - 1
+            };
+
+            self.sidebar.selected_index = next_index;
+
+            let next_id = self.sidebar.sandboxes[next_index].id.to_string();
+            let _ = self.select_sandbox(&next_id);
+            self.sidebar.select_by_id(&next_id);
+        }
+    }
+
+    fn placeholder_summary(&self, sandbox_id: SandboxId) -> Option<SandboxSummary> {
+        let name = self
+            .workspace_manager
+            .get_workspace(sandbox_id)
+            .map(|ws| ws.name.clone())
+            .unwrap_or_else(|| "Creating sandbox".to_string());
+
+        Some(SandboxSummary {
+            id: sandbox_id.0,
+            index: self.sidebar.sandboxes.len(),
+            name,
+            created_at: Utc::now(),
+            workspace: "/workspace".to_string(),
+            status: SandboxStatus::Unknown,
+            network: SandboxNetwork {
+                host_interface: "pending".to_string(),
+                sandbox_interface: "pending".to_string(),
+                host_ip: "0.0.0.0".to_string(),
+                sandbox_ip: "0.0.0.0".to_string(),
+                cidr: 24,
+            },
+        })
     }
 }
 
