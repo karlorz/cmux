@@ -619,7 +619,7 @@ export function PreviewDashboard({
                               size="sm"
                               className="bg-white text-black hover:bg-neutral-200"
                             >
-                              Import
+                              Setup
                             </Button>
                           </div>
                         );

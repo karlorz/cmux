@@ -637,7 +637,6 @@ export function PreviewConfigureClient({
   const lastSubmittedEnvContent = useRef<string | null>(null);
   const frameworkSelectRef = useRef<HTMLDivElement | null>(null);
   const copyResetTimeoutRef = useRef<number | null>(null);
-  const envSectionAutoCollapsedRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -927,13 +926,6 @@ export function PreviewConfigureClient({
     setRunConfirmed(false);
   }, [maintenanceScriptValue, devScriptValue, maintenanceNone, devNone]);
 
-  useEffect(() => {
-    if (!envSectionAutoCollapsedRef.current && hasEnvValues) {
-      setIsEnvSectionOpen(false);
-      envSectionAutoCollapsedRef.current = true;
-    }
-  }, [hasEnvValues]);
-
   const handleSaveConfiguration = async () => {
     if (!resolvedTeamSlugOrId) {
       setErrorMessage("Select a team before saving.");
@@ -1137,6 +1129,23 @@ export function PreviewConfigureClient({
   // Show setup screen while provisioning OR until user clicks Next
   if (!hasCompletedSetup) {
     const isWorkspaceReady = Boolean(instance?.vscodeUrl);
+
+    // When editing an existing environment, show loader until VS Code is ready
+    if (startAtConfigureEnvironment && !isWorkspaceReady) {
+      return (
+        <div className="flex min-h-dvh items-center justify-center bg-white dark:bg-black font-mono">
+          <div className="text-center px-6">
+            <Loader2 className="mx-auto h-8 w-8 animate-spin text-neutral-400" />
+            <h1 className="mt-4 text-lg font-medium text-neutral-900 dark:text-neutral-100">
+              Resuming your VS Code workspace...
+            </h1>
+            <p className="mt-2 text-sm text-neutral-500 dark:text-neutral-400">
+              We&apos;ll show the configuration form once your environment is ready.
+            </p>
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div className="min-h-dvh bg-white dark:bg-black font-mono">
