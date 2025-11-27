@@ -526,6 +526,14 @@ fi
         let root_overlay = path_to_string(&root_overlay, "root overlay")?;
         command.args(["--bind", &root_overlay, "/root"]);
 
+        // Make common credential-helper paths resolve to cmux-bridge symlinks inside the sandbox
+        for path_str in ["/opt", "/home/linuxbrew/.linuxbrew", "/snap"] {
+            let path = Path::new(path_str);
+            if path.exists() {
+                command.args(["--ro-bind", path_str, path_str]);
+            }
+        }
+
         // Hide sensitive host paths exposed via /var overlay
         command.args(["--tmpfs", "/var/lib/docker"]);
         command.args(["--tmpfs", "/var/lib/cmux"]);

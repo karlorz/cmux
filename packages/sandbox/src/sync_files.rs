@@ -288,14 +288,7 @@ pub async fn upload_sync_files_with_list(
     let move_script = r#"
         if [ -d /workspace/__cmux_sync_temp ]; then
             cp -r /workspace/__cmux_sync_temp/root/. /root/ 2>/dev/null || true
-            if [ -f /root/.gitconfig ]; then
-                existing_safe_dirs=$(git config --global --get-all safe.directory 2>/dev/null || true)
-                if [ -z "$existing_safe_dirs" ] || ! printf '%s\n' "$existing_safe_dirs" | grep -Fx '*' >/dev/null; then
-                    git config --global --add safe.directory '*'
-                fi
-            else
-                printf '[safe]\n\tdirectory = *\n' > /root/.gitconfig
-            fi
+            git config --global --add safe.directory /workspace || true
             rm -rf /workspace/__cmux_sync_temp
             # Fix SSH permissions (SSH is picky about this)
             if [ -d /root/.ssh ]; then
