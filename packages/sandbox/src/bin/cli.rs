@@ -1,4 +1,4 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use cmux_sandbox::models::{
     CreateSandboxRequest, EnvVar, ExecRequest, ExecResponse, SandboxSummary,
 };
@@ -89,11 +89,11 @@ enum Command {
     InternalProxy { address: String },
 
     /// Start the sandbox server container
-    Start,
+    Start(StartArgs),
     /// Stop the sandbox server container
     Stop,
     /// Restart the sandbox server container
-    Restart,
+    Restart(StartArgs),
     /// Show status of the sandbox server
     Status,
 
@@ -150,6 +150,31 @@ enum SandboxCommand {
     Ssh { id: String },
     /// Tear down a sandbox
     Delete { id: String },
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+enum DockerMode {
+    Dind,
+    Dood,
+}
+
+impl DockerMode {
+    fn as_str(&self) -> &'static str {
+        match self {
+            DockerMode::Dind => "dind",
+            DockerMode::Dood => "dood",
+        }
+    }
+}
+
+#[derive(Args, Debug, Clone)]
+struct StartArgs {
+    /// Docker mode to run inside the sandbox container (dind or dood)
+    #[arg(long, value_enum, env = "CMUX_DOCKER_MODE")]
+    docker: Option<DockerMode>,
+    /// Path to the Docker socket (used for dood mode)
+    #[arg(long, env = "CMUX_DOCKER_SOCKET")]
+    docker_socket: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -400,15 +425,15 @@ async fn run() -> anyhow::Result<()> {
         Command::Browser { id } => {
             handle_browser(cli.base_url, id).await?;
         }
-        Command::Start => {
-            handle_server_start().await?;
+        Command::Start(args) => {
+            handle_server_start(&args).await?;
         }
         Command::Stop => {
             handle_server_stop().await?;
         }
-        Command::Restart => {
+        Command::Restart(args) => {
             handle_server_stop().await?;
-            handle_server_start().await?;
+            handle_server_start(&args).await?;
         }
         Command::Status => {
             handle_server_status(&cli.base_url).await?;
@@ -1078,7 +1103,7 @@ fn generate_ca() -> anyhow::Result<rcgen::Certificate> {
     Ok(rcgen::Certificate::from_params(params)?)
 }
 
-async fn handle_server_start() -> anyhow::Result<()> {
+async fn handle_server_start(opts: &StartArgs) -> anyhow::Result<()> {
     let (default_container, default_port, default_image, volume_prefix) = if is_dmux() {
         (
             DMUX_DEFAULT_CONTAINER,
@@ -1098,6 +1123,11 @@ async fn handle_server_start() -> anyhow::Result<()> {
         std::env::var("CONTAINER_NAME").unwrap_or_else(|_| default_container.into());
     let port = std::env::var("CMUX_SANDBOX_PORT").unwrap_or(default_port);
     let image_name = std::env::var("IMAGE_NAME").unwrap_or_else(|_| default_image.into());
+    let docker_mode = opts.docker.unwrap_or(DockerMode::Dind);
+    let docker_socket = opts
+        .docker_socket
+        .clone()
+        .unwrap_or_else(|| "/var/run/docker.sock".to_string());
 
     // Check if container is already running
     let output = tokio::process::Command::new("docker")
@@ -1118,8 +1148,10 @@ async fn handle_server_start() -> anyhow::Result<()> {
     }
 
     eprintln!(
-        "Starting server container '{}' on port {}...",
-        container_name, port
+        "Starting server container '{}' on port {} (docker mode: {})...",
+        container_name,
+        port,
+        docker_mode.as_str()
     );
 
     // Force remove existing stopped container if any
@@ -1132,33 +1164,39 @@ async fn handle_server_start() -> anyhow::Result<()> {
     let data_volume = format!("{}-sandbox-data:/var/lib/cmux/sandboxes", volume_prefix);
     let port_mapping = format!("{}:{}", port, port);
     let port_env = format!("CMUX_SANDBOX_PORT={}", port);
+    let docker_mode_env = format!("CMUX_DOCKER_MODE={}", docker_mode.as_str());
+    let docker_socket_env = format!("CMUX_DOCKER_SOCKET={}", docker_socket);
 
-    // Build docker args
-    let mut docker_args = vec![
-        "run",
-        "--privileged",
-        "-d",
-        "--name",
-        &container_name,
-        "--cgroupns=host",
-        "--tmpfs",
-        "/run",
-        "--tmpfs",
-        "/run/lock",
-        "-v",
-        "/sys/fs/cgroup:/sys/fs/cgroup:rw",
-        "--dns",
-        "1.1.1.1",
-        "--dns",
-        "8.8.8.8",
-        "-e",
-        &port_env,
-        "-p",
-        &port_mapping,
-        "-v",
-        &docker_volume,
-        "-v",
-        &data_volume,
+    // Build docker args (owned Strings so we can push dynamic values safely)
+    let mut docker_args: Vec<String> = vec![
+        "run".into(),
+        "--privileged".into(),
+        "-d".into(),
+        "--name".into(),
+        container_name.clone(),
+        "--cgroupns=host".into(),
+        "--tmpfs".into(),
+        "/run".into(),
+        "--tmpfs".into(),
+        "/run/lock".into(),
+        "-v".into(),
+        "/sys/fs/cgroup:/sys/fs/cgroup:rw".into(),
+        "--dns".into(),
+        "1.1.1.1".into(),
+        "--dns".into(),
+        "8.8.8.8".into(),
+        "-e".into(),
+        port_env.clone(),
+        "-e".into(),
+        docker_mode_env.clone(),
+        "-e".into(),
+        docker_socket_env.clone(),
+        "-p".into(),
+        port_mapping.clone(),
+        "-v".into(),
+        docker_volume.clone(),
+        "-v".into(),
+        data_volume.clone(),
     ];
 
     // Add SSH agent forwarding if SSH_AUTH_SOCK is set and socket exists
@@ -1169,24 +1207,33 @@ async fn handle_server_start() -> anyhow::Result<()> {
         .map(|path| format!("{}:/ssh-agent.sock", path));
     if let Some(ref volume) = ssh_volume {
         eprintln!("SSH agent forwarding enabled");
-        docker_args.push("-v");
-        docker_args.push(volume);
-        docker_args.push("-e");
-        docker_args.push("SSH_AUTH_SOCK=/ssh-agent.sock");
+        docker_args.push("-v".into());
+        docker_args.push(volume.clone());
+        docker_args.push("-e".into());
+        docker_args.push("SSH_AUTH_SOCK=/ssh-agent.sock".into());
     }
 
-    docker_args.extend([
-        "--entrypoint",
-        "/usr/local/bin/bootstrap-dind.sh",
-        &image_name,
-        "/usr/local/bin/cmux-sandboxd",
-        "--bind",
-        "0.0.0.0",
-        "--port",
-        &port,
-        "--data-dir",
-        "/var/lib/cmux/sandboxes",
-    ]);
+    if let DockerMode::Dood = docker_mode {
+        if !std::path::Path::new(&docker_socket).exists() {
+            return Err(anyhow::anyhow!(
+                "docker socket '{}' not found on host; mount it or choose --docker dind",
+                docker_socket
+            ));
+        }
+        docker_args.push("-v".into());
+        docker_args.push(format!("{0}:{0}", docker_socket));
+    }
+
+    docker_args.push("--entrypoint".into());
+    docker_args.push("/usr/local/bin/bootstrap-dind.sh".into());
+    docker_args.push(image_name.clone());
+    docker_args.push("/usr/local/bin/cmux-sandboxd".into());
+    docker_args.push("--bind".into());
+    docker_args.push("0.0.0.0".into());
+    docker_args.push("--port".into());
+    docker_args.push(port.clone());
+    docker_args.push("--data-dir".into());
+    docker_args.push("/var/lib/cmux/sandboxes".into());
 
     let status = tokio::process::Command::new("docker")
         .args(&docker_args)

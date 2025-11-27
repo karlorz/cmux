@@ -4,9 +4,9 @@ After=network.target
 
 [Service]
 Type=simple
-Environment=DOCKER_HOST=unix:///var/run/docker.sock
-ExecStart=/usr/local/bin/dockerd --host=unix:///var/run/docker.sock --storage-driver=overlay2
-Restart=always
+EnvironmentFile=-/etc/default/cmux-docker
+ExecStart=/usr/local/bin/docker-mode.sh dockerd
+Restart=on-failure
 TimeoutStartSec=0
 
 [Install]

@@ -173,6 +173,16 @@ pub enum BridgeRequest {
         #[serde(default)]
         tab_id: Option<String>,
     },
+    /// Send a notification to the host UI
+    Notify {
+        message: String,
+        #[serde(default)]
+        level: NotificationLevel,
+        #[serde(default)]
+        sandbox_id: Option<String>,
+        #[serde(default)]
+        tab_id: Option<String>,
+    },
 }
 
 /// Response from the bridge socket.

@@ -348,7 +348,31 @@ async fn handle_notify(
     sandbox_id: Option<String>,
     tab_id: Option<String>,
 ) -> anyhow::Result<()> {
-    let request = NotificationRequest {
+    let request = BridgeRequest::Notify {
+        message: message.clone(),
+        level,
+        sandbox_id: sandbox_id.clone(),
+        tab_id: tab_id.clone(),
+    };
+
+    let mut socket_error = None;
+
+    // Try Unix socket first
+    if socket_available(&cli.socket) {
+        match send_bridge_request(&cli.socket, &request).await {
+            Ok(BridgeResponse::Ok) => return Ok(()),
+            Ok(BridgeResponse::Error { message }) => {
+                socket_error = Some(anyhow!("socket error: {message}"));
+            }
+            Ok(_) => {
+                socket_error = Some(anyhow!("unexpected response type"));
+            }
+            Err(error) => socket_error = Some(error),
+        }
+    }
+
+    // HTTP fallback
+    let http_request = NotificationRequest {
         message,
         level,
         sandbox_id,
@@ -357,7 +381,18 @@ async fn handle_notify(
 
     let client = build_http_client()?;
     let bases = candidate_base_urls(&cli.base_url);
-    send_notification_via_http(&client, &bases, &request).await
+    match send_notification_via_http(&client, &bases, &http_request).await {
+        Ok(()) => Ok(()),
+        Err(http_error) => {
+            if let Some(socket_error) = socket_error {
+                Err(anyhow!(
+                    "{http_error}; socket fallback failed: {socket_error}"
+                ))
+            } else {
+                Err(http_error)
+            }
+        }
+    }
 }
 
 async fn handle_gh(

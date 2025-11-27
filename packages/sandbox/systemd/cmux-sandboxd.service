@@ -1,12 +1,13 @@
 [Unit]
 Description=cmux sandbox daemon
 After=network.target dockerd.service buildkitd.service
-Requires=dockerd.service buildkitd.service
+Wants=dockerd.service buildkitd.service
 
 [Service]
 Type=simple
 Environment=CMUX_SANDBOX_PORT=46831
 EnvironmentFile=-/etc/default/cmux-sandboxd
+EnvironmentFile=-/etc/default/cmux-docker
 # Create /var/run/cmux for the open-url Unix socket
 RuntimeDirectory=cmux
 RuntimeDirectoryMode=0755

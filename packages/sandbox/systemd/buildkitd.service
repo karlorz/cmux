@@ -1,12 +1,13 @@
 [Unit]
 Description=BuildKit Daemon (cmux sandbox)
 After=network.target dockerd.service
-Requires=dockerd.service
+Wants=dockerd.service
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/buildkitd
-Restart=always
+EnvironmentFile=-/etc/default/cmux-docker
+ExecStart=/usr/local/bin/docker-mode.sh buildkitd
+Restart=on-failure
 TimeoutStartSec=0
 
 [Install]

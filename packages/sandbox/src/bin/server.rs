@@ -6,7 +6,7 @@ use cmux_sandbox::build_router;
 use cmux_sandbox::errors::{SandboxError, SandboxResult};
 use cmux_sandbox::models::{
     BridgeRequest, BridgeResponse, CreateSandboxRequest, ExecRequest, ExecResponse, GhRequest,
-    GhResponse, HostEvent, OpenUrlRequest, SandboxSummary,
+    GhResponse, HostEvent, NotificationLevel, NotificationRequest, OpenUrlRequest, SandboxSummary,
 };
 use cmux_sandbox::service::{GhAuthCache, GhResponseRegistry, HostEventSender, SandboxService};
 use cmux_sandbox::DEFAULT_HTTP_PORT;
@@ -311,6 +311,12 @@ async fn handle_bridge_connection(
             )
             .await
         }
+        BridgeRequest::Notify {
+            message,
+            level,
+            sandbox_id,
+            tab_id,
+        } => handle_notify_request(&host_events, message, level, sandbox_id, tab_id).await,
     };
 
     writer
@@ -349,6 +355,35 @@ async fn handle_open_url_request(
             BridgeResponse::Error {
                 message: "No clients connected".to_string(),
             }
+        }
+    }
+}
+
+async fn handle_notify_request(
+    host_events: &HostEventSender,
+    message: String,
+    level: NotificationLevel,
+    sandbox_id: Option<String>,
+    tab_id: Option<String>,
+) -> BridgeResponse {
+    match host_events.send(HostEvent::Notification(NotificationRequest {
+        message: message.clone(),
+        level,
+        sandbox_id,
+        tab_id,
+    })) {
+        Ok(receivers) => {
+            tracing::info!(
+                "broadcast notification to {} clients: {}",
+                receivers,
+                message
+            );
+            BridgeResponse::Ok
+        }
+        Err(_) => {
+            tracing::warn!("no clients connected to receive notification: {}", message);
+            // Return Ok anyway since notification delivery is best-effort
+            BridgeResponse::Ok
         }
     }
 }

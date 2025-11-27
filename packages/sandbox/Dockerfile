@@ -154,6 +154,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   make \
   build-essential \
   openssh-client \
+  jq \
+  findutils \
   && mkdir -p -m 755 /etc/apt/keyrings \
   && wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
   && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
@@ -232,7 +234,8 @@ COPY --from=builder --link /workspace/target/release/cmux-bridge /usr/local/bin/
 COPY --from=acp-builder --link /workspace/target/release/codex-acp /usr/local/bin/codex-acp
 
 COPY --link packages/sandbox/scripts/bootstrap-dind.sh /usr/local/bin/bootstrap-dind.sh
-RUN chmod +x /usr/local/bin/bootstrap-dind.sh && \
+COPY --link packages/sandbox/scripts/docker-mode.sh /usr/local/bin/docker-mode.sh
+RUN chmod +x /usr/local/bin/bootstrap-dind.sh /usr/local/bin/docker-mode.sh && \
     ln -sf /usr/local/bin/cmux-bridge /usr/local/bin/open-url && \
     ln -sf /usr/local/bin/cmux-bridge /usr/local/bin/xdg-open && \
     # Replace gh CLI with symlinks to cmux-bridge so git credential helpers work
@@ -248,17 +251,25 @@ RUN chmod +x /usr/local/bin/bootstrap-dind.sh && \
     ln -sf /usr/local/bin/cmux-bridge /snap/bin/gh && \
     ln -sf /usr/local/bin/cmux-bridge /usr/local/bin/gh
 
+# Agent notification hook configurations
+# These files configure Claude Code, Codex, and OpenCode to send notifications via cmux-bridge
+# Stored in /usr/share/cmux/agent-config/ and copied into sandbox's /root during bubblewrap setup
+COPY --link packages/sandbox/agent-config /usr/share/cmux/agent-config
+
 # systemd service units
 COPY --link packages/sandbox/systemd/dockerd.service /etc/systemd/system/dockerd.service
 COPY --link packages/sandbox/systemd/buildkitd.service /etc/systemd/system/buildkitd.service
 COPY --link packages/sandbox/systemd/cmux-sandboxd.service /etc/systemd/system/cmux-sandboxd.service
-RUN echo "CMUX_SANDBOX_PORT=46831" > /etc/default/cmux-sandboxd
+RUN echo "CMUX_SANDBOX_PORT=46831" > /etc/default/cmux-sandboxd && \
+  { echo "CMUX_DOCKER_MODE=dind"; echo "CMUX_DOCKER_SOCKET=/var/run/docker.sock"; } > /etc/default/cmux-docker
 RUN mkdir -p /etc/systemd/system/multi-user.target.wants && \
   ln -s /etc/systemd/system/dockerd.service /etc/systemd/system/multi-user.target.wants/dockerd.service && \
   ln -s /etc/systemd/system/buildkitd.service /etc/systemd/system/multi-user.target.wants/buildkitd.service && \
   ln -s /etc/systemd/system/cmux-sandboxd.service /etc/systemd/system/multi-user.target.wants/cmux-sandboxd.service
 
 ENV CMUX_SANDBOX_PORT=46831 \
+  CMUX_DOCKER_MODE=dind \
+  CMUX_DOCKER_SOCKET=/var/run/docker.sock \
   DOCKER_HOST=unix:///var/run/docker.sock \
   BROWSER=/usr/local/bin/open-url
 
