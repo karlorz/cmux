@@ -756,7 +756,7 @@ export async function runPreviewJob(
         prNumber: String(run.prNumber),
         headSha: run.headSha,
       },
-      ttlSeconds: 600,
+      ttlSeconds: 3600,
       ttlAction: "stop",
       readinessTimeoutMs: 5 * 60 * 1000,
     });
@@ -767,6 +767,11 @@ export async function runPreviewJob(
     if (!workerService) {
       throw new Error("Worker service not found on instance");
     }
+
+    const getServiceUrl = (port: number) =>
+      instance?.networking?.http_services?.find(
+        (service: { port?: number }) => service.port === port,
+      )?.url;
 
     const vscodeService = instance.networking?.http_services?.find(
       (service: { port?: number }) => service.port === 39378,
@@ -789,6 +794,37 @@ export async function runPreviewJob(
       workerHealthUrl: `${workerService.url}/health`,
       screenshotLogUrl: `${workerService.url.replace(':39377', ':39376')}/file?path=/root/.cmux/screenshot-collector/screenshot-collector.log`,
     });
+
+    if (taskRunId) {
+      const networking = instance.networking?.http_services?.map((s) => ({
+        status: "running" as const,
+        port: s.port || 0,
+        url: s.url || "",
+      })) ?? [];
+
+      await ctx.runMutation(internal.taskRuns.updateVSCodeMetadataInternal, {
+        taskRunId,
+        vscode: {
+          provider: "morph",
+          status: "running",
+          containerName: instance.id,
+          url: vscodeUrl ?? undefined,
+          workspaceUrl: vscodeUrl ?? undefined,
+          startedAt: Date.now(),
+          ports: {
+            vscode: getServiceUrl(39378) ?? "",
+            worker: getServiceUrl(39377) ?? "",
+            extension: getServiceUrl(39376),
+            vnc: getServiceUrl(39375),
+          },
+        },
+        networking,
+      });
+      console.log("[preview-jobs] Updated task run metadata with instance info", {
+        taskRunId,
+        instanceId: instance.id,
+      });
+    }
 
     // Step 2: Fetch latest changes and checkout PR
     // Preview environment snapshots have the repo pre-cloned at /root/workspace

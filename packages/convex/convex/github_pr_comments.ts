@@ -596,7 +596,7 @@ export const postPreviewCommentWithTaskScreenshots = internalAction({
     taskRunId: v.id("taskRuns"),
     previewRunId: v.id("previewRuns"),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{ ok: true; commentId?: number; commentUrl?: string } | { ok: false; error: string }> => {
     const { installationId, repoFullName, prNumber, taskRunId, previewRunId } = args;
 
     try {
@@ -620,7 +620,7 @@ export const postPreviewCommentWithTaskScreenshots = internalAction({
       const octokit = createOctokit(accessToken);
 
       // Get task run to find screenshot set
-      const taskRun = await ctx.runQuery(internal.taskRuns.getById, {
+      const taskRun: any = await ctx.runQuery(internal.taskRuns.getById, {
         id: taskRunId,
       });
 
@@ -630,6 +630,13 @@ export const postPreviewCommentWithTaskScreenshots = internalAction({
         });
         return { ok: false, error: "No screenshot set found" };
       }
+
+      // Get team info for the URL
+      const team: any = await ctx.runQuery(internal.teams.getByTeamIdInternal, {
+        teamId: taskRun.teamId,
+      });
+      const teamSlug: string = team?.slug ?? taskRun.teamId;
+      const workspaceUrl: string = `https://cmux.dev/${teamSlug}/task/${taskRun.taskId}`;
 
       // Get screenshot set from task run
       const screenshotSet = await ctx.runQuery(
@@ -645,7 +652,8 @@ export const postPreviewCommentWithTaskScreenshots = internalAction({
       }
 
       // Build comment body
-      let commentBody = "## Preview Screenshots\n\n";
+      let commentBody: string = `[Open Workspace](${workspaceUrl}) (expires in 30m) • [Open in 0github](https://0github.com/${repoFullName}/pull/${prNumber})\n\n`;
+      commentBody += "## Preview Screenshots\n\n";
 
       if (screenshotSet.status === "completed" && screenshotSet.images.length > 0) {
         commentBody += `Successfully captured ${screenshotSet.images.length} screenshot(s) for commit \`${(screenshotSet.commitSha || "").slice(0, 7)}\`:\n\n`;
@@ -670,7 +678,7 @@ export const postPreviewCommentWithTaskScreenshots = internalAction({
       }
 
       // Post comment to GitHub
-      const { data } = await octokit.rest.issues.createComment({
+      const { data }: { data: any } = await octokit.rest.issues.createComment({
         owner: repo.owner,
         repo: repo.repo,
         issue_number: prNumber,

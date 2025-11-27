@@ -1,4 +1,3 @@
-import { createMorphCloudClient, stopInstanceInstanceInstanceIdDelete } from "@cmux/morphcloud-openapi-client";
 import { env } from "../_shared/convex-env";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -11,79 +10,6 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
-}
-
-async function stopPreviewInstance(
-  ctx: ActionCtx,
-  previewRun: Doc<"previewRuns">,
-): Promise<void> {
-  if (!previewRun?.morphInstanceId) {
-    return;
-  }
-  if (previewRun.morphInstanceStoppedAt) {
-    console.log("[preview-jobs-http] Morph instance already stopped", {
-      previewRunId: previewRun._id,
-      morphInstanceId: previewRun.morphInstanceId,
-    });
-    return;
-  }
-  const morphApiKey = process.env.MORPH_API_KEY;
-  if (!morphApiKey) {
-    console.warn("[preview-jobs-http] Cannot stop Morph instance without MORPH_API_KEY", {
-      previewRunId: previewRun._id,
-      morphInstanceId: previewRun.morphInstanceId,
-    });
-    return;
-  }
-
-  const morphClient = createMorphCloudClient({ auth: morphApiKey });
-  const stoppedAt = Date.now();
-
-  try {
-    await stopInstanceInstanceInstanceIdDelete({
-      client: morphClient,
-      path: { instance_id: previewRun.morphInstanceId },
-    });
-  } catch (error) {
-    console.error("[preview-jobs-http] Failed to stop Morph instance", {
-      previewRunId: previewRun._id,
-      morphInstanceId: previewRun.morphInstanceId,
-      error,
-    });
-  }
-
-  try {
-    await ctx.runMutation(internal.previewRuns.updateInstanceMetadata, {
-      previewRunId: previewRun._id,
-      morphInstanceStoppedAt: stoppedAt,
-    });
-  } catch (error) {
-    console.error("[preview-jobs-http] Failed to record Morph instance stop time", {
-      previewRunId: previewRun._id,
-      error,
-    });
-  }
-
-  if (previewRun.taskRunId) {
-    try {
-      await ctx.runMutation(internal.taskRuns.updateVSCodeMetadataInternal, {
-        taskRunId: previewRun.taskRunId,
-        vscode: {
-          provider: "morph",
-          status: "stopped",
-          containerName: previewRun.morphInstanceId,
-          stoppedAt,
-        },
-        networking: [],
-      });
-    } catch (error) {
-      console.error("[preview-jobs-http] Failed to update task run VSCode metadata after stop", {
-        previewRunId: previewRun._id,
-        taskRunId: previewRun.taskRunId,
-        error,
-      });
-    }
-  }
 }
 
 export const dispatchPreviewJob = httpAction(async (ctx, req) => {
@@ -446,7 +372,11 @@ export const completePreviewJob = httpAction(async (ctx, req) => {
     }, 500);
   } finally {
     if (shouldStopInstance && previewRun) {
-      await stopPreviewInstance(ctx, previewRun);
+      await ctx.scheduler.runAfter(
+        30 * 60 * 1000,
+        internal.preview_jobs.stopPreviewInstance,
+        { previewRunId: previewRun._id },
+      );
     }
   }
 });

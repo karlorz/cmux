@@ -85,7 +85,7 @@ async function ensureTeamMembership(
   }
 
   const memberships = await ctx.runQuery(api.teams.listTeamMemberships, {});
-  const hasMembership = memberships.some((membership) => {
+  const hasMembership = memberships.some((membership: any) => {
     return membership.teamId === team.uuid;
   });
 
@@ -512,14 +512,14 @@ async function handleAllCompleteRequest(
     }
   );
 
-  const statuses = runsForTeam.map((run) => ({
+  const statuses = runsForTeam.map((run: any) => ({
     id: run._id,
     status: run.status,
   }));
 
   const allComplete =
     runsForTeam.length > 0 &&
-    runsForTeam.every((run) => run.status === "completed");
+    runsForTeam.every((run: any) => run.status === "completed");
 
   const response = {
     ok: true,
@@ -585,13 +585,13 @@ async function handleCrownCheckRequest(
       }),
     ]);
 
-  const allRunsFinished = runsForTeam.every((run) =>
+  const allRunsFinished = runsForTeam.every((run: any) =>
     ["completed", "failed"].includes(run.status)
   );
   const allWorkersReported = runsForTeam.every(
-    (run) => run.status === "completed"
+    (run: any) => run.status === "completed"
   );
-  const completedRuns = runsForTeam.filter((run) => run.status === "completed");
+  const completedRuns = runsForTeam.filter((run: any) => run.status === "completed");
 
   const shouldEvaluate =
     allRunsFinished &&
@@ -649,7 +649,7 @@ async function handleCrownCheckRequest(
       projectFullName: task.projectFullName ?? null,
       autoPrEnabled: workspaceSettings?.autoPrEnabled ?? false,
     },
-    runs: runsForTeam.map((run) => ({
+    runs: runsForTeam.map((run: any) => ({
       id: run._id,
       status: run.status as WorkerRunStatus,
       agentName: run.agentName ?? null,

@@ -174,6 +174,15 @@ export const updateInstanceMetadata = internalMutation({
   },
 });
 
+export const getById = internalQuery({
+  args: {
+    id: v.id("previewRuns"),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.id);
+  },
+});
+
 export const getRunWithConfig = internalQuery({
   args: {
     previewRunId: v.id("previewRuns"),
