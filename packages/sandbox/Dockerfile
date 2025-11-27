@@ -199,6 +199,7 @@ ENV RUSTUP_HOME=/usr/local/rustup \
     PATH=/usr/local/cargo/bin:$PATH
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain ${RUST_VERSION} --profile minimal && \
+    rustup component add clippy && \
     chmod -R a+w $RUSTUP_HOME $CARGO_HOME
 
 RUN update-alternatives --set iptables /usr/sbin/iptables-legacy || true
