@@ -46,8 +46,15 @@ import { startScreenshotCollection } from "./screenshotCollector/startScreenshot
 import { runTaskScreenshots } from "./screenshotCollector/runTaskScreenshots";
 import { convexRequest } from "./crown/convex";
 import type { WorkerTaskRunResponse } from "@cmux/shared/convex-safe";
+import { verifyTaskRunToken } from "@cmux/shared/convex-safe";
 
 const execAsync = promisify(exec);
+
+type PreviewJobContext = {
+  taskId: Id<"tasks">;
+  taskRunId: Id<"taskRuns">;
+  convexUrl: string;
+};
 
 const resolveConvexUrl = (provided?: string): string | undefined => {
   if (provided) return provided.replace(/\/$/, "");
@@ -56,6 +63,118 @@ const resolveConvexUrl = (provided?: string): string | undefined => {
   if (fromEnv) return fromEnv.replace(/\/$/, "");
   return undefined;
 };
+
+async function resolvePreviewJobContext({
+  token,
+  convexUrlOverride,
+  logPrefix,
+}: {
+  token: string;
+  convexUrlOverride?: string;
+  logPrefix: string;
+}): Promise<PreviewJobContext> {
+  const convexUrl =
+    resolveConvexUrl(convexUrlOverride) ?? process.env.NEXT_PUBLIC_CONVEX_URL;
+
+  log("INFO", `${logPrefix} Resolving task metadata`, {
+    workerId: WORKER_ID,
+    convexUrl,
+    hasConvexUrl: Boolean(convexUrl),
+  });
+
+  if (!convexUrl) {
+    throw new Error("Convex URL is not configured for screenshot workflow");
+  }
+
+  const info = await convexRequest<WorkerTaskRunResponse>(
+    "/api/crown/check",
+    token,
+    {
+      checkType: "info",
+    },
+    convexUrl,
+  );
+
+  log("INFO", `${logPrefix} Crown check response received`, {
+    workerId: WORKER_ID,
+    hasInfo: Boolean(info),
+    ok: info?.ok ?? null,
+    hasTaskRun: Boolean(info?.taskRun),
+    taskRunId: info?.taskRun?.id,
+    taskId: info?.taskRun?.taskId,
+    isPreviewJob: info?.taskRun?.isPreviewJob,
+  });
+
+  if (!info?.ok || !info.taskRun) {
+    throw new Error("Unable to load task run metadata for screenshot workflow");
+  }
+
+  if (!info.taskRun.isPreviewJob) {
+    throw new Error("Task run is not marked as a preview job");
+  }
+
+  return {
+    taskId: info.taskRun.taskId as Id<"tasks">,
+    taskRunId: info.taskRun.id as Id<"taskRuns">,
+    convexUrl,
+  };
+}
+
+async function runPreviewJobScreenshots({
+  token,
+  anthropicApiKey,
+  context,
+  logPrefix,
+}: {
+  token: string;
+  anthropicApiKey?: string;
+  context: PreviewJobContext;
+  logPrefix: string;
+}) {
+  const { taskId, taskRunId, convexUrl } = context;
+
+  log("INFO", `${logPrefix} Verified preview job metadata`, {
+    taskRunId,
+    taskId,
+  });
+
+  await runTaskScreenshots({
+    taskId,
+    taskRunId,
+    token,
+    convexUrl,
+    anthropicApiKey,
+    taskRunJwt: token,
+  });
+
+  log("INFO", `${logPrefix} Screenshots completed, calling /api/preview/complete`, {
+    taskRunId,
+  });
+
+  const completeUrl = `${convexUrl}/api/preview/complete`;
+  const response = await fetch(completeUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-cmux-token": token,
+    },
+    body: JSON.stringify({
+      taskRunId,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Failed to complete preview job (status ${response.status}): ${errorText}`
+    );
+  }
+
+  const result = await response.json().catch(() => ({}));
+  log("INFO", `${logPrefix} Preview job completed successfully`, {
+    result,
+  });
+}
 
 const Terminal = xtermHeadless.Terminal;
 
@@ -95,9 +214,24 @@ const upload = multer({
   storage: multer.memoryStorage(),
 });
 
+const ALLOWED_UPLOAD_ROOT = "/root/prompt";
+
 // File upload endpoint
 app.post("/upload-image", upload.single("image"), async (req, res) => {
   try {
+    const token = req.header("x-cmux-token");
+    const secret = process.env.CMUX_TASK_RUN_JWT_SECRET;
+    if (!token || !secret) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    try {
+      await verifyTaskRunToken(token, secret);
+    } catch (error) {
+      log("ERROR", "Invalid task run token for upload-image", error);
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
     }
@@ -107,27 +241,33 @@ app.post("/upload-image", upload.single("image"), async (req, res) => {
       return res.status(400).json({ error: "No path specified" });
     }
 
-    log("INFO", `Received image upload request for path: ${imagePath}`, {
+    const resolvedPath = path.resolve(String(imagePath));
+    const normalizedRoot = path.resolve(ALLOWED_UPLOAD_ROOT);
+    if (!resolvedPath.startsWith(`${normalizedRoot}/`) && resolvedPath !== normalizedRoot) {
+      return res.status(400).json({ error: "Invalid path" });
+    }
+
+    log("INFO", `Received image upload request for path: ${resolvedPath}`, {
       size: req.file.size,
       mimetype: req.file.mimetype,
       originalname: req.file.originalname,
     });
 
     // Ensure directory exists
-    const dir = path.dirname(imagePath);
+    const dir = path.dirname(resolvedPath);
     await fs.mkdir(dir, { recursive: true });
 
     // Write the file
-    await fs.writeFile(imagePath, req.file.buffer);
+    await fs.writeFile(resolvedPath, req.file.buffer);
 
-    log("INFO", `Successfully wrote image file: ${imagePath}`);
+    log("INFO", `Successfully wrote image file: ${resolvedPath}`);
 
     // Verify file was created
-    const stats = await fs.stat(imagePath);
+    const stats = await fs.stat(resolvedPath);
 
     res.json({
       success: true,
-      path: imagePath,
+      path: resolvedPath,
       size: stats.size,
     });
   } catch (error) {
@@ -144,7 +284,9 @@ app.post("/api/run-task-screenshots", async (req, res) => {
   try {
     const data = req.body;
 
-    log("INFO", "[/api/run-task-screenshots] Received request", {
+    const logPrefix = "[/api/run-task-screenshots]";
+
+    log("INFO", `${logPrefix} Received request`, {
       workerId: WORKER_ID,
       hasToken: Boolean(data?.token),
       hasAnthropicKey: Boolean(data?.anthropicApiKey),
@@ -156,71 +298,10 @@ app.post("/api/run-task-screenshots", async (req, res) => {
       });
     }
 
-    const convexUrl = resolveConvexUrl(data.convexUrl);
-
-    log("INFO", "[/api/run-task-screenshots] Resolving task metadata", {
-      workerId: WORKER_ID,
-      convexUrl,
-      hasConvexUrl: Boolean(convexUrl),
-    });
-
-    if (!convexUrl) {
-      log("ERROR", "[/api/run-task-screenshots] Missing convex URL for crown check", {
-        workerId: WORKER_ID,
-      });
-      return res.status(400).json({
-        error: "Convex URL is not configured for screenshot workflow",
-      });
-    }
-
-    // Extract taskRunId and taskId from JWT by calling /api/crown/check
-    // The JWT contains taskRunId, and the check endpoint returns both taskRunId and taskId
-    const info = await convexRequest<WorkerTaskRunResponse>(
-      "/api/crown/check",
-      data.token,
-      {
-        checkType: "info",
-      },
-      convexUrl,
-    );
-
-    log("INFO", "[/api/run-task-screenshots] Crown check response received", {
-      workerId: WORKER_ID,
-      hasInfo: Boolean(info),
-      ok: info?.ok ?? null,
-      hasTaskRun: Boolean(info?.taskRun),
-      taskRunId: info?.taskRun?.id,
-      taskId: info?.taskRun?.taskId,
-      isPreviewJob: info?.taskRun?.isPreviewJob,
-    });
-
-    if (!info?.ok || !info.taskRun) {
-      log("ERROR", "[/api/run-task-screenshots] Failed to load task run metadata", {
-        hasInfo: Boolean(info),
-        ok: info?.ok ?? null,
-        taskRunId: info?.taskRun?.id,
-        taskId: info?.taskRun?.taskId,
-      });
-      return res.status(400).json({
-        error: "Unable to load task run metadata for screenshot workflow",
-      });
-    }
-
-    const taskRunId = info.taskRun.id as Id<"taskRuns">;
-    const taskId = info.taskRun.taskId as Id<"tasks">;
-
-    if (!info.taskRun.isPreviewJob) {
-      log("ERROR", "[/api/run-task-screenshots] Task run is not a preview job", {
-        taskRunId,
-      });
-      return res.status(400).json({
-        error: "Task run is not marked as a preview job",
-      });
-    }
-
-    log("INFO", "[/api/run-task-screenshots] Verified preview job metadata", {
-      taskRunId,
-      taskId,
+    const context = await resolvePreviewJobContext({
+      token: data.token,
+      convexUrlOverride: data.convexUrl,
+      logPrefix,
     });
 
     // Respond immediately to acknowledge receipt
@@ -231,52 +312,21 @@ app.post("/api/run-task-screenshots", async (req, res) => {
     // Run screenshot collection in background
     (async () => {
       try {
-        await runTaskScreenshots({
-          taskId,
-          taskRunId,
+        await runPreviewJobScreenshots({
           token: data.token,
-          convexUrl,
           anthropicApiKey: data.anthropicApiKey,
-          taskRunJwt: data.token,
+          context,
+          logPrefix,
         });
-
-        log("INFO", "[/api/run-task-screenshots] Screenshots completed, calling /api/preview/complete", {
-          taskRunId,
-        });
-
-        const completeUrl = `${convexUrl}/api/preview/complete`;
-        const response = await fetch(completeUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-cmux-token": data.token,
-          },
-          body: JSON.stringify({
-            taskRunId,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          log("ERROR", "[/api/run-task-screenshots] Failed to complete preview job", {
-            status: response.status,
-            error: errorText,
-          });
-        } else {
-          const result = await response.json();
-          log("INFO", "[/api/run-task-screenshots] Preview job completed successfully", {
-            result,
-          });
-        }
       } catch (error) {
-        log("ERROR", "[/api/run-task-screenshots] Failed", error);
+        log("ERROR", `${logPrefix} Failed`, error);
       }
     })().catch((error) => {
-      log("ERROR", "[/api/run-task-screenshots] Background task failed", error);
+      log("ERROR", `${logPrefix} Background task failed`, error);
     });
   } catch (error) {
     log("ERROR", "[/api/run-task-screenshots] Request handling failed", error);
-    res.status(500).json({
+    res.status(400).json({
       error: error instanceof Error ? error.message : "Internal server error",
     });
   }
@@ -674,7 +724,9 @@ managementIO.on("connection", (socket) => {
   );
 
   socket.on("worker:run-task-screenshots", async (data, callback) => {
-    log("INFO", "[worker:run-task-screenshots] Received request", {
+    const logPrefix = "[worker:run-task-screenshots]";
+
+    log("INFO", `${logPrefix} Received request`, {
       workerId: WORKER_ID,
       hasToken: Boolean(data?.token),
       hasAnthropicKey: Boolean(data?.anthropicApiKey),
@@ -685,58 +737,10 @@ managementIO.on("connection", (socket) => {
         throw new Error("Missing required field: token");
       }
 
-      // Use environment variable for convexUrl
-      const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
-
-      log("INFO", "[worker:run-task-screenshots] Resolving task metadata", {
-        workerId: WORKER_ID,
-        convexUrl,
-        hasConvexUrl: Boolean(convexUrl),
-      });
-
-      // Extract taskRunId and taskId from JWT by calling /api/crown/check
-      const info = await convexRequest<WorkerTaskRunResponse>(
-        "/api/crown/check",
-        data.token,
-        {
-          checkType: "info",
-        },
-        convexUrl,
-      );
-
-      log("INFO", "[worker:run-task-screenshots] Crown check response received", {
-        workerId: WORKER_ID,
-        hasInfo: Boolean(info),
-        ok: info?.ok ?? null,
-        hasTaskRun: Boolean(info?.taskRun),
-        taskRunId: info?.taskRun?.id,
-        taskId: info?.taskRun?.taskId,
-        isPreviewJob: info?.taskRun?.isPreviewJob,
-      });
-
-      if (!info?.ok || !info.taskRun) {
-        log("ERROR", "[worker:run-task-screenshots] Failed to load task run metadata", {
-          hasInfo: Boolean(info),
-          ok: info?.ok ?? null,
-          taskRunId: info?.taskRun?.id,
-          taskId: info?.taskRun?.taskId,
-        });
-        throw new Error("Unable to load task run metadata for screenshot workflow");
-      }
-
-      const taskRunId = info.taskRun.id as Id<"taskRuns">;
-      const taskId = info.taskRun.taskId as Id<"tasks">;
-
-      if (!info.taskRun.isPreviewJob) {
-        log("ERROR", "[worker:run-task-screenshots] Task run is not a preview job", {
-          taskRunId,
-        });
-        throw new Error("Task run is not marked as a preview job");
-      }
-
-      log("INFO", "[worker:run-task-screenshots] Verified preview job metadata", {
-        taskRunId,
-        taskId,
+      const context = await resolvePreviewJobContext({
+        token: data.token,
+        convexUrlOverride: data.convexUrl,
+        logPrefix,
       });
 
       callback({
@@ -745,48 +749,17 @@ managementIO.on("connection", (socket) => {
       });
 
       try {
-        await runTaskScreenshots({
-          taskId,
-          taskRunId,
+        await runPreviewJobScreenshots({
           token: data.token,
-          convexUrl,
           anthropicApiKey: data.anthropicApiKey,
-          taskRunJwt: data.token,
+          context,
+          logPrefix,
         });
-
-        log("INFO", "[worker:run-task-screenshots] Screenshots completed, calling /api/preview/complete", {
-          taskRunId,
-        });
-
-        const completeUrl = `${convexUrl}/api/preview/complete`;
-        const response = await fetch(completeUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-cmux-token": data.token,
-          },
-          body: JSON.stringify({
-            taskRunId,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          log("ERROR", "[worker:run-task-screenshots] Failed to complete preview job", {
-            status: response.status,
-            error: errorText,
-          });
-        } else {
-          const result = await response.json();
-          log("INFO", "[worker:run-task-screenshots] Preview job completed successfully", {
-            result,
-          });
-        }
       } catch (error) {
-        log("ERROR", "[worker:run-task-screenshots] Failed", error);
+        log("ERROR", `${logPrefix} Failed`, error);
       }
     } catch (error) {
-      log("ERROR", "[worker:run-task-screenshots] Validation failed", error);
+      log("ERROR", `${logPrefix} Validation failed`, error);
       callback({
         error: error instanceof Error ? error : new Error(String(error)),
         data: null,

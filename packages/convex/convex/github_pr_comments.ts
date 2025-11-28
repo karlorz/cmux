@@ -2,7 +2,7 @@
 import { v } from "convex/values";
 import { fetchInstallationAccessToken } from "../_shared/githubApp";
 import { internal } from "./_generated/api";
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import {
   internalAction,
   type ActionCtx,
@@ -631,6 +631,17 @@ export const postPreviewCommentWithTaskScreenshots = internalAction({
         return { ok: false, error: "No screenshot set found" };
       }
 
+      const previewRun = await ctx.runQuery(internal.previewRuns.getById, {
+        id: previewRunId,
+      });
+
+      if (!previewRun) {
+        console.error("[github_pr_comments] Preview run not found", {
+          previewRunId,
+        });
+        return { ok: false, error: "Preview run not found" };
+      }
+
       // Get team info for the URL
       const team: any = await ctx.runQuery(internal.teams.getByTeamIdInternal, {
         teamId: taskRun.teamId,
@@ -652,7 +663,7 @@ export const postPreviewCommentWithTaskScreenshots = internalAction({
       }
 
       // Build comment body
-      let commentBody: string = `[Open Workspace](${workspaceUrl}) (expires in 30m) • [Open in 0github](https://0github.com/${repoFullName}/pull/${prNumber})\n\n`;
+      let commentBody: string = `[Open Workspace](${workspaceUrl}) (expires in 30m) • [Open in GitHub](https://github.com/${repoFullName}/pull/${prNumber})\n\n`;
       commentBody += "## Preview Screenshots\n\n";
 
       if (screenshotSet.status === "completed" && screenshotSet.images.length > 0) {
@@ -692,11 +703,29 @@ export const postPreviewCommentWithTaskScreenshots = internalAction({
         commentUrl: data.html_url,
       });
 
+      const previewScreenshotSetId = await ctx.runMutation(
+        internal.previewScreenshots.createScreenshotSet,
+        {
+          previewRunId,
+          status: screenshotSet.status as "completed" | "failed" | "skipped",
+          commitSha: screenshotSet.commitSha ?? previewRun.headSha,
+          error: screenshotSet.error,
+          images: screenshotSet.images.map((image) => ({
+            storageId: image.storageId as Id<"_storage">,
+            mimeType: image.mimeType,
+            fileName: image.fileName,
+            commitSha: image.commitSha,
+          })),
+        },
+      );
+
       // Update preview run with comment URL
       if (data.html_url) {
         await ctx.runMutation(internal.previewRuns.updateStatus, {
           previewRunId,
-          status: "completed",
+          status: screenshotSet.status as "completed" | "failed" | "skipped",
+          stateReason: screenshotSet.error,
+          screenshotSetId: previewScreenshotSetId,
           githubCommentUrl: data.html_url,
         });
       }

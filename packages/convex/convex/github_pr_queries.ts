@@ -8,13 +8,14 @@ export const findTaskRunsForPr = internalQuery({
     prNumber: v.number(),
   },
   handler: async (ctx, { teamId, repoFullName, prNumber }) => {
-    // Find task runs that have this PR
-    const allRuns = await ctx.db
+    // Limit scan to recent runs to avoid loading entire history for large teams
+    const recentRuns = await ctx.db
       .query("taskRuns")
       .withIndex("by_team_user", (q) => q.eq("teamId", teamId))
-      .collect();
+      .order("desc")
+      .take(300);
 
-    const matchingRuns = allRuns.filter((run) => {
+    const matchingRuns = recentRuns.filter((run) => {
       if (!run.pullRequests || run.pullRequests.length === 0) {
         return false;
       }
@@ -25,9 +26,6 @@ export const findTaskRunsForPr = internalQuery({
           pr.number === prNumber,
       );
     });
-
-    // Sort by creation time, most recent first
-    matchingRuns.sort((a, b) => b.createdAt - a.createdAt);
 
     return matchingRuns.slice(0, 5); // Return up to 5 most recent runs
   },

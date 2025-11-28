@@ -1432,7 +1432,7 @@ export function PreviewConfigureClient({
                 </div>
               </div>
 
-              <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-2">
+              <p className="text-xs text-neutral-400 dark:text-neutral-400 pl-6 mt-2">
                 Tip: Paste a .env file to auto-fill
               </p>
             </details>

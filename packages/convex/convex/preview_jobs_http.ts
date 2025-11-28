@@ -279,6 +279,11 @@ export const completePreviewJob = httpAction(async (ctx, req) => {
       console.log("[preview-jobs-http] No screenshots found for task run", {
         taskRunId,
       });
+      await ctx.runMutation(internal.previewRuns.updateStatus, {
+        previewRunId: previewRun._id,
+        status: "skipped",
+        stateReason: "No screenshots available",
+      });
       return jsonResponse({
         success: true,
         skipped: true,
