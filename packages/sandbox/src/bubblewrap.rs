@@ -19,10 +19,12 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::{env, time::Duration};
 use tokio::fs;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, Mutex};
+use tokio::time::sleep;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 use which::which;
@@ -30,6 +32,7 @@ use which::which;
 const NETWORK_BASE: Ipv4Addr = Ipv4Addr::new(10, 201, 0, 0);
 const HOST_IF_PREFIX: &str = "vethh";
 const NS_IF_PREFIX: &str = "vethn";
+const DOCKER_CONTAINER_SOCKET: &str = "/run/docker.sock";
 
 /// Handle for a multiplexed PTY session.
 struct PtySessionHandle {
@@ -64,6 +67,33 @@ struct SandboxEntry {
     env: Vec<EnvVar>,
 }
 
+#[derive(Clone)]
+struct DockerConfig {
+    host_socket: PathBuf,
+    docker_host_env: String,
+}
+
+impl DockerConfig {
+    fn from_env() -> SandboxResult<Self> {
+        let raw =
+            env::var("CMUX_DOCKER_SOCKET").unwrap_or_else(|_| "/var/run/docker.sock".to_string());
+        let host_socket = normalize_docker_socket(&raw)?;
+
+        Ok(Self {
+            host_socket,
+            docker_host_env: format!("unix://{DOCKER_CONTAINER_SOCKET}"),
+        })
+    }
+
+    fn host_socket(&self) -> &Path {
+        &self.host_socket
+    }
+
+    fn docker_host_env(&self) -> &str {
+        &self.docker_host_env
+    }
+}
+
 pub struct BubblewrapService {
     sandboxes: Mutex<HashMap<Uuid, SandboxEntry>>,
     workspace_root: PathBuf,
@@ -74,6 +104,7 @@ pub struct BubblewrapService {
     nsenter_path: String,
     port: u16,
     next_index: AtomicUsize,
+    docker: DockerConfig,
 }
 
 fn nsenter_args(pid: u32, workdir: Option<&str>, command: &[String]) -> Vec<String> {
@@ -109,6 +140,7 @@ impl BubblewrapService {
         let ip_path = find_binary("ip")?;
         let iptables_path = find_binary("iptables")?;
         let nsenter_path = find_binary("nsenter")?;
+        let docker = DockerConfig::from_env()?;
 
         let service = Self {
             sandboxes: Mutex::new(HashMap::new()),
@@ -120,6 +152,7 @@ impl BubblewrapService {
             nsenter_path,
             port,
             next_index: AtomicUsize::new(0),
+            docker,
         };
 
         service.setup_host_network().await?;
@@ -175,6 +208,20 @@ impl BubblewrapService {
         }
 
         Ok(())
+    }
+
+    async fn ensure_docker_socket(&self) -> SandboxResult<()> {
+        for _ in 0..10 {
+            if self.docker.host_socket().exists() {
+                return Ok(());
+            }
+            sleep(Duration::from_millis(200)).await;
+        }
+
+        Err(SandboxError::Internal(format!(
+            "docker socket not found at {}. Set CMUX_DOCKER_MODE=dind or mount the host socket (override with CMUX_DOCKER_SOCKET).",
+            self.docker.host_socket().display()
+        )))
     }
 
     fn default_name(id: &Uuid) -> String {
@@ -432,6 +479,40 @@ fi
         Ok(())
     }
 
+    /// Setup agent notification hook configurations.
+    /// Copies config files from /usr/share/cmux/agent-config/ into the sandbox's /root.
+    /// These configure Claude Code, Codex, and OpenCode to send notifications via cmux-bridge.
+    async fn setup_agent_configs(&self, root_merged: &Path) -> SandboxResult<()> {
+        let root_home = root_merged.join("root");
+        let agent_config_dir = Path::new("/usr/share/cmux/agent-config");
+
+        // Claude Code: ~/.claude/settings.json
+        let claude_src = agent_config_dir.join("claude/settings.json");
+        if claude_src.exists() {
+            let claude_dir = root_home.join(".claude");
+            fs::create_dir_all(&claude_dir).await?;
+            fs::copy(&claude_src, claude_dir.join("settings.json")).await?;
+        }
+
+        // Codex: ~/.codex/config.toml
+        let codex_src = agent_config_dir.join("codex/config.toml");
+        if codex_src.exists() {
+            let codex_dir = root_home.join(".codex");
+            fs::create_dir_all(&codex_dir).await?;
+            fs::copy(&codex_src, codex_dir.join("config.toml")).await?;
+        }
+
+        // OpenCode: ~/.config/opencode/plugin/notification.js
+        let opencode_src = agent_config_dir.join("opencode/notification.js");
+        if opencode_src.exists() {
+            let opencode_dir = root_home.join(".config/opencode/plugin");
+            fs::create_dir_all(&opencode_dir).await?;
+            fs::copy(&opencode_src, opencode_dir.join("notification.js")).await?;
+        }
+
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn spawn_bubblewrap(
         &self,
@@ -446,22 +527,34 @@ fi
         // Prepare system directories for the sandbox
         fs::create_dir_all(system_dir).await?;
 
-        // Setup overlays
-        let usr_merged = mount_overlay(system_dir, "usr", "/usr").await?;
-        let etc_merged = mount_overlay(system_dir, "etc", "/etc").await?;
-        let var_merged = mount_overlay(system_dir, "var", "/var").await?;
-
+        // Phase 1: Setup overlays and root directory in parallel
         let root_merged = system_dir.join("root-merged");
-        fs::create_dir_all(&root_merged).await?;
-        self.setup_bashrc(&root_merged).await?;
-        self.setup_zshrc(&root_merged).await?;
-        self.setup_gitconfig(&root_merged).await?;
+        let root_merged_clone = root_merged.clone();
+        let (usr_merged, etc_merged, var_merged, _) = tokio::try_join!(
+            mount_overlay(system_dir, "usr", "/usr"),
+            mount_overlay(system_dir, "etc", "/etc"),
+            mount_overlay(system_dir, "var", "/var"),
+            async {
+                fs::create_dir_all(&root_merged_clone).await?;
+                Ok::<_, SandboxError>(())
+            },
+        )?;
 
-        // Ensure we have valid DNS and hosts file in the overlay
-        self.setup_dns(&etc_merged).await?;
-        self.setup_hosts(&etc_merged, &format!("sandbox-{}", index))
-            .await?;
-        self.setup_apt(&etc_merged).await?;
+        // Phase 2: Setup all config files in parallel (they write to different paths)
+        let hostname = format!("sandbox-{}", index);
+        tokio::try_join!(
+            // root-merged setups
+            self.setup_bashrc(&root_merged),
+            self.setup_zshrc(&root_merged),
+            self.setup_gitconfig(&root_merged),
+            self.setup_agent_configs(&root_merged),
+            // etc overlay setups
+            self.setup_dns(&etc_merged),
+            self.setup_hosts(&etc_merged, &hostname),
+            self.setup_apt(&etc_merged),
+            // Docker socket can be ensured in parallel too
+            self.ensure_docker_socket(),
+        )?;
 
         let workspace_str = workspace
             .to_str()
@@ -469,6 +562,8 @@ fi
                 SandboxError::InvalidRequest("workspace path is not valid UTF-8".into())
             })?
             .to_owned();
+
+        let docker_socket_host = path_to_string(self.docker.host_socket(), "docker socket")?;
 
         let mut command = Command::new(&self.bubblewrap_path);
         command.kill_on_drop(true);
@@ -499,8 +594,8 @@ fi
             "/run/cmux",
             // Bind-mount the Docker socket for Docker-in-Docker support
             "--bind",
-            "/var/run/docker.sock",
-            "/run/docker.sock",
+            &docker_socket_host,
+            DOCKER_CONTAINER_SOCKET,
             "--bind",
             &workspace_str,
             "/workspace",
@@ -571,7 +666,7 @@ fi
 
         command.env("IS_SANDBOX", "1");
         // Docker socket is bind-mounted to /run/docker.sock
-        command.env("DOCKER_HOST", "unix:///run/docker.sock");
+        command.env("DOCKER_HOST", self.docker.docker_host_env());
         // Bridge socket path (mapped from /var/run/cmux to /run/cmux inside sandbox)
         command.env("CMUX_BRIDGE_SOCKET", "/run/cmux/bridge.sock");
 
@@ -759,7 +854,7 @@ fi
         cmd.env("LANG", "C.UTF-8");
         cmd.env("LC_ALL", "C.UTF-8");
         cmd.env("IS_SANDBOX", "1");
-        cmd.env("DOCKER_HOST", "unix:///run/docker.sock");
+        cmd.env("DOCKER_HOST", self.docker.docker_host_env());
         // SSH agent forwarding
         let ssh_socket_path = Path::new("/ssh-agent.sock");
         if ssh_socket_path.exists() {
@@ -852,6 +947,18 @@ fn find_binary(name: &str) -> SandboxResult<String> {
     Ok(binary_path)
 }
 
+fn normalize_docker_socket(raw: &str) -> SandboxResult<PathBuf> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(SandboxError::Internal(
+            "CMUX_DOCKER_SOCKET must not be empty".to_string(),
+        ));
+    }
+
+    let without_scheme = trimmed.strip_prefix("unix://").unwrap_or(trimmed);
+    Ok(PathBuf::from(without_scheme))
+}
+
 fn path_to_string(path: &Path, context: &str) -> SandboxResult<String> {
     path.to_str().map(|value| value.to_string()).ok_or_else(|| {
         SandboxError::Internal(format!(
@@ -885,11 +992,13 @@ fn build_effective_env(
     port: u16,
     sandbox_id: &Uuid,
     tab_id: &Option<String>,
+    docker_host: &str,
 ) -> Vec<EnvVar> {
     let mut merged = BTreeMap::new();
     for env in request_env {
         merged.insert(env.key.clone(), env.value.clone());
     }
+    merged.insert("DOCKER_HOST".to_string(), docker_host.to_string());
 
     merged.insert("CMUX_SANDBOX_ID".to_string(), sandbox_id.to_string());
     merged.insert(
@@ -950,8 +1059,14 @@ impl SandboxService for BubblewrapService {
             pool.allocate()?
         };
 
-        let effective_env =
-            build_effective_env(&request.env, &lease, self.port, &id, &request.tab_id);
+        let effective_env = build_effective_env(
+            &request.env,
+            &lease,
+            self.port,
+            &id,
+            &request.tab_id,
+            self.docker.docker_host_env(),
+        );
 
         let (mut child, inner_pid) = match self
             .spawn_bubblewrap(
@@ -1295,7 +1410,7 @@ impl SandboxService for BubblewrapService {
         cmd.env("LANG", "C.UTF-8");
         cmd.env("LC_ALL", "C.UTF-8");
         cmd.env("IS_SANDBOX", "1");
-        cmd.env("DOCKER_HOST", "unix:///run/docker.sock");
+        cmd.env("DOCKER_HOST", self.docker.docker_host_env());
         // SSH agent forwarding
         let ssh_socket_path = Path::new("/ssh-agent.sock");
         if ssh_socket_path.exists() {
@@ -1533,6 +1648,7 @@ impl SandboxService for BubblewrapService {
                                     level: notification.level,
                                     sandbox_id: notification.sandbox_id,
                                     tab_id: notification.tab_id,
+                                    pane_id: notification.pane_id,
                                 });
                             }
                             HostEvent::GhRequest(request) => {

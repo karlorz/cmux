@@ -6,8 +6,9 @@ use cmux_sandbox::build_router;
 use cmux_sandbox::errors::{SandboxError, SandboxResult};
 use cmux_sandbox::models::{
     BridgeRequest, BridgeResponse, CreateSandboxRequest, ExecRequest, ExecResponse, GhRequest,
-    GhResponse, HostEvent, OpenUrlRequest, SandboxSummary,
+    GhResponse, HostEvent, NotificationLevel, NotificationRequest, OpenUrlRequest, SandboxSummary,
 };
+use cmux_sandbox::notifications::NotificationStore;
 use cmux_sandbox::service::{GhAuthCache, GhResponseRegistry, HostEventSender, SandboxService};
 use cmux_sandbox::DEFAULT_HTTP_PORT;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -107,6 +108,7 @@ async fn run_server(options: Options) {
 
     // Cache for gh auth status (populated by TUI client on connect)
     let gh_auth_cache: GhAuthCache = Arc::new(Mutex::new(None));
+    let notifications = NotificationStore::new();
 
     let service = build_service(&options).await;
     let app = build_router(
@@ -114,6 +116,7 @@ async fn run_server(options: Options) {
         host_event_tx.clone(),
         gh_responses.clone(),
         gh_auth_cache.clone(),
+        notifications.clone(),
     );
 
     // Start the unified Unix socket listener for bridge requests from sandboxes
@@ -121,12 +124,14 @@ async fn run_server(options: Options) {
     let bridge_host_events = host_event_tx.clone();
     let bridge_gh_responses = gh_responses.clone();
     let bridge_gh_auth_cache = gh_auth_cache.clone();
+    let bridge_notifications = notifications.clone();
     tokio::spawn(async move {
         if let Err(e) = run_bridge_socket(
             &socket_path,
             bridge_host_events,
             bridge_gh_responses,
             bridge_gh_auth_cache,
+            bridge_notifications,
         )
         .await
         {
@@ -203,6 +208,7 @@ async fn run_bridge_socket(
     host_events: HostEventSender,
     gh_responses: GhResponseRegistry,
     gh_auth_cache: GhAuthCache,
+    notifications: NotificationStore,
 ) -> anyhow::Result<()> {
     // Ensure parent directory exists
     if let Some(parent) = socket_path.parent() {
@@ -230,10 +236,16 @@ async fn run_bridge_socket(
                 let host_events = host_events.clone();
                 let gh_responses = gh_responses.clone();
                 let gh_auth_cache = gh_auth_cache.clone();
+                let notifications = notifications.clone();
                 tokio::spawn(async move {
-                    if let Err(e) =
-                        handle_bridge_connection(stream, host_events, gh_responses, gh_auth_cache)
-                            .await
+                    if let Err(e) = handle_bridge_connection(
+                        stream,
+                        host_events,
+                        gh_responses,
+                        gh_auth_cache,
+                        notifications,
+                    )
+                    .await
                     {
                         tracing::warn!("bridge connection error: {e}");
                     }
@@ -252,6 +264,7 @@ async fn handle_bridge_connection(
     host_events: HostEventSender,
     gh_responses: GhResponseRegistry,
     gh_auth_cache: GhAuthCache,
+    notifications: NotificationStore,
 ) -> anyhow::Result<()> {
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
@@ -311,6 +324,24 @@ async fn handle_bridge_connection(
             )
             .await
         }
+        BridgeRequest::Notify {
+            message,
+            level,
+            sandbox_id,
+            tab_id,
+            pane_id,
+        } => {
+            handle_notify_request(
+                &host_events,
+                &notifications,
+                message,
+                level,
+                sandbox_id,
+                tab_id,
+                pane_id,
+            )
+            .await
+        }
     };
 
     writer
@@ -349,6 +380,47 @@ async fn handle_open_url_request(
             BridgeResponse::Error {
                 message: "No clients connected".to_string(),
             }
+        }
+    }
+}
+
+async fn handle_notify_request(
+    host_events: &HostEventSender,
+    notifications: &NotificationStore,
+    message: String,
+    level: NotificationLevel,
+    sandbox_id: Option<String>,
+    tab_id: Option<String>,
+    pane_id: Option<String>,
+) -> BridgeResponse {
+    let _ = notifications
+        .record(
+            message.clone(),
+            level,
+            sandbox_id.clone(),
+            tab_id.clone(),
+            pane_id.clone(),
+        )
+        .await;
+    match host_events.send(HostEvent::Notification(NotificationRequest {
+        message: message.clone(),
+        level,
+        sandbox_id,
+        tab_id,
+        pane_id,
+    })) {
+        Ok(receivers) => {
+            tracing::info!(
+                "broadcast notification to {} clients: {}",
+                receivers,
+                message
+            );
+            BridgeResponse::Ok
+        }
+        Err(_) => {
+            tracing::warn!("no clients connected to receive notification: {}", message);
+            // Return Ok anyway since notification delivery is best-effort
+            BridgeResponse::Ok
         }
     }
 }

@@ -3,6 +3,7 @@
 ARG RUST_VERSION=1.91.0
 ARG DOCKER_VERSION=27.4.0
 ARG DOCKER_COMPOSE_VERSION=2.29.7
+ARG BUILDX_VERSION=0.30.1
 ARG BUILDKIT_VERSION=0.15.2
 ARG NODE_VERSION=22.11.0
 
@@ -63,6 +64,7 @@ FROM ubuntu:24.04 AS dind-installer
 
 ARG DOCKER_VERSION
 ARG DOCKER_COMPOSE_VERSION
+ARG BUILDX_VERSION
 ARG BUILDKIT_VERSION
 
 SHELL ["/bin/bash", "-c"]
@@ -94,6 +96,10 @@ mkdir -p /usr/local/lib/docker/cli-plugins
 wget -O /usr/local/lib/docker/cli-plugins/docker-compose \
   "https://github.com/docker/compose/releases/download/v${DOCKER_COMPOSE_VERSION}/docker-compose-linux-${docker_arch}"
 chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+wget -O /usr/local/lib/docker/cli-plugins/docker-buildx \
+  "https://github.com/docker/buildx/releases/download/v${BUILDX_VERSION}/buildx-v${BUILDX_VERSION}.${buildkit_arch}"
+chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
 
 wget -O /tmp/buildkit.tgz "https://github.com/moby/buildkit/releases/download/v${BUILDKIT_VERSION}/buildkit-v${BUILDKIT_VERSION}.${buildkit_arch}.tar.gz"
 tar -xzf /tmp/buildkit.tgz -C /tmp
@@ -148,6 +154,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   make \
   build-essential \
   openssh-client \
+  jq \
+  findutils \
   && mkdir -p -m 755 /etc/apt/keyrings \
   && wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
   && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
@@ -185,6 +193,14 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
   mv /root/.local/bin/uv /usr/local/bin/uv && \
   rm -rf /root/.local
 
+ARG RUST_VERSION
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain ${RUST_VERSION} --profile minimal && \
+    chmod -R a+w $RUSTUP_HOME $CARGO_HOME
+
 RUN update-alternatives --set iptables /usr/sbin/iptables-legacy || true
 RUN mkdir -p /var/lib/cmux/sandboxes
 
@@ -218,7 +234,8 @@ COPY --from=builder --link /workspace/target/release/cmux-bridge /usr/local/bin/
 COPY --from=acp-builder --link /workspace/target/release/codex-acp /usr/local/bin/codex-acp
 
 COPY --link packages/sandbox/scripts/bootstrap-dind.sh /usr/local/bin/bootstrap-dind.sh
-RUN chmod +x /usr/local/bin/bootstrap-dind.sh && \
+COPY --link packages/sandbox/scripts/docker-mode.sh /usr/local/bin/docker-mode.sh
+RUN chmod +x /usr/local/bin/bootstrap-dind.sh /usr/local/bin/docker-mode.sh && \
     ln -sf /usr/local/bin/cmux-bridge /usr/local/bin/open-url && \
     ln -sf /usr/local/bin/cmux-bridge /usr/local/bin/xdg-open && \
     # Replace gh CLI with symlinks to cmux-bridge so git credential helpers work
@@ -234,17 +251,25 @@ RUN chmod +x /usr/local/bin/bootstrap-dind.sh && \
     ln -sf /usr/local/bin/cmux-bridge /snap/bin/gh && \
     ln -sf /usr/local/bin/cmux-bridge /usr/local/bin/gh
 
+# Agent notification hook configurations
+# These files configure Claude Code, Codex, and OpenCode to send notifications via cmux-bridge
+# Stored in /usr/share/cmux/agent-config/ and copied into sandbox's /root during bubblewrap setup
+COPY --link packages/sandbox/agent-config /usr/share/cmux/agent-config
+
 # systemd service units
 COPY --link packages/sandbox/systemd/dockerd.service /etc/systemd/system/dockerd.service
 COPY --link packages/sandbox/systemd/buildkitd.service /etc/systemd/system/buildkitd.service
 COPY --link packages/sandbox/systemd/cmux-sandboxd.service /etc/systemd/system/cmux-sandboxd.service
-RUN echo "CMUX_SANDBOX_PORT=46831" > /etc/default/cmux-sandboxd
+RUN echo "CMUX_SANDBOX_PORT=46831" > /etc/default/cmux-sandboxd && \
+  { echo "CMUX_DOCKER_MODE=dind"; echo "CMUX_DOCKER_SOCKET=/var/run/docker.sock"; } > /etc/default/cmux-docker
 RUN mkdir -p /etc/systemd/system/multi-user.target.wants && \
   ln -s /etc/systemd/system/dockerd.service /etc/systemd/system/multi-user.target.wants/dockerd.service && \
   ln -s /etc/systemd/system/buildkitd.service /etc/systemd/system/multi-user.target.wants/buildkitd.service && \
   ln -s /etc/systemd/system/cmux-sandboxd.service /etc/systemd/system/multi-user.target.wants/cmux-sandboxd.service
 
 ENV CMUX_SANDBOX_PORT=46831 \
+  CMUX_DOCKER_MODE=dind \
+  CMUX_DOCKER_SOCKET=/var/run/docker.sock \
   DOCKER_HOST=unix:///var/run/docker.sock \
   BROWSER=/usr/local/bin/open-url
 
