@@ -9,7 +9,13 @@ type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-type StackTeam = Awaited<ReturnType<typeof stackServerApp.listTeams>>[number];
+type StackTeam = Awaited<ReturnType<typeof stackServerApp.listTeams>>[number] & {
+  slug?: string | null;
+  teamId?: string;
+  id?: string;
+  displayName?: string | null;
+  name?: string | null;
+};
 
 type PreviewConfigListItem = {
   id: string;
@@ -29,20 +35,11 @@ type TeamOption = {
 };
 
 function getTeamSlugOrId(team: StackTeam): string {
-  const candidate = team as unknown as {
-    slug?: string | null;
-    teamId?: string;
-    id?: string;
-  };
-  return candidate.slug ?? candidate.teamId ?? candidate.id ?? "";
+  return team.slug ?? team.teamId ?? team.id ?? "";
 }
 
 function getTeamDisplayName(team: StackTeam): string {
-  const candidate = team as unknown as {
-    displayName?: string | null;
-    name?: string | null;
-  };
-  return candidate.displayName ?? candidate.name ?? getTeamSlugOrId(team);
+  return team.displayName ?? team.name ?? getTeamSlugOrId(team);
 }
 
 function serializeProviderConnections(
@@ -81,10 +78,12 @@ export default async function PreviewLandingPage({ searchParams }: PageProps) {
     );
   }
 
-  const [{ accessToken }, teams] = await Promise.all([
+  const [auth, teamsResult] = await Promise.all([
     user.getAuthJson(),
     user.listTeams(),
   ]);
+  const teams: StackTeam[] = teamsResult;
+  const { accessToken } = auth;
 
   if (!accessToken) {
     throw new Error("Missing Stack access token");

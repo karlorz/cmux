@@ -9,12 +9,20 @@ import { api } from "@cmux/convex/api";
 export const dynamic = "force-dynamic";
 
 type PageProps = {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+  searchParams?: Promise<SearchParams>;
 };
 
-type StackTeam = Awaited<ReturnType<typeof stackServerApp.listTeams>>[number];
+type SearchParams = Record<string, string | string[] | undefined>;
 
-function buildConfigurePath(search: Record<string, string | string[] | undefined> | undefined): string {
+type StackTeam = Awaited<ReturnType<typeof stackServerApp.listTeams>>[number] & {
+  slug?: string | null;
+  teamId?: string;
+  id?: string;
+  displayName?: string | null;
+  name?: string | null;
+};
+
+function buildConfigurePath(search: SearchParams | undefined): string {
   const params = new URLSearchParams();
   if (search) {
     Object.entries(search).forEach(([key, value]) => {
@@ -32,33 +40,19 @@ function buildConfigurePath(search: Record<string, string | string[] | undefined
 }
 
 function getTeamSlugOrId(team: StackTeam): string {
-  const candidate = team as unknown as {
-    slug?: string | null;
-    teamId?: string;
-    id?: string;
-  };
-  return candidate.slug ?? candidate.teamId ?? candidate.id ?? "";
+  return team.slug ?? team.teamId ?? team.id ?? "";
 }
 
 function getTeamId(team: StackTeam): string {
-  const candidate = team as unknown as {
-    teamId?: string;
-    id?: string;
-  };
-  return candidate.teamId ?? candidate.id ?? getTeamSlugOrId(team);
+  return team.teamId ?? team.id ?? getTeamSlugOrId(team);
 }
 
 function getTeamSlug(team: StackTeam): string | null {
-  const candidate = team as unknown as { slug?: string | null };
-  return candidate.slug ?? null;
+  return team.slug ?? null;
 }
 
 function getTeamDisplayName(team: StackTeam): string {
-  const candidate = team as unknown as {
-    displayName?: string | null;
-    name?: string | null;
-  };
-  return candidate.displayName ?? candidate.name ?? getTeamSlugOrId(team);
+  return team.displayName ?? team.name ?? getTeamSlugOrId(team);
 }
 
 type PackageJson = {
@@ -166,6 +160,17 @@ async function detectFrameworkPreset(repoFullName: string): Promise<FrameworkPre
   return "other";
 }
 
+function getSearchValue(
+  search: SearchParams | undefined,
+  key: string
+): string | null {
+  if (!search) {
+    return null;
+  }
+  const value = search[key];
+  return Array.isArray(value) ? value[0] ?? null : value ?? null;
+}
+
 export default async function PreviewConfigurePage({ searchParams }: PageProps) {
   const resolvedSearch = await searchParams;
   const configurePath = buildConfigurePath(resolvedSearch);
@@ -178,10 +183,12 @@ export default async function PreviewConfigurePage({ searchParams }: PageProps) 
     return redirect(signInUrl);
   }
 
-  const [{ accessToken }, teams] = await Promise.all([
+  const [auth, teamsResult] = await Promise.all([
     user.getAuthJson(),
     user.listTeams(),
   ]);
+  const teams: StackTeam[] = teamsResult;
+  const { accessToken } = auth;
 
   if (teams.length === 0) {
     notFound();
@@ -191,53 +198,15 @@ export default async function PreviewConfigurePage({ searchParams }: PageProps) 
     throw new Error("Missing Stack access token");
   }
 
-  const repo = (() => {
-    if (!resolvedSearch) {
-      return null;
-    }
-    const value = resolvedSearch.repo;
-    if (Array.isArray(value)) {
-      return value[0] ?? null;
-    }
-    return value ?? null;
-  })();
-
-  const installationId = (() => {
-    if (!resolvedSearch) {
-      return null;
-    }
-    const value = resolvedSearch.installationId;
-    if (Array.isArray(value)) {
-      return value[0] ?? null;
-    }
-    return value ?? null;
-  })();
-
-  const environmentId = (() => {
-    if (!resolvedSearch) {
-      return null;
-    }
-    const value = resolvedSearch.environmentId;
-    if (Array.isArray(value)) {
-      return value[0] ?? null;
-    }
-    return value ?? null;
-  })();
+  const repo = getSearchValue(resolvedSearch, "repo");
+  const installationId = getSearchValue(resolvedSearch, "installationId");
+  const environmentId = getSearchValue(resolvedSearch, "environmentId");
 
   if (!repo) {
     notFound();
   }
 
-  const searchTeam = (() => {
-    if (!resolvedSearch) {
-      return null;
-    }
-    const value = resolvedSearch.team;
-    if (Array.isArray(value)) {
-      return value[0] ?? null;
-    }
-    return value ?? null;
-  })();
+  const searchTeam = getSearchValue(resolvedSearch, "team");
 
   const selectedTeam =
     teams.find(
@@ -287,9 +256,7 @@ export default async function PreviewConfigurePage({ searchParams }: PageProps) 
     slug: getTeamSlug(team),
     slugOrId: getTeamSlugOrId(team),
     displayName: getTeamDisplayName(team),
-    name:
-      (team as unknown as { name?: string | null }).name ??
-      getTeamDisplayName(team),
+    name: team.name ?? getTeamDisplayName(team),
   }));
 
   const detectedFrameworkPreset = await detectFrameworkPreset(repo);

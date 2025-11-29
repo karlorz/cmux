@@ -24,10 +24,9 @@ const singleQuote = (value: string): string =>
 const WORKER_SOCKET_TIMEOUT_MS = 30_000;
 
 const resolveConvexUrl = (): string | null => {
-  const explicit =
-    process.env.CONVEX_SITE_URL || process.env.CONVEX_URL || process.env.CONVEX_CLOUD_URL;
-  if (explicit) {
-    return explicit.replace(/\/$/, "");
+  const explicitUrl = process.env.CONVEX_URL;
+  if (explicitUrl) {
+    return explicitUrl.replace(/\/$/, "");
   }
   const deployment = process.env.CONVEX_DEPLOYMENT;
   if (deployment) {
@@ -81,7 +80,7 @@ async function waitForWorkerHealth({
     try {
       const response = await fetch(`${workerUrl}/health`);
       if (response.ok) {
-        const payload = await response.json().catch(() => null);
+        const payload = await response.json();
         console.log("[preview-jobs] Worker health check ok", {
           previewRunId,
           mainServerConnected: payload?.mainServerConnected,
@@ -145,7 +144,7 @@ async function triggerWorkerScreenshotCollection({
         );
       }
 
-      const result = await response.json().catch(() => ({}));
+      const result = await response.json();
 
       if (result.error) {
         throw new Error(formatWorkerSocketError(result.error));

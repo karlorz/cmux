@@ -58,8 +58,7 @@ type PreviewJobContext = {
 
 const resolveConvexUrl = (provided?: string): string | undefined => {
   if (provided) return provided.replace(/\/$/, "");
-  const fromEnv =
-    process.env.CONVEX_SITE_URL || process.env.CONVEX_URL || process.env.CONVEX_CLOUD_URL;
+  const fromEnv = process.env.CONVEX_URL;
   if (fromEnv) return fromEnv.replace(/\/$/, "");
   return undefined;
 };
@@ -170,7 +169,7 @@ async function runPreviewJobScreenshots({
     );
   }
 
-  const result = await response.json().catch(() => ({}));
+  const result = await response.json();
   log("INFO", `${logPrefix} Preview job completed successfully`, {
     result,
   });
