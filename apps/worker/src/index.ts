@@ -58,7 +58,7 @@ type PreviewJobContext = {
 
 const resolveConvexUrl = (provided?: string): string | undefined => {
   if (provided) return provided.replace(/\/$/, "");
-  const fromEnv = process.env.CONVEX_URL;
+  const fromEnv =	process.env.CONVEX_SITE_URL || process.env.CONVEX_URL || process.env.CONVEX_CLOUD_URL;
   if (fromEnv) return fromEnv.replace(/\/$/, "");
   return undefined;
 };

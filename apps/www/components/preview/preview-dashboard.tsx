@@ -397,11 +397,12 @@ export function PreviewDashboard({
     }
   }, [selectedTeamSlugOrIdState, teamOptions]);
 
-  const repoSection = !isAuthenticated ? (
-    <div className="text-center py-12 rounded-lg border border-white/5 bg-white/[0.02]">
-      <User className="mx-auto h-6 w-6 text-neutral-500 mb-3" />
+  // Repo selection box - only this part, not configured repos
+  const repoSelectionBox = !isAuthenticated ? (
+    <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-white/5 bg-white/[0.02]">
+      <User className="h-6 w-6 text-neutral-500 mb-3" />
       <h3 className="text-base font-medium text-white mb-1.5">Sign in to continue</h3>
-      <p className="text-sm text-neutral-500 mb-5 max-w-xs mx-auto">
+      <p className="text-sm text-neutral-500 mb-5 max-w-xs text-center">
         Sign in to import your repositories and capture pull requests.
       </p>
       <Button asChild className="bg-white text-black hover:bg-neutral-200">
@@ -411,10 +412,10 @@ export function PreviewDashboard({
       </Button>
     </div>
   ) : !hasGithubAppInstallation ? (
-    <div className="text-center py-12 rounded-lg border border-white/5 bg-white/[0.02]">
-      <Github className="mx-auto h-6 w-6 text-neutral-500 mb-3" />
+    <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-white/5 bg-white/[0.02]">
+      <Github className="h-6 w-6 text-neutral-500 mb-3" />
       <h3 className="text-base font-medium text-white mb-1.5">Connect to GitHub</h3>
-      <p className="text-sm text-neutral-500 mb-5 max-w-xs mx-auto">
+      <p className="text-sm text-neutral-500 mb-5 max-w-xs text-center">
         Install the preview.new GitHub App to connect your repositories.
       </p>
       <Button
@@ -434,178 +435,95 @@ export function PreviewDashboard({
       )}
     </div>
   ) : (
-    <>
-      <div className="flex flex-1 flex-col overflow-hidden rounded-lg border border-white/10 min-h-[320px]">
-        <div className="flex border-b border-white/10">
-          <div className="relative border-r border-white/10">
-            <Github className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
-            <select
-              value={selectedInstallationId ?? ""}
-              onChange={(e) => {
-                const value = e.target.value;
-                if (value === ADD_INSTALLATION_VALUE) {
-                  void handleInstallGithubApp();
-                  return;
-                }
-                setSelectedInstallationId(Number(value));
-              }}
-              className="h-10 appearance-none bg-transparent py-2 pl-11 pr-8 text-sm text-white focus:outline-none"
-            >
-              {activeConnections.map((conn) => (
-                <option key={conn.installationId} value={conn.installationId}>
-                  {conn.accountLogin || `ID: ${conn.installationId}`}
-                </option>
-              ))}
-              <option value={ADD_INSTALLATION_VALUE}>Add account</option>
-            </select>
-            <div className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2">
-              <svg className="h-4 w-4 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
-          </div>
-
-          <div className="relative flex-1">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-500" />
-            <input
-              type="text"
-              value={repoSearch}
-              onChange={(e) => setRepoSearch(e.target.value)}
-              placeholder="Search..."
-              disabled={!canSearchRepos}
-              className="h-10 w-full bg-transparent py-2 pl-11 pr-4 text-sm text-white placeholder:text-neutral-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-            />
+    <div className="flex flex-1 flex-col overflow-hidden rounded-lg border border-white/10">
+      <div className="flex border-b border-white/10 shrink-0">
+        <div className="relative border-r border-white/10">
+          <Github className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+          <select
+            value={selectedInstallationId ?? ""}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (value === ADD_INSTALLATION_VALUE) {
+                void handleInstallGithubApp();
+                return;
+              }
+              setSelectedInstallationId(Number(value));
+            }}
+            className="h-10 appearance-none bg-transparent py-2 pl-11 pr-8 text-sm text-white focus:outline-none"
+          >
+            {activeConnections.map((conn) => (
+              <option key={conn.installationId} value={conn.installationId}>
+                {conn.accountLogin || `ID: ${conn.installationId}`}
+              </option>
+            ))}
+            <option value={ADD_INSTALLATION_VALUE}>Add account</option>
+          </select>
+          <div className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2">
+            <svg className="h-4 w-4 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
           </div>
         </div>
 
-        <div
-          className="flex-1 min-h-0 overflow-hidden divide-y divide-white/5"
-          style={{
-            scrollbarWidth: "thin",
-            scrollbarColor: "rgba(255,255,255,0.2) transparent",
-          }}
-        >
-          {!canSearchRepos ? (
-            <div className="flex items-center justify-center py-14 text-sm text-neutral-500">
-              Select a team and install the GitHub App to search.
-            </div>
-          ) : isLoadingRepos ? (
-            <div className="flex justify-center py-14">
-              <Loader2 className="h-5 w-5 animate-spin text-neutral-500" />
-            </div>
-          ) : repos.length > 0 ? (
-            repos.slice(0, 5).map((repo) => (
-              <div
-                key={repo.full_name}
-                className="flex items-center justify-between px-4 py-2.5"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <Github className="h-4 w-4 text-neutral-400 shrink-0" />
-                  <span className="text-sm text-white">{repo.full_name}</span>
-                </div>
-                <Button
-                  onClick={() => handleContinue(repo.full_name)}
-                  disabled={navigatingRepo !== null || !selectedInstallationId}
-                  size="sm"
-                  className="h-6 px-3 text-xs bg-white text-black hover:bg-neutral-200 min-w-[55px]"
-                >
-                  {navigatingRepo === repo.full_name ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    "Import"
-                  )}
-                </Button>
-              </div>
-            ))
-          ) : (
-            <div className="flex flex-col items-center justify-center py-14 text-sm text-neutral-500">
-              <p>No repositories found</p>
-            </div>
-          )}
+        <div className="relative flex-1">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-500" />
+          <input
+            type="text"
+            value={repoSearch}
+            onChange={(e) => setRepoSearch(e.target.value)}
+            placeholder="Search..."
+            disabled={!canSearchRepos}
+            className="h-10 w-full bg-transparent py-2 pl-11 pr-4 text-sm text-white placeholder:text-neutral-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+          />
         </div>
       </div>
 
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-medium text-white">Configured repositories</h2>
-          {configError && <span className="text-sm text-red-400">{configError}</span>}
-        </div>
-        {configs.length === 0 ? (
-          <p className="text-sm text-neutral-500 py-5">
-            No preview configs yet. Choose a repository above to create one.
-          </p>
-        ) : (
-          <TooltipProvider delayDuration={100}>
-            <div className="space-y-1.5">
-              {configs.map((config) => (
-                <div
-                  key={config.id}
-                  className="flex items-center justify-between px-3 py-2.5"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <Github className="h-4 w-4 text-neutral-500 shrink-0" />
-                    <span className="text-sm text-white truncate">{config.repoFullName}</span>
-                    <span className="text-xs text-neutral-600">{config.teamName}</span>
-                    <span
-                      className={clsx(
-                        "text-xs px-2 py-0.5 rounded",
-                        config.status === "active"
-                          ? "bg-emerald-500/10 text-emerald-400"
-                          : config.status === "paused"
-                            ? "bg-amber-500/10 text-amber-400"
-                            : "bg-neutral-500/10 text-neutral-400"
-                      )}
-                    >
-                      {config.status}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenConfig(config)}
-                          disabled={openingConfigId === config.id}
-                          className="p-1.5 text-neutral-500 disabled:opacity-50"
-                        >
-                          {openingConfigId === config.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Pencil className="h-4 w-4" />
-                          )}
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="text-xs">
-                        Edit configuration
-                      </TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          onClick={() => void handleDeleteConfig(config)}
-                          disabled={updatingConfigId === config.id}
-                          className="p-1.5 text-red-400 disabled:opacity-50"
-                        >
-                          {updatingConfigId === config.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-4 w-4" />
-                          )}
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="text-xs">
-                        Delete configuration
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                </div>
-              ))}
+      <div
+        className="flex-1 divide-y divide-white/5"
+        style={{
+          scrollbarWidth: "thin",
+          scrollbarColor: "rgba(255,255,255,0.2) transparent",
+        }}
+      >
+        {!canSearchRepos ? (
+          <div className="flex items-center justify-center h-full text-sm text-neutral-500">
+            Select a team and install the GitHub App to search.
+          </div>
+        ) : isLoadingRepos ? (
+          <div className="flex items-center justify-center h-full">
+            <Loader2 className="h-5 w-5 animate-spin text-neutral-500" />
+          </div>
+        ) : repos.length > 0 ? (
+          repos.slice(0, 5).map((repo) => (
+            <div
+              key={repo.full_name}
+              className="flex items-center justify-between px-4 py-2.5"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Github className="h-4 w-4 text-neutral-400 shrink-0" />
+                <span className="text-sm text-white">{repo.full_name}</span>
+              </div>
+              <Button
+                onClick={() => handleContinue(repo.full_name)}
+                disabled={navigatingRepo !== null || !selectedInstallationId}
+                size="sm"
+                className="h-6 px-3 text-xs bg-white text-black hover:bg-neutral-200 min-w-[55px]"
+              >
+                {navigatingRepo === repo.full_name ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  "Import"
+                )}
+              </Button>
             </div>
-          </TooltipProvider>
+          ))
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full text-sm text-neutral-500">
+            <p>No repositories found</p>
+          </div>
         )}
       </div>
-    </>
+    </div>
   );
 
   return (
@@ -665,111 +583,199 @@ export function PreviewDashboard({
         )}
       </div>
 
-      <div className="grid gap-8 items-start lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:items-stretch">
-        {/* Left Column: Import Git Repository */}
-        <div className="flex flex-col space-y-8 lg:h-[1px] lg:min-h-full">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-base font-medium text-white">Choose a repository</h2>
-            {isAuthenticated && teamOptions.length > 0 && (
-              <div className="flex items-center gap-2.5">
-                <label className="text-sm text-neutral-500">Team</label>
-                <div className="relative">
-                  <select
-                    value={selectedTeamSlugOrIdState}
-                    onChange={(e) => handleTeamChange(e.target.value)}
-                    className="appearance-none rounded-md border border-white/10 bg-white/5 pl-3 pr-8 py-1.5 text-sm text-white focus:border-white/20 focus:outline-none"
-                  >
-                    {teamOptions.map((team) => (
-                      <option key={team.slugOrId} value={team.slugOrId}>
-                        {team.displayName}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="pointer-events-none absolute right-2.5 top-2">
-                    <svg className="h-4 w-4 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </div>
+      {/* Main content grid */}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+        {/* Left Column Header */}
+        <div className="flex items-center justify-between min-h-[34px]">
+          <h2 className="text-base font-medium text-white">Choose a repository</h2>
+          {isAuthenticated && teamOptions.length > 0 && (
+            <div className="flex items-center gap-2.5">
+              <label className="text-sm text-neutral-500">Team</label>
+              <div className="relative">
+                <select
+                  value={selectedTeamSlugOrIdState}
+                  onChange={(e) => handleTeamChange(e.target.value)}
+                  className="appearance-none rounded-md border border-white/10 bg-white/5 pl-3 pr-8 py-1.5 text-sm text-white focus:border-white/20 focus:outline-none"
+                >
+                  {teamOptions.map((team) => (
+                    <option key={team.slugOrId} value={team.slugOrId}>
+                      {team.displayName}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute right-2.5 top-2">
+                  <svg className="h-4 w-4 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
                 </div>
               </div>
-            )}
-          </div>
-
-          {repoSection}
+            </div>
+          )}
         </div>
-        {/* Right Column: What is preview.new? */}
-        <div className="flex h-full flex-col gap-6">
-          <div>
-            <div className="flex items-center justify-between mb-4 min-h-[34px]">
-              <h2 className="text-base font-medium text-white">What is preview.new?</h2>
+
+        {/* Right Column Header */}
+        <div className="flex items-center justify-between min-h-[34px]">
+          <h2 className="text-base font-medium text-white">What is preview.new?</h2>
+        </div>
+
+        {/* Left: Repo selection box */}
+        <div className="flex flex-col">
+          {repoSelectionBox}
+        </div>
+
+        {/* Right: Feature cards */}
+        <div className="space-y-3">
+          <div className="flex items-start gap-4 rounded-lg border border-white/5 bg-white/5 p-4">
+            <div className="shrink-0 rounded p-2 bg-sky-500/10 text-sky-400">
+              <Camera className="h-5 w-5" />
             </div>
-            <div className="space-y-3">
-              <div className="flex items-start gap-4 rounded-lg border border-white/5 bg-white/5 p-4">
-                <div className="shrink-0 rounded p-2 bg-sky-500/10 text-sky-400">
-                  <Camera className="h-5 w-5" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-white mb-1">Screenshot agent</h4>
-                  <p className="text-xs text-neutral-400 leading-relaxed">
-                    An agent boots your dev server and captures screenshots of your UI on every PR.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-4 rounded-lg border border-white/5 bg-white/5 p-4">
-                <div className="shrink-0 rounded p-2 bg-emerald-500/10 text-emerald-400">
-                  <Github className="h-5 w-5" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-white mb-1">GitHub comments</h4>
-                  <p className="text-xs text-neutral-400 leading-relaxed">
-                    Screenshots are posted directly to your PR as comments for easy review.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-4 rounded-lg border border-white/5 bg-white/5 p-4">
-                <div className="shrink-0 rounded p-2 bg-purple-500/10 text-purple-400">
-                  <Server className="h-5 w-5" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-white mb-1">Isolated VMs</h4>
-                  <p className="text-xs text-neutral-400 leading-relaxed">
-                    Each PR runs in a dedicated VM with your exact dev environment.
-                  </p>
-                </div>
-              </div>
+            <div>
+              <h4 className="text-sm font-medium text-white mb-1">Screenshot agent</h4>
+              <p className="text-xs text-neutral-400 leading-relaxed">
+                An agent boots your dev server and captures screenshots of your UI on every PR.
+              </p>
             </div>
           </div>
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <h2 className="text-base font-medium text-white">From the creators of</h2>
-              <div className="inline-flex items-center gap-1.5 text-white">
-                <span className="text-blue-400">&gt;</span>
-                <Link href="https://cmux.dev" className="text-md font-medium text-white hover:underline">
-                  cmux.dev
-                </Link>
-              </div>
+
+          <div className="flex items-start gap-4 rounded-lg border border-white/5 bg-white/5 p-4">
+            <div className="shrink-0 rounded p-2 bg-emerald-500/10 text-emerald-400">
+              <Github className="h-5 w-5" />
             </div>
+            <div>
+              <h4 className="text-sm font-medium text-white mb-1">GitHub comments</h4>
+              <p className="text-xs text-neutral-400 leading-relaxed">
+                Screenshots are posted directly to your PR as comments for easy review.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-4 rounded-lg border border-white/5 bg-white/5 p-4">
+            <div className="shrink-0 rounded p-2 bg-purple-500/10 text-purple-400">
+              <Server className="h-5 w-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-medium text-white mb-1">Isolated VMs</h4>
+              <p className="text-xs text-neutral-400 leading-relaxed">
+                Each PR runs in a dedicated VM with your exact dev environment.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Left: Configured repositories */}
+        <div>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-base font-medium text-white">Configured repositories</h2>
+            {configError && <span className="text-sm text-red-400">{configError}</span>}
+          </div>
+          {configs.length === 0 ? (
             <p className="text-sm text-neutral-500">
-              Want UI screenshots for your code reviews? Check out cmux - an open-source Claude Code/Codex manager with visual diffs!
+              No preview configs yet.{" "}
+              {isAuthenticated && hasGithubAppInstallation
+                ? "Choose a repository above to create one."
+                : "Connect GitHub and import a repository to get started."}
             </p>
-            <div className="flex items-center gap-3">
-              <Link
-                href="https://github.com/manaflow-ai/cmux"
-                className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white"
-              >
-                <Star className="h-3.5 w-3.5" />
-                Star on GitHub
-              </Link>
-              <Link
-                href="https://cmux.dev"
-                className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                Explore cmux
+          ) : (
+            <TooltipProvider delayDuration={100}>
+              <div className="space-y-1.5">
+                {configs.map((config) => (
+                  <div
+                    key={config.id}
+                    className="flex items-center justify-between px-3 py-2.5"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <Github className="h-4 w-4 text-neutral-500 shrink-0" />
+                      <span className="text-sm text-white truncate">{config.repoFullName}</span>
+                      <span className="text-xs text-neutral-600">{config.teamName}</span>
+                      <span
+                        className={clsx(
+                          "text-xs px-2 py-0.5 rounded",
+                          config.status === "active"
+                            ? "bg-emerald-500/10 text-emerald-400"
+                            : config.status === "paused"
+                              ? "bg-amber-500/10 text-amber-400"
+                              : "bg-neutral-500/10 text-neutral-400"
+                        )}
+                      >
+                        {config.status}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenConfig(config)}
+                            disabled={openingConfigId === config.id}
+                            className="p-1.5 text-neutral-500 disabled:opacity-50"
+                          >
+                            {openingConfigId === config.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Pencil className="h-4 w-4" />
+                            )}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">
+                          Edit configuration
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteConfig(config)}
+                            disabled={updatingConfigId === config.id}
+                            className="p-1.5 text-red-400 disabled:opacity-50"
+                          >
+                            {updatingConfigId === config.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">
+                          Delete configuration
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </TooltipProvider>
+          )}
+        </div>
+
+        {/* Right: From creators section */}
+        <div>
+          <div className="flex items-center gap-2 mb-6">
+            <h2 className="text-base font-medium text-white">From the creators of</h2>
+            <div className="inline-flex items-center gap-1.5 text-white">
+              <span className="text-blue-400">&gt;</span>
+              <Link href="https://cmux.dev" className="text-md font-medium text-white hover:underline">
+                cmux.dev
               </Link>
             </div>
+          </div>
+          <p className="text-sm text-neutral-500 mb-2">
+            Want UI screenshots for your code reviews? Check out cmux - an open-source Claude Code/Codex manager with visual diffs!
+          </p>
+          <div className="flex items-center gap-3">
+            <Link
+              href="https://github.com/manaflow-ai/cmux"
+              className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white"
+            >
+              <Star className="h-3.5 w-3.5" />
+              Star on GitHub
+            </Link>
+            <Link
+              href="https://cmux.dev"
+              className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              Explore cmux
+            </Link>
           </div>
         </div>
       </div>

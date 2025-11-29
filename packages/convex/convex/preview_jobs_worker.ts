@@ -24,7 +24,7 @@ const singleQuote = (value: string): string =>
 const WORKER_SOCKET_TIMEOUT_MS = 30_000;
 
 const resolveConvexUrl = (): string | null => {
-  const explicitUrl = process.env.CONVEX_URL;
+  const explicitUrl = process.env.CONVEX_SITE_URL || process.env.CONVEX_URL || process.env.CONVEX_CLOUD_URL;
   if (explicitUrl) {
     return explicitUrl.replace(/\/$/, "");
   }
