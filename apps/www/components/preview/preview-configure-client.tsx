@@ -866,6 +866,9 @@ export function PreviewConfigureClient({
       const presetConfig = FRAMEWORK_PRESETS[preset];
       setMaintenanceScript(presetConfig.maintenanceScript);
       setDevScript(presetConfig.devScript);
+      // Update none states based on whether the preset has scripts
+      setMaintenanceNone(presetConfig.maintenanceScript.trim().length === 0);
+      setDevNone(presetConfig.devScript.trim().length === 0);
     }
   }, [hasUserEditedScripts]);
 
@@ -1253,7 +1256,7 @@ export function PreviewConfigureClient({
             {/* Maintenance and Dev Scripts - Collapsible */}
             <details className="group" open={isBuildOpen} onToggle={(e) => setIsBuildOpen(e.currentTarget.open)}>
               <summary className="flex items-center gap-2 cursor-pointer text-base font-semibold text-neutral-900 dark:text-neutral-100 list-none">
-                <ChevronDown className="h-4 w-4 text-neutral-400 transition-transform group-open:rotate-180" />
+                <ChevronDown className="h-4 w-4 text-neutral-400 transition-transform -rotate-90 group-open:rotate-0" />
                 Maintenance and Dev Scripts
               </summary>
               <div className="mt-4 pl-6 space-y-4">
@@ -1289,7 +1292,7 @@ export function PreviewConfigureClient({
             {/* Environment Variables - Collapsible */}
             <details className="group" open={isEnvOpen} onToggle={(e) => setIsEnvOpen(e.currentTarget.open)}>
               <summary className="flex items-center gap-2 cursor-pointer text-base font-semibold text-neutral-900 dark:text-neutral-100 list-none">
-                <ChevronDown className="h-4 w-4 text-neutral-400 transition-transform group-open:rotate-180" />
+                <ChevronDown className="h-4 w-4 text-neutral-400 transition-transform -rotate-90 group-open:rotate-0" />
                 <span>Environment Variables</span>
                 <div className="ml-auto flex items-center gap-2">
                   <button
@@ -1501,7 +1504,7 @@ export function PreviewConfigureClient({
       {/* Maintenance Script */}
       <details className="group" open={isMaintenanceSectionOpen} onToggle={(e) => setIsMaintenanceSectionOpen(e.currentTarget.open)}>
         <summary className="flex items-center gap-2 cursor-pointer list-none">
-          <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform group-open:rotate-180" />
+          <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform -rotate-90 group-open:rotate-0" />
           <StepBadge step={1} done={maintenanceDone} />
           <span className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100">Maintenance script</span>
         </summary>
@@ -1529,7 +1532,7 @@ export function PreviewConfigureClient({
       {/* Dev Script */}
       <details className="group" open={isDevSectionOpen} onToggle={(e) => setIsDevSectionOpen(e.currentTarget.open)}>
         <summary className="flex items-center gap-2 cursor-pointer list-none">
-          <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform group-open:rotate-180" />
+          <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform -rotate-90 group-open:rotate-0" />
           <StepBadge step={2} done={devDone} />
           <span className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100">Dev script</span>
         </summary>
@@ -1557,7 +1560,7 @@ export function PreviewConfigureClient({
       {/* Environment Variables */}
       <details className="group" open={isEnvSectionOpen} onToggle={(e) => setIsEnvSectionOpen(e.currentTarget.open)}>
         <summary className="flex items-center gap-2 cursor-pointer list-none">
-          <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform group-open:rotate-180" />
+          <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform -rotate-90 group-open:rotate-0" />
           <StepBadge step={3} done={envDone} />
           <span className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100">Environment variables</span>
           <button
@@ -1658,7 +1661,7 @@ export function PreviewConfigureClient({
       {/* Run Scripts */}
       <details className="group" open={isRunSectionOpen} onToggle={(e) => setIsRunSectionOpen(e.currentTarget.open)}>
         <summary className="flex items-center gap-2 cursor-pointer list-none">
-          <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform group-open:rotate-180" />
+          <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform -rotate-90 group-open:rotate-0" />
           <StepBadge step={4} done={runConfirmed} />
           <span className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100">Run scripts in VS Code terminal</span>
         </summary>
@@ -1695,7 +1698,7 @@ export function PreviewConfigureClient({
       {/* Browser Setup Info */}
       <details className="group" open={isBrowserSetupSectionOpen} onToggle={(e) => setIsBrowserSetupSectionOpen(e.currentTarget.open)}>
         <summary className="flex items-center gap-2 cursor-pointer list-none">
-          <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform group-open:rotate-180" />
+          <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform -rotate-90 group-open:rotate-0" />
           <StepBadge step={5} done={browserConfirmed} />
           <span className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100">Configure browser</span>
         </summary>
