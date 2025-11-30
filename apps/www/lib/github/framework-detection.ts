@@ -183,13 +183,16 @@ const FRAMEWORK_DEFINITIONS: FrameworkDefinition[] = [
   },
 ];
 
-export async function detectFrameworkPreset(repoFullName: string): Promise<FrameworkPreset> {
+export async function detectFrameworkPreset(
+  repoFullName: string,
+  accessToken?: string
+): Promise<FrameworkPreset> {
   const [owner, name] = repoFullName.split("/");
   if (!owner || !name) {
     return "other";
   }
 
-  const octokit = createGitHubClient(undefined, { useTokenRotation: true });
+  const octokit = createGitHubClient(accessToken, { useTokenRotation: true });
   const context = await buildDetectionContext(octokit, owner, name);
 
   const matches: FrameworkMatch[] = [];
