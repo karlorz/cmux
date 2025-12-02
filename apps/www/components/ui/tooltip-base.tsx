@@ -14,6 +14,7 @@ interface TooltipTriggerProps extends React.ComponentProps<typeof BaseTooltip.Tr
   delay?: number;
   closeDelay?: number;
   delayDuration?: number;
+  children?: React.ReactNode;
 }
 
 function TooltipTrigger({
