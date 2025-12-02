@@ -51,7 +51,7 @@ export default function OAuthCallbackPage() {
   }, []);
 
   return (
-    <div className="min-h-dvh bg-[#05050a] text-white flex items-center justify-center">
+    <div className="min-h-dvh bg-[#05050a] text-white flex items-center justify-center font-sans">
       <div className="flex flex-col items-center gap-4">
         <Loader2 className="h-8 w-8 animate-spin text-neutral-400" />
         <p className="text-sm text-neutral-400">

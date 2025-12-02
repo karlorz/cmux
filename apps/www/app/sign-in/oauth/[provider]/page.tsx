@@ -14,6 +14,13 @@ const VALID_PROVIDERS: OAuthProvider[] = [
   "google",
 ];
 
+const PROVIDER_DISPLAY_NAMES: Record<OAuthProvider, string> = {
+  github: "GitHub",
+  gitlab: "GitLab",
+  bitbucket: "Bitbucket",
+  google: "Google",
+};
+
 function isValidProvider(provider: string): provider is OAuthProvider {
   return VALID_PROVIDERS.includes(provider as OAuthProvider);
 }
@@ -72,11 +79,11 @@ export default function OAuthSignInPage() {
   }
 
   return (
-    <div className="min-h-dvh bg-[#05050a] text-white flex items-center justify-center">
+    <div className="min-h-dvh bg-[#05050a] text-white flex items-center justify-center font-sans">
       <div className="flex flex-col items-center gap-4">
         <Loader2 className="h-8 w-8 animate-spin text-neutral-400" />
         <p className="text-sm text-neutral-400">
-          Redirecting to {provider}...
+          Redirecting to {PROVIDER_DISPLAY_NAMES[provider]}...
         </p>
       </div>
     </div>
