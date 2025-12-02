@@ -384,7 +384,7 @@ export type SetupInstanceBody = {
     instanceId?: string;
     selectedRepos?: Array<string>;
     ttlSeconds?: number;
-    snapshotId?: string | ('snapshot_u00k1p82' | 'snapshot_8b1361wp' | 'snapshot_pcmfvjra');
+    snapshotId?: string | ('snapshot_75gexwe9' | 'snapshot_aammgkbb' | 'snapshot_pcmfvjra');
 };
 
 export type CreateEnvironmentResponse = {
@@ -649,7 +649,7 @@ export type PreviewConfig = {
     id: string;
     repoFullName: string;
     environmentId?: string | null;
-    repoInstallationId?: number | null;
+    repoInstallationId: number;
     repoDefaultBranch?: string | null;
     status: 'active' | 'paused' | 'disabled';
     lastRunAt?: number | null;
@@ -666,7 +666,7 @@ export type PreviewConfigMutationBody = {
     teamSlugOrId: string;
     repoFullName: string;
     environmentId?: string;
-    repoInstallationId?: number;
+    repoInstallationId: number;
     repoDefaultBranch?: string;
     status?: 'active' | 'paused' | 'disabled';
 };
