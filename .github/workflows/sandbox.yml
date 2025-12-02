@@ -54,6 +54,7 @@ jobs:
     name: Build Docker image (${{ matrix.platform }})
     runs-on: ${{ matrix.runner }}
     needs: rust-checks
+    environment: sandbox  # Required for self-hosted runner access
     # Only build Docker on main branch push or workflow_dispatch (not PRs)
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     permissions:
