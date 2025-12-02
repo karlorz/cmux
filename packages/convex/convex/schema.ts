@@ -568,7 +568,7 @@ const convexSchema = defineSchema({
     createdByUserId: v.string(),
     repoFullName: v.string(),
     repoProvider: v.optional(v.literal("github")),
-    repoInstallationId: v.optional(v.number()),
+    repoInstallationId: v.number(),
     repoDefaultBranch: v.optional(v.string()),
     environmentId: v.optional(v.id("environments")),
     status: v.optional(

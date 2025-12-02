@@ -391,14 +391,6 @@ async function main(): Promise<void> {
         process.exit(1);
       }
 
-      if (existingConfig.repoInstallationId === undefined) {
-        console.error(
-          `   ❌ Preview config for ${parsedPr.repoFullName} is missing repoInstallationId.\n` +
-            `      Please recreate the config via the web UI.`
-        );
-        process.exit(1);
-      }
-
       await client.mutation(api.previewConfigs.upsert, {
         teamSlugOrId: options.teamSlugOrId,
         repoFullName: parsedPr.repoFullName,
