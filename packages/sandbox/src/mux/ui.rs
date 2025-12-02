@@ -1145,28 +1145,25 @@ fn render_onboard_overlay(f: &mut Frame, app: &MuxApp) {
             f.render_widget(text, inner_area);
         }
         OnboardPhase::PromptDownload => {
-            let mut lines: Vec<Line<'_>> = Vec::new();
-
-            lines.push(Line::raw(""));
-            lines.push(Line::styled(
-                "The sandbox Docker image is not installed.",
-                Style::default().fg(Color::Yellow),
-            ));
-            lines.push(Line::raw(""));
-            lines.push(Line::from(vec![
-                Span::raw("Image: "),
-                Span::styled(&onboard.image_name, Style::default().fg(Color::Cyan)),
-            ]));
-            lines.push(Line::from(vec![
-                Span::raw("Size:  "),
-                Span::styled(onboard.format_size(), Style::default().fg(Color::Cyan)),
-            ]));
-            lines.push(Line::raw(""));
-            lines.push(Line::styled(
-                "Would you like to download it now?",
-                Style::default(),
-            ));
-            lines.push(Line::raw(""));
+            let mut lines: Vec<Line<'_>> = vec![
+                Line::raw(""),
+                Line::styled(
+                    "The sandbox Docker image is not installed.",
+                    Style::default().fg(Color::Yellow),
+                ),
+                Line::raw(""),
+                Line::from(vec![
+                    Span::raw("Image: "),
+                    Span::styled(&onboard.image_name, Style::default().fg(Color::Cyan)),
+                ]),
+                Line::from(vec![
+                    Span::raw("Size:  "),
+                    Span::styled(onboard.format_size(), Style::default().fg(Color::Cyan)),
+                ]),
+                Line::raw(""),
+                Line::styled("Would you like to download it now?", Style::default()),
+                Line::raw(""),
+            ];
 
             // Render buttons
             let download_style = if onboard.is_download_selected() {

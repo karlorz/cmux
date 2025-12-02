@@ -416,24 +416,37 @@ mod tests {
 
     #[test]
     fn test_format_size() {
-        let mut state = OnboardState::default();
-
-        state.image_size = Some(1_500_000_000);
+        let state = OnboardState {
+            image_size: Some(1_500_000_000),
+            ..Default::default()
+        };
         assert_eq!(state.format_size(), "1.5 GB");
 
-        state.image_size = Some(250_000_000);
+        let state = OnboardState {
+            image_size: Some(250_000_000),
+            ..Default::default()
+        };
         assert_eq!(state.format_size(), "250.0 MB");
 
-        state.image_size = Some(1_500_000);
+        let state = OnboardState {
+            image_size: Some(1_500_000),
+            ..Default::default()
+        };
         assert_eq!(state.format_size(), "1.5 MB");
 
-        state.image_size = Some(1_500);
+        let state = OnboardState {
+            image_size: Some(1_500),
+            ..Default::default()
+        };
         assert_eq!(state.format_size(), "1.5 KB");
 
-        state.image_size = Some(500);
+        let state = OnboardState {
+            image_size: Some(500),
+            ..Default::default()
+        };
         assert_eq!(state.format_size(), "500 bytes");
 
-        state.image_size = None;
+        let state = OnboardState::default();
         assert_eq!(state.format_size(), "Unknown size");
     }
 
