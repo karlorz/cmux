@@ -154,8 +154,9 @@ export default async function PreviewConfigurePage({ searchParams }: PageProps) 
 
   let initialEnvVarsContent: string | null = null;
   // Use detected scripts from package.json, can be overridden by environment
-  let initialMaintenanceScript: string | null = detectionResult.maintenanceScript || null;
-  let initialDevScript: string | null = detectionResult.devScript || null;
+  // Keep empty string if no dev script found (don't convert to null which would trigger preset fallback)
+  let initialMaintenanceScript: string | null = detectionResult.maintenanceScript;
+  let initialDevScript: string | null = detectionResult.devScript;
 
   if (environmentId) {
     try {
