@@ -63,10 +63,12 @@ export const Route = createFileRoute(
       ]);
       if (result) {
         const workspaceUrl = result.vscode?.workspaceUrl;
+        // Only use serve-web proxy for local workspaces, not Docker containers
+        const isLocalWorkspace = result.vscode?.provider === "other";
         await preloadTaskRunIframes([
           {
             url: workspaceUrl
-              ? toProxyWorkspaceUrl(workspaceUrl, localServeWeb.baseUrl)
+              ? toProxyWorkspaceUrl(workspaceUrl, isLocalWorkspace ? localServeWeb.baseUrl : null)
               : "",
             taskRunId: opts.params.runId,
           },
@@ -84,18 +86,20 @@ function VSCodeComponent() {
     id: taskRunId,
   });
 
+  // Only use serve-web proxy for local workspaces, not for Docker containers
+  const isLocalWorkspace = taskRun?.vscode?.provider === "other";
   const workspaceUrl = taskRun?.vscode?.workspaceUrl
     ? toProxyWorkspaceUrl(
         taskRun.vscode.workspaceUrl,
-        localServeWeb.data?.baseUrl
+        isLocalWorkspace ? localServeWeb.data?.baseUrl : null
       )
     : null;
-  const disablePreflight = taskRun?.vscode?.workspaceUrl
+  // enablePreflight is true for localhost URLs (Docker containers)
+  const enablePreflight = taskRun?.vscode?.workspaceUrl
     ? shouldUseServerIframePreflight(taskRun.vscode.workspaceUrl)
     : false;
   const persistKey = getTaskRunPersistKey(taskRunId);
   const hasWorkspace = workspaceUrl !== null;
-  const isLocalWorkspace = taskRun?.vscode?.provider === "other";
   const webviewActions = useWebviewActions({ persistKey });
 
   const [iframeStatus, setIframeStatus] =
@@ -172,7 +176,7 @@ function VSCodeComponent() {
               allow={TASK_RUN_IFRAME_ALLOW}
               retainOnUnmount
               suspended={!hasWorkspace}
-              preflight={!disablePreflight}
+              preflight={enablePreflight}
               onLoad={onLoad}
               onError={onError}
               fallback={loadingFallback}

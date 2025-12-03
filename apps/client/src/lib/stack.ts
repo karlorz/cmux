@@ -19,6 +19,9 @@ export const stackClientApp = new StackClientApp({
       };
     },
   },
+  oauthScopesOnSignIn: {
+    github: ["repo", "read:org", "user:email"],
+  },
 });
 
 convexQueryClient.convexClient.setAuth(
