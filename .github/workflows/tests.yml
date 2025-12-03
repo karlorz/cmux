@@ -32,6 +32,9 @@ jobs:
         with:
           node-version: 24
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Cache Bun install cache
         uses: actions/cache@v4
         with:
@@ -41,8 +44,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-bun-install-
 
+      - name: Cache Cargo registry + build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/server/native/core
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Build native-core addon
+        run: bun run build
+        working-directory: apps/server/native/core
 
       - name: Run tests
         env:

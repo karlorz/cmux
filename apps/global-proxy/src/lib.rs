@@ -710,7 +710,7 @@ async fn connect_upstream_websocket(
         error!(%err, "upstream websocket request error");
         text_response(
             StatusCode::BAD_GATEWAY,
-            "Failed to connect to websocket backend".into(),
+            "Failed to connect to websocket backend",
         )
     })?;
 
@@ -732,7 +732,7 @@ async fn connect_upstream_websocket(
             error!(%err, "upstream websocket upgrade failed");
             Err(text_response(
                 StatusCode::BAD_GATEWAY,
-                "Failed to upgrade websocket backend".into(),
+                "Failed to upgrade websocket backend",
             ))
         }
     }
@@ -807,10 +807,10 @@ async fn transform_response(response: Response<Body>, behavior: ProxyBehavior) -
                         } else if behavior.add_cors {
                             add_cors_headers(&mut new_headers);
                         }
-                        if let Some(frame_ancestors) = behavior.frame_ancestors {
-                            if let Ok(value) = HeaderValue::from_str(frame_ancestors) {
-                                new_headers.insert("content-security-policy", value);
-                            }
+                        if let Some(frame_ancestors) = behavior.frame_ancestors
+                            && let Ok(value) = HeaderValue::from_str(frame_ancestors)
+                        {
+                            new_headers.insert("content-security-policy", value);
                         }
                         new_headers.insert(
                             header::CONTENT_LENGTH,
@@ -857,10 +857,10 @@ fn forward_response_with_body(
     } else if behavior.add_cors {
         add_cors_headers(&mut new_headers);
     }
-    if let Some(frame_ancestors) = behavior.frame_ancestors {
-        if let Ok(value) = HeaderValue::from_str(frame_ancestors) {
-            new_headers.insert("content-security-policy", value);
-        }
+    if let Some(frame_ancestors) = behavior.frame_ancestors
+        && let Ok(value) = HeaderValue::from_str(frame_ancestors)
+    {
+        new_headers.insert("content-security-policy", value);
     }
     let headers_mut = builder.headers_mut().unwrap();
     for (name, value) in new_headers.iter() {
@@ -1029,10 +1029,10 @@ fn rewrite_html(
                     Ok(())
                 }),
                 element!("meta", |el| {
-                    if let Some(value) = el.get_attribute("http-equiv") {
-                        if value.eq_ignore_ascii_case("content-security-policy") {
-                            el.remove();
-                        }
+                    if let Some(value) = el.get_attribute("http-equiv")
+                        && value.eq_ignore_ascii_case("content-security-policy")
+                    {
+                        el.remove();
                     }
                     Ok(())
                 }),
@@ -1252,10 +1252,10 @@ fn extract_host(req: &Request<Body>) -> Option<String> {
 
 fn normalize_host(value: &str) -> String {
     let mut host = value.to_ascii_lowercase();
-    if let Some(idx) = host.rfind(':') {
-        if host[idx + 1..].chars().all(|c| c.is_ascii_digit()) {
-            host.truncate(idx);
-        }
+    if let Some(idx) = host.rfind(':')
+        && host[idx + 1..].chars().all(|c| c.is_ascii_digit())
+    {
+        host.truncate(idx);
     }
     host
 }

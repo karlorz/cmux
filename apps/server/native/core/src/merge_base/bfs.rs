@@ -68,7 +68,7 @@ pub fn merge_base_bfs(repo: &Repository, a: ObjectId, b: ObjectId) -> Option<Obj
         let next_from_a = qa.len() <= qb.len();
         let progressed = expand(
             next_from_a,
-            &repo,
+            repo,
             &mut qa,
             &mut qb,
             &mut dist_a,
@@ -76,7 +76,7 @@ pub fn merge_base_bfs(repo: &Repository, a: ObjectId, b: ObjectId) -> Option<Obj
             &mut best,
         ) || expand(
             !next_from_a,
-            &repo,
+            repo,
             &mut qa,
             &mut qb,
             &mut dist_a,

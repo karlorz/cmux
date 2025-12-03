@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use dirs_next::cache_dir;
 use std::sync::{Mutex, OnceLock};
-use std::{collections::HashMap, fs, path::PathBuf};
+use std::{collections::HashMap, fs, path::{Path, PathBuf}};
 
 use crate::util::run_git;
 
@@ -101,7 +101,7 @@ pub fn resolve_repo_url(repo_full_name: Option<&str>, repo_url: Option<&str>) ->
     Err(anyhow!("repoUrl or repoFullName required"))
 }
 
-fn load_index(root: &PathBuf) -> CacheIndex {
+fn load_index(root: &Path) -> CacheIndex {
     let idx_path = root.join("cache-index.json");
     if let Ok(data) = fs::read(&idx_path) {
         if let Ok(idx) = serde_json::from_slice::<CacheIndex>(&data) {
@@ -111,14 +111,14 @@ fn load_index(root: &PathBuf) -> CacheIndex {
     CacheIndex::default()
 }
 
-fn save_index(root: &PathBuf, idx: &CacheIndex) -> Result<()> {
+fn save_index(root: &Path, idx: &CacheIndex) -> Result<()> {
     let idx_path = root.join("cache-index.json");
     let data = serde_json::to_vec_pretty(idx)?;
     fs::write(idx_path, data)?;
     Ok(())
 }
 
-fn update_cache_index(root: &PathBuf, repo_path: &PathBuf) -> Result<()> {
+fn update_cache_index(root: &Path, repo_path: &Path) -> Result<()> {
     let mut idx = load_index(root);
     let slug = repo_path
         .file_name()
@@ -156,8 +156,8 @@ fn now_ms() -> u128 {
 }
 
 fn update_cache_index_with(
-    root: &PathBuf,
-    repo_path: &PathBuf,
+    root: &Path,
+    repo_path: &Path,
     last_fetch_ms: Option<u128>,
 ) -> Result<()> {
     let mut idx = load_index(root);
@@ -188,7 +188,7 @@ fn update_cache_index_with(
     Ok(())
 }
 
-fn get_cache_last_fetch(root: &PathBuf, repo_path: &PathBuf) -> Option<u128> {
+fn get_cache_last_fetch(root: &Path, repo_path: &Path) -> Option<u128> {
     let idx = load_index(root);
     let pstr = repo_path.to_string_lossy().to_string();
     idx.entries
@@ -203,12 +203,12 @@ fn swr_map() -> &'static Mutex<HashMap<String, u128>> {
     SWR_FETCH_MAP.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn get_map_last_fetch(repo_path: &PathBuf) -> Option<u128> {
+fn get_map_last_fetch(repo_path: &Path) -> Option<u128> {
     let pstr = repo_path.to_string_lossy().to_string();
     swr_map().lock().ok().and_then(|m| m.get(&pstr).copied())
 }
 
-fn set_map_last_fetch(repo_path: &PathBuf, t: u128) {
+fn set_map_last_fetch(repo_path: &Path, t: u128) {
     let pstr = repo_path.to_string_lossy().to_string();
     if let Ok(mut m) = swr_map().lock() {
         m.insert(pstr, t);

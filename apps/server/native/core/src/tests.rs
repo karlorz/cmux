@@ -276,15 +276,14 @@ fn ensure_merge_commit(base_repo: &Path, pr_number: u64, merge_sha: &str) -> boo
     {
         return true;
     }
-    if run_git(&repo_str, &["fetch", "origin", merge_sha]).is_ok() {
-        if run_git(
+    if run_git(&repo_str, &["fetch", "origin", merge_sha]).is_ok()
+        && run_git(
             &repo_str,
             &["cat-file", "-e", &format!("{merge_sha}^{{commit}}")],
         )
         .is_ok()
-        {
-            return true;
-        }
+    {
+        return true;
     }
     let merge_spec = format!(
         "refs/pull/{}/merge:refs/cmux-tests/merge/{}",
@@ -510,7 +509,7 @@ fn workspace_diff_unborn_head_uses_remote_default() {
     let origin_path = root.join("origin.git");
     fs::create_dir_all(&origin_path).unwrap();
     run(
-        &root,
+        root,
         &format!(
             "git init --bare {}",
             origin_path.file_name().unwrap().to_str().unwrap()
