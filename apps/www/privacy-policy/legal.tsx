@@ -213,7 +213,7 @@ export const PrivacyPolicyScreen = ({
           If you have any questions regarding this Privacy Policy or the
           practices of this Site, please contact us by sending an email to
           {contactEmail}. Last Updated: This Privacy Policy was last updated on{" "}
-          {lastUpdated}.{/* 11/27/2023. */}
+          {lastUpdated}.
         </Paragraph>
         <Paragraph>VIII. USE OF GOOGLE WORKSPACE APIS</Paragraph>
         <Paragraph>
