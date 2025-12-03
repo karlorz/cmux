@@ -128,21 +128,27 @@ export async function getClaudeEnvironment(
   );
 
   // Create the stop hook script in /root/lifecycle (outside git repo)
+  // IMPORTANT: We embed the taskRunId directly in the script because Claude Code hooks
+  // do NOT inherit parent process environment variables like CMUX_TASK_RUN_ID.
+  // The hook only has access to Claude-provided variables (CLAUDE_PROJECT_DIR, etc.)
   const stopHookScript = `#!/bin/bash
 # Claude Code stop hook for cmux task completion detection
 # This script is called when Claude Code finishes responding
+
+# Task run ID is embedded at script generation time (not from env var)
+TASK_RUN_ID="${ctx.taskRunId}"
 
 # Log to multiple places for debugging
 LOG_FILE="/root/lifecycle/claude-hook.log"
 
 echo "[CMUX Stop Hook] Script started at $(date)" >> "$LOG_FILE"
-echo "[CMUX Stop Hook] CMUX_TASK_RUN_ID=\${CMUX_TASK_RUN_ID}" >> "$LOG_FILE"
+echo "[CMUX Stop Hook] TASK_RUN_ID=$TASK_RUN_ID" >> "$LOG_FILE"
 echo "[CMUX Stop Hook] PWD=$(pwd)" >> "$LOG_FILE"
 echo "[CMUX Stop Hook] All env vars:" >> "$LOG_FILE"
 env | grep -E "(CMUX|CLAUDE|TASK)" >> "$LOG_FILE" 2>&1
 
 # Create a completion marker file that cmux can detect
-COMPLETION_MARKER="/root/lifecycle/claude-complete-\${CMUX_TASK_RUN_ID:-unknown}"
+COMPLETION_MARKER="/root/lifecycle/claude-complete-$TASK_RUN_ID"
 echo "$(date +%s)" > "$COMPLETION_MARKER"
 
 # Log success
@@ -150,7 +156,7 @@ echo "[CMUX Stop Hook] Created marker file: $COMPLETION_MARKER" >> "$LOG_FILE"
 ls -la "$COMPLETION_MARKER" >> "$LOG_FILE" 2>&1
 
 # Also log to stderr for visibility
-echo "[CMUX Stop Hook] Task completed for task run ID: \${CMUX_TASK_RUN_ID:-unknown}" >&2
+echo "[CMUX Stop Hook] Task completed for task run ID: $TASK_RUN_ID" >&2
 echo "[CMUX Stop Hook] Created marker file: $COMPLETION_MARKER" >&2
 
 # Always allow Claude to stop (don't block)
