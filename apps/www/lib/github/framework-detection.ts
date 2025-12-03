@@ -336,16 +336,64 @@ async function detectPackageManager(
     return null;
   }
 
-  // Slow path: parallel API checks when tree unavailable/truncated
-  const results = await Promise.all(
-    PACKAGE_MANAGER_LOCK_FILES.map(async ({ file, manager }) => {
-      const exists = await repoFileExists(octokit, owner, name, file);
-      return exists ? manager : null;
-    })
-  );
+  // Slow path: single GraphQL request to check all lock files
+  return detectPackageManagerViaGraphQL(octokit, owner, name);
+}
 
-  // Return first match (maintains priority order: bun > pnpm > yarn > npm)
-  return results.find((r): r is PackageManager => r !== null) ?? null;
+async function detectPackageManagerViaGraphQL(
+  octokit: ReturnType<typeof createGitHubClient>,
+  owner: string,
+  name: string
+): Promise<PackageManager | null> {
+  // Build aliases for each lock file: bunLockb, bunLock, pnpmLock, etc.
+  const aliasMap: Array<{ alias: string; file: string; manager: PackageManager }> =
+    PACKAGE_MANAGER_LOCK_FILES.map(({ file, manager }, i) => ({
+      alias: `file${i}`,
+      file,
+      manager,
+    }));
+
+  // Build GraphQL query with aliases
+  const objectQueries = aliasMap
+    .map(({ alias, file }) => `${alias}: object(expression: "HEAD:${file}") { oid }`)
+    .join("\n      ");
+
+  const query = `
+    query($owner: String!, $name: String!) {
+      repository(owner: $owner, name: $name) {
+        ${objectQueries}
+      }
+    }
+  `;
+
+  try {
+    const result = await octokit.graphql<{
+      repository: Record<string, { oid: string } | null> | null;
+    }>(query, { owner, name });
+
+    if (!result.repository) {
+      return null;
+    }
+
+    // Return first match in priority order
+    for (const { alias, manager } of aliasMap) {
+      if (result.repository[alias]?.oid) {
+        return manager;
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error("GraphQL lock file detection failed, falling back to REST", error);
+    // Fallback to parallel REST if GraphQL fails
+    const results = await Promise.all(
+      PACKAGE_MANAGER_LOCK_FILES.map(async ({ file, manager }) => {
+        const exists = await repoFileExists(octokit, owner, name, file);
+        return exists ? manager : null;
+      })
+    );
+    return results.find((r): r is PackageManager => r !== null) ?? null;
+  }
 }
 
 async function fetchRepoTree(
