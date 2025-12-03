@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { resolveTeamIdLoose } from "../_shared/team";
+import { getTeamId, resolveTeamIdLoose } from "../_shared/team";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery } from "./_generated/server";
@@ -301,7 +301,7 @@ export const getById = authQuery({
       return null;
     }
 
-    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
     const task = await ctx.db.get(args.id as Id<"tasks">);
     if (!task || task.teamId !== teamId) return null;
 
@@ -328,7 +328,7 @@ export const getById = authQuery({
 export const getVersions = authQuery({
   args: { teamSlugOrId: v.string(), taskId: v.id("tasks") },
   handler: async (ctx, args) => {
-    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
     return await ctx.db
       .query("taskVersions")
       .withIndex("by_task", (q) => q.eq("taskId", args.taskId))

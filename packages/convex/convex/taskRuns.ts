@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { SignJWT } from "jose";
 import { env } from "../_shared/convex-env";
-import { resolveTeamIdLoose } from "../_shared/team";
+import { getTeamId, resolveTeamIdLoose } from "../_shared/team";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
   internalMutation,
@@ -369,7 +369,7 @@ export const getByTask = authQuery({
       return [];
     }
 
-    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
     return await fetchTaskRunsForTask(
       ctx,
       teamId,
@@ -467,7 +467,7 @@ export const getRunDiffContext = authQuery({
     runId: v.id("taskRuns"),
   },
   handler: async (ctx, args) => {
-    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
 
     const [taskDoc, taskRuns] = await Promise.all([
       ctx.db.get(args.taskId),
@@ -591,7 +591,7 @@ export const updateSummary = authMutation({
 export const get = authQuery({
   args: { teamSlugOrId: v.string(), id: v.id("taskRuns") },
   handler: async (ctx, args) => {
-    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
     const doc = await ctx.db.get(args.id);
     if (!doc || doc.teamId !== teamId) {
       return null;
@@ -884,7 +884,7 @@ export const updateVSCodePorts = authMutation({
 export const getByContainerName = authQuery({
   args: { teamSlugOrId: v.string(), containerName: v.string() },
   handler: async (ctx, args) => {
-    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
     const run =
       (await ctx.db
         .query("taskRuns")
