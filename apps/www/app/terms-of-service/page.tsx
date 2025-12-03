@@ -1,4 +1,4 @@
-import { TermsOfServiceScreen } from "../privacy-policy/legal";
+import { TermsOfServiceScreen } from "@/app/privacy-policy/legal";
 
 export default function TermsOfServicePage() {
   return (

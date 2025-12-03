@@ -1,4 +1,4 @@
-import { EulaScreen } from "../privacy-policy/legal";
+import { EulaScreen } from "@/app/privacy-policy/legal";
 
 export default function EulaPage() {
   return (
