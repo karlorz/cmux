@@ -95,6 +95,7 @@
         "@tanstack/react-router-devtools": "^1.124.0",
         "@tanstack/react-router-with-query": "^1.129.8",
         "@tanstack/react-virtual": "^3.0.0",
+        "@vercel/related-projects": "^1.0.0",
         "@xterm/addon-attach": "^0.11.0",
         "@xterm/addon-fit": "^0.10.0",
         "@xterm/addon-search": "^0.15.0",
@@ -333,6 +334,7 @@
         "@t3-oss/env-core": "^0.13.8",
         "@tanstack/react-query": "^5.86.2",
         "@vercel/functions": "^1.4.0",
+        "@vercel/related-projects": "^1.0.0",
         "ai": "^5.0.82",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
@@ -2539,6 +2541,8 @@
     "@vercel/functions": ["@vercel/functions@1.6.0", "", { "peerDependencies": { "@aws-sdk/credential-provider-web-identity": "*" }, "optionalPeers": ["@aws-sdk/credential-provider-web-identity"] }, "sha512-R6FKQrYT5MZs5IE1SqeCJWxMuBdHawFcCZboKKw8p7s+6/mcd55Gx6tWmyKnQTyrSEA04NH73Tc9CbqpEle8RA=="],
 
     "@vercel/oidc": ["@vercel/oidc@3.0.3", "", {}, "sha512-yNEQvPcVrK9sIe637+I0jD6leluPxzwJKx/Haw6F4H77CdDsszUn5V3o96LPziXkSNE2B83+Z3mjqGKBK/R6Gg=="],
+
+    "@vercel/related-projects": ["@vercel/related-projects@1.0.0", "", { "optionalDependencies": { "ajv": "^6.12.3" } }, "sha512-wGk91hdzpQMMSTCE9q6q5caKWMse9OzH3IeeC83SBZ/ZprvjPSusgftYBrbkDehV0gytRd22MFzYFaSwbVYiDw=="],
 
     "@vitejs/plugin-react": ["@vitejs/plugin-react@4.7.0", "", { "dependencies": { "@babel/core": "^7.28.0", "@babel/plugin-transform-react-jsx-self": "^7.27.1", "@babel/plugin-transform-react-jsx-source": "^7.27.1", "@rolldown/pluginutils": "1.0.0-beta.27", "@types/babel__core": "^7.20.5", "react-refresh": "^0.17.0" }, "peerDependencies": { "vite": "^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0" } }, "sha512-gUu9hwfWvvEDBBmgtAowQCojwZmJ5mcLn3aufeCsitijs3+f2NsrPtlAWIR6OPiqljl96GVCUbLe0HyqIpVaoA=="],
 
