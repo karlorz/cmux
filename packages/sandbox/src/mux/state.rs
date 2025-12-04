@@ -14,6 +14,156 @@ use crate::mux::sidebar::Sidebar;
 use crate::mux::terminal::{SharedTerminalManager, TerminalRenderView};
 use uuid::Uuid;
 
+/// Result of ensuring SSH config is set up for sandboxes.
+enum SshConfigStatus {
+    AlreadyConfigured,
+    JustConfigured,
+    Failed(String),
+}
+
+/// Generates a dedicated passwordless SSH key for sandbox access.
+/// Returns the path to the private key, or an error message.
+fn ensure_sandbox_ssh_key(ssh_dir: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let key_path = ssh_dir.join("dmux_sandbox_key");
+    let pub_key_path = ssh_dir.join("dmux_sandbox_key.pub");
+
+    // If key already exists, return it
+    if key_path.exists() && pub_key_path.exists() {
+        return Ok(key_path);
+    }
+
+    // Generate a new ed25519 key without passphrase using ssh-keygen
+    let output = std::process::Command::new("ssh-keygen")
+        .args([
+            "-t",
+            "ed25519",
+            "-f",
+            key_path.to_str().unwrap_or(""),
+            "-N",
+            "", // Empty passphrase
+            "-C",
+            "dmux-sandbox-key",
+        ])
+        .output();
+
+    match output {
+        Ok(result) => {
+            if result.status.success() {
+                // Set proper permissions
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ =
+                        std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600));
+                    let _ = std::fs::set_permissions(
+                        &pub_key_path,
+                        std::fs::Permissions::from_mode(0o644),
+                    );
+                }
+                Ok(key_path)
+            } else {
+                Err(format!(
+                    "ssh-keygen failed: {}",
+                    String::from_utf8_lossy(&result.stderr)
+                ))
+            }
+        }
+        Err(e) => Err(format!("couldn't run ssh-keygen: {}", e)),
+    }
+}
+
+/// Ensures ~/.ssh/config has the sandbox-* host configuration.
+/// Also generates a dedicated passwordless SSH key for sandbox access.
+/// Returns the status of what happened.
+fn ensure_ssh_config_for_sandboxes() -> SshConfigStatus {
+    let home = match std::env::var("HOME") {
+        Ok(h) => h,
+        Err(_) => return SshConfigStatus::Failed("HOME not set".to_string()),
+    };
+
+    let ssh_dir = std::path::Path::new(&home).join(".ssh");
+    let config_path = ssh_dir.join("config");
+
+    // Check if config already has sandbox-* entry
+    if config_path.exists() {
+        match std::fs::read_to_string(&config_path) {
+            Ok(content) => {
+                if content.contains("Host sandbox-*") {
+                    // Config exists, but ensure the key exists too
+                    let _ = ensure_sandbox_ssh_key(&ssh_dir);
+                    return SshConfigStatus::AlreadyConfigured;
+                }
+            }
+            Err(e) => return SshConfigStatus::Failed(format!("couldn't read config: {}", e)),
+        }
+    }
+
+    // Ensure .ssh directory exists with proper permissions
+    if !ssh_dir.exists() {
+        if let Err(e) = std::fs::create_dir_all(&ssh_dir) {
+            return SshConfigStatus::Failed(format!("couldn't create .ssh: {}", e));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&ssh_dir, std::fs::Permissions::from_mode(0o700));
+        }
+    }
+
+    // Generate dedicated SSH key for sandboxes (passwordless)
+    let key_path = match ensure_sandbox_ssh_key(&ssh_dir) {
+        Ok(p) => p,
+        Err(e) => return SshConfigStatus::Failed(format!("couldn't create SSH key: {}", e)),
+    };
+
+    // Get the binary name (cmux or dmux) for ProxyCommand
+    let binary_name = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "dmux".to_string());
+
+    // Append the config with IdentityFile pointing to our passwordless key
+    let config_block = format!(
+        r#"
+# SSH config for {} sandboxes (auto-configured)
+Host sandbox-*
+    User root
+    IdentityFile {}
+    IdentitiesOnly yes
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+    LogLevel ERROR
+    ProxyCommand {} _ssh-proxy $(echo %n | sed 's/sandbox-//')
+"#,
+        binary_name,
+        key_path.display(),
+        binary_name
+    );
+
+    let mut file = match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&config_path)
+    {
+        Ok(f) => f,
+        Err(e) => return SshConfigStatus::Failed(format!("couldn't open config: {}", e)),
+    };
+
+    use std::io::Write;
+    if let Err(e) = file.write_all(config_block.as_bytes()) {
+        return SshConfigStatus::Failed(format!("couldn't write config: {}", e));
+    }
+
+    // Set proper permissions on config file
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&config_path, std::fs::Permissions::from_mode(0o600));
+    }
+
+    SshConfigStatus::JustConfigured
+}
+
 /// Which area of the UI has focus.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FocusArea {
@@ -761,6 +911,9 @@ impl<'a> MuxApp<'a> {
                     let ssh_host = format!("sandbox-{}", sandbox_id);
                     let remote_path = "/workspace";
 
+                    // Ensure SSH config is set up for sandbox-* hosts
+                    let config_status = ensure_ssh_config_for_sandboxes();
+
                     // Spawn VS Code with Remote-SSH extension
                     // Format: code --remote ssh-remote+<host> <path>
                     match std::process::Command::new("code")
@@ -768,10 +921,24 @@ impl<'a> MuxApp<'a> {
                         .spawn()
                     {
                         Ok(_) => {
-                            self.set_status(format!(
-                                "Opening VS Code to {}:{}",
-                                ssh_host, remote_path
-                            ));
+                            let msg = match config_status {
+                                SshConfigStatus::AlreadyConfigured => {
+                                    format!("Opening VS Code to {}:{}", ssh_host, remote_path)
+                                }
+                                SshConfigStatus::JustConfigured => {
+                                    format!(
+                                        "Configured SSH for sandbox-* hosts. Opening VS Code to {}:{}",
+                                        ssh_host, remote_path
+                                    )
+                                }
+                                SshConfigStatus::Failed(err) => {
+                                    format!(
+                                        "Warning: couldn't configure SSH ({}). Opening VS Code to {}:{}",
+                                        err, ssh_host, remote_path
+                                    )
+                                }
+                            };
+                            self.set_status(msg);
                         }
                         Err(e) => {
                             self.set_status(format!("Failed to open VS Code: {}", e));
