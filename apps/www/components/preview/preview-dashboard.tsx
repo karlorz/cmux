@@ -280,10 +280,100 @@ function MockGitHubPRBrowser() {
 
           {/* GitHub PR content - scrollable */}
           <div className="bg-[#0d1117] max-h-[550px] overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "#30363d #0d1117" }}>
-            <div className="px-6 py-4">
-              {/* Comment */}
+            <div className="px-6 py-4 space-y-4">
+              {/* Timeline: User opened PR */}
+              <div className="flex items-center gap-3 text-sm">
+                <div className="w-8 flex justify-center">
+                  <div className="w-8 h-8 rounded-full overflow-hidden">
+                    <Image
+                      src="https://avatars.githubusercontent.com/u/38676809?v=4"
+                      alt="austinywang"
+                      width={32}
+                      height={32}
+                      unoptimized
+                    />
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <span className="font-semibold text-[#e6edf3] hover:text-[#2f81f7] cursor-pointer">austinywang</span>
+                  <span className="text-[#7d8590]"> opened this pull request </span>
+                  <span className="text-[#7d8590]">yesterday</span>
+                </div>
+              </div>
+
+              {/* Timeline connector */}
+              <div className="flex">
+                <div className="w-8 flex justify-center">
+                  <div className="w-0.5 h-4 bg-[#30363d]" />
+                </div>
+              </div>
+
+              {/* User's PR description comment */}
               <div className="flex gap-3">
-                {/* Avatar */}
+                <div className="shrink-0 relative">
+                  <Image
+                    src="https://avatars.githubusercontent.com/u/38676809?v=4"
+                    alt="austinywang"
+                    width={40}
+                    height={40}
+                    className="rounded-full"
+                    unoptimized
+                  />
+                  {/* Timeline connector line */}
+                  <div className="absolute top-10 left-1/2 -translate-x-1/2 w-0.5 h-[calc(100%+16px)] bg-[#30363d]" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="rounded-md border border-[#30363d] overflow-hidden">
+                    <div className="flex items-center gap-2 px-4 py-2 bg-[#161b22] border-b border-[#30363d]">
+                      <span className="font-semibold text-sm text-[#e6edf3] hover:text-[#2f81f7] cursor-pointer">austinywang</span>
+                      <span className="text-sm text-[#7d8590]">commented yesterday</span>
+                      <span className="ml-auto px-1.5 py-0.5 rounded-md text-xs font-medium bg-[#388bfd26] text-[#2f81f7] border border-[#388bfd66]">
+                        Author
+                      </span>
+                    </div>
+                    <div className="p-4 bg-[#0d1117]">
+                      <h3 className="text-base font-semibold text-[#e6edf3] mb-2">Summary</h3>
+                      <p className="text-sm text-[#e6edf3] mb-3">
+                        This PR refactors the preview config component to be reusable in the step-by-step wizard flow. The same form components are now shared between the initial setup page and the sidebar wizard.
+                      </p>
+                      <h3 className="text-base font-semibold text-[#e6edf3] mb-2">Changes</h3>
+                      <ul className="text-sm text-[#e6edf3] list-disc list-inside space-y-1">
+                        <li>Extract shared form components</li>
+                        <li>Add collapsible sections for wizard steps</li>
+                        <li>Sync state between views</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Timeline: Commit */}
+              <div className="flex items-start gap-3 text-sm pt-2">
+                <div className="w-8 flex justify-center pt-0.5">
+                  <div className="w-6 h-6 rounded-full bg-[#21262d] border border-[#30363d] flex items-center justify-center">
+                    <svg className="h-3 w-3 text-[#7d8590]" viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M11.93 8.5a4.002 4.002 0 0 1-7.86 0H.75a.75.75 0 0 1 0-1.5h3.32a4.002 4.002 0 0 1 7.86 0h3.32a.75.75 0 0 1 0 1.5Zm-1.43-.75a2.5 2.5 0 1 0-5 0 2.5 2.5 0 0 0 5 0Z" />
+                    </svg>
+                  </div>
+                </div>
+                <div className="flex-1 pt-0.5">
+                  <span className="font-semibold text-[#e6edf3] hover:text-[#2f81f7] cursor-pointer">austinywang</span>
+                  <span className="text-[#7d8590]"> pushed a commit that referenced this pull request </span>
+                  <code className="px-1.5 py-0.5 rounded-md bg-[#6e768166] text-[#e6edf3] font-mono text-xs hover:text-[#2f81f7] cursor-pointer">
+                    ee59b00
+                  </code>
+                </div>
+              </div>
+
+              {/* Timeline connector */}
+              <div className="flex">
+                <div className="w-8 flex justify-center">
+                  <div className="w-0.5 h-4 bg-[#30363d]" />
+                </div>
+              </div>
+
+              {/* Bot comment */}
+              <div className="flex gap-3">
                 <div className="shrink-0">
                   <Image
                     src="https://avatars.githubusercontent.com/u/171392238?v=4"
@@ -295,10 +385,8 @@ function MockGitHubPRBrowser() {
                   />
                 </div>
 
-                {/* Comment box */}
                 <div className="flex-1 min-w-0">
                   <div className="rounded-md border border-[#30363d] overflow-hidden">
-                    {/* Comment header */}
                     <div className="flex items-center gap-2 px-4 py-2 bg-[#161b22] border-b border-[#30363d]">
                       <span className="font-semibold text-sm text-[#e6edf3] hover:text-[#2f81f7] cursor-pointer">cmux-agent</span>
                       <span className="px-1.5 py-0.5 rounded-md text-xs font-medium bg-[#6e40c926] text-[#a371f7] border border-[#6e40c966]">
@@ -307,14 +395,11 @@ function MockGitHubPRBrowser() {
                       <span className="text-sm text-[#7d8590]">commented yesterday</span>
                     </div>
 
-                    {/* Comment body - exact GitHub markdown rendering */}
                     <div className="p-4 bg-[#0d1117]">
-                      {/* H2 - Preview Screenshots */}
                       <h2 className="text-xl font-semibold text-[#e6edf3] pb-4 border-b border-[#30363d] mb-4">
                         Preview Screenshots
                       </h2>
 
-                      {/* Links */}
                       <p className="text-sm text-[#e6edf3] mb-4">
                         <span className="text-[#2f81f7] hover:underline cursor-pointer">Open Workspace (1 hr expiry)</span>
                         <span className="text-[#7d8590]"> · </span>
@@ -323,7 +408,6 @@ function MockGitHubPRBrowser() {
                         <span className="text-[#2f81f7] hover:underline cursor-pointer">Open Diff Heatmap</span>
                       </p>
 
-                      {/* Screenshot count */}
                       <p className="text-sm text-[#e6edf3] mb-6">
                         Captured {MOCK_SCREENSHOTS.length} screenshots for commit{" "}
                         <code className="px-1.5 py-0.5 rounded-md bg-[#6e768166] text-[#e6edf3] font-mono text-xs">
@@ -332,15 +416,12 @@ function MockGitHubPRBrowser() {
                         (2025-12-03 06:56:40.263 UTC).
                       </p>
 
-                      {/* Screenshots */}
                       <div className="space-y-6">
                         {MOCK_SCREENSHOTS.map((screenshot) => (
                           <div key={screenshot.id}>
-                            {/* Bold caption */}
                             <p className="text-sm text-[#e6edf3] mb-2">
                               <strong>{screenshot.caption}</strong>
                             </p>
-                            {/* Image */}
                             <button
                               onClick={() => setExpandedImage(expandedImage === screenshot.id ? null : screenshot.id)}
                               className="block rounded-md border border-[#30363d] overflow-hidden hover:border-[#8b949e] transition-colors"
@@ -363,10 +444,8 @@ function MockGitHubPRBrowser() {
                         ))}
                       </div>
 
-                      {/* Horizontal rule */}
                       <hr className="border-[#30363d] my-6" />
 
-                      {/* Footer */}
                       <p className="text-sm text-[#7d8590] italic">
                         Generated by{" "}
                         <span className="text-[#2f81f7] hover:underline cursor-pointer">cmux</span>{" "}
@@ -375,7 +454,6 @@ function MockGitHubPRBrowser() {
                     </div>
                   </div>
 
-                  {/* Reactions */}
                   <div className="flex items-center gap-1 mt-2">
                     <button className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[#30363d] bg-[#21262d] text-xs hover:bg-[#30363d] transition-colors">
                       <span>+1</span>
