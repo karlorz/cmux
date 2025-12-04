@@ -34,11 +34,7 @@ interface RFBInstance {
   compressionLevel: number;
   readonly capabilities: { power?: boolean };
   disconnect(): void;
-  sendCredentials(credentials: {
-    username?: string;
-    password?: string;
-    target?: string;
-  }): void;
+  sendCredentials(credentials: { username?: string; password?: string; target?: string }): void;
   sendKey(keysym: number, code: string | null, down?: boolean): void;
   sendCtrlAltDel(): void;
   focus(options?: FocusOptions): void;
@@ -48,18 +44,11 @@ interface RFBInstance {
   machineReboot(): void;
   machineReset(): void;
   addEventListener(type: string, listener: (event: CustomEvent) => void): void;
-  removeEventListener(
-    type: string,
-    listener: (event: CustomEvent) => void
-  ): void;
+  removeEventListener(type: string, listener: (event: CustomEvent) => void): void;
 }
 
 interface RFBConstructor {
-  new (
-    target: HTMLElement,
-    urlOrChannel: string | WebSocket,
-    options?: RFBOptions
-  ): RFBInstance;
+  new (target: HTMLElement, urlOrChannel: string | WebSocket, options?: RFBOptions): RFBInstance;
 }
 
 // Dynamically import RFB to avoid top-level await issues with noVNC
@@ -137,10 +126,7 @@ export interface VncViewerProps {
   /** Called when desktop name is received */
   onDesktopName?: (rfb: RFBInstance, name: string) => void;
   /** Called when capabilities are received */
-  onCapabilities?: (
-    rfb: RFBInstance,
-    capabilities: Record<string, boolean>
-  ) => void;
+  onCapabilities?: (rfb: RFBInstance, capabilities: Record<string, boolean>) => void;
 }
 
 export interface VncViewerHandle {
@@ -213,6 +199,8 @@ export const VncViewer = forwardRef<VncViewerHandle, VncViewerProps>(
     },
     ref
   ) {
+    console.log("[VncViewer] Component rendering, url:", url);
+
     const containerRef = useRef<HTMLDivElement>(null);
     const rfbRef = useRef<RFBInstance | null>(null);
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -458,58 +446,171 @@ export const VncViewer = forwardRef<VncViewerHandle, VncViewerProps>(
       updateStatus("disconnected");
     }, [clearReconnectTimer, updateStatus]);
 
-    // Clipboard paste handler
+    // Clipboard paste handler - types text directly via sendKey()
+    // This is more reliable than clipboard sync + Ctrl+V because:
+    // 1. Doesn't depend on VNC clipboard protocol timing
+    // 2. Works with any application that accepts keyboard input
+    // 3. Avoids issues with different paste shortcuts (Ctrl+V vs Ctrl+Shift+V vs Shift+Insert)
     const clipboardPaste = useCallback((text: string) => {
-      if (rfbRef.current) {
+      const rfb = rfbRef.current;
+      if (!rfb) return;
+
+      // Delay slightly to ensure the intercepted keydown event is fully processed
+      // This prevents race conditions with browser event handling
+      setTimeout(() => {
         try {
-          rfbRef.current.clipboardPasteFrom(text);
+          // Also sync clipboard for apps that might check it (e.g., for Ctrl+V later)
+          rfb.clipboardPasteFrom(text);
+
+          // X11 keysyms
+          const XK_Shift_L = 0xffe1;
+          const XK_Return = 0xff0d;
+          const XK_Tab = 0xff09;
+          const XK_BackSpace = 0xff08;
+
+          // Map shifted characters to their base key (US keyboard layout)
+          const shiftMap: Record<string, string> = {
+            "~": "`", "!": "1", "@": "2", "#": "3", "$": "4", "%": "5", "^": "6",
+            "&": "7", "*": "8", "(": "9", ")": "0", "_": "-", "+": "=",
+            "{": "[", "}": "]", "|": "\\", ":": ";", '"': "'", "<": ",", ">": ".", "?": "/",
+          };
+
+          console.log(`[VncViewer] Typing ${text.length} characters...`);
+
+          // Type each character
+          for (const char of text) {
+            let keysym: number;
+            let needsShift = false;
+
+            if (char === "\n" || char === "\r") {
+              keysym = XK_Return;
+            } else if (char === "\t") {
+              keysym = XK_Tab;
+            } else if (char === "\b") {
+              keysym = XK_BackSpace;
+            } else if (char >= "A" && char <= "Z") {
+              // Uppercase letter
+              keysym = char.toLowerCase().charCodeAt(0);
+              needsShift = true;
+            } else if (shiftMap[char]) {
+              // Shifted symbol
+              keysym = shiftMap[char].charCodeAt(0);
+              needsShift = true;
+            } else {
+              const code = char.charCodeAt(0);
+              if (code >= 0x20 && code <= 0x7e) {
+                // Printable ASCII
+                keysym = code;
+              } else if (code > 0x7f) {
+                // Unicode - use X11 Unicode keysym format
+                keysym = 0x01000000 + code;
+              } else {
+                // Skip non-printable control characters
+                continue;
+              }
+            }
+
+            // Send the key with shift if needed
+            if (needsShift) {
+              rfb.sendKey(XK_Shift_L, null, true);
+            }
+            rfb.sendKey(keysym, null, true);
+            rfb.sendKey(keysym, null, false);
+            if (needsShift) {
+              rfb.sendKey(XK_Shift_L, null, false);
+            }
+          }
+
+          console.log("[VncViewer] Paste complete");
         } catch (e) {
           console.error("[VncViewer] Error pasting to clipboard:", e);
         }
-      }
+      }, 50);
     }, []);
 
-    // Handle Cmd+V / Ctrl+V paste via paste event
-    const handlePaste = useCallback(
-      (e: ClipboardEvent) => {
-        if (!rfbRef.current || viewOnly) return;
+    // Intercept Cmd+V/Ctrl+V using capture-phase keydown + Clipboard API
+    // This fires before noVNC's handlers and works in both web and Electron
+    useEffect(() => {
+      const container = containerRef.current;
+      if (!container) return;
 
-        // Get clipboard text
-        const text = e.clipboardData?.getData("text");
-        if (text) {
-          e.preventDefault();
-          clipboardPaste(text);
+      let pendingPaste: string | null = null;
+
+      const handleKeyDown = async (e: KeyboardEvent) => {
+        // Detect paste shortcut: Cmd+V on Mac, Ctrl+V elsewhere
+        const isMac = /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent);
+        const isPasteShortcut =
+          e.key.toLowerCase() === "v" &&
+          (isMac ? e.metaKey : e.ctrlKey) &&
+          !e.altKey &&
+          !e.shiftKey;
+
+        if (!isPasteShortcut) return;
+        if (!rfbRef.current) return;
+
+        // Prevent noVNC from sending raw Meta+V to the server
+        e.preventDefault();
+        e.stopPropagation();
+
+        try {
+          const text = await navigator.clipboard.readText();
+          if (text) {
+            console.log("[VncViewer] Cmd+V intercepted, waiting for modifier release...");
+            // Store the text and wait for modifier keys to be released
+            // This prevents browser from interpreting our typed chars as shortcuts
+            pendingPaste = text;
+          }
+        } catch (err) {
+          console.error("[VncViewer] Clipboard read failed:", err);
         }
-      },
-      [clipboardPaste, viewOnly]
-    );
+      };
 
-    // Handle keyboard shortcut for paste (Cmd+V / Ctrl+V)
-    const handleKeyDown = useCallback(
-      (e: KeyboardEvent) => {
-        if (!rfbRef.current || viewOnly) return;
+      const handleKeyUp = (e: KeyboardEvent) => {
+        // When modifier key is released and we have pending paste, execute it
+        if (pendingPaste && (e.key === "Meta" || e.key === "Control")) {
+          console.log("[VncViewer] Modifier released, executing paste");
+          const text = pendingPaste;
+          pendingPaste = null;
+          // Small additional delay to ensure browser state is clean
+          setTimeout(() => clipboardPaste(text), 10);
+        }
+      };
 
-        // Check for Cmd+V (Mac) or Ctrl+V (Windows/Linux)
-        if ((e.metaKey || e.ctrlKey) && e.key === "v") {
+      // Capture phase ensures we intercept before noVNC's bubble-phase handlers
+      container.addEventListener("keydown", handleKeyDown, { capture: true });
+      container.addEventListener("keyup", handleKeyUp, { capture: true });
+      return () => {
+        container.removeEventListener("keydown", handleKeyDown, { capture: true });
+        container.removeEventListener("keyup", handleKeyUp, { capture: true });
+      };
+    }, [clipboardPaste]);
+
+    // Fallback: Document-level paste event listener
+    // Handles cases where keydown might not fire (e.g., Electron menu triggers paste)
+    useEffect(() => {
+      const container = containerRef.current;
+      if (!container) return;
+
+      const handleDocumentPaste = (e: ClipboardEvent) => {
+        // Only handle if VNC container has focus
+        if (!container.contains(document.activeElement)) return;
+        if (!rfbRef.current) return;
+
+        const text =
+          e.clipboardData?.getData("text/plain") ||
+          e.clipboardData?.getData("text");
+        if (text) {
+          console.log("[VncViewer] Document paste event intercepted");
           e.preventDefault();
           e.stopPropagation();
-
-          // Use async clipboard API
-          navigator.clipboard
-            .readText()
-            .then((text) => {
-              if (text) {
-                clipboardPaste(text);
-              }
-            })
-            .catch((err) => {
-              // Clipboard API might fail due to permissions
-              console.warn("[VncViewer] Could not read clipboard:", err);
-            });
+          clipboardPaste(text);
         }
-      },
-      [clipboardPaste, viewOnly]
-    );
+      };
+
+      // Capture phase to intercept before other handlers
+      document.addEventListener("paste", handleDocumentPaste, { capture: true });
+      return () => document.removeEventListener("paste", handleDocumentPaste, { capture: true });
+    }, [clipboardPaste]);
 
     // Focus the canvas
     const focus = useCallback(() => {
@@ -585,22 +686,6 @@ export const VncViewer = forwardRef<VncViewerHandle, VncViewerProps>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [url]);
 
-    // Add paste event listeners
-    useEffect(() => {
-      const container = containerRef.current;
-      if (!container) return;
-
-      container.addEventListener("paste", handlePaste as EventListener);
-      container.addEventListener("keydown", handleKeyDown as EventListener);
-
-      return () => {
-        container.removeEventListener("paste", handlePaste as EventListener);
-        container.removeEventListener(
-          "keydown",
-          handleKeyDown as EventListener
-        );
-      };
-    }, [handlePaste, handleKeyDown]);
 
     // Handle container click for focus
     const handleContainerClick = useCallback(() => {
@@ -651,11 +736,17 @@ export const VncViewer = forwardRef<VncViewerHandle, VncViewerProps>(
       [connect]
     );
 
+    // Prevent Electron's context menu so noVNC can handle right-clicks
+    const handleContextMenu = useCallback((e: React.MouseEvent) => {
+      e.preventDefault();
+    }, []);
+
     return (
       <div
         className={clsx("relative overflow-hidden", className)}
         style={{ background, ...style }}
         onClick={handleContainerClick}
+        onContextMenu={handleContextMenu}
       >
         {/* VNC Canvas Container */}
         <div
