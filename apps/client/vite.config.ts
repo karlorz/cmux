@@ -5,18 +5,24 @@ import { defineConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 
+import { relatedProjects } from "@vercel/related-projects";
+
+console.log("got related projects", relatedProjects());
+
 // Ensure all env is loaded
 await import("./src/client-env.ts");
 
-const SentryVitePlugin = process.env.SENTRY_AUTH_TOKEN ?  sentryVitePlugin({
-  org: "manaflow",
-  project: "cmux-client-web",
-  authToken: process.env.SENTRY_AUTH_TOKEN,
-  sourcemaps: {
-    filesToDeleteAfterUpload: ["**/*.map"],
-  },
-  telemetry: false
-}) : undefined;
+const SentryVitePlugin = process.env.SENTRY_AUTH_TOKEN
+  ? sentryVitePlugin({
+      org: "manaflow",
+      project: "cmux-client-web",
+      authToken: process.env.SENTRY_AUTH_TOKEN,
+      sourcemaps: {
+        filesToDeleteAfterUpload: ["**/*.map"],
+      },
+      telemetry: false,
+    })
+  : undefined;
 
 // https://vite.dev/config/
 export default defineConfig({
