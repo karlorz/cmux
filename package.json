@@ -64,6 +64,7 @@
     "scripts"
   ],
   "dependencies": {
+    "@novnc/novnc": "1.7.0-beta",
     "@sentry/browser": "10.27.0",
     "@sentry/core": "10.27.0",
     "@sentry/electron": "7.3.0",
