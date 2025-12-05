@@ -820,7 +820,11 @@ function TaskTreeInner({
               params={{ teamSlugOrId, taskId: task._id }}
               search={{ runId: undefined }}
               activeOptions={{ exact: true }}
-              className="group block"
+              className={clsx(
+                "group block",
+                // For local workspaces, manually add active class since we navigate to VSCode sub-route
+                localWorkspaceRunWithVscode && isTaskSelected && "active"
+              )}
               data-focus-visible={isTaskLinkFocusVisible ? "true" : undefined}
               onMouseEnter={handlePrefetch}
               onFocus={handleTaskLinkFocus}
