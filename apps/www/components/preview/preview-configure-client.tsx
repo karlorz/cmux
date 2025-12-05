@@ -544,9 +544,13 @@ export function PreviewConfigureClient({
   }, [resolvedTeamSlugOrId]);
 
   // WebSocket URL for direct VNC connection via noVNC/RFB
+  // Prefer server-provided vncUrl (for non-Morph providers), fall back to derived
   const resolvedVncWebsocketUrl = useMemo(() => {
+    if (instance?.vncUrl) {
+      return instance.vncUrl;
+    }
     return deriveVncWebsocketUrl(instance?.instanceId, instance?.vscodeUrl);
-  }, [instance?.instanceId, instance?.vscodeUrl]);
+  }, [instance?.vncUrl, instance?.instanceId, instance?.vscodeUrl]);
 
   // VNC connection status for the browser panel (may be used for UI indicators in the future)
   const [_vncStatus, setVncStatus] = useState<VncConnectionStatus>("disconnected");
