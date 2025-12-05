@@ -143,6 +143,30 @@ function deriveVncUrl(
 }
 
 /**
+ * Convert a VNC iframe URL (https://hostname/vnc.html) to websocket URL (wss://hostname/websockify).
+ * This handles the case where the server returns a vnc.html URL that needs to be converted
+ * to a websockify endpoint for direct noVNC/RFB connection.
+ */
+function convertVncUrlToWebsocket(vncUrl: string): string | null {
+  try {
+    const url = new URL(vncUrl);
+    // Already a websocket URL
+    if (url.protocol === "ws:" || url.protocol === "wss:") {
+      // Ensure it points to /websockify
+      if (!url.pathname.includes("websockify")) {
+        url.pathname = "/websockify";
+      }
+      return url.toString();
+    }
+    // Convert http/https to ws/wss
+    const wsProtocol = url.protocol === "https:" ? "wss:" : "ws:";
+    return `${wsProtocol}//${url.host}/websockify`;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Derive the VNC websocket URL for direct noVNC/RFB connection.
  * Returns a wss:// URL pointing to the /websockify endpoint.
  */
@@ -544,10 +568,11 @@ export function PreviewConfigureClient({
   }, [resolvedTeamSlugOrId]);
 
   // WebSocket URL for direct VNC connection via noVNC/RFB
-  // Prefer server-provided vncUrl (for non-Morph providers), fall back to derived
+  // Prefer server-provided vncUrl (converted to websocket), fall back to derived
   const resolvedVncWebsocketUrl = useMemo(() => {
     if (instance?.vncUrl) {
-      return instance.vncUrl;
+      // Convert iframe URL (https://host/vnc.html) to websocket URL (wss://host/websockify)
+      return convertVncUrlToWebsocket(instance.vncUrl);
     }
     return deriveVncWebsocketUrl(instance?.instanceId, instance?.vscodeUrl);
   }, [instance?.vncUrl, instance?.instanceId, instance?.vscodeUrl]);
