@@ -392,7 +392,7 @@ export type SetupInstanceBody = {
     instanceId?: string;
     selectedRepos?: Array<string>;
     ttlSeconds?: number;
-    snapshotId?: string | ('snapshot_mpzw0j37' | 'snapshot_u6orf3jx' | 'snapshot_pcmfvjra');
+    snapshotId?: string | ('snapshot_st54kpzd' | 'snapshot_6isj88bc' | 'snapshot_pcmfvjra');
 };
 
 export type CreateEnvironmentResponse = {
@@ -499,6 +499,7 @@ export type StartSandboxResponse = {
     vscodeUrl: string;
     workerUrl: string;
     provider?: 'morph';
+    vscodePersisted?: boolean;
 };
 
 export type StartSandboxBody = {
