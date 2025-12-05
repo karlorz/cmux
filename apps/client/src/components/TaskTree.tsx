@@ -14,6 +14,11 @@ import { useOpenWithActions } from "@/hooks/useOpenWithActions";
 import { useTaskRename } from "@/hooks/useTaskRename";
 import { isElectron } from "@/lib/electron";
 import { isFakeConvexId } from "@/lib/fakeConvexId";
+import {
+  getTaskRunPersistKey,
+  getTaskRunBrowserPersistKey,
+} from "@/lib/persistent-webview-keys";
+import { persistentIframeManager } from "@/lib/persistentIframeManager";
 import type { AnnotatedTaskRun, TaskRunWithChildren } from "@/types/task";
 import { ContextMenu } from "@base-ui-components/react/context-menu";
 import { api } from "@cmux/convex/api";
@@ -178,7 +183,9 @@ function SidebarArchiveOverlay({
         </TooltipTrigger>
         <TooltipContent side="right">{label}</TooltipContent>
       </Tooltip>
-      {icon ? <div className="flex items-center justify-center">{icon}</div> : null}
+      {icon ? (
+        <div className="flex items-center justify-center">{icon}</div>
+      ) : null}
     </div>
   );
 }
@@ -404,9 +411,11 @@ function TaskTreeInner({
       return null;
     }
     // Find the first active run with a running VSCode instance
-    return activeRunsFlat.find(
-      (run) => run.vscode?.status === "running" && run.vscode?.url
-    ) ?? null;
+    return (
+      activeRunsFlat.find(
+        (run) => run.vscode?.status === "running" && run.vscode?.url
+      ) ?? null
+    );
   }, [task.isLocalWorkspace, activeRunsFlat]);
 
   const runMenuEntries = useMemo(
@@ -1696,6 +1705,7 @@ interface TaskRunDetailLinkProps {
   className?: string;
   onClick?: (event: MouseEvent<HTMLAnchorElement>) => void;
   trailing?: ReactNode;
+  onReload?: () => void;
 }
 
 function TaskRunDetailLink({
@@ -1707,8 +1717,9 @@ function TaskRunDetailLink({
   className,
   onClick,
   trailing,
+  onReload,
 }: TaskRunDetailLinkProps) {
-  return (
+  const linkElement = (
     <Link
       to={to}
       params={params}
@@ -1730,6 +1741,29 @@ function TaskRunDetailLink({
         <span className="flex shrink-0 items-center">{trailing}</span>
       ) : null}
     </Link>
+  );
+
+  if (!onReload) {
+    return linkElement;
+  }
+
+  return (
+    <ContextMenu.Root>
+      <ContextMenu.Trigger>{linkElement}</ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Positioner className="outline-none z-[var(--z-context-menu)]">
+          <ContextMenu.Popup className="origin-[var(--transform-origin)] rounded-md bg-white dark:bg-neutral-800 py-1 text-neutral-900 dark:text-neutral-100 shadow-lg shadow-gray-200 outline-1 outline-neutral-200 transition-[opacity] data-[ending-style]:opacity-0 dark:shadow-none dark:-outline-offset-1 dark:outline-neutral-700">
+            <ContextMenu.Item
+              className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+              onClick={onReload}
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+              <span>Reload</span>
+            </ContextMenu.Item>
+          </ContextMenu.Popup>
+        </ContextMenu.Positioner>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
   );
 }
 
@@ -1961,6 +1995,18 @@ function TaskRunDetails({
     ]
   );
 
+  const handleReloadVSCode = useCallback(() => {
+    persistentIframeManager.reloadIframe(getTaskRunPersistKey(run._id));
+  }, [run._id]);
+
+  const handleReloadBrowser = useCallback(() => {
+    persistentIframeManager.reloadIframe(getTaskRunBrowserPersistKey(run._id));
+  }, [run._id]);
+
+  const handleReloadTerminals = useCallback(() => {
+    window.location.reload();
+  }, []);
+
   if (!isExpanded) {
     return null;
   }
@@ -2039,6 +2085,7 @@ function TaskRunDetails({
         label="VS Code"
         indentLevel={indentLevel}
         trailing={vscodeTrailing}
+        onReload={handleReloadVSCode}
       />
 
       {/* Git diff - always show for all workspaces */}
@@ -2059,6 +2106,7 @@ function TaskRunDetails({
           label="Browser"
           indentLevel={indentLevel}
           trailing={statusIndicator}
+          onReload={handleReloadBrowser}
         />
       ) : null}
 
@@ -2071,6 +2119,7 @@ function TaskRunDetails({
           label="Terminals"
           indentLevel={indentLevel}
           trailing={statusIndicator}
+          onReload={handleReloadTerminals}
         />
       ) : null}
 
