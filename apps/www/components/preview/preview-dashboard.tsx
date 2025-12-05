@@ -397,6 +397,10 @@ function MockGitHubPRBrowser() {
   // State for terminal input
   const [terminalInput, setTerminalInput] = useState<string>("");
 
+  // State for reactions
+  const [thumbsUpActive, setThumbsUpActive] = useState(false);
+  const [rocketActive, setRocketActive] = useState(false);
+
   // Toggle expand/collapse for a task (only collapses, doesn't select)
   const toggleTaskExpanded = useCallback((taskId: string) => {
     setExpandedTasks(prev => {
@@ -604,9 +608,9 @@ function MockGitHubPRBrowser() {
               <svg className="h-4 w-4 text-[#7d8590]" viewBox="0 0 16 16" fill="currentColor">
                 <path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z" />
               </svg>
-              <span className="text-[#e6edf3] font-semibold">manaflow-ai</span>
+              <a href="https://www.ycombinator.com/companies/manaflow" target="_blank" rel="noopener noreferrer" className="text-[#e6edf3] font-semibold hover:underline cursor-pointer">manaflow-ai</a>
               <span className="text-[#7d8590]">/</span>
-              <span className="text-[#2f81f7] font-semibold hover:underline cursor-pointer">cmux</span>
+              <a href="https://github.com/manaflow-ai/cmux" target="_blank" rel="noopener noreferrer" className="text-[#2f81f7] font-semibold hover:underline cursor-pointer">cmux</a>
             </div>
           </div>
 
@@ -626,7 +630,7 @@ function MockGitHubPRBrowser() {
                 Merged
               </span>
               <span className="text-sm text-[#7d8590]">
-                <span className="text-[#e6edf3] font-medium hover:text-[#2f81f7] cursor-pointer">austinywang</span>
+                <a href="https://x.com/austinywang" target="_blank" rel="noopener noreferrer" className="text-[#e6edf3] font-medium hover:text-[#2f81f7] cursor-pointer">austinywang</a>
                 {" merged 14 commits into "}
                 <span className="px-1.5 py-0.5 rounded-md bg-[#388bfd26] text-[#2f81f7] text-xs font-mono">main</span>
                 {" from "}
@@ -722,7 +726,7 @@ function MockGitHubPRBrowser() {
                   <div className="flex-1 min-w-0">
                     <div className="rounded-md border border-[#30363d] overflow-hidden">
                       <div className="flex items-center gap-2 px-4 py-2 bg-[#161b22] border-b border-[#30363d]">
-                        <span className="font-semibold text-sm text-[#e6edf3] hover:text-[#2f81f7] cursor-pointer">austinywang</span>
+                        <a href="https://x.com/austinywang" target="_blank" rel="noopener noreferrer" className="font-semibold text-sm text-[#e6edf3] hover:text-[#2f81f7] cursor-pointer">austinywang</a>
                         <span className="text-sm text-[#7d8590]">opened this pull request yesterday</span>
                         <span className="ml-auto px-1.5 py-0.5 rounded-md text-xs font-medium bg-[#388bfd26] text-[#2f81f7] border border-[#388bfd66]">
                           Author
@@ -760,7 +764,7 @@ function MockGitHubPRBrowser() {
                   <div className="flex-1 min-w-0">
                     <div className="rounded-md border border-[#30363d] overflow-hidden">
                       <div className="flex items-center gap-2 px-4 py-2 bg-[#161b22] border-b border-[#30363d]">
-                        <span className="font-semibold text-sm text-[#e6edf3] hover:text-[#2f81f7] cursor-pointer">cmux-agent</span>
+                        <button onClick={() => setActiveTab("workspace")} className="font-semibold text-sm text-[#e6edf3] hover:text-[#2f81f7] cursor-pointer">cmux-agent</button>
                         <span className="px-1.5 py-0.5 rounded-md text-xs font-medium bg-[#6e40c926] text-[#a371f7] border border-[#6e40c966]">
                           bot
                         </span>
@@ -773,11 +777,11 @@ function MockGitHubPRBrowser() {
                         </h2>
 
                         <p className="text-sm text-[#e6edf3] mb-4">
-                          <span className="text-[#2f81f7] hover:underline cursor-pointer">Open Workspace (1 hr expiry)</span>
+                          <button onClick={() => { setActiveTab("workspace"); setViewMode("all"); }} className="text-[#2f81f7] hover:underline cursor-pointer">Open Workspace (1 hr expiry)</button>
                           <span className="text-[#7d8590]"> · </span>
-                          <span className="text-[#2f81f7] hover:underline cursor-pointer">Open Dev Browser (1 hr expiry)</span>
+                          <button onClick={() => { setActiveTab("workspace"); setViewMode("browser"); }} className="text-[#2f81f7] hover:underline cursor-pointer">Open Dev Browser (1 hr expiry)</button>
                           <span className="text-[#7d8590]"> · </span>
-                          <span className="text-[#2f81f7] hover:underline cursor-pointer">Open Diff Heatmap</span>
+                          <a href="https://0github.com/" target="_blank" rel="noopener noreferrer" className="text-[#2f81f7] hover:underline cursor-pointer">Open Diff Heatmap</a>
                         </p>
 
                         <p className="text-sm text-[#e6edf3] mb-6">
@@ -820,7 +824,7 @@ function MockGitHubPRBrowser() {
 
                         <p className="text-sm text-[#7d8590] italic">
                           Generated by{" "}
-                          <span className="text-[#2f81f7] hover:underline cursor-pointer">cmux</span>{" "}
+                          <button onClick={() => { setActiveTab("workspace"); setViewMode("all"); }} className="text-[#2f81f7] hover:underline cursor-pointer">cmux</button>{" "}
                           preview system
                         </p>
                       </div>
@@ -828,11 +832,11 @@ function MockGitHubPRBrowser() {
 
                     <div className="flex items-center gap-1 mt-2">
                       <button className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[#30363d] bg-[#21262d] text-xs hover:bg-[#30363d] transition-colors">
-                        <span>+1</span>
+                        <span>👍</span>
                         <span className="text-[#7d8590]">2</span>
                       </button>
                       <button className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[#30363d] bg-[#21262d] text-xs hover:bg-[#30363d] transition-colors">
-                        <span>rocket</span>
+                        <span>🚀</span>
                         <span className="text-[#7d8590]">1</span>
                       </button>
                     </div>
@@ -919,7 +923,6 @@ function MockGitHubPRBrowser() {
                         <div className="text-xs text-[#7d8590]">{check.desc}</div>
                       </div>
                       <span className="text-xs text-[#7d8590]">{check.time}</span>
-                      <button className="text-xs text-[#2f81f7] hover:underline">Details</button>
                     </div>
                   ))}
                 </div>
@@ -1299,11 +1302,6 @@ function MockGitHubPRBrowser() {
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-[#252526] border-b border-[#2d2d2d]">
                   <Code className="h-4 w-4 text-[#007acc]" />
                   <span className="text-xs text-[#cccccc]">Workspace</span>
-                  <div className="ml-auto flex items-center gap-1">
-                    <button className="p-0.5 text-[#858585] hover:text-white hover:bg-[#3c3c3c] rounded">
-                      <ExternalLink className="h-3 w-3" />
-                    </button>
-                  </div>
                 </div>
                 {/* VS Code content */}
                 <div className="flex-1 flex min-h-0">
@@ -1312,7 +1310,7 @@ function MockGitHubPRBrowser() {
                     <div className="px-2 py-1 text-[10px] font-semibold text-[#858585] uppercase tracking-wide">
                       Explorer
                     </div>
-                    <div className="flex items-center gap-1 px-2 py-0.5 text-[11px] text-[#cccccc] bg-[#37373d]">
+                    <div className="flex items-center gap-1 px-2 py-0.5 text-[11px] text-[#cccccc]">
                       <ChevronDown className="h-3 w-3" />
                       <span className="text-[10px]">cmux</span>
                     </div>
@@ -1351,19 +1349,26 @@ function MockGitHubPRBrowser() {
                     </div>
                     {/* File content */}
                     <div className="flex-1 p-3 font-mono text-[11px] text-[#cccccc] overflow-auto">
-                      <div className="flex">
-                        <div className="pr-3 text-[#858585] select-none text-right w-8">1</div>
-                        <div>today we&apos;re launching cmux</div>
-                      </div>
+                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">1</div><div className="text-[#6a9955]"># LAUNCH.md</div></div>
                       <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">2</div><div></div></div>
-                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">3</div><div>it&apos;s basically Linear for Claude Code</div></div>
+                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">3</div><div>Welcome to cmux!</div></div>
                       <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">4</div><div></div></div>
-                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">5</div><div>we made Linear for Claude Code</div></div>
-                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">6</div><div></div></div>
-                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">7</div><div className="text-[#6a9955]">cmux is an open source coding CLI manager</div></div>
-                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">8</div><div className="text-[#6a9955]">that spawns Claude Code, Cursor CLI, Codex</div></div>
-                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">9</div><div className="text-[#6a9955]">CLI, Gemini CLI, Amp, Opencode, and</div></div>
-                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">10</div><div className="text-[#6a9955]">other coding agent CLIs in parallel</div></div>
+                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">5</div><div className="text-[#6a9955]">// Feel free to click around and explore!</div></div>
+                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">6</div><div>- Explore around in the sidebar</div></div>
+                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">7</div><div>- Check out the git diff view</div></div>
+                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">8</div><div>- View the browser preview</div></div>
+                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">9</div><div>- Switch between tmux sessions in terminal</div></div>
+                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">10</div><div></div></div>
+                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">11</div><div className="text-[#6a9955]">## What is cmux?</div></div>
+                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">12</div><div></div></div>
+                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">13</div><div>It&apos;s basically Linear for Claude Code.</div></div>
+                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">14</div><div></div></div>
+                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">15</div><div>A universal AI coding agent manager.</div></div>
+                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">16</div><div></div></div>
+                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">17</div><div className="text-[#6a9955]">## About Manaflow</div></div>
+                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">18</div><div></div></div>
+                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">19</div><div>We build interfaces to manage AI agents.</div></div>
+                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">20</div><div></div></div>
                     </div>
                   </div>
                 </div>
@@ -1387,11 +1392,6 @@ function MockGitHubPRBrowser() {
                   <div className="flex items-center gap-2 px-3 py-1.5 bg-[#252526] border-b border-[#2d2d2d]">
                     <Monitor className="h-4 w-4 text-[#858585]" />
                     <span className="text-xs text-[#cccccc]">Browser</span>
-                    <div className="ml-auto flex items-center gap-1">
-                      <button className="p-0.5 text-[#858585] hover:text-white hover:bg-[#3c3c3c] rounded">
-                        <ExternalLink className="h-3 w-3" />
-                      </button>
-                    </div>
                   </div>
                   {/* Chrome browser inside */}
                   <div className="flex-1 flex flex-col bg-[#202124] overflow-hidden" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
@@ -1399,7 +1399,7 @@ function MockGitHubPRBrowser() {
                     <div className="flex items-end bg-[#35363a] h-[28px] px-2 shrink-0">
                       <div className="flex items-center gap-1 bg-[#202124] rounded-t-lg px-2 py-1 max-w-[160px] mt-auto">
                         <TabFavicon />
-                        <span className="text-[10px] text-[#e8eaed] truncate">localhost:5173</span>
+                        <span className="text-[10px] text-[#e8eaed] truncate">cmux.dev</span>
                         <button className="p-0.5 hover:bg-[#35363a] rounded">
                           <X className="h-2.5 w-2.5 text-[#9aa0a6]" />
                         </button>
@@ -1424,17 +1424,19 @@ function MockGitHubPRBrowser() {
                         </div>
                         {/* Header */}
                         <div className="relative flex items-center justify-between px-4 py-3">
-                          <CmuxLogo height={20} />
+                          <a href="https://github.com/manaflow-ai/cmux" target="_blank" rel="noopener noreferrer" className="hover:opacity-80">
+                            <CmuxLogo height={20} />
+                          </a>
                           <div className="flex items-center gap-3 text-[9px] text-neutral-300">
-                            <span>About</span>
-                            <span>Workflow</span>
-                            <span>GitHub</span>
+                            <a href="https://www.cmux.dev/" target="_blank" rel="noopener noreferrer" className="hover:text-white">About</a>
+                            <a href="https://www.cmux.dev/" target="_blank" rel="noopener noreferrer" className="hover:text-white">Workflow</a>
+                            <a href="https://github.com/manaflow-ai/cmux" target="_blank" rel="noopener noreferrer" className="hover:text-white">GitHub</a>
                           </div>
                           <div className="flex items-center gap-2">
-                            <div className="flex items-center gap-1 text-[9px] text-neutral-300">
+                            <a href="https://github.com/manaflow-ai/cmux" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[9px] text-neutral-300 hover:text-white">
                               <Github className="h-3 w-3" />
                               <span>649</span>
-                            </div>
+                            </a>
                             <button className="px-2 py-0.5 bg-white text-black text-[8px] rounded-full flex items-center gap-1">
                               <Download className="w-2.5 h-2.5" />
                               <span>Download</span>
@@ -1455,26 +1457,43 @@ function MockGitHubPRBrowser() {
                                 Every run spins up an isolated VS Code workspace either in the cloud or in a local Docker container with the git diff view, terminal, and dev server preview ready.
                               </p>
                               <div className="flex items-center gap-2 pt-2">
-                                <button className="px-2 py-1 bg-white text-black text-[8px] rounded-lg flex items-center gap-1 font-medium">
+                                <a href="https://www.cmux.dev/" target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-white text-black text-[8px] rounded-lg flex items-center gap-1 font-medium hover:bg-neutral-200">
                                   <svg className="h-2.5 w-2.5" viewBox="0 0 16 16" fill="currentColor">
                                     <path d="M12.665 15.358c-.905.844-1.893.711-2.843.311-1.006-.409-1.93-.427-2.991 0-1.33.551-2.03.391-2.825-.31C-.498 10.886.166 4.078 5.28 3.83c1.246.062 2.114.657 2.843.71 1.09-.213 2.133-.826 3.296-.746 1.393.107 2.446.64 3.138 1.6-2.88 1.662-2.197 5.315.443 6.337-.526 1.333-1.21 2.657-2.345 3.635zM8.03 3.778C7.892 1.794 9.563.16 11.483 0c.268 2.293-2.16 4-3.452 3.777" />
                                   </svg>
                                   Download for macOS
-                                </button>
-                                <button className="px-2 py-1 border border-white/10 bg-white/5 text-white text-[8px] rounded-lg flex items-center gap-1">
+                                </a>
+                                <a href="https://github.com/manaflow-ai/cmux" target="_blank" rel="noopener noreferrer" className="px-2 py-1 border border-white/10 bg-white/5 text-white text-[8px] rounded-lg flex items-center gap-1 hover:bg-white/10">
                                   GitHub repo
                                   <Github className="w-2.5 h-2.5" />
-                                </button>
+                                </a>
                               </div>
                             </div>
                             {/* Right side - video + features */}
                             <div className="space-y-2">
                               <div className="rounded-xl border border-white/10 bg-white/5 p-2">
-                                {/* Video placeholder */}
-                                <div className="bg-neutral-900 rounded-lg aspect-video flex items-center justify-center mb-2">
-                                  <div className="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center">
-                                    <div className="w-0 h-0 border-t-[5px] border-t-transparent border-l-[8px] border-l-white border-b-[5px] border-b-transparent ml-0.5" />
+                                {/* Mini browser with YouTube video */}
+                                <div className="rounded-lg overflow-hidden border border-neutral-700 mb-2">
+                                  {/* Mini browser tab bar */}
+                                  <div className="flex items-center bg-[#35363a] h-[16px] px-1">
+                                    <div className="flex items-center gap-0.5 bg-[#202124] rounded-t px-1 py-0.5">
+                                      <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                                      <span className="text-[6px] text-[#e8eaed] truncate">YouTube</span>
+                                    </div>
                                   </div>
+                                  {/* Mini browser toolbar */}
+                                  <div className="flex items-center px-1 py-0.5 bg-[#202124]">
+                                    <div className="flex-1 px-1 py-0.5 bg-[#35363a] rounded text-[5px] text-[#9aa0a6] truncate">
+                                      youtube.com/watch?v=YtQTKSM_wsA
+                                    </div>
+                                  </div>
+                                  {/* Video content */}
+                                  <a href="https://www.youtube.com/watch?v=YtQTKSM_wsA" target="_blank" rel="noopener noreferrer" className="bg-neutral-900 aspect-video flex items-center justify-center cursor-pointer hover:bg-neutral-800 transition-colors block relative">
+                                    <img src="https://img.youtube.com/vi/YtQTKSM_wsA/hqdefault.jpg" alt="cmux demo video" className="absolute inset-0 w-full h-full object-cover opacity-60" />
+                                    <div className="relative w-8 h-8 rounded-full bg-red-600 flex items-center justify-center hover:bg-red-500 transition-colors">
+                                      <div className="w-0 h-0 border-t-[5px] border-t-transparent border-l-[8px] border-l-white border-b-[5px] border-b-transparent ml-0.5" />
+                                    </div>
+                                  </a>
                                 </div>
                                 {/* Feature bullets */}
                                 <div className="space-y-1.5">
@@ -1547,11 +1566,6 @@ function MockGitHubPRBrowser() {
                       <GitBranch className="h-4 w-4 text-[#f97316]" />
                       <span className="text-xs text-[#cccccc]">Git Diff</span>
                       <span className="text-[10px] text-[#858585]">3 files</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button className="p-0.5 text-[#858585] hover:text-white hover:bg-[#3c3c3c] rounded">
-                        <ExternalLink className="h-3 w-3" />
-                      </button>
                     </div>
                   </div>
                   <div className="flex-1 flex flex-col min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "#30363d #1e1e1e" }}>
@@ -1651,9 +1665,6 @@ function MockGitHubPRBrowser() {
                       <button onClick={() => setViewMode("all")} className="p-0.5 text-[#858585] hover:text-white hover:bg-[#3c3c3c] rounded text-[10px]">
                         Back to all
                       </button>
-                      <button className="p-0.5 text-[#858585] hover:text-white hover:bg-[#3c3c3c] rounded">
-                        <ExternalLink className="h-3 w-3" />
-                      </button>
                     </div>
                   </div>
                   {/* VS Code content */}
@@ -1702,19 +1713,25 @@ function MockGitHubPRBrowser() {
                       </div>
                       {/* File content */}
                       <div className="flex-1 p-4 font-mono text-[12px] text-[#cccccc] overflow-auto">
-                        <div className="flex">
-                          <div className="pr-4 text-[#858585] select-none text-right w-10">1</div>
-                          <div>today we&apos;re launching cmux</div>
-                        </div>
+                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">1</div><div className="text-[#6a9955]"># LAUNCH.md</div></div>
                         <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">2</div><div></div></div>
-                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">3</div><div>it&apos;s basically Linear for Claude Code</div></div>
+                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">3</div><div>Welcome to cmux!</div></div>
                         <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">4</div><div></div></div>
-                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">5</div><div>we made Linear for Claude Code</div></div>
-                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">6</div><div></div></div>
-                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">7</div><div className="text-[#6a9955]">cmux is an open source coding CLI manager</div></div>
-                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">8</div><div className="text-[#6a9955]">that spawns Claude Code, Cursor CLI, Codex</div></div>
-                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">9</div><div className="text-[#6a9955]">CLI, Gemini CLI, Amp, Opencode, and</div></div>
-                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">10</div><div className="text-[#6a9955]">other coding agent CLIs in parallel</div></div>
+                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">5</div><div className="text-[#6a9955]">// Feel free to click around and explore!</div></div>
+                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">6</div><div>- Browse files in the explorer</div></div>
+                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">7</div><div>- Check out the git diff view</div></div>
+                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">8</div><div>- View the browser preview</div></div>
+                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">9</div><div>- Switch between tmux sessions</div></div>
+                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">10</div><div></div></div>
+                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">11</div><div className="text-[#6a9955]">## What is cmux?</div></div>
+                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">12</div><div></div></div>
+                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">13</div><div>It&apos;s basically Linear for Claude Code.</div></div>
+                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">14</div><div></div></div>
+                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">15</div><div>A universal AI coding agent manager.</div></div>
+                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">16</div><div></div></div>
+                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">17</div><div className="text-[#6a9955]">## About Manaflow</div></div>
+                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">18</div><div></div></div>
+                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">19</div><div>We build interfaces to manage AI agents.</div></div>
                       </div>
                     </div>
                   </div>
@@ -1732,9 +1749,6 @@ function MockGitHubPRBrowser() {
                       <button onClick={() => setViewMode("all")} className="p-0.5 text-[#858585] hover:text-white hover:bg-[#3c3c3c] rounded text-[10px]">
                         Back to all
                       </button>
-                      <button className="p-0.5 text-[#858585] hover:text-white hover:bg-[#3c3c3c] rounded">
-                        <ExternalLink className="h-3 w-3" />
-                      </button>
                     </div>
                   </div>
                   {/* Chrome browser inside */}
@@ -1743,7 +1757,7 @@ function MockGitHubPRBrowser() {
                     <div className="flex items-end bg-[#35363a] h-[32px] px-2 shrink-0">
                       <div className="flex items-center gap-1 bg-[#202124] rounded-t-lg px-3 py-1.5 max-w-[200px] mt-auto">
                         <TabFavicon />
-                        <span className="text-[11px] text-[#e8eaed] truncate">localhost:5173</span>
+                        <span className="text-[11px] text-[#e8eaed] truncate">cmux.dev</span>
                         <button className="p-0.5 hover:bg-[#35363a] rounded">
                           <X className="h-3 w-3 text-[#9aa0a6]" />
                         </button>
@@ -1770,9 +1784,9 @@ function MockGitHubPRBrowser() {
                         <div className="relative flex items-center justify-between px-6 py-4">
                           <CmuxLogo height={28} />
                           <div className="flex items-center gap-4 text-sm text-neutral-300">
-                            <span>About</span>
-                            <span>Workflow</span>
-                            <span>GitHub</span>
+                            <a href="https://www.cmux.dev/" target="_blank" rel="noopener noreferrer" className="hover:text-white">About</a>
+                            <a href="https://www.cmux.dev/" target="_blank" rel="noopener noreferrer" className="hover:text-white">Workflow</a>
+                            <a href="https://github.com/manaflow-ai/cmux" target="_blank" rel="noopener noreferrer" className="hover:text-white">GitHub</a>
                           </div>
                           <div className="flex items-center gap-3">
                             <div className="flex items-center gap-1 text-sm text-neutral-300">
@@ -1799,26 +1813,43 @@ function MockGitHubPRBrowser() {
                                 Every run spins up an isolated VS Code workspace either in the cloud or in a local Docker container with the git diff view, terminal, and dev server preview ready.
                               </p>
                               <div className="flex items-center gap-3 pt-2">
-                                <button className="px-4 py-2 bg-white text-black text-sm rounded-lg flex items-center gap-2 font-medium">
+                                <a href="https://www.cmux.dev/" target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-white text-black text-sm rounded-lg flex items-center gap-2 font-medium hover:bg-neutral-200">
                                   <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
                                     <path d="M12.665 15.358c-.905.844-1.893.711-2.843.311-1.006-.409-1.93-.427-2.991 0-1.33.551-2.03.391-2.825-.31C-.498 10.886.166 4.078 5.28 3.83c1.246.062 2.114.657 2.843.71 1.09-.213 2.133-.826 3.296-.746 1.393.107 2.446.64 3.138 1.6-2.88 1.662-2.197 5.315.443 6.337-.526 1.333-1.21 2.657-2.345 3.635zM8.03 3.778C7.892 1.794 9.563.16 11.483 0c.268 2.293-2.16 4-3.452 3.777" />
                                   </svg>
                                   Download for macOS
-                                </button>
-                                <button className="px-4 py-2 border border-white/10 bg-white/5 text-white text-sm rounded-lg flex items-center gap-2">
+                                </a>
+                                <a href="https://github.com/manaflow-ai/cmux" target="_blank" rel="noopener noreferrer" className="px-4 py-2 border border-white/10 bg-white/5 text-white text-sm rounded-lg flex items-center gap-2 hover:bg-white/10">
                                   GitHub repo
                                   <Github className="w-4 h-4" />
-                                </button>
+                                </a>
                               </div>
                             </div>
                             {/* Right side - video + features */}
                             <div className="space-y-3">
                               <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-                                {/* Video placeholder */}
-                                <div className="bg-neutral-900 rounded-lg aspect-video flex items-center justify-center mb-3">
-                                  <div className="w-12 h-12 rounded-full bg-red-600 flex items-center justify-center">
-                                    <div className="w-0 h-0 border-t-[8px] border-t-transparent border-l-[12px] border-l-white border-b-[8px] border-b-transparent ml-1" />
+                                {/* Mini browser with YouTube video */}
+                                <div className="rounded-lg overflow-hidden border border-neutral-700 mb-3">
+                                  {/* Mini browser tab bar */}
+                                  <div className="flex items-center bg-[#35363a] h-[20px] px-1.5">
+                                    <div className="flex items-center gap-1 bg-[#202124] rounded-t px-2 py-0.5">
+                                      <div className="w-2 h-2 rounded-full bg-red-500" />
+                                      <span className="text-[8px] text-[#e8eaed] truncate">YouTube</span>
+                                    </div>
                                   </div>
+                                  {/* Mini browser toolbar */}
+                                  <div className="flex items-center px-1.5 py-1 bg-[#202124]">
+                                    <div className="flex-1 px-2 py-0.5 bg-[#35363a] rounded text-[8px] text-[#9aa0a6] truncate">
+                                      youtube.com/watch?v=YtQTKSM_wsA
+                                    </div>
+                                  </div>
+                                  {/* Video content */}
+                                  <a href="https://www.youtube.com/watch?v=YtQTKSM_wsA" target="_blank" rel="noopener noreferrer" className="bg-neutral-900 aspect-video flex items-center justify-center cursor-pointer hover:bg-neutral-800 transition-colors block relative">
+                                    <img src="https://img.youtube.com/vi/YtQTKSM_wsA/hqdefault.jpg" alt="cmux demo video" className="absolute inset-0 w-full h-full object-cover opacity-60" />
+                                    <div className="relative w-12 h-12 rounded-full bg-red-600 flex items-center justify-center hover:bg-red-500 transition-colors">
+                                      <div className="w-0 h-0 border-t-[8px] border-t-transparent border-l-[12px] border-l-white border-b-[8px] border-b-transparent ml-1" />
+                                    </div>
+                                  </a>
                                 </div>
                                 {/* Feature bullets */}
                                 <div className="space-y-2">
@@ -1887,9 +1918,6 @@ function MockGitHubPRBrowser() {
                     <div className="flex items-center gap-1">
                       <button onClick={() => setViewMode("all")} className="p-0.5 text-[#858585] hover:text-white hover:bg-[#3c3c3c] rounded text-[10px]">
                         Back to all
-                      </button>
-                      <button className="p-0.5 text-[#858585] hover:text-white hover:bg-[#3c3c3c] rounded">
-                        <ExternalLink className="h-3 w-3" />
                       </button>
                     </div>
                   </div>
@@ -2105,7 +2133,6 @@ function MockGitHubPRBrowser() {
                       ))}
                     </div>
                     <div className="flex items-center gap-3 px-2">
-                      <span className="text-white/90">&quot;morphvn&quot;</span>
                       <span className="text-white/90">09:41</span>
                       <span className="text-white/90">05-Dec-25</span>
                     </div>
