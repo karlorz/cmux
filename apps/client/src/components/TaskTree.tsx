@@ -335,6 +335,8 @@ function TaskTreeInner({
   defaultExpanded = false,
   teamSlugOrId,
 }: TaskTreeProps) {
+  const navigate = useNavigate();
+
   // Get the current route to determine if this task is selected
   const location = useLocation();
   const isTaskSelected = useMemo(
@@ -381,6 +383,18 @@ function TaskTreeInner({
   );
   const hasVisibleRuns = activeRunsFlat.length > 0;
   const showRunNumbers = flattenedRuns.length > 1;
+
+  // For local workspaces, find the run with VSCode to navigate to VSCode view directly
+  const localWorkspaceRunWithVscode = useMemo(() => {
+    if (!task.isLocalWorkspace) {
+      return null;
+    }
+    // Find the first active run with a running VSCode instance
+    return activeRunsFlat.find(
+      (run) => run.vscode?.status === "running" && run.vscode?.url
+    ) ?? null;
+  }, [task.isLocalWorkspace, activeRunsFlat]);
+
   const runMenuEntries = useMemo(
     () =>
       annotateAgentOrdinals(flattenedRuns).map((run) => ({
@@ -680,10 +694,10 @@ function TaskTreeInner({
     />
   );
   const taskTitleContent = isRenaming ? renameInputElement : taskTitleValue;
-  const canExpand = true;
   const isCrownEvaluating = task.crownEvaluationStatus === "in_progress";
   const isLocalWorkspace = task.isLocalWorkspace;
   const isCloudWorkspace = task.isCloudWorkspace;
+  const canExpand = true;
 
   const taskLeadingIcon = (() => {
     if (isCrownEvaluating) {
@@ -806,7 +820,11 @@ function TaskTreeInner({
               params={{ teamSlugOrId, taskId: task._id }}
               search={{ runId: undefined }}
               activeOptions={{ exact: true }}
-              className="group block"
+              className={clsx(
+                "group block",
+                // For local workspaces, manually add active class since we navigate to VSCode sub-route
+                localWorkspaceRunWithVscode && isTaskSelected && "active"
+              )}
               data-focus-visible={isTaskLinkFocusVisible ? "true" : undefined}
               onMouseEnter={handlePrefetch}
               onFocus={handleTaskLinkFocus}
@@ -823,6 +841,20 @@ function TaskTreeInner({
                 }
                 if (isRenaming) {
                   event.preventDefault();
+                  return;
+                }
+                // For local workspaces with active VSCode, expand and navigate to VSCode view
+                if (localWorkspaceRunWithVscode) {
+                  event.preventDefault();
+                  setIsExpanded(true);
+                  void navigate({
+                    to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+                    params: {
+                      teamSlugOrId,
+                      taskId: task._id,
+                      runId: localWorkspaceRunWithVscode._id,
+                    },
+                  });
                   return;
                 }
                 handleToggle(event);
@@ -966,7 +998,25 @@ function TaskTreeInner({
           </ContextMenu.Portal>
         </ContextMenu.Root>
 
-        {isExpanded ? (
+        {/* For local workspaces, only show VSCode link when expanded */}
+        {isExpanded && localWorkspaceRunWithVscode ? (
+          <TaskRunDetailLink
+            to="/$teamSlugOrId/task/$taskId/run/$runId/vscode"
+            params={{
+              teamSlugOrId,
+              taskId: task._id,
+              runId: localWorkspaceRunWithVscode._id,
+            }}
+            icon={
+              <VSCodeIcon className="w-3 h-3 mr-2 text-neutral-400 grayscale opacity-60" />
+            }
+            label="VS Code"
+            indentLevel={level + 1}
+          />
+        ) : null}
+
+        {/* For non-local workspaces, show normal task runs content */}
+        {isExpanded && !localWorkspaceRunWithVscode ? (
           <TaskRunsContent
             taskId={task._id}
             teamSlugOrId={teamSlugOrId}

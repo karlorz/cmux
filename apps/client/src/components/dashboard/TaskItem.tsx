@@ -12,7 +12,7 @@ import { api } from "@cmux/convex/api";
 import type { Doc } from "@cmux/convex/dataModel";
 import type { RunEnvironmentSummary } from "@/types/task";
 import { useClipboard } from "@mantine/hooks";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import clsx from "clsx";
 import { useQuery as useConvexQuery, useMutation } from "convex/react";
 // Read team slug from path to avoid route type coupling
@@ -41,6 +41,7 @@ export const TaskItem = memo(function TaskItem({
 }: TaskItemProps) {
   const clipboard = useClipboard({ timeout: 2000 });
   const { archiveWithUndo, unarchive } = useArchiveTask(teamSlugOrId);
+  const navigate = useNavigate();
   const isOptimisticUpdate = task._id.includes("-") && task._id.length === 36;
   const canRename = !isOptimisticUpdate;
 
@@ -169,6 +170,17 @@ export const TaskItem = memo(function TaskItem({
     return null;
   }, [hasActiveVSCode, runWithVSCode]);
 
+  // For local workspaces, find the run with VSCode to navigate to VSCode view directly
+  const localWorkspaceRunWithVscode = useMemo(() => {
+    if (!task.isLocalWorkspace) {
+      return null;
+    }
+    if (!hasActiveVSCode || !runWithVSCode) {
+      return null;
+    }
+    return runWithVSCode;
+  }, [task.isLocalWorkspace, hasActiveVSCode, runWithVSCode]);
+
   const handleLinkClick = useCallback(
     (event: React.MouseEvent<HTMLAnchorElement>) => {
       // Don't navigate if we're renaming or if modifier keys are pressed
@@ -183,8 +195,21 @@ export const TaskItem = memo(function TaskItem({
         event.preventDefault();
         return;
       }
+      // For local workspaces with active VSCode, navigate to VSCode view directly
+      if (localWorkspaceRunWithVscode) {
+        event.preventDefault();
+        void navigate({
+          to: "/$teamSlugOrId/task/$taskId/run/$runId/vscode",
+          params: {
+            teamSlugOrId,
+            taskId: task._id,
+            runId: localWorkspaceRunWithVscode._id,
+          },
+        });
+        return;
+      }
     },
-    [isRenaming]
+    [isRenaming, localWorkspaceRunWithVscode, navigate, teamSlugOrId, task._id]
   );
 
   const handleCopy = useCallback(
