@@ -1,4 +1,3 @@
-// IMPORTANT: Import prism-setup BEFORE @lexical/code to ensure Prism is globally available
 import "./prism-setup";
 
 import { editorStorage } from "@/lib/editorStorage";
@@ -169,7 +168,10 @@ function KeyboardCommandPlugin({ onSubmit }: { onSubmit?: () => void }) {
           return false;
         }
 
-        if (typeof navigator === "undefined" || !navigator.clipboard?.readText) {
+        if (
+          typeof navigator === "undefined" ||
+          !navigator.clipboard?.readText
+        ) {
           return false;
         }
 

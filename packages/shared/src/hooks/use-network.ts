@@ -44,11 +44,9 @@ export function useNetwork(): NetworkStatus {
       setStatus(getNetworkStatus());
     };
 
-    // Listen for online/offline events
     window.addEventListener("online", handleChange);
     window.addEventListener("offline", handleChange);
 
-    // Listen for connection changes if available
     const connection =
       (navigator as Navigator & { connection?: NetworkInformation }).connection;
     connection?.addEventListener?.("change", handleChange);

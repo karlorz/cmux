@@ -50,9 +50,9 @@ type EnvVar = { name: string; value: string; isSecret: boolean };
 
 // All configuration steps in order (shown in workspace config sidebar)
 const ALL_CONFIG_STEPS = [
-  "scripts",      // maintenance + dev scripts
-  "env-vars",     // environment variables
-  "run-scripts",  // run scripts in terminal
+  "scripts", // maintenance + dev scripts
+  "env-vars", // environment variables
+  "run-scripts", // run scripts in terminal
   "browser-setup", // browser configuration
 ] as const;
 
@@ -142,23 +142,15 @@ function deriveVncUrl(
   return normalizeVncUrl(baseUrl);
 }
 
-/**
- * Convert a VNC iframe URL (https://hostname/vnc.html) to websocket URL (wss://hostname/websockify).
- * This handles the case where the server returns a vnc.html URL that needs to be converted
- * to a websockify endpoint for direct noVNC/RFB connection.
- */
 function convertVncUrlToWebsocket(vncUrl: string): string | null {
   try {
     const url = new URL(vncUrl);
-    // Already a websocket URL
     if (url.protocol === "ws:" || url.protocol === "wss:") {
-      // Ensure it points to /websockify
       if (!url.pathname.includes("websockify")) {
         url.pathname = "/websockify";
       }
       return url.toString();
     }
-    // Convert http/https to ws/wss
     const wsProtocol = url.protocol === "https:" ? "wss:" : "ws:";
     return `${wsProtocol}//${url.host}/websockify`;
   } catch {
@@ -166,10 +158,6 @@ function convertVncUrlToWebsocket(vncUrl: string): string | null {
   }
 }
 
-/**
- * Derive the VNC websocket URL for direct noVNC/RFB connection.
- * Returns a wss:// URL pointing to the /websockify endpoint.
- */
 function deriveVncWebsocketUrl(
   instanceId?: string,
   workspaceUrl?: string
@@ -429,7 +417,8 @@ export function PreviewConfigureClient({
   startAtConfigureEnvironment = false,
 }: PreviewConfigureClientProps) {
   const initialEnvPrefilled = useMemo(
-    () => Boolean(initialEnvVarsContent && initialEnvVarsContent.trim().length > 0),
+    () =>
+      Boolean(initialEnvVarsContent && initialEnvVarsContent.trim().length > 0),
     [initialEnvVarsContent]
   );
   const initialEnvVars = useMemo(() => {
@@ -445,7 +434,9 @@ export function PreviewConfigureClient({
   const initialHasEnvValues = useMemo(
     () =>
       initialEnvPrefilled ||
-      initialEnvVars.some((r) => r.name.trim().length > 0 || r.value.trim().length > 0),
+      initialEnvVars.some(
+        (r) => r.name.trim().length > 0 || r.value.trim().length > 0
+      ),
     [initialEnvPrefilled, initialEnvVars]
   );
   const initialFrameworkConfig = getFrameworkPresetConfig(
@@ -479,7 +470,8 @@ export function PreviewConfigureClient({
     }
   }, []);
   // Current config step (starts at run-scripts when entering workspace config)
-  const [currentConfigStep, setCurrentConfigStep] = useState<ConfigStep>("run-scripts");
+  const [currentConfigStep, setCurrentConfigStep] =
+    useState<ConfigStep>("run-scripts");
   // Track which steps have been completed (scripts and env-vars are pre-completed from initial setup)
   const [completedSteps, setCompletedSteps] = useState<Set<ConfigStep>>(
     () => new Set(["scripts", "env-vars"] as ConfigStep[])
@@ -578,7 +570,8 @@ export function PreviewConfigureClient({
   }, [instance?.vncUrl, instance?.instanceId, instance?.vscodeUrl]);
 
   // VNC connection status for the browser panel (may be used for UI indicators in the future)
-  const [_vncStatus, setVncStatus] = useState<VncConnectionStatus>("disconnected");
+  const [_vncStatus, setVncStatus] =
+    useState<VncConnectionStatus>("disconnected");
 
   const workspacePlaceholder = useMemo(
     () =>
@@ -588,10 +581,10 @@ export function PreviewConfigureClient({
             title: instance?.instanceId
               ? "Waiting for VS Code"
               : "VS Code workspace not ready",
-              description: instance?.instanceId
-                ? "The editor opens automatically once the environment finishes booting."
-                : "Provisioning the workspace. We'll open VS Code as soon as it's ready.",
-            },
+            description: instance?.instanceId
+              ? "The editor opens automatically once the environment finishes booting."
+              : "Provisioning the workspace. We'll open VS Code as soon as it's ready.",
+          },
     [instance?.instanceId, instance?.vscodeUrl]
   );
 
@@ -600,7 +593,9 @@ export function PreviewConfigureClient({
   const hasEnvValues = useMemo(
     () =>
       (!hasTouchedEnvVars && initialEnvPrefilled) ||
-      envVars.some((r) => r.name.trim().length > 0 || r.value.trim().length > 0),
+      envVars.some(
+        (r) => r.name.trim().length > 0 || r.value.trim().length > 0
+      ),
     [envVars, hasTouchedEnvVars, initialEnvPrefilled]
   );
   const envDone = envNone || hasEnvValues;
@@ -790,7 +785,10 @@ export function PreviewConfigureClient({
       setFrameworkPreset(preset);
       // Only auto-fill if user hasn't manually edited the scripts
       if (!hasUserEditedScripts) {
-        const presetConfig = getFrameworkPresetConfig(preset, initialPackageManager);
+        const presetConfig = getFrameworkPresetConfig(
+          preset,
+          initialPackageManager
+        );
         setMaintenanceScript(presetConfig.maintenanceScript);
         setDevScript(presetConfig.devScript);
       }
@@ -829,7 +827,6 @@ export function PreviewConfigureClient({
       console.error("Failed to copy commands:", error);
     }
   }, [devScript, maintenanceScript]);
-
 
   const handleSaveConfiguration = async () => {
     if (!resolvedTeamSlugOrId) {
@@ -957,19 +954,28 @@ export function PreviewConfigureClient({
   }, [currentConfigStep]);
 
   // Helper to check if a step is visible (completed or current)
-  const isStepVisible = useCallback((step: ConfigStep) => {
-    return completedSteps.has(step) || step === currentConfigStep;
-  }, [completedSteps, currentConfigStep]);
+  const isStepVisible = useCallback(
+    (step: ConfigStep) => {
+      return completedSteps.has(step) || step === currentConfigStep;
+    },
+    [completedSteps, currentConfigStep]
+  );
 
   // Helper to check if a step is the current one
-  const isCurrentStep = useCallback((step: ConfigStep) => {
-    return step === currentConfigStep;
-  }, [currentConfigStep]);
+  const isCurrentStep = useCallback(
+    (step: ConfigStep) => {
+      return step === currentConfigStep;
+    },
+    [currentConfigStep]
+  );
 
   // Helper to check if a step is completed (for collapsing)
-  const isStepCompleted = useCallback((step: ConfigStep) => {
-    return completedSteps.has(step);
-  }, [completedSteps]);
+  const isStepCompleted = useCallback(
+    (step: ConfigStep) => {
+      return completedSteps.has(step);
+    },
+    [completedSteps]
+  );
 
   // Navigate to a specific step (for going back to completed steps)
   const handleGoToStep = useCallback((step: ConfigStep) => {
@@ -997,11 +1003,7 @@ export function PreviewConfigureClient({
         vscodeUrl.toString()
       );
     }
-  }, [
-    instance,
-    persistentIframeManager,
-    vscodePersistKey,
-  ]);
+  }, [instance, persistentIframeManager, vscodePersistKey]);
 
   // Mount VS Code iframe to its target when visible
   // Note: Browser VNC is now handled by VncViewer component, not iframe
@@ -1047,7 +1049,8 @@ export function PreviewConfigureClient({
     const inWorkspaceConfig = layoutPhase === "workspace-config";
     // Show VSCode for steps before browser-setup
     const showVscode = currentConfigStep !== "browser-setup";
-    const workspaceVisible = inWorkspaceConfig && showVscode && Boolean(instance?.vscodeUrl);
+    const workspaceVisible =
+      inWorkspaceConfig && showVscode && Boolean(instance?.vscodeUrl);
 
     persistentIframeManager.setVisibility(vscodePersistKey, workspaceVisible);
   }, [
@@ -1155,22 +1158,38 @@ export function PreviewConfigureClient({
   };
 
   // Shared render function for scripts section
-  const renderScriptsSection = (options?: { compact?: boolean; defaultOpen?: boolean; showStepBadge?: boolean; stepNumber?: number; isDone?: boolean }) => {
-    const { compact = false, defaultOpen = true, showStepBadge = false, stepNumber = 1, isDone = false } = options ?? {};
+  const renderScriptsSection = (options?: {
+    compact?: boolean;
+    defaultOpen?: boolean;
+    showStepBadge?: boolean;
+    stepNumber?: number;
+    isDone?: boolean;
+  }) => {
+    const {
+      compact = false,
+      defaultOpen = true,
+      showStepBadge = false,
+      stepNumber = 1,
+      isDone = false,
+    } = options ?? {};
     const iconSize = compact ? "h-3.5 w-3.5" : "h-4 w-4";
     const titleSize = compact ? "text-[13px]" : "text-base";
     const contentPadding = compact ? "mt-3 pl-5" : "mt-4 pl-6";
 
     return (
-      <details
-        className="group"
-        open={defaultOpen}
-      >
-        <summary className={clsx(
-          "flex items-center gap-2 cursor-pointer font-semibold text-neutral-900 dark:text-neutral-100 list-none",
-          titleSize
-        )}>
-          <ChevronDown className={clsx(iconSize, "text-neutral-400 transition-transform -rotate-90 group-open:rotate-0")} />
+      <details className="group" open={defaultOpen}>
+        <summary
+          className={clsx(
+            "flex items-center gap-2 cursor-pointer font-semibold text-neutral-900 dark:text-neutral-100 list-none",
+            titleSize
+          )}
+        >
+          <ChevronDown
+            className={clsx(
+              iconSize,
+              "text-neutral-400 transition-transform -rotate-90 group-open:rotate-0"
+            )}
+          />
           {showStepBadge && <StepBadge step={stepNumber} done={isDone} />}
           Maintenance and Dev Scripts
         </summary>
@@ -1211,8 +1230,20 @@ export function PreviewConfigureClient({
   };
 
   // Shared render function for environment variables section
-  const renderEnvVarsSection = (options?: { compact?: boolean; defaultOpen?: boolean; showStepBadge?: boolean; stepNumber?: number; isDone?: boolean }) => {
-    const { compact = false, defaultOpen = true, showStepBadge = false, stepNumber = 2, isDone = false } = options ?? {};
+  const renderEnvVarsSection = (options?: {
+    compact?: boolean;
+    defaultOpen?: boolean;
+    showStepBadge?: boolean;
+    stepNumber?: number;
+    isDone?: boolean;
+  }) => {
+    const {
+      compact = false,
+      defaultOpen = true,
+      showStepBadge = false,
+      stepNumber = 2,
+      isDone = false,
+    } = options ?? {};
     const iconSize = compact ? "h-3.5 w-3.5" : "h-4 w-4";
     const titleSize = compact ? "text-[13px]" : "text-base";
     const contentPadding = compact ? "mt-3 pl-5" : "mt-4 pl-6";
@@ -1223,11 +1254,18 @@ export function PreviewConfigureClient({
         open={defaultOpen}
         onToggle={(e) => setIsEnvSectionOpen(e.currentTarget.open)}
       >
-        <summary className={clsx(
-          "flex items-center gap-2 cursor-pointer font-semibold text-neutral-900 dark:text-neutral-100 list-none",
-          titleSize
-        )}>
-          <ChevronDown className={clsx(iconSize, "text-neutral-400 transition-transform -rotate-90 group-open:rotate-0")} />
+        <summary
+          className={clsx(
+            "flex items-center gap-2 cursor-pointer font-semibold text-neutral-900 dark:text-neutral-100 list-none",
+            titleSize
+          )}
+        >
+          <ChevronDown
+            className={clsx(
+              iconSize,
+              "text-neutral-400 transition-transform -rotate-90 group-open:rotate-0"
+            )}
+          />
           {showStepBadge && <StepBadge step={stepNumber} done={isDone} />}
           <span>Environment Variables</span>
           <div className="ml-auto flex items-center gap-2">
@@ -1241,7 +1279,11 @@ export function PreviewConfigureClient({
               className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition p-0.5"
               aria-label={areEnvValuesHidden ? "Reveal values" : "Hide values"}
             >
-              {areEnvValuesHidden ? <EyeOff className={iconSize} /> : <Eye className={iconSize} />}
+              {areEnvValuesHidden ? (
+                <EyeOff className={iconSize} />
+              ) : (
+                <Eye className={iconSize} />
+              )}
             </button>
           </div>
         </summary>
@@ -1257,14 +1299,23 @@ export function PreviewConfigureClient({
                 updateEnvVars((prev) => {
                   const map = new Map(
                     prev
-                      .filter((r) => r.name.trim().length > 0 || r.value.trim().length > 0)
+                      .filter(
+                        (r) =>
+                          r.name.trim().length > 0 || r.value.trim().length > 0
+                      )
                       .map((r) => [r.name, r] as const)
                   );
                   for (const it of items) {
                     if (!it.name) continue;
                     const existing = map.get(it.name);
-                    if (existing) map.set(it.name, { ...existing, value: it.value });
-                    else map.set(it.name, { name: it.name, value: it.value, isSecret: true });
+                    if (existing)
+                      map.set(it.name, { ...existing, value: it.value });
+                    else
+                      map.set(it.name, {
+                        name: it.name,
+                        value: it.value,
+                        isSecret: true,
+                      });
                   }
                   const next = Array.from(map.values());
                   next.push({ name: "", value: "", isSecret: true });
@@ -1277,7 +1328,9 @@ export function PreviewConfigureClient({
         >
           <div
             className="grid gap-2 text-xs text-neutral-500 items-center mb-1"
-            style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.5fr) 40px" }}
+            style={{
+              gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.5fr) 40px",
+            }}
           >
             <span>Name</span>
             <span>Value</span>
@@ -1285,23 +1338,31 @@ export function PreviewConfigureClient({
           </div>
           {envVars.map((row, idx) => {
             const isEditingValue = activeEnvValueIndex === idx;
-            const shouldMaskValue = areEnvValuesHidden && row.value.trim().length > 0 && !isEditingValue;
+            const shouldMaskValue =
+              areEnvValuesHidden &&
+              row.value.trim().length > 0 &&
+              !isEditingValue;
             return (
               <div
                 key={idx}
                 className="grid gap-2 items-center min-h-9"
-                style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.5fr) 40px" }}
+                style={{
+                  gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.5fr) 40px",
+                }}
               >
                 <input
                   type="text"
                   value={row.name}
                   disabled={envNone}
-                  ref={(el) => { keyInputRefs.current[idx] = el; }}
+                  ref={(el) => {
+                    keyInputRefs.current[idx] = el;
+                  }}
                   onChange={(e) => {
                     setEnvNone(false);
                     updateEnvVars((prev) => {
                       const next = [...prev];
-                      if (next[idx]) next[idx] = { ...next[idx], name: e.target.value };
+                      if (next[idx])
+                        next[idx] = { ...next[idx], name: e.target.value };
                       return next;
                     });
                   }}
@@ -1312,16 +1373,28 @@ export function PreviewConfigureClient({
                   type={shouldMaskValue ? "password" : "text"}
                   value={shouldMaskValue ? MASKED_ENV_VALUE : row.value}
                   disabled={envNone}
-                  onChange={shouldMaskValue ? undefined : (e) => {
-                    setEnvNone(false);
-                    updateEnvVars((prev) => {
-                      const next = [...prev];
-                      if (next[idx]) next[idx] = { ...next[idx], value: e.target.value };
-                      return next;
-                    });
-                  }}
+                  onChange={
+                    shouldMaskValue
+                      ? undefined
+                      : (e) => {
+                          setEnvNone(false);
+                          updateEnvVars((prev) => {
+                            const next = [...prev];
+                            if (next[idx])
+                              next[idx] = {
+                                ...next[idx],
+                                value: e.target.value,
+                              };
+                            return next;
+                          });
+                        }
+                  }
                   onFocus={() => setActiveEnvValueIndex(idx)}
-                  onBlur={() => setActiveEnvValueIndex((current) => current === idx ? null : current)}
+                  onBlur={() =>
+                    setActiveEnvValueIndex((current) =>
+                      current === idx ? null : current
+                    )
+                  }
                   readOnly={shouldMaskValue}
                   placeholder="I9JU23NF394R6HH"
                   className="w-full min-w-0 h-9 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700 disabled:opacity-60 disabled:cursor-not-allowed"
@@ -1329,10 +1402,14 @@ export function PreviewConfigureClient({
                 <button
                   type="button"
                   disabled={envNone || envVars.length <= 1}
-                  onClick={() => updateEnvVars((prev) => {
-                    const next = prev.filter((_, i) => i !== idx);
-                    return next.length > 0 ? next : [{ name: "", value: "", isSecret: true }];
-                  })}
+                  onClick={() =>
+                    updateEnvVars((prev) => {
+                      const next = prev.filter((_, i) => i !== idx);
+                      return next.length > 0
+                        ? next
+                        : [{ name: "", value: "", isSecret: true }];
+                    })
+                  }
                   className={clsx(
                     "h-9 w-9 rounded-md border border-neutral-200 dark:border-neutral-800 text-neutral-500 dark:text-neutral-400 grid place-items-center",
                     envNone || envVars.length <= 1
@@ -1349,7 +1426,12 @@ export function PreviewConfigureClient({
           <div className="mt-1">
             <button
               type="button"
-              onClick={() => updateEnvVars((prev) => [...prev, { name: "", value: "", isSecret: true }])}
+              onClick={() =>
+                updateEnvVars((prev) => [
+                  ...prev,
+                  { name: "", value: "", isSecret: true },
+                ])
+              }
               disabled={envNone}
               className="inline-flex items-center gap-2 h-9 rounded-md border border-neutral-200 dark:border-neutral-800 px-3 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-900 transition disabled:opacity-60 disabled:cursor-not-allowed"
             >
@@ -1357,7 +1439,12 @@ export function PreviewConfigureClient({
             </button>
           </div>
         </div>
-        <p className={clsx("text-xs text-neutral-400 mt-4", compact ? "pl-5" : "pl-6")}>
+        <p
+          className={clsx(
+            "text-xs text-neutral-400 mt-4",
+            compact ? "pl-5" : "pl-6"
+          )}
+        >
           Tip: Paste a .env file to auto-fill
         </p>
       </details>
@@ -1390,24 +1477,33 @@ export function PreviewConfigureClient({
         {/* Step 1: Scripts (completed from initial setup - collapsed) */}
         {isStepVisible("scripts") && (
           <div>
-            {renderScriptsSection({ compact: true, defaultOpen: !isStepCompleted("scripts"), showStepBadge: true, stepNumber: 1, isDone: isStepCompleted("scripts") })}
+            {renderScriptsSection({
+              compact: true,
+              defaultOpen: !isStepCompleted("scripts"),
+              showStepBadge: true,
+              stepNumber: 1,
+              isDone: isStepCompleted("scripts"),
+            })}
           </div>
         )}
 
         {/* Step 2: Environment Variables (completed from initial setup - collapsed) */}
         {isStepVisible("env-vars") && (
           <div>
-            {renderEnvVarsSection({ compact: true, defaultOpen: !isStepCompleted("env-vars"), showStepBadge: true, stepNumber: 2, isDone: isStepCompleted("env-vars") })}
+            {renderEnvVarsSection({
+              compact: true,
+              defaultOpen: !isStepCompleted("env-vars"),
+              showStepBadge: true,
+              stepNumber: 2,
+              isDone: isStepCompleted("env-vars"),
+            })}
           </div>
         )}
 
         {/* Step 3: Run Scripts */}
         {isStepVisible("run-scripts") && (
           <div>
-            <details
-              className="group"
-              open={isCurrentStep("run-scripts")}
-            >
+            <details className="group" open={isCurrentStep("run-scripts")}>
               <summary
                 className={clsx(
                   "flex items-center gap-2 list-none",
@@ -1415,14 +1511,23 @@ export function PreviewConfigureClient({
                 )}
                 onClick={(e) => {
                   if (isSaving) return;
-                  if (isStepCompleted("run-scripts") && !isCurrentStep("run-scripts")) {
+                  if (
+                    isStepCompleted("run-scripts") &&
+                    !isCurrentStep("run-scripts")
+                  ) {
                     e.preventDefault();
                     handleGoToStep("run-scripts");
                   }
                 }}
               >
                 <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform -rotate-90 group-open:rotate-0" />
-                <StepBadge step={3} done={isStepCompleted("run-scripts") && !isCurrentStep("run-scripts")} />
+                <StepBadge
+                  step={3}
+                  done={
+                    isStepCompleted("run-scripts") &&
+                    !isCurrentStep("run-scripts")
+                  }
+                />
                 <span className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100">
                   Run scripts in VS Code terminal
                 </span>
@@ -1455,15 +1560,23 @@ export function PreviewConfigureClient({
                             : "text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
                         )}
                       >
-                        {commandsCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                        {commandsCopied ? (
+                          <Check className="h-3 w-3" />
+                        ) : (
+                          <Copy className="h-3 w-3" />
+                        )}
                       </button>
                     )}
                   </div>
                   <pre className="px-3 py-2 text-[11px] font-mono text-neutral-900 dark:text-neutral-100 overflow-x-auto whitespace-pre-wrap break-all select-all">
                     {maintenanceScript.trim() || devScript.trim() ? (
-                      [maintenanceScript.trim(), devScript.trim()].filter(Boolean).join(" && ")
+                      [maintenanceScript.trim(), devScript.trim()]
+                        .filter(Boolean)
+                        .join(" && ")
                     ) : (
-                      <span className="text-neutral-400 italic">No scripts configured</span>
+                      <span className="text-neutral-400 italic">
+                        No scripts configured
+                      </span>
                     )}
                   </pre>
                 </div>
@@ -1489,10 +1602,7 @@ export function PreviewConfigureClient({
         {/* Step 4: Browser Setup */}
         {isStepVisible("browser-setup") && (
           <div>
-            <details
-              className="group"
-              open={isCurrentStep("browser-setup")}
-            >
+            <details className="group" open={isCurrentStep("browser-setup")}>
               <summary
                 className={clsx(
                   "flex items-center gap-2 list-none",
@@ -1500,14 +1610,23 @@ export function PreviewConfigureClient({
                 )}
                 onClick={(e) => {
                   if (isSaving) return;
-                  if (isStepCompleted("browser-setup") && !isCurrentStep("browser-setup")) {
+                  if (
+                    isStepCompleted("browser-setup") &&
+                    !isCurrentStep("browser-setup")
+                  ) {
                     e.preventDefault();
                     handleGoToStep("browser-setup");
                   }
                 }}
               >
                 <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform -rotate-90 group-open:rotate-0" />
-                <StepBadge step={4} done={isStepCompleted("browser-setup") && !isCurrentStep("browser-setup")} />
+                <StepBadge
+                  step={4}
+                  done={
+                    isStepCompleted("browser-setup") &&
+                    !isCurrentStep("browser-setup")
+                  }
+                />
                 <span className="text-[13px] font-medium text-neutral-900 dark:text-neutral-100">
                   Configure browser
                 </span>
@@ -1518,16 +1637,24 @@ export function PreviewConfigureClient({
                 </p>
                 <ul className="space-y-2 text-[11px] text-neutral-600 dark:text-neutral-400">
                   <li className="flex items-start gap-2">
-                    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-[10px] text-neutral-500 dark:text-neutral-400 flex-shrink-0 mt-0.5">1</span>
+                    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-[10px] text-neutral-500 dark:text-neutral-400 flex-shrink-0 mt-0.5">
+                      1
+                    </span>
                     <span>Sign in to any dashboards or SaaS tools</span>
                   </li>
                   <li className="flex items-start gap-2">
-                    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-[10px] text-neutral-500 dark:text-neutral-400 flex-shrink-0 mt-0.5">2</span>
+                    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-[10px] text-neutral-500 dark:text-neutral-400 flex-shrink-0 mt-0.5">
+                      2
+                    </span>
                     <span>Dismiss cookie banners, popups, or MFA prompts</span>
                   </li>
                   <li className="flex items-start gap-2">
-                    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-[10px] text-neutral-500 dark:text-neutral-400 flex-shrink-0 mt-0.5">3</span>
-                    <span>Navigate to your dev server URL (e.g., localhost:3000)</span>
+                    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-[10px] text-neutral-500 dark:text-neutral-400 flex-shrink-0 mt-0.5">
+                      3
+                    </span>
+                    <span>
+                      Navigate to your dev server URL (e.g., localhost:3000)
+                    </span>
                   </li>
                 </ul>
                 <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
@@ -1580,7 +1707,11 @@ export function PreviewConfigureClient({
             Configure workspace
           </h1>
           <div className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400 pt-2">
-            <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+            <svg
+              className="h-4 w-4 shrink-0"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+            >
               <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" />
             </svg>
             <span className="font-sans">{repo}</span>
@@ -1593,7 +1724,9 @@ export function PreviewConfigureClient({
         {/* Error Message */}
         {errorMessage && (
           <div className="rounded-md bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 p-3 mt-6">
-            <p className="text-sm text-red-600 dark:text-red-400">{errorMessage}</p>
+            <p className="text-sm text-red-600 dark:text-red-400">
+              {errorMessage}
+            </p>
           </div>
         )}
 
@@ -1638,7 +1771,11 @@ export function PreviewConfigureClient({
           Configure workspace
         </h1>
         <div className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400 pt-1">
-          <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+          <svg
+            className="h-4 w-4 shrink-0"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+          >
             <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" />
           </svg>
           <span className="font-sans text-xs">{repo}</span>
@@ -1657,7 +1794,9 @@ export function PreviewConfigureClient({
 
         {errorMessage && (
           <div className="rounded-md bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 p-3 mt-4">
-            <p className="text-sm text-red-600 dark:text-red-400">{errorMessage}</p>
+            <p className="text-sm text-red-600 dark:text-red-400">
+              {errorMessage}
+            </p>
           </div>
         )}
       </div>
@@ -1711,7 +1850,11 @@ export function PreviewConfigureClient({
               Configure workspace
             </h1>
             <div className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400 pt-1">
-              <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+              <svg
+                className="h-4 w-4 shrink-0"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
                 <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" />
               </svg>
               <span className="font-sans text-xs">{repo}</span>

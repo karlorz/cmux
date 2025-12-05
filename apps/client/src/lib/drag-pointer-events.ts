@@ -1,15 +1,6 @@
-/**
- * Utility for disabling pointer events on marked elements during drag operations.
- * Elements should be marked with `data-drag-disable-pointer` attribute.
- * Also targets canvas/iframe children since pointer-events doesn't propagate to children.
- */
+const SELECTOR =
+  "[data-drag-disable-pointer], [data-drag-disable-pointer] canvas, [data-drag-disable-pointer] iframe";
 
-const SELECTOR = "[data-drag-disable-pointer], [data-drag-disable-pointer] canvas, [data-drag-disable-pointer] iframe";
-
-/**
- * Disable pointer events on all marked elements.
- * Call this when starting a drag operation.
- */
 export function disableDragPointerEvents(): void {
   const elements = Array.from(document.querySelectorAll(SELECTOR));
   for (const el of elements) {
@@ -21,10 +12,6 @@ export function disableDragPointerEvents(): void {
   }
 }
 
-/**
- * Restore pointer events on all marked elements.
- * Call this when ending a drag operation.
- */
 export function restoreDragPointerEvents(): void {
   const elements = Array.from(document.querySelectorAll(SELECTOR));
   for (const el of elements) {
