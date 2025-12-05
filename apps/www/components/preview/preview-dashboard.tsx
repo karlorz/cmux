@@ -596,7 +596,7 @@ function MockGitHubPRBrowser() {
               <path d="M7 11V7a5 5 0 0 1 10 0v4" />
             </svg>
             <span className="text-neutral-300 truncate">
-              {activeTab === "github" ? "github.com/manaflow-ai/cmux/pull/1124" : "cmux.dev/workspace/reuse-preview-config"}
+              {activeTab === "github" ? "github.com/manaflow-ai/cmux/pull/1124" : "cmux.sh/workspace/reuse-preview-config"}
             </span>
           </div>
         </div>
@@ -1094,11 +1094,11 @@ function MockGitHubPRBrowser() {
             <div className="w-[280px] bg-neutral-950 border-r border-neutral-800 flex flex-col shrink-0">
               {/* Header with logo */}
               <div className="h-[38px] flex items-center px-3 shrink-0">
-                <CmuxLogo height={28} wordmarkText="cmux.dev" />
+                <CmuxLogo height={28} wordmarkText="cmux" />
                 <div className="ml-auto">
-                  <button className="w-[25px] h-[25px] border border-neutral-800 hover:bg-neutral-900 rounded-lg flex items-center justify-center">
+                  <div className="w-[25px] h-[25px] border border-neutral-800 hover:bg-neutral-900 rounded-lg flex items-center justify-center cursor-pointer">
                     <Plus className="w-4 h-4 text-neutral-300" />
-                  </button>
+                  </div>
                 </div>
               </div>
 
@@ -1459,7 +1459,7 @@ function MockGitHubPRBrowser() {
                       <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">2</div><div></div></div>
                       <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">3</div><div>Welcome to cmux!</div></div>
                       <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">4</div><div></div></div>
-                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">5</div><div className="text-[#6a9955]">// Feel free to click around and explore!</div></div>
+                      <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">5</div><div>Feel free to click around and explore!</div></div>
                       <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">6</div><div>- Explore around in the sidebar</div></div>
                       <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">7</div><div>- Check out the git diff view</div></div>
                       <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">8</div><div>- View the browser preview</div></div>
@@ -1478,7 +1478,6 @@ function MockGitHubPRBrowser() {
                       <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">19</div><div className="text-[#6a9955]">## About Manaflow</div></div>
                       <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">20</div><div></div></div>
                       <div className="flex"><div className="pr-3 text-[#858585] select-none text-right w-8">21</div><div>We build interfaces to manage AI agents.</div></div>
- 
                     </div>
                   </div>
                 </div>
@@ -1827,11 +1826,11 @@ function MockGitHubPRBrowser() {
                         <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">2</div><div></div></div>
                         <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">3</div><div>Welcome to cmux!</div></div>
                         <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">4</div><div></div></div>
-                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">5</div><div className="text-[#6a9955]">// Feel free to click around and explore!</div></div>
+                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">5</div><div>Feel free to click around and explore!</div></div>
                         <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">6</div><div>- Browse files in the explorer</div></div>
                         <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">7</div><div>- Check out the git diff view</div></div>
                         <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">8</div><div>- View the browser preview</div></div>
-                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">9</div><div>- Navigate the terminal</div></div>
+                        <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">9</div><div>- There may be some Easter eggs</div></div>
                         <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">10</div><div></div></div>
                         <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">11</div><div className="text-[#6a9955]">## What is cmux?</div></div>
                         <div className="flex"><div className="pr-4 text-[#858585] select-none text-right w-10">12</div><div></div></div>
