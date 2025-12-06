@@ -148,11 +148,28 @@ export async function captureScreenshotsForBranch(
   const useTaskRunJwt = isTaskRunJwtAuth(auth);
   const providedApiKey = !useTaskRunJwt ? auth.anthropicApiKey : undefined;
 
-  const devInstructions = installCommand || devCommand
-    ? `
-${installCommand ? `Install command: ${installCommand}` : ""}
-${devCommand ? `Dev server command: ${devCommand}` : ""}`
-    : "";
+  const devInstructions = (() => {
+    if (!installCommand && !devCommand) {
+      return `
+The user did not provide installation or dev commands. You will need to discover them by reading README.md, package.json, .devcontainer.json, or other configuration files.`;
+    }
+    const parts = ["The user provided the following commands:"];
+    if (installCommand) {
+      parts.push(`<install_command>\n${installCommand}\n</install_command>`);
+    } else {
+      parts.push(
+        "(No install command provided - check README.md or package.json)"
+      );
+    }
+    if (devCommand) {
+      parts.push(`<dev_command>\n${devCommand}\n</dev_command>`);
+    } else {
+      parts.push(
+        "(No dev command provided - check README.md or package.json)"
+      );
+    }
+    return "\n" + parts.join("\n");
+  })();
 
   const prompt = `I need you to take screenshots of the UI changes in this pull request.
 
@@ -168,14 +185,21 @@ Screenshot output directory: ${outputDir}
 ${devInstructions}
 Please:
 0. Read CLAUDE.md or AGENTS.md (they may be one level deeper) and install dependencies if needed
-1. Start the development server if needed (${devCommand ? `use: ${devCommand}` : "check files like README.md, package.json or .devcontainer.json for dev script, explore the repository more if needed"}. check tmux panes comprehensively to see if the server is running.)
-2. Wait for the server to be ready
+1. Start the development server if needed (check files like README.md, package.json or .devcontainer.json for dev script, or use the dev_command provided above if available). Check tmux panes comprehensively to see if the server is already running.
+2. Wait for the server to be ready by using curl to check if it returns a 200 status code (e.g., curl -s -o /dev/null -w "%{http_code}" http://localhost:PORT)
 3. Navigate to the pages/components that were modified in the PR
 4. Take full-page screenshots as well as element-specific screenshots of each relevant UI view that was changed
-5. Save every screenshot directly inside ${outputDir} (no subdirectories) with descriptive names like "homepage-${branch}.png"
+5. Don't just screenshot the page at rest - also capture interactive and hidden UI states that may have changed:
+   - Hover states (buttons, links, cards)
+   - Focus states (form inputs, interactive elements)
+   - Loading/error/empty states
+   - Modals, dialogs, dropdowns, tooltips
+   - Collapsed vs expanded states (accordions, menus)
+   - Different viewport sizes if responsive changes were made
+6. Save every screenshot directly inside ${outputDir} (no subdirectories) with descriptive names like "homepage-${branch}.png" or "button-hover-${branch}.png"
 
 <IMPORTANT>
-Focus on capturing visual changes. If no UI changes are present, just let me know.
+Focus on capturing visual changes, including interactive states that aren't visible by default. If no UI changes are present, just let me know.
 When providing structured_output, set hasUiChanges to true if you saw UI changes and false otherwise. Include every screenshot you saved with the absolute file path (or a path relative to ${outputDir}) and a short description of what the screenshot shows. The paths must match the files you saved.
 Do not close the browser after you're done, since I will want to click around the final page you navigated to.
 Do not create summary documents.
