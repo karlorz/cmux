@@ -189,8 +189,9 @@ export async function runTaskScreenshots(
       result,
     });
   }
-  if (!commitSha) {
-    log("ERROR", "Cannot upload screenshot result without commitSha", {
+  // For completed status, commitSha is required
+  if (status === "completed" && !commitSha) {
+    log("ERROR", "Cannot upload completed screenshot result without commitSha", {
       taskRunId,
       status,
       error,
@@ -205,7 +206,8 @@ export async function runTaskScreenshots(
       taskId,
       runId: taskRunId,
       status,
-      commitSha,
+      // Only include commitSha if available (required for completed, optional for failed/skipped)
+      ...(commitSha && { commitSha }),
       images,
       error,
       hasUiChanges,

@@ -85,6 +85,12 @@ export const uploadScreenshot = httpAction(async (ctx, req) => {
   }));
 
   if (payload.status === "completed") {
+    if (!payload.commitSha) {
+      return jsonResponse(
+        { code: 400, message: "commitSha is required for completed status" },
+        400
+      );
+    }
     if (!payload.images || payload.images.length === 0) {
       return jsonResponse(
         { code: 400, message: "At least one screenshot image is required" },
