@@ -657,7 +657,8 @@ export const recordScreenshotResult = internalMutation({
       v.literal("failed"),
       v.literal("skipped"),
     ),
-    commitSha: v.string(),
+    /** Required for completed status, optional for failed/skipped */
+    commitSha: v.optional(v.string()),
     hasUiChanges: v.optional(v.boolean()),
     screenshots: v.optional(
       v.array(
