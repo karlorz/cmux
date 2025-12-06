@@ -274,6 +274,18 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     };
   }, []);
 
+  // Listen for GitHub install completion message from popup
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type === "cmux/github-install-complete") {
+        router.options.context?.queryClient?.invalidateQueries();
+      }
+    };
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [router.options.context?.queryClient]);
+
   const handleImageClick = useCallback(() => {
     // Trigger the file select from ImagePlugin
     const lexicalWindow = window as Window & {
@@ -456,11 +468,6 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     const win = window.open("about:blank", name, features);
     if (win) {
       try {
-        (win as Window & { opener: null | Window }).opener = null;
-      } catch {
-        /* noop */
-      }
-      try {
         win.location.href = url;
       } catch {
         window.open(url, "_blank");
@@ -531,7 +538,12 @@ export const DashboardInputControls = memo(function DashboardInputControls({
                       return;
                     }
                     const baseUrl = `https://github.com/apps/${slug}/installations/new`;
-                    const { state } = await mintState({ teamSlugOrId });
+                    // For web users, pass returnUrl to connect-complete page which handles popup close
+                    // Include popup=true query param to signal this is a web popup flow
+                    const returnUrl = !isElectron
+                      ? new URL(`/${teamSlugOrId}/connect-complete?popup=true`, window.location.origin).toString()
+                      : undefined;
+                    const { state } = await mintState({ teamSlugOrId, returnUrl });
                     const sep = baseUrl.includes("?") ? "&" : "?";
                     const url = `${baseUrl}${sep}state=${encodeURIComponent(
                       state,
