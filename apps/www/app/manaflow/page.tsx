@@ -84,6 +84,37 @@ export default function ManaflowPage() {
             </p>
           </div>
         </div>
+
+        <div className="mt-12 flex gap-4 text-sm">
+          <a
+            href="https://x.com/manaflowai"
+            target="_blank"
+            className="text-neutral-500 hover:text-black hover:underline"
+          >
+            x
+          </a>
+          <a
+            href="https://github.com/manaflow-ai"
+            target="_blank"
+            className="text-neutral-500 hover:text-black hover:underline"
+          >
+            github
+          </a>
+          <a
+            href="https://discord.gg/FVevu78A"
+            target="_blank"
+            className="text-neutral-500 hover:text-black hover:underline"
+          >
+            discord
+          </a>
+          <a
+            href="https://www.linkedin.com/company/manaflow-ai"
+            target="_blank"
+            className="text-neutral-500 hover:text-black hover:underline"
+          >
+            linkedin
+          </a>
+        </div>
       </div>
     </div>
   );
