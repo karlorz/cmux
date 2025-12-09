@@ -257,7 +257,6 @@ function DashboardComponent() {
   }, [branchesQuery.data, defaultBranchQuery.data]);
 
   const branchNames = branchSummary.names;
-  const remoteDefaultBranch = branchSummary.defaultName;
 
   // Callbacks for branch selector events
   const handleBranchSelectorOpen = useCallback((open: boolean) => {
@@ -462,24 +461,30 @@ function DashboardComponent() {
   const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
   const addManualRepo = useAction(api.github_http.addManualRepo);
 
+  // Use the stable default branch from the fast query for fallback selection
+  // This prevents search results from changing the effective selection
+  const stableDefaultBranch = defaultBranchQuery.data?.defaultBranch;
+
   const effectiveSelectedBranch = useMemo(() => {
     if (selectedBranch.length > 0) {
       return selectedBranch;
     }
+    // Use the stable default branch from the fast query, not from search results
+    if (stableDefaultBranch) {
+      return [stableDefaultBranch];
+    }
+    // Fallback to common default branch names if fast query hasn't loaded yet
     if (branchNames.length === 0) {
       return [];
     }
-    const fallbackBranch = branchNames.includes("main")
-      ? "main"
-      : branchNames.includes("master")
-        ? "master"
-        : branchNames[0];
-    const preferredBranch =
-      remoteDefaultBranch && branchNames.includes(remoteDefaultBranch)
-        ? remoteDefaultBranch
-        : fallbackBranch;
-    return [preferredBranch];
-  }, [selectedBranch, branchNames, remoteDefaultBranch]);
+    if (branchNames.includes("main")) {
+      return ["main"];
+    }
+    if (branchNames.includes("master")) {
+      return ["master"];
+    }
+    return [];
+  }, [selectedBranch, stableDefaultBranch, branchNames]);
 
   const handleStartTask = useCallback(async () => {
     if (isStartingTaskRef.current) {
