@@ -1442,6 +1442,23 @@ EOF
 
 
 @registry.task(
+    name="configure-openbox",
+    deps=("upload-repo", "install-base-packages"),
+    description="Install openbox configuration for desktop menu",
+)
+async def task_configure_openbox(ctx: TaskContext) -> None:
+    repo = shlex.quote(ctx.remote_repo_root)
+    cmd = textwrap.dedent(
+        f"""
+        set -eux
+        mkdir -p /root/.config/openbox
+        install -Dm0644 {repo}/configs/openbox/menu.xml /root/.config/openbox/menu.xml
+        """
+    )
+    await ctx.run("configure-openbox", cmd)
+
+
+@registry.task(
     name="upload-repo",
     deps=("apt-bootstrap",),
     description="Upload repository to the instance",
@@ -1853,6 +1870,7 @@ PROFILE
     deps=(
         "configure-memory-protection",
         "configure-envctl",
+        "configure-openbox",
         "install-prompt-wrapper",
         "install-tmux-conf",
         "install-collect-scripts",
@@ -2321,6 +2339,7 @@ async def provision_and_snapshot_for_preset(
         ttl_seconds=args.ttl_seconds,
         ttl_action=args.ttl_action,
     )
+    await instance.aset_wake_on(wake_on_http=True)
     started_instances.append(instance)
     await _await_instance_ready(instance, console=console)
     console.always(

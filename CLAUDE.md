@@ -66,6 +66,7 @@ xagi-server
 ```
 
 Morph snapshots capture RAM state. So after snapshot, running processes will still be running.
+To modify and rebuild all snapshots, edit `./scripts/snapshot.py` and run `uv run --env-file .env ./scripts/snapshot.py`
 
 # Frontend
 
