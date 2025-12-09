@@ -102,6 +102,9 @@ enum Command {
         /// Team slug or ID
         #[arg(long, short = 't', env = "CMUX_TEAM")]
         team: Option<String>,
+        /// API base URL (for staging/self-hosted environments)
+        #[arg(long, short = 'u', env = "CMUX_BASE_URL")]
+        base_url: Option<String>,
     },
 
     /// Start the sandbox server container
@@ -604,8 +607,9 @@ async fn run() -> anyhow::Result<()> {
                 tokio::io::copy(&mut ri, &mut stdout)
             );
         }
-        Command::SshProxy { id, team } => {
-            handle_ssh_proxy(&id, team.as_deref()).await?;
+        Command::SshProxy { id, team, base_url } => {
+            let api_url = base_url.as_deref().unwrap_or(&cli.base_url);
+            handle_ssh_proxy(&id, team.as_deref(), api_url).await?;
         }
         Command::Proxy { id, port } => {
             handle_proxy(cli.base_url, id, port).await?;
@@ -2076,8 +2080,9 @@ async fn get_sandbox_ssh_info(
     access_token: &str,
     sandbox_id: &str,
     team_slug_or_id: &str,
+    base_url: &str,
 ) -> anyhow::Result<SandboxSshInfo> {
-    let api_url = get_stack_api_url();
+    let api_url = base_url;
 
     // URL-encode the query parameters
     let query: String = url::form_urlencoded::Serializer::new(String::new())
@@ -2463,43 +2468,6 @@ struct ImportGithubKeysResponse {
     keys: Vec<CreateSshKeyResponse>,
 }
 
-/// Get an access token from the stored refresh token
-async fn get_access_token() -> anyhow::Result<String> {
-    let refresh_token = get_stack_refresh_token().ok_or_else(|| {
-        anyhow::anyhow!("Not logged in. Run 'cmux auth login' first.")
-    })?;
-
-    let api_url = get_stack_api_url();
-    let project_id = get_stack_project_id();
-    let publishable_key = get_stack_publishable_key();
-
-    let client = Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()?;
-
-    let refresh_url = format!("{}/api/v1/auth/sessions/current/refresh", api_url);
-    let response = client
-        .post(&refresh_url)
-        .header("x-stack-project-id", &project_id)
-        .header("x-stack-publishable-client-key", &publishable_key)
-        .header("x-stack-refresh-token", &refresh_token)
-        .send()
-        .await?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        return Err(anyhow::anyhow!(
-            "Failed to refresh token: {} - {}. Try 'cmux auth login' to re-authenticate.",
-            status,
-            text
-        ));
-    }
-
-    let token_response: TokenRefreshResponse = response.json().await?;
-    Ok(token_response.access_token)
-}
-
 /// Compute SSH key fingerprint from a public key string.
 /// Format: 'SHA256:base64...'
 fn compute_ssh_fingerprint(public_key: &str) -> anyhow::Result<String> {
@@ -2605,12 +2573,11 @@ fn format_relative_time(timestamp_ms: i64) -> String {
 
 /// Handle `cmux ssh-keys list` - list registered SSH keys
 async fn handle_ssh_keys_list() -> anyhow::Result<()> {
-    let access_token = get_access_token().await?;
-    let api_url = get_stack_api_url();
-
     let client = Client::builder()
         .timeout(Duration::from_secs(30))
         .build()?;
+    let access_token = get_access_token(&client).await?;
+    let api_url = get_stack_api_url();
 
     let url = format!("{}/api/user/ssh-keys", api_url);
     let response = client
@@ -2727,12 +2694,11 @@ async fn handle_ssh_keys_add(args: SshKeysAddArgs) -> anyhow::Result<()> {
     };
 
     // Get access token and make API request
-    let access_token = get_access_token().await?;
-    let api_url = get_stack_api_url();
-
     let client = Client::builder()
         .timeout(Duration::from_secs(30))
         .build()?;
+    let access_token = get_access_token(&client).await?;
+    let api_url = get_stack_api_url();
 
     let url = format!("{}/api/user/ssh-keys", api_url);
     let body = serde_json::json!({
@@ -2770,12 +2736,11 @@ async fn handle_ssh_keys_add(args: SshKeysAddArgs) -> anyhow::Result<()> {
 async fn handle_ssh_keys_import_github() -> anyhow::Result<()> {
     eprintln!("Importing SSH keys from connected GitHub account...");
 
-    let access_token = get_access_token().await?;
-    let api_url = get_stack_api_url();
-
     let client = Client::builder()
         .timeout(Duration::from_secs(30))
         .build()?;
+    let access_token = get_access_token(&client).await?;
+    let api_url = get_stack_api_url();
 
     let url = format!("{}/api/user/ssh-keys/import-github", api_url);
     let response = client
@@ -2817,12 +2782,11 @@ async fn handle_ssh_keys_import_github() -> anyhow::Result<()> {
 
 /// Handle `cmux ssh-keys remove` - remove an SSH key
 async fn handle_ssh_keys_remove(fingerprint_or_id: &str) -> anyhow::Result<()> {
-    let access_token = get_access_token().await?;
-    let api_url = get_stack_api_url();
-
     let client = Client::builder()
         .timeout(Duration::from_secs(30))
         .build()?;
+    let access_token = get_access_token(&client).await?;
+    let api_url = get_stack_api_url();
 
     // First, list keys to find the one to delete
     let list_url = format!("{}/api/user/ssh-keys", api_url);
@@ -3032,7 +2996,7 @@ async fn handle_onboard() -> anyhow::Result<()> {
 }
 
 /// Handle real SSH to a sandbox (via direct TCP to Morph)
-async fn handle_real_ssh(client: &Client, _base_url: &str, args: &SshArgs) -> anyhow::Result<()> {
+async fn handle_real_ssh(client: &Client, base_url: &str, args: &SshArgs) -> anyhow::Result<()> {
     let binary_name = if is_dmux() { "dmux" } else { "cmux" };
 
     // Get access token and resolve team
@@ -3042,14 +3006,14 @@ async fn handle_real_ssh(client: &Client, _base_url: &str, args: &SshArgs) -> an
 
     // Verify we can get SSH info for this sandbox (validates sandbox exists and is accessible)
     eprintln!("Resolving sandbox {}...", args.id);
-    let ssh_info = get_sandbox_ssh_info(client, &access_token, &args.id, &team).await?;
+    let ssh_info = get_sandbox_ssh_info(client, &access_token, &args.id, &team, base_url).await?;
     eprintln!(
         "Connecting to {} ({}:{})...",
         ssh_info.morph_instance_id, ssh_info.host, ssh_info.port
     );
 
     // Build SSH command with ProxyCommand using our _ssh-proxy
-    // Pass the team to the proxy command so it can authenticate
+    // Pass the team and base_url to the proxy command so it can authenticate
     let mut ssh_args = vec![
         "-o".to_string(),
         "StrictHostKeyChecking=no".to_string(),
@@ -3059,8 +3023,8 @@ async fn handle_real_ssh(client: &Client, _base_url: &str, args: &SshArgs) -> an
         "LogLevel=ERROR".to_string(),
         "-o".to_string(),
         format!(
-            "ProxyCommand={} _ssh-proxy {} --team {}",
-            binary_name, args.id, team
+            "ProxyCommand={} _ssh-proxy {} --team {} --base-url {}",
+            binary_name, args.id, team, base_url
         ),
     ];
 
@@ -3146,7 +3110,7 @@ async fn handle_ssh_config(_client: &Client, _base_url: &str) -> anyhow::Result<
 
 /// Internal SSH proxy command - bridges stdin/stdout to direct TCP to Morph SSH gateway
 /// This is used as SSH ProxyCommand to route SSH through the Morph gateway
-async fn handle_ssh_proxy(id: &str, team: Option<&str>) -> anyhow::Result<()> {
+async fn handle_ssh_proxy(id: &str, team: Option<&str>, base_url: &str) -> anyhow::Result<()> {
     // Create a client for API calls
     let client = Client::builder()
         .timeout(Duration::from_secs(30))
@@ -3157,7 +3121,7 @@ async fn handle_ssh_proxy(id: &str, team: Option<&str>) -> anyhow::Result<()> {
     let team = resolve_team(&client, &access_token, team).await?;
 
     // Get SSH connection info from the API
-    let ssh_info = get_sandbox_ssh_info(&client, &access_token, id, &team).await?;
+    let ssh_info = get_sandbox_ssh_info(&client, &access_token, id, &team, base_url).await?;
 
     // The Morph SSH gateway expects connections with the instance ID as the username
     // Format: ssh -p 22222 morphvm_xxx@ssh.cloud.morph.so
