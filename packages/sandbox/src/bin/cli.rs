@@ -2034,6 +2034,7 @@ async fn get_access_token(client: &Client) -> anyhow::Result<String> {
         .post(&refresh_url)
         .header("x-stack-project-id", &project_id)
         .header("x-stack-publishable-client-key", &publishable_key)
+        .header("x-stack-access-type", "client")
         .header("x-stack-refresh-token", &refresh_token)
         .send()
         .await?;
@@ -2063,6 +2064,7 @@ async fn get_user_teams(client: &Client, access_token: &str) -> anyhow::Result<V
         .get(&teams_url)
         .header("x-stack-project-id", &project_id)
         .header("x-stack-publishable-client-key", &publishable_key)
+        .header("x-stack-access-type", "client")
         .header("Authorization", format!("Bearer {}", access_token))
         .send()
         .await?;
@@ -2177,6 +2179,7 @@ async fn handle_auth_login() -> anyhow::Result<()> {
         .post(&init_url)
         .header("x-stack-project-id", &project_id)
         .header("x-stack-publishable-client-key", &publishable_key)
+        .header("x-stack-access-type", "client")
         .header("Content-Type", "application/json")
         .json(&init_body)
         .send()
@@ -2232,6 +2235,7 @@ async fn handle_auth_login() -> anyhow::Result<()> {
             .post(&poll_url)
             .header("x-stack-project-id", &project_id)
             .header("x-stack-publishable-client-key", &publishable_key)
+            .header("x-stack-access-type", "client")
             .header("Content-Type", "application/json")
             .json(&poll_body)
             .send()
@@ -2304,6 +2308,7 @@ async fn get_user_info(client: &Client, refresh_token: &str) -> anyhow::Result<S
         .post(&refresh_url)
         .header("x-stack-project-id", &project_id)
         .header("x-stack-publishable-client-key", &publishable_key)
+        .header("x-stack-access-type", "client")
         .header("x-stack-refresh-token", refresh_token)
         .send()
         .await?;
@@ -2320,6 +2325,7 @@ async fn get_user_info(client: &Client, refresh_token: &str) -> anyhow::Result<S
         .get(&user_url)
         .header("x-stack-project-id", &project_id)
         .header("x-stack-publishable-client-key", &publishable_key)
+        .header("x-stack-access-type", "client")
         .header(
             "Authorization",
             format!("Bearer {}", token_response.access_token),
@@ -2418,6 +2424,7 @@ async fn handle_auth_token() -> anyhow::Result<()> {
         .post(&refresh_url)
         .header("x-stack-project-id", &project_id)
         .header("x-stack-publishable-client-key", &publishable_key)
+        .header("x-stack-access-type", "client")
         .header("x-stack-refresh-token", &refresh_token)
         .send()
         .await?;
