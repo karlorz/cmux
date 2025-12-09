@@ -344,13 +344,13 @@ async fn forward_request(
 ) -> Response<Body> {
     if is_upgrade_request(&req) {
         // Ensure upgrade headers are present for hyper's upgrade mechanism to work.
-        // When requests come through HTTP/2 load balancers, these headers may be stripped.
+        // When requests come through HTTP/2 load balancers, these headers may be stripped
+        // or replaced (e.g., Connection: keep-alive). Use insert() to unconditionally set
+        // the correct values for WebSocket upgrades.
         req.headers_mut()
-            .entry(CONNECTION)
-            .or_insert(HeaderValue::from_static("Upgrade"));
+            .insert(CONNECTION, HeaderValue::from_static("Upgrade"));
         req.headers_mut()
-            .entry(UPGRADE)
-            .or_insert(HeaderValue::from_static("websocket"));
+            .insert(UPGRADE, HeaderValue::from_static("websocket"));
         return handle_websocket(state, req, target, behavior).await;
     }
 
@@ -593,15 +593,15 @@ async fn handle_websocket(
             .insert(name.clone(), value.clone());
     }
 
-    // Ensure WebSocket upgrade headers are present (may have been stripped by HTTP/2 load balancer)
+    // Ensure WebSocket upgrade headers are present (may have been stripped or replaced
+    // by HTTP/2 load balancer, e.g., Connection: keep-alive). Use insert() to unconditionally
+    // set the correct values.
     backend_request
         .headers_mut()
-        .entry(CONNECTION)
-        .or_insert(HeaderValue::from_static("Upgrade"));
+        .insert(CONNECTION, HeaderValue::from_static("Upgrade"));
     backend_request
         .headers_mut()
-        .entry(UPGRADE)
-        .or_insert(HeaderValue::from_static("websocket"));
+        .insert(UPGRADE, HeaderValue::from_static("websocket"));
 
     let (backend_stream, backend_headers) =
         match connect_upstream_websocket(state.client.clone(), backend_request).await {
