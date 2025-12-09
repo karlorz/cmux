@@ -305,7 +305,11 @@ pub fn delete_stack_refresh_token() -> Result<(), std::io::Error> {
     let mut creds: serde_json::Value =
         serde_json::from_str(&content).unwrap_or(serde_json::json!({}));
 
-    if creds.as_object_mut().map(|o| o.remove("stack_refresh_token")).is_some() {
+    if creds
+        .as_object_mut()
+        .map(|o| o.remove("stack_refresh_token"))
+        .is_some()
+    {
         fs::write(&path, serde_json::to_string_pretty(&creds)?)?;
         fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
     }

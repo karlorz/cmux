@@ -13,12 +13,12 @@ use cmux_sandbox::{
     AcpProvider, DEFAULT_HTTP_PORT, DEFAULT_IMAGE, DMUX_DEFAULT_CONTAINER, DMUX_DEFAULT_HTTP_PORT,
     DMUX_DEFAULT_IMAGE,
 };
-use sha2::{Digest, Sha256};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use futures::{SinkExt, StreamExt};
 use ignore::WalkBuilder;
 use reqwest::Client;
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
@@ -1947,8 +1947,7 @@ fn get_stack_api_url() -> String {
 
 /// Stack Auth project ID
 fn get_stack_project_id() -> String {
-    std::env::var("STACK_PROJECT_ID")
-        .unwrap_or_else(|_| "a]7Li4]:V-|0GTq$G[gY".to_string())
+    std::env::var("STACK_PROJECT_ID").unwrap_or_else(|_| "a]7Li4]:V-|0GTq$G[gY".to_string())
 }
 
 /// Stack Auth publishable client key
@@ -2018,9 +2017,8 @@ struct StackTeamsResponse {
 
 /// Get an access token using the stored refresh token
 async fn get_access_token(client: &Client) -> anyhow::Result<String> {
-    let refresh_token = get_stack_refresh_token().ok_or_else(|| {
-        anyhow::anyhow!("Not logged in. Run 'cmux auth login' first.")
-    })?;
+    let refresh_token = get_stack_refresh_token()
+        .ok_or_else(|| anyhow::anyhow!("Not logged in. Run 'cmux auth login' first."))?;
 
     let api_url = get_stack_api_url();
     let project_id = get_stack_project_id();
@@ -2067,7 +2065,11 @@ async fn get_user_teams(client: &Client, access_token: &str) -> anyhow::Result<V
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
-        return Err(anyhow::anyhow!("Failed to get teams: {} - {}", status, text));
+        return Err(anyhow::anyhow!(
+            "Failed to get teams: {} - {}",
+            status,
+            text
+        ));
     }
 
     let teams_response: StackTeamsResponse = response.json().await?;
@@ -2158,9 +2160,7 @@ async fn handle_auth_login() -> anyhow::Result<()> {
 
     eprintln!("Starting authentication...");
 
-    let client = Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()?;
+    let client = Client::builder().timeout(Duration::from_secs(30)).build()?;
 
     // Step 1: Initiate CLI auth flow
     let init_url = format!("{}/api/v1/auth/cli", api_url);
@@ -2276,9 +2276,7 @@ async fn handle_auth_login() -> anyhow::Result<()> {
                 }
             }
             "expired" => {
-                return Err(anyhow::anyhow!(
-                    "Authentication expired. Please try again."
-                ));
+                return Err(anyhow::anyhow!("Authentication expired. Please try again."));
             }
             _ => {
                 // Still pending, continue polling
@@ -2316,7 +2314,10 @@ async fn get_user_info(client: &Client, refresh_token: &str) -> anyhow::Result<S
         .get(&user_url)
         .header("x-stack-project-id", &project_id)
         .header("x-stack-publishable-client-key", &publishable_key)
-        .header("Authorization", format!("Bearer {}", token_response.access_token))
+        .header(
+            "Authorization",
+            format!("Bearer {}", token_response.access_token),
+        )
         .send()
         .await?;
 
@@ -2332,8 +2333,7 @@ async fn get_user_info(client: &Client, refresh_token: &str) -> anyhow::Result<S
 fn handle_auth_logout() -> anyhow::Result<()> {
     let had_token = get_stack_refresh_token().is_some();
 
-    delete_stack_refresh_token()
-        .map_err(|e| anyhow::anyhow!("Failed to delete token: {}", e))?;
+    delete_stack_refresh_token().map_err(|e| anyhow::anyhow!("Failed to delete token: {}", e))?;
 
     if had_token {
         eprintln!("\x1b[32m✓ Logged out successfully.\x1b[0m");
@@ -2350,9 +2350,7 @@ async fn handle_auth_status() -> anyhow::Result<()> {
     println!("\x1b[1mStack Auth Status:\x1b[0m");
 
     if let Some(refresh_token) = get_stack_refresh_token() {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(10))
-            .build()?;
+        let client = Client::builder().timeout(Duration::from_secs(10)).build()?;
 
         match get_user_info(&client, &refresh_token).await {
             Ok(user_info) => {
@@ -2400,17 +2398,14 @@ async fn handle_auth_status() -> anyhow::Result<()> {
 
 /// Handle `cmux auth token` - print current access token
 async fn handle_auth_token() -> anyhow::Result<()> {
-    let refresh_token = get_stack_refresh_token().ok_or_else(|| {
-        anyhow::anyhow!("Not logged in. Run 'cmux auth login' first.")
-    })?;
+    let refresh_token = get_stack_refresh_token()
+        .ok_or_else(|| anyhow::anyhow!("Not logged in. Run 'cmux auth login' first."))?;
 
     let api_url = get_stack_api_url();
     let project_id = get_stack_project_id();
     let publishable_key = get_stack_publishable_key();
 
-    let client = Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()?;
+    let client = Client::builder().timeout(Duration::from_secs(10)).build()?;
 
     let refresh_url = format!("{}/api/v1/auth/sessions/current/refresh", api_url);
     let response = client
@@ -2573,9 +2568,7 @@ fn format_relative_time(timestamp_ms: i64) -> String {
 
 /// Handle `cmux ssh-keys list` - list registered SSH keys
 async fn handle_ssh_keys_list() -> anyhow::Result<()> {
-    let client = Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()?;
+    let client = Client::builder().timeout(Duration::from_secs(30)).build()?;
     let access_token = get_access_token(&client).await?;
     let api_url = get_stack_api_url();
 
@@ -2589,7 +2582,11 @@ async fn handle_ssh_keys_list() -> anyhow::Result<()> {
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
-        return Err(anyhow::anyhow!("Failed to list SSH keys: {} - {}", status, text));
+        return Err(anyhow::anyhow!(
+            "Failed to list SSH keys: {} - {}",
+            status,
+            text
+        ));
     }
 
     let keys: Vec<SshKeyInfo> = response.json().await?;
@@ -2602,8 +2599,8 @@ async fn handle_ssh_keys_list() -> anyhow::Result<()> {
 
     // Print header
     println!(
-        "{:<20} {:<45} {:<10} {}",
-        "NAME", "FINGERPRINT", "SOURCE", "CREATED"
+        "{:<20} {:<45} {:<10} CREATED",
+        "NAME", "FINGERPRINT", "SOURCE"
     );
     println!("{}", "-".repeat(90));
 
@@ -2648,22 +2645,23 @@ async fn handle_ssh_keys_add(args: SshKeysAddArgs) -> anyhow::Result<()> {
     let key_path = match args.path {
         Some(path) => {
             if !path.exists() {
-                return Err(anyhow::anyhow!("SSH public key file not found: {}", path.display()));
+                return Err(anyhow::anyhow!(
+                    "SSH public key file not found: {}",
+                    path.display()
+                ));
             }
             path
         }
-        None => {
-            find_ssh_public_key().ok_or_else(|| {
-                anyhow::anyhow!(
-                    "No SSH public key found.\n\
+        None => find_ssh_public_key().ok_or_else(|| {
+            anyhow::anyhow!(
+                "No SSH public key found.\n\
                      \n\
                      Looked in ~/.ssh/ for: id_ed25519.pub, id_rsa.pub, id_ecdsa.pub\n\
                      \n\
                      Generate a new key with: ssh-keygen -t ed25519\n\
                      Or specify a path: cmux ssh-keys add /path/to/key.pub"
-                )
-            })?
-        }
+            )
+        })?,
     };
 
     eprintln!("Found SSH public key at {}", key_path.display());
@@ -2694,9 +2692,7 @@ async fn handle_ssh_keys_add(args: SshKeysAddArgs) -> anyhow::Result<()> {
     };
 
     // Get access token and make API request
-    let client = Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()?;
+    let client = Client::builder().timeout(Duration::from_secs(30)).build()?;
     let access_token = get_access_token(&client).await?;
     let api_url = get_stack_api_url();
 
@@ -2718,9 +2714,15 @@ async fn handle_ssh_keys_add(args: SshKeysAddArgs) -> anyhow::Result<()> {
     if !status.is_success() {
         let text = response.text().await.unwrap_or_default();
         if status.as_u16() == 409 {
-            return Err(anyhow::anyhow!("SSH key with this fingerprint already exists"));
+            return Err(anyhow::anyhow!(
+                "SSH key with this fingerprint already exists"
+            ));
         }
-        return Err(anyhow::anyhow!("Failed to add SSH key: {} - {}", status, text));
+        return Err(anyhow::anyhow!(
+            "Failed to add SSH key: {} - {}",
+            status,
+            text
+        ));
     }
 
     let result: CreateSshKeyResponse = response.json().await?;
@@ -2736,9 +2738,7 @@ async fn handle_ssh_keys_add(args: SshKeysAddArgs) -> anyhow::Result<()> {
 async fn handle_ssh_keys_import_github() -> anyhow::Result<()> {
     eprintln!("Importing SSH keys from connected GitHub account...");
 
-    let client = Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()?;
+    let client = Client::builder().timeout(Duration::from_secs(30)).build()?;
     let access_token = get_access_token(&client).await?;
     let api_url = get_stack_api_url();
 
@@ -2759,7 +2759,11 @@ async fn handle_ssh_keys_import_github() -> anyhow::Result<()> {
                  Please connect your GitHub account at https://cmux.sh/settings"
             ));
         }
-        return Err(anyhow::anyhow!("Failed to import GitHub keys: {} - {}", status, text));
+        return Err(anyhow::anyhow!(
+            "Failed to import GitHub keys: {} - {}",
+            status,
+            text
+        ));
     }
 
     let result: ImportGithubKeysResponse = response.json().await?;
@@ -2768,7 +2772,8 @@ async fn handle_ssh_keys_import_github() -> anyhow::Result<()> {
         eprintln!("\x1b[33mNo new keys to import.\x1b[0m");
         eprintln!("Either you have no SSH keys on GitHub or they're already registered.");
     } else {
-        eprintln!("\n\x1b[32m✓ Imported {} SSH key{} from GitHub\x1b[0m",
+        eprintln!(
+            "\n\x1b[32m✓ Imported {} SSH key{} from GitHub\x1b[0m",
             result.imported,
             if result.imported == 1 { "" } else { "s" }
         );
@@ -2782,9 +2787,7 @@ async fn handle_ssh_keys_import_github() -> anyhow::Result<()> {
 
 /// Handle `cmux ssh-keys remove` - remove an SSH key
 async fn handle_ssh_keys_remove(fingerprint_or_id: &str) -> anyhow::Result<()> {
-    let client = Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()?;
+    let client = Client::builder().timeout(Duration::from_secs(30)).build()?;
     let access_token = get_access_token(&client).await?;
     let api_url = get_stack_api_url();
 
@@ -2799,16 +2802,20 @@ async fn handle_ssh_keys_remove(fingerprint_or_id: &str) -> anyhow::Result<()> {
     if !list_response.status().is_success() {
         let status = list_response.status();
         let text = list_response.text().await.unwrap_or_default();
-        return Err(anyhow::anyhow!("Failed to list SSH keys: {} - {}", status, text));
+        return Err(anyhow::anyhow!(
+            "Failed to list SSH keys: {} - {}",
+            status,
+            text
+        ));
     }
 
     let keys: Vec<SshKeyInfo> = list_response.json().await?;
 
     // Find the key by fingerprint or ID
     let key_to_delete = keys.iter().find(|k| {
-        k.id == fingerprint_or_id ||
-        k.fingerprint == fingerprint_or_id ||
-        k.fingerprint.ends_with(fingerprint_or_id)
+        k.id == fingerprint_or_id
+            || k.fingerprint == fingerprint_or_id
+            || k.fingerprint.ends_with(fingerprint_or_id)
     });
 
     let key = match key_to_delete {
@@ -2834,7 +2841,11 @@ async fn handle_ssh_keys_remove(fingerprint_or_id: &str) -> anyhow::Result<()> {
     if !delete_response.status().is_success() {
         let status = delete_response.status();
         let text = delete_response.text().await.unwrap_or_default();
-        return Err(anyhow::anyhow!("Failed to delete SSH key: {} - {}", status, text));
+        return Err(anyhow::anyhow!(
+            "Failed to delete SSH key: {} - {}",
+            status,
+            text
+        ));
     }
 
     eprintln!("\x1b[32m✓ SSH key removed: {}\x1b[0m", key.name);
@@ -3112,9 +3123,7 @@ async fn handle_ssh_config(_client: &Client, _base_url: &str) -> anyhow::Result<
 /// This is used as SSH ProxyCommand to route SSH through the Morph gateway
 async fn handle_ssh_proxy(id: &str, team: Option<&str>, base_url: &str) -> anyhow::Result<()> {
     // Create a client for API calls
-    let client = Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()?;
+    let client = Client::builder().timeout(Duration::from_secs(30)).build()?;
 
     // Get access token and resolve team
     let access_token = get_access_token(&client).await?;
