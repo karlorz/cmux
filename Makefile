@@ -4,7 +4,7 @@ DEVCONTAINER_DIR := .devcontainer
 COMPOSE_FILE := docker-compose.convex.yml
 PROJECT_NAME := cmux-convex
 
-.PHONY: convex-up convex-down convex-restart convex-clean convex-init convex-fresh dev
+.PHONY: convex-up convex-down convex-restart convex-clean convex-init convex-init-prod convex-clear-prod convex-fresh dev
 
 convex-up:
 	cd $(DEVCONTAINER_DIR) && COMPOSE_PROJECT_NAME=$(PROJECT_NAME) docker compose -f $(COMPOSE_FILE) up -d
@@ -20,8 +20,24 @@ convex-clean:
 	@echo "✅ Convex containers and volumes removed"
 
 convex-init:
-	@echo "🔧 Initializing Convex environment variables..."
+	@echo "🔧 Initializing Convex environment variables (local)..."
 	./scripts/setup-convex-env.sh
+
+convex-init-prod:
+	@echo "🔧 Initializing Convex environment variables (production)..."
+	./scripts/setup-convex-env.sh --prod
+
+convex-clear-prod:
+	@echo "⚠️  WARNING: This will DELETE ALL DATA from production Convex!"
+	@echo "Press Ctrl+C within 5 seconds to cancel..."
+	@sleep 5
+	@echo "🗑️  Clearing all tables in production Convex..."
+	@rm -rf /tmp/convex-empty && mkdir -p /tmp/convex-empty/dummy
+	@touch /tmp/convex-empty/dummy/.gitkeep
+	@cd /tmp/convex-empty && zip -r empty.zip dummy
+	cd packages/convex && bunx convex import --env-file ../../.env.production --replace-all -y /tmp/convex-empty/empty.zip
+	@rm -rf /tmp/convex-empty
+	@echo "✅ Production database cleared"
 
 convex-fresh: convex-clean convex-up
 	@echo "⏳ Waiting for containers to be ready..."
