@@ -1473,7 +1473,7 @@ if [ -s /etc/profile.d/nvm.sh ]; then
   . /etc/profile.d/nvm.sh
 fi
 
-alias code='/app/openvscode-server/bin/openvscode-server'
+alias code='/usr/local/bin/code'
 alias c='code'
 alias g='git'
 
