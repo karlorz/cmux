@@ -694,7 +694,7 @@ export const getApiIntegrationsGithubOauthTokenOptions = (options?: Options<GetA
 export const getApiIntegrationsGithubDefaultBranchQueryKey = (options: Options<GetApiIntegrationsGithubDefaultBranchData>) => createQueryKey('getApiIntegrationsGithubDefaultBranch', options);
 
 /**
- * Get the default branch for a repository (fast - single API call)
+ * Get the default branch for a repository using GitHub App
  */
 export const getApiIntegrationsGithubDefaultBranchOptions = (options: Options<GetApiIntegrationsGithubDefaultBranchData>) => {
     return queryOptions({
@@ -714,7 +714,7 @@ export const getApiIntegrationsGithubDefaultBranchOptions = (options: Options<Ge
 export const getApiIntegrationsGithubBranchesQueryKey = (options: Options<GetApiIntegrationsGithubBranchesData>) => createQueryKey('getApiIntegrationsGithubBranches', options);
 
 /**
- * List branches for a repository with optional search filter
+ * List branches for a repository using GitHub App
  */
 export const getApiIntegrationsGithubBranchesOptions = (options: Options<GetApiIntegrationsGithubBranchesData>) => {
     return queryOptions({

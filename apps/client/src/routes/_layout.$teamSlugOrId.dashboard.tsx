@@ -211,6 +211,7 @@ function DashboardComponent() {
   const branchesQuery = useQuery({
     ...getApiIntegrationsGithubBranchesOptions({
       query: {
+        team: teamSlugOrId,
         repo: selectedProject[0] || "",
         limit: 5,
         search: effectiveBranchSearch || undefined,

@@ -1725,6 +1725,10 @@ export type GetApiIntegrationsGithubDefaultBranchData = {
     path?: never;
     query: {
         /**
+         * Team slug or UUID
+         */
+        team: string;
+        /**
          * Repository full name (owner/repo)
          */
         repo: string;
@@ -1752,6 +1756,10 @@ export type GetApiIntegrationsGithubBranchesData = {
     body?: never;
     path?: never;
     query: {
+        /**
+         * Team slug or UUID
+         */
+        team: string;
         /**
          * Repository full name (owner/repo)
          */
