@@ -323,6 +323,46 @@ function ChromeTab({
   );
 }
 
+// VS Code style tab component (used for LAUNCH.md and browser tabs)
+type VSCodeTabProps = {
+  icon: React.ReactNode;
+  label: string;
+  isActive?: boolean;
+  onClose?: () => void;
+};
+
+function VSCodeTab({ icon, label, isActive = true, onClose }: VSCodeTabProps) {
+  return (
+    <div
+      className={clsx(
+        "flex items-center gap-1 px-3 py-1 text-[11px]",
+        isActive
+          ? "bg-[#1e1e1e] border-r border-[#2d2d2d] text-[#cccccc]"
+          : "bg-[#2d2d2d] text-[#969696]"
+      )}
+    >
+      {icon}
+      <span className="truncate">{label}</span>
+      <X
+        className="h-3 w-3 ml-1 text-[#858585] hover:text-white cursor-pointer"
+        onClick={onClose}
+      />
+    </div>
+  );
+}
+
+type VSCodeTabBarProps = {
+  children: React.ReactNode;
+};
+
+function VSCodeTabBar({ children }: VSCodeTabBarProps) {
+  return (
+    <div className="flex items-center bg-[#252526] border-b border-[#2d2d2d]">
+      {children}
+    </div>
+  );
+}
+
 function Section({
   title,
   headerContent,
@@ -2125,13 +2165,13 @@ function MockGitHubPRBrowser() {
                       {/* Editor area */}
                       <div className="flex-1 flex flex-col min-w-0">
                         {/* Tabs */}
-                        <div className="flex items-center bg-[#252526] border-b border-[#2d2d2d]">
-                          <div className="flex items-center gap-1 px-3 py-1 bg-[#1e1e1e] border-r border-[#2d2d2d] text-[11px] text-[#cccccc]">
-                            <FileText className="h-3 w-3 text-[#858585]" />
-                            <span>LAUNCH.md</span>
-                            <X className="h-3 w-3 ml-1 text-[#858585] hover:text-white" />
-                          </div>
-                        </div>
+                        <VSCodeTabBar>
+                          <VSCodeTab
+                            icon={<FileText className="h-3 w-3 text-[#858585]" />}
+                            label="LAUNCH.md"
+                            isActive
+                          />
+                        </VSCodeTabBar>
                         {/* File content */}
                         <div className="flex-1 p-3 font-mono text-[11px] text-[#cccccc] overflow-auto">
                           <div className="flex">
@@ -2309,51 +2349,16 @@ function MockGitHubPRBrowser() {
                         <Monitor className="h-4 w-4 text-[#858585]" />
                         <span className="text-xs text-[#cccccc]">Browser</span>
                       </div>
-                      {/* Chrome browser inside */}
-                      <div
-                        className="flex-1 flex flex-col bg-[#202124] overflow-hidden"
-                        style={{
-                          fontFamily:
-                            '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                        }}
-                      >
-                        {/* Chrome tab bar */}
-                        <div className="flex items-end bg-[#35363a] h-[28px] px-2 shrink-0">
-                          <div className="flex items-center gap-1 bg-[#202124] rounded-t-lg px-2 py-1 max-w-[160px] mt-auto">
-                            <TabFavicon />
-                            <span className="text-[10px] text-[#e8eaed] truncate">
-                              cmux.dev
-                            </span>
-                            <button className="p-0.5 hover:bg-[#35363a] rounded">
-                              <X className="h-2.5 w-2.5 text-[#9aa0a6]" />
-                            </button>
-                          </div>
-                        </div>
-                        {/* Chrome toolbar */}
-                        <div className="flex items-center gap-2 px-2 py-1 bg-[#202124] shrink-0">
-                          <div className="flex-1 flex items-center gap-2 px-2 py-0.5 bg-[#35363a] rounded-full text-[10px]">
-                            <svg
-                              className="h-2.5 w-2.5 text-[#9aa0a6]"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                            >
-                              <rect
-                                x="3"
-                                y="11"
-                                width="18"
-                                height="11"
-                                rx="2"
-                                ry="2"
-                              />
-                              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                            </svg>
-                            <span className="text-[#e8eaed]">
-                              localhost:5173
-                            </span>
-                          </div>
-                        </div>
+                      {/* Browser inside with VS Code style tabs */}
+                      <div className="flex-1 flex flex-col bg-[#1e1e1e] overflow-hidden">
+                        {/* VS Code style tab bar */}
+                        <VSCodeTabBar>
+                          <VSCodeTab
+                            icon={<TabFavicon />}
+                            label="cmux.dev"
+                            isActive
+                          />
+                        </VSCodeTabBar>
                         {/* Browser content - cmux.dev landing page */}
                         <div className="flex-1 bg-[#030712] overflow-hidden">
                           <iframe
@@ -2650,13 +2655,13 @@ function MockGitHubPRBrowser() {
                     {/* Editor area */}
                     <div className="flex-1 flex flex-col min-w-0">
                       {/* Tabs */}
-                      <div className="flex items-center bg-[#252526] border-b border-[#2d2d2d]">
-                        <div className="flex items-center gap-1 px-3 py-1 bg-[#1e1e1e] border-r border-[#2d2d2d] text-[11px] text-[#cccccc]">
-                          <FileText className="h-3 w-3 text-[#858585]" />
-                          <span>LAUNCH.md</span>
-                          <X className="h-3 w-3 ml-1 text-[#858585] hover:text-white" />
-                        </div>
-                      </div>
+                      <VSCodeTabBar>
+                        <VSCodeTab
+                          icon={<FileText className="h-3 w-3 text-[#858585]" />}
+                          label="LAUNCH.md"
+                          isActive
+                        />
+                      </VSCodeTabBar>
                       {/* File content */}
                       <div className="flex-1 p-4 font-mono text-[12px] text-[#cccccc] overflow-auto">
                         <div className="flex">
@@ -2797,49 +2802,16 @@ function MockGitHubPRBrowser() {
                       </button>
                     </div>
                   </div>
-                  {/* Chrome browser inside */}
-                  <div
-                    className="flex-1 flex flex-col bg-[#202124] overflow-hidden"
-                    style={{
-                      fontFamily:
-                        '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                    }}
-                  >
-                    {/* Chrome tab bar */}
-                    <div className="flex items-end bg-[#35363a] h-[32px] px-2 shrink-0">
-                      <div className="flex items-center gap-1 bg-[#202124] rounded-t-lg px-3 py-1.5 max-w-[200px] mt-auto">
-                        <TabFavicon />
-                        <span className="text-[11px] text-[#e8eaed] truncate">
-                          cmux.dev
-                        </span>
-                        <button className="p-0.5 hover:bg-[#35363a] rounded">
-                          <X className="h-3 w-3 text-[#9aa0a6]" />
-                        </button>
-                      </div>
-                    </div>
-                    {/* Chrome toolbar */}
-                    <div className="flex items-center gap-2 px-2 py-1.5 bg-[#202124] shrink-0">
-                      <div className="flex-1 flex items-center gap-2 px-3 py-1 bg-[#35363a] rounded-full text-[11px]">
-                        <svg
-                          className="h-3 w-3 text-[#9aa0a6]"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                        >
-                          <rect
-                            x="3"
-                            y="11"
-                            width="18"
-                            height="11"
-                            rx="2"
-                            ry="2"
-                          />
-                          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                        </svg>
-                        <span className="text-[#e8eaed]">localhost:5173</span>
-                      </div>
-                    </div>
+                  {/* Browser inside with VS Code style tabs */}
+                  <div className="flex-1 flex flex-col bg-[#1e1e1e] overflow-hidden">
+                    {/* VS Code style tab bar */}
+                    <VSCodeTabBar>
+                      <VSCodeTab
+                        icon={<TabFavicon />}
+                        label="cmux.dev"
+                        isActive
+                      />
+                    </VSCodeTabBar>
                     {/* Browser content - cmux.dev landing page */}
                     <div className="flex-1 bg-[#030712] overflow-hidden">
                       <iframe
