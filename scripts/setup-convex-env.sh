@@ -1,25 +1,46 @@
 #!/bin/bash
 set -e
 
-ADMIN_KEY="cmux-dev|017aebe6643f7feb3fe831fbb93a348653c63e5711d2427d1a34b670e3151b0165d86a5ff9"
-BACKEND_URL="http://localhost:9777"
+# Default values
 ENV_FILE=".env.production"
+MODE="local"
 
-echo "🔧 Setting up Convex environment variables..."
-
-# Wait for backend to be ready
-echo "⏳ Waiting for Convex backend to be ready..."
-timeout=30
-elapsed=0
-until curl -f -s "$BACKEND_URL/" > /dev/null 2>&1; do
-  if [ $elapsed -ge $timeout ]; then
-    echo "❌ Timeout waiting for backend"
-    exit 1
-  fi
-  sleep 2
-  elapsed=$((elapsed + 2))
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --prod|--production)
+      MODE="production"
+      shift
+      ;;
+    --env-file)
+      ENV_FILE="$2"
+      shift 2
+      ;;
+    --env-file=*)
+      ENV_FILE="${1#*=}"
+      shift
+      ;;
+    -h|--help)
+      echo "Usage: $0 [OPTIONS]"
+      echo ""
+      echo "Options:"
+      echo "  --prod, --production    Use production Convex cloud"
+      echo "  --env-file FILE         Env file to read (default: .env.production)"
+      echo "  -h, --help              Show this help"
+      echo ""
+      echo "Examples:"
+      echo "  $0 --prod                          # Production with .env.production"
+      echo "  $0 --prod --env-file .env.custom   # Production with custom env file"
+      echo "  $0                                 # Local dev with .env.production"
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1"
+      echo "Usage: $0 [--prod|--production] [--env-file FILE]"
+      exit 1
+      ;;
+  esac
 done
-echo "✅ Backend is ready!"
 
 # Check if .env.production exists
 if [ ! -f "$ENV_FILE" ]; then
@@ -40,41 +61,151 @@ get_env_value() {
   fi
 }
 
+if [ "$MODE" = "production" ]; then
+  # Production mode - use Convex cloud
+  DEPLOY_KEY=$(get_env_value CONVEX_DEPLOY_KEY)
+  if [ -z "$DEPLOY_KEY" ]; then
+    echo "❌ Error: CONVEX_DEPLOY_KEY not found in $ENV_FILE"
+    exit 1
+  fi
+  BACKEND_URL="https://outstanding-stoat-794.convex.cloud"
+  ADMIN_KEY="$DEPLOY_KEY"
+  echo "🔧 Setting up Convex environment variables (PRODUCTION)..."
+  echo "📁 Env file: $ENV_FILE"
+  echo "📡 Target: $BACKEND_URL"
+else
+  # Local mode - use local backend
+  ADMIN_KEY="cmux-dev|017aebe6643f7feb3fe831fbb93a348653c63e5711d2427d1a34b670e3151b0165d86a5ff9"
+  BACKEND_URL="http://localhost:9777"
+  echo "🔧 Setting up Convex environment variables (LOCAL)..."
+  echo "📁 Env file: $ENV_FILE"
+
+  # Wait for backend to be ready (only for local)
+  echo "⏳ Waiting for Convex backend to be ready..."
+  timeout=30
+  elapsed=0
+  until curl -f -s "$BACKEND_URL/" > /dev/null 2>&1; do
+    if [ $elapsed -ge $timeout ]; then
+      echo "❌ Timeout waiting for backend"
+      exit 1
+    fi
+    sleep 2
+    elapsed=$((elapsed + 2))
+  done
+  echo "✅ Backend is ready!"
+fi
+
 # Read the GitHub private key properly (multi-line)
-GITHUB_PRIVATE_KEY=$(awk '/^CMUX_GITHUB_APP_PRIVATE_KEY=/{flag=1; sub(/^CMUX_GITHUB_APP_PRIVATE_KEY=/, ""); sub(/^"/, "")} flag{print} /END.*KEY/{sub(/"$/, ""); print; flag=0}' "$ENV_FILE" | sed 's/  $//')
+GITHUB_PRIVATE_KEY=$(sed -n '/^CMUX_GITHUB_APP_PRIVATE_KEY=/,/-----END.*KEY-----/p' "$ENV_FILE" | sed 's/^CMUX_GITHUB_APP_PRIVATE_KEY="//' | sed 's/"$//')
+
+# Convert PKCS#1 (RSA PRIVATE KEY) to PKCS#8 (PRIVATE KEY) if needed
+# Web Crypto API's subtle.importKey("pkcs8", ...) requires PKCS#8 format
+if [[ "$GITHUB_PRIVATE_KEY" == *"BEGIN RSA PRIVATE KEY"* ]]; then
+  echo "🔄 Converting GitHub private key from PKCS#1 to PKCS#8 format..."
+  GITHUB_PRIVATE_KEY=$(echo "$GITHUB_PRIVATE_KEY" | openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt 2>&1)
+  if [[ "$GITHUB_PRIVATE_KEY" != *"BEGIN PRIVATE KEY"* ]]; then
+    echo "❌ Error: Failed to convert private key to PKCS#8 format"
+    echo "$GITHUB_PRIVATE_KEY"
+    exit 1
+  fi
+  echo "✅ Private key converted to PKCS#8 format"
+fi
+
+# Set INSTALL_STATE_SECRET based on mode
+if [ "$MODE" = "production" ]; then
+  INSTALL_STATE_SECRET=$(get_env_value INSTALL_STATE_SECRET)
+else
+  INSTALL_STATE_SECRET="dev_install_state_secret_cmux_local"
+fi
 
 echo "📤 Uploading environment variables to Convex backend..."
+
+# Show what we're setting (keys only, not values for security)
+echo ""
+echo "📝 Environment variables to set:"
+echo "  • STACK_WEBHOOK_SECRET: $(get_env_value STACK_WEBHOOK_SECRET | head -c 10)..."
+echo "  • BASE_APP_URL: $(get_env_value BASE_APP_URL)"
+echo "  • CMUX_TASK_RUN_JWT_SECRET: $(get_env_value CMUX_TASK_RUN_JWT_SECRET | head -c 10)..."
+echo "  • NEXT_PUBLIC_STACK_PROJECT_ID: $(get_env_value NEXT_PUBLIC_STACK_PROJECT_ID)"
+echo "  • NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY: $(get_env_value NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY | head -c 15)..."
+echo "  • STACK_SECRET_SERVER_KEY: $(get_env_value STACK_SECRET_SERVER_KEY | head -c 10)..."
+echo "  • STACK_SUPER_SECRET_ADMIN_KEY: $(get_env_value STACK_SUPER_SECRET_ADMIN_KEY | head -c 10)..."
+echo "  • STACK_DATA_VAULT_SECRET: $(get_env_value STACK_DATA_VAULT_SECRET | head -c 10)..."
+echo "  • GITHUB_APP_WEBHOOK_SECRET: $(get_env_value GITHUB_APP_WEBHOOK_SECRET | head -c 10)..."
+echo "  • CMUX_GITHUB_APP_ID: $(get_env_value CMUX_GITHUB_APP_ID)"
+echo "  • CMUX_GITHUB_APP_PRIVATE_KEY: $(echo "$GITHUB_PRIVATE_KEY" | head -1)"
+echo "  • NEXT_PUBLIC_GITHUB_APP_SLUG: $(get_env_value NEXT_PUBLIC_GITHUB_APP_SLUG)"
+echo "  • INSTALL_STATE_SECRET: $(echo "$INSTALL_STATE_SECRET" | head -c 10)..."
+echo "  • OPENAI_API_KEY: $(get_env_value OPENAI_API_KEY | head -c 10)..."
+echo "  • ANTHROPIC_API_KEY: $(get_env_value ANTHROPIC_API_KEY | head -c 10)..."
+echo "  • GEMINI_API_KEY: $(get_env_value GEMINI_API_KEY | head -c 10)..."
+echo "  • MORPH_API_KEY: $(get_env_value MORPH_API_KEY | head -c 10)..."
+echo ""
+
+# Build JSON payload, only including non-empty values
+build_json_changes() {
+  local changes=""
+
+  add_change() {
+    local name=$1
+    local value=$2
+    if [ -n "$value" ]; then
+      if [ -n "$changes" ]; then
+        changes="$changes,"
+      fi
+      # Escape the value for JSON (use printf to avoid adding newline from echo)
+      local escaped_value=$(printf '%s' "$value" | jq -Rs . | sed 's/^"//;s/"$//')
+      changes="$changes{\"name\": \"$name\", \"value\": \"$escaped_value\"}"
+    fi
+  }
+
+  add_change "STACK_WEBHOOK_SECRET" "$(get_env_value STACK_WEBHOOK_SECRET)"
+  add_change "BASE_APP_URL" "$(get_env_value BASE_APP_URL)"
+  add_change "CMUX_TASK_RUN_JWT_SECRET" "$(get_env_value CMUX_TASK_RUN_JWT_SECRET)"
+  add_change "NEXT_PUBLIC_STACK_PROJECT_ID" "$(get_env_value NEXT_PUBLIC_STACK_PROJECT_ID)"
+  add_change "NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY" "$(get_env_value NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY)"
+  add_change "STACK_SECRET_SERVER_KEY" "$(get_env_value STACK_SECRET_SERVER_KEY)"
+  add_change "STACK_SUPER_SECRET_ADMIN_KEY" "$(get_env_value STACK_SUPER_SECRET_ADMIN_KEY)"
+  add_change "STACK_DATA_VAULT_SECRET" "$(get_env_value STACK_DATA_VAULT_SECRET)"
+  add_change "GITHUB_APP_WEBHOOK_SECRET" "$(get_env_value GITHUB_APP_WEBHOOK_SECRET)"
+  add_change "CMUX_GITHUB_APP_ID" "$(get_env_value CMUX_GITHUB_APP_ID)"
+  add_change "NEXT_PUBLIC_GITHUB_APP_SLUG" "$(get_env_value NEXT_PUBLIC_GITHUB_APP_SLUG)"
+  add_change "INSTALL_STATE_SECRET" "$INSTALL_STATE_SECRET"
+  add_change "OPENAI_API_KEY" "$(get_env_value OPENAI_API_KEY)"
+  add_change "ANTHROPIC_API_KEY" "$(get_env_value ANTHROPIC_API_KEY)"
+  add_change "GEMINI_API_KEY" "$(get_env_value GEMINI_API_KEY)"
+  add_change "MORPH_API_KEY" "$(get_env_value MORPH_API_KEY)"
+
+  # Handle private key separately (multi-line)
+  if [ -n "$GITHUB_PRIVATE_KEY" ]; then
+    if [ -n "$changes" ]; then
+      changes="$changes,"
+    fi
+    # Private key needs trailing newline for proper PEM format
+    local pk_escaped=$(printf '%s\n' "$GITHUB_PRIVATE_KEY" | jq -Rs . | sed 's/^"//;s/"$//')
+    changes="$changes{\"name\": \"CMUX_GITHUB_APP_PRIVATE_KEY\", \"value\": \"$pk_escaped\"}"
+  fi
+
+  echo "{\"changes\": [$changes]}"
+}
+
+JSON_PAYLOAD=$(build_json_changes)
+
+# Debug: show payload size
+echo "📦 Payload size: $(echo "$JSON_PAYLOAD" | wc -c) bytes"
 
 # Set all environment variables at once
 response=$(curl -s -X POST "$BACKEND_URL/api/update_environment_variables" \
   -H 'Content-Type: application/json' \
   -H "Authorization: Convex $ADMIN_KEY" \
-  -d "$(cat <<EOF
-{
-  "changes": [
-    {"name": "STACK_WEBHOOK_SECRET", "value": "$(get_env_value STACK_WEBHOOK_SECRET)"},
-    {"name": "BASE_APP_URL", "value": "$(get_env_value BASE_APP_URL)"},
-    {"name": "CMUX_TASK_RUN_JWT_SECRET", "value": "$(get_env_value CMUX_TASK_RUN_JWT_SECRET)"},
-    {"name": "NEXT_PUBLIC_STACK_PROJECT_ID", "value": "$(get_env_value NEXT_PUBLIC_STACK_PROJECT_ID)"},
-    {"name": "NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY", "value": "$(get_env_value NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY)"},
-    {"name": "STACK_SECRET_SERVER_KEY", "value": "$(get_env_value STACK_SECRET_SERVER_KEY)"},
-    {"name": "STACK_SUPER_SECRET_ADMIN_KEY", "value": "$(get_env_value STACK_SUPER_SECRET_ADMIN_KEY)"},
-    {"name": "STACK_DATA_VAULT_SECRET", "value": "$(get_env_value STACK_DATA_VAULT_SECRET)"},
-    {"name": "GITHUB_APP_WEBHOOK_SECRET", "value": "$(get_env_value GITHUB_APP_WEBHOOK_SECRET)"},
-    {"name": "CMUX_GITHUB_APP_ID", "value": "$(get_env_value CMUX_GITHUB_APP_ID)"},
-    {"name": "CMUX_GITHUB_APP_PRIVATE_KEY", "value": $(echo "$GITHUB_PRIVATE_KEY" | jq -Rs .)},
-    {"name": "NEXT_PUBLIC_GITHUB_APP_SLUG", "value": "$(get_env_value NEXT_PUBLIC_GITHUB_APP_SLUG)"},
-    {"name": "INSTALL_STATE_SECRET", "value": "dev_install_state_secret_cmux_local"},
-    {"name": "OPENAI_API_KEY", "value": "$(get_env_value OPENAI_API_KEY)"},
-    {"name": "ANTHROPIC_API_KEY", "value": "$(get_env_value ANTHROPIC_API_KEY)"},
-    {"name": "GEMINI_API_KEY", "value": "$(get_env_value GEMINI_API_KEY)"},
-    {"name": "MORPH_API_KEY", "value": "$(get_env_value MORPH_API_KEY)"}
-  ]
-}
-EOF
-)")
+  -d "$JSON_PAYLOAD")
 
-if echo "$response" | grep -q "error"; then
+# Show response for debugging
+if [ -n "$response" ]; then
+  echo "📨 API Response: $response"
+fi
+
+if echo "$response" | grep -qi "error"; then
   echo "❌ Error setting environment variables:"
   echo "$response"
   exit 1
