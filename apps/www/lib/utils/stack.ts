@@ -11,9 +11,6 @@ export const stackServerApp = new StackServerApp({
     afterSignIn: "/handler/after-sign-in",
     afterSignUp: "/handler/after-sign-in",
   },
-  oauthScopesOnSignIn: {
-    github: ["repo", "read:org", "user:email"],
-  },
 });
 
 export const stackServerAppJs = new StackServerAppJs({
