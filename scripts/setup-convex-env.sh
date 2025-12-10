@@ -2,7 +2,7 @@
 set -e
 
 # Default values
-ENV_FILE=".env.production"
+ENV_FILE=".env"
 MODE="local"
 
 # Parse arguments
@@ -25,13 +25,13 @@ while [[ $# -gt 0 ]]; do
       echo ""
       echo "Options:"
       echo "  --prod, --production    Use production Convex cloud"
-      echo "  --env-file FILE         Env file to read (default: .env.production)"
+      echo "  --env-file FILE         Env file to read (default: .env)"
       echo "  -h, --help              Show this help"
       echo ""
       echo "Examples:"
-      echo "  $0 --prod                          # Production with .env.production"
+      echo "  $0 --prod                          # Production with .env"
       echo "  $0 --prod --env-file .env.custom   # Production with custom env file"
-      echo "  $0                                 # Local dev with .env.production"
+      echo "  $0                                 # Local dev with .env"
       exit 0
       ;;
     *)
@@ -65,34 +65,34 @@ if [ "$MODE" = "production" ]; then
   # Production mode - use Convex cloud
   DEPLOY_KEY=$(get_env_value CONVEX_DEPLOY_KEY)
   if [ -z "$DEPLOY_KEY" ]; then
-    echo "❌ Error: CONVEX_DEPLOY_KEY not found in $ENV_FILE"
+    echo "Error: CONVEX_DEPLOY_KEY not found in $ENV_FILE"
     exit 1
   fi
   BACKEND_URL="https://outstanding-stoat-794.convex.cloud"
   ADMIN_KEY="$DEPLOY_KEY"
-  echo "🔧 Setting up Convex environment variables (PRODUCTION)..."
-  echo "📁 Env file: $ENV_FILE"
-  echo "📡 Target: $BACKEND_URL"
+  echo "Setting up Convex environment variables (PRODUCTION)..."
+  echo "Env file: $ENV_FILE"
+  echo "Target: $BACKEND_URL"
 else
   # Local mode - use local backend
   ADMIN_KEY="cmux-dev|017aebe6643f7feb3fe831fbb93a348653c63e5711d2427d1a34b670e3151b0165d86a5ff9"
   BACKEND_URL="http://localhost:9777"
-  echo "🔧 Setting up Convex environment variables (LOCAL)..."
-  echo "📁 Env file: $ENV_FILE"
+  echo "Setting up Convex environment variables (LOCAL)..."
+  echo "Env file: $ENV_FILE"
 
   # Wait for backend to be ready (only for local)
-  echo "⏳ Waiting for Convex backend to be ready..."
+  echo "Waiting for Convex backend to be ready..."
   timeout=30
   elapsed=0
   until curl -f -s "$BACKEND_URL/" > /dev/null 2>&1; do
     if [ $elapsed -ge $timeout ]; then
-      echo "❌ Timeout waiting for backend"
+      echo "Error: Timeout waiting for backend"
       exit 1
     fi
     sleep 2
     elapsed=$((elapsed + 2))
   done
-  echo "✅ Backend is ready!"
+  echo "Backend is ready"
 fi
 
 # Read the GitHub private key properly (multi-line)
@@ -101,14 +101,14 @@ GITHUB_PRIVATE_KEY=$(sed -n '/^CMUX_GITHUB_APP_PRIVATE_KEY=/,/-----END.*KEY-----
 # Convert PKCS#1 (RSA PRIVATE KEY) to PKCS#8 (PRIVATE KEY) if needed
 # Web Crypto API's subtle.importKey("pkcs8", ...) requires PKCS#8 format
 if [[ "$GITHUB_PRIVATE_KEY" == *"BEGIN RSA PRIVATE KEY"* ]]; then
-  echo "🔄 Converting GitHub private key from PKCS#1 to PKCS#8 format..."
+  echo "Converting GitHub private key from PKCS#1 to PKCS#8 format..."
   GITHUB_PRIVATE_KEY=$(echo "$GITHUB_PRIVATE_KEY" | openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt 2>&1)
   if [[ "$GITHUB_PRIVATE_KEY" != *"BEGIN PRIVATE KEY"* ]]; then
-    echo "❌ Error: Failed to convert private key to PKCS#8 format"
+    echo "Error: Failed to convert private key to PKCS#8 format"
     echo "$GITHUB_PRIVATE_KEY"
     exit 1
   fi
-  echo "✅ Private key converted to PKCS#8 format"
+  echo "Private key converted to PKCS#8 format"
 fi
 
 # Set INSTALL_STATE_SECRET based on mode
@@ -118,28 +118,28 @@ else
   INSTALL_STATE_SECRET="dev_install_state_secret_cmux_local"
 fi
 
-echo "📤 Uploading environment variables to Convex backend..."
+echo "Uploading environment variables to Convex backend..."
 
 # Show what we're setting (keys only, not values for security)
 echo ""
-echo "📝 Environment variables to set:"
-echo "  • STACK_WEBHOOK_SECRET: $(get_env_value STACK_WEBHOOK_SECRET | head -c 10)..."
-echo "  • BASE_APP_URL: $(get_env_value BASE_APP_URL)"
-echo "  • CMUX_TASK_RUN_JWT_SECRET: $(get_env_value CMUX_TASK_RUN_JWT_SECRET | head -c 10)..."
-echo "  • NEXT_PUBLIC_STACK_PROJECT_ID: $(get_env_value NEXT_PUBLIC_STACK_PROJECT_ID)"
-echo "  • NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY: $(get_env_value NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY | head -c 15)..."
-echo "  • STACK_SECRET_SERVER_KEY: $(get_env_value STACK_SECRET_SERVER_KEY | head -c 10)..."
-echo "  • STACK_SUPER_SECRET_ADMIN_KEY: $(get_env_value STACK_SUPER_SECRET_ADMIN_KEY | head -c 10)..."
-echo "  • STACK_DATA_VAULT_SECRET: $(get_env_value STACK_DATA_VAULT_SECRET | head -c 10)..."
-echo "  • GITHUB_APP_WEBHOOK_SECRET: $(get_env_value GITHUB_APP_WEBHOOK_SECRET | head -c 10)..."
-echo "  • CMUX_GITHUB_APP_ID: $(get_env_value CMUX_GITHUB_APP_ID)"
-echo "  • CMUX_GITHUB_APP_PRIVATE_KEY: $(echo "$GITHUB_PRIVATE_KEY" | head -1)"
-echo "  • NEXT_PUBLIC_GITHUB_APP_SLUG: $(get_env_value NEXT_PUBLIC_GITHUB_APP_SLUG)"
-echo "  • INSTALL_STATE_SECRET: $(echo "$INSTALL_STATE_SECRET" | head -c 10)..."
-echo "  • OPENAI_API_KEY: $(get_env_value OPENAI_API_KEY | head -c 10)..."
-echo "  • ANTHROPIC_API_KEY: $(get_env_value ANTHROPIC_API_KEY | head -c 10)..."
-echo "  • GEMINI_API_KEY: $(get_env_value GEMINI_API_KEY | head -c 10)..."
-echo "  • MORPH_API_KEY: $(get_env_value MORPH_API_KEY | head -c 10)..."
+echo "Environment variables to set:"
+echo "  - STACK_WEBHOOK_SECRET: $(get_env_value STACK_WEBHOOK_SECRET | head -c 10)..."
+echo "  - BASE_APP_URL: $(get_env_value BASE_APP_URL)"
+echo "  - CMUX_TASK_RUN_JWT_SECRET: $(get_env_value CMUX_TASK_RUN_JWT_SECRET | head -c 10)..."
+echo "  - NEXT_PUBLIC_STACK_PROJECT_ID: $(get_env_value NEXT_PUBLIC_STACK_PROJECT_ID)"
+echo "  - NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY: $(get_env_value NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY | head -c 15)..."
+echo "  - STACK_SECRET_SERVER_KEY: $(get_env_value STACK_SECRET_SERVER_KEY | head -c 10)..."
+echo "  - STACK_SUPER_SECRET_ADMIN_KEY: $(get_env_value STACK_SUPER_SECRET_ADMIN_KEY | head -c 10)..."
+echo "  - STACK_DATA_VAULT_SECRET: $(get_env_value STACK_DATA_VAULT_SECRET | head -c 10)..."
+echo "  - GITHUB_APP_WEBHOOK_SECRET: $(get_env_value GITHUB_APP_WEBHOOK_SECRET | head -c 10)..."
+echo "  - CMUX_GITHUB_APP_ID: $(get_env_value CMUX_GITHUB_APP_ID)"
+echo "  - CMUX_GITHUB_APP_PRIVATE_KEY: $(echo "$GITHUB_PRIVATE_KEY" | head -1)"
+echo "  - NEXT_PUBLIC_GITHUB_APP_SLUG: $(get_env_value NEXT_PUBLIC_GITHUB_APP_SLUG)"
+echo "  - INSTALL_STATE_SECRET: $(echo "$INSTALL_STATE_SECRET" | head -c 10)..."
+echo "  - OPENAI_API_KEY: $(get_env_value OPENAI_API_KEY | head -c 10)..."
+echo "  - ANTHROPIC_API_KEY: $(get_env_value ANTHROPIC_API_KEY | head -c 10)..."
+echo "  - GEMINI_API_KEY: $(get_env_value GEMINI_API_KEY | head -c 10)..."
+echo "  - MORPH_API_KEY: $(get_env_value MORPH_API_KEY | head -c 10)..."
 echo ""
 
 # Build JSON payload, only including non-empty values
@@ -192,7 +192,7 @@ build_json_changes() {
 JSON_PAYLOAD=$(build_json_changes)
 
 # Debug: show payload size
-echo "📦 Payload size: $(echo "$JSON_PAYLOAD" | wc -c) bytes"
+echo "Payload size: $(echo "$JSON_PAYLOAD" | wc -c | tr -d ' ') bytes"
 
 # Set all environment variables at once
 response=$(curl -s -X POST "$BACKEND_URL/api/update_environment_variables" \
@@ -202,24 +202,28 @@ response=$(curl -s -X POST "$BACKEND_URL/api/update_environment_variables" \
 
 # Show response for debugging
 if [ -n "$response" ]; then
-  echo "📨 API Response: $response"
+  echo "API Response: $response"
 fi
 
 if echo "$response" | grep -qi "error"; then
-  echo "❌ Error setting environment variables:"
+  echo "Error setting environment variables:"
   echo "$response"
   exit 1
 fi
 
-echo "✅ Environment variables configured successfully!"
+echo "Environment variables configured successfully"
 
 # Verify by listing them
 echo ""
-echo "📋 Verifying environment variables..."
+echo "Verifying environment variables..."
 curl -s -X GET "$BACKEND_URL/api/list_environment_variables" \
   -H "Authorization: Convex $ADMIN_KEY" | jq -r '.environmentVariables | keys | .[]' | while read key; do
-  echo "  ✓ $key"
+  echo "  [ok] $key"
 done
 
 echo ""
-echo "🎉 Setup complete! You can now run: bun run convex:deploy:prod"
+if [ "$MODE" = "production" ]; then
+  echo "Setup complete (production). You can now run: bun run convex:deploy:prod"
+else
+  echo "Setup complete (local). Convex env vars have been configured for local development."
+fi

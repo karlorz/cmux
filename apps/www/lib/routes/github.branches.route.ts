@@ -1,6 +1,11 @@
-import { stackServerAppJs } from "@/lib/utils/stack";
+import { getAccessTokenFromRequest } from "@/lib/utils/auth";
+import { env } from "@/lib/utils/www-env";
+import { api } from "@cmux/convex/api";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createAppAuth } from "@octokit/auth-app";
 import { Octokit } from "octokit";
+import { getConvex } from "../utils/get-convex";
+import { githubPrivateKey } from "../utils/githubPrivateKey";
 
 export const githubBranchesRouter = new OpenAPIHono();
 
@@ -13,11 +18,57 @@ const GithubBranch = z
   })
   .openapi("GithubBranch");
 
+// Helper to get Octokit client with GitHub App auth for a repo
+async function getOctokitForRepo(
+  accessToken: string,
+  teamSlugOrId: string,
+  repo: string
+): Promise<{ octokit: Octokit | null; error: string | null }> {
+  const [owner] = repo.split("/");
+  if (!owner) {
+    return { octokit: null, error: "Invalid repository format" };
+  }
+
+  const convex = getConvex({ accessToken });
+  const connections = await convex.query(api.github.listProviderConnections, {
+    teamSlugOrId,
+  });
+
+  // Find the installation that has access to this repo (match by owner)
+  const target = connections.find(
+    (co) =>
+      co.isActive && co.accountLogin?.toLowerCase() === owner.toLowerCase()
+  );
+
+  if (!target) {
+    return {
+      octokit: null,
+      error:
+        "GitHub App not installed for this repository. Please install the GitHub App first.",
+    };
+  }
+
+  const octokit = new Octokit({
+    authStrategy: createAppAuth,
+    auth: {
+      appId: env.CMUX_GITHUB_APP_ID,
+      privateKey: githubPrivateKey,
+      installationId: target.installationId,
+    },
+  });
+
+  return { octokit, error: null };
+}
+
 // --- Default Branch Endpoint (fast - single API call) ---
 
 const DefaultBranchQuery = z
   .object({
-    repo: z.string().min(1).openapi({ description: "Repository full name (owner/repo)" }),
+    team: z.string().min(1).openapi({ description: "Team slug or UUID" }),
+    repo: z
+      .string()
+      .min(1)
+      .openapi({ description: "Repository full name (owner/repo)" }),
   })
   .openapi("GithubDefaultBranchQuery");
 
@@ -33,7 +84,7 @@ githubBranchesRouter.openapi(
     method: "get" as const,
     path: "/integrations/github/default-branch",
     tags: ["Integrations"],
-    summary: "Get the default branch for a repository (fast - single API call)",
+    summary: "Get the default branch for a repository using GitHub App",
     request: { query: DefaultBranchQuery },
     responses: {
       200: {
@@ -48,26 +99,21 @@ githubBranchesRouter.openapi(
     },
   }),
   async (c) => {
-    const user = await stackServerAppJs.getUser({ tokenStore: c.req.raw });
-    if (!user) {
-      return c.text("Unauthorized", 401);
-    }
+    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+    if (!accessToken) return c.text("Unauthorized", 401);
 
-    const { repo } = c.req.valid("query");
+    const { team, repo } = c.req.valid("query");
+    const [owner, repoName] = repo.split("/");
 
     try {
-      const githubAccount = await user.getConnectedAccount("github");
-      if (!githubAccount) {
-        return c.json({ defaultBranch: null, error: "GitHub account not connected" }, 200);
+      const { octokit, error } = await getOctokitForRepo(
+        accessToken,
+        team,
+        repo
+      );
+      if (error || !octokit) {
+        return c.json({ defaultBranch: null, error }, 200);
       }
-
-      const { accessToken } = await githubAccount.getAccessToken();
-      if (!accessToken || accessToken.trim().length === 0) {
-        return c.json({ defaultBranch: null, error: "GitHub access token not found" }, 200);
-      }
-
-      const octokit = new Octokit({ auth: accessToken.trim() });
-      const [owner, repoName] = repo.split("/");
 
       const { data } = await octokit.request("GET /repos/{owner}/{repo}", {
         owner: owner!,
@@ -77,10 +123,16 @@ githubBranchesRouter.openapi(
       return c.json({ defaultBranch: data.default_branch, error: null }, 200);
     } catch (error) {
       console.error("[github.branches] Error getting default branch:", error);
-      return c.json({
-        defaultBranch: null,
-        error: error instanceof Error ? error.message : "Failed to get default branch",
-      }, 200);
+      return c.json(
+        {
+          defaultBranch: null,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to get default branch",
+        },
+        200
+      );
     }
   }
 );
@@ -89,7 +141,11 @@ githubBranchesRouter.openapi(
 
 const BranchesQuery = z
   .object({
-    repo: z.string().min(1).openapi({ description: "Repository full name (owner/repo)" }),
+    team: z.string().min(1).openapi({ description: "Team slug or UUID" }),
+    repo: z
+      .string()
+      .min(1)
+      .openapi({ description: "Repository full name (owner/repo)" }),
     search: z
       .string()
       .trim()
@@ -118,7 +174,7 @@ githubBranchesRouter.openapi(
     method: "get" as const,
     path: "/integrations/github/branches",
     tags: ["Integrations"],
-    summary: "List branches for a repository with optional search filter",
+    summary: "List branches for a repository using GitHub App",
     request: { query: BranchesQuery },
     responses: {
       200: {
@@ -133,34 +189,32 @@ githubBranchesRouter.openapi(
     },
   }),
   async (c) => {
-    const user = await stackServerAppJs.getUser({ tokenStore: c.req.raw });
-    if (!user) {
-      return c.text("Unauthorized", 401);
-    }
+    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+    if (!accessToken) return c.text("Unauthorized", 401);
 
-    const { repo, search, limit = 30 } = c.req.valid("query");
+    const { team, repo, search, limit = 30 } = c.req.valid("query");
+    const [owner, repoName] = repo.split("/");
 
     try {
-      const githubAccount = await user.getConnectedAccount("github");
-      if (!githubAccount) {
-        return c.json({ branches: [], defaultBranch: null, error: "GitHub account not connected" }, 200);
+      const { octokit, error } = await getOctokitForRepo(
+        accessToken,
+        team,
+        repo
+      );
+      if (error || !octokit) {
+        return c.json({ branches: [], defaultBranch: null, error }, 200);
       }
-
-      const { accessToken } = await githubAccount.getAccessToken();
-      if (!accessToken || accessToken.trim().length === 0) {
-        return c.json({ branches: [], defaultBranch: null, error: "GitHub access token not found" }, 200);
-      }
-
-      const octokit = new Octokit({ auth: accessToken.trim() });
-      const [owner, repoName] = repo.split("/");
 
       // Get repo info for default branch
       let defaultBranchName: string | null = null;
       try {
-        const { data: repoData } = await octokit.request("GET /repos/{owner}/{repo}", {
-          owner: owner!,
-          repo: repoName!,
-        });
+        const { data: repoData } = await octokit.request(
+          "GET /repos/{owner}/{repo}",
+          {
+            owner: owner!,
+            repo: repoName!,
+          }
+        );
         defaultBranchName = repoData.default_branch;
       } catch {
         // Ignore - we'll continue without default branch info
@@ -171,11 +225,14 @@ githubBranchesRouter.openapi(
 
       if (!search) {
         // No search - just get first page of branches
-        const { data } = await octokit.request("GET /repos/{owner}/{repo}/branches", {
-          owner: owner!,
-          repo: repoName!,
-          per_page: limit,
-        }) as { data: BranchResp[] };
+        const { data } = (await octokit.request(
+          "GET /repos/{owner}/{repo}/branches",
+          {
+            owner: owner!,
+            repo: repoName!,
+            per_page: limit,
+          }
+        )) as { data: BranchResp[] };
 
         for (const br of data) {
           branches.push({
@@ -191,12 +248,15 @@ githubBranchesRouter.openapi(
         const perPage = 100;
 
         while (branches.length < limit) {
-          const { data } = await octokit.request("GET /repos/{owner}/{repo}/branches", {
-            owner: owner!,
-            repo: repoName!,
-            per_page: perPage,
-            page,
-          }) as { data: BranchResp[] };
+          const { data } = (await octokit.request(
+            "GET /repos/{owner}/{repo}/branches",
+            {
+              owner: owner!,
+              repo: repoName!,
+              per_page: perPage,
+              page,
+            }
+          )) as { data: BranchResp[] };
 
           if (data.length === 0) break;
 
@@ -216,14 +276,23 @@ githubBranchesRouter.openapi(
         }
       }
 
-      return c.json({ branches, defaultBranch: defaultBranchName, error: null }, 200);
+      return c.json(
+        { branches, defaultBranch: defaultBranchName, error: null },
+        200
+      );
     } catch (error) {
       console.error("[github.branches] Error fetching branches:", error);
-      return c.json({
-        branches: [],
-        defaultBranch: null,
-        error: error instanceof Error ? error.message : "Failed to fetch branches",
-      }, 200);
+      return c.json(
+        {
+          branches: [],
+          defaultBranch: null,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to fetch branches",
+        },
+        200
+      );
     }
   }
 );
