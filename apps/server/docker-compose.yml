@@ -23,6 +23,9 @@ services:
       - PORT=9776
       # Required: Convex deployment URL
       - NEXT_PUBLIC_CONVEX_URL=${NEXT_PUBLIC_CONVEX_URL}
+      # Required: Client origin(s) for CORS - comma-separated for multiple origins
+      # Example: "https://cmux-client.example.com,https://cmux.example.com"
+      - CMUX_ALLOWED_SOCKET_ORIGINS=${CMUX_ALLOWED_SOCKET_ORIGINS}
       # Optional: WWW app origin for API calls
       - NEXT_PUBLIC_WWW_ORIGIN=${NEXT_PUBLIC_WWW_ORIGIN:-}
       # Optional: Convex HTTP actions URL
