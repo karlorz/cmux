@@ -133,13 +133,17 @@ function GrainOverlay({ opacity = 0.08 }: { opacity?: number }) {
 function CmuxMarkIcon({
   size = 16,
   className,
+  color,
 }: {
   size?: number;
   className?: string;
+  /** Solid color override. When set, disables gradient and uses this color. Use "currentColor" to inherit from parent. */
+  color?: string;
 }) {
   const id = useId();
   const gradId = `cmuxMarkGradient-${id}`;
   const glowId = `cmuxMarkGlow-${id}`;
+  const fillValue = color ?? `url(#${gradId})`;
 
   return (
     <svg
@@ -151,9 +155,17 @@ function CmuxMarkIcon({
       aria-hidden
     >
       <defs>
-        <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#00D4FF" />
-          <stop offset="100%" stopColor="#7C3AED" />
+        <linearGradient
+          id={gradId}
+          x1="64"
+          y1="64"
+          x2="38964"
+          y2="64"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="#00D4FF" />
+          <stop offset="0.0120866" stopColor="#7C3AED" />
+          <stop offset="0.024529" stopColor="#7C3AED" />
         </linearGradient>
         <filter
           id={glowId}
@@ -213,7 +225,7 @@ function CmuxMarkIcon({
       <g filter={`url(#${glowId})`}>
         <path
           d="M64 64L453 333.5L64 603V483.222L273.462 333.5L64 183.778V64Z"
-          fill={`url(#${gradId})`}
+          fill={fillValue}
         />
       </g>
     </svg>
@@ -641,7 +653,7 @@ function MockGitHubPRBrowser() {
   return (
     <div className="pt-12 pb-4 h-dvh w-screen relative left-1/2 -translate-x-1/2 px-4 flex flex-col">
       {/* Browser window frame - Chrome Dark Mode style */}
-      <div className="rounded-2xl border border-[#35363A] bg-[#202124] overflow-hidden shadow-2xl w-full flex-1 flex flex-col min-h-0 max-w-[1800px] mx-auto">
+      <div className="rounded-2xl border border-[#35363A] bg-[#202124] overflow-hidden shadow-2xl w-full flex-1 flex flex-col min-h-0 max-w-[1400px] lg:max-w-[1800px] mx-auto">
         {/* Tab strip */}
         <div className="flex items-end h-[38px] bg-[#202124] px-2 select-none">
           {/* Traffic lights */}
@@ -668,7 +680,7 @@ function MockGitHubPRBrowser() {
               onClick={() => setActiveTab("github")}
             />
             <ChromeTab
-              icon={<TabFavicon className="grayscale opacity-80" />}
+              icon={<TabFavicon />}
               label="cmux"
               isActive={activeTab === "workspace"}
               onClick={() => setActiveTab("workspace")}
@@ -2554,12 +2566,14 @@ function MockGitHubPRBrowser() {
                                         href="https://www.youtube.com/watch?v=YtQTKSM_wsA"
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="bg-neutral-900 aspect-video flex items-center justify-center cursor-pointer hover:bg-neutral-800 transition-colors block relative"
+                                        className="bg-neutral-900 aspect-video flex items-center justify-center cursor-pointer hover:bg-neutral-800 transition-colors relative"
                                       >
-                                        <img
+                                        <Image
                                           src="https://img.youtube.com/vi/YtQTKSM_wsA/hqdefault.jpg"
                                           alt="cmux demo video"
                                           className="absolute inset-0 w-full h-full object-cover opacity-60"
+                                          fill
+                                          unoptimized
                                         />
                                         <div className="relative w-8 h-8 rounded-full bg-red-600 flex items-center justify-center hover:bg-red-500 transition-colors">
                                           <div className="w-0 h-0 border-t-[5px] border-t-transparent border-l-[8px] border-l-white border-b-[5px] border-b-transparent ml-0.5" />
@@ -3240,12 +3254,14 @@ function MockGitHubPRBrowser() {
                                     href="https://www.youtube.com/watch?v=YtQTKSM_wsA"
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="bg-neutral-900 aspect-video flex items-center justify-center cursor-pointer hover:bg-neutral-800 transition-colors block relative"
+                                    className="bg-neutral-900 aspect-video flex items-center justify-center cursor-pointer hover:bg-neutral-800 transition-colors relative"
                                   >
-                                    <img
+                                    <Image
                                       src="https://img.youtube.com/vi/YtQTKSM_wsA/hqdefault.jpg"
                                       alt="cmux demo video"
                                       className="absolute inset-0 w-full h-full object-cover opacity-60"
+                                      fill
+                                      unoptimized
                                     />
                                     <div className="relative w-12 h-12 rounded-full bg-red-600 flex items-center justify-center hover:bg-red-500 transition-colors">
                                       <div className="w-0 h-0 border-t-[8px] border-t-transparent border-l-[12px] border-l-white border-b-[8px] border-b-transparent ml-1" />
