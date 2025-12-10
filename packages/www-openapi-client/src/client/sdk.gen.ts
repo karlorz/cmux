@@ -358,7 +358,7 @@ export const getApiIntegrationsGithubOauthToken = <ThrowOnError extends boolean 
 };
 
 /**
- * Get the default branch for a repository (fast - single API call)
+ * Get the default branch for a repository using GitHub App
  */
 export const getApiIntegrationsGithubDefaultBranch = <ThrowOnError extends boolean = false>(options: Options<GetApiIntegrationsGithubDefaultBranchData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).get<GetApiIntegrationsGithubDefaultBranchResponses, GetApiIntegrationsGithubDefaultBranchErrors, ThrowOnError>({
@@ -368,7 +368,7 @@ export const getApiIntegrationsGithubDefaultBranch = <ThrowOnError extends boole
 };
 
 /**
- * List branches for a repository with optional search filter
+ * List branches for a repository using GitHub App
  */
 export const getApiIntegrationsGithubBranches = <ThrowOnError extends boolean = false>(options: Options<GetApiIntegrationsGithubBranchesData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).get<GetApiIntegrationsGithubBranchesResponses, GetApiIntegrationsGithubBranchesErrors, ThrowOnError>({
