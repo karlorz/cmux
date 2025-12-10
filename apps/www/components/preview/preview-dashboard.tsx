@@ -2822,7 +2822,7 @@ function MockGitHubPRBrowser() {
                     {/* Browser content - cmux.dev landing page */}
                     <div className="flex-1 bg-[#030712] overflow-hidden">
                       <iframe
-                        src="/"
+                        src="https://cmux.dev"
                         className="border-0 origin-top-left"
                         style={{
                           width: "200%",
