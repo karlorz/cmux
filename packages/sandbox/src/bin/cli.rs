@@ -139,6 +139,10 @@ enum Command {
     /// SSH into a sandbox (real SSH, not WebSocket attach)
     Ssh(SshArgs),
 
+    /// Execute a command on a sandbox via SSH (non-interactive)
+    #[command(name = "ssh-exec")]
+    SshExec(SshExecArgs),
+
     /// Generate SSH config for easy sandbox access (e.g., `ssh sandbox-0`)
     SshConfig,
 
@@ -213,9 +217,9 @@ enum VmCommand {
 
 #[derive(Args, Debug)]
 struct VmCreateArgs {
-    /// Team slug or ID
+    /// Team slug or ID (required)
     #[arg(long, short = 't', env = "CMUX_TEAM")]
-    team: Option<String>,
+    team: String,
     /// Time-to-live in seconds before VM auto-pauses (default: 30 minutes)
     #[arg(long, default_value_t = 1800)]
     ttl: u64,
@@ -265,6 +269,18 @@ struct SshArgs {
     /// Additional SSH arguments (e.g., -L 8080:localhost:8080 for port forwarding)
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     ssh_args: Vec<String>,
+}
+
+#[derive(Args, Debug)]
+struct SshExecArgs {
+    /// Sandbox ID or index (can be morphvm_xxx or task-run ID)
+    id: String,
+    /// Team slug or ID (required for remote SSH connections)
+    #[arg(long, short = 't', env = "CMUX_TEAM")]
+    team: Option<String>,
+    /// Command to execute on the sandbox
+    #[arg(trailing_var_arg = true, required = true)]
+    command: Vec<String>,
 }
 
 #[derive(Args, Debug)]
@@ -789,6 +805,9 @@ async fn run() -> anyhow::Result<()> {
         }
         Command::Ssh(args) => {
             handle_real_ssh(&client, &cli.base_url, &args).await?;
+        }
+        Command::SshExec(args) => {
+            handle_ssh_exec(&client, &cli.base_url, &args).await?;
         }
         Command::SshConfig => {
             handle_ssh_config(&client, &cli.base_url).await?;
@@ -3076,11 +3095,8 @@ async fn handle_vm_create(args: VmCreateArgs) -> anyhow::Result<()> {
     // Build the request body
     let mut body = serde_json::json!({
         "ttlSeconds": args.ttl,
+        "teamSlugOrId": args.team,
     });
-
-    if let Some(team) = &args.team {
-        body["teamId"] = serde_json::json!(team);
-    }
 
     if let Some(preset) = &args.preset {
         body["presetId"] = serde_json::json!(preset);
@@ -3411,6 +3427,67 @@ async fn handle_real_ssh(client: &Client, base_url: &str, args: &SshArgs) -> any
         }
         Ok(())
     }
+}
+
+/// Execute a command on a sandbox via SSH (non-interactive)
+///
+/// This is designed for scripting and automation. Unlike `ssh`, this command:
+/// - Does not allocate a PTY by default
+/// - Suppresses connection status messages
+/// - Properly propagates the exit code of the remote command
+async fn handle_ssh_exec(
+    client: &Client,
+    base_url: &str,
+    args: &SshExecArgs,
+) -> anyhow::Result<()> {
+    let binary_name = if is_dmux() { "dmux" } else { "cmux" };
+
+    // Get access token and resolve team
+    let access_token = get_access_token(client).await?;
+    let team = resolve_team(client, &access_token, args.team.as_deref()).await?;
+
+    // Verify we can get SSH info for this sandbox
+    let ssh_info = get_sandbox_ssh_info(client, &access_token, &args.id, &team, base_url).await?;
+
+    // Build SSH command with ProxyCommand using our _ssh-proxy
+    // Use -T to disable pseudo-terminal allocation (non-interactive)
+    // Use -o BatchMode=yes to prevent password prompts
+    let mut ssh_args = vec![
+        "-T".to_string(), // Disable pseudo-terminal allocation
+        "-o".to_string(),
+        "BatchMode=yes".to_string(),
+        "-o".to_string(),
+        "StrictHostKeyChecking=no".to_string(),
+        "-o".to_string(),
+        "UserKnownHostsFile=/dev/null".to_string(),
+        "-o".to_string(),
+        "LogLevel=ERROR".to_string(),
+        "-o".to_string(),
+        format!(
+            "ProxyCommand={} _ssh-proxy {} --team {} --base-url {}",
+            binary_name, args.id, team, base_url
+        ),
+    ];
+
+    // The hostname (doesn't matter since we use ProxyCommand, but SSH requires one)
+    ssh_args.push(format!(
+        "{}@sandbox-{}",
+        ssh_info.user, ssh_info.morph_instance_id
+    ));
+
+    // Add the command to execute
+    // Join command parts into a single string for remote execution
+    let remote_cmd = args.command.join(" ");
+    ssh_args.push(remote_cmd);
+
+    // Execute SSH and capture exit code
+    let status = std::process::Command::new("ssh").args(&ssh_args).status()?;
+
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
+
+    Ok(())
 }
 
 /// Generate SSH config for easy sandbox access
