@@ -266,21 +266,26 @@ INCOMPLETE CAPTURE: Missing important UI elements. Ensure full components are vi
 </CRITICAL_MISTAKES>
 
 <CODE_MODIFICATION_POLICY>
-CRITICAL: You are strictly FORBIDDEN from modifying any source code in the repository.
+Your screenshots must be TRUTHFUL to the current state of the code in this branch.
 
-- DO NOT use the Edit or Write tools to modify any files in the repository
-- DO NOT fix bugs, errors, or type issues in the code
-- DO NOT update dependencies or configuration files
-- DO NOT create new source files
+ALLOWED modifications (for environment setup only):
+- Creating mock environment variable files (e.g., .env.local with placeholder API keys)
+- Creating minimal configuration files required to start the dev server
+- Writing temporary test data files if needed to render UI states
 
-Your screenshots must be TRUTHFUL to the current state of the code in this branch, even if there are errors or issues. If the UI has bugs, broken styles, or error states - capture them exactly as they appear. The purpose of these screenshots is to document the actual state of the PR, not an idealized or fixed version.
+FORBIDDEN modifications:
+- DO NOT fix bugs, syntax errors, or type issues in the source code
+- DO NOT "improve" or refactor any existing code
+- DO NOT update dependencies or package.json
+- DO NOT modify the actual application source files
 
-If the dev server fails to start or the application has runtime errors:
-1. Report the failure in your output
-2. Set hasUiChanges based on whether the changed files SHOULD have UI impact
-3. Do not attempt to fix the issues
+The principle: You may CREATE files needed to RUN the app, but you must NOT MODIFY files that affect WHAT the app displays. If the UI has bugs, broken styles, or error states - capture them exactly as they appear. The purpose is to document the actual state of the PR, not an idealized or fixed version.
 
-The only files you may create are screenshots in the designated output directory.
+If the dev server fails to start due to missing env vars or config:
+1. Try creating minimal mock files to get it running
+2. If it still fails, report the failure in your output
+3. Set hasUiChanges based on whether the changed files SHOULD have UI impact
+4. Never modify source code to fix the issues
 </CODE_MODIFICATION_POLICY>
 
 <OUTPUT_REQUIREMENTS>
@@ -402,13 +407,40 @@ The only files you may create are screenshots in the designated output directory
                       return {};
                     }
 
+                    // Allow creating environment/config files for setup
+                    const fileName = path.basename(filePath);
+                    const isEnvFile = fileName.startsWith(".env");
+                    const isLocalConfig =
+                      fileName.endsWith(".local.json") ||
+                      fileName.endsWith(".local.yaml") ||
+                      fileName.endsWith(".local.yml") ||
+                      fileName.endsWith(".local.ts") ||
+                      fileName.endsWith(".local.js");
+                    const isMockDataFile =
+                      filePath.includes("/mock/") ||
+                      filePath.includes("/mocks/") ||
+                      filePath.includes("/fixtures/") ||
+                      fileName.startsWith("mock-") ||
+                      fileName.startsWith("test-data");
+
+                    // Only allow Write (creating new files), not Edit (modifying existing)
+                    if (
+                      toolName === "Write" &&
+                      (isEnvFile || isLocalConfig || isMockDataFile)
+                    ) {
+                      await logToScreenshotCollector(
+                        `[hook] Allowing ${toolName} for setup file: ${filePath}`
+                      );
+                      return {};
+                    }
+
                     await logToScreenshotCollector(
                       `[hook] Blocked ${toolName} tool attempting to modify: ${filePath}`
                     );
 
                     return {
                       decision: "block",
-                      reason: `File modifications are not allowed. You are a screenshot collector and must not modify any source code. The screenshots must be truthful to the current state of the code in the branch. File: ${filePath}`,
+                      reason: `Source code modifications are not allowed. You may only CREATE environment files (.env*), local config files (*.local.json/yaml/ts/js), or mock data files. You must NOT modify existing source files. Screenshots must be truthful to the current state of the code. Blocked file: ${filePath}`,
                     };
                   },
                 ],
