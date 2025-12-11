@@ -1315,6 +1315,37 @@ async def task_install_ide_extensions(ctx: TaskContext) -> None:
         extensions_dir = "/root/.openvscode-server/extensions"
         user_data_dir = "/root/.openvscode-server/data"
 
+    ide_deps_path = Path(__file__).resolve().parent.parent / "configs/ide-deps.json"
+    try:
+        ide_deps_raw = ide_deps_path.read_text(encoding="utf-8")
+        ide_deps = json.loads(ide_deps_raw)
+    except Exception as exc:
+        raise RuntimeError(f"Failed to read {ide_deps_path}") from exc
+
+    extensions = ide_deps.get("extensions")
+    if not isinstance(extensions, list):
+        raise RuntimeError("configs/ide-deps.json extensions must be an array.")
+
+    extension_lines: list[str] = []
+    for ext in extensions:
+        if not isinstance(ext, dict):
+            raise RuntimeError(f"Invalid extension entry {ext!r}")
+        publisher = ext.get("publisher")
+        name = ext.get("name")
+        version = ext.get("version")
+        if (
+            not isinstance(publisher, str)
+            or not isinstance(name, str)
+            or not isinstance(version, str)
+        ):
+            raise RuntimeError(f"Invalid extension entry {ext!r}")
+        extension_lines.append(f"{publisher}|{name}|{version}")
+
+    if not extension_lines:
+        raise RuntimeError("No extensions found in configs/ide-deps.json.")
+
+    extensions_blob = "\n".join(extension_lines)
+
     cmd = textwrap.dedent(
         f"""
         set -eux
@@ -1390,12 +1421,7 @@ async def task_install_ide_extensions(ctx: TaskContext) -> None:
           [ -z "${{publisher}}" ] && continue
           download_extension "${{publisher}}" "${{name}}" "${{version}}" "${{download_dir}}/${{publisher}}.${{name}}.vsix" &
         done <<'EXTENSIONS'
-        anthropic|claude-code|2.0.27
-        openai|chatgpt|0.5.27
-        ms-vscode|vscode-typescript-next|5.9.20250531
-        ms-python|python|2025.6.1
-        ms-python|vscode-pylance|2025.8.100
-        ms-python|debugpy|2025.14.0
+        {extensions_blob}
         EXTENSIONS
         wait
         set -- "${{download_dir}}"/*.vsix
@@ -1430,11 +1456,30 @@ async def task_install_cursor(ctx: TaskContext) -> None:
     description="Install global agent CLIs with bun",
 )
 async def task_install_global_cli(ctx: TaskContext) -> None:
+    ide_deps_path = Path(__file__).resolve().parent.parent / "configs/ide-deps.json"
+    try:
+        ide_deps_raw = ide_deps_path.read_text(encoding="utf-8")
+        ide_deps = json.loads(ide_deps_raw)
+    except Exception as exc:
+        raise RuntimeError(f"Failed to read {ide_deps_path}") from exc
+
+    packages = ide_deps.get("packages")
+    if not isinstance(packages, dict):
+        raise RuntimeError("configs/ide-deps.json packages must be an object.")
+
+    package_args: list[str] = []
+    for name, version in packages.items():
+        if not isinstance(name, str) or not isinstance(version, str):
+            raise RuntimeError(f"Invalid package entry {name!r}: {version!r}")
+        package_args.append(f"{name}@{version}")
+
+    if not package_args:
+        raise RuntimeError("No packages found in configs/ide-deps.json.")
+
+    bun_line = "bun add -g " + " ".join(package_args)
     cmd = textwrap.dedent(
-        """
-        bun add -g @openai/codex@0.50.0 @anthropic-ai/claude-code@2.0.54 \
-          @google/gemini-cli@0.1.21 opencode-ai@0.6.4 codebuff \
-          @devcontainers/cli @sourcegraph/amp
+        f"""
+        {bun_line}
         """
     )
     await ctx.run("install-global-cli", cmd)
@@ -2543,6 +2588,22 @@ async def provision_and_snapshot(args: argparse.Namespace) -> None:
     atexit.register(_sync_cleanup)
 
     repo_root = Path(args.repo_root).resolve()
+    if getattr(args, "bump_ide_deps", False):
+        bun_path = shutil.which("bun")
+        if bun_path is None:
+            raise RuntimeError(
+                "bun not found on host; install bun or rerun with --no-bump-ide-deps."
+            )
+        console.always("Bumping IDE deps to latest (bun run bump-ide-deps)...")
+        bump_result = subprocess.run(
+            [bun_path, "run", "bump-ide-deps"],
+            cwd=str(repo_root),
+            text=True,
+        )
+        if bump_result.returncode != 0:
+            raise RuntimeError(
+                f"bun run bump-ide-deps failed with exit code {bump_result.returncode}"
+            )
     preset_plans = _build_preset_plans(args)
 
     console.always(
@@ -2693,6 +2754,13 @@ def parse_args() -> argparse.Namespace:
         choices=(IDE_PROVIDER_CODER, IDE_PROVIDER_OPENVSCODE),
         default=DEFAULT_IDE_PROVIDER,
         help=f"IDE provider to install (default: {DEFAULT_IDE_PROVIDER})",
+    )
+    parser.add_argument(
+        "--bump-ide-deps",
+        dest="bump_ide_deps",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Update configs/ide-deps.json to latest versions before snapshotting",
     )
     return parser.parse_args()
 
