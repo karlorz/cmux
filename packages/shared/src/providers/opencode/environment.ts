@@ -1,7 +1,12 @@
 import type {
   EnvironmentContext,
   EnvironmentResult,
+  PostStartCommand,
 } from "../common/environment-result";
+
+// Opencode HTTP API configuration
+export const OPENCODE_HTTP_HOST = "127.0.0.1";
+export const OPENCODE_HTTP_PORT = 4096;
 
 async function buildOpencodeEnvironment(
   ctx: EnvironmentContext,
@@ -14,6 +19,7 @@ async function buildOpencodeEnvironment(
   const files: EnvironmentResult["files"] = [];
   const env: Record<string, string> = {};
   const startupCommands: string[] = [];
+  const postStartCommands: PostStartCommand[] = [];
 
   // Ensure .local/share/opencode directory exists
   startupCommands.push("mkdir -p ~/.local/share/opencode");
@@ -103,7 +109,45 @@ export const NotificationPlugin = async ({ project: _project, client: _client, $
     env.XAI_API_KEY = ctx.apiKeys.XAI_API_KEY;
   }
 
-  return { files, env, startupCommands };
+  // Add post-start commands to poll the session endpoint and submit the prompt
+  // These run after the opencode TUI starts
+  const baseUrl = `http://${OPENCODE_HTTP_HOST}:${OPENCODE_HTTP_PORT}`;
+
+  // Command 1: Poll /session until it's ready (with retries)
+  postStartCommands.push({
+    description: "Wait for opencode session to be ready",
+    command: `
+      for i in $(seq 1 60); do
+        if curl -sf "${baseUrl}/session" > /dev/null 2>&1; then
+          echo "OpenCode session ready after $i attempts"
+          exit 0
+        fi
+        sleep 1
+      done
+      echo "OpenCode session not ready after 60 attempts" >&2
+      exit 1
+    `.trim(),
+    timeoutMs: 90000, // 90 seconds total (60 retries * 1 second + overhead)
+    continueOnError: false,
+  });
+
+  // Command 2: Submit the prompt via HTTP API
+  // We need to escape the prompt for JSON
+  const escapedPrompt = ctx.prompt
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t");
+
+  postStartCommands.push({
+    description: "Submit prompt to opencode via HTTP API",
+    command: `curl -sf -X POST "${baseUrl}/tui/submit-prompt" -H "Content-Type: application/json" -d '{"prompt":"${escapedPrompt}"}'`,
+    timeoutMs: 30000, // 30 seconds
+    continueOnError: false,
+  });
+
+  return { files, env, startupCommands, postStartCommands };
 }
 
 export async function getOpencodeEnvironment(
