@@ -11,12 +11,9 @@ import {
 } from "./logger";
 import { detectGitRepoPath, listGitRepoPaths } from "../crown/git";
 import { readPrDescription } from "./context";
-import {
-  SCREENSHOT_STORAGE_ROOT,
-  claudeCodeCapturePRScreenshots,
-  normalizeScreenshotOutputDir,
-  type ClaudeCodeAuthConfig,
-} from "./claudeScreenshotCollector";
+import { loadScreenshotCollector, type ScreenshotCollectorModule } from "./screenshotCollectorLoader";
+// Keep the bundled import for type references
+import type { ClaudeCodeAuthConfig } from "./claudeScreenshotCollector";
 
 export interface StartScreenshotCollectionOptions {
   anthropicApiKey?: string | null;
@@ -109,8 +106,11 @@ function resolvePrTitle(params: {
 
 function resolveOutputDirectory(
   headBranch: string,
+  collectorModule: ScreenshotCollectorModule,
   requestedPath?: string
 ): { outputDir: string; copyTarget?: string } {
+  const { normalizeScreenshotOutputDir, SCREENSHOT_STORAGE_ROOT } = collectorModule;
+
   if (requestedPath) {
     const trimmed = requestedPath.trim();
     if (trimmed.length > 0) {
@@ -141,6 +141,11 @@ export async function startScreenshotCollection(
     path: SCREENSHOT_COLLECTOR_LOG_PATH,
     openVSCodeUrl: SCREENSHOT_COLLECTOR_DIRECTORY_URL,
   });
+
+  // Load the screenshot collector module (may fetch from Convex or use bundled fallback)
+  await logToScreenshotCollector("Loading screenshot collector module...");
+  const collectorModule = await loadScreenshotCollector();
+  await logToScreenshotCollector("Screenshot collector module loaded");
 
   const workspaceRoot = WORKSPACE_ROOT;
   const repoCandidates: string[] = [];
@@ -444,13 +449,14 @@ export async function startScreenshotCollection(
 
   const { outputDir, copyTarget } = resolveOutputDirectory(
     headBranch,
+    collectorModule,
     options.outputPath
   );
 
   await logToScreenshotCollector(`Claude collector output dir: ${outputDir}`);
 
   try {
-    const claudeResult = await claudeCodeCapturePRScreenshots({
+    const claudeResult = await collectorModule.claudeCodeCapturePRScreenshots({
       workspaceDir,
       changedFiles: textFiles,
       prTitle,
