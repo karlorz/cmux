@@ -109,8 +109,8 @@ type PreviewDashboardProps = {
   isAuthenticated: boolean;
   previewConfigs: PreviewConfigListItem[];
   popupComplete?: boolean;
-  /** When set, user authenticated with this provider but GitHub is not connected yet - show waitlist */
-  waitlistProvider?: "gitlab" | "bitbucket" | null;
+  /** When set, user authenticated with these providers but GitHub is not connected yet - show waitlist */
+  waitlistProviders?: ("gitlab" | "bitbucket")[];
   /** Email to display on waitlist screen */
   waitlistEmail?: string | null;
 };
@@ -3677,7 +3677,7 @@ function PreviewDashboardInner({
   isAuthenticated,
   previewConfigs,
   popupComplete,
-  waitlistProvider,
+  waitlistProviders,
   waitlistEmail,
 }: PreviewDashboardProps) {
   const [selectedTeamSlugOrIdState, setSelectedTeamSlugOrIdState] = useState(
@@ -4184,11 +4184,16 @@ function PreviewDashboardInner({
         </Button>
       </div>
     </div>
-  ) : waitlistProvider ? (
+  ) : waitlistProviders && waitlistProviders.length > 0 ? (
     // Waitlist for GitLab/Bitbucket users who don't have GitHub connected
     (() => {
-      const providerName =
-        waitlistProvider === "gitlab" ? "GitLab" : "Bitbucket";
+      const providerNames = waitlistProviders.map((p) =>
+        p === "gitlab" ? "GitLab" : "Bitbucket"
+      );
+      const providerDisplay =
+        providerNames.length === 1
+          ? providerNames[0]
+          : `${providerNames.slice(0, -1).join(", ")} and ${providerNames[providerNames.length - 1]}`;
       return (
         <div className="relative flex flex-1 flex-col items-center justify-center rounded-lg border border-white/5 bg-white/[0.02] backdrop-blur-sm px-4 py-8 overflow-hidden">
           <GrainOverlay opacity={0.02} />
@@ -4197,8 +4202,8 @@ function PreviewDashboardInner({
           </h3>
           <div className="text-sm text-neutral-400 text-center max-w-md space-y-2">
             <p>
-              {providerName} integration is in beta. We&apos;ll email you when
-              it&apos;s ready.
+              {providerDisplay} integration is in beta. We&apos;ll email you
+              when it&apos;s ready.
             </p>
             {waitlistEmail && (
               <p className="text-neutral-500 text-xs">({waitlistEmail})</p>

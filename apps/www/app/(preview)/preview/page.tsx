@@ -138,20 +138,23 @@ export default async function PreviewLandingPage({ searchParams }: PageProps) {
   const hasGitLab = !!gitlabAccount;
   const hasBitbucket = !!bitbucketAccount;
 
-  const waitlistProvider = !hasGitHub && (hasGitLab || hasBitbucket)
-    ? (hasGitLab ? "gitlab" : "bitbucket")
-    : null;
+  const waitlistProviders: ("gitlab" | "bitbucket")[] = !hasGitHub
+    ? [
+        ...(hasGitLab ? (["gitlab"] as const) : []),
+        ...(hasBitbucket ? (["bitbucket"] as const) : []),
+      ]
+    : [];
 
   // Persist waitlist status to server metadata (non-blocking)
-  if (waitlistProvider) {
+  if (waitlistProviders.length > 0) {
     const serverMetadata = user.serverMetadata as Record<string, unknown> | null;
-    const existingWaitlist = serverMetadata?.previewWaitlist as string | undefined;
+    const existingWaitlist = serverMetadata?.previewWaitlist as string[] | undefined;
     if (!existingWaitlist) {
       waitUntil(
         user.update({
           serverMetadata: {
             ...serverMetadata,
-            previewWaitlist: waitlistProvider,
+            previewWaitlist: waitlistProviders,
             previewWaitlistJoinedAt: new Date().toISOString(),
           },
         })
@@ -280,7 +283,7 @@ export default async function PreviewLandingPage({ searchParams }: PageProps) {
         isAuthenticated={true}
         previewConfigs={previewConfigs}
         popupComplete={popupComplete}
-        waitlistProvider={waitlistProvider}
+        waitlistProviders={waitlistProviders}
         waitlistEmail={user.primaryEmail}
       />
     </div>
