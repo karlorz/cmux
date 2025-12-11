@@ -528,6 +528,14 @@ export const postInitialPreviewComment = internalAction({
 
       const octokit = createOctokit(accessToken);
 
+      // Get the current GitHub App's info to only collapse comments from this same app
+      const { data: appData } = await octokit.rest.apps.getAuthenticated();
+      if (!appData?.slug) {
+        console.error("[github_pr_comments] Could not get app slug", { installationId });
+        return { ok: false, error: "Could not get app slug" };
+      }
+      const expectedBotLogin = `${appData.slug}[bot]`;
+
       // Build the initial comment with diff heatmap link and loading state
       const commentSections: string[] = ["## Preview Screenshots"];
 
@@ -566,6 +574,15 @@ export const postInitialPreviewComment = internalAction({
         status: "running",
         githubCommentUrl: data.html_url,
         githubCommentId: data.id,
+      });
+
+      await collapseOlderPreviewComments({
+        octokit,
+        owner: repo.owner,
+        repo: repo.repo,
+        prNumber,
+        latestCommentId: data.id,
+        expectedBotLogin,
       });
 
       return { ok: true, commentId: data.id, commentUrl: data.html_url };
