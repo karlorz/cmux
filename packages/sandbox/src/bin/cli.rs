@@ -3044,11 +3044,7 @@ async fn handle_real_ssh(client: &Client, base_url: &str, args: &SshArgs) -> any
         finish_spinner(&spinner, "Sandbox resumed");
     }
 
-    // Print connecting message - this stays visible while SSH handshakes
-    eprintln!("\x1b[2m→ Connecting to sandbox...\x1b[0m");
-
     // Build SSH command using Morph's per-instance SSH tokens
-    // Connection format: ssh {access_token}@ssh.cloud.morph.so
     let mut ssh_args = vec![
         "-o".to_string(),
         "StrictHostKeyChecking=no".to_string(),
@@ -3066,6 +3062,21 @@ async fn handle_real_ssh(client: &Client, base_url: &str, args: &SshArgs) -> any
 
     // Use Morph's SSH gateway with per-instance token
     ssh_args.push(format!("{}@ssh.cloud.morph.so", ssh_info.access_token));
+
+    // Spawn a thread to show animated spinner while SSH connects
+    // The thread will be killed when exec() replaces the process
+    std::thread::spawn(|| {
+        let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+        let start = std::time::Instant::now();
+        for i in 0.. {
+            let elapsed = start.elapsed().as_secs();
+            eprint!("\r\x1b[36m{}\x1b[0m Connecting to sandbox \x1b[2m{}s\x1b[0m  ", frames[i % frames.len()], elapsed);
+            std::thread::sleep(std::time::Duration::from_millis(80));
+        }
+    });
+
+    // Small delay to let spinner start
+    std::thread::sleep(std::time::Duration::from_millis(50));
 
     // Execute native SSH
     // Use exec on Unix to replace process and fully inherit terminal for passphrase prompts
