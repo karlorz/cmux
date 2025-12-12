@@ -2291,7 +2291,19 @@ async fn get_sandbox_ssh_info(
         ));
     }
 
-    let ssh_info: SandboxSshInfo = response.json().await?;
+    let response_text = response.text().await?;
+    let ssh_info: SandboxSshInfo = serde_json::from_str(&response_text).map_err(|_| {
+        // Check for common error patterns
+        if response_text.contains("<!doctype html>") || response_text.contains("<html") {
+            anyhow::anyhow!(
+                "Server returned HTML instead of JSON. Check CMUX_API_URL is set correctly."
+            )
+        } else if response_text.is_empty() {
+            anyhow::anyhow!("Server returned empty response")
+        } else {
+            anyhow::anyhow!("Invalid response from server: {}", response_text.chars().take(200).collect::<String>())
+        }
+    })?;
     Ok(ssh_info)
 }
 
