@@ -96,7 +96,7 @@ enum Command {
     /// Internal helper to proxy SSH through direct TCP to Morph (used as SSH ProxyCommand)
     #[command(name = "_ssh-proxy", hide = true)]
     SshProxy {
-        /// Sandbox ID (morphvm_xxx or task-run ID)
+        /// Sandbox ID
         id: String,
         /// Team slug or ID
         #[arg(long, short = 't', env = "CMUX_TEAM")]
@@ -225,7 +225,7 @@ struct VmListArgs {
 
 #[derive(Args, Debug)]
 struct SshArgs {
-    /// Sandbox ID or index (can be morphvm_xxx or task-run ID)
+    /// Sandbox ID (task-run ID or sandbox identifier)
     id: String,
     /// Team slug or ID (required for remote SSH connections)
     #[arg(long, short = 't', env = "CMUX_TEAM")]
@@ -237,7 +237,7 @@ struct SshArgs {
 
 #[derive(Args, Debug)]
 struct SshExecArgs {
-    /// Sandbox ID or index (can be morphvm_xxx or task-run ID)
+    /// Sandbox ID (task-run ID or sandbox identifier)
     id: String,
     /// Team slug or ID (required for remote SSH connections)
     #[arg(long, short = 't', env = "CMUX_TEAM")]
@@ -2922,10 +2922,10 @@ async fn handle_real_ssh(client: &Client, base_url: &str, args: &SshArgs) -> any
     };
 
     // Get SSH info from the API (includes Morph per-instance SSH token)
-    eprintln!("Resolving sandbox {}...", args.id);
+    eprintln!("Resolving sandbox...");
     let ssh_info =
         get_sandbox_ssh_info(client, &access_token, &args.id, team.as_deref(), base_url).await?;
-    eprintln!("Connecting to {}...", ssh_info.morph_instance_id);
+    eprintln!("Connecting...");
 
     // Build SSH command using Morph's per-instance SSH tokens
     // Connection format: ssh {access_token}@ssh.cloud.morph.so
@@ -3023,13 +3023,8 @@ async fn handle_ssh_exec(
         let exit_code = status.code().unwrap_or(1);
         // Exit code 255 typically means SSH connection failure
         if exit_code == 255 {
-            eprintln!(
-                "Error: SSH connection failed (exit code 255). The instance may be paused or unreachable."
-            );
-            eprintln!(
-                "Hint: Resume the instance with: morphcloud instance resume {}",
-                args.id
-            );
+            eprintln!("Error: SSH connection failed. The sandbox may be paused or unreachable.");
+            eprintln!("Hint: Check sandbox status or try again later.");
         }
         std::process::exit(exit_code);
     }
