@@ -1,7 +1,9 @@
 import { api } from "@cmux/convex/api";
 import {
   AGENT_CONFIGS,
+  checkGitStatus,
   type DockerStatus,
+  type GitStatus,
   type ProviderRequirementsContext,
   type ProviderStatus as SharedProviderStatus,
 } from "@cmux/shared";
@@ -17,9 +19,13 @@ export async function checkAllProvidersStatus(
 ): Promise<{
   providers: SharedProviderStatus[];
   dockerStatus: DockerStatus;
+  gitStatus: GitStatus;
 }> {
-  // Check Docker status
-  const dockerStatus = await checkDockerStatus();
+  // Check Docker and Git status in parallel
+  const [dockerStatus, gitStatus] = await Promise.all([
+    checkDockerStatus(),
+    checkGitStatus(),
+  ]);
 
   let apiKeys: ProviderRequirementsContext["apiKeys"] = undefined;
 
@@ -59,6 +65,7 @@ export async function checkAllProvidersStatus(
   return {
     providers: providerChecks,
     dockerStatus,
+    gitStatus,
   };
 }
 
@@ -72,9 +79,11 @@ export async function checkAllProvidersStatusWebMode(options: {
 }): Promise<{
   providers: SharedProviderStatus[];
   dockerStatus: DockerStatus;
+  gitStatus: GitStatus;
 }> {
-  // In web mode, Docker is managed by cloud provider - always report as ready
+  // In web mode, Docker and Git are managed by cloud provider - always report as ready
   const dockerStatus: DockerStatus = { isRunning: true, version: "web-mode" };
+  const gitStatus: GitStatus = { isAvailable: true, version: "web-mode" };
 
   let apiKeys: Record<string, string> = {};
 
@@ -115,5 +124,6 @@ export async function checkAllProvidersStatusWebMode(options: {
   return {
     providers: providerChecks,
     dockerStatus,
+    gitStatus,
   };
 }

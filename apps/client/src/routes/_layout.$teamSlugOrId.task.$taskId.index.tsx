@@ -482,8 +482,11 @@ function TaskDetailPage() {
   const headerTaskRunId = selectedRunId ?? taskRuns?.[0]?._id ?? null;
 
   const rawWorkspaceUrl = selectedRun?.vscode?.workspaceUrl ?? null;
+  const isLocalWorkspace = selectedRun?.vscode?.provider === "other";
   const workspaceUrl = rawWorkspaceUrl
-    ? toProxyWorkspaceUrl(rawWorkspaceUrl, localServeWeb.data?.baseUrl)
+    ? isLocalWorkspace
+      ? toProxyWorkspaceUrl(rawWorkspaceUrl, localServeWeb.data?.baseUrl)
+      : rawWorkspaceUrl
     : null;
   const workspacePersistKey = selectedRunId
     ? getTaskRunPersistKey(selectedRunId)
@@ -558,8 +561,6 @@ function TaskDetailPage() {
     },
     [selectedRunId]
   );
-
-  const isLocalWorkspace = selectedRun?.vscode?.provider === "other";
 
   const editorLoadingFallback = useMemo(
     () =>
