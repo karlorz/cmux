@@ -1055,6 +1055,25 @@ export async function runPreviewJob(
       repoFullName: run.repoFullName,
       prNumber: run.prNumber,
     });
+    // Mark taskRun as skipped if it exists
+    if (taskRunId) {
+      try {
+        await ctx.runMutation(internal.taskRuns.workerComplete, {
+          taskRunId,
+          exitCode: 0,
+        });
+        console.log("[preview-jobs] Task run marked as completed (skipped - no environmentId)", {
+          previewRunId,
+          taskRunId,
+        });
+      } catch (completeError) {
+        console.error("[preview-jobs] Failed to mark task run as completed", {
+          previewRunId,
+          taskRunId,
+          error: completeError instanceof Error ? completeError.message : String(completeError),
+        });
+      }
+    }
     await ctx.runMutation(internal.previewRuns.updateStatus, {
       previewRunId,
       status: "skipped",
@@ -1071,6 +1090,25 @@ export async function runPreviewJob(
       previewRunId,
       environmentId: config.environmentId,
     });
+    // Mark taskRun as skipped if it exists
+    if (taskRunId) {
+      try {
+        await ctx.runMutation(internal.taskRuns.workerComplete, {
+          taskRunId,
+          exitCode: 0,
+        });
+        console.log("[preview-jobs] Task run marked as completed (skipped - environment not found)", {
+          previewRunId,
+          taskRunId,
+        });
+      } catch (completeError) {
+        console.error("[preview-jobs] Failed to mark task run as completed", {
+          previewRunId,
+          taskRunId,
+          error: completeError instanceof Error ? completeError.message : String(completeError),
+        });
+      }
+    }
     await ctx.runMutation(internal.previewRuns.updateStatus, {
       previewRunId,
       status: "skipped",
@@ -1083,6 +1121,25 @@ export async function runPreviewJob(
       previewRunId,
       environmentId: environment._id,
     });
+    // Mark taskRun as skipped if it exists
+    if (taskRunId) {
+      try {
+        await ctx.runMutation(internal.taskRuns.workerComplete, {
+          taskRunId,
+          exitCode: 0,
+        });
+        console.log("[preview-jobs] Task run marked as completed (skipped - no morph snapshot)", {
+          previewRunId,
+          taskRunId,
+        });
+      } catch (completeError) {
+        console.error("[preview-jobs] Failed to mark task run as completed", {
+          previewRunId,
+          taskRunId,
+          error: completeError instanceof Error ? completeError.message : String(completeError),
+        });
+      }
+    }
     await ctx.runMutation(internal.previewRuns.updateStatus, {
       previewRunId,
       status: "skipped",
@@ -1915,6 +1972,33 @@ export async function runPreviewJob(
       });
     }
 
+    // Mark the task run as completed now that screenshot collection is done
+    // This triggers updateTaskStatusFromRuns to mark the parent task as completed
+    if (taskRunId) {
+      try {
+        await ctx.runMutation(internal.taskRuns.workerComplete, {
+          taskRunId,
+          exitCode: 0,
+        });
+        console.log("[preview-jobs] Task run marked as completed", {
+          previewRunId,
+          taskRunId,
+        });
+      } catch (completeError) {
+        console.error("[preview-jobs] Failed to mark task run as completed", {
+          previewRunId,
+          taskRunId,
+          error: completeError instanceof Error ? completeError.message : String(completeError),
+        });
+      }
+    }
+
+    // Mark the preview run as completed
+    await ctx.runMutation(internal.previewRuns.updateStatus, {
+      previewRunId,
+      status: "completed",
+    });
+
     console.log("[preview-jobs] Preview run initialized successfully", {
       previewRunId,
       instanceId: instance.id,
@@ -1927,6 +2011,26 @@ export async function runPreviewJob(
       previewRunId,
       error: message,
     });
+
+    // Mark the task run as failed if we have one
+    if (taskRunId) {
+      try {
+        await ctx.runMutation(internal.taskRuns.updateStatus, {
+          id: taskRunId,
+          status: "failed",
+        });
+        console.log("[preview-jobs] Task run marked as failed", {
+          previewRunId,
+          taskRunId,
+        });
+      } catch (taskRunError) {
+        console.error("[preview-jobs] Failed to mark task run as failed", {
+          previewRunId,
+          taskRunId,
+          error: taskRunError instanceof Error ? taskRunError.message : String(taskRunError),
+        });
+      }
+    }
 
     try {
       await ctx.runMutation(internal.previewRuns.updateStatus, {
