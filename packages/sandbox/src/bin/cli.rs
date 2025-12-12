@@ -3044,10 +3044,8 @@ async fn handle_real_ssh(client: &Client, base_url: &str, args: &SshArgs) -> any
         finish_spinner(&spinner, "Sandbox resumed");
     }
 
-    let spinner = create_spinner("Connecting");
-    // Small delay to show the spinner before SSH takes over
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    spinner.finish_and_clear();
+    // Print connecting message - this stays visible while SSH handshakes
+    eprintln!("\x1b[2m→ Connecting to sandbox...\x1b[0m");
 
     // Build SSH command using Morph's per-instance SSH tokens
     // Connection format: ssh {access_token}@ssh.cloud.morph.so
