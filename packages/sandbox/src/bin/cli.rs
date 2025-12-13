@@ -84,7 +84,7 @@ enum Command {
         port: u16,
     },
 
-    /// Open a browser connected to the sandbox (VS Code web for cloud, proxy for local)
+    /// Open Chrome with proxy to access services running in the sandbox
     #[command(alias = "b")]
     Browser(BrowserArgs),
 
@@ -1707,6 +1707,7 @@ struct SandboxStatusResponse {
 }
 
 /// Unified browser handler that supports both local and cloud sandboxes
+/// Opens Chrome with a proxy configured to route traffic through the sandbox
 async fn handle_browser_unified(
     client: &Client,
     local_daemon_url: &str,
@@ -1722,7 +1723,7 @@ async fn handle_browser_unified(
             handle_browser_local(local_daemon_url.to_string(), sandbox_id.to_string()).await
         }
         SandboxIdType::Cloud | SandboxIdType::TaskRun => {
-            // For cloud sandboxes, get the VS Code URL and open in browser
+            // For cloud sandboxes, set up SSH SOCKS proxy and launch Chrome
             let spinner = create_spinner("Authenticating");
             let access_token = get_access_token(client).await?;
             finish_spinner(&spinner, "Authenticated");
@@ -1734,56 +1735,97 @@ async fn handle_browser_unified(
                 Some(resolve_team(client, &access_token, args.team.as_deref()).await?)
             };
 
-            // Get sandbox status (includes vscodeUrl)
-            let spinner = create_spinner("Getting sandbox info");
-            let status_url = if let Some(team) = &team {
-                let query: String = url::form_urlencoded::Serializer::new(String::new())
-                    .append_pair("teamSlugOrId", team)
-                    .finish();
-                format!("{}/api/sandboxes/{}/status?{}", api_url, id, query)
-            } else {
-                format!("{}/api/sandboxes/{}/status", api_url, id)
-            };
+            // Get SSH info
+            let spinner = create_spinner("Getting SSH credentials");
+            let ssh_info =
+                get_sandbox_ssh_info(client, &access_token, &id, team.as_deref(), api_url).await?;
+            finish_spinner(&spinner, "SSH credentials obtained");
 
-            let response = client
-                .get(&status_url)
-                .header("Authorization", format!("Bearer {}", access_token))
-                .send()
-                .await?;
+            // Check if paused and resume
+            if ssh_info.status == "paused" {
+                let spinner = create_spinner("Resuming sandbox");
+                resume_sandbox(client, &access_token, &id, team.as_deref(), api_url).await?;
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                finish_spinner(&spinner, "Sandbox resumed");
+            }
 
-            if !response.status().is_success() {
-                finish_spinner(&spinner, "Failed");
-                let status = response.status();
-                if status.as_u16() == 404 {
+            // Find a free port for SOCKS proxy
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let socks_port = listener.local_addr()?.port();
+            drop(listener); // Release the port so SSH can use it
+
+            eprintln!("Starting SSH SOCKS proxy on port {}...", socks_port);
+
+            // Start SSH with dynamic SOCKS proxy (-D)
+            let mut ssh_child = tokio::process::Command::new("ssh")
+                .arg("-D")
+                .arg(format!("127.0.0.1:{}", socks_port))
+                .arg("-N") // Don't execute remote command
+                .arg("-o")
+                .arg("StrictHostKeyChecking=no")
+                .arg("-o")
+                .arg("UserKnownHostsFile=/dev/null")
+                .arg("-o")
+                .arg("LogLevel=ERROR")
+                .arg("-o")
+                .arg("ExitOnForwardFailure=yes")
+                .arg(format!("{}@ssh.cloud.morph.so", ssh_info.access_token))
+                .kill_on_drop(true)
+                .spawn()?;
+
+            // Wait a moment for SSH to establish the tunnel
+            tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+
+            // Check if SSH is still running
+            match ssh_child.try_wait()? {
+                Some(status) => {
                     return Err(anyhow::anyhow!(
-                        "Sandbox not found. The ID may be invalid or the sandbox no longer exists."
+                        "SSH tunnel failed to start (exit code: {:?})",
+                        status.code()
                     ));
                 }
-                return Err(anyhow::anyhow!("Failed to get sandbox status: {}", status));
+                None => {
+                    eprintln!("SSH SOCKS proxy started successfully");
+                }
             }
 
-            let status: SandboxStatusResponse = response.json().await?;
-            finish_spinner(&spinner, "Got sandbox info");
+            // Launch Chrome with SOCKS proxy
+            #[cfg(target_os = "macos")]
+            let chrome_bin = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+            #[cfg(target_os = "linux")]
+            let chrome_bin = "google-chrome";
+            #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+            let chrome_bin = "chrome";
 
-            // Check if sandbox is running
-            if !status.running {
-                return Err(anyhow::anyhow!(
-                    "Sandbox is not running. Use 'cmux ssh {}' to resume it first.",
-                    args.id
-                ));
-            }
+            let user_data = std::env::temp_dir().join("cmux-chrome-profile-cloud");
+            let _ = std::fs::create_dir_all(&user_data);
 
-            // Get VS Code URL
-            let vscode_url = status.vscode_url.ok_or_else(|| {
-                anyhow::anyhow!("Sandbox is running but VS Code URL not available")
-            })?;
+            eprintln!("Launching Chrome with SOCKS proxy...");
+            eprintln!("  Browse to http://localhost:<port> to access services in the sandbox");
 
-            eprintln!("Opening VS Code in browser...");
-            eprintln!("  URL: {}", vscode_url);
+            let mut chrome_child = match tokio::process::Command::new(chrome_bin)
+                .arg(format!("--proxy-server=socks5://127.0.0.1:{}", socks_port))
+                .arg(format!("--user-data-dir={}", user_data.display()))
+                .arg("--no-first-run")
+                .arg("http://localhost:8000")
+                .kill_on_drop(true)
+                .spawn()
+            {
+                Ok(child) => child,
+                Err(err) => {
+                    ssh_child.kill().await.ok();
+                    return Err(err.into());
+                }
+            };
 
-            if let Err(e) = open::that(&vscode_url) {
-                eprintln!("Failed to open browser: {}", e);
-                eprintln!("Please open the URL manually.");
+            // Wait for Chrome to exit
+            let chrome_result = chrome_child.wait().await;
+
+            // Kill SSH tunnel
+            ssh_child.kill().await.ok();
+
+            if let Err(err) = chrome_result {
+                return Err(err.into());
             }
 
             Ok(())
