@@ -84,12 +84,9 @@ enum Command {
         port: u16,
     },
 
-    /// Open a browser connected to the sandbox
+    /// Open a browser connected to the sandbox (VS Code web for cloud, proxy for local)
     #[command(alias = "b")]
-    Browser {
-        /// Sandbox ID or index
-        id: String,
-    },
+    Browser(BrowserArgs),
 
     /// Internal helper to proxy stdin/stdout to a TCP address
     #[command(name = "_internal-proxy", hide = true)]
@@ -177,6 +174,15 @@ struct IdeArgs {
     /// Path to open in the IDE (defaults to /workspace for local, /root/workspace for cloud)
     #[arg(long, short = 'p')]
     path: Option<String>,
+}
+
+#[derive(Args, Debug)]
+struct BrowserArgs {
+    /// Sandbox ID: c_xxx (cloud), l_xxx (local)
+    id: String,
+    /// Team slug or ID (optional for cloud sandboxes)
+    #[arg(long, short = 't', env = "CMUX_TEAM")]
+    team: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -833,8 +839,9 @@ async fn run() -> anyhow::Result<()> {
         Command::Proxy { id, port } => {
             handle_proxy(cli.base_url, id, port).await?;
         }
-        Command::Browser { id } => {
-            handle_browser(cli.base_url, id).await?;
+        Command::Browser(args) => {
+            let api_url = get_cmux_api_url();
+            handle_browser_unified(&client, &cli.base_url, &api_url, &args).await?;
         }
         Command::Start(args) => {
             handle_server_start(&args).await?;
@@ -1615,7 +1622,7 @@ impl BrowserProxy {
     }
 }
 
-async fn handle_browser(base_url: String, id: String) -> anyhow::Result<()> {
+async fn handle_browser_local(base_url: String, id: String) -> anyhow::Result<()> {
     let proxy = BrowserProxy::start(base_url, id, Arc::new(generate_ca()?)).await?;
     let port = proxy.port();
     eprintln!("Proxy started on port {}", port);
@@ -1659,6 +1666,102 @@ async fn handle_browser(base_url: String, id: String) -> anyhow::Result<()> {
     }
     shutdown_result?;
     Ok(())
+}
+
+/// Response from the sandbox status endpoint
+#[derive(serde::Deserialize, Debug)]
+#[allow(dead_code)]
+struct SandboxStatusResponse {
+    running: bool,
+    #[serde(rename = "vscodeUrl")]
+    vscode_url: Option<String>,
+    #[serde(rename = "workerUrl")]
+    worker_url: Option<String>,
+}
+
+/// Unified browser handler that supports both local and cloud sandboxes
+async fn handle_browser_unified(
+    client: &Client,
+    local_daemon_url: &str,
+    api_url: &str,
+    args: &BrowserArgs,
+) -> anyhow::Result<()> {
+    let (id_type, id) = parse_sandbox_id(&args.id);
+
+    match id_type {
+        SandboxIdType::Local => {
+            // For local sandboxes, use the existing proxy-based browser handler
+            let sandbox_id = args.id.strip_prefix("l_").unwrap_or(&args.id);
+            handle_browser_local(local_daemon_url.to_string(), sandbox_id.to_string()).await
+        }
+        SandboxIdType::Cloud | SandboxIdType::TaskRun => {
+            // For cloud sandboxes, get the VS Code URL and open in browser
+            let spinner = create_spinner("Authenticating");
+            let access_token = get_access_token(client).await?;
+            finish_spinner(&spinner, "Authenticated");
+
+            // Resolve team if needed
+            let team = if id_type == SandboxIdType::Cloud && args.team.is_none() {
+                None
+            } else {
+                Some(resolve_team(client, &access_token, args.team.as_deref()).await?)
+            };
+
+            // Get sandbox status (includes vscodeUrl)
+            let spinner = create_spinner("Getting sandbox info");
+            let status_url = if let Some(team) = &team {
+                let query: String = url::form_urlencoded::Serializer::new(String::new())
+                    .append_pair("teamSlugOrId", team)
+                    .finish();
+                format!("{}/api/sandboxes/{}/status?{}", api_url, id, query)
+            } else {
+                format!("{}/api/sandboxes/{}/status", api_url, id)
+            };
+
+            let response = client
+                .get(&status_url)
+                .header("Authorization", format!("Bearer {}", access_token))
+                .send()
+                .await?;
+
+            if !response.status().is_success() {
+                finish_spinner(&spinner, "Failed");
+                let status = response.status();
+                if status.as_u16() == 404 {
+                    return Err(anyhow::anyhow!(
+                        "Sandbox not found. The ID may be invalid or the sandbox no longer exists."
+                    ));
+                }
+                return Err(anyhow::anyhow!("Failed to get sandbox status: {}", status));
+            }
+
+            let status: SandboxStatusResponse = response.json().await?;
+            finish_spinner(&spinner, "Got sandbox info");
+
+            // Check if sandbox is running
+            if !status.running {
+                return Err(anyhow::anyhow!(
+                    "Sandbox is not running. Use 'cmux ssh {}' to resume it first.",
+                    args.id
+                ));
+            }
+
+            // Get VS Code URL
+            let vscode_url = status.vscode_url.ok_or_else(|| {
+                anyhow::anyhow!("Sandbox is running but VS Code URL not available")
+            })?;
+
+            eprintln!("Opening VS Code in browser...");
+            eprintln!("  URL: {}", vscode_url);
+
+            if let Err(e) = open::that(&vscode_url) {
+                eprintln!("Failed to open browser: {}", e);
+                eprintln!("Please open the URL manually.");
+            }
+
+            Ok(())
+        }
+    }
 }
 
 fn generate_ca() -> anyhow::Result<rcgen::Certificate> {
