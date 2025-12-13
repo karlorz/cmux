@@ -153,6 +153,30 @@ enum Command {
     /// Manage teams (list, set default)
     #[command(subcommand)]
     Team(TeamCommand),
+
+    /// Open sandbox in VS Code via SSH Remote
+    Code(IdeArgs),
+
+    /// Open sandbox in Cursor via SSH Remote
+    Cursor(IdeArgs),
+
+    /// Open sandbox in Windsurf via SSH Remote
+    Windsurf(IdeArgs),
+
+    /// Open sandbox in Zed via SSH Remote
+    Zed(IdeArgs),
+}
+
+#[derive(Args, Debug)]
+struct IdeArgs {
+    /// Sandbox ID: c_xxx (cloud), l_xxx (local)
+    id: String,
+    /// Team slug or ID (optional for cloud sandboxes)
+    #[arg(long, short = 't', env = "CMUX_TEAM")]
+    team: Option<String>,
+    /// Path to open in the IDE (defaults to /workspace for local, /root/workspace for cloud)
+    #[arg(long, short = 'p')]
+    path: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -969,6 +993,22 @@ async fn run() -> anyhow::Result<()> {
                 handle_team_default(args).await?;
             }
         },
+        Command::Code(args) => {
+            let api_url = get_cmux_api_url();
+            handle_ide(&client, &cli.base_url, &api_url, "code", &args).await?;
+        }
+        Command::Cursor(args) => {
+            let api_url = get_cmux_api_url();
+            handle_ide(&client, &cli.base_url, &api_url, "cursor", &args).await?;
+        }
+        Command::Windsurf(args) => {
+            let api_url = get_cmux_api_url();
+            handle_ide(&client, &cli.base_url, &api_url, "windsurf", &args).await?;
+        }
+        Command::Zed(args) => {
+            let api_url = get_cmux_api_url();
+            handle_ide(&client, &cli.base_url, &api_url, "zed", &args).await?;
+        }
         Command::Sandboxes(cmd) => {
             match cmd {
                 SandboxCommand::List => {
@@ -3681,6 +3721,195 @@ async fn handle_ssh_config(_client: &Client, _base_url: &str) -> anyhow::Result<
         "  {} ssh <sandbox-id> 2>&1 | grep -o 'ssh .*@ssh.cloud.morph.so'",
         binary_name
     );
+
+    Ok(())
+}
+
+/// Handle IDE commands (code, cursor, windsurf, zed)
+/// Opens the sandbox in the specified IDE via SSH Remote
+async fn handle_ide(
+    client: &Client,
+    local_daemon_url: &str,
+    api_url: &str,
+    ide: &str,
+    args: &IdeArgs,
+) -> anyhow::Result<()> {
+    let (id_type, id) = parse_sandbox_id(&args.id);
+
+    // Determine the IDE command and remote path
+    let (ide_cmd, remote_prefix) = match ide {
+        "code" => ("code", "vscode-remote://ssh-remote+"),
+        "cursor" => ("cursor", "vscode-remote://ssh-remote+"),
+        "windsurf" => ("windsurf", "vscode-remote://ssh-remote+"),
+        "zed" => ("zed", "ssh://"),
+        _ => return Err(anyhow::anyhow!("Unknown IDE: {}", ide)),
+    };
+
+    // Check if the IDE is installed
+    if std::process::Command::new("which")
+        .arg(ide_cmd)
+        .output()
+        .map(|o| !o.status.success())
+        .unwrap_or(true)
+    {
+        return Err(anyhow::anyhow!(
+            "{} is not installed or not in PATH. Install it first.",
+            ide_cmd
+        ));
+    }
+
+    match id_type {
+        SandboxIdType::Local => {
+            // For local sandboxes, get the sandbox IP and connect via SSH
+            let sandbox_id = args.id.strip_prefix("l_").unwrap_or(&args.id);
+
+            // Get sandbox info from local daemon
+            let url = format!(
+                "{}/sandboxes/{}",
+                local_daemon_url.trim_end_matches('/'),
+                sandbox_id
+            );
+            let response = client.get(&url).send().await?;
+            if !response.status().is_success() {
+                return Err(anyhow::anyhow!(
+                    "Failed to get sandbox info: {}",
+                    response.status()
+                ));
+            }
+            let sandbox: SandboxSummary = response.json().await?;
+            let sandbox_ip = &sandbox.network.sandbox_ip;
+
+            // Default path for local sandboxes
+            let remote_path = args
+                .path
+                .clone()
+                .unwrap_or_else(|| "/workspace".to_string());
+
+            // Create SSH config for the local sandbox
+            let ssh_host = format!("cmux-local-{}", &sandbox_id[..8.min(sandbox_id.len())]);
+            let config_dir = get_config_dir();
+            let ssh_config_path = config_dir.join("ssh_config");
+
+            // Ensure config directory exists
+            std::fs::create_dir_all(&config_dir)?;
+
+            // Write SSH config
+            let ssh_config = format!(
+                r#"Host {}
+    HostName {}
+    User root
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+    LogLevel ERROR
+"#,
+                ssh_host, sandbox_ip
+            );
+            std::fs::write(&ssh_config_path, ssh_config)?;
+
+            eprintln!("Opening {} in {}...", args.id, ide_cmd);
+
+            // Open the IDE
+            if ide == "zed" {
+                // Zed uses a different URL format: zed ssh://user@host/path
+                let url = format!("{}root@{}{}", remote_prefix, sandbox_ip, remote_path);
+                let status = std::process::Command::new(ide_cmd).arg(&url).status()?;
+                if !status.success() {
+                    return Err(anyhow::anyhow!("Failed to open {}", ide_cmd));
+                }
+            } else {
+                // VS Code-like IDEs use: code --remote ssh-remote+host /path
+                // We need to add our SSH config to the system
+                let remote_arg = format!("ssh-remote+{}", ssh_host);
+                let status = std::process::Command::new(ide_cmd)
+                    .args(["--remote", &remote_arg, &remote_path])
+                    .status()?;
+                if !status.success() {
+                    return Err(anyhow::anyhow!("Failed to open {}", ide_cmd));
+                }
+            }
+        }
+        SandboxIdType::Cloud | SandboxIdType::TaskRun => {
+            // For cloud sandboxes, get SSH token and connect
+            let spinner = create_spinner("Authenticating");
+            let access_token = get_access_token(client).await?;
+            finish_spinner(&spinner, "Authenticated");
+
+            // Resolve team if needed
+            let team = if id_type == SandboxIdType::Cloud && args.team.is_none() {
+                None
+            } else {
+                Some(resolve_team(client, &access_token, args.team.as_deref()).await?)
+            };
+
+            // Get SSH info
+            let spinner = create_spinner("Getting SSH credentials");
+            let ssh_info =
+                get_sandbox_ssh_info(client, &access_token, &id, team.as_deref(), api_url).await?;
+            finish_spinner(&spinner, "SSH credentials obtained");
+
+            // Check if paused and resume
+            if ssh_info.status == "paused" {
+                let spinner = create_spinner("Resuming sandbox");
+                resume_sandbox(client, &access_token, &id, team.as_deref(), api_url).await?;
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                finish_spinner(&spinner, "Sandbox resumed");
+            }
+
+            // Default path for cloud sandboxes
+            let remote_path = args
+                .path
+                .clone()
+                .unwrap_or_else(|| "/root/workspace".to_string());
+
+            // Create SSH config for the cloud sandbox
+            let display_id = id.strip_prefix("morphvm_").unwrap_or(&id);
+            let ssh_host = format!("cmux-cloud-{}", display_id);
+            let config_dir = get_config_dir();
+            let ssh_config_path = config_dir.join("ssh_config");
+
+            // Ensure config directory exists
+            std::fs::create_dir_all(&config_dir)?;
+
+            // Write SSH config with the access token as username
+            let ssh_config = format!(
+                r#"Host {}
+    HostName ssh.cloud.morph.so
+    User {}
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+    LogLevel ERROR
+"#,
+                ssh_host, ssh_info.access_token
+            );
+            std::fs::write(&ssh_config_path, &ssh_config)?;
+
+            eprintln!("Opening {} in {}...", args.id, ide_cmd);
+            eprintln!("Note: SSH config written to {}", ssh_config_path.display());
+            eprintln!("You may need to add 'Include ~/.cmux/ssh_config' to ~/.ssh/config");
+
+            // Open the IDE
+            if ide == "zed" {
+                // Zed uses: zed ssh://user@host/path
+                let url = format!(
+                    "{}{}@ssh.cloud.morph.so{}",
+                    remote_prefix, ssh_info.access_token, remote_path
+                );
+                let status = std::process::Command::new(ide_cmd).arg(&url).status()?;
+                if !status.success() {
+                    return Err(anyhow::anyhow!("Failed to open {}", ide_cmd));
+                }
+            } else {
+                // VS Code-like IDEs
+                let remote_arg = format!("ssh-remote+{}", ssh_host);
+                let status = std::process::Command::new(ide_cmd)
+                    .args(["--remote", &remote_arg, &remote_path])
+                    .status()?;
+                if !status.success() {
+                    return Err(anyhow::anyhow!("Failed to open {}", ide_cmd));
+                }
+            }
+        }
+    }
 
     Ok(())
 }
