@@ -711,7 +711,7 @@ async fn run() -> anyhow::Result<()> {
 
                 let ssh_id = format!("c_{}", result.instance_id);
 
-                eprintln!("\x1b[32m✓ VM created: {}\x1b[0m", result.instance_id);
+                eprintln!("\x1b[32m✓ VM created: {}\x1b[0m", ssh_id);
 
                 // SSH into the VM
                 let ssh_args = SshArgs {
@@ -3047,7 +3047,7 @@ async fn handle_vm_create(args: VmCreateArgs) -> anyhow::Result<()> {
     } else {
         eprintln!("\x1b[32m✓ VM created successfully!\x1b[0m");
         eprintln!();
-        eprintln!("  Instance ID: {}", result.instance_id);
+        eprintln!("  ID: {}", ssh_id);
         eprintln!("  VS Code URL: {}", result.vscode_url);
         if !result.cloned_repos.is_empty() {
             eprintln!("  Cloned repos: {}", result.cloned_repos.join(", "));
@@ -3725,6 +3725,50 @@ async fn handle_ssh_config(_client: &Client, _base_url: &str) -> anyhow::Result<
     Ok(())
 }
 
+/// Ensure ~/.ssh/config includes our cmux SSH config
+fn ensure_ssh_config_include() -> anyhow::Result<()> {
+    let home = std::env::var("HOME").map_err(|_| anyhow::anyhow!("HOME not set"))?;
+    let ssh_dir = PathBuf::from(&home).join(".ssh");
+    let ssh_config_path = ssh_dir.join("config");
+    let cmux_config_path = get_config_dir().join("ssh_config");
+
+    // Ensure ~/.ssh directory exists
+    std::fs::create_dir_all(&ssh_dir)?;
+
+    // The include line we want to add
+    let include_line = format!("Include {}", cmux_config_path.display());
+
+    // Check if ~/.ssh/config exists and already has the include
+    if ssh_config_path.exists() {
+        let content = std::fs::read_to_string(&ssh_config_path)?;
+        if content.contains(&include_line) || content.contains("~/.cmux/ssh_config") {
+            return Ok(()); // Already included
+        }
+
+        // Prepend the include line (Include must be at the top)
+        let new_content = format!("{}\n\n{}", include_line, content);
+        std::fs::write(&ssh_config_path, new_content)?;
+        eprintln!(
+            "Added 'Include {}' to ~/.ssh/config",
+            cmux_config_path.display()
+        );
+    } else {
+        // Create new ~/.ssh/config with the include
+        std::fs::write(&ssh_config_path, format!("{}\n", include_line))?;
+        eprintln!("Created ~/.ssh/config with cmux include");
+    }
+
+    // Set proper permissions on ~/.ssh/config (600)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o600);
+        std::fs::set_permissions(&ssh_config_path, perms)?;
+    }
+
+    Ok(())
+}
+
 /// Handle IDE commands (code, cursor, windsurf, zed)
 /// Opens the sandbox in the specified IDE via SSH Remote
 async fn handle_ide(
@@ -3756,6 +3800,11 @@ async fn handle_ide(
             "{} is not installed or not in PATH. Install it first.",
             ide_cmd
         ));
+    }
+
+    // For VS Code-like IDEs, ensure SSH config is set up first
+    if ide != "zed" {
+        ensure_ssh_config_include()?;
     }
 
     match id_type {
@@ -3818,7 +3867,6 @@ async fn handle_ide(
                 }
             } else {
                 // VS Code-like IDEs use: code --remote ssh-remote+host /path
-                // We need to add our SSH config to the system
                 let remote_arg = format!("ssh-remote+{}", ssh_host);
                 let status = std::process::Command::new(ide_cmd)
                     .args(["--remote", &remote_arg, &remote_path])
@@ -3884,8 +3932,6 @@ async fn handle_ide(
             std::fs::write(&ssh_config_path, &ssh_config)?;
 
             eprintln!("Opening {} in {}...", args.id, ide_cmd);
-            eprintln!("Note: SSH config written to {}", ssh_config_path.display());
-            eprintln!("You may need to add 'Include ~/.cmux/ssh_config' to ~/.ssh/config");
 
             // Open the IDE
             if ide == "zed" {
