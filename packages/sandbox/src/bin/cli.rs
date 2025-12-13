@@ -3283,7 +3283,7 @@ async fn handle_real_ssh(
         false
     };
 
-    // Build SSH command using Morph's per-instance SSH tokens
+    // Build SSH command using per-instance SSH tokens
     let mut ssh_args = vec![
         "-o".to_string(),
         "StrictHostKeyChecking=no".to_string(),
@@ -3299,7 +3299,7 @@ async fn handle_real_ssh(
         ssh_args.push(arg.clone());
     }
 
-    // Use Morph's SSH gateway with per-instance token
+    // Use SSH gateway with per-instance token
     ssh_args.push(format!("{}@ssh.cloud.morph.so", ssh_info.access_token));
 
     // Print static "Connecting" message - no spinner needed since exec() happens immediately
@@ -3418,7 +3418,7 @@ async fn handle_ssh_exec(
         "LogLevel=ERROR".to_string(),
     ];
 
-    // Use Morph's SSH gateway with per-instance token
+    // Use SSH gateway with per-instance token
     ssh_args.push(format!("{}@ssh.cloud.morph.so", ssh_info.access_token));
 
     // Add the command to execute
@@ -3446,17 +3446,14 @@ async fn handle_ssh_exec(
 async fn handle_ssh_config(_client: &Client, _base_url: &str) -> anyhow::Result<()> {
     let binary_name = if is_dmux() { "dmux" } else { "cmux" };
 
-    println!(
-        "# SSH with {} uses Morph's per-instance SSH tokens",
-        binary_name
-    );
+    println!("# SSH with {} uses per-instance SSH tokens", binary_name);
     println!(
         "# No SSH config needed - just use the {} ssh command",
         binary_name
     );
     println!();
     println!(
-        "# The {} ssh command fetches a per-instance access token from Morph",
+        "# The {} ssh command fetches a per-instance access token",
         binary_name
     );
     println!("# and connects directly via: ssh <access_token>@ssh.cloud.morph.so");
@@ -3490,11 +3487,11 @@ async fn handle_ssh_config(_client: &Client, _base_url: &str) -> anyhow::Result<
 }
 
 /// Internal SSH proxy command (DEPRECATED)
-/// This command is no longer needed - SSH now uses Morph's native per-instance tokens
+/// This command is no longer needed - SSH now uses native per-instance tokens
 #[allow(unused_variables)]
 async fn handle_ssh_proxy(id: &str, team: Option<&str>, base_url: &str) -> anyhow::Result<()> {
     eprintln!("\x1b[33mWarning: _ssh-proxy is deprecated.\x1b[0m");
-    eprintln!("SSH now uses Morph's native per-instance tokens directly.");
+    eprintln!("SSH now uses native per-instance tokens directly.");
     eprintln!("Use 'cmux ssh <sandbox-id>' instead.");
     std::process::exit(1);
 }
