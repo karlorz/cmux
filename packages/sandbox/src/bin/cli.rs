@@ -226,9 +226,9 @@ struct VmListArgs {
 
 #[derive(Args, Debug)]
 struct SshArgs {
-    /// Sandbox ID (task-run ID or sandbox identifier)
+    /// Sandbox ID: c_xxx (cloud), l_xxx (local), or UUID (task run)
     id: String,
-    /// Team slug or ID (required for remote SSH connections)
+    /// Team slug or ID (optional for cloud sandboxes)
     #[arg(long, short = 't', env = "CMUX_TEAM")]
     team: Option<String>,
     /// Additional SSH arguments (e.g., -L 8080:localhost:8080 for port forwarding)
@@ -238,9 +238,9 @@ struct SshArgs {
 
 #[derive(Args, Debug)]
 struct SshExecArgs {
-    /// Sandbox ID (task-run ID or sandbox identifier)
+    /// Sandbox ID: c_xxx (cloud), l_xxx (local), or UUID (task run)
     id: String,
-    /// Team slug or ID (required for remote SSH connections)
+    /// Team slug or ID (optional for cloud sandboxes)
     #[arg(long, short = 't', env = "CMUX_TEAM")]
     team: Option<String>,
     /// Command to execute on the sandbox
@@ -770,11 +770,13 @@ async fn run() -> anyhow::Result<()> {
         }
         Command::Ssh(args) => {
             let api_url = get_cmux_api_url();
-            handle_real_ssh(&client, &api_url, &args).await?;
+            let local_daemon_url = &cli.base_url;
+            handle_real_ssh(&client, &api_url, local_daemon_url, &args).await?;
         }
         Command::SshExec(args) => {
             let api_url = get_cmux_api_url();
-            handle_ssh_exec(&client, &api_url, &args).await?;
+            let local_daemon_url = &cli.base_url;
+            handle_ssh_exec(&client, &api_url, local_daemon_url, &args).await?;
         }
         Command::SshConfig => {
             let api_url = get_cmux_api_url();
@@ -2301,7 +2303,10 @@ async fn get_sandbox_ssh_info(
         } else if response_text.is_empty() {
             anyhow::anyhow!("Server returned empty response")
         } else {
-            anyhow::anyhow!("Invalid response from server: {}", response_text.chars().take(200).collect::<String>())
+            anyhow::anyhow!(
+                "Invalid response from server: {}",
+                response_text.chars().take(200).collect::<String>()
+            )
         }
     })?;
     Ok(ssh_info)
@@ -2976,14 +2981,37 @@ async fn handle_onboard() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Normalize a sandbox ID - add morphvm_ prefix if it looks like a raw VM ID
-fn normalize_sandbox_id(id: &str) -> String {
-    // If it already has a prefix or looks like a task-run ID, use as-is
-    if id.starts_with("morphvm_") || id.contains("-") || id.len() > 20 {
-        id.to_string()
+/// Sandbox ID type
+#[derive(Debug, Clone, PartialEq)]
+enum SandboxIdType {
+    /// Cloud sandbox (c_xxx) - runs on remote cloud infrastructure
+    Cloud,
+    /// Local sandbox (l_xxx) - runs in local Docker
+    Local,
+    /// Task run ID (UUID) - lookup required to determine type
+    TaskRun,
+}
+
+/// Parse a sandbox ID and return its type and the internal ID
+/// - c_xxxxxxxx → Cloud, morphvm_xxxxxxxx
+/// - l_xxxxxxxx → Local, l_xxxxxxxx
+/// - UUID → TaskRun, UUID as-is
+fn parse_sandbox_id(id: &str) -> (SandboxIdType, String) {
+    if let Some(cloud_id) = id.strip_prefix("c_") {
+        (SandboxIdType::Cloud, format!("morphvm_{}", cloud_id))
+    } else if id.starts_with("l_") {
+        (SandboxIdType::Local, id.to_string())
+    } else if id.contains("-") {
+        // UUID format - task run ID
+        (SandboxIdType::TaskRun, id.to_string())
     } else {
-        // Assume it's a raw VM ID, add prefix
-        format!("morphvm_{}", id)
+        // Unknown format - show error with expected formats
+        eprintln!("Error: Invalid sandbox ID format: {}", id);
+        eprintln!("Expected formats:");
+        eprintln!("  c_xxxxxxxx  - cloud sandbox");
+        eprintln!("  l_xxxxxxxx  - local sandbox");
+        eprintln!("  <uuid>      - task run ID");
+        std::process::exit(1);
     }
 }
 
@@ -3011,19 +3039,34 @@ fn finish_spinner(spinner: &ProgressBar, msg: &str) {
     spinner.finish_with_message(format!("✓ {}", msg));
 }
 
-/// Handle real SSH to a sandbox (via direct TCP to Morph)
-async fn handle_real_ssh(client: &Client, base_url: &str, args: &SshArgs) -> anyhow::Result<()> {
+/// Handle SSH to a sandbox
+/// - Cloud sandboxes (c_xxx): Real SSH via cloud gateway
+/// - Local sandboxes (l_xxx): WebSocket attach to local daemon
+async fn handle_real_ssh(
+    client: &Client,
+    api_url: &str,
+    local_daemon_url: &str,
+    args: &SshArgs,
+) -> anyhow::Result<()> {
+    // Parse the sandbox ID
+    let (id_type, id) = parse_sandbox_id(&args.id);
+
+    // Local sandboxes use WebSocket attach to local daemon
+    if id_type == SandboxIdType::Local {
+        // Strip l_ prefix to get the sandbox ID
+        let sandbox_id = args.id.strip_prefix("l_").unwrap_or(&args.id);
+        eprintln!("→ Connecting to local sandbox...");
+        return handle_ssh(local_daemon_url, sandbox_id).await;
+    }
+
     // Authenticate
     let spinner = create_spinner("Authenticating");
     let access_token = get_access_token(client).await?;
     finish_spinner(&spinner, "Authenticated");
 
-    // Normalize the ID (add morphvm_ prefix if needed)
-    let id = normalize_sandbox_id(&args.id);
-
-    // For VM IDs, team is optional (provider validates access)
+    // For cloud sandbox IDs, team is optional (provider validates access)
     // For task-run IDs, team is required
-    let team = if id.starts_with("morphvm_") && args.team.is_none() {
+    let team = if id_type == SandboxIdType::Cloud && args.team.is_none() {
         None
     } else {
         Some(resolve_team(client, &access_token, args.team.as_deref()).await?)
@@ -3032,17 +3075,20 @@ async fn handle_real_ssh(client: &Client, base_url: &str, args: &SshArgs) -> any
     // Get SSH info from the API (includes status)
     let spinner = create_spinner("Resolving sandbox");
     let ssh_info =
-        get_sandbox_ssh_info(client, &access_token, &id, team.as_deref(), base_url).await?;
+        get_sandbox_ssh_info(client, &access_token, &id, team.as_deref(), api_url).await?;
     finish_spinner(&spinner, "Sandbox resolved");
 
     // Check if the sandbox is paused and resume it
-    if ssh_info.status == "paused" {
+    let was_resumed = if ssh_info.status == "paused" {
         let spinner = create_spinner("Resuming sandbox");
-        resume_sandbox(client, &access_token, &id, team.as_deref(), base_url).await?;
+        resume_sandbox(client, &access_token, &id, team.as_deref(), api_url).await?;
         // Wait a moment for the instance to be fully ready
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         finish_spinner(&spinner, "Sandbox resumed");
-    }
+        true
+    } else {
+        false
+    };
 
     // Build SSH command using Morph's per-instance SSH tokens
     let mut ssh_args = vec![
@@ -3063,20 +3109,13 @@ async fn handle_real_ssh(client: &Client, base_url: &str, args: &SshArgs) -> any
     // Use Morph's SSH gateway with per-instance token
     ssh_args.push(format!("{}@ssh.cloud.morph.so", ssh_info.access_token));
 
-    // Spawn a thread to show animated spinner while SSH connects
-    // The thread will be killed when exec() replaces the process
-    std::thread::spawn(|| {
-        let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-        let start = std::time::Instant::now();
-        for i in 0.. {
-            let elapsed = start.elapsed().as_secs();
-            eprint!("\r\x1b[36m{}\x1b[0m Connecting to sandbox \x1b[2m{}s\x1b[0m  ", frames[i % frames.len()], elapsed);
-            std::thread::sleep(std::time::Duration::from_millis(80));
-        }
-    });
-
-    // Small delay to let spinner start
-    std::thread::sleep(std::time::Duration::from_millis(50));
+    // Print static "Connecting" message - no spinner needed since exec() happens immediately
+    // The SSH handshake time is spent inside the SSH process which we can't monitor
+    if was_resumed {
+        eprintln!("→ Connecting (takes longer after resume)...");
+    } else {
+        eprintln!("→ Connecting...");
+    }
 
     // Execute native SSH
     // Use exec on Unix to replace process and fully inherit terminal for passphrase prompts
@@ -3106,18 +3145,53 @@ async fn handle_real_ssh(client: &Client, base_url: &str, args: &SshArgs) -> any
 /// - Properly propagates the exit code of the remote command
 async fn handle_ssh_exec(
     client: &Client,
-    base_url: &str,
+    api_url: &str,
+    local_daemon_url: &str,
     args: &SshExecArgs,
 ) -> anyhow::Result<()> {
+    // Parse the sandbox ID
+    let (id_type, id) = parse_sandbox_id(&args.id);
+
+    // Local sandboxes use HTTP exec to local daemon
+    if id_type == SandboxIdType::Local {
+        let sandbox_id = args.id.strip_prefix("l_").unwrap_or(&args.id);
+        let command = if args.command.len() == 1 && args.command[0].contains(' ') {
+            vec!["/bin/sh".into(), "-c".into(), args.command[0].clone()]
+        } else {
+            args.command.clone()
+        };
+        let body = ExecRequest {
+            command,
+            workdir: None,
+            env: Vec::new(),
+        };
+        let url = format!(
+            "{}/sandboxes/{}/exec",
+            local_daemon_url.trim_end_matches('/'),
+            sandbox_id
+        );
+        let response = client.post(url).json(&body).send().await?;
+        let result: ExecResponse = parse_response(response).await?;
+
+        // Print stdout/stderr and exit with proper code
+        if !result.stdout.is_empty() {
+            print!("{}", result.stdout);
+        }
+        if !result.stderr.is_empty() {
+            eprint!("{}", result.stderr);
+        }
+        if result.exit_code != 0 {
+            std::process::exit(result.exit_code);
+        }
+        return Ok(());
+    }
+
     // Get access token (no spinner for exec - keep it minimal for scripting)
     let access_token = get_access_token(client).await?;
 
-    // Normalize the ID (add morphvm_ prefix if needed)
-    let id = normalize_sandbox_id(&args.id);
-
-    // For VM IDs, team is optional (provider validates access)
+    // For cloud sandbox IDs, team is optional (provider validates access)
     // For task-run IDs, team is required
-    let team = if id.starts_with("morphvm_") && args.team.is_none() {
+    let team = if id_type == SandboxIdType::Cloud && args.team.is_none() {
         None
     } else {
         Some(resolve_team(client, &access_token, args.team.as_deref()).await?)
@@ -3125,12 +3199,12 @@ async fn handle_ssh_exec(
 
     // Get SSH info from the API (includes status)
     let ssh_info =
-        get_sandbox_ssh_info(client, &access_token, &id, team.as_deref(), base_url).await?;
+        get_sandbox_ssh_info(client, &access_token, &id, team.as_deref(), api_url).await?;
 
     // Check if the sandbox is paused and resume it
     if ssh_info.status == "paused" {
         let spinner = create_spinner("Resuming sandbox");
-        resume_sandbox(client, &access_token, &id, team.as_deref(), base_url).await?;
+        resume_sandbox(client, &access_token, &id, team.as_deref(), api_url).await?;
         // Wait a moment for the instance to be fully ready
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         finish_spinner(&spinner, "Sandbox resumed");
