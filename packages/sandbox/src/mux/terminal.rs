@@ -4056,48 +4056,52 @@ impl DaFilter {
                 }
 
                 DaFilterState::CsiQuestion => {
-                    self.buffer.push(byte);
                     if byte == b'c' {
                         // DA1 response: ESC [ ? params c - filter it out
                         self.buffer.clear();
                         self.state = DaFilterState::Normal;
                     } else if byte.is_ascii_digit() || byte == b';' {
                         // Continue accumulating params
+                        self.buffer.push(byte);
                     } else {
-                        // Not a DA1 response, flush buffer
+                        // Not a DA1 response (e.g., ESC[?25h for cursor)
+                        // Flush buffer INCLUDING the current byte
                         result.extend(&self.buffer);
+                        result.push(byte);
                         self.buffer.clear();
                         self.state = DaFilterState::Normal;
                     }
                 }
 
                 DaFilterState::CsiGreater => {
-                    self.buffer.push(byte);
                     if byte == b'c' {
                         // DA2 query/response: ESC [ > c or ESC [ > params c - filter it out
                         self.buffer.clear();
                         self.state = DaFilterState::Normal;
                     } else if byte.is_ascii_digit() || byte == b';' {
                         // Continue accumulating params (DA2 response)
+                        self.buffer.push(byte);
                     } else {
-                        // Not a DA2 sequence, flush buffer
+                        // Not a DA2 sequence, flush buffer INCLUDING the current byte
                         result.extend(&self.buffer);
+                        result.push(byte);
                         self.buffer.clear();
                         self.state = DaFilterState::Normal;
                     }
                 }
 
                 DaFilterState::InParams => {
-                    self.buffer.push(byte);
                     if byte == b'c' {
                         // DA1 query with param: ESC [ 0 c - filter it out
                         self.buffer.clear();
                         self.state = DaFilterState::Normal;
                     } else if byte.is_ascii_digit() || byte == b';' {
                         // Continue accumulating params
+                        self.buffer.push(byte);
                     } else {
-                        // Not a DA sequence, flush buffer
+                        // Not a DA sequence, flush buffer INCLUDING the current byte
                         result.extend(&self.buffer);
+                        result.push(byte);
                         self.buffer.clear();
                         self.state = DaFilterState::Normal;
                     }
@@ -6400,5 +6404,54 @@ mod tests {
         result.extend(chunk2);
         result.extend(flush);
         assert_eq!(result, b"hello\x1bOworld");
+    }
+
+    #[test]
+    fn da_filter_preserves_dec_private_mode_show_cursor() {
+        // ESC[?25h - show cursor (DECTCEM)
+        let filtered = filter_da_queries(b"hello\x1b[?25hworld");
+        assert_eq!(filtered, b"hello\x1b[?25hworld");
+    }
+
+    #[test]
+    fn da_filter_preserves_dec_private_mode_hide_cursor() {
+        // ESC[?25l - hide cursor (DECTCEM)
+        let filtered = filter_da_queries(b"hello\x1b[?25lworld");
+        assert_eq!(filtered, b"hello\x1b[?25lworld");
+    }
+
+    #[test]
+    fn da_filter_preserves_mouse_enable() {
+        // ESC[?1000h - enable X10 mouse tracking
+        let filtered = filter_da_queries(b"\x1b[?1000h");
+        assert_eq!(filtered, b"\x1b[?1000h");
+    }
+
+    #[test]
+    fn da_filter_preserves_mouse_disable() {
+        // ESC[?1000l - disable X10 mouse tracking
+        let filtered = filter_da_queries(b"\x1b[?1000l");
+        assert_eq!(filtered, b"\x1b[?1000l");
+    }
+
+    #[test]
+    fn da_filter_preserves_alternate_screen() {
+        // ESC[?1049h - enable alternate screen buffer
+        let filtered = filter_da_queries(b"\x1b[?1049h");
+        assert_eq!(filtered, b"\x1b[?1049h");
+    }
+
+    #[test]
+    fn da_filter_preserves_bracketed_paste() {
+        // ESC[?2004h - enable bracketed paste mode
+        let filtered = filter_da_queries(b"\x1b[?2004h");
+        assert_eq!(filtered, b"\x1b[?2004h");
+    }
+
+    #[test]
+    fn da_filter_preserves_sgr_mouse_mode() {
+        // ESC[>4;1m - modifyOtherKeys (CSI > sequence that isn't DA2)
+        let filtered = filter_da_queries(b"\x1b[>4;1m");
+        assert_eq!(filtered, b"\x1b[>4;1m");
     }
 }
