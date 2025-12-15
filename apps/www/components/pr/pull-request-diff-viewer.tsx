@@ -1076,6 +1076,7 @@ export function PullRequestDiffViewer({
             teamSlugOrId,
             repoFullName,
             prNumber,
+            tooltipLanguage: tooltipLanguagePreference,
             ...(commitRef ? { commitRef } : {}),
             ...(baseCommitRef ? { baseCommitRef } : {}),
           },
@@ -1085,6 +1086,7 @@ export function PullRequestDiffViewer({
       teamSlugOrId,
       repoFullName,
       prNumber,
+      tooltipLanguagePreference,
       commitRef,
       baseCommitRef,
     ]
@@ -1101,6 +1103,7 @@ export function PullRequestDiffViewer({
             teamSlugOrId,
             repoFullName,
             comparisonSlug,
+            tooltipLanguage: tooltipLanguagePreference,
             ...(commitRef ? { commitRef } : {}),
             ...(baseCommitRef ? { baseCommitRef } : {}),
           },
@@ -1110,6 +1113,7 @@ export function PullRequestDiffViewer({
       teamSlugOrId,
       repoFullName,
       comparisonSlug,
+      tooltipLanguagePreference,
       commitRef,
       baseCommitRef,
     ]
@@ -1512,6 +1516,7 @@ export function PullRequestDiffViewer({
       const review = fileOutputIndex.get(entry.file.filename) ?? null;
       const streamState = streamStateByFile.get(entry.file.filename) ?? null;
       const streamedHeatmap = streamState?.lines ?? [];
+      // Convex query now filters by tooltipLanguage, so cached data matches the selected language
       const reviewHeatmapFromCodex = review
         ? parseReviewHeatmap(review.codexReviewOutput)
         : [];

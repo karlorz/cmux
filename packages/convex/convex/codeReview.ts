@@ -999,6 +999,7 @@ export const listFileOutputsForPr = authQuery({
     prNumber: v.number(),
     commitRef: v.optional(v.string()),
     baseCommitRef: v.optional(v.string()),
+    tooltipLanguage: v.optional(v.string()),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -1006,26 +1007,41 @@ export const listFileOutputsForPr = authQuery({
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
     const limit = Math.min(args.limit ?? 200, 500);
 
-    let query = ctx.db
-      .query("automatedCodeReviewFileOutputs")
-      .withIndex("by_team_repo_pr_commit", (q) =>
-        q
-          .eq("teamId", teamId)
-          .eq("repoFullName", args.repoFullName)
-          .eq("prNumber", args.prNumber)
-      )
-      .order("desc");
+    // Use language-specific index when language is provided
+    const query = args.tooltipLanguage
+      ? ctx.db
+          .query("automatedCodeReviewFileOutputs")
+          .withIndex("by_team_repo_pr_lang", (q) =>
+            q
+              .eq("teamId", teamId)
+              .eq("repoFullName", args.repoFullName)
+              .eq("prNumber", args.prNumber)
+              .eq("tooltipLanguage", args.tooltipLanguage)
+          )
+          .order("desc")
+      : ctx.db
+          .query("automatedCodeReviewFileOutputs")
+          .withIndex("by_team_repo_pr_commit", (q) =>
+            q
+              .eq("teamId", teamId)
+              .eq("repoFullName", args.repoFullName)
+              .eq("prNumber", args.prNumber)
+          )
+          .order("desc");
 
+    let filteredQuery = query;
     if (args.commitRef) {
-      query = query.filter((q) => q.eq(q.field("commitRef"), args.commitRef));
+      filteredQuery = filteredQuery.filter((q) =>
+        q.eq(q.field("commitRef"), args.commitRef)
+      );
     }
     if (args.baseCommitRef) {
-      query = query.filter((q) =>
+      filteredQuery = filteredQuery.filter((q) =>
         q.eq(q.field("baseCommitRef"), args.baseCommitRef)
       );
     }
 
-    const outputs = await query.take(limit);
+    const outputs = await filteredQuery.take(limit);
 
     return outputs.map((output) => ({
       id: output._id,
@@ -1039,6 +1055,7 @@ export const listFileOutputsForPr = authQuery({
       sandboxInstanceId: output.sandboxInstanceId ?? null,
       filePath: output.filePath,
       codexReviewOutput: output.codexReviewOutput,
+      tooltipLanguage: output.tooltipLanguage ?? null,
       createdAt: output.createdAt,
       updatedAt: output.updatedAt,
     }));
@@ -1052,6 +1069,7 @@ export const listFileOutputsForComparison = authQuery({
     comparisonSlug: v.string(),
     commitRef: v.optional(v.string()),
     baseCommitRef: v.optional(v.string()),
+    tooltipLanguage: v.optional(v.string()),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -1059,26 +1077,41 @@ export const listFileOutputsForComparison = authQuery({
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
     const limit = Math.min(args.limit ?? 200, 500);
 
-    let query = ctx.db
-      .query("automatedCodeReviewFileOutputs")
-      .withIndex("by_team_repo_comparison_commit", (q) =>
-        q
-          .eq("teamId", teamId)
-          .eq("repoFullName", args.repoFullName)
-          .eq("comparisonSlug", args.comparisonSlug)
-      )
-      .order("desc");
+    // Use language-specific index when language is provided
+    const query = args.tooltipLanguage
+      ? ctx.db
+          .query("automatedCodeReviewFileOutputs")
+          .withIndex("by_team_repo_comparison_lang", (q) =>
+            q
+              .eq("teamId", teamId)
+              .eq("repoFullName", args.repoFullName)
+              .eq("comparisonSlug", args.comparisonSlug)
+              .eq("tooltipLanguage", args.tooltipLanguage)
+          )
+          .order("desc")
+      : ctx.db
+          .query("automatedCodeReviewFileOutputs")
+          .withIndex("by_team_repo_comparison_commit", (q) =>
+            q
+              .eq("teamId", teamId)
+              .eq("repoFullName", args.repoFullName)
+              .eq("comparisonSlug", args.comparisonSlug)
+          )
+          .order("desc");
 
+    let filteredQuery = query;
     if (args.commitRef) {
-      query = query.filter((q) => q.eq(q.field("commitRef"), args.commitRef));
+      filteredQuery = filteredQuery.filter((q) =>
+        q.eq(q.field("commitRef"), args.commitRef)
+      );
     }
     if (args.baseCommitRef) {
-      query = query.filter((q) =>
+      filteredQuery = filteredQuery.filter((q) =>
         q.eq(q.field("baseCommitRef"), args.baseCommitRef)
       );
     }
 
-    const outputs = await query.take(limit);
+    const outputs = await filteredQuery.take(limit);
 
     return outputs.map((output) => ({
       id: output._id,
@@ -1092,6 +1125,7 @@ export const listFileOutputsForComparison = authQuery({
       sandboxInstanceId: output.sandboxInstanceId ?? null,
       filePath: output.filePath,
       codexReviewOutput: output.codexReviewOutput,
+      tooltipLanguage: output.tooltipLanguage ?? null,
       createdAt: output.createdAt,
       updatedAt: output.updatedAt,
     }));
