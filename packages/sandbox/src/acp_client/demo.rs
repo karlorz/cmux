@@ -45,6 +45,12 @@ pub async fn run_demo_tui() -> Result<()> {
     )?;
     terminal.show_cursor()?;
 
+    // Small delay to let any pending terminal responses arrive
+    std::thread::sleep(std::time::Duration::from_millis(10));
+
+    // Drain stdin to consume any leftover terminal responses
+    terminal_guard::drain_stdin();
+
     // Reset global state
     terminal_guard::TERMINAL_MODES_ENABLED.store(false, Ordering::SeqCst);
     terminal_guard::CLEANUP_DONE.store(false, Ordering::SeqCst);

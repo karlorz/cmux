@@ -82,6 +82,13 @@ pub async fn run_mux_tui(base_url: String, workspace_path: Option<PathBuf>) -> R
         eprintln!("Warning: failed to show cursor: {e}");
     }
 
+    // Small delay to let any pending terminal responses arrive (like DA1/DA2 responses
+    // to keyboard enhancement or other queries)
+    std::thread::sleep(std::time::Duration::from_millis(10));
+
+    // Drain stdin to consume any leftover terminal responses
+    terminal_guard::drain_stdin();
+
     // Reset global state
     terminal_guard::TERMINAL_MODES_ENABLED.store(false, Ordering::SeqCst);
     terminal_guard::CLEANUP_DONE.store(false, Ordering::SeqCst);

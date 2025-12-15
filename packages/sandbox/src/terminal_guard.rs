@@ -14,6 +14,7 @@
 //! 2. Restores terminal state on Drop (normal exit, panic unwinding)
 //! 3. Installs a panic hook for double safety
 //! 4. Uses a global flag to prevent double-cleanup
+//! 5. Drains stdin after cleanup to consume any leftover terminal responses
 
 use crossterm::{
     event::{DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture},
@@ -30,6 +31,43 @@ pub static CLEANUP_DONE: AtomicBool = AtomicBool::new(false);
 /// Global flag to track if terminal modes are currently enabled.
 /// Used by the panic hook to know if cleanup is needed.
 pub static TERMINAL_MODES_ENABLED: AtomicBool = AtomicBool::new(false);
+
+/// Drain any pending data from stdin (non-blocking).
+/// This consumes leftover terminal responses (like DA1/DA2 responses) that might
+/// have arrived after we sent terminal mode change sequences.
+#[cfg(unix)]
+pub fn drain_stdin() {
+    use std::os::unix::io::AsRawFd;
+
+    let stdin = std::io::stdin();
+    let stdin_handle = stdin.lock();
+    let stdin_fd = stdin_handle.as_raw_fd();
+
+    // Set non-blocking
+    let flags = unsafe { libc::fcntl(stdin_fd, libc::F_GETFL) };
+    if flags < 0 {
+        return;
+    }
+    if unsafe { libc::fcntl(stdin_fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+        return;
+    }
+
+    // Drain all pending data
+    let mut buf = [0u8; 256];
+    loop {
+        let n = unsafe { libc::read(stdin_fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) };
+        if n <= 0 {
+            break;
+        }
+    }
+
+    // Restore blocking mode
+    unsafe { libc::fcntl(stdin_fd, libc::F_SETFL, flags) };
+}
+
+/// No-op on non-Unix platforms.
+#[cfg(not(unix))]
+pub fn drain_stdin() {}
 
 /// Restore terminal to a clean state.
 /// This is safe to call multiple times - it uses atomic flags to prevent double-cleanup.
@@ -68,6 +106,13 @@ pub fn restore_terminal() {
     let _ = stdout.write_all(b"\x1b[?1049l"); // Leave alternate screen
     let _ = stdout.write_all(b"\x1b[?25h"); // Show cursor
     let _ = stdout.flush();
+
+    // Small delay to let any pending terminal responses arrive
+    std::thread::sleep(std::time::Duration::from_millis(10));
+
+    // Drain stdin to consume any leftover terminal responses (DA1/DA2, etc.)
+    // These might have been sent in response to our terminal mode changes
+    drain_stdin();
 }
 
 /// Install a panic hook that restores terminal state.
@@ -185,6 +230,12 @@ impl Drop for TerminalGuard {
         // Always try to show cursor
         let _ = stdout.write_all(b"\x1b[?25h");
         let _ = stdout.flush();
+
+        // Small delay to let any pending terminal responses arrive
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        // Drain stdin to consume any leftover terminal responses
+        drain_stdin();
 
         // Reset the global flags for potential reuse
         TERMINAL_MODES_ENABLED.store(false, Ordering::SeqCst);
