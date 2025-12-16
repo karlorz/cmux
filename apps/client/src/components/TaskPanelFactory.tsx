@@ -487,7 +487,8 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
       if (!PersistentWebView || !WorkspaceLoadingIndicator) return null;
       const isLocalWorkspace = selectedRun?.vscode?.provider === "other";
       const shouldShowWorkspaceLoader = Boolean(selectedRun) && !workspaceUrl && !isLocalWorkspace;
-      const disablePreflight = rawWorkspaceUrl
+      // enablePreflight is true for localhost URLs (Docker containers)
+      const enablePreflight = rawWorkspaceUrl
         ? shouldUseServerIframePreflight(rawWorkspaceUrl)
         : false;
 
@@ -505,7 +506,7 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
               persistentWrapperClassName={isExpanded ? "z-[var(--z-maximized-iframe)]" : undefined}
               allow={TASK_RUN_IFRAME_ALLOW}
               sandbox={TASK_RUN_IFRAME_SANDBOX}
-              preflight={!disablePreflight}
+              preflight={enablePreflight}
               retainOnUnmount
               suspended={!selectedRun}
               onLoad={onEditorLoad}
