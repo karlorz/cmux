@@ -2029,6 +2029,7 @@ PROFILE
         "install-prompt-wrapper",
         "install-tmux-conf",
         "install-collect-scripts",
+        "setup-claude-oauth-wrappers",
     ),
     description="Remove repository upload and toolchain caches prior to final validation",
 )

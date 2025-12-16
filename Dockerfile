@@ -928,10 +928,10 @@ if [ -z "${extensions}" ]; then
   echo "No extensions found in /tmp/ide-deps.json" >&2
   exit 1
 fi
-printf '%s\n' "${extensions}" | while IFS='|' read -r publisher name version; do
+while IFS='|' read -r publisher name version; do
   [ -z "${publisher}" ] && continue
   download_extension "${publisher}" "${name}" "${version}" "${download_dir}/${publisher}.${name}.vsix" &
-done
+done <<< "${extensions}"
 wait
 set -- "\${download_dir}"/*.vsix
 for vsix in "\$@"; do
