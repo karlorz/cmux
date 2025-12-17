@@ -778,9 +778,43 @@ app.on("login", (event, webContents, _request, authInfo, callback) => {
   callback(creds.username, creds.password);
 });
 
+// macOS: open-url event
 app.on("open-url", (_event, url) => {
   handleOrQueueProtocolUrl(url);
 });
+
+// Windows/Linux: Protocol URLs are passed as command-line arguments.
+// We need single instance lock to receive deep links from second instances.
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  // Another instance already has the lock. Our argv has the deep link,
+  // and Electron will send it to the first instance via 'second-instance'.
+  app.quit();
+} else {
+  // We are the first (or only) instance.
+  // Handle deep links from second instances.
+  app.on("second-instance", (_event, argv, _workingDirectory) => {
+    // Windows: the deep link URL is in argv
+    const url = argv.find((arg) => arg.startsWith("cmux://"));
+    if (url) {
+      mainLog("Received protocol URL from second instance", { url });
+      handleOrQueueProtocolUrl(url);
+    }
+    // Focus our window
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+
+  // Check if the app was launched with a deep link URL in argv (cold start)
+  const deepLinkUrl = process.argv.find((arg) => arg.startsWith("cmux://"));
+  if (deepLinkUrl) {
+    mainLog("Found protocol URL in startup argv", { url: deepLinkUrl });
+    handleOrQueueProtocolUrl(deepLinkUrl);
+  }
+}
 
 app.whenReady().then(async () => {
   setupPreviewProxyCertificateTrust();
@@ -926,10 +960,21 @@ app.whenReady().then(async () => {
   // will add CFBundleURLTypes on macOS, but calling this is harmless and also
   // helps on Windows/Linux when packaged.
   try {
-    const ok = app.setAsDefaultProtocolClient("cmux");
+    let ok: boolean;
+    if (!app.isPackaged && process.platform === "win32") {
+      // In development on Windows, we need to pass the path to electron.exe
+      // and the path to our app so Windows can invoke it properly.
+      ok = app.setAsDefaultProtocolClient("cmux", process.execPath, [
+        path.resolve(process.argv[1] ?? "."),
+      ]);
+    } else {
+      ok = app.setAsDefaultProtocolClient("cmux");
+    }
     mainLog("setAsDefaultProtocolClient(cmux)", {
       ok,
       packaged: app.isPackaged,
+      platform: process.platform,
+      execPath: process.execPath,
     });
   } catch (e) {
     mainWarn("setAsDefaultProtocolClient failed", e);

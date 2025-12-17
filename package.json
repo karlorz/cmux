@@ -54,6 +54,9 @@
     "generate-openapi-client": "cd apps/www && bun run generate-openapi-client",
     "generate-morphcloud-openapi-client": "cd packages/morphcloud-openapi-client && bun run generate",
     "build:mac-arm64-prod": "bash scripts/build-prod-mac-arm64.sh",
+    "build:win-prod": "bash scripts/build-prod-win.sh",
+    "dev:electron": "bash scripts/dev.sh --electron",
+    "dev:electron:simple": "bash scripts/dev-electron-simple.sh",
     "convex:deploy:prod": "(cd packages/convex && bun run deploy:prod)",
     "convex:deploy": "(cd packages/convex && bun run deploy)",
     "convex:setup": "bun run --env-file .env --cwd packages/convex setup"
