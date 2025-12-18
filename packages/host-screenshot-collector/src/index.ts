@@ -3,7 +3,6 @@ import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import { z } from "zod";
 
-import { log } from "../logger";
 import { logToScreenshotCollector } from "./logger";
 import { formatClaudeMessage } from "./claudeMessageFormatter";
 
@@ -125,6 +124,15 @@ function isTaskRunJwtAuth(
   auth: ClaudeCodeAuthConfig["auth"]
 ): auth is { taskRunJwt: string } {
   return "taskRunJwt" in auth;
+}
+
+function log(
+  level: "INFO" | "WARN" | "ERROR",
+  message: string,
+  data?: Record<string, unknown>
+): void {
+  const logData = data ? ` ${JSON.stringify(data)}` : "";
+  console.log(`[${level}] ${message}${logData}`);
 }
 
 export async function captureScreenshotsForBranch(
@@ -628,4 +636,70 @@ export async function claudeCodeCapturePRScreenshots(
       error: message,
     };
   }
+}
+
+// Re-export utilities
+export { logToScreenshotCollector } from "./logger";
+export { formatClaudeMessage } from "./claudeMessageFormatter";
+
+// CLI entry point - runs when executed directly
+const cliOptionsSchema = z.object({
+  workspaceDir: z.string(),
+  changedFiles: z.array(z.string()),
+  prTitle: z.string(),
+  prDescription: z.string(),
+  baseBranch: z.string(),
+  headBranch: z.string(),
+  outputDir: z.string(),
+  pathToClaudeCodeExecutable: z.string().optional(),
+  installCommand: z.string().optional(),
+  devCommand: z.string().optional(),
+  auth: z.union([
+    z.object({ taskRunJwt: z.string() }),
+    z.object({ anthropicApiKey: z.string() }),
+  ]),
+});
+
+async function main() {
+  const optionsJson = process.env.SCREENSHOT_OPTIONS;
+  if (!optionsJson) {
+    console.error("SCREENSHOT_OPTIONS environment variable is required");
+    process.exit(1);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(optionsJson);
+  } catch (error) {
+    console.error("Failed to parse SCREENSHOT_OPTIONS as JSON:", error);
+    process.exit(1);
+  }
+
+  const validated = cliOptionsSchema.safeParse(parsed);
+  if (!validated.success) {
+    console.error("Invalid SCREENSHOT_OPTIONS:", validated.error.format());
+    process.exit(1);
+  }
+
+  const options = validated.data;
+  const result = await claudeCodeCapturePRScreenshots(options as CaptureScreenshotsOptions);
+
+  // Output result as JSON to stdout
+  console.log(JSON.stringify(result));
+}
+
+// Check if running as CLI (not imported as module)
+// Support various filename patterns: index.js, index.mjs, screenshot-collector.mjs, etc.
+const scriptPath = process.argv[1] ?? "";
+const isRunningAsCli =
+  import.meta.url === `file://${scriptPath}` ||
+  scriptPath.endsWith("/index.js") ||
+  scriptPath.endsWith("/index.mjs") ||
+  scriptPath.includes("screenshot-collector");
+
+if (isRunningAsCli) {
+  main().catch((error) => {
+    console.error("CLI execution failed:", error);
+    process.exit(1);
+  });
 }
