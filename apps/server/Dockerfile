@@ -33,6 +33,7 @@ COPY packages/www-openapi-client/package.json ./packages/www-openapi-client/
 COPY packages/morphcloud-openapi-client/package.json ./packages/morphcloud-openapi-client/
 COPY packages/cmux/package.json ./packages/cmux/
 COPY packages/vscode-extension/package.json ./packages/vscode-extension/
+COPY packages/host-screenshot-collector/package.json ./packages/host-screenshot-collector/
 COPY scripts/package.json ./scripts/
 
 # Install all dependencies (production only, ignore optional native modules that fail)
