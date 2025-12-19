@@ -8,6 +8,7 @@ import {
   useState,
   useCallback,
   useEffect,
+  useRef,
   type ReactNode,
 } from "react";
 import {
@@ -35,6 +36,7 @@ import {
   FileMinus,
   FilePlus,
   FileText,
+  Loader2,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -81,6 +83,14 @@ export type HeatmapDiffViewerProps = {
   heatmapThreshold?: number;
   /** Custom heatmap colors */
   heatmapColors?: HeatmapColorSettings;
+  /** Focused line for navigation */
+  focusedLine?: DiffLineLocation | null;
+  /** Auto-open tooltip target */
+  autoTooltipLine?: DiffLineLocation | null;
+  /** Display loading state for AI review */
+  isLoading?: boolean;
+  /** Optional message when diff is unavailable */
+  errorMessage?: string | null;
   /** Whether the card starts collapsed */
   defaultCollapsed?: boolean;
   /** Callback when collapse state changes */
@@ -90,6 +100,11 @@ export type HeatmapDiffViewerProps = {
 };
 
 type DiffLineSide = "new" | "old";
+
+type DiffLineLocation = {
+  side: DiffLineSide;
+  lineNumber: number;
+};
 
 type HeatmapTooltipMeta = {
   score: number;
@@ -387,6 +402,19 @@ function getHeatmapTooltipTheme(score: number): HeatmapTooltipTheme {
   }
 }
 
+function doesChangeMatchLine(
+  change: ChangeData,
+  target: DiffLineLocation
+): boolean {
+  if (target.side === "new") {
+    const newLineNumber = computeNewLineNumber(change);
+    return newLineNumber > 0 && newLineNumber === target.lineNumber;
+  }
+
+  const oldLineNumber = computeOldLineNumber(change);
+  return oldLineNumber > 0 && oldLineNumber === target.lineNumber;
+}
+
 // ============================================================================
 // Tooltip Components
 // ============================================================================
@@ -419,9 +447,28 @@ function HeatmapGutterTooltip({
   isAutoOpen: boolean;
 }) {
   const [isManuallyOpen, setIsManuallyOpen] = useState(false);
+  const [isHovering, setIsHovering] = useState(false);
+  const wasAutoOpenRef = useRef(isAutoOpen);
 
   const handleOpenChange = useCallback((nextOpen: boolean) => {
     setIsManuallyOpen(nextOpen);
+  }, []);
+
+  useEffect(() => {
+    if (isAutoOpen) {
+      setIsManuallyOpen(false);
+    } else if (wasAutoOpenRef.current && isHovering) {
+      setIsManuallyOpen(true);
+    }
+    wasAutoOpenRef.current = isAutoOpen;
+  }, [isAutoOpen, isHovering]);
+
+  const handlePointerEnter = useCallback(() => {
+    setIsHovering(true);
+  }, []);
+
+  const handlePointerLeave = useCallback(() => {
+    setIsHovering(false);
   }, []);
 
   const isOpen = isAutoOpen || isManuallyOpen;
@@ -430,7 +477,13 @@ function HeatmapGutterTooltip({
   return (
     <Tooltip delayDuration={120} open={isOpen} onOpenChange={handleOpenChange}>
       <TooltipTrigger asChild>
-        <span className="cmux-heatmap-gutter">{children}</span>
+        <span
+          className="cmux-heatmap-gutter"
+          onPointerEnter={handlePointerEnter}
+          onPointerLeave={handlePointerLeave}
+        >
+          {children}
+        </span>
       </TooltipTrigger>
       <TooltipContent
         side="left"
@@ -463,6 +516,10 @@ export const HeatmapDiffViewer = memo(function HeatmapDiffViewerComponent({
   reviewHeatmap = [],
   heatmapThreshold = 0,
   heatmapColors = DEFAULT_HEATMAP_COLORS,
+  focusedLine = null,
+  autoTooltipLine = null,
+  isLoading = false,
+  errorMessage = null,
   defaultCollapsed = false,
   onCollapseChange,
   className,
@@ -625,19 +682,53 @@ export const HeatmapDiffViewer = memo(function HeatmapDiffViewerComponent({
     return renderTokenWithTooltip;
   }, [lineTooltips]);
 
-  // Gutter renderer with tooltips
-  const renderHeatmapGutter = useMemo<RenderGutter | undefined>(() => {
-    if (!lineTooltips) {
-      return undefined;
-    }
-
-    const renderGutterWithTooltip: RenderGutter = ({
+  // Gutter renderer with tooltips and +/- indicators
+  const renderHeatmapGutter = useMemo<RenderGutter>(() => {
+    const renderGutterWithIndicator: RenderGutter = ({
       change,
       side,
       renderDefault,
       wrapInAnchor,
     }) => {
-      const content = renderDefault();
+      const lineNumberContent = renderDefault();
+
+      // Determine the change indicator based on change type
+      const changeType = (change as { type?: string }).type;
+      let indicator: ReactNode = null;
+
+      if (changeType === "insert" && side === "new") {
+        indicator = (
+          <span className="text-emerald-600 dark:text-emerald-400 select-none font-medium w-4 inline-block text-center">
+            +
+          </span>
+        );
+      } else if (changeType === "delete" && side === "old") {
+        indicator = (
+          <span className="text-rose-600 dark:text-rose-400 select-none font-medium w-4 inline-block text-center">
+            −
+          </span>
+        );
+      } else {
+        // For normal/unchanged lines, add a spacer to maintain alignment
+        indicator = (
+          <span className="w-4 inline-block select-none" aria-hidden="true">
+            {" "}
+          </span>
+        );
+      }
+
+      const content = (
+        <span className="inline-flex items-center">
+          {indicator}
+          {lineNumberContent}
+        </span>
+      );
+
+      // If no tooltips, just return the content with indicator
+      if (!lineTooltips) {
+        return wrapInAnchor(content);
+      }
+
       const tooltipSource =
         side === "new" ? lineTooltips.new : lineTooltips.old;
 
@@ -658,10 +749,15 @@ export const HeatmapDiffViewer = memo(function HeatmapDiffViewerComponent({
         return wrapInAnchor(content);
       }
 
+      const isAutoOpen =
+        autoTooltipLine !== null &&
+        autoTooltipLine.side === side &&
+        autoTooltipLine.lineNumber === lineNumber;
+
       return wrapInAnchor(
         <HeatmapGutterTooltip
           key={`heatmap-gutter-${side}-${lineNumber}`}
-          isAutoOpen={false}
+          isAutoOpen={isAutoOpen}
           tooltipMeta={tooltipMeta}
         >
           {content}
@@ -669,8 +765,8 @@ export const HeatmapDiffViewer = memo(function HeatmapDiffViewerComponent({
       );
     };
 
-    return renderGutterWithTooltip;
-  }, [lineTooltips]);
+    return renderGutterWithIndicator;
+  }, [autoTooltipLine, lineTooltips]);
 
   // Tokenize with syntax highlighting
   const tokens = useMemo<HunkTokens | null>(() => {
@@ -735,7 +831,7 @@ export const HeatmapDiffViewer = memo(function HeatmapDiffViewerComponent({
       />
       <article
         className={cn(
-          "border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 transition",
+          "bg-white dark:bg-neutral-900 transition",
           className
         )}
       >
@@ -778,6 +874,24 @@ export const HeatmapDiffViewer = memo(function HeatmapDiffViewerComponent({
               </span>
             </div>
 
+            {isLoading ? (
+              <Tooltip delayDuration={300}>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center">
+                    <Loader2 className="h-3.5 w-3.5 text-sky-500 animate-spin flex-shrink-0" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="bottom"
+                  align="start"
+                  showArrow={false}
+                  className="rounded-md border border-neutral-200 bg-white px-2.5 py-1.5 text-xs text-neutral-700 shadow-md dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
+                >
+                  AI review in progress...
+                </TooltipContent>
+              </Tooltip>
+            ) : null}
+
             <div className="flex items-center gap-2 text-[13px] font-medium">
               <span className="text-emerald-600 dark:text-emerald-400">
                 +{additions}
@@ -819,6 +933,14 @@ export const HeatmapDiffViewer = memo(function HeatmapDiffViewerComponent({
                   const normalizedChanges = changes.filter(
                     (change): change is ChangeData => Boolean(change)
                   );
+                  const hasFocus =
+                    focusedLine !== null &&
+                    normalizedChanges.some((change) =>
+                      doesChangeMatchLine(change, focusedLine)
+                    );
+                  if (hasFocus) {
+                    classNames.push("cmux-heatmap-focus");
+                  }
 
                   // Apply heatmap line classes
                   if (
@@ -888,8 +1010,8 @@ export const HeatmapDiffViewer = memo(function HeatmapDiffViewerComponent({
               </Diff>
             ) : (
               <div className="bg-neutral-50 dark:bg-neutral-900 px-4 py-6 text-sm text-neutral-600 dark:text-neutral-400">
-                Diff content is unavailable for this file. It might be binary or
-                too large to display.
+                {errorMessage ??
+                  "Diff content is unavailable for this file. It might be binary or too large to display."}
               </div>
             )
           )}
