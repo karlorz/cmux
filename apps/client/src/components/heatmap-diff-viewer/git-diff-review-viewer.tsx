@@ -147,9 +147,9 @@ type GitDiffHeatmapReviewViewerProps = {
 };
 
 const SIDEBAR_WIDTH_STORAGE_KEY = "cmux:git-diff-viewer:file-tree-width";
-const SIDEBAR_DEFAULT_WIDTH = 330;
-const SIDEBAR_MIN_WIDTH = 240;
-const SIDEBAR_MAX_WIDTH = 520;
+const SIDEBAR_DEFAULT_WIDTH = 280;
+const SIDEBAR_MIN_WIDTH = 200;
+const SIDEBAR_MAX_WIDTH = 442;
 
 function clampSidebarWidth(value: number): number {
   if (Number.isNaN(value)) {
@@ -1037,13 +1037,15 @@ const FileDiffCard = memo(function FileDiffCardComponent({
   heatmapColors,
 }: FileDiffCardProps) {
   const cardRef = useRef<HTMLDivElement | null>(null);
+  const onCollapseChangeRef = useRef(onCollapseChange);
+  onCollapseChangeRef.current = onCollapseChange;
 
   useEffect(() => {
     if (!focusedChangeKey) {
       return;
     }
-    onCollapseChange(false);
-  }, [focusedChangeKey, onCollapseChange]);
+    onCollapseChangeRef.current(false);
+  }, [focusedChangeKey]);
 
   useEffect(() => {
     if (!focusedChangeKey) {
@@ -1965,7 +1967,6 @@ export function GitDiffHeatmapReviewViewer({
                 key={fileEntry.entry.anchorId}
                 entry={fileEntry.entry}
                 status={status}
-                isActive={fileEntry.entry.anchorId === activeAnchor}
                 reviewHeatmap={fileEntry.reviewHeatmap}
                 focusedLine={focusedLine}
                 focusedChangeKey={focusedChangeKey}
