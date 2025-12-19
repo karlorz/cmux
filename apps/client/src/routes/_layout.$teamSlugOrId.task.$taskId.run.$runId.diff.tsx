@@ -46,6 +46,20 @@ const paramsSchema = z.object({
   runId: typedZid("taskRuns"),
 });
 
+const workspaceSettingsSchema = z
+  .object({
+    heatmapThreshold: z.number().optional(),
+    heatmapModel: z.string().optional(),
+    heatmapTooltipLanguage: z.string().optional(),
+    heatmapColors: z
+      .object({
+        line: z.object({ start: z.string(), end: z.string() }),
+        token: z.object({ start: z.string(), end: z.string() }),
+      })
+      .optional(),
+  })
+  .nullish();
+
 const gitDiffViewerClassNames: GitDiffViewerProps["classNames"] = {
   fileDiffRow: {
     button: "top-[96px] md:top-[56px]",
@@ -246,14 +260,14 @@ function RunDiffPage() {
     ...convexQuery(api.workspaceSettings.get, { teamSlugOrId }),
     enabled: Boolean(teamSlugOrId),
   });
-  const workspaceSettings = workspaceSettingsQuery.data as {
-    heatmapThreshold?: number;
-    heatmapModel?: string;
-    heatmapTooltipLanguage?: string;
-  } | null | undefined;
+  const workspaceSettings = useMemo(() => {
+    const parsed = workspaceSettingsSchema.safeParse(workspaceSettingsQuery.data);
+    return parsed.success ? parsed.data ?? null : null;
+  }, [workspaceSettingsQuery.data]);
   const heatmapThreshold = workspaceSettings?.heatmapThreshold ?? 0;
   const heatmapModel = workspaceSettings?.heatmapModel;
   const heatmapTooltipLanguage = workspaceSettings?.heatmapTooltipLanguage;
+  const heatmapColors = workspaceSettings?.heatmapColors;
 
   // Code review mutation to start the heatmap job
   const codeReviewMutation = useRQMutation({
@@ -396,15 +410,20 @@ function RunDiffPage() {
   // IMPORTANT: Use useMemo for query args to prevent new object reference on every render
   // (which would cause Convex to re-subscribe and trigger infinite loops)
   const fileOutputsQueryArgs = useMemo(
-    () =>
-      comparisonSlug && primaryRepo
-        ? {
-            teamSlugOrId,
-            repoFullName: primaryRepo,
-            comparisonSlug,
-          }
-        : ("skip" as const),
-    [teamSlugOrId, primaryRepo, comparisonSlug]
+    () => {
+      if (!comparisonSlug || !primaryRepo) {
+        return "skip" as const;
+      }
+      return {
+        teamSlugOrId,
+        repoFullName: primaryRepo,
+        comparisonSlug,
+        ...(heatmapTooltipLanguage
+          ? { tooltipLanguage: heatmapTooltipLanguage }
+          : {}),
+      };
+    },
+    [teamSlugOrId, primaryRepo, comparisonSlug, heatmapTooltipLanguage]
   );
   const fileOutputs = useQuery(
     api.codeReview.listFileOutputsForComparison,
@@ -573,11 +592,12 @@ function RunDiffPage() {
 
   // Track if we've already auto-triggered the heatmap review
   const hasAutoTriggeredRef = useRef(false);
-  // Track the last triggered branch/commit to detect changes and re-trigger
-  const lastTriggeredBranchRef = useRef<string | null>(null);
+  // Track the last triggered comparison/settings to detect changes and re-trigger
+  const lastTriggeredComparisonRef = useRef<string | null>(null);
+  const lastTriggeredSettingsRef = useRef<string | null>(null);
 
   // Auto-trigger heatmap review when all required data is available (including diffs and settings)
-  // Also re-triggers when the branch changes (e.g., new commits pushed)
+  // Also re-triggers when the comparison or heatmap settings change
   // The backend handles caching - if results already exist, it returns them immediately
   useEffect(() => {
     // Wait for all required data to be ready (including diffs)
@@ -596,17 +616,27 @@ function RunDiffPage() {
 
     // Build a key that represents the current state (branch + base)
     const baseBranch = task?.baseBranch || "main";
-    const currentKey = `${primaryRepo}:${baseBranch}...${selectedRun.newBranch}`;
+    const comparisonKey = `${primaryRepo}:${baseBranch}...${selectedRun.newBranch}`;
+    const settingsKey = `${heatmapModel ?? "default"}|${heatmapTooltipLanguage ?? "default"}`;
 
-    // Check if we need to re-trigger (first time or branch changed)
-    const shouldTrigger = !hasAutoTriggeredRef.current || lastTriggeredBranchRef.current !== currentKey;
+    // Check if we need to re-trigger (first time, comparison change, or settings change)
+    const shouldTrigger =
+      !hasAutoTriggeredRef.current ||
+      lastTriggeredComparisonRef.current !== comparisonKey ||
+      lastTriggeredSettingsRef.current !== settingsKey;
     if (!shouldTrigger) {
       return;
     }
 
+    const shouldForce =
+      hasAutoTriggeredRef.current &&
+      lastTriggeredComparisonRef.current === comparisonKey &&
+      lastTriggeredSettingsRef.current !== settingsKey;
+
     // Mark as triggered and store the current key
     hasAutoTriggeredRef.current = true;
-    lastTriggeredBranchRef.current = currentKey;
+    lastTriggeredComparisonRef.current = comparisonKey;
+    lastTriggeredSettingsRef.current = settingsKey;
 
     // Compute the comparison slug to start the subscription immediately
     const comparisonSlugValue = `${baseBranch}...${selectedRun.newBranch}`;
@@ -614,7 +644,7 @@ function RunDiffPage() {
 
     // Trigger the review with pre-fetched diffs and settings (backend will return cached results if available)
     // Force re-run if the branch changed (lastTriggeredBranchRef was different)
-    triggerHeatmapReview(false, fileDiffsForHeatmap, heatmapModel, heatmapTooltipLanguage);
+    triggerHeatmapReview(shouldForce, fileDiffsForHeatmap, heatmapModel, heatmapTooltipLanguage);
   }, [primaryRepo, selectedRun?.newBranch, task?.baseBranch, triggerHeatmapReview, diffQuery.isLoading, fileDiffsForHeatmap, workspaceSettingsQuery.isLoading, heatmapModel, heatmapTooltipLanguage]);
 
   // 404 if selected run is missing
@@ -709,6 +739,7 @@ function RunDiffPage() {
                     metadataByRepo={metadataByRepo}
                     heatmapByFile={heatmapByFile}
                     heatmapThreshold={heatmapThreshold}
+                    heatmapColors={heatmapColors}
                   />
                 ) : (
                   <div className="flex h-full items-center justify-center p-6 text-sm text-neutral-600 dark:text-neutral-300">

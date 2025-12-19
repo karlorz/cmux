@@ -2,6 +2,7 @@ import { gitDiffQueryOptions } from "@/queries/git-diff";
 import { useQueries } from "@tanstack/react-query";
 import { useMemo, useRef, type ComponentProps } from "react";
 import { GitDiffViewer, GitDiffViewerWithHeatmap } from "./git-diff-viewer";
+import type { HeatmapColorSettings } from "@/components/heatmap-diff-viewer";
 import type { ReplaceDiffEntry } from "@cmux/shared/diff-types";
 import type { ReviewHeatmapLine } from "@/lib/heatmap";
 
@@ -26,6 +27,8 @@ export interface RunDiffSectionProps {
   heatmapByFile?: Map<string, ReviewHeatmapLine[]>;
   /** Heatmap threshold for filtering entries (0-1) */
   heatmapThreshold?: number;
+  /** Custom heatmap colors */
+  heatmapColors?: HeatmapColorSettings;
 }
 
 function applyRepoPrefix(
@@ -58,6 +61,7 @@ export function RunDiffSection(props: RunDiffSectionProps) {
     useHeatmapViewer = true, // Default to heatmap viewer
     heatmapByFile,
     heatmapThreshold,
+    heatmapColors,
   } = props;
 
   const repoFullNames = useMemo(() => {
@@ -176,6 +180,7 @@ export function RunDiffSection(props: RunDiffSectionProps) {
         diffs={combinedDiffs}
         heatmapByFile={heatmapByFile}
         heatmapThreshold={heatmapThreshold}
+        heatmapColors={heatmapColors}
         onControlsChange={onControlsChange}
         classNames={classNames}
       />
