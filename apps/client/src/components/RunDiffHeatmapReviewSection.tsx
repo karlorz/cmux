@@ -2,7 +2,10 @@ import { gitDiffQueryOptions } from "@/queries/git-diff";
 import { useQueries } from "@tanstack/react-query";
 import { useMemo, useRef } from "react";
 import type { ReplaceDiffEntry } from "@cmux/shared/diff-types";
-import { GitDiffHeatmapReviewViewer } from "@/components/heatmap-diff-viewer";
+import {
+  GitDiffHeatmapReviewViewer,
+  type StreamFileState,
+} from "@/components/heatmap-diff-viewer";
 import type { HeatmapColorSettings } from "@/components/heatmap-diff-viewer/heatmap-gradient";
 import type {
   HeatmapModelOptionValue,
@@ -32,6 +35,7 @@ export interface RunDiffHeatmapReviewSectionProps {
     filePath: string;
     codexReviewOutput: unknown;
   }>;
+  streamStateByFile?: Map<string, StreamFileState>;
   onHeatmapThresholdChange?: (next: number) => void;
   onHeatmapColorsChange?: (next: HeatmapColorSettings) => void;
   onHeatmapModelChange?: (next: HeatmapModelOptionValue) => void;
@@ -71,6 +75,7 @@ export function RunDiffHeatmapReviewSection(
     heatmapModel,
     heatmapTooltipLanguage,
     fileOutputs,
+    streamStateByFile,
     onHeatmapThresholdChange,
     onHeatmapColorsChange,
     onHeatmapModelChange,
@@ -187,6 +192,7 @@ export function RunDiffHeatmapReviewSection(
     <GitDiffHeatmapReviewViewer
       diffs={combinedDiffs}
       fileOutputs={fileOutputs}
+      streamStateByFile={streamStateByFile}
       primaryRepoFullName={repoFullName}
       shouldPrefixDiffs={shouldPrefix}
       heatmapThreshold={heatmapThreshold}

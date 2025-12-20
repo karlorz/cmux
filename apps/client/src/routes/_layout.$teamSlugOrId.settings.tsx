@@ -118,10 +118,10 @@ function SettingsComponent() {
 
   // Heatmap model options from model-config.ts
   const HEATMAP_MODEL_OPTIONS = [
-    { value: "anthropic-opus-4-5", label: "Claude Opus 4.5 (Most Accurate)", description: "Best quality reviews, slower" },
-    { value: "anthropic", label: "Claude Opus 4.1", description: "High quality, balanced speed" },
-    { value: "cmux-heatmap-2", label: "cmux-heatmap-2 (GPT-4.1 Fine-tuned)", description: "Fast, cost-effective" },
-    { value: "cmux-heatmap-1", label: "cmux-heatmap-1 (GPT-4.1 Mini)", description: "Fastest, most cost-effective" },
+    { value: "anthropic-opus-4-5", label: "Claude Opus 4.5" },
+    { value: "anthropic", label: "Claude Opus 4.1" },
+    { value: "cmux-heatmap-2", label: "cmux-heatmap-2" },
+    { value: "cmux-heatmap-1", label: "cmux-heatmap-1" },
   ];
 
   // Tooltip language options
@@ -848,11 +848,6 @@ function SettingsComponent() {
                       </option>
                     ))}
                   </select>
-                  {HEATMAP_MODEL_OPTIONS.find((opt) => opt.value === heatmapModel)?.description && (
-                    <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                      {HEATMAP_MODEL_OPTIONS.find((opt) => opt.value === heatmapModel)?.description}
-                    </p>
-                  )}
                 </div>
 
                 {/* Tooltip Language Selector */}

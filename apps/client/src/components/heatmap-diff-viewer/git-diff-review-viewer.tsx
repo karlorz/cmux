@@ -123,6 +123,15 @@ type HeatmapFileOutput = {
   codexReviewOutput: unknown;
 };
 
+export type StreamFileStatus = "pending" | "success" | "skipped" | "error";
+
+export type StreamFileState = {
+  lines: ReviewHeatmapLine[];
+  status: StreamFileStatus;
+  skipReason?: string | null;
+  summary?: string | null;
+};
+
 type DiffViewerControls = {
   expandAll: () => void;
   collapseAll: () => void;
@@ -133,6 +142,7 @@ type DiffViewerControls = {
 type GitDiffHeatmapReviewViewerProps = {
   diffs: ReplaceDiffEntry[];
   fileOutputs?: HeatmapFileOutput[];
+  streamStateByFile?: Map<string, StreamFileState>;
   primaryRepoFullName?: string | null;
   shouldPrefixDiffs?: boolean;
   heatmapThreshold?: number;
@@ -173,6 +183,46 @@ function mapStatusToHeatmapStatus(
     default:
       return "changed";
   }
+}
+
+function mergeHeatmapLines(
+  primary: ReviewHeatmapLine[],
+  fallback: ReviewHeatmapLine[]
+): ReviewHeatmapLine[] {
+  if (fallback.length === 0) {
+    return primary;
+  }
+
+  const lineMap = new Map<string, ReviewHeatmapLine>();
+
+  for (const entry of primary) {
+    const normalized =
+      typeof entry.lineText === "string"
+        ? entry.lineText.replace(/\s+/g, " ").trim()
+        : "";
+    const key = `${entry.lineNumber ?? "unknown"}:${normalized}`;
+    lineMap.set(key, entry);
+  }
+
+  for (const entry of fallback) {
+    const normalized =
+      typeof entry.lineText === "string"
+        ? entry.lineText.replace(/\s+/g, " ").trim()
+        : "";
+    const key = `${entry.lineNumber ?? "unknown"}:${normalized}`;
+    if (!lineMap.has(key)) {
+      lineMap.set(key, entry);
+    }
+  }
+
+  return Array.from(lineMap.values()).sort((a, b) => {
+    const aLine = a.lineNumber ?? -1;
+    const bLine = b.lineNumber ?? -1;
+    if (aLine !== bLine) {
+      return aLine - bLine;
+    }
+    return (a.lineText ?? "").localeCompare(b.lineText ?? "");
+  });
 }
 
 /**
@@ -525,6 +575,24 @@ function getParentPaths(path: string): string[] {
   return parents;
 }
 
+const COLOR_SECTION_METADATA: Record<
+  keyof HeatmapColorSettings,
+  { title: string; helper: string }
+> = {
+  line: {
+    title: "Line background gradient",
+    helper: "",
+  },
+  token: {
+    title: "Token highlight gradient",
+    helper: "",
+  },
+};
+
+function isValidHexColor(value: string): boolean {
+  return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value);
+}
+
 const ReviewProgressIndicator = memo(function ReviewProgressIndicator({
   totalFileCount,
   processedFileCount,
@@ -638,7 +706,10 @@ function HeatmapThresholdControl({
     (section: keyof HeatmapColorSettings, stop: keyof HeatmapColorSettings["line"]) =>
       (event: ChangeEvent<HTMLInputElement>) => {
         const nextValue = event.target.value;
-        if (nextValue === colors[section][stop]) {
+        if (
+          !isValidHexColor(nextValue) ||
+          nextValue === colors[section][stop]
+        ) {
           return;
         }
         onColorsChange({
@@ -669,12 +740,12 @@ function HeatmapThresholdControl({
   );
 
   return (
-    <div className="border border-neutral-200 bg-white p-5 pt-4 text-sm text-neutral-700 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">
-      <div className="flex items-center justify-between gap-3">
-        <label htmlFor={sliderId} className="font-medium text-neutral-700 dark:text-neutral-200">
+    <div className="rounded border border-neutral-200 bg-white p-5 pt-4 text-sm text-neutral-700 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">
+      <div className="flex items-center justify-between gap-2">
+        <label htmlFor={sliderId} className="text-xs font-medium text-neutral-700 dark:text-neutral-200">
           &ldquo;Should review&rdquo; threshold
         </label>
-        <span className="text-xs font-semibold text-neutral-600 dark:text-neutral-300">
+        <span className="flex-shrink-0 text-xs font-semibold text-neutral-600 dark:text-neutral-300">
           ≥ <span className="tabular-nums">{percent}%</span>
         </span>
       </div>
@@ -683,7 +754,7 @@ function HeatmapThresholdControl({
         type="range"
         min={0}
         max={100}
-        step={5}
+        step={1}
         value={percent}
         onChange={handleSliderChange}
         className="mt-3 w-full accent-sky-500"
@@ -698,16 +769,13 @@ function HeatmapThresholdControl({
       </p>
       <div className="mt-4 space-y-5">
         {(
-          Object.keys(colors) as Array<keyof HeatmapColorSettings>
+          Object.keys(COLOR_SECTION_METADATA) as Array<keyof HeatmapColorSettings>
         ).map((section) => {
-          const title =
-            section === "line"
-              ? "Line background gradient"
-              : "Token highlight gradient";
+          const meta = COLOR_SECTION_METADATA[section];
           return (
             <div key={section} className="space-y-2">
               <p className="text-xs font-semibold text-neutral-700 dark:text-neutral-200">
-                {title}
+                {meta.title}
               </p>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="flex items-center justify-between gap-3 text-xs font-medium text-neutral-700 dark:text-neutral-200">
@@ -717,7 +785,7 @@ function HeatmapThresholdControl({
                     value={colors[section].start}
                     onChange={handleColorChange(section, "start")}
                     className="h-8 w-16 cursor-pointer rounded border border-neutral-300 bg-transparent p-0 dark:border-neutral-600"
-                    aria-label={`${title} low score color`}
+                    aria-label={`${meta.title} low score color`}
                   />
                 </label>
                 <label className="flex items-center justify-between gap-3 text-xs font-medium text-neutral-700 dark:text-neutral-200">
@@ -727,7 +795,7 @@ function HeatmapThresholdControl({
                     value={colors[section].end}
                     onChange={handleColorChange(section, "end")}
                     className="h-8 w-16 cursor-pointer rounded border border-neutral-300 bg-transparent p-0 dark:border-neutral-600"
-                    aria-label={`${title} high score color`}
+                    aria-label={`${meta.title} high score color`}
                   />
                 </label>
               </div>
@@ -1097,6 +1165,7 @@ const FileDiffCard = memo(function FileDiffCardComponent({
 export function GitDiffHeatmapReviewViewer({
   diffs,
   fileOutputs,
+  streamStateByFile,
   primaryRepoFullName,
   shouldPrefixDiffs = false,
   heatmapThreshold = 0,
@@ -1122,6 +1191,11 @@ export function GitDiffHeatmapReviewViewer({
 
   const deferredHeatmapThreshold = useDeferredValue(heatmapThreshold);
   const clipboard = useClipboard({ timeout: 2000 });
+  const emptyStreamStateMap = useMemo(
+    () => new Map<string, StreamFileState>(),
+    []
+  );
+  const streamStateMap = streamStateByFile ?? emptyStreamStateMap;
 
   const fileOutputIndex = useMemo(() => {
     const map = new Map<string, HeatmapFileOutput>();
@@ -1226,9 +1300,15 @@ export function GitDiffHeatmapReviewViewer({
   const fileEntries = useMemo<FileDiffViewModel[]>(() => {
     return parsedDiffs.map((entry) => {
       const review = fileOutputIndex.get(entry.entry.filePath) ?? null;
-      const reviewHeatmap = review
+      const streamState = streamStateMap.get(entry.entry.filePath) ?? null;
+      const streamedHeatmap = streamState?.lines ?? [];
+      const reviewHeatmapFromCodex = review
         ? parseReviewHeatmap(review.codexReviewOutput)
         : [];
+      const reviewHeatmap = mergeHeatmapLines(
+        streamedHeatmap,
+        reviewHeatmapFromCodex
+      );
       const diffHeatmapArtifacts =
         entry.diff && reviewHeatmap.length > 0
           ? prepareDiffHeatmapArtifacts(entry.diff, reviewHeatmap)
@@ -1247,7 +1327,12 @@ export function GitDiffHeatmapReviewViewer({
         changeKeyByLine: buildChangeKeyIndex(entry.diff),
       };
     });
-  }, [deferredHeatmapThreshold, fileOutputIndex, parsedDiffs]);
+  }, [
+    deferredHeatmapThreshold,
+    fileOutputIndex,
+    parsedDiffs,
+    streamStateMap,
+  ]);
 
   const errorTargets = useMemo<ReviewErrorTarget[]>(() => {
     const targets: ReviewErrorTarget[] = [];
@@ -1397,7 +1482,10 @@ export function GitDiffHeatmapReviewViewer({
     const addLoadingState = (nodes: FileTreeNode[]): FileTreeNode[] => {
       return nodes.map((node) => {
         if (node.file) {
-          const isLoading = !fileOutputIndex.has(node.file.filePath);
+          const streamState = streamStateMap.get(node.file.filePath);
+          const isLoading =
+            !fileOutputIndex.has(node.file.filePath) &&
+            (!streamState || streamState.status === "pending");
           return {
             ...node,
             isLoading,
@@ -1411,7 +1499,7 @@ export function GitDiffHeatmapReviewViewer({
       });
     };
     return addLoadingState(tree);
-  }, [sortedFiles, fileOutputIndex]);
+  }, [sortedFiles, fileOutputIndex, streamStateMap]);
 
   const directoryPaths = useMemo(
     () => collectDirectoryPaths(fileTree),
@@ -1518,9 +1606,70 @@ export function GitDiffHeatmapReviewViewer({
     }
     window.localStorage.setItem(
       SIDEBAR_WIDTH_STORAGE_KEY,
-      String(sidebarWidth)
+      String(Math.round(sidebarWidth))
     );
   }, [sidebarWidth]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+    if (!isResizingSidebar) {
+      return;
+    }
+    const previousCursor = document.body.style.cursor;
+    document.body.style.cursor = "col-resize";
+    return () => {
+      document.body.style.cursor = previousCursor;
+    };
+  }, [isResizingSidebar]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    return () => {
+      if (sidebarPointerMoveHandlerRef.current) {
+        window.removeEventListener(
+          "pointermove",
+          sidebarPointerMoveHandlerRef.current
+        );
+        sidebarPointerMoveHandlerRef.current = null;
+      }
+      if (sidebarPointerUpHandlerRef.current) {
+        window.removeEventListener(
+          "pointerup",
+          sidebarPointerUpHandlerRef.current
+        );
+        window.removeEventListener(
+          "pointercancel",
+          sidebarPointerUpHandlerRef.current
+        );
+        sidebarPointerUpHandlerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    setExpandedPaths(() => {
+      const defaults = new Set<string>(directoryPaths);
+      for (const parent of getParentPaths(activePath)) {
+        defaults.add(parent);
+      }
+      return defaults;
+    });
+  }, [directoryPaths, activePath]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const hash = decodeURIComponent(window.location.hash.slice(1));
+    if (hash && sortedFiles.some((file) => file.filePath === hash)) {
+      setActivePath(hash);
+      setActiveAnchor(hash);
+    }
+  }, [sortedFiles]);
 
   useEffect(() => {
     if (!activePath) {
@@ -1536,68 +1685,155 @@ export function GitDiffHeatmapReviewViewer({
     });
   }, [activePath]);
 
+  useEffect(() => {
+    if (parsedDiffs.length === 0) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .map((entry) => ({
+            id: entry.target.id,
+            top: entry.target.getBoundingClientRect().top,
+          }))
+          .sort((a, b) => a.top - b.top);
+
+        if (visible.length > 0 && visible[0]?.id) {
+          setActiveAnchor(visible[0].id);
+        }
+      },
+      {
+        rootMargin: "0px 0px -60% 0px",
+        threshold: 0,
+      }
+    );
+
+    const elements = parsedDiffs
+      .map((entry) => document.getElementById(entry.anchorId))
+      .filter((element): element is HTMLElement => Boolean(element));
+
+    elements.forEach((element) => observer.observe(element));
+
+    return () => {
+      elements.forEach((element) => observer.unobserve(element));
+      observer.disconnect();
+    };
+  }, [parsedDiffs]);
+
   const handleSidebarResizePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === "mouse" && event.button !== 0) {
+        return;
+      }
+      if (typeof window === "undefined") {
+        return;
+      }
       event.preventDefault();
-      setIsResizingSidebar(true);
+      const handleElement = event.currentTarget;
+      const pointerId = event.pointerId;
       pointerStartXRef.current = event.clientX;
       pointerStartWidthRef.current = sidebarWidth;
+      setIsResizingSidebar(true);
+
+      try {
+        handleElement.focus({ preventScroll: true });
+      } catch {
+        handleElement.focus();
+      }
 
       const handlePointerMove = (moveEvent: PointerEvent) => {
         const delta = moveEvent.clientX - pointerStartXRef.current;
-        const nextWidth = clampSidebarWidth(pointerStartWidthRef.current + delta);
-        setSidebarWidth(nextWidth);
+        const nextWidth = clampSidebarWidth(
+          pointerStartWidthRef.current + delta
+        );
+        setSidebarWidth((previous) =>
+          previous === nextWidth ? previous : nextWidth
+        );
       };
 
-      const handlePointerUp = () => {
+      const handlePointerTerminate = (upEvent: PointerEvent) => {
+        if (upEvent.pointerId !== pointerId) {
+          return;
+        }
+        if (handleElement.hasPointerCapture?.(pointerId)) {
+          try {
+            handleElement.releasePointerCapture(pointerId);
+          } catch {
+            // Ignore release failures.
+          }
+        }
         setIsResizingSidebar(false);
-        window.removeEventListener("pointermove", handlePointerMove);
-        window.removeEventListener("pointerup", handlePointerUp);
-        sidebarPointerMoveHandlerRef.current = null;
-        sidebarPointerUpHandlerRef.current = null;
+        if (sidebarPointerMoveHandlerRef.current) {
+          window.removeEventListener(
+            "pointermove",
+            sidebarPointerMoveHandlerRef.current
+          );
+          sidebarPointerMoveHandlerRef.current = null;
+        }
+        if (sidebarPointerUpHandlerRef.current) {
+          window.removeEventListener(
+            "pointerup",
+            sidebarPointerUpHandlerRef.current
+          );
+          window.removeEventListener(
+            "pointercancel",
+            sidebarPointerUpHandlerRef.current
+          );
+          sidebarPointerUpHandlerRef.current = null;
+        }
       };
+
+      sidebarPointerMoveHandlerRef.current = handlePointerMove;
+      sidebarPointerUpHandlerRef.current = handlePointerTerminate;
 
       window.addEventListener("pointermove", handlePointerMove);
-      window.addEventListener("pointerup", handlePointerUp);
-      sidebarPointerMoveHandlerRef.current = handlePointerMove;
-      sidebarPointerUpHandlerRef.current = handlePointerUp;
+      window.addEventListener("pointerup", handlePointerTerminate);
+      window.addEventListener("pointercancel", handlePointerTerminate);
+
+      try {
+        handleElement.setPointerCapture(pointerId);
+      } catch {
+        // Ignore pointer capture failures (e.g., Safari).
+      }
     },
-    [sidebarWidth]
+    [sidebarWidth, setIsResizingSidebar, setSidebarWidth]
   );
 
   const handleSidebarResizeKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
-      const delta =
-        event.key === "ArrowLeft"
-          ? -10
-          : event.key === "ArrowRight"
-            ? 10
-            : 0;
-
-      if (delta !== 0) {
+      const key = event.key;
+      if (key === "ArrowLeft" || key === "ArrowRight") {
         event.preventDefault();
+        const delta = key === "ArrowLeft" ? -16 : 16;
         setSidebarWidth((previous) => clampSidebarWidth(previous + delta));
+        return;
       }
-
-      if (event.key === "Home") {
+      if (key === "Home") {
         event.preventDefault();
         setSidebarWidth(SIDEBAR_MIN_WIDTH);
+        return;
       }
-      if (event.key === "End") {
+      if (key === "End") {
         event.preventDefault();
         setSidebarWidth(SIDEBAR_MAX_WIDTH);
+        return;
       }
-      if (event.key === "Enter") {
+      if ((event.metaKey || event.ctrlKey) && key === "0") {
         event.preventDefault();
         setSidebarWidth(SIDEBAR_DEFAULT_WIDTH);
       }
     },
-    []
+    [setSidebarWidth]
   );
 
   const handleSidebarResizeDoubleClick = useCallback(() => {
     setSidebarWidth(SIDEBAR_DEFAULT_WIDTH);
-  }, []);
+  }, [setSidebarWidth]);
 
   const handleNavigate = useCallback((path: string, options?: NavigateOptions) => {
     setActivePath(path);
@@ -1790,19 +2026,29 @@ export function GitDiffHeatmapReviewViewer({
 
   const totalFileCount = sortedFiles.length;
   const processedFileCount = useMemo(() => {
-    if (fileOutputs === undefined) {
+    if (fileOutputs === undefined && streamStateMap.size === 0) {
       return null;
     }
     let count = 0;
     for (const file of sortedFiles) {
-      if (fileOutputIndex.has(file.filePath)) {
+      const streamState = streamStateMap.get(file.filePath);
+      const isStreamComplete =
+        streamState !== undefined && streamState.status !== "pending";
+      const isProcessed =
+        fileOutputIndex.has(file.filePath) || isStreamComplete;
+      if (isProcessed) {
         count += 1;
       }
     }
     return count;
-  }, [fileOutputs, fileOutputIndex, sortedFiles]);
+  }, [fileOutputs, fileOutputIndex, sortedFiles, streamStateMap]);
 
-  const isLoadingFileOutputs = fileOutputs === undefined;
+  const isLoadingFileOutputs =
+    fileOutputs === undefined &&
+    (streamStateMap.size === 0 ||
+      Array.from(streamStateMap.values()).some(
+        (state) => state.status === "pending"
+      ));
 
   const handleCopyHeatmapConfig = useCallback(() => {
     const compact = JSON.stringify(effectiveHeatmapColors);
@@ -1844,7 +2090,7 @@ export function GitDiffHeatmapReviewViewer({
       <div className="flex flex-col gap-3 lg:flex-row lg:items-stretch lg:gap-0">
         <aside
           id={sidebarPanelId}
-          className="relative w-full lg:sticky lg:top-2 lg:h-[calc(100vh)] lg:flex-none lg:overflow-y-auto lg:w-[var(--pr-diff-sidebar-width)] lg:min-w-[15rem] lg:max-w-[32.5rem] lg:pl-3"
+          className="relative w-full lg:sticky lg:top-2 lg:h-[calc(100vh-0.5rem)] lg:flex-none lg:overflow-y-auto lg:overscroll-contain lg:w-[var(--pr-diff-sidebar-width)] lg:min-w-[15rem] lg:max-w-[32.5rem] lg:pl-3"
           style={
             {
               "--pr-diff-sidebar-width": `${sidebarWidth}px`,
@@ -1956,9 +2202,12 @@ export function GitDiffHeatmapReviewViewer({
                     lineNumber: autoTooltipTarget.lineNumber,
                   }
                 : null;
-            const isLoading = !fileOutputIndex.has(
+            const streamState = streamStateMap.get(
               fileEntry.entry.entry.filePath
             );
+            const isLoading =
+              !fileOutputIndex.has(fileEntry.entry.entry.filePath) &&
+              (!streamState || streamState.status === "pending");
             const isCollapsed =
               collapsedState.get(fileEntry.entry.entry.filePath) ?? false;
 
