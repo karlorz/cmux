@@ -1832,7 +1832,6 @@ export function GitDiffHeatmapReviewViewer({
           setActiveAnchor(visible[0].id);
         }
       },
-      },
       {
         root: scrollContainer ?? null,
         rootMargin: "0px 0px -60% 0px",
