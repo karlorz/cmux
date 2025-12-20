@@ -916,53 +916,10 @@ function SettingsComponent() {
 
             {/* Heatmap Review Settings */}
             <div className="bg-white dark:bg-neutral-950 rounded-lg border border-neutral-200 dark:border-neutral-800">
-              <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between">
+              <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
                 <h2 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
                   Diff Heatmap Review
                 </h2>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const config = {
-                        heatmapModel,
-                        heatmapThreshold,
-                        heatmapTooltipLanguage,
-                        heatmapColors,
-                      };
-                      navigator.clipboard.writeText(JSON.stringify(config, null, 2));
-                      toast.success("Config copied to clipboard");
-                    }}
-                    className="px-2 py-1 text-xs rounded border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors"
-                  >
-                    Copy Config
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        const text = await navigator.clipboard.readText();
-                        const config = JSON.parse(text) as {
-                          heatmapModel?: string;
-                          heatmapThreshold?: number;
-                          heatmapTooltipLanguage?: string;
-                          heatmapColors?: typeof heatmapColors;
-                        };
-                        if (config.heatmapModel) setHeatmapModel(config.heatmapModel);
-                        if (config.heatmapThreshold !== undefined) setHeatmapThreshold(config.heatmapThreshold);
-                        if (config.heatmapTooltipLanguage) setHeatmapTooltipLanguage(config.heatmapTooltipLanguage);
-                        if (config.heatmapColors) setHeatmapColors(config.heatmapColors);
-                        toast.success("Config loaded from clipboard");
-                      } catch (error) {
-                        console.error("Failed to load config:", error);
-                        toast.error("Failed to load config - make sure you copied a valid config");
-                      }
-                    }}
-                    className="px-2 py-1 text-xs rounded border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors"
-                  >
-                    Load Config
-                  </button>
-                </div>
               </div>
               <div className="p-4 space-y-6">
                 {/* Model Selector */}
