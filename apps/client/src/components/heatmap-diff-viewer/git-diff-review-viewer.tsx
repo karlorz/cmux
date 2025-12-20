@@ -2229,15 +2229,12 @@ export function GitDiffHeatmapReviewViewer({
           }
         >
           {/* Fixed at top - does not scroll */}
-          <div className="flex-shrink-0">
+          <div className="flex-shrink-0 flex flex-col gap-3">
             <ReviewProgressIndicator
               totalFileCount={totalFileCount}
               processedFileCount={processedFileCount}
               isLoading={isLoadingFileOutputs}
             />
-          </div>
-          {/* Scrollable content below */}
-          <div className="flex flex-col gap-3 lg:overflow-y-auto lg:overscroll-contain lg:flex-1 lg:mt-3">
             <HeatmapThresholdControl
               value={heatmapThreshold}
               onChange={(next) => onHeatmapThresholdChange?.(next)}
@@ -2258,6 +2255,9 @@ export function GitDiffHeatmapReviewViewer({
                 />
               </div>
             ) : null}
+          </div>
+          {/* Scrollable content below - only the file tree */}
+          <div className="flex flex-col gap-3 lg:overflow-y-auto lg:overscroll-contain lg:flex-1 lg:mt-3">
             <div>
               <FileTreeNavigator
                 nodes={fileTree}
