@@ -112,7 +112,13 @@ morphRouter.openapi(
     },
   }),
   async (c) => {
-    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+    // Use stackServerAppJs to get full user object (needed for GitHub token refresh)
+    const user = await stackServerAppJs.getUser({ tokenStore: c.req.raw });
+    if (!user) {
+      return c.text("Unauthorized", 401);
+    }
+
+    const { accessToken } = await user.getAuthJson();
     if (!accessToken) {
       return c.text("Unauthorized", 401);
     }
@@ -167,6 +173,29 @@ morphRouter.openapi(
         id: taskRunId as Id<"taskRuns">,
         status: "running",
       });
+
+      // Refresh GitHub auth after resume (async, non-blocking)
+      // This ensures gh/git CLI has fresh credentials after VM wake-up
+      void (async () => {
+        try {
+          const tokenResult = await getFreshGitHubToken(user);
+          if ("error" in tokenResult) {
+            console.warn(
+              `[morph.resume-task-run] Could not get GitHub token for auth refresh: ${tokenResult.error}`
+            );
+            return;
+          }
+          await configureGithubAccess(instance, tokenResult.token);
+          console.log(
+            `[morph.resume-task-run] Refreshed GitHub auth for instance ${instanceId}`
+          );
+        } catch (error) {
+          console.error(
+            "[morph.resume-task-run] Failed to refresh GitHub auth after resume:",
+            error
+          );
+        }
+      })();
 
       return c.json({ resumed: true });
     } catch (error) {

@@ -35,6 +35,28 @@ import {
 import { VM_CLEANUP_COMMANDS } from "./sandboxes/cleanup";
 
 /**
+ * Fetches a fresh GitHub access token for the authenticated user.
+ * This is a reusable helper to avoid duplicating token retrieval logic.
+ */
+async function getFreshGitHubTokenFromUser(
+  user: Awaited<ReturnType<typeof stackServerAppJs.getUser>>
+): Promise<{ token: string } | { error: string }> {
+  if (!user) {
+    return { error: "Unauthorized" };
+  }
+  const githubAccount = await user.getConnectedAccount("github");
+  if (!githubAccount) {
+    return { error: "GitHub account not connected" };
+  }
+  const { accessToken: githubAccessToken } =
+    await githubAccount.getAccessToken();
+  if (!githubAccessToken) {
+    return { error: "Failed to get GitHub access token" };
+  }
+  return { token: githubAccessToken };
+}
+
+/**
  * Wait for the VSCode server to be ready by polling the service URL.
  * This prevents "upstream connect error" when the iframe loads before the server is ready.
  */
@@ -1391,6 +1413,30 @@ sandboxesRouter.openapi(
       }
 
       await instance.resume();
+
+      // Refresh GitHub auth after resume (async, non-blocking)
+      // This ensures gh/git CLI has fresh credentials after VM wake-up
+      void (async () => {
+        try {
+          const tokenResult = await getFreshGitHubTokenFromUser(user);
+          if ("error" in tokenResult) {
+            console.warn(
+              `[sandboxes.resume] Could not get GitHub token for auth refresh: ${tokenResult.error}`
+            );
+            return;
+          }
+          await configureGithubAccess(instance, tokenResult.token);
+          console.log(
+            `[sandboxes.resume] Refreshed GitHub auth for instance ${morphInstanceId}`
+          );
+        } catch (error) {
+          console.error(
+            "[sandboxes.resume] Failed to refresh GitHub auth after resume:",
+            error
+          );
+        }
+      })();
+
       return c.json({ resumed: true });
     } catch (error) {
       if (error instanceof HTTPException) {
