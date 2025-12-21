@@ -10,6 +10,7 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     --prod|--production)
       MODE="production"
+      ENV_FILE=".env.production"
       shift
       ;;
     --env-file)
@@ -130,6 +131,7 @@ echo "  - ANTHROPIC_API_KEY: $(get_env_value ANTHROPIC_API_KEY | head -c 10)..."
 echo "  - GEMINI_API_KEY: $(get_env_value GEMINI_API_KEY | head -c 10)..."
 echo "  - MORPH_API_KEY: $(get_env_value MORPH_API_KEY | head -c 10)..."
 echo "  - CMUX_IS_STAGING: $(get_env_value CMUX_IS_STAGING)"
+echo "  - CONVEX_IS_PRODUCTION: $( [ "$MODE" = "production" ] && echo "true" || echo "false" )"
 echo ""
 
 # Build JSON payload, only including non-empty values
@@ -166,6 +168,13 @@ build_json_changes() {
   add_change "GEMINI_API_KEY" "$(get_env_value GEMINI_API_KEY)"
   add_change "MORPH_API_KEY" "$(get_env_value MORPH_API_KEY)"
   add_change "CMUX_IS_STAGING" "$(get_env_value CMUX_IS_STAGING)"
+
+  # Set CONVEX_IS_PRODUCTION based on mode (required by Convex deploy validation)
+  if [ "$MODE" = "production" ]; then
+    add_change "CONVEX_IS_PRODUCTION" "true"
+  else
+    add_change "CONVEX_IS_PRODUCTION" "false"
+  fi
 
   # Handle private key separately (multi-line)
   if [ -n "$GITHUB_PRIVATE_KEY" ]; then

@@ -76,7 +76,7 @@ function DashboardDiffPage() {
 
   const branchesQuery = useRQ({
     ...getApiIntegrationsGithubBranchesOptions({
-      query: { team: teamSlugOrId, repo: selectedProject || "" },
+      query: { repo: selectedProject || "" },
     }),
     staleTime: 10_000,
     enabled: !!selectedProject && !isEnvironmentProject,
