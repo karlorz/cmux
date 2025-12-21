@@ -10,6 +10,7 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     --prod|--production)
       MODE="production"
+      ENV_FILE=".env.production"
       shift
       ;;
     --env-file)
