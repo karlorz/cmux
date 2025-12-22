@@ -2434,14 +2434,7 @@ ${title}`;
       try {
         const { taskId } = ArchiveTaskSchema.parse(data);
 
-        // In web mode, skip Docker container operations (managed by cloud provider)
-        if (env.NEXT_PUBLIC_WEB_MODE) {
-          serverLogger.info(`Skipping container cleanup for task ${taskId} in web mode`);
-          callback({ success: true });
-          return;
-        }
-
-        // Stop/pause all containers via helper (handles querying + logging)
+        // Stop/pause all containers via helper (handles Docker and Morph instances)
         const results = await stopContainersForRuns(taskId, safeTeam);
 
         // Log summary
