@@ -41,6 +41,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          cache: false
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v4
