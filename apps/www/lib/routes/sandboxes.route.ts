@@ -31,7 +31,7 @@ import {
   encodeEnvContentForEnvctl,
   envctlLoadCommand,
 } from "./utils/ensure-env-vars";
-import { VM_CLEANUP_COMMANDS } from "./sandboxes/cleanup";
+import { VM_CLEANUP_COMMANDS, VM_RESTART_SERVICES_COMMANDS } from "./sandboxes/cleanup";
 
 /**
  * Wait for the VSCode server to be ready by polling the service URL.
@@ -1355,6 +1355,18 @@ sandboxesRouter.openapi(
       }
 
       await instance.resume();
+
+      // Restart cmux services that were killed during pause
+      // The VM_CLEANUP_COMMANDS run before pause kills all user processes,
+      // but systemd doesn't auto-restart them on resume since state was frozen
+      try {
+        await instance.exec(VM_RESTART_SERVICES_COMMANDS);
+        console.log(`[sandboxes.resume] Restarted cmux services for ${morphInstanceId}`);
+      } catch (restartError) {
+        // Log but don't fail - the VM is resumed, services may recover
+        console.error(`[sandboxes.resume] Failed to restart services for ${morphInstanceId}:`, restartError);
+      }
+
       return c.json({ resumed: true });
     } catch (error) {
       if (error instanceof HTTPException) {
