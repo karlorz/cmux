@@ -74,6 +74,17 @@ export function useArchiveTask(teamSlugOrId: string) {
           previewRuns.filter((run) => run.taskId !== args.id)
         );
       }
+
+      // Also update getPinned query if it exists (used by sidebar pinned section)
+      const pinnedArgs = { teamSlugOrId: args.teamSlugOrId };
+      const pinnedTasks = localStore.getQuery(api.tasks.getPinned, pinnedArgs);
+      if (pinnedTasks) {
+        localStore.setQuery(
+          api.tasks.getPinned,
+          pinnedArgs,
+          pinnedTasks.filter((t) => t._id !== args.id)
+        );
+      }
     }
   );
 
