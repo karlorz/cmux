@@ -93,36 +93,45 @@ jobs:
           echo "All $max_attempts attempts failed"
           exit 1
 
-      - name: Check for changes
-        id: changes
+      - name: Check for snapshot changes
+        id: snapshot_changes
         run: |
-          if git diff --quiet; then
-            echo "No changes detected"
+          if git diff --quiet configs/ide-deps.json packages/shared/src/morph-snapshots.json; then
+            echo "No snapshot changes detected"
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
           else
-            echo "Changes detected"
+            echo "Snapshot changes detected"
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Regenerate OpenAPI client
+        if: steps.snapshot_changes.outputs.has_changes == 'true'
+        run: |
+          cd apps/www && bun run generate-openapi-client
+
+      - name: Run type check
+        if: steps.snapshot_changes.outputs.has_changes == 'true'
+        run: bun check
+
       - name: Configure git user
-        if: steps.changes.outputs.has_changes == 'true'
+        if: steps.snapshot_changes.outputs.has_changes == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Create branch and commit
-        if: steps.changes.outputs.has_changes == 'true'
+        if: steps.snapshot_changes.outputs.has_changes == 'true'
         id: commit
         run: |
           BRANCH_NAME="morph-snapshot-$(date +%Y%m%d-%H%M%S)"
           git checkout -b "$BRANCH_NAME"
-          git add configs/ide-deps.json packages/shared/src/morph-snapshots.json
+          git add configs/ide-deps.json packages/shared/src/morph-snapshots.json packages/www-openapi-client/src/client/
           git commit -m "chore: daily morph snapshot update"
           git push -u origin "$BRANCH_NAME"
           echo "branch=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Create Pull Request
-        if: steps.changes.outputs.has_changes == 'true'
+        if: steps.snapshot_changes.outputs.has_changes == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -133,6 +142,7 @@ jobs:
           ## Changes
           - Updated morph snapshots to latest version
           - Updated IDE extension and CLI package versions
+          - Regenerated OpenAPI client types
 
           ## Test plan
           - [ ] Verify new snapshots work by starting a sandbox session" \
