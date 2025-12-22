@@ -1,6 +1,8 @@
+import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { useSocket } from "@/contexts/socket/use-socket";
 import { api } from "@cmux/convex/api";
 import type { Doc } from "@cmux/convex/dataModel";
+import { convexQuery } from "@convex-dev/react-query";
 import { useMutation } from "convex/react";
 import { toast } from "sonner";
 
@@ -122,8 +124,41 @@ export function useArchiveTask(teamSlugOrId: string) {
     }
   });
 
+  // Helper to update React Query cache (used alongside Convex optimistic updates)
+  // The layout uses convexQuery wrapper with React Query, which has a separate cache
+  const invalidateReactQueryCache = (taskId: Doc<"tasks">["_id"]) => {
+    const queryClient = convexQueryClient.queryClient;
+
+    // Get current tasks from React Query cache and filter out the archived task
+    const tasksQueryKey = convexQuery(api.tasks.get, {
+      teamSlugOrId,
+      archived: false,
+    }).queryKey;
+    const currentTasks = queryClient.getQueryData<Doc<"tasks">[]>(tasksQueryKey);
+    if (currentTasks) {
+      queryClient.setQueryData(
+        tasksQueryKey,
+        currentTasks.filter((t) => t._id !== taskId)
+      );
+    }
+
+    // Also update the variant without explicit archived: false (used by workspaces)
+    const tasksQueryKeyNoArchived = convexQuery(api.tasks.get, {
+      teamSlugOrId,
+    }).queryKey;
+    const currentTasksNoArchived =
+      queryClient.getQueryData<Doc<"tasks">[]>(tasksQueryKeyNoArchived);
+    if (currentTasksNoArchived) {
+      queryClient.setQueryData(
+        tasksQueryKeyNoArchived,
+        currentTasksNoArchived.filter((t) => t._id !== taskId)
+      );
+    }
+  };
+
   const archiveWithUndo = (task: Doc<"tasks">) => {
     archiveMutation({ teamSlugOrId, id: task._id });
+    invalidateReactQueryCache(task._id);
 
     // Emit socket event to stop/pause containers
     if (socket) {
@@ -151,6 +186,7 @@ export function useArchiveTask(teamSlugOrId: string) {
       teamSlugOrId,
       id: id as Doc<"tasks">["_id"],
     });
+    invalidateReactQueryCache(id as Doc<"tasks">["_id"]);
 
     // Emit socket event to stop/pause containers
     if (socket) {

@@ -16,14 +16,14 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/workspaces")({
   loader: async ({ params }) => {
     const { teamSlugOrId } = params;
     void convexQueryClient.queryClient.ensureQueryData(
-      convexQuery(api.tasks.get, { teamSlugOrId })
+      convexQuery(api.tasks.get, { teamSlugOrId, archived: false })
     );
   },
 });
 
 function WorkspacesRoute() {
   const { teamSlugOrId } = Route.useParams();
-  const tasks = useQuery(api.tasks.get, { teamSlugOrId });
+  const tasks = useQuery(api.tasks.get, { teamSlugOrId, archived: false });
   const { expandTaskIds } = useExpandTasks();
 
   const orderedTasks = useMemo(() => {
