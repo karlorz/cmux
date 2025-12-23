@@ -1,11 +1,106 @@
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { useSocket } from "@/contexts/socket/use-socket";
+import { cleanupTaskRunIframes } from "@/lib/persistent-webview-keys";
 import { api } from "@cmux/convex/api";
-import type { Doc } from "@cmux/convex/dataModel";
+import type { Doc, Id } from "@cmux/convex/dataModel";
 import { convexQuery } from "@convex-dev/react-query";
 import { useMutation } from "convex/react";
 import { toast } from "sonner";
 import { queryClient } from "@/query-client";
+
+type TaskRunWithVSCode = {
+  _id: Id<"taskRuns">;
+  vscode?: { workspaceUrl?: string | null } | null;
+  children?: TaskRunWithVSCode[];
+};
+
+/**
+ * Clean up all cached iframes and cancel terminal session queries for a task's runs.
+ * This prevents Wake on HTTP from being triggered by:
+ * 1. Cached iframes still in the DOM making HTTP requests to paused VMs
+ * 2. React Query's refetchInterval polling terminal sessions
+ */
+async function cleanupTaskResources(
+  teamSlugOrId: string,
+  taskId: Id<"tasks">
+): Promise<void> {
+  try {
+    // Query task runs from the Convex query client cache or fetch if needed
+    const taskRunsQueryKey = convexQuery(api.taskRuns.getByTask, {
+      teamSlugOrId,
+      taskId,
+    }).queryKey;
+
+    const cachedRuns = convexQueryClient.queryClient.getQueryData<TaskRunWithVSCode[]>(
+      taskRunsQueryKey
+    );
+
+    if (!cachedRuns) {
+      // No cached runs, nothing to clean up
+      return;
+    }
+
+    // Recursively collect all runs (including children)
+    const collectRuns = (runs: TaskRunWithVSCode[]): TaskRunWithVSCode[] => {
+      const allRuns: TaskRunWithVSCode[] = [];
+      for (const run of runs) {
+        allRuns.push(run);
+        if (run.children?.length) {
+          allRuns.push(...collectRuns(run.children));
+        }
+      }
+      return allRuns;
+    };
+
+    const allRuns = collectRuns(cachedRuns);
+
+    // Clean up iframes for each run
+    for (const run of allRuns) {
+      cleanupTaskRunIframes(run._id);
+    }
+
+    // Cancel all terminal-tabs queries that might be polling the VM
+    // The query key format is: ["terminal-tabs", contextKey, baseUrl, "list"]
+    // We need to cancel queries matching any of the task's workspace URLs
+    await queryClient.cancelQueries({
+      predicate: (query) => {
+        if (!Array.isArray(query.queryKey)) return false;
+        if (query.queryKey[0] !== "terminal-tabs") return false;
+
+        // Check if the contextKey (query.queryKey[1]) matches any of our run IDs
+        const contextKey = query.queryKey[1];
+        if (typeof contextKey !== "string") return false;
+
+        // The contextKey could be the runId or workspaceUrl
+        // Check both to be safe
+        return allRuns.some(
+          (run) =>
+            contextKey === run._id ||
+            contextKey === run.vscode?.workspaceUrl
+        );
+      },
+    });
+
+    // Also remove these queries from cache to stop refetchInterval from restarting them
+    queryClient.removeQueries({
+      predicate: (query) => {
+        if (!Array.isArray(query.queryKey)) return false;
+        if (query.queryKey[0] !== "terminal-tabs") return false;
+
+        const contextKey = query.queryKey[1];
+        if (typeof contextKey !== "string") return false;
+
+        return allRuns.some(
+          (run) =>
+            contextKey === run._id ||
+            contextKey === run.vscode?.workspaceUrl
+        );
+      },
+    });
+  } catch (error) {
+    console.error("[useArchiveTask] Failed to cleanup task resources:", error);
+  }
+}
 
 export function useArchiveTask(teamSlugOrId: string) {
   const { socket } = useSocket();
@@ -161,6 +256,9 @@ export function useArchiveTask(teamSlugOrId: string) {
     archiveMutation({ teamSlugOrId, id: task._id });
     invalidateReactQueryCache(task._id);
 
+    // Clean up cached iframes and terminal queries to prevent Wake on HTTP
+    void cleanupTaskResources(teamSlugOrId, task._id);
+
     // Emit socket event to stop/pause containers
     if (socket) {
       socket.emit(
@@ -210,6 +308,9 @@ export function useArchiveTask(teamSlugOrId: string) {
       id: id as Doc<"tasks">["_id"],
     });
     invalidateReactQueryCache(id as Doc<"tasks">["_id"]);
+
+    // Clean up cached iframes and terminal queries to prevent Wake on HTTP
+    void cleanupTaskResources(teamSlugOrId, id as Id<"tasks">);
 
     // Emit socket event to stop/pause containers
     if (socket) {

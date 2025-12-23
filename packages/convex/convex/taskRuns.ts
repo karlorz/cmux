@@ -1137,6 +1137,38 @@ export const getByContainerName = authQuery({
   },
 });
 
+/**
+ * Check if the task associated with a container name is archived.
+ * Used by iframe-preflight to prevent waking VMs for archived tasks.
+ */
+export const isTaskArchivedByContainerName = authQuery({
+  args: { teamSlugOrId: v.string(), containerName: v.string() },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+    const run = await ctx.db
+      .query("taskRuns")
+      .withIndex("by_vscode_container_name", (q) =>
+        q.eq("vscode.containerName", args.containerName),
+      )
+      .filter((q) => q.eq(q.field("teamId"), teamId))
+      .first();
+
+    if (!run) {
+      // If we can't find the run, return false (not archived) to allow the request
+      // This handles edge cases where container name doesn't match
+      return { isArchived: false, found: false };
+    }
+
+    // Look up the parent task to check its archived status
+    const task = await ctx.db.get(run.taskId);
+    if (!task) {
+      return { isArchived: false, found: false };
+    }
+
+    return { isArchived: task.isArchived === true, found: true };
+  },
+});
+
 // Complete a task run
 export const complete = authMutation({
   args: {
