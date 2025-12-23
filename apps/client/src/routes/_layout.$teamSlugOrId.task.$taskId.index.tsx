@@ -16,6 +16,7 @@ import {
   getActivePanelPositions,
   removePanelFromAllPositions,
   getCurrentLayoutPanels,
+  ensureTerminalPanelVisible,
   PANEL_LABELS,
 } from "@/lib/panel-config";
 import type { PanelConfig, PanelType, PanelPosition } from "@/lib/panel-config";
@@ -44,6 +45,7 @@ import { api } from "@cmux/convex/api";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "convex/react";
+import { useQuery as useTanstackQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -507,6 +509,60 @@ function TaskDetailPage() {
       ]);
     }
   }, [selectedRunId, workspaceUrl]);
+
+  // Track if we've already attempted terminal auto-add (prevent re-adding after user closes)
+  const hasAttemptedTerminalAutoAdd = useRef(false);
+
+  // Query terminal sessions to detect if Claude Code is running
+  const xtermBaseUrl = useMemo(
+    () => (rawWorkspaceUrl ? toMorphXtermBaseUrl(rawWorkspaceUrl) : null),
+    [rawWorkspaceUrl]
+  );
+  const terminalTabsQuery = useTanstackQuery(
+    terminalTabsQueryOptions({
+      baseUrl: xtermBaseUrl,
+      contextKey: selectedRunId,
+      enabled: Boolean(xtermBaseUrl),
+    })
+  );
+
+  // Auto-show terminal panel when sessions exist (only once per mount)
+  useEffect(() => {
+    // Only attempt once per run (don't re-add if user closes panel)
+    if (hasAttemptedTerminalAutoAdd.current) return;
+
+    // Wait for query to complete
+    if (terminalTabsQuery.isLoading || terminalTabsQuery.isError) return;
+
+    // Check if sessions exist
+    const hasTerminalSessions =
+      terminalTabsQuery.data && terminalTabsQuery.data.length > 0;
+    if (!hasTerminalSessions) return;
+
+    // Mark as attempted
+    hasAttemptedTerminalAutoAdd.current = true;
+
+    setPanelConfig((prev) => {
+      const updated = ensureTerminalPanelVisible(prev);
+      if (updated !== prev) {
+        // Config changed - save and trigger resize
+        savePanelConfig(updated);
+        requestAnimationFrame(() => {
+          window.dispatchEvent(new Event("resize"));
+        });
+      }
+      return updated;
+    });
+  }, [
+    terminalTabsQuery.data,
+    terminalTabsQuery.isLoading,
+    terminalTabsQuery.isError,
+  ]);
+
+  // Reset auto-add flag when run changes (new run = new attempt allowed)
+  useEffect(() => {
+    hasAttemptedTerminalAutoAdd.current = false;
+  }, [selectedRunId]);
 
   const updateIframeStatus = useCallback(
     (
