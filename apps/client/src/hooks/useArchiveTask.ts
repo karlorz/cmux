@@ -5,6 +5,7 @@ import type { Doc } from "@cmux/convex/dataModel";
 import { convexQuery } from "@convex-dev/react-query";
 import { useMutation } from "convex/react";
 import { toast } from "sonner";
+import { queryClient } from "@/query-client";
 
 export function useArchiveTask(teamSlugOrId: string) {
   const { socket } = useSocket();
@@ -186,6 +187,14 @@ export function useArchiveTask(teamSlugOrId: string) {
               (response: { success: boolean; error?: string }) => {
                 if (!response.success) {
                   console.error("Failed to resume containers:", response.error);
+                } else {
+                  // Invalidate morph pause queries to trigger iframe refresh
+                  void queryClient.invalidateQueries({
+                    predicate: (query) =>
+                      Array.isArray(query.queryKey) &&
+                      query.queryKey[0] === "morph" &&
+                      query.queryKey[1] === "task-run",
+                  });
                 }
               }
             );
@@ -230,6 +239,15 @@ export function useArchiveTask(teamSlugOrId: string) {
         (response: { success: boolean; error?: string }) => {
           if (!response.success) {
             console.error("Failed to resume containers:", response.error);
+          } else {
+            // Invalidate morph pause queries to trigger iframe refresh
+            // This ensures the UI knows the VM is no longer paused
+            void queryClient.invalidateQueries({
+              predicate: (query) =>
+                Array.isArray(query.queryKey) &&
+                query.queryKey[0] === "morph" &&
+                query.queryKey[1] === "task-run",
+            });
           }
         }
       );

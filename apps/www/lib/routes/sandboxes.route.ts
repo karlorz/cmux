@@ -32,7 +32,6 @@ import {
   encodeEnvContentForEnvctl,
   envctlLoadCommand,
 } from "./utils/ensure-env-vars";
-import { VM_CLEANUP_COMMANDS, VM_RESTART_SERVICES_COMMANDS } from "./sandboxes/cleanup";
 
 /**
  * Wait for the VSCode server to be ready by polling the service URL.
@@ -793,8 +792,8 @@ sandboxesRouter.openapi(
     try {
       const client = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
       const instance = await client.instances.get({ instanceId: id });
-      // Kill all dev servers and user processes before pausing to avoid port conflicts on resume
-      await instance.exec(VM_CLEANUP_COMMANDS);
+      // Pause the VM directly - Morph preserves RAM state so processes resume exactly where they left off.
+      // No need to kill processes; doing so would terminate agent sessions that should persist across pause/resume.
       await instance.pause();
       return c.body(null, 204);
     } catch (error) {
@@ -1399,16 +1398,8 @@ sandboxesRouter.openapi(
 
       await instance.resume();
 
-      // Restart cmux services that were killed during pause
-      // The VM_CLEANUP_COMMANDS run before pause kills all user processes,
-      // but systemd doesn't auto-restart them on resume since state was frozen
-      try {
-        await instance.exec(VM_RESTART_SERVICES_COMMANDS);
-        console.log(`[sandboxes.resume] Restarted cmux services for ${morphInstanceId}`);
-      } catch (restartError) {
-        // Log but don't fail - the VM is resumed, services may recover
-        console.error(`[sandboxes.resume] Failed to restart services for ${morphInstanceId}:`, restartError);
-      }
+      // Morph preserves RAM state on pause/resume, so all processes (including agent sessions)
+      // should resume exactly where they left off. No need to restart services.
 
       return c.json({ resumed: true });
     } catch (error) {

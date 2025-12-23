@@ -107,12 +107,15 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/task/$taskId/")({
     });
 
     void (async () => {
-      const taskRuns = await queryClient.ensureQueryData(
-        convexQuery(api.taskRuns.getByTask, {
-          teamSlugOrId: opts.params.teamSlugOrId,
-          taskId: opts.params.taskId,
-        })
-      );
+      // Invalidate stale cache data before preloading iframes.
+      // This ensures we fetch fresh data from Convex instead of using
+      // potentially stale cached data from previous navigations.
+      const taskRunsQueryOptions = convexQuery(api.taskRuns.getByTask, {
+        teamSlugOrId: opts.params.teamSlugOrId,
+        taskId: opts.params.taskId,
+      });
+      await queryClient.invalidateQueries({ queryKey: taskRunsQueryOptions.queryKey });
+      const taskRuns = await queryClient.fetchQuery(taskRunsQueryOptions);
 
       if (!taskRuns?.length) {
         return;
