@@ -10,6 +10,7 @@
 #   --skip-convex[=BOOL]    Skip Convex backend (default: true)
 #   --show-compose-logs     Show Docker Compose logs in console
 #   --electron              Start Electron app
+#   --electron-debug[=PORT] Enable Chrome DevTools remote debugging (default port: 9222)
 #   --convex-agent          Run convex dev in agent mode
 #
 # Environment variables:
@@ -60,6 +61,8 @@ SHOW_COMPOSE_LOGS=false
 # Default to skipping Convex unless explicitly disabled via env/flag
 SKIP_CONVEX="${SKIP_CONVEX:-true}"
 RUN_ELECTRON=false
+ELECTRON_DEBUG=false
+ELECTRON_DEBUG_PORT=9222
 SKIP_DOCKER_BUILD="${SKIP_DOCKER_BUILD:-true}"
 CONVEX_AGENT_MODE=false
 
@@ -75,6 +78,27 @@ while [[ $# -gt 0 ]]; do
             ;;
         --electron)
             RUN_ELECTRON=true
+            shift
+            ;;
+        --electron-debug)
+            ELECTRON_DEBUG=true
+            # Check if next arg is a port number
+            if [[ -n "${2:-}" && "${2}" =~ ^[0-9]+$ ]]; then
+                ELECTRON_DEBUG_PORT="$2"
+                shift 2
+            else
+                shift
+            fi
+            ;;
+        --electron-debug=*)
+            ELECTRON_DEBUG=true
+            val="${1#*=}"
+            if [[ "$val" =~ ^[0-9]+$ ]]; then
+                ELECTRON_DEBUG_PORT="$val"
+            else
+                echo "Invalid port for --electron-debug: $val. Use a number." >&2
+                exit 1
+            fi
             shift
             ;;
         --skip-convex)
@@ -406,8 +430,14 @@ wait_for_log_message "$OPENAPI_LOG_FILE" "$OPENAPI_READY_MARKER" "$OPENAPI_CLIEN
 
 # Start Electron if requested
 if [ "$RUN_ELECTRON" = "true" ]; then
-    echo -e "${GREEN}Starting Electron app...${NC}"
-    (cd "$APP_DIR/apps/client" && exec bash -c 'trap "kill -9 0" EXIT; bunx dotenv-cli -e ../../.env -- pnpm dev:electron 2>&1 | tee "$LOG_DIR/electron.log" | prefix_output "ELECTRON" "$RED"') &
+    if [ "$ELECTRON_DEBUG" = "true" ]; then
+        echo -e "${GREEN}Starting Electron app with remote debugging on port $ELECTRON_DEBUG_PORT...${NC}"
+        export ELECTRON_DEBUG_PORT
+        (cd "$APP_DIR/apps/client" && exec bash -c 'trap "kill -9 0" EXIT; bunx dotenv-cli -e ../../.env -- pnpm dev:electron -- --remote-debugging-port='"$ELECTRON_DEBUG_PORT"' 2>&1 | tee "$LOG_DIR/electron.log" | prefix_output "ELECTRON" "$RED"') &
+    else
+        echo -e "${GREEN}Starting Electron app...${NC}"
+        (cd "$APP_DIR/apps/client" && exec bash -c 'trap "kill -9 0" EXIT; bunx dotenv-cli -e ../../.env -- pnpm dev:electron 2>&1 | tee "$LOG_DIR/electron.log" | prefix_output "ELECTRON" "$RED"') &
+    fi
     ELECTRON_PID=$!
     check_process $ELECTRON_PID "Electron App"
 fi
@@ -421,6 +451,9 @@ if [ "$SKIP_CONVEX" != "true" ]; then
 fi
 if [ "$RUN_ELECTRON" = "true" ]; then
     echo -e "${BLUE}Electron app is starting...${NC}"
+    if [ "$ELECTRON_DEBUG" = "true" ]; then
+        echo -e "${BLUE}Chrome DevTools: chrome://inspect or http://localhost:$ELECTRON_DEBUG_PORT${NC}"
+    fi
 fi
 echo -e "\nPress Ctrl+C to stop all services"
 

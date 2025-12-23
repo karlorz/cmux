@@ -49,7 +49,7 @@ dev:
 	./scripts/dev.sh --skip-docker --show-compose-logs --skip-convex
 
 dev-electron:
-	./scripts/dev.sh --skip-convex --electron
+	./scripts/dev.sh --skip-convex --electron --electron-debug
 
 sync-upstream-tags:
 	./scripts/sync-upstream-tags.sh
