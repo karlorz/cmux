@@ -176,7 +176,21 @@ export function useArchiveTask(teamSlugOrId: string) {
     toast("Task archived", {
       action: {
         label: "Undo",
-        onClick: () => unarchiveMutation({ teamSlugOrId, id: task._id }),
+        onClick: () => {
+          unarchiveMutation({ teamSlugOrId, id: task._id });
+          // Emit socket event to resume containers
+          if (socket) {
+            socket.emit(
+              "unarchive-task",
+              { taskId: task._id },
+              (response: { success: boolean; error?: string }) => {
+                if (!response.success) {
+                  console.error("Failed to resume containers:", response.error);
+                }
+              }
+            );
+          }
+        },
       },
     });
   };
@@ -202,13 +216,29 @@ export function useArchiveTask(teamSlugOrId: string) {
     }
   };
 
+  const unarchive = (id: string) => {
+    unarchiveMutation({
+      teamSlugOrId,
+      id: id as Doc<"tasks">["_id"],
+    });
+
+    // Emit socket event to resume containers
+    if (socket) {
+      socket.emit(
+        "unarchive-task",
+        { taskId: id as Doc<"tasks">["_id"] },
+        (response: { success: boolean; error?: string }) => {
+          if (!response.success) {
+            console.error("Failed to resume containers:", response.error);
+          }
+        }
+      );
+    }
+  };
+
   return {
     archive,
-    unarchive: (id: string) =>
-      unarchiveMutation({
-        teamSlugOrId,
-        id: id as Doc<"tasks">["_id"],
-      }),
+    unarchive,
     archiveWithUndo,
   };
 }
