@@ -1,15 +1,12 @@
-import { EnvironmentConfiguration } from "@/components/EnvironmentConfiguration";
+import { EnvironmentSetupFlow } from "@/components/environment";
 import { FloatingPane } from "@/components/floating-pane";
 import { RepositoryPicker } from "@/components/RepositoryPicker";
 import { TitleBar } from "@/components/TitleBar";
-import { toMorphVncUrl } from "@/lib/toProxyWorkspaceUrl";
 import {
   clearEnvironmentDraft,
   persistEnvironmentDraftMetadata,
-  updateEnvironmentDraftConfig,
   useEnvironmentDraft,
 } from "@/state/environment-draft-store";
-import type { EnvironmentConfigDraft } from "@/types/environment";
 import {
   DEFAULT_MORPH_SNAPSHOT_ID,
   MORPH_SNAPSHOT_PRESETS,
@@ -20,7 +17,6 @@ import { ArrowLeft } from "lucide-react";
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -90,19 +86,6 @@ function EnvironmentsPage() {
   const activeInstanceId = draft?.instanceId ?? urlInstanceId;
   const activeSnapshotId = draft?.snapshotId ?? searchSnapshotId;
 
-  const derivedVscodeUrl = useMemo(() => {
-    if (!activeInstanceId) return undefined;
-    const hostId = activeInstanceId.replace(/_/g, "-");
-    return `https://port-39378-${hostId}.http.cloud.morph.so/?folder=/root/workspace`;
-  }, [activeInstanceId]);
-
-  const derivedBrowserUrl = useMemo(() => {
-    if (!activeInstanceId) return undefined;
-    const hostId = activeInstanceId.replace(/_/g, "-");
-    const workspaceUrl = `https://port-39378-${hostId}.http.cloud.morph.so/?folder=/root/workspace`;
-    return toMorphVncUrl(workspaceUrl) ?? undefined;
-  }, [activeInstanceId]);
-
   useEffect(() => {
     if (activeStep !== "configure") {
       setHeaderActions(null);
@@ -158,17 +141,6 @@ function EnvironmentsPage() {
     [draft, teamSlugOrId],
   );
 
-  const handlePersistConfig = useCallback(
-    (partial: Partial<EnvironmentConfigDraft>) => {
-      updateEnvironmentDraftConfig(teamSlugOrId, partial, {
-        selectedRepos: activeSelectedRepos,
-        instanceId: activeInstanceId,
-        snapshotId: activeSnapshotId,
-      });
-    },
-    [teamSlugOrId, activeInstanceId, activeSelectedRepos, activeSnapshotId],
-  );
-
   const handleBackToRepositorySelection = useCallback(() => {
     persistEnvironmentDraftMetadata(
       teamSlugOrId,
@@ -203,47 +175,53 @@ function EnvironmentsPage() {
     });
   }, [handleResetDraft, navigate, teamSlugOrId]);
 
+  // For configure step, show the new EnvironmentSetupFlow without the floating pane
+  // The new flow has its own full-screen layout
+  if (activeStep === "configure") {
+    return (
+      <div className="h-full w-full overflow-hidden">
+        <EnvironmentSetupFlow
+          teamSlugOrId={teamSlugOrId}
+          selectedRepos={activeSelectedRepos}
+          instanceId={activeInstanceId}
+          initialEnvName={draft?.config?.envName}
+          initialMaintenanceScript={draft?.config?.maintenanceScript}
+          initialDevScript={draft?.config?.devScript}
+          initialExposedPorts={draft?.config?.exposedPorts}
+          initialEnvVars={draft?.config?.envVars}
+          onEnvironmentSaved={handleResetDraft}
+          onBack={handleBackToRepositorySelection}
+        />
+      </div>
+    );
+  }
+
+  // For select step, show the repository picker in a floating pane
   return (
     <FloatingPane header={<TitleBar title="Environments" actions={headerActions} />}>
       <div className="flex flex-col grow select-none relative h-full overflow-hidden">
-        {activeStep === "select" ? (
-          <div className="p-6 max-w-3xl w-full mx-auto overflow-auto">
-            <RepositoryPicker
-              teamSlugOrId={teamSlugOrId}
-              instanceId={activeInstanceId}
-              initialSelectedRepos={activeSelectedRepos}
-              initialSnapshotId={activeSnapshotId}
-              showHeader={true}
-              showContinueButton={true}
-              showManualConfigOption={true}
-              onStartConfigure={handleStartConfigure}
-              topAccessory={
-                <button
-                  type="button"
-                  onClick={handleDiscardAndExit}
-                  className="inline-flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  Back to environments
-                </button>
-              }
-            />
-          </div>
-        ) : (
-          <EnvironmentConfiguration
-            selectedRepos={activeSelectedRepos}
+        <div className="p-6 max-w-3xl w-full mx-auto overflow-auto">
+          <RepositoryPicker
             teamSlugOrId={teamSlugOrId}
             instanceId={activeInstanceId}
-            vscodeUrl={derivedVscodeUrl}
-            browserUrl={derivedBrowserUrl}
-            isProvisioning={false}
-            onHeaderControlsChange={setHeaderActions}
-            persistedState={draft?.config}
-            onPersistStateChange={handlePersistConfig}
-            onBackToRepositorySelection={handleBackToRepositorySelection}
-            onEnvironmentSaved={handleResetDraft}
+            initialSelectedRepos={activeSelectedRepos}
+            initialSnapshotId={activeSnapshotId}
+            showHeader={true}
+            showContinueButton={true}
+            showManualConfigOption={true}
+            onStartConfigure={handleStartConfigure}
+            topAccessory={
+              <button
+                type="button"
+                onClick={handleDiscardAndExit}
+                className="inline-flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back to environments
+              </button>
+            }
           />
-        )}
+        </div>
       </div>
     </FloatingPane>
   );
