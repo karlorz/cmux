@@ -1,6 +1,7 @@
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { useSocket } from "@/contexts/socket/use-socket";
 import { cleanupTaskRunIframes } from "@/lib/persistent-webview-keys";
+import { morphPauseQueryKey } from "@/hooks/useMorphWorkspace";
 import { api } from "@cmux/convex/api";
 import type { Doc, Id } from "@cmux/convex/dataModel";
 import { convexQuery } from "@convex-dev/react-query";
@@ -99,6 +100,54 @@ async function cleanupTaskResources(
     });
   } catch (error) {
     console.error("[useArchiveTask] Failed to cleanup task resources:", error);
+  }
+}
+
+/**
+ * Invalidate only the morph pause queries for a specific task's runs.
+ * This is more targeted than invalidating all morph queries, which would
+ * trigger HTTP requests to other tasks' VMs (triggering Wake on HTTP).
+ */
+function invalidateMorphPauseQueriesForTask(
+  teamSlugOrId: string,
+  taskId: Id<"tasks">
+): void {
+  try {
+    const taskRunsQueryKey = convexQuery(api.taskRuns.getByTask, {
+      teamSlugOrId,
+      taskId,
+    }).queryKey;
+
+    const cachedRuns = convexQueryClient.queryClient.getQueryData<TaskRunWithVSCode[]>(
+      taskRunsQueryKey
+    );
+
+    if (!cachedRuns?.length) {
+      return;
+    }
+
+    // Recursively collect all runs (including children)
+    const collectRunIds = (runs: TaskRunWithVSCode[]): Id<"taskRuns">[] => {
+      const allIds: Id<"taskRuns">[] = [];
+      for (const run of runs) {
+        allIds.push(run._id);
+        if (run.children?.length) {
+          allIds.push(...collectRunIds(run.children));
+        }
+      }
+      return allIds;
+    };
+
+    const runIds = collectRunIds(cachedRuns);
+
+    // Invalidate only the specific morph pause queries for this task's runs
+    for (const runId of runIds) {
+      void queryClient.invalidateQueries({
+        queryKey: morphPauseQueryKey(runId, teamSlugOrId),
+      });
+    }
+  } catch (error) {
+    console.error("[useArchiveTask] Failed to invalidate morph queries:", error);
   }
 }
 
@@ -286,13 +335,9 @@ export function useArchiveTask(teamSlugOrId: string) {
                 if (!response.success) {
                   console.error("Failed to resume containers:", response.error);
                 } else {
-                  // Invalidate morph pause queries to trigger iframe refresh
-                  void queryClient.invalidateQueries({
-                    predicate: (query) =>
-                      Array.isArray(query.queryKey) &&
-                      query.queryKey[0] === "morph" &&
-                      query.queryKey[1] === "task-run",
-                  });
+                  // Invalidate only this task's morph pause queries to trigger iframe refresh
+                  // Using targeted invalidation prevents waking other tasks' VMs via Wake on HTTP
+                  invalidateMorphPauseQueriesForTask(teamSlugOrId, task._id);
                 }
               }
             );
@@ -327,28 +372,24 @@ export function useArchiveTask(teamSlugOrId: string) {
   };
 
   const unarchive = (id: string) => {
+    const taskId = id as Id<"tasks">;
     unarchiveMutation({
       teamSlugOrId,
-      id: id as Doc<"tasks">["_id"],
+      id: taskId,
     });
 
     // Emit socket event to resume containers
     if (socket) {
       socket.emit(
         "unarchive-task",
-        { taskId: id as Doc<"tasks">["_id"] },
+        { taskId },
         (response: { success: boolean; error?: string }) => {
           if (!response.success) {
             console.error("Failed to resume containers:", response.error);
           } else {
-            // Invalidate morph pause queries to trigger iframe refresh
-            // This ensures the UI knows the VM is no longer paused
-            void queryClient.invalidateQueries({
-              predicate: (query) =>
-                Array.isArray(query.queryKey) &&
-                query.queryKey[0] === "morph" &&
-                query.queryKey[1] === "task-run",
-            });
+            // Invalidate only this task's morph pause queries to trigger iframe refresh
+            // Using targeted invalidation prevents waking other tasks' VMs via Wake on HTTP
+            invalidateMorphPauseQueriesForTask(teamSlugOrId, taskId);
           }
         }
       );
