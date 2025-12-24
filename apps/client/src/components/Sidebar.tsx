@@ -11,7 +11,7 @@ import { api } from "@cmux/convex/api";
 import { useQuery } from "convex/react";
 import type { LinkProps } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
-import { Home, Plus, Server, Settings } from "lucide-react";
+import { Bell, Home, Plus, Server, Settings } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -27,8 +27,11 @@ import { SidebarPullRequestList } from "./sidebar/SidebarPullRequestList";
 import { SidebarSectionLink } from "./sidebar/SidebarSectionLink";
 import { SidebarWorkspacesSection } from "./sidebar/SidebarWorkspacesSection";
 
+// Tasks with hasUnread indicator from the query
+type TaskWithUnread = Doc<"tasks"> & { hasUnread: boolean };
+
 interface SidebarProps {
-  tasks: Doc<"tasks">[] | undefined;
+  tasks: TaskWithUnread[] | undefined;
   teamSlugOrId: string;
 }
 
@@ -39,12 +42,25 @@ interface SidebarNavItem {
   search?: LinkProps["search"];
   exact?: boolean;
 }
-const navItems: SidebarNavItem[] = [
+interface SidebarNavItemWithBadge extends SidebarNavItem {
+  showBadge?: boolean;
+  hidden?: boolean;
+}
+
+const navItems: SidebarNavItemWithBadge[] = [
   {
     label: "Home",
     to: "/$teamSlugOrId/dashboard",
     exact: true,
     icon: Home,
+  },
+  {
+    label: "Notifications",
+    to: "/$teamSlugOrId/notifications",
+    exact: true,
+    icon: Bell,
+    showBadge: true,
+    hidden: true,
   },
   {
     label: "Environments",
@@ -91,6 +107,11 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
 
   // Fetch pinned items
   const pinnedData = useQuery(api.tasks.getPinned, { teamSlugOrId });
+
+  // Fetch unread notification count
+  const unreadCount = useQuery(api.taskNotifications.getUnreadCount, {
+    teamSlugOrId,
+  });
 
   useEffect(() => {
     localStorage.setItem("sidebarWidth", String(width));
@@ -151,7 +172,7 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
       const clientX = e.clientX;
       const newWidth = Math.min(
         Math.max(clientX - containerLeft, MIN_WIDTH),
-        MAX_WIDTH,
+        MAX_WIDTH
       );
       setWidth(newWidth);
     });
@@ -187,7 +208,7 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
       window.addEventListener("mousemove", onMouseMove);
       window.addEventListener("mouseup", stopResizing);
     },
-    [onMouseMove, stopResizing],
+    [onMouseMove, stopResizing]
   );
 
   useEffect(() => {
@@ -215,7 +236,7 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
       }
     >
       <div
-        className={`h-[38px] flex items-center pr-1.5 shrink-0 ${isElectron ? "" : "pl-3"}`}
+        className={`h-[38px] flex items-center pr-0.5 shrink-0 ${isElectron ? "" : "pl-3"}`}
         style={{ WebkitAppRegion: "drag" } as CSSProperties}
       >
         {isElectron && <div className="w-[80px]"></div>}
@@ -247,7 +268,9 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
       <nav className="grow flex flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto pb-8">
           <ul className="flex flex-col gap-px">
-            {navItems.map((item) => (
+            {navItems
+              .filter((item) => !item.hidden)
+              .map((item) => (
               <li key={item.label}>
                 <SidebarNavLink
                   to={item.to}
@@ -256,6 +279,7 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
                   icon={item.icon}
                   exact={item.exact}
                   label={item.label}
+                  badgeCount={item.showBadge ? unreadCount : undefined}
                 />
               </li>
             ))}
@@ -285,9 +309,9 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
               ) : tasks && tasks.length > 0 ? (
                 <>
                   {/* Pinned items at the top */}
-                  {pinnedData && pinnedData.length > 0 && (
+                  {pinnedData && pinnedData.filter(t => !t.isArchived).length > 0 && (
                     <>
-                      {pinnedData.map((task) => (
+                      {pinnedData.filter(t => !t.isArchived).map((task) => (
                         <TaskTree
                           key={task._id}
                           task={task}
@@ -295,6 +319,7 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
                             expandTaskIds?.includes(task._id) ?? false
                           }
                           teamSlugOrId={teamSlugOrId}
+                          hasUnreadNotification={task.hasUnread}
                         />
                       ))}
                       {/* Horizontal divider after pinned items */}
@@ -304,8 +329,9 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
                   {/* Regular (non-pinned) tasks */}
                   {tasks
                     .filter((task) => {
-                      // Only filter out directly pinned tasks
-                      return !task.pinned;
+                      // Filter out pinned tasks (shown separately above) and archived tasks
+                      // (defensive filter in case query returns stale data)
+                      return !task.pinned && !task.isArchived;
                     })
                     .map((task) => (
                       <TaskTree
@@ -315,6 +341,7 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
                           expandTaskIds?.includes(task._id) ?? false
                         }
                         teamSlugOrId={teamSlugOrId}
+                        hasUnreadNotification={task.hasUnread}
                       />
                     ))}
                 </>
