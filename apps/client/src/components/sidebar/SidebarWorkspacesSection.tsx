@@ -26,11 +26,6 @@ export function SidebarWorkspacesSection({
     openCommandBarWithPage("cloud-workspaces");
   }, []);
 
-  // Hide entire workspaces section in web mode
-  if (env.NEXT_PUBLIC_WEB_MODE) {
-    return null;
-  }
-
   return (
     <div className="flex items-center justify-between ml-2">
       <Link
@@ -51,7 +46,7 @@ export function SidebarWorkspacesSection({
       <Dropdown.Root>
         <Dropdown.Trigger
           className={clsx(
-            "p-1 flex items-center justify-center",
+            "p-1 mr-[3px] flex items-center justify-center",
             "text-neutral-500 dark:text-neutral-400",
             "hover:text-neutral-700 dark:hover:text-neutral-200",
             "transition-colors"

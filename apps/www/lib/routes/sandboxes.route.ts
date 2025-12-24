@@ -32,7 +32,6 @@ import {
   encodeEnvContentForEnvctl,
   envctlLoadCommand,
 } from "./utils/ensure-env-vars";
-import { VM_CLEANUP_COMMANDS } from "./sandboxes/cleanup";
 
 /**
  * Wait for the VSCode server to be ready by polling the service URL.
@@ -154,6 +153,72 @@ function getSandboxStartErrorMessage(error: unknown): string {
   }
 
   return baseMessage;
+}
+
+/**
+ * Cmux instance metadata stored in Morph instance.metadata
+ */
+interface CmuxInstanceMetadata {
+  app?: string;
+  userId?: string;
+  teamId?: string;
+}
+
+/**
+ * Result of instance ownership verification
+ */
+type VerifyInstanceOwnershipResult =
+  | { authorized: true; instanceId: string }
+  | { authorized: false; status: 403 | 404; message: string };
+
+/**
+ * Verify that a user owns or has team access to a Morph instance.
+ * Checks instance metadata for cmux app prefix and user/team ownership.
+ */
+async function verifyInstanceOwnership(
+  morphClient: MorphCloudClient,
+  instanceId: string,
+  userId: string,
+  checkTeamMembership: () => Promise<{ teamId: string }[]>
+): Promise<VerifyInstanceOwnershipResult> {
+  let instance;
+  try {
+    instance = await morphClient.instances.get({ instanceId });
+  } catch {
+    return { authorized: false, status: 404, message: "Instance not found" };
+  }
+
+  const meta = instance.metadata as CmuxInstanceMetadata | undefined;
+
+  // Verify the instance belongs to cmux (accepts cmux, cmux-dev, cmux-preview, etc.)
+  if (!meta?.app?.startsWith("cmux")) {
+    return { authorized: false, status: 404, message: "Instance not found" };
+  }
+
+  // Check direct ownership
+  const isOwner = meta.userId === userId;
+  if (isOwner) {
+    return { authorized: true, instanceId };
+  }
+
+  // Check team membership if instance has a teamId
+  if (meta.teamId) {
+    try {
+      const memberships = await checkTeamMembership();
+      const isTeamMember = memberships.some((m) => m.teamId === meta.teamId);
+      if (isTeamMember) {
+        return { authorized: true, instanceId };
+      }
+    } catch {
+      // Failed to check team membership - continue to deny
+    }
+  }
+
+  return {
+    authorized: false,
+    status: 403,
+    message: "Forbidden - not authorized to access this instance",
+  };
 }
 
 export const sandboxesRouter = new OpenAPIHono();
@@ -727,8 +792,8 @@ sandboxesRouter.openapi(
     try {
       const client = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
       const instance = await client.instances.get({ instanceId: id });
-      // Kill all dev servers and user processes before pausing to avoid port conflicts on resume
-      await instance.exec(VM_CLEANUP_COMMANDS);
+      // Pause the VM directly - Morph preserves RAM state so processes resume exactly where they left off.
+      // No need to kill processes; doing so would terminate agent sessions that should persist across pause/resume.
       await instance.pause();
       return c.body(null, 204);
     } catch (error) {
@@ -1059,47 +1124,19 @@ sandboxesRouter.openapi(
 
         // If not found via task run, verify ownership via instance metadata
         if (!morphInstanceId) {
-          // Fetch instance to verify ownership
-          let instance;
-          try {
-            instance = await morphClient.instances.get({ instanceId: id });
-          } catch {
-            return c.text("Instance not found", 404);
-          }
-
-          const meta = instance.metadata as
-            | { app?: string; userId?: string; teamId?: string }
-            | undefined;
-
-          // Verify the instance belongs to cmux (accepts cmux, cmux-dev, cmux-preview, etc.)
-          if (!meta?.app?.startsWith("cmux")) {
-            return c.text("Instance not found", 404);
-          }
-
-          // Verify user ownership: either direct user match or team membership
-          const isOwner = meta.userId === user.id;
-          let isTeamMember = false;
-
-          if (meta.teamId && !isOwner) {
-            // Check if user is a member of the team that owns this instance
-            try {
-              const memberships = await convex.query(
-                api.teams.listTeamMemberships,
-                {},
-              );
-              isTeamMember = memberships.some(
-                (m) => m.team.teamId === meta.teamId,
-              );
-            } catch {
-              // Failed to check team membership
+          const result = await verifyInstanceOwnership(
+            morphClient,
+            id,
+            user.id,
+            async () => {
+              const memberships = await convex.query(api.teams.listTeamMemberships, {});
+              return memberships.map((m) => ({ teamId: m.team.teamId }));
             }
+          );
+          if (!result.authorized) {
+            return c.text(result.message, result.status);
           }
-
-          if (!isOwner && !isTeamMember) {
-            return c.text("Forbidden - not authorized to access this instance", 403);
-          }
-
-          morphInstanceId = id;
+          morphInstanceId = result.instanceId;
         }
       } else {
         // For task-run IDs, team is required to look up the task run
@@ -1305,50 +1342,19 @@ sandboxesRouter.openapi(
 
         // If not found via task run, verify ownership via instance metadata
         if (!morphInstanceId) {
-          // Fetch instance to verify ownership
-          let instance;
-          try {
-            instance = await morphClient.instances.get({ instanceId: id });
-          } catch {
-            return c.text("Instance not found", 404);
-          }
-
-          const meta = instance.metadata as
-            | { app?: string; userId?: string; teamId?: string }
-            | undefined;
-
-          // Verify the instance belongs to cmux (accepts cmux, cmux-dev, cmux-preview, etc.)
-          if (!meta?.app?.startsWith("cmux")) {
-            return c.text("Instance not found", 404);
-          }
-
-          // Verify user ownership: either direct user match or team membership
-          const isOwner = meta.userId === user.id;
-          let isTeamMember = false;
-
-          if (meta.teamId && !isOwner) {
-            // Check if user is a member of the team that owns this instance
-            try {
-              const memberships = await convex.query(
-                api.teams.listTeamMemberships,
-                {},
-              );
-              isTeamMember = memberships.some(
-                (m) => m.team.teamId === meta.teamId,
-              );
-            } catch {
-              // Failed to check team membership
+          const result = await verifyInstanceOwnership(
+            morphClient,
+            id,
+            user.id,
+            async () => {
+              const memberships = await convex.query(api.teams.listTeamMemberships, {});
+              return memberships.map((m) => ({ teamId: m.team.teamId }));
             }
+          );
+          if (!result.authorized) {
+            return c.text(result.message, result.status);
           }
-
-          if (!isOwner && !isTeamMember) {
-            return c.text(
-              "Forbidden - not authorized to access this instance",
-              403,
-            );
-          }
-
-          morphInstanceId = id;
+          morphInstanceId = result.instanceId;
         }
       } else {
         // Task-run ID - team is required
@@ -1391,6 +1397,10 @@ sandboxesRouter.openapi(
       }
 
       await instance.resume();
+
+      // Morph preserves RAM state on pause/resume, so all processes (including agent sessions)
+      // should resume exactly where they left off. No need to restart services.
+
       return c.json({ resumed: true });
     } catch (error) {
       if (error instanceof HTTPException) {
