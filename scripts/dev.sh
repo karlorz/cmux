@@ -366,7 +366,19 @@ wait_for_log_message() {
 
 # Start Convex backend (different for devcontainer vs host)
 if [ "$SKIP_CONVEX" = "true" ]; then
-    echo -e "${YELLOW}Skipping Convex (SKIP_CONVEX=true)${NC}"
+    echo -e "${YELLOW}Skipping local Convex backend (SKIP_CONVEX=true)${NC}"
+
+    # Check if using Convex Cloud (CONVEX_DEPLOY_KEY is set)
+    # If so, we still need to initialize env vars on the cloud backend
+    if grep -q "^CONVEX_DEPLOY_KEY=" "$APP_DIR/.env" 2>/dev/null; then
+        echo -e "${BLUE}Detected CONVEX_DEPLOY_KEY, initializing Convex Cloud env vars...${NC}"
+        if ! "$APP_DIR/scripts/setup-convex-env.sh"; then
+            echo -e "${RED}Failed to initialize Convex Cloud environment variables${NC}"
+            echo -e "${YELLOW}Hint: Make sure .env file has valid CONVEX_DEPLOY_KEY${NC}"
+            exit 1
+        fi
+        echo -e "${GREEN}Convex Cloud environment variables initialized${NC}"
+    fi
 else
     if [ "$IS_DEVCONTAINER" = "true" ]; then
         # In devcontainer, Convex is already running as part of docker-compose
@@ -383,6 +395,19 @@ else
           }') &
         DOCKER_COMPOSE_PID=$!
         check_process $DOCKER_COMPOSE_PID "Docker Compose"
+
+        # Initialize Convex environment variables (required for fresh start)
+        # setup-convex-env.sh waits for the backend to be ready before setting env vars
+        echo -e "${BLUE}Initializing Convex environment variables...${NC}"
+        if ! "$APP_DIR/scripts/setup-convex-env.sh"; then
+            echo -e "${RED}Failed to initialize Convex environment variables${NC}"
+            echo -e "${YELLOW}Hint: Make sure .env file exists with required variables:${NC}"
+            echo -e "${YELLOW}  - STACK_WEBHOOK_SECRET${NC}"
+            echo -e "${YELLOW}  - BASE_APP_URL${NC}"
+            echo -e "${YELLOW}  - CMUX_TASK_RUN_JWT_SECRET${NC}"
+            exit 1
+        fi
+        echo -e "${GREEN}Convex environment variables initialized${NC}"
     fi
 fi
 

@@ -46,7 +46,7 @@ convex-fresh: convex-clean convex-up
 	@echo "🎉 Fresh Convex setup complete! Ready to deploy."
 
 dev:
-	./scripts/dev.sh --skip-docker --show-compose-logs --skip-convex
+	./scripts/dev.sh
 
 dev-electron:
 	./scripts/dev.sh --skip-convex --electron --electron-debug
