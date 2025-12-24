@@ -19,6 +19,13 @@ export interface StopResult {
   error?: unknown;
 }
 
+export interface ResumeResult {
+  success: boolean;
+  containerName: string;
+  provider: VSCodeProvider;
+  error?: unknown;
+}
+
 async function stopDockerContainer(containerName: string): Promise<void> {
   try {
     await execAsync(`docker stop ${containerName}`, { timeout: 15_000 });
@@ -53,6 +60,30 @@ async function stopCmuxSandbox(instanceId: string): Promise<void> {
   if (!res.ok && res.status !== 204) {
     throw new Error(
       `Failed stopping sandbox ${instanceId}: HTTP ${res.status}`
+    );
+  }
+}
+
+async function startDockerContainer(containerName: string): Promise<void> {
+  await execAsync(`docker start ${containerName}`, { timeout: 15_000 });
+}
+
+async function resumeCmuxSandbox(
+  instanceId: string,
+  teamSlugOrId: string
+): Promise<void> {
+  const baseUrl = getWwwBaseUrl();
+  const url = `${baseUrl}/api/sandboxes/${encodeURIComponent(instanceId)}/resume?teamSlugOrId=${encodeURIComponent(teamSlugOrId)}`;
+  const token = getAuthToken();
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers["x-stack-auth"] =
+      getAuthHeaderJson() || JSON.stringify({ accessToken: token });
+  }
+  const res = await fetch(url, { method: "POST", headers });
+  if (!res.ok && res.status !== 204) {
+    throw new Error(
+      `Failed resuming sandbox ${instanceId}: HTTP ${res.status}`
     );
   }
 }
@@ -175,6 +206,138 @@ export function stopContainersForRunsFromTree(
       } catch (error) {
         serverLogger.error(
           `Failed to stop ${t.provider} container ${t.containerName}:`,
+          error
+        );
+        return {
+          success: false,
+          containerName: t.containerName,
+          provider: t.provider,
+          error,
+        };
+      }
+    })
+  );
+}
+
+export async function resumeContainersForRuns(
+  taskId: Id<"tasks">,
+  teamSlugOrId: string,
+  query: (
+    ref: typeof api.taskRuns.getByTask,
+    args: { teamSlugOrId: string; taskId: Id<"tasks"> }
+  ) => Promise<FunctionReturnType<typeof api.taskRuns.getByTask>> = (
+    ref,
+    args
+  ) => getConvex().query(ref, args)
+): Promise<ResumeResult[]> {
+  const tree = await query(api.taskRuns.getByTask, {
+    teamSlugOrId,
+    taskId,
+  });
+  return resumeContainersForRunsFromTree(tree, teamSlugOrId, String(taskId));
+}
+
+export function resumeContainersForRunsFromTree(
+  tree: FunctionReturnType<typeof api.taskRuns.getByTask>,
+  teamSlugOrId: string,
+  taskIdLabel?: string
+): Promise<ResumeResult[]> {
+  // Flatten tree without casts
+  const flat: unknown[] = [];
+  const walk = (nodes: unknown): void => {
+    if (!Array.isArray(nodes)) return;
+    for (const n of nodes) {
+      flat.push(n);
+      if (typeof n === "object" && n !== null) {
+        const children = Reflect.get(Object(n), "children");
+        walk(children);
+      }
+    }
+  };
+  walk(tree);
+
+  if (typeof taskIdLabel === "string") {
+    serverLogger.info(`Resuming task ${taskIdLabel} with ${flat.length} runs`);
+  }
+
+  // Collect valid docker/morph targets
+  const targets: {
+    provider: VSCodeProvider;
+    containerName: string;
+    runId: string;
+  }[] = [];
+  for (const r of flat) {
+    if (typeof r !== "object" || r === null) continue;
+    const vscode = Reflect.get(Object(r), "vscode");
+    const runId = Reflect.get(Object(r), "_id");
+    const provider =
+      typeof vscode === "object" && vscode !== null
+        ? Reflect.get(Object(vscode), "provider")
+        : undefined;
+    const name =
+      typeof vscode === "object" && vscode !== null
+        ? Reflect.get(Object(vscode), "containerName")
+        : undefined;
+
+    if (
+      provider === "docker" &&
+      typeof name === "string" &&
+      typeof runId === "string"
+    ) {
+      targets.push({ provider: "docker", containerName: name, runId });
+    } else if (
+      provider === "morph" &&
+      typeof name === "string" &&
+      typeof runId === "string"
+    ) {
+      targets.push({ provider: "morph", containerName: name, runId });
+    }
+  }
+
+  return Promise.all(
+    targets.map(async (t): Promise<ResumeResult> => {
+      try {
+        serverLogger.info(
+          `Resuming ${t.provider} container for run ${t.runId}: ${t.containerName}`
+        );
+        if (t.provider === "docker") {
+          // Remove 'docker-' prefix for actual Docker commands
+          const actualContainerName = t.containerName.startsWith("docker-")
+            ? t.containerName.substring(7)
+            : t.containerName;
+          await startDockerContainer(actualContainerName);
+          serverLogger.info(
+            `Successfully started Docker container: ${t.containerName} (actual: ${actualContainerName})`
+          );
+          return {
+            success: true,
+            containerName: t.containerName,
+            provider: t.provider,
+          };
+        }
+        if (t.provider === "morph") {
+          await resumeCmuxSandbox(t.containerName, teamSlugOrId);
+          serverLogger.info(
+            `Successfully resumed Morph instance: ${t.containerName}`
+          );
+          return {
+            success: true,
+            containerName: t.containerName,
+            provider: t.provider,
+          };
+        }
+        serverLogger.warn(
+          `Unsupported provider '${t.provider}' for container ${t.containerName}`
+        );
+        return {
+          success: false,
+          containerName: t.containerName,
+          provider: t.provider,
+          error: new Error("Unsupported provider"),
+        };
+      } catch (error) {
+        serverLogger.error(
+          `Failed to resume ${t.provider} container ${t.containerName}:`,
           error
         );
         return {

@@ -5,11 +5,13 @@
 # Usage: ./scripts/dev.sh [options]
 #
 # Options:
+#   --docker                Force build Docker image (alias for --force-docker-build)
 #   --force-docker-build    Force rebuild the Docker image (overrides --skip-docker)
 #   --skip-docker[=BOOL]    Skip Docker image build (default: true)
 #   --skip-convex[=BOOL]    Skip Convex backend (default: true)
 #   --show-compose-logs     Show Docker Compose logs in console
 #   --electron              Start Electron app
+#   --electron-debug[=PORT] Enable Chrome DevTools remote debugging (default port: 9222)
 #   --convex-agent          Run convex dev in agent mode
 #
 # Environment variables:
@@ -18,7 +20,7 @@
 #
 # Examples:
 #   ./scripts/dev.sh                          # Start without Docker build
-#   ./scripts/dev.sh --force-docker-build     # Force Docker image rebuild
+#   ./scripts/dev.sh --docker                 # Force Docker image rebuild
 #   ./scripts/dev.sh --skip-docker=false      # Build Docker image
 #   ./scripts/dev.sh --skip-convex=false      # Run with Convex enabled
 #
@@ -60,11 +62,17 @@ SHOW_COMPOSE_LOGS=false
 # Default to skipping Convex unless explicitly disabled via env/flag
 SKIP_CONVEX="${SKIP_CONVEX:-true}"
 RUN_ELECTRON=false
+ELECTRON_DEBUG=false
+ELECTRON_DEBUG_PORT=9222
 SKIP_DOCKER_BUILD="${SKIP_DOCKER_BUILD:-true}"
 CONVEX_AGENT_MODE=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --docker)
+            FORCE_DOCKER_BUILD=true
+            shift
+            ;;
         --force-docker-build)
             FORCE_DOCKER_BUILD=true
             shift
@@ -75,6 +83,27 @@ while [[ $# -gt 0 ]]; do
             ;;
         --electron)
             RUN_ELECTRON=true
+            shift
+            ;;
+        --electron-debug)
+            ELECTRON_DEBUG=true
+            # Check if next arg is a port number
+            if [[ -n "${2:-}" && "${2}" =~ ^[0-9]+$ ]]; then
+                ELECTRON_DEBUG_PORT="$2"
+                shift 2
+            else
+                shift
+            fi
+            ;;
+        --electron-debug=*)
+            ELECTRON_DEBUG=true
+            val="${1#*=}"
+            if [[ "$val" =~ ^[0-9]+$ ]]; then
+                ELECTRON_DEBUG_PORT="$val"
+            else
+                echo "Invalid port for --electron-debug: $val. Use a number." >&2
+                exit 1
+            fi
             shift
             ;;
         --skip-convex)
@@ -179,15 +208,19 @@ if [ -n "${EFFECTIVE_GITHUB_TOKEN}" ]; then
     DOCKER_BUILD_ARGS+=(--build-arg GITHUB_TOKEN --secret id=github_token,env=GITHUB_TOKEN)
 fi
 
+# Start Docker build (runs in background to parallelize with N-API build)
+DOCKER_BUILD_PID=""
 if [ "$IS_DEVCONTAINER" = "true" ]; then
     # In devcontainer, always build since we have access to docker socket
     echo "Building Docker image..."
-    docker build "${DOCKER_BUILD_ARGS[@]}" "$APP_DIR" || exit 1
+    docker build "${DOCKER_BUILD_ARGS[@]}" "$APP_DIR" &
+    DOCKER_BUILD_PID=$!
 else
     # On host, build by default unless explicitly skipped
     if [ "$SKIP_DOCKER_BUILD" != "true" ] || [ "$FORCE_DOCKER_BUILD" = "true" ]; then
         echo "Building Docker image..."
-        docker build "${DOCKER_BUILD_ARGS[@]}" . || exit 1
+        docker build "${DOCKER_BUILD_ARGS[@]}" . &
+        DOCKER_BUILD_PID=$!
     else
         echo "Skipping Docker build (SKIP_DOCKER_BUILD=true)"
     fi
@@ -244,9 +277,19 @@ if [ ! -d "node_modules" ] || [ "$FORCE_INSTALL" = "true" ]; then
     CI=1 bun install --frozen-lockfile || exit 1
 fi
 
-# Build Rust N-API addon (required)
+# Build Rust N-API addon (required) - runs in parallel with Docker build
 echo -e "${GREEN}Building native Rust addon...${NC}"
-(cd "$APP_DIR/apps/server/native/core" && bunx --bun @napi-rs/cli build --platform)
+(cd "$APP_DIR/apps/server/native/core" && bunx --bun @napi-rs/cli build --platform) || exit 1
+
+# Wait for Docker build to complete if it was started
+if [ -n "$DOCKER_BUILD_PID" ]; then
+    echo -e "${BLUE}Waiting for Docker build to complete...${NC}"
+    if ! wait $DOCKER_BUILD_PID; then
+        echo -e "${RED}Docker build failed${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}Docker build completed${NC}"
+fi
 
 # Function to prefix output with colored labels
 prefix_output() {
@@ -406,8 +449,14 @@ wait_for_log_message "$OPENAPI_LOG_FILE" "$OPENAPI_READY_MARKER" "$OPENAPI_CLIEN
 
 # Start Electron if requested
 if [ "$RUN_ELECTRON" = "true" ]; then
-    echo -e "${GREEN}Starting Electron app...${NC}"
-    (cd "$APP_DIR/apps/client" && exec bash -c 'trap "kill -9 0" EXIT; bunx dotenv-cli -e ../../.env -- pnpm dev:electron 2>&1 | tee "$LOG_DIR/electron.log" | prefix_output "ELECTRON" "$RED"') &
+    if [ "$ELECTRON_DEBUG" = "true" ]; then
+        echo -e "${GREEN}Starting Electron app with remote debugging on port $ELECTRON_DEBUG_PORT...${NC}"
+        export ELECTRON_DEBUG_PORT
+        (cd "$APP_DIR/apps/client" && exec bash -c 'trap "kill -9 0" EXIT; bunx dotenv-cli -e ../../.env -- pnpm dev:electron -- --remote-debugging-port='"$ELECTRON_DEBUG_PORT"' 2>&1 | tee "$LOG_DIR/electron.log" | prefix_output "ELECTRON" "$RED"') &
+    else
+        echo -e "${GREEN}Starting Electron app...${NC}"
+        (cd "$APP_DIR/apps/client" && exec bash -c 'trap "kill -9 0" EXIT; bunx dotenv-cli -e ../../.env -- pnpm dev:electron 2>&1 | tee "$LOG_DIR/electron.log" | prefix_output "ELECTRON" "$RED"') &
+    fi
     ELECTRON_PID=$!
     check_process $ELECTRON_PID "Electron App"
 fi
@@ -421,6 +470,9 @@ if [ "$SKIP_CONVEX" != "true" ]; then
 fi
 if [ "$RUN_ELECTRON" = "true" ]; then
     echo -e "${BLUE}Electron app is starting...${NC}"
+    if [ "$ELECTRON_DEBUG" = "true" ]; then
+        echo -e "${BLUE}Chrome DevTools: chrome://inspect or http://localhost:$ELECTRON_DEBUG_PORT${NC}"
+    fi
 fi
 echo -e "\nPress Ctrl+C to stop all services"
 
