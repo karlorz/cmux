@@ -281,7 +281,7 @@ function EnvironmentsPage() {
   // The new flow has its own full-screen layout
   if (activeStep === "configure") {
     return (
-      <div className="h-full w-full overflow-hidden">
+      <div className="h-full w-full overflow-auto">
         <EnvironmentSetupFlow
           teamSlugOrId={teamSlugOrId}
           selectedRepos={activeSelectedRepos}
