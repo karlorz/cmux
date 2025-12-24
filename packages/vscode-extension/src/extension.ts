@@ -345,7 +345,6 @@ async function setupDefaultTerminal() {
     }
   }
 
-
   // Run all UI setup in parallel
   log("Setting up SCM view, multi-diff editor in parallel...");
   await Promise.all([
