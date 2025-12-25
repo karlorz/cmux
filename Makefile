@@ -49,7 +49,7 @@ dev:
 	./scripts/dev.sh
 
 dev-electron:
-	./scripts/dev.sh --skip-convex --electron --electron-debug
+	./scripts/dev.sh --electron --electron-debug
 
 sync-upstream-tags:
 	./scripts/sync-upstream-tags.sh
