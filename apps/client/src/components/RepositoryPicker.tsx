@@ -218,16 +218,24 @@ export function RepositoryPicker({
 
   const handleContinue = useCallback(
     (repos: string[]): void => {
+      // Check if repos or snapshot changed - if so, we need a new VM
+      const reposChanged = !haveSameRepos(initialSelectedRepos, repos);
+      const snapshotChanged = initialSnapshotId !== selectedSnapshotId;
+      const needsNewInstance = reposChanged || snapshotChanged;
+
       // Navigate immediately - provisioning will happen on the configure page
-      void goToConfigure(repos);
+      void goToConfigure(repos, { clearInstanceId: needsNewInstance });
       onStartConfigure?.({
         selectedRepos: repos,
-        instanceId,
+        instanceId: needsNewInstance ? undefined : instanceId,
         snapshotId: selectedSnapshotId,
       });
     },
     [
       goToConfigure,
+      haveSameRepos,
+      initialSelectedRepos,
+      initialSnapshotId,
       instanceId,
       onStartConfigure,
       selectedSnapshotId,
