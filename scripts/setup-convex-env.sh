@@ -181,7 +181,13 @@ echo "  - ANTHROPIC_API_KEY: $(get_env_value ANTHROPIC_API_KEY | head -c 10)..."
 echo "  - GEMINI_API_KEY: $(get_env_value GEMINI_API_KEY | head -c 10)..."
 echo "  - MORPH_API_KEY: $(get_env_value MORPH_API_KEY | head -c 10)..."
 echo "  - CMUX_IS_STAGING: $(get_env_value CMUX_IS_STAGING)"
-echo "  - CONVEX_IS_PRODUCTION: $( [ "$MODE" = "production" ] && echo "true" || echo "false" )"
+CONVEX_IS_PRODUCTION_DISPLAY=$(get_env_value CONVEX_IS_PRODUCTION)
+if [ -z "$CONVEX_IS_PRODUCTION_DISPLAY" ]; then
+  CONVEX_IS_PRODUCTION_DISPLAY=$( [ "$MODE" = "production" ] && echo "true" || echo "false" )
+  echo "  - CONVEX_IS_PRODUCTION: $CONVEX_IS_PRODUCTION_DISPLAY (from MODE)"
+else
+  echo "  - CONVEX_IS_PRODUCTION: $CONVEX_IS_PRODUCTION_DISPLAY (from env file)"
+fi
 echo ""
 
 # Build JSON payload, only including non-empty values
@@ -219,8 +225,11 @@ build_json_changes() {
   add_change "MORPH_API_KEY" "$(get_env_value MORPH_API_KEY)"
   add_change "CMUX_IS_STAGING" "$(get_env_value CMUX_IS_STAGING)"
 
-  # Set CONVEX_IS_PRODUCTION based on mode (required by Convex deploy validation)
-  if [ "$MODE" = "production" ]; then
+  # Set CONVEX_IS_PRODUCTION: first check env file, then fall back to MODE
+  CONVEX_IS_PRODUCTION_ENV=$(get_env_value CONVEX_IS_PRODUCTION)
+  if [ -n "$CONVEX_IS_PRODUCTION_ENV" ]; then
+    add_change "CONVEX_IS_PRODUCTION" "$CONVEX_IS_PRODUCTION_ENV"
+  elif [ "$MODE" = "production" ]; then
     add_change "CONVEX_IS_PRODUCTION" "true"
   else
     add_change "CONVEX_IS_PRODUCTION" "false"
