@@ -151,5 +151,6 @@ try {
   if (error?.error) {
     console.error("Failed to launch electron-rebuild:", error.error);
   }
-  process.exit(error?.code ?? 1);
+  const exitCode = typeof error?.code === "number" ? error.code : 1;
+  process.exit(exitCode);
 }
