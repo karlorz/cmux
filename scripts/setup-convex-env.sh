@@ -3,14 +3,17 @@ set -e
 
 # Default values
 ENV_FILE=".env"
-MODE="local"
+MODE="auto"  # auto-detect based on CONVEX_DEPLOY_KEY
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
   case $1 in
     --prod|--production)
       MODE="production"
-      ENV_FILE=".env.production"
+      shift
+      ;;
+    --local)
+      MODE="local"
       shift
       ;;
     --env-file)
@@ -25,27 +28,33 @@ while [[ $# -gt 0 ]]; do
       echo "Usage: $0 [OPTIONS]"
       echo ""
       echo "Options:"
-      echo "  --prod, --production    Use production Convex cloud"
+      echo "  --prod, --production    Force Convex cloud mode"
+      echo "  --local                 Force local self-hosted mode"
       echo "  --env-file FILE         Env file to read (default: .env)"
       echo "  -h, --help              Show this help"
       echo ""
+      echo "Auto-detection (default):"
+      echo "  - If CONVEX_DEPLOY_KEY is set in env file -> uses Convex cloud"
+      echo "  - If CONVEX_SELF_HOSTED_ADMIN_KEY is set  -> uses local self-hosted"
+      echo ""
       echo "Examples:"
-      echo "  $0 --prod                          # Production with .env"
-      echo "  $0 --prod --env-file .env.custom   # Production with custom env file"
-      echo "  $0                                 # Local dev with .env"
+      echo "  $0                                 # Auto-detect from .env"
+      echo "  $0 --prod                          # Force production mode"
+      echo "  $0 --local                         # Force local mode"
+      echo "  $0 --env-file .env.custom          # Use custom env file"
       exit 0
       ;;
     *)
       echo "Unknown option: $1"
-      echo "Usage: $0 [--prod|--production] [--env-file FILE]"
+      echo "Usage: $0 [--prod|--local] [--env-file FILE]"
       exit 1
       ;;
   esac
 done
 
-# Check if .env.production exists
+# Check if env file exists
 if [ ! -f "$ENV_FILE" ]; then
-  echo "❌ Error: $ENV_FILE not found"
+  echo "Error: $ENV_FILE not found"
   exit 1
 fi
 
@@ -62,24 +71,65 @@ get_env_value() {
   fi
 }
 
+# Auto-detect mode if not explicitly set
+if [ "$MODE" = "auto" ]; then
+  DEPLOY_KEY=$(get_env_value CONVEX_DEPLOY_KEY)
+  SELF_HOSTED_KEY=$(get_env_value CONVEX_SELF_HOSTED_ADMIN_KEY)
+
+  if [ -n "$DEPLOY_KEY" ]; then
+    MODE="production"
+    echo "[Auto-detect] Found CONVEX_DEPLOY_KEY, using Convex cloud"
+  elif [ -n "$SELF_HOSTED_KEY" ]; then
+    MODE="local"
+    echo "[Auto-detect] Found CONVEX_SELF_HOSTED_ADMIN_KEY, using local self-hosted"
+  else
+    echo "Error: Neither CONVEX_DEPLOY_KEY nor CONVEX_SELF_HOSTED_ADMIN_KEY found in $ENV_FILE"
+    echo "Set one of these to configure Convex backend"
+    exit 1
+  fi
+fi
+
 if [ "$MODE" = "production" ]; then
   # Production mode - use Convex cloud
   DEPLOY_KEY=$(get_env_value CONVEX_DEPLOY_KEY)
+  CONVEX_URL=$(get_env_value NEXT_PUBLIC_CONVEX_URL)
+
   if [ -z "$DEPLOY_KEY" ]; then
     echo "Error: CONVEX_DEPLOY_KEY not found in $ENV_FILE"
     exit 1
   fi
-  BACKEND_URL="https://outstanding-stoat-794.convex.cloud"
+
+  # Use NEXT_PUBLIC_CONVEX_URL if set, otherwise default
+  if [ -n "$CONVEX_URL" ]; then
+    BACKEND_URL="$CONVEX_URL"
+  else
+    BACKEND_URL="https://outstanding-stoat-794.convex.cloud"
+  fi
+
   ADMIN_KEY="$DEPLOY_KEY"
-  echo "Setting up Convex environment variables (PRODUCTION)..."
+  echo "Setting up Convex environment variables (CLOUD)..."
   echo "Env file: $ENV_FILE"
   echo "Target: $BACKEND_URL"
 else
   # Local mode - use local backend
-  ADMIN_KEY="cmux-dev|017aebe6643f7feb3fe831fbb93a348653c63e5711d2427d1a34b670e3151b0165d86a5ff9"
-  BACKEND_URL="http://localhost:9777"
+  SELF_HOSTED_KEY=$(get_env_value CONVEX_SELF_HOSTED_ADMIN_KEY)
+  SELF_HOSTED_URL=$(get_env_value CONVEX_SELF_HOSTED_URL)
+
+  if [ -n "$SELF_HOSTED_KEY" ]; then
+    ADMIN_KEY="$SELF_HOSTED_KEY"
+  else
+    ADMIN_KEY="cmux-dev|017aebe6643f7feb3fe831fbb93a348653c63e5711d2427d1a34b670e3151b0165d86a5ff9"
+  fi
+
+  if [ -n "$SELF_HOSTED_URL" ]; then
+    BACKEND_URL="$SELF_HOSTED_URL"
+  else
+    BACKEND_URL="http://localhost:9777"
+  fi
+
   echo "Setting up Convex environment variables (LOCAL)..."
   echo "Env file: $ENV_FILE"
+  echo "Target: $BACKEND_URL"
 
   # Wait for backend to be ready (only for local)
   echo "Waiting for Convex backend to be ready..."
@@ -87,7 +137,7 @@ else
   elapsed=0
   until curl -f -s "$BACKEND_URL/" > /dev/null 2>&1; do
     if [ $elapsed -ge $timeout ]; then
-      echo "Error: Timeout waiting for backend"
+      echo "Error: Timeout waiting for backend at $BACKEND_URL"
       exit 1
     fi
     sleep 2
@@ -131,7 +181,13 @@ echo "  - ANTHROPIC_API_KEY: $(get_env_value ANTHROPIC_API_KEY | head -c 10)..."
 echo "  - GEMINI_API_KEY: $(get_env_value GEMINI_API_KEY | head -c 10)..."
 echo "  - MORPH_API_KEY: $(get_env_value MORPH_API_KEY | head -c 10)..."
 echo "  - CMUX_IS_STAGING: $(get_env_value CMUX_IS_STAGING)"
-echo "  - CONVEX_IS_PRODUCTION: $( [ "$MODE" = "production" ] && echo "true" || echo "false" )"
+CONVEX_IS_PRODUCTION_DISPLAY=$(get_env_value CONVEX_IS_PRODUCTION)
+if [ -z "$CONVEX_IS_PRODUCTION_DISPLAY" ]; then
+  CONVEX_IS_PRODUCTION_DISPLAY=$( [ "$MODE" = "production" ] && echo "true" || echo "false" )
+  echo "  - CONVEX_IS_PRODUCTION: $CONVEX_IS_PRODUCTION_DISPLAY (from MODE)"
+else
+  echo "  - CONVEX_IS_PRODUCTION: $CONVEX_IS_PRODUCTION_DISPLAY (from env file)"
+fi
 echo ""
 
 # Build JSON payload, only including non-empty values
@@ -169,8 +225,11 @@ build_json_changes() {
   add_change "MORPH_API_KEY" "$(get_env_value MORPH_API_KEY)"
   add_change "CMUX_IS_STAGING" "$(get_env_value CMUX_IS_STAGING)"
 
-  # Set CONVEX_IS_PRODUCTION based on mode (required by Convex deploy validation)
-  if [ "$MODE" = "production" ]; then
+  # Set CONVEX_IS_PRODUCTION: first check env file, then fall back to MODE
+  CONVEX_IS_PRODUCTION_ENV=$(get_env_value CONVEX_IS_PRODUCTION)
+  if [ -n "$CONVEX_IS_PRODUCTION_ENV" ]; then
+    add_change "CONVEX_IS_PRODUCTION" "$CONVEX_IS_PRODUCTION_ENV"
+  elif [ "$MODE" = "production" ]; then
     add_change "CONVEX_IS_PRODUCTION" "true"
   else
     add_change "CONVEX_IS_PRODUCTION" "false"
@@ -223,7 +282,7 @@ done
 
 echo ""
 if [ "$MODE" = "production" ]; then
-  echo "Setup complete (production). You can now run: bun run convex:deploy:prod"
+  echo "Setup complete (Convex Cloud). Target: $BACKEND_URL"
 else
-  echo "Setup complete (local). Convex env vars have been configured for local development."
+  echo "Setup complete (Local self-hosted). Target: $BACKEND_URL"
 fi
