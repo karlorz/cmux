@@ -191,17 +191,25 @@ function EnvironmentsPage() {
     }) => {
       const existingRepos = draft?.selectedRepos ?? [];
       const reposChanged = !haveSameRepos(existingRepos, payload.selectedRepos);
-      const instanceChanged = draft?.instanceId !== payload.instanceId;
       const snapshotChanged = draft?.snapshotId !== payload.snapshotId;
-      const shouldResetConfig =
-        !draft || reposChanged || instanceChanged || snapshotChanged;
+      const shouldResetConfig = !draft || reposChanged || snapshotChanged;
+
+      // If repos or snapshot changed, we need a NEW instance with the new repos
+      // Clear instanceId to trigger re-provisioning
+      const needsNewInstance = reposChanged || snapshotChanged;
+      const resolvedInstanceId = needsNewInstance ? undefined : payload.instanceId;
+
+      // Also reset the provisioning trigger so the effect will run again
+      if (needsNewInstance) {
+        provisioningTriggeredRef.current = false;
+      }
 
       skipDraftHydrationRef.current = false;
       persistEnvironmentDraftMetadata(
         teamSlugOrId,
         {
           selectedRepos: payload.selectedRepos,
-          instanceId: payload.instanceId,
+          instanceId: resolvedInstanceId,
           snapshotId: payload.snapshotId,
         },
         { resetConfig: shouldResetConfig, step: "configure" },

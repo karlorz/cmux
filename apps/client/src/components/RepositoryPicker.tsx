@@ -167,21 +167,31 @@ export function RepositoryPicker({
     [instanceId]
   );
 
+  // Helper to check if repos are the same (order-independent)
+  const haveSameRepos = useCallback(
+    (a: readonly string[], b: readonly string[]): boolean => {
+      if (a.length !== b.length) return false;
+      const setA = new Set(a);
+      return b.every((repo) => setA.has(repo));
+    },
+    []
+  );
+
   const goToConfigure = useCallback(
     async (
       repos: string[],
-      provisionedInstanceId?: string
+      options?: { clearInstanceId?: boolean }
     ): Promise<string | undefined> => {
       let resolvedInstanceId: string | undefined;
-      const navigateToConfigure = async (options?: { replace?: boolean }) => {
+      const navigateToConfigure = async (navOptions?: { replace?: boolean }) => {
         await navigate({
           to: "/$teamSlugOrId/environments/new",
           params: { teamSlugOrId },
           search: (prev) => {
-            resolvedInstanceId = resolveInstanceId(
-              prev.instanceId,
-              provisionedInstanceId
-            );
+            // If clearInstanceId is set, don't include instanceId - we need a new VM
+            resolvedInstanceId = options?.clearInstanceId
+              ? undefined
+              : resolveInstanceId(prev.instanceId, undefined);
             return {
               step: "configure",
               selectedRepos: repos,
@@ -191,19 +201,14 @@ export function RepositoryPicker({
               snapshotId: selectedSnapshotId,
             };
           },
-          ...options,
+          ...navOptions,
         });
       };
 
       await navigateToConfigure();
-      if (!instanceId && provisionedInstanceId) {
-        await navigateToConfigure({ replace: true });
-      }
-
       return resolvedInstanceId;
     },
     [
-      instanceId,
       navigate,
       resolveInstanceId,
       selectedSnapshotId,

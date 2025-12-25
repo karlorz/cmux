@@ -24,6 +24,7 @@ import { validateExposedPorts } from "@cmux/shared/utils/validate-exposed-ports"
 import {
   postApiEnvironmentsMutation,
   postApiSandboxesByIdEnvMutation,
+  postApiSandboxesByIdRunScriptsMutation,
 } from "@cmux/www-openapi-client/react-query";
 import { useMutation as useRQMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -97,6 +98,9 @@ export function EnvironmentSetupFlow({
   // Track when environment has been saved to prevent draft re-creation
   const hasSavedRef = useRef(false);
 
+  // Track when scripts have been triggered to prevent re-triggering
+  const scriptsTriggeredRef = useRef(false);
+
   useEffect(() => {
     if (selectedRepos.length === 0) return;
 
@@ -136,6 +140,7 @@ export function EnvironmentSetupFlow({
   // Mutations
   const createEnvironmentMutation = useRQMutation(postApiEnvironmentsMutation());
   const applySandboxEnvMutation = useRQMutation(postApiSandboxesByIdEnvMutation());
+  const runScriptsMutation = useRQMutation(postApiSandboxesByIdRunScriptsMutation());
 
   // Auto-apply env vars to sandbox
   const lastSubmittedEnvContent = useRef<string | null>(null);
@@ -195,6 +200,55 @@ export function EnvironmentSetupFlow({
       { selectedRepos, instanceId }
     );
   }, [teamSlugOrId, envName, envVars, maintenanceScript, devScript, exposedPorts, selectedRepos, instanceId]);
+
+  // Auto-run scripts when entering workspace-config phase
+  // This ensures scripts run in tmux sessions for proper cleanup before snapshotting
+  useEffect(() => {
+    // Only run in workspace-config phase
+    if (layoutPhase !== "workspace-config") {
+      return;
+    }
+
+    // Need instanceId to run scripts
+    if (!instanceId) {
+      return;
+    }
+
+    // Don't re-trigger if already triggered
+    if (scriptsTriggeredRef.current) {
+      return;
+    }
+
+    // Need at least one script to run
+    const normalizedMaintenance = maintenanceScript.trim();
+    const normalizedDev = devScript.trim();
+    if (!normalizedMaintenance && !normalizedDev) {
+      return;
+    }
+
+    scriptsTriggeredRef.current = true;
+
+    runScriptsMutation.mutate(
+      {
+        path: { id: instanceId },
+        body: {
+          teamSlugOrId,
+          maintenanceScript: normalizedMaintenance || undefined,
+          devScript: normalizedDev || undefined,
+        },
+      },
+      {
+        onSuccess: () => {
+          console.log("[EnvironmentSetupFlow] Scripts started in tmux sessions");
+        },
+        onError: (error) => {
+          console.error("[EnvironmentSetupFlow] Failed to run scripts:", error);
+          // Reset so user can retry by navigating back and forward
+          scriptsTriggeredRef.current = false;
+        },
+      }
+    );
+  }, [layoutPhase, instanceId, maintenanceScript, devScript, teamSlugOrId, runScriptsMutation]);
 
   // Handlers
   const handleEnvNameChange = useCallback((value: string) => {
