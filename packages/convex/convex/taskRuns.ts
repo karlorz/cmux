@@ -1128,10 +1128,23 @@ export const updateVSCodePorts = authMutation({
       status: "starting" as const,
     };
 
+    // Update ports and regenerate URLs with new port
+    // Only regenerate if this is a Docker provider (localhost URLs)
+    const newUrl =
+      vscode.provider === "docker"
+        ? `http://localhost:${args.ports.vscode}`
+        : vscode.url;
+    const newWorkspaceUrl =
+      vscode.provider === "docker"
+        ? `http://localhost:${args.ports.vscode}/?folder=/root/workspace`
+        : vscode.workspaceUrl;
+
     await ctx.db.patch(args.id, {
       vscode: {
         ...vscode,
         ports: args.ports,
+        url: newUrl,
+        workspaceUrl: newWorkspaceUrl,
       },
       updatedAt: Date.now(),
     });

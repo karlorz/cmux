@@ -10,6 +10,14 @@ import { getWwwBaseUrl } from "./utils/server-env";
 
 const execAsync = promisify(exec);
 
+// Port mapping interface for Docker containers
+interface DockerPortMapping {
+  vscode: string;
+  worker: string;
+  proxy: string;
+  vnc: string;
+}
+
 export type VSCodeProvider = "docker" | "morph" | "daytona" | "other";
 
 export interface StopResult {
@@ -66,6 +74,101 @@ async function stopCmuxSandbox(instanceId: string): Promise<void> {
 
 async function startDockerContainer(containerName: string): Promise<void> {
   await execAsync(`docker start ${containerName}`, { timeout: 15_000 });
+}
+
+/**
+ * Get port mappings from a running Docker container.
+ * Uses docker inspect to retrieve the dynamically assigned host ports.
+ * Resilient: retries up to 3 times with exponential backoff.
+ */
+async function getDockerContainerPorts(
+  containerName: string,
+  maxRetries = 3
+): Promise<DockerPortMapping | null> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const { stdout } = await execAsync(
+        `docker inspect ${containerName} --format '{{json .NetworkSettings.Ports}}'`,
+        { timeout: 10_000 }
+      );
+
+      const ports = JSON.parse(stdout.trim()) as Record<
+        string,
+        Array<{ HostIp: string; HostPort: string }> | null
+      >;
+
+      const vscodePort = ports["39378/tcp"]?.[0]?.HostPort;
+      const workerPort = ports["39377/tcp"]?.[0]?.HostPort;
+      const proxyPort = ports["39379/tcp"]?.[0]?.HostPort;
+      const vncPort = ports["39380/tcp"]?.[0]?.HostPort;
+
+      if (!vscodePort || !workerPort || !proxyPort || !vncPort) {
+        serverLogger.warn(
+          `[getDockerContainerPorts] Missing ports for ${containerName} (attempt ${attempt}):`,
+          { vscodePort, workerPort, proxyPort, vncPort }
+        );
+        if (attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, 500 * attempt));
+          continue;
+        }
+        return null;
+      }
+
+      return { vscode: vscodePort, worker: workerPort, proxy: proxyPort, vnc: vncPort };
+    } catch (error) {
+      serverLogger.error(
+        `[getDockerContainerPorts] Failed to inspect ${containerName} (attempt ${attempt}):`,
+        error
+      );
+      if (attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, 500 * attempt));
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Update Convex with new port mappings and status after container resume.
+ * Resilient: catches errors and logs them without failing the resume operation.
+ */
+async function updateConvexAfterResume(
+  runId: string,
+  teamSlugOrId: string,
+  ports: DockerPortMapping
+): Promise<boolean> {
+  try {
+    // Update ports
+    await getConvex().mutation(api.taskRuns.updateVSCodePorts, {
+      teamSlugOrId,
+      id: runId as Id<"taskRuns">,
+      ports: {
+        vscode: ports.vscode,
+        worker: ports.worker,
+        proxy: ports.proxy,
+        vnc: ports.vnc,
+      },
+    });
+
+    // Update status to running
+    await getConvex().mutation(api.taskRuns.updateVSCodeStatus, {
+      teamSlugOrId,
+      id: runId as Id<"taskRuns">,
+      status: "running",
+    });
+
+    serverLogger.info(
+      `[updateConvexAfterResume] Updated Convex for run ${runId} with ports:`,
+      ports
+    );
+    return true;
+  } catch (error) {
+    serverLogger.error(
+      `[updateConvexAfterResume] Failed to update Convex for run ${runId}:`,
+      error
+    );
+    return false;
+  }
 }
 
 async function resumeCmuxSandbox(
@@ -309,6 +412,32 @@ export function resumeContainersForRunsFromTree(
           serverLogger.info(
             `Successfully started Docker container: ${t.containerName} (actual: ${actualContainerName})`
           );
+
+          // Get new port mappings after container restart
+          // Docker assigns new random ports when container restarts with HostPort: "0"
+          const newPorts = await getDockerContainerPorts(actualContainerName);
+          if (newPorts) {
+            serverLogger.info(
+              `[resume] Got new ports for ${actualContainerName}:`,
+              newPorts
+            );
+            // Update Convex with new ports (non-blocking, errors are logged)
+            const convexUpdated = await updateConvexAfterResume(
+              t.runId,
+              teamSlugOrId,
+              newPorts
+            );
+            if (!convexUpdated) {
+              serverLogger.warn(
+                `[resume] Convex update failed for ${actualContainerName}, container is running but ports may be stale`
+              );
+            }
+          } else {
+            serverLogger.warn(
+              `[resume] Could not get new ports for ${actualContainerName}, Convex ports may be stale`
+            );
+          }
+
           return {
             success: true,
             containerName: t.containerName,
