@@ -75,6 +75,7 @@ interface RepositoryConnectionsSectionProps {
   onSelectedLoginChange: (login: string | null) => void;
   onContextChange: (context: ConnectionContext) => void;
   onConnectionsInvalidated: () => void;
+  onInstallHandlerReady: (handler: (() => void) | null) => void;
 }
 
 interface RepositoryListSectionProps {
@@ -82,7 +83,9 @@ interface RepositoryListSectionProps {
   installationId: number | null;
   selectedRepos: readonly string[];
   onToggleRepo: (repo: string) => void;
+  onAddRepo: (repo: string) => void;
   hasConnections: boolean;
+  onInstallGitHubApp: () => void;
 }
 
 export interface RepositoryPickerProps {
@@ -240,11 +243,13 @@ export function RepositoryPicker({
       void goToConfigure(repos);
       onStartConfigure?.({
         selectedRepos: repos,
+        instanceId,
         snapshotId: selectedSnapshotId,
       });
     },
     [
       goToConfigure,
+      instanceId,
       onStartConfigure,
       selectedSnapshotId,
     ]
@@ -280,9 +285,23 @@ export function RepositoryPicker({
     });
   }, []);
 
+  const addRepo = useCallback((repo: string) => {
+    setSelectedRepos((prev) => {
+      if (prev.includes(repo)) {
+        return prev;
+      }
+      return [...prev, repo];
+    });
+  }, []);
+
   const removeRepo = useCallback((repo: string) => {
     setSelectedRepos((prev) => prev.filter((item) => item !== repo));
   }, []);
+
+  // GitHub app install handler - lifted from RepositoryConnectionsSection for use in RepositoryListSection
+  const [installGitHubAppHandler, setInstallGitHubAppHandler] = useState<
+    (() => void) | null
+  >(null);
 
   const setConnectionContextSafe = useCallback((ctx: ConnectionContext) => {
     setConnectionContext((prev) => {
@@ -342,12 +361,14 @@ export function RepositoryPicker({
       )}
 
       <div className="space-y-6 mt-6">
+        {/* Hidden - provides context and install handler without visible UI */}
         <RepositoryConnectionsSection
           teamSlugOrId={teamSlugOrId}
           selectedLogin={selectedConnectionLogin}
           onSelectedLoginChange={setSelectedConnectionLogin}
           onContextChange={setConnectionContextSafe}
           onConnectionsInvalidated={handleConnectionsInvalidated}
+          onInstallHandlerReady={setInstallGitHubAppHandler}
         />
 
         <RepositoryListSection
@@ -355,7 +376,9 @@ export function RepositoryPicker({
           installationId={connectionContext.installationId}
           selectedRepos={selectedRepos}
           onToggleRepo={toggleRepo}
+          onAddRepo={addRepo}
           hasConnections={connectionContext.hasConnections}
+          onInstallGitHubApp={installGitHubAppHandler ?? (() => {})}
         />
 
         {selectedRepos.length > 0 ? (
@@ -424,13 +447,12 @@ function RepositoryConnectionsSection({
   onSelectedLoginChange,
   onContextChange,
   onConnectionsInvalidated,
+  onInstallHandlerReady,
 }: RepositoryConnectionsSectionProps) {
   const connections = useQuery(api.github.listProviderConnections, {
     teamSlugOrId,
   });
   const mintState = useMutation(api.github_app.mintInstallState);
-  const [connectionDropdownOpen, setConnectionDropdownOpen] = useState(false);
-  const [connectionSearch, setConnectionSearch] = useState("");
 
   const activeConnections = useMemo(
     () => (connections || []).filter((c) => c.isActive !== false),
@@ -450,15 +472,6 @@ function RepositoryConnectionsSection({
       onSelectedLoginChange(currentLogin);
     }
   }, [currentLogin, onSelectedLoginChange, selectedLogin]);
-
-  const filteredConnections = useMemo(() => {
-    if (!connectionSearch.trim()) return activeConnections;
-    const searchLower = connectionSearch.toLowerCase();
-    return activeConnections.filter((c) => {
-      const name = c.accountLogin || `installation-${c.installationId}`;
-      return name.toLowerCase().includes(searchLower);
-    });
-  }, [activeConnections, connectionSearch]);
 
   const selectedInstallationId = useMemo(() => {
     const match = activeConnections.find(
