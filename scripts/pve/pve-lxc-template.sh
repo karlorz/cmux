@@ -60,10 +60,10 @@ Options for 'create':
 
 Options for 'configure':
   --mode <mode>           Execution mode (default: auto)
-                            auto          - Auto-detect (local if on PVE, else container-ssh)
+                            auto          - Auto-detect (local if on PVE, else pve-ssh)
                             local         - Run pct commands directly (on PVE host)
                             pve-ssh       - SSH to PVE host, then use pct
-                            container-ssh - SSH directly into container (needs SSH in container)
+                            container-ssh - SSH directly into container (needs openssh-server)
 
 Environment Variables:
   PVE_EXEC_MODE           Default execution mode for configure (default: auto)
@@ -337,7 +337,8 @@ SETUP_EOF
         if command -v pct &>/dev/null; then
             mode="local"
         else
-            mode="container-ssh"
+            # Default to pve-ssh since container-ssh requires SSH in container
+            mode="pve-ssh"
         fi
     fi
 
@@ -417,20 +418,10 @@ SETUP_EOF
 
             local container_ssh="root@${container_ip}"
             log_info "Container IP: ${container_ip}"
-            log_info "Waiting for SSH to be available..."
 
-            # Wait for SSH to be available (container may have just started)
-            local ssh_ready=0
-            for i in {1..30}; do
-                if ssh -o ConnectTimeout=2 -o BatchMode=yes -o StrictHostKeyChecking=no "$container_ssh" "echo ready" &>/dev/null; then
-                    ssh_ready=1
-                    break
-                fi
-                sleep 2
-            done
-
-            if [[ $ssh_ready -eq 0 ]]; then
-                log_warn "SSH not available in container (may need to install openssh-server)"
+            # Quick check if SSH port is open (1 second timeout)
+            if ! nc -z -w 1 "$container_ip" 22 &>/dev/null; then
+                log_warn "SSH port 22 not open on container (openssh-server not installed)"
                 echo ""
                 echo "The container does not have SSH enabled."
                 echo "Options:"
