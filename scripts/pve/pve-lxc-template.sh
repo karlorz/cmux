@@ -349,7 +349,7 @@ else
     mark_done "06-vnc"
 fi
 
-# Step 7: CRIU
+# Step 7: CRIU (optional - may not be available on all distros)
 if step_done "07-criu"; then
     echo "[7/8] CRIU... SKIP (already done)"
 elif command -v criu &>/dev/null; then
@@ -357,7 +357,14 @@ elif command -v criu &>/dev/null; then
     mark_done "07-criu"
 else
     echo "[7/8] Installing CRIU..."
-    apt-get install -y -qq criu
+    # Enable universe repo if needed (for Ubuntu)
+    add-apt-repository -y universe 2>/dev/null || true
+    apt-get update -qq 2>/dev/null || true
+    if apt-get install -y -qq criu 2>/dev/null; then
+        echo "    CRIU installed"
+    else
+        echo "    CRIU not available - skipping (checkpointing will use disk snapshots)"
+    fi
     mark_done "07-criu"
 fi
 
