@@ -1,5 +1,6 @@
 import {
   createEmptyEnvironmentConfig,
+  ensureInitialEnvVars,
   type EnvironmentConfigDraft,
   type EnvironmentDraftMetadata,
 } from "@/types/environment";
@@ -80,8 +81,17 @@ class EnvironmentDraftStore {
         "selectedRepos" in parsed &&
         "config" in parsed
       ) {
-        this.drafts.set(teamSlugOrId, parsed);
-        return parsed;
+        // SECURITY: envVars are not persisted to localStorage, so initialize them fresh
+        // This ensures users need to re-enter secrets after page reload
+        const draft: EnvironmentDraft = {
+          ...parsed,
+          config: {
+            ...parsed.config,
+            envVars: ensureInitialEnvVars(parsed.config.envVars),
+          },
+        };
+        this.drafts.set(teamSlugOrId, draft);
+        return draft;
       }
     } catch (error) {
       console.error("Failed to parse stored draft:", error);
@@ -94,7 +104,16 @@ class EnvironmentDraftStore {
     if (draft === null) {
       safeLocalStorage.removeItem(STORAGE_KEY_PREFIX + teamSlugOrId);
     } else {
-      safeLocalStorage.setItem(STORAGE_KEY_PREFIX + teamSlugOrId, JSON.stringify(draft));
+      // SECURITY: Don't persist envVars to localStorage - they may contain secrets
+      // Only persist non-sensitive draft data (name, scripts, ports, metadata)
+      const safeToStore: EnvironmentDraft = {
+        ...draft,
+        config: {
+          ...draft.config,
+          envVars: [], // Clear envVars before storing
+        },
+      };
+      safeLocalStorage.setItem(STORAGE_KEY_PREFIX + teamSlugOrId, JSON.stringify(safeToStore));
     }
   }
 
