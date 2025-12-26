@@ -153,8 +153,11 @@ CRIU checkpoint/restore for RAM state preservation (critical for Morph parity).
    ./pve-lxc-template.sh convert 9000
    ```
 
-   Note: The `configure` command uses SSH to execute `pct` commands on the PVE host.
-   Ensure SSH key-based auth is set up for `root@<pve-host>` (derived from `PVE_API_URL`).
+   Note: The Proxmox VE API does not support executing commands inside containers.
+   The `configure` command supports multiple execution modes:
+   - `--mode local`: Run directly on PVE host (if script is run there)
+   - `--mode pve-ssh`: SSH to PVE host, then use `pct` commands (default when not on PVE)
+   - `--mode container-ssh`: SSH directly into container (requires SSH in container)
 
 4. **Create sandbox instance**
    ```bash

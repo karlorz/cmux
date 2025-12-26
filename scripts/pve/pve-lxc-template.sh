@@ -50,7 +50,7 @@ Commands:
   convert <vmid>          Convert container to template (makes it read-only)
   info <vmid>             Show container/template info
 
-Options:
+Options for 'create':
   --memory <MB>           Memory in MB (default: ${DEFAULT_MEMORY})
   --cores <N>             CPU cores (default: ${DEFAULT_CORES})
   --disk <GB>             Disk size in GB (default: ${DEFAULT_DISK})
@@ -58,11 +58,30 @@ Options:
   --ostemplate <volid>    OS template (default: ${DEFAULT_OSTEMPLATE})
   --hostname <name>       Container hostname (default: cmux-template)
 
+Options for 'configure':
+  --mode <mode>           Execution mode (default: auto)
+                            auto          - Auto-detect (local if on PVE, else container-ssh)
+                            local         - Run pct commands directly (on PVE host)
+                            pve-ssh       - SSH to PVE host, then use pct
+                            container-ssh - SSH directly into container (needs SSH in container)
+
+Environment Variables:
+  PVE_EXEC_MODE           Default execution mode for configure (default: auto)
+  PVE_SSH_HOST            SSH target for pve-ssh mode (default: derived from PVE_API_URL)
+
 Examples:
   $(basename "$0") list
   $(basename "$0") create 9000 --memory 8192 --cores 8
-  $(basename "$0") configure 9000
+  $(basename "$0") configure 9000                      # Auto-detect mode
+  $(basename "$0") configure 9000 --mode pve-ssh      # SSH to PVE host
+  $(basename "$0") configure 9000 --mode container-ssh # SSH to container
   $(basename "$0") convert 9000
+
+Note: The Proxmox VE API does not support executing commands inside containers.
+      The 'configure' command requires either:
+      - Running this script on the PVE host (local mode)
+      - SSH access to the PVE host (pve-ssh mode)
+      - SSH server running inside the container (container-ssh mode)
 EOF
 }
 
@@ -173,20 +192,32 @@ cmd_create() {
     echo "  2. Convert to template: $(basename "$0") convert ${vmid}"
 }
 
+# Get container IP address via API
+# Usage: pve_lxc_get_ip <vmid> [node]
+pve_lxc_get_ip() {
+    local vmid="$1"
+    local node="${2:-$(pve_get_default_node)}"
+    pve_api GET "/api2/json/nodes/${node}/lxc/${vmid}/interfaces" | \
+        jq -r '.data[] | select(.name == "eth0") | .inet // empty' | \
+        cut -d'/' -f1
+}
+
 cmd_configure() {
     local vmid="$1"
+    shift
     local node
     node=$(pve_get_default_node)
 
-    log_info "Configuring container ${vmid} on ${node}..."
+    # Parse options
+    local mode="${PVE_EXEC_MODE:-auto}"  # auto, pve-ssh, container-ssh, local
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --mode) mode="$2"; shift 2 ;;
+            *) log_error "Unknown option: $1"; return 1 ;;
+        esac
+    done
 
-    # Determine SSH target for pct commands
-    # PVE_SSH_HOST can be set to override (e.g., root@pve.example.com)
-    local pve_ssh_host="${PVE_SSH_HOST:-}"
-    if [[ -z "$pve_ssh_host" ]]; then
-        # Try to extract hostname from PVE_API_URL
-        pve_ssh_host="root@$(echo "${PVE_API_URL}" | sed -E 's|https?://([^:/]+).*|\1|')"
-    fi
+    log_info "Configuring container ${vmid} on ${node}..."
 
     # Check container exists
     local status
@@ -199,13 +230,13 @@ cmd_configure() {
 
     # Start container if not running
     if [[ "$status" != "running" ]]; then
-        log_info "Starting container ${vmid}..."
+        log_info "Starting container ${vmid} via API..."
         local upid
         upid=$(pve_lxc_start "$vmid" "$node" | jq -r '.data // empty')
         if [[ -n "$upid" ]]; then
             pve_wait_task "$upid" 120 "$node"
         fi
-        sleep 3
+        sleep 5
     fi
 
     # Generate setup script
@@ -300,39 +331,150 @@ SETUP_EOF
 
     chmod +x "$setup_script"
 
-    log_info "Using SSH host: ${pve_ssh_host}"
-    log_info "Copying setup script to PVE host..."
-
-    # Copy script to PVE host first
-    if ! scp -q "$setup_script" "${pve_ssh_host}:/tmp/cmux-lxc-setup-${vmid}.sh"; then
-        log_error "Failed to copy setup script to PVE host"
-        return 1
+    # Auto-detect execution mode if set to auto
+    if [[ "$mode" == "auto" ]]; then
+        # Check if we're on the PVE host (pct command available)
+        if command -v pct &>/dev/null; then
+            mode="local"
+        else
+            mode="container-ssh"
+        fi
     fi
 
-    log_info "Pushing setup script to container ${vmid}..."
-    if ! ssh "$pve_ssh_host" "pct push ${vmid} /tmp/cmux-lxc-setup-${vmid}.sh /tmp/setup.sh"; then
-        log_error "Failed to push setup script to container"
-        return 1
-    fi
+    log_info "Execution mode: ${mode}"
 
-    log_info "Executing setup script inside container ${vmid}..."
-    log_info "This may take several minutes..."
+    case "$mode" in
+        local)
+            # Running directly on PVE host
+            log_info "Pushing setup script to container ${vmid}..."
+            if ! pct push "$vmid" "$setup_script" /tmp/setup.sh; then
+                log_error "Failed to push setup script to container"
+                return 1
+            fi
+
+            log_info "Executing setup script inside container ${vmid}..."
+            log_info "This may take several minutes..."
+            echo ""
+
+            if pct exec "$vmid" -- bash /tmp/setup.sh; then
+                log_success "Container ${vmid} configured successfully"
+            else
+                log_error "Setup script failed"
+                echo "Debug: pct enter ${vmid}"
+                return 1
+            fi
+            ;;
+
+        pve-ssh)
+            # SSH to PVE host, then use pct
+            local pve_ssh_host="${PVE_SSH_HOST:-}"
+            if [[ -z "$pve_ssh_host" ]]; then
+                pve_ssh_host="root@$(echo "${PVE_API_URL}" | sed -E 's|https?://([^:/]+).*|\1|')"
+            fi
+            log_info "Using PVE SSH host: ${pve_ssh_host}"
+
+            log_info "Copying setup script to PVE host..."
+            if ! scp -q "$setup_script" "${pve_ssh_host}:/tmp/cmux-lxc-setup-${vmid}.sh"; then
+                log_error "Failed to copy setup script to PVE host"
+                return 1
+            fi
+
+            log_info "Pushing setup script to container ${vmid}..."
+            if ! ssh "$pve_ssh_host" "pct push ${vmid} /tmp/cmux-lxc-setup-${vmid}.sh /tmp/setup.sh"; then
+                log_error "Failed to push setup script to container"
+                return 1
+            fi
+
+            log_info "Executing setup script inside container ${vmid}..."
+            log_info "This may take several minutes..."
+            echo ""
+
+            if ssh -t "$pve_ssh_host" "pct exec ${vmid} -- bash /tmp/setup.sh"; then
+                log_success "Container ${vmid} configured successfully"
+            else
+                log_error "Setup script failed"
+                echo "Debug: ssh ${pve_ssh_host} 'pct enter ${vmid}'"
+                return 1
+            fi
+            ;;
+
+        container-ssh)
+            # SSH directly into the container using its IP (requires SSH in container)
+            log_info "Getting container IP address via API..."
+            local container_ip
+            container_ip=$(pve_lxc_get_ip "$vmid" "$node")
+
+            if [[ -z "$container_ip" ]]; then
+                log_error "Could not get container IP address"
+                log_info "Container may not have network configured yet"
+                echo ""
+                echo "Alternative: Run on PVE host directly:"
+                echo "  scp ${setup_script} root@<pve-host>:/tmp/"
+                echo "  ssh root@<pve-host> 'pct push ${vmid} /tmp/cmux-lxc-setup-${vmid}.sh /tmp/setup.sh'"
+                echo "  ssh root@<pve-host> 'pct exec ${vmid} -- bash /tmp/setup.sh'"
+                return 1
+            fi
+
+            local container_ssh="root@${container_ip}"
+            log_info "Container IP: ${container_ip}"
+            log_info "Waiting for SSH to be available..."
+
+            # Wait for SSH to be available (container may have just started)
+            local ssh_ready=0
+            for i in {1..30}; do
+                if ssh -o ConnectTimeout=2 -o BatchMode=yes -o StrictHostKeyChecking=no "$container_ssh" "echo ready" &>/dev/null; then
+                    ssh_ready=1
+                    break
+                fi
+                sleep 2
+            done
+
+            if [[ $ssh_ready -eq 0 ]]; then
+                log_warn "SSH not available in container (may need to install openssh-server)"
+                echo ""
+                echo "The container does not have SSH enabled."
+                echo "Options:"
+                echo "  1. Run script on PVE host: --mode pve-ssh"
+                echo "  2. Copy script manually and run via PVE console"
+                echo ""
+                echo "Script generated: ${setup_script}"
+                echo ""
+                echo "Manual steps on PVE host:"
+                echo "  pct push ${vmid} ${setup_script} /tmp/setup.sh"
+                echo "  pct exec ${vmid} -- bash /tmp/setup.sh"
+                return 1
+            fi
+
+            log_info "Copying setup script to container..."
+            if ! scp -o StrictHostKeyChecking=no "$setup_script" "${container_ssh}:/tmp/setup.sh"; then
+                log_error "Failed to copy setup script to container"
+                return 1
+            fi
+
+            log_info "Executing setup script inside container ${vmid}..."
+            log_info "This may take several minutes..."
+            echo ""
+
+            if ssh -t -o StrictHostKeyChecking=no "$container_ssh" "bash /tmp/setup.sh"; then
+                log_success "Container ${vmid} configured successfully"
+            else
+                log_error "Setup script failed"
+                echo "Debug: ssh ${container_ssh}"
+                return 1
+            fi
+            ;;
+
+        *)
+            log_error "Unknown execution mode: ${mode}"
+            echo "Valid modes: auto, local, pve-ssh, container-ssh"
+            return 1
+            ;;
+    esac
+
     echo ""
-
-    # Execute setup script with real-time output via SSH
-    if ssh -t "$pve_ssh_host" "pct exec ${vmid} -- bash /tmp/setup.sh"; then
-        log_success "Container ${vmid} configured successfully"
-        echo ""
-        echo "Next steps:"
-        echo "  1. Convert to template: $(basename "$0") convert ${vmid}"
-        echo "     (This will auto-stop the container)"
-    else
-        log_error "Setup script failed"
-        echo ""
-        echo "Debug interactively:"
-        echo "  ssh ${pve_ssh_host} 'pct enter ${vmid}'"
-        return 1
-    fi
+    echo "Next steps:"
+    echo "  1. Convert to template: $(basename "$0") convert ${vmid}"
+    echo "     (This will auto-stop the container)"
 }
 
 cmd_convert() {
