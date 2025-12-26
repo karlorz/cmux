@@ -537,14 +537,32 @@ cmd_convert() {
     local node
     node=$(pve_get_default_node)
 
-    # Check container exists
+    # Check container exists and get config
+    local config
+    config=$(pve_lxc_config "$vmid" "$node")
+
+    # Check if already a template
+    local is_template
+    is_template=$(echo "$config" | jq -r '.data.template // 0')
+    if [[ "$is_template" == "1" ]]; then
+        log_success "Container ${vmid} is already a template"
+        echo ""
+        echo "Clone command: pct clone ${vmid} <new-vmid> --full"
+        return 0
+    fi
+
+    # Check status and stop if running
     local status
     status=$(pve_lxc_status "$vmid" "$node" | jq -r '.data.status')
 
     if [[ "$status" == "running" ]]; then
         log_info "Stopping container ${vmid}..."
-        pve_lxc_stop "$vmid" "$node"
-        sleep 3
+        local upid
+        upid=$(pve_lxc_stop "$vmid" "$node" | jq -r '.data // empty')
+        if [[ -n "$upid" ]]; then
+            pve_wait_task "$upid" 60 "$node" || true
+        fi
+        sleep 2
     fi
 
     log_info "Converting container ${vmid} to template..."
@@ -552,16 +570,17 @@ cmd_convert() {
     local result
     result=$(pve_api POST "/api2/json/nodes/${node}/lxc/${vmid}/template")
 
-    if echo "$result" | jq -e '.data' > /dev/null 2>&1; then
-        log_success "Container ${vmid} converted to template"
-        echo ""
-        echo "Template is now ready for cloning."
-        echo "Clone command: pct clone ${vmid} <new-vmid> --full"
-    else
+    # Check for errors - API returns {"data": null} on success
+    if echo "$result" | jq -e '.errors' > /dev/null 2>&1; then
         log_error "Failed to convert to template"
         echo "$result" | jq .
         return 1
     fi
+
+    log_success "Container ${vmid} converted to template"
+    echo ""
+    echo "Template is now ready for cloning."
+    echo "Clone command: pct clone ${vmid} <new-vmid> --full"
 }
 
 cmd_info() {
