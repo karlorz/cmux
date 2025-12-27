@@ -256,10 +256,10 @@ class PveLxcClient:
         new_vmid: int,
         *,
         hostname: str | None = None,
-        full: bool = True,
+        full: bool = False,  # Linked clone by default (fast)
         node: str | None = None,
     ) -> str:
-        """Clone an LXC container. Returns task UPID."""
+        """Clone an LXC container. Returns task UPID. Default is linked clone (full=False)."""
         node = node or self.get_node()
         data: dict[str, t.Any] = {
             "newid": new_vmid,
@@ -280,10 +280,10 @@ class PveLxcClient:
         new_vmid: int,
         *,
         hostname: str | None = None,
-        full: bool = True,
+        full: bool = False,  # Linked clone by default (fast)
         node: str | None = None,
     ) -> str:
-        """Async clone LXC."""
+        """Async clone LXC. Default is linked clone (full=False)."""
         return await asyncio.to_thread(
             self.clone_lxc, source_vmid, new_vmid,
             hostname=hostname, full=full, node=node
@@ -2614,6 +2614,94 @@ async def wait_for_container_ready(
     raise TimeoutError(f"Container {vmid} did not become ready within {timeout}s")
 
 
+@dataclass
+class ToolchainStatus:
+    """Status of required toolchains in the container."""
+    has_go: bool = False
+    has_rust: bool = False
+    has_bun: bool = False
+    has_node: bool = False
+
+    @property
+    def all_present(self) -> bool:
+        return self.has_go and self.has_rust and self.has_bun and self.has_node
+
+    @property
+    def missing(self) -> list[str]:
+        missing = []
+        if not self.has_go:
+            missing.append("go")
+        if not self.has_rust:
+            missing.append("rust")
+        if not self.has_bun:
+            missing.append("bun")
+        if not self.has_node:
+            missing.append("node")
+        return missing
+
+
+async def detect_toolchains(
+    vmid: int,
+    client: PveLxcClient,
+    console: Console,
+) -> ToolchainStatus:
+    """Detect which toolchains are installed in the container."""
+    status = ToolchainStatus()
+
+    # Check Go
+    try:
+        result = await client.apct_exec(vmid, "which go", timeout=10, check=False)
+        status.has_go = result.returncode == 0
+    except Exception:
+        pass
+
+    # Check Rust
+    try:
+        result = await client.apct_exec(vmid, "which cargo", timeout=10, check=False)
+        status.has_rust = result.returncode == 0
+    except Exception:
+        pass
+
+    # Check Bun
+    try:
+        result = await client.apct_exec(vmid, "which bun", timeout=10, check=False)
+        status.has_bun = result.returncode == 0
+    except Exception:
+        pass
+
+    # Check Node
+    try:
+        result = await client.apct_exec(vmid, "which node", timeout=10, check=False)
+        status.has_node = result.returncode == 0
+    except Exception:
+        pass
+
+    return status
+
+
+def create_dynamic_update_registry(toolchain_status: ToolchainStatus) -> TaskRegistry:
+    """Create a dynamic task registry for update mode based on detected toolchains.
+
+    If toolchains are missing, we add the installation tasks to the registry.
+    This allows update mode to work on older templates that don't have all toolchains.
+    """
+    dynamic_registry = TaskRegistry()
+
+    # Always include these base tasks from update_registry
+    # We'll copy tasks from update_registry and optionally add toolchain installation
+
+    # If Go is missing, we need to add install-go-toolchain task
+    # If Rust is missing, we need to add install-rust-toolchain task
+    # etc.
+
+    # For now, if any toolchain is missing, use the full registry instead
+    # This is simpler and ensures all dependencies are met
+    if not toolchain_status.all_present:
+        return registry  # Use full registry for templates missing toolchains
+
+    return update_registry  # Use optimized update registry
+
+
 async def update_existing_template(
     args: argparse.Namespace,
     *,
@@ -2628,7 +2716,7 @@ async def update_existing_template(
 
     Flow:
     1. Check if source VMID is a template (via config template=1)
-    2. If template, full clone to new auto-allocated VMID
+    2. If template, linked clone to new auto-allocated VMID (full clone as fallback)
     3. Start the clone and run update tasks
     4. Stop and convert to new template
     5. Return new template VMID
@@ -2657,17 +2745,30 @@ async def update_existing_template(
         # Clone from template to new VMID
         new_vmid = await client.afind_next_vmid(node)
         hostname = f"cmux-update-{new_vmid}"
-        console.always(f"Source {source_vmid} is a template, cloning to new container {new_vmid}...")
 
-        upid = await client.aclone_lxc(
-            source_vmid,
-            new_vmid,
-            hostname=hostname,
-            full=True,
-            node=node,
-        )
-        await client.await_task(upid, timeout=600, node=node)
-        console.info(f"Clone complete: {source_vmid} -> {new_vmid}")
+        # Try linked clone first (faster), fall back to full clone if it fails
+        try:
+            console.always(f"Source {source_vmid} is a template, linked-cloning to new container {new_vmid}...")
+            upid = await client.aclone_lxc(
+                source_vmid,
+                new_vmid,
+                hostname=hostname,
+                full=False,  # Linked clone (fast)
+                node=node,
+            )
+            await client.await_task(upid, timeout=300, node=node)
+            console.info(f"Linked clone complete: {source_vmid} -> {new_vmid}")
+        except Exception as e:
+            console.always(f"Linked clone failed ({e}), falling back to full clone...")
+            upid = await client.aclone_lxc(
+                source_vmid,
+                new_vmid,
+                hostname=hostname,
+                full=True,  # Full clone (fallback)
+                node=node,
+            )
+            await client.await_task(upid, timeout=600, node=node)
+            console.info(f"Full clone complete: {source_vmid} -> {new_vmid}")
 
         work_vmid = new_vmid
     else:
@@ -2685,6 +2786,20 @@ async def update_existing_template(
     else:
         console.info(f"Container {work_vmid} is already running")
 
+    # Detect which toolchains are installed
+    console.always("\nDetecting installed toolchains...")
+    toolchain_status = await detect_toolchains(work_vmid, client, console)
+
+    if toolchain_status.all_present:
+        console.always("All toolchains present - using optimized update registry")
+        active_registry = update_registry
+        registry_name = "Update Mode"
+    else:
+        missing = ", ".join(toolchain_status.missing)
+        console.always(f"Missing toolchains: {missing} - using full registry to install them")
+        active_registry = registry
+        registry_name = "Full Build"
+
     # Create task context
     ctx = PveTaskContext(
         vmid=work_vmid,
@@ -2696,13 +2811,13 @@ async def update_existing_template(
         timings=timings,
     )
 
-    # Run update task graph (uses update_registry instead of full registry)
-    console.always("\nRunning update tasks (skipping dependency installation)...")
-    await run_pve_task_graph(update_registry, ctx)
+    # Run task graph (uses detected registry)
+    console.always(f"\nRunning {registry_name} tasks...")
+    await run_pve_task_graph(active_registry, ctx)
 
-    graph = format_dependency_graph(update_registry)
+    graph = format_dependency_graph(active_registry)
     if graph:
-        console.always("\nUpdate Mode Dependency Graph")
+        console.always(f"\n{registry_name} Dependency Graph")
         for line in graph.splitlines():
             console.always(line)
 
@@ -2752,17 +2867,30 @@ async def provision_and_create_template(
     new_vmid = await client.afind_next_vmid(node)
     hostname = f"cmux-{preset.preset_id.replace('_', '-')}"
 
-    console.info(f"Cloning template {args.template_vmid} to new container {new_vmid}...")
+    # Try linked clone first (faster), fall back to full clone if it fails
+    try:
+        console.info(f"Linked-cloning template {args.template_vmid} to new container {new_vmid}...")
+        upid = await client.aclone_lxc(
+            args.template_vmid,
+            new_vmid,
+            hostname=hostname,
+            full=False,  # Linked clone (fast)
+            node=node,
+        )
+        await client.await_task(upid, timeout=300, node=node)
+        console.info(f"Linked clone complete: {args.template_vmid} -> {new_vmid}")
+    except Exception as e:
+        console.always(f"Linked clone failed ({e}), falling back to full clone...")
+        upid = await client.aclone_lxc(
+            args.template_vmid,
+            new_vmid,
+            hostname=hostname,
+            full=True,  # Full clone (fallback)
+            node=node,
+        )
+        await client.await_task(upid, timeout=600, node=node)
+        console.info(f"Full clone complete: {args.template_vmid} -> {new_vmid}")
 
-    # Clone from template
-    upid = await client.aclone_lxc(
-        args.template_vmid,
-        new_vmid,
-        hostname=hostname,
-        full=True,
-        node=node,
-    )
-    await client.await_task(upid, timeout=600, node=node)
     created_containers.append(new_vmid)
 
     # Configure resources
