@@ -19,6 +19,7 @@ import {
   configureGitIdentity,
   fetchGitIdentityInputs,
 } from "./sandboxes/git";
+import { wrapMorphInstance } from "@/lib/utils/sandbox-instance";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import * as Sentry from "@sentry/nextjs";
 
@@ -423,7 +424,7 @@ morphRouter.openapi(
       }
 
       // Use the existing configureGithubAccess function to refresh auth
-      await configureGithubAccess(instance, tokenResult.token);
+      await configureGithubAccess(wrapMorphInstance(instance), tokenResult.token);
 
       console.log(
         `[morph.refresh-github-auth] Successfully refreshed GitHub auth for instance ${instanceId}`
@@ -606,9 +607,10 @@ morphRouter.openapi(
         return c.text("Failed to resolve GitHub credentials", 401);
       }
 
+      const wrappedInstance = wrapMorphInstance(instance);
       const configureGithubPromise = Sentry.startSpan(
         { name: "configureGithubAccess", op: "morph.exec" },
-        () => configureGithubAccess(instance, githubAccessToken)
+        () => configureGithubAccess(wrappedInstance, githubAccessToken)
       );
 
       void gitIdentityPromise
@@ -616,7 +618,7 @@ morphRouter.openapi(
           const { name, email } = selectGitIdentity(who, gh);
           return Sentry.startSpan(
             { name: "configureGitIdentity", op: "morph.exec" },
-            () => configureGitIdentity(instance, { name, email })
+            () => configureGitIdentity(wrappedInstance, { name, email })
           );
         })
         .catch((error) => {

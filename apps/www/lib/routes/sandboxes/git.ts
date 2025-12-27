@@ -1,14 +1,15 @@
 import { fetchGithubUserInfoForRequest } from "@/lib/utils/githubUserInfo";
+import type { SandboxInstance } from "@/lib/utils/sandbox-instance";
 import { api } from "@cmux/convex/api";
-
-import type { MorphCloudClient } from "morphcloud";
 
 import type { ConvexClient } from "./snapshot";
 import { singleQuote } from "./shell";
 
-export type MorphInstance = Awaited<
-  ReturnType<MorphCloudClient["instances"]["start"]>
->;
+/**
+ * Instance type for sandbox operations.
+ * Now uses the unified SandboxInstance interface to support both Morph and PVE LXC.
+ */
+export type MorphInstance = SandboxInstance;
 
 export const fetchGitIdentityInputs = (
   convex: ConvexClient,

@@ -15,6 +15,12 @@ import { parseGithubRepoUrl } from "@cmux/shared/utils/parse-github-repo-url";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { MorphCloudClient } from "morphcloud";
+import { getPveLxcClient, type PveLxcInstance } from "@/lib/utils/pve-lxc-client";
+import {
+  type SandboxInstance,
+  wrapMorphInstance,
+  wrapPveLxcInstance,
+} from "@/lib/utils/sandbox-instance";
 import { loadEnvironmentEnvVars } from "./sandboxes/environment";
 import {
   configureGithubAccess,
@@ -368,12 +374,6 @@ sandboxesRouter.openapi(
         snapshotId: body.snapshotId,
       });
 
-      // Currently only Morph is fully implemented
-      // Proxmox support will be added in a future PR
-      if (provider === "proxmox") {
-        return c.text("Proxmox sandbox provider not yet implemented", 501);
-      }
-
       const environmentEnvVarsPromise = environmentDataVaultKey
         ? loadEnvironmentEnvVars(environmentDataVaultKey)
         : Promise.resolve<string | null>(null);
@@ -429,22 +429,47 @@ sandboxesRouter.openapi(
         },
       );
 
-      const client = getMorphClient();
+      // Start the sandbox using the appropriate provider
+      let instance: SandboxInstance;
+      let rawPveLxcInstance: PveLxcInstance | null = null;
 
-      const instance = await client.instances.start({
-        snapshotId: resolvedSnapshotId,
-        ttlSeconds: body.ttlSeconds ?? 60 * 60,
-        ttlAction: "pause",
-        metadata: {
-          app: "cmux",
-          teamId: team.uuid,
-          ...(body.environmentId ? { environmentId: body.environmentId } : {}),
-          ...(body.metadata || {}),
-        },
-      });
-      void (async () => {
-        await instance.setWakeOn(true, true);
-      })();
+      if (provider === "proxmox") {
+        // Proxmox VE LXC provider
+        console.log(`[sandboxes.start] Starting PVE LXC sandbox with snapshot ${resolvedSnapshotId}`);
+        const pveClient = getPveLxcClient();
+        rawPveLxcInstance = await pveClient.instances.start({
+          snapshotId: resolvedSnapshotId,
+          ttlSeconds: body.ttlSeconds ?? 60 * 60,
+          ttlAction: "pause",
+          metadata: {
+            app: "cmux",
+            teamId: team.uuid,
+            userId: user.id,
+            ...(body.environmentId ? { environmentId: body.environmentId } : {}),
+            ...(body.metadata || {}),
+          },
+        });
+        instance = wrapPveLxcInstance(rawPveLxcInstance);
+        console.log(`[sandboxes.start] PVE LXC sandbox started: ${instance.id}`);
+      } else {
+        // Morph provider (default)
+        const client = getMorphClient();
+        const morphInstance = await client.instances.start({
+          snapshotId: resolvedSnapshotId,
+          ttlSeconds: body.ttlSeconds ?? 60 * 60,
+          ttlAction: "pause",
+          metadata: {
+            app: "cmux",
+            teamId: team.uuid,
+            ...(body.environmentId ? { environmentId: body.environmentId } : {}),
+            ...(body.metadata || {}),
+          },
+        });
+        instance = wrapMorphInstance(morphInstance);
+        void (async () => {
+          await instance.setWakeOn(true, true);
+        })();
+      }
 
       const exposed = instance.networking.httpServices;
       const vscodeService = exposed.find((s) => s.port === 39378);
@@ -477,7 +502,7 @@ sandboxesRouter.openapi(
             teamSlugOrId: body.teamSlugOrId,
             id: body.taskRunId as Id<"taskRuns">,
             vscode: {
-              provider: "morph",
+              provider: provider === "proxmox" ? "pve-lxc" : "morph",
               containerName: instance.id,
               status: "starting",
               url: vscodeService.url,
@@ -678,7 +703,7 @@ sandboxesRouter.openapi(
         instanceId: instance.id,
         vscodeUrl: vscodeService.url,
         workerUrl: workerService.url,
-        provider: "morph",
+        provider: provider === "proxmox" ? "proxmox" : "morph",
         vscodePersisted,
       });
     } catch (error) {
