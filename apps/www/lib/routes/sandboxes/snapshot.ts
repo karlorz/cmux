@@ -1,4 +1,12 @@
 import { DEFAULT_MORPH_SNAPSHOT_ID } from "@/lib/utils/morph-defaults";
+import {
+  DEFAULT_PVE_LXC_SNAPSHOT_ID,
+  PVE_LXC_SNAPSHOT_PRESETS,
+} from "@/lib/utils/pve-lxc-defaults";
+import {
+  getActiveSandboxProvider,
+  type SandboxProvider,
+} from "@/lib/utils/sandbox-provider";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { api } from "@cmux/convex/api";
 import { MORPH_SNAPSHOT_PRESETS } from "@cmux/shared";
@@ -12,9 +20,43 @@ export type ConvexClient = ReturnType<typeof getConvex>;
 export interface SnapshotResolution {
   team: Awaited<ReturnType<typeof verifyTeamAccess>>;
   resolvedSnapshotId: string;
+  /** The sandbox provider to use */
+  provider: SandboxProvider;
   environmentDataVaultKey?: string;
   environmentMaintenanceScript?: string;
   environmentDevScript?: string;
+}
+
+/**
+ * Get the default snapshot ID based on the active provider
+ */
+function getDefaultSnapshotId(provider: SandboxProvider): string {
+  switch (provider) {
+    case "proxmox":
+      return DEFAULT_PVE_LXC_SNAPSHOT_ID;
+    case "morph":
+    default:
+      return DEFAULT_MORPH_SNAPSHOT_ID;
+  }
+}
+
+/**
+ * Check if a snapshot ID is a known default snapshot for any provider
+ */
+function isKnownDefaultSnapshot(snapshotId: string): boolean {
+  // Check Morph snapshots
+  const isMorphSnapshot = MORPH_SNAPSHOT_PRESETS.some((preset) =>
+    preset.versions.some((v) => v.snapshotId === snapshotId)
+  );
+  if (isMorphSnapshot) {
+    return true;
+  }
+
+  // Check PVE LXC snapshots
+  const isPveSnapshot = PVE_LXC_SNAPSHOT_PRESETS.some((preset) =>
+    preset.versions.some((v) => `pve_${v.vmid}_${v.snapshotName}` === snapshotId)
+  );
+  return isPveSnapshot;
 }
 
 export const resolveTeamAndSnapshot = async ({
@@ -32,6 +74,11 @@ export const resolveTeamAndSnapshot = async ({
 }): Promise<SnapshotResolution> => {
   const team = await verifyTeamAccess({ req, teamSlugOrId });
 
+  // Determine the active provider
+  const providerConfig = getActiveSandboxProvider();
+  const provider = providerConfig.provider;
+  const defaultSnapshotId = getDefaultSnapshotId(provider);
+
   if (environmentId) {
     const environmentDoc = await convex.query(api.environments.get, {
       teamSlugOrId,
@@ -46,8 +93,9 @@ export const resolveTeamAndSnapshot = async ({
 
     return {
       team,
+      provider,
       resolvedSnapshotId:
-        environmentDoc.morphSnapshotId || DEFAULT_MORPH_SNAPSHOT_ID,
+        environmentDoc.morphSnapshotId || defaultSnapshotId,
       environmentDataVaultKey: environmentDoc.dataVaultKey ?? undefined,
       environmentMaintenanceScript: environmentDoc.maintenanceScript ?? undefined,
       environmentDevScript: environmentDoc.devScript ?? undefined,
@@ -55,13 +103,10 @@ export const resolveTeamAndSnapshot = async ({
   }
 
   if (snapshotId) {
-    const isKnownDefaultSnapshot = MORPH_SNAPSHOT_PRESETS.some((preset) =>
-      preset.versions.some((v) => v.snapshotId === snapshotId)
-    );
-
-    if (isKnownDefaultSnapshot) {
+    if (isKnownDefaultSnapshot(snapshotId)) {
       return {
         team,
+        provider,
         resolvedSnapshotId: snapshotId,
       };
     }
@@ -76,8 +121,9 @@ export const resolveTeamAndSnapshot = async ({
     if (matchedEnvironment) {
       return {
         team,
+        provider,
         resolvedSnapshotId:
-          matchedEnvironment.morphSnapshotId || DEFAULT_MORPH_SNAPSHOT_ID,
+          matchedEnvironment.morphSnapshotId || defaultSnapshotId,
       };
     }
 
@@ -94,13 +140,15 @@ export const resolveTeamAndSnapshot = async ({
 
     return {
       team,
+      provider,
       resolvedSnapshotId:
-        snapshotVersion.morphSnapshotId || DEFAULT_MORPH_SNAPSHOT_ID,
+        snapshotVersion.morphSnapshotId || defaultSnapshotId,
     };
   }
 
   return {
     team,
-    resolvedSnapshotId: DEFAULT_MORPH_SNAPSHOT_ID,
+    provider,
+    resolvedSnapshotId: defaultSnapshotId,
   };
 };

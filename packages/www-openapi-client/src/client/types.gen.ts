@@ -541,7 +541,7 @@ export type StartSandboxResponse = {
     instanceId: string;
     vscodeUrl: string;
     workerUrl: string;
-    provider?: 'morph';
+    provider?: 'morph' | 'proxmox';
     vscodePersisted?: boolean;
 };
 
@@ -2530,7 +2530,7 @@ export type GetApiSandboxesByIdStatusResponses = {
         running: boolean;
         vscodeUrl?: string;
         workerUrl?: string;
-        provider?: 'morph';
+        provider?: 'morph' | 'proxmox';
     };
 };
 

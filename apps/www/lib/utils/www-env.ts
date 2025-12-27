@@ -11,8 +11,13 @@ export const env = createEnv({
     // GitHub App
     CMUX_GITHUB_APP_ID: z.string().min(1),
     CMUX_GITHUB_APP_PRIVATE_KEY: z.string().min(1),
-    // Morph
-    MORPH_API_KEY: z.string().min(1),
+    // Sandbox providers (at least one required)
+    // Morph Cloud - original provider
+    MORPH_API_KEY: z.string().min(1).optional(),
+    // Proxmox VE LXC - self-hosted alternative
+    PVE_API_URL: z.string().url().optional(),
+    PVE_API_TOKEN: z.string().min(1).optional(),
+    PVE_NODE: z.string().min(1).optional(),
     OPENAI_API_KEY: z.string().min(1).optional(),
     GEMINI_API_KEY: z.string().min(1).optional(),
     ANTHROPIC_API_KEY: z.string().min(1),

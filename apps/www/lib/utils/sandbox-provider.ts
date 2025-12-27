@@ -1,0 +1,81 @@
+import { env } from "./www-env";
+
+/**
+ * Supported sandbox providers
+ */
+export type SandboxProvider = "morph" | "proxmox";
+
+/**
+ * Configuration for the active sandbox provider
+ */
+export interface SandboxProviderConfig {
+  provider: SandboxProvider;
+  /** For Morph: API key; For Proxmox: not used here */
+  apiKey?: string;
+  /** For Proxmox: API URL */
+  apiUrl?: string;
+  /** For Proxmox: API token */
+  apiToken?: string;
+  /** For Proxmox: node name */
+  node?: string;
+}
+
+/**
+ * Determines which sandbox provider to use based on available environment variables.
+ *
+ * Selection priority:
+ * 1. If MORPH_API_KEY is set, use Morph (original provider)
+ * 2. If PVE_API_URL and PVE_API_TOKEN are set, use Proxmox
+ * 3. Throw error if no provider is configured
+ */
+export function getActiveSandboxProvider(): SandboxProviderConfig {
+  // Check for Morph (original provider - takes priority if both are set)
+  if (env.MORPH_API_KEY) {
+    return {
+      provider: "morph",
+      apiKey: env.MORPH_API_KEY,
+    };
+  }
+
+  // Check for Proxmox VE LXC
+  if (env.PVE_API_URL && env.PVE_API_TOKEN) {
+    return {
+      provider: "proxmox",
+      apiUrl: env.PVE_API_URL,
+      apiToken: env.PVE_API_TOKEN,
+      node: env.PVE_NODE,
+    };
+  }
+
+  throw new Error(
+    "No sandbox provider configured. Set either MORPH_API_KEY or (PVE_API_URL + PVE_API_TOKEN)."
+  );
+}
+
+/**
+ * Check if Morph provider is available
+ */
+export function isMorphAvailable(): boolean {
+  return Boolean(env.MORPH_API_KEY);
+}
+
+/**
+ * Check if Proxmox provider is available
+ */
+export function isProxmoxAvailable(): boolean {
+  return Boolean(env.PVE_API_URL && env.PVE_API_TOKEN);
+}
+
+/**
+ * Get a list of all available sandbox providers
+ */
+export function getAvailableSandboxProviders(): SandboxProvider[] {
+  const providers: SandboxProvider[] = [];
+  if (isMorphAvailable()) {
+    providers.push("morph");
+  }
+  if (isProxmoxAvailable()) {
+    providers.push("proxmox");
+  }
+  return providers;
+}

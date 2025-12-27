@@ -34,6 +34,17 @@ import {
 } from "./utils/ensure-env-vars";
 
 /**
+ * Create a MorphCloudClient instance.
+ * Throws if MORPH_API_KEY is not configured.
+ */
+function getMorphClient(): MorphCloudClient {
+  if (!env.MORPH_API_KEY) {
+    throw new Error("Morph API key not configured");
+  }
+  return new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
+}
+
+/**
  * Wait for the VSCode server to be ready by polling the service URL.
  * This prevents "upstream connect error" when the iframe loads before the server is ready.
  */
@@ -249,7 +260,7 @@ const StartSandboxResponse = z
     instanceId: z.string(),
     vscodeUrl: z.string(),
     workerUrl: z.string(),
-    provider: z.enum(["morph"]).default("morph"),
+    provider: z.enum(["morph", "proxmox"]).default("morph"),
     vscodePersisted: z.boolean().optional(),
   })
   .openapi("StartSandboxResponse");
@@ -344,6 +355,7 @@ sandboxesRouter.openapi(
 
       const {
         team,
+        provider,
         resolvedSnapshotId,
         environmentDataVaultKey,
         environmentMaintenanceScript,
@@ -355,6 +367,12 @@ sandboxesRouter.openapi(
         environmentId: body.environmentId,
         snapshotId: body.snapshotId,
       });
+
+      // Currently only Morph is fully implemented
+      // Proxmox support will be added in a future PR
+      if (provider === "proxmox") {
+        return c.text("Proxmox sandbox provider not yet implemented", 501);
+      }
 
       const environmentEnvVarsPromise = environmentDataVaultKey
         ? loadEnvironmentEnvVars(environmentDataVaultKey)
@@ -411,7 +429,7 @@ sandboxesRouter.openapi(
         },
       );
 
-      const client = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
+      const client = getMorphClient();
 
       const instance = await client.instances.start({
         snapshotId: resolvedSnapshotId,
@@ -724,7 +742,7 @@ sandboxesRouter.openapi(
         teamSlugOrId,
       });
 
-      const client = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
+      const client = getMorphClient();
       const instance = await client.instances
         .get({ instanceId: id })
         .catch((error) => {
@@ -790,7 +808,7 @@ sandboxesRouter.openapi(
     if (!token) return c.text("Unauthorized", 401);
 
     try {
-      const client = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
+      const client = getMorphClient();
       const instance = await client.instances.get({ instanceId: id });
       // Pause the VM directly - Morph preserves RAM state so processes resume exactly where they left off.
       // No need to kill processes; doing so would terminate agent sessions that should persist across pause/resume.
@@ -821,7 +839,7 @@ sandboxesRouter.openapi(
               running: z.boolean(),
               vscodeUrl: z.string().optional(),
               workerUrl: z.string().optional(),
-              provider: z.enum(["morph"]).optional(),
+              provider: z.enum(["morph", "proxmox"]).optional(),
             }),
           },
         },
@@ -836,7 +854,7 @@ sandboxesRouter.openapi(
     const token = await getAccessTokenFromRequest(c.req.raw);
     if (!token) return c.text("Unauthorized", 401);
     try {
-      const client = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
+      const client = getMorphClient();
       const instance = await client.instances.get({ instanceId: id });
       const vscodeService = instance.networking.httpServices.find(
         (s) => s.port === 39378,
@@ -905,7 +923,7 @@ sandboxesRouter.openapi(
     const { id } = c.req.valid("param");
     const { teamSlugOrId, taskRunId } = c.req.valid("json");
     try {
-      const client = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
+      const client = getMorphClient();
       const instance = await client.instances.get({ instanceId: id });
 
       const reservedPorts = RESERVED_CMUX_PORT_SET;
@@ -1092,7 +1110,7 @@ sandboxesRouter.openapi(
       // Check if the id is a Morph instance ID (starts with "morphvm_")
       if (id.startsWith("morphvm_")) {
         // Direct Morph instance ID - verify ownership via instance metadata
-        const morphClient = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
+        const morphClient = getMorphClient();
 
         // First try to find in task runs if team is provided
         if (teamSlugOrId) {
@@ -1236,7 +1254,7 @@ sandboxesRouter.openapi(
       }
 
       // Get instance status from Morph
-      const morphClient = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
+      const morphClient = getMorphClient();
       const instance = await morphClient.instances.get({ instanceId: morphInstanceId });
       const status = instance.status === "paused" ? "paused" : "running";
 
@@ -1313,7 +1331,7 @@ sandboxesRouter.openapi(
       // Check if the id is a direct VM ID
       if (id.startsWith("morphvm_")) {
         // Direct Morph instance ID - verify ownership via instance metadata
-        const morphClient = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
+        const morphClient = getMorphClient();
 
         // First try to find in task runs if team is provided
         if (teamSlugOrId) {
@@ -1388,7 +1406,7 @@ sandboxesRouter.openapi(
       }
 
       // Resume the instance using Morph API
-      const morphClient = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
+      const morphClient = getMorphClient();
       const instance = await morphClient.instances.get({ instanceId: morphInstanceId });
 
       if (instance.status !== "paused") {
