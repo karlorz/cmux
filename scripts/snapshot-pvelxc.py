@@ -1129,6 +1129,34 @@ def _write_manifest(manifest: PveTemplateManifestEntry) -> None:
     )
 
 
+def _find_preset_for_vmid(manifest: PveTemplateManifestEntry, vmid: int) -> PveTemplatePresetEntry | None:
+    """Find the preset entry that contains a given template VMID."""
+    for preset in manifest.get("presets", []):
+        for version in preset.get("versions", []):
+            if version.get("templateVmid") == vmid:
+                return preset
+    return None
+
+
+def _add_version_to_preset(
+    preset_entry: PveTemplatePresetEntry,
+    template_vmid: int,
+    captured_at: str,
+) -> None:
+    """Add a new version entry to an existing preset."""
+    next_version = 1
+    if preset_entry["versions"]:
+        next_version = max(entry["version"] for entry in preset_entry["versions"]) + 1
+
+    version_entry: PveTemplateVersionEntry = {
+        "version": next_version,
+        "templateVmid": template_vmid,
+        "capturedAt": captured_at,
+    }
+    preset_entry["versions"].append(version_entry)
+    preset_entry["versions"].sort(key=lambda entry: entry["version"])
+
+
 def _update_manifest_with_template(
     manifest: PveTemplateManifestEntry,
     preset: TemplatePresetPlan,
@@ -3546,10 +3574,28 @@ async def update_existing_template(
 
     console.always(f"\n=== Update complete: new template VMID {work_vmid} ===")
 
+    # Update manifest with new template version
+    manifest = _load_manifest()
+    captured_at = _iso_timestamp()
+
+    # Find the preset for the source VMID
+    preset_entry = _find_preset_for_vmid(manifest, source_vmid)
+    if preset_entry:
+        _add_version_to_preset(preset_entry, work_vmid, captured_at)
+        manifest["updatedAt"] = captured_at
+        manifest["node"] = node
+        _write_manifest(manifest)
+        console.always(f"\nManifest updated: {PVE_SNAPSHOT_MANIFEST_PATH}")
+        console.always(f"  Preset: {preset_entry.get('presetId')} ({preset_entry.get('label')})")
+        console.always(f"  New version added with template VMID {work_vmid}")
+    else:
+        console.always(f"\nWARNING: Source VMID {source_vmid} not found in manifest")
+        console.always(f"  Manifest not updated. Manually add template {work_vmid} to the manifest if needed.")
+
     if is_template:
         console.always(f"\nOld template: {source_vmid}")
         console.always(f"New template: {work_vmid}")
-        console.always("\nTo use the new template, update manifest or clone from it:")
+        console.always("\nTo use the new template, clone from it:")
         console.always(f"  pct clone {work_vmid} <new-vmid>")
     else:
         console.always(f"\nContainer {work_vmid} converted to template")
