@@ -3035,7 +3035,7 @@ async def update_existing_template(
     if is_template:
         # Clone from template to new VMID
         new_vmid = await client.afind_next_vmid(node)
-        hostname = f"cmux-update-{new_vmid}"
+        hostname = f"cmux-{new_vmid}"
 
         # Try linked clone first (faster), fall back to full clone if it fails
         try:
@@ -3156,7 +3156,7 @@ async def provision_and_create_template(
 
     node = await client.aget_node()
     new_vmid = await client.afind_next_vmid(node)
-    hostname = f"cmux-{preset.preset_id.replace('_', '-')}"
+    hostname = f"cmux-{new_vmid}"
 
     # Try linked clone first (faster), fall back to full clone if it fails
     try:
