@@ -389,8 +389,11 @@ export class PveLxcClient {
     timeoutMs?: number
   ): Promise<ExecResult | null> {
     const execUrl = `http://${ipAddress}:39375/exec`;
+    // Set HOME explicitly since cmux-execd may not have it set,
+    // and many tools (gh, git) require HOME to be defined.
+    // The command is passed directly to the execd service which runs it via sh -c.
     const body = JSON.stringify({
-      command: `bash -lc ${JSON.stringify(command)}`,
+      command: `HOME=/root ${command}`,
       timeout_ms: timeoutMs ?? 30000,
     });
 
