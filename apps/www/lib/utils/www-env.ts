@@ -20,6 +20,9 @@ export const env = createEnv({
     PVE_API_URL: z.string().url().optional(),
     PVE_API_TOKEN: z.string().min(1).optional(),
     PVE_NODE: z.string().min(1).optional(),
+    // Public domain for PVE sandbox URLs via Cloudflare Tunnel (e.g., "example.com")
+    // When set, generates URLs like https://vscode-{vmid}.example.com
+    PVE_PUBLIC_DOMAIN: z.string().min(1).optional(),
     OPENAI_API_KEY: z.string().min(1).optional(),
     GEMINI_API_KEY: z.string().min(1).optional(),
     ANTHROPIC_API_KEY: z.string().min(1),

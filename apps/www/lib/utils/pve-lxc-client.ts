@@ -242,6 +242,8 @@ export class PveLxcClient {
   private domainSuffix: string | null = null;
   /** Whether we've attempted to fetch the domain suffix */
   private domainSuffixFetched: boolean = false;
+  /** Public domain for external access via Cloudflare Tunnel (e.g., "example.com") */
+  private publicDomain: string | null;
 
   // In-memory store for instance metadata (PVE doesn't have native metadata support)
   private instanceMetadata: Map<number, ContainerMetadata> = new Map();
@@ -251,10 +253,12 @@ export class PveLxcClient {
     apiUrl: string;
     apiToken: string;
     node?: string;
+    publicDomain?: string;
   }) {
     this.apiUrl = options.apiUrl.replace(/\/$/, "");
     this.apiToken = options.apiToken;
     this.node = options.node || null; // Will be auto-detected if not provided
+    this.publicDomain = options.publicDomain || null;
 
     // Extract SSH host from API URL
     const url = new URL(this.apiUrl);
@@ -324,6 +328,18 @@ export class PveLxcClient {
       return `${hostname}${domainSuffix}`;
     }
     return undefined;
+  }
+
+  /**
+   * Build a public URL for a service via Cloudflare Tunnel.
+   * Pattern: https://{serviceName}-{vmid}.{publicDomain}
+   * Returns null if publicDomain is not configured.
+   */
+  private buildPublicServiceUrl(serviceName: string, vmid: number): string | null {
+    if (!this.publicDomain) {
+      return null;
+    }
+    return `https://${serviceName}-${vmid}.${this.publicDomain}`;
   }
 
   /**
@@ -849,9 +865,17 @@ export class PveLxcClient {
       this.instanceMetadata.set(newVmid, metadata);
 
       // Initialize services with standard cmux ports
-      // Prefer hostname+domainSuffix when available, fall back to IP
+      // Prefer public URL (via Cloudflare Tunnel) when PVE_PUBLIC_DOMAIN is set,
+      // otherwise fall back to internal hostname+domainSuffix or IP
       const services: HttpService[] = [];
-      if (hostname || ipAddress) {
+      const vscodePubUrl = this.buildPublicServiceUrl("vscode", newVmid);
+      const workerPubUrl = this.buildPublicServiceUrl("worker", newVmid);
+      if (vscodePubUrl && workerPubUrl) {
+        services.push(
+          { name: "vscode", port: 39378, url: vscodePubUrl },
+          { name: "worker", port: 39377, url: workerPubUrl }
+        );
+      } else if (hostname || ipAddress) {
         services.push(
           { name: "vscode", port: 39378, url: this.buildServiceUrl(hostname, ipAddress, 39378, domainSuffix) },
           { name: "worker", port: 39377, url: this.buildServiceUrl(hostname, ipAddress, 39377, domainSuffix) }
@@ -965,5 +989,6 @@ export function getPveLxcClient(): PveLxcClient {
     apiUrl: env.PVE_API_URL,
     apiToken: env.PVE_API_TOKEN,
     node: env.PVE_NODE,
+    publicDomain: env.PVE_PUBLIC_DOMAIN,
   });
 }
