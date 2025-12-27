@@ -34,6 +34,13 @@ Examples:
 
 from __future__ import annotations
 
+# Force unbuffered output for real-time console logging
+import sys
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(line_buffering=True)
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(line_buffering=True)
+
 import argparse
 import asyncio
 import json
@@ -42,7 +49,6 @@ import shlex
 import shutil
 import ssl
 import subprocess
-import sys
 import tarfile
 import tempfile
 import textwrap
@@ -2849,28 +2855,47 @@ async def wait_for_container_ready(
     client: PveLxcClient,
     *,
     console: Console,
-    timeout: int = 120,
+    timeout: int = 180,
 ) -> None:
-    """Wait for container to be running and ready for commands via SSH."""
+    """Wait for container to be running and ready for commands.
+
+    Uses HTTP exec (cmux-execd) when cf_domain is configured, otherwise falls back
+    to checking container status via PVE API only. When cf_domain is configured,
+    waits for the cmux-execd service to become responsive (may take time after boot).
+    """
     console.info(f"Waiting for container {vmid} to be ready...")
 
     elapsed = 0
+    container_running = False
     while elapsed < timeout:
         status = await client.aget_lxc_status(vmid)
         if status.get("status") == "running":
-            # Try to run a simple command via SSH + pct exec
-            try:
-                result = await client.apct_exec(
-                    vmid,
-                    "echo ready",
-                    timeout=10,
-                    check=False,
-                )
-                if result.returncode == 0 and "ready" in result.stdout:
-                    console.info(f"Container {vmid} is ready")
-                    return
-            except Exception:
-                pass
+            if not container_running:
+                container_running = True
+                console.info(f"Container {vmid} is running, waiting for services...")
+
+            # Try HTTP exec first if cf_domain is configured
+            if client.cf_domain:
+                try:
+                    result = await client.ahttp_exec(
+                        vmid,
+                        "echo ready",
+                        timeout=10,
+                        check=False,
+                    )
+                    if result is not None and result.returncode == 0 and "ready" in result.stdout:
+                        console.info(f"Container {vmid} is ready (HTTP exec)")
+                        return
+                except Exception:
+                    pass
+                # HTTP exec not ready yet, keep waiting
+                if elapsed > 0 and elapsed % 30 == 0:
+                    console.info(f"Still waiting for cmux-execd on container {vmid}... ({elapsed}s)")
+            else:
+                # No cf_domain configured - just verify container is running via API
+                # The PVE API confirmed running status, so we're good
+                console.info(f"Container {vmid} is running (API verified)")
+                return
         await asyncio.sleep(2)
         elapsed += 2
 
@@ -2908,33 +2933,36 @@ async def detect_toolchains(
     client: PveLxcClient,
     console: Console,
 ) -> ToolchainStatus:
-    """Detect which toolchains are installed in the container."""
+    """Detect which toolchains are installed in the container.
+
+    Uses HTTP exec (cmux-execd) when available, falls back to SSH+pct exec.
+    """
     status = ToolchainStatus()
 
     # Check Go
     try:
-        result = await client.apct_exec(vmid, "which go", timeout=10, check=False)
+        result = await client.aexec_in_container(vmid, "which go", timeout=10, check=False)
         status.has_go = result.returncode == 0
     except Exception:
         pass
 
     # Check Rust
     try:
-        result = await client.apct_exec(vmid, "which cargo", timeout=10, check=False)
+        result = await client.aexec_in_container(vmid, "which cargo", timeout=10, check=False)
         status.has_rust = result.returncode == 0
     except Exception:
         pass
 
     # Check Bun
     try:
-        result = await client.apct_exec(vmid, "which bun", timeout=10, check=False)
+        result = await client.aexec_in_container(vmid, "which bun", timeout=10, check=False)
         status.has_bun = result.returncode == 0
     except Exception:
         pass
 
     # Check Node
     try:
-        result = await client.apct_exec(vmid, "which node", timeout=10, check=False)
+        result = await client.aexec_in_container(vmid, "which node", timeout=10, check=False)
         status.has_node = result.returncode == 0
     except Exception:
         pass
