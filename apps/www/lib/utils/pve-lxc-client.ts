@@ -479,11 +479,12 @@ export class PveLxcClient {
    * Execute a command inside an LXC container via HTTP exec (cmux-execd).
    * Requires cmux-execd to be running in the container on port 39375.
    * Uses public exec URL (Cloudflare Tunnel), FQDN, or hostname to reach the container.
+   * Includes retry logic for container startup timing.
    */
   async execInContainer(
     vmid: number,
     command: string,
-    options?: { execHost?: string; timeoutMs?: number }
+    options?: { execHost?: string; timeoutMs?: number; retries?: number }
   ): Promise<ExecResult> {
     // Determine the host to use for HTTP exec
     // Priority: provided execHost > public exec URL > hostname-based FQDN
@@ -508,16 +509,36 @@ export class PveLxcClient {
       }
     }
 
-    const httpResult = await this.httpExec(host, command, options?.timeoutMs);
+    // Retry logic for container startup timing
+    // cmux-execd may not be ready immediately after container start
+    const maxRetries = options?.retries ?? 5;
+    const baseDelayMs = 2000;
 
-    if (!httpResult) {
-      throw new Error(
-        `HTTP exec failed for container ${vmid} via ${host}. ` +
-        `Ensure cmux-execd is running in the container.`
-      );
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const httpResult = await this.httpExec(host, command, options?.timeoutMs);
+
+      if (httpResult) {
+        if (attempt > 1) {
+          console.log(
+            `[PveLxcClient] HTTP exec succeeded on attempt ${attempt} for ${host}`
+          );
+        }
+        return httpResult;
+      }
+
+      if (attempt < maxRetries) {
+        const delayMs = baseDelayMs * attempt;
+        console.log(
+          `[PveLxcClient] HTTP exec attempt ${attempt}/${maxRetries} failed for ${host}, retrying in ${delayMs}ms...`
+        );
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
     }
 
-    return httpResult;
+    throw new Error(
+      `HTTP exec failed for container ${vmid} via ${host} after ${maxRetries} attempts. ` +
+        `Ensure cmux-execd is running in the container.`
+    );
   }
 
   /**
