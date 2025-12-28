@@ -150,6 +150,36 @@ export function toMorphVncWebsocketUrl(sourceUrl: string): string | null {
   return wsUrl.toString();
 }
 
+/**
+ * Convert a generic VNC base URL to a noVNC HTML viewer URL.
+ * Works with any VNC URL (PVE LXC, Morph, etc.) by appending /vnc.html and query params.
+ *
+ * @param vncBaseUrl - The base VNC URL (e.g., https://vnc-201.alphasolves.com)
+ * @returns The noVNC HTML viewer URL with autoconnect params
+ */
+export function toVncViewerUrl(vncBaseUrl: string): string | null {
+  if (!vncBaseUrl) {
+    return null;
+  }
+
+  try {
+    const url = new URL(vncBaseUrl);
+    url.pathname = "/vnc.html";
+
+    const searchParams = new URLSearchParams();
+    searchParams.set("autoconnect", "1");
+    searchParams.set("resize", "scale");
+    searchParams.set("reconnect", "1");
+    searchParams.set("reconnect_delay", "1000");
+    url.search = `?${searchParams.toString()}`;
+    url.hash = "";
+
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 export function toMorphXtermBaseUrl(sourceUrl: string): string | null {
   const components = parseMorphUrl(sourceUrl);
 

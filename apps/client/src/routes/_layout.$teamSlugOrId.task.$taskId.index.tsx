@@ -28,6 +28,7 @@ import {
 import {
   toMorphVncUrl,
   toMorphXtermBaseUrl,
+  toVncViewerUrl,
 } from "@/lib/toProxyWorkspaceUrl";
 import { getWorkspaceUrl } from "@/lib/workspace-url";
 import {
@@ -152,6 +153,7 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/task/$taskId/")({
         : taskRuns[0];
 
       const rawWorkspaceUrl = selectedRun?.vscode?.workspaceUrl ?? null;
+      const rawVncUrl = selectedRun?.vscode?.vncUrl ?? null;
       const rawBrowserUrl =
         selectedRun?.vscode?.url ?? rawWorkspaceUrl ?? null;
 
@@ -170,8 +172,14 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/task/$taskId/")({
           });
         }
       }
-      if (selectedRun && rawBrowserUrl) {
-        const vncUrl = toMorphVncUrl(rawBrowserUrl);
+      // Preload browser iframe - prefer direct vncUrl for PVE LXC, fall back to Morph derivation
+      if (selectedRun) {
+        let vncUrl: string | null = null;
+        if (rawVncUrl) {
+          vncUrl = toVncViewerUrl(rawVncUrl);
+        } else if (rawBrowserUrl) {
+          vncUrl = toMorphVncUrl(rawBrowserUrl);
+        }
         if (vncUrl) {
           void preloadTaskRunBrowserIframe(selectedRun._id, vncUrl).catch(
             (error) => {
@@ -682,14 +690,22 @@ function TaskDetailPage() {
     []
   );
 
+  // For browser panel, prefer direct vncUrl (works with PVE LXC and other providers),
+  // fall back to deriving VNC URL from workspace URL for Morph provider
+  const rawVncUrl = selectedRun?.vscode?.vncUrl ?? null;
   const rawBrowserUrl =
     selectedRun?.vscode?.url ?? selectedRun?.vscode?.workspaceUrl ?? null;
   const browserUrl = useMemo(() => {
-    if (!rawBrowserUrl) {
-      return null;
+    // Use vncUrl directly if available (PVE LXC, etc.)
+    if (rawVncUrl) {
+      return toVncViewerUrl(rawVncUrl);
     }
-    return toMorphVncUrl(rawBrowserUrl);
-  }, [rawBrowserUrl]);
+    // Fall back to deriving from workspace URL for Morph
+    if (rawBrowserUrl) {
+      return toMorphVncUrl(rawBrowserUrl);
+    }
+    return null;
+  }, [rawVncUrl, rawBrowserUrl]);
   const browserPersistKey = selectedRunId
     ? getTaskRunBrowserPersistKey(selectedRunId)
     : null;
