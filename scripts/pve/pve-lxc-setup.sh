@@ -180,7 +180,7 @@ create_container() {
         --cores "$cores" \
         --rootfs "${storage}:${disk}" \
         --net0 "name=eth0,bridge=vmbr0,ip=dhcp" \
-        --unprivileged 1 \
+        --unprivileged 0 \
         --features "nesting=1" \
         --start 0; then
         log_success "Container ${vmid} created"

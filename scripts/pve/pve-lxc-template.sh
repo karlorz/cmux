@@ -279,7 +279,7 @@ cmd_create() {
         --data-urlencode "rootfs=${rootfs_value}" \
         --data-urlencode "net0=${net0_value}" \
         --data-urlencode "start=0" \
-        --data-urlencode "unprivileged=1" \
+        --data-urlencode "unprivileged=0" \
         --data-urlencode "features=${features_value}" \
         "$url")
 
