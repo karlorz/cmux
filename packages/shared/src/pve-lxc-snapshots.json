@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "updatedAt": "2025-12-28T08:31:35Z",
-  "baseTemplateVmid": 9001,
+  "baseTemplateVmid": 9000,
   "node": "karl-ws",
   "presets": [
     {
@@ -13,21 +13,6 @@
       "versions": [
         {
           "version": 1,
-          "templateVmid": 102,
-          "capturedAt": "2025-12-26T19:00:09Z"
-        },
-        {
-          "version": 2,
-          "templateVmid": 105,
-          "capturedAt": "2025-12-27T07:59:50Z"
-        },
-        {
-          "version": 3,
-          "templateVmid": 108,
-          "capturedAt": "2025-12-27T18:08:06Z"
-        },
-        {
-          "version": 4,
           "templateVmid": 9004,
           "capturedAt": "2025-12-28T08:19:56Z",
           "baseCommit": "905aafc5f47997fa160dddedfa1779d20c387e3b"
@@ -43,11 +28,6 @@
       "versions": [
         {
           "version": 1,
-          "templateVmid": 103,
-          "capturedAt": "2025-12-26T19:13:00Z"
-        },
-        {
-          "version": 2,
           "templateVmid": 9005,
           "capturedAt": "2025-12-28T08:31:35Z",
           "baseCommit": "905aafc5f47997fa160dddedfa1779d20c387e3b"
