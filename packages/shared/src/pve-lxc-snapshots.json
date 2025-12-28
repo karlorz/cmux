@@ -11,21 +11,6 @@
       "versions": [
         {
           "version": 1,
-          "templateVmid": 9004,
-          "capturedAt": "2025-12-28T08:19:56Z"
-        },
-        {
-          "version": 2,
-          "templateVmid": 9001,
-          "capturedAt": "2025-12-28T09:50:50Z"
-        },
-        {
-          "version": 3,
-          "templateVmid": 9007,
-          "capturedAt": "2025-12-28T11:59:22Z"
-        },
-        {
-          "version": 4,
           "templateVmid": 9011,
           "capturedAt": "2025-12-28T13:15:43Z"
         }
@@ -40,12 +25,7 @@
       "versions": [
         {
           "version": 1,
-          "templateVmid": 9005,
-          "capturedAt": "2025-12-28T08:31:35Z"
-        },
-        {
-          "version": 2,
-          "templateVmid": 9006,
+          "templateVmid": 9011,
           "capturedAt": "2025-12-28T10:21:34Z"
         }
       ]
