@@ -840,11 +840,24 @@ sandboxesRouter.openapi(
     if (!token) return c.text("Unauthorized", 401);
 
     try {
-      const client = getMorphClient();
-      const instance = await client.instances.get({ instanceId: id });
-      // Pause the VM directly - Morph preserves RAM state so processes resume exactly where they left off.
-      // No need to kill processes; doing so would terminate agent sessions that should persist across pause/resume.
-      await instance.pause();
+      // Determine provider based on instance ID prefix
+      const isPveLxc = id.startsWith("pve_lxc_");
+
+      if (isPveLxc) {
+        // PVE LXC instance
+        // Note: LXC doesn't support hibernate, so pause() actually stops the container
+        const pveClient = getPveLxcClient();
+        const pveLxcInstance = await pveClient.instances.get({ instanceId: id });
+        await pveLxcInstance.pause();
+        console.log(`[sandboxes.stop] PVE LXC container ${id} stopped`);
+      } else {
+        // Morph instance (default)
+        const client = getMorphClient();
+        const instance = await client.instances.get({ instanceId: id });
+        // Pause the VM directly - Morph preserves RAM state so processes resume exactly where they left off.
+        // No need to kill processes; doing so would terminate agent sessions that should persist across pause/resume.
+        await instance.pause();
+      }
       return c.body(null, 204);
     } catch (error) {
       console.error("Failed to stop sandbox:", error);
@@ -886,21 +899,44 @@ sandboxesRouter.openapi(
     const token = await getAccessTokenFromRequest(c.req.raw);
     if (!token) return c.text("Unauthorized", 401);
     try {
-      const client = getMorphClient();
-      const instance = await client.instances.get({ instanceId: id });
-      const vscodeService = instance.networking.httpServices.find(
-        (s) => s.port === 39378,
-      );
-      const workerService = instance.networking.httpServices.find(
-        (s) => s.port === 39377,
-      );
-      const running = Boolean(vscodeService);
-      return c.json({
-        running,
-        vscodeUrl: vscodeService?.url,
-        workerUrl: workerService?.url,
-        provider: "morph",
-      });
+      // Determine provider based on instance ID prefix
+      const isPveLxc = id.startsWith("pve_lxc_");
+
+      if (isPveLxc) {
+        // PVE LXC instance
+        const pveClient = getPveLxcClient();
+        const pveLxcInstance = await pveClient.instances.get({ instanceId: id });
+        const vscodeService = pveLxcInstance.networking.httpServices.find(
+          (s) => s.port === 39378,
+        );
+        const workerService = pveLxcInstance.networking.httpServices.find(
+          (s) => s.port === 39377,
+        );
+        const running = pveLxcInstance.status === "running" && Boolean(vscodeService);
+        return c.json({
+          running,
+          vscodeUrl: vscodeService?.url,
+          workerUrl: workerService?.url,
+          provider: "pve-lxc" as const,
+        });
+      } else {
+        // Morph instance (default)
+        const client = getMorphClient();
+        const instance = await client.instances.get({ instanceId: id });
+        const vscodeService = instance.networking.httpServices.find(
+          (s) => s.port === 39378,
+        );
+        const workerService = instance.networking.httpServices.find(
+          (s) => s.port === 39377,
+        );
+        const running = Boolean(vscodeService);
+        return c.json({
+          running,
+          vscodeUrl: vscodeService?.url,
+          workerUrl: workerService?.url,
+          provider: "morph" as const,
+        });
+      }
     } catch (error) {
       console.error("Failed to get sandbox status:", error);
       return c.text("Failed to get status", 500);
@@ -1377,10 +1413,31 @@ sandboxesRouter.openapi(
 
     try {
       const convex = getConvex({ accessToken });
+
+      // Determine provider based on instance ID prefix
+      const isPveLxc = id.startsWith("pve_lxc_");
+      const isMorphVm = id.startsWith("morphvm_");
+
+      if (isPveLxc) {
+        // PVE LXC instance - resume directly
+        // Note: LXC doesn't support hibernate, so "paused" containers are actually "stopped"
+        const pveClient = getPveLxcClient();
+        const pveLxcInstance = await pveClient.instances.get({ instanceId: id });
+
+        if (pveLxcInstance.status === "running") {
+          // Already running, just return success
+          return c.json({ resumed: true });
+        }
+
+        await pveLxcInstance.resume();
+        console.log(`[sandboxes.resume] PVE LXC container ${id} resumed (restarted)`);
+        return c.json({ resumed: true });
+      }
+
       let morphInstanceId: string | null = null;
 
       // Check if the id is a direct VM ID
-      if (id.startsWith("morphvm_")) {
+      if (isMorphVm) {
         // Direct Morph instance ID - verify ownership via instance metadata
         const morphClient = getMorphClient();
 
@@ -1443,6 +1500,21 @@ sandboxesRouter.openapi(
 
         if (!taskRun || !taskRun.vscode?.containerName) {
           return c.text("Sandbox not found", 404);
+        }
+
+        // Handle PVE LXC via task run lookup
+        // Note: LXC doesn't support hibernate, so "paused" containers are actually "stopped"
+        if (taskRun.vscode.provider === "pve-lxc") {
+          const pveClient = getPveLxcClient();
+          const pveLxcInstance = await pveClient.instances.get({ instanceId: taskRun.vscode.containerName });
+
+          if (pveLxcInstance.status === "running") {
+            return c.json({ resumed: true });
+          }
+
+          await pveLxcInstance.resume();
+          console.log(`[sandboxes.resume] PVE LXC container ${taskRun.vscode.containerName} resumed (restarted)`);
+          return c.json({ resumed: true });
         }
 
         if (taskRun.vscode.provider !== "morph") {

@@ -118,18 +118,19 @@ export class PveLxcInstance {
   }
 
   /**
-   * Pause the container (PVE uses freeze for LXC)
+   * Pause the container (LXC doesn't support hibernate, use stop instead)
+   * Note: Unlike Morph VMs, LXC containers don't preserve RAM state on stop.
    */
   async pause(): Promise<void> {
-    await this.client.suspendContainer(this.vmid);
-    this.status = "paused";
+    await this.client.stopContainer(this.vmid);
+    this.status = "stopped";
   }
 
   /**
-   * Resume the container
+   * Resume the container (restart after stop)
    */
   async resume(): Promise<void> {
-    await this.client.resumeContainer(this.vmid);
+    await this.client.startContainer(this.vmid);
     this.status = "running";
   }
 

@@ -262,6 +262,12 @@ export function stopContainersForRunsFromTree(
       typeof runId === "string"
     ) {
       targets.push({ provider: "morph", containerName: name, runId });
+    } else if (
+      provider === "pve-lxc" &&
+      typeof name === "string" &&
+      typeof runId === "string"
+    ) {
+      targets.push({ provider: "pve-lxc", containerName: name, runId });
     }
   }
 
@@ -290,6 +296,18 @@ export function stopContainersForRunsFromTree(
           await stopCmuxSandbox(t.containerName);
           serverLogger.info(
             `Successfully paused Morph instance: ${t.containerName}`
+          );
+          return {
+            success: true,
+            containerName: t.containerName,
+            provider: t.provider,
+          };
+        }
+        if (t.provider === "pve-lxc") {
+          // PVE LXC uses the same sandbox API endpoint as Morph
+          await stopCmuxSandbox(t.containerName);
+          serverLogger.info(
+            `Successfully paused PVE LXC instance: ${t.containerName}`
           );
           return {
             success: true,
@@ -394,6 +412,12 @@ export function resumeContainersForRunsFromTree(
       typeof runId === "string"
     ) {
       targets.push({ provider: "morph", containerName: name, runId });
+    } else if (
+      provider === "pve-lxc" &&
+      typeof name === "string" &&
+      typeof runId === "string"
+    ) {
+      targets.push({ provider: "pve-lxc", containerName: name, runId });
     }
   }
 
@@ -448,6 +472,18 @@ export function resumeContainersForRunsFromTree(
           await resumeCmuxSandbox(t.containerName, teamSlugOrId);
           serverLogger.info(
             `Successfully resumed Morph instance: ${t.containerName}`
+          );
+          return {
+            success: true,
+            containerName: t.containerName,
+            provider: t.provider,
+          };
+        }
+        if (t.provider === "pve-lxc") {
+          // PVE LXC uses the same sandbox API endpoint as Morph
+          await resumeCmuxSandbox(t.containerName, teamSlugOrId);
+          serverLogger.info(
+            `Successfully resumed PVE LXC instance: ${t.containerName}`
           );
           return {
             success: true,
