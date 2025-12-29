@@ -6,8 +6,8 @@
 
 use crate::errors::{SandboxError, SandboxResult};
 use crate::models::{
-    CreateSandboxRequest, EnvVar, ExecRequest, ExecResponse, PruneRequest, PruneResponse,
-    SandboxNetwork, SandboxStatus, SandboxSummary,
+    AwaitReadyRequest, AwaitReadyResponse, CreateSandboxRequest, EnvVar, ExecRequest, ExecResponse,
+    PruneRequest, PruneResponse, SandboxNetwork, SandboxStatus, SandboxSummary, ServiceReadiness,
 };
 use crate::service::{GhAuthCache, GhResponseRegistry, HostEventReceiver, SandboxService};
 use async_trait::async_trait;
@@ -835,6 +835,7 @@ impl LxcSandboxEntry {
                 sandbox_ip: self.ip.to_string(),
                 cidr: 24, // Assuming /24 for now
             },
+            display: None, // PVE LXC uses external VNC via Cloudflare Tunnel
             correlation_id: self.correlation_id.clone(),
         }
     }
@@ -1108,6 +1109,35 @@ impl SandboxService for PveLxcService {
             dry_run: request.dry_run,
             bytes_freed: 0,
         })
+    }
+
+    async fn await_services_ready(
+        &self,
+        id: String,
+        _request: AwaitReadyRequest,
+    ) -> SandboxResult<AwaitReadyResponse> {
+        // For PVE LXC, services are considered ready once the container is running
+        // and accessible via Cloudflare Tunnel. We don't have internal readiness
+        // tracking like bubblewrap does.
+        let uuid = Uuid::parse_str(&id)
+            .map_err(|_| SandboxError::InvalidRequest(format!("Invalid UUID: {id}")))?;
+
+        let sandboxes = self.sandboxes.lock().await;
+        if sandboxes.contains_key(&uuid) {
+            // Container exists, assume services are ready
+            // In the future, we could probe the actual services
+            Ok(AwaitReadyResponse {
+                ready: true,
+                services: ServiceReadiness {
+                    vnc: true,
+                    vscode: true,
+                    pty: true,
+                },
+                timed_out: vec![],
+            })
+        } else {
+            Err(SandboxError::NotFound(uuid))
+        }
     }
 }
 
