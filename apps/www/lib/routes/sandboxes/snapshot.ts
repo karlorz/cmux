@@ -55,9 +55,12 @@ function isKnownDefaultSnapshot(snapshotId: string): boolean {
     return true;
   }
 
-  // Check PVE LXC templates (schema v2: pve_template_{templateVmid})
+  // Check PVE LXC templates (unified format: pvelxc_{presetId}_v{version})
   const isPveTemplate = PVE_LXC_SNAPSHOT_PRESETS.some((preset) =>
-    preset.versions.some((v) => `pve_template_${v.templateVmid}` === snapshotId)
+    preset.versions.some((v) => {
+      const unifiedId = `pvelxc_${preset.presetId}_v${v.version}`;
+      return unifiedId === snapshotId;
+    })
   );
   return isPveTemplate;
 }

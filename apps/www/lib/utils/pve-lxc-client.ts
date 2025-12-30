@@ -3,6 +3,7 @@
  *
  * A client for managing LXC containers on Proxmox VE that mirrors
  * the MorphCloudClient interface for seamless provider switching.
+ * Supports unified snapshot ID format (pvelxc_{presetId}_v{version}).
  */
 
 import { env } from "./www-env";
@@ -575,21 +576,36 @@ export class PveLxcClient {
 
   /**
    * Parse snapshot/template ID to extract template VMID.
-   * Schema v2 format: pve_template_{templateVmid}
+   * Unified format: pvelxc_{presetId}_v{version} (e.g., "pvelxc_4vcpu_6gb_32gb_v1")
    */
-  private parseSnapshotId(snapshotId: string): {
+  private async parseSnapshotId(snapshotId: string): Promise<{
     templateVmid: number;
-  } {
-    // Schema v2 format: pve_template_{templateVmid}
-    const match = snapshotId.match(/^pve_template_(\d+)$/);
+  }> {
+    const match = snapshotId.match(/^pvelxc_([^_]+_[^_]+_[^_]+)_v(\d+)$/);
     if (!match) {
       throw new Error(
         `Invalid PVE template ID format: ${snapshotId}. ` +
-        `Expected format: pve_template_{templateVmid}`
+        `Expected format: pvelxc_{presetId}_v{version}`
       );
     }
+
+    const [, presetId, versionStr] = match;
+    const version = parseInt(versionStr, 10);
+
+    // Dynamic import to avoid circular dependency
+    const { PVE_LXC_SNAPSHOT_PRESETS } = await import("./pve-lxc-defaults");
+    const preset = PVE_LXC_SNAPSHOT_PRESETS.find(p => p.presetId === presetId);
+    if (!preset) {
+      throw new Error(`PVE LXC preset not found: ${presetId}`);
+    }
+
+    const versionData = preset.versions.find(v => v.version === version);
+    if (!versionData) {
+      throw new Error(`PVE LXC version not found: ${version} for preset ${presetId}`);
+    }
+
     return {
-      templateVmid: parseInt(match[1], 10),
+      templateVmid: versionData.templateVmid,
     };
   }
 
@@ -723,7 +739,7 @@ export class PveLxcClient {
      * Start a new container from a template using linked-clone (fast, copy-on-write).
      */
     start: async (options: StartContainerOptions): Promise<PveLxcInstance> => {
-      const { templateVmid } = this.parseSnapshotId(options.snapshotId);
+      const { templateVmid } = await this.parseSnapshotId(options.snapshotId);
       const newVmid = await this.findNextVmid();
       const hostname = `cmux-${newVmid}`;
 
