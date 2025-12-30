@@ -2,7 +2,6 @@ import { env } from "@/client-env";
 import { GitHubIcon } from "@/components/icons/github";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@cmux/convex/api";
-import { DEFAULT_MORPH_SNAPSHOT_ID, type MorphSnapshotId } from "@cmux/shared";
 import { isElectron } from "@/lib/electron";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
@@ -66,7 +65,8 @@ export interface RepositoryPickerProps {
   teamSlugOrId: string;
   instanceId?: string;
   initialSelectedRepos?: string[];
-  initialSnapshotId?: MorphSnapshotId;
+  /** Initial snapshot/preset ID. If not provided, will use the provider's default. */
+  initialSnapshotId?: string;
   showHeader?: boolean;
   showContinueButton?: boolean;
   showManualConfigOption?: boolean;
@@ -78,7 +78,7 @@ export interface RepositoryPickerProps {
   onStartConfigure?: (payload: {
     selectedRepos: string[];
     instanceId?: string;
-    snapshotId?: MorphSnapshotId;
+    snapshotId?: string;
   }) => void;
   topAccessory?: ReactNode;
   /**
@@ -112,8 +112,9 @@ export function RepositoryPicker({
   const [selectedRepos, setSelectedRepos] = useState<string[]>(() =>
     Array.from(new Set(initialSelectedRepos))
   );
-  const [selectedSnapshotId, setSelectedSnapshotId] = useState<MorphSnapshotId>(
-    initialSnapshotId ?? DEFAULT_MORPH_SNAPSHOT_ID
+  // Snapshot ID is now a plain string - the actual default comes from the API
+  const [selectedSnapshotId, setSelectedSnapshotId] = useState<string | undefined>(
+    initialSnapshotId
   );
   const [selectedConnectionLogin, setSelectedConnectionLogin] = useState<
     string | null
@@ -128,11 +129,7 @@ export function RepositoryPicker({
 
 
   useEffect(() => {
-    if (initialSnapshotId) {
-      setSelectedSnapshotId(initialSnapshotId);
-    } else {
-      setSelectedSnapshotId(DEFAULT_MORPH_SNAPSHOT_ID);
-    }
+    setSelectedSnapshotId(initialSnapshotId);
   }, [initialSnapshotId]);
 
   const handleConnectionsInvalidated = useCallback((): void => {
@@ -243,7 +240,7 @@ export function RepositoryPicker({
   );
 
   const updateSnapshotSelection = useCallback(
-    (nextSnapshotId: MorphSnapshotId) => {
+    (nextSnapshotId: string) => {
       const shouldResetInstanceId = nextSnapshotId !== selectedSnapshotId;
       setSelectedSnapshotId(nextSnapshotId);
       void navigate({

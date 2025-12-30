@@ -1,4 +1,5 @@
 export { booksRouter } from "./books.route";
+export { configRouter } from "./config.route";
 export { devServerRouter } from "./dev-server.route";
 export { githubBranchesRouter } from "./github.branches.route";
 export { githubFrameworkDetectionRouter } from "./github.framework-detection.route";

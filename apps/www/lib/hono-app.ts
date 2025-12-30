@@ -13,6 +13,7 @@ import {
   booksRouter,
   branchRouter,
   codeReviewRouter,
+  configRouter,
   devServerRouter,
   environmentsRouter,
   githubBranchesRouter,
@@ -146,6 +147,7 @@ app.route("/", sandboxesRouter);
 app.route("/", teamsRouter);
 app.route("/", branchRouter);
 app.route("/", codeReviewRouter);
+app.route("/", configRouter);
 app.route("/", workspaceConfigsRouter);
 app.route("/", previewRouter);
 

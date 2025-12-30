@@ -740,6 +740,32 @@ export type CodeReviewStartBody = {
     tooltipLanguage?: string;
 };
 
+export type SandboxPreset = {
+    id: string;
+    presetId: string;
+    label: string;
+    cpu: string;
+    memory: string;
+    disk: string;
+    description?: string;
+};
+
+export type SandboxProviderCapabilities = {
+    supportsHibernate: boolean;
+    supportsSnapshots: boolean;
+    supportsResize: boolean;
+    supportsNestedVirt: boolean;
+    supportsGpu: boolean;
+};
+
+export type SandboxConfig = {
+    provider: 'morph' | 'pve-lxc' | 'pve-vm';
+    providerDisplayName: string;
+    presets: Array<SandboxPreset>;
+    defaultPresetId: string;
+    capabilities: SandboxProviderCapabilities;
+};
+
 export type WorkspaceConfigResponse = {
     projectFullName: string;
     maintenanceScript?: string;
@@ -2821,6 +2847,29 @@ export type PostApiCodeReviewStartResponses = {
 };
 
 export type PostApiCodeReviewStartResponse = PostApiCodeReviewStartResponses[keyof PostApiCodeReviewStartResponses];
+
+export type GetApiConfigSandboxData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/config/sandbox';
+};
+
+export type GetApiConfigSandboxErrors = {
+    /**
+     * No sandbox provider configured
+     */
+    500: unknown;
+};
+
+export type GetApiConfigSandboxResponses = {
+    /**
+     * Sandbox configuration
+     */
+    200: SandboxConfig;
+};
+
+export type GetApiConfigSandboxResponse = GetApiConfigSandboxResponses[keyof GetApiConfigSandboxResponses];
 
 export type GetApiWorkspaceConfigsData = {
     body?: never;
