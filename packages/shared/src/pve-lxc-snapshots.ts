@@ -100,8 +100,9 @@ const toPresetWithLatest = (
   if (!latestVersion) {
     throw new Error(`Preset "${preset.presetId}" does not contain versions`);
   }
-  // Create a unique ID from template VMID (schema v2 format)
-  const id = `pve_template_${latestVersion.templateVmid}`;
+  // Create a unique ID from presetId and template VMID
+  // Include presetId since multiple presets can share the same template
+  const id = `pve_${preset.presetId}_${latestVersion.templateVmid}`;
   return {
     ...preset,
     versions: sortedVersions,
