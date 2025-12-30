@@ -5,6 +5,8 @@ import { api } from "@cmux/convex/api";
 import { isElectron } from "@/lib/electron";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
+import { useQuery as useRQQuery } from "@tanstack/react-query";
+import { getApiConfigSandboxOptions } from "@cmux/www-openapi-client/react-query";
 import { Check, Loader2, X } from "lucide-react";
 import {
   useCallback,
@@ -127,10 +129,17 @@ export function RepositoryPicker({
     }
   );
 
+  // Fetch sandbox config to get default preset ID
+  const { data: sandboxConfig } = useRQQuery(getApiConfigSandboxOptions());
 
+  // Set default snapshotId from sandbox config if not already set
   useEffect(() => {
-    setSelectedSnapshotId(initialSnapshotId);
-  }, [initialSnapshotId]);
+    if (initialSnapshotId) {
+      setSelectedSnapshotId(initialSnapshotId);
+    } else if (sandboxConfig?.defaultPresetId && !selectedSnapshotId) {
+      setSelectedSnapshotId(sandboxConfig.defaultPresetId);
+    }
+  }, [initialSnapshotId, sandboxConfig?.defaultPresetId, selectedSnapshotId]);
 
   const handleConnectionsInvalidated = useCallback((): void => {
     const qc = router.options.context?.queryClient;
