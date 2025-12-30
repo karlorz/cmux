@@ -444,6 +444,16 @@ jobs:
             exit 1
           fi
 
+      - name: Sync package.json version with release tag
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
+        run: |
+          # Extract version from tag (remove 'v' prefix if present)
+          VERSION="${RELEASE_TAG#v}"
+          echo "Setting package.json version to $VERSION"
+          cd apps/client && npm pkg set version="$VERSION"
+
       - name: Prepare signing credentials
         env:
           MAC_CERT_BASE64: ${{ secrets.MAC_CERT_BASE64 }}
@@ -590,6 +600,15 @@ jobs:
         working-directory: apps/server/native/core
         shell: pwsh
         run: bunx --bun @napi-rs/cli build --platform --release
+      - name: Sync package.json version with release tag
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
+        run: |
+          # Extract version from tag (remove 'v' prefix if present)
+          VERSION="${RELEASE_TAG#v}"
+          echo "Setting package.json version to $VERSION"
+          cd apps/client && npm pkg set version="$VERSION"
       - name: Generate icons
         working-directory: apps/client
         run: bun run ./scripts/generate-icons.mjs
@@ -638,6 +657,15 @@ jobs:
         working-directory: apps/server/native/core
         shell: bash
         run: bunx --bun @napi-rs/cli build --platform --release
+      - name: Sync package.json version with release tag
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
+        run: |
+          # Extract version from tag (remove 'v' prefix if present)
+          VERSION="${RELEASE_TAG#v}"
+          echo "Setting package.json version to $VERSION"
+          cd apps/client && npm pkg set version="$VERSION"
       - name: Generate icons
         working-directory: apps/client
         run: bun run ./scripts/generate-icons.mjs
