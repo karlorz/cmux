@@ -108,12 +108,30 @@ export interface SandboxConfig {
 
 /**
  * Preset IDs that should be shown in the environment creation UI.
- * These are the "standard" and "performance" tiers.
+ * Maps provider type to visible preset IDs for that provider.
+ *
+ * When a provider returns presets, we filter to only show these preset IDs.
+ * This allows each provider to have different resource configurations
+ * while maintaining consistent "standard" and "performance" tiers in the UI.
  */
-export const UI_VISIBLE_PRESET_IDS = ["4vcpu_16gb_48gb", "8vcpu_32gb_48gb"] as const;
+export const UI_VISIBLE_PRESET_IDS_BY_PROVIDER: Record<SandboxProviderType, readonly string[]> = {
+  morph: ["4vcpu_16gb_48gb", "8vcpu_32gb_48gb"],
+  "pve-lxc": ["4vcpu_6gb_32gb", "6vcpu_8gb_32gb"],
+  "pve-vm": [], // TODO: Add when PVE VM presets are defined
+};
 
 /**
- * Filter presets to only show UI-visible ones
+ * All UI visible preset IDs across all providers (for backwards compatibility)
+ */
+export const UI_VISIBLE_PRESET_IDS = [
+  ...UI_VISIBLE_PRESET_IDS_BY_PROVIDER.morph,
+  ...UI_VISIBLE_PRESET_IDS_BY_PROVIDER["pve-lxc"],
+  ...UI_VISIBLE_PRESET_IDS_BY_PROVIDER["pve-vm"],
+] as const;
+
+/**
+ * Filter presets to only show UI-visible ones.
+ * Accepts all preset IDs from any provider for flexibility.
  */
 export function filterVisiblePresets(presets: SandboxPreset[]): SandboxPreset[] {
   return presets.filter((p) =>
