@@ -543,7 +543,7 @@ iframePreflightRouter.openapi(
                   ? metadata.teamId
                   : null;
                 if (teamId) {
-                  await convexClient.mutation(api.morphInstances.recordResume, {
+                  await convexClient.mutation(api.sandboxInstances.recordResume, {
                     instanceId,
                     teamSlugOrId: teamId,
                   });

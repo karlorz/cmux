@@ -166,7 +166,7 @@ morphRouter.openapi(
       await instance.resume();
 
       // Record the resume for activity tracking (used by cleanup cron)
-      await convex.mutation(api.morphInstances.recordResume, {
+      await convex.mutation(api.sandboxInstances.recordResume, {
         instanceId,
         teamSlugOrId,
       });

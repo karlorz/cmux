@@ -3,23 +3,20 @@ import { internal } from "./_generated/api";
 
 const crons = cronJobs();
 
-// Pause Morph instances older than 20 hours
-// Runs daily at 4 AM Pacific Time
-// 4 AM PST = 12:00 UTC (during standard time)
-// 4 AM PDT = 11:00 UTC (during daylight saving)
-// Using 12:00 UTC means it runs at 4 AM PST or 5 AM PDT
+// Sandbox instance lifecycle maintenance (all providers: morph, pve-lxc, docker, daytona)
+// Runs daily at 12:00 UTC (4 AM PST / 5 AM PDT)
 crons.daily(
-  "pause old morph instances",
+  "pause old sandbox instances",
   { hourUTC: 12, minuteUTC: 0 },
-  internal.morphInstanceMaintenance.pauseOldMorphInstances
+  internal.sandboxInstanceMaintenance.pauseOldSandboxInstances
 );
 
-// Stop (delete) Morph instances that have been paused for more than 2 weeks
-// Runs daily at 13:00 UTC (~5-6 AM Pacific depending on DST)
+// Stop inactive sandbox instances (paused for >14 days)
+// Runs daily at 13:00 UTC (5 AM PST / 6 AM PDT)
 crons.daily(
-  "stop old morph instances",
+  "stop old sandbox instances",
   { hourUTC: 13, minuteUTC: 0 },
-  internal.morphInstanceMaintenance.stopOldMorphInstances
+  internal.sandboxInstanceMaintenance.stopOldSandboxInstances
 );
 
 export default crons;

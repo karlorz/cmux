@@ -1125,12 +1125,38 @@ const convexSchema = defineSchema({
     .index("by_task_user", ["taskId", "userId"]), // Get unread runs for a task
 
   // Track Morph instance activity for cleanup cron decisions
+  // DEPRECATED: Use sandboxInstanceActivity for new code (provider-agnostic)
   morphInstanceActivity: defineTable({
     instanceId: v.string(), // Morph instance ID (morphvm_xxx)
     lastPausedAt: v.optional(v.number()), // When instance was last paused by cron
     lastResumedAt: v.optional(v.number()), // When instance was last resumed via UI
     stoppedAt: v.optional(v.number()), // When instance was permanently stopped
   }).index("by_instanceId", ["instanceId"]),
+
+  // Unified sandbox instance activity tracking (provider-agnostic)
+  // Supports: morph, pve-lxc, docker, daytona, and future providers
+  sandboxInstanceActivity: defineTable({
+    instanceId: v.string(), // Instance ID (morphvm_xxx, pve_lxc_xxx, etc.)
+    provider: v.union(
+      v.literal("morph"),
+      v.literal("pve-lxc"),
+      v.literal("docker"),
+      v.literal("daytona"),
+      v.literal("other")
+    ),
+    // Activity timestamps
+    lastPausedAt: v.optional(v.number()), // When instance was last paused by cron
+    lastResumedAt: v.optional(v.number()), // When instance was last resumed via UI
+    stoppedAt: v.optional(v.number()), // When instance was permanently stopped/deleted
+    // Metadata for tracking
+    teamId: v.optional(v.string()), // Team that owns this instance
+    userId: v.optional(v.string()), // User that created this instance
+    createdAt: v.optional(v.number()), // When the activity record was created
+  })
+    .index("by_instanceId", ["instanceId"])
+    .index("by_provider", ["provider"])
+    .index("by_provider_stopped", ["provider", "stoppedAt"]) // For cleanup queries
+    .index("by_team", ["teamId"]),
 });
 
 export default convexSchema;

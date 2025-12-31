@@ -180,6 +180,10 @@ echo "  - OPENAI_API_KEY: $(get_env_value OPENAI_API_KEY | head -c 10)..."
 echo "  - ANTHROPIC_API_KEY: $(get_env_value ANTHROPIC_API_KEY | head -c 10)..."
 echo "  - GEMINI_API_KEY: $(get_env_value GEMINI_API_KEY | head -c 10)..."
 echo "  - MORPH_API_KEY: $(get_env_value MORPH_API_KEY | head -c 10)..."
+echo "  - PVE_API_URL: $(get_env_value PVE_API_URL)"
+echo "  - PVE_API_TOKEN: $(get_env_value PVE_API_TOKEN | head -c 20)..."
+echo "  - PVE_NODE: $(get_env_value PVE_NODE)"
+echo "  - PVE_PUBLIC_DOMAIN: $(get_env_value PVE_PUBLIC_DOMAIN)"
 echo "  - CMUX_IS_STAGING: $(get_env_value CMUX_IS_STAGING)"
 CONVEX_IS_PRODUCTION_DISPLAY=$(get_env_value CONVEX_IS_PRODUCTION)
 if [ -z "$CONVEX_IS_PRODUCTION_DISPLAY" ]; then
@@ -223,6 +227,10 @@ build_json_changes() {
   add_change "ANTHROPIC_API_KEY" "$(get_env_value ANTHROPIC_API_KEY)"
   add_change "GEMINI_API_KEY" "$(get_env_value GEMINI_API_KEY)"
   add_change "MORPH_API_KEY" "$(get_env_value MORPH_API_KEY)"
+  add_change "PVE_API_URL" "$(get_env_value PVE_API_URL)"
+  add_change "PVE_API_TOKEN" "$(get_env_value PVE_API_TOKEN)"
+  add_change "PVE_NODE" "$(get_env_value PVE_NODE)"
+  add_change "PVE_PUBLIC_DOMAIN" "$(get_env_value PVE_PUBLIC_DOMAIN)"
   add_change "CMUX_IS_STAGING" "$(get_env_value CMUX_IS_STAGING)"
 
   # Set CONVEX_IS_PRODUCTION: first check env file, then fall back to MODE

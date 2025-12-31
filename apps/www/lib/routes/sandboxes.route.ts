@@ -787,26 +787,53 @@ sandboxesRouter.openapi(
         teamSlugOrId,
       });
 
-      const client = getMorphClient();
-      const instance = await client.instances
-        .get({ instanceId: id })
-        .catch((error) => {
-          console.error("[sandboxes.env] Failed to load instance", error);
-          return null;
-        });
+      // Detect provider based on instance ID prefix
+      const isPveLxc = id.startsWith("pve_lxc_");
 
-      if (!instance) {
-        return c.text("Sandbox not found", 404);
-      }
+      let instance: SandboxInstance;
 
-      const metadataTeamId = (
-        instance as unknown as {
-          metadata?: { teamId?: string };
+      if (isPveLxc) {
+        // PVE LXC instance
+        const pveClient = getPveLxcClient();
+        const pveLxcInstance = await pveClient.instances
+          .get({ instanceId: id })
+          .catch((error) => {
+            console.error("[sandboxes.env] Failed to load PVE LXC instance", error);
+            return null;
+          });
+
+        if (!pveLxcInstance) {
+          return c.text("Sandbox not found", 404);
         }
-      ).metadata?.teamId;
 
-      if (metadataTeamId && metadataTeamId !== team.uuid) {
-        return c.text("Forbidden", 403);
+        // PVE LXC uses in-memory metadata, so we can't verify team ownership reliably
+        // The caller must be authorized to access the team (verified above)
+        instance = wrapPveLxcInstance(pveLxcInstance);
+      } else {
+        // Morph instance (default)
+        const client = getMorphClient();
+        const morphInstance = await client.instances
+          .get({ instanceId: id })
+          .catch((error) => {
+            console.error("[sandboxes.env] Failed to load Morph instance", error);
+            return null;
+          });
+
+        if (!morphInstance) {
+          return c.text("Sandbox not found", 404);
+        }
+
+        const metadataTeamId = (
+          morphInstance as unknown as {
+            metadata?: { teamId?: string };
+          }
+        ).metadata?.teamId;
+
+        if (metadataTeamId && metadataTeamId !== team.uuid) {
+          return c.text("Forbidden", 403);
+        }
+
+        instance = wrapMorphInstance(morphInstance);
       }
 
       const encodedEnv = encodeEnvContentForEnvctl(envVarsContent);
@@ -898,26 +925,51 @@ sandboxesRouter.openapi(
         teamSlugOrId,
       });
 
-      const client = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
-      const instance = await client.instances
-        .get({ instanceId: id })
-        .catch((error) => {
-          console.error("[sandboxes.run-scripts] Failed to load instance", error);
-          return null;
-        });
+      // Detect provider based on instance ID prefix
+      const isPveLxc = id.startsWith("pve_lxc_");
 
-      if (!instance) {
-        return c.text("Sandbox not found", 404);
-      }
+      let instance: SandboxInstance;
 
-      const metadataTeamId = (
-        instance as unknown as {
-          metadata?: { teamId?: string };
+      if (isPveLxc) {
+        // PVE LXC instance
+        const pveClient = getPveLxcClient();
+        const pveLxcInstance = await pveClient.instances
+          .get({ instanceId: id })
+          .catch((error) => {
+            console.error("[sandboxes.run-scripts] Failed to load PVE LXC instance", error);
+            return null;
+          });
+
+        if (!pveLxcInstance) {
+          return c.text("Sandbox not found", 404);
         }
-      ).metadata?.teamId;
 
-      if (metadataTeamId && metadataTeamId !== team.uuid) {
-        return c.text("Forbidden", 403);
+        instance = wrapPveLxcInstance(pveLxcInstance);
+      } else {
+        // Morph instance (default)
+        const client = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
+        const morphInstance = await client.instances
+          .get({ instanceId: id })
+          .catch((error) => {
+            console.error("[sandboxes.run-scripts] Failed to load Morph instance", error);
+            return null;
+          });
+
+        if (!morphInstance) {
+          return c.text("Sandbox not found", 404);
+        }
+
+        const metadataTeamId = (
+          morphInstance as unknown as {
+            metadata?: { teamId?: string };
+          }
+        ).metadata?.teamId;
+
+        if (metadataTeamId && metadataTeamId !== team.uuid) {
+          return c.text("Forbidden", 403);
+        }
+
+        instance = wrapMorphInstance(morphInstance);
       }
 
       // Allocate script identifiers for tracking
@@ -926,7 +978,7 @@ sandboxesRouter.openapi(
       // Run scripts in background (don't await)
       (async () => {
         await runMaintenanceAndDevScripts({
-          instance: wrapMorphInstance(instance),
+          instance,
           maintenanceScript: maintenanceScript || undefined,
           devScript: devScript || undefined,
           identifiers: scriptIdentifiers,
@@ -1565,6 +1617,20 @@ sandboxesRouter.openapi(
 
         await pveLxcInstance.resume();
         console.log(`[sandboxes.resume] PVE LXC container ${id} resumed (restarted)`);
+
+        // Record resume activity for PVE LXC instance
+        if (teamSlugOrId) {
+          try {
+            await convex.mutation(api.sandboxInstances.recordResume, {
+              instanceId: id,
+              teamSlugOrId,
+            });
+          } catch (recordError) {
+            // Don't fail the resume if recording fails
+            console.error("[sandboxes.resume] Failed to record PVE LXC resume activity:", recordError);
+          }
+        }
+
         return c.json({ resumed: true });
       }
 
@@ -1648,6 +1714,17 @@ sandboxesRouter.openapi(
 
           await pveLxcInstance.resume();
           console.log(`[sandboxes.resume] PVE LXC container ${taskRun.vscode.containerName} resumed (restarted)`);
+
+          // Record resume activity for PVE LXC instance
+          try {
+            await convex.mutation(api.sandboxInstances.recordResume, {
+              instanceId: taskRun.vscode.containerName,
+              teamSlugOrId,
+            });
+          } catch (recordError) {
+            console.error("[sandboxes.resume] Failed to record PVE LXC resume activity:", recordError);
+          }
+
           return c.json({ resumed: true });
         }
 
@@ -1682,7 +1759,8 @@ sandboxesRouter.openapi(
       const effectiveTeamSlugOrId = teamSlugOrId ?? (instanceMetadata?.teamId as string | undefined);
       if (effectiveTeamSlugOrId && morphInstanceId) {
         try {
-          await convex.mutation(api.morphInstances.recordResume, {
+          // Record resume activity for cleanup cron
+          await convex.mutation(api.sandboxInstances.recordResume, {
             instanceId: morphInstanceId,
             teamSlugOrId: effectiveTeamSlugOrId,
           });
