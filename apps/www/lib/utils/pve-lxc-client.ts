@@ -291,14 +291,14 @@ export class PveLxcClient {
 
   /**
    * Build a public URL for a service via Cloudflare Tunnel.
-   * Pattern: https://{serviceName}-{vmid}.{publicDomain}
+   * Pattern (Morph-consistent): https://port-{port}-vm-{vmid}.{publicDomain}
    * Returns null if publicDomain is not configured.
    */
-  private buildPublicServiceUrl(serviceName: string, vmid: number): string | null {
+  private buildPublicServiceUrl(port: number, vmid: number): string | null {
     if (!this.publicDomain) {
       return null;
     }
-    return `https://${serviceName}-${vmid}.${this.publicDomain}`;
+    return `https://port-${port}-vm-${vmid}.${this.publicDomain}`;
   }
 
   /**
@@ -494,7 +494,7 @@ export class PveLxcClient {
 
     if (!host) {
       // Try public exec URL via Cloudflare Tunnel
-      const publicExecUrl = this.buildPublicServiceUrl("exec", vmid);
+      const publicExecUrl = this.buildPublicServiceUrl(39375, vmid);
       if (publicExecUrl) {
         host = publicExecUrl;
       } else {
@@ -768,10 +768,10 @@ export class PveLxcClient {
       // Prefer public URL (via Cloudflare Tunnel) when PVE_PUBLIC_DOMAIN is set,
       // otherwise fall back to internal hostname+domainSuffix (FQDN)
       const services: HttpService[] = [];
-      const vscodePubUrl = this.buildPublicServiceUrl("vscode", newVmid);
-      const workerPubUrl = this.buildPublicServiceUrl("worker", newVmid);
-      const vncPubUrl = this.buildPublicServiceUrl("vnc", newVmid);
-      const xtermPubUrl = this.buildPublicServiceUrl("xterm", newVmid);
+      const vscodePubUrl = this.buildPublicServiceUrl(39378, newVmid);
+      const workerPubUrl = this.buildPublicServiceUrl(39377, newVmid);
+      const vncPubUrl = this.buildPublicServiceUrl(39380, newVmid);
+      const xtermPubUrl = this.buildPublicServiceUrl(39383, newVmid);
       if (vscodePubUrl && workerPubUrl && vncPubUrl && xtermPubUrl) {
         services.push(
           { name: "vscode", port: 39378, url: vscodePubUrl },
