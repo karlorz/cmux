@@ -365,6 +365,81 @@ function getProviderConfigs(): ProviderConfig[] {
 // ============================================================================
 
 /**
+ * Test function to debug provider configuration (public for debugging).
+ * Returns provider availability without actually pausing anything.
+ * NOTE: Remove this function before production deployment!
+ */
+import { action } from "./_generated/server";
+
+export const debugProviderConfig = action({
+  args: {},
+  handler: async () => {
+    const configs = getProviderConfigs();
+    const results = configs.map((c) => ({
+      provider: c.provider,
+      available: c.available,
+      error: c.error,
+    }));
+
+    console.log("[sandboxMaintenance:debug] Provider configs:", JSON.stringify(results, null, 2));
+    console.log("[sandboxMaintenance:debug] CONVEX_IS_PRODUCTION:", env.CONVEX_IS_PRODUCTION);
+    console.log("[sandboxMaintenance:debug] MORPH_API_KEY set:", !!env.MORPH_API_KEY);
+    console.log("[sandboxMaintenance:debug] PVE_API_URL set:", !!process.env.PVE_API_URL);
+    console.log("[sandboxMaintenance:debug] PVE_API_TOKEN set:", !!process.env.PVE_API_TOKEN);
+
+    return {
+      providers: results,
+      isProduction: env.CONVEX_IS_PRODUCTION,
+      morphApiKeySet: !!env.MORPH_API_KEY,
+      pveApiUrlSet: !!process.env.PVE_API_URL,
+      pveApiTokenSet: !!process.env.PVE_API_TOKEN,
+    };
+  },
+});
+
+/**
+ * Test function to list instances from all providers (public for debugging).
+ * NOTE: Remove this function before production deployment!
+ */
+export const debugListInstances = action({
+  args: {},
+  handler: async () => {
+    const configs = getProviderConfigs();
+    const results: Record<string, { count: number; instances: Array<{ id: string; status: string }>; error?: string }> = {};
+
+    for (const config of configs) {
+      if (!config.available || !config.client) {
+        results[config.provider] = {
+          count: 0,
+          instances: [],
+          error: config.error,
+        };
+        continue;
+      }
+
+      try {
+        const instances = await config.client.listInstances();
+        const cmuxInstances = instances.filter((inst) => inst.metadata?.app?.startsWith("cmux"));
+        results[config.provider] = {
+          count: cmuxInstances.length,
+          instances: cmuxInstances.slice(0, 10).map((i) => ({ id: i.id, status: i.status })),
+        };
+        console.log(`[sandboxMaintenance:debug] ${config.provider}: ${cmuxInstances.length} cmux instances`);
+      } catch (error) {
+        results[config.provider] = {
+          count: 0,
+          instances: [],
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+        console.error(`[sandboxMaintenance:debug] ${config.provider} error:`, error);
+      }
+    }
+
+    return results;
+  },
+});
+
+/**
  * Pauses all sandbox instances that have been running for more than the threshold.
  * Called by the daily cron job.
  */
