@@ -164,7 +164,14 @@ export function parseSnapshotId(id: string): {
   // Match unified format: prefix_cpu_mem_disk_v123
   const match = id.match(/^(morph|pvelxc|pvevm)_([^_]+_[^_]+_[^_]+)_v(\d+)$/);
   if (match) {
-    const [, prefix, presetId, versionStr] = match;
+    const prefix = match[1];
+    const presetId = match[2];
+    const versionStr = match[3];
+
+    if (!prefix || !presetId || !versionStr) {
+      return null;
+    }
+
     const providerMap: Record<string, SandboxProviderType> = {
       morph: "morph",
       pvelxc: "pve-lxc",
@@ -186,9 +193,14 @@ export function parseSnapshotId(id: string): {
   // Backwards compat: old pve_{presetId}_{vmid} format
   const oldPveMatch = id.match(/^pve_([^_]+_[^_]+_[^_]+)_(\d+)$/);
   if (oldPveMatch) {
+    const presetId = oldPveMatch[1];
+    if (!presetId) {
+      return null;
+    }
+
     return {
       provider: "pve-lxc",
-      presetId: oldPveMatch[1],
+      presetId,
       version: 1,  // Assume v1 for old format
     };
   }
