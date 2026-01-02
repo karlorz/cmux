@@ -184,6 +184,8 @@ echo "  - PVE_API_URL: $(get_env_value PVE_API_URL)"
 echo "  - PVE_API_TOKEN: $(get_env_value PVE_API_TOKEN | head -c 20)..."
 echo "  - PVE_NODE: $(get_env_value PVE_NODE)"
 echo "  - PVE_PUBLIC_DOMAIN: $(get_env_value PVE_PUBLIC_DOMAIN)"
+echo "  - PVE_STORAGE: $(get_env_value PVE_STORAGE)"
+echo "  - SANDBOX_PROVIDER: $(get_env_value SANDBOX_PROVIDER)"
 echo "  - CMUX_IS_STAGING: $(get_env_value CMUX_IS_STAGING)"
 CONVEX_IS_PRODUCTION_DISPLAY=$(get_env_value CONVEX_IS_PRODUCTION)
 if [ -z "$CONVEX_IS_PRODUCTION_DISPLAY" ]; then
@@ -231,6 +233,8 @@ build_json_changes() {
   add_change "PVE_API_TOKEN" "$(get_env_value PVE_API_TOKEN)"
   add_change "PVE_NODE" "$(get_env_value PVE_NODE)"
   add_change "PVE_PUBLIC_DOMAIN" "$(get_env_value PVE_PUBLIC_DOMAIN)"
+  add_change "PVE_STORAGE" "$(get_env_value PVE_STORAGE)"
+  add_change "SANDBOX_PROVIDER" "$(get_env_value SANDBOX_PROVIDER)"
   add_change "CMUX_IS_STAGING" "$(get_env_value CMUX_IS_STAGING)"
 
   # Set CONVEX_IS_PRODUCTION: first check env file, then fall back to MODE
