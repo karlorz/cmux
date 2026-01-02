@@ -107,6 +107,7 @@ interface PveContainerStatus {
   vmid: number;
   status: string;
   name?: string;
+  template?: number; // 1 if container is a template
 }
 
 interface PveApiResponse<T> {
@@ -203,9 +204,12 @@ function createPveLxcProviderClient(
       );
 
       // Filter to cmux containers (hostname starts with "cmux-")
+      // Exclude templates and high VMID ranges (>=9000) used for templates
       // Note: PVE doesn't have native metadata, so we rely on hostname convention
       return containers
         .filter((c) => c.name?.startsWith("cmux-"))
+        .filter((c) => c.template !== 1) // Exclude PVE templates
+        .filter((c) => c.vmid < 9000) // Exclude template VMID range (9000-9999)
         .map((c) => ({
           id: `pve_lxc_${c.vmid}`,
           status: c.status === "running" ? "ready" : c.status,
