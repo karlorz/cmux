@@ -7,7 +7,9 @@ set -euo pipefail
 
 VMID="${1:-202}"
 DOMAIN="${PVE_PUBLIC_DOMAIN:-alphasolves.com}"
-XTERM_URL="https://xterm-${VMID}.${DOMAIN}"
+# URL pattern (Morph-consistent): https://port-{port}-vm-{vmid}.{domain}
+XTERM_URL="https://port-39383-vm-${VMID}.${DOMAIN}"
+EXEC_URL="https://port-39375-vm-${VMID}.${DOMAIN}"
 
 echo "=============================================="
 echo "Testing xterm service for VMID: ${VMID}"
@@ -50,7 +52,6 @@ echo
 # Test 5: Check if service is running internally (via exec service)
 echo "[Test 5] Check cmux-pty service status via exec endpoint"
 echo "----------------------------------------------"
-EXEC_URL="https://exec-${VMID}.${DOMAIN}"
 curl -s -X POST "${EXEC_URL}/exec" \
   -H "Content-Type: application/json" \
   -d '{"command": "systemctl status cmux-pty --no-pager", "timeout_ms": 10000}' \

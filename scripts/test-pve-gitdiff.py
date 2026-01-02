@@ -106,7 +106,7 @@ class PveExecClient:
         self.cf_domain = cf_domain
 
     def build_exec_url(self, vmid: int) -> str:
-        return f"https://exec-{vmid}.{self.cf_domain}/exec"
+        return f"https://port-39375-vm-{vmid}.{self.cf_domain}/exec"
 
     def http_exec(
         self,

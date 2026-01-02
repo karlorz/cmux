@@ -19,8 +19,9 @@ Required environment variables:
 
 Optional environment variables:
     PVE_CF_DOMAIN - Cloudflare Tunnel domain for HTTP exec (e.g., alphasolves.com)
-                    When set, uses https://exec-{vmid}.{domain}/exec for command execution
-                    via cmux-execd instead of SSH+pct exec. Falls back to PVE_PUBLIC_DOMAIN
+                    When set, uses Morph-consistent URL pattern:
+                    https://port-{port}-vm-{vmid}.{domain} for command execution via
+                    cmux-execd instead of SSH+pct exec. Falls back to PVE_PUBLIC_DOMAIN
                     if not set, then to SSH if neither is set.
     PVE_PUBLIC_DOMAIN - Alias for PVE_CF_DOMAIN (used as fallback)
     PVE_NODE - Target PVE node name (auto-detected if not set)
@@ -159,7 +160,7 @@ class PveLxcClient:
         self.node = node
         self.verify_ssl = verify_ssl
         # Cloudflare Tunnel domain for public exec URLs (e.g., "example.com")
-        # When set, uses https://exec-{vmid}.{cf_domain}/exec for HTTP exec
+        # When set, uses Morph-consistent URL pattern: port-{port}-vm-{vmid}.{cf_domain}
         self.cf_domain = cf_domain
 
         # Parse token: user@realm!tokenid=secret
@@ -747,10 +748,11 @@ class PveLxcClient:
         """Build the HTTP exec URL for a container.
 
         Returns None if cf_domain is not configured.
+        URL pattern (Morph-consistent): https://port-{port}-vm-{vmid}.{cf_domain}
         """
         if not self.cf_domain:
             return None
-        return f"https://exec-{vmid}.{self.cf_domain}/exec"
+        return f"https://port-39375-vm-{vmid}.{self.cf_domain}/exec"
 
     def http_exec(
         self,
@@ -766,7 +768,8 @@ class PveLxcClient:
         Falls back to SSH+pct exec if HTTP exec fails.
 
         The cmux-execd daemon runs on port 39375 inside containers and is
-        exposed via Cloudflare Tunnel at https://exec-{vmid}.{cf_domain}/exec
+        exposed via Cloudflare Tunnel using Morph-consistent URL pattern:
+        https://port-{port}-vm-{vmid}.{cf_domain}
         """
         exec_url = self.build_exec_url(vmid)
         if not exec_url:

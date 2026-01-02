@@ -270,7 +270,7 @@ Environment:
   // Test 1: Direct HTTP exec via CF Tunnel
   if (publicDomain && !values["use-fqdn"]) {
     console.log("\n--- Test 1: HTTP exec via CF Tunnel ---");
-    const cfExecUrl = `https://exec-${vmid}.${publicDomain}`;
+    const cfExecUrl = `https://port-39375-vm-${vmid}.${publicDomain}`;
     logResult(await testHttpExec("CF Tunnel exec", cfExecUrl, "echo hello"));
     logResult(await testHttpExec("CF Tunnel hostname", cfExecUrl, "hostname"));
     logResult(await testHttpExec("CF Tunnel uname", cfExecUrl, "uname -a"));
@@ -297,11 +297,11 @@ Environment:
   logResult(await testClientExec(client, vmid, "which bun node git || echo 'some tools missing'"));
   logResult(await testClientExec(client, vmid, "ps aux | head -5"));
 
-  // Test 5: Service connectivity
+  // Test 5: Service connectivity (Morph-consistent URL pattern)
   if (publicDomain && !values["use-fqdn"]) {
-    console.log("\n--- Test 5: Service URLs ---");
-    const vscodeUrl = `https://vscode-${vmid}.${publicDomain}`;
-    const workerUrl = `https://worker-${vmid}.${publicDomain}`;
+    console.log("\n--- Test 5: Service URLs (Morph-consistent pattern) ---");
+    const vscodeUrl = `https://port-39378-vm-${vmid}.${publicDomain}`;
+    const workerUrl = `https://port-39377-vm-${vmid}.${publicDomain}`;
 
     try {
       const vscodeRes = await fetch(vscodeUrl, {
