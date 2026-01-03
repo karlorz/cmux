@@ -2054,19 +2054,34 @@ async def task_install_nvm(ctx: PveTaskContext) -> None:
 @registry.task(
     name="install-bun",
     deps=("install-base-packages",),
-    description="Install Bun runtime",
+    description="Install Bun runtime (split to avoid Cloudflare timeout)",
 )
 async def task_install_bun(ctx: PveTaskContext) -> None:
+    # Step 1: Download bun installer script (quick)
+    await ctx.run(
+        "download-bun-installer",
+        "curl -fsSL https://bun.sh/install -o /tmp/bun-install.sh",
+        timeout=120,
+    )
+
+    # Step 2: Run bun installer (downloads binary, may take time)
+    await ctx.run(
+        "run-bun-installer",
+        "bash /tmp/bun-install.sh",
+        timeout=300,
+    )
+
+    # Step 3: Install to system paths and verify
     cmd = textwrap.dedent(
         """
-        curl -fsSL https://bun.sh/install | bash
         install -m 0755 /root/.bun/bin/bun /usr/local/bin/bun
         ln -sf /usr/local/bin/bun /usr/local/bin/bunx
         bun --version
         bunx --version
+        rm -f /tmp/bun-install.sh
         """
     )
-    await ctx.run("install-bun", cmd)
+    await ctx.run("install-bun-to-system", cmd, timeout=60)
 
 
 @registry.task(
