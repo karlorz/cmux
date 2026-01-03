@@ -657,9 +657,25 @@ export class PveLxcClient {
   }
 
   /**
-   * Suspend (freeze) a container
+   * Suspend (freeze) a container using CRIU.
+   *
+   * **EXPERIMENTAL - NOT FOR PRODUCTION USE**
+   *
+   * This method uses PVE's `pct suspend` which is marked as experimental
+   * in the official Proxmox documentation. Limitations include:
+   *
+   * - Requires CRIU package installed on PVE host
+   * - Requires kernel support for CRIU
+   * - FUSE mounts inside containers are incompatible
+   * - Linux kernel freezer subsystem can cause I/O deadlocks
+   * - Not all processes/applications checkpoint cleanly
+   *
+   * For production use, prefer `stopContainer()` instead.
+   *
+   * @see https://pve.proxmox.com/wiki/Linux_Container
+   * @internal This is a PVE-specific experimental feature
    */
-  async suspendContainer(vmid: number): Promise<void> {
+  private async suspendContainer(vmid: number): Promise<void> {
     const node = await this.getNode();
     const upid = await this.apiRequest<string>(
       "POST",
@@ -669,9 +685,20 @@ export class PveLxcClient {
   }
 
   /**
-   * Resume a suspended container
+   * Resume a suspended container using CRIU.
+   *
+   * **EXPERIMENTAL - NOT FOR PRODUCTION USE**
+   *
+   * This method uses PVE's `pct resume` which is marked as experimental
+   * in the official Proxmox documentation. See `suspendContainer()` for
+   * full list of limitations.
+   *
+   * For production use, prefer `startContainer()` instead.
+   *
+   * @see https://pve.proxmox.com/wiki/Linux_Container
+   * @internal This is a PVE-specific experimental feature
    */
-  async resumeContainer(vmid: number): Promise<void> {
+  private async resumeContainer(vmid: number): Promise<void> {
     const node = await this.getNode();
     const upid = await this.apiRequest<string>(
       "POST",
@@ -737,6 +764,7 @@ export class PveLxcClient {
   instances = {
     /**
      * Start a new container from a template using linked-clone (fast, copy-on-write).
+     * Includes rollback logic: if clone succeeds but start fails, the container is deleted.
      */
     start: async (options: StartContainerOptions): Promise<PveLxcInstance> => {
       const { templateVmid } = await this.parseSnapshotId(options.snapshotId);
@@ -754,8 +782,26 @@ export class PveLxcClient {
       // Linked-clone from template (fast, copy-on-write)
       await this.linkedCloneFromTemplate(templateVmid, newVmid, hostname);
 
-      // Start the container
-      await this.startContainer(newVmid);
+      // Start the container with rollback on failure
+      try {
+        await this.startContainer(newVmid);
+      } catch (startError) {
+        // Clone succeeded but start failed - rollback by deleting the container
+        console.error(
+          `[PveLxcClient] Failed to start container ${newVmid}, rolling back clone:`,
+          startError instanceof Error ? startError.message : startError
+        );
+        try {
+          await this.deleteContainer(newVmid);
+          console.log(`[PveLxcClient] Rollback complete: container ${newVmid} deleted`);
+        } catch (deleteError) {
+          console.error(
+            `[PveLxcClient] Failed to rollback (delete) container ${newVmid}:`,
+            deleteError instanceof Error ? deleteError.message : deleteError
+          );
+        }
+        throw startError;
+      }
 
       // Wait for container to be fully running
       await new Promise((resolve) => setTimeout(resolve, 3000));
