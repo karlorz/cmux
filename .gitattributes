@@ -1,3 +1,6 @@
 
-# Use bd merge for beads JSONL files
-.beads/issues.jsonl merge=beads
+# Always accept upstream (theirs) version for .beads/ files (auto-generated issue tracker)
+# Requires: git config merge.theirs.driver "cp %B %A"
+.beads/** merge=theirs
+.beads/issues.jsonl merge=theirs
+.beads/interactions.jsonl merge=theirs
