@@ -70,7 +70,7 @@ jobs:
           STANDARD_DISK_SIZE: ${{ vars.PVE_STANDARD_DISK_SIZE || '32768' }}
           BOOSTED_VCPUS: ${{ vars.PVE_BOOSTED_VCPUS || '6' }}
           BOOSTED_MEMORY: ${{ vars.PVE_BOOSTED_MEMORY || '8192' }}
-          BOOSTED_DISK_SIZE: ${{ vars.PVE_BOOSTED_DISK_SIZE || '32768' }}
+          BOOSTED_DISK_SIZE: ${{ vars.PVE_BOOSTED_DISK_SIZE || '40960' }}
         run: |
           max_attempts=3
           attempt=1
