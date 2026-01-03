@@ -35,6 +35,19 @@ const ALLOWED_EXACT_HOSTS = new Set<string>([
 
 const DEV_ONLY_HOSTS = new Set<string>(["localhost", "127.0.0.1", "::1"]);
 
+/**
+ * Get additional allowed host suffixes from environment (e.g., PVE_PUBLIC_DOMAIN).
+ * Returns array of suffixes like [".example.com"].
+ */
+function getDynamicAllowedHostSuffixes(): string[] {
+  const suffixes: string[] = [];
+  // Add PVE public domain if configured (for Cloudflare Tunnel access)
+  if (env.PVE_PUBLIC_DOMAIN) {
+    suffixes.push(`.${env.PVE_PUBLIC_DOMAIN}`);
+  }
+  return suffixes;
+}
+
 function isAllowedHost(hostname: string): boolean {
   const normalized = hostname.toLowerCase();
 
@@ -43,6 +56,12 @@ function isAllowedHost(hostname: string): boolean {
   }
 
   if (ALLOWED_HOST_SUFFIXES.some((suffix) => normalized.endsWith(suffix))) {
+    return true;
+  }
+
+  // Check dynamic suffixes (from env)
+  const dynamicSuffixes = getDynamicAllowedHostSuffixes();
+  if (dynamicSuffixes.some((suffix) => normalized.endsWith(suffix))) {
     return true;
   }
 
@@ -524,7 +543,7 @@ iframePreflightRouter.openapi(
                   ? metadata.teamId
                   : null;
                 if (teamId) {
-                  await convexClient.mutation(api.morphInstances.recordResume, {
+                  await convexClient.mutation(api.sandboxInstances.recordResume, {
                     instanceId,
                     teamSlugOrId: teamId,
                   });

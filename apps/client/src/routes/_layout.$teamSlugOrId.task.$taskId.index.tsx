@@ -28,6 +28,7 @@ import {
 import {
   toMorphVncUrl,
   toMorphXtermBaseUrl,
+  toVncViewerUrl,
 } from "@/lib/toProxyWorkspaceUrl";
 import { getWorkspaceUrl } from "@/lib/workspace-url";
 import {
@@ -152,6 +153,7 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/task/$taskId/")({
         : taskRuns[0];
 
       const rawWorkspaceUrl = selectedRun?.vscode?.workspaceUrl ?? null;
+      const rawVncUrl = selectedRun?.vscode?.vncUrl ?? null;
       const rawBrowserUrl =
         selectedRun?.vscode?.url ?? rawWorkspaceUrl ?? null;
 
@@ -170,8 +172,14 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/task/$taskId/")({
           });
         }
       }
-      if (selectedRun && rawBrowserUrl) {
-        const vncUrl = toMorphVncUrl(rawBrowserUrl);
+      // Preload browser iframe - prefer direct vncUrl for PVE LXC, fall back to Morph derivation
+      if (selectedRun) {
+        let vncUrl: string | null = null;
+        if (rawVncUrl) {
+          vncUrl = toVncViewerUrl(rawVncUrl);
+        } else if (rawBrowserUrl) {
+          vncUrl = toMorphVncUrl(rawBrowserUrl);
+        }
         if (vncUrl) {
           void preloadTaskRunBrowserIframe(selectedRun._id, vncUrl).catch(
             (error) => {
@@ -558,9 +566,18 @@ function TaskDetailPage() {
 
   // Query terminal sessions to detect if Claude Code is running
   // Disable for archived tasks to prevent Wake on HTTP (the query has refetchInterval: 10_000)
+  // Prefer direct xtermUrl from vscode info (works for PVE LXC), fall back to deriving from Morph URL
   const xtermBaseUrl = useMemo(
-    () => (rawWorkspaceUrl && !isTaskArchived ? toMorphXtermBaseUrl(rawWorkspaceUrl) : null),
-    [rawWorkspaceUrl, isTaskArchived]
+    () => {
+      if (isTaskArchived) return null;
+      // Prefer direct xtermUrl if available (PVE LXC and future providers)
+      if (selectedRun?.vscode?.xtermUrl) {
+        return selectedRun.vscode.xtermUrl;
+      }
+      // Fall back to deriving from Morph workspace URL
+      return rawWorkspaceUrl ? toMorphXtermBaseUrl(rawWorkspaceUrl) : null;
+    },
+    [rawWorkspaceUrl, isTaskArchived, selectedRun?.vscode?.xtermUrl]
   );
   const terminalTabsQuery = useTanstackQuery(
     terminalTabsQueryOptions({
@@ -682,14 +699,22 @@ function TaskDetailPage() {
     []
   );
 
+  // For browser panel, prefer direct vncUrl (works with PVE LXC and other providers),
+  // fall back to deriving VNC URL from workspace URL for Morph provider
+  const rawVncUrl = selectedRun?.vscode?.vncUrl ?? null;
   const rawBrowserUrl =
     selectedRun?.vscode?.url ?? selectedRun?.vscode?.workspaceUrl ?? null;
   const browserUrl = useMemo(() => {
-    if (!rawBrowserUrl) {
-      return null;
+    // Use vncUrl directly if available (PVE LXC, etc.)
+    if (rawVncUrl) {
+      return toVncViewerUrl(rawVncUrl);
     }
-    return toMorphVncUrl(rawBrowserUrl);
-  }, [rawBrowserUrl]);
+    // Fall back to deriving from workspace URL for Morph
+    if (rawBrowserUrl) {
+      return toMorphVncUrl(rawBrowserUrl);
+    }
+    return null;
+  }, [rawVncUrl, rawBrowserUrl]);
   const browserPersistKey = selectedRunId
     ? getTaskRunBrowserPersistKey(selectedRunId)
     : null;
@@ -847,6 +872,7 @@ function TaskDetailPage() {
       workspacePlaceholder,
       // For archived tasks, pass null URLs to prevent iframe loading (Wake on HTTP)
       rawWorkspaceUrl: isTaskArchived ? null : rawWorkspaceUrl,
+      xtermUrl: isTaskArchived ? null : xtermBaseUrl,
       browserUrl: isTaskArchived ? null : browserUrl,
       browserPersistKey: isTaskArchived ? null : browserPersistKey,
       browserStatus,
@@ -881,6 +907,7 @@ function TaskDetailPage() {
       isEditorBusy,
       workspacePlaceholder,
       rawWorkspaceUrl,
+      xtermBaseUrl,
       browserUrl,
       browserPersistKey,
       browserStatus,

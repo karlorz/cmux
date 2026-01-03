@@ -5,6 +5,8 @@ import { useEnvironmentDraft } from "@/state/environment-draft-store";
 import { api } from "@cmux/convex/api";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
+import { useQuery as useRQQuery } from "@tanstack/react-query";
+import { getApiConfigSandboxOptions } from "@cmux/www-openapi-client/react-query";
 import { formatDistanceToNow } from "date-fns";
 import { Calendar, Eye, GitBranch, Play, Plus, Server } from "lucide-react";
 import { useEffect } from "react";
@@ -25,6 +27,10 @@ function EnvironmentsListPage() {
   const { teamSlugOrId } = Route.useParams();
   const navigate = useNavigate({ from: Route.fullPath });
   const draft = useEnvironmentDraft(teamSlugOrId);
+
+  // Fetch sandbox config to get default preset ID
+  const { data: sandboxConfig } = useRQQuery(getApiConfigSandboxOptions());
+  const defaultSnapshotId = sandboxConfig?.defaultPresetId;
 
   // Auto-navigate to /environments/new if there's a draft in progress
   useEffect(() => {
@@ -70,7 +76,7 @@ function EnvironmentsListPage() {
               connectionLogin: undefined,
               repoSearch: undefined,
               instanceId: undefined,
-              snapshotId: undefined,
+              snapshotId: defaultSnapshotId,
             }}
             className="inline-flex items-center gap-2 rounded-md bg-neutral-900 text-white px-4 py-2 text-sm font-medium hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 transition-colors"
           >
@@ -191,7 +197,7 @@ function EnvironmentsListPage() {
                 connectionLogin: undefined,
                 repoSearch: undefined,
                 instanceId: undefined,
-                snapshotId: undefined,
+                snapshotId: defaultSnapshotId,
               }}
               className="inline-flex items-center gap-2 rounded-md bg-neutral-900 text-white px-4 py-2 text-sm hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
             >
