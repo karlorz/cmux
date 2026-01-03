@@ -4,3 +4,6 @@
 .beads/** merge=theirs
 .beads/issues.jsonl merge=theirs
 .beads/interactions.jsonl merge=theirs
+
+# Always keep OUR version of morph-snapshots.json (fork-specific snapshots)
+packages/shared/src/morph-snapshots.json merge=ours
