@@ -4,37 +4,59 @@ Scripts for managing Proxmox VE LXC containers as sandbox providers for cmux.
 
 ## Overview
 
-These scripts support the cmux cost reduction roadmap by providing a self-hosted alternative to Morph Cloud sandboxes using Proxmox VE with LXC containers and CRIU for RAM state snapshots.
+These scripts support the cmux PVE LXC sandbox provider, a self-hosted alternative to Morph Cloud sandboxes using Proxmox VE with LXC containers and Cloudflare Tunnel for public access.
 
 ## Prerequisites
 
 - Proxmox VE 8.x node
 - API token with appropriate permissions
+- Domain with Cloudflare DNS (for public access via Cloudflare Tunnel)
 - `jq` and `curl` installed on your local machine
-- CRIU installed on the Proxmox node (for checkpoint/restore)
 
 ## Environment Variables
 
 The scripts automatically load environment variables from the project root `.env` file.
 You can also export them manually or override the `.env` values by exporting before running.
 
-```bash
-# Required (add to .env or export)
-PVE_API_URL="https://pve.example.com:8006"
-PVE_API_TOKEN="root@pam!cmux=<your-token-secret>"
+### Backend (apps/www)
 
-# Optional
-PVE_NODE="pve"                    # Target node (auto-detected if not set)
-PVE_STORAGE="local"               # Storage for templates
-PVE_TEMPLATE_VMID="9000"          # Default template VMID
-PVE_LXC_MEMORY="4096"             # Default memory in MB
-PVE_LXC_CORES="4"                 # Default CPU cores
-PVE_LXC_DISK="32"                 # Default disk size in GB
-PVE_SSH_HOST="root@pve.example.com"  # SSH host for pct commands (auto-derived from PVE_API_URL)
+```bash
+# Required
+PVE_API_URL="https://pve.example.com"
+PVE_API_TOKEN="root@pam!cmux=<your-token-secret>"
+PVE_PUBLIC_DOMAIN="example.com"   # Domain for Cloudflare Tunnel URLs
+
+# Optional (auto-detected)
+PVE_NODE="pve"                    # Target node (first online node)
+PVE_STORAGE="local-lvm"           # Storage (most available space)
+PVE_BRIDGE="vmbr0"                # Network bridge
+PVE_GATEWAY=""                    # Gateway IP (from bridge config)
+PVE_VERIFY_TLS="false"            # Self-signed cert support
+```
+
+### Cloudflare Tunnel (on PVE Host)
+
+```bash
+CF_API_TOKEN="..."                # Zone:DNS:Edit + Tunnel:Edit permissions
+CF_ZONE_ID="..."                  # From Cloudflare dashboard
+CF_ACCOUNT_ID="..."               # From Cloudflare dashboard
+CF_DOMAIN="example.com"
 ```
 
 The `.env` file is auto-loaded from the project root (`/path/to/cmux/.env`).
 If `PVE_API_URL` is already set in your environment, the `.env` file will not override it.
+
+## URL Pattern
+
+PVE LXC uses a Morph-consistent URL pattern for service access via Cloudflare Tunnel:
+
+| Service | Port | URL Pattern |
+|---------|------|-------------|
+| VSCode | 39378 | `https://port-39378-vm-{vmid}.{domain}` |
+| Worker | 39377 | `https://port-39377-vm-{vmid}.{domain}` |
+| Xterm | 39383 | `https://port-39383-vm-{vmid}.{domain}` |
+| Exec | 39375 | `https://port-39375-vm-{vmid}.{domain}` |
+| VNC | 39380 | `https://port-39380-vm-{vmid}.{domain}` |
 
 ## Scripts
 
@@ -62,6 +84,17 @@ Test API connectivity and authentication.
 
 ```bash
 ./pve-test-connection.sh
+```
+
+### pve-lxc-setup.sh
+One-liner template creation for PVE host. Run this directly on your Proxmox node.
+
+```bash
+# Download and run on PVE host
+curl -fsSL https://raw.githubusercontent.com/karlorz/cmux/main/scripts/pve/pve-lxc-setup.sh | bash -s -- 9000
+
+# With custom options
+curl -fsSL https://raw.githubusercontent.com/karlorz/cmux/main/scripts/pve/pve-lxc-setup.sh | bash -s -- 9000 --memory 8192 --cores 8
 ```
 
 ### pve-lxc-template.sh
@@ -105,113 +138,75 @@ Manage LXC container instances.
 ./pve-instance.sh delete 100
 ```
 
-### pve-criu.sh
-CRIU checkpoint/restore for RAM state preservation (critical for Morph parity).
+### pve-tunnel-setup.sh
+Deploy Cloudflare Tunnel and Caddy for public access to containers.
 
 ```bash
-# Check CRIU availability
-./pve-criu.sh status
+# Initial setup (run on PVE host)
+./pve-tunnel-setup.sh setup
 
-# Checkpoint (pause with RAM state)
-./pve-criu.sh checkpoint 100
+# Check status
+./pve-tunnel-setup.sh status
 
-# Restore (resume from checkpoint)
-./pve-criu.sh restore 100
-
-# Test checkpoint/restore cycle
-./pve-criu.sh test 100
-
-# Disk snapshots (no RAM state)
-./pve-criu.sh snapshot 100 pre-upgrade
-./pve-criu.sh list 100
-./pve-criu.sh rollback 100 pre-upgrade
+# Update configuration
+./pve-tunnel-setup.sh update
 ```
 
 ## Quick Start
 
-1. **Set up environment variables** (add to project root `.env` file)
-   ```bash
-   # In /path/to/cmux/.env
-   PVE_API_URL="https://your-pve-host:8006"
-   PVE_API_TOKEN="root@pam!cmux=your-token-secret"
-   ```
-
-2. **Test connection**
-   ```bash
-   ./pve-test-connection.sh
-   ```
-
-3. **Create base template**
-   ```bash
-   # Create container
-   ./pve-lxc-template.sh create 9000
-
-   # Configure (fully autonomous - auto-starts, installs deps via SSH)
-   ./pve-lxc-template.sh configure 9000
-
-   # Convert to template (auto-stops container)
-   ./pve-lxc-template.sh convert 9000
-   ```
-
-   Note: The Proxmox VE API does not support executing commands inside containers.
-   The `configure` command supports multiple execution modes:
-   - `--mode local`: Run directly on PVE host (if script is run there)
-   - `--mode pve-ssh`: SSH to PVE host, then use `pct` commands (default when not on PVE)
-   - `--mode container-ssh`: SSH directly into container (requires SSH in container)
-
-4. **Create sandbox instance**
-   ```bash
-   ./pve-instance.sh clone 101 --hostname my-sandbox
-   ./pve-instance.sh start 101
-   ```
-
-5. **Test CRIU checkpoint/restore**
-   ```bash
-   ./pve-criu.sh test 101
-   ```
-
-## CRIU Notes
-
-CRIU (Checkpoint/Restore In Userspace) is essential for RAM state preservation. This gives cmux the ability to pause sandboxes and resume them with all running processes intact, matching Morph Cloud's capability.
-
-### Installing CRIU on Proxmox Node
+### 1. Create Base Template (on PVE host)
 
 ```bash
-apt-get install criu
-criu check --all
+# One-liner: download and run setup script on PVE host console
+curl -fsSL https://raw.githubusercontent.com/karlorz/cmux/main/scripts/pve/pve-lxc-setup.sh | bash -s -- 9000
 ```
 
-### Container Requirements for CRIU
+### 2. Deploy Cloudflare Tunnel (on PVE host)
 
-- Containers should have `features=nesting=1` for Docker support
-- Some applications may not checkpoint cleanly (test your workload)
-- Unprivileged containers may have limitations
+```bash
+# Set Cloudflare credentials
+export CF_API_TOKEN="your-cloudflare-api-token"
+export CF_ZONE_ID="your-zone-id"
+export CF_ACCOUNT_ID="your-account-id"
+export CF_DOMAIN="example.com"
 
-### Checkpoint vs Snapshot
+# Run setup
+curl -fsSL https://raw.githubusercontent.com/karlorz/cmux/main/scripts/pve/pve-tunnel-setup.sh | bash -s -- setup
+```
 
-| Feature | Checkpoint (CRIU) | Snapshot (Disk) |
-|---------|-------------------|-----------------|
-| RAM State | Yes | No |
-| Process Resume | Yes | No |
-| Speed | Fast (~100-500ms) | Medium |
-| Storage | More space | Less space |
-| Use Case | Pause/Resume | Backup/Rollback |
+### 3. Build Snapshots (from dev machine)
+
+```bash
+uv run --env-file .env ./scripts/snapshot-pvelxc.py --template-vmid 9000
+```
+
+### 4. Configure Backend
+
+Add to your `.env` file:
+
+```bash
+PVE_API_URL="https://your-pve-host"
+PVE_API_TOKEN="root@pam!cmux=your-token-secret"
+PVE_PUBLIC_DOMAIN="example.com"
+```
+
+### 5. Test Connection
+
+```bash
+./scripts/pve/pve-test-connection.sh
+```
 
 ## Integration with cmux
 
-These scripts are designed to support the `ProxmoxProvider` implementation in cmux:
+These scripts support the PVE LXC provider implementation:
 
-```typescript
-// packages/sandbox/src/pve_lxc.rs (Rust)
-// or packages/shared/src/sandbox-providers/proxmox.ts (TypeScript)
+| File | Purpose |
+|------|---------|
+| `apps/www/lib/utils/pve-lxc-client.ts` | PVE API client (~900 lines) |
+| `packages/sandbox/src/pve_lxc.rs` | Rust sandbox daemon |
+| `scripts/snapshot-pvelxc.py` | Snapshot build script |
 
-interface ProxmoxProvider {
-  startInstance(config): Promise<Instance>;
-  stopInstance(id): Promise<void>;
-  pauseInstance(id): Promise<void>;   // Uses CRIU checkpoint
-  resumeInstance(id): Promise<void>;  // Uses CRIU restore
-}
-```
+The provider auto-detects based on environment variables. Set `SANDBOX_PROVIDER=pve-lxc` to force PVE.
 
 ## Troubleshooting
 
@@ -224,23 +219,34 @@ curl -k -v "${PVE_API_URL}/api2/json/version"
 echo "Token: ${PVE_API_TOKEN%%=*}=***"
 ```
 
-### CRIU Issues
+### Cloudflare Tunnel Issues
 ```bash
-# Check CRIU on node
-ssh root@pve-node "criu check --all"
+# Check tunnel status on PVE host
+systemctl status cloudflared
 
-# Check container features
-pct config <vmid> | grep features
+# Check Caddy status
+systemctl status caddy-cmux
+
+# Test URL routing
+curl -v https://port-39378-vm-200.example.com
 ```
 
 ### Common Errors
 
 - **401 Unauthorized**: Check API token format and permissions
-- **CRIU not available**: Install CRIU on the Proxmox node
-- **Checkpoint failed**: Some processes may block checkpointing
+- **Connection refused**: Verify Cloudflare Tunnel is running
+- **DNS resolution failed**: Check wildcard DNS (*.example.com) points to Cloudflare
+
+## Experimental Scripts
+
+The `experimental/` directory contains scripts for features not yet production-ready:
+
+- `experimental/pve-criu.sh` - CRIU checkpoint/restore (experimental, not required for cmux)
+
+Note: CRIU checkpoint/restore is marked experimental in PVE documentation and is NOT required for cmux operation. The PVE LXC provider uses container stop/start for pause/resume.
 
 ## Related Documentation
 
 - [Proxmox VE API Documentation](https://pve.proxmox.com/pve-docs/api-viewer/)
-- [CRIU Documentation](https://criu.org/Main_Page)
-- [cmux Cost Reduction Roadmap](../../docs/cmux-costreduce-roadmap.md)
+- [PR #27 Review - PVE LXC Architecture](../../docs/PR27-PVE-LXC-REVIEW.md)
+- [Cloudflare Tunnel Documentation](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
