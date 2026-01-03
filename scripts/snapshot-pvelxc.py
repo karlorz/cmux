@@ -855,9 +855,10 @@ class PveLxcClient:
                     except json.JSONDecodeError:
                         stderr_lines.append(line_str)
         except urllib.error.HTTPError as e:
-            # Gateway errors (502, 503, 504) indicate cmux-execd is not available
-            # Return None to trigger fallback to SSH+pct exec
-            if e.code in (502, 503, 504):
+            # Gateway errors (502, 503, 504) and Cloudflare timeout (524) indicate
+            # cmux-execd is not available or the request timed out.
+            # Return None to trigger fallback to SSH+pct exec if available.
+            if e.code in (502, 503, 504, 524):
                 return None
             error_body = e.read().decode("utf-8", errors="replace")
             stderr_lines.append(f"HTTP exec error {e.code}: {e.reason}\n{error_body}")
@@ -2054,34 +2055,102 @@ async def task_install_nvm(ctx: PveTaskContext) -> None:
 @registry.task(
     name="install-bun",
     deps=("install-base-packages",),
-    description="Install Bun runtime (split to avoid Cloudflare timeout)",
+    description="Install Bun runtime (background download to avoid Cloudflare timeout)",
 )
 async def task_install_bun(ctx: PveTaskContext) -> None:
-    # Step 1: Download bun installer script (quick)
-    await ctx.run(
-        "download-bun-installer",
-        "curl -fsSL https://bun.sh/install -o /tmp/bun-install.sh",
-        timeout=120,
-    )
-
-    # Step 2: Run bun installer (downloads binary, may take time)
-    await ctx.run(
-        "run-bun-installer",
-        "bash /tmp/bun-install.sh",
-        timeout=300,
-    )
-
-    # Step 3: Install to system paths and verify
+    # Step 1: Detect architecture and start bun download in background
+    # The background download avoids Cloudflare Tunnel's ~100s timeout
     cmd = textwrap.dedent(
         """
-        install -m 0755 /root/.bun/bin/bun /usr/local/bin/bun
-        ln -sf /usr/local/bin/bun /usr/local/bin/bunx
-        bun --version
-        bunx --version
-        rm -f /tmp/bun-install.sh
+        set -eux
+        arch="$(uname -m)"
+        case "${arch}" in
+          x86_64) bun_arch="x64" ;;
+          aarch64|arm64) bun_arch="aarch64" ;;
+          *) echo "Unsupported architecture: ${arch}" >&2; exit 1 ;;
+        esac
+
+        # Get latest bun version
+        BUN_VERSION="$(curl -fsSL https://api.github.com/repos/oven-sh/bun/releases/latest | jq -r '.tag_name' | sed 's/^bun-v//')"
+        echo "Installing bun v${BUN_VERSION} for ${bun_arch}..."
+
+        # Save arch for installation step
+        echo "${bun_arch}" > /tmp/bun-arch
+
+        # Download in background to avoid Cloudflare timeout
+        url="https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-${bun_arch}.zip"
+        nohup sh -c "curl -fsSL --retry 3 --retry-delay 5 -o /tmp/bun.zip '${url}' && touch /tmp/bun-download-done" > /tmp/bun-download.log 2>&1 &
+        echo "Background download started (PID: $!)"
         """
     )
-    await ctx.run("install-bun-to-system", cmd, timeout=60)
+    await ctx.run("start-bun-download", cmd, timeout=60)
+
+    # Step 2: Poll for download completion
+    ctx.console.info("[install-bun] Waiting for background download to complete...")
+    max_wait = 300  # 5 minutes max
+    poll_interval = 10
+    elapsed = 0
+
+    while elapsed < max_wait:
+        result = await ctx.client.aexec_in_container(
+            ctx.vmid,
+            "[ -f /tmp/bun-download-done ] && echo done || echo waiting",
+            timeout=15,
+            check=False,
+        )
+        if "done" in result.stdout:
+            ctx.console.info("[install-bun] Download completed")
+            break
+        # Check for download failure
+        if elapsed > 30:  # Give it some time to start
+            check_result = await ctx.client.aexec_in_container(
+                ctx.vmid,
+                "pgrep -f 'curl.*bun.zip' > /dev/null && echo running || echo stopped",
+                timeout=15,
+                check=False,
+            )
+            if "stopped" in check_result.stdout and "done" not in result.stdout:
+                # Download process stopped but didn't complete
+                log_result = await ctx.client.aexec_in_container(
+                    ctx.vmid,
+                    "cat /tmp/bun-download.log 2>/dev/null || echo 'no log'",
+                    timeout=15,
+                    check=False,
+                )
+                raise RuntimeError(f"Bun download failed:\n{log_result.stdout}")
+        await asyncio.sleep(poll_interval)
+        elapsed += poll_interval
+        if elapsed % 30 == 0:
+            ctx.console.info(f"[install-bun] Still downloading... ({elapsed}s)")
+    else:
+        # Timeout - get the log for debugging
+        log_result = await ctx.client.aexec_in_container(
+            ctx.vmid,
+            "cat /tmp/bun-download.log 2>/dev/null || echo 'no log'",
+            timeout=15,
+            check=False,
+        )
+        raise TimeoutError(f"Bun download timed out after {max_wait}s\nLog: {log_result.stdout}")
+
+    # Step 3: Extract and install bun
+    cmd = textwrap.dedent(
+        """
+        set -eux
+        bun_arch="$(cat /tmp/bun-arch)"
+        cd /tmp
+        unzip -o bun.zip
+        install -m 0755 "bun-linux-${bun_arch}/bun" /usr/local/bin/bun
+        ln -sf /usr/local/bin/bun /usr/local/bin/bunx
+
+        # Cleanup
+        rm -rf /tmp/bun.zip /tmp/bun-linux-* /tmp/bun-arch /tmp/bun-download-done /tmp/bun-download.log
+
+        # Verify
+        bun --version
+        bunx --version
+        """
+    )
+    await ctx.run("install-bun-binary", cmd, timeout=60)
 
 
 @registry.task(
