@@ -12,6 +12,8 @@ This PR adds Proxmox VE (PVE) LXC containers as an alternative sandbox provider 
 
 **Update (2026-01-03):** Comprehensive architecture review completed. Implementation plans added for future improvements.
 
+**Update (2026-01-03, Rev 2):** Deep review with Context7 (PVE docs) and DeepWiki (upstream cmux patterns). Style consistency analysis and env var minimization verified.
+
 ---
 
 ## Review Verdict
@@ -593,108 +595,276 @@ To add a new sandbox provider (e.g., AWS EC2):
 
 ---
 
+## PVE LXC Technical Limitations (Official Documentation)
+
+Based on official Proxmox VE documentation and API:
+
+### Suspend/Resume Limitations
+
+| Feature | QEMU VM | LXC Container | Notes |
+|---------|---------|---------------|-------|
+| **RAM State Preservation** | Yes (`qm suspend --todisk`) | **No** | LXC `pct suspend` is **experimental** |
+| **True Hibernate** | Yes | **No** | LXC uses rsync-based backup suspend |
+| **Process Resume** | Exact state | Cold restart | All processes restart from scratch |
+
+> **Source:** `pct suspend` is marked "experimental" in PVE docs. Backup suspend mode "uses rsync to copy the container data to a temporary location, then suspends the container, copies changed files, and resumes" - not true RAM state preservation.
+
+### Metadata Storage Limitations
+
+| Feature | QEMU VM | LXC Container |
+|---------|---------|---------------|
+| **Custom Metadata** | Limited | **Tags only** |
+| **Arbitrary Key-Value** | No | **No** |
+| **Configuration File** | `/etc/pve/qemu-server/{vmid}.conf` | `/etc/pve/lxc/{vmid}.conf` |
+
+> **Note:** PVE only supports `tags` field for meta-information. No arbitrary metadata API exists.
+
+### CRIU Checkpoint Limitations
+
+- **Experimental Status:** CRIU checkpoint/restore is not officially supported
+- **Kernel Dependency:** Requires kernel support and CRIU package on host
+- **FUSE Incompatibility:** "Usage of FUSE mounts inside a container is strongly advised against, as containers need to be frozen for suspend or snapshot mode backups"
+- **Freezer Subsystem Issues:** "Existing issues in the Linux kernel's freezer subsystem" can cause I/O deadlocks
+
+### Other LXC Constraints
+
+- **OS Support:** Linux only (no Windows/FreeBSD)
+- **Kernel Sharing:** Containers share host kernel (security consideration)
+- **Bind Mount Backup:** "Contents of bind mount points are not backed up"
+- **Disk Shrink:** Not supported (only grow)
+
+---
+
+## VM-Tech Specific Code to Remove/Refactor
+
+The following code exposes PVE LXC implementation details that should be abstracted or removed:
+
+### 1. In-Memory Metadata Store (REMOVE)
+
+**Location:** `apps/www/lib/utils/pve-lxc-client.ts:234-235`
+
+```typescript
+// These expose VM-tech specific state management
+private instanceMetadata: Map<number, ContainerMetadata> = new Map();
+private instanceServices: Map<number, HttpService[]> = new Map();
+```
+
+**Problem:**
+- [ ] Metadata doesn't survive server restarts
+- [ ] Not provider-agnostic (Convex DB should be single source of truth)
+- [ ] Causes inconsistency when multiple backend instances run
+
+### 2. CRIU/Suspend Methods (MARK PRIVATE or REMOVE)
+
+**Location:** `apps/www/lib/utils/pve-lxc-client.ts:662-680`
+
+```typescript
+// These expose experimental PVE features
+async suspendContainer(vmid: number): Promise<void>
+async resumeContainer(vmid: number): Promise<void>
+```
+
+**Problem:**
+- [ ] CRIU is experimental per PVE docs
+- [ ] Not portable to other providers
+- [ ] `SandboxInstance.pause()` already abstracts this correctly (falls back to stop)
+
+### 3. CRIU Shell Script (MOVE TO EXPERIMENTAL)
+
+**Location:** `scripts/pve/pve-criu.sh`
+
+**Problem:**
+- [ ] 545 lines of CRIU-specific code
+- [ ] Requires kernel support not guaranteed
+- [ ] Not used by core cmux functionality
+
+### 4. Provider-Specific Capability Assumptions
+
+**Location:** `packages/shared/src/sandbox-presets.ts:61-67`
+
+```typescript
+"pve-lxc": {
+  supportsHibernate: false,  // Correctly documented
+  // ...
+}
+```
+
+**Status:** ✅ Already correctly abstracted
+
+---
+
 ## Implementation Plans (Future Work)
 
 These plans focus on **cmux-specific improvements** that apply regardless of underlying virtualization technology.
 
-### Plan 1: Container Garbage Collection (HIGH PRIORITY)
+### Plan 1: Migrate In-Memory Metadata to Convex (P0)
 
-**Problem:** No TTL enforcement or cleanup of orphaned sandboxes.
+**Problem:** Metadata stored in memory doesn't survive restarts and isn't accessible across instances.
 
-**Solution:** Extend existing `sandboxInstanceMaintenance.ts` cron to handle PVE containers.
+**Files:**
+- `apps/www/lib/utils/pve-lxc-client.ts`
+- `packages/convex/convex/sandboxInstances.ts`
 
-**Files to modify:**
-- `packages/convex/convex/sandboxInstanceMaintenance.ts` - Add PVE cleanup logic
-- `packages/convex/convex/crons.ts` - Ensure cron covers both providers
-- `apps/www/lib/utils/pve-lxc-client.ts` - Add `pruneContainers()` method
-
-**Estimated effort:** 2-3 hours
+**Todo:**
+- [ ] Remove `instanceMetadata` and `instanceServices` Maps from `PveLxcClient`
+- [ ] Store container metadata in Convex `sandboxInstances` table on creation
+- [ ] Query Convex for metadata in `instances.get()` and `instances.list()`
+- [ ] Update `deleteContainer()` to clean up Convex record
+- [ ] Add `pveLxcVmid` field to `sandboxInstances` schema for PVE containers
 
 ---
 
-### Plan 2: Clone Failure Rollback (HIGH PRIORITY)
+### Plan 2: Clone Failure Rollback (P0)
 
 **Problem:** If container clone succeeds but start fails, orphaned container remains.
 
-**Location:** `apps/www/lib/utils/pve-lxc-client.ts` - `instances.start()`
+**Location:** `apps/www/lib/utils/pve-lxc-client.ts:754-758`
 
-**Solution:** Wrap `startContainer()` in try/catch and delete container on failure.
-
-**Estimated effort:** 30 minutes
+**Todo:**
+- [ ] Wrap `startContainer()` call in try/catch in `instances.start()`
+- [ ] On failure, call `deleteContainer(newVmid)` to clean up
+- [ ] Log rollback action for debugging
+- [ ] Re-throw original error after cleanup
 
 ---
 
-### Plan 3: Health Check Endpoint (MEDIUM PRIORITY)
+### Plan 3: Move CRIU Script to Experimental (P1)
+
+**Problem:** CRIU is experimental and not required for core cmux functionality.
+
+**Files:**
+- `scripts/pve/pve-criu.sh`
+
+**Todo:**
+- [ ] Create `scripts/pve/experimental/` directory
+- [ ] Move `pve-criu.sh` to experimental folder
+- [ ] Add README explaining experimental status
+- [ ] Update any docs referencing CRIU as optional
+
+---
+
+### Plan 4: Mark Suspend/Resume Methods Private (P1)
+
+**Problem:** Public suspend/resume methods expose experimental PVE features.
+
+**Location:** `apps/www/lib/utils/pve-lxc-client.ts:662-680`
+
+**Todo:**
+- [ ] Change `suspendContainer()` to private method
+- [ ] Change `resumeContainer()` to private method
+- [ ] Verify no external callers (only internal `pause()`/`resume()` wrappers)
+- [ ] Add JSDoc noting these are LXC-specific and experimental
+
+---
+
+### Plan 5: Container Garbage Collection (P1)
+
+**Problem:** No TTL enforcement or cleanup of orphaned sandboxes.
+
+**Files:**
+- `packages/convex/convex/sandboxInstanceMaintenance.ts`
+- `packages/convex/convex/crons.ts`
+- `apps/www/lib/utils/pve-lxc-client.ts`
+
+**Todo:**
+- [ ] Add `pruneContainers(olderThanMs: number)` method to `PveLxcClient`
+- [ ] List all containers with `cmux-` prefix
+- [ ] Cross-reference with Convex `sandboxInstances` table
+- [ ] Delete containers not in Convex or past TTL
+- [ ] Extend cron job to call PVE cleanup alongside Morph cleanup
+
+---
+
+### Plan 6: Health Check Endpoint (P2)
 
 **Problem:** No way to verify sandbox provider connectivity from frontend.
 
-**Solution:** Add `GET /api/health/sandbox` endpoint returning provider status and latency.
+**Files:**
+- `apps/www/lib/routes/health.route.ts` (new file)
+- `apps/www/lib/routes/index.ts`
 
-**File:** `apps/www/lib/routes/health.route.ts`
-
-**Estimated effort:** 1-2 hours
+**Todo:**
+- [ ] Create `GET /api/health/sandbox` endpoint
+- [ ] Return active provider type and status
+- [ ] Test PVE API connectivity with lightweight call (`/nodes`)
+- [ ] Return latency measurement
+- [ ] Include template availability check
 
 ---
 
-### Plan 4: Rate Limiting (MEDIUM PRIORITY)
+### Plan 7: Rate Limiting (P2)
 
 **Problem:** No protection against rapid sandbox creation.
 
-**Solution:** Add per-team rate limits using `hono-rate-limiter` middleware.
+**Files:**
+- `apps/www/lib/middleware/rate-limit.ts` (new file)
+- `apps/www/lib/routes/sandboxes.route.ts`
 
-**File:** `apps/www/lib/middleware/rate-limit.ts`
-
-**Estimated effort:** 1-2 hours
+**Todo:**
+- [ ] Add `hono-rate-limiter` to dependencies
+- [ ] Create rate limit middleware for sandbox creation
+- [ ] Configure per-team limits (e.g., 10 containers/hour)
+- [ ] Apply to `POST /api/sandboxes/start` route
+- [ ] Return 429 with retry-after header
 
 ---
 
-### Plan 5: Service URL IP Fallback (LOW PRIORITY)
+### Plan 8: Service URL IP Fallback (P3)
 
 **Problem:** Falls back from public domain to FQDN, but no IP fallback for local dev.
 
-**Location:** `apps/www/lib/utils/pve-lxc-client.ts` - `buildServiceUrl()`
+**Location:** `apps/www/lib/utils/pve-lxc-client.ts`
 
-**Solution:** Add container IP as third fallback option for local development without DNS.
-
-**Estimated effort:** 1 hour
+**Todo:**
+- [ ] Add `PVE_CONTAINER_IP_PREFIX` env var option
+- [ ] Modify `buildServiceUrl()` to try: public URL → FQDN → IP
+- [ ] Query container IP from PVE API if needed
+- [ ] Document local dev setup without DNS/tunnel
 
 ---
 
-### Plan 6: Unit Tests for Snapshot Parsing (LOW PRIORITY)
+### Plan 9: Unit Tests for Snapshot Parsing (P3)
 
 **Problem:** Edge cases in `parseSnapshotId()` not covered by tests.
 
 **File:** `packages/shared/src/sandbox-presets.test.ts`
 
-**Test cases needed:**
-- Parse morph/pvelxc/pvevm snapshot IDs
-- Handle backwards-compatible formats
-- Return null for invalid formats
-
-**Estimated effort:** 1 hour
+**Todo:**
+- [ ] Add test: Parse `morph_4vcpu_16gb_48gb_v1` correctly
+- [ ] Add test: Parse `pvelxc_4vcpu_6gb_32gb_v1` correctly
+- [ ] Add test: Parse `pvevm_4vcpu_6gb_32gb_v1` correctly
+- [ ] Add test: Handle old `pve_{preset}_{vmid}` format
+- [ ] Add test: Return null for invalid formats
+- [ ] Add test: Return null for empty/undefined input
 
 ---
 
 ## Implementation Priority Matrix
 
-| Priority | Plan | Effort | Impact |
-|----------|------|--------|--------|
-| **P0** | Plan 2: Clone Failure Rollback | 30min | Prevents orphaned containers |
-| **P1** | Plan 1: Container GC | 2-3h | Prevents resource leaks |
-| **P2** | Plan 3: Health Check Endpoint | 1-2h | Improves observability |
-| **P2** | Plan 4: Rate Limiting | 1-2h | Prevents abuse |
-| **P3** | Plan 5: IP Fallback | 1h | Better local dev experience |
-| **P3** | Plan 6: Unit Tests | 1h | Improved reliability |
+| Priority | Plan | Impact |
+|----------|------|--------|
+| **P0** | Plan 1: Migrate metadata to Convex | Fixes data persistence |
+| **P0** | Plan 2: Clone failure rollback | Prevents orphaned containers |
+| **P1** | Plan 3: Move CRIU to experimental | Clarifies supported features |
+| **P1** | Plan 4: Mark suspend/resume private | Improves API clarity |
+| **P1** | Plan 5: Container GC | Prevents resource leaks |
+| **P2** | Plan 6: Health check endpoint | Improves observability |
+| **P2** | Plan 7: Rate limiting | Prevents abuse |
+| **P3** | Plan 8: IP fallback | Better local dev |
+| **P3** | Plan 9: Unit tests | Improved reliability |
 
 ---
 
 ## Quick Reference: Beads Issues for Follow-up
 
 ```bash
-# P0 - Must fix
+# P0 - Must fix before merge
+bd create --title="PVE: Migrate in-memory metadata to Convex" --type=bug --priority=0
 bd create --title="PVE: Add clone failure rollback" --type=bug --priority=0
 
 # P1 - Should fix soon
+bd create --title="PVE: Move CRIU script to experimental" --type=task --priority=1
+bd create --title="PVE: Mark suspend/resume methods private" --type=task --priority=1
 bd create --title="PVE: Add container garbage collection" --type=task --priority=1
 
 # P2 - Nice to have
@@ -705,4 +875,167 @@ bd create --title="Sandbox: Add rate limiting" --type=task --priority=2
 bd create --title="PVE: Add IP fallback for service URLs" --type=task --priority=3
 bd create --title="Shared: Add unit tests for snapshot parsing" --type=task --priority=3
 ```
+
+---
+
+## Deep Review: Upstream Alignment & Style Consistency (2026-01-03)
+
+This section documents findings from a comprehensive review using Context7 (Proxmox VE official docs) and DeepWiki (upstream manaflow-ai/cmux patterns).
+
+### Architecture Alignment with Upstream (DeepWiki Analysis)
+
+| Aspect | Morph (Upstream) | PVE LXC (PR #27) | Status |
+|--------|------------------|------------------|--------|
+| Provider detection | `getActiveSandboxProvider()` | Same function, extended | Aligned |
+| Instance wrapper | `wrapMorphInstance()` | `wrapPveLxcInstance()` | Aligned |
+| Unified interface | `SandboxInstance` | Same interface | Aligned |
+| Snapshot ID format | `morph_{preset}_v{ver}` | `pvelxc_{preset}_v{ver}` | Aligned |
+| Capabilities config | `SANDBOX_PROVIDER_CAPABILITIES` | Same pattern | Aligned |
+| Maintenance cron | `pauseOldSandboxInstances` | Extended for PVE | Aligned |
+
+**DeepWiki Insight:** The upstream cmux architecture uses a provider-based pattern with:
+1. Unified `SandboxInstance` interface
+2. Provider-specific wrappers (`wrapMorphInstance`, `wrapPveLxcInstance`)
+3. Auto-detection with explicit override via `SANDBOX_PROVIDER`
+4. Pluggable `ProviderClient` interface for maintenance
+
+This PR correctly follows all upstream patterns.
+
+### Style Consistency: PVE LXC vs Morph Provider
+
+| Pattern | Morph | PVE LXC | Consistent? |
+|---------|-------|---------|-------------|
+| Instance ID prefix | `morphvm_` | `pve_lxc_` | Yes |
+| Service name pattern | `port-{port}` | `port-{port}` | Yes |
+| URL pattern | `port-{port}-morphvm_{id}` | `port-{port}-vm-{vmid}` | Yes |
+| Wrapper function | `wrapMorphInstance()` | `wrapPveLxcInstance()` | Yes |
+| Client class | `MorphCloudClient` | `PveLxcClient` | Yes |
+| Snapshot parsing | `parseSnapshotId()` | Same function | Yes |
+| Capability check | `SANDBOX_PROVIDER_CAPABILITIES` | Same object | Yes |
+
+### Environment Variable Minimization Analysis
+
+**Goal:** Minimize required production env vars while maximizing auto-detection.
+
+| Variable | Required? | Auto-Detected? | Morph Equivalent |
+|----------|-----------|----------------|------------------|
+| `PVE_API_URL` | Yes | No | `MORPH_API_KEY` (combined) |
+| `PVE_API_TOKEN` | Yes | No | `MORPH_API_KEY` (combined) |
+| `PVE_PUBLIC_DOMAIN` | Yes* | No | Morph provides URLs |
+| `PVE_NODE` | No | Yes (first online) | N/A |
+| `PVE_STORAGE` | No | Yes (most space) | N/A |
+| `PVE_BRIDGE` | No | Yes (vmbr0) | N/A |
+| `PVE_GATEWAY` | No | Yes (from bridge) | N/A |
+| `PVE_VERIFY_TLS` | No | Yes (false) | N/A |
+| `PVE_TEMPLATE_VMID` | No | From snapshot ID | N/A |
+| `PVE_IP_POOL_CIDR` | No | Yes (10.100.0.0/24) | N/A |
+
+**Verdict:** Good minimization. Only 3 required for production with Cloudflare Tunnel:
+- `PVE_API_URL`
+- `PVE_API_TOKEN`
+- `PVE_PUBLIC_DOMAIN`
+
+vs Morph's single `MORPH_API_KEY` (but Morph handles URL routing internally).
+
+### Context7 PVE Documentation Findings
+
+Key insights from official Proxmox VE documentation:
+
+1. **`pct suspend` is experimental** - Uses rsync-based backup, NOT true RAM state preservation
+2. **No arbitrary metadata API** - PVE only supports `tags` field for container meta-information
+3. **CRIU checkpoint limitations:**
+   - Requires kernel support and CRIU package on host
+   - FUSE mounts incompatible with freeze operations
+   - Freezer subsystem can cause I/O deadlocks
+
+4. **Minimal API for lifecycle:**
+   ```bash
+   # Core operations (all used in pve-lxc-client.ts)
+   POST /nodes/{node}/lxc/{vmid}/clone     # Clone container
+   POST /nodes/{node}/lxc/{vmid}/status/start
+   POST /nodes/{node}/lxc/{vmid}/status/stop
+   DELETE /nodes/{node}/lxc/{vmid}         # Delete container
+   GET /nodes/{node}/lxc                   # List containers
+   ```
+
+### Provider Extensibility Assessment
+
+The architecture correctly enables adding new providers:
+
+```typescript
+// 1. Add to SandboxProviderType union
+export type SandboxProviderType = "morph" | "pve-lxc" | "pve-vm" | "daytona";
+
+// 2. Define capabilities
+SANDBOX_PROVIDER_CAPABILITIES["daytona"] = {
+  supportsHibernate: true,
+  supportsSnapshots: true,
+  // ...
+};
+
+// 3. Create wrapper function
+export function wrapDaytonaInstance(instance): SandboxInstance { ... }
+
+// 4. Update provider detection
+if (env.DAYTONA_API_KEY) return { provider: "daytona", ... };
+
+// 5. Add to maintenance cron
+configs.push({
+  provider: "daytona",
+  client: createDaytonaProviderClient(env.DAYTONA_API_KEY),
+  available: true,
+});
+```
+
+### VM-Tech Specific Code Summary
+
+Code that exposes virtualization-specific details (should be abstracted):
+
+| Item | Location | Issue | Recommendation |
+|------|----------|-------|----------------|
+| In-memory metadata | `pve-lxc-client.ts:234-235` | Doesn't survive restarts | Migrate to Convex |
+| `suspendContainer()` | `pve-lxc-client.ts:662` | Experimental PVE feature | Mark private + JSDoc |
+| `resumeContainer()` | `pve-lxc-client.ts:674` | Experimental PVE feature | Mark private + JSDoc |
+| `pve-criu.sh` | `scripts/pve/pve-criu.sh` | 545 lines, not used by core | Move to experimental/ |
+
+### Final Merge Checklist
+
+**Pre-merge (Required):**
+- [x] Provider abstraction follows upstream patterns
+- [x] URL patterns are Morph-consistent
+- [x] Environment variable minimization verified
+- [x] Maintenance cron extended for PVE
+- [x] All tests passing
+
+**Pre-merge (Recommended):**
+- [ ] Move `pve-criu.sh` to `scripts/pve/experimental/`
+- [ ] Add JSDoc to `suspendContainer`/`resumeContainer` noting experimental status
+
+**Post-merge (Tracked):**
+- [ ] P0: Migrate in-memory metadata to Convex
+- [ ] P0: Add clone failure rollback
+- [ ] P1: Container garbage collection
+- [ ] P1: Mark suspend/resume private
+
+---
+
+## Appendix: Review Methodology
+
+This review used the following tools and sources:
+
+1. **Context7 MCP** - Queried `/proxmox/pve-docs` for official API patterns and LXC limitations
+2. **DeepWiki MCP** - Queried `manaflow-ai/cmux` for upstream architecture patterns
+3. **Manual code review** - 75 files across TypeScript, Rust, Python, and Shell
+4. **PR file diff** - `gh pr view 27 --json files`
+
+### Key Files Reviewed
+
+| Category | Files |
+|----------|-------|
+| Provider abstraction | `sandbox-provider.ts`, `sandbox-instance.ts`, `pve-lxc-client.ts` |
+| Shared types | `sandbox-presets.ts`, `pve-lxc-snapshots.ts` |
+| Rust daemon | `pve_lxc.rs`, `models.rs` |
+| Maintenance | `sandboxInstanceMaintenance.ts` |
+| Environment | `www-env.ts`, `convex-env.ts` |
+| Scripts | `pve-criu.sh`, `snapshot-pvelxc.py`, `pve-tunnel-setup.sh`
 
