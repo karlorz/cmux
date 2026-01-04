@@ -21,6 +21,7 @@ import {
   patchApiEnvironmentsByIdMutation,
   postApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateMutation,
   postApiSandboxesStartMutation,
+  deleteApiEnvironmentsByIdMutation,
 } from "@cmux/www-openapi-client/react-query";
 import { convexQuery } from "@convex-dev/react-query";
 import {
@@ -98,10 +99,12 @@ function EnvironmentDetailsPage() {
       teamSlugOrId,
       environmentId,
     }) ?? [];
-  const deleteEnvironment = useMutation(api.environments.remove);
   const deleteSnapshotVersion = useMutation(api.environmentSnapshots.remove);
   const updatePortsMutation = useRQMutation(
     patchApiEnvironmentsByIdPortsMutation()
+  );
+  const deleteEnvironmentMutation = useRQMutation(
+    deleteApiEnvironmentsByIdMutation()
   );
   const updateEnvironmentMutation = useRQMutation(
     patchApiEnvironmentsByIdMutation()
@@ -402,9 +405,9 @@ function EnvironmentDetailsPage() {
 
     setIsDeleting(true);
     try {
-      await deleteEnvironment({
-        teamSlugOrId,
-        id: environmentId,
+      await deleteEnvironmentMutation.mutateAsync({
+        path: { id: String(environmentId) },
+        query: { teamSlugOrId },
       });
       toast.success("Environment deleted successfully");
       navigate({

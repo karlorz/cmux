@@ -214,6 +214,18 @@ export const remove = authMutation({
       throw new Error("Environment not found");
     }
 
+    // Cascade delete snapshot versions for this environment to avoid orphaned records
+    const versions = await ctx.db
+      .query("environmentSnapshotVersions")
+      .withIndex("by_environment_version", (q) =>
+        q.eq("environmentId", args.id)
+      )
+      .collect();
+
+    for (const version of versions) {
+      await ctx.db.delete(version._id);
+    }
+
     await ctx.db.delete(args.id);
   },
 });

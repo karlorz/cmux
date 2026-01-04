@@ -466,6 +466,88 @@ export class PveLxcClient {
   }
 
   /**
+   * Normalize a UPID returned by PVE. Handles encoded strings and object responses.
+   */
+  private normalizeUpid(rawUpid: unknown): string | null {
+    let candidate: string | null = null;
+
+    if (typeof rawUpid === "string") {
+      candidate = rawUpid;
+    } else if (
+      rawUpid &&
+      typeof rawUpid === "object" &&
+      "upid" in (rawUpid as Record<string, unknown>)
+    ) {
+      const value = (rawUpid as Record<string, unknown>).upid;
+      if (typeof value === "string") {
+        candidate = value;
+      }
+    }
+
+    if (!candidate) {
+      return null;
+    }
+
+    const trimmed = candidate.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    // Some PVE endpoints may return URL-encoded UPIDs
+    return trimmed.includes("%3A") ? decodeURIComponent(trimmed) : trimmed;
+  }
+
+  /**
+   * Wait for a task if a valid UPID is returned. If no UPID is provided,
+   * optionally poll a fallback condition to confirm completion.
+   */
+  private async waitForTaskNormalized(
+    rawUpid: unknown,
+    context: string,
+    fallbackCheck?: () => Promise<boolean>,
+    options?: { timeoutMs?: number }
+  ): Promise<void> {
+    const upid = this.normalizeUpid(rawUpid);
+
+    if (upid) {
+      await this.waitForTask(upid, options?.timeoutMs);
+      return;
+    }
+
+    if (fallbackCheck) {
+      const timeoutMs = options?.timeoutMs ?? 300000;
+      const pollInterval = 2000;
+      const startTime = Date.now();
+
+      while (Date.now() - startTime < timeoutMs) {
+        try {
+          if (await fallbackCheck()) {
+            console.warn(
+              `[PveLxcClient] ${context} completed without UPID (verified via fallback poll)`
+            );
+            return;
+          }
+        } catch (error) {
+          console.error(
+            `[PveLxcClient] Fallback check failed for ${context}:`,
+            error
+          );
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      }
+
+      throw new Error(
+        `Task ${context} did not return a UPID and did not complete within ${timeoutMs}ms`
+      );
+    }
+
+    console.warn(
+      `[PveLxcClient] No task UPID returned for ${context}, assuming synchronous completion`
+    );
+  }
+
+  /**
    * Execute a command inside an LXC container via HTTP exec daemon.
    * This uses the cmux-execd service running in the container on port 39375.
    * Supports both internal (hostname/IP) and public (Cloudflare Tunnel) URLs.
@@ -476,10 +558,15 @@ export class PveLxcClient {
     command: string,
     timeoutMs?: number
   ): Promise<ExecResult | null> {
-    // Support both public URLs (https://exec-xxx.domain.com) and internal (hostname:port)
-    const execUrl = host.startsWith("https://")
-      ? `${host}/exec`
-      : `http://${host}:39375/exec`;
+    // Support both full URLs (http/https) and bare hosts
+    let execUrl: string;
+    if (host.startsWith("http://") || host.startsWith("https://")) {
+      const url = new URL(host);
+      url.pathname = url.pathname && url.pathname !== "/" ? url.pathname : "/exec";
+      execUrl = url.toString();
+    } else {
+      execUrl = `http://${host}:39375/exec`;
+    }
     // Set HOME explicitly since cmux-execd may not have it set,
     // and many tools (gh, git) require HOME to be defined.
     // The command is passed directly to the execd service which runs it via sh -c.
@@ -563,58 +650,68 @@ export class PveLxcClient {
     command: string,
     options?: { execHost?: string; timeoutMs?: number; retries?: number }
   ): Promise<ExecResult> {
-    // Determine the host to use for HTTP exec
-    // Priority: provided execHost > public exec URL > hostname-based FQDN
-    let host = options?.execHost;
-
-    if (!host) {
-      // Try public exec URL via Cloudflare Tunnel
-      const publicExecUrl = this.buildPublicServiceUrl(39375, vmid);
-      if (publicExecUrl) {
-        host = publicExecUrl;
-      } else {
-        // Fall back to hostname + domain suffix
-        const hostname = `cmux-${vmid}`;
-        const domainSuffix = await this.getDomainSuffix();
-        if (domainSuffix) {
-          host = `${hostname}${domainSuffix}`;
-        } else {
-          throw new Error(
-            `Cannot execute command in container ${vmid}: no public domain or DNS search domain configured`
-          );
-        }
-      }
-    }
-
-    // Retry logic for container startup timing
-    // cmux-execd may not be ready immediately after container start
+    const hostname = `cmux-${vmid}`;
+    const domainSuffix = await this.getDomainSuffix();
     const maxRetries = options?.retries ?? 5;
     const baseDelayMs = 2000;
 
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      const httpResult = await this.httpExec(host, command, options?.timeoutMs);
+    const hosts = new Set<string>();
+    if (options?.execHost) {
+      hosts.add(options.execHost);
+    }
 
-      if (httpResult) {
-        if (attempt > 1) {
-          console.log(
-            `[PveLxcClient] HTTP exec succeeded on attempt ${attempt} for ${host}`
-          );
+    const ip = await this.getContainerIp(vmid);
+    if (ip) {
+      hosts.add(`http://${ip}:39375`);
+    }
+
+    const fqdn = this.getFqdnSync(hostname, domainSuffix);
+    if (fqdn) {
+      hosts.add(`http://${fqdn}:39375`);
+    }
+
+    const publicExecUrl = this.buildPublicServiceUrl(39375, vmid);
+    if (publicExecUrl) {
+      hosts.add(publicExecUrl);
+    }
+
+    if (!hosts.size) {
+      throw new Error(
+        `Cannot execute command in container ${vmid}: no reachable exec host candidates`
+      );
+    }
+
+    for (const host of hosts) {
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const httpResult = await this.httpExec(host, command, options?.timeoutMs);
+
+        if (httpResult) {
+          if (attempt > 1) {
+            console.log(
+              `[PveLxcClient] HTTP exec succeeded on attempt ${attempt} for ${host}`
+            );
+          }
+          return httpResult;
         }
-        return httpResult;
+
+        if (attempt < maxRetries) {
+          const delayMs = baseDelayMs * attempt;
+          console.log(
+            `[PveLxcClient] HTTP exec attempt ${attempt}/${maxRetries} failed for ${host}, retrying in ${delayMs}ms...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
       }
 
-      if (attempt < maxRetries) {
-        const delayMs = baseDelayMs * attempt;
-        console.log(
-          `[PveLxcClient] HTTP exec attempt ${attempt}/${maxRetries} failed for ${host}, retrying in ${delayMs}ms...`
-        );
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
+      console.warn(
+        `[PveLxcClient] HTTP exec failed for ${host} after ${maxRetries} attempts, trying next candidate...`
+      );
     }
 
     throw new Error(
-      `HTTP exec failed for container ${vmid} via ${host} after ${maxRetries} attempts. ` +
-        `Ensure cmux-execd is running in the container.`
+      `HTTP exec failed for container ${vmid} via candidates: ${Array.from(hosts).join(
+        ", "
+      )}. Ensure cmux-execd is running and network is reachable.`
     );
   }
 
@@ -656,11 +753,22 @@ export class PveLxcClient {
   private async parseSnapshotId(snapshotId: string): Promise<{
     templateVmid: number;
   }> {
+    // Direct template reference: pve_lxc_{vmid}
+    const directMatch = snapshotId.match(/^pve_lxc_(\d+)$/i);
+    if (directMatch) {
+      return { templateVmid: parseInt(directMatch[1], 10) };
+    }
+
+    // Plain VMID (numbers only)
+    if (/^\d+$/.test(snapshotId)) {
+      return { templateVmid: parseInt(snapshotId, 10) };
+    }
+
     const match = snapshotId.match(/^pvelxc_([^_]+_[^_]+_[^_]+)_v(\d+)$/);
     if (!match) {
       throw new Error(
         `Invalid PVE template ID format: ${snapshotId}. ` +
-        `Expected format: pvelxc_{presetId}_v{version}`
+        `Expected format: pvelxc_{presetId}_v{version} or pve_lxc_{vmid}`
       );
     }
 
@@ -685,6 +793,99 @@ export class PveLxcClient {
   }
 
   /**
+   * Create a reusable template from an existing container.
+   * Returns the new template VMID and snapshot identifier (pve_lxc_{vmid}).
+   */
+  async createTemplateFromContainer(sourceInstanceId: string): Promise<{
+    templateVmid: number;
+    snapshotId: string;
+  }> {
+    const sourceMatch = sourceInstanceId.match(/^pve_lxc_(\d+)$/);
+    if (!sourceMatch) {
+      throw new Error(
+        `Invalid PVE LXC instance ID: ${sourceInstanceId}. Expected format: pve_lxc_{vmid}`
+      );
+    }
+    const sourceVmid = parseInt(sourceMatch[1], 10);
+
+    // Allocate a new VMID for the template to avoid collisions
+    const templateVmid = await this.findNextVmid();
+    const hostname = `cmux-template-${templateVmid}`;
+    const targetNode = await this.getNode();
+
+    // If container is running, create a temporary snapshot to enable cloning
+    let snapshotName: string | null = null;
+    if ((await this.getContainerStatus(sourceVmid)) === "running") {
+      snapshotName = `cmux-temp-${Date.now()}`;
+      const snapshotUpid = await this.apiRequest<string>(
+        "POST",
+        `/api2/json/nodes/${targetNode}/lxc/${sourceVmid}/snapshot`,
+        { snapname: snapshotName }
+      );
+      await this.waitForTaskNormalized(
+        snapshotUpid,
+        `create temp snapshot ${snapshotName} on container ${sourceVmid}`
+      );
+    }
+
+    // Perform a full clone of the source container to capture filesystem changes
+    const cloneUpid = await this.apiRequest<string>(
+      "POST",
+      `/api2/json/nodes/${targetNode}/lxc/${sourceVmid}/clone`,
+      {
+        newid: templateVmid,
+        hostname,
+        full: 1, // Full clone to capture current state
+        ...(snapshotName ? { snapname: snapshotName } : {}),
+      }
+    );
+    await this.waitForTaskNormalized(
+      cloneUpid,
+      `clone container ${sourceVmid} -> template ${templateVmid}`
+    );
+
+    // Convert the cloned container into a template for fast linked-clone starts
+    const templateUpid = await this.apiRequest<string>(
+      "POST",
+      `/api2/json/nodes/${targetNode}/lxc/${templateVmid}/template`
+    );
+    await this.waitForTaskNormalized(
+      templateUpid,
+      `convert container ${templateVmid} to template`,
+      async () => {
+        // Fallback: poll config to confirm template flag is set
+        const config = await this.apiRequest<PveContainerConfig>(
+          "GET",
+          `/api2/json/nodes/${targetNode}/lxc/${templateVmid}/config`
+        );
+        return config.template === 1;
+      }
+    );
+
+    // Clean up temporary snapshot (if created)
+    if (snapshotName) {
+      try {
+        const deleteUpid = await this.apiRequest<string>(
+          "DELETE",
+          `/api2/json/nodes/${targetNode}/lxc/${sourceVmid}/snapshot/${snapshotName}`
+        );
+        await this.waitForTaskNormalized(
+          deleteUpid,
+          `delete temp snapshot ${snapshotName} on container ${sourceVmid}`
+        );
+      } catch (error) {
+        console.error(
+          `[PveLxcClient] Failed to delete temp snapshot ${snapshotName} on ${sourceVmid}:`,
+          error
+        );
+      }
+    }
+
+    const snapshotId = `pve_lxc_${templateVmid}`;
+    return { templateVmid, snapshotId };
+  }
+
+  /**
    * Clone a container from a template using linked-clone (fast, copy-on-write).
    * Requires the source to be a template (template=1 in PVE config).
    */
@@ -704,7 +905,10 @@ export class PveLxcClient {
       }
     );
 
-    await this.waitForTask(upid);
+    await this.waitForTaskNormalized(
+      upid,
+      `linked clone ${templateVmid} -> ${newVmid}`
+    );
   }
 
   /**
@@ -716,7 +920,7 @@ export class PveLxcClient {
       "POST",
       `/api2/json/nodes/${node}/lxc/${vmid}/status/start`
     );
-    await this.waitForTask(upid);
+    await this.waitForTaskNormalized(upid, `start container ${vmid}`);
   }
 
   /**
@@ -728,7 +932,7 @@ export class PveLxcClient {
       "POST",
       `/api2/json/nodes/${node}/lxc/${vmid}/status/stop`
     );
-    await this.waitForTask(upid);
+    await this.waitForTaskNormalized(upid, `stop container ${vmid}`);
   }
 
   /**
@@ -756,7 +960,7 @@ export class PveLxcClient {
       "POST",
       `/api2/json/nodes/${node}/lxc/${vmid}/status/suspend`
     );
-    await this.waitForTask(upid);
+    await this.waitForTaskNormalized(upid, `suspend container ${vmid}`);
   }
 
   /**
@@ -779,7 +983,7 @@ export class PveLxcClient {
       "POST",
       `/api2/json/nodes/${node}/lxc/${vmid}/status/resume`
     );
-    await this.waitForTask(upid);
+    await this.waitForTaskNormalized(upid, `resume container ${vmid}`);
   }
 
   /**
@@ -798,7 +1002,7 @@ export class PveLxcClient {
       "DELETE",
       `/api2/json/nodes/${node}/lxc/${vmid}`
     );
-    await this.waitForTask(upid);
+    await this.waitForTaskNormalized(upid, `delete container ${vmid}`);
 
     // Clean up in-memory service URLs
     // Note: Convex sandboxInstanceActivity is updated separately via recordStopInternal
@@ -945,14 +1149,33 @@ export class PveLxcClient {
       // Note: Metadata is stored in Convex sandboxInstanceActivity, not in-memory
       // Return empty metadata here; callers can query Convex for full details
       const metadata: ContainerMetadata = {};
-      const services = this.instanceServices.get(vmid) || [];
+      let services = this.instanceServices.get(vmid);
+
+      // Rebuild service URLs if not cached (common on fresh client instances)
+      if (!services || services.length === 0) {
+        const vscodeUrl = await this.buildServiceUrl(39378, vmid, hostname, domainSuffix);
+        const workerUrl = await this.buildServiceUrl(39377, vmid, hostname, domainSuffix);
+        const vncUrl = await this.buildServiceUrl(39380, vmid, hostname, domainSuffix);
+        const xtermUrl = await this.buildServiceUrl(39383, vmid, hostname, domainSuffix);
+
+        services = [];
+        if (vscodeUrl && workerUrl && vncUrl && xtermUrl) {
+          services.push(
+            { name: "vscode", port: 39378, url: vscodeUrl },
+            { name: "worker", port: 39377, url: workerUrl },
+            { name: "vnc", port: 39380, url: vncUrl },
+            { name: "xterm", port: 39383, url: xtermUrl }
+          );
+          this.instanceServices.set(vmid, services);
+        }
+      }
 
       return new PveLxcInstance(
         this,
         vmid,
         status,
         metadata,
-        { httpServices: services, hostname, fqdn },
+        { httpServices: services || [], hostname, fqdn },
         node
       );
     },

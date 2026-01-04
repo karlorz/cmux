@@ -1,5 +1,8 @@
 import { getAccessTokenFromRequest } from "@/lib/utils/auth";
 import { getConvex } from "@/lib/utils/get-convex";
+import { getPveLxcClient } from "@/lib/utils/pve-lxc-client";
+import { PVE_LXC_SNAPSHOT_PRESETS } from "@/lib/utils/pve-lxc-defaults";
+import { getActiveSandboxProvider } from "@/lib/utils/sandbox-provider";
 import { stackServerAppJs } from "@/lib/utils/stack";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { env } from "@/lib/utils/www-env";
@@ -257,18 +260,7 @@ environmentsRouter.openapi(
           ? sanitizePortsOrThrow(body.exposedPorts)
           : [];
 
-      // Create Morph snapshot from instance
-      const client = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
-      const instance = await withMorphRetry(
-        () => client.instances.get({ instanceId: body.morphInstanceId }),
-        "instances.get (create environment)"
-      );
-
-      // Ensure instance belongs to this team (when metadata exists)
-      const instanceTeamId = instance.metadata?.teamId;
-      if (instanceTeamId && instanceTeamId !== team.uuid) {
-        return c.text("Forbidden: Instance does not belong to this team", 403);
-      }
+      const provider = getActiveSandboxProvider().provider;
 
       const persistDataVaultPromise = (async () => {
         const dataVaultKey = `env_${randomBytes(16).toString("hex")}`;
@@ -280,9 +272,44 @@ environmentsRouter.openapi(
         return { dataVaultKey };
       })();
 
-      await instance.exec(SNAPSHOT_CLEANUP_COMMANDS);
+      let snapshotId: string;
 
-      const snapshot = await instance.snapshot();
+      if (provider === "pve-lxc") {
+        const pveClient = getPveLxcClient();
+        const pveInstance = await pveClient.instances.get({
+          instanceId: body.morphInstanceId,
+        });
+
+        // Ensure container is running before executing cleanup commands
+        if (pveInstance.status !== "running") {
+          await pveInstance.start();
+        }
+
+        await pveInstance.exec(SNAPSHOT_CLEANUP_COMMANDS);
+
+        const template = await pveClient.createTemplateFromContainer(
+          body.morphInstanceId
+        );
+        snapshotId = template.snapshotId;
+      } else {
+        // Create Morph snapshot from instance
+        const client = new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
+        const instance = await withMorphRetry(
+          () => client.instances.get({ instanceId: body.morphInstanceId }),
+          "instances.get (create environment)"
+        );
+
+        // Ensure instance belongs to this team (when metadata exists)
+        const instanceTeamId = instance.metadata?.teamId;
+        if (instanceTeamId && instanceTeamId !== team.uuid) {
+          return c.text("Forbidden: Instance does not belong to this team", 403);
+        }
+
+        await instance.exec(SNAPSHOT_CLEANUP_COMMANDS);
+
+        const snapshot = await instance.snapshot();
+        snapshotId = snapshot.id;
+      }
 
       const convexClient = getConvex({ accessToken });
       const { dataVaultKey } = await persistDataVaultPromise;
@@ -291,7 +318,7 @@ environmentsRouter.openapi(
         {
           teamSlugOrId: body.teamSlugOrId,
           name: body.name,
-          morphSnapshotId: snapshot.id,
+          morphSnapshotId: snapshotId,
           dataVaultKey,
           selectedRepos: body.selectedRepos,
           description: body.description,
@@ -303,7 +330,7 @@ environmentsRouter.openapi(
 
       return c.json({
         id: environmentId,
-        snapshotId: snapshot.id,
+        snapshotId,
       });
     } catch (error) {
       if (error instanceof HTTPException) {
@@ -1056,9 +1083,82 @@ environmentsRouter.openapi(
 
     try {
       const convexClient = getConvex({ accessToken });
+      const environmentId = typedZid("environments").parse(id);
+
+      const environment = await convexClient.query(api.environments.get, {
+        teamSlugOrId,
+        id: environmentId,
+      });
+
+      if (!environment) {
+        return c.text("Environment not found", 404);
+      }
+
+      const snapshotVersions =
+        (await convexClient.query(api.environmentSnapshots.list, {
+          teamSlugOrId,
+          environmentId,
+        })) ?? [];
+
+      // Collect all snapshot IDs tied to this environment (active + versions)
+      const snapshotIds = new Set<string>();
+      snapshotIds.add(environment.morphSnapshotId);
+      snapshotVersions.forEach((version) => {
+        snapshotIds.add(version.morphSnapshotId);
+      });
+
+      const provider = getActiveSandboxProvider().provider;
+
+      if (provider === "pve-lxc") {
+        const pveClient = getPveLxcClient();
+        const presetTemplateVmids = new Set(
+          PVE_LXC_SNAPSHOT_PRESETS.flatMap((preset) =>
+            preset.versions.map((v) => v.templateVmid)
+          )
+        );
+
+        for (const snapshotId of snapshotIds) {
+          const match = snapshotId.match(/^pve_lxc_(\d+)$/i);
+          if (!match) continue;
+
+          const vmid = Number.parseInt(match[1], 10);
+          if (!Number.isFinite(vmid)) continue;
+
+          // Protect base templates and low VMIDs reserved for presets
+          if (vmid < 200 || presetTemplateVmids.has(vmid)) {
+            console.log(
+              `[environments.delete] Skipping PVE template cleanup for protected VMID ${vmid}`
+            );
+            continue;
+          }
+
+          try {
+            await pveClient.deleteContainer(vmid);
+            console.log(
+              `[environments.delete] Deleted PVE template container ${vmid}`
+            );
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            // Treat already-deleted templates as non-fatal
+            if (message.includes("404") || message.includes("Not found")) {
+              console.warn(
+                `[environments.delete] PVE template ${vmid} already deleted`
+              );
+              continue;
+            }
+            console.error(
+              `[environments.delete] Failed to delete PVE template ${vmid}:`,
+              message
+            );
+            return c.text("Failed to delete environment", 500);
+          }
+        }
+      }
+
       await convexClient.mutation(api.environments.remove, {
         teamSlugOrId,
-        id: typedZid("environments").parse(id),
+        id: environmentId,
       });
 
       return c.body(null, 204);

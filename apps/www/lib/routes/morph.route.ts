@@ -3,7 +3,10 @@ import {
   MORPH_SNAPSHOT_PRESETS,
   type MorphSnapshotId,
 } from "@/lib/utils/morph-defaults";
+import { DEFAULT_PVE_LXC_SNAPSHOT_ID } from "@/lib/utils/pve-lxc-defaults";
 import { getAccessTokenFromRequest, getUserFromRequest } from "@/lib/utils/auth";
+import { getPveLxcClient } from "@/lib/utils/pve-lxc-client";
+import { getActiveSandboxProvider } from "@/lib/utils/sandbox-provider";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { env } from "@/lib/utils/www-env";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
@@ -19,7 +22,7 @@ import {
   configureGitIdentity,
   fetchGitIdentityInputs,
 } from "./sandboxes/git";
-import { wrapMorphInstance } from "@/lib/utils/sandbox-instance";
+import { wrapMorphInstance, wrapPveLxcInstance, type SandboxInstance } from "@/lib/utils/sandbox-instance";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import * as Sentry from "@sentry/nextjs";
 
@@ -535,117 +538,170 @@ morphRouter.openapi(
     );
 
     try {
-      const client = new MorphCloudClient({
-        apiKey: env.MORPH_API_KEY,
-      });
+      const providerConfig = getActiveSandboxProvider();
+      const provider = providerConfig.provider;
+      const selectedSnapshotId =
+        snapshotId ??
+        (provider === "pve-lxc"
+          ? DEFAULT_PVE_LXC_SNAPSHOT_ID
+          : DEFAULT_MORPH_SNAPSHOT_ID);
 
-      let instance: Instance;
+      let sandboxInstance: SandboxInstance;
       let instanceId = existingInstanceId;
-      const selectedSnapshotId = snapshotId ?? DEFAULT_MORPH_SNAPSHOT_ID;
+      let vscodeUrl: string | undefined;
 
-      if (!instanceId) {
+      if (provider === "pve-lxc") {
         const team = await verifyTeamPromise;
+        const pveClient = getPveLxcClient();
 
-        console.log(
-          `Creating new Morph instance (snapshot: ${selectedSnapshotId})`
-        );
-
-        // Retry logic for instance start to handle connection timeouts
-        const maxRetries = 3;
-        let lastError: Error | undefined;
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-          try {
-            instance = await Sentry.startSpan(
-              { name: "client.instances.start", op: "morph", attributes: { attempt } },
-              () =>
-                client.instances.start({
-                  snapshotId: selectedSnapshotId,
-                  ttlSeconds,
-                  ttlAction: "pause",
-                  metadata: {
-                    app: "cmux-dev",
-                    userId: user.id,
-                    teamId: team.uuid,
-                  },
-                })
-            );
-            break; // Success, exit retry loop
-          } catch (error) {
-            lastError = error instanceof Error ? error : new Error(String(error));
-            const isConnectTimeout =
-              lastError.message.includes("fetch failed") ||
-              lastError.message.includes("ConnectTimeoutError") ||
-              (lastError.cause instanceof Error &&
-                (lastError.cause.message.includes("Connect Timeout") ||
-                  (lastError.cause as NodeJS.ErrnoException).code === "UND_ERR_CONNECT_TIMEOUT"));
-
-            if (!isConnectTimeout || attempt === maxRetries) {
-              throw lastError;
-            }
-
-            console.log(
-              `[morph.setup-instance] Connection timeout on attempt ${attempt}/${maxRetries}, retrying in ${attempt * 2}s...`
-            );
-            await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
-          }
-        }
-        instanceId = instance!.id;
-        void Sentry.startSpan(
-          { name: "instance.setWakeOn", op: "morph" },
-          () => instance.setWakeOn(true, true)
-        );
-        instance = instance!;
-      } else {
-        console.log(`Using existing Morph instance: ${instanceId}`);
-
-        const team = await verifyTeamPromise;
-
-        // Retry logic for instance get to handle connection timeouts
-        const maxRetries = 3;
-        let lastError: Error | undefined;
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-          try {
-            instance = await Sentry.startSpan(
-              { name: "client.instances.get", op: "morph", attributes: { attempt } },
-              () => client.instances.get({ instanceId: instanceId! })
-            );
-            break; // Success, exit retry loop
-          } catch (error) {
-            lastError = error instanceof Error ? error : new Error(String(error));
-            const isConnectTimeout =
-              lastError.message.includes("fetch failed") ||
-              lastError.message.includes("ConnectTimeoutError") ||
-              (lastError.cause instanceof Error &&
-                (lastError.cause.message.includes("Connect Timeout") ||
-                  (lastError.cause as NodeJS.ErrnoException).code === "UND_ERR_CONNECT_TIMEOUT"));
-
-            if (!isConnectTimeout || attempt === maxRetries) {
-              throw lastError;
-            }
-
-            console.log(
-              `[morph.setup-instance] Connection timeout on get attempt ${attempt}/${maxRetries}, retrying in ${attempt * 2}s...`
-            );
-            await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
-          }
-        }
-
-        const meta = instance!.metadata;
-        const instanceTeamId = meta?.teamId;
-        if (!instanceTeamId || instanceTeamId !== team.uuid) {
-          return c.text(
-            "Forbidden: Instance does not belong to this team",
-            403
+        if (!instanceId) {
+          console.log(
+            `[morph.setup-instance] Creating new PVE LXC instance (snapshot: ${selectedSnapshotId})`
           );
+          const pveInstance = await pveClient.instances.start({
+            snapshotId: selectedSnapshotId,
+            ttlSeconds,
+            metadata: {
+              app: "cmux",
+              userId: user.id,
+              teamId: team.uuid,
+            },
+          });
+          instanceId = pveInstance.id;
+          sandboxInstance = wrapPveLxcInstance(pveInstance);
+
+          void convex
+            .mutation(api.sandboxInstances.recordCreate, {
+              instanceId,
+              provider: "pve-lxc",
+              teamSlugOrId,
+            })
+            .catch((error) =>
+              console.error(
+                "[morph.setup-instance] Failed to record PVE instance creation (non-fatal):",
+                error
+              )
+            );
+        } else {
+          console.log(
+            `[morph.setup-instance] Using existing PVE LXC instance: ${instanceId}`
+          );
+          const pveInstance = await pveClient.instances.get({ instanceId });
+          sandboxInstance = wrapPveLxcInstance(pveInstance);
         }
-        instance = instance!;
+
+        vscodeUrl = sandboxInstance.networking.httpServices.find(
+          (service) => service.port === 39378
+        )?.url;
+      } else {
+        const client = new MorphCloudClient({
+          apiKey: env.MORPH_API_KEY,
+        });
+        let instance: Instance | undefined;
+
+        if (!instanceId) {
+          const team = await verifyTeamPromise;
+
+          console.log(
+            `Creating new Morph instance (snapshot: ${selectedSnapshotId})`
+          );
+
+          // Retry logic for instance start to handle connection timeouts
+          const maxRetries = 3;
+          let lastError: Error | undefined;
+          for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+              instance = await Sentry.startSpan(
+                { name: "client.instances.start", op: "morph", attributes: { attempt } },
+                () =>
+                  client.instances.start({
+                    snapshotId: selectedSnapshotId,
+                    ttlSeconds,
+                    ttlAction: "pause",
+                    metadata: {
+                      app: "cmux-dev",
+                      userId: user.id,
+                      teamId: team.uuid,
+                    },
+                  })
+              );
+              break; // Success, exit retry loop
+            } catch (error) {
+              lastError = error instanceof Error ? error : new Error(String(error));
+              const isConnectTimeout =
+                lastError.message.includes("fetch failed") ||
+                lastError.message.includes("ConnectTimeoutError") ||
+                (lastError.cause instanceof Error &&
+                  (lastError.cause.message.includes("Connect Timeout") ||
+                    (lastError.cause as NodeJS.ErrnoException).code === "UND_ERR_CONNECT_TIMEOUT"));
+
+              if (!isConnectTimeout || attempt === maxRetries) {
+                throw lastError;
+              }
+
+              console.log(
+                `[morph.setup-instance] Connection timeout on attempt ${attempt}/${maxRetries}, retrying in ${attempt * 2}s...`
+              );
+              await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
+            }
+          }
+          instanceId = instance!.id;
+          void Sentry.startSpan(
+            { name: "instance.setWakeOn", op: "morph" },
+            () => instance!.setWakeOn(true, true)
+          );
+        } else {
+          console.log(`Using existing Morph instance: ${instanceId}`);
+
+          const team = await verifyTeamPromise;
+
+          // Retry logic for instance get to handle connection timeouts
+          const maxRetries = 3;
+          let lastError: Error | undefined;
+          for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+              instance = await Sentry.startSpan(
+                { name: "client.instances.get", op: "morph", attributes: { attempt } },
+                () => client.instances.get({ instanceId: instanceId! })
+              );
+              break; // Success, exit retry loop
+            } catch (error) {
+              lastError = error instanceof Error ? error : new Error(String(error));
+              const isConnectTimeout =
+                lastError.message.includes("fetch failed") ||
+                lastError.message.includes("ConnectTimeoutError") ||
+                (lastError.cause instanceof Error &&
+                  (lastError.cause.message.includes("Connect Timeout") ||
+                    (lastError.cause as NodeJS.ErrnoException).code === "UND_ERR_CONNECT_TIMEOUT"));
+
+              if (!isConnectTimeout || attempt === maxRetries) {
+                throw lastError;
+              }
+
+              console.log(
+                `[morph.setup-instance] Connection timeout on get attempt ${attempt}/${maxRetries}, retrying in ${attempt * 2}s...`
+              );
+              await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
+            }
+          }
+
+          const meta = instance!.metadata;
+          const instanceTeamId = meta?.teamId;
+          if (!instanceTeamId || instanceTeamId !== team.uuid) {
+            return c.text(
+              "Forbidden: Instance does not belong to this team",
+              403
+            );
+          }
+        }
+
+        sandboxInstance = wrapMorphInstance(instance!);
+        vscodeUrl = sandboxInstance.networking.httpServices.find(
+          (service) => service.port === 39378
+        )?.url;
       }
 
-      const vscodeUrl = instance.networking.httpServices.find(
-        (service) => service.port === 39378
-      )?.url;
-
-      if (!vscodeUrl) {
+      if (!vscodeUrl || !instanceId) {
         throw new Error("VSCode URL not found");
       }
 
@@ -658,9 +714,9 @@ morphRouter.openapi(
         return c.text("Failed to resolve GitHub credentials", 401);
       }
 
-      const wrappedInstance = wrapMorphInstance(instance);
+      const wrappedInstance = sandboxInstance;
       const configureGithubPromise = Sentry.startSpan(
-        { name: "configureGithubAccess", op: "morph.exec" },
+        { name: "configureGithubAccess", op: "sandbox.exec" },
         () => configureGithubAccess(wrappedInstance, githubAccessToken)
       );
 
@@ -668,7 +724,7 @@ morphRouter.openapi(
         .then(([who, gh]) => {
           const { name, email } = selectGitIdentity(who, gh);
           return Sentry.startSpan(
-            { name: "configureGitIdentity", op: "morph.exec" },
+            { name: "configureGitIdentity", op: "sandbox.exec" },
             () => configureGitIdentity(wrappedInstance, { name, email })
           );
         })
@@ -720,9 +776,9 @@ morphRouter.openapi(
         }
 
         const listReposCmd = await Sentry.startSpan(
-          { name: "instance.exec (list repos)", op: "morph.exec" },
+          { name: "instance.exec (list repos)", op: "sandbox.exec" },
           () =>
-            instance.exec(
+            sandboxInstance.exec(
               "for dir in /root/workspace/*/; do " +
                 'if [ -d "$dir/.git" ]; then ' +
                 'basename "$dir"; ' +
@@ -750,8 +806,8 @@ morphRouter.openapi(
           if (!selectedRepo) {
             console.log(`Removing repository: ${existingName}`);
             await Sentry.startSpan(
-              { name: `instance.exec (rm ${existingName})`, op: "morph.exec" },
-              () => instance.exec(`rm -rf /root/workspace/${existingName}`)
+              { name: `instance.exec (rm ${existingName})`, op: "sandbox.exec" },
+              () => sandboxInstance.exec(`rm -rf /root/workspace/${existingName}`)
             );
             removedRepos.push(existingName);
           } else if (existingUrl && !existingUrl.includes(selectedRepo)) {
@@ -759,8 +815,8 @@ morphRouter.openapi(
               `Repository ${existingName} points to different remote, removing for re-clone`
             );
             await Sentry.startSpan(
-              { name: `instance.exec (rm ${existingName})`, op: "morph.exec" },
-              () => instance.exec(`rm -rf /root/workspace/${existingName}`)
+              { name: `instance.exec (rm ${existingName})`, op: "sandbox.exec" },
+              () => sandboxInstance.exec(`rm -rf /root/workspace/${existingName}`)
             );
             removedRepos.push(existingName);
             existingRepos.delete(existingName);
@@ -781,11 +837,11 @@ morphRouter.openapi(
                 const cloneCmd = await Sentry.startSpan(
                   {
                     name: `instance.exec (clone ${repoName})`,
-                    op: "morph.exec",
+                    op: "sandbox.exec",
                     attributes: { attempt },
                   },
                   () =>
-                    instance.exec(
+                    sandboxInstance.exec(
                       `mkdir -p /root/workspace && cd /root/workspace && git clone https://github.com/${repo}.git ${repoName} 2>&1`
                     )
                 );
@@ -815,7 +871,7 @@ morphRouter.openapi(
                     console.log(
                       `Clone attempt ${attempt} failed for ${repo}, retrying...`
                     );
-                    await instance.exec(`rm -rf /root/workspace/${repoName}`);
+                    await sandboxInstance.exec(`rm -rf /root/workspace/${repoName}`);
                     await new Promise((resolve) =>
                       setTimeout(resolve, attempt * 1000)
                     );
@@ -875,7 +931,7 @@ morphRouter.openapi(
       if (error instanceof HTTPException) {
         throw error;
       }
-      console.error("Failed to setup Morph instance:", error);
+      console.error("Failed to setup instance:", error);
       return c.text("Failed to setup instance", 500);
     }
   }
