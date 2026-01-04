@@ -26,6 +26,20 @@
 
 set -e
 
+# Prevent multiple dev.sh instances from running
+LOCKFILE="/tmp/cmux-dev.lock"
+exec 200>"$LOCKFILE"
+if ! flock -n 200; then
+    echo -e "\033[0;31mAnother dev.sh instance is already running!\033[0m"
+    echo "Run 'scripts/cleanup-dev.sh' to kill it, or wait for it to finish."
+    exit 1
+fi
+# Write our PID to the lockfile for debugging
+echo $$ >&200
+
+# Enable process group management - kill entire tree on exit
+set -m
+
 export CONVEX_PORT=9777
 
 if [ -f .env ]; then
@@ -218,29 +232,45 @@ echo -e "${BLUE}Starting Terminal App Development Environment...${NC}"
 # Change to app directory
 cd "$APP_DIR"
 
-# Function to cleanup on exit
+# Function to cleanup on exit - more aggressive to prevent zombie processes
 cleanup() {
     echo -e "\n${BLUE}Shutting down...${NC}"
-    # Kill the bash processes which will trigger their EXIT traps to kill all children
-    [ -n "$SERVER_PID" ] && kill $SERVER_PID 2>/dev/null
-    [ -n "$CLIENT_PID" ] && kill $CLIENT_PID 2>/dev/null
-    [ -n "$WWW_PID" ] && kill $WWW_PID 2>/dev/null
-    [ -n "$CONVEX_DEV_PID" ] && kill $CONVEX_DEV_PID 2>/dev/null
-    [ -n "$DOCKER_COMPOSE_PID" ] && kill $DOCKER_COMPOSE_PID 2>/dev/null
-    [ -n "$SERVER_GLOBAL_PID" ] && kill $SERVER_GLOBAL_PID 2>/dev/null
-    [ -n "$OPENAPI_CLIENT_PID" ] && kill $OPENAPI_CLIENT_PID 2>/dev/null
-    [ -n "$ELECTRON_PID" ] && kill $ELECTRON_PID 2>/dev/null
-    # Give processes time to cleanup
+
+    # Kill entire process groups (negative PID kills the group)
+    for pid in "$SERVER_PID" "$CLIENT_PID" "$WWW_PID" "$CONVEX_DEV_PID" "$DOCKER_COMPOSE_PID" "$SERVER_GLOBAL_PID" "$OPENAPI_CLIENT_PID" "$ELECTRON_PID"; do
+        if [ -n "$pid" ]; then
+            # Try graceful shutdown first
+            kill -- -"$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+        fi
+    done
+
+    # Give processes time to cleanup gracefully
     sleep 1
-    # Force kill any remaining processes
-    [ -n "$SERVER_PID" ] && kill -9 $SERVER_PID 2>/dev/null
-    [ -n "$CLIENT_PID" ] && kill -9 $CLIENT_PID 2>/dev/null
-    [ -n "$WWW_PID" ] && kill -9 $WWW_PID 2>/dev/null
-    [ -n "$CONVEX_DEV_PID" ] && kill -9 $CONVEX_DEV_PID 2>/dev/null
-    [ -n "$DOCKER_COMPOSE_PID" ] && kill -9 $DOCKER_COMPOSE_PID 2>/dev/null
-    [ -n "$SERVER_GLOBAL_PID" ] && kill -9 $SERVER_GLOBAL_PID 2>/dev/null
-    [ -n "$OPENAPI_CLIENT_PID" ] && kill -9 $OPENAPI_CLIENT_PID 2>/dev/null
-    [ -n "$ELECTRON_PID" ] && kill -9 $ELECTRON_PID 2>/dev/null
+
+    # Force kill any remaining processes in our groups
+    for pid in "$SERVER_PID" "$CLIENT_PID" "$WWW_PID" "$CONVEX_DEV_PID" "$DOCKER_COMPOSE_PID" "$SERVER_GLOBAL_PID" "$OPENAPI_CLIENT_PID" "$ELECTRON_PID"; do
+        if [ -n "$pid" ]; then
+            kill -9 -- -"$pid" 2>/dev/null || kill -9 "$pid" 2>/dev/null || true
+        fi
+    done
+
+    # Kill any orphaned processes on our ports
+    for port in 5173 9776 9777 9778 9779; do
+        local pids
+        pids=$(lsof -ti :"$port" 2>/dev/null || true)
+        if [ -n "$pids" ]; then
+            echo "$pids" | xargs -r kill -9 2>/dev/null || true
+        fi
+    done
+
+    # Stop docker compose explicitly
+    docker compose -f "$APP_DIR/.devcontainer/docker-compose.convex.yml" down 2>/dev/null || true
+
+    # Release the lock
+    flock -u 200 2>/dev/null || true
+    rm -f "$LOCKFILE" 2>/dev/null || true
+
+    echo -e "${GREEN}Cleanup complete${NC}"
     exit
 }
 
