@@ -1375,7 +1375,7 @@ class PveTaskContext:
                 break
             except subprocess.TimeoutExpired as e:
                 raise TimeoutError(f"Command timed out after {timeout}s") from e
-            except OSError as exc:
+            except (OSError, RuntimeError) as exc:
                 if attempts < max_attempts:
                     delay = float(min(2**attempts, 8))
                     self.console.info(
@@ -2105,12 +2105,20 @@ async def task_install_bun(ctx: PveTaskContext) -> None:
     elapsed = 0
 
     while elapsed < max_wait:
-        result = await ctx.client.aexec_in_container(
-            ctx.vmid,
-            "[ -f /tmp/bun-download-done ] && echo done || echo waiting",
-            timeout=15,
-            check=False,
-        )
+        try:
+            result = await ctx.client.aexec_in_container(
+                ctx.vmid,
+                "[ -f /tmp/bun-download-done ] && echo done || echo waiting",
+                timeout=15,
+                check=False,
+            )
+        except (RuntimeError, TimeoutError) as e:
+            # Transient failure in exec connection (e.g. Cloudflare tunnel hiccup)
+            ctx.console.info(f"[install-bun] Polling check failed ({e}), retrying in {poll_interval}s...")
+            await asyncio.sleep(poll_interval)
+            elapsed += poll_interval
+            continue
+
         if "done" in result.stdout:
             ctx.console.info("[install-bun] Download completed")
             break
@@ -2137,13 +2145,18 @@ async def task_install_bun(ctx: PveTaskContext) -> None:
             ctx.console.info(f"[install-bun] Still downloading... ({elapsed}s)")
     else:
         # Timeout - get the log for debugging
-        log_result = await ctx.client.aexec_in_container(
-            ctx.vmid,
-            "cat /tmp/bun-download.log 2>/dev/null || echo 'no log'",
-            timeout=15,
-            check=False,
-        )
-        raise TimeoutError(f"Bun download timed out after {max_wait}s\nLog: {log_result.stdout}")
+        try:
+            log_result = await ctx.client.aexec_in_container(
+                ctx.vmid,
+                "cat /tmp/bun-download.log 2>/dev/null || echo 'no log'",
+                timeout=15,
+                check=False,
+            )
+            log_content = log_result.stdout
+        except Exception as e:
+            log_content = f"Could not retrieve log: {e}"
+        
+        raise TimeoutError(f"Bun download timed out after {max_wait}s\nLog: {log_content}")
 
     # Step 3: Extract and install bun
     cmd = textwrap.dedent(
