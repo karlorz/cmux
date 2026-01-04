@@ -1,69 +1,96 @@
 #!/usr/bin/env bash
-# Aggressively cleanup orphaned dev server processes and free resources
+# Cleanup orphaned dev server processes for this project (or all projects)
+# Usage:
+#   ./scripts/cleanup-dev.sh        # Clean up this project only
+#   ./scripts/cleanup-dev.sh --all  # Clean up all dev-server instances
 set -euo pipefail
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 APP_DIR="$(dirname "$SCRIPT_DIR")"
-LOCKFILE="/tmp/cmux-dev.lock"
+
+# Kill all descendant processes of a given PID (recursive)
+kill_descendants() {
+    local pid=$1
+    local signal=${2:-9}
+    local children
+    children=$(pgrep -P "$pid" 2>/dev/null || true)
+    for child in $children; do
+        kill_descendants "$child" "$signal"
+    done
+    kill -"$signal" "$pid" 2>/dev/null || true
+}
+
+# Clean up a single dev server instance by its hash
+cleanup_instance() {
+    local hash=$1
+    local lockfile="/tmp/dev-server-${hash}.lock"
+    local pidfile="/tmp/dev-server-${hash}.pid"
+    local pathfile="/tmp/dev-server-${hash}.path"
+
+    local project_path="unknown"
+    [ -f "$pathfile" ] && project_path=$(cat "$pathfile")
+
+    if [ -f "$pidfile" ]; then
+        local pid
+        pid=$(cat "$pidfile")
+        if kill -0 "$pid" 2>/dev/null; then
+            echo "Killing dev server (PID: $pid) for: $project_path"
+            kill_descendants "$pid" TERM
+            sleep 1
+            kill_descendants "$pid" 9
+        else
+            echo "Stale pidfile for: $project_path (process not running)"
+        fi
+    fi
+
+    # Clean up docker compose if we know the project path
+    if [ -d "$project_path/.devcontainer" ]; then
+        echo "Stopping docker compose in: $project_path"
+        for compose_file in "$project_path/.devcontainer"/docker-compose*.yml; do
+            if [ -f "$compose_file" ]; then
+                docker compose -f "$compose_file" down 2>/dev/null || true
+            fi
+        done
+    fi
+
+    # Remove temp files
+    rm -f "$lockfile" "$pidfile" "$pathfile" 2>/dev/null || true
+}
 
 echo "Cleaning up dev server processes..."
 
-# Remove stale lockfile
-if [ -f "$LOCKFILE" ]; then
-    LOCKED_PID=$(cat "$LOCKFILE" 2>/dev/null || echo "")
-    if [ -n "$LOCKED_PID" ] && kill -0 "$LOCKED_PID" 2>/dev/null; then
-        echo "Killing dev.sh process (PID: $LOCKED_PID)..."
-        kill -9 "$LOCKED_PID" 2>/dev/null || true
-    fi
-    rm -f "$LOCKFILE"
-    echo "Removed lockfile"
+if [ "${1:-}" = "--all" ]; then
+    # Clean up ALL dev-server instances
+    echo "Cleaning up all dev-server instances..."
+    for pidfile in /tmp/dev-server-*.pid; do
+        [ -f "$pidfile" ] || continue
+        hash=$(basename "$pidfile" | sed 's/dev-server-//' | sed 's/\.pid//')
+        cleanup_instance "$hash"
+    done
+else
+    # Clean up only this project
+    PROJECT_HASH=$(echo "$APP_DIR" | md5sum | cut -c1-8)
+    cleanup_instance "$PROJECT_HASH"
 fi
 
-# Kill orphaned node processes (vite, next, convex, electron)
-echo "Killing orphaned dev processes..."
-pkill -9 -f "vite.*--host" 2>/dev/null || true
-pkill -9 -f "next-server" 2>/dev/null || true
-pkill -9 -f "convex dev" 2>/dev/null || true
-pkill -9 -f "electron-vite" 2>/dev/null || true
-pkill -9 -f "esbuild.*serve" 2>/dev/null || true
-
-# Kill processes on specific dev ports (faster than scanning all ports)
-DEV_PORTS="5173 9776 9777 9778 9779 3000 3001 8080"
-for port in $DEV_PORTS; do
-    pids=$(lsof -ti ":$port" 2>/dev/null || true)
-    if [ -n "$pids" ]; then
-        echo "Killing processes on port $port: $pids"
-        echo "$pids" | xargs -r kill -9 2>/dev/null || true
-    fi
-done
-
-# Clear caches that can cause issues on restart
-echo "Clearing dev caches..."
-rm -rf "$APP_DIR/node_modules/.vite" 2>/dev/null || true
-rm -rf "$APP_DIR/apps/client/node_modules/.vite" 2>/dev/null || true
-rm -rf "$APP_DIR/apps/www/.next" 2>/dev/null || true
-
-# Stop all docker containers from this project
-echo "Stopping docker containers..."
-(cd "$APP_DIR/.devcontainer" && docker compose -f docker-compose.yml down 2>/dev/null) || true
-(cd "$APP_DIR/.devcontainer" && docker compose -f docker-compose.devcontainer.yml down 2>/dev/null) || true
-(cd "$APP_DIR/.devcontainer" && COMPOSE_PROJECT_NAME=cmux-convex docker compose -f docker-compose.convex.yml down 2>/dev/null) || true
-
-# Clean up any dangling docker resources
-docker system prune -f --filter "label=com.docker.compose.project=cmux-convex" 2>/dev/null || true
-
+# Show status
 echo ""
 echo "Cleanup complete"
 echo ""
-echo "Resource status:"
-echo "  Node processes: $(pgrep -c node 2>/dev/null || echo 0)"
-echo "  Docker containers: $(docker ps -q 2>/dev/null | wc -l)"
-echo "  Ports 5173,9776-9779 status:"
-for port in 5173 9776 9777 9778 9779; do
-    pid=$(lsof -ti ":$port" 2>/dev/null || echo "free")
-    if [ "$pid" = "free" ]; then
-        echo "    $port: free"
-    else
-        echo "    $port: in use (PID: $pid)"
+echo "Active dev-server instances:"
+found_any=false
+for pidfile in /tmp/dev-server-*.pid; do
+    [ -f "$pidfile" ] || continue
+    pid=$(cat "$pidfile")
+    hash=$(basename "$pidfile" | sed 's/dev-server-//' | sed 's/\.pid//')
+    pathfile="/tmp/dev-server-${hash}.path"
+    path="unknown"
+    [ -f "$pathfile" ] && path=$(cat "$pathfile")
+    if kill -0 "$pid" 2>/dev/null; then
+        echo "  PID $pid: $path"
+        found_any=true
     fi
 done
+if [ "$found_any" = false ]; then
+    echo "  (none)"
+fi

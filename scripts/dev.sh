@@ -26,18 +26,29 @@
 
 set -e
 
-# Prevent multiple dev.sh instances from running
-LOCKFILE="/tmp/cmux-dev.lock"
+# Prevent multiple dev.sh instances from running (per-project lockfile)
+# Use a hash of APP_DIR to create a unique lockfile per project
+SCRIPT_DIR_TMP="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+APP_DIR_TMP="$(dirname "$SCRIPT_DIR_TMP")"
+PROJECT_HASH=$(echo "$APP_DIR_TMP" | md5sum | cut -c1-8)
+LOCKFILE="/tmp/dev-server-${PROJECT_HASH}.lock"
+PIDFILE="/tmp/dev-server-${PROJECT_HASH}.pid"
+
 exec 200>"$LOCKFILE"
 if ! flock -n 200; then
-    echo -e "\033[0;31mAnother dev.sh instance is already running!\033[0m"
+    echo -e "\033[0;31mAnother dev.sh instance is already running for this project!\033[0m"
+    if [ -f "$PIDFILE" ]; then
+        echo "PID: $(cat "$PIDFILE")"
+    fi
     echo "Run 'scripts/cleanup-dev.sh' to kill it, or wait for it to finish."
     exit 1
 fi
-# Write our PID to the lockfile for debugging
-echo $$ >&200
 
-# Enable process group management - kill entire tree on exit
+# Store our PID and project path for cleanup script
+echo $$ > "$PIDFILE"
+echo "$APP_DIR_TMP" > "/tmp/dev-server-${PROJECT_HASH}.path"
+
+# Enable job control for process group management
 set -m
 
 export CONVEX_PORT=9777
@@ -232,50 +243,51 @@ echo -e "${BLUE}Starting Terminal App Development Environment...${NC}"
 # Change to app directory
 cd "$APP_DIR"
 
-# Function to cleanup on exit - more aggressive to prevent zombie processes
+# Kill all descendant processes of a given PID (recursive)
+kill_descendants() {
+    local pid=$1
+    local signal=${2:-TERM}
+    # Get all children of this process
+    local children
+    children=$(pgrep -P "$pid" 2>/dev/null || true)
+    for child in $children; do
+        kill_descendants "$child" "$signal"
+    done
+    kill -"$signal" "$pid" 2>/dev/null || true
+}
+
+# Function to cleanup on exit - kills entire process tree
 cleanup() {
     echo -e "\n${BLUE}Shutting down...${NC}"
 
-    # Kill entire process groups (negative PID kills the group)
-    for pid in "$SERVER_PID" "$CLIENT_PID" "$WWW_PID" "$CONVEX_DEV_PID" "$DOCKER_COMPOSE_PID" "$SERVER_GLOBAL_PID" "$OPENAPI_CLIENT_PID" "$ELECTRON_PID"; do
-        if [ -n "$pid" ]; then
-            # Try graceful shutdown first
-            kill -- -"$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
-        fi
-    done
+    # Kill all descendants of this script (covers all spawned processes)
+    # This is generalizable - no need to track individual PIDs
+    kill_descendants $$ TERM
 
-    # Give processes time to cleanup gracefully
-    sleep 1
+    # Give processes 2 seconds to cleanup gracefully
+    sleep 2
 
-    # Force kill any remaining processes in our groups
-    for pid in "$SERVER_PID" "$CLIENT_PID" "$WWW_PID" "$CONVEX_DEV_PID" "$DOCKER_COMPOSE_PID" "$SERVER_GLOBAL_PID" "$OPENAPI_CLIENT_PID" "$ELECTRON_PID"; do
-        if [ -n "$pid" ]; then
-            kill -9 -- -"$pid" 2>/dev/null || kill -9 "$pid" 2>/dev/null || true
-        fi
-    done
+    # Force kill any remaining descendants
+    kill_descendants $$ 9
 
-    # Kill any orphaned processes on our ports
-    for port in 5173 9776 9777 9778 9779; do
-        local pids
-        pids=$(lsof -ti :"$port" 2>/dev/null || true)
-        if [ -n "$pids" ]; then
-            echo "$pids" | xargs -r kill -9 2>/dev/null || true
-        fi
-    done
+    # Clean up any docker compose in this project's .devcontainer (if exists)
+    if [ -d "$APP_DIR/.devcontainer" ]; then
+        for compose_file in "$APP_DIR/.devcontainer"/docker-compose*.yml; do
+            [ -f "$compose_file" ] && docker compose -f "$compose_file" down 2>/dev/null || true
+        done
+    fi
 
-    # Stop docker compose explicitly
-    docker compose -f "$APP_DIR/.devcontainer/docker-compose.convex.yml" down 2>/dev/null || true
-
-    # Release the lock
+    # Release the lock and clean up temp files
     flock -u 200 2>/dev/null || true
-    rm -f "$LOCKFILE" 2>/dev/null || true
+    rm -f "$LOCKFILE" "$PIDFILE" "/tmp/dev-server-${PROJECT_HASH}.path" 2>/dev/null || true
 
     echo -e "${GREEN}Cleanup complete${NC}"
     exit
 }
 
 # Set up trap to cleanup on script exit
-trap cleanup EXIT INT TERM
+# Include HUP (terminal closed) and QUIT (Ctrl+\) for thorough coverage
+trap cleanup EXIT INT TERM HUP QUIT
 
 # Check if node_modules exist, if not install dependencies
 if [ ! -d "node_modules" ] || [ "$FORCE_INSTALL" = "true" ]; then
