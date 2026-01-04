@@ -464,7 +464,7 @@ export async function startScreenshotCollection(
       baseBranch,
       headBranch,
       outputDir,
-      pathToClaudeCodeExecutable: "/root/.bun/bin/claude",
+      pathToClaudeCodeExecutable: "/usr/local/bin/claude",
       installCommand: options.installCommand ?? undefined,
       devCommand: options.devCommand ?? undefined,
       ...claudeAuth,
