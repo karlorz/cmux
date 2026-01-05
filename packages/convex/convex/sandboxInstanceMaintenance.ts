@@ -23,6 +23,7 @@ import {
   stopInstanceInstanceInstanceIdDelete,
 } from "@cmux/morphcloud-openapi-client";
 import type { SandboxProvider } from "./sandboxInstances";
+import { Agent, fetch as undiciFetch } from "undici";
 
 // ============================================================================
 // Configuration
@@ -118,14 +119,16 @@ async function pveApiRequest<T>(
   apiUrl: string,
   apiToken: string,
   method: string,
-  path: string
+  path: string,
+  dispatcher?: Agent
 ): Promise<T> {
   const url = `${apiUrl}${path}`;
-  const response = await fetch(url, {
+  const response = await undiciFetch(url, {
     method,
     headers: {
       Authorization: `PVEAPIToken=${apiToken}`,
     },
+    dispatcher,
   });
 
   if (!response.ok) {
@@ -142,7 +145,8 @@ async function pveWaitForTask(
   apiToken: string,
   node: string,
   upid: string,
-  timeoutMs: number = 60000
+  timeoutMs: number = 60000,
+  dispatcher?: Agent
 ): Promise<void> {
   const startTime = Date.now();
   const pollInterval = 2000;
@@ -152,7 +156,8 @@ async function pveWaitForTask(
       apiUrl,
       apiToken,
       "GET",
-      `/api2/json/nodes/${node}/tasks/${encodeURIComponent(upid)}/status`
+      `/api2/json/nodes/${node}/tasks/${encodeURIComponent(upid)}/status`,
+      dispatcher
     );
 
     if (status.status === "stopped") {
@@ -174,6 +179,12 @@ function createPveLxcProviderClient(
   node?: string
 ): ProviderClient {
   let resolvedNode: string | null = node || null;
+  const verifyTls =
+    process.env.PVE_VERIFY_TLS === "1" ||
+    process.env.PVE_VERIFY_TLS?.toLowerCase() === "true";
+  const dispatcher = verifyTls
+    ? undefined
+    : new Agent({ connect: { rejectUnauthorized: false } });
 
   async function getNode(): Promise<string> {
     if (resolvedNode) return resolvedNode;
@@ -182,7 +193,8 @@ function createPveLxcProviderClient(
       apiUrl,
       apiToken,
       "GET",
-      "/api2/json/nodes"
+      "/api2/json/nodes",
+      dispatcher
     );
 
     if (!nodes || nodes.length === 0) {
@@ -200,7 +212,8 @@ function createPveLxcProviderClient(
         apiUrl,
         apiToken,
         "GET",
-        `/api2/json/nodes/${nodeName}/lxc`
+        `/api2/json/nodes/${nodeName}/lxc`,
+        dispatcher
       );
 
       // Filter to cmux containers (hostname starts with "cmux-" or "pvelxc-")
@@ -231,10 +244,11 @@ function createPveLxcProviderClient(
         apiUrl,
         apiToken,
         "POST",
-        `/api2/json/nodes/${nodeName}/lxc/${vmid}/status/stop`
+        `/api2/json/nodes/${nodeName}/lxc/${vmid}/status/stop`,
+        dispatcher
       );
 
-      await pveWaitForTask(apiUrl, apiToken, nodeName, upid);
+      await pveWaitForTask(apiUrl, apiToken, nodeName, upid, 60000, dispatcher);
     },
 
     async stopInstance(instanceId: string): Promise<void> {
@@ -247,9 +261,10 @@ function createPveLxcProviderClient(
           apiUrl,
           apiToken,
           "POST",
-          `/api2/json/nodes/${nodeName}/lxc/${vmid}/status/stop`
+          `/api2/json/nodes/${nodeName}/lxc/${vmid}/status/stop`,
+          dispatcher
         );
-        await pveWaitForTask(apiUrl, apiToken, nodeName, stopUpid);
+        await pveWaitForTask(apiUrl, apiToken, nodeName, stopUpid, 60000, dispatcher);
       } catch {
         // May already be stopped
       }
@@ -258,10 +273,11 @@ function createPveLxcProviderClient(
         apiUrl,
         apiToken,
         "DELETE",
-        `/api2/json/nodes/${nodeName}/lxc/${vmid}`
+        `/api2/json/nodes/${nodeName}/lxc/${vmid}`,
+        dispatcher
       );
 
-      await pveWaitForTask(apiUrl, apiToken, nodeName, deleteUpid);
+      await pveWaitForTask(apiUrl, apiToken, nodeName, deleteUpid, 60000, dispatcher);
     },
   };
 
@@ -276,7 +292,8 @@ function createPveLxcProviderClient(
         apiUrl,
         apiToken,
         "GET",
-        `/api2/json/nodes/${nodeName}/lxc`
+        `/api2/json/nodes/${nodeName}/lxc`,
+        dispatcher
       );
       const match = containers.find((c) => c.name === instanceId);
       if (match) {

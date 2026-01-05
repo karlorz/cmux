@@ -3,7 +3,7 @@
  *
  * A client for managing LXC containers on Proxmox VE that mirrors
  * the MorphCloudClient interface for seamless provider switching.
- * Supports unified snapshot ID format (pvelxc_{presetId}_v{version}).
+ * Supports canonical snapshot IDs (snapshot_*) with legacy formats for compatibility.
  */
 
 import { env } from "./www-env";
@@ -15,7 +15,7 @@ import crypto from "node:crypto";
 // (Next.js patches global fetch which may not support dispatcher)
 const pveHttpsAgent = new Agent({
   connect: {
-    rejectUnauthorized: false,
+    rejectUnauthorized: Boolean(env.PVE_VERIFY_TLS),
   },
 });
 
@@ -818,6 +818,38 @@ export class PveLxcClient {
     return vmid;
   }
 
+  /**
+   * Get the next available template VMID (default range: 9000+).
+   * Falls back to the general VMID allocator if the template range is exhausted.
+   */
+  private async findNextTemplateVmid(): Promise<number> {
+    const node = await this.getNode();
+    const containers = await this.apiRequest<PveContainerStatus[]>(
+      "GET",
+      `/api2/json/nodes/${node}/lxc`
+    );
+    const vms = await this.apiRequest<Array<{ vmid: number }>>(
+      "GET",
+      `/api2/json/nodes/${node}/qemu`
+    );
+
+    const usedVmids = new Set([
+      ...containers.map((c) => c.vmid),
+      ...vms.map((v) => v.vmid),
+    ]);
+
+    let vmid = 9000;
+    while (usedVmids.has(vmid)) {
+      vmid++;
+    }
+
+    if (vmid >= 10000) {
+      return this.findNextVmid();
+    }
+
+    return vmid;
+  }
+
   private async findVmidByHostname(hostname: string): Promise<number | null> {
     const node = await this.getNode();
     const containers = await this.apiRequest<PveContainerStatus[]>(
@@ -906,6 +938,9 @@ export class PveLxcClient {
   /**
    * Convert an existing container into a reusable template.
    * Returns the template VMID and canonical snapshot ID.
+   *
+   * This clones the source into a new template VMID to avoid mutating
+   * the active workspace container.
    */
   async createTemplateFromContainer(sourceInstanceId: string): Promise<{
     templateVmid: number;
@@ -915,28 +950,71 @@ export class PveLxcClient {
 
     const targetNode = await this.getNode();
 
+    const sourceStatus = await this.getContainerStatus(sourceVmid);
+    const wasRunning = sourceStatus === "running";
+
     await this.ensureContainerStopped(sourceVmid);
 
-    // Convert the container into a template for fast linked-clone starts
-    const templateUpid = await this.apiRequest<string>(
-      "POST",
-      `/api2/json/nodes/${targetNode}/lxc/${sourceVmid}/template`
+    const templateVmid = await this.findNextTemplateVmid();
+    const templateHostname = this.normalizeHostId(
+      `cmux-template-${crypto.randomUUID().split("-")[0]}`
     );
-    await this.waitForTaskNormalized(
-      templateUpid,
-      `convert container ${sourceVmid} to template`,
-      async () => {
-        // Fallback: poll config to confirm template flag is set
-        const config = await this.apiRequest<PveContainerConfig>(
-          "GET",
-          `/api2/json/nodes/${targetNode}/lxc/${sourceVmid}/config`
-        );
-        return config.template === 1;
-      }
-    );
+    let templateCreated = false;
 
-    const snapshotId = this.generateSnapshotId();
-    return { templateVmid: sourceVmid, snapshotId };
+    try {
+      await this.cloneContainerFromSource(
+        sourceVmid,
+        templateVmid,
+        templateHostname
+      );
+      templateCreated = true;
+
+      await this.ensureContainerStopped(templateVmid);
+
+      // Convert the cloned container into a template for fast linked-clone starts
+      const templateUpid = await this.apiRequest<string>(
+        "POST",
+        `/api2/json/nodes/${targetNode}/lxc/${templateVmid}/template`
+      );
+      await this.waitForTaskNormalized(
+        templateUpid,
+        `convert container ${templateVmid} to template`,
+        async () => {
+          // Fallback: poll config to confirm template flag is set
+          const config = await this.apiRequest<PveContainerConfig>(
+            "GET",
+            `/api2/json/nodes/${targetNode}/lxc/${templateVmid}/config`
+          );
+          return config.template === 1;
+        }
+      );
+
+      const snapshotId = this.generateSnapshotId();
+      return { templateVmid, snapshotId };
+    } catch (error) {
+      if (templateCreated) {
+        try {
+          await this.deleteContainer(templateVmid);
+        } catch (cleanupError) {
+          console.error(
+            `[PveLxcClient] Failed to cleanup template ${templateVmid}:`,
+            cleanupError
+          );
+        }
+      }
+      throw error;
+    } finally {
+      if (wasRunning) {
+        try {
+          await this.startContainer(sourceVmid);
+        } catch (restartError) {
+          console.error(
+            `[PveLxcClient] Failed to restart source container ${sourceVmid}:`,
+            restartError
+          );
+        }
+      }
+    }
   }
 
   /**
@@ -963,6 +1041,28 @@ export class PveLxcClient {
       upid,
       `linked clone ${templateVmid} -> ${newVmid}`
     );
+  }
+
+  /**
+   * Clone a container from a non-template source (full clone).
+   */
+  private async cloneContainerFromSource(
+    sourceVmid: number,
+    newVmid: number,
+    hostname: string
+  ): Promise<void> {
+    const node = await this.getNode();
+    const upid = await this.apiRequest<string>(
+      "POST",
+      `/api2/json/nodes/${node}/lxc/${sourceVmid}/clone`,
+      {
+        newid: newVmid,
+        hostname,
+        full: 1, // Full clone (source does not need to be a template)
+      }
+    );
+
+    await this.waitForTaskNormalized(upid, `clone ${sourceVmid} -> ${newVmid}`);
   }
 
   /**

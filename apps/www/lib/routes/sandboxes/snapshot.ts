@@ -5,6 +5,8 @@ import {
 } from "@/lib/utils/pve-lxc-defaults";
 import {
   getActiveSandboxProvider,
+  isMorphAvailable,
+  isProxmoxAvailable,
   type SandboxProvider,
 } from "@/lib/utils/sandbox-provider";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
@@ -63,6 +65,47 @@ function isKnownDefaultSnapshot(snapshotId: string): boolean {
   return isPveTemplate;
 }
 
+function resolveProviderForSnapshotId(
+  snapshotId: string
+): SandboxProvider | null {
+  const isMorphSnapshot = MORPH_SNAPSHOT_PRESETS.some((preset) =>
+    preset.versions.some((v) => v.snapshotId === snapshotId)
+  );
+  const isPveSnapshot = PVE_LXC_SNAPSHOT_PRESETS.some((preset) =>
+    preset.versions.some((v) => v.snapshotId === snapshotId)
+  );
+
+  if (isMorphSnapshot && !isPveSnapshot) {
+    return "morph";
+  }
+  if (isPveSnapshot && !isMorphSnapshot) {
+    return "pve-lxc";
+  }
+  return null;
+}
+
+function ensureProviderAvailable(provider: SandboxProvider): void {
+  if (provider === "pve-vm") {
+    throw new HTTPException(501, {
+      message: "PVE VM provider is not supported yet",
+    });
+  }
+  if (provider === "morph" && !isMorphAvailable()) {
+    throw new HTTPException(503, {
+      message: "Morph provider is not configured",
+    });
+  }
+  if (provider === "pve-lxc" && !isProxmoxAvailable()) {
+    throw new HTTPException(503, {
+      message: "PVE LXC provider is not configured",
+    });
+  }
+}
+
+function isSandboxProvider(value: string | undefined): value is SandboxProvider {
+  return value === "morph" || value === "pve-lxc" || value === "pve-vm";
+}
+
 export const resolveTeamAndSnapshot = async ({
   req,
   convex,
@@ -78,9 +121,21 @@ export const resolveTeamAndSnapshot = async ({
 }): Promise<SnapshotResolution> => {
   const team = await verifyTeamAccess({ req, teamSlugOrId });
 
-  // Determine the active provider
-  const providerConfig = getActiveSandboxProvider();
-  const provider = providerConfig.provider;
+  const provider = (() => {
+    try {
+      return getActiveSandboxProvider().provider;
+    } catch {
+      if (isMorphAvailable()) {
+        return "morph";
+      }
+      if (isProxmoxAvailable()) {
+        return "pve-lxc";
+      }
+      throw new HTTPException(500, {
+        message: "No sandbox provider configured",
+      });
+    }
+  })();
   const defaultSnapshotId = getDefaultSnapshotId(provider);
 
   if (environmentId) {
@@ -97,9 +152,18 @@ export const resolveTeamAndSnapshot = async ({
 
     const snapshotId =
       environmentDoc.snapshotId ?? environmentDoc.morphSnapshotId ?? defaultSnapshotId;
+    const environmentProvider =
+      (isSandboxProvider(environmentDoc.snapshotProvider)
+        ? environmentDoc.snapshotProvider
+        : undefined) ??
+      (environmentDoc.morphSnapshotId ? "morph" : undefined) ??
+      (snapshotId ? resolveProviderForSnapshotId(snapshotId) : null) ??
+      provider;
+
+    ensureProviderAvailable(environmentProvider);
     return {
       team,
-      provider,
+      provider: environmentProvider,
       resolvedSnapshotId: snapshotId,
       resolvedTemplateVmid: environmentDoc.templateVmid ?? undefined,
       environmentDataVaultKey: environmentDoc.dataVaultKey ?? undefined,
@@ -109,13 +173,8 @@ export const resolveTeamAndSnapshot = async ({
   }
 
   if (snapshotId) {
-    if (isKnownDefaultSnapshot(snapshotId)) {
-      return {
-        team,
-        provider,
-        resolvedSnapshotId: snapshotId,
-      };
-    }
+    const snapshotProvider =
+      resolveProviderForSnapshotId(snapshotId) ?? provider;
 
     const environments = await convex.query(api.environments.list, {
       teamSlugOrId,
@@ -125,9 +184,19 @@ export const resolveTeamAndSnapshot = async ({
     );
 
     if (matchedEnvironment) {
+      const environmentProvider =
+        (isSandboxProvider(matchedEnvironment.snapshotProvider)
+          ? matchedEnvironment.snapshotProvider
+          : undefined) ??
+        (matchedEnvironment.morphSnapshotId ? "morph" : undefined) ??
+        (matchedEnvironment.snapshotId
+          ? resolveProviderForSnapshotId(matchedEnvironment.snapshotId)
+          : null) ??
+        provider;
+      ensureProviderAvailable(environmentProvider);
       return {
         team,
-        provider,
+        provider: environmentProvider,
         resolvedSnapshotId:
           matchedEnvironment.snapshotId ??
           matchedEnvironment.morphSnapshotId ??
@@ -136,12 +205,22 @@ export const resolveTeamAndSnapshot = async ({
       };
     }
 
+    if (isKnownDefaultSnapshot(snapshotId)) {
+      ensureProviderAvailable(snapshotProvider);
+      return {
+        team,
+        provider: snapshotProvider,
+        resolvedSnapshotId: snapshotId,
+      };
+    }
+
+    ensureProviderAvailable(snapshotProvider);
     const snapshotVersion = await convex.query(
       api.environmentSnapshots.findBySnapshotId,
       {
         teamSlugOrId,
         snapshotId,
-        snapshotProvider: provider,
+        snapshotProvider,
       }
     );
 
@@ -153,7 +232,7 @@ export const resolveTeamAndSnapshot = async ({
 
     return {
       team,
-      provider,
+      provider: snapshotProvider,
       resolvedSnapshotId:
         snapshotVersion.snapshotId ??
         snapshotVersion.morphSnapshotId ??
@@ -162,6 +241,7 @@ export const resolveTeamAndSnapshot = async ({
     };
   }
 
+  ensureProviderAvailable(provider);
   return {
     team,
     provider,

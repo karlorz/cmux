@@ -45,8 +45,13 @@ export const env = createEnv({
     PVE_API_TOKEN: sandboxProviderSchema.PVE_API_TOKEN,
     PVE_NODE: z.string().min(1).optional(),
     // Public domain for PVE sandbox URLs via Cloudflare Tunnel (e.g., "example.com")
-    // When set, generates URLs like https://vscode-{vmid}.example.com
+    // When set, generates URLs like https://port-{port}-{instanceId}.example.com
     PVE_PUBLIC_DOMAIN: z.string().min(1).optional(),
+    // Whether to verify PVE TLS certs (default: false for self-signed)
+    PVE_VERIFY_TLS: z
+      .string()
+      .optional()
+      .transform((value) => value === "1" || value?.toLowerCase() === "true"),
     OPENAI_API_KEY: z.string().min(1).optional(),
     GEMINI_API_KEY: z.string().min(1).optional(),
     ANTHROPIC_API_KEY: z.string().min(1),
