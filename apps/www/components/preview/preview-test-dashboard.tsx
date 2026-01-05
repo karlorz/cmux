@@ -132,10 +132,10 @@ function PreviewTestDashboardInner({
 
   // Client app base URL for workspace/browser links
   // In development, the client app runs on port 5173
-  // In production, both apps share the same domain (www.cmux.sh)
+  // In production, workspace/browser are on www.cmux.sh (not preview.new)
   const clientBaseUrl = typeof window !== "undefined" && window.location.hostname === "localhost"
     ? "http://localhost:5173"
-    : "";
+    : "https://www.cmux.sh";
 
   // Fetch test jobs
   const { data: jobsData, isLoading: isLoadingJobs } = useQuery({
