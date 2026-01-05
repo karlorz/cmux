@@ -14,7 +14,6 @@ import {
   AlertCircle,
   CheckCircle2,
   Clock,
-  FileText,
   Code,
   Globe,
 } from "lucide-react";
@@ -454,41 +453,6 @@ function PreviewTestDashboardInner({
             )}
             Add
           </Button>
-          <button
-            onClick={() => setShowConfiguredRepos(!showConfiguredRepos)}
-            className={clsx(
-              "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition-colors shrink-0",
-              activeConfigs.length > 0
-                ? "bg-green-900/30 text-green-400 hover:bg-green-900/50"
-                : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-300"
-            )}
-          >
-            {activeConfigs.length > 0 ? (
-              <>
-                <CheckCircle2 className="h-3 w-3" />
-                {activeConfigs.length} repo{activeConfigs.length !== 1 ? "s" : ""}
-              </>
-            ) : (
-              <>
-                <span className="h-1.5 w-1.5 rounded-full bg-neutral-500" />
-                0 repos
-              </>
-            )}
-          </button>
-          <Button
-            onClick={() =>
-              qc.invalidateQueries({
-                queryKey: ["preview-test-jobs", selectedTeam],
-              })
-            }
-            variant="ghost"
-            size="icon"
-            className="shrink-0"
-          >
-            <RefreshCw
-              className={clsx("h-4 w-4", isLoadingJobs && "animate-spin")}
-            />
-          </Button>
         </div>
       </div>
 
@@ -545,64 +509,6 @@ function PreviewTestDashboardInner({
               <X className="h-4 w-4" />
             </button>
           </div>
-        </div>
-      )}
-
-      {/* Configured repositories panel */}
-      {showConfiguredRepos && (
-        <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-medium text-white">
-              Configured Repositories ({activeConfigs.length})
-            </h3>
-            <button
-              onClick={() => setShowConfiguredRepos(false)}
-              className="text-neutral-400 hover:text-white"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          {isLoadingConfigs ? (
-            <div className="flex items-center justify-center py-4">
-              <Loader2 className="h-5 w-5 animate-spin text-neutral-400" />
-            </div>
-          ) : activeConfigs.length === 0 ? (
-            <div className="py-4 text-center">
-              <p className="text-neutral-400">No repositories configured for preview.new</p>
-              <Link
-                href="/preview"
-                className="mt-2 inline-block text-blue-400 hover:text-blue-300"
-              >
-                Configure a repository
-              </Link>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {activeConfigs.map((config) => (
-                <div
-                  key={config.id}
-                  className="flex items-center justify-between rounded-md bg-neutral-800/50 px-3 py-2"
-                >
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-green-400" />
-                    <span className="font-mono text-sm text-neutral-200">
-                      {config.repoFullName}
-                    </span>
-                  </div>
-                  <span className="text-xs text-neutral-500">
-                    {config.repoDefaultBranch ?? "main"}
-                  </span>
-                </div>
-              ))}
-              <p className="mt-2 text-xs text-neutral-500">
-                Only PRs from these repositories can be tested. To add a new repository,{" "}
-                <Link href="/preview" className="text-blue-400 hover:text-blue-300">
-                  configure it in Preview settings
-                </Link>
-                .
-              </p>
-            </div>
-          )}
         </div>
       )}
 
@@ -697,24 +603,6 @@ function PreviewTestDashboardInner({
                   >
                     {getStatusText(job.status)}
                   </span>
-                  {job.taskId && job.taskRunId && (
-                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                      <a
-                        href={`${clientBaseUrl}/${selectedTeamSlug}/task/${job.taskId}`}
-                        className="rounded p-1.5 text-neutral-400 hover:bg-neutral-700 hover:text-white"
-                        title="View Workspace"
-                      >
-                        <Code className="h-4 w-4" />
-                      </a>
-                      <a
-                        href={`${clientBaseUrl}/${selectedTeamSlug}/task/${job.taskId}/run/${job.taskRunId}/browser`}
-                        className="rounded p-1.5 text-neutral-400 hover:bg-neutral-700 hover:text-white"
-                        title="View Browser"
-                      >
-                        <Globe className="h-4 w-4" />
-                      </a>
-                    </div>
-                  )}
                   <div
                     className="flex items-center gap-1"
                     onClick={(e) => e.stopPropagation()}
@@ -746,16 +634,12 @@ function PreviewTestDashboardInner({
                         Retry
                       </Button>
                     )}
-                    <a
-                      href={job.prUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="rounded p-1.5 text-neutral-400 hover:bg-neutral-700 hover:text-white"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                    </a>
                     <button
-                      onClick={() => handleDeleteJob(job._id)}
+                      onClick={() => {
+                        if (window.confirm("Are you sure you want to delete this test job?")) {
+                          handleDeleteJob(job._id);
+                        }
+                      }}
                       disabled={deleteJobMutation.isPending}
                       className="rounded p-1.5 text-neutral-400 hover:bg-red-900/50 hover:text-red-300"
                     >
@@ -799,100 +683,96 @@ function PreviewTestDashboardInner({
                       </div>
                     </div>
 
-                    {/* Workspace, Browser, and Trajectory links */}
+                    {/* Workspace and Browser links */}
                     {job.taskId && job.taskRunId && (
                       <div className="mb-4 flex flex-wrap items-center gap-2">
                         <a
                           href={`${clientBaseUrl}/${selectedTeamSlug}/task/${job.taskId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
                           className="inline-flex items-center gap-2 rounded-md bg-neutral-800 px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-700 hover:text-white"
                         >
                           <Code className="h-4 w-4" />
                           Workspace
-                          <ExternalLink className="h-3 w-3" />
                         </a>
                         <a
                           href={`${clientBaseUrl}/${selectedTeamSlug}/task/${job.taskId}/run/${job.taskRunId}/browser`}
+                          target="_blank"
+                          rel="noopener noreferrer"
                           className="inline-flex items-center gap-2 rounded-md bg-neutral-800 px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-700 hover:text-white"
                         >
                           <Globe className="h-4 w-4" />
                           Browser
-                          <ExternalLink className="h-3 w-3" />
-                        </a>
-                        <a
-                          href={`${clientBaseUrl}/${selectedTeamSlug}/task/${job.taskId}/run/${job.taskRunId}`}
-                          className="inline-flex items-center gap-2 rounded-md bg-neutral-800 px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-700 hover:text-white"
-                        >
-                          <FileText className="h-4 w-4" />
-                          Trajectory
-                          <ExternalLink className="h-3 w-3" />
                         </a>
                       </div>
                     )}
 
                     {/* Screenshots */}
                     {job.screenshotSet ? (
-                      <div>
-                        <h4 className="mb-3 text-sm font-medium text-white">
-                          Screenshots ({job.screenshotSet.images.length})
-                          {job.screenshotSet.hasUiChanges === false && (
-                            <span className="ml-2 text-neutral-500">
-                              - No UI changes detected
-                            </span>
+                      job.screenshotSet.hasUiChanges === false ? (
+                        <div className="flex items-center gap-2 rounded-md bg-neutral-800/50 px-3 py-2 text-sm text-neutral-400">
+                          <CheckCircle2 className="h-4 w-4 text-neutral-500" />
+                          No UI changes detected - skipped screenshot workflow
+                        </div>
+                      ) : (
+                        <div>
+                          <h4 className="mb-3 text-sm font-medium text-white">
+                            Screenshots ({job.screenshotSet.images.length})
+                          </h4>
+                          {job.screenshotSet.error && (
+                            <div className="mb-3 rounded-md bg-red-900/20 px-3 py-2 text-sm text-red-300">
+                              Error: {job.screenshotSet.error}
+                            </div>
                           )}
-                        </h4>
-                        {job.screenshotSet.error && (
-                          <div className="mb-3 rounded-md bg-red-900/20 px-3 py-2 text-sm text-red-300">
-                            Error: {job.screenshotSet.error}
-                          </div>
-                        )}
-                        {job.screenshotSet.images.length > 0 ? (
-                          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                            {job.screenshotSet.images.map((image, index) => (
-                              <div
-                                key={image.storageId}
-                                className="overflow-hidden rounded-lg border border-neutral-700 bg-neutral-800"
-                              >
-                                {image.url ? (
-                                  <a
-                                    href={image.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                  >
-                                    <img
-                                      src={image.url}
-                                      alt={
-                                        image.description ??
-                                        `Screenshot ${index + 1}`
-                                      }
-                                      className="aspect-video w-full object-cover hover:opacity-90"
-                                    />
-                                  </a>
-                                ) : (
-                                  <div className="flex aspect-video items-center justify-center bg-neutral-900">
-                                    <ImageIcon className="h-8 w-8 text-neutral-600" />
-                                  </div>
-                                )}
-                                {image.description && (
-                                  <div className="px-3 py-2">
-                                    <p className="text-sm text-neutral-300">
-                                      {image.description}
-                                    </p>
-                                    {image.fileName && (
-                                      <p className="mt-1 text-xs text-neutral-500">
-                                        {image.fileName}
+                          {job.screenshotSet.images.length > 0 ? (
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                              {job.screenshotSet.images.map((image, index) => (
+                                <div
+                                  key={image.storageId}
+                                  className="overflow-hidden rounded-lg border border-neutral-700 bg-neutral-800"
+                                >
+                                  {image.url ? (
+                                    <a
+                                      href={image.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                    >
+                                      <img
+                                        src={image.url}
+                                        alt={
+                                          image.description ??
+                                          `Screenshot ${index + 1}`
+                                        }
+                                        className="aspect-video w-full object-cover hover:opacity-90"
+                                      />
+                                    </a>
+                                  ) : (
+                                    <div className="flex aspect-video items-center justify-center bg-neutral-900">
+                                      <ImageIcon className="h-8 w-8 text-neutral-600" />
+                                    </div>
+                                  )}
+                                  {image.description && (
+                                    <div className="px-3 py-2">
+                                      <p className="text-sm text-neutral-300">
+                                        {image.description}
                                       </p>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-neutral-500">
-                            No screenshots captured
-                          </p>
-                        )}
-                      </div>
+                                      {image.fileName && (
+                                        <p className="mt-1 text-xs text-neutral-500">
+                                          {image.fileName}
+                                        </p>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-neutral-500">
+                              No screenshots captured
+                            </p>
+                          )}
+                        </div>
+                      )
                     ) : job.status === "running" ? (
                       <div className="flex items-center gap-2 text-sm text-neutral-400">
                         <Loader2 className="h-4 w-4 animate-spin" />
