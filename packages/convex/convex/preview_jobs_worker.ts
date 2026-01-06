@@ -1255,55 +1255,13 @@ export async function runPreviewJob(
   const snapshotId = environment.morphSnapshotId;
   let instance: InstanceModel | null = null;
   let taskId: Id<"tasks"> | null = null;
+  let keepInstanceForTaskRun = false;
 
-  if (!taskRunId) {
-    console.log("[preview-jobs] No taskRun linked to preview run, creating one now", {
-      previewRunId,
-      repoFullName: run.repoFullName,
-      prNumber: run.prNumber,
-    });
+  // Note: task/taskRun creation is now deferred until AFTER the VM starts
+  // This ensures the preview job doesn't appear in the UI until it has working links
 
-    // Use "system" as fallback for legacy configs without createdByUserId
-    const configUserId = config.createdByUserId ?? "system";
-
-    taskId = await ctx.runMutation(internal.tasks.createForPreview, {
-      teamId: run.teamId,
-      userId: configUserId,
-      previewRunId,
-      repoFullName: run.repoFullName,
-      prNumber: run.prNumber,
-      prUrl: run.prUrl,
-      headSha: run.headSha,
-      baseBranch: config.repoDefaultBranch,
-    });
-
-    const { taskRunId: createdTaskRunId } = await ctx.runMutation(
-      internal.taskRuns.createForPreview,
-      {
-        taskId,
-        teamId: run.teamId,
-        userId: configUserId,
-        prUrl: run.prUrl,
-        environmentId: config.environmentId,
-        newBranch: run.headRef,
-      },
-    );
-
-    await ctx.runMutation(internal.previewRuns.linkTaskRun, {
-      previewRunId,
-      taskRunId: createdTaskRunId,
-    });
-
-    taskRunId = createdTaskRunId;
-
-    console.log("[preview-jobs] Created and linked task/taskRun for preview run", {
-      previewRunId,
-      taskId,
-      taskRunId,
-    });
-  }
-
-  if (!taskId && taskRunId) {
+  // If we already have a taskRunId (from non-test runs), get the taskId
+  if (taskRunId) {
     const existingTaskRun = await ctx.runQuery(internal.taskRuns.getById, { id: taskRunId });
     if (existingTaskRun?.taskId) {
       taskId = existingTaskRun.taskId;
@@ -1316,7 +1274,6 @@ export async function runPreviewJob(
     }
   }
 
-  const keepInstanceForTaskRun = Boolean(taskRunId);
   console.log("[preview-jobs] Launching Morph instance", {
     previewRunId,
     snapshotId,
@@ -1368,26 +1325,13 @@ export async function runPreviewJob(
   }
 
   try {
-    // Generate JWT for screenshot upload authentication if we have a taskRunId
-    const previewJwt = taskRunId
-      ? await new SignJWT({
-          taskRunId,
-          teamId: run.teamId,
-          userId: config.createdByUserId,
-        })
-          .setProtectedHeader({ alg: "HS256" })
-          .setIssuedAt()
-          .setExpirationTime("12h")
-          .sign(new TextEncoder().encode(env.CMUX_TASK_RUN_JWT_SECRET))
-      : null;
-
     console.log("[preview-jobs] Starting Morph instance", {
       previewRunId,
       hasTaskRunId: Boolean(taskRunId),
-      hasToken: Boolean(previewJwt),
       snapshotId,
     });
 
+    // Start VM first - task/taskRun creation happens AFTER the VM is ready
     instance = await startMorphInstance(morphClient, {
       snapshotId,
       metadata: {
@@ -1429,6 +1373,72 @@ export async function runPreviewJob(
       workerHealthUrl: `${workerService.url}/health`,
     });
 
+    // Now that VM is running, create task/taskRun if needed
+    // This ensures the preview job only appears in UI after VM has working links
+    if (!taskRunId) {
+      console.log("[preview-jobs] VM ready, now creating task/taskRun", {
+        previewRunId,
+        repoFullName: run.repoFullName,
+        prNumber: run.prNumber,
+      });
+
+      // Use "system" as fallback for legacy configs without createdByUserId
+      const configUserId = config.createdByUserId ?? "system";
+
+      taskId = await ctx.runMutation(internal.tasks.createForPreview, {
+        teamId: run.teamId,
+        userId: configUserId,
+        previewRunId,
+        repoFullName: run.repoFullName,
+        prNumber: run.prNumber,
+        prUrl: run.prUrl,
+        headSha: run.headSha,
+        baseBranch: config.repoDefaultBranch,
+      });
+
+      const { taskRunId: createdTaskRunId } = await ctx.runMutation(
+        internal.taskRuns.createForPreview,
+        {
+          taskId,
+          teamId: run.teamId,
+          userId: configUserId,
+          prUrl: run.prUrl,
+          environmentId: config.environmentId,
+          newBranch: run.headRef,
+        },
+      );
+
+      await ctx.runMutation(internal.previewRuns.linkTaskRun, {
+        previewRunId,
+        taskRunId: createdTaskRunId,
+      });
+
+      taskRunId = createdTaskRunId;
+
+      console.log("[preview-jobs] Created and linked task/taskRun for preview run", {
+        previewRunId,
+        taskId,
+        taskRunId,
+      });
+    }
+
+    // Keep instance running if we have a taskRun (for interactive access)
+    keepInstanceForTaskRun = Boolean(taskRunId);
+
+    // Generate JWT for screenshot upload authentication now that we have taskRunId
+    const previewJwt = taskRunId
+      ? await new SignJWT({
+          taskRunId,
+          teamId: run.teamId,
+          userId: config.createdByUserId,
+        })
+          .setProtectedHeader({ alg: "HS256" })
+          .setIssuedAt()
+          .setExpirationTime("12h")
+          .sign(new TextEncoder().encode(env.CMUX_TASK_RUN_JWT_SECRET))
+      : null;
+
+    // Update taskRun with VM instance info and URLs
     if (taskRunId) {
       const networking = instance.networking?.http_services?.map((s) => ({
         status: "running" as const,
