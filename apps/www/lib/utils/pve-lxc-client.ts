@@ -718,10 +718,7 @@ export class PveLxcClient {
       options?.hostname ??
       (await this.getContainerHostname(vmid)) ??
       fallbackHostname;
-    const hostId =
-      options?.instanceId && !options.instanceId.startsWith("pve_lxc_")
-        ? options.instanceId
-        : resolvedHostname;
+    const hostId = options?.instanceId ?? resolvedHostname;
     const hostname = resolvedHostname;
     const domainSuffix = await this.getDomainSuffix();
     const maxRetries = options?.retries ?? 5;
@@ -864,10 +861,6 @@ export class PveLxcClient {
   }
 
   private async resolveVmidForInstanceId(instanceId: string): Promise<number> {
-    const legacyMatch = instanceId.match(/^pve_lxc_(\d+)$/);
-    if (legacyMatch?.[1]) {
-      return parseInt(legacyMatch[1], 10);
-    }
     const hostname = this.normalizeHostId(instanceId);
     const vmid = await this.findVmidByHostname(hostname);
     if (!vmid) {
@@ -878,22 +871,11 @@ export class PveLxcClient {
 
   /**
    * Resolve a snapshot ID to a template VMID.
-   * Supports canonical snapshot_*, legacy pvelxc_{presetId}_v{version}, and pve_lxc_{vmid}.
+   * Supports canonical snapshot_* identifiers only.
    */
   private async parseSnapshotId(snapshotId: string): Promise<{
     templateVmid: number;
   }> {
-    // Direct template reference: pve_lxc_{vmid}
-    const directMatch = snapshotId.match(/^pve_lxc_(\d+)$/i);
-    if (directMatch) {
-      return { templateVmid: parseInt(directMatch[1], 10) };
-    }
-
-    // Plain VMID (numbers only)
-    if (/^\d+$/.test(snapshotId)) {
-      return { templateVmid: parseInt(snapshotId, 10) };
-    }
-
     // Dynamic import to avoid circular dependency
     const { PVE_LXC_SNAPSHOT_PRESETS } = await import("./pve-lxc-defaults");
 
@@ -909,30 +891,9 @@ export class PveLxcClient {
       return { templateVmid: versionData.templateVmid };
     }
 
-    const match = snapshotId.match(/^pvelxc_([^_]+_[^_]+_[^_]+)_v(\d+)$/);
-    if (!match) {
-      throw new Error(
-        `Invalid PVE template ID format: ${snapshotId}. ` +
-        `Expected format: snapshot_* or pvelxc_{presetId}_v{version} or pve_lxc_{vmid}`
-      );
-    }
-
-    const [, presetId, versionStr] = match;
-    const version = parseInt(versionStr, 10);
-
-    const preset = PVE_LXC_SNAPSHOT_PRESETS.find(p => p.presetId === presetId);
-    if (!preset) {
-      throw new Error(`PVE LXC preset not found: ${presetId}`);
-    }
-
-    const versionData = preset.versions.find(v => v.version === version);
-    if (!versionData) {
-      throw new Error(`PVE LXC version not found: ${version} for preset ${presetId}`);
-    }
-
-    return {
-      templateVmid: versionData.templateVmid,
-    };
+    throw new Error(
+      `Invalid PVE snapshot ID: ${snapshotId}. Expected format: snapshot_*`
+    );
   }
 
   /**
@@ -1367,13 +1328,10 @@ export class PveLxcClient {
     }): Promise<PveLxcInstance> => {
       const vmid =
         options.vmid ?? (await this.resolveVmidForInstanceId(options.instanceId));
-      const fallbackHostname = `cmux-${vmid}`;
       const resolvedHostname =
         options.hostname ??
         (await this.getContainerHostname(vmid)) ??
-        (options.instanceId.startsWith("pvelxc-")
-          ? this.normalizeHostId(options.instanceId)
-          : fallbackHostname);
+        this.normalizeHostId(options.instanceId);
       const hostname = resolvedHostname;
 
       // Auto-detect domain suffix from PVE DNS config
@@ -1472,15 +1430,12 @@ export class PveLxcClient {
           const services = this.instanceServices.get(container.vmid) || [];
           // Metadata is in Convex, return empty here
           const metadata: ContainerMetadata = {};
-          const instanceId = hostname.startsWith("pvelxc-")
-            ? hostname
-            : `pve_lxc_${container.vmid}`;
           this.instanceHostnames.set(container.vmid, hostname);
 
           instances.push(
             new PveLxcInstance(
               this,
-              instanceId,
+              hostname,
               container.vmid,
               status,
               metadata,

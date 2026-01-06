@@ -1142,9 +1142,8 @@ export async function runPreviewJob(
     return;
   }
 
-  const snapshotId = environment.snapshotId ?? environment.morphSnapshotId;
-  const snapshotProvider =
-    environment.snapshotProvider ?? (environment.morphSnapshotId ? "morph" : "other");
+  const snapshotId = environment.snapshotId;
+  const snapshotProvider = environment.snapshotProvider ?? "other";
 
   if (!snapshotId) {
     console.warn("[preview-jobs] Environment missing snapshot; skipping", {

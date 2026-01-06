@@ -573,7 +573,7 @@ export function CommandBar({
           keywords: compactStrings([
             env.name,
             env.description,
-            env.snapshotId ?? env.morphSnapshotId,
+            env.snapshotId,
             ...(env.selectedRepos ?? []),
           ]),
         }));

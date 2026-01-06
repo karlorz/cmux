@@ -758,7 +758,7 @@ const convexSchema = defineSchema({
     name: v.string(), // Human-friendly environment name
     teamId: v.string(), // Team that owns this environment
     userId: v.string(), // User who created the environment
-    snapshotId: v.optional(v.string()), // Canonical snapshot identifier (snapshot_*), optional for legacy rows
+    snapshotId: v.optional(v.string()), // Canonical snapshot identifier (snapshot_*)
     snapshotProvider: v.optional(
       v.union(
         v.literal("morph"),
@@ -769,7 +769,6 @@ const convexSchema = defineSchema({
         v.literal("other")
       )
     ),
-    morphSnapshotId: v.optional(v.string()), // Legacy Morph snapshot identifier
     templateVmid: v.optional(v.number()), // PVE template VMID (for pve-lxc/pve-vm)
     dataVaultKey: v.string(), // Key for StackAuth DataBook (stores encrypted env vars)
     selectedRepos: v.optional(v.array(v.string())), // List of repository full names
@@ -798,7 +797,6 @@ const convexSchema = defineSchema({
         v.literal("other")
       )
     ),
-    morphSnapshotId: v.optional(v.string()), // Legacy Morph snapshot identifier
     templateVmid: v.optional(v.number()), // PVE template VMID (for pve-lxc/pve-vm)
     version: v.number(),
     createdAt: v.number(),
@@ -810,8 +808,7 @@ const convexSchema = defineSchema({
     .index("by_environment_version", ["environmentId", "version"])
     .index("by_environment_createdAt", ["environmentId", "createdAt"])
     .index("by_team_createdAt", ["teamId", "createdAt"])
-    .index("by_team_snapshot", ["teamId", "snapshotId"])
-    .index("by_team_snapshot_legacy", ["teamId", "morphSnapshotId"]),
+    .index("by_team_snapshot", ["teamId", "snapshotId"]),
 
   // Webhook deliveries for idempotency and auditing
   webhookDeliveries: defineTable({
@@ -1162,7 +1159,7 @@ const convexSchema = defineSchema({
   // Unified sandbox instance activity tracking (provider-agnostic)
   // Supports: morph, pve-lxc, docker, daytona, and future providers
   sandboxInstanceActivity: defineTable({
-    instanceId: v.string(), // Instance ID (morphvm_xxx, pve_lxc_xxx, etc.)
+    instanceId: v.string(), // Instance ID (morphvm_xxx, pvelxc-xxx, etc.)
     provider: v.union(
       v.literal("morph"),
       v.literal("pve-lxc"),

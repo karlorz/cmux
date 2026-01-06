@@ -224,7 +224,7 @@ function createPveLxcProviderClient(
         .filter((c) => c.template !== 1) // Exclude PVE templates
         .filter((c) => c.vmid < 9000) // Exclude template VMID range (9000-9999)
         .map((c) => ({
-          id: c.name?.startsWith("pvelxc-") ? c.name : `pve_lxc_${c.vmid}`,
+          id: c.name!,
           status: c.status === "running" ? "ready" : c.status,
           // PVE doesn't track creation time easily, use 0 as fallback
           // The activity table will have the actual creation time
@@ -282,10 +282,6 @@ function createPveLxcProviderClient(
   };
 
   async function resolveVmid(instanceId: string): Promise<string> {
-    const legacyMatch = instanceId.match(/^pve_lxc_(\d+)$/);
-    if (legacyMatch?.[1]) {
-      return legacyMatch[1];
-    }
     if (instanceId.startsWith("pvelxc-") || instanceId.startsWith("cmux-")) {
       const nodeName = await getNode();
       const containers = await pveApiRequest<PveContainerStatus[]>(

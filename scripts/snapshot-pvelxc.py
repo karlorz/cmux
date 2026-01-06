@@ -21,10 +21,8 @@ Optional environment variables:
     PVE_CF_DOMAIN - Cloudflare Tunnel domain for HTTP exec (e.g., alphasolves.com)
                     When set, uses instanceId-based URL pattern:
                     https://port-{port}-{instanceId}.{domain} for command execution via
-                    cmux-execd instead of SSH+pct exec. Falls back to legacy
-                    port-{port}-vm-{vmid}.{domain} if hostname cannot be resolved.
-                    Falls back to PVE_PUBLIC_DOMAIN if not set, then to SSH if
-                    neither is set.
+                    cmux-execd instead of SSH+pct exec. Falls back to
+                    PVE_PUBLIC_DOMAIN if not set, then to SSH if neither is set.
     PVE_PUBLIC_DOMAIN - Alias for PVE_CF_DOMAIN (used as fallback)
     PVE_NODE - Target PVE node name (auto-detected if not set)
     PVE_SSH_HOST - SSH host for fallback (derived from PVE_API_URL if not set)
@@ -824,14 +822,13 @@ class PveLxcClient:
 
         Returns None if cf_domain is not configured.
         URL pattern (instanceId-based): https://port-{port}-{instanceId}.{cf_domain}
-        Falls back to legacy: https://port-{port}-vm-{vmid}.{cf_domain}
         """
         if not self.cf_domain:
             return None
         host_id = self.resolve_http_host_id(vmid)
-        if host_id:
-            return f"https://port-39375-{host_id}.{self.cf_domain}/exec"
-        return f"https://port-39375-vm-{vmid}.{self.cf_domain}/exec"
+        if not host_id:
+            return None
+        return f"https://port-39375-{host_id}.{self.cf_domain}/exec"
 
     def http_exec(
         self,

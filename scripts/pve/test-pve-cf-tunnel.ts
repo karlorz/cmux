@@ -268,20 +268,20 @@ Environment:
   if (!instanceId && vmid !== undefined) {
     try {
       const instance = await client.instances.get({
-        instanceId: `pve_lxc_${vmid}`,
+        instanceId: `pvelxc-${vmid}`,
         vmid,
       });
       instanceId = instance.networking.hostname;
     } catch (error) {
       console.warn(
-        "WARN: Failed to resolve hostname from PVE, using legacy default",
+        "WARN: Failed to resolve hostname from PVE, using fallback instance ID",
         error
       );
-      instanceId = `cmux-${vmid}`;
+      instanceId = `pvelxc-${vmid}`;
     }
   }
 
-  const hostname = instanceId ?? `cmux-${vmid}`;
+  const hostname = instanceId ?? `pvelxc-${vmid}`;
 
   // Wait for container to be ready
   if (createdInstance) {

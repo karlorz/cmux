@@ -92,8 +92,6 @@ export const create = authMutation({
     };
     const maintenanceScript = normalizeScript(args.maintenanceScript);
     const devScript = normalizeScript(args.devScript);
-    const legacyMorphSnapshotId =
-      args.snapshotProvider === "morph" ? args.snapshotId : undefined;
     const templateVmid =
       args.snapshotProvider === "pve-lxc" || args.snapshotProvider === "pve-vm"
         ? args.templateVmid
@@ -105,7 +103,6 @@ export const create = authMutation({
       userId,
       snapshotId: args.snapshotId,
       snapshotProvider: args.snapshotProvider,
-      morphSnapshotId: legacyMorphSnapshotId,
       templateVmid,
       dataVaultKey: args.dataVaultKey,
       selectedRepos: args.selectedRepos,
@@ -122,7 +119,6 @@ export const create = authMutation({
       teamId,
       snapshotId: args.snapshotId,
       snapshotProvider: args.snapshotProvider,
-      morphSnapshotId: legacyMorphSnapshotId,
       templateVmid,
       version: 1,
       createdAt,

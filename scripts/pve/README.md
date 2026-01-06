@@ -69,10 +69,6 @@ PVE LXC uses an instanceId-based URL pattern for service access via Cloudflare T
 | Exec | 39375 | `https://port-39375-{instanceId}.{domain}` |
 | VNC | 39380 | `https://port-39380-{instanceId}.{domain}` |
 
-Legacy VMID-based URLs are still supported:
-
-`https://port-{port}-vm-{vmid}.{domain}`
-
 ## Scripts
 
 ### pve-api.sh
@@ -263,5 +259,4 @@ Note: CRIU checkpoint/restore is marked experimental in PVE documentation and is
 ## Related Documentation
 
 - [Proxmox VE API Documentation](https://pve.proxmox.com/pve-docs/api-viewer/)
-- [PR #27 Review - PVE LXC Architecture](../../docs/PR27-PVE-LXC-REVIEW.md)
 - [Cloudflare Tunnel Documentation](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)

@@ -14,55 +14,30 @@ export const migrations = new Migrations<DataModel>(components.migrations);
 
 const inferSnapshotProvider = (
   snapshotId: string | undefined,
-  morphSnapshotId: string | undefined,
   templateVmid: number | undefined
 ): "morph" | "pve-lxc" | "pve-vm" | undefined => {
   if (!snapshotId) {
-    if (templateVmid !== undefined) {
-      return "pve-lxc";
-    }
-    return morphSnapshotId ? "morph" : undefined;
+    return templateVmid !== undefined ? "pve-lxc" : undefined;
   }
 
-  if (snapshotId.startsWith("pvevm_") || snapshotId.startsWith("snapshot_pvevm")) {
-    return "pve-vm";
-  }
-  if (
-    snapshotId.startsWith("pvelxc_") ||
-    snapshotId.startsWith("pve_lxc_") ||
-    snapshotId.startsWith("snapshot_pvelxc") ||
-    snapshotId.startsWith("pve_")
-  ) {
-    return "pve-lxc";
-  }
-  if (snapshotId.startsWith("morph_")) {
-    return "morph";
-  }
   if (snapshotId.startsWith("snapshot_")) {
     return templateVmid !== undefined ? "pve-lxc" : "morph";
   }
-  if (templateVmid !== undefined) {
-    return "pve-lxc";
-  }
-  return morphSnapshotId ? "morph" : undefined;
+
+  return undefined;
 };
 
-// Backfill snapshotId/snapshotProvider from legacy morphSnapshotId where possible.
+// Backfill snapshotProvider from snapshotId/template metadata where possible.
 // Run with: bunx convex run migrations:run '{fn: "migrations:backfillEnvironmentsSnapshotFields"}'
 export const backfillEnvironmentsSnapshotFields = migrations.define({
   table: "environments",
   migrateOne: (_ctx, doc) => {
     const updates: Partial<typeof doc> = {};
-    const normalizedSnapshotId = doc.snapshotId ?? doc.morphSnapshotId;
-
-    if (doc.snapshotId === undefined && doc.morphSnapshotId) {
-      updates.snapshotId = doc.morphSnapshotId;
-    }
+    const normalizedSnapshotId = doc.snapshotId;
 
     if (doc.snapshotProvider === undefined) {
       const provider = inferSnapshotProvider(
         normalizedSnapshotId,
-        doc.morphSnapshotId,
         doc.templateVmid
       );
       if (provider) {
@@ -84,16 +59,11 @@ export const backfillEnvironmentSnapshotVersionsSnapshotFields =
     table: "environmentSnapshotVersions",
     migrateOne: (_ctx, doc) => {
       const updates: Partial<typeof doc> = {};
-      const normalizedSnapshotId = doc.snapshotId ?? doc.morphSnapshotId;
-
-      if (doc.snapshotId === undefined && doc.morphSnapshotId) {
-        updates.snapshotId = doc.morphSnapshotId;
-      }
+      const normalizedSnapshotId = doc.snapshotId;
 
       if (doc.snapshotProvider === undefined) {
         const provider = inferSnapshotProvider(
           normalizedSnapshotId,
-          doc.morphSnapshotId,
           doc.templateVmid
         );
         if (provider) {

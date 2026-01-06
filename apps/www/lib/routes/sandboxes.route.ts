@@ -54,7 +54,6 @@ function getMorphClient(): MorphCloudClient {
 function isPveLxcInstanceId(instanceId: string): boolean {
   return (
     instanceId.startsWith("pvelxc-") ||
-    instanceId.startsWith("pve_lxc_") ||
     instanceId.startsWith("cmux-")
   );
 }

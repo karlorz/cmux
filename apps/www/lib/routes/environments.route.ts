@@ -83,7 +83,7 @@ const detectInstanceProvider = (
   instanceId: string
 ): "morph" | "pve-lxc" | "pve-vm" | "other" => {
   if (instanceId.startsWith("morphvm_")) return "morph";
-  if (instanceId.startsWith("pvelxc-") || instanceId.startsWith("pve_lxc_")) {
+  if (instanceId.startsWith("pvelxc-")) {
     return "pve-lxc";
   }
   if (instanceId.startsWith("pvevm-") || instanceId.startsWith("pve_vm_")) {
@@ -431,22 +431,26 @@ environmentsRouter.openapi(
       });
 
       // Map Convex documents to API response shape
-      const result = environments.map((env) => ({
-        id: env._id,
-        name: env.name,
-        snapshotId: env.snapshotId ?? env.morphSnapshotId,
-        snapshotProvider:
-          env.snapshotProvider ?? (env.morphSnapshotId ? "morph" : "other"),
-        templateVmid: env.templateVmid ?? undefined,
-        dataVaultKey: env.dataVaultKey,
-        selectedRepos: env.selectedRepos,
-        description: env.description,
-        maintenanceScript: env.maintenanceScript,
-        devScript: env.devScript,
-        exposedPorts: env.exposedPorts,
-        createdAt: env.createdAt,
-        updatedAt: env.updatedAt,
-      }));
+      const result = environments.map((env) => {
+        if (!env.snapshotId || !env.snapshotProvider) {
+          throw new Error(`Environment ${env._id} is missing snapshot metadata`);
+        }
+        return {
+          id: env._id,
+          name: env.name,
+          snapshotId: env.snapshotId,
+          snapshotProvider: env.snapshotProvider,
+          templateVmid: env.templateVmid ?? undefined,
+          dataVaultKey: env.dataVaultKey,
+          selectedRepos: env.selectedRepos,
+          description: env.description,
+          maintenanceScript: env.maintenanceScript,
+          devScript: env.devScript,
+          exposedPorts: env.exposedPorts,
+          createdAt: env.createdAt,
+          updatedAt: env.updatedAt,
+        };
+      });
 
       return c.json(result);
     } catch (error) {
@@ -505,13 +509,14 @@ environmentsRouter.openapi(
         return c.text("Environment not found", 404);
       }
       // Map Convex document to API response shape
+      if (!environment.snapshotId || !environment.snapshotProvider) {
+        throw new Error(`Environment ${environment._id} is missing snapshot metadata`);
+      }
       const mapped = {
         id: environment._id,
         name: environment.name,
-        snapshotId: environment.snapshotId ?? environment.morphSnapshotId,
-        snapshotProvider:
-          environment.snapshotProvider ??
-          (environment.morphSnapshotId ? "morph" : "other"),
+        snapshotId: environment.snapshotId,
+        snapshotProvider: environment.snapshotProvider,
         templateVmid: environment.templateVmid ?? undefined,
         dataVaultKey: environment.dataVaultKey,
         selectedRepos: environment.selectedRepos,
@@ -668,13 +673,15 @@ environmentsRouter.openapi(
         return c.text("Environment not found", 404);
       }
 
+      if (!updated.snapshotId || !updated.snapshotProvider) {
+        throw new Error(`Environment ${updated._id} is missing snapshot metadata`);
+      }
+
       return c.json({
         id: updated._id,
         name: updated.name,
-        snapshotId: updated.snapshotId ?? updated.morphSnapshotId,
-        snapshotProvider:
-          updated.snapshotProvider ??
-          (updated.morphSnapshotId ? "morph" : "other"),
+        snapshotId: updated.snapshotId,
+        snapshotProvider: updated.snapshotProvider,
         templateVmid: updated.templateVmid ?? undefined,
         dataVaultKey: updated.dataVaultKey,
         selectedRepos: updated.selectedRepos ?? undefined,
@@ -944,20 +951,26 @@ environmentsRouter.openapi(
         return c.text("Environment not found", 404);
       }
 
-      const mapped = versions.map((version) => ({
-        id: String(version._id),
-        version: version.version,
-        snapshotId: version.snapshotId ?? version.morphSnapshotId,
-        snapshotProvider:
-          version.snapshotProvider ?? (version.morphSnapshotId ? "morph" : "other"),
-        templateVmid: version.templateVmid ?? undefined,
-        createdAt: version.createdAt,
-        createdByUserId: version.createdByUserId,
-        label: version.label ?? undefined,
-        isActive: version.isActive,
-        maintenanceScript: version.maintenanceScript ?? undefined,
-        devScript: version.devScript ?? undefined,
-      }));
+      const mapped = versions.map((version) => {
+        if (!version.snapshotId || !version.snapshotProvider) {
+          throw new Error(
+            `Snapshot version ${version._id} is missing snapshot metadata`
+          );
+        }
+        return {
+          id: String(version._id),
+          version: version.version,
+          snapshotId: version.snapshotId,
+          snapshotProvider: version.snapshotProvider,
+          templateVmid: version.templateVmid ?? undefined,
+          createdAt: version.createdAt,
+          createdByUserId: version.createdByUserId,
+          label: version.label ?? undefined,
+          isActive: version.isActive,
+          maintenanceScript: version.maintenanceScript ?? undefined,
+          devScript: version.devScript ?? undefined,
+        };
+      });
 
       return c.json(mapped);
     } catch (error) {
@@ -1251,8 +1264,7 @@ environmentsRouter.openapi(
         })) ?? [];
 
       const provider =
-        environment.snapshotProvider ??
-        (environment.morphSnapshotId ? "morph" : getActiveSandboxProvider().provider);
+        environment.snapshotProvider ?? getActiveSandboxProvider().provider;
 
       if (provider === "pve-lxc") {
         const pveClient = getPveLxcClient();

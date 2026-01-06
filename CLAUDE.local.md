@@ -131,5 +131,3 @@ MORPH_API_KEY=morph_...
 ## Full Reference
 
 For complete environment variable documentation by deployment target, see:
-
-- [docs/PR27-PVE-LXC-REVIEW.md](docs/PR27-PVE-LXC-REVIEW.md) - PVE LXC architecture review

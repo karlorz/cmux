@@ -485,7 +485,7 @@ function EnvironmentDetailsPage() {
         instanceId: data.instanceId,
         vscodeUrl: vscodeUrlWithFolder,
         step: "configure",
-        snapshotId: environment.snapshotId ?? environment.morphSnapshotId ?? undefined,
+        snapshotId: environment.snapshotId ?? undefined,
       },
     });
   };
@@ -512,7 +512,7 @@ function EnvironmentDetailsPage() {
         body: {
           teamSlugOrId,
           environmentId: String(environmentId),
-          snapshotId: environment.snapshotId ?? environment.morphSnapshotId ?? undefined,
+          snapshotId: environment.snapshotId ?? undefined,
           isCloudWorkspace: true,
         },
       },
@@ -524,7 +524,7 @@ function EnvironmentDetailsPage() {
   };
 
   const handleStartSnapshotVersion = () => {
-    const activeSnapshotId = environment.snapshotId ?? environment.morphSnapshotId;
+    const activeSnapshotId = environment.snapshotId;
     if (!activeSnapshotId) {
       toast.error("Environment is missing a snapshot.");
       return;
@@ -1004,7 +1004,7 @@ function EnvironmentDetailsPage() {
                               )}
                             </p>
                             <p className="text-xs text-neutral-500 dark:text-neutral-500">
-                              Snapshot ID: {version.snapshotId ?? version.morphSnapshotId}
+                              Snapshot ID: {version.snapshotId}
                             </p>
                           </div>
                           <div className="flex items-center gap-2">

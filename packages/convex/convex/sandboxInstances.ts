@@ -32,7 +32,6 @@ export type SandboxProvider = (typeof SANDBOX_PROVIDERS)[number];
 export function detectProviderFromInstanceId(instanceId: string): SandboxProvider {
   if (instanceId.startsWith("morphvm_")) return "morph";
   if (instanceId.startsWith("pvelxc-")) return "pve-lxc";
-  if (instanceId.startsWith("pve_lxc_")) return "pve-lxc";
   if (instanceId.startsWith("docker_")) return "docker";
   if (instanceId.startsWith("daytona_")) return "daytona";
   return "other";

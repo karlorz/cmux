@@ -150,13 +150,11 @@ export const resolveTeamAndSnapshot = async ({
       });
     }
 
-    const snapshotId =
-      environmentDoc.snapshotId ?? environmentDoc.morphSnapshotId ?? defaultSnapshotId;
+    const snapshotId = environmentDoc.snapshotId ?? defaultSnapshotId;
     const environmentProvider =
       (isSandboxProvider(environmentDoc.snapshotProvider)
         ? environmentDoc.snapshotProvider
         : undefined) ??
-      (environmentDoc.morphSnapshotId ? "morph" : undefined) ??
       (snapshotId ? resolveProviderForSnapshotId(snapshotId) : null) ??
       provider;
 
@@ -179,8 +177,8 @@ export const resolveTeamAndSnapshot = async ({
     const environments = await convex.query(api.environments.list, {
       teamSlugOrId,
     });
-    const matchedEnvironment = environments.find((environment) =>
-      (environment.snapshotId ?? environment.morphSnapshotId) === snapshotId
+    const matchedEnvironment = environments.find(
+      (environment) => environment.snapshotId === snapshotId
     );
 
     if (matchedEnvironment) {
@@ -188,7 +186,6 @@ export const resolveTeamAndSnapshot = async ({
         (isSandboxProvider(matchedEnvironment.snapshotProvider)
           ? matchedEnvironment.snapshotProvider
           : undefined) ??
-        (matchedEnvironment.morphSnapshotId ? "morph" : undefined) ??
         (matchedEnvironment.snapshotId
           ? resolveProviderForSnapshotId(matchedEnvironment.snapshotId)
           : null) ??
@@ -198,9 +195,7 @@ export const resolveTeamAndSnapshot = async ({
         team,
         provider: environmentProvider,
         resolvedSnapshotId:
-          matchedEnvironment.snapshotId ??
-          matchedEnvironment.morphSnapshotId ??
-          getDefaultSnapshotId(environmentProvider),
+          matchedEnvironment.snapshotId ?? getDefaultSnapshotId(environmentProvider),
         resolvedTemplateVmid: matchedEnvironment.templateVmid ?? undefined,
       };
     }
@@ -234,7 +229,6 @@ export const resolveTeamAndSnapshot = async ({
       (isSandboxProvider(snapshotVersion.snapshotProvider)
         ? snapshotVersion.snapshotProvider
         : undefined) ??
-      (snapshotVersion.morphSnapshotId ? "morph" : undefined) ??
       (snapshotVersion.snapshotId
         ? resolveProviderForSnapshotId(snapshotVersion.snapshotId)
         : null) ??
@@ -246,9 +240,7 @@ export const resolveTeamAndSnapshot = async ({
       team,
       provider: versionProvider,
       resolvedSnapshotId:
-        snapshotVersion.snapshotId ??
-        snapshotVersion.morphSnapshotId ??
-        getDefaultSnapshotId(versionProvider),
+        snapshotVersion.snapshotId ?? getDefaultSnapshotId(versionProvider),
       resolvedTemplateVmid: snapshotVersion.templateVmid ?? undefined,
     };
   }

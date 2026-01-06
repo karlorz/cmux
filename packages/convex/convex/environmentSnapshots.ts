@@ -22,16 +22,14 @@ export const list = authQuery({
       .order("desc")
       .collect();
 
-    const activeSnapshotId = environment.snapshotId ?? environment.morphSnapshotId;
-    const activeSnapshotProvider =
-      environment.snapshotProvider ?? (environment.morphSnapshotId ? "morph" : "other");
+    const activeSnapshotId = environment.snapshotId;
+    const activeSnapshotProvider = environment.snapshotProvider ?? "other";
 
     return versions.map((version) => ({
       ...version,
       isActive:
-        (version.snapshotId ?? version.morphSnapshotId) === activeSnapshotId &&
-        (version.snapshotProvider ??
-          (version.morphSnapshotId ? "morph" : "other")) === activeSnapshotProvider,
+        version.snapshotId === activeSnapshotId &&
+        (version.snapshotProvider ?? "other") === activeSnapshotProvider,
     }));
   },
 });
@@ -79,8 +77,6 @@ export const create = authMutation({
     const maintenanceScript =
       args.maintenanceScript ?? environment.maintenanceScript ?? undefined;
     const devScript = args.devScript ?? environment.devScript ?? undefined;
-    const legacyMorphSnapshotId =
-      args.snapshotProvider === "morph" ? args.snapshotId : undefined;
     const templateVmid =
       args.snapshotProvider === "pve-lxc" || args.snapshotProvider === "pve-vm"
         ? args.templateVmid
@@ -93,7 +89,6 @@ export const create = authMutation({
         teamId,
         snapshotId: args.snapshotId,
         snapshotProvider: args.snapshotProvider,
-        morphSnapshotId: legacyMorphSnapshotId,
         templateVmid,
         version: nextVersion,
         createdAt,
@@ -108,7 +103,6 @@ export const create = authMutation({
       await ctx.db.patch(args.environmentId, {
         snapshotId: args.snapshotId,
         snapshotProvider: args.snapshotProvider,
-        morphSnapshotId: legacyMorphSnapshotId,
         templateVmid,
         maintenanceScript,
         devScript,
@@ -150,12 +144,13 @@ export const activate = authMutation({
     const devScript =
       versionDoc.devScript ?? environment.devScript ?? undefined;
 
+    if (!versionDoc.snapshotId || !versionDoc.snapshotProvider) {
+      throw new Error("Snapshot version is missing snapshot metadata");
+    }
+
     await ctx.db.patch(args.environmentId, {
-      snapshotId: versionDoc.snapshotId ?? versionDoc.morphSnapshotId,
-      snapshotProvider:
-        versionDoc.snapshotProvider ??
-        (versionDoc.morphSnapshotId ? "morph" : "other"),
-      morphSnapshotId: versionDoc.morphSnapshotId,
+      snapshotId: versionDoc.snapshotId,
+      snapshotProvider: versionDoc.snapshotProvider,
       templateVmid: versionDoc.templateVmid,
       maintenanceScript,
       devScript,
@@ -163,10 +158,8 @@ export const activate = authMutation({
     });
 
     return {
-      snapshotId: versionDoc.snapshotId ?? versionDoc.morphSnapshotId ?? "",
-      snapshotProvider:
-        versionDoc.snapshotProvider ??
-        (versionDoc.morphSnapshotId ? "morph" : "other"),
+      snapshotId: versionDoc.snapshotId,
+      snapshotProvider: versionDoc.snapshotProvider,
       templateVmid: versionDoc.templateVmid,
       version: versionDoc.version,
     };
@@ -197,8 +190,8 @@ export const remove = authMutation({
       throw new Error("Snapshot version not found");
     }
 
-    const activeSnapshotId = environment.snapshotId ?? environment.morphSnapshotId;
-    const versionSnapshotId = versionDoc.snapshotId ?? versionDoc.morphSnapshotId;
+    const activeSnapshotId = environment.snapshotId;
+    const versionSnapshotId = versionDoc.snapshotId;
     if (versionSnapshotId && versionSnapshotId === activeSnapshotId) {
       throw new Error("Cannot delete the active snapshot version.");
     }
@@ -235,20 +228,10 @@ export const findBySnapshotId = authQuery({
         .first();
     }
 
-    const canonical = await ctx.db
+    return await ctx.db
       .query("environmentSnapshotVersions")
       .withIndex("by_team_snapshot", (q) =>
         q.eq("teamId", teamId).eq("snapshotId", args.snapshotId)
-      )
-      .first();
-    if (canonical) {
-      return canonical;
-    }
-
-    return await ctx.db
-      .query("environmentSnapshotVersions")
-      .withIndex("by_team_snapshot_legacy", (q) =>
-        q.eq("teamId", teamId).eq("morphSnapshotId", args.snapshotId)
       )
       .first();
   },

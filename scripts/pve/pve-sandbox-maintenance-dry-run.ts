@@ -316,15 +316,17 @@ async function main(): Promise<void> {
     `/api2/json/nodes/${node}/lxc`
   );
 
-  const cmuxContainers = containers.filter((c) => c.name?.startsWith("cmux-"));
-  const excludedTemplates = cmuxContainers.filter((c) => c.template === 1);
-  const excludedVmidRange = cmuxContainers.filter((c) => c.vmid >= 9000);
-  const included = cmuxContainers
+  const managedContainers = containers.filter(
+    (c) => c.name?.startsWith("cmux-") || c.name?.startsWith("pvelxc-")
+  );
+  const excludedTemplates = managedContainers.filter((c) => c.template === 1);
+  const excludedVmidRange = managedContainers.filter((c) => c.vmid >= 9000);
+  const included = managedContainers
     .filter((c) => c.template !== 1)
     .filter((c) => c.vmid < 9000);
 
   const instances: ProviderInstance[] = included.map((c) => ({
-    id: `pve_lxc_${c.vmid}`,
+    id: c.name ?? "",
     vmid: c.vmid,
     name: c.name,
     status: c.status === "running" ? "ready" : c.status,
@@ -344,7 +346,7 @@ async function main(): Promise<void> {
   console.log(`PVE node: ${node}`);
   console.log("");
   console.log(`Total LXC containers: ${containers.length}`);
-  console.log(`cmux-* containers: ${cmuxContainers.length}`);
+  console.log(`cmux-/pvelxc- containers: ${managedContainers.length}`);
   console.log(`Excluded templates: ${excludedTemplates.length}`);
   console.log(`Excluded VMID >= 9000: ${excludedVmidRange.length}`);
   console.log(`Included for maintenance: ${instances.length}`);

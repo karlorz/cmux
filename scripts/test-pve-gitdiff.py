@@ -5,7 +5,6 @@ This tests the git clone + patch approach in isolation without running full snap
 
 Usage:
     uv run --env-file .env ./scripts/test-pve-gitdiff.py --instance-id <pvelxc-id>
-    uv run --env-file .env ./scripts/test-pve-gitdiff.py --vmid <running-container-vmid>
 """
 
 from __future__ import annotations
@@ -112,26 +111,20 @@ class PveExecClient:
     def build_exec_url(
         self,
         *,
-        instance_id: str | None = None,
-        vmid: int | None = None,
+        instance_id: str,
     ) -> str:
-        if instance_id:
-            host_id = self._normalize_host_id(instance_id)
-            return f"https://port-39375-{host_id}.{self.cf_domain}/exec"
-        if vmid is None:
-            raise ValueError("instance_id or vmid is required to build exec URL")
-        return f"https://port-39375-vm-{vmid}.{self.cf_domain}/exec"
+        host_id = self._normalize_host_id(instance_id)
+        return f"https://port-39375-{host_id}.{self.cf_domain}/exec"
 
     def http_exec(
         self,
         *,
-        instance_id: str | None = None,
-        vmid: int | None = None,
+        instance_id: str,
         command: str,
         timeout: float = 300,
     ) -> tuple[int, str, str]:
         """Execute command via HTTP exec. Returns (exit_code, stdout, stderr)."""
-        exec_url = self.build_exec_url(instance_id=instance_id, vmid=vmid)
+        exec_url = self.build_exec_url(instance_id=instance_id)
         timeout_ms = int(timeout * 1000)
         body = json.dumps({
             "command": f"HOME=/root {command}",
@@ -179,15 +172,14 @@ class PveExecClient:
 
 async def test_git_diff(
     *,
-    instance_id: str | None,
-    vmid: int | None,
+    instance_id: str,
     cf_domain: str,
     repo_root: Path,
 ) -> None:
     """Test the git-diff upload approach."""
     client = PveExecClient(cf_domain)
     remote_repo_root = "/tmp/cmux-test"
-    target_label = instance_id or (f"vmid {vmid}" if vmid is not None else "unknown")
+    target_label = instance_id
 
     print(f"\n=== Testing git-diff upload for container {target_label} ===\n")
 
@@ -220,7 +212,6 @@ async def test_git_diff(
     print("\n--- Testing HTTP exec connectivity ---")
     exit_code, stdout, stderr = client.http_exec(
         instance_id=instance_id,
-        vmid=vmid,
         command="echo 'HTTP exec works!'"
     )
     if exit_code != 0:
@@ -260,7 +251,6 @@ async def test_git_diff(
         print(f"[test] Clone attempt {attempt}/{max_attempts}...")
         exit_code, stdout, stderr = client.http_exec(
             instance_id=instance_id,
-            vmid=vmid,
             command=clone_cmd,
             timeout=300,
         )
@@ -308,7 +298,6 @@ async def test_git_diff(
         print("[test] Uploading patch via base64...")
         exit_code, stdout, stderr = client.http_exec(
             instance_id=instance_id,
-            vmid=vmid,
             command=upload_cmd,
             timeout=120,
         )
@@ -334,7 +323,6 @@ async def test_git_diff(
         print("[test] Applying patch...")
         exit_code, stdout, stderr = client.http_exec(
             instance_id=instance_id,
-            vmid=vmid,
             command=apply_cmd,
             timeout=120,
         )
@@ -351,7 +339,6 @@ async def test_git_diff(
     verify_cmd = f"cd {shlex.quote(remote_repo_root)} && git log -1 --oneline && ls -la"
     exit_code, stdout, stderr = client.http_exec(
         instance_id=instance_id,
-        vmid=vmid,
         command=verify_cmd,
         timeout=30,
     )
@@ -366,7 +353,7 @@ async def test_git_diff(
     # Cleanup
     print("\n--- Cleanup ---")
     cleanup_cmd = f"rm -rf {shlex.quote(remote_repo_root)}"
-    client.http_exec(instance_id=instance_id, vmid=vmid, command=cleanup_cmd, timeout=30)
+    client.http_exec(instance_id=instance_id, command=cleanup_cmd, timeout=30)
     print("[OK] Cleanup done")
 
     print("\n=== Test completed successfully ===")
@@ -376,7 +363,6 @@ def main():
     dotenv.load_dotenv()
 
     parser = argparse.ArgumentParser(description="Test PVE git-diff upload")
-    parser.add_argument("--vmid", type=int, help="VMID of running container (legacy URL pattern)")
     parser.add_argument("--instance-id", help="Instance ID/hostname for instanceId-based URLs")
     parser.add_argument("--repo-root", default=".", help="Repository root (default: current directory)")
     args = parser.parse_args()
@@ -386,18 +372,17 @@ def main():
         print("ERROR: PVE_CF_DOMAIN or PVE_PUBLIC_DOMAIN must be set")
         sys.exit(1)
 
-    if not args.vmid and not args.instance_id:
-        print("ERROR: --instance-id or --vmid is required")
+    if not args.instance_id:
+        print("ERROR: --instance-id is required")
         sys.exit(1)
 
     print(f"Using Cloudflare domain: {cf_domain}")
-    print(f"Testing with container: {args.instance_id or args.vmid}")
+    print(f"Testing with container: {args.instance_id}")
 
     repo_root = Path(args.repo_root).resolve()
     asyncio.run(
         test_git_diff(
             instance_id=args.instance_id,
-            vmid=args.vmid,
             cf_domain=cf_domain,
             repo_root=repo_root,
         )
