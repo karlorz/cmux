@@ -36,7 +36,7 @@ use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 use tower_http::cors::CorsLayer;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 // =============================================================================
@@ -465,6 +465,29 @@ impl PtySession {
         terminal.resize(rows, cols);
     }
 
+    /// Drain any terminal responses (e.g., DSR/DA) and send them back to the PTY.
+    /// This lets programs that query the terminal (like Codex) receive replies
+    /// even when no interactive terminal emulator is attached.
+    fn flush_terminal_responses(&self) -> usize {
+        let responses = {
+            let mut terminal = self.terminal.lock();
+            terminal.drain_responses()
+        };
+
+        let mut sent = 0usize;
+        for resp in responses {
+            if let Err(e) = self.input_tx.send(resp) {
+                error!(
+                    "[session:{}] Failed to send terminal response back to PTY: {}",
+                    self.id, e
+                );
+                break;
+            }
+            sent += 1;
+        }
+        sent
+    }
+
     /// Get the current terminal content as plain text lines.
     fn get_terminal_content(&self) -> Vec<String> {
         let terminal = self.terminal.lock();
@@ -739,6 +762,15 @@ async fn spawn_pty_reader(
 
                 // Process through virtual terminal emulator for state tracking
                 session.process_terminal(&filtered_bytes);
+
+                // Send any terminal responses (e.g., cursor position) back to the PTY
+                let responses_sent = session.flush_terminal_responses();
+                if responses_sent > 0 {
+                    debug!(
+                        "[reader:{}] Sent {} terminal response(s) back to PTY",
+                        session_id, responses_sent
+                    );
+                }
 
                 // Combine any leftover bytes from previous read with filtered data
                 utf8_buffer.extend_from_slice(&filtered_bytes);
