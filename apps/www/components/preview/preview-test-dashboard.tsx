@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ChevronDown,
   Loader2,
@@ -17,6 +17,7 @@ import {
   Globe,
 } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 import clsx from "clsx";
 import {
   QueryClient,
@@ -152,7 +153,10 @@ function PreviewTestDashboardInner({
     enabled: Boolean(selectedTeam),
   });
 
-  const jobs = (jobsData?.jobs ?? []) as TestJob[];
+  const jobs = useMemo(
+    () => (jobsData?.jobs ?? []) as TestJob[],
+    [jobsData?.jobs]
+  );
 
   // Create test job mutation
   const createJobMutation = useMutation({
@@ -698,12 +702,14 @@ function PreviewTestDashboardInner({
                                       target="_blank"
                                       rel="noopener noreferrer"
                                     >
-                                      <img
+                                      <Image
                                         src={image.url}
                                         alt={
                                           image.description ??
                                           `Screenshot ${index + 1}`
                                         }
+                                        width={1280}
+                                        height={720}
                                         className="aspect-video w-full object-cover hover:opacity-90"
                                       />
                                     </a>

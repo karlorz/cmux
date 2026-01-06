@@ -51,6 +51,8 @@ import type * as preview_jobs from "../preview_jobs.js";
 import type * as preview_jobs_http from "../preview_jobs_http.js";
 import type * as preview_jobs_worker from "../preview_jobs_worker.js";
 import type * as preview_screenshots_http from "../preview_screenshots_http.js";
+import type * as sandboxInstanceMaintenance from "../sandboxInstanceMaintenance.js";
+import type * as sandboxInstances from "../sandboxInstances.js";
 import type * as screenshots_http from "../screenshots_http.js";
 import type * as seed from "../seed.js";
 import type * as stack from "../stack.js";
@@ -121,6 +123,8 @@ declare const fullApi: ApiFromModules<{
   preview_jobs_http: typeof preview_jobs_http;
   preview_jobs_worker: typeof preview_jobs_worker;
   preview_screenshots_http: typeof preview_screenshots_http;
+  sandboxInstanceMaintenance: typeof sandboxInstanceMaintenance;
+  sandboxInstances: typeof sandboxInstances;
   screenshots_http: typeof screenshots_http;
   seed: typeof seed;
   stack: typeof stack;

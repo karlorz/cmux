@@ -271,8 +271,8 @@ const convexSchema = defineSchema({
         ),
         url: v.optional(v.string()), // The VSCode URL
         workspaceUrl: v.optional(v.string()), // The workspace URL
-        vncUrl: v.optional(v.string()),
-        xtermUrl: v.optional(v.string()),
+        vncUrl: v.optional(v.string()), // The VNC websocket URL for browser preview
+        xtermUrl: v.optional(v.string()), // The xterm terminal backend URL
         startedAt: v.optional(v.number()),
         stoppedAt: v.optional(v.number()),
         lastAccessedAt: v.optional(v.number()), // Track when user last accessed the container
@@ -758,7 +758,18 @@ const convexSchema = defineSchema({
     name: v.string(), // Human-friendly environment name
     teamId: v.string(), // Team that owns this environment
     userId: v.string(), // User who created the environment
-    morphSnapshotId: v.string(), // Morph snapshot identifier
+    snapshotId: v.optional(v.string()), // Canonical snapshot identifier (snapshot_*)
+    snapshotProvider: v.optional(
+      v.union(
+        v.literal("morph"),
+        v.literal("pve-lxc"),
+        v.literal("pve-vm"),
+        v.literal("docker"),
+        v.literal("daytona"),
+        v.literal("other")
+      )
+    ),
+    templateVmid: v.optional(v.number()), // PVE template VMID (for pve-lxc/pve-vm)
     dataVaultKey: v.string(), // Key for StackAuth DataBook (stores encrypted env vars)
     selectedRepos: v.optional(v.array(v.string())), // List of repository full names
     description: v.optional(v.string()), // Optional description
@@ -775,7 +786,19 @@ const convexSchema = defineSchema({
   environmentSnapshotVersions: defineTable({
     environmentId: v.id("environments"),
     teamId: v.string(),
-    morphSnapshotId: v.string(),
+    morphSnapshotId: v.optional(v.string()), // Legacy field for backfill
+    snapshotId: v.optional(v.string()),
+    snapshotProvider: v.optional(
+      v.union(
+        v.literal("morph"),
+        v.literal("pve-lxc"),
+        v.literal("pve-vm"),
+        v.literal("docker"),
+        v.literal("daytona"),
+        v.literal("other")
+      )
+    ),
+    templateVmid: v.optional(v.number()), // PVE template VMID (for pve-lxc/pve-vm)
     version: v.number(),
     createdAt: v.number(),
     createdByUserId: v.string(),
@@ -786,7 +809,7 @@ const convexSchema = defineSchema({
     .index("by_environment_version", ["environmentId", "version"])
     .index("by_environment_createdAt", ["environmentId", "createdAt"])
     .index("by_team_createdAt", ["teamId", "createdAt"])
-    .index("by_team_snapshot", ["teamId", "morphSnapshotId"]),
+    .index("by_team_snapshot", ["teamId", "snapshotId"]),
 
   // Webhook deliveries for idempotency and auditing
   webhookDeliveries: defineTable({
@@ -1126,12 +1149,53 @@ const convexSchema = defineSchema({
     .index("by_task_user", ["taskId", "userId"]), // Get unread runs for a task
 
   // Track Morph instance activity for cleanup cron decisions
+  // DEPRECATED: Use sandboxInstanceActivity for new code (provider-agnostic)
   morphInstanceActivity: defineTable({
     instanceId: v.string(), // Morph instance ID (morphvm_xxx)
     lastPausedAt: v.optional(v.number()), // When instance was last paused by cron
     lastResumedAt: v.optional(v.number()), // When instance was last resumed via UI
     stoppedAt: v.optional(v.number()), // When instance was permanently stopped
   }).index("by_instanceId", ["instanceId"]),
+
+  // Unified sandbox instance activity tracking (provider-agnostic)
+  // Supports: morph, pve-lxc, docker, daytona, and future providers
+  sandboxInstanceActivity: defineTable({
+    instanceId: v.string(), // Instance ID (morphvm_xxx, pvelxc-xxx, etc.)
+    provider: v.union(
+      v.literal("morph"),
+      v.literal("pve-lxc"),
+      v.literal("docker"),
+      v.literal("daytona"),
+      v.literal("other")
+    ),
+    vmid: v.optional(v.number()), // PVE VMID
+    hostname: v.optional(v.string()), // PVE hostname (instanceId for new instances)
+    snapshotId: v.optional(v.string()),
+    snapshotProvider: v.optional(
+      v.union(
+        v.literal("morph"),
+        v.literal("pve-lxc"),
+        v.literal("pve-vm"),
+        v.literal("docker"),
+        v.literal("daytona"),
+        v.literal("other")
+      )
+    ),
+    templateVmid: v.optional(v.number()),
+    // Activity timestamps
+    lastPausedAt: v.optional(v.number()), // When instance was last paused by cron
+    lastResumedAt: v.optional(v.number()), // When instance was last resumed via UI
+    stoppedAt: v.optional(v.number()), // When instance was permanently stopped/deleted
+    // Metadata for tracking
+    teamId: v.optional(v.string()), // Team that owns this instance
+    userId: v.optional(v.string()), // User that created this instance
+    createdAt: v.optional(v.number()), // When the activity record was created
+  })
+    .index("by_instanceId", ["instanceId"])
+    .index("by_vmid", ["vmid"])
+    .index("by_provider", ["provider"])
+    .index("by_provider_stopped", ["provider", "stoppedAt"]) // For cleanup queries
+    .index("by_team", ["teamId"]),
 });
 
 export default convexSchema;

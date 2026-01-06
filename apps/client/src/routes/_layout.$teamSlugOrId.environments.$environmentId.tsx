@@ -21,6 +21,7 @@ import {
   patchApiEnvironmentsByIdMutation,
   postApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateMutation,
   postApiSandboxesStartMutation,
+  deleteApiEnvironmentsByIdMutation,
 } from "@cmux/www-openapi-client/react-query";
 import { convexQuery } from "@convex-dev/react-query";
 import {
@@ -98,10 +99,12 @@ function EnvironmentDetailsPage() {
       teamSlugOrId,
       environmentId,
     }) ?? [];
-  const deleteEnvironment = useMutation(api.environments.remove);
   const deleteSnapshotVersion = useMutation(api.environmentSnapshots.remove);
   const updatePortsMutation = useRQMutation(
     patchApiEnvironmentsByIdPortsMutation()
+  );
+  const deleteEnvironmentMutation = useRQMutation(
+    deleteApiEnvironmentsByIdMutation()
   );
   const updateEnvironmentMutation = useRQMutation(
     patchApiEnvironmentsByIdMutation()
@@ -402,9 +405,9 @@ function EnvironmentDetailsPage() {
 
     setIsDeleting(true);
     try {
-      await deleteEnvironment({
-        teamSlugOrId,
-        id: environmentId,
+      await deleteEnvironmentMutation.mutateAsync({
+        path: { id: String(environmentId) },
+        query: { teamSlugOrId },
       });
       toast.success("Environment deleted successfully");
       navigate({
@@ -482,7 +485,7 @@ function EnvironmentDetailsPage() {
         instanceId: data.instanceId,
         vscodeUrl: vscodeUrlWithFolder,
         step: "configure",
-        snapshotId: environment.morphSnapshotId ?? undefined,
+        snapshotId: environment.snapshotId ?? undefined,
       },
     });
   };
@@ -509,7 +512,7 @@ function EnvironmentDetailsPage() {
         body: {
           teamSlugOrId,
           environmentId: String(environmentId),
-          snapshotId: environment.morphSnapshotId ?? undefined,
+          snapshotId: environment.snapshotId ?? undefined,
           isCloudWorkspace: true,
         },
       },
@@ -521,7 +524,8 @@ function EnvironmentDetailsPage() {
   };
 
   const handleStartSnapshotVersion = () => {
-    if (!environment.morphSnapshotId) {
+    const activeSnapshotId = environment.snapshotId;
+    if (!activeSnapshotId) {
       toast.error("Environment is missing a snapshot.");
       return;
     }
@@ -531,7 +535,7 @@ function EnvironmentDetailsPage() {
         body: {
           teamSlugOrId,
           environmentId: String(environmentId),
-          snapshotId: environment.morphSnapshotId,
+          snapshotId: activeSnapshotId,
           isCloudWorkspace: true,
         },
       },
@@ -1000,7 +1004,7 @@ function EnvironmentDetailsPage() {
                               )}
                             </p>
                             <p className="text-xs text-neutral-500 dark:text-neutral-500">
-                              Snapshot ID: {version.morphSnapshotId}
+                              Snapshot ID: {version.snapshotId}
                             </p>
                           </div>
                           <div className="flex items-center gap-2">

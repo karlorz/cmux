@@ -1,4 +1,5 @@
 export { booksRouter } from "./books.route";
+export { configRouter } from "./config.route";
 export { devServerRouter } from "./dev-server.route";
 export { githubBranchesRouter } from "./github.branches.route";
 export { githubFrameworkDetectionRouter } from "./github.framework-detection.route";
@@ -17,6 +18,7 @@ export { githubInstallStateRouter } from "./github.install-state.route";
 export { healthRouter } from "./health.route";
 export { iframePreflightRouter } from "./iframe-preflight.route";
 export { morphRouter } from "./morph.route";
+export { pveLxcRouter } from "./pve-lxc.route";
 export { sandboxesRouter } from "./sandboxes.route";
 export { teamsRouter } from "./teams.route";
 export { usersRouter } from "./users.route";

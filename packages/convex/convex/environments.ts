@@ -56,7 +56,16 @@ export const create = authMutation({
   args: {
     teamSlugOrId: v.string(),
     name: v.string(),
-    morphSnapshotId: v.string(),
+    snapshotId: v.string(),
+    snapshotProvider: v.union(
+      v.literal("morph"),
+      v.literal("pve-lxc"),
+      v.literal("pve-vm"),
+      v.literal("docker"),
+      v.literal("daytona"),
+      v.literal("other")
+    ),
+    templateVmid: v.optional(v.number()),
     dataVaultKey: v.string(),
     selectedRepos: v.optional(v.array(v.string())),
     description: v.optional(v.string()),
@@ -83,12 +92,18 @@ export const create = authMutation({
     };
     const maintenanceScript = normalizeScript(args.maintenanceScript);
     const devScript = normalizeScript(args.devScript);
+    const templateVmid =
+      args.snapshotProvider === "pve-lxc" || args.snapshotProvider === "pve-vm"
+        ? args.templateVmid
+        : undefined;
 
     const environmentId = await ctx.db.insert("environments", {
       name: args.name,
       teamId,
       userId,
-      morphSnapshotId: args.morphSnapshotId,
+      snapshotId: args.snapshotId,
+      snapshotProvider: args.snapshotProvider,
+      templateVmid,
       dataVaultKey: args.dataVaultKey,
       selectedRepos: args.selectedRepos,
       description: args.description,
@@ -102,7 +117,9 @@ export const create = authMutation({
     await ctx.db.insert("environmentSnapshotVersions", {
       environmentId,
       teamId,
-      morphSnapshotId: args.morphSnapshotId,
+      snapshotId: args.snapshotId,
+      snapshotProvider: args.snapshotProvider,
+      templateVmid,
       version: 1,
       createdAt,
       createdByUserId: userId,
@@ -212,6 +229,18 @@ export const remove = authMutation({
 
     if (!environment || environment.teamId !== teamId) {
       throw new Error("Environment not found");
+    }
+
+    // Cascade delete snapshot versions for this environment to avoid orphaned records
+    const versions = await ctx.db
+      .query("environmentSnapshotVersions")
+      .withIndex("by_environment_version", (q) =>
+        q.eq("environmentId", args.id)
+      )
+      .collect();
+
+    for (const version of versions) {
+      await ctx.db.delete(version._id);
     }
 
     await ctx.db.delete(args.id);

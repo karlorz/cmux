@@ -13,6 +13,7 @@ import {
   booksRouter,
   branchRouter,
   codeReviewRouter,
+  configRouter,
   devServerRouter,
   environmentsRouter,
   githubBranchesRouter,
@@ -21,6 +22,7 @@ import {
   githubOAuthTokenRouter,
   healthRouter,
   morphRouter,
+  pveLxcRouter,
   sandboxesRouter,
   teamsRouter,
   usersRouter,
@@ -140,12 +142,14 @@ app.route("/", githubInstallStateRouter);
 app.route("/", githubOAuthTokenRouter);
 app.route("/", githubBranchesRouter);
 app.route("/", morphRouter);
+app.route("/", pveLxcRouter);
 app.route("/", iframePreflightRouter);
 app.route("/", environmentsRouter);
 app.route("/", sandboxesRouter);
 app.route("/", teamsRouter);
 app.route("/", branchRouter);
 app.route("/", codeReviewRouter);
+app.route("/", configRouter);
 app.route("/", workspaceConfigsRouter);
 app.route("/", previewRouter);
 

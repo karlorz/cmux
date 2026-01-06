@@ -19,6 +19,9 @@ export const env = createEnv({
     OPENAI_API_KEY: z.string().min(1).optional(),
     ANTHROPIC_API_KEY: z.string().min(1).optional(),
     MORPH_API_KEY: z.string().min(1).optional(),
+    // Note: PVE_* variables are accessed via process.env directly in
+    // sandboxInstanceMaintenance.ts to avoid Convex static analysis
+    // requiring them to be set in all deployments
     CMUX_IS_STAGING: z.string().optional(),
     CONVEX_IS_PRODUCTION: z.string().optional(),
   },

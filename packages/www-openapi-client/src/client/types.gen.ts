@@ -10,6 +10,28 @@ export type Health = {
     uptime: number;
 };
 
+export type SandboxHealth = {
+    status: 'healthy' | 'unhealthy' | 'degraded';
+    /**
+     * Active sandbox provider
+     */
+    provider: string;
+    providerStatus: 'connected' | 'disconnected' | 'error';
+    /**
+     * API latency in milliseconds
+     */
+    latencyMs?: number;
+    /**
+     * Number of templates available
+     */
+    templatesAvailable?: number;
+    /**
+     * Error message if status is unhealthy
+     */
+    error?: string;
+    timestamp: string;
+};
+
 export type AnonymousSignUpResponse = {
     success: boolean;
     userId?: string;
@@ -438,15 +460,33 @@ export type InstanceInfo = {
 
 export type ListInstancesResponse = Array<InstanceInfo>;
 
+export type PveLxcResumeTaskRunResponse = {
+    resumed: true;
+};
+
+export type PveLxcResumeTaskRunBody = {
+    teamSlugOrId: string;
+};
+
+export type PveLxcCheckTaskRunStoppedResponse = {
+    stopped: boolean;
+    deleted?: boolean;
+};
+
+export type PveLxcCheckTaskRunStoppedBody = {
+    teamSlugOrId: string;
+};
+
 export type CreateEnvironmentResponse = {
     id: string;
     snapshotId: string;
+    snapshotProvider: 'morph' | 'pve-lxc' | 'pve-vm' | 'docker' | 'daytona' | 'other';
 };
 
 export type CreateEnvironmentBody = {
     teamSlugOrId: string;
     name: string;
-    morphInstanceId: string;
+    instanceId: string;
     envVarsContent: string;
     selectedRepos?: Array<string>;
     description?: string;
@@ -458,7 +498,9 @@ export type CreateEnvironmentBody = {
 export type GetEnvironmentResponse = {
     id: string;
     name: string;
-    morphSnapshotId: string;
+    snapshotId: string;
+    snapshotProvider: 'morph' | 'pve-lxc' | 'pve-vm' | 'docker' | 'daytona' | 'other';
+    templateVmid?: number;
     dataVaultKey: string;
     selectedRepos?: Array<string>;
     description?: string;
@@ -496,13 +538,15 @@ export type UpdateEnvironmentPortsResponse = {
 export type UpdateEnvironmentPortsBody = {
     teamSlugOrId: string;
     ports: Array<number>;
-    morphInstanceId?: string;
+    instanceId?: string;
 };
 
 export type SnapshotVersionResponse = {
     id: string;
     version: number;
-    morphSnapshotId: string;
+    snapshotId: string;
+    snapshotProvider: 'morph' | 'pve-lxc' | 'pve-vm' | 'docker' | 'daytona' | 'other';
+    templateVmid?: number;
     createdAt: number;
     createdByUserId: string;
     label?: string;
@@ -516,12 +560,13 @@ export type ListSnapshotVersionsResponse = Array<SnapshotVersionResponse>;
 export type CreateSnapshotVersionResponse = {
     snapshotVersionId: string;
     snapshotId: string;
+    snapshotProvider: 'morph' | 'pve-lxc' | 'pve-vm' | 'docker' | 'daytona' | 'other';
     version: number;
 };
 
 export type CreateSnapshotVersionBody = {
     teamSlugOrId: string;
-    morphInstanceId: string;
+    instanceId: string;
     label?: string;
     activate?: boolean;
     maintenanceScript?: string;
@@ -529,7 +574,9 @@ export type CreateSnapshotVersionBody = {
 };
 
 export type ActivateSnapshotVersionResponse = {
-    morphSnapshotId: string;
+    snapshotId: string;
+    snapshotProvider: 'morph' | 'pve-lxc' | 'pve-vm' | 'docker' | 'daytona' | 'other';
+    templateVmid?: number;
     version: number;
 };
 
@@ -541,7 +588,8 @@ export type StartSandboxResponse = {
     instanceId: string;
     vscodeUrl: string;
     workerUrl: string;
-    provider?: 'morph';
+    vncUrl?: string;
+    provider?: 'morph' | 'pve-lxc';
     vscodePersisted?: boolean;
 };
 
@@ -739,6 +787,32 @@ export type CodeReviewStartBody = {
     tooltipLanguage?: string;
 };
 
+export type SandboxPreset = {
+    id: string;
+    presetId: string;
+    label: string;
+    cpu: string;
+    memory: string;
+    disk: string;
+    description?: string;
+};
+
+export type SandboxProviderCapabilities = {
+    supportsHibernate: boolean;
+    supportsSnapshots: boolean;
+    supportsResize: boolean;
+    supportsNestedVirt: boolean;
+    supportsGpu: boolean;
+};
+
+export type SandboxConfig = {
+    provider: 'morph' | 'pve-lxc' | 'pve-vm';
+    providerDisplayName: string;
+    presets: Array<SandboxPreset>;
+    defaultPresetId: string;
+    capabilities: SandboxProviderCapabilities;
+};
+
 export type WorkspaceConfigResponse = {
     projectFullName: string;
     maintenanceScript?: string;
@@ -812,6 +886,22 @@ export type GetApiHealthResponses = {
 };
 
 export type GetApiHealthResponse = GetApiHealthResponses[keyof GetApiHealthResponses];
+
+export type GetApiHealthSandboxData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/health/sandbox';
+};
+
+export type GetApiHealthSandboxResponses = {
+    /**
+     * Sandbox provider health status
+     */
+    200: SandboxHealth;
+};
+
+export type GetApiHealthSandboxResponse = GetApiHealthSandboxResponses[keyof GetApiHealthSandboxResponses];
 
 export type PostApiAuthAnonymousSignUpData = {
     body?: never;
@@ -2038,6 +2128,96 @@ export type GetApiMorphInstancesResponses = {
 
 export type GetApiMorphInstancesResponse = GetApiMorphInstancesResponses[keyof GetApiMorphInstancesResponses];
 
+export type PostApiPveLxcTaskRunsByTaskRunIdResumeData = {
+    body: PveLxcResumeTaskRunBody;
+    path: {
+        taskRunId: string;
+    };
+    query?: never;
+    url: '/api/pve-lxc/task-runs/{taskRunId}/resume';
+};
+
+export type PostApiPveLxcTaskRunsByTaskRunIdResumeErrors = {
+    /**
+     * Task run is not backed by a PVE LXC container
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Task run or container not found
+     */
+    404: unknown;
+    /**
+     * Failed to resume container
+     */
+    500: unknown;
+    /**
+     * PVE LXC provider not configured
+     */
+    503: unknown;
+};
+
+export type PostApiPveLxcTaskRunsByTaskRunIdResumeResponses = {
+    /**
+     * PVE LXC container resumed
+     */
+    200: PveLxcResumeTaskRunResponse;
+};
+
+export type PostApiPveLxcTaskRunsByTaskRunIdResumeResponse = PostApiPveLxcTaskRunsByTaskRunIdResumeResponses[keyof PostApiPveLxcTaskRunsByTaskRunIdResumeResponses];
+
+export type PostApiPveLxcTaskRunsByTaskRunIdIsStoppedData = {
+    body: PveLxcCheckTaskRunStoppedBody;
+    path: {
+        taskRunId: string;
+    };
+    query?: never;
+    url: '/api/pve-lxc/task-runs/{taskRunId}/is-stopped';
+};
+
+export type PostApiPveLxcTaskRunsByTaskRunIdIsStoppedErrors = {
+    /**
+     * Task run is not backed by a PVE LXC container
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Task run not found
+     */
+    404: unknown;
+    /**
+     * Failed to check container status
+     */
+    500: unknown;
+    /**
+     * PVE LXC provider not configured
+     */
+    503: unknown;
+};
+
+export type PostApiPveLxcTaskRunsByTaskRunIdIsStoppedResponses = {
+    /**
+     * PVE LXC container status returned
+     */
+    200: PveLxcCheckTaskRunStoppedResponse;
+};
+
+export type PostApiPveLxcTaskRunsByTaskRunIdIsStoppedResponse = PostApiPveLxcTaskRunsByTaskRunIdIsStoppedResponses[keyof PostApiPveLxcTaskRunsByTaskRunIdIsStoppedResponses];
+
 export type GetApiIframePreflightData = {
     body?: never;
     path?: never;
@@ -2577,7 +2757,7 @@ export type GetApiSandboxesByIdStatusResponses = {
         running: boolean;
         vscodeUrl?: string;
         workerUrl?: string;
-        provider?: 'morph';
+        provider?: 'morph' | 'pve-lxc';
     };
 };
 
@@ -2820,6 +3000,29 @@ export type PostApiCodeReviewStartResponses = {
 };
 
 export type PostApiCodeReviewStartResponse = PostApiCodeReviewStartResponses[keyof PostApiCodeReviewStartResponses];
+
+export type GetApiConfigSandboxData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/config/sandbox';
+};
+
+export type GetApiConfigSandboxErrors = {
+    /**
+     * No sandbox provider configured
+     */
+    500: unknown;
+};
+
+export type GetApiConfigSandboxResponses = {
+    /**
+     * Sandbox configuration
+     */
+    200: SandboxConfig;
+};
+
+export type GetApiConfigSandboxResponse = GetApiConfigSandboxResponses[keyof GetApiConfigSandboxResponses];
 
 export type GetApiWorkspaceConfigsData = {
     body?: never;

@@ -25,6 +25,8 @@ export * from "./worker-schemas";
 export * from "./pull-request-state";
 export * from "./iframe-preflight";
 export * from "./morph-snapshots";
+export * from "./pve-lxc-snapshots";
+export * from "./sandbox-presets";
 export * from "./screenshots/types";
 export * from "./config/host-config";
 // Note: useNetwork hook is NOT exported here to avoid SSR issues.
