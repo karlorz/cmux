@@ -115,14 +115,18 @@ pveLxcRouter.openapi(
     }
 
     try {
-      const client = getPveLxcClient();
-      const instance = await client.instances.get({ instanceId });
-
-      // Verify instance belongs to this team via metadata
-      const metadataTeamId = instance.metadata?.teamId;
-      if (metadataTeamId && metadataTeamId !== team.uuid) {
+      const activity = await convex.query(api.sandboxInstances.getActivity, {
+        instanceId,
+      });
+      if (!activity || !activity.teamId) {
+        return c.text("Sandbox not found", 404);
+      }
+      if (activity.teamId !== team.uuid) {
         return c.text("Forbidden", 403);
       }
+
+      const client = getPveLxcClient();
+      const instance = await client.instances.get({ instanceId });
 
       // Start the container (resume is just start for LXC)
       await instance.start();
@@ -221,6 +225,16 @@ pveLxcRouter.openapi(
     }
 
     try {
+      const activity = await convex.query(api.sandboxInstances.getActivity, {
+        instanceId,
+      });
+      if (!activity || !activity.teamId) {
+        return c.text("Sandbox not found", 404);
+      }
+      if (activity.teamId !== team.uuid) {
+        return c.text("Forbidden", 403);
+      }
+
       const client = getPveLxcClient();
 
       let instance;

@@ -813,6 +813,7 @@ sandboxesRouter.openapi(
         req: c.req.raw,
         teamSlugOrId,
       });
+      const convex = getConvex({ accessToken });
 
       // Detect provider based on instance ID prefix
       const isPveLxc = isPveLxcInstanceId(id);
@@ -820,6 +821,16 @@ sandboxesRouter.openapi(
       let instance: SandboxInstance;
 
       if (isPveLxc) {
+        const activity = await convex.query(api.sandboxInstances.getActivity, {
+          instanceId: id,
+        });
+        if (!activity || !activity.teamId) {
+          return c.text("Sandbox not found", 404);
+        }
+        if (activity.teamId !== team.uuid) {
+          return c.text("Forbidden", 403);
+        }
+
         // PVE LXC instance
         const pveClient = getPveLxcClient();
         const pveLxcInstance = await pveClient.instances

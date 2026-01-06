@@ -163,6 +163,12 @@ struct PveLxcStatus {
     cpus: u32,
 }
 
+/// LXC container config (partial)
+#[derive(Debug, Deserialize)]
+struct PveLxcConfig {
+    net0: Option<String>,
+}
+
 /// Request body for creating an LXC container
 #[derive(Debug, Serialize)]
 struct CreateLxcRequest {
@@ -548,6 +554,12 @@ impl PveClient {
         self.get(&path).await
     }
 
+    /// Get config for a specific LXC container
+    async fn get_lxc_config(&self, vmid: u32) -> SandboxResult<PveLxcConfig> {
+        let path = format!("/nodes/{}/lxc/{}/config", self.config.node, vmid);
+        self.get(&path).await
+    }
+
     /// Get status of a specific LXC container
     #[allow(dead_code)]
     async fn get_lxc_status(&self, vmid: u32) -> SandboxResult<PveLxcStatus> {
@@ -740,6 +752,22 @@ fn derive_gateway_from_cidr(cidr: &str) -> String {
 // IP Pool for LXC Containers
 // =============================================================================
 
+fn extract_ip_from_net_config(net0: &str) -> Option<std::net::Ipv4Addr> {
+    for part in net0.split(',') {
+        let value = part.trim();
+        if let Some(ip_part) = value.strip_prefix("ip=") {
+            if ip_part.eq_ignore_ascii_case("dhcp") || ip_part.eq_ignore_ascii_case("auto") {
+                return None;
+            }
+            let raw_ip = ip_part.split('/').next().unwrap_or(ip_part);
+            if let Ok(ip) = raw_ip.parse::<std::net::Ipv4Addr>() {
+                return Some(ip);
+            }
+        }
+    }
+    None
+}
+
 /// Simple IP pool allocator for LXC containers
 struct LxcIpPool {
     base: std::net::Ipv4Addr,
@@ -770,6 +798,23 @@ impl LxcIpPool {
             allocated: std::collections::HashSet::new(),
             next_offset: 10, // Start at .10 to avoid common reserved IPs
         })
+    }
+
+    fn contains(&self, ip: std::net::Ipv4Addr) -> bool {
+        let base_u32 = u32::from_be_bytes(self.base.octets());
+        let ip_u32 = u32::from_be_bytes(ip.octets());
+        let mask = if self.prefix_len == 0 {
+            0
+        } else {
+            u32::MAX << (32 - self.prefix_len as u32)
+        };
+        (base_u32 & mask) == (ip_u32 & mask)
+    }
+
+    fn reserve(&mut self, ip: std::net::Ipv4Addr) {
+        if self.contains(ip) {
+            self.allocated.insert(ip);
+        }
     }
 
     fn allocate(&mut self) -> SandboxResult<std::net::Ipv4Addr> {
@@ -862,10 +907,18 @@ impl PveLxcService {
         let client = PveClient::new(config.clone()).await?;
         let resolved = client.resolved_config();
 
-        let ip_pool = LxcIpPool::new(&resolved.ip_pool_cidr)?;
-
         // Find the highest VMID in use to avoid conflicts
         let containers = client.list_lxc().await.unwrap_or_default();
+        let mut ip_pool = LxcIpPool::new(&resolved.ip_pool_cidr)?;
+        for container in &containers {
+            if let Ok(config) = client.get_lxc_config(container.vmid).await {
+                if let Some(net0) = config.net0.as_deref() {
+                    if let Some(ip) = extract_ip_from_net_config(net0) {
+                        ip_pool.reserve(ip);
+                    }
+                }
+            }
+        }
         let max_vmid = containers.iter().map(|c| c.vmid).max().unwrap_or(100);
 
         // Start VMIDs at max + 1000 to leave room for manual containers

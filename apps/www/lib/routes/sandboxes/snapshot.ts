@@ -173,8 +173,8 @@ export const resolveTeamAndSnapshot = async ({
   }
 
   if (snapshotId) {
-    const snapshotProvider =
-      resolveProviderForSnapshotId(snapshotId) ?? provider;
+    const resolvedSnapshotProvider = resolveProviderForSnapshotId(snapshotId);
+    const snapshotProvider = resolvedSnapshotProvider ?? provider;
 
     const environments = await convex.query(api.environments.list, {
       teamSlugOrId,
@@ -200,27 +200,27 @@ export const resolveTeamAndSnapshot = async ({
         resolvedSnapshotId:
           matchedEnvironment.snapshotId ??
           matchedEnvironment.morphSnapshotId ??
-          defaultSnapshotId,
+          getDefaultSnapshotId(environmentProvider),
         resolvedTemplateVmid: matchedEnvironment.templateVmid ?? undefined,
       };
     }
 
     if (isKnownDefaultSnapshot(snapshotId)) {
-      ensureProviderAvailable(snapshotProvider);
+      const defaultProvider = resolvedSnapshotProvider ?? snapshotProvider;
+      ensureProviderAvailable(defaultProvider);
       return {
         team,
-        provider: snapshotProvider,
+        provider: defaultProvider,
         resolvedSnapshotId: snapshotId,
       };
     }
 
-    ensureProviderAvailable(snapshotProvider);
     const snapshotVersion = await convex.query(
       api.environmentSnapshots.findBySnapshotId,
       {
         teamSlugOrId,
         snapshotId,
-        snapshotProvider,
+        snapshotProvider: resolvedSnapshotProvider ?? undefined,
       }
     );
 
@@ -230,13 +230,25 @@ export const resolveTeamAndSnapshot = async ({
       });
     }
 
+    const versionProvider =
+      (isSandboxProvider(snapshotVersion.snapshotProvider)
+        ? snapshotVersion.snapshotProvider
+        : undefined) ??
+      (snapshotVersion.morphSnapshotId ? "morph" : undefined) ??
+      (snapshotVersion.snapshotId
+        ? resolveProviderForSnapshotId(snapshotVersion.snapshotId)
+        : null) ??
+      resolvedSnapshotProvider ??
+      provider;
+
+    ensureProviderAvailable(versionProvider);
     return {
       team,
-      provider: snapshotProvider,
+      provider: versionProvider,
       resolvedSnapshotId:
         snapshotVersion.snapshotId ??
         snapshotVersion.morphSnapshotId ??
-        defaultSnapshotId,
+        getDefaultSnapshotId(versionProvider),
       resolvedTemplateVmid: snapshotVersion.templateVmid ?? undefined,
     };
   }
