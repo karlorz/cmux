@@ -1,7 +1,4 @@
-# Current main task
-feat(pve): PVE LXC sandbox provider with Cloudflare Tunnel support #27
-https://github.com/karlorz/cmux/pull/27
-- Full file change list `gh pr view 27 --repo karlorz/cmux --json files --q '.files[].path' | cat`
+<!-- # Current main task -->
 
 # Style
 - Do not use emojis in shell scripts or debug messages
