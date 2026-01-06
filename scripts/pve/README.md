@@ -43,6 +43,17 @@ CF_ACCOUNT_ID="..."               # From Cloudflare dashboard
 CF_DOMAIN="example.com"
 ```
 
+### Config Files (PVE Host)
+
+Default paths written by `pve-tunnel-setup.sh`:
+
+- Cloudflare Tunnel config: `/etc/cloudflared/config.yml`
+- Caddy config: `/etc/caddy/Caddyfile.cmux`
+- Cloudflare systemd unit: `/etc/systemd/system/cloudflared.service`
+- Caddy systemd unit: `/etc/systemd/system/caddy-cmux.service`
+
+Overrides are available via `CLOUDFLARED_CONFIG_DIR` and `CADDY_CONFIG_DIR`.
+
 The `.env` file is auto-loaded from the project root (`/path/to/cmux/.env`).
 If `PVE_API_URL` is already set in your environment, the `.env` file will not override it.
 

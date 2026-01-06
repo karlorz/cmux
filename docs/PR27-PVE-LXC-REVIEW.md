@@ -26,6 +26,10 @@
 - Cloudflare Tunnel exposes wildcard subdomains.
 - Caddy routes `port-{port}-{instanceId}` to `{instanceId}.{domainSuffix}:{port}`.
 - Legacy routing for `port-{port}-vm-{vmid}` remains during migration.
+- Default config paths on PVE host:
+  - Cloudflare Tunnel: `/etc/cloudflared/config.yml`
+  - Caddy: `/etc/caddy/Caddyfile.cmux`
+  - systemd units: `/etc/systemd/system/cloudflared.service`, `/etc/systemd/system/caddy-cmux.service`
 
 ---
 
@@ -52,4 +56,3 @@
 ### 4) UI + Utilities
 - Derive Morph URLs only for Morph instance IDs.
 - Display-friendly conversions may use underscore for UI, but never for hostnames or URLs.
-
