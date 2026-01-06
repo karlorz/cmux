@@ -82,7 +82,7 @@ bunx electron-vite build -c electron.vite.config.ts
 
 # Create a temporary directory for packaging
 TEMP_DIR=$(mktemp -d)
-APP_NAME="${CMUX_APP_NAME:-cmux next}"
+APP_NAME="${CMUX_APP_NAME:-cmux-next}"
 APP_ID="${CMUX_APP_ID:-com.karlorz.cmux}"
 CMUX_PROTOCOL="${CMUX_PROTOCOL:-cmux-next}"
 APP_DIR="$TEMP_DIR/$APP_NAME.app"

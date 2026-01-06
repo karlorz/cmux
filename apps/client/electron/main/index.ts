@@ -909,11 +909,11 @@ app.whenReady().then(async () => {
     },
   });
 
-  // Ensure macOS menu and About panel use "cmux next" instead of package.json name
+  // Ensure macOS menu and About panel use "cmux-next" instead of package.json name
   if (process.platform === "darwin") {
     try {
-      app.setName("cmux next");
-      app.setAboutPanelOptions({ applicationName: "cmux next" });
+      app.setName("cmux-next");
+      app.setAboutPanelOptions({ applicationName: "cmux-next" });
     } catch (error) {
       console.error("Failed to set app name and about panel options", error);
     }
