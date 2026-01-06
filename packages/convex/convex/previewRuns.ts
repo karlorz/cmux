@@ -418,8 +418,24 @@ export const updateStatus = internalMutation({
       throw new Error("Preview run not found");
     }
     const now = Date.now();
+
+    // Preserve "superseded" status - don't allow overwriting it with other statuses
+    // A superseded run should stay superseded even if it completes its work.
+    // The exception is when explicitly setting to "superseded" (args.status === "superseded").
+    const shouldPreserveSuperseded =
+      run.status === "superseded" && args.status !== "superseded";
+    const effectiveStatus = shouldPreserveSuperseded ? run.status : args.status;
+
+    if (shouldPreserveSuperseded) {
+      console.log("[previewRuns] Preserving superseded status", {
+        previewRunId: args.previewRunId,
+        attemptedStatus: args.status,
+        currentStatus: run.status,
+      });
+    }
+
     const patch: Record<string, unknown> = {
-      status: args.status,
+      status: effectiveStatus,
       screenshotSetId: args.screenshotSetId ?? run.screenshotSetId,
       githubCommentUrl: args.githubCommentUrl ?? run.githubCommentUrl,
       githubCommentId: args.githubCommentId ?? run.githubCommentId,
@@ -437,7 +453,10 @@ export const updateStatus = internalMutation({
       args.status === "skipped" ||
       args.status === "superseded"
     ) {
-      patch.completedAt = now;
+      // Only set completedAt if not already set (preserve original completion time for superseded runs)
+      if (!run.completedAt) {
+        patch.completedAt = now;
+      }
     } else if (args.status === "running" && !run.startedAt) {
       patch.startedAt = now;
     }

@@ -56,40 +56,6 @@ class SupersededError extends Error {
 }
 
 /**
- * Check if the preview run has been superseded by a newer commit.
- * If superseded, throws SupersededError to trigger graceful cleanup.
- * This should be called at key checkpoints during the preview job execution.
- */
-async function checkSupersessionCheckpoint(
-  ctx: ActionCtx,
-  previewRunId: Id<"previewRuns">,
-  checkpoint: string,
-): Promise<void> {
-  const result = await ctx.runQuery(internal.previewRuns.checkIfSuperseded, {
-    previewRunId,
-  });
-
-  if (result.superseded) {
-    console.log("[preview-jobs] Supersession detected at checkpoint", {
-      previewRunId,
-      checkpoint,
-      reason: result.reason,
-      supersededBy: result.supersededBy,
-    });
-    throw new SupersededError(
-      previewRunId,
-      result.supersededBy,
-      result.stateReason ?? result.reason,
-    );
-  }
-
-  console.log("[preview-jobs] Checkpoint passed - not superseded", {
-    previewRunId,
-    checkpoint,
-  });
-}
-
-/**
  * Fetch the screenshot collector release URL from Convex
  */
 async function fetchScreenshotCollectorRelease({
@@ -1149,15 +1115,9 @@ export async function runPreviewJob(
     return;
   }
 
-  // Check if this run was superseded by a newer commit before we start expensive operations
-  if (payload.run.status === "superseded") {
-    console.log("[preview-jobs] Preview run was superseded; aborting job execution", {
-      previewRunId,
-      headSha: payload.run.headSha?.slice(0, 7),
-      supersededBy: payload.run.supersededBy,
-    });
-    return;
-  }
+  // Note: We continue even if status is "superseded" because each preview run
+  // should complete and update its own GitHub comment. The user pushed this commit
+  // and deserves to see its preview results.
 
   const convexUrl = resolveConvexUrl();
   if (!convexUrl) {
@@ -1489,9 +1449,10 @@ export async function runPreviewJob(
       workerHealthUrl: `${workerService.url}/health`,
     });
 
-    // CHECKPOINT 1: After Morph instance is ready, before git operations
-    // This is the first expensive resource we've acquired, check before proceeding
-    await checkSupersessionCheckpoint(ctx, previewRunId, "after_instance_ready");
+    // Note: We intentionally do NOT abort on supersession here.
+    // Each preview run should complete and update its own GitHub comment,
+    // even if a newer commit has arrived. This ensures the user sees results
+    // for each commit they pushed.
 
     if (taskRunId) {
       const networking = instance.networking?.http_services?.map((s) => ({
@@ -1840,9 +1801,6 @@ export async function runPreviewJob(
       stdout: checkoutResult.stdout?.slice(0, 200),
     });
 
-    // CHECKPOINT 2: After git checkout, before expensive screenshot operations
-    // A newer commit may have arrived during the git fetch/checkout process
-    await checkSupersessionCheckpoint(ctx, previewRunId, "after_checkout");
 
     // Step 4: Apply environment variables and trigger screenshot collection
     await ctx.runMutation(internal.previewRuns.updateStatus, {
@@ -2000,10 +1958,6 @@ export async function runPreviewJob(
           previewRunId,
         });
       } else {
-        // CHECKPOINT 3: Before running the screenshot collector
-        // This is the most expensive operation - check one more time before proceeding
-        await checkSupersessionCheckpoint(ctx, previewRunId, "before_screenshot_collection");
-
         // Build screenshot collector options
         const screenshotOptions: ScreenshotCollectorOptions = {
           workspaceDir: repoDir,
@@ -2036,10 +1990,6 @@ export async function runPreviewJob(
           hasUiChanges: collectorResult.hasUiChanges,
           error: collectorResult.error,
         });
-
-        // CHECKPOINT 4: After screenshot collection, before uploading
-        // If superseded, don't bother uploading stale screenshots
-        await checkSupersessionCheckpoint(ctx, previewRunId, "after_screenshot_collection");
 
         // Upload screenshots to Convex storage and create screenshot set
         const uploadedImages: Array<{
