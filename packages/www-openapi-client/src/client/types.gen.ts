@@ -3103,12 +3103,10 @@ export type PostApiPreviewTestJobsErrors = {
 
 export type PostApiPreviewTestJobsResponses = {
     /**
-     * Test job created
+     * Test job created (task/taskRun will be created after VM starts)
      */
     200: {
         previewRunId: string;
-        taskId: string;
-        taskRunId: string;
         prNumber: number;
         repoFullName: string;
     };

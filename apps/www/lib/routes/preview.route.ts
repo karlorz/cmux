@@ -445,13 +445,11 @@ previewRouter.openapi(
     },
     responses: {
       200: {
-        description: "Test job created",
+        description: "Test job created (task/taskRun will be created after VM starts)",
         content: {
           "application/json": {
             schema: z.object({
               previewRunId: z.string(),
-              taskId: z.string(),
-              taskRunId: z.string(),
               prNumber: z.number(),
               repoFullName: z.string(),
             }),
