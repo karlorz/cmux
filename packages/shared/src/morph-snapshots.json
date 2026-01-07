@@ -19,7 +19,8 @@
           "snapshotId": "snapshot_sldfbwgu",
           "capturedAt": "2026-01-06T16:17:58Z"
         }
-      ]
+      ],
+      "description": "Great default for day-to-day work. Balanced CPU, memory, and storage."
     },
     {
       "presetId": "6vcpu_8gb_32gb",
@@ -38,7 +39,8 @@
           "snapshotId": "snapshot_60pamhdp",
           "capturedAt": "2026-01-06T16:17:38Z"
         }
-      ]
+      ],
+      "description": "Extra headroom for larger codebases or heavier workloads."
     }
   ]
 }
