@@ -465,29 +465,6 @@ impl PtySession {
         terminal.resize(rows, cols);
     }
 
-    /// Drain any terminal responses (e.g., DSR/DA) and send them back to the PTY.
-    /// This lets programs that query the terminal (like Codex) receive replies
-    /// even when no interactive terminal emulator is attached.
-    fn flush_terminal_responses(&self) -> usize {
-        let responses = {
-            let mut terminal = self.terminal.lock();
-            terminal.drain_responses()
-        };
-
-        let mut sent = 0usize;
-        for resp in responses {
-            if let Err(e) = self.input_tx.send(resp) {
-                error!(
-                    "[session:{}] Failed to send terminal response back to PTY: {}",
-                    self.id, e
-                );
-                break;
-            }
-            sent += 1;
-        }
-        sent
-    }
-
     /// Get the current terminal content as plain text lines.
     fn get_terminal_content(&self) -> Vec<String> {
         let terminal = self.terminal.lock();
