@@ -1278,6 +1278,7 @@ export function setupSocketHandlers(
           projectFullName,
           repoUrl,
           taskId: providedTaskId,
+          theme,
         } = parsed.data;
         const teamSlugOrId = requestedTeamSlugOrId || safeTeam;
 
@@ -1356,6 +1357,7 @@ export function setupSocketHandlers(
               ...(environmentId
                 ? { environmentId }
                 : { projectFullName, repoUrl }),
+              ...(theme ? { theme } : {}),
             },
           });
 

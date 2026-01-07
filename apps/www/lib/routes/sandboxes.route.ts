@@ -273,6 +273,8 @@ const StartSandboxBody = z
     branch: z.string().optional(),
     newBranch: z.string().optional(),
     depth: z.number().optional().default(1),
+    // Theme for VSCode IDE (dark, light, system)
+    theme: z.enum(["dark", "light", "system"]).optional(),
   })
   .openapi("StartSandboxBody");
 
@@ -510,6 +512,50 @@ sandboxesRouter.openapi(
           "[sandboxes.start] Failed to record instance creation (non-fatal):",
           error,
         );
+      }
+
+      // Configure IDE theme if specified
+      // Write VSCODE_THEME to /etc/cmux/ide.env and restart the IDE service
+      // so the configure script picks up the new theme setting
+      if (body.theme) {
+        try {
+          // Ensure the ide.env file exists and update VSCODE_THEME
+          // Use sed to update in-place if the variable exists, or append if not
+          const themeValue = body.theme;
+          const updateThemeCmd = `
+            mkdir -p /etc/cmux && \\
+            if grep -q '^VSCODE_THEME=' /etc/cmux/ide.env 2>/dev/null; then
+              sed -i 's/^VSCODE_THEME=.*/VSCODE_THEME=${themeValue}/' /etc/cmux/ide.env
+            else
+              echo 'VSCODE_THEME=${themeValue}' >> /etc/cmux/ide.env
+            fi
+          `.trim();
+
+          const themeRes = await instance.exec(updateThemeCmd);
+          if (themeRes.exit_code === 0) {
+            // Restart the IDE service so the configure script runs with the new theme
+            // The configure script reads VSCODE_THEME and updates VSCode settings.json
+            const restartRes = await instance.exec("systemctl restart cmux-ide");
+            if (restartRes.exit_code === 0) {
+              console.log(
+                `[sandboxes.start] Applied IDE theme: ${themeValue}`,
+              );
+            } else {
+              console.error(
+                `[sandboxes.start] Failed to restart cmux-ide service: exit=${restartRes.exit_code} stderr=${(restartRes.stderr || "").slice(0, 200)}`,
+              );
+            }
+          } else {
+            console.error(
+              `[sandboxes.start] Failed to write theme to ide.env: exit=${themeRes.exit_code} stderr=${(themeRes.stderr || "").slice(0, 200)}`,
+            );
+          }
+        } catch (error) {
+          console.error(
+            "[sandboxes.start] Failed to configure IDE theme (non-fatal):",
+            error,
+          );
+        }
       }
 
       const exposed = instance.networking.httpServices;
