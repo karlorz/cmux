@@ -1,7 +1,6 @@
 import type {
   EnvironmentContext,
   EnvironmentResult,
-  PostStartCommand,
 } from "../common/environment-result";
 
 // Opencode HTTP API configuration
