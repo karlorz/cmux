@@ -740,15 +740,6 @@ async fn spawn_pty_reader(
                 // Process through virtual terminal emulator for state tracking
                 session.process_terminal(&filtered_bytes);
 
-                // Send any terminal responses (e.g., cursor position) back to the PTY
-                let responses_sent = session.flush_terminal_responses();
-                if responses_sent > 0 {
-                    debug!(
-                        "[reader:{}] Sent {} terminal response(s) back to PTY",
-                        session_id, responses_sent
-                    );
-                }
-
                 // Combine any leftover bytes from previous read with filtered data
                 utf8_buffer.extend_from_slice(&filtered_bytes);
 
