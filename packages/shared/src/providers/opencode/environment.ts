@@ -80,7 +80,16 @@ export const NotificationPlugin = async ({ project: _project, client: _client, $
   return {
     event: async ({ event }) => {
       // Send notification on session completion
-      if (event.type === "session.idle") {
+      const props = event?.properties ?? {};
+      const statusType =
+        props.status?.type ??
+        props.status ??
+        event?.status?.type ??
+        event?.status;
+      const isIdle =
+        event.type === "session.idle" ||
+        (event.type === "session.status" && statusType === "idle");
+      if (isIdle) {
         try {
           await $\`/root/lifecycle/opencode/session-complete-hook.sh\`
         } catch (primaryError) {
