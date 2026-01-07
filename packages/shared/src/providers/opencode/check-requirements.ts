@@ -1,4 +1,24 @@
-export async function checkOpencodeRequirements(): Promise<string[]> {
+type ProviderRequirementsContext = {
+  apiKeys?: Record<string, string>;
+  teamSlugOrId?: string;
+};
+
+type OpencodeRequirementOptions = {
+  requireAuth?: boolean;
+};
+
+export async function checkOpencodeRequirements(
+  options: OpencodeRequirementOptions | ProviderRequirementsContext | undefined = {}
+): Promise<string[]> {
+  const { requireAuth = true } =
+    "requireAuth" in (options as OpencodeRequirementOptions)
+      ? (options as OpencodeRequirementOptions)
+      : { requireAuth: true };
+
+  if (!requireAuth) {
+    return [];
+  }
+
   const { access } = await import("node:fs/promises");
   const { homedir } = await import("node:os");
   const { join } = await import("node:path");
@@ -13,4 +33,10 @@ export async function checkOpencodeRequirements(): Promise<string[]> {
   }
 
   return missing;
+}
+
+export function createOpencodeRequirementsChecker(
+  options: OpencodeRequirementOptions
+): (context?: ProviderRequirementsContext) => Promise<string[]> {
+  return (_context) => checkOpencodeRequirements(options);
 }
