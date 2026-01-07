@@ -14,7 +14,8 @@
           "snapshotId": "snapshot_5a255f9t",
           "capturedAt": "2025-12-24T16:42:16Z"
         }
-      ]
+      ],
+      "description": "Great default for day-to-day work. Balanced CPU, memory, and storage."
     },
     {
       "presetId": "6vcpu_8gb_32gb",
@@ -28,35 +29,8 @@
           "snapshotId": "snapshot_d5hz9r0j",
           "capturedAt": "2025-12-24T16:41:50Z"
         }
-      ]
-    },
-    {
-      "presetId": "4vcpu_6gb_20gb",
-      "label": "Standard workspace",
-      "cpu": "4 vCPU",
-      "memory": "6 GB RAM",
-      "disk": "20 GB SSD",
-      "versions": [
-        {
-          "version": 1,
-          "snapshotId": "snapshot_vjli675a",
-          "capturedAt": "2026-01-06T03:18:45Z"
-        }
-      ]
-    },
-    {
-      "presetId": "6vcpu_8gb_40gb",
-      "label": "Performance workspace",
-      "cpu": "6 vCPU",
-      "memory": "8 GB RAM",
-      "disk": "40 GB SSD",
-      "versions": [
-        {
-          "version": 1,
-          "snapshotId": "snapshot_njbiskhc",
-          "capturedAt": "2026-01-06T03:17:43Z"
-        }
-      ]
+      ],
+      "description": "Extra headroom for larger codebases or heavier workloads."
     }
   ]
 }

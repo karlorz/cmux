@@ -27,7 +27,8 @@
           "templateVmid": 9005,
           "capturedAt": "2026-01-06T12:19:58Z"
         }
-      ]
+      ],
+      "description": "Great default for day-to-day work. Balanced CPU, memory, and storage."
     },
     {
       "presetId": "6vcpu_8gb_40gb",
@@ -54,7 +55,8 @@
           "templateVmid": 9006,
           "capturedAt": "2026-01-06T12:20:27Z"
         }
-      ]
+      ],
+      "description": "Extra headroom for larger codebases or heavier workloads."
     }
   ],
   "node": "karl-ws",
