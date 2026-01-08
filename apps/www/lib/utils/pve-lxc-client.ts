@@ -4,6 +4,9 @@
  * A client for managing LXC containers on Proxmox VE that mirrors
  * the MorphCloudClient interface for seamless provider switching.
  * Supports canonical snapshot IDs (snapshot_*) with legacy formats for compatibility.
+ *
+ * When PVE_POOL_URL is configured, container creation uses the sandbox pool
+ * service for faster allocation (pre-created containers instead of on-demand cloning).
  */
 
 import { env } from "./www-env";
@@ -241,6 +244,17 @@ interface PveDnsConfig {
 }
 
 /**
+ * Response from pool service allocation
+ */
+interface PoolAllocateResponse {
+  vmid: number;
+  hostname: string;
+  instance_id: string;
+  template_vmid: number;
+  allocated_from_pool: boolean;
+}
+
+/**
  * Proxmox VE LXC Client
  */
 export class PveLxcClient {
@@ -253,6 +267,8 @@ export class PveLxcClient {
   private domainSuffixFetched: boolean = false;
   /** Public domain for external access via Cloudflare Tunnel (e.g., "example.com") */
   private publicDomain: string | null;
+  /** Pool service URL for fast container allocation (optional) */
+  private poolUrl: string | null;
 
   // In-memory store for HTTP service URLs (computed from VMID, not persisted)
   // Note: Instance metadata (teamId, userId, etc.) is now tracked in Convex
@@ -265,11 +281,13 @@ export class PveLxcClient {
     apiToken: string;
     node?: string;
     publicDomain?: string;
+    poolUrl?: string;
   }) {
     this.apiUrl = options.apiUrl.replace(/\/$/, "");
     this.apiToken = options.apiToken;
     this.node = options.node || null; // Will be auto-detected if not provided
     this.publicDomain = options.publicDomain || null;
+    this.poolUrl = options.poolUrl || null;
   }
 
   private generateInstanceId(): string {
@@ -979,6 +997,64 @@ export class PveLxcClient {
   }
 
   /**
+   * Allocate a container from the pool service.
+   * Returns null if pool service is not configured or allocation fails.
+   */
+  private async allocateFromPool(
+    templateVmid: number,
+    instanceId: string,
+    metadata?: ContainerMetadata
+  ): Promise<{ vmid: number; hostname: string; fromPool: boolean } | null> {
+    if (!this.poolUrl) {
+      return null;
+    }
+
+    try {
+      console.log(
+        `[PveLxcClient] Attempting pool allocation for template ${templateVmid}`
+      );
+
+      const response = await undiciFetch(`${this.poolUrl}/allocate?start=true`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          template_vmid: templateVmid,
+          instance_id: instanceId,
+          metadata: metadata || {},
+        }),
+        signal: AbortSignal.timeout(120000), // 2 minute timeout
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(
+          `[PveLxcClient] Pool allocation failed (${response.status}): ${errorText}`
+        );
+        return null;
+      }
+
+      const result = (await response.json()) as PoolAllocateResponse;
+      console.log(
+        `[PveLxcClient] Pool allocation successful: vmid=${result.vmid}, from_pool=${result.allocated_from_pool}`
+      );
+
+      return {
+        vmid: result.vmid,
+        hostname: result.hostname,
+        fromPool: result.allocated_from_pool,
+      };
+    } catch (error) {
+      console.error(
+        `[PveLxcClient] Pool allocation error:`,
+        error instanceof Error ? error.message : error
+      );
+      return null;
+    }
+  }
+
+  /**
    * Clone a container from a template using linked-clone (fast, copy-on-write).
    * Requires the source to be a template (template=1 in PVE config).
    */
@@ -1201,57 +1277,85 @@ export class PveLxcClient {
    */
   instances = {
     /**
-     * Start a new container from a template using linked-clone (fast, copy-on-write).
+     * Start a new container from a template.
+     *
+     * If PVE_POOL_URL is configured, attempts to allocate from the pool service
+     * for faster startup (pre-created containers). Falls back to direct clone
+     * if pool is unavailable.
+     *
+     * Without pool service, uses linked-clone (fast, copy-on-write).
      * Includes rollback logic: if clone succeeds but start fails, the container is deleted.
      */
     start: async (options: StartContainerOptions): Promise<PveLxcInstance> => {
       const resolvedTemplateVmid =
         options.templateVmid ??
         (await this.parseSnapshotId(options.snapshotId)).templateVmid;
-      const newVmid = await this.findNextVmid();
       const instanceId = this.normalizeHostId(
         options.instanceId ?? this.generateInstanceId()
       );
-      const hostname = instanceId;
 
       // Auto-detect domain suffix from PVE DNS config
       const domainSuffix = await this.getDomainSuffix();
-      const fqdn = this.getFqdnSync(hostname, domainSuffix);
 
-      console.log(
-        `[PveLxcClient] Linked-cloning from template ${resolvedTemplateVmid} to ${newVmid}`
+      // Note: Metadata (teamId, userId, etc.) is tracked in Convex sandboxInstanceActivity
+      // table via sandboxes.route.ts calling recordCreate mutation
+      const metadata = options.metadata || {};
+
+      let newVmid: number;
+      let hostname: string;
+
+      // Try pool allocation first if configured
+      const poolResult = await this.allocateFromPool(
+        resolvedTemplateVmid,
+        instanceId,
+        metadata
       );
 
-      // Linked-clone from template (fast, copy-on-write)
-      await this.linkedCloneFromTemplate(resolvedTemplateVmid, newVmid, hostname);
-
-      // Start the container with rollback on failure
-      try {
-        await this.startContainer(newVmid);
-      } catch (startError) {
-        // Clone succeeded but start failed - rollback by deleting the container
-        console.error(
-          `[PveLxcClient] Failed to start container ${newVmid}, rolling back clone:`,
-          startError instanceof Error ? startError.message : startError
+      if (poolResult) {
+        // Pool allocation successful - container is already started
+        newVmid = poolResult.vmid;
+        hostname = poolResult.hostname;
+        console.log(
+          `[PveLxcClient] Container allocated from pool: vmid=${newVmid}, hostname=${hostname}, from_pool=${poolResult.fromPool}`
         );
+      } else {
+        // Fall back to direct clone
+        newVmid = await this.findNextVmid();
+        hostname = instanceId;
+
+        console.log(
+          `[PveLxcClient] Linked-cloning from template ${resolvedTemplateVmid} to ${newVmid}`
+        );
+
+        // Linked-clone from template (fast, copy-on-write)
+        await this.linkedCloneFromTemplate(resolvedTemplateVmid, newVmid, hostname);
+
+        // Start the container with rollback on failure
         try {
-          await this.deleteContainer(newVmid);
-          console.log(`[PveLxcClient] Rollback complete: container ${newVmid} deleted`);
-        } catch (deleteError) {
+          await this.startContainer(newVmid);
+        } catch (startError) {
+          // Clone succeeded but start failed - rollback by deleting the container
           console.error(
-            `[PveLxcClient] Failed to rollback (delete) container ${newVmid}:`,
-            deleteError instanceof Error ? deleteError.message : deleteError
+            `[PveLxcClient] Failed to start container ${newVmid}, rolling back clone:`,
+            startError instanceof Error ? startError.message : startError
           );
+          try {
+            await this.deleteContainer(newVmid);
+            console.log(`[PveLxcClient] Rollback complete: container ${newVmid} deleted`);
+          } catch (deleteError) {
+            console.error(
+              `[PveLxcClient] Failed to rollback (delete) container ${newVmid}:`,
+              deleteError instanceof Error ? deleteError.message : deleteError
+            );
+          }
+          throw startError;
         }
-        throw startError;
       }
 
       // Wait for container to be fully running
       await new Promise((resolve) => setTimeout(resolve, 3000));
 
-      // Note: Metadata (teamId, userId, etc.) is tracked in Convex sandboxInstanceActivity
-      // table via sandboxes.route.ts calling recordCreate mutation
-      const metadata = options.metadata || {};
+      const fqdn = this.getFqdnSync(hostname, domainSuffix);
 
       // Initialize services with standard cmux ports
       // URL resolution order: public URL (Cloudflare Tunnel) > FQDN > container IP
@@ -1464,5 +1568,6 @@ export function getPveLxcClient(): PveLxcClient {
     apiToken: env.PVE_API_TOKEN,
     node: env.PVE_NODE,
     publicDomain: env.PVE_PUBLIC_DOMAIN,
+    poolUrl: env.PVE_POOL_URL,
   });
 }

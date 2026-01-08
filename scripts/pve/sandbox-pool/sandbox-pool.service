@@ -1,0 +1,37 @@
+[Unit]
+Description=PVE Sandbox Pool Service
+Documentation=https://github.com/manaflow-ai/cmux
+After=network.target pve-cluster.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/cmux-sandbox-pool
+
+# Load environment from file
+EnvironmentFile=/opt/cmux-sandbox-pool/.env
+
+# Run the service
+ExecStart=/opt/cmux-sandbox-pool/.venv/bin/uvicorn pool_service:app --host 127.0.0.1 --port 8007
+
+# Restart policy
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/cmux-sandbox-pool
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sandbox-pool
+
+[Install]
+WantedBy=multi-user.target

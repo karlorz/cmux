@@ -52,6 +52,10 @@ export const env = createEnv({
       .string()
       .optional()
       .transform((value) => value === "1" || value?.toLowerCase() === "true"),
+    // PVE Sandbox Pool Service URL (optional)
+    // When set, sandbox creation uses the pool for faster allocation
+    // Example: http://127.0.0.1:8007 (or via Caddy: https://pve.example.com/pool)
+    PVE_POOL_URL: z.string().url().optional(),
     OPENAI_API_KEY: z.string().min(1).optional(),
     GEMINI_API_KEY: z.string().min(1).optional(),
     ANTHROPIC_API_KEY: z.string().min(1),

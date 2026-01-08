@@ -1,0 +1,41 @@
+# Example Caddy configuration for PVE + Sandbox Pool
+#
+# This configuration routes:
+# - /pool/* requests to the sandbox pool service (port 8007)
+# - All other requests to the PVE API (port 8006)
+#
+# Place this in /etc/caddy/Caddyfile on your PVE host
+
+{
+    # Global options
+    admin off  # Disable admin API in production
+}
+
+# Main PVE proxy with pool service integration
+pve.example.com {
+    # Enable compression
+    encode gzip
+
+    # Route pool API requests to the sandbox pool service
+    handle /pool/* {
+        uri strip_prefix /pool
+        reverse_proxy 127.0.0.1:8007
+    }
+
+    # Route everything else to PVE API
+    handle {
+        reverse_proxy https://127.0.0.1:8006 {
+            transport http {
+                tls_insecure_skip_verify
+            }
+        }
+    }
+
+    # TLS configuration (use your own certs or Let's Encrypt)
+    # tls /path/to/cert.pem /path/to/key.pem
+}
+
+# Alternative: Separate subdomain for pool API
+# pool.pve.example.com {
+#     reverse_proxy 127.0.0.1:8007
+# }
