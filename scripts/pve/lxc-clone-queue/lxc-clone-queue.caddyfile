@@ -1,0 +1,53 @@
+# lxc-clone-queue Caddy Configuration
+#
+# This configures Caddy as a reverse proxy in front of the PVE API,
+# routing clone requests through the lxc-clone-queue service.
+#
+# Architecture:
+#   cmux backend -> Caddy (:8443) -> lxc-clone-queue (:8081) -> PVE API (:8006)
+#                                 -> PVE API (:8006) (non-clone requests)
+#
+# Usage:
+#   1. Install lxc-clone-queue service (run install.sh)
+#   2. Copy this file to /etc/caddy/Caddyfile.pve-proxy
+#   3. Start Caddy: caddy run --config /etc/caddy/Caddyfile.pve-proxy --adapter caddyfile
+#   4. Update cmux .env: PVE_API_URL=https://pve.example.com:8443
+#
+# This can run alongside the existing Caddyfile.cmux (different port).
+
+# PVE API Proxy with clone request routing
+# Listen on port 8443 (choose any unused port)
+:8443 {
+    # Route LXC clone requests to the queue service
+    @lxc_clone {
+        method POST
+        path_regexp ^/api2/json/nodes/[^/]+/lxc/\d+/clone$
+    }
+    handle @lxc_clone {
+        reverse_proxy localhost:8081 {
+            # Long timeout for clone operations (may queue)
+            transport http {
+                dial_timeout 30s
+                response_header_timeout 15m
+            }
+        }
+    }
+
+    # All other requests go directly to PVE API
+    handle {
+        reverse_proxy https://127.0.0.1:8006 {
+            transport http {
+                tls_insecure_skip_verify
+                dial_timeout 10s
+            }
+        }
+    }
+
+    # Logging
+    log {
+        output file /var/log/caddy/pve-proxy.log {
+            roll_size 10mb
+            roll_keep 3
+        }
+    }
+}
