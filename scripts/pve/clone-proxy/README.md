@@ -17,6 +17,8 @@ Environment variables (optional):
 - `CLONE_PROXY_TARGET` (default `$PVE_API_URL` or `https://127.0.0.1:8006`)
 - `CLONE_PROXY_POLL_INTERVAL` (default `2s`)
 - `CLONE_PROXY_POLL_TIMEOUT` (default `15m`)
+- `CLONE_PROXY_REQUEST_TIMEOUT` (default `30s` per upstream HTTP request)
+- `CLONE_PROXY_QUEUE_SIZE` (default `100` pending clone requests before 503)
 - `CLONE_PROXY_SKIP_TLS_VERIFY` (`true` to skip upstream TLS verification)
 
 Create `/etc/default/pve-clone-proxy` to persist settings, e.g.:
@@ -24,10 +26,16 @@ Create `/etc/default/pve-clone-proxy` to persist settings, e.g.:
 ```
 CLONE_PROXY_LISTEN="127.0.0.1:8081"
 CLONE_PROXY_TARGET="https://127.0.0.1:8006"
-CLONE_PROXY_SKIP_TLS_VERIFY="false"
+CLONE_PROXY_SKIP_TLS_VERIFY="true"
 CLONE_PROXY_POLL_INTERVAL="2s"
 CLONE_PROXY_POLL_TIMEOUT="15m"
+CLONE_PROXY_REQUEST_TIMEOUT="30s"
+CLONE_PROXY_QUEUE_SIZE="100"
 ```
+
+Behavior:
+- Clone requests are placed onto a bounded in-memory queue (503 if full) and processed one at a time.
+- The proxy waits for the PVE task to finish polling before releasing the queue slot; the client receives the original clone response after polling completes.
 
 ## Systemd
 

@@ -15,8 +15,8 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 )
@@ -38,20 +38,24 @@ var (
 
 // config holds runtime settings sourced from environment variables.
 type config struct {
-	listenAddr    string
-	targetURL     string
-	pollInterval  time.Duration
-	pollTimeout   time.Duration
-	skipTLSVerify bool
+	listenAddr     string
+	targetURL      string
+	pollInterval   time.Duration
+	pollTimeout    time.Duration
+	requestTimeout time.Duration
+	skipTLSVerify  bool
+	queueSize      int
 }
 
 func main() {
 	cfg := config{
-		listenAddr:    getenv("CLONE_PROXY_LISTEN", "127.0.0.1:8081"),
-		targetURL:     getenv("CLONE_PROXY_TARGET", getenv("PVE_API_URL", "https://127.0.0.1:8006")),
-		pollInterval:  mustParseDuration(getenv("CLONE_PROXY_POLL_INTERVAL", "2s")),
-		pollTimeout:   mustParseDuration(getenv("CLONE_PROXY_POLL_TIMEOUT", "15m")),
-		skipTLSVerify: strings.EqualFold(getenv("CLONE_PROXY_SKIP_TLS_VERIFY", "false"), "true"),
+		listenAddr:     getenv("CLONE_PROXY_LISTEN", "127.0.0.1:8081"),
+		targetURL:      getenv("CLONE_PROXY_TARGET", getenv("PVE_API_URL", "https://127.0.0.1:8006")),
+		pollInterval:   mustParseDuration(getenv("CLONE_PROXY_POLL_INTERVAL", "2s")),
+		pollTimeout:    mustParseDuration(getenv("CLONE_PROXY_POLL_TIMEOUT", "15m")),
+		requestTimeout: mustParseDuration(getenv("CLONE_PROXY_REQUEST_TIMEOUT", "30s")),
+		skipTLSVerify:  strings.EqualFold(getenv("CLONE_PROXY_SKIP_TLS_VERIFY", "false"), "true"),
+		queueSize:      mustParseInt(getenv("CLONE_PROXY_QUEUE_SIZE", "100")),
 	}
 
 	proxy, err := newCloneProxy(cfg)
@@ -78,22 +82,29 @@ func main() {
 		}
 	}()
 
-	log.Printf("pve clone proxy listening on %s -> %s", cfg.listenAddr, cfg.targetURL)
+	log.Printf("pve clone proxy listening on %s -> %s (queue=%d, poll=%s, timeout=%s)", cfg.listenAddr, cfg.targetURL, cfg.queueSize, cfg.pollInterval, cfg.pollTimeout)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("server exited with error: %v", err)
 	}
 }
 
-// cloneProxy proxies requests to the PVE API while serializing clone operations.
+// cloneProxy proxies requests to the PVE API while serializing clone operations
+// using a bounded in-memory queue.
 type cloneProxy struct {
 	target       *url.URL
 	reverseProxy *httputil.ReverseProxy
 	httpClient   *http.Client
 	pollInterval time.Duration
 	pollTimeout  time.Duration
+	queue        chan *cloneRequest
+}
 
-	cloneSlots chan struct{}
-	mu         sync.Mutex
+type cloneRequest struct {
+	w    http.ResponseWriter
+	r    *http.Request
+	body []byte
+	node string
+	done chan struct{}
 }
 
 func newCloneProxy(cfg config) (*cloneProxy, error) {
@@ -113,99 +124,133 @@ func newCloneProxy(cfg config) (*cloneProxy, error) {
 		http.Error(w, "upstream error", http.StatusBadGateway)
 	}
 
-	return &cloneProxy{
+	cp := &cloneProxy{
 		target:       target,
 		reverseProxy: rp,
-		httpClient:   &http.Client{Transport: transport},
+		httpClient:   &http.Client{Transport: transport, Timeout: cfg.requestTimeout},
 		pollInterval: cfg.pollInterval,
 		pollTimeout:  cfg.pollTimeout,
-		cloneSlots:   make(chan struct{}, 1),
-	}, nil
+		queue:        make(chan *cloneRequest, cfg.queueSize),
+	}
+
+	go cp.worker()
+
+	return cp, nil
 }
 
 func (p *cloneProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost && clonePathPattern.MatchString(r.URL.Path) {
-		p.handleClone(w, r)
+		p.enqueueClone(w, r)
 		return
 	}
 	p.reverseProxy.ServeHTTP(w, r)
 }
 
-func (p *cloneProxy) handleClone(w http.ResponseWriter, r *http.Request) {
-	p.cloneSlots <- struct{}{} // blocks and queues clone operations
-
-	release := func() {
-		<-p.cloneSlots
-	}
-
+func (p *cloneProxy) enqueueClone(w http.ResponseWriter, r *http.Request) {
 	matches := clonePathPattern.FindStringSubmatch(r.URL.Path)
 	node := matches[1]
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		release()
 		http.Error(w, "failed to read request body", http.StatusBadRequest)
 		return
 	}
 	r.Body.Close()
 
-	upstreamURL := p.joinURL(r.URL)
-	upstreamReq, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL.String(), bytes.NewReader(body))
+	req := &cloneRequest{
+		w:    w,
+		r:    r,
+		body: body,
+		node: node,
+		done: make(chan struct{}),
+	}
+
+	select {
+	case p.queue <- req:
+		<-req.done
+	default:
+		log.Printf("clone queue full (size=%d)", cap(p.queue))
+		http.Error(w, "clone queue full", http.StatusServiceUnavailable)
+	}
+}
+
+func (p *cloneProxy) worker() {
+	for req := range p.queue {
+		p.processClone(req)
+		close(req.done)
+	}
+}
+
+func (p *cloneProxy) processClone(req *cloneRequest) {
+	start := time.Now()
+
+	upstreamURL := p.joinURL(req.r.URL)
+	upstreamReq, err := http.NewRequestWithContext(req.r.Context(), req.r.Method, upstreamURL.String(), bytes.NewReader(req.body))
 	if err != nil {
-		release()
-		http.Error(w, "failed to build upstream request", http.StatusBadRequest)
+		http.Error(req.w, "failed to build upstream request", http.StatusBadRequest)
 		return
 	}
-	upstreamReq.ContentLength = int64(len(body))
+	upstreamReq.ContentLength = int64(len(req.body))
 	upstreamReq.Host = p.target.Host
-	copyHeaders(upstreamReq.Header, r.Header)
-	addForwardHeaders(upstreamReq, r)
+	copyHeaders(upstreamReq.Header, req.r.Header)
+	addForwardHeaders(upstreamReq, req.r)
 
 	resp, err := p.httpClient.Do(upstreamReq)
 	if err != nil {
-		release()
 		log.Printf("clone request failed: %v", err)
-		http.Error(w, "upstream unavailable", http.StatusBadGateway)
+		http.Error(req.w, "upstream unavailable", http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		release()
 		log.Printf("failed reading upstream response: %v", err)
-		http.Error(w, "failed to read upstream response", http.StatusBadGateway)
+		http.Error(req.w, "failed to read upstream response", http.StatusBadGateway)
 		return
 	}
 
-	copyResponseHeaders(w.Header(), resp.Header)
-	w.WriteHeader(resp.StatusCode)
-	if _, err := w.Write(respBody); err != nil {
-		log.Printf("failed writing response to client: %v", err)
-	}
-
-	if resp.StatusCode >= 300 {
-		release()
+	// If the clone call failed, return immediately.
+	if resp.StatusCode >= 400 {
+		copyResponseHeaders(req.w.Header(), resp.Header)
+		req.w.WriteHeader(resp.StatusCode)
+		if _, err := req.w.Write(respBody); err != nil {
+			log.Printf("failed writing error response to client: %v", err)
+		}
 		return
 	}
 
 	upid := extractUPID(respBody)
 	if upid == "" {
-		release()
+		copyResponseHeaders(req.w.Header(), resp.Header)
+		req.w.WriteHeader(resp.StatusCode)
+		if _, err := req.w.Write(respBody); err != nil {
+			log.Printf("failed writing response to client: %v", err)
+		}
 		return
 	}
 
-	authHeaders := cloneAuthHeaders(r.Header)
+	authHeaders := cloneAuthHeaders(req.r.Header)
+	status, exitStatus := p.waitForTask(req.node, upid, authHeaders)
+	duration := time.Since(start)
 
-	go func() {
-		defer release()
-		ctx, cancel := context.WithTimeout(context.Background(), p.pollTimeout)
-		defer cancel()
-		p.waitForTask(ctx, node, upid, authHeaders)
-	}()
+	if status != "" {
+		log.Printf("clone task %s finished status=%s exitstatus=%s (duration=%s)", upid, status, exitStatus, duration)
+	} else {
+		log.Printf("clone task %s finished (duration=%s)", upid, duration)
+	}
+
+	copyResponseHeaders(req.w.Header(), resp.Header)
+	req.w.WriteHeader(resp.StatusCode)
+	if _, err := req.w.Write(respBody); err != nil {
+		log.Printf("failed writing response to client: %v", err)
+	}
 }
 
-func (p *cloneProxy) waitForTask(ctx context.Context, node, upid string, authHeaders http.Header) {
+func (p *cloneProxy) waitForTask(node, upid string, authHeaders http.Header) (string, string) {
+	ctx, cancel := context.WithTimeout(context.Background(), p.pollTimeout)
+	defer cancel()
+
 	statusURL := p.taskStatusURL(node, upid)
 
 	ticker := time.NewTicker(p.pollInterval)
@@ -215,7 +260,7 @@ func (p *cloneProxy) waitForTask(ctx context.Context, node, upid string, authHea
 		select {
 		case <-ctx.Done():
 			log.Printf("poll timeout for %s: %v", upid, ctx.Err())
-			return
+			return "", ""
 		case <-ticker.C:
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, statusURL, nil)
 			if err != nil {
@@ -242,24 +287,39 @@ func (p *cloneProxy) waitForTask(ctx context.Context, node, upid string, authHea
 				continue
 			}
 
-			status := parseTaskStatus(body)
+			status, exitStatus := parseTaskStatus(body)
 			if status == "running" {
 				continue
 			}
 
-			log.Printf("clone task %s finished with status=%s", upid, status)
-			return
+			if status == "" {
+				status = "unknown"
+			}
+			return status, exitStatus
 		}
 	}
 }
 
 func (p *cloneProxy) taskStatusURL(node, upid string) string {
-	escaped := url.PathEscape(upid)
-	path := "/api2/json/nodes/" + url.PathEscape(node) + "/tasks/" + escaped + "/status"
+	escapedNode := url.PathEscape(node)
+	escapedUpid := url.PathEscape(upid)
+
+	// Build an escaped path without letting url.URL double-encode percent sequences
+	path := singleJoiningSlash(p.target.Path, "/api2/json/nodes/"+escapedNode+"/tasks/"+escapedUpid+"/status")
 
 	u := *p.target
-	u.Path = singleJoiningSlash(p.target.Path, path)
 	u.RawQuery = ""
+
+	// Keep the escaped form in RawPath and the unescaped form in Path so
+	// EscapedPath uses the provided encoding instead of re-encoding the `%`.
+	unescapedPath, err := url.PathUnescape(path)
+	if err != nil {
+		// Fallback to the escaped path if unescape ever fails (should not happen)
+		unescapedPath = path
+	}
+	u.Path = unescapedPath
+	u.RawPath = path
+
 	return u.String()
 }
 
@@ -293,7 +353,7 @@ func extractUPID(body []byte) string {
 	return ""
 }
 
-func parseTaskStatus(body []byte) string {
+func parseTaskStatus(body []byte) (string, string) {
 	var payload struct {
 		Data struct {
 			Status     string `json:"status"`
@@ -301,16 +361,10 @@ func parseTaskStatus(body []byte) string {
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return ""
+		return "", ""
 	}
 
-	if payload.Data.Status != "" {
-		return payload.Data.Status
-	}
-	if payload.Data.ExitStatus != "" {
-		return payload.Data.ExitStatus
-	}
-	return ""
+	return payload.Data.Status, payload.Data.ExitStatus
 }
 
 func copyHeaders(dst, src http.Header) {
@@ -384,6 +438,14 @@ func mustParseDuration(v string) time.Duration {
 		log.Fatalf("invalid duration %q: %v", v, err)
 	}
 	return d
+}
+
+func mustParseInt(v string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil {
+		log.Fatalf("invalid int %q: %v", v, err)
+	}
+	return n
 }
 
 func singleJoiningSlash(a, b string) string {
