@@ -7,13 +7,16 @@ type OpencodeRequirementOptions = {
   requireAuth?: boolean;
 };
 
+function isRequirementOptions(opt: unknown): opt is OpencodeRequirementOptions {
+  return typeof opt === "object" && opt !== null && "requireAuth" in opt;
+}
+
 export async function checkOpencodeRequirements(
-  options: OpencodeRequirementOptions | ProviderRequirementsContext | undefined = {}
+  options?: OpencodeRequirementOptions | ProviderRequirementsContext
 ): Promise<string[]> {
-  const { requireAuth = true } =
-    "requireAuth" in (options as OpencodeRequirementOptions)
-      ? (options as OpencodeRequirementOptions)
-      : { requireAuth: true };
+  const requireAuth = isRequirementOptions(options)
+    ? (options.requireAuth ?? true)
+    : true;
 
   if (!requireAuth) {
     return [];
@@ -35,6 +38,11 @@ export async function checkOpencodeRequirements(
   return missing;
 }
 
+/**
+ * Creates a requirements checker with pre-configured options.
+ * Note: The context parameter is intentionally unused for free models
+ * since they don't require authentication credentials from user settings.
+ */
 export function createOpencodeRequirementsChecker(
   options: OpencodeRequirementOptions
 ): (context?: ProviderRequirementsContext) => Promise<string[]> {

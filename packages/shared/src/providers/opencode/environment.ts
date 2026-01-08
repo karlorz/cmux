@@ -75,11 +75,50 @@ ls -la "\${MARKER_FILE}" >> "\${LOG_FILE}" 2>&1
   });
 
   // Install OpenCode Notification plugin to invoke completion hook
+  // Only fires completion when session is idle AND has assistant messages (not just errors)
   const pluginContent = `\
-export const NotificationPlugin = async ({ project: _project, client: _client, $, directory: _directory, worktree: _worktree }) => {
+export const NotificationPlugin = async ({ project: _project, client, $, directory: _directory, worktree: _worktree }) => {
+  let completionFired = false;
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const log = (msg) => {
+    const line = "[" + new Date().toISOString() + "] " + msg + "\\n";
+    fs.appendFileSync("/root/lifecycle/opencode-plugin.log", line);
+  };
+
+  // Read messages directly from storage (SDK API is broken)
+  const readMessagesFromStorage = () => {
+    const storageBase = path.join(process.env.HOME || "/root", ".local/share/opencode/storage");
+    const messageDir = path.join(storageBase, "message");
+    const messages = [];
+
+    try {
+      // Find all session directories
+      const sessionDirs = fs.readdirSync(messageDir).filter(d => d.startsWith("ses_"));
+      for (const sessionDir of sessionDirs) {
+        const sessionPath = path.join(messageDir, sessionDir);
+        const msgFiles = fs.readdirSync(sessionPath).filter(f => f.endsWith(".json"));
+        for (const msgFile of msgFiles) {
+          try {
+            const content = fs.readFileSync(path.join(sessionPath, msgFile), "utf-8");
+            messages.push(JSON.parse(content));
+          } catch (e) {
+            // Skip invalid files
+          }
+        }
+      }
+    } catch (e) {
+      log("Error reading message storage: " + e);
+    }
+
+    return messages;
+  };
+
   return {
     event: async ({ event }) => {
-      // Send notification on session completion
+      // Prevent duplicate completion hooks
+      if (completionFired) return;
+
       const props = event?.properties ?? {};
       const statusType =
         props.status?.type ??
@@ -89,15 +128,77 @@ export const NotificationPlugin = async ({ project: _project, client: _client, $
       const isIdle =
         event.type === "session.idle" ||
         (event.type === "session.status" && statusType === "idle");
-      if (isIdle) {
-        try {
-          await $\`/root/lifecycle/opencode/session-complete-hook.sh\`
-        } catch (primaryError) {
-          try {
-            await $\`bash -lc "/root/lifecycle/opencode/session-complete-hook.sh"\`
-          } catch (fallbackError) {
-            console.error("[CMUX] Failed to run OpenCode completion hook", primaryError, fallbackError);
+
+      if (!isIdle) return;
+
+      log("session.idle event received");
+
+      // Check if the session has actual assistant work (not just errors)
+      // This prevents marking errored sessions (e.g., "Forbidden") as completed
+      let shouldComplete = false; // Default to NOT completing - must prove success
+
+      try {
+        // Read messages directly from storage (SDK client.session.messages() is broken)
+        const messages = readMessagesFromStorage();
+        log("Got " + messages.length + " messages from storage");
+
+        // Find assistant messages
+        const assistantMsgs = messages.filter((m) => m.role === "assistant");
+        log("Found " + assistantMsgs.length + " assistant messages");
+
+        // If no assistant messages, don't complete (nothing was done)
+        if (assistantMsgs.length === 0) {
+          log("No assistant messages found, skipping completion");
+          return;
+        }
+
+        // Check if ANY assistant message completed successfully
+        const hasSuccessfulCompletion = assistantMsgs.some((m) => {
+          // Check for explicit error in the message
+          const hasExplicitError = m.error != null && typeof m.error === "object";
+
+          // Check for successful finish reason
+          const hasFinish = m.finish && m.finish !== "error";
+
+          // Check for completed timestamp
+          const hasCompleted = m.time?.completed != null;
+
+          log("Msg " + m.id + ": error=" + (hasExplicitError ? "YES(" + (m.error?.name || "unknown") + ")" : "no") + " finish=" + m.finish + " completed=" + hasCompleted);
+
+          // If there's an explicit error object, this message failed
+          if (hasExplicitError) {
+            log("Message has error, not counting as success");
+            return false;
           }
+
+          // Success if finished or completed without error
+          return hasFinish || hasCompleted;
+        });
+
+        if (hasSuccessfulCompletion) {
+          log("Found successful completion, will fire hook");
+          shouldComplete = true;
+        } else {
+          log("No successful completion found, skipping hook");
+        }
+      } catch (err) {
+        // If anything fails, log it but don't complete
+        log("Error in plugin: " + (err?.message ?? err));
+        return;
+      }
+
+      if (!shouldComplete) {
+        return;
+      }
+
+      completionFired = true;
+      try {
+        await $\`/root/lifecycle/opencode/session-complete-hook.sh\`
+      } catch (primaryError) {
+        try {
+          await $\`bash -lc "/root/lifecycle/opencode/session-complete-hook.sh"\`
+        } catch (fallbackError) {
+          console.error("[CMUX] Failed to run OpenCode completion hook", primaryError, fallbackError);
         }
       }
     },
@@ -219,7 +320,10 @@ log "Post-start script end"
     mode: "755",
   });
 
-  // Run post-start script in background so prompt always gets delivered even if worker postStart fails
+  // Run post-start script in background via nohup in startupCommands.
+  // NOTE: Cannot use postStartCommands here because cmux-pty backend sends them
+  // as PTY input to the TUI rather than running them as separate processes.
+  // The script logs to /root/lifecycle/opencode-post-start.log for debugging.
   startupCommands.push(
     "nohup /root/lifecycle/opencode/post-start.sh >/root/lifecycle/opencode-post-start.log 2>&1 &"
   );
