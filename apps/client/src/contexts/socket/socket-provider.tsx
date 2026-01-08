@@ -1,7 +1,5 @@
 import type { AvailableEditors } from "@cmux/shared";
-import {
-  connectToMainServer,
-} from "@cmux/shared/socket";
+import { connectToMainServer } from "@cmux/shared/socket";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "@tanstack/react-router";
 import React, { useEffect, useMemo } from "react";
