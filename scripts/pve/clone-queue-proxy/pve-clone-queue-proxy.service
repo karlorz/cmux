@@ -1,0 +1,37 @@
+[Unit]
+Description=PVE Clone Queue Proxy - Serializes LXC clone operations
+Documentation=https://github.com/manaflow-ai/cmux
+After=network.target pve-cluster.service pvedaemon.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/pve-clone-queue-proxy \
+    -listen :8081 \
+    -backend https://127.0.0.1:8006 \
+    -insecure=true \
+    -poll-delay 500ms \
+    -task-timeout 5m
+Restart=always
+RestartSec=5
+User=root
+Group=root
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pve-clone-queue-proxy
+
+# Resource limits
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

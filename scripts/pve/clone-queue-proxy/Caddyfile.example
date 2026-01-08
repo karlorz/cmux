@@ -1,0 +1,91 @@
+# PVE Clone Queue Proxy - Caddy Configuration
+#
+# This Caddyfile routes LXC clone requests through the queue proxy
+# while passing all other PVE API requests directly to the backend.
+#
+# The queue proxy ensures only one clone operation runs at a time,
+# preventing "CT is locked" errors when multiple clones are requested.
+
+# Option 1: Route ALL PVE API traffic through the queue proxy
+# (Simpler, the proxy handles pass-through for non-clone requests)
+{
+	# Global options
+	admin off
+}
+
+pve.example.com {
+	# TLS configuration - use your certificates
+	tls /etc/ssl/certs/pve.crt /etc/ssl/private/pve.key
+
+	# Route everything through the clone queue proxy
+	# The proxy will:
+	# - Queue and serialize clone requests (POST .../clone)
+	# - Pass through all other requests directly to PVE
+	reverse_proxy localhost:8081 {
+		# Increase timeouts for long-running clone operations
+		transport http {
+			tls_insecure_skip_verify
+			read_timeout 10m
+			write_timeout 10m
+		}
+
+		# Health check
+		health_uri /health
+		health_interval 30s
+		health_timeout 5s
+	}
+
+	# Logging
+	log {
+		output file /var/log/caddy/pve-access.log {
+			roll_size 100mb
+			roll_keep 5
+		}
+	}
+}
+
+# Option 2: Route ONLY clone requests through the proxy (more complex)
+# Uncomment below and comment out Option 1 if preferred
+#
+# pve.example.com {
+# 	tls /etc/ssl/certs/pve.crt /etc/ssl/private/pve.key
+#
+# 	# Clone requests go through the queue proxy
+# 	@clone {
+# 		method POST
+# 		path_regexp clone ^/api2/json/nodes/[^/]+/lxc/\d+/clone$
+# 	}
+# 	handle @clone {
+# 		reverse_proxy localhost:8081 {
+# 			transport http {
+# 				tls_insecure_skip_verify
+# 				read_timeout 10m
+# 				write_timeout 10m
+# 			}
+# 		}
+# 	}
+#
+# 	# All other requests go directly to PVE
+# 	handle {
+# 		reverse_proxy localhost:8006 {
+# 			transport http {
+# 				tls_insecure_skip_verify
+# 			}
+# 		}
+# 	}
+# }
+
+
+# Option 3: For Cloudflare Tunnel integration
+# Use this if Caddy is behind a Cloudflare Tunnel
+#
+# :8443 {
+# 	# No TLS needed - tunnel handles encryption
+# 	reverse_proxy localhost:8081 {
+# 		transport http {
+# 			tls_insecure_skip_verify
+# 			read_timeout 10m
+# 			write_timeout 10m
+# 		}
+# 	}
+# }
