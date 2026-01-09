@@ -23,6 +23,9 @@ const OPENAI_CROWN_MODEL = "gpt-5-mini";
 const ANTHROPIC_CROWN_MODEL = "claude-sonnet-4-5-20250929";
 const GEMINI_CROWN_MODEL = "gemini-3-flash-preview";
 
+const CROWN_PROVIDERS = ["openai", "anthropic", "gemini"] as const;
+type CrownProvider = (typeof CROWN_PROVIDERS)[number];
+
 const CrownEvaluationCandidateValidator = v.object({
   runId: v.optional(v.string()),
   agentName: v.optional(v.string()),
@@ -33,7 +36,7 @@ const CrownEvaluationCandidateValidator = v.object({
 });
 
 function resolveCrownModel(): {
-  providerName: string;
+  provider: CrownProvider;
   model: LanguageModel;
 } {
   // Note: AIGATEWAY_* accessed via process.env to avoid Convex static analysis
@@ -43,7 +46,7 @@ function resolveCrownModel(): {
       apiKey: openaiKey,
       baseURL: process.env.AIGATEWAY_OPENAI_BASE_URL || CLOUDFLARE_OPENAI_BASE_URL,
     });
-    return { model: openai(OPENAI_CROWN_MODEL), providerName: "OpenAI" };
+    return { provider: "openai", model: openai(OPENAI_CROWN_MODEL) };
   }
 
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
@@ -54,7 +57,7 @@ function resolveCrownModel(): {
         process.env.AIGATEWAY_ANTHROPIC_BASE_URL || CLOUDFLARE_ANTHROPIC_BASE_URL,
     });
     return {
-      providerName: "Anthropic",
+      provider: "anthropic",
       model: anthropic(ANTHROPIC_CROWN_MODEL),
     };
   }
@@ -65,7 +68,7 @@ function resolveCrownModel(): {
       apiKey: geminiKey,
       baseURL: process.env.AIGATEWAY_GEMINI_BASE_URL || CLOUDFLARE_GEMINI_BASE_URL,
     });
-    return { model: google(GEMINI_CROWN_MODEL), providerName: "Gemini" };
+    return { provider: "gemini", model: google(GEMINI_CROWN_MODEL) };
   }
 
   throw new ConvexError(
@@ -77,7 +80,7 @@ export async function performCrownEvaluation(
   prompt: string,
   candidates: CrownEvaluationCandidate[]
 ): Promise<CrownEvaluationResponse> {
-  const { model, providerName } = resolveCrownModel();
+  const { model, provider } = resolveCrownModel();
 
   const normalizedCandidates = candidates.map((candidate, idx) => {
     const resolvedIndex = candidate.index ?? idx;
@@ -129,14 +132,14 @@ IMPORTANT: Respond ONLY with the JSON object, no other text.`;
       system:
         "You select the best implementation from structured diff inputs and explain briefly why.",
       prompt: evaluationPrompt,
-      ...(providerName === "OpenAI" ? {} : { temperature: 0 }),
+      ...(provider === "openai" ? {} : { temperature: 0 }),
       maxRetries: 2,
     });
 
-    console.info(`[convex.crown] Evaluation completed via ${providerName}`);
+    console.info(`[convex.crown] Evaluation completed via ${provider}`);
     return CrownEvaluationResponseSchema.parse(object);
   } catch (error) {
-    console.error(`[convex.crown] ${providerName} evaluation error`, error);
+    console.error(`[convex.crown] ${provider} evaluation error`, error);
     throw new ConvexError("Evaluation failed");
   }
 }
@@ -145,7 +148,7 @@ export async function performCrownSummarization(
   prompt: string,
   gitDiff: string
 ): Promise<CrownSummarizationResponse> {
-  const { model, providerName } = resolveCrownModel();
+  const { model, provider } = resolveCrownModel();
 
   const summarizationPrompt = `You are an expert reviewer summarizing a pull request.
 
@@ -181,14 +184,14 @@ OUTPUT FORMAT (Markdown)
       system:
         "You are an expert reviewer summarizing pull requests. Provide a clear, concise summary following the requested format.",
       prompt: summarizationPrompt,
-      ...(providerName === "OpenAI" ? {} : { temperature: 0 }),
+      ...(provider === "openai" ? {} : { temperature: 0 }),
       maxRetries: 2,
     });
 
-    console.info(`[convex.crown] Summarization completed via ${providerName}`);
+    console.info(`[convex.crown] Summarization completed via ${provider}`);
     return CrownSummarizationResponseSchema.parse(object);
   } catch (error) {
-    console.error(`[convex.crown] ${providerName} summarization error`, error);
+    console.error(`[convex.crown] ${provider} summarization error`, error);
     throw new ConvexError("Summarization failed");
   }
 }
