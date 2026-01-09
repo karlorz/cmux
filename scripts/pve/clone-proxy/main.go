@@ -231,8 +231,22 @@ func (p *cloneProxy) processClone(req *cloneRequest) {
 	}
 
 	authHeaders := cloneAuthHeaders(req.r.Header)
-	status, exitStatus := p.waitForTask(req.node, upid, authHeaders)
+	status, exitStatus, timedOut := p.waitForTask(req.node, upid, authHeaders)
 	duration := time.Since(start)
+
+	if timedOut {
+		// Clone task is still running on PVE. Return an error to the client
+		// but keep blocking until the task finishes to maintain serialization.
+		log.Printf("clone task %s poll timed out after %s, waiting indefinitely for task completion", upid, duration)
+		http.Error(req.w, "clone task poll timed out, task may still be running", http.StatusGatewayTimeout)
+
+		// Continue polling without timeout to ensure we don't release the queue
+		// slot until the clone task actually finishes on PVE.
+		finalStatus, finalExitStatus := p.waitForTaskIndefinitely(req.node, upid, authHeaders)
+		finalDuration := time.Since(start)
+		log.Printf("clone task %s eventually finished status=%s exitstatus=%s (duration=%s)", upid, finalStatus, finalExitStatus, finalDuration)
+		return
+	}
 
 	if status != "" {
 		log.Printf("clone task %s finished status=%s exitstatus=%s (duration=%s)", upid, status, exitStatus, duration)
@@ -247,7 +261,7 @@ func (p *cloneProxy) processClone(req *cloneRequest) {
 	}
 }
 
-func (p *cloneProxy) waitForTask(node, upid string, authHeaders http.Header) (string, string) {
+func (p *cloneProxy) waitForTask(node, upid string, authHeaders http.Header) (status string, exitStatus string, timedOut bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), p.pollTimeout)
 	defer cancel()
 
@@ -260,7 +274,7 @@ func (p *cloneProxy) waitForTask(node, upid string, authHeaders http.Header) (st
 		select {
 		case <-ctx.Done():
 			log.Printf("poll timeout for %s: %v", upid, ctx.Err())
-			return "", ""
+			return "", "", true
 		case <-ticker.C:
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, statusURL, nil)
 			if err != nil {
@@ -287,17 +301,71 @@ func (p *cloneProxy) waitForTask(node, upid string, authHeaders http.Header) (st
 				continue
 			}
 
-			status, exitStatus := parseTaskStatus(body)
-			if status == "running" {
+			s, es := parseTaskStatus(body)
+			if s == "running" {
 				continue
 			}
 
-			if status == "" {
-				status = "unknown"
+			if s == "" {
+				s = "unknown"
 			}
-			return status, exitStatus
+			return s, es, false
 		}
 	}
+}
+
+// waitForTaskIndefinitely polls the task status without any timeout.
+// This is used after the initial poll timeout to ensure we don't release
+// the queue slot while the clone task is still running on PVE.
+func (p *cloneProxy) waitForTaskIndefinitely(node, upid string, authHeaders http.Header) (string, string) {
+	statusURL := p.taskStatusURL(node, upid)
+
+	ticker := time.NewTicker(p.pollInterval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		ctx, cancel := context.WithTimeout(context.Background(), p.httpClient.Timeout)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, statusURL, nil)
+		if err != nil {
+			cancel()
+			log.Printf("failed to build status request: %v", err)
+			continue
+		}
+		copyHeaders(req.Header, authHeaders)
+
+		resp, err := p.httpClient.Do(req)
+		if err != nil {
+			cancel()
+			log.Printf("indefinite poll failed for %s: %v", upid, err)
+			continue
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		cancel()
+		if err != nil {
+			log.Printf("indefinite poll response read failed for %s: %v", upid, err)
+			continue
+		}
+
+		if resp.StatusCode >= 300 {
+			log.Printf("indefinite poll returned %d for %s: %s", resp.StatusCode, upid, strings.TrimSpace(string(body)))
+			continue
+		}
+
+		status, exitStatus := parseTaskStatus(body)
+		if status == "running" {
+			continue
+		}
+
+		if status == "" {
+			status = "unknown"
+		}
+		return status, exitStatus
+	}
+
+	// Unreachable, but needed for compilation
+	return "unknown", ""
 }
 
 func (p *cloneProxy) taskStatusURL(node, upid string) string {
