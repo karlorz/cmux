@@ -6,6 +6,7 @@ import { api } from "@cmux/convex/api";
 import type { Doc, Id } from "@cmux/convex/dataModel";
 import { convexQuery } from "@convex-dev/react-query";
 import { useMutation } from "convex/react";
+import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { queryClient } from "@/query-client";
 
@@ -153,6 +154,9 @@ function invalidateMorphPauseQueriesForTask(
 
 export function useArchiveTask(teamSlugOrId: string) {
   const { socket } = useSocket();
+  const [archivingTaskIds, setArchivingTaskIds] = useState<Set<string>>(
+    new Set()
+  );
 
   type TasksGetArgs = {
     teamSlugOrId: string;
@@ -269,107 +273,143 @@ export function useArchiveTask(teamSlugOrId: string) {
     }
   });
 
-  // Helper to update React Query cache (used alongside Convex optimistic updates)
+// Helper to update React Query cache (used alongside Convex optimistic updates)
   // The layout uses convexQuery wrapper with React Query, which has a separate cache
-  const invalidateReactQueryCache = (taskId: Doc<"tasks">["_id"]) => {
-    const queryClient = convexQueryClient.queryClient;
+  const invalidateReactQueryCache = useCallback(
+    (taskId: Doc<"tasks">["_id"]) => {
+      const rqClient = convexQueryClient.queryClient;
 
-    // Get current tasks from React Query cache and filter out the archived task
-    const tasksQueryKey = convexQuery(api.tasks.get, {
-      teamSlugOrId,
-      archived: false,
-    }).queryKey;
-    const currentTasks = queryClient.getQueryData<Doc<"tasks">[]>(tasksQueryKey);
-    if (currentTasks) {
-      queryClient.setQueryData(
-        tasksQueryKey,
-        currentTasks.filter((t) => t._id !== taskId)
-      );
-    }
+      // Get current tasks from React Query cache and filter out the archived task
+      const tasksQueryKey = convexQuery(api.tasks.get, {
+        teamSlugOrId,
+        archived: false,
+      }).queryKey;
+      const currentTasks = rqClient.getQueryData<Doc<"tasks">[]>(tasksQueryKey);
+      if (currentTasks) {
+        rqClient.setQueryData(
+          tasksQueryKey,
+          currentTasks.filter((t) => t._id !== taskId)
+        );
+      }
 
-    // Also update the variant without explicit archived: false (used by workspaces)
-    const tasksQueryKeyNoArchived = convexQuery(api.tasks.get, {
-      teamSlugOrId,
-    }).queryKey;
-    const currentTasksNoArchived =
-      queryClient.getQueryData<Doc<"tasks">[]>(tasksQueryKeyNoArchived);
-    if (currentTasksNoArchived) {
-      queryClient.setQueryData(
-        tasksQueryKeyNoArchived,
-        currentTasksNoArchived.filter((t) => t._id !== taskId)
-      );
-    }
-  };
+      // Also update the variant without explicit archived: false (used by workspaces)
+      const tasksQueryKeyNoArchived = convexQuery(api.tasks.get, {
+        teamSlugOrId,
+      }).queryKey;
+      const currentTasksNoArchived =
+        rqClient.getQueryData<Doc<"tasks">[]>(tasksQueryKeyNoArchived);
+      if (currentTasksNoArchived) {
+        rqClient.setQueryData(
+          tasksQueryKeyNoArchived,
+          currentTasksNoArchived.filter((t) => t._id !== taskId)
+        );
+      }
+    },
+    [teamSlugOrId]
+  );
 
-  const archiveWithUndo = (task: Doc<"tasks">) => {
-    archiveMutation({ teamSlugOrId, id: task._id });
-    invalidateReactQueryCache(task._id);
+  const archiveWithUndo = useCallback(
+    async (task: Doc<"tasks">) => {
+      const taskId = task._id;
+      setArchivingTaskIds((prev) => new Set(prev).add(taskId));
+      invalidateReactQueryCache(taskId);
 
-    // Clean up cached iframes and terminal queries to prevent Wake on HTTP
-    void cleanupTaskResources(teamSlugOrId, task._id);
+      // Clean up cached iframes and terminal queries to prevent Wake on HTTP
+      void cleanupTaskResources(teamSlugOrId, taskId);
 
-    // Emit socket event to stop/pause containers
-    if (socket) {
-      socket.emit(
-        "archive-task",
-        { taskId: task._id },
-        (response: { success: boolean; error?: string }) => {
-          if (!response.success) {
-            console.error("Failed to stop containers:", response.error);
-          }
-        }
-      );
-    }
+      try {
+        await archiveMutation({ teamSlugOrId, id: taskId });
 
-    toast("Task archived", {
-      action: {
-        label: "Undo",
-        onClick: () => {
-          unarchiveMutation({ teamSlugOrId, id: task._id });
-          // Emit socket event to resume containers
-          if (socket) {
-            socket.emit(
-              "unarchive-task",
-              { taskId: task._id },
-              (response: { success: boolean; error?: string }) => {
-                if (!response.success) {
-                  console.error("Failed to resume containers:", response.error);
-                } else {
-                  // Invalidate only this task's morph pause queries to trigger iframe refresh
-                  // Using targeted invalidation prevents waking other tasks' VMs via Wake on HTTP
-                  invalidateMorphPauseQueriesForTask(teamSlugOrId, task._id);
-                }
+        // Emit socket event to stop/pause containers
+        if (socket) {
+          socket.emit(
+            "archive-task",
+            { taskId },
+            (response: { success: boolean; error?: string }) => {
+              if (!response.success) {
+                console.error("Failed to stop containers:", response.error);
               }
-            );
-          }
-        },
-      },
-    });
-  };
-
-  const archive = (id: string) => {
-    archiveMutation({
-      teamSlugOrId,
-      id: id as Doc<"tasks">["_id"],
-    });
-    invalidateReactQueryCache(id as Doc<"tasks">["_id"]);
-
-    // Clean up cached iframes and terminal queries to prevent Wake on HTTP
-    void cleanupTaskResources(teamSlugOrId, id as Id<"tasks">);
-
-    // Emit socket event to stop/pause containers
-    if (socket) {
-      socket.emit(
-        "archive-task",
-        { taskId: id as Doc<"tasks">["_id"] },
-        (response: { success: boolean; error?: string }) => {
-          if (!response.success) {
-            console.error("Failed to stop containers:", response.error);
-          }
+            }
+          );
         }
-      );
-    }
-  };
+
+        toast("Task archived", {
+          action: {
+            label: "Undo",
+            onClick: () => {
+              unarchiveMutation({ teamSlugOrId, id: taskId });
+              // Emit socket event to resume containers
+              if (socket) {
+                socket.emit(
+                  "unarchive-task",
+                  { taskId },
+                  (response: { success: boolean; error?: string }) => {
+                    if (!response.success) {
+                      console.error("Failed to resume containers:", response.error);
+                    } else {
+                      // Invalidate only this task's morph pause queries to trigger iframe refresh
+                      // Using targeted invalidation prevents waking other tasks' VMs via Wake on HTTP
+                      invalidateMorphPauseQueriesForTask(teamSlugOrId, taskId);
+                    }
+                  }
+                );
+              }
+            },
+          },
+        });
+      } finally {
+        setArchivingTaskIds((prev) => {
+          const next = new Set(prev);
+          next.delete(taskId);
+          return next;
+        });
+      }
+    },
+    [archiveMutation, invalidateReactQueryCache, socket, teamSlugOrId, unarchiveMutation]
+  );
+
+  const archive = useCallback(
+    async (id: string) => {
+      const taskId = id as Doc<"tasks">["_id"];
+      setArchivingTaskIds((prev) => new Set(prev).add(id));
+      invalidateReactQueryCache(taskId);
+
+      // Clean up cached iframes and terminal queries to prevent Wake on HTTP
+      void cleanupTaskResources(teamSlugOrId, taskId);
+
+      try {
+        await archiveMutation({
+          teamSlugOrId,
+          id: taskId,
+        });
+
+        // Emit socket event to stop/pause containers
+        if (socket) {
+          socket.emit(
+            "archive-task",
+            { taskId },
+            (response: { success: boolean; error?: string }) => {
+              if (!response.success) {
+                console.error("Failed to stop containers:", response.error);
+              }
+            }
+          );
+        }
+      } finally {
+        setArchivingTaskIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }
+    },
+    [archiveMutation, invalidateReactQueryCache, socket, teamSlugOrId]
+  );
+
+  const isArchiving = useCallback(
+    (id: string) => archivingTaskIds.has(id),
+    [archivingTaskIds]
+  );
 
   const unarchive = (id: string) => {
     const taskId = id as Id<"tasks">;
@@ -400,5 +440,6 @@ export function useArchiveTask(teamSlugOrId: string) {
     archive,
     unarchive,
     archiveWithUndo,
+    isArchiving,
   };
 }
