@@ -5,15 +5,16 @@ cd "$CLAUDE_PROJECT_DIR"
 TMPFILE=$(mktemp)
 trap 'rm -f "$TMPFILE"' EXIT
 
-script -q "$TMPFILE" codex \
-  --dangerously-bypass-approvals-and-sandbox \
-  --model gpt-5.2 \
-  -c model_reasoning_effort="high" \
-  review --base main 2>&1 || true
+# Run codex review and capture output
+codex review \
+  --base main \
+  -c model="gpt-5.2" \
+  -c model_reasoning_effort="high" 2>&1 | tee "$TMPFILE" || true
 
-# Extract findings after last "codex" marker
+# Extract findings after last "codex" marker (the review output section)
 FINDINGS=$(awk '/^codex$/ { found=1; content=""; next } found { content = content $0 "\n" } END { print content }' "$TMPFILE" | sed 's/\x1b\[[0-9;]*m//g' | sed '/^$/d')
 
+echo ""
 echo "## Codex Review Findings"
 echo "$FINDINGS"
 ```
