@@ -6,14 +6,13 @@ import {
   getClaudeEnvironment,
 } from "./environment";
 
-// Bedrock model IDs from environment variables
-const BEDROCK_MODEL_SONNET_45 = "anthropic.claude-sonnet-4-5-20250929-v1:0";
-const BEDROCK_MODEL_OPUS_45 = "global.anthropic.claude-opus-4-5-20251101-v1:0";
-const BEDROCK_MODEL_HAIKU_45 = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
-
-// TODO: Temporary flag to disable OAuth token support
-// Set to true to re-enable user OAuth token authentication
-const ENABLE_OAUTH_TOKEN = false;
+// Bedrock model IDs from environment variables (with fallback defaults)
+const BEDROCK_MODEL_SONNET_45 =
+  process.env.ANTHROPIC_MODEL_SONNET_45 ?? "anthropic.claude-sonnet-4-5-20250929-v1:0";
+const BEDROCK_MODEL_OPUS_45 =
+  process.env.ANTHROPIC_MODEL_OPUS_45 ?? "global.anthropic.claude-opus-4-5-20251101-v1:0";
+const BEDROCK_MODEL_HAIKU_45 =
+  process.env.ANTHROPIC_MODEL_HAIKU_45 ?? "us.anthropic.claude-haiku-4-5-20251001-v1:0";
 
 /**
  * Apply API keys for Claude agents.
