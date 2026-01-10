@@ -259,6 +259,44 @@ pub fn fetch_origin_all_path(path: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
+/// Fetch a specific ref from origin. Use this when a ref is missing locally.
+/// Unlike swr_fetch_origin_all_path, this always performs the fetch synchronously
+/// without checking the time window, since we know the ref doesn't exist.
+pub fn fetch_specific_ref(path: &std::path::Path, ref_name: &str) -> Result<bool> {
+    let cwd = path.to_string_lossy().to_string();
+
+    // Extract the branch name, stripping common prefixes
+    let branch = ref_name
+        .strip_prefix("origin/")
+        .or_else(|| ref_name.strip_prefix("refs/remotes/origin/"))
+        .or_else(|| ref_name.strip_prefix("refs/heads/"))
+        .unwrap_or(ref_name);
+
+    // Try to fetch the specific branch from origin
+    let result = run_git(&cwd, &["fetch", "origin", branch]);
+
+    if result.is_ok() {
+        // Update last fetch time since we just fetched
+        let root = default_cache_root();
+        let now = now_ms();
+        let _ = update_cache_index_with(&root, &PathBuf::from(&cwd), Some(now));
+        set_map_last_fetch(&PathBuf::from(&cwd), now);
+        return Ok(true);
+    }
+
+    // If specific branch fetch failed, try fetching all (the branch might have a different name on remote)
+    let result_all = run_git(&cwd, &["fetch", "--all", "--tags", "--prune"]);
+    if result_all.is_ok() {
+        let root = default_cache_root();
+        let now = now_ms();
+        let _ = update_cache_index_with(&root, &PathBuf::from(&cwd), Some(now));
+        set_map_last_fetch(&PathBuf::from(&cwd), now);
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
 fn enforce_cache_limit(root: &Path) -> Result<()> {
     let mut idx = load_index(root);
     if idx.entries.len() <= MAX_CACHE_REPOS {

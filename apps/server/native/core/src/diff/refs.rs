@@ -223,39 +223,137 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
     let head_oid = match oid_from_rev_parse(&repo, head_ref) {
         Ok(oid) => oid,
         Err(_) => {
-            let _d_head = t_head.elapsed();
+            // Ref not found locally - try fetching it from origin and retry
             #[cfg(debug_assertions)]
             println!(
-        "[cmux_native_git] git_diff timings: total={}ms resolve_head={}ms (failed to resolve); cwd={}",
-        t_total.elapsed().as_millis(),
-        _d_head.as_millis(),
-        cwd,
-      );
-            return Ok(Vec::new());
+                "[native.refs] head ref '{}' not found locally, attempting fetch...",
+                head_ref
+            );
+            let fetch_succeeded = crate::repo::cache::fetch_specific_ref(
+                std::path::Path::new(&cwd),
+                head_ref,
+            )
+            .unwrap_or(false);
+            if fetch_succeeded {
+                // Re-open repo after fetch to pick up new refs
+                if let Ok(repo2) = gix::open(&cwd) {
+                    if let Ok(oid) = oid_from_rev_parse(&repo2, head_ref) {
+                        #[cfg(debug_assertions)]
+                        println!(
+                            "[native.refs] head ref '{}' resolved after fetch: {}",
+                            head_ref, oid
+                        );
+                        oid
+                    } else {
+                        let _d_head = t_head.elapsed();
+                        #[cfg(debug_assertions)]
+                        println!(
+                            "[cmux_native_git] git_diff timings: total={}ms resolve_head={}ms (failed to resolve after fetch); cwd={}",
+                            t_total.elapsed().as_millis(),
+                            _d_head.as_millis(),
+                            cwd,
+                        );
+                        return Ok(Vec::new());
+                    }
+                } else {
+                    let _d_head = t_head.elapsed();
+                    #[cfg(debug_assertions)]
+                    println!(
+                        "[cmux_native_git] git_diff timings: total={}ms resolve_head={}ms (failed to reopen repo after fetch); cwd={}",
+                        t_total.elapsed().as_millis(),
+                        _d_head.as_millis(),
+                        cwd,
+                    );
+                    return Ok(Vec::new());
+                }
+            } else {
+                let _d_head = t_head.elapsed();
+                #[cfg(debug_assertions)]
+                println!(
+                    "[cmux_native_git] git_diff timings: total={}ms resolve_head={}ms (failed to resolve, fetch also failed); cwd={}",
+                    t_total.elapsed().as_millis(),
+                    _d_head.as_millis(),
+                    cwd,
+                );
+                return Ok(Vec::new());
+            }
         }
     };
     let _d_head = t_head.elapsed();
 
     let t_base = Instant::now();
+    // We may need to use the refreshed repo if we fetched for head_ref
+    let repo_for_base = gix::open(&cwd).unwrap_or(repo);
     let mut resolved_base_oid = match base_ref_input {
-        Some(ref spec) => match oid_from_rev_parse(&repo, spec) {
+        Some(ref spec) => match oid_from_rev_parse(&repo_for_base, spec) {
             Ok(oid) => oid,
             Err(_) => {
-                let _d_base = t_base.elapsed();
+                // Base ref not found locally - try fetching it from origin and retry
                 #[cfg(debug_assertions)]
                 println!(
-          "[cmux_native_git] git_diff timings: total={}ms resolve_head={}ms resolve_base={}ms (failed to resolve); cwd={}",
-          t_total.elapsed().as_millis(),
-          _d_head.as_millis(),
-          _d_base.as_millis(),
-          cwd,
-        );
-                return Ok(Vec::new());
+                    "[native.refs] base ref '{}' not found locally, attempting fetch...",
+                    spec
+                );
+                let fetch_succeeded = crate::repo::cache::fetch_specific_ref(
+                    std::path::Path::new(&cwd),
+                    spec,
+                )
+                .unwrap_or(false);
+                if fetch_succeeded {
+                    // Re-open repo after fetch to pick up new refs
+                    if let Ok(repo3) = gix::open(&cwd) {
+                        if let Ok(oid) = oid_from_rev_parse(&repo3, spec) {
+                            #[cfg(debug_assertions)]
+                            println!(
+                                "[native.refs] base ref '{}' resolved after fetch: {}",
+                                spec, oid
+                            );
+                            oid
+                        } else {
+                            let _d_base = t_base.elapsed();
+                            #[cfg(debug_assertions)]
+                            println!(
+                                "[cmux_native_git] git_diff timings: total={}ms resolve_head={}ms resolve_base={}ms (failed to resolve after fetch); cwd={}",
+                                t_total.elapsed().as_millis(),
+                                _d_head.as_millis(),
+                                _d_base.as_millis(),
+                                cwd,
+                            );
+                            return Ok(Vec::new());
+                        }
+                    } else {
+                        let _d_base = t_base.elapsed();
+                        #[cfg(debug_assertions)]
+                        println!(
+                            "[cmux_native_git] git_diff timings: total={}ms resolve_head={}ms resolve_base={}ms (failed to reopen repo after fetch); cwd={}",
+                            t_total.elapsed().as_millis(),
+                            _d_head.as_millis(),
+                            _d_base.as_millis(),
+                            cwd,
+                        );
+                        return Ok(Vec::new());
+                    }
+                } else {
+                    let _d_base = t_base.elapsed();
+                    #[cfg(debug_assertions)]
+                    println!(
+                        "[cmux_native_git] git_diff timings: total={}ms resolve_head={}ms resolve_base={}ms (failed to resolve, fetch also failed); cwd={}",
+                        t_total.elapsed().as_millis(),
+                        _d_head.as_millis(),
+                        _d_base.as_millis(),
+                        cwd,
+                    );
+                    return Ok(Vec::new());
+                }
             }
         },
-        None => resolve_default_base(&repo, head_oid),
+        None => resolve_default_base(&repo_for_base, head_oid),
     };
     let _d_base = t_base.elapsed();
+
+    // Re-open repo to ensure we have the latest refs after any fetches
+    let repo = gix::open(&cwd)?;
+
     if let Some(ref known_base) = opts.lastKnownBaseSha {
         if let Some(candidate) = parse_oid(known_base) {
             if repo.find_object(candidate).is_ok() && is_ancestor(&repo, candidate, head_oid) {
