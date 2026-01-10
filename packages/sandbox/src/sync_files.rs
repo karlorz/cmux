@@ -2,7 +2,13 @@
 //!
 //! This module handles syncing configuration files (auth tokens, settings, shell config)
 //! from the user's home directory on the host to the sandbox environment.
+//!
+//! MCP Configuration Transformation:
+//! Certain files are transformed during sync to adapt them for the sandbox environment.
+//! For example, MCP server configurations are modified to connect to the sandbox's
+//! existing Chrome instance via the CDP proxy (port 39381) instead of spawning a new browser.
 
+use crate::mcp_transform;
 use crate::models::ExecRequest;
 use anyhow::anyhow;
 use reqwest::Client;
@@ -32,6 +38,12 @@ pub const SYNC_FILES: &[SyncFileDef] = &[
         name: "Claude Config",
         host_path: ".claude.json",
         sandbox_path: "/root/.claude.json",
+        is_dir: false,
+    },
+    SyncFileDef {
+        name: "Claude MCP Config (user)",
+        host_path: ".claude/.mcp.json",
+        sandbox_path: "/root/.claude/.mcp.json",
         is_dir: false,
     },
     // Codex
@@ -213,6 +225,66 @@ pub fn detect_sync_files() -> Vec<SyncFileToUpload> {
     files_to_upload
 }
 
+/// Transform a file's content for sandbox environment.
+///
+/// This function applies transformations needed for certain config files to work
+/// in the sandbox environment:
+/// - Codex config.toml: Injects notify hook for cmux-bridge
+/// - MCP config files: Injects --browserUrl for CDP-based MCP servers
+///
+/// Returns Some(Ok(content)) if transformation was applied successfully,
+/// Some(Err(message)) if transformation failed, or None if no transformation needed.
+fn transform_file_for_sandbox(
+    host_path: &Path,
+    sandbox_path: &str,
+) -> Option<Result<String, String>> {
+    let raw = match fs::read_to_string(host_path) {
+        Ok(content) => content,
+        Err(e) => return Some(Err(format!("Failed to read file: {}", e))),
+    };
+
+    match sandbox_path {
+        "/root/.codex/config.toml" => {
+            // Apply both Codex notify injection AND MCP transformation
+            let with_notify = ensure_codex_notify(&raw);
+            Some(mcp_transform::transform_codex_mcp_toml(&with_notify))
+        }
+        "/root/.claude/.mcp.json" => {
+            // Transform Claude MCP config for sandbox
+            Some(mcp_transform::transform_claude_mcp_json(&raw))
+        }
+        "/root/.gemini/settings.json" => {
+            // Transform Gemini settings for sandbox (may contain MCP config)
+            Some(mcp_transform::transform_gemini_mcp_json(&raw))
+        }
+        "/root/.config/amp/settings.json" => {
+            // Transform Amp settings for sandbox (may contain MCP config)
+            Some(mcp_transform::transform_amp_mcp_json(&raw))
+        }
+        _ => None,
+    }
+}
+
+/// Ensure Codex config.toml has the cmux-bridge notify hook.
+fn ensure_codex_notify(content: &str) -> String {
+    let has_notify = content
+        .lines()
+        .any(|line| line.trim_start().starts_with("notify"));
+    if has_notify {
+        return content.to_string();
+    }
+
+    let notify_block = r#"notify = [
+  "sh",
+  "-c",
+  "echo \"$1\" | jq -r '.[\"last-assistant-message\"] // \"Awaiting input\"' | xargs -I{} cmux-bridge notify \"Codex: {}\"",
+  "--",
+]
+
+"#;
+    format!("{notify_block}{content}")
+}
+
 pub async fn upload_sync_files(
     client: &Client,
     base_url: &str,
@@ -246,25 +318,6 @@ pub async fn upload_sync_files_with_list(
 
         let temp_dir_name = "__cmux_sync_temp";
 
-        fn ensure_codex_notify(content: &str) -> String {
-            let has_notify = content
-                .lines()
-                .any(|line| line.trim_start().starts_with("notify"));
-            if has_notify {
-                return content.to_string();
-            }
-
-            let notify_block = r#"notify = [
-  "sh",
-  "-c",
-  "echo \"$1\" | jq -r '.[\"last-assistant-message\"] // \"Awaiting input\"' | xargs -I{} cmux-bridge notify \"Codex: {}\"",
-  "--",
-]
-
-"#;
-            format!("{notify_block}{content}")
-        }
-
         for SyncFileToUpload {
             host_path,
             sandbox_path: sandbox_path_str,
@@ -279,12 +332,13 @@ pub async fn upload_sync_files_with_list(
             let result: io::Result<()> = if is_dir {
                 // For directories, recursively add all contents
                 tar.append_dir_all(&tar_path, &host_path)
-            } else if sandbox_path_str == "/root/.codex/config.toml" {
-                // Ensure Codex config always has our notify hook
-                match fs::read_to_string(&host_path) {
-                    Ok(raw) => {
-                        let merged = ensure_codex_notify(&raw);
-                        let bytes = merged.as_bytes();
+            } else if let Some(transformed) =
+                transform_file_for_sandbox(&host_path, sandbox_path_str)
+            {
+                // File requires transformation for sandbox environment
+                match transformed {
+                    Ok(content) => {
+                        let bytes = content.as_bytes();
                         let mut header = Header::new_gnu();
                         if let Err(e) = header.set_path(&tar_path) {
                             let _ = tx.blocking_send(Err(e));
@@ -300,7 +354,11 @@ pub async fn upload_sync_files_with_list(
                         header.set_cksum();
                         tar.append_data(&mut header, &tar_path, bytes)
                     }
-                    Err(e) => Err(e),
+                    Err(e) => {
+                        eprintln!("Warning: Failed to transform {}: {}", sandbox_path_str, e);
+                        // Fall back to copying file as-is
+                        tar.append_path_with_name(&host_path, &tar_path)
+                    }
                 }
             } else {
                 // For files, add with the specified name
@@ -417,25 +475,6 @@ pub fn prebuild_sync_files_tar() -> Result<Option<Vec<u8>>, String> {
         let mut tar = Builder::new(&mut buffer);
         let temp_dir_name = "__cmux_sync_temp";
 
-        fn ensure_codex_notify(content: &str) -> String {
-            let has_notify = content
-                .lines()
-                .any(|line| line.trim_start().starts_with("notify"));
-            if has_notify {
-                return content.to_string();
-            }
-
-            let notify_block = r#"notify = [
-  "sh",
-  "-c",
-  "echo \"$1\" | jq -r '.[\"last-assistant-message\"] // \"Awaiting input\"' | xargs -I{} cmux-bridge notify \"Codex: {}\"",
-  "--",
-]
-
-"#;
-            format!("{notify_block}{content}")
-        }
-
         for SyncFileToUpload {
             host_path,
             sandbox_path: sandbox_path_str,
@@ -448,11 +487,13 @@ pub fn prebuild_sync_files_tar() -> Result<Option<Vec<u8>>, String> {
 
             let result: io::Result<()> = if is_dir {
                 tar.append_dir_all(&tar_path, &host_path)
-            } else if sandbox_path_str == "/root/.codex/config.toml" {
-                match fs::read_to_string(&host_path) {
-                    Ok(raw) => {
-                        let merged = ensure_codex_notify(&raw);
-                        let bytes = merged.as_bytes();
+            } else if let Some(transformed) =
+                transform_file_for_sandbox(&host_path, sandbox_path_str)
+            {
+                // File requires transformation for sandbox environment
+                match transformed {
+                    Ok(content) => {
+                        let bytes = content.as_bytes();
                         let mut header = Header::new_gnu();
                         if header.set_path(&tar_path).is_err() {
                             return Err(format!(
@@ -470,7 +511,11 @@ pub fn prebuild_sync_files_tar() -> Result<Option<Vec<u8>>, String> {
                         header.set_cksum();
                         tar.append_data(&mut header, &tar_path, bytes)
                     }
-                    Err(e) => Err(e),
+                    Err(e) => {
+                        eprintln!("Warning: Failed to transform {}: {}", sandbox_path_str, e);
+                        // Fall back to copying file as-is
+                        tar.append_path_with_name(&host_path, &tar_path)
+                    }
                 }
             } else {
                 tar.append_path_with_name(&host_path, &tar_path)

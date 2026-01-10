@@ -42,6 +42,7 @@ rustls = { version = "0.23.35", features = ["ring"] }
 rustls-pki-types = "1.13.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+toml = "0.8"
 tar = "0.4.44"
 thiserror = "1.0"
 tokio = { version = "1.41", features = ["macros", "rt-multi-thread", "signal", "process", "fs", "net", "time", "io-std"] }

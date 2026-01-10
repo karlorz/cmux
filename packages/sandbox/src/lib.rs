@@ -4,6 +4,7 @@ pub mod bubblewrap;
 pub mod errors;
 pub mod ip_pool;
 pub mod keyring;
+pub mod mcp_transform;
 pub mod models;
 pub mod mux;
 pub mod notifications;
