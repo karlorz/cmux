@@ -5,11 +5,6 @@ import {
   type AgentConfig,
   type EnvironmentResult,
 } from "@cmux/shared/agentConfig";
-import {
-  ANTHROPIC_MODEL_HAIKU_45_ENV,
-  ANTHROPIC_MODEL_OPUS_45_ENV,
-  ANTHROPIC_MODEL_SONNET_45_ENV,
-} from "@cmux/shared/utils/anthropic";
 import type {
   WorkerCreateTerminal,
   WorkerTerminalFailed,
@@ -311,9 +306,21 @@ export async function spawnAgent(
 
     // Fetch API keys from Convex BEFORE calling agent.environment()
     // so agents can access them in their environment configuration
-    const apiKeys = await getConvex().query(api.apiKeys.getAllForAgents, {
+    const userApiKeys = await getConvex().query(api.apiKeys.getAllForAgents, {
       teamSlugOrId,
     });
+
+    // Merge with platform-provided AWS Bedrock credentials from server environment
+    // These are always injected so Claude agents can fall back to Bedrock when no OAuth token
+    const apiKeys: Record<string, string> = {
+      ...userApiKeys,
+    };
+    if (process.env.AWS_BEARER_TOKEN_BEDROCK) {
+      apiKeys.AWS_BEARER_TOKEN_BEDROCK = process.env.AWS_BEARER_TOKEN_BEDROCK;
+    }
+    if (process.env.AWS_REGION) {
+      apiKeys.AWS_REGION = process.env.AWS_REGION;
+    }
 
     // Use environment property if available
     if (agent.environment) {
@@ -406,30 +413,11 @@ export async function spawnAgent(
     }
 
     // Replace $PROMPT placeholders in args with $CMUX_PROMPT token for shell-time expansion
-    // Also substitute $ANTHROPIC_MODEL_* env vars with actual values from server environment
-    const modelEnvVars: Record<string, string | undefined> = {
-      [`$${ANTHROPIC_MODEL_OPUS_45_ENV}`]: process.env[ANTHROPIC_MODEL_OPUS_45_ENV],
-      [`$${ANTHROPIC_MODEL_SONNET_45_ENV}`]: process.env[ANTHROPIC_MODEL_SONNET_45_ENV],
-      [`$${ANTHROPIC_MODEL_HAIKU_45_ENV}`]: process.env[ANTHROPIC_MODEL_HAIKU_45_ENV],
-    };
-
     const processedArgs = agent.args.map((arg) => {
-      let result = arg;
-      if (result.includes("$PROMPT")) {
-        result = result.replace(/\$PROMPT/g, "$CMUX_PROMPT");
+      if (arg.includes("$PROMPT")) {
+        return arg.replace(/\$PROMPT/g, "$CMUX_PROMPT");
       }
-      // Direct env var substitution for model IDs
-      if (result in modelEnvVars) {
-        const value = modelEnvVars[result];
-        if (value) {
-          result = value;
-        } else {
-          serverLogger.warn(
-            `[AgentSpawner] Environment variable ${result.slice(1)} is not set`
-          );
-        }
-      }
-      return result;
+      return arg;
     });
 
     const usesDangerousPermissions = processedArgs.includes(
