@@ -2,6 +2,7 @@ import type {
   EnvironmentContext,
   EnvironmentResult,
 } from "../common/environment-result";
+import { getClaudeCodeRemoteMcpFile } from "../common/remote-mcp-config";
 
 export const CLAUDE_KEY_ENV_VARS_TO_UNSET = [
   "ANTHROPIC_API_KEY",
@@ -286,6 +287,12 @@ echo ${ctx.taskRunJwt}`;
   startupCommands.push(
     "echo '[CMUX] Settings directory in ~/.claude:' && ls -la /root/.claude/",
   );
+
+  // Add project-level .mcp.json with remote MCP server configurations
+  // This uses "Connect Mode" to connect to already-running services in the sandbox
+  // (e.g., Chrome DevTools via CDP proxy at localhost:39381)
+  // Project-level .mcp.json takes precedence over user-level ~/.claude/.mcp.json
+  files.push(getClaudeCodeRemoteMcpFile());
 
   return {
     files,

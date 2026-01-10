@@ -2,7 +2,14 @@ import type {
   EnvironmentContext,
   EnvironmentResult,
 } from "../common/environment-result";
+import { generateGeminiMcpConfig } from "../common/remote-mcp-config";
 import { getGeminiTelemetryPath } from "./telemetry";
+
+type GeminiMcpServerConfig = {
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+};
 
 type GeminiModelSettings = {
   skipNextSpeakerCheck?: boolean;
@@ -21,6 +28,7 @@ type GeminiSettings = {
   selectedAuthType?: string;
   model?: GeminiModelSettings;
   telemetry?: GeminiTelemetrySettings;
+  mcpServers?: Record<string, GeminiMcpServerConfig>;
   [key: string]: unknown;
 };
 
@@ -131,6 +139,19 @@ export async function getGeminiEnvironment(
     settings.model = {
       ...modelSettings,
       skipNextSpeakerCheck: false,
+    };
+
+    // Add remote MCP server configurations for sandbox environment
+    // These use "Connect Mode" to connect to already-running services
+    // (e.g., Chrome DevTools via CDP proxy at localhost:39381)
+    const remoteMcpServers = generateGeminiMcpConfig();
+    const existingMcpServers =
+      settings.mcpServers && typeof settings.mcpServers === "object"
+        ? (settings.mcpServers as Record<string, GeminiMcpServerConfig>)
+        : {};
+    settings.mcpServers = {
+      ...existingMcpServers,
+      ...remoteMcpServers,
     };
 
     const mergedContent = JSON.stringify(settings, null, 2) + "\n";

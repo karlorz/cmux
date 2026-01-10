@@ -2,6 +2,7 @@ import type {
   EnvironmentContext,
   EnvironmentResult,
 } from "../common/environment-result";
+import { getCodexRemoteMcpTomlContent } from "../common/remote-mcp-config";
 
 /**
  * Apply API keys for OpenAI Codex.
@@ -102,21 +103,26 @@ touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
     }
   }
 
-  // Ensure config.toml exists and contains a notify hook pointing to our script
+  // Ensure config.toml exists and contains:
+  // 1. A notify hook pointing to our script
+  // 2. Remote MCP server configurations for sandbox environment
+  const remoteMcpToml = getCodexRemoteMcpTomlContent();
   try {
     const rawToml = await readFile(`${homedir()}/.codex/config.toml`, "utf-8");
     const hasNotify = /(^|\n)\s*notify\s*=/.test(rawToml);
-    const tomlOut = hasNotify
+    let tomlOut = hasNotify
       ? rawToml
       : `notify = ["/root/lifecycle/codex-notify.sh"]\n` + rawToml;
+    // Append remote MCP server configurations
+    tomlOut += remoteMcpToml;
     files.push({
       destinationPath: `$HOME/.codex/config.toml`,
       contentBase64: Buffer.from(tomlOut).toString("base64"),
       mode: "644",
     });
   } catch (_error) {
-    // No host config.toml; create a minimal one that sets notify
-    const toml = `notify = ["/root/lifecycle/codex-notify.sh"]\n`;
+    // No host config.toml; create a minimal one that sets notify and remote MCP servers
+    const toml = `notify = ["/root/lifecycle/codex-notify.sh"]\n` + remoteMcpToml;
     files.push({
       destinationPath: `$HOME/.codex/config.toml`,
       contentBase64: Buffer.from(toml).toString("base64"),
