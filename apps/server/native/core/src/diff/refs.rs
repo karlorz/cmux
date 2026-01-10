@@ -229,11 +229,9 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
                 "[native.refs] head ref '{}' not found locally, attempting fetch...",
                 head_ref
             );
-            let fetch_succeeded = crate::repo::cache::fetch_specific_ref(
-                std::path::Path::new(&cwd),
-                head_ref,
-            )
-            .unwrap_or(false);
+            let fetch_succeeded =
+                crate::repo::cache::fetch_specific_ref(std::path::Path::new(&cwd), head_ref)
+                    .unwrap_or(false);
             if fetch_succeeded {
                 // Re-open repo after fetch to pick up new refs
                 if let Ok(repo2) = gix::open(&cwd) {
@@ -294,11 +292,9 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
                     "[native.refs] base ref '{}' not found locally, attempting fetch...",
                     spec
                 );
-                let fetch_succeeded = crate::repo::cache::fetch_specific_ref(
-                    std::path::Path::new(&cwd),
-                    spec,
-                )
-                .unwrap_or(false);
+                let fetch_succeeded =
+                    crate::repo::cache::fetch_specific_ref(std::path::Path::new(&cwd), spec)
+                        .unwrap_or(false);
                 if fetch_succeeded {
                     // Re-open repo after fetch to pick up new refs
                     if let Ok(repo3) = gix::open(&cwd) {
