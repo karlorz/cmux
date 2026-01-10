@@ -2,7 +2,11 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { api } from "@cmux/convex/api";
-import { CLOUDFLARE_OPENAI_BASE_URL } from "@cmux/shared";
+import {
+  CLOUDFLARE_ANTHROPIC_BASE_URL,
+  CLOUDFLARE_GEMINI_BASE_URL,
+  CLOUDFLARE_OPENAI_BASE_URL,
+} from "@cmux/shared";
 import { generateText, type LanguageModel } from "ai";
 import { getConvex } from "../utils/convexClient";
 import { serverLogger } from "./fileLogger";
@@ -10,19 +14,34 @@ import { serverLogger } from "./fileLogger";
 function getModelAndProvider(
   apiKeys: Record<string, string>
 ): { model: LanguageModel; providerName: string } | null {
+  // OpenAI via Cloudflare AI Gateway
   if (apiKeys.OPENAI_API_KEY) {
+    const baseURL =
+      process.env.AIGATEWAY_OPENAI_BASE_URL || CLOUDFLARE_OPENAI_BASE_URL;
     const openai = createOpenAI({
       apiKey: apiKeys.OPENAI_API_KEY,
-      baseURL: CLOUDFLARE_OPENAI_BASE_URL,
+      baseURL,
     });
     return { model: openai("gpt-5-nano"), providerName: "OpenAI" };
   }
+  // Gemini via Cloudflare AI Gateway
   if (apiKeys.GEMINI_API_KEY) {
-    const google = createGoogleGenerativeAI({ apiKey: apiKeys.GEMINI_API_KEY });
+    const baseURL =
+      process.env.AIGATEWAY_GEMINI_BASE_URL || CLOUDFLARE_GEMINI_BASE_URL;
+    const google = createGoogleGenerativeAI({
+      apiKey: apiKeys.GEMINI_API_KEY,
+      baseURL,
+    });
     return { model: google("gemini-2.5-flash"), providerName: "Gemini" };
   }
+  // Anthropic via Cloudflare AI Gateway
   if (apiKeys.ANTHROPIC_API_KEY) {
-    const anthropic = createAnthropic({ apiKey: apiKeys.ANTHROPIC_API_KEY });
+    const baseURL =
+      process.env.AIGATEWAY_ANTHROPIC_BASE_URL || CLOUDFLARE_ANTHROPIC_BASE_URL;
+    const anthropic = createAnthropic({
+      apiKey: apiKeys.ANTHROPIC_API_KEY,
+      baseURL,
+    });
     return {
       model: anthropic("claude-3-5-haiku-20241022"),
       providerName: "Anthropic",
