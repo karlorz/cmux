@@ -632,6 +632,15 @@ jobs:
             --mac dmg zip \
             --arm64 \
             --publish never
+      - name: Prepare arm64 update manifest
+        working-directory: apps/client/dist-electron
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f "latest-mac.yml" ]]; then
+            rm -f latest-arm64-mac.yml
+            mv latest-mac.yml latest-arm64-mac.yml
+          fi
       - name: Publish unsigned macOS arm64 artifacts to GitHub Releases
         env:
           GH_TOKEN: ${{ github.token }}
@@ -755,6 +764,15 @@ jobs:
             --mac dmg zip \
             --universal \
             --publish never
+      - name: Prepare universal update manifest
+        working-directory: apps/client/dist-electron
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f "latest-mac.yml" ]]; then
+            rm -f latest-universal-mac.yml
+            mv latest-mac.yml latest-universal-mac.yml
+          fi
       - name: Publish unsigned macOS universal artifacts to GitHub Releases
         env:
           GH_TOKEN: ${{ github.token }}
