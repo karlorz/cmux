@@ -2,27 +2,41 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { api } from "@cmux/convex/api";
-import { CLOUDFLARE_OPENAI_BASE_URL } from "@cmux/shared";
+import {
+  CLOUDFLARE_OPENAI_BASE_URL,
+  CLOUDFLARE_ANTHROPIC_BASE_URL,
+  CLOUDFLARE_GEMINI_BASE_URL,
+} from "@cmux/shared";
 import { generateText, type LanguageModel } from "ai";
 import { getConvex } from "../utils/convexClient";
 import { serverLogger } from "./fileLogger";
 
 function getModelAndProvider(
-  apiKeys: Record<string, string>
+  apiKeys: Record<string, string>,
 ): { model: LanguageModel; providerName: string } | null {
   if (apiKeys.OPENAI_API_KEY) {
     const openai = createOpenAI({
       apiKey: apiKeys.OPENAI_API_KEY,
-      baseURL: CLOUDFLARE_OPENAI_BASE_URL,
+      baseURL:
+        process.env.AIGATEWAY_OPENAI_BASE_URL || CLOUDFLARE_OPENAI_BASE_URL,
     });
     return { model: openai("gpt-5-nano"), providerName: "OpenAI" };
   }
   if (apiKeys.GEMINI_API_KEY) {
-    const google = createGoogleGenerativeAI({ apiKey: apiKeys.GEMINI_API_KEY });
+    const google = createGoogleGenerativeAI({
+      apiKey: apiKeys.GEMINI_API_KEY,
+      baseURL:
+        process.env.AIGATEWAY_GEMINI_BASE_URL || CLOUDFLARE_GEMINI_BASE_URL,
+    });
     return { model: google("gemini-2.5-flash"), providerName: "Gemini" };
   }
   if (apiKeys.ANTHROPIC_API_KEY) {
-    const anthropic = createAnthropic({ apiKey: apiKeys.ANTHROPIC_API_KEY });
+    const anthropic = createAnthropic({
+      apiKey: apiKeys.ANTHROPIC_API_KEY,
+      baseURL:
+        process.env.AIGATEWAY_ANTHROPIC_BASE_URL ||
+        CLOUDFLARE_ANTHROPIC_BASE_URL,
+    });
     return {
       model: anthropic("claude-3-5-haiku-20241022"),
       providerName: "Anthropic",
@@ -33,7 +47,7 @@ function getModelAndProvider(
 
 export async function generateCommitMessageFromDiff(
   diff: string,
-  teamSlugOrId: string
+  teamSlugOrId: string,
 ): Promise<string | null> {
   const apiKeys = await getConvex().query(api.apiKeys.getAllForAgents, {
     teamSlugOrId,
@@ -41,7 +55,7 @@ export async function generateCommitMessageFromDiff(
   const config = getModelAndProvider(apiKeys);
   if (!config) {
     serverLogger.warn(
-      "[CommitMsg] No API keys available, skipping AI generation"
+      "[CommitMsg] No API keys available, skipping AI generation",
     );
     return null;
   }
@@ -92,7 +106,7 @@ export async function generateCommitMessageFromDiff(
     });
     const cleaned = text.trim();
     serverLogger.info(
-      `[CommitMsg] Generated via ${providerName}: ${cleaned.split("\n")[0]}`
+      `[CommitMsg] Generated via ${providerName}: ${cleaned.split("\n")[0]}`,
     );
     return cleaned || null;
   } catch (error) {
