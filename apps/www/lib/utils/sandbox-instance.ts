@@ -18,6 +18,14 @@ export interface ExecResult {
 }
 
 /**
+ * Options for executing commands inside a sandbox
+ */
+export interface ExecOptions {
+  /** Maximum runtime for the command in milliseconds */
+  timeoutMs?: number;
+}
+
+/**
  * HTTP service exposed by the sandbox
  */
 export interface HttpService {
@@ -50,7 +58,7 @@ export interface SandboxInstance {
   networking: SandboxNetworking;
 
   /** Execute a command inside the sandbox */
-  exec(command: string): Promise<ExecResult>;
+  exec(command: string, options?: ExecOptions): Promise<ExecResult>;
 
   /** Stop the sandbox */
   stop(): Promise<void>;
@@ -86,8 +94,12 @@ export function wrapMorphInstance(instance: Instance): SandboxInstance {
         url: s.url,
       })),
     },
-    exec: async (command: string) => {
-      const result = await instance.exec(command);
+    exec: async (command: string, options?: ExecOptions) => {
+      const timeoutSeconds = options?.timeoutMs
+        ? Math.ceil(options.timeoutMs / 1000)
+        : undefined;
+
+      const result = await instance.exec(command, timeoutSeconds ? { timeout: timeoutSeconds } : undefined);
       return {
         exit_code: result.exit_code,
         stdout: result.stdout || "",
@@ -118,7 +130,7 @@ export function wrapPveLxcInstance(instance: PveLxcInstance): SandboxInstance {
     networking: {
       httpServices: instance.networking.httpServices,
     },
-    exec: (command: string) => instance.exec(command),
+    exec: (command: string, options?: ExecOptions) => instance.exec(command, options),
     stop: () => instance.stop(),
     pause: () => instance.pause(),
     resume: () => instance.resume(),

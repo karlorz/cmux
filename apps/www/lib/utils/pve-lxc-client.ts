@@ -627,9 +627,11 @@ export class PveLxcClient {
     // Set HOME explicitly since cmux-execd may not have it set,
     // and many tools (gh, git) require HOME to be defined.
     // The command is passed directly to the execd service which runs it via sh -c.
+    const effectiveTimeoutMs = timeoutMs ?? 300000;
+
     const body = JSON.stringify({
       command: `HOME=/root ${command}`,
-      timeout_ms: timeoutMs ?? 30000,
+      timeout_ms: effectiveTimeoutMs,
     });
 
     try {
@@ -639,7 +641,7 @@ export class PveLxcClient {
           "Content-Type": "application/json",
         },
         body,
-        signal: AbortSignal.timeout(timeoutMs ?? 60000),
+        signal: AbortSignal.timeout(effectiveTimeoutMs + 30000),
       });
 
       if (!response.ok) {
