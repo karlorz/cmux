@@ -4,10 +4,19 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { generateObject, type LanguageModel } from "ai";
 import {
   CLOUDFLARE_ANTHROPIC_BASE_URL,
+  CLOUDFLARE_GEMINI_BASE_URL,
   CLOUDFLARE_OPENAI_BASE_URL,
 } from "@cmux/shared";
 import { z } from "zod";
 import { env } from "./www-env";
+
+// AI Gateway base URLs - configurable via environment, falling back to Cloudflare
+const AIGATEWAY_OPENAI_BASE_URL =
+  process.env.AIGATEWAY_OPENAI_BASE_URL || CLOUDFLARE_OPENAI_BASE_URL;
+const AIGATEWAY_ANTHROPIC_BASE_URL =
+  process.env.AIGATEWAY_ANTHROPIC_BASE_URL || CLOUDFLARE_ANTHROPIC_BASE_URL;
+const AIGATEWAY_GEMINI_BASE_URL =
+  process.env.AIGATEWAY_GEMINI_BASE_URL || CLOUDFLARE_GEMINI_BASE_URL;
 
 export function toKebabCase(input: string): string {
   return (
@@ -102,7 +111,7 @@ function getModelAndProvider(
   if (apiKeys.OPENAI_API_KEY) {
     const openai = createOpenAI({
       apiKey: apiKeys.OPENAI_API_KEY,
-      baseURL: CLOUDFLARE_OPENAI_BASE_URL,
+      baseURL: AIGATEWAY_OPENAI_BASE_URL,
     });
     return {
       model: openai("gpt-5-nano"),
@@ -113,6 +122,7 @@ function getModelAndProvider(
   if (apiKeys.GEMINI_API_KEY) {
     const google = createGoogleGenerativeAI({
       apiKey: apiKeys.GEMINI_API_KEY,
+      baseURL: AIGATEWAY_GEMINI_BASE_URL,
     });
     return {
       model: google("gemini-2.5-flash"),
@@ -123,7 +133,7 @@ function getModelAndProvider(
   if (apiKeys.ANTHROPIC_API_KEY) {
     const anthropic = createAnthropic({
       apiKey: apiKeys.ANTHROPIC_API_KEY,
-      baseURL: CLOUDFLARE_ANTHROPIC_BASE_URL,
+      baseURL: AIGATEWAY_ANTHROPIC_BASE_URL,
     });
     return {
       model: anthropic("claude-3-5-haiku-20241022"),
