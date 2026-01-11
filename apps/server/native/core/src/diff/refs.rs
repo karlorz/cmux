@@ -282,6 +282,32 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
     let t_base = Instant::now();
     // We may need to use the refreshed repo if we fetched for head_ref
     let repo_for_base = gix::open(&cwd).unwrap_or(repo);
+
+    // For default base refs (main/master), always fetch fresh to avoid stale comparisons.
+    // These refs are updated frequently and tasks are typically created from the latest,
+    // so using a stale local ref would include commits already in main.
+    let is_default_base_ref = base_ref_input.as_ref().is_some_and(|s| {
+        let lower = s.to_lowercase();
+        lower.contains("main") || lower.contains("master")
+    });
+    if is_default_base_ref {
+        if let Some(ref spec) = base_ref_input {
+            #[cfg(debug_assertions)]
+            println!(
+                "[native.refs] base ref '{}' is a default branch, fetching fresh...",
+                spec
+            );
+            let _ = crate::repo::cache::fetch_specific_ref(std::path::Path::new(&cwd), spec);
+        }
+    }
+
+    // Re-open repo after potential fetch for default base
+    let repo_for_base = if is_default_base_ref {
+        gix::open(&cwd).unwrap_or(repo_for_base)
+    } else {
+        repo_for_base
+    };
+
     let mut resolved_base_oid = match base_ref_input {
         Some(ref spec) => match oid_from_rev_parse(&repo_for_base, spec) {
             Ok(oid) => oid,
