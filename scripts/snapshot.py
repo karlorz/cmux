@@ -1999,7 +1999,9 @@ async def task_build_worker(ctx: TaskContext) -> None:
           exit 1
         fi
         install -d ./apps/worker/build/node_modules
-        if [ -d ./node_modules/express/node_modules/path-to-regexp ]; then
+        if [ -d ./node_modules/path-to-regexp ]; then
+          cp -RL ./node_modules/path-to-regexp ./apps/worker/build/node_modules/path-to-regexp
+        elif [ -d ./node_modules/express/node_modules/path-to-regexp ]; then
           cp -RL ./node_modules/express/node_modules/path-to-regexp ./apps/worker/build/node_modules/path-to-regexp
         else
           echo "Missing express path-to-regexp dependency" >&2
