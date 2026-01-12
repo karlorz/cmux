@@ -29,6 +29,7 @@ ENV RUSTUP_HOME=/usr/local/rustup \
 # Install minimal dependencies for Rust cross-compilation
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   --mount=type=cache,target=/var/lib/apt,sharing=locked \
+  rm -rf /var/lib/apt/lists/* && \
   apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
   curl \
@@ -37,7 +38,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   libc6-dev \
   gcc-x86-64-linux-gnu \
   g++-x86-64-linux-gnu \
-  libc6-dev-amd64-cross
+  libc6-dev-amd64-cross && \
+  rm -rf /var/lib/apt/lists/*
 
 # Install Rust toolchain with x86_64 cross-compilation support
 RUN bash <<'EOF'
@@ -163,6 +165,7 @@ ENV NVM_DIR=/root/.nvm \
 # Install build dependencies (Rust is in rust-builder stage)
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   --mount=type=cache,target=/var/lib/apt,sharing=locked \
+  rm -rf /var/lib/apt/lists/* && \
   apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
   curl \
@@ -178,7 +181,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   xz-utils \
   gnupg \
   ruby-full \
-  perl
+  perl && \
+  rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 24.x without relying on external APT mirrors
 RUN <<EOF
@@ -630,6 +634,7 @@ ARG CODE_RELEASE
 # Install runtime dependencies only
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   --mount=type=cache,target=/var/lib/apt,sharing=locked \
+  rm -rf /var/lib/apt/lists/* && \
   apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
   curl \
@@ -686,7 +691,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   libxshmfence1 \
   libxss1 \
   libxtst6 \
-  zram-tools
+  zram-tools && \
+  rm -rf /var/lib/apt/lists/*
 
 ENV RUSTUP_HOME=/usr/local/rustup \
   CARGO_HOME=/usr/local/cargo \
@@ -801,6 +807,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   --mount=type=cache,target=/var/lib/apt,sharing=locked \
   --mount=type=secret,id=github_token,required=false \
   /usr/local/share/cmux/repo-enablers/deb/github-cli.sh \
+  && rm -rf /var/lib/apt/lists/* \
   && DEBIAN_FRONTEND=noninteractive apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y gh \
   && rm -rf /var/lib/apt/lists/*
@@ -1244,11 +1251,13 @@ ARG BUILDKIT_VERSION
 # Install minimal dependencies for Docker installation
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   --mount=type=cache,target=/var/lib/apt,sharing=locked \
+  rm -rf /var/lib/apt/lists/* && \
   apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
   curl \
   wget \
-  jq
+  jq && \
+  rm -rf /var/lib/apt/lists/*
 
 # Copy github-curl helper from builder
 COPY --from=builder /usr/local/bin/github-curl /usr/local/bin/github-curl
