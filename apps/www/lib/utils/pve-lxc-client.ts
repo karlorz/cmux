@@ -269,7 +269,8 @@ export class PveLxcClient {
     this.apiUrl = options.apiUrl.replace(/\/$/, "");
     this.apiToken = options.apiToken;
     this.node = options.node || null; // Will be auto-detected if not provided
-    this.publicDomain = options.publicDomain || null;
+    // Support both PVE_PUBLIC_DOMAIN (preferred) and legacy PVE_CF_DOMAIN
+    this.publicDomain = options.publicDomain || env.PVE_CF_DOMAIN || null;
   }
 
   private generateInstanceId(): string {
@@ -731,9 +732,10 @@ export class PveLxcClient {
       hosts.add(options.execHost);
     }
 
-    const ip = await this.getContainerIp(vmid);
-    if (ip) {
-      hosts.add(`http://${ip}:39375`);
+    // Prefer public (Caddy/Cloudflare) URL first, then FQDN, then IP fallback
+    const publicExecUrl = this.buildPublicServiceUrl(39375, hostId);
+    if (publicExecUrl) {
+      hosts.add(publicExecUrl);
     }
 
     const fqdn = this.getFqdnSync(hostname, domainSuffix);
@@ -741,9 +743,9 @@ export class PveLxcClient {
       hosts.add(`http://${fqdn}:39375`);
     }
 
-    const publicExecUrl = this.buildPublicServiceUrl(39375, hostId);
-    if (publicExecUrl) {
-      hosts.add(publicExecUrl);
+    const ip = await this.getContainerIp(vmid);
+    if (ip) {
+      hosts.add(`http://${ip}:39375`);
     }
 
     if (!hosts.size) {

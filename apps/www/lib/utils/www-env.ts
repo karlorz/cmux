@@ -47,6 +47,8 @@ export const env = createEnv({
     // Public domain for PVE sandbox URLs via Cloudflare Tunnel (e.g., "example.com")
     // When set, generates URLs like https://port-{port}-{instanceId}.example.com
     PVE_PUBLIC_DOMAIN: z.string().min(1).optional(),
+    // Alias for public domain (legacy env var name used by scripts)
+    PVE_CF_DOMAIN: z.string().min(1).optional(),
     // Whether to verify PVE TLS certs (default: false for self-signed)
     PVE_VERIFY_TLS: z
       .string()
