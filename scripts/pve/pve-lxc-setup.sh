@@ -41,6 +41,8 @@ DEFAULT_CORES="${PVE_LXC_CORES:-4}"
 DEFAULT_DISK="${PVE_LXC_DISK:-32}"
 DEFAULT_OSTEMPLATE="${PVE_OSTEMPLATE:-local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst}"
 DEFAULT_HOSTNAME="cmux-template"
+DEFAULT_DNS_DOMAIN="${PVE_DNS_DOMAIN:-}"
+DEFAULT_DNS_SERVER="${PVE_DNS_SERVER:-}"
 
 usage() {
     cat << EOF
@@ -58,6 +60,8 @@ Options:
   --storage <name>        Storage pool (default: ${DEFAULT_STORAGE})
   --ostemplate <volid>    OS template (default: ${DEFAULT_OSTEMPLATE})
   --hostname <name>       Container hostname (default: ${DEFAULT_HOSTNAME})
+  --dns-domain <domain>   DNS search domain (e.g., lan, local)
+  --dns-server <ip>       DNS server IP address (e.g., 10.10.0.1)
   --skip-create           Skip container creation (only configure existing)
   --skip-configure        Skip configuration (only create container)
   --skip-convert          Skip template conversion (keep as container)
@@ -69,6 +73,8 @@ Environment Variables:
   PVE_LXC_CORES           Default CPU cores
   PVE_LXC_DISK            Default disk size (GB)
   PVE_OSTEMPLATE          Default OS template
+  PVE_DNS_DOMAIN          Default DNS search domain
+  PVE_DNS_SERVER          Default DNS server IP
 
 Examples:
   # Run from PVE console via curl
@@ -76,6 +82,9 @@ Examples:
 
   # With custom options
   $(basename "$0") 9000 --memory 8192 --cores 8 --storage local-zfs
+
+  # With custom DNS settings
+  $(basename "$0") 9000 --dns-domain lan --dns-server 10.10.0.1
 
   # Only configure existing container
   $(basename "$0") 9000 --skip-create
@@ -149,6 +158,8 @@ create_container() {
     local storage="$5"
     local ostemplate="$6"
     local hostname="$7"
+    local dns_domain="$8"
+    local dns_server="$9"
 
     log_info "Creating LXC container ${vmid}..."
     echo "  Memory: ${memory}MB"
@@ -157,6 +168,8 @@ create_container() {
     echo "  Storage: ${storage}"
     echo "  OS Template: ${ostemplate}"
     echo "  Hostname: ${hostname}"
+    [[ -n "$dns_domain" ]] && echo "  DNS Domain: ${dns_domain}"
+    [[ -n "$dns_server" ]] && echo "  DNS Server: ${dns_server}"
 
     # Check if container already exists
     if pct status "$vmid" &>/dev/null; then
@@ -173,16 +186,29 @@ create_container() {
         fi
     fi
 
+    # Build pct create command
+    local pct_args=(
+        "$vmid" "$ostemplate"
+        --hostname "$hostname"
+        --memory "$memory"
+        --cores "$cores"
+        --rootfs "${storage}:${disk}"
+        --net0 "name=eth0,bridge=vmbr0,ip=dhcp"
+        --unprivileged 0
+        --features "nesting=1"
+        --start 0
+    )
+    
+    # Add optional DNS settings
+    if [[ -n "$dns_domain" ]]; then
+        pct_args+=(--searchdomain "$dns_domain")
+    fi
+    if [[ -n "$dns_server" ]]; then
+        pct_args+=(--nameserver "$dns_server")
+    fi
+    
     # Create container
-    if pct create "$vmid" "$ostemplate" \
-        --hostname "$hostname" \
-        --memory "$memory" \
-        --cores "$cores" \
-        --rootfs "${storage}:${disk}" \
-        --net0 "name=eth0,bridge=vmbr0,ip=dhcp" \
-        --unprivileged 0 \
-        --features "nesting=1" \
-        --start 0; then
+    if pct create "${pct_args[@]}"; then
         log_success "Container ${vmid} created"
     else
         log_error "Failed to create container"
@@ -212,9 +238,9 @@ echo ""
 
 # Step 1: Base packages and locale
 if step_done "01-base"; then
-    echo "[1/10] Base dependencies... SKIP (already done)"
+    echo "[1/11] Base dependencies... SKIP (already done)"
 else
-    echo "[1/10] Installing base dependencies..."
+    echo "[1/11] Installing base dependencies..."
     apt-get update -qq
     apt-get install -y -qq \
         curl wget git unzip ca-certificates gnupg lsb-release \
@@ -227,12 +253,12 @@ fi
 
 # Step 2: Docker
 if step_done "02-docker"; then
-    echo "[2/10] Docker... SKIP (already done)"
+    echo "[2/11] Docker... SKIP (already done)"
 elif command -v docker &>/dev/null; then
-    echo "[2/10] Docker... SKIP (already installed)"
+    echo "[2/11] Docker... SKIP (already installed)"
     mark_done "02-docker"
 else
-    echo "[2/10] Installing Docker..."
+    echo "[2/11] Installing Docker..."
     install -m 0755 -d /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg 2>/dev/null || true
     chmod a+r /etc/apt/keyrings/docker.gpg
@@ -245,41 +271,122 @@ fi
 
 # Step 3: Node.js
 if step_done "03-nodejs"; then
-    echo "[3/10] Node.js... SKIP (already done)"
+    echo "[3/11] Node.js... SKIP (already done)"
 elif command -v node &>/dev/null && [[ "$(node --version 2>/dev/null)" == v2* ]]; then
-    echo "[3/10] Node.js... SKIP (already installed: $(node --version))"
+    echo "[3/11] Node.js... SKIP (already installed: $(node --version))"
     mark_done "03-nodejs"
 else
-    echo "[3/10] Installing Node.js..."
+    echo "[3/11] Installing Node.js..."
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null 2>&1
     apt-get install -y -qq nodejs
     echo "    Installed: $(node --version)"
     mark_done "03-nodejs"
 fi
 
-# Step 4: Bun
+# Step 4: Bun (with retry logic for reliable download)
 if step_done "04-bun"; then
-    echo "[4/10] Bun... SKIP (already done)"
-elif command -v bun &>/dev/null; then
-    echo "[4/10] Bun... SKIP (already installed: $(bun --version))"
+    echo "[4/11] Bun... SKIP (already done)"
+elif command -v bun &>/dev/null && [[ -x /usr/local/bin/bun ]]; then
+    echo "[4/11] Bun... SKIP (already installed: $(bun --version))"
     mark_done "04-bun"
 else
-    echo "[4/10] Installing Bun..."
-    curl -fsSL https://bun.sh/install | bash >/dev/null 2>&1
+    echo "[4/11] Installing Bun..."
+    # Get latest version
+    BUN_VERSION=$(curl -fsSL https://api.github.com/repos/oven-sh/bun/releases/latest | jq -r '.tag_name' | sed 's/^bun-v//')
+    if [[ -z "$BUN_VERSION" || "$BUN_VERSION" == "null" ]]; then
+        BUN_VERSION="1.3.5"  # Fallback version
+        echo "    Using fallback version: $BUN_VERSION"
+    fi
+    
+    # Determine architecture
+    ARCH=$(uname -m)
+    case "$ARCH" in
+        x86_64) BUN_ARCH="x64" ;;
+        aarch64|arm64) BUN_ARCH="aarch64" ;;
+        *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
+    esac
+    
+    BUN_URL="https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-${BUN_ARCH}.zip"
+    
+    # Download with retries
+    mkdir -p /root/.bun/bin
+    for attempt in 1 2 3 4 5; do
+        echo "    Download attempt $attempt/5..."
+        if curl -fsSL --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 -o /tmp/bun.zip "$BUN_URL"; then
+            break
+        fi
+        if [[ $attempt -eq 5 ]]; then
+            echo "    ERROR: Failed to download Bun after 5 attempts"
+            exit 1
+        fi
+        sleep $((attempt * 10))
+    done
+    
+    # Extract and install
+    cd /tmp
+    unzip -o bun.zip >/dev/null
+    install -m 0755 bun-linux-${BUN_ARCH}/bun /root/.bun/bin/bun
+    ln -sf /root/.bun/bin/bun /root/.bun/bin/bunx
     ln -sf /root/.bun/bin/bun /usr/local/bin/bun
-    ln -sf /root/.bun/bin/bunx /usr/local/bin/bunx
+    ln -sf /root/.bun/bin/bun /usr/local/bin/bunx
+    rm -rf /tmp/bun.zip /tmp/bun-linux-${BUN_ARCH}
+    
     echo "    Installed: $(/usr/local/bin/bun --version)"
     mark_done "04-bun"
 fi
 
+# Step 4b: Pre-install global CLI packages (codex, claude, gemini, etc.)
+if step_done "04b-global-cli"; then
+    echo "[4b/11] Global CLI packages... SKIP (already done)"
+elif [[ -x /root/.bun/bin/claude ]] && [[ -x /root/.bun/bin/codex ]]; then
+    echo "[4b/11] Global CLI packages... SKIP (already installed)"
+    mark_done "04b-global-cli"
+else
+    echo "[4b/11] Installing global CLI packages (codex, claude, gemini, etc.)..."
+    export BUN_INSTALL="/root/.bun"
+    export PATH="/usr/local/bin:${BUN_INSTALL}/bin:$PATH"
+    
+    # Install global packages with retries
+    for attempt in 1 2 3; do
+        echo "    Install attempt $attempt/3..."
+        if bun add -g \
+            @openai/codex@latest \
+            @anthropic-ai/claude-code@latest \
+            @google/gemini-cli@latest \
+            opencode-ai@latest \
+            codebuff@latest \
+            @devcontainers/cli@latest \
+            @sourcegraph/amp@latest 2>&1; then
+            break
+        fi
+        if [[ $attempt -eq 3 ]]; then
+            echo "    WARNING: Failed to install some CLI packages after 3 attempts"
+            # Continue anyway - these can be installed later
+        fi
+        sleep $((attempt * 5))
+    done
+    
+    # Verify installations
+    echo "    Installed CLIs:"
+    [[ -x "${BUN_INSTALL}/bin/codex" ]] && echo "      - codex" || echo "      - codex (NOT FOUND)"
+    [[ -x "${BUN_INSTALL}/bin/claude" ]] && echo "      - claude" || echo "      - claude (NOT FOUND)"
+    [[ -x "${BUN_INSTALL}/bin/gemini" ]] && echo "      - gemini" || echo "      - gemini (NOT FOUND)"
+    [[ -x "${BUN_INSTALL}/bin/opencode" ]] && echo "      - opencode" || echo "      - opencode (NOT FOUND)"
+    [[ -x "${BUN_INSTALL}/bin/codebuff" ]] && echo "      - codebuff" || echo "      - codebuff (NOT FOUND)"
+    [[ -x "${BUN_INSTALL}/bin/devcontainer" ]] && echo "      - devcontainer" || echo "      - devcontainer (NOT FOUND)"
+    [[ -x "${BUN_INSTALL}/bin/amp" ]] && echo "      - amp" || echo "      - amp (NOT FOUND)"
+    
+    mark_done "04b-global-cli"
+fi
+
 # Step 5: uv (Python)
 if step_done "05-uv"; then
-    echo "[5/10] uv (Python)... SKIP (already done)"
+    echo "[5/11] uv (Python)... SKIP (already done)"
 elif command -v uv &>/dev/null; then
-    echo "[5/10] uv... SKIP (already installed: $(uv --version))"
+    echo "[5/11] uv... SKIP (already installed: $(uv --version))"
     mark_done "05-uv"
 else
-    echo "[5/10] Installing uv..."
+    echo "[5/11] Installing uv..."
     curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1
     ln -sf /root/.local/bin/uv /usr/local/bin/uv
     ln -sf /root/.local/bin/uvx /usr/local/bin/uvx
@@ -289,24 +396,24 @@ fi
 
 # Step 6: VNC and X11
 if step_done "06-vnc"; then
-    echo "[6/10] VNC/X11... SKIP (already done)"
+    echo "[6/11] VNC/X11... SKIP (already done)"
 elif command -v Xvfb &>/dev/null; then
-    echo "[6/10] VNC/X11... SKIP (already installed)"
+    echo "[6/11] VNC/X11... SKIP (already installed)"
     mark_done "06-vnc"
 else
-    echo "[6/10] Installing VNC and X11..."
+    echo "[6/11] Installing VNC and X11..."
     apt-get install -y -qq xvfb tigervnc-standalone-server tigervnc-common x11-utils xterm dbus-x11
     mark_done "06-vnc"
 fi
 
 # Step 7: CRIU (optional)
 if step_done "07-criu"; then
-    echo "[7/10] CRIU... SKIP (already done)"
+    echo "[7/11] CRIU... SKIP (already done)"
 elif command -v criu &>/dev/null; then
-    echo "[7/10] CRIU... SKIP (already installed)"
+    echo "[7/11] CRIU... SKIP (already installed)"
     mark_done "07-criu"
 else
-    echo "[7/10] Installing CRIU..."
+    echo "[7/11] Installing CRIU..."
     add-apt-repository -y universe 2>/dev/null || true
     apt-get update -qq 2>/dev/null || true
     if apt-get install -y -qq criu 2>/dev/null; then
@@ -319,12 +426,12 @@ fi
 
 # Step 8: Go (for cmux-execd)
 if step_done "08-go"; then
-    echo "[8/10] Go... SKIP (already done)"
+    echo "[8/11] Go... SKIP (already done)"
 elif command -v go &>/dev/null; then
-    echo "[8/10] Go... SKIP (already installed: $(go version))"
+    echo "[8/11] Go... SKIP (already installed: $(go version))"
     mark_done "08-go"
 else
-    echo "[8/10] Installing Go..."
+    echo "[8/11] Installing Go..."
     GO_VERSION="1.23.4"
     curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" | tar -C /usr/local -xzf -
     ln -sf /usr/local/go/bin/go /usr/local/bin/go
@@ -335,12 +442,12 @@ fi
 
 # Step 9: cmux-execd (HTTP exec daemon for remote command execution)
 if step_done "09-execd"; then
-    echo "[9/10] cmux-execd... SKIP (already done)"
+    echo "[9/11] cmux-execd... SKIP (already done)"
 elif [[ -f /usr/local/bin/cmux-execd ]]; then
-    echo "[9/10] cmux-execd... SKIP (already installed)"
+    echo "[9/11] cmux-execd... SKIP (already installed)"
     mark_done "09-execd"
 else
-    echo "[9/10] Installing cmux-execd..."
+    echo "[9/11] Installing cmux-execd..."
 
     # Create temp build directory
     EXECD_BUILD_DIR=$(mktemp -d)
@@ -559,11 +666,34 @@ SERVICE
     mark_done "09-execd"
 fi
 
-# Step 10: Finalize
-if step_done "10-finalize"; then
-    echo "[10/10] Finalize... SKIP (already done)"
+# Step 10: Rust toolchain (for cmux binaries)
+if step_done "10-rust"; then
+    echo "[10/11] Rust toolchain... SKIP (already done)"
+elif command -v rustc &>/dev/null; then
+    echo "[10/11] Rust toolchain... SKIP (already installed: $(rustc --version))"
+    mark_done "10-rust"
 else
-    echo "[10/10] Finalizing setup..."
+    echo "[10/11] Installing Rust toolchain..."
+    export RUSTUP_HOME=/usr/local/rustup
+    export CARGO_HOME=/usr/local/cargo
+    install -d -m 0755 "${RUSTUP_HOME}" "${CARGO_HOME}"
+    install -d -m 0755 "${CARGO_HOME}/bin"
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+        sh -s -- -y --no-modify-path --profile minimal
+    source "${CARGO_HOME}/env"
+    rustup component add rustfmt
+    ln -sf "${CARGO_HOME}/bin/cargo" /usr/local/bin/cargo
+    ln -sf "${CARGO_HOME}/bin/rustc" /usr/local/bin/rustc
+    ln -sf "${CARGO_HOME}/bin/rustfmt" /usr/local/bin/rustfmt
+    echo "    Installed: $(rustc --version)"
+    mark_done "10-rust"
+fi
+
+# Step 11: Finalize
+if step_done "11-finalize"; then
+    echo "[11/11] Finalize... SKIP (already done)"
+else
+    echo "[11/11] Finalizing setup..."
 
     # Create cmux directories
     mkdir -p /opt/cmux/{bin,config,checkpoints}
@@ -590,12 +720,15 @@ else
     grep -q 'XDG_RUNTIME_DIR' /root/.zshrc 2>/dev/null || \
         echo 'export XDG_RUNTIME_DIR=/run/user/0' >> /root/.zshrc 2>/dev/null || true
 
-    # Setup PATH
+    # Setup PATH and BUN_INSTALL
     PATH_EXPORT='export PATH="/usr/local/bin:/usr/local/cargo/bin:$HOME/.local/bin:$HOME/.bun/bin:/usr/local/go/bin:$PATH"'
+    BUN_EXPORT='export BUN_INSTALL="$HOME/.bun"'
     grep -q '/usr/local/bin' /root/.bashrc 2>/dev/null || echo "$PATH_EXPORT" >> /root/.bashrc
     grep -q '/usr/local/bin' /root/.zshrc 2>/dev/null || echo "$PATH_EXPORT" >> /root/.zshrc 2>/dev/null || true
+    grep -q 'BUN_INSTALL' /root/.bashrc 2>/dev/null || echo "$BUN_EXPORT" >> /root/.bashrc
+    grep -q 'BUN_INSTALL' /root/.zshrc 2>/dev/null || echo "$BUN_EXPORT" >> /root/.zshrc 2>/dev/null || true
 
-    mark_done "10-finalize"
+    mark_done "11-finalize"
 fi
 
 echo ""
@@ -699,6 +832,8 @@ main() {
     local storage="$DEFAULT_STORAGE"
     local ostemplate="$DEFAULT_OSTEMPLATE"
     local hostname="$DEFAULT_HOSTNAME"
+    local dns_domain="$DEFAULT_DNS_DOMAIN"
+    local dns_server="$DEFAULT_DNS_SERVER"
     local skip_create=false
     local skip_configure=false
     local skip_convert=false
@@ -734,6 +869,14 @@ main() {
                 hostname="$2"
                 shift 2
                 ;;
+            --dns-domain)
+                dns_domain="$2"
+                shift 2
+                ;;
+            --dns-server)
+                dns_server="$2"
+                shift 2
+                ;;
             --skip-create)
                 skip_create=true
                 shift
@@ -764,6 +907,8 @@ main() {
     echo "======================================"
     echo ""
     echo "  VMID: ${vmid}"
+    [[ -n "$dns_domain" ]] && echo "  DNS Domain: ${dns_domain}"
+    [[ -n "$dns_server" ]] && echo "  DNS Server: ${dns_server}"
     echo "  Skip create: ${skip_create}"
     echo "  Skip configure: ${skip_configure}"
     echo "  Skip convert: ${skip_convert}"
@@ -779,7 +924,7 @@ main() {
 
     # Create container
     if [[ "$skip_create" != "true" ]]; then
-        create_container "$vmid" "$memory" "$cores" "$disk" "$storage" "$ostemplate" "$hostname"
+        create_container "$vmid" "$memory" "$cores" "$disk" "$storage" "$ostemplate" "$hostname" "$dns_domain" "$dns_server"
     fi
 
     # Configure container
