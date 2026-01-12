@@ -494,15 +494,14 @@ mv ./apps/worker/build/browser-agent/runBrowserAgentFromPrompt.js ./apps/worker/
 rm -rf ./apps/worker/build/browser-agent
 echo "Built worker"
 mkdir -p ./apps/worker/build/node_modules
-  # Prefer the express-pinned path-to-regexp (0.1.x) to avoid bundling newer incompatible versions
-  if [ -d ./node_modules/express/node_modules/path-to-regexp ]; then
-    cp -RL ./node_modules/express/node_modules/path-to-regexp ./apps/worker/build/node_modules/path-to-regexp
-  elif [ -d ./node_modules/path-to-regexp ]; then
-    cp -RL ./node_modules/path-to-regexp ./apps/worker/build/node_modules/path-to-regexp
-  else
-    echo "Missing path-to-regexp dependency (expected in node_modules/path-to-regexp or express/node_modules/path-to-regexp)" >&2
-    exit 1
-  fi
+# Install express-compatible path-to-regexp 0.1.x explicitly
+# bun hoisting can place dependencies differently, so we install directly
+cd ./apps/worker/build/node_modules
+npm pack path-to-regexp@0.1.12 --silent
+tar -xzf path-to-regexp-0.1.12.tgz
+mv package path-to-regexp
+rm -f path-to-regexp-0.1.12.tgz
+cd /app
 shopt -s nullglob
 declare -A COPIED_PACKAGES=()
 
