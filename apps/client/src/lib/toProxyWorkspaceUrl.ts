@@ -154,7 +154,7 @@ export function toMorphVncWebsocketUrl(sourceUrl: string): string | null {
  * Convert a generic VNC base URL to a noVNC HTML viewer URL.
  * Works with any VNC URL (PVE LXC, Morph, etc.) by appending /vnc.html and query params.
  *
- * @param vncBaseUrl - The base VNC URL (e.g., https://vnc-201.alphasolves.com)
+ * @param vncBaseUrl - The base VNC URL (e.g., https://vnc-201.{PVE_PUBLIC_DOMAIN})
  * @returns The noVNC HTML viewer URL with autoconnect params
  */
 export function toVncViewerUrl(vncBaseUrl: string): string | null {
@@ -182,7 +182,7 @@ export function toVncViewerUrl(vncBaseUrl: string): string | null {
 
 /**
  * Generic port-based URL regex that matches patterns like:
- * - port-39378-pvelxc-1cc7473f.alphasolves.com (PVE LXC)
+ * - port-39378-pvelxc-1cc7473f.{PVE_PUBLIC_DOMAIN} (PVE LXC)
  * - port-39378-morphvm-abc123.http.cloud.morph.so (Morph)
  */
 const GENERIC_PORT_HOST_REGEX = /^port-(\d+)-([^.]+)\.(.+)$/;
@@ -193,7 +193,7 @@ const GENERIC_PORT_HOST_REGEX = /^port-(\d+)-([^.]+)\.(.+)$/;
  *
  * Supports patterns like:
  * - https://port-39378-morphvm-abc123.http.cloud.morph.so -> VNC on port 39380
- * - https://port-39378-pvelxc-1cc7473f.alphasolves.com -> VNC on port 39380
+ * - https://port-39378-pvelxc-1cc7473f.{PVE_PUBLIC_DOMAIN} -> VNC on port 39380
  *
  * @param sourceUrl - The workspace/vscode URL
  * @returns The noVNC HTML viewer URL with autoconnect params, or null if URL doesn't match

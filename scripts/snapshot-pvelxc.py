@@ -18,7 +18,7 @@ Required environment variables:
     PVE_API_TOKEN - API token in format: user@realm!tokenid=secret
 
 Optional environment variables:
-    PVE_PUBLIC_DOMAIN - Cloudflare Tunnel domain for HTTP exec (e.g., alphasolves.com)
+    PVE_PUBLIC_DOMAIN - Cloudflare Tunnel domain for HTTP exec (e.g., example.com)
                     When set, uses instanceId-based URL pattern:
                     https://port-{port}-{instanceId}.{domain} for command execution via
                     cmux-execd instead of SSH+pct exec. Falls back to SSH if not set.
