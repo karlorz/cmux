@@ -11,7 +11,7 @@ export const CLAUDE_KEY_ENV_VARS_TO_UNSET = [
 ];
 
 export async function getClaudeEnvironment(
-  _ctx: EnvironmentContext,
+  ctx: EnvironmentContext,
 ): Promise<EnvironmentResult> {
   // These must be lazy since configs are imported into the browser
   // const { exec } = await import("node:child_process");
@@ -180,12 +180,31 @@ exit 0`;
     mode: "755",
   });
 
+  // Check if user has provided an OAuth token (preferred)
+  // If no OAuth token, Claude Code will use API key or fall back to AWS Bedrock
+  const hasOAuthToken =
+    ctx.apiKeys?.CLAUDE_CODE_OAUTH_TOKEN &&
+    ctx.apiKeys.CLAUDE_CODE_OAUTH_TOKEN.trim().length > 0;
+
+  // If OAuth token is provided, write it to /etc/claude-code/env
+  // The wrapper scripts (claude, npx, bunx) source this file before running claude-code
+  // This is necessary because CLAUDE_CODE_OAUTH_TOKEN must be set as an env var
+  // BEFORE claude-code starts (it checks OAuth early, before loading settings.json)
+  if (hasOAuthToken) {
+    const oauthEnvContent = `CLAUDE_CODE_OAUTH_TOKEN=${ctx.apiKeys?.CLAUDE_CODE_OAUTH_TOKEN}\n`;
+    files.push({
+      destinationPath: "/etc/claude-code/env",
+      contentBase64: Buffer.from(oauthEnvContent).toString("base64"),
+      mode: "600", // Restrictive permissions for the token
+    });
+  }
+
   // Remove any OAuth credentials file to ensure clean state
-  // This prevents cached OAuth from overriding Bedrock authentication
+  // This prevents cached OAuth from overriding configured authentication
   startupCommands.push("rm -f ~/.claude/.credentials.json 2>/dev/null || true");
 
   // Create settings.json with hooks configuration
-  // Authentication is handled by AWS Bedrock (platform-provided credentials)
+  // Authentication priority: OAuth token (user) > API key (user) > AWS Bedrock (platform)
   const settingsConfig: Record<string, unknown> = {
     alwaysThinkingEnabled: true,
     hooks: {

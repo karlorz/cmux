@@ -1,9 +1,13 @@
 import type { AgentConfig } from "../../agentConfig";
+import { ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN } from "../../apiKeys";
 import {
   ANTHROPIC_MODEL_HAIKU_45,
   ANTHROPIC_MODEL_OPUS_45,
 } from "../../utils/anthropic";
-import { checkClaudeRequirements } from "./check-requirements";
+import {
+  checkClaudeRequirements,
+  checkClaudeSonnetRequirements,
+} from "./check-requirements";
 import { startClaudeCompletionDetector } from "./completion-detector";
 import {
   CLAUDE_KEY_ENV_VARS_TO_UNSET,
@@ -11,9 +15,13 @@ import {
 } from "./environment";
 
 /**
- * Create applyApiKeys function for AWS Bedrock.
+ * Create applyApiKeys function for Claude agents.
  *
- * Uses platform-provided AWS Bedrock credentials.
+ * Priority:
+ * 1. OAuth token (user-provided) - uses user's Claude subscription
+ * 2. Anthropic API key (user-provided) - uses user's API key
+ * 3. AWS Bedrock (platform-provided) - fallback to platform credentials
+ *
  * Claude Code with Bedrock requires the model to be set via the ANTHROPIC_MODEL
  * environment variable (not via --model CLI flag).
  */
@@ -24,7 +32,34 @@ function createApplyClaudeApiKeys(
     // Base env vars to unset (prevent conflicts)
     const unsetEnv = [...CLAUDE_KEY_ENV_VARS_TO_UNSET];
 
-    // AWS Bedrock with platform-provided credentials
+    const oauthToken = keys.CLAUDE_CODE_OAUTH_TOKEN;
+    const anthropicKey = keys.ANTHROPIC_API_KEY;
+
+    // Priority 1: OAuth token (user pays via their subscription)
+    if (oauthToken && oauthToken.trim().length > 0) {
+      // Ensure ANTHROPIC_API_KEY is in the unset list
+      if (!unsetEnv.includes("ANTHROPIC_API_KEY")) {
+        unsetEnv.push("ANTHROPIC_API_KEY");
+      }
+      return {
+        env: {
+          CLAUDE_CODE_OAUTH_TOKEN: oauthToken,
+        },
+        unsetEnv,
+      };
+    }
+
+    // Priority 2: User-provided Anthropic API key
+    if (anthropicKey && anthropicKey.trim().length > 0) {
+      return {
+        env: {
+          ANTHROPIC_API_KEY: anthropicKey,
+        },
+        unsetEnv,
+      };
+    }
+
+    // Priority 3: AWS Bedrock with platform-provided credentials (fallback)
     const env: Record<string, string> = {
       // Enable AWS Bedrock mode in Claude Code
       CLAUDE_CODE_USE_BEDROCK: "1",
@@ -47,6 +82,44 @@ function createApplyClaudeApiKeys(
   };
 }
 
+/**
+ * Apply API keys for Claude Sonnet - NO Bedrock fallback.
+ *
+ * Sonnet 4.5 is not available on AWS Bedrock, so this function only supports:
+ * 1. OAuth token (user-provided)
+ * 2. Anthropic API key (user-provided)
+ *
+ * If neither is provided, returns empty env (will fail at runtime).
+ */
+const applyClaudeApiKeysNoBedrockFallback: NonNullable<
+  AgentConfig["applyApiKeys"]
+> = async (keys) => {
+  const unsetEnv = [...CLAUDE_KEY_ENV_VARS_TO_UNSET];
+  const env: Record<string, string> = {};
+
+  const oauthToken = keys.CLAUDE_CODE_OAUTH_TOKEN;
+  const anthropicKey = keys.ANTHROPIC_API_KEY;
+
+  // Priority 1: OAuth token (user pays via their subscription)
+  if (oauthToken && oauthToken.trim().length > 0) {
+    if (!unsetEnv.includes("ANTHROPIC_API_KEY")) {
+      unsetEnv.push("ANTHROPIC_API_KEY");
+    }
+    env.CLAUDE_CODE_OAUTH_TOKEN = oauthToken;
+    return { env, unsetEnv };
+  }
+
+  // Priority 2: User-provided Anthropic API key
+  if (anthropicKey && anthropicKey.trim().length > 0) {
+    env.ANTHROPIC_API_KEY = anthropicKey;
+    return { env, unsetEnv };
+  }
+
+  // No Bedrock fallback - Sonnet 4.5 is not available on Bedrock
+  // Return empty env; checkRequirements should have caught this
+  return { env, unsetEnv };
+};
+
 export const CLAUDE_OPUS_4_5_CONFIG: AgentConfig = {
   name: "claude/opus-4.5",
   command: "bunx",
@@ -59,6 +132,8 @@ export const CLAUDE_OPUS_4_5_CONFIG: AgentConfig = {
   ],
   environment: getClaudeEnvironment,
   checkRequirements: checkClaudeRequirements,
+  // User-configurable: OAuth token (preferred) or API key; falls back to Bedrock
+  apiKeys: [CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY],
   applyApiKeys: createApplyClaudeApiKeys(ANTHROPIC_MODEL_OPUS_45),
   completionDetector: startClaudeCompletionDetector,
 };
@@ -74,11 +149,12 @@ export const CLAUDE_SONNET_4_5_CONFIG: AgentConfig = {
     "$PROMPT",
   ],
   environment: getClaudeEnvironment,
-  checkRequirements: checkClaudeRequirements,
+  // Sonnet uses special check - requires OAuth or API key (no Bedrock fallback)
+  checkRequirements: checkClaudeSonnetRequirements,
+  // User-configurable: OAuth token (preferred) or API key; NO Bedrock fallback
+  apiKeys: [CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY],
+  applyApiKeys: applyClaudeApiKeysNoBedrockFallback,
   completionDetector: startClaudeCompletionDetector,
-  // Sonnet 4.5 not available on AWS Bedrock
-  disabled: true,
-  disabledReason: "Claude Sonnet 4.5 is not available on AWS Bedrock",
 };
 
 export const CLAUDE_HAIKU_4_5_CONFIG: AgentConfig = {
@@ -93,6 +169,8 @@ export const CLAUDE_HAIKU_4_5_CONFIG: AgentConfig = {
   ],
   environment: getClaudeEnvironment,
   checkRequirements: checkClaudeRequirements,
+  // User-configurable: OAuth token (preferred) or API key; falls back to Bedrock
+  apiKeys: [CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY],
   applyApiKeys: createApplyClaudeApiKeys(ANTHROPIC_MODEL_HAIKU_45),
   completionDetector: startClaudeCompletionDetector,
 };
