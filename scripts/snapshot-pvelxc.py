@@ -18,12 +18,10 @@ Required environment variables:
     PVE_API_TOKEN - API token in format: user@realm!tokenid=secret
 
 Optional environment variables:
-    PVE_CF_DOMAIN - Cloudflare Tunnel domain for HTTP exec (e.g., alphasolves.com)
+    PVE_PUBLIC_DOMAIN - Cloudflare Tunnel domain for HTTP exec (e.g., alphasolves.com)
                     When set, uses instanceId-based URL pattern:
                     https://port-{port}-{instanceId}.{domain} for command execution via
-                    cmux-execd instead of SSH+pct exec. Falls back to
-                    PVE_PUBLIC_DOMAIN if not set, then to SSH if neither is set.
-    PVE_PUBLIC_DOMAIN - Alias for PVE_CF_DOMAIN (used as fallback)
+                    cmux-execd instead of SSH+pct exec. Falls back to SSH if not set.
     PVE_NODE - Target PVE node name (auto-detected if not set)
     PVE_SSH_HOST - SSH host for fallback (derived from PVE_API_URL if not set)
 
@@ -4129,7 +4127,7 @@ async def provision_and_snapshot(args: argparse.Namespace) -> None:
         console.always("  export PVE_API_TOKEN=root@pam!cmux=your-secret")
         sys.exit(1)
 
-    cf_domain = os.environ.get("PVE_CF_DOMAIN") or os.environ.get("PVE_PUBLIC_DOMAIN")
+    cf_domain = os.environ.get("PVE_PUBLIC_DOMAIN")
 
     client = PveLxcClient(
         api_url=api_url,
@@ -4151,7 +4149,7 @@ async def provision_and_snapshot(args: argparse.Namespace) -> None:
         if client._ssh_host_explicit:
             console.info(f"Using SSH host: {client.ssh_host}")
         else:
-            console.always("ERROR: No exec method configured. Set PVE_CF_DOMAIN or PVE_SSH_HOST")
+            console.always("ERROR: No exec method configured. Set PVE_PUBLIC_DOMAIN or PVE_SSH_HOST")
             sys.exit(1)
 
     # Test connection
@@ -4470,7 +4468,7 @@ async def run_update_mode(args: argparse.Namespace) -> None:
         console.always("ERROR: PVE_API_URL and PVE_API_TOKEN must be set")
         sys.exit(1)
 
-    cf_domain = os.environ.get("PVE_CF_DOMAIN") or os.environ.get("PVE_PUBLIC_DOMAIN")
+    cf_domain = os.environ.get("PVE_PUBLIC_DOMAIN")
 
     client = PveLxcClient(
         api_url=api_url,
@@ -4492,7 +4490,7 @@ async def run_update_mode(args: argparse.Namespace) -> None:
         if client._ssh_host_explicit:
             console.info(f"Using SSH host: {client.ssh_host}")
         else:
-            console.always("ERROR: No exec method configured. Set PVE_CF_DOMAIN or PVE_SSH_HOST")
+            console.always("ERROR: No exec method configured. Set PVE_PUBLIC_DOMAIN or PVE_SSH_HOST")
             sys.exit(1)
 
     # Test connection

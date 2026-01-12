@@ -28,10 +28,10 @@ async def main():
     # Get PVE config from environment
     api_url = os.environ["PVE_API_URL"]
     api_token = os.environ["PVE_API_TOKEN"]
-    public_domain = os.environ.get("PVE_PUBLIC_DOMAIN") or os.environ.get("PVE_CF_DOMAIN")
+    public_domain = os.environ.get("PVE_PUBLIC_DOMAIN")
 
     if not public_domain:
-        print("ERROR: PVE_PUBLIC_DOMAIN or PVE_CF_DOMAIN not set", file=sys.stderr)
+        print("ERROR: PVE_PUBLIC_DOMAIN not set", file=sys.stderr)
         sys.exit(1)
 
     print(f"Connecting to {api_url}")
