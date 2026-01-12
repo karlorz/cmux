@@ -335,50 +335,6 @@ else
     mark_done "04-bun"
 fi
 
-# Step 4b: Pre-install global CLI packages (codex, claude, gemini, etc.)
-if step_done "04b-global-cli"; then
-    echo "[4b/11] Global CLI packages... SKIP (already done)"
-elif [[ -x /root/.bun/bin/claude ]] && [[ -x /root/.bun/bin/codex ]]; then
-    echo "[4b/11] Global CLI packages... SKIP (already installed)"
-    mark_done "04b-global-cli"
-else
-    echo "[4b/11] Installing global CLI packages (codex, claude, gemini, etc.)..."
-    export BUN_INSTALL="/root/.bun"
-    export PATH="/usr/local/bin:${BUN_INSTALL}/bin:$PATH"
-    
-    # Install global packages with retries
-    for attempt in 1 2 3; do
-        echo "    Install attempt $attempt/3..."
-        if bun add -g \
-            @openai/codex@latest \
-            @anthropic-ai/claude-code@latest \
-            @google/gemini-cli@latest \
-            opencode-ai@latest \
-            codebuff@latest \
-            @devcontainers/cli@latest \
-            @sourcegraph/amp@latest 2>&1; then
-            break
-        fi
-        if [[ $attempt -eq 3 ]]; then
-            echo "    WARNING: Failed to install some CLI packages after 3 attempts"
-            # Continue anyway - these can be installed later
-        fi
-        sleep $((attempt * 5))
-    done
-    
-    # Verify installations
-    echo "    Installed CLIs:"
-    [[ -x "${BUN_INSTALL}/bin/codex" ]] && echo "      - codex" || echo "      - codex (NOT FOUND)"
-    [[ -x "${BUN_INSTALL}/bin/claude" ]] && echo "      - claude" || echo "      - claude (NOT FOUND)"
-    [[ -x "${BUN_INSTALL}/bin/gemini" ]] && echo "      - gemini" || echo "      - gemini (NOT FOUND)"
-    [[ -x "${BUN_INSTALL}/bin/opencode" ]] && echo "      - opencode" || echo "      - opencode (NOT FOUND)"
-    [[ -x "${BUN_INSTALL}/bin/codebuff" ]] && echo "      - codebuff" || echo "      - codebuff (NOT FOUND)"
-    [[ -x "${BUN_INSTALL}/bin/devcontainer" ]] && echo "      - devcontainer" || echo "      - devcontainer (NOT FOUND)"
-    [[ -x "${BUN_INSTALL}/bin/amp" ]] && echo "      - amp" || echo "      - amp (NOT FOUND)"
-    
-    mark_done "04b-global-cli"
-fi
-
 # Step 5: uv (Python)
 if step_done "05-uv"; then
     echo "[5/11] uv (Python)... SKIP (already done)"
