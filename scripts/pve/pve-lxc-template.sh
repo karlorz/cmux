@@ -26,9 +26,9 @@ MAX_RETRIES="${PVE_MAX_RETRIES:-3}"
 RETRY_DELAY="${PVE_RETRY_DELAY:-5}"
 
 # HTTP exec configuration (optional, for faster execution when cmux-execd is running)
-# Set PVE_CF_DOMAIN to enable HTTP exec (e.g., alphasolves.com)
-# URL pattern (instanceId-based): https://port-{port}-{instanceId}.{cf_domain}
-PVE_CF_DOMAIN="${PVE_CF_DOMAIN:-}"
+# Set PVE_PUBLIC_DOMAIN to enable HTTP exec (e.g., alphasolves.com)
+# URL pattern (instanceId-based): https://port-{port}-{instanceId}.{public_domain}
+PVE_PUBLIC_DOMAIN="${PVE_PUBLIC_DOMAIN:-}"
 
 get_container_hostname() {
     local vmid="$1"
@@ -85,20 +85,20 @@ retry_command() {
     return 1
 }
 
-# HTTP exec via cmux-execd (when PVE_CF_DOMAIN is set)
+# HTTP exec via cmux-execd (when PVE_PUBLIC_DOMAIN is set)
 # Usage: http_exec <vmid> <command> [timeout]
 http_exec() {
     local vmid="$1"
     local command="$2"
     local timeout="${3:-120}"
 
-    if [[ -z "$PVE_CF_DOMAIN" ]]; then
+    if [[ -z "$PVE_PUBLIC_DOMAIN" ]]; then
         return 1  # HTTP exec not available
     fi
 
     local hostname
     hostname=$(get_container_hostname "$vmid")
-    local url="https://port-39375-${hostname}.${PVE_CF_DOMAIN}/exec"
+    local url="https://port-39375-${hostname}.${PVE_PUBLIC_DOMAIN}/exec"
     local json_payload
     json_payload=$(jq -n --arg cmd "$command" --argjson timeout "$timeout" '{command: $cmd, timeout: $timeout}')
 
@@ -120,14 +120,14 @@ http_exec() {
     return "$exit_code"
 }
 
-# HTTP file push via cmux-execd (when PVE_CF_DOMAIN is set)
+# HTTP file push via cmux-execd (when PVE_PUBLIC_DOMAIN is set)
 # Usage: http_push <vmid> <local_path> <remote_path>
 http_push() {
     local vmid="$1"
     local local_path="$2"
     local remote_path="$3"
 
-    if [[ -z "$PVE_CF_DOMAIN" ]]; then
+    if [[ -z "$PVE_PUBLIC_DOMAIN" ]]; then
         return 1  # HTTP exec not available
     fi
 
@@ -182,12 +182,12 @@ Options for 'configure':
                             local         - Run pct commands directly (on PVE host)
                             pve-ssh       - SSH to PVE host, then use pct
                             container-ssh - SSH directly into container (needs openssh-server)
-                            http          - Use cmux-execd HTTP exec (needs PVE_CF_DOMAIN)
+                            http          - Use cmux-execd HTTP exec (needs PVE_PUBLIC_DOMAIN)
 
 Environment Variables:
   PVE_EXEC_MODE           Default execution mode for configure (default: auto)
   PVE_SSH_HOST            SSH target for pve-ssh mode (default: derived from PVE_API_URL)
-  PVE_CF_DOMAIN           Cloudflare Tunnel domain for HTTP exec (optional)
+  PVE_PUBLIC_DOMAIN           Cloudflare Tunnel domain for HTTP exec (optional)
                             When set, adds 'http' mode using cmux-execd
   PVE_MAX_RETRIES         Max retries for transient errors (default: 3)
   PVE_RETRY_DELAY         Initial retry delay in seconds (default: 5)
@@ -674,16 +674,16 @@ SETUP_EOF
             ;;
 
         http)
-            # Use HTTP exec via cmux-execd (requires PVE_CF_DOMAIN and cmux-execd running)
-            if [[ -z "$PVE_CF_DOMAIN" ]]; then
-                log_error "HTTP exec mode requires PVE_CF_DOMAIN environment variable"
-                echo "Set PVE_CF_DOMAIN to your Cloudflare Tunnel domain (e.g., alphasolves.com)"
+            # Use HTTP exec via cmux-execd (requires PVE_PUBLIC_DOMAIN and cmux-execd running)
+            if [[ -z "$PVE_PUBLIC_DOMAIN" ]]; then
+                log_error "HTTP exec mode requires PVE_PUBLIC_DOMAIN environment variable"
+                echo "Set PVE_PUBLIC_DOMAIN to your Cloudflare Tunnel domain (e.g., alphasolves.com)"
                 return 1
             fi
 
             local hostname
             hostname=$(get_container_hostname "$vmid")
-            local http_url="https://port-39375-${hostname}.${PVE_CF_DOMAIN}/exec"
+            local http_url="https://port-39375-${hostname}.${PVE_PUBLIC_DOMAIN}/exec"
             log_info "Using HTTP exec via cmux-execd: ${http_url}"
 
             # Check if cmux-execd is reachable

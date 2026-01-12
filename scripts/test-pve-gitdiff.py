@@ -367,9 +367,9 @@ def main():
     parser.add_argument("--repo-root", default=".", help="Repository root (default: current directory)")
     args = parser.parse_args()
 
-    cf_domain = os.environ.get("PVE_CF_DOMAIN") or os.environ.get("PVE_PUBLIC_DOMAIN")
+    cf_domain = os.environ.get("PVE_PUBLIC_DOMAIN")
     if not cf_domain:
-        print("ERROR: PVE_CF_DOMAIN or PVE_PUBLIC_DOMAIN must be set")
+        print("ERROR: PVE_PUBLIC_DOMAIN must be set")
         sys.exit(1)
 
     if not args.instance_id:

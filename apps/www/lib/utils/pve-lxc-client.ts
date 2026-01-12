@@ -269,8 +269,7 @@ export class PveLxcClient {
     this.apiUrl = options.apiUrl.replace(/\/$/, "");
     this.apiToken = options.apiToken;
     this.node = options.node || null; // Will be auto-detected if not provided
-    // Support both PVE_PUBLIC_DOMAIN (preferred) and legacy PVE_CF_DOMAIN
-    this.publicDomain = options.publicDomain || env.PVE_CF_DOMAIN || null;
+    this.publicDomain = options.publicDomain || null;
   }
 
   private generateInstanceId(): string {
