@@ -1964,6 +1964,7 @@ async def task_apt_bootstrap(ctx: PveTaskContext) -> None:
         EOF
 
         # Update and install core utilities
+        rm -rf /var/lib/apt/lists/*
         DEBIAN_FRONTEND=noninteractive apt-get update
         DEBIAN_FRONTEND=noninteractive apt-get install -y \
             ca-certificates curl wget jq git gnupg lsb-release \
@@ -1994,6 +1995,7 @@ async def task_install_base_packages(ctx: PveTaskContext) -> None:
         """
         set -eux
 
+        rm -rf /var/lib/apt/lists/*
         DEBIAN_FRONTEND=noninteractive apt-get update
         DEBIAN_FRONTEND=noninteractive apt-get install -y \
             build-essential make pkg-config g++ libssl-dev \
@@ -2045,6 +2047,7 @@ async def task_ensure_docker(ctx: PveTaskContext) -> None:
         set -euo pipefail
 
         echo "[docker] ensuring Docker APT repository"
+        rm -rf /var/lib/apt/lists/*
         DEBIAN_FRONTEND=noninteractive apt-get update
         DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl
         os_release="/etc/os-release"
@@ -2077,6 +2080,7 @@ async def task_ensure_docker(ctx: PveTaskContext) -> None:
         echo "[docker] installing engine and CLI plugins"
         # Retry apt-get update up to 3 times
         for i in 1 2 3; do
+          rm -rf /var/lib/apt/lists/*
           DEBIAN_FRONTEND=noninteractive apt-get update && break || {
             if [ $i -eq 3 ]; then
               echo "apt-get update failed after 3 attempts" >&2
@@ -2338,6 +2342,7 @@ async def task_install_uv_python(ctx: PveTaskContext) -> None:
     cmd = textwrap.dedent(
         """
         set -eux
+        rm -rf /var/lib/apt/lists/*
         DEBIAN_FRONTEND=noninteractive apt-get update
         DEBIAN_FRONTEND=noninteractive apt-get install -y python3-pip
         python3 -m pip install --break-system-packages uv
@@ -3068,15 +3073,14 @@ async def task_build_worker(ctx: PveTaskContext) -> None:
           exit 1
         fi
         install -d ./apps/worker/build/node_modules
-        # Prefer express-pinned path-to-regexp (0.1.x) to avoid bundling newer incompatible version
-        if [ -d ./node_modules/express/node_modules/path-to-regexp ]; then
-          cp -RL ./node_modules/express/node_modules/path-to-regexp ./apps/worker/build/node_modules/path-to-regexp
-        elif [ -d ./node_modules/path-to-regexp ]; then
-          cp -RL ./node_modules/path-to-regexp ./apps/worker/build/node_modules/path-to-regexp
-        else
-          echo "Missing express path-to-regexp dependency" >&2
-          exit 1
-        fi
+        # Install express-compatible path-to-regexp 0.1.x explicitly
+        # bun hoisting can place dependencies differently, so we install directly
+        cd ./apps/worker/build/node_modules
+        npm pack path-to-regexp@0.1.12 --silent
+        tar -xzf path-to-regexp-0.1.12.tgz
+        mv package path-to-regexp
+        rm -f path-to-regexp-0.1.12.tgz
+        cd {repo}
         install -d /builtins
         cat <<'JSON' > /builtins/package.json
 {{"name":"builtins","type":"module","version":"1.0.0"}}

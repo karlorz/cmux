@@ -933,6 +933,7 @@ async def task_apt_bootstrap(ctx: TaskContext) -> None:
         EOF
 
         # Update and install core utilities needed for source setup
+        rm -rf /var/lib/apt/lists/*
         DEBIAN_FRONTEND=noninteractive apt-get update
         DEBIAN_FRONTEND=noninteractive apt-get install -y \
             ca-certificates curl wget jq git gnupg lsb-release \
@@ -964,6 +965,7 @@ async def task_install_base_packages(ctx: TaskContext) -> None:
         set -eux
 
         # Single apt-get update to pick up all configured sources
+        rm -rf /var/lib/apt/lists/*
         DEBIAN_FRONTEND=noninteractive apt-get update
 
         # Install all packages in parallel in a single command
@@ -1019,6 +1021,7 @@ async def task_ensure_docker(ctx: TaskContext) -> None:
         set -euo pipefail
 
         echo "[docker] ensuring Docker APT repository"
+        rm -rf /var/lib/apt/lists/*
         DEBIAN_FRONTEND=noninteractive apt-get update
         DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl
         os_release="/etc/os-release"
@@ -1049,6 +1052,7 @@ async def task_ensure_docker(ctx: TaskContext) -> None:
           > /etc/apt/sources.list.d/docker.list
 
         echo "[docker] installing engine and CLI plugins"
+        rm -rf /var/lib/apt/lists/*
         DEBIAN_FRONTEND=noninteractive apt-get update
         DEBIAN_FRONTEND=noninteractive apt-get install -y \
           docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
@@ -1207,6 +1211,7 @@ async def task_install_uv_python(ctx: TaskContext) -> None:
         """
         set -eux
         # Install python3-pip via apt (also installs python3)
+        rm -rf /var/lib/apt/lists/*
         DEBIAN_FRONTEND=noninteractive apt-get update
         DEBIAN_FRONTEND=noninteractive apt-get install -y python3-pip
         # Install uv from PyPI (more reliable than GitHub CDN)
@@ -2012,15 +2017,14 @@ async def task_build_worker(ctx: TaskContext) -> None:
           exit 1
         fi
         install -d ./apps/worker/build/node_modules
-        # Prefer express-pinned path-to-regexp (0.1.x) to avoid bundling newer incompatible version
-        if [ -d ./node_modules/express/node_modules/path-to-regexp ]; then
-          cp -RL ./node_modules/express/node_modules/path-to-regexp ./apps/worker/build/node_modules/path-to-regexp
-        elif [ -d ./node_modules/path-to-regexp ]; then
-          cp -RL ./node_modules/path-to-regexp ./apps/worker/build/node_modules/path-to-regexp
-        else
-          echo "Missing express path-to-regexp dependency" >&2
-          exit 1
-        fi
+        # Install express-compatible path-to-regexp 0.1.x explicitly
+        # bun hoisting can place dependencies differently, so we install directly
+        cd ./apps/worker/build/node_modules
+        npm pack path-to-regexp@0.1.12 --silent
+        tar -xzf path-to-regexp-0.1.12.tgz
+        mv package path-to-regexp
+        rm -f path-to-regexp-0.1.12.tgz
+        cd {repo}
         install -d /builtins
         cat <<'JSON' > /builtins/package.json
 {{"name":"builtins","type":"module","version":"1.0.0"}}
