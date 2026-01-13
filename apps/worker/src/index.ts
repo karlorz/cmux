@@ -239,7 +239,7 @@ const upload = multer({
 const ALLOWED_UPLOAD_ROOT = "/root/prompt";
 
 // File upload endpoint
-app.post("/upload-image", upload.single("image"), async (req, res) => {
+const handleUploadImage: express.RequestHandler = async (req, res, _next) => {
   try {
     const token = req.header("x-cmux-token");
     const secret = process.env.CMUX_TASK_RUN_JWT_SECRET;
@@ -298,11 +298,17 @@ app.post("/upload-image", upload.single("image"), async (req, res) => {
       error: error instanceof Error ? error.message : "Upload failed",
     });
   }
-});
+};
+
+app.post(
+  "/upload-image",
+  upload.single("image") as express.RequestHandler,
+  handleUploadImage
+);
 
 // HTTP endpoint for running task screenshots (replaces Socket.IO)
 app.use(express.json());
-app.post("/api/run-task-screenshots", async (req, res) => {
+const handleRunTaskScreenshots: express.RequestHandler = async (req, res, _next) => {
   try {
     const data = req.body;
 
@@ -354,7 +360,9 @@ app.post("/api/run-task-screenshots", async (req, res) => {
       error: error instanceof Error ? error.message : "Internal server error",
     });
   }
-});
+};
+
+app.post("/api/run-task-screenshots", handleRunTaskScreenshots);
 
 // Create HTTP server with Express app
 const httpServer = createServer(app);
