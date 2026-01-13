@@ -8,12 +8,6 @@ import {
 } from "./environment";
 
 /**
- * Temporary flag to force proxy fallback for testing.
- * TODO: Remove this after testing is complete.
- */
-const FORCE_PROXY_FALLBACK = true;
-
-/**
  * Create applyApiKeys function for Claude agents.
  *
  * Priority:
@@ -26,34 +20,31 @@ function createApplyClaudeApiKeys(): NonNullable<AgentConfig["applyApiKeys"]> {
     // Base env vars to unset (prevent conflicts)
     const unsetEnv = [...CLAUDE_KEY_ENV_VARS_TO_UNSET];
 
-    // Skip user-provided keys if forcing proxy fallback for testing
-    if (!FORCE_PROXY_FALLBACK) {
-      const oauthToken = keys.CLAUDE_CODE_OAUTH_TOKEN;
-      const anthropicKey = keys.ANTHROPIC_API_KEY;
+    const oauthToken = keys.CLAUDE_CODE_OAUTH_TOKEN;
+    const anthropicKey = keys.ANTHROPIC_API_KEY;
 
-      // Priority 1: OAuth token (user pays via their subscription)
-      if (oauthToken && oauthToken.trim().length > 0) {
-        // Ensure ANTHROPIC_API_KEY is in the unset list
-        if (!unsetEnv.includes("ANTHROPIC_API_KEY")) {
-          unsetEnv.push("ANTHROPIC_API_KEY");
-        }
-        return {
-          env: {
-            CLAUDE_CODE_OAUTH_TOKEN: oauthToken,
-          } as Record<string, string>,
-          unsetEnv,
-        };
+    // Priority 1: OAuth token (user pays via their subscription)
+    if (oauthToken && oauthToken.trim().length > 0) {
+      // Ensure ANTHROPIC_API_KEY is in the unset list
+      if (!unsetEnv.includes("ANTHROPIC_API_KEY")) {
+        unsetEnv.push("ANTHROPIC_API_KEY");
       }
+      return {
+        env: {
+          CLAUDE_CODE_OAUTH_TOKEN: oauthToken,
+        } as Record<string, string>,
+        unsetEnv,
+      };
+    }
 
-      // Priority 2: User-provided Anthropic API key
-      if (anthropicKey && anthropicKey.trim().length > 0) {
-        return {
-          env: {
-            ANTHROPIC_API_KEY: anthropicKey,
-          } as Record<string, string>,
-          unsetEnv,
-        };
-      }
+    // Priority 2: User-provided Anthropic API key
+    if (anthropicKey && anthropicKey.trim().length > 0) {
+      return {
+        env: {
+          ANTHROPIC_API_KEY: anthropicKey,
+        } as Record<string, string>,
+        unsetEnv,
+      };
     }
 
     // Priority 3: Platform proxy endpoint (fallback)
