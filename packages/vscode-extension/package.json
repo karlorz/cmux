@@ -90,7 +90,7 @@
     "pretest": "npm run compile && npm run lint && npm run compile-tsc",
     "lint": "eslint src",
     "test:todo": "echo 'TODO: enable VS Code tests later'",
-    "package": "bunx @vscode/vsce package --allow-missing-repository --no-dependencies --allow-star-activation",
+    "package": "bun run vsce package --allow-missing-repository --no-dependencies --allow-star-activation",
     "typecheck": "bunx tsgo --noEmit -p tsconfig.json"
   },
   "devDependencies": {
