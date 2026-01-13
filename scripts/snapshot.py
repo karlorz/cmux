@@ -1148,7 +1148,7 @@ async def task_install_nvm(ctx: TaskContext) -> None:
 )
 async def task_install_bun(ctx: TaskContext) -> None:
     # Check if bun is already installed
-    check_result = await ctx.instance.aexec("command -v bun && bun --version", check=False)
+    check_result = await ctx.instance.aexec("command -v bun && bun --version")
     if check_result.returncode == 0 and check_result.stdout.strip():
         version = check_result.stdout.strip().split("\n")[-1]
         ctx.console.info(f"[install-bun] Bun already installed: v{version}")
@@ -1173,7 +1173,7 @@ async def task_install_bun(ctx: TaskContext) -> None:
 )
 async def task_install_go_toolchain(ctx: TaskContext) -> None:
     # Check if go is already installed
-    check_result = await ctx.instance.aexec("command -v go && go version", check=False)
+    check_result = await ctx.instance.aexec("command -v go && go version")
     if check_result.returncode == 0 and "go version" in check_result.stdout:
         version = check_result.stdout.strip().split("\n")[-1]
         ctx.console.info(f"[install-go-toolchain] Go already installed: {version}")
@@ -1260,7 +1260,7 @@ async def task_install_rust_toolchain(ctx: TaskContext) -> None:
         fi
         """
     )
-    check_result = await ctx.instance.aexec(check_cmd, check=False)
+    check_result = await ctx.instance.aexec(check_cmd)
     if check_result.returncode == 0 and "rustc" in check_result.stdout:
         version = check_result.stdout.strip().split("\n")[-1]
         ctx.console.info(f"[install-rust-toolchain] Rust already installed: {version}")
