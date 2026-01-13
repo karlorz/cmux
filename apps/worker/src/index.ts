@@ -237,123 +237,136 @@ const upload = multer({
 });
 
 const ALLOWED_UPLOAD_ROOT = "/root/prompt";
+const uploadSingleImage = upload.single("image") as unknown as express.RequestHandler;
+
+const handleUploadImage: express.RequestHandler = (req, res, next) => {
+  void (async () => {
+    try {
+      const token = req.header("x-cmux-token");
+      const secret = process.env.CMUX_TASK_RUN_JWT_SECRET;
+      if (!token || !secret) {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+
+      try {
+        await verifyTaskRunToken(token, secret);
+      } catch (error) {
+        log("ERROR", "Invalid task run token for upload-image", error);
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+
+      if (!req.file) {
+        res.status(400).json({ error: "No file uploaded" });
+        return;
+      }
+
+      const { path: imagePath } = req.body;
+      if (!imagePath) {
+        res.status(400).json({ error: "No path specified" });
+        return;
+      }
+
+      const resolvedPath = path.resolve(String(imagePath));
+      const normalizedRoot = path.resolve(ALLOWED_UPLOAD_ROOT);
+      if (!resolvedPath.startsWith(`${normalizedRoot}/`) && resolvedPath !== normalizedRoot) {
+        res.status(400).json({ error: "Invalid path" });
+        return;
+      }
+
+      log("INFO", `Received image upload request for path: ${resolvedPath}`, {
+        size: req.file.size,
+        mimetype: req.file.mimetype,
+        originalname: req.file.originalname,
+      });
+
+      // Ensure directory exists
+      const dir = path.dirname(resolvedPath);
+      await fs.mkdir(dir, { recursive: true });
+
+      // Write the file
+      await fs.writeFile(resolvedPath, req.file.buffer);
+
+      log("INFO", `Successfully wrote image file: ${resolvedPath}`);
+
+      // Verify file was created
+      const stats = await fs.stat(resolvedPath);
+
+      res.json({
+        success: true,
+        path: resolvedPath,
+        size: stats.size,
+      });
+    } catch (error) {
+      log("ERROR", "Failed to upload image", error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Upload failed",
+      });
+    }
+  })().catch(next);
+};
 
 // File upload endpoint
-app.post("/upload-image", upload.single("image"), async (req, res) => {
-  try {
-    const token = req.header("x-cmux-token");
-    const secret = process.env.CMUX_TASK_RUN_JWT_SECRET;
-    if (!token || !secret) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    try {
-      await verifyTaskRunToken(token, secret);
-    } catch (error) {
-      log("ERROR", "Invalid task run token for upload-image", error);
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
-    }
-
-    const { path: imagePath } = req.body;
-    if (!imagePath) {
-      return res.status(400).json({ error: "No path specified" });
-    }
-
-    const resolvedPath = path.resolve(String(imagePath));
-    const normalizedRoot = path.resolve(ALLOWED_UPLOAD_ROOT);
-    if (!resolvedPath.startsWith(`${normalizedRoot}/`) && resolvedPath !== normalizedRoot) {
-      return res.status(400).json({ error: "Invalid path" });
-    }
-
-    log("INFO", `Received image upload request for path: ${resolvedPath}`, {
-      size: req.file.size,
-      mimetype: req.file.mimetype,
-      originalname: req.file.originalname,
-    });
-
-    // Ensure directory exists
-    const dir = path.dirname(resolvedPath);
-    await fs.mkdir(dir, { recursive: true });
-
-    // Write the file
-    await fs.writeFile(resolvedPath, req.file.buffer);
-
-    log("INFO", `Successfully wrote image file: ${resolvedPath}`);
-
-    // Verify file was created
-    const stats = await fs.stat(resolvedPath);
-
-    res.json({
-      success: true,
-      path: resolvedPath,
-      size: stats.size,
-    });
-  } catch (error) {
-    log("ERROR", "Failed to upload image", error);
-    res.status(500).json({
-      error: error instanceof Error ? error.message : "Upload failed",
-    });
-  }
-});
+app.post("/upload-image", uploadSingleImage, handleUploadImage);
 
 // HTTP endpoint for running task screenshots (replaces Socket.IO)
 app.use(express.json());
-app.post("/api/run-task-screenshots", async (req, res) => {
-  try {
-    const data = req.body;
+app.post("/api/run-task-screenshots", (req, res, next) => {
+  void (async () => {
+    try {
+      const data = req.body;
 
-    const logPrefix = "[/api/run-task-screenshots]";
+      const logPrefix = "[/api/run-task-screenshots]";
 
-    log("INFO", `${logPrefix} Received request`, {
-      workerId: WORKER_ID,
-      hasToken: Boolean(data?.token),
-      hasAnthropicKey: Boolean(data?.anthropicApiKey),
-    });
+      log("INFO", `${logPrefix} Received request`, {
+        workerId: WORKER_ID,
+        hasToken: Boolean(data?.token),
+        hasAnthropicKey: Boolean(data?.anthropicApiKey),
+      });
 
-    if (!data?.token) {
-      return res.status(400).json({
-        error: "Missing required field: token",
+      if (!data?.token) {
+        res.status(400).json({
+          error: "Missing required field: token",
+        });
+        return;
+      }
+
+      const context = await resolvePreviewJobContext({
+        token: data.token,
+        convexUrlOverride: data.convexUrl,
+        logPrefix,
+      });
+
+      // Respond immediately to acknowledge receipt
+      res.json({
+        success: true,
+      });
+
+      // Run screenshot collection in background
+      (async () => {
+        try {
+          await runPreviewJobScreenshots({
+            token: data.token,
+            anthropicApiKey: data.anthropicApiKey,
+            context,
+            logPrefix,
+            installCommand: data.installCommand,
+            devCommand: data.devCommand,
+          });
+        } catch (error) {
+          log("ERROR", `${logPrefix} Failed`, error);
+        }
+      })().catch((error) => {
+        log("ERROR", `${logPrefix} Background task failed`, error);
+      });
+    } catch (error) {
+      log("ERROR", "[/api/run-task-screenshots] Request handling failed", error);
+      res.status(400).json({
+        error: error instanceof Error ? error.message : "Internal server error",
       });
     }
-
-    const context = await resolvePreviewJobContext({
-      token: data.token,
-      convexUrlOverride: data.convexUrl,
-      logPrefix,
-    });
-
-    // Respond immediately to acknowledge receipt
-    res.json({
-      success: true,
-    });
-
-    // Run screenshot collection in background
-    (async () => {
-      try {
-        await runPreviewJobScreenshots({
-          token: data.token,
-          anthropicApiKey: data.anthropicApiKey,
-          context,
-          logPrefix,
-          installCommand: data.installCommand,
-          devCommand: data.devCommand,
-        });
-      } catch (error) {
-        log("ERROR", `${logPrefix} Failed`, error);
-      }
-    })().catch((error) => {
-      log("ERROR", `${logPrefix} Background task failed`, error);
-    });
-  } catch (error) {
-    log("ERROR", "[/api/run-task-screenshots] Request handling failed", error);
-    res.status(400).json({
-      error: error instanceof Error ? error.message : "Internal server error",
-    });
-  }
+  })().catch(next);
 });
 
 // Create HTTP server with Express app
