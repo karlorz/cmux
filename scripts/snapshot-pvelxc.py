@@ -2754,10 +2754,6 @@ async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
         export HOME=/root
         server_root="{server_root}"
         echo "[install-ide-extensions] provider={ide_provider} server_root={server_root}"
-        
-        echo "DEBUG: Checking content of {server_root}..."
-        ls -R "{server_root}" || echo "Failed to list {server_root}"
-        
         bin_path="{bin_path}"
         echo "[install-ide-extensions] bin_path=${{bin_path}}"
         if [ ! -x "${{bin_path}}" ]; then
