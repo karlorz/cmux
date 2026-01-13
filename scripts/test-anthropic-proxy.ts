@@ -11,7 +11,7 @@
  * Examples:
  *   bun scripts/test-anthropic-proxy.ts
  *   bun scripts/test-anthropic-proxy.ts --stream
- *   bun scripts/test-anthropic-proxy.ts --model claude-sonnet-4-5-20250514
+ *   bun scripts/test-anthropic-proxy.ts --model claude-sonnet-4-5
  */
 
 const args = process.argv.slice(2);
