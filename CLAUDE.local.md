@@ -63,7 +63,7 @@ uv run --env-file .env ./scripts/snapshot-pvelxc.py \
 # Rebuild Morph snapshot (local dev, optional)
 ```bash
 uv run --env-file .env ./scripts/snapshot.py \
---snapshot-id snapshot_yw1qulce \
+--snapshot-id snapshot_7wbqo5jd \
 --standard-vcpus 4 \    
 --standard-memory 6144 \
 --standard-disk-size 32768 \
