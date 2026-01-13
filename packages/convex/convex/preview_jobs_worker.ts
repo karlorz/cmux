@@ -262,6 +262,7 @@ interface ScreenshotCollectorOptions {
   pathToClaudeCodeExecutable?: string;
   installCommand?: string;
   devCommand?: string;
+  convexSiteUrl?: string;
   auth: { taskRunJwt: string } | { anthropicApiKey: string };
 }
 
@@ -701,22 +702,22 @@ async function ensureCommitAvailable({
     description: string;
     command: string[];
   }> = [
-    {
-      description: "fetch commit by sha",
-      command: ["git", "-C", repoDir, "fetch", "origin", commitSha],
-    },
-    {
-      description: "fetch PR head ref",
-      command: [
-        "git",
-        "-C",
-        repoDir,
-        "fetch",
-        "origin",
-        `+refs/pull/${prNumber}/head:refs/cmux/preview/pull/${prNumber}`,
-      ],
-    },
-  ];
+      {
+        description: "fetch commit by sha",
+        command: ["git", "-C", repoDir, "fetch", "origin", commitSha],
+      },
+      {
+        description: "fetch PR head ref",
+        command: [
+          "git",
+          "-C",
+          repoDir,
+          "fetch",
+          "origin",
+          `+refs/pull/${prNumber}/head:refs/cmux/preview/pull/${prNumber}`,
+        ],
+      },
+    ];
 
   // If PR is from a fork, add fork fetch as the highest priority
   if (headRepoCloneUrl && headRef) {
@@ -1453,14 +1454,14 @@ export async function runPreviewJob(
     // Generate JWT for screenshot upload authentication now that we have taskRunId
     const previewJwt = taskRunId
       ? await new SignJWT({
-          taskRunId,
-          teamId: run.teamId,
-          userId: config.createdByUserId,
-        })
-          .setProtectedHeader({ alg: "HS256" })
-          .setIssuedAt()
-          .setExpirationTime("12h")
-          .sign(new TextEncoder().encode(env.CMUX_TASK_RUN_JWT_SECRET))
+        taskRunId,
+        teamId: run.teamId,
+        userId: config.createdByUserId,
+      })
+        .setProtectedHeader({ alg: "HS256" })
+        .setIssuedAt()
+        .setExpirationTime("12h")
+        .sign(new TextEncoder().encode(env.CMUX_TASK_RUN_JWT_SECRET))
       : null;
 
     // Update taskRun with VM instance info and URLs
@@ -1543,7 +1544,7 @@ export async function runPreviewJob(
 
       if (accessToken) {
         const escapedToken = singleQuote(accessToken);
-        
+
         let lastError: Error | undefined;
         let authSucceeded = false;
         const maxRetries = 5;
@@ -1980,6 +1981,7 @@ export async function runPreviewJob(
           pathToClaudeCodeExecutable: "/root/.bun/bin/claude",
           installCommand: environment.maintenanceScript ?? undefined,
           devCommand: environment.devScript ?? undefined,
+          convexSiteUrl: convexUrl,
           auth: { taskRunJwt: previewJwt },
         };
 

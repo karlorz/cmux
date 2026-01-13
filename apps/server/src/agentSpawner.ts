@@ -310,17 +310,9 @@ export async function spawnAgent(
       teamSlugOrId,
     });
 
-    // Merge with platform-provided AWS Bedrock credentials from server environment
-    // These are always injected so Claude agents can fall back to Bedrock when no OAuth token
     const apiKeys: Record<string, string> = {
       ...userApiKeys,
     };
-    if (process.env.AWS_BEARER_TOKEN_BEDROCK) {
-      apiKeys.AWS_BEARER_TOKEN_BEDROCK = process.env.AWS_BEARER_TOKEN_BEDROCK;
-    }
-    if (process.env.AWS_REGION) {
-      apiKeys.AWS_REGION = process.env.AWS_REGION;
-    }
 
     // Use environment property if available
     if (agent.environment) {
@@ -329,6 +321,7 @@ export async function spawnAgent(
         prompt: processedTaskDescription,
         taskRunJwt,
         apiKeys,
+        callbackUrl,
       });
       envVars = {
         ...envVars,

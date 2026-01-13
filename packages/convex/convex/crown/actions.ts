@@ -14,7 +14,7 @@ import { CLOUDFLARE_OPENAI_BASE_URL } from "@cmux/shared";
 import { env } from "../../_shared/convex-env";
 import { action } from "../_generated/server";
 
-const OPENAI_CROWN_MODEL = "gpt-5.2-codex";
+const OPENAI_CROWN_MODEL = "gpt-5-mini-2025-08-07";
 
 const CrownEvaluationCandidateValidator = v.object({
   runId: v.optional(v.string()),
