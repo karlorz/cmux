@@ -49,6 +49,7 @@ BASE_SETTINGS=$(jq -n \
     "workbench.editor.preserveOpenEditors": true,
     "window.restoreWindows": "preserve",
     "window.reopenFolders": "one",
+    "extensions.verifySignature": false,
     "editor.minimap.enabled": false,
     "files.autoSave": "afterDelay",
     "files.autoSaveDelay": 1000,

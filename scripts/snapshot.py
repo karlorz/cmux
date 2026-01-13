@@ -1499,6 +1499,9 @@ async def task_install_ide_extensions(ctx: TaskContext) -> None:
         f"""
         set -eux
         export HOME=/root
+        # Allow installing unsigned/marketplace VSIX without blocking on signatures.
+        export VSCODE_GALLERY_EXTENSION_SIGNATURE_VERIFICATION=false
+        export VSCODE_GALLERY_SIGNATURE_VERIFICATION=false
         server_root="{server_root}"
         echo "[install-ide-extensions] provider={ide_provider} server_root={server_root}"
         bin_path="{bin_path}"
