@@ -1,6 +1,9 @@
 export const CLOUDFLARE_ANTHROPIC_BASE_URL =
   "https://gateway.ai.cloudflare.com/v1/0c1675e0def6de1ab3a50a4e17dc5656/cmux-ai-proxy/anthropic";
 
+export const CMUX_ANTHROPIC_PROXY_PLACEHOLDER_API_KEY =
+  "sk_placeholder_cmux_anthropic_api_key";
+
 export const VERTEX_MODEL_OPUS_45 = "claude-opus-4-5";
 export const VERTEX_MODEL_SONNET_45 = "claude-sonnet-4-5";
 export const VERTEX_MODEL_HAIKU_45 = "claude-haiku-4-5";

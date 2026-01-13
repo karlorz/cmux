@@ -3,10 +3,22 @@ import { getWorkerAuth } from "./users/utils/getWorkerAuth";
 import { env } from "../_shared/convex-env";
 
 /**
- * Direct Vertex AI URL (bypassing Cloudflare for now to debug auth).
+ * Cloudflare AI Gateway configuration.
  */
-const VERTEX_AI_BASE_URL =
-  "https://us-east5-aiplatform.googleapis.com/v1/projects/manaflow-420907/locations/us-east5/publishers/anthropic/models";
+const CLOUDFLARE_ACCOUNT_ID = "0c1675e0def6de1ab3a50a4e17dc5656";
+const CLOUDFLARE_GATEWAY_ID = "cmux-heatmap";
+
+/**
+ * Google Cloud project configuration.
+ */
+const GCP_PROJECT_ID = "manaflow-420907";
+const GCP_REGION = "us-east5";
+
+/**
+ * Cloudflare AI Gateway base URL for Google Vertex AI.
+ */
+const CLOUDFLARE_VERTEX_BASE_URL =
+  `https://gateway.ai.cloudflare.com/v1/${CLOUDFLARE_ACCOUNT_ID}/${CLOUDFLARE_GATEWAY_ID}/google-vertex-ai/v1/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/publishers/anthropic/models`;
 
 const JSON_HEADERS = {
   "Content-Type": "application/json",
@@ -27,109 +39,38 @@ function formatPrivateKey(key: string): string {
 }
 
 /**
- * Base64URL encode (no padding)
+ * Build the service account JSON for Cloudflare AI Gateway authentication.
+ * Cloudflare handles token generation internally when given the service account JSON.
  */
-function base64UrlEncode(data: Uint8Array | string): string {
-  const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
-  const base64 = btoa(String.fromCharCode(...bytes));
-  return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
-}
-
-/**
- * Convert PEM private key to CryptoKey for signing
- */
-async function importPrivateKey(pemKey: string): Promise<CryptoKey> {
-  // Remove PEM headers and decode base64
-  const pemContents = pemKey
-    .replace(/-----BEGIN PRIVATE KEY-----/, "")
-    .replace(/-----END PRIVATE KEY-----/, "")
-    .replace(/\s/g, "");
-
-  const binaryDer = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
-
-  return crypto.subtle.importKey(
-    "pkcs8",
-    binaryDer,
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-}
-
-/**
- * Generate a Google OAuth2 access token using service account credentials.
- */
-async function getGoogleAccessToken(): Promise<string> {
+function buildServiceAccountJson(): string {
   const privateKey = env.VERTEX_PRIVATE_KEY;
   if (!privateKey) {
     throw new Error("VERTEX_PRIVATE_KEY environment variable is not set");
   }
 
-  const formattedKey = formatPrivateKey(privateKey);
-  const clientEmail = "vertex-express@manaflow-420907.iam.gserviceaccount.com";
-  const tokenUrl = "https://oauth2.googleapis.com/token";
-  const scope = "https://www.googleapis.com/auth/cloud-platform";
-
-  const now = Math.floor(Date.now() / 1000);
-  const expiry = now + 3600; // 1 hour
-
-  // Create JWT header and claims
-  const header = { alg: "RS256", typ: "JWT" };
-  const claims = {
-    iss: clientEmail,
-    sub: clientEmail,
-    aud: tokenUrl,
-    iat: now,
-    exp: expiry,
-    scope: scope,
+  const serviceAccount = {
+    type: "service_account",
+    project_id: GCP_PROJECT_ID,
+    private_key_id: "aff18cf6b6f38c0827cba7cb8bd143269560e435",
+    private_key: formatPrivateKey(privateKey),
+    client_email: "vertex-express@manaflow-420907.iam.gserviceaccount.com",
+    client_id: "113976467144405037333",
+    auth_uri: "https://accounts.google.com/o/oauth2/auth",
+    token_uri: "https://oauth2.googleapis.com/token",
+    auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
+    client_x509_cert_url: "https://www.googleapis.com/robot/v1/metadata/x509/vertex-express%40manaflow-420907.iam.gserviceaccount.com",
+    universe_domain: "googleapis.com",
+    // Required by Cloudflare AI Gateway for Vertex AI
+    region: GCP_REGION,
   };
 
-  // Encode header and claims
-  const encodedHeader = base64UrlEncode(JSON.stringify(header));
-  const encodedClaims = base64UrlEncode(JSON.stringify(claims));
-  const signatureInput = `${encodedHeader}.${encodedClaims}`;
-
-  // Sign with private key
-  const cryptoKey = await importPrivateKey(formattedKey);
-  const signature = await crypto.subtle.sign(
-    "RSASSA-PKCS1-v1_5",
-    cryptoKey,
-    new TextEncoder().encode(signatureInput)
-  );
-
-  const encodedSignature = base64UrlEncode(new Uint8Array(signature));
-  const jwt = `${signatureInput}.${encodedSignature}`;
-
-  // Exchange JWT for access token
-  const response = await fetch(tokenUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion: jwt,
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to get access token: ${error}`);
-  }
-
-  const data = await response.json() as { access_token: string };
-  return data.access_token;
+  return JSON.stringify(serviceAccount);
 }
 
 const TEMPORARY_DISABLE_AUTH = true;
 
-const hardCodedApiKey = "sk_placeholder_cmux_anthropic_api_key";
-
-function getIsOAuthToken(token: string) {
-  return token.includes("sk-ant-oat");
-}
-
 /**
  * Supported Claude models on Vertex AI.
- * These short names work directly with Vertex AI.
  */
 const SUPPORTED_VERTEX_MODELS = [
   "claude-opus-4-5",
@@ -139,28 +80,45 @@ const SUPPORTED_VERTEX_MODELS = [
 
 /**
  * Map model names to Vertex AI format.
- * For now, we just pass through supported models.
+ * Strips date suffixes (e.g., "-20250929") since Vertex AI expects base model names.
  */
 function mapToVertexModel(model: string): string {
-  // Pass through supported models
-  if (SUPPORTED_VERTEX_MODELS.includes(model as typeof SUPPORTED_VERTEX_MODELS[number])) {
-    return model;
+  // Strip date suffix (e.g., "claude-sonnet-4-5-20250929" -> "claude-sonnet-4-5")
+  const baseModel = model.replace(/-\d{8}$/, "");
+
+  // Check if the base model is supported on Vertex AI
+  if (SUPPORTED_VERTEX_MODELS.includes(baseModel as typeof SUPPORTED_VERTEX_MODELS[number])) {
+    return baseModel;
   }
-  // Default fallback
-  return model;
+
+  // Default to sonnet if model is not recognized
+  console.warn(`[anthropic-proxy] Unknown model "${model}", defaulting to claude-sonnet-4-5`);
+  return "claude-sonnet-4-5";
 }
 
 /**
- * HTTP action to proxy Anthropic API requests to Vertex AI via Cloudflare.
+ * HTTP action to proxy Anthropic API requests to Vertex AI via Cloudflare AI Gateway.
  * This endpoint is called by Claude Code running in sandboxes.
  */
 export const anthropicProxy = httpAction(async (_ctx, req) => {
   const startTime = Date.now();
 
+  // Log incoming request details
+  const url = new URL(req.url);
+  console.log("[anthropic-proxy] === Incoming Request ===");
+  console.log("[anthropic-proxy] Method:", req.method);
+  console.log("[anthropic-proxy] URL:", req.url);
+  console.log("[anthropic-proxy] Path:", url.pathname);
+  console.log("[anthropic-proxy] x-cmux-token present:", !!req.headers.get("x-cmux-token"));
+  console.log("[anthropic-proxy] x-api-key present:", !!req.headers.get("x-api-key"));
+  console.log("[anthropic-proxy] authorization present:", !!req.headers.get("authorization"));
+  console.log("[anthropic-proxy] content-type:", req.headers.get("content-type"));
+
   // Try to extract token payload for tracking
   const workerAuth = await getWorkerAuth(req, {
     loggerPrefix: "[anthropic-proxy]",
   });
+  console.log("[anthropic-proxy] workerAuth result:", workerAuth ? { taskRunId: workerAuth.payload.taskRunId, teamId: workerAuth.payload.teamId } : null);
 
   if (!TEMPORARY_DISABLE_AUTH && !workerAuth) {
     console.error("[anthropic-proxy] Auth error: Missing or invalid token");
@@ -168,57 +126,26 @@ export const anthropicProxy = httpAction(async (_ctx, req) => {
   }
 
   try {
-    // Get query parameters
-    const url = new URL(req.url);
-    const beta = url.searchParams.get("beta");
-
-    const xApiKeyHeader = req.headers.get("x-api-key");
-    const authorizationHeader = req.headers.get("authorization");
-    const isOAuthToken = getIsOAuthToken(
-      xApiKeyHeader || authorizationHeader || ""
-    );
-    const useOriginalApiKey =
-      !isOAuthToken &&
-      xApiKeyHeader !== hardCodedApiKey &&
-      authorizationHeader !== hardCodedApiKey;
-
     const body = await req.json();
 
-    // Build Vertex AI URL with model and stream suffix
-    const requestedModel = body.model ?? "claude-opus-4-5";
+    // Build Cloudflare AI Gateway URL with model and stream suffix
+    const requestedModel = body.model ?? "claude-sonnet-4-5";
     const vertexModel = mapToVertexModel(requestedModel);
     const streamSuffix = body.stream ? ":streamRawPredict" : ":rawPredict";
-    const vertexUrl = `${VERTEX_AI_BASE_URL}/${vertexModel}${streamSuffix}`;
+    const cloudflareUrl = `${CLOUDFLARE_VERTEX_BASE_URL}/${vertexModel}${streamSuffix}`;
 
     console.log("[anthropic-proxy] Model mapping:", requestedModel, "->", vertexModel);
+    console.log("[anthropic-proxy] Proxying to Cloudflare AI Gateway:", cloudflareUrl);
 
-    // Get Google access token
-    const accessToken = await getGoogleAccessToken();
-    console.log("[anthropic-proxy] Got access token, length:", accessToken.length);
+    // Build service account JSON for Cloudflare authentication
+    const serviceAccountJson = buildServiceAccountJson();
+    console.log("[anthropic-proxy] Service account JSON built (length:", serviceAccountJson.length, ")");
 
-    // Build headers for Vertex AI
-    const headers: Record<string, string> =
-      useOriginalApiKey && !TEMPORARY_DISABLE_AUTH
-        ? (() => {
-            const filtered: Record<string, string> = {};
-            req.headers.forEach((value, key) => {
-              filtered[key] = value;
-            });
-            return filtered;
-          })()
-        : {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-          };
-
-    // Add beta header if beta param is present
-    if (!useOriginalApiKey) {
-      if (beta === "true") {
-        headers["anthropic-beta"] = "messages-2023-12-15";
-      }
-    }
-
-    console.log("[anthropic-proxy] Proxying to Vertex AI:", vertexUrl);
+    // Build headers - Cloudflare AI Gateway expects service account JSON directly (no Bearer prefix)
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Authorization: serviceAccountJson,
+    };
 
     // Add anthropic_version required by Vertex AI and remove model (it's in URL)
     const { model: _model, ...bodyWithoutModel } = body;
@@ -227,13 +154,15 @@ export const anthropicProxy = httpAction(async (_ctx, req) => {
       anthropic_version: "vertex-2023-10-16",
     };
 
-    const response = await fetch(vertexUrl, {
+    console.log("[anthropic-proxy] Request body keys:", Object.keys(vertexBody));
+
+    const response = await fetch(cloudflareUrl, {
       method: "POST",
       headers,
       body: JSON.stringify(vertexBody),
     });
 
-    console.log("[anthropic-proxy] Vertex AI response status:", response.status);
+    console.log("[anthropic-proxy] Cloudflare response status:", response.status);
 
     // Handle streaming responses
     if (body.stream && response.ok) {
@@ -243,7 +172,6 @@ export const anthropicProxy = httpAction(async (_ctx, req) => {
         "ms"
       );
 
-      // Pass through the SSE stream
       const stream = response.body;
       if (!stream) {
         return jsonResponse({ error: "No response body" }, 500);
@@ -262,7 +190,7 @@ export const anthropicProxy = httpAction(async (_ctx, req) => {
     const data = await response.json();
 
     if (!response.ok) {
-      console.error("[anthropic-proxy] Vertex AI error:", data);
+      console.error("[anthropic-proxy] Cloudflare/Vertex error:", data);
       return jsonResponse(data, response.status);
     }
 
@@ -276,7 +204,7 @@ export const anthropicProxy = httpAction(async (_ctx, req) => {
   } catch (error) {
     console.error("[anthropic-proxy] Error:", error);
     return jsonResponse(
-      { error: "Failed to proxy request to Vertex AI" },
+      { error: "Failed to proxy request to Vertex AI via Cloudflare" },
       500
     );
   }

@@ -2,6 +2,7 @@ import type {
   EnvironmentContext,
   EnvironmentResult,
 } from "../common/environment-result";
+import { CMUX_ANTHROPIC_PROXY_PLACEHOLDER_API_KEY } from "../../utils/anthropic";
 
 export const CLAUDE_KEY_ENV_VARS_TO_UNSET = [
   "ANTHROPIC_API_KEY",
@@ -25,6 +26,8 @@ export async function getClaudeEnvironment(
   const env: Record<string, string> = {};
   const startupCommands: string[] = [];
   const claudeLifecycleDir = "/root/lifecycle/claude";
+  const claudeSecretsDir = `${claudeLifecycleDir}/secrets`;
+  const claudeApiKeyHelperPath = `${claudeSecretsDir}/anthropic_key_helper.sh`;
 
   // Prepare .claude.json
   try {
@@ -116,6 +119,7 @@ export async function getClaudeEnvironment(
   // Ensure directories exist
   startupCommands.unshift("mkdir -p ~/.claude");
   startupCommands.push(`mkdir -p ${claudeLifecycleDir}`);
+  startupCommands.push(`mkdir -p ${claudeSecretsDir}`);
 
   // Clean up any previous Claude completion markers
   // This should run before the agent starts to ensure clean state
@@ -180,11 +184,13 @@ exit 0`;
     mode: "755",
   });
 
-  // Check if user has provided an OAuth token (preferred)
-  // If no OAuth token, Claude Code will use API key or fall back to AWS Bedrock
+  // Check if user has provided an OAuth token (preferred) or API key
   const hasOAuthToken =
     ctx.apiKeys?.CLAUDE_CODE_OAUTH_TOKEN &&
     ctx.apiKeys.CLAUDE_CODE_OAUTH_TOKEN.trim().length > 0;
+  const hasAnthropicApiKey =
+    ctx.apiKeys?.ANTHROPIC_API_KEY &&
+    ctx.apiKeys.ANTHROPIC_API_KEY.trim().length > 0;
 
   // If OAuth token is provided, write it to /etc/claude-code/env
   // The wrapper scripts (claude, npx, bunx) source this file before running claude-code
@@ -199,14 +205,23 @@ exit 0`;
     });
   }
 
-  // Remove any OAuth credentials file to ensure clean state
-  // This prevents cached OAuth from overriding configured authentication
-  startupCommands.push("rm -f ~/.claude/.credentials.json 2>/dev/null || true");
-
   // Create settings.json with hooks configuration
-  // Authentication priority: OAuth token (user) > API key (user) > AWS Bedrock (platform)
+  // When OAuth token is present, we don't use the cmux proxy (user pays directly via their subscription)
+  // When only API key is present, we route through cmux proxy for tracking/rate limiting
   const settingsConfig: Record<string, unknown> = {
     alwaysThinkingEnabled: true,
+    // Configure helper to avoid env-var based prompting (only when not using OAuth)
+    ...(hasOAuthToken ? {} : { apiKeyHelper: claudeApiKeyHelperPath }),
+    // Set the API key for Claude Code:
+    // - If user provided their own ANTHROPIC_API_KEY, use that
+    // - Otherwise, use a placeholder (our proxy uses service account credentials)
+    ...(!hasOAuthToken
+      ? {
+        anthropicApiKey: hasAnthropicApiKey
+          ? ctx.apiKeys?.ANTHROPIC_API_KEY
+          : CMUX_ANTHROPIC_PROXY_PLACEHOLDER_API_KEY,
+      }
+      : {}),
     hooks: {
       Stop: [
         {
@@ -233,6 +248,15 @@ exit 0`;
     env: {
       CLAUDE_CODE_ENABLE_TELEMETRY: 0,
       CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: 1,
+      ...(hasOAuthToken
+        ? {}
+        : (() => {
+          const anthropicBaseUrl = `${ctx.callbackUrl}/api/anthropic`;
+          return {
+            ANTHROPIC_BASE_URL: anthropicBaseUrl,
+            ANTHROPIC_CUSTOM_HEADERS: `x-cmux-token:${ctx.taskRunJwt}`,
+          };
+        })()),
     },
   };
 
@@ -243,6 +267,15 @@ exit 0`;
       JSON.stringify(settingsConfig, null, 2),
     ).toString("base64"),
     mode: "644",
+  });
+
+  // Add apiKey helper script to read key from file
+  const helperScript = `#!/bin/sh
+echo ${ctx.taskRunJwt}`;
+  files.push({
+    destinationPath: claudeApiKeyHelperPath,
+    contentBase64: Buffer.from(helperScript).toString("base64"),
+    mode: "700",
   });
 
   // Log the files for debugging
