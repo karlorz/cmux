@@ -22,7 +22,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import atexit
-import io
 import json
 import os
 import shutil
@@ -1216,7 +1215,6 @@ async def task_install_uv_python(ctx: TaskContext) -> None:
         PIP_VERSION="$(curl -fsSL https://pypi.org/pypi/pip/json | jq -r '.info.version')"
         python3 -m pip install --break-system-packages --upgrade "pip==${PIP_VERSION}"
         ln -sf /usr/bin/python3 /usr/bin/python
-        rm -rf /var/lib/apt/lists/*
         """
     )
     await ctx.run("install-uv-python", cmd)
@@ -1469,24 +1467,20 @@ async def task_install_ide_extensions(ctx: TaskContext) -> None:
         fi
         extensions_dir="{extensions_dir}"
         user_data_dir="{user_data_dir}"
-        echo "[install-ide-extensions] extensions_dir=${{extensions_dir}} user_data_dir=${{user_data_dir}}"
         mkdir -p "${{extensions_dir}}" "${{user_data_dir}}"
         cmux_vsix="/tmp/cmux-vscode-extension.vsix"
         if [ ! -f "${{cmux_vsix}}" ]; then
           echo "cmux extension package missing at ${{cmux_vsix}}" >&2
           exit 1
         fi
-        ls -lh "${{cmux_vsix}}"
         install_from_file() {{
           local package_path="$1"
-          echo "[install-ide-extensions] installing ${{package_path}}"
           "${{bin_path}}" \\
             --install-extension "${{package_path}}" \\
             --force \\
             --extensions-dir "${{extensions_dir}}" \\
             --user-data-dir "${{user_data_dir}}"
         }}
-        echo "[install-ide-extensions] installing bundled cmux extension"
         install_from_file "${{cmux_vsix}}"
         rm -f "${{cmux_vsix}}"
         download_dir="$(mktemp -d)"
@@ -1532,8 +1526,6 @@ async def task_install_ide_extensions(ctx: TaskContext) -> None:
             mv "${{tmpfile}}" "${{destination}}"
           fi
         }}
-        # Disable errexit for the while loop to avoid envctl debug trap interference
-        set +e
         while IFS='|' read -r publisher name version; do
           [ -z "${{publisher}}" ] && continue
           download_extension "${{publisher}}" "${{name}}" "${{version}}" "${{download_dir}}/${{publisher}}.${{name}}.vsix" &
@@ -1541,7 +1533,6 @@ async def task_install_ide_extensions(ctx: TaskContext) -> None:
 {extensions_blob}
 EXTENSIONS
         wait
-        set -e
         set -- "${{download_dir}}"/*.vsix
         for vsix in "$@"; do
           if [ -f "${{vsix}}" ]; then
@@ -1996,19 +1987,9 @@ async def task_build_worker(ctx: TaskContext) -> None:
           --target node \\
           --outdir ./apps/worker/build \\
           --external @cmux/convex \\
-          --external path-to-regexp \\
           --external 'node:*'
         if [ ! -f ./apps/worker/build/index.js ]; then
           echo "Worker build output missing at ./apps/worker/build/index.js" >&2
-          exit 1
-        fi
-        install -d ./apps/worker/build/node_modules
-        if [ -d ./node_modules/path-to-regexp ]; then
-          cp -RL ./node_modules/path-to-regexp ./apps/worker/build/node_modules/path-to-regexp
-        elif [ -d ./node_modules/express/node_modules/path-to-regexp ]; then
-          cp -RL ./node_modules/express/node_modules/path-to-regexp ./apps/worker/build/node_modules/path-to-regexp
-        else
-          echo "Missing express path-to-regexp dependency" >&2
           exit 1
         fi
         install -d /builtins
