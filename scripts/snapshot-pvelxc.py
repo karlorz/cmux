@@ -53,6 +53,7 @@ import tempfile
 import textwrap
 import traceback
 import typing as t
+import http.client
 import urllib.parse
 import urllib.request
 import uuid
@@ -904,6 +905,10 @@ class PveLxcClient:
             exit_code = 1
         except urllib.error.URLError as e:
             # Connection failed - HTTP exec not available
+            return None
+        except http.client.RemoteDisconnected:
+            # Server closed connection unexpectedly - often due to large payload
+            # Return None to trigger fallback to SSH+pct exec if available
             return None
         except TimeoutError:
             stderr_lines.append(f"HTTP exec timed out after {timeout}s")
@@ -2045,7 +2050,17 @@ async def task_ensure_docker(ctx: PveTaskContext) -> None:
         set -euo pipefail
 
         echo "[docker] ensuring Docker APT repository"
-        DEBIAN_FRONTEND=noninteractive apt-get update
+        # Retry apt-get update up to 3 times (handles mirror sync issues)
+        for i in 1 2 3; do
+          DEBIAN_FRONTEND=noninteractive apt-get update && break || {
+            if [ $i -eq 3 ]; then
+              echo "apt-get update failed after 3 attempts" >&2
+              exit 1
+            fi
+            echo "apt-get update failed, retrying in 10s..." >&2
+            sleep 10
+          }
+        done
         DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl
         os_release="/etc/os-release"
         if [ ! -f "$os_release" ]; then
@@ -2158,10 +2173,29 @@ async def task_install_node(ctx: PveTaskContext) -> None:
 async def task_install_nvm(ctx: PveTaskContext) -> None:
     cmd = textwrap.dedent(
         """
-        set -eux
+        set -eu
         export NVM_DIR="/root/.nvm"
         mkdir -p "${NVM_DIR}"
-        curl -fsSL "https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh" | bash
+        
+        # Retry nvm install up to 3 times (handles transient TLS/network errors)
+        for attempt in 1 2 3; do
+          echo "Installing nvm (attempt $attempt/3)..."
+          # Clear any partial installation from previous attempt
+          rm -rf "${NVM_DIR}/.git" "${NVM_DIR}/nvm.sh" 2>/dev/null || true
+          
+          if curl -fsSL "https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh" | bash; then
+            echo "nvm installed successfully"
+            break
+          else
+            if [ $attempt -eq 3 ]; then
+              echo "nvm installation failed after 3 attempts" >&2
+              exit 1
+            fi
+            echo "nvm installation failed, retrying in 10s..." >&2
+            sleep 10
+          fi
+        done
+        
         cat <<'PROFILE' > /etc/profile.d/nvm.sh
         export NVM_DIR="$HOME/.nvm"
         [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
@@ -3048,19 +3082,9 @@ async def task_build_worker(ctx: PveTaskContext) -> None:
           --target node \\
           --outdir ./apps/worker/build \\
           --external @cmux/convex \\
-          --external path-to-regexp \\
           --external 'node:*'
         if [ ! -f ./apps/worker/build/index.js ]; then
           echo "Worker build output missing at ./apps/worker/build/index.js" >&2
-          exit 1
-        fi
-        install -d ./apps/worker/build/node_modules
-        if [ -d ./node_modules/path-to-regexp ]; then
-          cp -RL ./node_modules/path-to-regexp ./apps/worker/build/node_modules/path-to-regexp
-        elif [ -d ./node_modules/express/node_modules/path-to-regexp ]; then
-          cp -RL ./node_modules/express/node_modules/path-to-regexp ./apps/worker/build/node_modules/path-to-regexp
-        else
-          echo "Missing express path-to-regexp dependency" >&2
           exit 1
         fi
         install -d /builtins
