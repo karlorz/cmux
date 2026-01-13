@@ -305,9 +305,21 @@ export async function spawnAgent(
 
     // Fetch API keys from Convex BEFORE calling agent.environment()
     // so agents can access them in their environment configuration
-    const apiKeys = await getConvex().query(api.apiKeys.getAllForAgents, {
+    const userApiKeys = await getConvex().query(api.apiKeys.getAllForAgents, {
       teamSlugOrId,
     });
+
+    // Merge with platform-provided AWS Bedrock credentials from server environment
+    // These are always injected so Claude agents can fall back to Bedrock when no OAuth token
+    const apiKeys: Record<string, string> = {
+      ...userApiKeys,
+    };
+    if (process.env.AWS_BEARER_TOKEN_BEDROCK) {
+      apiKeys.AWS_BEARER_TOKEN_BEDROCK = process.env.AWS_BEARER_TOKEN_BEDROCK;
+    }
+    if (process.env.AWS_REGION) {
+      apiKeys.AWS_REGION = process.env.AWS_REGION;
+    }
 
     // Use environment property if available
     if (agent.environment) {
@@ -1089,13 +1101,20 @@ exit $EXIT_CODE
           formData.append("image", blob, "image.png");
           formData.append("path", imageFile.path);
 
-          // Get worker port from VSCode instance
-          const workerPort =
-            vscodeInstance instanceof DockerVSCodeInstance
-              ? (vscodeInstance as DockerVSCodeInstance).getPorts()?.worker
-              : "39377";
-
-          const uploadUrl = `http://localhost:${workerPort}/upload-image`;
+          // Get upload URL from VSCode instance
+          let uploadUrl: string;
+          if (vscodeInstance instanceof DockerVSCodeInstance) {
+            const workerPort = vscodeInstance.getPorts()?.worker;
+            uploadUrl = `http://localhost:${workerPort}/upload-image`;
+          } else if (vscodeInstance instanceof CmuxVSCodeInstance) {
+            const workerUrl = vscodeInstance.getWorkerUrl();
+            if (!workerUrl) {
+              throw new Error("Worker URL not available for cloud instance");
+            }
+            uploadUrl = `${workerUrl}/upload-image`;
+          } else {
+            throw new Error("Unknown VSCode instance type");
+          }
 
           serverLogger.info(`[AgentSpawner] Uploading image to ${uploadUrl}`);
 

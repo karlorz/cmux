@@ -67,3 +67,9 @@ export const AWS_BEARER_TOKEN_BEDROCK: AgentConfigApiKey = {
   displayName: "AWS Bedrock Bearer Token",
   description: "Bearer token for AWS Bedrock API access to Claude models",
 };
+
+export const AWS_REGION: AgentConfigApiKey = {
+  envVar: "AWS_REGION",
+  displayName: "AWS Region",
+  description: "AWS region for Bedrock (e.g., us-east-1, us-west-2)",
+};
