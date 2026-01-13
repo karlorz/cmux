@@ -2180,9 +2180,25 @@ async def task_install_nvm(ctx: PveTaskContext) -> None:
 @registry.task(
     name="install-bun",
     deps=("install-base-packages",),
-    description="Install Bun runtime (background download to avoid Cloudflare timeout)",
+    description="Install Bun runtime (skips if pre-installed in base template)",
 )
 async def task_install_bun(ctx: PveTaskContext) -> None:
+    # Step 0: Check if bun is already installed (pre-installed in base template)
+    check_cmd = "command -v bun && bun --version"
+    try:
+        result = await ctx.client.aexec_in_container(
+            ctx.vmid,
+            check_cmd,
+            timeout=15,
+            check=False,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            version = result.stdout.strip().split("\n")[-1]
+            ctx.console.info(f"[install-bun] Bun already installed: v{version} (from base template)")
+            return
+    except Exception as e:
+        ctx.console.info(f"[install-bun] Pre-install check failed ({e}), will install...")
+
     # Step 1: Detect architecture and start bun download in background
     # The background download avoids Cloudflare Tunnel's ~100s timeout
     cmd = textwrap.dedent(
@@ -2294,9 +2310,25 @@ async def task_install_bun(ctx: PveTaskContext) -> None:
 @registry.task(
     name="install-go-toolchain",
     deps=("install-base-packages",),
-    description="Install Go toolchain for building CMux helpers",
+    description="Install Go toolchain for building CMux helpers (skips if pre-installed)",
 )
 async def task_install_go_toolchain(ctx: PveTaskContext) -> None:
+    # Check if Go is already installed (pre-installed in base template)
+    check_cmd = "command -v go && go version"
+    try:
+        result = await ctx.client.aexec_in_container(
+            ctx.vmid,
+            check_cmd,
+            timeout=15,
+            check=False,
+        )
+        if result.returncode == 0 and "go version" in result.stdout:
+            version = result.stdout.strip().split("\n")[-1]
+            ctx.console.info(f"[install-go-toolchain] Go already installed: {version} (from base template)")
+            return
+    except Exception as e:
+        ctx.console.info(f"[install-go-toolchain] Pre-install check failed ({e}), will install...")
+
     cmd = textwrap.dedent(
         """
         set -eux
@@ -2360,9 +2392,39 @@ async def task_install_uv_python(ctx: PveTaskContext) -> None:
 @registry.task(
     name="install-rust-toolchain",
     deps=("install-base-packages",),
-    description="Install Rust toolchain via rustup",
+    description="Install Rust toolchain via rustup (skips if pre-installed)",
 )
 async def task_install_rust_toolchain(ctx: PveTaskContext) -> None:
+    # Check if Rust is already installed (pre-installed in base template)
+    # Respect CARGO_HOME and prepend to PATH so rustc under /usr/local/cargo/bin is detected
+    check_cmd = textwrap.dedent(
+        """
+        set -e
+        CARGO_HOME="${CARGO_HOME:-/usr/local/cargo}"
+        PATH="${CARGO_HOME}/bin:${PATH}"
+        if command -v rustc >/dev/null 2>&1; then
+          rustc --version
+        else
+          exit 1
+        fi
+        """
+    )
+    try:
+        result = await ctx.client.aexec_in_container(
+            ctx.vmid,
+            check_cmd,
+            timeout=15,
+            check=False,
+        )
+        if result.returncode == 0 and "rustc" in result.stdout:
+            version = result.stdout.strip().split("\n")[-1]
+            ctx.console.info(f"[install-rust-toolchain] Rust already installed: {version} (from base template)")
+            return
+        elif result.returncode != 0:
+            ctx.console.info(f"[install-rust-toolchain] Pre-install check returned {result.returncode}: {result.stdout.strip()} ({result.stderr.strip()})")
+    except Exception as e:
+        ctx.console.info(f"[install-rust-toolchain] Pre-install check failed ({e}), will install...")
+
     cmd = textwrap.dedent(
         """
         set -eux
@@ -2836,9 +2898,38 @@ async def task_install_global_cli(ctx: PveTaskContext) -> None:
         raise RuntimeError("No packages found in configs/ide-deps.json.")
 
     bun_line = "bun add -g " + " ".join(package_args)
+    # Build list of expected binary names for verification
+    expected_binaries = ["codex", "claude", "gemini", "opencode", "codebuff", "devcontainer", "amp"]
+    verify_lines = "\n".join(
+        f'[ -x "${{BUN_INSTALL}}/bin/{b}" ] || echo "WARNING: {b} not found in ${{BUN_INSTALL}}/bin"'
+        for b in expected_binaries
+    )
     cmd = textwrap.dedent(
         f"""
-        {bun_line}
+        set -eux
+        export BUN_INSTALL="/root/.bun"
+        CACHE_DIR="${{BUN_INSTALL_CACHE:-${{BUN_INSTALL}}/install/cache}}"
+        export BUN_INSTALL_CACHE="${{CACHE_DIR}}"
+        export PATH="/usr/local/bin:${{BUN_INSTALL}}/bin:$PATH"
+        mkdir -p "${{CACHE_DIR}}"
+        for attempt in 1 2; do
+          echo "[install-global-cli] bun add attempt ${{attempt}}/2 (cache=${{CACHE_DIR}})"
+          if {bun_line}; then
+            break
+          fi
+          exit_code=$?
+          if [ "${{attempt}}" -eq 2 ]; then
+            exit "${{exit_code}}"
+          fi
+          echo "[install-global-cli] bun add failed (exit ${{exit_code}}), clearing cache and retrying..."
+          rm -rf "${{CACHE_DIR}}"
+          rm -rf "${{BUN_INSTALL}}/install/cache" || true
+          rm -rf "${{BUN_INSTALL}}/cache" || true
+          mkdir -p "${{CACHE_DIR}}"
+        done
+        echo "Verifying installed CLIs..."
+        ls -la "${{BUN_INSTALL}}/bin/" || true
+        {verify_lines}
         """
     )
     await ctx.run("install-global-cli", cmd)
@@ -3113,12 +3204,34 @@ async def task_build_rust_binaries(ctx: PveTaskContext) -> None:
         export CARGO_TARGET_DIR={repo}/target
         export PATH="${{CARGO_HOME}}/bin:$PATH"
         export CARGO_BUILD_JOBS="$(nproc)"
+        # Configuration to better handle network timeouts
+        export CARGO_NET_RETRY=3
+        export CARGO_NET_GIT_FETCH_WITH_CLI=true
+        
+        echo "Building cmux-env..."
         cargo build --locked --release --manifest-path {repo}/crates/cmux-env/Cargo.toml
+        
+        echo "Building cmux-proxy..."
         cargo build --locked --release --manifest-path {repo}/crates/cmux-proxy/Cargo.toml
+        
+        echo "Building cmux-pty..."
         cargo build --locked --release --manifest-path {repo}/crates/cmux-pty/Cargo.toml
         """
     )
-    await ctx.run("build-rust-binaries", cmd, timeout=60 * 30)
+    
+    # Retry loop for transient network issues (crates.io timeouts)
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            if attempt > 1:
+                ctx.console.info(f"[build-rust-binaries] Retry attempt {attempt}/{max_retries}...")
+            await ctx.run("build-rust-binaries", cmd, timeout=60 * 30)
+            break
+        except Exception as e:
+            if attempt == max_retries:
+                raise
+            ctx.console.info(f"[build-rust-binaries] Build failed (likely network): {e}")
+            await asyncio.sleep(10 * attempt)  # Backoff wait
 
 
 @registry.task(

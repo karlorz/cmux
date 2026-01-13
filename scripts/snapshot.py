@@ -1144,9 +1144,16 @@ async def task_install_nvm(ctx: TaskContext) -> None:
 @registry.task(
     name="install-bun",
     deps=("install-base-packages",),
-    description="Install Bun runtime",
+    description="Install Bun runtime (skips if pre-installed)",
 )
 async def task_install_bun(ctx: TaskContext) -> None:
+    # Check if bun is already installed
+    check_result = await ctx.instance.aexec("command -v bun && bun --version", check=False)
+    if check_result.returncode == 0 and check_result.stdout.strip():
+        version = check_result.stdout.strip().split("\n")[-1]
+        ctx.console.info(f"[install-bun] Bun already installed: v{version}")
+        return
+
     cmd = textwrap.dedent(
         """
         curl -fsSL https://bun.sh/install | bash
@@ -1162,13 +1169,20 @@ async def task_install_bun(ctx: TaskContext) -> None:
 @registry.task(
     name="install-go-toolchain",
     deps=("install-base-packages",),
-    description="Install Go toolchain for building CMux helpers",
+    description="Install Go toolchain for building CMux helpers (skips if pre-installed)",
 )
 async def task_install_go_toolchain(ctx: TaskContext) -> None:
+    # Check if go is already installed
+    check_result = await ctx.instance.aexec("command -v go && go version", check=False)
+    if check_result.returncode == 0 and "go version" in check_result.stdout:
+        version = check_result.stdout.strip().split("\n")[-1]
+        ctx.console.info(f"[install-go-toolchain] Go already installed: {version}")
+        return
+
     cmd = textwrap.dedent(
         """
         set -eux
-        GO_VERSION="1.25.2"
+        GO_VERSION="1.25.5"
         ARCH="$(uname -m)"
         case "${ARCH}" in
           x86_64)
@@ -1230,9 +1244,28 @@ async def task_install_uv_python(ctx: TaskContext) -> None:
 @registry.task(
     name="install-rust-toolchain",
     deps=("install-base-packages",),
-    description="Install Rust toolchain via rustup",
+    description="Install Rust toolchain via rustup (skips if pre-installed)",
 )
 async def task_install_rust_toolchain(ctx: TaskContext) -> None:
+    # Check if rustc is already installed
+    check_cmd = textwrap.dedent(
+        """
+        set -e
+        CARGO_HOME="${CARGO_HOME:-/usr/local/cargo}"
+        PATH="${CARGO_HOME}/bin:${PATH}"
+        if command -v rustc >/dev/null 2>&1; then
+          rustc --version
+        else
+          exit 1
+        fi
+        """
+    )
+    check_result = await ctx.instance.aexec(check_cmd, check=False)
+    if check_result.returncode == 0 and "rustc" in check_result.stdout:
+        version = check_result.stdout.strip().split("\n")[-1]
+        ctx.console.info(f"[install-rust-toolchain] Rust already installed: {version}")
+        return
+
     cmd = textwrap.dedent(
         """
         set -eux
@@ -1254,7 +1287,7 @@ async def task_install_rust_toolchain(ctx: TaskContext) -> None:
             exit 1
             ;;
         esac
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \\
           sh -s -- -y --no-modify-path --profile minimal
         source "${CARGO_HOME}/env"
         rustup component add rustfmt
@@ -1609,9 +1642,38 @@ async def task_install_global_cli(ctx: TaskContext) -> None:
         raise RuntimeError("No packages found in configs/ide-deps.json.")
 
     bun_line = "bun add -g " + " ".join(package_args)
+    # Build list of expected binary names for verification
+    expected_binaries = ["codex", "claude", "gemini", "opencode", "codebuff", "devcontainer", "amp"]
+    verify_lines = "\n".join(
+        f'[ -x "${{BUN_INSTALL}}/bin/{b}" ] || echo "WARNING: {b} not found in ${{BUN_INSTALL}}/bin"'
+        for b in expected_binaries
+    )
     cmd = textwrap.dedent(
         f"""
-        {bun_line}
+        set -eux
+        export BUN_INSTALL="/root/.bun"
+        CACHE_DIR="${{BUN_INSTALL_CACHE:-${{BUN_INSTALL}}/install/cache}}"
+        export BUN_INSTALL_CACHE="${{CACHE_DIR}}"
+        export PATH="/usr/local/bin:${{BUN_INSTALL}}/bin:$PATH"
+        mkdir -p "${{CACHE_DIR}}"
+        for attempt in 1 2; do
+          echo "[install-global-cli] bun add attempt ${{attempt}}/2 (cache=${{CACHE_DIR}})"
+          if {bun_line}; then
+            break
+          fi
+          exit_code=$?
+          if [ "${{attempt}}" -eq 2 ]; then
+            exit "${{exit_code}}"
+          fi
+          echo "[install-global-cli] bun add failed (exit ${{exit_code}}), clearing cache and retrying..."
+          rm -rf "${{CACHE_DIR}}"
+          rm -rf "${{BUN_INSTALL}}/install/cache" || true
+          rm -rf "${{BUN_INSTALL}}/cache" || true
+          mkdir -p "${{CACHE_DIR}}"
+        done
+        echo "Verifying installed CLIs..."
+        ls -la "${{BUN_INSTALL}}/bin/" || true
+        {verify_lines}
         """
     )
     await ctx.run("install-global-cli", cmd)
