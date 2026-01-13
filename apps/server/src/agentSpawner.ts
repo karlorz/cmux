@@ -86,7 +86,8 @@ export async function spawnAgent(
       options.newBranch ||
       (await generateNewBranchName(options.taskDescription, teamSlugOrId));
     serverLogger.info(
-      `[AgentSpawner] New Branch: ${newBranch}, Base Branch: ${options.branch ?? "(auto)"
+      `[AgentSpawner] New Branch: ${newBranch}, Base Branch: ${
+        options.branch ?? "(auto)"
       }`
     );
 
@@ -309,9 +310,17 @@ export async function spawnAgent(
       teamSlugOrId,
     });
 
+    // Merge with platform-provided AWS Bedrock credentials from server environment
+    // These are always injected so Claude agents can fall back to Bedrock when no OAuth token
     const apiKeys: Record<string, string> = {
       ...userApiKeys,
     };
+    if (process.env.AWS_BEARER_TOKEN_BEDROCK) {
+      apiKeys.AWS_BEARER_TOKEN_BEDROCK = process.env.AWS_BEARER_TOKEN_BEDROCK;
+    }
+    if (process.env.AWS_REGION) {
+      apiKeys.AWS_REGION = process.env.AWS_REGION;
+    }
 
     // Use environment property if available
     if (agent.environment) {
@@ -320,7 +329,6 @@ export async function spawnAgent(
         prompt: processedTaskDescription,
         taskRunJwt,
         apiKeys,
-        callbackUrl,
       });
       envVars = {
         ...envVars,
@@ -591,12 +599,12 @@ export async function spawnAgent(
     // Get ports if it's a Docker instance
     let ports:
       | {
-        vscode: string;
-        worker: string;
-        extension?: string;
-        proxy?: string;
-        vnc?: string;
-      }
+          vscode: string;
+          worker: string;
+          extension?: string;
+          proxy?: string;
+          vnc?: string;
+        }
       | undefined;
     if (vscodeInstance instanceof DockerVSCodeInstance) {
       const dockerPorts = vscodeInstance.getPorts();
@@ -855,30 +863,30 @@ chmod +x ${maintenanceScriptPath}`;
     // The notify command contains complex JSON that gets mangled through shell layers
     const tmuxArgs = agent.name.toLowerCase().includes("codex")
       ? [
-        "new-session",
-        "-d",
-        "-s",
-        tmuxSessionName,
-        "-c",
-        "/root/workspace",
-        actualCommand,
-        ...actualArgs.map((arg) => {
-          // Replace $CMUX_PROMPT with actual prompt value
-          if (arg === "$CMUX_PROMPT") {
-            return processedTaskDescription;
-          }
-          return arg;
-        }),
-      ]
+          "new-session",
+          "-d",
+          "-s",
+          tmuxSessionName,
+          "-c",
+          "/root/workspace",
+          actualCommand,
+          ...actualArgs.map((arg) => {
+            // Replace $CMUX_PROMPT with actual prompt value
+            if (arg === "$CMUX_PROMPT") {
+              return processedTaskDescription;
+            }
+            return arg;
+          }),
+        ]
       : [
-        "new-session",
-        "-d",
-        "-s",
-        tmuxSessionName,
-        "bash",
-        "-lc",
-        `${unsetCommand}exec ${commandString}`,
-      ];
+          "new-session",
+          "-d",
+          "-s",
+          tmuxSessionName,
+          "bash",
+          "-lc",
+          `${unsetCommand}exec ${commandString}`,
+        ];
 
     // Build cmux-pty specific command (the actual agent command without tmux/bash wrapper)
     // For Codex agents, replace $CMUX_PROMPT with actual prompt value (matching tmux behavior)
@@ -1247,8 +1255,8 @@ export async function spawnAllAgents(
   // If selectedAgents is provided, map each entry to an AgentConfig to preserve duplicates
   const agentsToSpawn = options.selectedAgents
     ? options.selectedAgents
-      .map((name) => AGENT_CONFIGS.find((agent) => agent.name === name))
-      .filter((a): a is AgentConfig => Boolean(a))
+        .map((name) => AGENT_CONFIGS.find((agent) => agent.name === name))
+        .filter((a): a is AgentConfig => Boolean(a))
     : AGENT_CONFIGS;
 
   // Validate taskRunIds count matches agents count if provided
@@ -1269,15 +1277,15 @@ export async function spawnAllAgents(
     // Generate unique branch names for all agents at once to ensure no collisions
     branchNames = options.prTitle
       ? await generateUniqueBranchNamesFromTitle(
-        options.prTitle,
-        agentsToSpawn.length,
-        teamSlugOrId
-      )
+          options.prTitle,
+          agentsToSpawn.length,
+          teamSlugOrId
+        )
       : await generateUniqueBranchNames(
-        options.taskDescription,
-        agentsToSpawn.length,
-        teamSlugOrId
-      );
+          options.taskDescription,
+          agentsToSpawn.length,
+          teamSlugOrId
+        );
     serverLogger.info(
       `[AgentSpawner] Generated ${branchNames.length} unique branch names for agents`
     );
