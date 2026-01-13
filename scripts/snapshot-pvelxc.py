@@ -2566,9 +2566,6 @@ async def task_install_cmux_code(ctx: PveTaskContext) -> None:
         tar xf /tmp/cmux-code.tar.gz -C /app/cmux-code --strip-components=1
         rm -f /tmp/cmux-code.tar.gz
 
-        echo "Contents of /app/cmux-code:"
-        ls -R /app/cmux-code
-
         mkdir -p /root/.vscode-server-oss/data/User
         cat > /root/.vscode-server-oss/data/User/settings.json << 'EOF'
 {
