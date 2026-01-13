@@ -266,9 +266,11 @@ elif command -v bun &>/dev/null; then
 else
     echo "[4/10] Installing Bun..."
     curl -fsSL https://bun.sh/install | bash >/dev/null 2>&1
-    ln -sf /root/.bun/bin/bun /usr/local/bin/bun
-    ln -sf /root/.bun/bin/bunx /usr/local/bin/bunx
+    # Install bun binary to /usr/local/bin (same approach as snapshot.py)
+    install -m 0755 /root/.bun/bin/bun /usr/local/bin/bun
+    ln -sf /usr/local/bin/bun /usr/local/bin/bunx
     echo "    Installed: $(/usr/local/bin/bun --version)"
+    /usr/local/bin/bunx --version >/dev/null 2>&1 && echo "    bunx: OK" || echo "    bunx: WARN - check symlink"
     mark_done "04-bun"
 fi
 
