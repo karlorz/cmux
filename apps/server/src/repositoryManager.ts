@@ -8,6 +8,7 @@ import {
   type GitHooksConfig,
 } from "./gitHooks";
 import { serverLogger } from "./utils/fileLogger";
+import { getGitHubOAuthToken } from "./utils/getGitHubToken";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -319,14 +320,56 @@ export class RepositoryManager {
   }
 
   /**
+   * Get the fetch source for git commands.
+   * If authenticatedUrl is provided, use it directly.
+   * Otherwise, try to get a GitHub OAuth token and inject it into the origin URL.
+   * Falls back to "origin" if no authentication is available.
+   */
+  private async getFetchSource(
+    repoPath: string,
+    authenticatedUrl?: string
+  ): Promise<string> {
+    if (authenticatedUrl) {
+      return `"${authenticatedUrl}"`;
+    }
+
+    // Try to get the origin URL and inject auth token if available
+    try {
+      const { stdout } = await this.executeGitCommand(
+        `git remote get-url origin`,
+        { cwd: repoPath, suppressErrorLogging: true }
+      );
+      const originUrl = stdout.trim();
+
+      // Only try to authenticate GitHub URLs
+      if (originUrl.startsWith("https://github.com/")) {
+        const token = await getGitHubOAuthToken();
+        if (token) {
+          const authenticatedOrigin = originUrl.replace(
+            "https://github.com/",
+            `https://x-access-token:${token}@github.com/`
+          );
+          return `"${authenticatedOrigin}"`;
+        }
+      }
+    } catch {
+      // Ignore errors, fall back to origin
+    }
+
+    return "origin";
+  }
+
+  /**
    * Prewarm commit history for fast ancestry (merge-base) operations.
    * Uses partial clone filter to avoid fetching blobs, and writes commit-graph.
    * Idempotent and rate-limited via a timestamp file under .git.
+   * @param authenticatedUrl - Optional authenticated URL for private repos
    */
   async prewarmCommitHistory(
     repoPath: string,
     branch: string,
-    ttlMs = 30 * 60 * 1000
+    ttlMs = 30 * 60 * 1000,
+    authenticatedUrl?: string
   ): Promise<void> {
     const gitDir = await this.getGitDir(repoPath);
     const stamp = path.join(gitDir, "cmux-prewarm.stamp");
@@ -350,18 +393,21 @@ export class RepositoryManager {
       serverLogger.warn("Failed to set partial clone promisor config:", e);
     }
 
+    // Get authenticated fetch source for private repo support
+    const fetchSource = await this.getFetchSource(repoPath, authenticatedUrl);
+
     const shallow = await this.isShallow(repoPath);
     try {
       if (shallow) {
         // Unshallow commit history, but keep blobs filtered
         await this.executeGitCommand(
-          `git fetch --filter=blob:none --unshallow --prune origin ${branch}`,
+          `git fetch --filter=blob:none --unshallow --prune ${fetchSource} ${branch}`,
           { cwd: repoPath }
         );
       } else {
         // Ensure we have latest commit graph for branch history
         await this.executeGitCommand(
-          `git fetch --filter=blob:none --prune origin ${branch}`,
+          `git fetch --filter=blob:none --prune ${fetchSource} ${branch}`,
           { cwd: repoPath }
         );
       }
@@ -389,7 +435,8 @@ export class RepositoryManager {
   async updateRemoteBranchIfStale(
     repoPath: string,
     branch: string,
-    ttlMs = 20_000
+    ttlMs = 20_000,
+    authenticatedUrl?: string
   ): Promise<void> {
     const safeBranch = branch.replace(/[^a-zA-Z0-9._-]/g, "_");
     const gitDir = await this.getGitDir(repoPath);
@@ -401,9 +448,11 @@ export class RepositoryManager {
       // ignore
     }
     try {
+      // Get authenticated fetch source for private repo support
+      const fetchSource = await this.getFetchSource(repoPath, authenticatedUrl);
       await this.removeStaleGitLock(repoPath, "shallow.lock", 15_000);
       await this.executeGitCommand(
-        `git fetch --depth 1 origin +refs/heads/${branch}:refs/remotes/origin/${branch}`,
+        `git fetch --depth 1 ${fetchSource} +refs/heads/${branch}:refs/remotes/origin/${branch}`,
         { cwd: repoPath }
       );
       await fs.writeFile(stamp, `${Date.now()}\n`, "utf8");
@@ -906,7 +955,8 @@ export class RepositoryManager {
     originPath: string,
     worktreePath: string,
     branchName: string,
-    baseBranch: string = "main"
+    baseBranch: string = "main",
+    authenticatedUrl?: string
   ): Promise<string> {
     // In-process lock keyed by repo+branch to avoid concurrent add for same branch
     const inProcessLockKey = `${originPath}::${branchName}`;
@@ -929,13 +979,16 @@ export class RepositoryManager {
 
     serverLogger.info(`Creating worktree with branch ${branchName}...`);
     try {
+      // Get authenticated fetch source for private repo support
+      const fetchSource = await this.getFetchSource(originPath, authenticatedUrl);
+
       // Before creating the worktree, try to fetch the remote branch ref for this branch
       // so that if the agent pushed it, we base the worktree on the pushed commits
       // rather than creating a fresh branch off the base.
       const fetchRemoteBranchRef = async (): Promise<boolean> => {
         // Proactively clear shallow.lock to avoid fetch contention
         await this.removeStaleGitLock(originPath, "shallow.lock", 15_000);
-        const fetchCmd = `git fetch --depth ${this.config.fetchDepth} origin +refs/heads/${branchName}:refs/remotes/origin/${branchName}`;
+        const fetchCmd = `git fetch --depth ${this.config.fetchDepth} ${fetchSource} +refs/heads/${branchName}:refs/remotes/origin/${branchName}`;
         try {
           await this.executeGitCommand(fetchCmd, { cwd: originPath });
         } catch (e) {
