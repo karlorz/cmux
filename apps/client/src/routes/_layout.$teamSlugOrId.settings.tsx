@@ -91,41 +91,33 @@ function GitHubIcon({ className }: { className?: string }) {
 
 function ConnectedAccountsSection({ teamSlugOrId }: { teamSlugOrId: string }) {
   const user = useUser({ or: "return-null" });
-  const [githubConnected, setGithubConnected] = useState<boolean | null>(null);
-  const [githubUsername, setGithubUsername] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
 
-  useEffect(() => {
-    async function checkGitHubConnection() {
-      if (!user) {
-        setGithubConnected(false);
-        return;
-      }
+  const { data: githubAccount, isLoading: isCheckingConnection } = useQuery({
+    queryKey: ["github-connection", user?.id],
+    queryFn: async () => {
+      if (!user) return { connected: false, username: null };
+      const account = await user.getConnectedAccount("github");
+      if (!account) return { connected: false, username: null };
       try {
-        const account = await user.getConnectedAccount("github");
-        setGithubConnected(!!account);
-        if (account) {
-          try {
-            const token = await account.getAccessToken();
-            if (token.accessToken) {
-              const response = await fetch("https://api.github.com/user", {
-                headers: { Authorization: `Bearer ${token.accessToken}` },
-              });
-              if (response.ok) {
-                const data = await response.json();
-                setGithubUsername(data.login);
-              }
-            }
-          } catch {
-            // Ignore errors fetching username
-          }
-        }
-      } catch {
-        setGithubConnected(false);
+        const token = await account.getAccessToken();
+        if (!token.accessToken) return { connected: true, username: null };
+        const response = await fetch("https://api.github.com/user", {
+          headers: { Authorization: `Bearer ${token.accessToken}` },
+        });
+        if (!response.ok) return { connected: true, username: null };
+        const data = (await response.json()) as { login: string };
+        return { connected: true, username: data.login };
+      } catch (err) {
+        console.error("Failed to fetch GitHub username:", err);
+        return { connected: true, username: null };
       }
-    }
-    void checkGitHubConnection();
-  }, [user]);
+    },
+    enabled: !!user,
+  });
+
+  const githubConnected = isCheckingConnection ? null : (githubAccount?.connected ?? false);
+  const githubUsername = githubAccount?.username ?? null;
 
   const handleConnectGitHub = useCallback(async () => {
     if (!user) return;

@@ -142,10 +142,7 @@ export function RepositoryPicker({
   }, [initialSnapshotId]);
 
   const handleConnectionsInvalidated = useCallback((): void => {
-    const qc = router.options.context.queryClient;
-    if (qc) {
-      qc.invalidateQueries();
-    }
+    router.options.context.queryClient.invalidateQueries();
     window.focus?.();
   }, [router]);
 

@@ -13,6 +13,18 @@ import { getGitHubOAuthToken } from "./utils/getGitHubToken";
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 
+/**
+ * Sanitize a URL or command string by removing credentials.
+ * Replaces patterns like `https://user:token@host` with `https://***@host`
+ */
+function sanitizeForLogging(str: string): string {
+  // Match URLs with credentials: protocol://user:password@host
+  return str.replace(
+    /(\w+:\/\/)([^:]+):([^@]+)@/g,
+    "$1***:***@"
+  );
+}
+
 interface RepositoryOperation {
   promise: Promise<void>;
   timestamp: number;
@@ -160,11 +172,11 @@ export class RepositoryManager {
         } catch (error) {
           // Log only if not suppressed (some failures are expected)
           if (!options?.suppressErrorLogging) {
-            serverLogger.error(`Git command failed: ${command}`);
+            serverLogger.error(`Git command failed: ${sanitizeForLogging(command)}`);
             if (error instanceof Error) {
-              serverLogger.error(`Error: ${error.message}`);
+              serverLogger.error(`Error: ${sanitizeForLogging(error.message)}`);
               const stderrMsg = this.extractStderr(error);
-              if (stderrMsg) serverLogger.error(`Stderr: ${stderrMsg}`);
+              if (stderrMsg) serverLogger.error(`Stderr: ${sanitizeForLogging(stderrMsg)}`);
             }
           }
           throw error;
@@ -192,12 +204,12 @@ export class RepositoryManager {
         // Log and fall through to shell execution unless suppressed
         if (!options?.suppressErrorLogging) {
           serverLogger.error(
-            `Git command failed: ${gitPath} ${args.join(" ")}`
+            `Git command failed: ${gitPath} ${sanitizeForLogging(args.join(" "))}`
           );
           if (error instanceof Error) {
-            serverLogger.error(`Error: ${error.message}`);
+            serverLogger.error(`Error: ${sanitizeForLogging(error.message)}`);
             const stderrMsg = this.extractStderr(error);
-            if (stderrMsg) serverLogger.error(`Stderr: ${stderrMsg}`);
+            if (stderrMsg) serverLogger.error(`Stderr: ${sanitizeForLogging(stderrMsg)}`);
           }
         }
       }
@@ -216,11 +228,11 @@ export class RepositoryManager {
     } catch (error) {
       // Log only if not suppressed
       if (!options?.suppressErrorLogging) {
-        serverLogger.error(`Git command failed: ${command}`);
+        serverLogger.error(`Git command failed: ${sanitizeForLogging(command)}`);
         if (error instanceof Error) {
-          serverLogger.error(`Error: ${error.message}`);
+          serverLogger.error(`Error: ${sanitizeForLogging(error.message)}`);
           const stderrMsg = this.extractStderr(error);
-          if (stderrMsg) serverLogger.error(`Stderr: ${stderrMsg}`);
+          if (stderrMsg) serverLogger.error(`Stderr: ${sanitizeForLogging(stderrMsg)}`);
         }
       }
       throw error;
@@ -352,8 +364,8 @@ export class RepositoryManager {
           return `"${authenticatedOrigin}"`;
         }
       }
-    } catch {
-      // Ignore errors, fall back to origin
+    } catch (err) {
+      console.error("Failed to get authenticated origin URL:", err);
     }
 
     return "origin";
@@ -597,7 +609,7 @@ export class RepositoryManager {
       existingClone &&
       Date.now() - existingClone.timestamp < this.config.operationCacheTime
     ) {
-      serverLogger.info(`Reusing existing clone operation for ${repoUrl}`);
+      serverLogger.info(`Reusing existing clone operation for ${sanitizeForLogging(repoUrl)}`);
       await existingClone.promise.catch(() => {
         /* swallow to allow retry below */
       });

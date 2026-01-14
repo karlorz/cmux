@@ -68,7 +68,7 @@ export function getGitHubAppInstallIntent(): GitHubAppInstallIntent | null {
     const raw = sessionStorage.getItem(GITHUB_APP_INSTALL_INTENT_KEY);
     if (!raw) return null;
 
-    const intent = JSON.parse(raw) as GitHubAppInstallIntent;
+    const intent = JSON.parse(raw);
 
     // Ignore stale intents (> 5 minutes old)
     const MAX_AGE_MS = 5 * 60 * 1000;
