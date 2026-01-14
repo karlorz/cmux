@@ -8,6 +8,9 @@
 - gh repo set-default karlorz/cmux
 ✓ Set karlorz/cmux as the default repository for the current directory
 
+# Logs
+- PVE snapshot helper writes to `logs/snapshot-pvelxc.log`
+
 # Config for Host Machine (not Devcontainer)
 - `make convex-fresh`: Fresh Convex setup and start concex service via docker compose, it will delete convex data volume
 - `make convex-init`: Init Convex DB using .env

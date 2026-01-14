@@ -27,6 +27,7 @@ echo "Claude directory: $CLAUDE_DIR"
 if [ -f "$CLAUDE_PATH" ] && ! [ -L "$CLAUDE_PATH" ]; then
     if head -1 "$CLAUDE_PATH" 2>/dev/null | grep -q "^#!/bin/bash"; then
         echo "claude already appears to be a wrapper, skipping"
+        sleep 1
         exit 0
     fi
 fi
@@ -105,3 +106,4 @@ echo "Claude OAuth wrappers setup complete"
 echo "claude wrapper:"
 ls -la "$CLAUDE_DIR/claude" "$CLAUDE_DIR/claude-real" 2>/dev/null || true
 cat "$CLAUDE_DIR/claude"
+sleep 1

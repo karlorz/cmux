@@ -58,6 +58,8 @@ import typing as t
 import urllib.parse
 import urllib.request
 import uuid
+import atexit
+from io import TextIOBase
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -72,6 +74,40 @@ from snapshot import (
     Command,
     format_dependency_graph,
 )
+
+# ---------------------------------------------------------------------------
+# File logging (tee stdout/stderr to logs/snapshot-pvelxc.log)
+# ---------------------------------------------------------------------------
+
+
+class _Tee(TextIOBase):
+    """Tee writes to multiple text streams."""
+
+    def __init__(self, *streams: TextIOBase) -> None:
+        self.streams = streams
+
+    def write(self, s: str) -> int:  # type: ignore[override]
+        for stream in self.streams:
+            stream.write(s)
+        return len(s)
+
+    def flush(self) -> None:  # type: ignore[override]
+        for stream in self.streams:
+            try:
+                if not stream.closed:
+                    stream.flush()
+            except ValueError:
+                pass
+
+
+_LOG_PATH = Path(__file__).resolve().parent.parent / "logs" / "snapshot-pvelxc.log"
+_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+_log_file = _LOG_PATH.open("a", encoding="utf-8", buffering=1)
+atexit.register(_log_file.close)
+
+# Tee stdout/stderr so runs are captured in logs folder (similar to dev server logging).
+sys.stdout = _Tee(sys.stdout, _log_file)  # type: ignore[assignment]
+sys.stderr = _Tee(sys.stderr, _log_file)  # type: ignore[assignment]
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -118,6 +154,10 @@ def set_ide_provider(provider: str) -> None:
     _ide_provider = provider
 
 
+# Ensure bun global bin is available for any non-login shells (matches environment_prelude)
+os.environ["PATH"] = f"/root/.local/bin:/root/.bun/bin:{os.environ.get('PATH', '')}"
+
+
 def get_ide_provider() -> str:
     return _ide_provider
 
@@ -137,6 +177,20 @@ def set_git_diff_mode(use_diff: bool) -> None:
 
 def get_git_diff_mode() -> bool:
     return _use_git_diff
+
+
+# ---------------------------------------------------------------------------
+# Exceptions
+# ---------------------------------------------------------------------------
+
+
+class TunnelDropError(Exception):
+    """Raised when HTTP exec stream ends prematurely without an exit event.
+    
+    This is a transient error that can be retried - typically caused by
+    Cloudflare Tunnel connection drops or network instability.
+    """
+    pass
 
 
 # ---------------------------------------------------------------------------
@@ -911,8 +965,18 @@ class PveLxcClient:
             stderr_lines.append(f"HTTP exec timed out after {timeout}s")
             exit_code = 124
 
+        # If we never received an exit event, treat it as a truncated stream.
+        # Return None to allow SSH fallback when configured; otherwise raise
+        # TunnelDropError so retry logic can handle the transient failure.
         if exit_code is None:
-            exit_code = 0
+            stderr_lines.append("HTTP exec stream ended without exit event (possible tunnel drop)")
+            if self._ssh_host_explicit:
+                return None
+            raise TunnelDropError(
+                f"HTTP exec stream ended without exit event (possible tunnel drop)\n"
+                f"stdout: {''.join(stdout_lines)}\n"
+                f"stderr: {''.join(stderr_lines)}"
+            )
 
         result = subprocess.CompletedProcess(
             args=command,
@@ -1428,7 +1492,7 @@ class PveTaskContext:
             export GOPATH=/usr/local/go-workspace
             export GOMODCACHE="${GOPATH}/pkg/mod"
             export GOCACHE=/usr/local/go-cache
-            export PATH="/root/.local/bin:/usr/local/cargo/bin:/usr/local/go/bin:${GOPATH}/bin:/usr/local/bin:$PATH"
+            export PATH="/root/.local/bin:/root/.bun/bin:/usr/local/cargo/bin:/usr/local/go/bin:${GOPATH}/bin:/usr/local/bin:$PATH"
             """
         ).strip()
         self.environment_prelude = exports
@@ -1471,7 +1535,7 @@ class PveTaskContext:
         script = f"/bin/bash -c '{escaped_command}'"
 
         attempts = 0
-        max_attempts = 3
+        max_attempts = 10
         while True:
             attempts += 1
             try:
@@ -1485,9 +1549,9 @@ class PveTaskContext:
                 break
             except subprocess.TimeoutExpired as e:
                 raise TimeoutError(f"Command timed out after {timeout}s") from e
-            except (OSError, RuntimeError) as exc:
+            except (OSError, RuntimeError, TunnelDropError) as exc:
                 if attempts < max_attempts:
-                    delay = float(min(2**attempts, 8))
+                    delay = float(min(2**attempts, 30))
                     self.console.info(
                         f"[{label}] retrying after exec failure ({exc}) (attempt {attempts}/{max_attempts}) in {delay}s"
                     )
@@ -1996,6 +2060,19 @@ async def task_install_base_packages(ctx: PveTaskContext) -> None:
         """
         set -eux
 
+        # Wait for any existing apt/dpkg locks to be released (up to 60s)
+        deadline=$(($(date +%s) + 600))
+        while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || \
+              fuser /var/lib/apt/lists/lock >/dev/null 2>&1 || \
+              fuser /var/cache/apt/archives/lock >/dev/null 2>&1; do
+          if [ "$(date +%s)" -ge "$deadline" ]; then
+            echo "Timeout waiting for apt/dpkg locks" >&2
+            exit 1
+          fi
+          echo "Waiting for apt/dpkg lock..."
+          sleep 2
+        done
+
         DEBIAN_FRONTEND=noninteractive apt-get update
         DEBIAN_FRONTEND=noninteractive apt-get install -y \
             build-essential make pkg-config g++ libssl-dev \
@@ -2340,6 +2417,20 @@ async def task_install_uv_python(ctx: PveTaskContext) -> None:
     cmd = textwrap.dedent(
         """
         set -eux
+        
+        # Wait for any existing apt/dpkg locks to be released (up to 600s)
+        deadline=$(($(date +%s) + 600))
+        while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || \
+              fuser /var/lib/apt/lists/lock >/dev/null 2>&1 || \
+              fuser /var/cache/apt/archives/lock >/dev/null 2>&1; do
+          if [ "$(date +%s)" -ge "$deadline" ]; then
+            echo "Timeout waiting for apt/dpkg locks" >&2
+            exit 1
+          fi
+          echo "Waiting for apt/dpkg lock..."
+          sleep 2
+        done
+
         DEBIAN_FRONTEND=noninteractive apt-get update
         DEBIAN_FRONTEND=noninteractive apt-get install -y python3-pip
         python3 -m pip install --break-system-packages uv
@@ -2475,7 +2566,8 @@ async def task_install_cmux_code(ctx: PveTaskContext) -> None:
     if get_ide_provider() != IDE_PROVIDER_CMUX_CODE:
         ctx.console.info("Skipping install-cmux-code (IDE provider is not cmux-code)")
         return
-    cmd = textwrap.dedent(
+    # Part 1: Download
+    download_cmd = textwrap.dedent(
         """
         set -eux
         CODE_RELEASE="$(curl -fsSL https://api.github.com/repos/manaflow-ai/vscode-1/releases/latest | jq -r '.tag_name' | sed 's|^v||')"
@@ -2497,12 +2589,16 @@ async def task_install_cmux_code(ctx: PveTaskContext) -> None:
           curl -fSL4 --retry 6 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 600 -o /tmp/cmux-code.tar.gz "${url}"
         
         ls -lh /tmp/cmux-code.tar.gz
-        
+        """
+    )
+    await ctx.run("install-cmux-code-download", download_cmd)
+
+    # Part 2: Extract and Configure
+    extract_cmd = textwrap.dedent(
+        """
+        set -eux
         tar xf /tmp/cmux-code.tar.gz -C /app/cmux-code --strip-components=1
         rm -f /tmp/cmux-code.tar.gz
-
-        echo "Contents of /app/cmux-code:"
-        ls -R /app/cmux-code
 
         mkdir -p /root/.vscode-server-oss/data/User
         cat > /root/.vscode-server-oss/data/User/settings.json << 'EOF'
@@ -2528,7 +2624,7 @@ EOF
         echo "cmux-code binary verified at ${bin_path}"
         """
     )
-    await ctx.run("install-cmux-code", cmd)
+    await ctx.run("install-cmux-code-extract", extract_cmd)
 
 
 @registry.task(
@@ -2689,8 +2785,7 @@ async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
         export HOME=/root
         server_root="{server_root}"
         
-        echo "DEBUG: Checking content of {server_root}..."
-        ls -R "{server_root}" || echo "Failed to list {server_root}"
+
         
         bin_path="{bin_path}"
         if [ ! -x "${{bin_path}}" ]; then
