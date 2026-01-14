@@ -23,6 +23,7 @@ import type { ProviderStatus, ProviderStatusResponse } from "@cmux/shared";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { parseGithubRepoUrl } from "@cmux/shared";
 import { useUser } from "@stackframe/react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useRouter } from "@tanstack/react-router";
 import clsx from "clsx";
 import { useAction, useMutation } from "convex/react";
@@ -144,6 +145,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
   providerStatus = null,
 }: DashboardInputControlsProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const user = useUser({ or: "return-null" });
   const agentSelectRef = useRef<SearchableSelectHandle | null>(null);
   const mintState = useMutation(api.github_app.mintInstallState);
@@ -375,12 +377,12 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     const handleMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
       if (event.data?.type === "cmux/github-install-complete") {
-        router.options.context?.queryClient?.invalidateQueries();
+        void queryClient.invalidateQueries();
       }
     };
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [router.options.context?.queryClient]);
+  }, [queryClient]);
 
   const handleImageClick = useCallback(() => {
     // Trigger the file select from ImagePlugin
@@ -547,11 +549,11 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       url,
       { name: "github-install" },
       () => {
-        router.options.context?.queryClient?.invalidateQueries();
+        void queryClient.invalidateQueries();
       },
     );
     win?.focus?.();
-  }, [mintState, router.options.context?.queryClient, teamSlugOrId]);
+  }, [mintState, queryClient, teamSlugOrId]);
 
   // Check for pending GitHub App install intent on mount and when github-connect-complete is received
   useEffect(() => {
