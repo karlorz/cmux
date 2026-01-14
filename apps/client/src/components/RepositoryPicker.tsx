@@ -4,6 +4,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@cmux/convex/api";
 import { DEFAULT_MORPH_SNAPSHOT_ID, type MorphSnapshotId } from "@cmux/shared";
 import { isElectron } from "@/lib/electron";
+import {
+  consumePendingGitHubAction,
+  setPendingGitHubAction,
+} from "@/lib/github-oauth-flow";
+import { useUser } from "@stackframe/react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { Check, Loader2, X } from "lucide-react";
@@ -436,10 +441,13 @@ function RepositoryConnectionsSection({
   onConnectionsInvalidated,
   onInstallHandlerReady,
 }: RepositoryConnectionsSectionProps) {
+  const user = useUser({ or: "return-null" });
   const connections = useQuery(api.github.listProviderConnections, {
     teamSlugOrId,
   });
   const mintState = useMutation(api.github_app.mintInstallState);
+  // Prevent double handling of pending GitHub action in React Strict Mode
+  const pendingActionHandledRef = useRef(false);
 
   const activeConnections = useMemo(
     () => (connections || []).filter((c) => c.isActive !== false),
@@ -562,7 +570,8 @@ function RepositoryConnectionsSection({
     onConnectionsInvalidated();
   }, [onConnectionsInvalidated]);
 
-  const handleInstallApp = useCallback(async () => {
+  // Function to open GitHub App installation popup (without OAuth check)
+  const openGitHubAppInstallPopup = useCallback(async () => {
     if (!installNewUrl) return;
     try {
       const { state } = await mintState({ teamSlugOrId });
@@ -577,12 +586,56 @@ function RepositoryConnectionsSection({
       console.error("Failed to start GitHub install:", err);
       alert("Failed to start installation. Please try again.");
     }
+  }, [handlePopupClosedRefetch, installNewUrl, mintState, openCenteredPopup, teamSlugOrId]);
+
+  // Check for pending GitHub action on mount (after OAuth redirect)
+  useEffect(() => {
+    // Prevent double handling in React Strict Mode
+    if (pendingActionHandledRef.current) {
+      console.log("[GitHubOAuth] RepositoryPicker already handled pending action, skipping");
+      return;
+    }
+
+    const pendingAction = consumePendingGitHubAction();
+    console.log("[GitHubOAuth] RepositoryPicker checking pending action:", { pendingAction, teamSlugOrId });
+    if (pendingAction && pendingAction.teamSlugOrId === teamSlugOrId) {
+      pendingActionHandledRef.current = true;
+      console.log("[GitHubOAuth] RepositoryPicker found matching pending action, opening GitHub App install popup");
+      // Continue with GitHub App installation after OAuth completed
+      void openGitHubAppInstallPopup().catch((err) => {
+        console.error("Failed to continue GitHub install after OAuth:", err);
+      });
+    }
+  }, [openGitHubAppInstallPopup, teamSlugOrId]);
+
+  const handleInstallApp = useCallback(async () => {
+    if (!installNewUrl) return;
+
+    // First, ensure GitHub OAuth is connected via Stack Auth
+    // This is needed for cloning private repos
+    if (user) {
+      try {
+        const githubAccount = await user.getConnectedAccount("github");
+        if (!githubAccount) {
+          // Store intent to continue with app installation after OAuth
+          setPendingGitHubAction(teamSlugOrId);
+          // Redirect to GitHub OAuth to connect the account
+          await user.getConnectedAccount("github", { or: "redirect" });
+          return; // Will redirect, so don't continue
+        }
+      } catch (err) {
+        console.error("Failed to check GitHub connected account:", err);
+        // Continue with app installation even if connected account check fails
+      }
+    }
+
+    // OAuth connected, proceed with app installation
+    await openGitHubAppInstallPopup();
   }, [
-    handlePopupClosedRefetch,
     installNewUrl,
-    mintState,
-    openCenteredPopup,
+    openGitHubAppInstallPopup,
     teamSlugOrId,
+    user,
   ]);
 
   // Expose the install handler to parent component

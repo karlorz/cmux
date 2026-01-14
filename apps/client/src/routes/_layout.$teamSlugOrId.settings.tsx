@@ -12,6 +12,7 @@ import { AGENT_CONFIGS, type AgentConfig } from "@cmux/shared/agentConfig";
 import { API_KEY_MODELS_BY_ENV } from "@cmux/shared/model-usage";
 import { convexQuery } from "@convex-dev/react-query";
 import { Switch } from "@heroui/react";
+import { useUser } from "@stackframe/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useConvex } from "convex/react";
@@ -77,6 +78,118 @@ const PROVIDER_INFO: Record<string, ProviderInfo> = {
     url: "https://console.x.ai/",
   },
 };
+
+function GitHubIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+    </svg>
+  );
+}
+
+function ConnectedAccountsSection() {
+  const user = useUser({ or: "return-null" });
+  const [githubConnected, setGithubConnected] = useState<boolean | null>(null);
+  const [githubUsername, setGithubUsername] = useState<string | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false);
+
+  useEffect(() => {
+    async function checkGitHubConnection() {
+      if (!user) {
+        setGithubConnected(false);
+        return;
+      }
+      try {
+        const account = await user.getConnectedAccount("github");
+        setGithubConnected(!!account);
+        if (account) {
+          try {
+            const token = await account.getAccessToken();
+            if (token.accessToken) {
+              const response = await fetch("https://api.github.com/user", {
+                headers: { Authorization: `Bearer ${token.accessToken}` },
+              });
+              if (response.ok) {
+                const data = await response.json();
+                setGithubUsername(data.login);
+              }
+            }
+          } catch {
+            // Ignore errors fetching username
+          }
+        }
+      } catch {
+        setGithubConnected(false);
+      }
+    }
+    void checkGitHubConnection();
+  }, [user]);
+
+  const handleConnectGitHub = useCallback(async () => {
+    if (!user) return;
+    setIsConnecting(true);
+    try {
+      await user.getConnectedAccount("github", { or: "redirect" });
+    } catch (error) {
+      console.error("Failed to connect GitHub:", error);
+      setIsConnecting(false);
+    }
+  }, [user]);
+
+  if (!user) return null;
+
+  return (
+    <div className="bg-white dark:bg-neutral-950 rounded-lg border border-neutral-200 dark:border-neutral-800">
+      <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
+        <h2 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+          Connected Accounts
+        </h2>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+          Connect accounts to enable additional features like private repo access
+        </p>
+      </div>
+      <div className="p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-neutral-100 dark:bg-neutral-800 rounded-lg flex items-center justify-center">
+              <GitHubIcon className="w-4.5 h-4.5 text-neutral-700 dark:text-neutral-300" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                GitHub
+              </p>
+              {githubConnected === null ? (
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">Checking...</p>
+              ) : githubConnected ? (
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  Connected{githubUsername ? ` as @${githubUsername}` : ""}
+                </p>
+              ) : (
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  Required for cloning private repos
+                </p>
+              )}
+            </div>
+          </div>
+          {githubConnected === false && (
+            <button
+              onClick={handleConnectGitHub}
+              disabled={isConnecting}
+              className="px-3 py-1.5 text-xs font-medium text-white bg-neutral-900 dark:bg-neutral-100 dark:text-neutral-900 rounded-md hover:bg-neutral-800 dark:hover:bg-neutral-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {isConnecting ? "Connecting..." : "Connect"}
+            </button>
+          )}
+          {githubConnected === true && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400">
+              Connected
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function SettingsComponent() {
   const { teamSlugOrId } = Route.useParams();
@@ -746,6 +859,9 @@ function SettingsComponent() {
                 </button>
               </div>
             </div>
+
+            {/* Connected Accounts */}
+            <ConnectedAccountsSection />
 
             {/* Appearance */}
             <div className="bg-white dark:bg-neutral-950 rounded-lg border border-neutral-200 dark:border-neutral-800">
