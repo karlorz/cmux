@@ -813,7 +813,7 @@ export class RepositoryManager {
           error.message.includes("unrelated histories"))
       ) {
         serverLogger.warn(
-          `Pull failed (likely conflicts/divergence). Attempting hard reset to origin/${branch}`
+          `Pull failed (likely conflicts/divergence). Attempting hard reset to ${branch}`
         );
         try {
           // Fetch the latest state using authenticated URL if provided
@@ -822,14 +822,15 @@ export class RepositoryManager {
             `git fetch --depth ${this.config.fetchDepth} ${fetchSource} ${branch}`,
             { cwd: repoPath }
           );
-          // Reset to the remote branch
-          await this.executeGitCommand(`git reset --hard origin/${branch}`, {
+          // Reset to FETCH_HEAD since fetching from a URL only updates FETCH_HEAD,
+          // not the origin/<branch> remote-tracking ref
+          await this.executeGitCommand(`git reset --hard FETCH_HEAD`, {
             cwd: repoPath,
           });
-          serverLogger.info(`Successfully reset to origin/${branch}`);
+          serverLogger.info(`Successfully reset to FETCH_HEAD for ${branch}`);
         } catch (resetError) {
           serverLogger.error(
-            `Failed to reset to origin/${branch}:`,
+            `Failed to reset to FETCH_HEAD for ${branch}:`,
             resetError
           );
           throw resetError;
