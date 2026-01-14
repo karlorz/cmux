@@ -197,6 +197,9 @@ export const resolveTeamAndSnapshot = async ({
         resolvedSnapshotId:
           matchedEnvironment.snapshotId ?? getDefaultSnapshotId(environmentProvider),
         resolvedTemplateVmid: matchedEnvironment.templateVmid ?? undefined,
+        environmentDataVaultKey: matchedEnvironment.dataVaultKey ?? undefined,
+        environmentMaintenanceScript: matchedEnvironment.maintenanceScript ?? undefined,
+        environmentDevScript: matchedEnvironment.devScript ?? undefined,
       };
     }
 
