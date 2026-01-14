@@ -236,6 +236,10 @@ const upload = multer({
   storage: multer.memoryStorage(),
 });
 
+// Ensure middleware uses the same Express types to avoid overload mismatch in app.post
+const uploadImageMiddleware: express.RequestHandler = (req, res, next) =>
+  upload.single("image")(req as any, res as any, next);
+
 const ALLOWED_UPLOAD_ROOT = "/root/prompt";
 
 // File upload endpoint
@@ -300,11 +304,7 @@ const handleUploadImage: express.RequestHandler = async (req, res, _next) => {
   }
 };
 
-app.post(
-  "/upload-image",
-  upload.single("image") as express.RequestHandler,
-  handleUploadImage
-);
+app.post("/upload-image", uploadImageMiddleware, handleUploadImage);
 
 // HTTP endpoint for running task screenshots (replaces Socket.IO)
 app.use(express.json());
