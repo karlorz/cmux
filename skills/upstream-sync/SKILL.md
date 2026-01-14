@@ -43,6 +43,9 @@ bun check
 git push -u origin sync/upstream-main-$(date +%Y%m%d)
 gh pr create --repo karlorz/cmux --base main --head sync/upstream-main-$(date +%Y%m%d) --fill
 ```
+7) Summarize changes for reviewers:
+- Note notable upstream changes pulled in, key conflicts and decisions, and any follow-up fixes needed (e.g., TODOs you left to keep fork behavior).
+- If follow-ups are required, add a short checklist in the PR description.
 
 # Conflict rules
 - **Honor .gitattributes merge drivers first**:
@@ -56,4 +59,4 @@ gh pr create --repo karlorz/cmux --base main --head sync/upstream-main-$(date +%
 - Merge commit present (no rebase).
 - Conflicts resolved per rules above.
 - `bun check` passes.
-- PR target: `karlorz/cmux:main`. Include a short summary of major conflict choices (especially if keeping fork code over upstream).
+- PR target: `karlorz/cmux:main`. Include a short summary of major upstream changes, conflict choices (especially if keeping fork code over upstream), and any follow-up items.
