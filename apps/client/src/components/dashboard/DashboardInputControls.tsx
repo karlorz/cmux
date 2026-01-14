@@ -68,8 +68,11 @@ function watchPopupClosed(win: Window | null, onClose: () => void): void {
         window.clearInterval(timer);
         onClose();
       }
-    } catch (_error) {
-      void 0;
+    } catch {
+      // Cross-origin security error means we can't track the window anymore
+      // Treat as closed since we can't determine its state
+      window.clearInterval(timer);
+      onClose();
     }
   }, 600);
 }
@@ -375,7 +378,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     const handleMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
       if (event.data?.type === "cmux/github-install-complete") {
-        router.options.context.queryClient.invalidateQueries();
+        router.options.context.queryClient?.invalidateQueries();
       }
     };
     window.addEventListener("message", handleMessage);
@@ -547,7 +550,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       url,
       { name: "github-install" },
       () => {
-        router.options.context.queryClient.invalidateQueries();
+        router.options.context.queryClient?.invalidateQueries();
       },
     );
     win?.focus?.();

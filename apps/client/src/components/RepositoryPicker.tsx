@@ -142,7 +142,7 @@ export function RepositoryPicker({
   }, [initialSnapshotId]);
 
   const handleConnectionsInvalidated = useCallback((): void => {
-    router.options.context.queryClient.invalidateQueries();
+    router.options.context.queryClient?.invalidateQueries();
     window.focus?.();
   }, [router]);
 
@@ -368,7 +368,7 @@ export function RepositoryPicker({
           onToggleRepo={toggleRepo}
           onAddRepo={addRepo}
           hasConnections={connectionContext.hasConnections}
-          onInstallGitHubApp={installGitHubAppHandler ?? (() => {})}
+          onInstallGitHubApp={installGitHubAppHandler ?? (() => { })}
         />
 
         {selectedRepos.length > 0 ? (
@@ -809,16 +809,14 @@ function RepositoryListSection({
                   >
                     <div className="text-sm flex items-center gap-2 min-w-0 flex-1">
                       <div
-                        className={`mr-1 h-4 w-4 rounded-sm border grid place-items-center shrink-0 ${
-                          isSelected
+                        className={`mr-1 h-4 w-4 rounded-sm border grid place-items-center shrink-0 ${isSelected
                             ? "border-neutral-700 bg-neutral-800"
                             : "border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950"
-                        }`}
+                          }`}
                       >
                         <Check
-                          className={`w-3 h-3 text-white transition-opacity ${
-                            isSelected ? "opacity-100" : "opacity-0"
-                          }`}
+                          className={`w-3 h-3 text-white transition-opacity ${isSelected ? "opacity-100" : "opacity-0"
+                            }`}
                         />
                       </div>
                       <GitHubIcon className="h-4 w-4 shrink-0 text-neutral-700 dark:text-neutral-200" />
