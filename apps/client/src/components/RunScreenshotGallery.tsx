@@ -35,6 +35,7 @@ interface RunScreenshotSet {
   taskId: Id<"tasks">;
   runId: Id<"taskRuns">;
   status: ScreenshotStatus;
+  hasUiChanges?: boolean | null;
   commitSha?: string | null;
   capturedAt: number;
   error?: string | null;
@@ -62,6 +63,24 @@ const STATUS_STYLES: Record<ScreenshotStatus, string> = {
   skipped:
     "bg-neutral-200/70 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300",
 };
+
+const NO_UI_CHANGES_MESSAGE =
+  "No UI changes detected - skipped screenshot workflow.";
+
+const NO_UI_CHANGES_ERROR_SNIPPETS = [
+  "Claude collector reported success but returned no files",
+  "returned no files in the git diff",
+];
+
+function isNoUiChangesError(error?: string | null): boolean {
+  if (!error) {
+    return false;
+  }
+  const normalized = error.toLowerCase();
+  return NO_UI_CHANGES_ERROR_SNIPPETS.some((snippet) =>
+    normalized.includes(snippet.toLowerCase())
+  );
+}
 
 const getImageKey = (
   setId: Id<"taskRunScreenshotSets">,
@@ -610,6 +629,21 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
           });
           const shortCommit = set.commitSha?.slice(0, 12);
           const isHighlighted = effectiveHighlight === set._id;
+          const isNoUiChanges =
+            set.hasUiChanges === false || isNoUiChangesError(set.error);
+          const statusLabel = isNoUiChanges
+            ? STATUS_LABELS.skipped
+            : STATUS_LABELS[set.status];
+          const statusStyle = isNoUiChanges
+            ? STATUS_STYLES.skipped
+            : STATUS_STYLES[set.status];
+          const detailMessage = isNoUiChanges
+            ? NO_UI_CHANGES_MESSAGE
+            : set.error;
+          const detailClass = isNoUiChanges
+            ? "text-neutral-500 dark:text-neutral-400"
+            : "text-rose-600 dark:text-rose-400";
+          const showEmptyStateMessage = set.images.length === 0 && !isNoUiChanges;
 
           return (
             <article
@@ -624,10 +658,10 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
                 <span
                   className={cn(
                     "px-2 py-0.5 text-xs font-medium rounded-full",
-                    STATUS_STYLES[set.status]
+                    statusStyle
                   )}
                 >
-                  {STATUS_LABELS[set.status]}
+                  {statusLabel}
                 </span>
                 {isHighlighted && (
                   <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-100/80 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-300">
@@ -652,9 +686,9 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
                   </span>
                 )}
               </div>
-              {set.error && (
-                <p className="mt-2 text-xs text-rose-600 dark:text-rose-400">
-                  {set.error}
+              {detailMessage && (
+                <p className={cn("mt-2 text-xs", detailClass)}>
+                  {detailMessage}
                 </p>
               )}
               {set.images.length > 0 ? (
@@ -705,13 +739,13 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
                     );
                   })}
                 </div>
-              ) : (
+              ) : showEmptyStateMessage ? (
                 <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
                   {set.status === "failed"
                     ? "Screenshot capture failed before any images were saved."
                     : "No screenshots were captured for this attempt."}
                 </p>
-              )}
+              ) : null}
             </article>
           );
         })}
