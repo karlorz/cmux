@@ -1,6 +1,5 @@
 import { httpAction } from "./_generated/server";
 import { getWorkerAuth } from "./users/utils/getWorkerAuth";
-import { env } from "../_shared/convex-env";
 import {
   BEDROCK_BASE_URL,
   toBedrockModelId,
@@ -284,7 +283,7 @@ export const anthropicProxy = httpAction(async (_ctx, req) => {
 
     // AWS Bedrock path: using platform credits (placeholder key)
     {
-      const bedrockToken = env.AWS_BEARER_TOKEN_BEDROCK;
+      const bedrockToken = process.env.AWS_BEARER_TOKEN_BEDROCK;
       if (!bedrockToken) {
         console.error(
           "[anthropic-proxy] AWS_BEARER_TOKEN_BEDROCK environment variable is not set"
@@ -393,7 +392,7 @@ async function handleResponse(
  * Bedrock doesn't have an equivalent count_tokens endpoint.
  */
 export const anthropicCountTokens = httpAction(async (_ctx, req) => {
-  const anthropicApiKey = env.ANTHROPIC_API_KEY;
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
   if (!anthropicApiKey) {
     // Bedrock doesn't have count_tokens API - return unavailable
     return jsonResponse(
