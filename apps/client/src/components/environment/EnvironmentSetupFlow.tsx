@@ -20,8 +20,8 @@ import {
   deriveVscodeUrl,
   ensureInitialEnvVars,
 } from "@cmux/shared/components/environment";
-import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { formatEnvVarsContent } from "@cmux/shared/utils/format-env-vars-content";
+import type { Id } from "@cmux/convex/dataModel";
 import { validateExposedPorts } from "@cmux/shared/utils/validate-exposed-ports";
 import {
   postApiEnvironmentsMutation,
@@ -391,7 +391,8 @@ export function EnvironmentSetupFlow({
             to: "/$teamSlugOrId/environments/$environmentId",
             params: {
               teamSlugOrId,
-              environmentId: typedZid("environments").parse(data.id),
+              // API returns string but route expects Id<"environments"> - safe cast since data is from our backend
+              environmentId: data.id as Id<"environments">,
             },
             search: {
               step: undefined,
