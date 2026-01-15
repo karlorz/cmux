@@ -9,9 +9,7 @@ import { useSyncExternalStore } from "react";
 
 export interface EnvironmentDraft extends EnvironmentDraftMetadata {
   step: "select" | "configure";
-  /** Sub-phase within configure step: initial-setup shows the config form, workspace-config shows VS Code/browser */
   layoutPhase?: LayoutPhase;
-  /** Current config step within workspace-config phase: determines which panel (vscode/browser) is shown */
   configStep?: ConfigStep;
   config: EnvironmentConfigDraft;
   lastUpdatedAt: number;

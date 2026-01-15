@@ -55,9 +55,7 @@ interface EnvironmentSetupFlowProps {
   initialDevScript?: string;
   initialExposedPorts?: string;
   initialEnvVars?: EnvVar[];
-  /** Initial layout phase restored from draft - determines whether to show config form or VS Code/browser */
   initialLayoutPhase?: LayoutPhase;
-  /** Initial config step restored from draft - determines which panel (vscode/browser) is shown */
   initialConfigStep?: ConfigStep;
   onEnvironmentSaved?: () => void;
   onBack?: () => void;
@@ -391,7 +389,6 @@ export function EnvironmentSetupFlow({
             to: "/$teamSlugOrId/environments/$environmentId",
             params: {
               teamSlugOrId,
-              // API returns string but route expects Id<"environments"> - safe cast since data is from our backend
               environmentId: data.id as Id<"environments">,
             },
             search: {

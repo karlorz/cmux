@@ -580,7 +580,6 @@ export function EnvironmentConfiguration({
               to: "/$teamSlugOrId/environments/$environmentId",
               params: {
                 teamSlugOrId,
-                // API returns string but route expects Id<"environments"> - safe cast since data is from our backend
                 environmentId: data.id as Id<"environments">,
               },
               search: {
@@ -607,13 +606,13 @@ export function EnvironmentConfiguration({
       vscodeUrl
         ? null
         : {
-            title: instanceId
-              ? "Waiting for VS Code"
-              : "VS Code workspace not ready",
-            description: instanceId
-              ? "The editor opens automatically once the environment finishes booting."
-              : "Select a repository and launch an environment to open VS Code.",
-          },
+          title: instanceId
+            ? "Waiting for VS Code"
+            : "VS Code workspace not ready",
+          description: instanceId
+            ? "The editor opens automatically once the environment finishes booting."
+            : "Select a repository and launch an environment to open VS Code.",
+        },
     [instanceId, vscodeUrl]
   );
   const browserPlaceholder = useMemo(
@@ -621,13 +620,13 @@ export function EnvironmentConfiguration({
       browserUrl
         ? null
         : {
-            title: instanceId
-              ? "Waiting for browser"
-              : "Browser preview unavailable",
-            description: instanceId
-              ? "We'll embed the browser session as soon as the environment exposes it."
-              : "Launch an environment so the browser agent can handle screenshots and authentication flows.",
-          },
+          title: instanceId
+            ? "Waiting for browser"
+            : "Browser preview unavailable",
+          description: instanceId
+            ? "We'll embed the browser session as soon as the environment exposes it."
+            : "Launch an environment so the browser agent can handle screenshots and authentication flows.",
+        },
     [browserUrl, instanceId]
   );
 
@@ -1171,7 +1170,7 @@ export function EnvironmentConfiguration({
                           <Minus className="w-4 h-4" />
                         </button>
                       </div>
-                  </div>
+                    </div>
                   );
                 })}
               </div>
@@ -1303,8 +1302,8 @@ export function EnvironmentConfiguration({
             className="inline-flex items-center rounded-md bg-neutral-900 text-white disabled:bg-neutral-300 dark:disabled:bg-neutral-700 disabled:cursor-not-allowed px-4 py-2 text-sm hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
           >
             {isProvisioning ||
-            createEnvironmentMutation.isPending ||
-            createSnapshotMutation.isPending ? (
+              createEnvironmentMutation.isPending ||
+              createSnapshotMutation.isPending ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 {mode === "snapshot"
