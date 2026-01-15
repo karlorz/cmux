@@ -163,15 +163,15 @@ async function openMultiDiffEditor(
     const resources =
       files.length > 0
         ? files.map((file) => {
-            const fileUri = vscode.Uri.file(`${repoPath}/${file}`);
-            const baseUri = api.toGitUri(fileUri, effectiveBase);
+          const fileUri = vscode.Uri.file(`${repoPath}/${file}`);
+          const baseUri = api.toGitUri(fileUri, effectiveBase);
 
-            // Match the exact structure used by VS Code's git extension
-            return {
-              originalUri: baseUri,
-              modifiedUri: fileUri,
-            };
-          })
+          // Match the exact structure used by VS Code's git extension
+          return {
+            originalUri: baseUri,
+            modifiedUri: fileUri,
+          };
+        })
         : [];
 
     log(

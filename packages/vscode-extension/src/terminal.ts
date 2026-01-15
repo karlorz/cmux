@@ -283,7 +283,7 @@ class PtyClient {
   private _maxReconnectAttempts = 10;
   private _reconnectDelay = 1000;
 
-  constructor(private readonly serverUrl: string) {}
+  constructor(private readonly serverUrl: string) { }
 
   async connect(): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -340,7 +340,7 @@ class PtyClient {
       this._reconnectAttempts++;
       const delay = this._reconnectDelay * Math.pow(2, this._reconnectAttempts - 1);
       console.log(`Reconnecting in ${delay}ms (attempt ${this._reconnectAttempts})`);
-      setTimeout(() => this.connect().catch(() => {}), delay);
+      setTimeout(() => this.connect().catch(() => { }), delay);
     }
   }
 
