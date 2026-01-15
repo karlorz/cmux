@@ -1352,11 +1352,10 @@ function MockGitHubPRBrowser() {
                       <div className="flex items-center gap-1 mt-2">
                         <button
                           onClick={() => setThumbsUpActive(!thumbsUpActive)}
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs transition-colors ${
-                            thumbsUpActive
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs transition-colors ${thumbsUpActive
                               ? "border-[#2f81f7] bg-[#388bfd1a] text-[#2f81f7]"
                               : "border-[#30363d] bg-[#21262d] hover:bg-[#30363d]"
-                          }`}
+                            }`}
                         >
                           <span>👍</span>
                           <span
@@ -1371,11 +1370,10 @@ function MockGitHubPRBrowser() {
                         </button>
                         <button
                           onClick={() => setRocketActive(!rocketActive)}
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs transition-colors ${
-                            rocketActive
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs transition-colors ${rocketActive
                               ? "border-[#2f81f7] bg-[#388bfd1a] text-[#2f81f7]"
                               : "border-[#30363d] bg-[#21262d] hover:bg-[#30363d]"
-                          }`}
+                            }`}
                         >
                           <span>🚀</span>
                           <span
@@ -4382,7 +4380,7 @@ function PreviewDashboardInner({
       </div>
 
       {/* Quick Setup Input */}
-      <div id="setup-preview" className="pb-10">
+      {/* <div id="setup-preview" className="pb-10">
         <div className="flex rounded-lg border border-white/10 overflow-hidden">
           <div className="relative flex-1 flex items-center bg-white/5 backdrop-blur-sm">
             <Link2 className="absolute left-4 h-5 w-5 text-neutral-500 z-10" />
@@ -4414,7 +4412,7 @@ function PreviewDashboardInner({
         {errorMessage && (
           <p className="text-xs text-red-400 pt-2">{errorMessage}</p>
         )}
-      </div>
+      </div> */}
 
       {/* Main content grid */}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
