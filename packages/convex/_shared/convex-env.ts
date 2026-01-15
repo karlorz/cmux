@@ -24,7 +24,8 @@ export const env = createEnv({
     // Note: PVE_* variables are accessed via process.env directly in
     // sandboxInstanceMaintenance.ts to avoid Convex static analysis
     // requiring them to be set in all deployments
-    CMUX_IS_STAGING: z.string().optional(),
+    // Note: CMUX_IS_STAGING was removed - preview_jobs_worker.ts now hardcodes
+    // CMUX_IS_STAGING="false" in sandbox env to always use production releases
     CONVEX_IS_PRODUCTION: z.string().optional(),
   },
   runtimeEnv: process.env,
