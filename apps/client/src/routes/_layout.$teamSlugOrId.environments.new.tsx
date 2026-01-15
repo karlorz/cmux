@@ -275,6 +275,7 @@ function EnvironmentsPage() {
             initialDevScript={draft?.config?.devScript}
             initialExposedPorts={draft?.config?.exposedPorts}
             initialEnvVars={draft?.config?.envVars}
+            initialLayoutPhase={draft?.layoutPhase}
             onEnvironmentSaved={handleResetDraft}
             onBack={handleBackToRepositorySelection}
           />

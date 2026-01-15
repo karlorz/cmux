@@ -35,7 +35,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { updateEnvironmentDraftConfig } from "@/state/environment-draft-store";
+import {
+  updateEnvironmentDraftConfig,
+  updateEnvironmentDraftLayoutPhase,
+} from "@/state/environment-draft-store";
 import { toast } from "sonner";
 import { EnvironmentInitialSetup } from "./EnvironmentInitialSetup";
 import { EnvironmentWorkspaceConfig } from "./EnvironmentWorkspaceConfig";
@@ -49,6 +52,8 @@ interface EnvironmentSetupFlowProps {
   initialDevScript?: string;
   initialExposedPorts?: string;
   initialEnvVars?: EnvVar[];
+  /** Initial layout phase restored from draft - determines whether to show config form or VS Code/browser */
+  initialLayoutPhase?: LayoutPhase;
   onEnvironmentSaved?: () => void;
   onBack?: () => void;
 }
@@ -62,13 +67,16 @@ export function EnvironmentSetupFlow({
   initialDevScript = "",
   initialExposedPorts = "",
   initialEnvVars,
+  initialLayoutPhase,
   onEnvironmentSaved,
   onBack,
 }: EnvironmentSetupFlowProps) {
   const navigate = useNavigate();
 
-  // Layout phase state
-  const [layoutPhase, setLayoutPhase] = useState<LayoutPhase>("initial-setup");
+  // Layout phase state - restore from draft if available
+  const [layoutPhase, setLayoutPhase] = useState<LayoutPhase>(
+    () => initialLayoutPhase ?? "initial-setup"
+  );
 
   // Configuration state - blank by default, placeholder shows the default pattern
   const [envName, setEnvName] = useState(initialEnvName);
@@ -281,11 +289,15 @@ export function EnvironmentSetupFlow({
 
   const handleContinueToWorkspaceConfig = useCallback(() => {
     setLayoutPhase("workspace-config");
-  }, []);
+    // Persist layoutPhase to draft so it survives navigation
+    updateEnvironmentDraftLayoutPhase(teamSlugOrId, "workspace-config");
+  }, [teamSlugOrId]);
 
   const handleBackToInitialSetup = useCallback(() => {
     setLayoutPhase("initial-setup");
-  }, []);
+    // Persist layoutPhase to draft so it survives navigation
+    updateEnvironmentDraftLayoutPhase(teamSlugOrId, "initial-setup");
+  }, [teamSlugOrId]);
 
   const handleSaveEnvironment = useCallback(async () => {
     if (!instanceId) {

@@ -4,10 +4,13 @@ import {
   type EnvironmentConfigDraft,
   type EnvironmentDraftMetadata,
 } from "@/types/environment";
+import type { LayoutPhase } from "@cmux/shared/components/environment";
 import { useSyncExternalStore } from "react";
 
 export interface EnvironmentDraft extends EnvironmentDraftMetadata {
   step: "select" | "configure";
+  /** Sub-phase within configure step: initial-setup shows the config form, workspace-config shows VS Code/browser */
+  layoutPhase?: LayoutPhase;
   config: EnvironmentConfigDraft;
   lastUpdatedAt: number;
 }
@@ -160,8 +163,10 @@ const now = () => Date.now();
 const buildDraft = (
   metadata: EnvironmentDraftMetadata,
   config: EnvironmentConfigDraft,
+  layoutPhase?: LayoutPhase,
 ): EnvironmentDraft => ({
   step: "configure",
+  layoutPhase,
   selectedRepos: metadata.selectedRepos,
   instanceId: metadata.instanceId,
   snapshotId: metadata.snapshotId,
@@ -184,6 +189,7 @@ export const persistEnvironmentDraftMetadata = (
   options?: {
     resetConfig?: boolean;
     step?: "select" | "configure";
+    layoutPhase?: LayoutPhase;
   },
 ): EnvironmentDraft | null =>
   store.update(teamSlugOrId, (prev) => {
@@ -198,9 +204,12 @@ export const persistEnvironmentDraftMetadata = (
     };
     // Preserve current step if not explicitly specified
     const nextStep = options?.step ?? prev?.step ?? "configure";
+    // Preserve layoutPhase if not explicitly specified (undefined means preserve existing)
+    const nextLayoutPhase = options?.layoutPhase ?? prev?.layoutPhase;
     if (nextStep === "select") {
       return {
         step: "select",
+        layoutPhase: undefined, // Reset layoutPhase when going back to select
         selectedRepos: nextMetadata.selectedRepos,
         instanceId: nextMetadata.instanceId,
         snapshotId: nextMetadata.snapshotId,
@@ -210,6 +219,7 @@ export const persistEnvironmentDraftMetadata = (
     }
     return {
       step: "configure",
+      layoutPhase: nextLayoutPhase,
       selectedRepos: nextMetadata.selectedRepos,
       instanceId: nextMetadata.instanceId,
       snapshotId: nextMetadata.snapshotId,
@@ -240,7 +250,21 @@ export const updateEnvironmentDraftConfig = (
     return buildDraft(
       { selectedRepos, instanceId, snapshotId },
       nextConfig,
+      prev?.layoutPhase, // Preserve layoutPhase
     );
+  });
+
+export const updateEnvironmentDraftLayoutPhase = (
+  teamSlugOrId: string,
+  layoutPhase: LayoutPhase,
+): EnvironmentDraft | null =>
+  store.update(teamSlugOrId, (prev) => {
+    if (!prev) return null;
+    return {
+      ...prev,
+      layoutPhase,
+      lastUpdatedAt: now(),
+    };
   });
 
 export const clearEnvironmentDraft = (teamSlugOrId: string): void => {
