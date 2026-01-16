@@ -627,11 +627,25 @@ jobs:
         run: |
           set -euo pipefail
           bunx electron-vite build -c electron.vite.config.ts
-          bunx electron-builder \
-            --config "$ELECTRON_BUILDER_CONFIG" \
-            --mac dmg zip \
-            --arm64 \
-            --publish never
+          # Retry electron-builder up to 3 times due to intermittent hdiutil failures on macOS runners
+          # See: https://github.com/actions/runner-images/issues/12323
+          for attempt in 1 2 3; do
+            echo "Build attempt $attempt of 3..."
+            if bunx electron-builder \
+                --config "$ELECTRON_BUILDER_CONFIG" \
+                --mac dmg zip \
+                --arm64 \
+                --publish never; then
+              echo "Build succeeded on attempt $attempt"
+              break
+            fi
+            if [[ $attempt -eq 3 ]]; then
+              echo "Build failed after 3 attempts"
+              exit 1
+            fi
+            echo "Build failed on attempt $attempt, retrying in 10 seconds..."
+            sleep 10
+          done
       - name: Prepare arm64 update manifest
         working-directory: apps/client/dist-electron
         shell: bash
@@ -759,11 +773,25 @@ jobs:
         run: |
           set -euo pipefail
           bunx electron-vite build -c electron.vite.config.ts
-          bunx electron-builder \
-            --config "$ELECTRON_BUILDER_CONFIG" \
-            --mac dmg zip \
-            --universal \
-            --publish never
+          # Retry electron-builder up to 3 times due to intermittent hdiutil failures on macOS runners
+          # See: https://github.com/actions/runner-images/issues/12323
+          for attempt in 1 2 3; do
+            echo "Build attempt $attempt of 3..."
+            if bunx electron-builder \
+                --config "$ELECTRON_BUILDER_CONFIG" \
+                --mac dmg zip \
+                --universal \
+                --publish never; then
+              echo "Build succeeded on attempt $attempt"
+              break
+            fi
+            if [[ $attempt -eq 3 ]]; then
+              echo "Build failed after 3 attempts"
+              exit 1
+            fi
+            echo "Build failed on attempt $attempt, retrying in 10 seconds..."
+            sleep 10
+          done
       - name: Prepare universal update manifest
         working-directory: apps/client/dist-electron
         shell: bash
