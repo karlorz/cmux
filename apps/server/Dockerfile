@@ -50,6 +50,16 @@ COPY apps/server ./apps/server
 # This eliminates all workspace symlink issues
 RUN bun build --target=bun --outdir=dist ./apps/server/src/local-dev.ts
 
+# Resolve workspace symlinks to actual directories so they copy correctly
+# This converts symlinks in node_modules to real directories
+RUN for link in node_modules/@cmux/*; do \
+        if [ -L "$link" ]; then \
+            target=$(readlink -f "$link"); \
+            rm "$link"; \
+            cp -r "$target" "$link" 2>/dev/null || true; \
+        fi; \
+    done
+
 # =============================================================================
 # Stage 2: Production
 # =============================================================================
