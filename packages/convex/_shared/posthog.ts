@@ -8,6 +8,8 @@
  *   await drainPosthogEvents();   // wait for all at the end
  */
 
+import { env } from "./convex-env";
+
 const POSTHOG_HOST = "https://us.i.posthog.com";
 
 type PostHogEvent = {
@@ -24,7 +26,7 @@ const pendingEvents: Promise<void>[] = [];
  * Call drainPosthogEvents() at the end of your handler to ensure all events are sent.
  */
 export function capturePosthogEvent(payload: PostHogEvent): void {
-  const apiKey = process.env.POSTHOG_API_KEY;
+  const apiKey = env.POSTHOG_API_KEY;
   if (!apiKey) {
     return;
   }
