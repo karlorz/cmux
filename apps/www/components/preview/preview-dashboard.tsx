@@ -4101,10 +4101,10 @@ function PreviewDashboardInner({
   const repoSelectionBox = !isAuthenticated ? (
     <div className="relative flex flex-1 flex-col items-center justify-center rounded-lg border border-white/5 bg-white/[0.02] backdrop-blur-sm px-4 py-10 overflow-hidden">
       <GrainOverlay opacity={0.02} />
-      <p className="text-sm text-neutral-300/85 pb-6 max-w-sm text-center">
+      <p className="text-sm text-neutral-300/85 pb-6 max-w-xs text-center">
         Select a Git provider to import a Git Repository
       </p>
-      <div className="flex flex-col gap-3 w-full max-w-sm">
+      <div className="flex flex-col gap-3 w-full max-w-xs">
         <Button
           onClick={() => signInWithPopup("github")}
           disabled={signingInProvider !== null}
