@@ -403,7 +403,7 @@ export const completePreviewJob = httpAction(async (ctx, req) => {
           });
 
           // Track comment updated
-          void capturePosthogEvent(env.POSTHOG_API_KEY, {
+          void capturePosthogEvent({
             distinctId: taskRun.teamId,
             event: "preview_comment_posted",
             properties: {
@@ -464,7 +464,7 @@ export const completePreviewJob = httpAction(async (ctx, req) => {
           });
 
           // Track comment posted
-          void capturePosthogEvent(env.POSTHOG_API_KEY, {
+          void capturePosthogEvent({
             distinctId: taskRun.teamId,
             event: "preview_comment_posted",
             properties: {

@@ -596,7 +596,7 @@ export const githubWebhook = httpAction(async (_ctx, req) => {
                   });
 
                   // Track webhook event
-                  void capturePosthogEvent(env.POSTHOG_API_KEY, {
+                  void capturePosthogEvent({
                     distinctId: previewConfig.teamId,
                     event: "preview_webhook_received",
                     properties: {

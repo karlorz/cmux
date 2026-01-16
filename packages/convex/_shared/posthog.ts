@@ -14,11 +14,12 @@ type PostHogEvent = {
 /**
  * Capture a PostHog event from Convex
  * Uses the PostHog capture API directly via fetch
+ * API key is read from process.env.POSTHOG_API_KEY (optional - no-op if not set)
  */
 export async function capturePosthogEvent(
-  apiKey: string | undefined,
   payload: PostHogEvent
 ): Promise<void> {
+  const apiKey = process.env.POSTHOG_API_KEY;
   if (!apiKey) {
     return;
   }
