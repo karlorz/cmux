@@ -1,26 +1,25 @@
 # syntax=docker/dockerfile:1
 
 # Multi-stage Dockerfile for cmux server
-# Optimized for Coolify deployment using bun build bundler
+# Optimized for Coolify deployment
+# Uses Bun's recommended temp directory pattern for workspace projects
 
 # =============================================================================
-# Stage 1: Build
+# Stage 1: Install dependencies in temp directory (isolated from workspaces)
 # =============================================================================
-FROM oven/bun:1 AS build
+FROM oven/bun:1 AS install
 
 WORKDIR /app
 
-# Install build dependencies for native modules (utf-8-validate, etc.)
+# Install build dependencies for native modules
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     make \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy root package files for workspace resolution
+# Copy package files for workspace resolution
 COPY package.json bun.lock .npmrc ./
-
-# Copy all workspace package.json files (needed for bun install)
 COPY apps/server/package.json ./apps/server/
 COPY apps/www/package.json ./apps/www/
 COPY apps/client/package.json ./apps/client/
@@ -36,29 +35,15 @@ COPY packages/vscode-extension/package.json ./packages/vscode-extension/
 COPY packages/host-screenshot-collector/package.json ./packages/host-screenshot-collector/
 COPY scripts/package.json ./scripts/
 
-# Install all dependencies
-RUN bun install --frozen-lockfile --ignore-scripts || \
-    (echo "Retrying..." && bun install --frozen-lockfile --ignore-scripts)
-
-# Copy all source code needed for build
-COPY packages/shared ./packages/shared
-COPY packages/convex ./packages/convex
-COPY packages/www-openapi-client ./packages/www-openapi-client
-COPY apps/server ./apps/server
-
-# Bundle the server into a single file using bun build
-# This eliminates all workspace symlink issues
-RUN bun build --target=bun --outdir=dist ./apps/server/src/local-dev.ts
-
-# Resolve workspace symlinks to actual directories so they copy correctly
-# This converts symlinks in node_modules to real directories
-RUN for link in node_modules/@cmux/*; do \
-        if [ -L "$link" ]; then \
-            target=$(readlink -f "$link"); \
-            rm "$link"; \
-            cp -r "$target" "$link" 2>/dev/null || true; \
-        fi; \
-    done
+# Install production dependencies into a temp directory (Bun recommended pattern)
+# This creates a clean node_modules without workspace symlinks pointing to /app
+RUN mkdir -p /temp/prod \
+    && cp package.json bun.lock .npmrc /temp/prod/ \
+    && cp -r apps /temp/prod/apps \
+    && cp -r packages /temp/prod/packages \
+    && cp -r scripts /temp/prod/scripts \
+    && cd /temp/prod \
+    && bun install --frozen-lockfile --production --ignore-scripts
 
 # =============================================================================
 # Stage 2: Production
@@ -77,25 +62,38 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN groupadd --gid 1001 cmux \
     && useradd --uid 1001 --gid cmux --shell /bin/bash --create-home cmux
 
-# Copy bundled output from build stage
-COPY --from=build /app/dist ./dist
+# Copy node_modules from temp directory (clean, no broken symlinks)
+COPY --from=install /temp/prod/node_modules ./node_modules
+
+# Copy workspace packages source code
+COPY packages/shared ./packages/shared
+COPY packages/convex ./packages/convex
+COPY packages/www-openapi-client ./packages/www-openapi-client
+
+# Copy server source code
+COPY apps/server ./apps/server
+
+# Copy root config files
+COPY package.json bun.lock .npmrc ./
+
+# Re-link @cmux workspace packages to local source
+# This is necessary for subpath exports like @cmux/convex/api to resolve
+RUN rm -rf node_modules/@cmux && mkdir -p node_modules/@cmux \
+    && ln -s ../../packages/shared node_modules/@cmux/shared \
+    && ln -s ../../packages/convex node_modules/@cmux/convex \
+    && ln -s ../../packages/www-openapi-client node_modules/@cmux/www-openapi-client
 
 # Set ownership to non-root user
 RUN chown -R cmux:cmux /app
 
-# Switch to non-root user
 USER cmux
 
-# Environment variables
 ENV NODE_ENV=production
 ENV PORT=9776
 
-# Expose the server port
 EXPOSE 9776
 
-# Health check - TCP-based since server is Socket.IO only
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD bun -e "const net = require('net'); const s = net.createConnection(9776, 'localhost'); s.on('connect', () => process.exit(0)); s.on('error', () => process.exit(1));" || exit 1
 
-# Start the bundled server
-CMD ["bun", "dist/local-dev.js"]
+CMD ["bun", "run", "apps/server/src/local-dev.ts"]

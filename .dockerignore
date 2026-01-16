@@ -110,3 +110,7 @@ jspm_packages/
 
 # Go build artifacts
 scripts/vnc-proxy/vnc-proxy
+
+# Rust build artifacts
+**/target/
+**/*.rs.bk
