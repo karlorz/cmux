@@ -428,38 +428,6 @@ class PveLxcClient:
             node=node,
         )
 
-    def ensure_lxc_docker_config(self, vmid: int, node: str | None = None) -> None:
-        """Ensure LXC container has raw config for Docker-in-LXC support.
-
-        This adds AppArmor unconfined profile and other settings needed for
-        running Docker inside a privileged LXC container. Must be called
-        before starting the container.
-        """
-        node = node or self.get_node()
-        config_path = f"/etc/pve/lxc/{vmid}.conf"
-
-        # Check if config already has apparmor setting
-        check_cmd = f"grep -q 'lxc.apparmor.profile' {config_path}"
-        result = self.ssh_exec(check_cmd, check=False)
-        if result.returncode == 0:
-            # Already configured
-            return
-
-        # Add Docker-in-LXC raw config
-        raw_config = """\
-lxc.apparmor.profile: unconfined
-lxc.cap.drop:
-lxc.mount.auto: proc:rw sys:rw
-"""
-        append_cmd = f"cat >> {config_path} << 'EOF'\n{raw_config}EOF"
-        self.ssh_exec(append_cmd, check=True)
-
-    async def aensure_lxc_docker_config(
-        self, vmid: int, node: str | None = None
-    ) -> None:
-        """Async ensure LXC Docker config."""
-        await asyncio.to_thread(self.ensure_lxc_docker_config, vmid, node)
-
     def resize_lxc_disk(
         self,
         vmid: int,
@@ -3847,10 +3815,6 @@ async def update_existing_template(
             console.info(f"Full clone complete: {source_vmid} -> {new_vmid}")
 
         work_vmid = new_vmid
-
-        # Ensure Docker-in-LXC config (AppArmor unconfined, etc.) before starting
-        console.info(f"Ensuring Docker-in-LXC config for container {work_vmid}...")
-        await client.aensure_lxc_docker_config(work_vmid, node)
     else:
         # Source is a regular container, work on it directly
         work_vmid = source_vmid
@@ -4017,10 +3981,6 @@ async def provision_and_create_template(
         console.info(f"Full clone complete: {src_vmid} -> {new_vmid}")
 
     created_containers.append(new_vmid)
-
-    # Ensure Docker-in-LXC config (AppArmor unconfined, etc.)
-    console.info(f"Ensuring Docker-in-LXC config for container {new_vmid}...")
-    await client.aensure_lxc_docker_config(new_vmid, node)
 
     # Configure resources
     console.info(f"Configuring container {new_vmid} with {preset.vcpus} cores, {preset.memory_mib}MB RAM...")
