@@ -87,6 +87,7 @@ RUN rm -rf node_modules/@cmux && mkdir -p node_modules/@cmux \
 # Auto-hoist packages from .bun/ cache to node_modules root
 # Bun's --production install puts packages in nested .bun/ directory
 # Handles both scoped (@org/pkg) and non-scoped packages
+# Uses sort -V -r to pick highest version when multiple versions exist
 RUN while read pkg; do \
       [ -z "$pkg" ] && continue; \
       if echo "$pkg" | grep -q '^@'; then \
@@ -94,14 +95,14 @@ RUN while read pkg; do \
         SCOPE=$(echo "$pkg" | cut -d'/' -f1); \
         NAME=$(echo "$pkg" | cut -d'/' -f2); \
         SEARCH_PATTERN="${SCOPE}+${NAME}@"; \
-        PKG_PATH=$(find node_modules/.bun -type d -path "*${SEARCH_PATTERN}*/node_modules/${SCOPE}/${NAME}" 2>/dev/null | head -1); \
+        PKG_PATH=$(find node_modules/.bun -type d -path "*${SEARCH_PATTERN}*/node_modules/${SCOPE}/${NAME}" 2>/dev/null | sort -V -r | head -1); \
         if [ -n "$PKG_PATH" ] && [ ! -e "node_modules/${SCOPE}/${NAME}" ]; then \
           mkdir -p "node_modules/${SCOPE}"; \
           ln -s "../${PKG_PATH#node_modules/}" "node_modules/${SCOPE}/${NAME}"; \
         fi; \
       else \
-        # Non-scoped package
-        PKG_PATH=$(find node_modules/.bun -type d -name "$pkg" -path "*${pkg}@*/node_modules/${pkg}" 2>/dev/null | head -1); \
+        # Non-scoped package: sort -V -r picks highest version
+        PKG_PATH=$(find node_modules/.bun -type d -name "$pkg" -path "*${pkg}@*/node_modules/${pkg}" 2>/dev/null | sort -V -r | head -1); \
         if [ -n "$PKG_PATH" ] && [ ! -e "node_modules/$pkg" ]; then \
           ln -s "${PKG_PATH#node_modules/}" "node_modules/$pkg"; \
         fi; \
