@@ -14,6 +14,14 @@ import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { getPveLxcClient } from "@/lib/utils/pve-lxc-client";
+import {
+  RefreshGitHubAuthBody,
+  RefreshGitHubAuthResponse,
+  getFreshGitHubToken,
+} from "./utils/github-auth";
+import { stackServerAppJs } from "../utils/stack";
+import { configureGithubAccess } from "./sandboxes/git";
+import { wrapPveLxcInstance } from "@/lib/utils/sandbox-instance";
 
 export const pveLxcRouter = new OpenAPIHono();
 
@@ -269,6 +277,140 @@ pveLxcRouter.openapi(
         error
       );
       return c.text("Failed to check container status", 500);
+    }
+  }
+);
+
+/**
+ * Refresh GitHub authentication inside a PVE LXC container
+ */
+pveLxcRouter.openapi(
+  createRoute({
+    method: "post" as const,
+    path: "/pve-lxc/task-runs/{taskRunId}/refresh-github-auth",
+    tags: ["PVE LXC"],
+    summary: "Refresh GitHub authentication on a PVE LXC container",
+    description:
+      "Re-authenticates the GitHub CLI inside a running PVE LXC container with a fresh token.",
+    request: {
+      params: z.object({
+        taskRunId: typedZid("taskRuns"),
+      }),
+      body: {
+        content: {
+          "application/json": {
+            schema: RefreshGitHubAuthBody,
+          },
+        },
+        required: true,
+      },
+    },
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: RefreshGitHubAuthResponse,
+          },
+        },
+        description: "GitHub authentication refreshed successfully",
+      },
+      400: { description: "Task run is not backed by a PVE LXC container" },
+      401: { description: "Unauthorized or GitHub not connected" },
+      403: { description: "Forbidden - container does not belong to this team" },
+      404: { description: "Task run not found" },
+      409: { description: "Container is stopped - resume it first" },
+      500: { description: "Failed to refresh GitHub authentication" },
+      503: { description: "PVE LXC provider not configured" },
+    },
+  }),
+  async (c) => {
+    // Ensure provider is configured before proceeding
+    if (!env.PVE_API_URL || !env.PVE_API_TOKEN) {
+      return c.text("PVE LXC provider not configured", 503);
+    }
+
+    // Authenticate user via Stack Auth to retrieve GitHub token
+    const user = await stackServerAppJs.getUser({ tokenStore: c.req.raw });
+    if (!user) {
+      return c.text("Unauthorized", 401);
+    }
+
+    const { accessToken } = await user.getAuthJson();
+    if (!accessToken) {
+      return c.text("Unauthorized", 401);
+    }
+
+    const { taskRunId } = c.req.valid("param");
+    const { teamSlugOrId } = c.req.valid("json");
+
+    const convex = getConvex({ accessToken });
+    const team = await verifyTeamAccess({ req: c.req.raw, teamSlugOrId });
+
+    const taskRun = await convex.query(api.taskRuns.get, {
+      teamSlugOrId,
+      id: taskRunId,
+    });
+
+    if (!taskRun) {
+      return c.text("Task run not found", 404);
+    }
+
+    const instanceId = taskRun.vscode?.containerName;
+    const isPveLxcProvider = taskRun.vscode?.provider === "pve-lxc";
+
+    if (!isPveLxcProvider || !instanceId) {
+      return c.text("Task run is not backed by a PVE LXC container", 400);
+    }
+
+    try {
+      const activity = await convex.query(api.sandboxInstances.getActivity, {
+        instanceId,
+      });
+
+      if (!activity || !activity.teamId) {
+        return c.text("Sandbox not found", 404);
+      }
+      if (activity.teamId !== team.uuid) {
+        return c.text("Forbidden", 403);
+      }
+
+      const client = getPveLxcClient();
+      const instance = await client.instances.get({ instanceId });
+
+      // Verify instance belongs to this team via metadata
+      const metadataTeamId = instance.metadata?.teamId;
+      if (metadataTeamId && metadataTeamId !== team.uuid) {
+        return c.text("Forbidden", 403);
+      }
+
+      // Ensure the container is running before executing commands
+      if (instance.status !== "running") {
+        return c.text("Container is stopped - resume it first", 409);
+      }
+
+      // Get fresh GitHub token (server-side, never from client)
+      const tokenResult = await getFreshGitHubToken(user);
+      if ("error" in tokenResult) {
+        return c.text(tokenResult.error, tokenResult.status);
+      }
+
+      // Execute GitHub auth refresh inside the container
+      await configureGithubAccess(
+        wrapPveLxcInstance(instance),
+        tokenResult.token
+      );
+
+      console.log(
+        `[pve-lxc.refresh-github-auth] Successfully refreshed GitHub auth for container ${instanceId}`
+      );
+
+      return c.json({ refreshed: true });
+    } catch (error) {
+      console.error(
+        "[pve-lxc.refresh-github-auth] Failed to refresh GitHub auth:",
+        error
+      );
+      return c.text("Failed to refresh GitHub authentication", 500);
     }
   }
 );

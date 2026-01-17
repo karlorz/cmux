@@ -2240,6 +2240,55 @@ export type PostApiPveLxcTaskRunsByTaskRunIdIsStoppedResponses = {
 
 export type PostApiPveLxcTaskRunsByTaskRunIdIsStoppedResponse = PostApiPveLxcTaskRunsByTaskRunIdIsStoppedResponses[keyof PostApiPveLxcTaskRunsByTaskRunIdIsStoppedResponses];
 
+export type PostApiPveLxcTaskRunsByTaskRunIdRefreshGithubAuthData = {
+    body: RefreshGitHubAuthBody;
+    path: {
+        taskRunId: string;
+    };
+    query?: never;
+    url: '/api/pve-lxc/task-runs/{taskRunId}/refresh-github-auth';
+};
+
+export type PostApiPveLxcTaskRunsByTaskRunIdRefreshGithubAuthErrors = {
+    /**
+     * Task run is not backed by a PVE LXC container
+     */
+    400: unknown;
+    /**
+     * Unauthorized or GitHub not connected
+     */
+    401: unknown;
+    /**
+     * Forbidden - container does not belong to this team
+     */
+    403: unknown;
+    /**
+     * Task run not found
+     */
+    404: unknown;
+    /**
+     * Container is stopped - resume it first
+     */
+    409: unknown;
+    /**
+     * Failed to refresh GitHub authentication
+     */
+    500: unknown;
+    /**
+     * PVE LXC provider not configured
+     */
+    503: unknown;
+};
+
+export type PostApiPveLxcTaskRunsByTaskRunIdRefreshGithubAuthResponses = {
+    /**
+     * GitHub authentication refreshed successfully
+     */
+    200: RefreshGitHubAuthResponse;
+};
+
+export type PostApiPveLxcTaskRunsByTaskRunIdRefreshGithubAuthResponse = PostApiPveLxcTaskRunsByTaskRunIdRefreshGithubAuthResponses[keyof PostApiPveLxcTaskRunsByTaskRunIdRefreshGithubAuthResponses];
+
 export type GetApiIframePreflightData = {
     body?: never;
     path?: never;

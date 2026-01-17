@@ -6,13 +6,11 @@ import {
 } from "@/components/ui/tooltip";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { useArchiveTask } from "@/hooks/useArchiveTask";
-import {
-  useResumeMorphWorkspace,
-  useRefreshMorphGitHubAuth,
-} from "@/hooks/useMorphWorkspace";
+import { useResumeMorphWorkspace } from "@/hooks/useMorphWorkspace";
 import { useResumePveLxcWorkspace } from "@/hooks/usePveLxcWorkspace";
 import { useOpenWithActions } from "@/hooks/useOpenWithActions";
 import { useTaskRename } from "@/hooks/useTaskRename";
+import { useRefreshGitHubAuth } from "@/hooks/useRefreshGitHubAuth";
 import { isElectron } from "@/lib/electron";
 import { isFakeConvexId } from "@/lib/fakeConvexId";
 import {
@@ -1565,13 +1563,19 @@ function TaskRunTreeInner({
     });
   }, [resumePveLxcWorkspace, run._id, teamSlugOrId]);
 
-  const refreshGitHubAuth = useRefreshMorphGitHubAuth({
+  const supportsGitHubAuthRefresh =
+    run.vscode?.provider === "morph" || run.vscode?.provider === "pve-lxc";
+
+  const refreshGitHubAuth = useRefreshGitHubAuth({
     taskRunId: run._id,
     teamSlugOrId,
+    provider: supportsGitHubAuthRefresh
+      ? (run.vscode?.provider as "morph" | "pve-lxc")
+      : undefined,
   });
 
   const handleRefreshGitHubAuth = useCallback(() => {
-    if (refreshGitHubAuth.isPending) {
+    if (!supportsGitHubAuthRefresh || refreshGitHubAuth.isPending) {
       return;
     }
 
@@ -1579,7 +1583,7 @@ function TaskRunTreeInner({
       path: { taskRunId: run._id },
       body: { teamSlugOrId },
     });
-  }, [refreshGitHubAuth, run._id, teamSlugOrId]);
+  }, [refreshGitHubAuth, run._id, supportsGitHubAuthRefresh, teamSlugOrId]);
 
   const shouldRenderPullRequestLink = Boolean(
     (run.pullRequestUrl && run.pullRequestUrl !== "pending") ||
@@ -1681,7 +1685,7 @@ function TaskRunTreeInner({
                   {resumePveLxcWorkspace.isPending ? "Resuming…" : "Resume Container"}
                 </ContextMenu.Item>
               ) : null}
-              {run.vscode?.provider === "morph" ? (
+              {supportsGitHubAuthRefresh ? (
                 <ContextMenu.Item
                   className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
                   onClick={handleRefreshGitHubAuth}
