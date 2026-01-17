@@ -427,39 +427,86 @@ async function handleResponse(
 }
 
 /**
- * Proxy count_tokens to Anthropic directly.
- * Note: This endpoint requires ANTHROPIC_API_KEY to be configured.
- * Bedrock doesn't have an equivalent count_tokens endpoint.
+ * Proxy count_tokens to Anthropic API.
+ * Routes to:
+ * 1. Anthropic direct (via Cloudflare) - when user provides their own API key
+ * 2. AI Gateway - when AIGATEWAY_ANTHROPIC_BASE_URL is configured with ANTHROPIC_API_KEY
+ * 3. Bedrock-only fallback - returns 503 since Bedrock has no token counting API
  */
 export const anthropicCountTokens = httpAction(async (_ctx, req) => {
-  const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
-  if (!anthropicApiKey) {
-    // Bedrock doesn't have count_tokens API - return unavailable
+  const xApiKey = req.headers.get("x-api-key");
+  const useUserApiKey = hasUserApiKey(xApiKey);
+
+  try {
+    const body = await req.json();
+
+    if (useUserApiKey && xApiKey) {
+      // User provided their own Anthropic API key - proxy directly to Anthropic
+      const userBaseUrl = process.env.AIGATEWAY_ANTHROPIC_BASE_URL;
+      const baseUrl = userBaseUrl || CLOUDFLARE_ANTHROPIC_BASE_URL;
+
+      const response = await fetch(`${baseUrl}/v1/messages/count_tokens`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": xApiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify(body),
+      });
+      const data = await response.json();
+      return jsonResponse(data, response.status);
+    }
+
+    // Platform credits path: try AI Gateway with ANTHROPIC_API_KEY
+    const aiGatewayBaseUrl = process.env.AIGATEWAY_ANTHROPIC_BASE_URL;
+    const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+
+    if (aiGatewayBaseUrl && anthropicApiKey) {
+      // AI Gateway path with platform API key
+      const response = await fetch(
+        `${aiGatewayBaseUrl}/v1/messages/count_tokens`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicApiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify(body),
+        }
+      );
+      const data = await response.json();
+      return jsonResponse(data, response.status);
+    }
+
+    // Fallback: Try Cloudflare gateway with ANTHROPIC_API_KEY if available
+    if (anthropicApiKey) {
+      const response = await fetch(
+        `${CLOUDFLARE_ANTHROPIC_BASE_URL}/v1/messages/count_tokens`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicApiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify(body),
+        }
+      );
+      const data = await response.json();
+      return jsonResponse(data, response.status);
+    }
+
+    // Bedrock-only mode: no token counting available
     return jsonResponse(
       {
-        error: "Token counting is not available in Bedrock-only mode. Configure ANTHROPIC_API_KEY to enable this feature.",
+        error:
+          "Token counting is not available in Bedrock-only mode. Configure ANTHROPIC_API_KEY or provide your own x-api-key to enable this feature.",
         type: "service_unavailable",
       },
       503
     );
-  }
-
-  try {
-    const body = await req.json();
-    const response = await fetch(
-      `${CLOUDFLARE_ANTHROPIC_BASE_URL}/v1/messages/count_tokens`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": anthropicApiKey,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify(body),
-      }
-    );
-    const data = await response.json();
-    return jsonResponse(data, response.status);
   } catch (error) {
     console.error("[anthropic-proxy] count_tokens error:", error);
     return jsonResponse(
