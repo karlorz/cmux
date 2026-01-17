@@ -4174,9 +4174,12 @@ async def provision_and_snapshot(args: argparse.Namespace) -> None:
             raise RuntimeError(
                 "bun not found on host; install bun or rerun with --no-bump-ide-deps."
             )
-        console.always("Bumping IDE deps to latest (bun run bump-ide-deps)...")
+        ide_channel = getattr(args, "ide_deps_channel", "stable")
+        console.always(
+            f"Bumping IDE deps (channel: {ide_channel}) (bun run bump-ide-deps)..."
+        )
         bump_result = subprocess.run(
-            [bun_path, "run", "bump-ide-deps"],
+            [bun_path, "run", "bump-ide-deps", "--channel", ide_channel],
             cwd=str(Path(args.repo_root).resolve()),
             text=True,
         )
@@ -4375,11 +4378,17 @@ def parse_args() -> argparse.Namespace:
         help=f"IDE provider to install (default: {DEFAULT_IDE_PROVIDER})",
     )
     parser.add_argument(
+        "--ide-deps-channel",
+        choices=("stable", "latest", "beta"),
+        default="stable",
+        help="Dist-tag channel for IDE dependency bumping (default: stable, falls back to latest if missing)",
+    )
+    parser.add_argument(
         "--bump-ide-deps",
         dest="bump_ide_deps",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Update configs/ide-deps.json to latest versions before snapshotting",
+        help="Update configs/ide-deps.json before snapshotting (uses --ide-deps-channel)",
     )
     parser.add_argument(
         "--print-deps",

@@ -17,6 +17,7 @@ env:
   NODE_VERSION: "24"
   BUN_VERSION: "1.2.21"
   GO_VERSION: "1.23"
+  IDE_DEPS_CHANNEL: ${{ vars.IDE_DEPS_CHANNEL || 'stable' }}
 
 jobs:
   morph-snapshot:
@@ -80,7 +81,8 @@ jobs:
               --standard-disk-size "$STANDARD_DISK_SIZE" \
               --boosted-vcpus "$BOOSTED_VCPUS" \
               --boosted-memory "$BOOSTED_MEMORY" \
-              --boosted-disk-size "$BOOSTED_DISK_SIZE"; then
+              --boosted-disk-size "$BOOSTED_DISK_SIZE" \
+              --ide-deps-channel "$IDE_DEPS_CHANNEL"; then
               echo "Snapshot completed successfully"
               exit 0
             fi

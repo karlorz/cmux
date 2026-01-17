@@ -15,6 +15,7 @@ ARG NODE_VERSION=24.9.0
 ARG GO_VERSION=1.25.2
 ARG GITHUB_TOKEN
 ARG IDE_PROVIDER=cmux-code
+ARG IDE_DEPS_CHANNEL=stable
 
 FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS rust-base
 
@@ -156,6 +157,7 @@ ARG NODE_VERSION
 ARG NVM_VERSION
 ARG GO_VERSION
 ARG IDE_PROVIDER
+ARG IDE_DEPS_CHANNEL
 
 ENV NVM_DIR=/root/.nvm \
   PATH="/usr/local/bin:${PATH}"
@@ -356,6 +358,15 @@ COPY --parents apps/*/package.json packages/*/package.json scripts/package.json 
 
 RUN --mount=type=cache,target=/root/.bun/install/cache \
   bun install --frozen-lockfile --production
+
+# Keep IDE dependencies fresh with a configurable channel (stable by default).
+COPY configs/ide-deps.json ./configs/ide-deps.json
+COPY scripts/bump-ide-deps.ts ./scripts/bump-ide-deps.ts
+COPY scripts/lib ./scripts/lib
+COPY scripts/snapshot.py ./scripts/snapshot.py
+COPY Dockerfile ./Dockerfile
+ARG IDE_DEPS_CHANNEL
+RUN bun run bump-ide-deps --channel "${IDE_DEPS_CHANNEL:-stable}"
 
 RUN mkdir -p /builtins && \
   echo '{"name":"builtins","type":"module","version":"1.0.0"}' > /builtins/package.json
@@ -856,7 +867,7 @@ ENV PATH="/usr/local/bin:$PATH"
 ENV BUN_INSTALL_CACHE_DIR=/cmux/node_modules/.bun
 
 # Global CLIs are sourced from configs/ide-deps.json.
-COPY configs/ide-deps.json /tmp/ide-deps.json
+COPY --from=builder /cmux/configs/ide-deps.json /tmp/ide-deps.json
 RUN --mount=type=cache,target=/root/.bun/install/cache <<'EOF'
 set -eux
 packages="$(node - <<'NODE'
