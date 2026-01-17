@@ -7,6 +7,7 @@
   },
   "files": [
     "out/**/*",
+    "node_modules/**/*",
     "package.json",
     "!**/target/**",
     "!**/*.rs",
@@ -18,10 +19,10 @@
     "!**/node_modules/**/*.d.ts",
     "!**/node_modules/.bin",
     "!**/*.map",
-    "!**/node_modules/electron",
-    "!**/node_modules/electron-builder",
-    "!**/node_modules/electron-vite",
-    "!**/node_modules/@electron/**",
+    "!node_modules/electron{,/**}",
+    "!node_modules/electron-builder{,/**}",
+    "!node_modules/electron-vite{,/**}",
+    "!node_modules/@electron{,/**}",
     "!**/swiftshader/**",
     "!**/libvk_swiftshader.dylib",
     "!**/vk_swiftshader_icd.json"

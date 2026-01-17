@@ -86,12 +86,25 @@ RUN rm -rf node_modules/@cmux && mkdir -p node_modules/@cmux \
 
 # Auto-hoist packages from .bun/ cache to node_modules root
 # Bun's --production install puts packages in nested .bun/ directory
-# Read the list generated in deps stage and create symlinks
+# Handles both scoped (@org/pkg) and non-scoped packages
 RUN while read pkg; do \
       [ -z "$pkg" ] && continue; \
-      PKG_PATH=$(find node_modules/.bun -type d -name "$pkg" -path "*${pkg}@*/node_modules/${pkg}" 2>/dev/null | head -1); \
-      if [ -n "$PKG_PATH" ] && [ ! -e "node_modules/$pkg" ]; then \
-        ln -s "${PKG_PATH#node_modules/}" "node_modules/$pkg"; \
+      if echo "$pkg" | grep -q '^@'; then \
+        # Scoped package: @org/name -> search pattern @org+name@version
+        SCOPE=$(echo "$pkg" | cut -d'/' -f1); \
+        NAME=$(echo "$pkg" | cut -d'/' -f2); \
+        SEARCH_PATTERN="${SCOPE}+${NAME}@"; \
+        PKG_PATH=$(find node_modules/.bun -type d -path "*${SEARCH_PATTERN}*/node_modules/${SCOPE}/${NAME}" 2>/dev/null | head -1); \
+        if [ -n "$PKG_PATH" ] && [ ! -e "node_modules/${SCOPE}/${NAME}" ]; then \
+          mkdir -p "node_modules/${SCOPE}"; \
+          ln -s "../${PKG_PATH#node_modules/}" "node_modules/${SCOPE}/${NAME}"; \
+        fi; \
+      else \
+        # Non-scoped package
+        PKG_PATH=$(find node_modules/.bun -type d -name "$pkg" -path "*${pkg}@*/node_modules/${pkg}" 2>/dev/null | head -1); \
+        if [ -n "$PKG_PATH" ] && [ ! -e "node_modules/$pkg" ]; then \
+          ln -s "${PKG_PATH#node_modules/}" "node_modules/$pkg"; \
+        fi; \
       fi; \
     done < /tmp/deps-to-hoist.txt && rm /tmp/deps-to-hoist.txt
 
