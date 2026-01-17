@@ -288,6 +288,8 @@ DOCKER_BUILD_ARGS=(-t cmux-worker:0.0.1)
 if [ -n "${CMUX_DOCKER_PLATFORM:-}" ]; then
     DOCKER_BUILD_ARGS+=(--platform "${CMUX_DOCKER_PLATFORM}")
 fi
+IDE_DEPS_CHANNEL="${IDE_DEPS_CHANNEL:-stable}"
+DOCKER_BUILD_ARGS+=(--build-arg "IDE_DEPS_CHANNEL=${IDE_DEPS_CHANNEL}")
 
 # Allow passing a GitHub token to avoid API rate limiting during docker builds.
 # Prefer an existing GITHUB_TOKEN environment variable, otherwise fall back to `gh auth token`.
