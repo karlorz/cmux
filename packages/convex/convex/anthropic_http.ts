@@ -427,17 +427,30 @@ async function handleResponse(
 }
 
 /**
- * Proxy count_tokens to Anthropic directly.
- * Note: This endpoint requires ANTHROPIC_API_KEY to be configured.
- * Bedrock doesn't have an equivalent count_tokens endpoint.
+ * Proxy count_tokens to an Anthropic-compatible endpoint.
+ * Allows overriding the base URL + API key so Bedrock-only setups can use
+ * third-party services that implement the endpoint.
  */
 export const anthropicCountTokens = httpAction(async (_ctx, req) => {
-  const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
-  if (!anthropicApiKey) {
-    // Bedrock doesn't have count_tokens API - return unavailable
+  // Prefer explicit count-tokens override, then AI Gateway, then Cloudflare default
+  const baseUrl =
+    process.env.ANTHROPIC_COUNT_TOKENS_BASE_URL ||
+    process.env.AIGATEWAY_ANTHROPIC_BASE_URL ||
+    CLOUDFLARE_ANTHROPIC_BASE_URL;
+
+  // Allow a separate key for third-party gateways; fall back to Anthropic key if present
+  const apiKey =
+    process.env.ANTHROPIC_COUNT_TOKENS_API_KEY ||
+    process.env.AIGATEWAY_ANTHROPIC_API_KEY ||
+    process.env.ANTHROPIC_API_KEY;
+
+  // If no key is available and we're still pointing at the Anthropic/Cloudflare gateway,
+  // surface a clear error rather than hitting the real API without credentials.
+  if (!apiKey && baseUrl === CLOUDFLARE_ANTHROPIC_BASE_URL) {
     return jsonResponse(
       {
-        error: "Token counting is not available in Bedrock-only mode. Configure ANTHROPIC_API_KEY to enable this feature.",
+        error:
+          "Token counting requires an Anthropic-compatible endpoint. Configure ANTHROPIC_API_KEY or set ANTHROPIC_COUNT_TOKENS_BASE_URL (and optional ANTHROPIC_COUNT_TOKENS_API_KEY) to a compatible gateway.",
         type: "service_unavailable",
       },
       503
@@ -446,18 +459,25 @@ export const anthropicCountTokens = httpAction(async (_ctx, req) => {
 
   try {
     const body = await req.json();
-    const response = await fetch(
-      `${CLOUDFLARE_ANTHROPIC_BASE_URL}/v1/messages/count_tokens`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": anthropicApiKey,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify(body),
-      }
-    );
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "anthropic-version": "2023-06-01",
+    };
+
+    if (apiKey) {
+      headers["x-api-key"] = apiKey;
+    }
+
+    console.log("[anthropic-proxy] count_tokens request", {
+      baseUrl,
+      hasApiKey: Boolean(apiKey),
+    });
+
+    const response = await fetch(`${baseUrl}/v1/messages/count_tokens`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
     const data = await response.json();
     return jsonResponse(data, response.status);
   } catch (error) {
