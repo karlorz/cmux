@@ -251,17 +251,28 @@ export async function handleWorkerTaskCompletion(
       });
 
       try {
-        await autoCommitAndPush({
+        const autoCommitResult = await autoCommitAndPush({
           branchName: branchForCommit,
           commitMessage,
           remoteUrl,
         });
-        log("INFO", "[AUTOCOMMIT] autoCommitAndPush completed successfully", {
-          taskRunId,
-          branch: branchForCommit,
-        });
+
+        if (autoCommitResult.success) {
+          log("INFO", "[AUTOCOMMIT] autoCommitAndPush completed successfully", {
+            taskRunId,
+            branch: branchForCommit,
+            pushedRepos: autoCommitResult.pushedRepos,
+          });
+        } else {
+          log("WARN", "[AUTOCOMMIT] autoCommitAndPush completed with issues", {
+            taskRunId,
+            branch: branchForCommit,
+            pushedRepos: autoCommitResult.pushedRepos,
+            errors: autoCommitResult.errors,
+          });
+        }
       } catch (error) {
-        log("ERROR", "[AUTOCOMMIT] Worker auto-commit failed", {
+        log("ERROR", "[AUTOCOMMIT] Worker auto-commit failed with exception", {
           taskRunId,
           branch: branchForCommit,
           error,
