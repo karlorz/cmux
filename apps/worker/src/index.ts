@@ -54,6 +54,55 @@ import { verifyTaskRunToken } from "@cmux/shared/convex-safe";
 
 const execAsync = promisify(exec);
 
+// Cache for environment variables fetched from envd
+const envdCache = new Map<string, { value: string | undefined; timestamp: number }>();
+const ENVD_CACHE_TTL_MS = 30000; // Cache for 30 seconds
+
+// Helper to get environment variable from envd (envctl daemon) via Unix socket
+// Falls back to process.env if envd is unavailable
+async function getEnvFromEnvd(key: string): Promise<string | undefined> {
+  // First check process.env (fast path)
+  const fromProcess = process.env[key];
+  if (fromProcess) {
+    return fromProcess;
+  }
+
+  // Check cache
+  const cached = envdCache.get(key);
+  if (cached && Date.now() - cached.timestamp < ENVD_CACHE_TTL_MS) {
+    return cached.value;
+  }
+
+  // Sanitize key to prevent command injection - only allow alphanumeric and underscore
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+    log("ERROR", `Invalid environment variable key: ${key}`);
+    return undefined;
+  }
+
+  // Try to get from envd via envctl CLI
+  // Set XDG_RUNTIME_DIR to ensure envctl finds the socket at /run/user/0/cmux-envd/envd.sock
+  // This matches where envctl load sets variables (see pve-lxc-client.ts httpExec)
+  const uid = process.getuid?.() ?? 0;
+  const xdgRuntimeDir = process.env.XDG_RUNTIME_DIR || `/run/user/${uid}`;
+  try {
+    const { stdout } = await execAsync(`envctl get ${key} 2>/dev/null || true`, {
+      env: { ...process.env, XDG_RUNTIME_DIR: xdgRuntimeDir },
+    });
+    const value = stdout.trim();
+    const result = value && value !== "null" && value !== "" ? value : undefined;
+
+    // Cache the result
+    envdCache.set(key, { value: result, timestamp: Date.now() });
+
+    return result;
+  } catch {
+    // envctl not available or failed, cache undefined to avoid repeated failures
+    envdCache.set(key, { value: undefined, timestamp: Date.now() });
+  }
+
+  return undefined;
+}
+
 const resolveCompletionDetector = (
   agentModel?: string,
   agentConfig?: { completionDetector?: (taskRunId: string) => Promise<void> }
@@ -246,8 +295,14 @@ const ALLOWED_UPLOAD_ROOT = "/root/prompt";
 app.post("/upload-image", uploadImageMiddleware, async (req, res) => {
   try {
     const token = req.header("x-cmux-token");
-    const secret = process.env.CMUX_TASK_RUN_JWT_SECRET;
+    // Get JWT secret from envd (envctl daemon) or fall back to process.env
+    // This allows dynamically set env vars via envctl to be used by the already-running worker
+    const secret = await getEnvFromEnvd("CMUX_TASK_RUN_JWT_SECRET");
     if (!token || !secret) {
+      log("ERROR", "Missing token or secret for upload-image", {
+        hasToken: Boolean(token),
+        hasSecret: Boolean(secret),
+      });
       return res.status(401).json({ error: "Unauthorized" });
     }
 

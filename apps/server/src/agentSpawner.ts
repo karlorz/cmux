@@ -199,6 +199,7 @@ export async function spawnAgent(
 
         // Replace image reference in prompt with file path
         // First try to replace the original filename (exact match, no word boundaries)
+        let replaced = false;
         if (image.fileName) {
           const beforeReplace = processedTaskDescription;
           // Escape special regex characters in the filename
@@ -214,6 +215,7 @@ export async function spawnAgent(
             serverLogger.info(
               `[AgentSpawner] Replaced "${image.fileName}" with "${imagePath}"`
             );
+            replaced = true;
           } else {
             serverLogger.warn(
               `[AgentSpawner] Failed to find "${image.fileName}" in prompt text`
@@ -221,25 +223,29 @@ export async function spawnAgent(
           }
         }
 
-        // Also replace just the filename without extension in case it appears that way
-        const nameWithoutExt = image.fileName?.replace(/\.[^/.]+$/, "");
-        if (
-          nameWithoutExt &&
-          processedTaskDescription.includes(nameWithoutExt)
-        ) {
-          const beforeReplace = processedTaskDescription;
-          const escapedName = nameWithoutExt.replace(
-            /[.*+?^${}()|[\]\\]/g,
-            "\\$&"
-          );
-          processedTaskDescription = processedTaskDescription.replace(
-            new RegExp(escapedName, "g"),
-            imagePath
-          );
-          if (beforeReplace !== processedTaskDescription) {
-            serverLogger.info(
-              `[AgentSpawner] Replaced "${nameWithoutExt}" with "${imagePath}"`
+        // Only try to replace filename without extension if the full filename replacement didn't work
+        // This prevents double-replacement issues (e.g., "hot.jpg" -> "/root/prompt/hot.jpg",
+        // then "hot" matching within the path and causing "/root/prompt//root/prompt/hot.jpg.jpg")
+        if (!replaced) {
+          const nameWithoutExt = image.fileName?.replace(/\.[^/.]+$/, "");
+          if (
+            nameWithoutExt &&
+            processedTaskDescription.includes(nameWithoutExt)
+          ) {
+            const beforeReplace = processedTaskDescription;
+            const escapedName = nameWithoutExt.replace(
+              /[.*+?^${}()|[\]\\]/g,
+              "\\$&"
             );
+            processedTaskDescription = processedTaskDescription.replace(
+              new RegExp(escapedName, "g"),
+              imagePath
+            );
+            if (beforeReplace !== processedTaskDescription) {
+              serverLogger.info(
+                `[AgentSpawner] Replaced "${nameWithoutExt}" with "${imagePath}"`
+              );
+            }
           }
         }
       });

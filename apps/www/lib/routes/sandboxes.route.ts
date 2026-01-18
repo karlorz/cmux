@@ -573,6 +573,15 @@ sandboxesRouter.openapi(
       }
       if (body.taskRunJwt) {
         envVarsToApply += `\nCMUX_TASK_RUN_JWT="${body.taskRunJwt}"`;
+        // Also add the JWT secret so the worker can verify tokens for image uploads
+        // Only add if the secret is configured to avoid injecting "undefined" as a literal value
+        if (env.CMUX_TASK_RUN_JWT_SECRET) {
+          envVarsToApply += `\nCMUX_TASK_RUN_JWT_SECRET="${env.CMUX_TASK_RUN_JWT_SECRET}"`;
+        } else {
+          console.warn(
+            "[sandboxes.start] CMUX_TASK_RUN_JWT_SECRET not configured, image uploads will not work",
+          );
+        }
       }
 
       // Apply all environment variables if any
