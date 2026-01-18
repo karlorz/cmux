@@ -171,12 +171,9 @@ start_step "Package DMG"
 export CSC_IDENTITY_AUTO_DISCOVERY=false
 (cd "$CLIENT_DIR" && \
   bunx electron-builder \
-    --config electron-builder.json \
+    --config electron-builder.fork.local.json \
     --mac dmg --arm64 \
-    --publish never \
-    --config.mac.identity=null \
-    --config.dmg.sign=false \
-    --config.mac.notarize=false)
+    --publish never)
 end_step
 
 echo "==> Done. Outputs in: $DIST_DIR"
