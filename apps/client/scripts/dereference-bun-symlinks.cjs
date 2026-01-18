@@ -18,8 +18,9 @@ const {
   readdirSync,
   lstatSync,
   readlinkSync,
-  rmSync,
+  unlinkSync,
   cpSync,
+  mkdirSync,
 } = require("node:fs");
 
 // Workspace packages are bundled by electron-vite, not needed in node_modules
@@ -33,6 +34,110 @@ const MAX_DEPTH = 10;
  */
 function isBunCacheSymlink(linkTarget) {
   return linkTarget.includes("node_modules/.bun/") || linkTarget.includes(".bun/");
+}
+
+/**
+ * Copy sibling dependencies from Bun's cache structure.
+ *
+ * Bun hoists dependencies as siblings in the cache:
+ *   .bun/dockerode@4.0.9/node_modules/
+ *     dockerode/           <- the actual package
+ *     docker-modem -> ../../docker-modem@5.0.6/node_modules/docker-modem
+ *     protobufjs -> ...
+ *
+ * When we copy dockerode, we also need to copy docker-modem etc. into
+ * dockerode/node_modules/ so Node.js resolution works in the asar.
+ */
+function copySiblingDependencies(sourceDir, targetPkgDir, errors) {
+  // sourceDir is e.g. .bun/dockerode@4.0.9/node_modules/dockerode
+  // We need to look at siblings in .bun/dockerode@4.0.9/node_modules/
+  const bunNodeModules = dirname(sourceDir);
+  const pkgName = sourceDir.split("/").pop();
+
+  let siblings;
+  try {
+    siblings = readdirSync(bunNodeModules);
+  } catch {
+    return 0;
+  }
+
+  let copied = 0;
+  for (const sibling of siblings) {
+    // Skip the package itself and hidden entries
+    if (sibling === pkgName || sibling.startsWith(".")) continue;
+
+    const siblingPath = join(bunNodeModules, sibling);
+    let stat;
+    try {
+      stat = lstatSync(siblingPath);
+    } catch {
+      continue;
+    }
+
+    // Handle scoped packages (@org/pkg)
+    if (sibling.startsWith("@") && stat.isDirectory()) {
+      let scopedPkgs;
+      try {
+        scopedPkgs = readdirSync(siblingPath);
+      } catch {
+        continue;
+      }
+      for (const scopedPkg of scopedPkgs) {
+        const scopedPath = join(siblingPath, scopedPkg);
+        const targetScopedDir = join(targetPkgDir, "node_modules", sibling);
+        const targetScopedPath = join(targetScopedDir, scopedPkg);
+
+        // Skip if already exists
+        if (existsSync(targetScopedPath)) continue;
+
+        try {
+          const scopedStat = lstatSync(scopedPath);
+          let copySource = scopedPath;
+
+          if (scopedStat.isSymbolicLink()) {
+            const linkTarget = readlinkSync(scopedPath);
+            copySource = resolve(dirname(scopedPath), linkTarget);
+            if (!existsSync(copySource)) continue;
+          }
+
+          mkdirSync(targetScopedDir, { recursive: true });
+          cpSync(copySource, targetScopedPath, { recursive: true, dereference: true });
+          copied++;
+        } catch (err) {
+          errors.push(`Failed to copy scoped sibling ${sibling}/${scopedPkg}: ${err.message}`);
+        }
+      }
+      continue;
+    }
+
+    // Target location: inside the package's node_modules
+    const targetPath = join(targetPkgDir, "node_modules", sibling);
+
+    // Skip if already exists
+    if (existsSync(targetPath)) continue;
+
+    let copySource = siblingPath;
+
+    // If sibling is a symlink, resolve it
+    if (stat.isSymbolicLink()) {
+      const linkTarget = readlinkSync(siblingPath);
+      copySource = resolve(dirname(siblingPath), linkTarget);
+      if (!existsSync(copySource)) {
+        errors.push(`Sibling symlink target missing: ${sibling} -> ${copySource}`);
+        continue;
+      }
+    }
+
+    try {
+      mkdirSync(join(targetPkgDir, "node_modules"), { recursive: true });
+      cpSync(copySource, targetPath, { recursive: true, dereference: true });
+      copied++;
+    } catch (err) {
+      errors.push(`Failed to copy sibling ${sibling}: ${err.message}`);
+    }
+  }
+
+  return copied;
 }
 
 /**
@@ -97,13 +202,19 @@ function dereferenceSymlinks(nodeModulesDir, depth = 0, visited = new Set()) {
           continue;
         }
 
-        // Remove the symlink
-        rmSync(entryPath, { force: true });
+        // Remove the symlink (use unlinkSync, not rmSync, because rmSync follows
+        // symlinks to directories in Node 24+ and fails with ERR_FS_EISDIR)
+        unlinkSync(entryPath);
 
         // Copy the real directory and flatten any nested .bun symlinks so dependencies
         // like docker-modem are materialized instead of pointing at non-existent targets
         cpSync(resolvedTarget, entryPath, { recursive: true, dereference: true });
         replaced++;
+
+        // Copy sibling dependencies from Bun's cache structure into the package's
+        // node_modules so Node.js resolution works inside the asar
+        const siblingsCopied = copySiblingDependencies(resolvedTarget, entryPath, errors);
+        replaced += siblingsCopied;
 
         // Recurse into the newly copied directory to handle nested node_modules
         const nestedNodeModules = join(entryPath, "node_modules");
