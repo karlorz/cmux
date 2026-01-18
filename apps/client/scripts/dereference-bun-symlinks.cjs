@@ -12,7 +12,7 @@
  * the workspace will be discarded after the build.
  */
 
-const { join, resolve, dirname } = require("node:path");
+const { join, resolve, dirname, basename } = require("node:path");
 const {
   existsSync,
   readdirSync,
@@ -20,6 +20,7 @@ const {
   readlinkSync,
   rmSync,
   cpSync,
+  mkdirSync,
 } = require("node:fs");
 
 // Workspace packages are bundled by electron-vite, not needed in node_modules
@@ -29,10 +30,90 @@ const WORKSPACE_SCOPES = ["@cmux"];
 const MAX_DEPTH = 10;
 
 /**
- * Check if a symlink points to Bun's cache (.bun/ directory)
+ * Check if a path is in Bun's cache (.bun/ directory)
+ * Can check either relative link targets or resolved absolute paths.
  */
-function isBunCacheSymlink(linkTarget) {
-  return linkTarget.includes("node_modules/.bun/") || linkTarget.includes(".bun/");
+function isBunCachePath(pathToCheck) {
+  return pathToCheck.includes("node_modules/.bun/") || pathToCheck.includes(".bun/");
+}
+
+/**
+ * Copy sibling dependencies from Bun cache into package's node_modules.
+ *
+ * Bun's cache structure puts dependencies as siblings:
+ *   .bun/dockerode@4.0.9/node_modules/
+ *     dockerode/          <- the package
+ *     docker-modem -> ..  <- sibling symlink dependency
+ *
+ * Node.js resolution expects nested or hoisted deps, so we copy
+ * sibling symlinks into the package's own node_modules/.
+ */
+function copySiblingDependencies(entryPath, resolvedTarget) {
+  // resolvedTarget is e.g. /root/.../node_modules/.bun/dockerode@4.0.9/node_modules/dockerode
+  // siblingDir is the parent: /root/.../node_modules/.bun/dockerode@4.0.9/node_modules/
+  const siblingDir = dirname(resolvedTarget);
+  const packageName = basename(resolvedTarget);
+
+  let siblings;
+  try {
+    siblings = readdirSync(siblingDir);
+  } catch {
+    return 0;
+  }
+
+  let copied = 0;
+
+  for (const sibling of siblings) {
+    // Skip the package itself, hidden files, and .bin
+    if (sibling === packageName || sibling.startsWith(".")) continue;
+
+    const siblingPath = join(siblingDir, sibling);
+
+    try {
+      const stat = lstatSync(siblingPath);
+
+      // Only process symlinks (Bun's dependency links)
+      if (!stat.isSymbolicLink()) continue;
+
+      const linkTarget = readlinkSync(siblingPath);
+      const resolvedSibling = resolve(siblingDir, linkTarget);
+
+      // Only copy .bun cache symlinks (check resolved path for relative links)
+      if (!isBunCachePath(linkTarget) && !isBunCachePath(resolvedSibling)) continue;
+      if (!existsSync(resolvedSibling)) continue;
+
+      // Create package's node_modules if needed
+      const nestedNodeModules = join(entryPath, "node_modules");
+      if (!existsSync(nestedNodeModules)) {
+        mkdirSync(nestedNodeModules, { recursive: true });
+      }
+
+      // Handle scoped packages (@org/package)
+      let destPath;
+      if (sibling.startsWith("@")) {
+        // sibling is a scope dir, need to copy its contents
+        const scopeDir = join(nestedNodeModules, sibling);
+        if (!existsSync(scopeDir)) {
+          mkdirSync(scopeDir, { recursive: true });
+        }
+        // The symlink points to the actual scoped package
+        destPath = join(nestedNodeModules, sibling);
+      } else {
+        destPath = join(nestedNodeModules, sibling);
+      }
+
+      // Skip if already exists (hoisted or previously copied)
+      if (existsSync(destPath)) continue;
+
+      // Copy with dereference to flatten nested symlinks
+      cpSync(resolvedSibling, destPath, { recursive: true, dereference: true });
+      copied++;
+    } catch {
+      // Ignore errors for individual siblings
+    }
+  }
+
+  return copied;
 }
 
 /**
@@ -87,8 +168,8 @@ function dereferenceSymlinks(nodeModulesDir, depth = 0, visited = new Set()) {
         const linkTarget = readlinkSync(entryPath);
         const resolvedTarget = resolve(dirname(entryPath), linkTarget);
 
-        // Only dereference .bun cache symlinks
-        if (!isBunCacheSymlink(linkTarget)) {
+        // Only dereference .bun cache symlinks (check resolved path for relative links)
+        if (!isBunCachePath(linkTarget) && !isBunCachePath(resolvedTarget)) {
           continue;
         }
 
@@ -97,13 +178,17 @@ function dereferenceSymlinks(nodeModulesDir, depth = 0, visited = new Set()) {
           continue;
         }
 
-        // Remove the symlink
-        rmSync(entryPath, { force: true });
+        // Remove the symlink (recursive needed for symlinks to directories)
+        rmSync(entryPath, { force: true, recursive: true });
 
         // Copy the real directory and flatten any nested .bun symlinks so dependencies
         // like docker-modem are materialized instead of pointing at non-existent targets
         cpSync(resolvedTarget, entryPath, { recursive: true, dereference: true });
         replaced++;
+
+        // Copy sibling dependencies from Bun cache into package's node_modules
+        // This handles Bun's flat structure where deps are siblings, not nested
+        replaced += copySiblingDependencies(entryPath, resolvedTarget);
 
         // Recurse into the newly copied directory to handle nested node_modules
         const nestedNodeModules = join(entryPath, "node_modules");
