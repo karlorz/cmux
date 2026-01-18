@@ -47,8 +47,17 @@ function isBunCacheSymlink(linkTarget) {
  *
  * When we copy dockerode, we also need to copy docker-modem etc. into
  * dockerode/node_modules/ so Node.js resolution works in the asar.
+ *
+ * Additionally, when a sibling (like docker-modem) is itself a symlink
+ * pointing to another versioned directory in Bun's cache, we need to
+ * recursively copy its siblings too (like readable-stream, split-ca).
  */
-function copySiblingDependencies(sourceDir, targetPkgDir, errors) {
+function copySiblingDependencies(sourceDir, targetPkgDir, errors, depth = 0) {
+  // Prevent infinite recursion
+  if (depth > MAX_DEPTH) {
+    return 0;
+  }
+
   // sourceDir is e.g. .bun/dockerode@4.0.9/node_modules/dockerode
   // We need to look at siblings in .bun/dockerode@4.0.9/node_modules/
   const bunNodeModules = dirname(sourceDir);
@@ -93,16 +102,24 @@ function copySiblingDependencies(sourceDir, targetPkgDir, errors) {
         try {
           const scopedStat = lstatSync(scopedPath);
           let copySource = scopedPath;
+          let wasSymlink = false;
 
           if (scopedStat.isSymbolicLink()) {
             const linkTarget = readlinkSync(scopedPath);
             copySource = resolve(dirname(scopedPath), linkTarget);
             if (!existsSync(copySource)) continue;
+            wasSymlink = true;
           }
 
           mkdirSync(targetScopedDir, { recursive: true });
           cpSync(copySource, targetScopedPath, { recursive: true, dereference: true });
           copied++;
+
+          // If this was a symlink, recursively copy its siblings from Bun's cache
+          if (wasSymlink && isBunCacheSymlink(copySource)) {
+            const nestedCopied = copySiblingDependencies(copySource, targetScopedPath, errors, depth + 1);
+            copied += nestedCopied;
+          }
         } catch (err) {
           errors.push(`Failed to copy scoped sibling ${sibling}/${scopedPkg}: ${err.message}`);
         }
@@ -117,6 +134,7 @@ function copySiblingDependencies(sourceDir, targetPkgDir, errors) {
     if (existsSync(targetPath)) continue;
 
     let copySource = siblingPath;
+    let wasSymlink = false;
 
     // If sibling is a symlink, resolve it
     if (stat.isSymbolicLink()) {
@@ -126,12 +144,21 @@ function copySiblingDependencies(sourceDir, targetPkgDir, errors) {
         errors.push(`Sibling symlink target missing: ${sibling} -> ${copySource}`);
         continue;
       }
+      wasSymlink = true;
     }
 
     try {
       mkdirSync(join(targetPkgDir, "node_modules"), { recursive: true });
       cpSync(copySource, targetPath, { recursive: true, dereference: true });
       copied++;
+
+      // If this was a symlink pointing into Bun's cache, recursively copy its
+      // siblings. This handles transitive dependencies like docker-modem's
+      // readable-stream, split-ca, etc.
+      if (wasSymlink && isBunCacheSymlink(copySource)) {
+        const nestedCopied = copySiblingDependencies(copySource, targetPath, errors, depth + 1);
+        copied += nestedCopied;
+      }
     } catch (err) {
       errors.push(`Failed to copy sibling ${sibling}: ${err.message}`);
     }
