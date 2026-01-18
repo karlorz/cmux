@@ -589,9 +589,6 @@ jobs:
           targets: aarch64-apple-darwin
       - name: Install dependencies (bun)
         run: bun install --frozen-lockfile
-      - name: Install app deps in apps/client (bun)
-        working-directory: apps/client
-        run: bun install --frozen-lockfile
       - name: Write .env for build
         shell: bash
         run: |
@@ -707,9 +704,6 @@ jobs:
           toolchain: stable
           targets: aarch64-apple-darwin, x86_64-apple-darwin
       - name: Install dependencies (bun)
-        run: bun install --frozen-lockfile
-      - name: Install app deps in apps/client (bun)
-        working-directory: apps/client
         run: bun install --frozen-lockfile
       - name: Write .env for build
         shell: bash
