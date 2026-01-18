@@ -589,9 +589,6 @@ jobs:
           targets: aarch64-apple-darwin
       - name: Install dependencies (bun)
         run: bun install --frozen-lockfile
-      - name: Install app deps in apps/client (bun)
-        working-directory: apps/client
-        run: bun install --frozen-lockfile
       - name: Write .env for build
         shell: bash
         run: |
@@ -618,10 +615,6 @@ jobs:
       - name: Generate icons
         working-directory: apps/client
         run: bun run ./scripts/generate-icons.mjs
-      - name: Dereference Bun symlinks for electron-builder
-        working-directory: apps/client
-        shell: bash
-        run: node scripts/dereference-bun-symlinks.cjs
       - name: Build unsigned macOS arm64 artifacts
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -712,9 +705,6 @@ jobs:
           targets: aarch64-apple-darwin, x86_64-apple-darwin
       - name: Install dependencies (bun)
         run: bun install --frozen-lockfile
-      - name: Install app deps in apps/client (bun)
-        working-directory: apps/client
-        run: bun install --frozen-lockfile
       - name: Write .env for build
         shell: bash
         run: |
@@ -768,10 +758,6 @@ jobs:
       - name: Generate icons
         working-directory: apps/client
         run: bun run ./scripts/generate-icons.mjs
-      - name: Dereference Bun symlinks for electron-builder
-        working-directory: apps/client
-        shell: bash
-        run: node scripts/dereference-bun-symlinks.cjs
       - name: Build unsigned macOS universal artifacts
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -881,10 +867,6 @@ jobs:
       - name: Generate icons
         working-directory: apps/client
         run: bun run ./scripts/generate-icons.mjs
-      - name: Dereference Bun symlinks for electron-builder
-        working-directory: apps/client
-        shell: bash
-        run: node scripts/dereference-bun-symlinks.cjs
       - name: Build & publish Windows x64 to GitHub Releases
         env:
           GH_TOKEN: ${{ github.token }}
@@ -941,10 +923,6 @@ jobs:
       - name: Generate icons
         working-directory: apps/client
         run: bun run ./scripts/generate-icons.mjs
-      - name: Dereference Bun symlinks for electron-builder
-        working-directory: apps/client
-        shell: bash
-        run: node scripts/dereference-bun-symlinks.cjs
       - name: Build & publish Linux AppImage x64 to GitHub Releases
         env:
           GH_TOKEN: ${{ github.token }}

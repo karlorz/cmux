@@ -51,6 +51,7 @@ export default defineConfig({
           "@cmux/convex",
           "@cmux/www-openapi-client",
           "@sentry/electron",
+          "dockerode",
         ],
       }),
       resolveWorkspacePackages(),
