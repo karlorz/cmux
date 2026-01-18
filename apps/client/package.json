@@ -114,6 +114,7 @@
     "debug": "^4.4.1",
     "diff": "^8.0.2",
     "dockerode": "^4.0.2",
+    "docker-modem": "^5.0.6",
     "electron-context-menu": "^4.1.1",
     "electron-updater": "^6.6.2",
     "engine.io-client": "^6.6.3",
