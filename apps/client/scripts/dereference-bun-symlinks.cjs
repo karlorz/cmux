@@ -100,9 +100,9 @@ function dereferenceSymlinks(nodeModulesDir, depth = 0, visited = new Set()) {
         // Remove the symlink
         rmSync(entryPath, { force: true });
 
-        // Copy the real directory, but don't follow symlinks recursively during copy
-        // We'll handle nested node_modules manually to avoid circular refs
-        cpSync(resolvedTarget, entryPath, { recursive: true, dereference: false });
+        // Copy the real directory and flatten any nested .bun symlinks so dependencies
+        // like docker-modem are materialized instead of pointing at non-existent targets
+        cpSync(resolvedTarget, entryPath, { recursive: true, dereference: true });
         replaced++;
 
         // Recurse into the newly copied directory to handle nested node_modules
