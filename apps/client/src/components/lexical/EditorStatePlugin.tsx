@@ -4,6 +4,7 @@ import {
   $createParagraphNode,
   $getSelection,
   $createTextNode,
+  $isLineBreakNode,
   ParagraphNode,
   type LexicalNode,
   ElementNode,
@@ -70,6 +71,8 @@ export function EditorStatePlugin({ onEditorReady }: { onEditorReady?: (api: Edi
                 } else {
                   textParts.push(`[Image: ${altText}]`);
                 }
+              } else if ($isLineBreakNode(node)) {
+                textParts.push('\n');
               } else if (node instanceof TextNode) {
                 textParts.push(node.getTextContent());
               } else if (node instanceof ElementNode) {
