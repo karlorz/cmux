@@ -1,4 +1,8 @@
-import { $convertToMarkdownString, TRANSFORMERS } from "@lexical/markdown";
+import {
+  $convertToMarkdownString,
+  TRANSFORMERS,
+  type Transformer,
+} from "@lexical/markdown";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import {
   $getRoot,
@@ -10,7 +14,33 @@ import {
   ElementNode,
 } from "lexical";
 import { useEffect } from "react";
-import { $isImageNode } from "./ImageNode";
+import { $isImageNode, ImageNode } from "./ImageNode";
+
+// Custom transformer for ImageNode to export as markdown image syntax
+const IMAGE_TRANSFORMER: Transformer = {
+  dependencies: [ImageNode],
+  export: (node) => {
+    if (!$isImageNode(node)) {
+      return null;
+    }
+    const fileName = node.getFileName();
+    const altText = node.getAltText();
+    // Use fileName if available, otherwise use altText as reference
+    const imageRef = fileName || `image: ${altText}`;
+    // Export as markdown image syntax: ![alt](reference)
+    // The actual image data is handled separately via the images array
+    return `![${altText}](${imageRef})`;
+  },
+  regExp: /!\[([^\]]*)\]\(([^)]+)\)/,
+  replace: () => {
+    // Import is not needed since we handle images via paste/drag-drop
+    // Return void (do nothing) - images are handled separately
+  },
+  type: "text-match",
+};
+
+// Combine default transformers with our custom image transformer
+const EXTENDED_TRANSFORMERS: Transformer[] = [IMAGE_TRANSFORMER, ...TRANSFORMERS];
 
 interface ExtractedContent {
   text: string;
@@ -72,7 +102,8 @@ export function EditorStatePlugin({ onEditorReady }: { onEditorReady?: (api: Edi
 
             // Use $convertToMarkdownString to preserve formatting (newlines, headers, etc.)
             // This properly handles paragraphs, headings, lists, code blocks, etc.
-            content.text = $convertToMarkdownString(TRANSFORMERS).trim();
+            // Use EXTENDED_TRANSFORMERS to include our custom ImageNode transformer
+            content.text = $convertToMarkdownString(EXTENDED_TRANSFORMERS).trim();
           });
 
           return content;
