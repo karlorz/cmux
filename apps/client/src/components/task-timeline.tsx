@@ -433,7 +433,7 @@ export function TaskTimeline({
                 </span>
                 <span className="text-neutral-600 dark:text-neutral-400">
                   {event.isFallback
-                    ? " - selected first submission"
+                    ? " - auto-selected first candidate"
                     : " completed"}
                 </span>
                 <span className="text-neutral-500 dark:text-neutral-500 ml-1">
@@ -449,7 +449,7 @@ export function TaskTimeline({
                 </span>
                 <span className="text-neutral-600 dark:text-neutral-400">
                   {event.isFallback
-                    ? " - selected first submission"
+                    ? " - auto-selected first candidate"
                     : " completed"}
                 </span>
                 <span className="text-neutral-500 dark:text-neutral-500 ml-1">
