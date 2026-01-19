@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { getTeamId } from "../_shared/team";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { authMutation, authQuery, taskIdWithFake } from "./users/utils";
@@ -261,7 +262,7 @@ export const getTasksWithCrowns = authQuery({
 
 /**
  * Retry crown evaluation after a previous failure.
- * Clears the error state and resets status to "pending".
+ * Validates the task has retry data and schedules the retry action.
  */
 export const retryCrownEvaluation = authMutation({
   args: {
@@ -289,6 +290,14 @@ export const retryCrownEvaluation = authMutation({
       );
     }
 
+    // Check if we have retry data
+    if (!task.crownEvaluationRetryData) {
+      console.log(`[Crown] No retry data available for task ${args.taskId}`);
+      throw new Error(
+        "No retry data available. This evaluation cannot be retried."
+      );
+    }
+
     // Reset to pending for re-evaluation
     await ctx.db.patch(args.taskId, {
       crownEvaluationStatus: "pending",
@@ -296,7 +305,12 @@ export const retryCrownEvaluation = authMutation({
       updatedAt: Date.now(),
     });
 
-    console.log(`[Crown] Marked task ${args.taskId} for retry evaluation`);
+    // Schedule the retry action
+    await ctx.scheduler.runAfter(0, internal.crown.actions.retryEvaluation, {
+      taskId: args.taskId,
+    });
+
+    console.log(`[Crown] Scheduled retry evaluation for task ${args.taskId}`);
     return "pending";
   },
 });
@@ -378,17 +392,25 @@ export const workerFinalize = internalMutation({
 
     const now = Date.now();
 
-    // If no winner was selected (failure fallback), mark task as error and return
+    // If no winner was selected (failure fallback), mark task as error and store retry data
     if (!args.winnerRunId) {
-      // We do NOT create a crownEvaluations record for failures
-      // allowing for future retries if needed
+      // Store evaluation data for potential retry
+      const retryData = {
+        evaluationPrompt: args.evaluationPrompt,
+        candidateRunIds: args.candidateRunIds,
+        teamId: args.teamId,
+        userId: args.userId,
+      };
+
       await ctx.db.patch(args.taskId, {
         crownEvaluationStatus: "error",
         crownEvaluationError: args.evaluationNote || args.reason,
+        crownEvaluationRetryData: JSON.stringify(retryData),
         isCompleted: true, // Mark completed to unblock the task flow
         updatedAt: now,
       });
 
+      console.log(`[Crown] Stored retry data for task ${args.taskId}`);
       return null;
     }
 

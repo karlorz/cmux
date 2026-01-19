@@ -685,6 +685,8 @@ export const RenderPanel = React.memo(RenderPanelComponent, (prevProps, nextProp
   // For chat panel, check task and run changes
   if (prevProps.type === "chat") {
     if (prevProps.task?._id !== nextProps.task?._id ||
+      prevProps.task?.crownEvaluationStatus !== nextProps.task?.crownEvaluationStatus ||
+      prevProps.task?.crownEvaluationError !== nextProps.task?.crownEvaluationError ||
       prevProps.taskRuns !== nextProps.taskRuns ||
       prevProps.crownEvaluation !== nextProps.crownEvaluation) {
       return false;

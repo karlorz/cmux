@@ -121,6 +121,8 @@ const convexSchema = defineSchema({
       ),
     ), // State of crown evaluation workflow
     crownEvaluationError: v.optional(v.string()), // Error message if crown evaluation failed
+    /** Stored evaluation data for retry (JSON string with prompt, candidates, etc.) */
+    crownEvaluationRetryData: v.optional(v.string()),
     mergeStatus: v.optional(
       v.union(
         v.literal("none"), // No PR activity yet

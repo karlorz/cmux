@@ -15,7 +15,7 @@ import {
   Trophy,
   XCircle,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import CmuxLogoMark from "./logo/cmux-logo-mark";
 import { TaskMessage } from "./task-message";
 
@@ -77,20 +77,39 @@ export function TaskTimeline({
   });
 
   const retryCrownEvaluationMutation = useMutation(api.crown.retryCrownEvaluation);
-  const [isRetrying, setIsRetrying] = useState(false);
+
+  // Optimistic state for immediate UI feedback on click
+  const [isSubmittingRetry, setIsSubmittingRetry] = useState(false);
+
+  // Track retry state from server
+  const isRetryingFromServer =
+    task?.crownEvaluationStatus === "pending" ||
+    task?.crownEvaluationStatus === "in_progress";
+
+  // Reset optimistic state when server confirms it's retrying (handoff complete)
+  // or when retry finishes (status changes to error/succeeded)
+  useEffect(() => {
+    if (isSubmittingRetry && isRetryingFromServer) {
+      // Server took over - handoff complete, clear optimistic state
+      setIsSubmittingRetry(false);
+    }
+  }, [isSubmittingRetry, isRetryingFromServer]);
+
+  // Combined state: optimistic (immediate) OR server state (after round-trip)
+  const isRetrying = isSubmittingRetry || isRetryingFromServer;
 
   const handleRetryEvaluation = async () => {
     if (!task?._id || isRetrying) return;
-    setIsRetrying(true);
+    setIsSubmittingRetry(true); // Optimistic: show "Retrying..." immediately
     try {
       await retryCrownEvaluationMutation({
         teamSlugOrId: params.teamSlugOrId,
         taskId: task._id,
       });
+      // Server state will take over via isRetryingFromServer
     } catch (error) {
       console.error("[TaskTimeline] Failed to retry crown evaluation:", error);
-    } finally {
-      setIsRetrying(false);
+      setIsSubmittingRetry(false); // Revert on error
     }
   };
 
@@ -159,7 +178,7 @@ export function TaskTimeline({
       }
     });
 
-    // Add crown evaluation event if exists or if status is error (failed)
+    // Add crown evaluation event if exists or if status is error/retrying
     if (crownEvaluation?.evaluatedAt) {
       timelineEvents.push({
         id: "crown-evaluation",
@@ -170,23 +189,34 @@ export function TaskTimeline({
         isFallback: crownEvaluation.isFallback,
         evaluationNote: crownEvaluation.evaluationNote,
       });
-    } else if (task?.crownEvaluationStatus === "error") {
-      // Fallback display for failed evaluation (no winner selected)
+    } else if (
+      task?.crownEvaluationStatus === "error" ||
+      task?.crownEvaluationStatus === "pending" ||
+      task?.crownEvaluationStatus === "in_progress" ||
+      isSubmittingRetry // Include optimistic state
+    ) {
+      // Fallback display for failed evaluation or retry in progress
+      // Use optimistic state OR server state for immediate UI feedback
+      const isRetryingNow =
+        isSubmittingRetry ||
+        task?.crownEvaluationStatus === "pending" ||
+        task?.crownEvaluationStatus === "in_progress";
       timelineEvents.push({
         id: "crown-evaluation-failed",
         type: "crown_evaluation",
-        timestamp: task.updatedAt || Date.now(),
+        timestamp: task?.updatedAt || Date.now(),
         isFallback: true,
-        evaluationNote:
-          task.crownEvaluationError ||
-          "Crown evaluation failed. No winner was selected.",
-        crownReason: "Evaluation failed",
+        evaluationNote: isRetryingNow
+          ? "Retrying crown evaluation..."
+          : task?.crownEvaluationError ||
+            "Crown evaluation failed. No winner was selected.",
+        crownReason: isRetryingNow ? "Retry in progress" : "Evaluation failed",
       });
     }
 
     // Sort by timestamp
     return timelineEvents.sort((a, b) => a.timestamp - b.timestamp);
-  }, [task, taskRuns, crownEvaluation]);
+  }, [task, taskRuns, crownEvaluation, isSubmittingRetry]);
 
   if (!events.length && !task) {
     return (
@@ -495,8 +525,8 @@ export function TaskTimeline({
                 {event.evaluationNote}
               </div>
             )}
-            {/* Show retry button for failed evaluations */}
-            {event.isFallback && task?.crownEvaluationStatus === "error" && (
+            {/* Show retry button for failed evaluations or retrying state */}
+            {event.isFallback && (task?.crownEvaluationStatus === "error" || isRetrying) && (
               <button
                 type="button"
                 onClick={handleRetryEvaluation}
