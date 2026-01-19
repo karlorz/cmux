@@ -115,7 +115,7 @@ export const CandidateDataSchema = z.object({
 export type CandidateData = z.infer<typeof CandidateDataSchema>;
 
 export const CrownEvaluationResponseSchema = z.object({
-  winner: z.number().int().min(0),
+  winner: z.number().int().min(0).nullable(),
   reason: z.string(),
   /** Whether this result was produced by fallback due to AI service failure */
   isFallback: z.boolean().optional(),
@@ -197,7 +197,7 @@ export const WorkerCheckSchema = z.object({
 
 export const WorkerFinalizeSchema = z.object({
   taskId: typedZid("tasks"),
-  winnerRunId: typedZid("taskRuns"),
+  winnerRunId: typedZid("taskRuns").nullable().optional(),
   reason: z.string(),
   evaluationPrompt: z.string(),
   evaluationResponse: z.string(),

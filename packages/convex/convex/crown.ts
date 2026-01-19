@@ -259,6 +259,48 @@ export const getTasksWithCrowns = authQuery({
   },
 });
 
+/**
+ * Retry crown evaluation after a previous failure.
+ * Clears the error state and resets status to "pending".
+ */
+export const retryCrownEvaluation = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    taskId: v.id("tasks"),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const task = await ctx.db.get(args.taskId);
+    if (!task) {
+      throw new Error("Task not found");
+    }
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+    if (task.teamId !== teamId || task.userId !== userId) {
+      throw new Error("Unauthorized");
+    }
+
+    // Only allow retry if status is "error"
+    if (task.crownEvaluationStatus !== "error") {
+      console.log(
+        `[Crown] Retry not allowed: status is ${task.crownEvaluationStatus}`
+      );
+      throw new Error(
+        `Cannot retry: evaluation status is "${task.crownEvaluationStatus}", expected "error"`
+      );
+    }
+
+    // Reset to pending for re-evaluation
+    await ctx.db.patch(args.taskId, {
+      crownEvaluationStatus: "pending",
+      crownEvaluationError: undefined,
+      updatedAt: Date.now(),
+    });
+
+    console.log(`[Crown] Marked task ${args.taskId} for retry evaluation`);
+    return "pending";
+  },
+});
+
 export const getEvaluationByTaskInternal = internalQuery({
   args: {
     taskId: v.id("tasks"),
@@ -284,7 +326,7 @@ export const workerFinalize = internalMutation({
     taskId: v.id("tasks"),
     teamId: v.string(),
     userId: v.string(),
-    winnerRunId: v.id("taskRuns"),
+    winnerRunId: v.optional(v.union(v.id("taskRuns"), v.null())),
     reason: v.string(),
     summary: v.optional(v.string()),
     evaluationPrompt: v.string(),
@@ -336,6 +378,21 @@ export const workerFinalize = internalMutation({
 
     const now = Date.now();
 
+    // If no winner was selected (failure fallback), mark task as error and return
+    if (!args.winnerRunId) {
+      // We do NOT create a crownEvaluations record for failures
+      // allowing for future retries if needed
+      await ctx.db.patch(args.taskId, {
+        crownEvaluationStatus: "error",
+        crownEvaluationError: args.evaluationNote || args.reason,
+        isCompleted: true, // Mark completed to unblock the task flow
+        updatedAt: now,
+      });
+
+      return null;
+    }
+
+    // Proceed with normal winner crowning
     await ctx.db.insert("crownEvaluations", {
       taskId: args.taskId,
       evaluatedAt: now,

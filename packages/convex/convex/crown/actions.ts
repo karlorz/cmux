@@ -178,9 +178,9 @@ IMPORTANT: Respond ONLY with the JSON object, no other text.`;
     }
   }
 
-  // All retry attempts exhausted - fall back to selecting candidate 0
+  // All retry attempts exhausted - fall back to "no winner" state
   console.warn(
-    `[convex.crown] All ${MAX_CROWN_EVALUATION_ATTEMPTS} evaluation attempts failed via ${provider}. Falling back to auto-select candidate 0.`,
+    `[convex.crown] All ${MAX_CROWN_EVALUATION_ATTEMPTS} evaluation attempts failed via ${provider}. Falling back to no-winner state.`,
     {
       provider,
       totalAttempts: MAX_CROWN_EVALUATION_ATTEMPTS,
@@ -191,14 +191,14 @@ IMPORTANT: Respond ONLY with the JSON object, no other text.`;
     }
   );
 
-  // Return fallback response with metadata
+  // Return fallback response with metadata (null winner indicates failure)
   const fallbackReason =
-    "Evaluation service unavailable - auto-selected first candidate";
+    "Evaluation service unavailable - no winner selected";
   return {
-    winner: 0,
+    winner: null,
     reason: fallbackReason,
     isFallback: true,
-    evaluationNote: `Crown evaluation failed after ${MAX_CROWN_EVALUATION_ATTEMPTS} attempts (provider: ${provider}). First candidate was automatically selected.`,
+    evaluationNote: `Crown evaluation failed after ${MAX_CROWN_EVALUATION_ATTEMPTS} attempts (provider: ${provider}). No winner was selected.`,
   };
 }
 

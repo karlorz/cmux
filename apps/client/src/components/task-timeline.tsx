@@ -3,18 +3,19 @@ import { type Doc, type Id } from "@cmux/convex/dataModel";
 import type { RunEnvironmentSummary } from "@/types/task";
 import { useUser } from "@stackframe/react";
 import { Link, useParams } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { formatDistanceToNow } from "date-fns";
 import {
   AlertCircle,
   CheckCircle2,
   Clock,
   Play,
+  RefreshCw,
   Sparkles,
   Trophy,
   XCircle,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import CmuxLogoMark from "./logo/cmux-logo-mark";
 import { TaskMessage } from "./task-message";
 
@@ -74,6 +75,24 @@ export function TaskTimeline({
     teamSlugOrId: params.teamSlugOrId,
     taskId: params.taskId as Id<"tasks">,
   });
+
+  const retryCrownEvaluationMutation = useMutation(api.crown.retryCrownEvaluation);
+  const [isRetrying, setIsRetrying] = useState(false);
+
+  const handleRetryEvaluation = async () => {
+    if (!task?._id || isRetrying) return;
+    setIsRetrying(true);
+    try {
+      await retryCrownEvaluationMutation({
+        teamSlugOrId: params.teamSlugOrId,
+        taskId: task._id,
+      });
+    } catch (error) {
+      console.error("[TaskTimeline] Failed to retry crown evaluation:", error);
+    } finally {
+      setIsRetrying(false);
+    }
+  };
 
   const events = useMemo(() => {
     const timelineEvents: TimelineEvent[] = [];
@@ -140,7 +159,7 @@ export function TaskTimeline({
       }
     });
 
-    // Add crown evaluation event if exists
+    // Add crown evaluation event if exists or if status is error (failed)
     if (crownEvaluation?.evaluatedAt) {
       timelineEvents.push({
         id: "crown-evaluation",
@@ -150,6 +169,18 @@ export function TaskTimeline({
         crownReason: crownEvaluation.reason,
         isFallback: crownEvaluation.isFallback,
         evaluationNote: crownEvaluation.evaluationNote,
+      });
+    } else if (task?.crownEvaluationStatus === "error") {
+      // Fallback display for failed evaluation (no winner selected)
+      timelineEvents.push({
+        id: "crown-evaluation-failed",
+        type: "crown_evaluation",
+        timestamp: task.updatedAt || Date.now(),
+        isFallback: true,
+        evaluationNote:
+          task.crownEvaluationError ||
+          "Crown evaluation failed. No winner was selected.",
+        crownReason: "Evaluation failed",
       });
     }
 
@@ -463,6 +494,18 @@ export function TaskTimeline({
                 <AlertCircle className="inline size-3 mr-2" />
                 {event.evaluationNote}
               </div>
+            )}
+            {/* Show retry button for failed evaluations */}
+            {event.isFallback && task?.crownEvaluationStatus === "error" && (
+              <button
+                type="button"
+                onClick={handleRetryEvaluation}
+                disabled={isRetrying}
+                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 hover:bg-amber-200 dark:hover:bg-amber-900/50 rounded-md transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`size-3 ${isRetrying ? "animate-spin" : ""}`} />
+                {isRetrying ? "Retrying..." : "Retry Evaluation"}
+              </button>
             )}
             {/* Show normal crown reason with purple styling */}
             {!event.isFallback && event.crownReason && (
