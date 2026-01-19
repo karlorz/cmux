@@ -38,6 +38,10 @@ interface TimelineEvent {
   crownReason?: string;
   summary?: string;
   userId?: string;
+  /** Whether this crown evaluation was a fallback due to AI service failure */
+  isFallback?: boolean;
+  /** Human-readable note about the evaluation process */
+  evaluationNote?: string;
 }
 
 type TaskRunWithChildren = Doc<"taskRuns"> & {
@@ -52,6 +56,10 @@ interface TaskTimelineProps {
     evaluatedAt?: number;
     winnerRunId?: Id<"taskRuns">;
     reason?: string;
+    /** Whether this evaluation was produced by fallback due to AI service failure */
+    isFallback?: boolean;
+    /** Human-readable note about the evaluation process */
+    evaluationNote?: string;
   } | null;
 }
 
@@ -140,6 +148,8 @@ export function TaskTimeline({
         timestamp: crownEvaluation.evaluatedAt,
         runId: crownEvaluation.winnerRunId,
         crownReason: crownEvaluation.reason,
+        isFallback: crownEvaluation.isFallback,
+        evaluationNote: crownEvaluation.evaluationNote,
       });
     }
 
@@ -393,7 +403,12 @@ export function TaskTimeline({
         );
         break;
       case "crown_evaluation":
-        icon = (
+        // Use amber/orange styling for fallback evaluations to indicate service unavailability
+        icon = event.isFallback ? (
+          <div className="size-4 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+            <AlertCircle className="size-2.5 text-amber-600 dark:text-amber-400" />
+          </div>
+        ) : (
           <div className="size-4 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
             <Sparkles className="size-2.5 text-purple-600 dark:text-purple-400" />
           </div>
@@ -412,11 +427,14 @@ export function TaskTimeline({
                 className="hover:underline inline"
               >
                 <span className="font-medium text-neutral-900 dark:text-neutral-100">
-                  Crown evaluation
+                  {event.isFallback
+                    ? "Evaluation unavailable"
+                    : "Crown evaluation"}
                 </span>
                 <span className="text-neutral-600 dark:text-neutral-400">
-                  {" "}
-                  completed
+                  {event.isFallback
+                    ? " - selected first submission"
+                    : " completed"}
                 </span>
                 <span className="text-neutral-500 dark:text-neutral-500 ml-1">
                   {formatDistanceToNow(event.timestamp, { addSuffix: true })}
@@ -425,18 +443,29 @@ export function TaskTimeline({
             ) : (
               <>
                 <span className="font-medium text-neutral-900 dark:text-neutral-100">
-                  Crown evaluation
+                  {event.isFallback
+                    ? "Evaluation unavailable"
+                    : "Crown evaluation"}
                 </span>
                 <span className="text-neutral-600 dark:text-neutral-400">
-                  {" "}
-                  completed
+                  {event.isFallback
+                    ? " - selected first submission"
+                    : " completed"}
                 </span>
                 <span className="text-neutral-500 dark:text-neutral-500 ml-1">
                   {formatDistanceToNow(event.timestamp, { addSuffix: true })}
                 </span>
               </>
             )}
-            {event.crownReason && (
+            {/* Show fallback notice with amber styling */}
+            {event.isFallback && event.evaluationNote && (
+              <div className="mt-2 text-[13px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-md p-3">
+                <AlertCircle className="inline size-3 mr-2" />
+                {event.evaluationNote}
+              </div>
+            )}
+            {/* Show normal crown reason with purple styling */}
+            {!event.isFallback && event.crownReason && (
               <div className="mt-2 text-[13px] text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 rounded-md p-3">
                 {event.crownReason}
               </div>

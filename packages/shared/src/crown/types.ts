@@ -117,6 +117,10 @@ export type CandidateData = z.infer<typeof CandidateDataSchema>;
 export const CrownEvaluationResponseSchema = z.object({
   winner: z.number().int().min(0),
   reason: z.string(),
+  /** Whether this result was produced by fallback due to AI service failure */
+  isFallback: z.boolean().optional(),
+  /** Human-readable message about the evaluation process */
+  evaluationNote: z.string().optional(),
 });
 export type CrownEvaluationResponse = z.infer<
   typeof CrownEvaluationResponseSchema
@@ -211,6 +215,10 @@ export const WorkerFinalizeSchema = z.object({
     .optional(),
   pullRequestTitle: z.string().optional(),
   pullRequestDescription: z.string().optional(),
+  /** Whether this evaluation was produced by fallback due to AI service failure */
+  isFallback: z.boolean().optional(),
+  /** Human-readable note about the evaluation process */
+  evaluationNote: z.string().optional(),
 });
 
 export const WorkerCompleteRequestSchema = z.object({

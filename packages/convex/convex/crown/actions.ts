@@ -26,6 +26,17 @@ const GEMINI_CROWN_MODEL = "gemini-3-flash-preview";
 const CROWN_PROVIDERS = ["openai", "anthropic", "gemini"] as const;
 type CrownProvider = (typeof CROWN_PROVIDERS)[number];
 
+// Configuration for retry logic
+const MAX_CROWN_EVALUATION_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = 1000; // 1 second base delay, doubles each retry
+
+/**
+ * Delays execution for exponential backoff
+ */
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 const CrownEvaluationCandidateValidator = v.object({
   runId: v.optional(v.string()),
   agentName: v.optional(v.string()),
@@ -125,22 +136,70 @@ Example response:
 
 IMPORTANT: Respond ONLY with the JSON object, no other text.`;
 
-  try {
-    const { object } = await generateObject({
-      model,
-      schema: CrownEvaluationResponseSchema,
-      system:
-        "You select the best implementation from structured diff inputs and explain briefly why.",
-      prompt: evaluationPrompt,
-      maxRetries: 2,
-    });
+  // Track errors for diagnostics
+  const attemptErrors: Array<{ attempt: number; error: unknown }> = [];
 
-    console.info(`[convex.crown] Evaluation completed via ${provider}`);
-    return CrownEvaluationResponseSchema.parse(object);
-  } catch (error) {
-    console.error(`[convex.crown] ${provider} evaluation error`, error);
-    throw new ConvexError("Evaluation failed");
+  // Retry loop with exponential backoff
+  for (let attempt = 1; attempt <= MAX_CROWN_EVALUATION_ATTEMPTS; attempt++) {
+    try {
+      console.info(
+        `[convex.crown] Evaluation attempt ${attempt}/${MAX_CROWN_EVALUATION_ATTEMPTS} via ${provider}`
+      );
+
+      const { object } = await generateObject({
+        model,
+        schema: CrownEvaluationResponseSchema,
+        system:
+          "You select the best implementation from structured diff inputs and explain briefly why.",
+        prompt: evaluationPrompt,
+        maxRetries: 2,
+      });
+
+      console.info(`[convex.crown] Evaluation completed via ${provider}`);
+      return CrownEvaluationResponseSchema.parse(object);
+    } catch (error) {
+      attemptErrors.push({ attempt, error });
+
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      console.error(
+        `[convex.crown] ${provider} evaluation attempt ${attempt}/${MAX_CROWN_EVALUATION_ATTEMPTS} failed:`,
+        errorMessage
+      );
+
+      // If not the last attempt, wait with exponential backoff before retrying
+      if (attempt < MAX_CROWN_EVALUATION_ATTEMPTS) {
+        const backoffDelay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+        console.info(
+          `[convex.crown] Retrying in ${backoffDelay}ms (attempt ${attempt + 1}/${MAX_CROWN_EVALUATION_ATTEMPTS})`
+        );
+        await delay(backoffDelay);
+      }
+    }
   }
+
+  // All retry attempts exhausted - fall back to selecting candidate 0
+  console.warn(
+    `[convex.crown] All ${MAX_CROWN_EVALUATION_ATTEMPTS} evaluation attempts failed via ${provider}. Falling back to auto-select candidate 0.`,
+    {
+      provider,
+      totalAttempts: MAX_CROWN_EVALUATION_ATTEMPTS,
+      errors: attemptErrors.map((e) => ({
+        attempt: e.attempt,
+        error: e.error instanceof Error ? e.error.message : String(e.error),
+      })),
+    }
+  );
+
+  // Return fallback response with metadata
+  const fallbackReason =
+    "Evaluation service unavailable - auto-selected first candidate";
+  return {
+    winner: 0,
+    reason: fallbackReason,
+    isFallback: true,
+    evaluationNote: `Crown evaluation failed after ${MAX_CROWN_EVALUATION_ATTEMPTS} attempts (provider: ${provider}). First candidate was automatically selected.`,
+  };
 }
 
 export async function performCrownSummarization(

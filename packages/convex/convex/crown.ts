@@ -309,6 +309,10 @@ export const workerFinalize = internalMutation({
     ),
     pullRequestTitle: v.optional(v.string()),
     pullRequestDescription: v.optional(v.string()),
+    /** Whether this evaluation was produced by fallback due to AI service failure */
+    isFallback: v.optional(v.boolean()),
+    /** Human-readable note about the evaluation process */
+    evaluationNote: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const task = await ctx.db.get(args.taskId);
@@ -342,6 +346,8 @@ export const workerFinalize = internalMutation({
       createdAt: now,
       userId: args.userId,
       teamId: args.teamId,
+      ...(args.isFallback !== undefined ? { isFallback: args.isFallback } : {}),
+      ...(args.evaluationNote ? { evaluationNote: args.evaluationNote } : {}),
     });
 
     const runsForTeam = await ctx.db

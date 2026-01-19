@@ -671,6 +671,10 @@ const convexSchema = defineSchema({
     createdAt: v.number(),
     userId: v.string(),
     teamId: v.string(),
+    /** Whether this evaluation was produced by fallback due to AI service failure */
+    isFallback: v.optional(v.boolean()),
+    /** Human-readable note about the evaluation process (e.g., fallback details) */
+    evaluationNote: v.optional(v.string()),
   })
     .index("by_task", ["taskId"])
     .index("by_winner", ["winnerRunId"])
