@@ -663,6 +663,8 @@ export const clearCrownRetryData = internalMutation({
   handler: async (ctx, args) => {
     await ctx.db.patch(args.taskId, {
       crownEvaluationRetryData: undefined,
+      crownEvaluationRetryCount: undefined,
+      crownEvaluationLastRetryAt: undefined,
       updatedAt: Date.now(),
     });
   },

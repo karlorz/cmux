@@ -5,6 +5,7 @@ import { useUser } from "@stackframe/react";
 import { Link, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { formatDistanceToNow } from "date-fns";
+import { toast } from "sonner";
 import {
   AlertCircle,
   CheckCircle2,
@@ -15,9 +16,11 @@ import {
   Trophy,
   XCircle,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import CmuxLogoMark from "./logo/cmux-logo-mark";
 import { TaskMessage } from "./task-message";
+
+const RETRY_COOLDOWN_MS = 30_000;
 
 type TaskRunStatus = "pending" | "running" | "completed" | "failed" | "skipped";
 
@@ -80,6 +83,14 @@ export function TaskTimeline({
 
   // Optimistic state for immediate UI feedback on click
   const [isSubmittingRetry, setIsSubmittingRetry] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const prevCrownStatusRef = useRef<Doc<"tasks">["crownEvaluationStatus"]>(
+    undefined
+  );
+  const prevCrownErrorRef = useRef<string | undefined>(undefined);
+  // Track status/error at the moment we started submitting to detect transitions
+  const statusAtRetryStartRef = useRef<Doc<"tasks">["crownEvaluationStatus"]>(undefined);
+  const errorAtRetryStartRef = useRef<string | undefined>(undefined);
 
   // Track retry state from server
   const isRetryingFromServer =
@@ -87,19 +98,84 @@ export function TaskTimeline({
     task?.crownEvaluationStatus === "in_progress";
 
   // Reset optimistic state when server confirms it's retrying (handoff complete)
-  // or when retry finishes (status changes to error/succeeded)
+  // or when retry finishes (status changes to error/succeeded after we started)
   useEffect(() => {
-    if (isSubmittingRetry && isRetryingFromServer) {
-      // Server took over - handoff complete, clear optimistic state
-      setIsSubmittingRetry(false);
+    if (isSubmittingRetry) {
+      if (isRetryingFromServer) {
+        // Server took over - handoff complete, clear optimistic state
+        setIsSubmittingRetry(false);
+        statusAtRetryStartRef.current = undefined;
+        errorAtRetryStartRef.current = undefined;
+      } else if (statusAtRetryStartRef.current !== undefined) {
+        // Check if status changed, or if error message changed (error -> error with new message)
+        const statusChanged = task?.crownEvaluationStatus !== statusAtRetryStartRef.current;
+        const errorChanged = task?.crownEvaluationError !== errorAtRetryStartRef.current;
+        if (statusChanged || errorChanged) {
+          // Retry completed (success or failure) - clear optimistic state
+          setIsSubmittingRetry(false);
+          statusAtRetryStartRef.current = undefined;
+          errorAtRetryStartRef.current = undefined;
+        }
+      }
     }
-  }, [isSubmittingRetry, isRetryingFromServer]);
+  }, [isSubmittingRetry, isRetryingFromServer, task?.crownEvaluationStatus, task?.crownEvaluationError]);
+
+  // Notify users when evaluation is unavailable
+  useEffect(() => {
+    const status = task?.crownEvaluationStatus;
+    const prevStatus = prevCrownStatusRef.current;
+    const errorMessage = task?.crownEvaluationError;
+    const prevErrorMessage = prevCrownErrorRef.current;
+
+    // Avoid showing on initial mount/refresh when already in error.
+    const shouldNotify =
+      status === "error" &&
+      ((prevStatus !== undefined && prevStatus !== "error") ||
+        (prevStatus === "error" &&
+          !!errorMessage &&
+          errorMessage !== prevErrorMessage));
+
+    if (shouldNotify) {
+      toast.error("Evaluation unavailable", {
+        id: task?._id ? `crown-evaluation-unavailable:${task._id}` : undefined,
+        description:
+          errorMessage ||
+          "Crown evaluation failed. No winner was selected.",
+      });
+    }
+
+    prevCrownStatusRef.current = status;
+    prevCrownErrorRef.current = errorMessage;
+  }, [task?._id, task?.crownEvaluationStatus, task?.crownEvaluationError]);
 
   // Combined state: optimistic (immediate) OR server state (after round-trip)
   const isRetrying = isSubmittingRetry || isRetryingFromServer;
 
+  const lastRetryAt = task?.crownEvaluationLastRetryAt ?? 0;
+  const retryCount = task?.crownEvaluationRetryCount ?? 0;
+  const cooldownRemainingMs =
+    task?.crownEvaluationStatus === "error"
+      ? Math.max(0, RETRY_COOLDOWN_MS - (nowMs - lastRetryAt))
+      : 0;
+  const cooldownSeconds = Math.ceil(cooldownRemainingMs / 1000);
+  const isRetryCooldownActive = cooldownRemainingMs > 0;
+
+  // Tick a local clock to keep the cooldown label fresh while status is error
+  useEffect(() => {
+    if (task?.crownEvaluationStatus !== "error" || !lastRetryAt) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [task?.crownEvaluationStatus, lastRetryAt]);
+
   const handleRetryEvaluation = async () => {
-    if (!task?._id || isRetrying) return;
+    if (!task?._id || isRetrying || isRetryCooldownActive) return;
+    // Capture current status/error to detect immediate failures (error -> error transitions)
+    statusAtRetryStartRef.current = task.crownEvaluationStatus;
+    errorAtRetryStartRef.current = task.crownEvaluationError;
     setIsSubmittingRetry(true); // Optimistic: show "Retrying..." immediately
     try {
       await retryCrownEvaluationMutation({
@@ -110,6 +186,8 @@ export function TaskTimeline({
     } catch (error) {
       console.error("[TaskTimeline] Failed to retry crown evaluation:", error);
       setIsSubmittingRetry(false); // Revert on error
+      statusAtRetryStartRef.current = undefined;
+      errorAtRetryStartRef.current = undefined;
     }
   };
 
@@ -530,12 +608,23 @@ export function TaskTimeline({
               <button
                 type="button"
                 onClick={handleRetryEvaluation}
-                disabled={isRetrying}
+                disabled={isRetrying || isRetryCooldownActive}
                 className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 hover:bg-amber-200 dark:hover:bg-amber-900/50 rounded-md transition-colors disabled:opacity-50"
               >
                 <RefreshCw className={`size-3 ${isRetrying ? "animate-spin" : ""}`} />
-                {isRetrying ? "Retrying..." : "Retry Evaluation"}
+                {isRetrying
+                  ? "Retrying..."
+                  : isRetryCooldownActive
+                    ? `Retry in ${cooldownSeconds}s`
+                    : "Retry Evaluation"}
               </button>
+            )}
+            {event.isFallback && (retryCount > 0 || isRetryCooldownActive) && (
+              <div className="mt-1 text-[12px] text-amber-700 dark:text-amber-400">
+                {retryCount > 0 ? `Retries used: ${retryCount}` : null}
+                {retryCount > 0 && isRetryCooldownActive ? " · " : null}
+                {isRetryCooldownActive ? `Cooldown: ${cooldownSeconds}s` : null}
+              </div>
             )}
             {/* Show normal crown reason with purple styling */}
             {!event.isFallback && event.crownReason && (

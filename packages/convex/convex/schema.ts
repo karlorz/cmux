@@ -123,6 +123,10 @@ const convexSchema = defineSchema({
     crownEvaluationError: v.optional(v.string()), // Error message if crown evaluation failed
     /** Stored evaluation data for retry (JSON string with prompt, candidates, etc.) */
     crownEvaluationRetryData: v.optional(v.string()),
+    /** Number of times the user has retried crown evaluation */
+    crownEvaluationRetryCount: v.optional(v.number()),
+    /** Timestamp of the last retry attempt */
+    crownEvaluationLastRetryAt: v.optional(v.number()),
     mergeStatus: v.optional(
       v.union(
         v.literal("none"), // No PR activity yet

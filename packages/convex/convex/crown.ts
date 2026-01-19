@@ -5,6 +5,8 @@ import type { Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { authMutation, authQuery, taskIdWithFake } from "./users/utils";
 
+const CROWN_RETRY_COOLDOWN_MS = 30_000;
+
 export const evaluateAndCrownWinner = authMutation({
   args: {
     teamSlugOrId: v.string(),
@@ -290,6 +292,17 @@ export const retryCrownEvaluation = authMutation({
       );
     }
 
+    const now = Date.now();
+    const lastRetryAt = task.crownEvaluationLastRetryAt ?? 0;
+    if (now - lastRetryAt < CROWN_RETRY_COOLDOWN_MS) {
+      const remainingSeconds = Math.ceil(
+        (CROWN_RETRY_COOLDOWN_MS - (now - lastRetryAt)) / 1000,
+      );
+      throw new Error(
+        `Please wait ${remainingSeconds}s before retrying the crown evaluation.`,
+      );
+    }
+
     // Check if we have retry data
     if (!task.crownEvaluationRetryData) {
       console.log(`[Crown] No retry data available for task ${args.taskId}`);
@@ -298,11 +311,15 @@ export const retryCrownEvaluation = authMutation({
       );
     }
 
+    const nextRetryCount = (task.crownEvaluationRetryCount ?? 0) + 1;
+
     // Reset to pending for re-evaluation
     await ctx.db.patch(args.taskId, {
       crownEvaluationStatus: "pending",
       crownEvaluationError: undefined,
-      updatedAt: Date.now(),
+      crownEvaluationRetryCount: nextRetryCount,
+      crownEvaluationLastRetryAt: now,
+      updatedAt: now,
     });
 
     // Schedule the retry action
@@ -394,6 +411,7 @@ export const workerFinalize = internalMutation({
 
     // If no winner was selected (failure fallback), mark task as error and store retry data
     if (!args.winnerRunId) {
+      const currentRetryCount = task.crownEvaluationRetryCount ?? 0;
       // Store evaluation data for potential retry
       const retryData = {
         evaluationPrompt: args.evaluationPrompt,
@@ -406,6 +424,8 @@ export const workerFinalize = internalMutation({
         crownEvaluationStatus: "error",
         crownEvaluationError: args.evaluationNote || args.reason,
         crownEvaluationRetryData: JSON.stringify(retryData),
+        crownEvaluationRetryCount: currentRetryCount,
+        crownEvaluationLastRetryAt: task.crownEvaluationLastRetryAt,
         isCompleted: true, // Mark completed to unblock the task flow
         updatedAt: now,
       });
@@ -474,6 +494,9 @@ export const workerFinalize = internalMutation({
       crownEvaluationError: undefined,
       isCompleted: true,
       updatedAt: now,
+      crownEvaluationRetryData: undefined,
+      crownEvaluationRetryCount: undefined,
+      crownEvaluationLastRetryAt: undefined,
       ...(args.pullRequestTitle ? { pullRequestTitle: args.pullRequestTitle } : {}),
       ...(args.pullRequestDescription
         ? { pullRequestDescription: args.pullRequestDescription }
