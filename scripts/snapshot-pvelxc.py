@@ -2586,7 +2586,7 @@ EOF
 
 @registry.task(
     name="install-cmux-code",
-    deps=("apt-bootstrap",),
+    deps=("install-base-packages",),
     description="Install Cmux Code (VSCode fork with OpenVSIX)",
 )
 async def task_install_cmux_code(ctx: PveTaskContext) -> None:
@@ -2607,8 +2607,8 @@ async def task_install_cmux_code(ctx: PveTaskContext) -> None:
         # endpoint follows redirects to the latest release asset.
         url="https://github.com/manaflow-ai/vscode-1/releases/latest/download/vscode-server-linux-${ARCH}-web.tar.gz"
         echo "Downloading ${url}..."
-        curl -fSL --retry 6 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 600 -o /tmp/cmux-code.tar.gz "${url}" || \
-          curl -fSL4 --retry 6 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 600 -o /tmp/cmux-code.tar.gz "${url}"
+        curl -fsSL --retry 6 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 600 -o /tmp/cmux-code.tar.gz "${url}" || \
+          curl -fsSL4 --retry 6 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 600 -o /tmp/cmux-code.tar.gz "${url}"
         
         ls -lh /tmp/cmux-code.tar.gz
         
