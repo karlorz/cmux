@@ -1448,6 +1448,120 @@ class PveTaskContext:
         command_with_env = self._apply_environment(command)
         return await self._run_pct_exec(label, command_with_env, timeout=timeout)
 
+    async def run_long(
+        self,
+        label: str,
+        command: Command,
+        *,
+        max_wait: int = 1800,
+        poll_interval: int = 10,
+    ) -> PveExecResponse:
+        """Run a potentially long command without holding open an HTTP exec stream.
+
+        This is designed for Cloudflare Tunnel + cmux-execd where long-running
+        commands may have the HTTP stream cut before an explicit exit event is
+        received.
+        """
+        command_with_env = self._apply_environment(command)
+        safe_label = label.replace("/", "-").replace(" ", "-")
+        script_path = f"/tmp/cmux-task-{safe_label}.sh"
+        log_path = f"/tmp/cmux-task-{safe_label}.log"
+        done_path = f"/tmp/cmux-task-{safe_label}.done"
+        status_path = f"/tmp/cmux-task-{safe_label}.status"
+        pid_path = f"/tmp/cmux-task-{safe_label}.pid"
+
+        self.console.info(f"[{label}] running (background)...")
+
+        wrapper = (
+            f"/bin/bash {shlex.quote(script_path)}; "
+            f"rc=$?; "
+            f"echo \"$rc\" > {shlex.quote(status_path)}; "
+            f"touch {shlex.quote(done_path)}; "
+            f"exit \"$rc\""
+        )
+
+        start_cmd = textwrap.dedent(
+            f"""
+            set -euo pipefail
+            rm -f {shlex.quote(done_path)} {shlex.quote(status_path)} {shlex.quote(pid_path)}
+            : > {shlex.quote(log_path)}
+            cat > {shlex.quote(script_path)} <<'CMUX_TASK_EOF'
+{command_with_env}
+CMUX_TASK_EOF
+            chmod +x {shlex.quote(script_path)}
+            nohup /bin/bash -c {shlex.quote(wrapper)} > {shlex.quote(log_path)} 2>&1 &
+            echo "$!" > {shlex.quote(pid_path)}
+            echo "[{label}] background pid $(cat {shlex.quote(pid_path)}) log {shlex.quote(log_path)}"
+            """
+        ).strip()
+        await self.run(f"{label}-start", start_cmd, timeout=60)
+
+        elapsed = 0
+        while elapsed < max_wait:
+            check_cmd = (
+                f"if [ -f {shlex.quote(done_path)} ]; then "
+                f"cat {shlex.quote(status_path)}; "
+                f"else echo RUNNING; fi"
+            )
+            result = await self.client.aexec_in_container(
+                self.vmid, check_cmd, timeout=15, check=False
+            )
+            status = (result.stdout or "").strip()
+            if status != "RUNNING":
+                try:
+                    exit_code = int(status)
+                except ValueError:
+                    exit_code = 1
+                if exit_code != 0:
+                    log_tail = await self.client.aexec_in_container(
+                        self.vmid,
+                        f"tail -n 200 {shlex.quote(log_path)} 2>/dev/null || true",
+                        timeout=30,
+                        check=False,
+                    )
+                    raise RuntimeError(
+                        f"{label} failed with exit code {exit_code}\n"
+                        f"Last log lines:\n{log_tail.stdout.rstrip()}"
+                    )
+                self.console.info(f"[{label}] completed (background)")
+                return PveExecResponse(exit_code=0, stdout="", stderr="")
+
+            await asyncio.sleep(poll_interval)
+            elapsed += poll_interval
+            if elapsed % 60 == 0:
+                self.console.info(f"[{label}] still running... ({elapsed}s)")
+
+        # Timeout: attempt to stop the background process to avoid leaving it running.
+        try:
+            await self.client.aexec_in_container(
+                self.vmid,
+                f"if [ -f {shlex.quote(pid_path)} ]; then "
+                f"kill -TERM \"$(cat {shlex.quote(pid_path)})\" 2>/dev/null || true; "
+                f"sleep 2; "
+                f"kill -KILL \"$(cat {shlex.quote(pid_path)})\" 2>/dev/null || true; "
+                f"fi",
+                timeout=30,
+                check=False,
+            )
+        except Exception:
+            pass
+
+        log_tail = ""
+        try:
+            log_result = await self.client.aexec_in_container(
+                self.vmid,
+                f"tail -n 200 {shlex.quote(log_path)} 2>/dev/null || true",
+                timeout=30,
+                check=False,
+            )
+            log_tail = log_result.stdout.rstrip()
+        except Exception:
+            pass
+        raise TimeoutError(
+            f"{label} timed out after {max_wait}s\n"
+            f"Last log lines:\n{log_tail}"
+        )
+
     def _apply_environment(self, command: Command) -> str:
         """Apply environment prelude to command."""
         if isinstance(command, str):
@@ -2037,7 +2151,7 @@ async def task_install_base_packages(ctx: PveTaskContext) -> None:
         rm -rf /var/lib/apt/lists/*
         """
     )
-    await ctx.run("install-base-packages", cmd)
+    await ctx.run_long("install-base-packages", cmd, max_wait=1800, poll_interval=10)
 
 
 @registry.task(
@@ -2532,7 +2646,7 @@ EOF
         echo "cmux-code binary verified at ${bin_path}"
         """
     )
-    await ctx.run("install-cmux-code", cmd)
+    await ctx.run_long("install-cmux-code", cmd, max_wait=1800, poll_interval=10)
 
 
 @registry.task(
