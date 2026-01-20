@@ -52,7 +52,7 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
   );
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(
     () => loadStoredState().completed || loadStoredState().skipped
-  )
+  )co
   // Filter steps based on environment - skip cloud-mode in web mode
   const filteredSteps = useMemo(() => {
     if (env.NEXT_PUBLIC_WEB_MODE) {

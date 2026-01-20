@@ -131,16 +131,20 @@ function DashboardComponent() {
     // Wait for tasks query to load
     if (tasksQuery.isLoading) return;
 
-    // Only start for new users (no tasks)
-    const hasTasks = (tasksQuery.data?.length ?? 0) > 0;
-    if (hasTasks) return;
+    // Only start for new users - check for real tasks (not standalone workspaces)
+    // Standalone workspaces (isCloudWorkspace/isLocalWorkspace) don't count as "tasks"
+    const realTasks = tasksQuery.data?.filter(
+      (task) => !task.isCloudWorkspace && !task.isLocalWorkspace
+    );
+    const hasRealTasks = (realTasks?.length ?? 0) > 0;
+    if (hasRealTasks) return;
 
     // Start onboarding for new users
     onboarding.startOnboarding();
   }, [
     onboarding,
     tasksQuery.isLoading,
-    tasksQuery.data?.length,
+    tasksQuery.data,
   ]);
 
   const [selectedProject, setSelectedProject] = useState<string[]>(() => {
