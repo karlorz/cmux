@@ -89,8 +89,8 @@ export async function POST(request: NextRequest) {
     // Build headers
     // When using Convex endpoint with platform credits, send the placeholder key
     // so Convex routes to Bedrock instead of Cloudflare/Anthropic
-    const apiKeyForRequest = USE_CLOUDFLARE_AI_GATEWAY
-      ? env.ANTHROPIC_API_KEY
+    const apiKeyForRequest: string = USE_CLOUDFLARE_AI_GATEWAY
+      ? (env.ANTHROPIC_API_KEY ?? "")
       : hardCodedApiKey;
 
     const headers: Record<string, string> =
