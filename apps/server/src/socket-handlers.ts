@@ -2362,6 +2362,7 @@ Please address the issue mentioned in the comment above.`;
         const truncatedTitle =
           title.length > 72 ? `${title.slice(0, 69)}...` : title;
         const body =
+          task.pullRequestDescription ||
           task.text ||
           `## Summary
 
