@@ -202,7 +202,24 @@ IMPORTANT: Respond ONLY with the JSON object, no other text.`;
       });
 
       console.info(`[convex.crown] Evaluation completed via ${provider}`);
-      return CrownEvaluationResponseSchema.parse(object);
+      const result = CrownEvaluationResponseSchema.parse(object);
+
+      // If AI returned null winner (e.g., no code changes), default to candidate 0
+      // This is different from isFallback=true which indicates AI service failure
+      if (result.winner === null && normalizedCandidates.length > 0) {
+        console.info(
+          `[convex.crown] AI returned null winner, defaulting to candidate 0`
+        );
+        return {
+          ...result,
+          winner: 0,
+          reason:
+            result.reason ||
+            "No meaningful code changes detected; selecting first candidate as default.",
+        };
+      }
+
+      return result;
     } catch (error) {
       attemptErrors.push({ attempt, error });
 
