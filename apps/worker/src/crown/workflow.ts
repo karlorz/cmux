@@ -14,7 +14,11 @@ import {
   getCurrentBranch,
   runGitCommand,
 } from "./git";
-import { createPullRequest } from "./pullRequest";
+import {
+  buildPullRequestBody,
+  buildPullRequestTitle,
+  createPullRequest,
+} from "./pullRequest";
 import {
   type CandidateData,
   type CrownEvaluationResponse,
@@ -701,6 +705,17 @@ async function startCrownEvaluation({
     ? summaryResponse.summary.slice(0, 8000)
     : undefined;
 
+  // Always generate PR title and description (for manual draft PRs even if auto-PR is disabled)
+  const pullRequestTitle = buildPullRequestTitle(promptText);
+  const pullRequestDescription = buildPullRequestBody({
+    summary,
+    prompt: promptText,
+    agentName: winnerCandidate.agentName,
+    branch: winnerCandidate.newBranch || "",
+    taskId: crownData.taskId,
+    runId: winnerCandidate.runId,
+  });
+
   const prMetadata = await createPullRequest({
     check: crownData,
     winner: winnerCandidate,
@@ -729,8 +744,9 @@ async function startCrownEvaluation({
       candidateRunIds: candidates.map((candidate) => candidate.runId),
       summary,
       pullRequest: prMetadata?.pullRequest,
-      pullRequestTitle: prMetadata?.title,
-      pullRequestDescription: prMetadata?.description,
+      // Use pre-generated title/description (available for manual PRs even if auto-PR disabled)
+      pullRequestTitle: prMetadata?.title || pullRequestTitle,
+      pullRequestDescription: prMetadata?.description || pullRequestDescription,
       isFallback: evaluationResponse.isFallback,
       evaluationNote: evaluationResponse.evaluationNote,
     },
