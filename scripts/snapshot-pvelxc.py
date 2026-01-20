@@ -2112,10 +2112,30 @@ async def task_apt_bootstrap(ctx: PveTaskContext) -> None:
 async def task_install_base_packages(ctx: PveTaskContext) -> None:
     cmd = textwrap.dedent(
         """
-        set -eux
+        set -euo pipefail
+        set -x
+        export DEBIAN_FRONTEND=noninteractive
 
-        DEBIAN_FRONTEND=noninteractive apt-get update
-        DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        apt_update() {
+          for i in 1 2 3; do
+            if apt-get -o Acquire::Retries=3 -o Dpkg::Use-Pty=0 update; then
+              return 0
+            fi
+            if [ "$i" -eq 3 ]; then
+              echo "apt-get update failed after 3 attempts" >&2
+              return 1
+            fi
+            echo "apt-get update failed; retrying in 5s..." >&2
+            sleep 5
+          done
+        }
+
+        apt_install() {
+          apt-get -o Acquire::Retries=3 -o Dpkg::Use-Pty=0 install -y "$@"
+        }
+
+        apt_update
+        apt_install \
             build-essential make pkg-config g++ libssl-dev \
             ruby-full perl software-properties-common \
             tigervnc-standalone-server tigervnc-common \
@@ -2143,9 +2163,10 @@ async def task_install_base_packages(ctx: PveTaskContext) -> None:
             ;;
         esac
         cd /tmp
-        curl -fsSL -o chrome.deb "${chrome_url}"
-        DEBIAN_FRONTEND=noninteractive apt-get install -y ./chrome.deb || true
-        DEBIAN_FRONTEND=noninteractive apt-get install -yf
+        curl -fsSL --retry 6 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 600 -o chrome.deb "${chrome_url}" || \
+          curl -fsSL4 --retry 6 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 600 -o chrome.deb "${chrome_url}"
+        apt-get -o Acquire::Retries=3 -o Dpkg::Use-Pty=0 install -y ./chrome.deb || true
+        apt-get -o Acquire::Retries=3 -o Dpkg::Use-Pty=0 install -yf
         rm -f chrome.deb
 
         rm -rf /var/lib/apt/lists/*
