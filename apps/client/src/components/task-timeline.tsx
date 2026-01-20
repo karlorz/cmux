@@ -273,23 +273,42 @@ export function TaskTimeline({
       task?.crownEvaluationStatus === "in_progress" ||
       isSubmittingRetry // Include optimistic state
     ) {
-      // Fallback display for failed evaluation or retry in progress
-      // Use optimistic state OR server state for immediate UI feedback
-      const isRetryingNow =
-        isSubmittingRetry ||
+      // Determine if this is the initial evaluation or a retry
+      // It's a retry if: user just clicked retry (optimistic) OR there's been a previous error (retryCount > 0)
+      const hasHadPreviousError = (task?.crownEvaluationRetryCount ?? 0) > 0;
+      const isRetryInProgress = isSubmittingRetry || (hasHadPreviousError && (
         task?.crownEvaluationStatus === "pending" ||
-        task?.crownEvaluationStatus === "in_progress";
-      timelineEvents.push({
-        id: "crown-evaluation-failed",
-        type: "crown_evaluation",
-        timestamp: task?.updatedAt || Date.now(),
-        isFallback: true,
-        evaluationNote: isRetryingNow
-          ? "Retrying crown evaluation..."
-          : task?.crownEvaluationError ||
-            "Crown evaluation failed. No winner was selected.",
-        crownReason: isRetryingNow ? "Retry in progress" : "Evaluation failed",
-      });
+        task?.crownEvaluationStatus === "in_progress"
+      ));
+      const isInitialEvaluation = !hasHadPreviousError && (
+        task?.crownEvaluationStatus === "pending" ||
+        task?.crownEvaluationStatus === "in_progress"
+      );
+
+      if (isInitialEvaluation) {
+        // Initial evaluation in progress - show neutral "evaluating" message
+        timelineEvents.push({
+          id: "crown-evaluation-in-progress",
+          type: "crown_evaluation",
+          timestamp: task?.updatedAt || Date.now(),
+          isFallback: false,
+          evaluationNote: "Evaluating submissions...",
+          crownReason: "Evaluation in progress",
+        });
+      } else {
+        // Error state or retry in progress - show fallback/retry UI
+        timelineEvents.push({
+          id: "crown-evaluation-failed",
+          type: "crown_evaluation",
+          timestamp: task?.updatedAt || Date.now(),
+          isFallback: true,
+          evaluationNote: isRetryInProgress
+            ? "Retrying crown evaluation..."
+            : task?.crownEvaluationError ||
+              "Crown evaluation failed. No winner was selected.",
+          crownReason: isRetryInProgress ? "Retry in progress" : "Evaluation failed",
+        });
+      }
     }
 
     // Sort by timestamp
@@ -541,17 +560,39 @@ export function TaskTimeline({
           </>
         );
         break;
-      case "crown_evaluation":
+      case "crown_evaluation": {
+        // Determine if this is an in-progress initial evaluation (not a fallback/error)
+        const isInProgressInitialEval = !event.isFallback && event.id === "crown-evaluation-in-progress";
+
         // Use amber/orange styling for fallback evaluations to indicate service unavailability
+        // Use blue styling for in-progress initial evaluations
+        // Use purple styling for completed successful evaluations
         icon = event.isFallback ? (
           <div className="size-4 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
             <AlertCircle className="size-2.5 text-amber-600 dark:text-amber-400" />
+          </div>
+        ) : isInProgressInitialEval ? (
+          <div className="size-4 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+            <Clock className="size-2.5 text-blue-600 dark:text-blue-400" />
           </div>
         ) : (
           <div className="size-4 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
             <Sparkles className="size-2.5 text-purple-600 dark:text-purple-400" />
           </div>
         );
+
+        // Determine text based on state
+        const getTitleText = () => {
+          if (event.isFallback) return "Evaluation unavailable";
+          if (isInProgressInitialEval) return "Crown evaluation";
+          return "Crown evaluation";
+        };
+        const getStatusText = () => {
+          if (event.isFallback) return " - no winner selected";
+          if (isInProgressInitialEval) return " in progress";
+          return " completed";
+        };
+
         content = (
           <>
             {event.runId ? (
@@ -566,14 +607,10 @@ export function TaskTimeline({
                 className="hover:underline inline"
               >
                 <span className="font-medium text-neutral-900 dark:text-neutral-100">
-                  {event.isFallback
-                    ? "Evaluation unavailable"
-                    : "Crown evaluation"}
+                  {getTitleText()}
                 </span>
                 <span className="text-neutral-600 dark:text-neutral-400">
-                  {event.isFallback
-                    ? " - no winner selected"
-                    : " completed"}
+                  {getStatusText()}
                 </span>
                 <span className="text-neutral-500 dark:text-neutral-500 ml-1">
                   {formatDistanceToNow(event.timestamp, { addSuffix: true })}
@@ -582,19 +619,22 @@ export function TaskTimeline({
             ) : (
               <>
                 <span className="font-medium text-neutral-900 dark:text-neutral-100">
-                  {event.isFallback
-                    ? "Evaluation unavailable"
-                    : "Crown evaluation"}
+                  {getTitleText()}
                 </span>
                 <span className="text-neutral-600 dark:text-neutral-400">
-                  {event.isFallback
-                    ? " - no winner selected"
-                    : " completed"}
+                  {getStatusText()}
                 </span>
                 <span className="text-neutral-500 dark:text-neutral-500 ml-1">
                   {formatDistanceToNow(event.timestamp, { addSuffix: true })}
                 </span>
               </>
+            )}
+            {/* Show in-progress notice with blue styling */}
+            {isInProgressInitialEval && event.evaluationNote && (
+              <div className="mt-2 text-[13px] text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-md p-3">
+                <Clock className="inline size-3 mr-2" />
+                {event.evaluationNote}
+              </div>
             )}
             {/* Show fallback notice with amber styling */}
             {event.isFallback && event.evaluationNote && (
@@ -627,7 +667,7 @@ export function TaskTimeline({
               </div>
             )}
             {/* Show normal crown reason with purple styling */}
-            {!event.isFallback && event.crownReason && (
+            {!event.isFallback && !isInProgressInitialEval && event.crownReason && (
               <div className="mt-2 text-[13px] text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 rounded-md p-3">
                 {event.crownReason}
               </div>
@@ -635,6 +675,7 @@ export function TaskTimeline({
           </>
         );
         break;
+      }
       default:
         icon = (
           <div className="size-4 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
