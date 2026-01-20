@@ -910,7 +910,13 @@ class PveLxcClient:
             exit_code = 124
 
         if exit_code is None:
-            exit_code = 0
+            # If we didn't receive an explicit exit event, the stream likely ended
+            # prematurely (Cloudflare timeout, connection reset, execd crash). Treat this
+            # as a failure so we don't silently accept incomplete provisioning.
+            stderr_lines.append(
+                "HTTP exec stream ended without an exit event; treating as failure"
+            )
+            exit_code = 1
 
         result = subprocess.CompletedProcess(
             args=command,
@@ -2499,8 +2505,8 @@ async def task_install_cmux_code(ctx: PveTaskContext) -> None:
         tar xf /tmp/cmux-code.tar.gz -C /app/cmux-code --strip-components=1
         rm -f /tmp/cmux-code.tar.gz
 
-        echo "Contents of /app/cmux-code:"
-        ls -R /app/cmux-code
+        echo "Installed /app/cmux-code/bin:"
+        ls -la /app/cmux-code/bin || true
 
         mkdir -p /root/.vscode-server-oss/data/User
         cat > /root/.vscode-server-oss/data/User/settings.json << 'EOF'
@@ -2688,9 +2694,6 @@ async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
         server_root="{server_root}"
         echo "[install-ide-extensions] provider={ide_provider} server_root={server_root}"
         
-        echo "DEBUG: Checking content of {server_root}..."
-        ls -R "{server_root}" || echo "Failed to list {server_root}"
-        
         bin_path="{bin_path}"
         echo "[install-ide-extensions] bin_path=${{bin_path}}"
         if [ ! -x "${{bin_path}}" ]; then
@@ -2718,7 +2721,29 @@ async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
         }}
         echo "[install-ide-extensions] installing bundled cmux extension"
         install_from_file "${{cmux_vsix}}"
+
+        echo "[install-ide-extensions] validating cmux extension install"
+        shopt -s nullglob
+        cmux_installs=( "${{extensions_dir}}"/cmux.cmux-vscode-extension-* )
+        if [ "${{#cmux_installs[@]}}" -eq 0 ]; then
+          echo "cmux VS Code extension not found under ${{extensions_dir}} after install" >&2
+          echo "[install-ide-extensions] extensions_dir contents:" >&2
+          ls -la "${{extensions_dir}}" >&2 || true
+          if [ -f "${{extensions_dir}}/extensions.json" ]; then
+            echo "[install-ide-extensions] extensions.json:" >&2
+            cat "${{extensions_dir}}/extensions.json" >&2 || true
+          fi
+          exit 1
+        fi
+        if [ -f "${{extensions_dir}}/extensions.json" ]; then
+          if ! grep -q 'cmux\\.cmux-vscode-extension' "${{extensions_dir}}/extensions.json"; then
+            echo "cmux VS Code extension missing from ${{extensions_dir}}/extensions.json" >&2
+            cat "${{extensions_dir}}/extensions.json" >&2 || true
+            exit 1
+          fi
+        fi
         rm -f "${{cmux_vsix}}"
+
         download_dir="$(mktemp -d)"
         cleanup() {{
           rm -rf "${{download_dir}}"

@@ -130,9 +130,11 @@ async def main():
                         # Non-JSON line, append to stderr for debugging
                         stderr_lines.append(line_str)
 
-                # Default to 0 if no exit event received (matches snapshot-pvelxc.py behavior)
                 if exit_code is None:
-                    exit_code = 0
+                    stderr_lines.append(
+                        "HTTP exec stream ended without an exit event; treating as failure"
+                    )
+                    exit_code = 1
 
                 return (exit_code, "".join(stdout_lines), "".join(stderr_lines))
         except urllib.error.HTTPError as e:
