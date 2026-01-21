@@ -110,12 +110,23 @@ export const upsertCheckRunFromWebhook = internalMutation({
     };
 
 
-    // Upsert the check run - use .first() to minimize read set for OCC
-    const existing = await ctx.db
+    // Use .take(5) for low OCC cost while enabling duplicate cleanup
+    // Happy path (0-1 records): same cost as .first()
+    // Duplicate path: cleanup when needed (5 handles rare concurrent webhook storms)
+    const existingRecords = await ctx.db
       .query("githubCheckRuns")
       .withIndex("by_checkRunId", (q) => q.eq("checkRunId", checkRunId))
-      .first();
+      .take(5);
 
+    // Find the newest record by updatedAt (handles duplicates correctly)
+    let existing = existingRecords[0];
+    if (existingRecords.length > 1) {
+      for (const record of existingRecords) {
+        if ((record.updatedAt ?? 0) > (existing.updatedAt ?? 0)) {
+          existing = record;
+        }
+      }
+    }
     const action = existing ? "update" : "insert";
     console.log("[occ-debug:check_runs]", {
       checkRunId,
@@ -145,6 +156,16 @@ export const upsertCheckRunFromWebhook = internalMutation({
         await ctx.db.patch(existing._id, checkRunDoc);
       } else {
         console.log("[occ-debug:check_runs] skipped-noop", { checkRunId });
+      }
+
+      // Lazy cleanup: delete duplicates only when they exist (keep the newest)
+      if (existingRecords.length > 1) {
+        console.warn("[occ-debug:check_runs] cleaning-duplicates", { checkRunId, count: existingRecords.length });
+        for (const dup of existingRecords) {
+          if (dup._id !== existing._id) {
+            await ctx.db.delete(dup._id);
+          }
+        }
       }
     } else {
       // Insert new check run

@@ -132,12 +132,23 @@ export const upsertWorkflowRunFromWebhook = internalMutation({
     };
 
 
-    // Upsert the workflow run - use .first() to minimize read set for OCC
-    const existing = await ctx.db
+    // Use .take(5) for low OCC cost while enabling duplicate cleanup
+    // Happy path (0-1 records): same cost as .first()
+    // Duplicate path: cleanup when needed (5 handles rare concurrent webhook storms)
+    const existingRecords = await ctx.db
       .query("githubWorkflowRuns")
       .withIndex("by_runId", (q) => q.eq("runId", runId))
-      .first();
+      .take(5);
 
+    // Find the newest record by updatedAt (handles duplicates correctly)
+    let existing = existingRecords[0];
+    if (existingRecords.length > 1) {
+      for (const record of existingRecords) {
+        if ((record.updatedAt ?? 0) > (existing.updatedAt ?? 0)) {
+          existing = record;
+        }
+      }
+    }
     const action = existing ? "update" : "insert";
     console.log("[occ-debug:workflow_runs]", {
       runId,
@@ -168,6 +179,16 @@ export const upsertWorkflowRunFromWebhook = internalMutation({
         await ctx.db.patch(existing._id, workflowRunDoc);
       } else {
         console.log("[occ-debug:workflow_runs] skipped-noop", { runId });
+      }
+
+      // Lazy cleanup: delete duplicates only when they exist (keep the newest)
+      if (existingRecords.length > 1) {
+        console.warn("[occ-debug:workflow_runs] cleaning-duplicates", { runId, count: existingRecords.length });
+        for (const dup of existingRecords) {
+          if (dup._id !== existing._id) {
+            await ctx.db.delete(dup._id);
+          }
+        }
       }
     } else {
       // Insert new run
@@ -226,14 +247,23 @@ export const getWorkflowRunById = authQuery({
     const { teamSlugOrId, runId } = args;
     const teamId = await getTeamId(ctx, teamSlugOrId);
 
-    const run = await ctx.db
+    // Collect all matches and return the newest by updatedAt (handles duplicates correctly)
+    const runs = await ctx.db
       .query("githubWorkflowRuns")
-      .withIndex("by_runId")
-      .filter((q) => q.eq(q.field("runId"), runId))
+      .withIndex("by_runId", (q) => q.eq("runId", runId))
       .filter((q) => q.eq(q.field("teamId"), teamId))
-      .unique();
+      .collect();
 
-    return run;
+    if (runs.length === 0) return null;
+
+    // Find the newest record by updatedAt
+    let newest = runs[0];
+    for (const run of runs) {
+      if ((run.updatedAt ?? 0) > (newest.updatedAt ?? 0)) {
+        newest = run;
+      }
+    }
+    return newest;
   },
 });
 
