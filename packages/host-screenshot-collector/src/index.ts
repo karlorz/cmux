@@ -471,6 +471,14 @@ Do not close the browser when done. Do not create summary documents.
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
     };
 
+    // Remove Bedrock-related environment variables that may be inherited from the parent process.
+    // These can cause Claude Code to use Bedrock instead of the direct Anthropic API,
+    // leading to "You MUST call the StructuredOutput tool" errors.
+    delete claudeEnv.AWS_BEARER_TOKEN_BEDROCK;
+    delete claudeEnv.CLAUDE_CODE_USE_BEDROCK;
+    delete claudeEnv.ANTHROPIC_MODEL;
+    delete claudeEnv.ANTHROPIC_SMALL_FAST_MODEL;
+
     // Only use proxy if convexSiteUrl is provided
     if (convexSiteUrl) {
       claudeEnv.ANTHROPIC_BASE_URL = anthropicBaseUrl;
