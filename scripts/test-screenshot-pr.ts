@@ -160,7 +160,19 @@ async function downloadScreenshotCollectorFromConvex(providedConvexUrl?: string)
     commitSha: releaseInfo.commitSha,
   });
 
-  // Download the actual JS file
+  // Save to a temp file for dynamic import
+  const tempDir = join(tmpdir(), "cmux-screenshot-collector");
+  mkdirSync(tempDir, { recursive: true });
+
+  const tempFile = join(tempDir, `collector-${releaseInfo.version}.mjs`);
+
+  // Check if we already have this version cached (skip download if so)
+  if (existsSync(tempFile)) {
+    log(`Using cached screenshot collector`, { version: releaseInfo.version, path: tempFile });
+    return tempFile;
+  }
+
+  // Download the actual JS file (only if not cached)
   const jsResponse = await fetch(releaseInfo.url);
   if (!jsResponse.ok) {
     throw new Error(
@@ -169,18 +181,6 @@ async function downloadScreenshotCollectorFromConvex(providedConvexUrl?: string)
   }
 
   const jsContent = await jsResponse.text();
-
-  // Save to a temp file for dynamic import
-  const tempDir = join(tmpdir(), "cmux-screenshot-collector");
-  mkdirSync(tempDir, { recursive: true });
-
-  const tempFile = join(tempDir, `collector-${releaseInfo.version}.mjs`);
-
-  // Check if we already have this version cached
-  if (existsSync(tempFile)) {
-    log(`Using cached screenshot collector`, { version: releaseInfo.version, path: tempFile });
-    return tempFile;
-  }
 
   writeFileSync(tempFile, jsContent);
   log(`Downloaded and cached screenshot collector`, {
