@@ -69,11 +69,11 @@ export const upsertDeploymentFromWebhook = internalMutation({
     };
 
 
-    // Use .unique() to minimize read set for OCC
+    // Use .first() to minimize read set for OCC (not .unique() in case duplicates exist)
     const existing = await ctx.db
       .query("githubDeployments")
       .withIndex("by_deploymentId", (q) => q.eq("deploymentId", deploymentId))
-      .unique();
+      .first();
 
     const action = existing ? "update" : "insert";
     console.log("[occ-debug:deployments]", {
@@ -138,11 +138,11 @@ export const updateDeploymentStatusFromWebhook = internalMutation({
 
     const updatedAt = normalizeTimestamp(payload.deployment_status?.updated_at);
 
-    // Use .unique() to minimize read set for OCC
+    // Use .first() to minimize read set for OCC (not .unique() in case duplicates exist)
     const existing = await ctx.db
       .query("githubDeployments")
       .withIndex("by_deploymentId", (q) => q.eq("deploymentId", deploymentId))
-      .unique();
+      .first();
 
     const action = existing ? "update" : "insert";
     console.log("[occ-debug:deployment_status]", {

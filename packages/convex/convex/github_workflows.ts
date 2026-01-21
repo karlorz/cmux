@@ -132,11 +132,11 @@ export const upsertWorkflowRunFromWebhook = internalMutation({
     };
 
 
-    // Upsert the workflow run - use .unique() to minimize read set for OCC
+    // Upsert the workflow run - use .first() to minimize read set for OCC
     const existing = await ctx.db
       .query("githubWorkflowRuns")
       .withIndex("by_runId", (q) => q.eq("runId", runId))
-      .unique();
+      .first();
 
     const action = existing ? "update" : "insert";
     console.log("[occ-debug:workflow_runs]", {
