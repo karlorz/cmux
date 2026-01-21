@@ -418,11 +418,16 @@ WHEN TO STOP RECORDING:
 - Once the final result is visible on screen, STOP - do not record beyond that
 - Do NOT keep recording while you think about what to do next
 - Do NOT record empty time where nothing is happening
+- The kill command should be your VERY NEXT action after the result appears - do not hesitate
+- 1-2 seconds after content loads is enough, then STOP immediately
+- Do NOT use sleep before killing ffmpeg - just kill it directly
+- The video records the SCREEN - if you can see the result visually, just stop. No need for extra Chrome MCP commands to verify.
 
 Example timing:
 - Click button -> page navigates -> new page fully loads -> STOP
-- Click link -> content appears -> STOP
-- Bad: clicking, then 10 seconds of nothing, then stopping
+- Click link -> new tab opens (visible on screen) -> STOP
+- Bad: clicking, then list_pages/select_page to verify, then stopping
+- Bad: clicking, then sleep 3, then stopping
 
 COORDINATE CALCULATION (add 85 to Y for Chrome toolbar):
 \`\`\`javascript
