@@ -11,6 +11,7 @@ import {
   type CrownEvaluationCandidate,
   type CrownEvaluationResponse,
   type CrownSummarizationResponse,
+  type CrownUnifiedResponse,
 } from "@cmux/shared/convex-safe";
 import {
   CLOUDFLARE_OPENAI_BASE_URL,
@@ -316,6 +317,76 @@ OUTPUT FORMAT (Markdown)
   }
 }
 
+/**
+ * Performs crown evaluation AND summarization as an atomic operation.
+ * If either step fails, the entire operation fails.
+ * This ensures we never have a crowned winner without a summary.
+ */
+export async function performCrownEvaluationAndSummarization(
+  prompt: string,
+  candidates: CrownEvaluationCandidate[]
+): Promise<CrownUnifiedResponse> {
+  // Step 1: Perform evaluation
+  console.info(`[convex.crown] Starting unified evaluation + summarization`);
+
+  const evaluationResponse = await performCrownEvaluation(prompt, candidates);
+
+  // If evaluation failed (no winner selected), return failure
+  if (evaluationResponse.winner === null) {
+    console.warn(`[convex.crown] Unified flow failed at evaluation step`);
+    return {
+      success: false,
+      winner: null,
+      reason: evaluationResponse.reason,
+      isFallback: evaluationResponse.isFallback,
+      errorMessage: evaluationResponse.evaluationNote || "Evaluation failed to select a winner",
+      failedStep: "evaluation",
+    };
+  }
+
+  // Get the winner candidate for summarization
+  const winnerCandidate = candidates[evaluationResponse.winner];
+  if (!winnerCandidate) {
+    console.error(`[convex.crown] Winner index ${evaluationResponse.winner} out of bounds`);
+    return {
+      success: false,
+      winner: null,
+      reason: evaluationResponse.reason,
+      errorMessage: `Winner index ${evaluationResponse.winner} is out of bounds`,
+      failedStep: "evaluation",
+    };
+  }
+
+  // Step 2: Perform summarization
+  try {
+    console.info(`[convex.crown] Evaluation succeeded, starting summarization for winner`);
+    const summarizationResponse = await performCrownSummarization(prompt, winnerCandidate.gitDiff);
+
+    // Success! Both steps completed
+    console.info(`[convex.crown] Unified evaluation + summarization completed successfully`);
+    return {
+      success: true,
+      winner: evaluationResponse.winner,
+      reason: evaluationResponse.reason,
+      summary: summarizationResponse.summary,
+      isFallback: evaluationResponse.isFallback,
+    };
+  } catch (error) {
+    // Summarization failed - treat the entire operation as failed
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`[convex.crown] Unified flow failed at summarization step:`, errorMessage);
+
+    return {
+      success: false,
+      winner: evaluationResponse.winner, // Include winner for retry context
+      reason: evaluationResponse.reason,
+      isFallback: true,
+      errorMessage: `Summarization failed: ${errorMessage}`,
+      failedStep: "summarization",
+    };
+  }
+}
+
 export const evaluate = action({
   args: {
     prompt: v.string(),
@@ -335,6 +406,21 @@ export const summarize = action({
   },
   handler: async (_ctx, args) => {
     return performCrownSummarization(args.prompt, args.gitDiff);
+  },
+});
+
+/**
+ * Unified action that performs evaluation + summarization atomically.
+ * Used by the worker to ensure both steps succeed or both fail.
+ */
+export const evaluateAndSummarize = action({
+  args: {
+    prompt: v.string(),
+    candidates: v.array(CrownEvaluationCandidateValidator),
+    teamSlugOrId: v.string(),
+  },
+  handler: async (_ctx, args) => {
+    return performCrownEvaluationAndSummarization(args.prompt, args.candidates);
   },
 });
 
@@ -392,6 +478,7 @@ function parseEvaluationPrompt(evaluationPrompt: string): ParsedEvaluationData |
 /**
  * Internal action to retry a failed crown evaluation.
  * Called after retryCrownEvaluation mutation resets the status.
+ * Uses the unified flow - both evaluation AND summarization must succeed.
  */
 export const retryEvaluation = internalAction({
   args: {
@@ -470,63 +557,54 @@ export const retryEvaluation = internalAction({
       })
     );
 
-    console.log(`[Crown] Retrying evaluation with ${evaluationCandidates.length} candidates`);
+    console.log(`[Crown] Retrying with unified evaluation + summarization for ${evaluationCandidates.length} candidates`);
 
     try {
-      // Perform the evaluation
-      const evaluationResponse = await performCrownEvaluation(
+      // Perform unified evaluation + summarization (atomic operation)
+      const unifiedResponse = await performCrownEvaluationAndSummarization(
         parsedData.prompt,
         evaluationCandidates
       );
 
-      console.log(`[Crown] Retry evaluation result:`, {
-        winner: evaluationResponse.winner,
-        isFallback: evaluationResponse.isFallback,
+      console.log(`[Crown] Retry unified result:`, {
+        success: unifiedResponse.success,
+        winner: unifiedResponse.winner,
+        failedStep: unifiedResponse.failedStep,
+        isFallback: unifiedResponse.isFallback,
       });
 
-      // Handle the result
-      if (evaluationResponse.winner === null) {
-        // Still failing - update error state
+      // Handle failure (either evaluation or summarization failed)
+      if (!unifiedResponse.success) {
+        const errorNote = unifiedResponse.errorMessage ||
+          (unifiedResponse.failedStep === "summarization"
+            ? "Summarization failed after successful evaluation"
+            : "Evaluation failed to select a winner");
+
         await ctx.runMutation(internal.crown.workerFinalize, {
           taskId: args.taskId,
           teamId: retryData.teamId,
           userId: retryData.userId,
           winnerRunId: null,
-          reason: evaluationResponse.reason,
+          reason: unifiedResponse.reason,
           evaluationPrompt: retryData.evaluationPrompt,
-          evaluationResponse: JSON.stringify(evaluationResponse),
+          evaluationResponse: JSON.stringify(unifiedResponse),
           candidateRunIds: retryData.candidateRunIds.map((id) => id as Id<"taskRuns">),
           isFallback: true,
-          evaluationNote: evaluationResponse.evaluationNote || "Retry evaluation failed",
+          evaluationNote: errorNote,
         });
 
-        return { success: false, reason: evaluationResponse.reason };
+        return { success: false, reason: unifiedResponse.reason, failedStep: unifiedResponse.failedStep };
       }
 
-      // Success! Get the winner candidate
-      const winnerCandidate = parsedData.candidates[evaluationResponse.winner];
+      // Success! Both evaluation and summarization completed
+      const winnerCandidate = parsedData.candidates[unifiedResponse.winner!];
       if (!winnerCandidate) {
-        throw new Error(`Winner index ${evaluationResponse.winner} out of bounds`);
+        throw new Error(`Winner index ${unifiedResponse.winner} out of bounds`);
       }
 
-      // Generate summary for the winning candidate (same as normal path)
-      let summary: string | undefined;
-      try {
-        console.log(`[Crown] Generating summary for retry winner ${winnerCandidate.runId}`);
-        const summaryResponse = await performCrownSummarization(
-          parsedData.prompt,
-          winnerCandidate.gitDiff
-        );
-        summary = summaryResponse?.summary?.slice(0, 8000);
-        console.log(`[Crown] Summary generated for retry winner`, {
-          summaryLength: summary?.length ?? 0,
-        });
-      } catch (summaryError) {
-        // Log but don't fail the retry if summarization fails
-        console.error("[Crown] Summary generation failed during retry, continuing without summary:", summaryError);
-      }
+      const summary = unifiedResponse.summary?.slice(0, 8000);
 
-      // Generate PR title and description (for consistency with normal path)
+      // Generate PR title and description
       const pullRequestTitle = buildPullRequestTitle(parsedData.prompt);
       const pullRequestDescription = buildPullRequestBody({
         summary,
@@ -537,15 +615,15 @@ export const retryEvaluation = internalAction({
         runId: winnerCandidate.runId,
       });
 
-      // Finalize with winner (now includes summary and PR metadata)
+      // Finalize with winner (includes summary and PR metadata)
       await ctx.runMutation(internal.crown.workerFinalize, {
         taskId: args.taskId,
         teamId: retryData.teamId,
         userId: retryData.userId,
         winnerRunId: winnerCandidate.runId as Id<"taskRuns">,
-        reason: evaluationResponse.reason,
+        reason: unifiedResponse.reason,
         evaluationPrompt: retryData.evaluationPrompt,
-        evaluationResponse: JSON.stringify(evaluationResponse),
+        evaluationResponse: JSON.stringify(unifiedResponse),
         candidateRunIds: retryData.candidateRunIds.map((id) => id as Id<"taskRuns">),
         isFallback: false,
         summary,
@@ -558,7 +636,7 @@ export const retryEvaluation = internalAction({
         taskId: args.taskId,
       });
 
-      console.log(`[Crown] Retry evaluation succeeded, winner: ${winnerCandidate.runId}`);
+      console.log(`[Crown] Retry succeeded with unified flow, winner: ${winnerCandidate.runId}`);
       return { success: true, winnerRunId: winnerCandidate.runId };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

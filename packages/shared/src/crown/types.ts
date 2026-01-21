@@ -133,6 +133,28 @@ export type CrownSummarizationResponse = z.infer<
   typeof CrownSummarizationResponseSchema
 >;
 
+/**
+ * Unified response for combined evaluation + summarization flow.
+ * This ensures atomic operation - either both succeed or both fail.
+ */
+export const CrownUnifiedResponseSchema = z.object({
+  /** Whether the entire operation (evaluation + summarization) succeeded */
+  success: z.boolean(),
+  /** Winner index from evaluation (null if failed) */
+  winner: z.number().int().min(0).nullable(),
+  /** Reason from evaluation */
+  reason: z.string(),
+  /** Summary from summarization (undefined if failed or skipped) */
+  summary: z.string().optional(),
+  /** Whether this result was produced by fallback due to AI service failure */
+  isFallback: z.boolean().optional(),
+  /** Human-readable message about the evaluation/summarization process */
+  errorMessage: z.string().optional(),
+  /** Which step failed: "evaluation" or "summarization" */
+  failedStep: z.enum(["evaluation", "summarization"]).optional(),
+});
+export type CrownUnifiedResponse = z.infer<typeof CrownUnifiedResponseSchema>;
+
 export const PullRequestMetadataSchema = z.object({
   pullRequest: z
     .object({
@@ -183,6 +205,17 @@ export const CrownSummarizationRequestSchema = z.object({
 export type CrownSummarizationRequest = z.infer<
   typeof CrownSummarizationRequestSchema
 >;
+
+/**
+ * Request schema for unified evaluation + summarization endpoint.
+ * Combines evaluation candidates with winner diff for summarization.
+ */
+export const CrownUnifiedRequestSchema = z.object({
+  prompt: z.string(),
+  candidates: z.array(CrownEvaluationCandidateSchema).min(1),
+  teamSlugOrId: z.string(),
+});
+export type CrownUnifiedRequest = z.infer<typeof CrownUnifiedRequestSchema>;
 
 export const CrownSummarizationPromptSchema = z.object({
   prompt: z.string(),
