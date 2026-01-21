@@ -23,6 +23,7 @@ import {
   type CandidateData,
   type CrownEvaluationResponse,
   type CrownSummarizationResponse,
+  type CrownUnifiedEvaluationResponse,
   type CrownWorkerCheckResponse,
   type WorkerAllRunsCompleteResponse,
   type WorkerRunContext,
@@ -615,7 +616,7 @@ async function startCrownEvaluation({
 
   const promptText = crownData.task.text;
 
-  log("INFO", "Preparing crown evaluation request", {
+  log("INFO", "Preparing unified crown evaluation + summarization request", {
     taskRunId,
     hasPrompt: true,
     promptPreview: promptText.slice(0, 100),
@@ -623,8 +624,9 @@ async function startCrownEvaluation({
     teamId: runContext.teamId,
   });
 
-  const evaluationResponse = await convexRequest<CrownEvaluationResponse>(
-    "/api/crown/evaluate-agents",
+  // Use unified endpoint for atomic evaluation + summarization
+  const unifiedResponse = await convexRequest<CrownUnifiedEvaluationResponse>(
+    "/api/crown/evaluate-and-summarize",
     runContext.token,
     {
       prompt: promptText,
@@ -634,48 +636,58 @@ async function startCrownEvaluation({
     baseUrlOverride
   );
 
-  if (!evaluationResponse) {
-    log("ERROR", "Crown evaluation response missing", {
+  if (!unifiedResponse) {
+    log("ERROR", "Unified crown evaluation response missing", {
       taskRunId,
     });
     return;
   }
 
-  log("INFO", "Crown evaluation response", {
+  const evaluationResponse = unifiedResponse.evaluation;
+
+  log("INFO", "Unified crown evaluation response", {
     taskRunId,
     winner: evaluationResponse.winner,
     reason: evaluationResponse.reason,
     isFallback: evaluationResponse.isFallback,
+    hasSummary: Boolean(unifiedResponse.summary),
+    failedPhase: unifiedResponse.failedPhase,
   });
 
-  // Handle "no winner" case (fallback)
-  if (evaluationResponse.winner === null) {
-      log("WARN", "No winner selected by crown evaluation (fallback)", {
-          taskRunId,
-          reason: evaluationResponse.reason,
-      });
+  // Handle failure cases (no winner selected or phase failure)
+  if (evaluationResponse.winner === null || unifiedResponse.failedPhase) {
+    const failureNote = unifiedResponse.failedPhase
+      ? `${unifiedResponse.failedPhase} phase failed: ${unifiedResponse.errorMessage || "Unknown error"}`
+      : evaluationResponse.evaluationNote || "No winner selected";
 
-      await convexRequest(
-        "/api/crown/finalize",
-        runContext.token,
-        {
-          taskId: crownData.taskId,
-          winnerRunId: null,
-          reason: evaluationResponse.reason,
-          evaluationPrompt: `Task: ${promptText}\nCandidates: ${JSON.stringify(candidates)}`,
-          evaluationResponse: JSON.stringify(evaluationResponse),
-          candidateRunIds: candidates.map((candidate) => candidate.runId),
-          isFallback: true,
-          evaluationNote: evaluationResponse.evaluationNote || "No winner selected",
-        },
-        baseUrlOverride
-      );
-      return;
+    log("WARN", "Crown evaluation flow failed", {
+      taskRunId,
+      reason: evaluationResponse.reason,
+      failedPhase: unifiedResponse.failedPhase,
+      errorMessage: unifiedResponse.errorMessage,
+    });
+
+    await convexRequest(
+      "/api/crown/finalize",
+      runContext.token,
+      {
+        taskId: crownData.taskId,
+        winnerRunId: null,
+        reason: evaluationResponse.reason,
+        evaluationPrompt: `Task: ${promptText}\nCandidates: ${JSON.stringify(candidates)}`,
+        evaluationResponse: JSON.stringify(evaluationResponse),
+        candidateRunIds: candidates.map((candidate) => candidate.runId),
+        isFallback: true,
+        evaluationNote: failureNote,
+      },
+      baseUrlOverride
+    );
+    return;
   }
 
   const winnerIndex = evaluationResponse.winner;
   const winnerCandidate = candidates[winnerIndex];
-  
+
   if (!winnerCandidate) {
     log("ERROR", "Unable to find winner candidate by index", {
       taskRunId,
@@ -685,25 +697,13 @@ async function startCrownEvaluation({
     return;
   }
 
-  const summaryResponse = await convexRequest<CrownSummarizationResponse>(
-    "/api/crown/summarize",
-    runContext.token,
-    {
-      prompt: promptText,
-      gitDiff: winnerCandidate.gitDiff,
-      teamSlugOrId: runContext.teamId,
-    },
-    baseUrlOverride
-  );
+  // Summary comes from the unified response
+  const summary = unifiedResponse.summary;
 
-  log("INFO", "Crown summarization response", {
+  log("INFO", "Crown evaluation + summarization completed", {
     taskRunId,
-    summaryPreview: summaryResponse?.summary?.slice(0, 120),
+    summaryPreview: summary?.slice(0, 120),
   });
-
-  const summary = summaryResponse?.summary
-    ? summaryResponse.summary.slice(0, 8000)
-    : undefined;
 
   // Always generate PR title and description (for manual draft PRs even if auto-PR is disabled)
   const pullRequestTitle = buildPullRequestTitle(promptText);
@@ -734,26 +734,20 @@ async function startCrownEvaluation({
       winnerRunId: winnerCandidate.runId,
       reason,
       evaluationPrompt: `Task: ${promptText}\nCandidates: ${JSON.stringify(candidates)}`,
-      evaluationResponse: JSON.stringify(
-        evaluationResponse ?? {
-          winner: candidates.indexOf(winnerCandidate),
-          reason,
-          fallback: true,
-        }
-      ),
+      evaluationResponse: JSON.stringify(evaluationResponse),
       candidateRunIds: candidates.map((candidate) => candidate.runId),
       summary,
       pullRequest: prMetadata?.pullRequest,
       // Use pre-generated title/description (available for manual PRs even if auto-PR disabled)
       pullRequestTitle: prMetadata?.title || pullRequestTitle,
       pullRequestDescription: prMetadata?.description || pullRequestDescription,
-      isFallback: evaluationResponse.isFallback,
+      isFallback: false,
       evaluationNote: evaluationResponse.evaluationNote,
     },
     baseUrlOverride
   );
 
-  log("INFO", "Crowned task after evaluation", {
+  log("INFO", "Crowned task after unified evaluation + summarization", {
     taskId: crownData.taskId,
     winnerRunId: winnerCandidate.runId,
     winnerAgent: winnerCandidate.agentName,

@@ -1,10 +1,12 @@
 import {
   CrownEvaluationRequestSchema,
   CrownSummarizationRequestSchema,
+  CrownUnifiedEvaluationRequestSchema,
   WorkerCheckSchema,
   WorkerCompleteRequestSchema,
   WorkerFinalizeSchema,
   type CrownEvaluationRequest,
+  type CrownUnifiedEvaluationRequest,
   type CrownWorkerCheckResponse,
   type WorkerAllRunsCompleteResponse,
   type WorkerRunStatus,
@@ -321,6 +323,177 @@ export const crownEvaluate = httpAction(async (ctx, req) => {
   } catch (error) {
     console.error("[convex.crown] Evaluation error", error);
     return jsonResponse({ code: 500, message: "Evaluation failed" }, 500);
+  }
+});
+
+/**
+ * Unified crown evaluation + summarization endpoint.
+ * POST /api/crown/evaluate-and-summarize
+ *
+ * This endpoint performs both evaluation and summarization as a single atomic operation.
+ * If evaluation succeeds but summarization fails, the response will indicate which phase failed.
+ */
+export const crownEvaluateAndSummarize = httpAction(async (ctx, req) => {
+  const workerAuth = await getWorkerAuth(req, {
+    loggerPrefix: "[convex.crown]",
+  });
+
+  if (!workerAuth) {
+    const stackAuthError = ensureStackAuth(req);
+    if (stackAuthError) throw stackAuthError;
+  }
+
+  const parsed = await ensureJsonRequest(req);
+  if (parsed instanceof Response) return parsed;
+
+  const validation = CrownUnifiedEvaluationRequestSchema.safeParse(parsed.json);
+  if (!validation.success) {
+    console.warn("[convex.crown] Invalid unified evaluation payload", {
+      errors: validation.error.issues,
+      receivedBody: parsed.json,
+    });
+    return jsonResponse({ code: 400, message: "Invalid input" }, 400);
+  }
+
+  const data: CrownUnifiedEvaluationRequest = validation.data;
+
+  const teamSlugOrId = workerAuth
+    ? workerAuth.payload.teamId
+    : data.teamSlugOrId;
+
+  if (!teamSlugOrId) {
+    return jsonResponse(
+      { code: 400, message: "teamSlugOrId is required" },
+      400
+    );
+  }
+
+  let teamContext: { teamId: string; userId: string } | null = null;
+
+  if (workerAuth) {
+    teamContext = {
+      teamId: workerAuth.payload.teamId,
+      userId: workerAuth.payload.userId,
+    };
+  } else {
+    const membership = await ensureTeamMembership(ctx, teamSlugOrId);
+    if (membership instanceof Response) return membership;
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      console.warn("[convex.crown] Missing identity during unified evaluation request");
+      return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
+    }
+    teamContext = { teamId: membership.teamId, userId: identity.subject };
+  }
+
+  if (!teamContext) {
+    console.error("[convex.crown] Failed to resolve team context");
+    return jsonResponse({ code: 500, message: "Team resolution failed" }, 500);
+  }
+
+  // Try to resolve target task for status tracking
+  let targetTaskId: Id<"tasks"> | null = null;
+
+  const candidateWithRunId = data.candidates.find(
+    (candidate) => candidate.runId
+  );
+
+  if (candidateWithRunId?.runId) {
+    try {
+      const run = await ctx.runQuery(internal.taskRuns.getById, {
+        id: candidateWithRunId.runId as Id<"taskRuns">,
+      });
+      if (
+        run &&
+        run.teamId === teamContext.teamId &&
+        run.userId === teamContext.userId
+      ) {
+        targetTaskId = run.taskId;
+      }
+    } catch (error) {
+      console.error("[convex.crown] Failed to resolve task from candidate", {
+        runId: candidateWithRunId.runId,
+        error,
+      });
+    }
+  }
+
+  if (!targetTaskId && workerAuth?.payload.taskRunId) {
+    try {
+      const run = await ctx.runQuery(internal.taskRuns.getById, {
+        id: workerAuth.payload.taskRunId as Id<"taskRuns">,
+      });
+      if (run) {
+        targetTaskId = run.taskId;
+      }
+    } catch (error) {
+      console.error("[convex.crown] Failed to resolve task from worker run", {
+        taskRunId: workerAuth.payload.taskRunId,
+        error,
+      });
+    }
+  }
+
+  // Mark task as in_progress before starting unified flow
+  if (targetTaskId) {
+    try {
+      const task = await ctx.runQuery(internal.tasks.getByIdInternal, {
+        id: targetTaskId,
+      });
+      if (
+        task &&
+        task.teamId === teamContext.teamId &&
+        task.userId === teamContext.userId &&
+        task.crownEvaluationStatus !== "in_progress"
+      ) {
+        await ctx.runMutation(internal.tasks.setCrownEvaluationStatusInternal, {
+          taskId: targetTaskId,
+          teamId: teamContext.teamId,
+          userId: teamContext.userId,
+          status: "in_progress",
+          clearError: true,
+        });
+      }
+    } catch (error) {
+      console.error("[convex.crown] Failed to mark crown in progress", {
+        taskId: targetTaskId,
+        error,
+      });
+    }
+  }
+
+  try {
+    const candidates = data.candidates.map((candidate, index) => ({
+      modelName:
+        candidate.agentName ??
+        candidate.modelName ??
+        `candidate-${candidate.index ?? index}`,
+      gitDiff: candidate.gitDiff,
+      index: candidate.index ?? index,
+    }));
+
+    console.info(`[convex.crown] Starting unified evaluation flow`, {
+      candidatesCount: candidates.length,
+      teamSlugOrId,
+      targetTaskId,
+    });
+
+    const result = await ctx.runAction(api.crown.actions.evaluateAndSummarize, {
+      prompt: data.prompt,
+      candidates,
+      teamSlugOrId,
+    });
+
+    console.info(`[convex.crown] Unified evaluation flow completed`, {
+      winner: result.evaluation?.winner,
+      hasSummary: Boolean(result.summary),
+      failedPhase: result.failedPhase,
+    });
+
+    return jsonResponse(result);
+  } catch (error) {
+    console.error("[convex.crown] Unified evaluation error", error);
+    return jsonResponse({ code: 500, message: "Unified evaluation failed" }, 500);
   }
 });
 

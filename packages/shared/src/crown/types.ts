@@ -226,6 +226,36 @@ export const WorkerCompleteRequestSchema = z.object({
   exitCode: z.number().optional(),
 });
 
+/**
+ * Unified evaluation + summarization response.
+ * Combines evaluation and optional summarization into a single atomic result.
+ */
+export const CrownUnifiedEvaluationResponseSchema = z.object({
+  /** Evaluation result */
+  evaluation: CrownEvaluationResponseSchema,
+  /** Summary (only present if winner was selected and summarization succeeded) */
+  summary: z.string().optional(),
+  /** Which phase failed, if any */
+  failedPhase: z.enum(["evaluation", "summarization"]).optional(),
+  /** Error message if a phase failed */
+  errorMessage: z.string().optional(),
+});
+export type CrownUnifiedEvaluationResponse = z.infer<
+  typeof CrownUnifiedEvaluationResponseSchema
+>;
+
+/**
+ * Request schema for unified evaluation + summarization endpoint
+ */
+export const CrownUnifiedEvaluationRequestSchema = z.object({
+  prompt: z.string(),
+  candidates: z.array(CrownEvaluationCandidateSchema).min(1),
+  teamSlugOrId: z.string(),
+});
+export type CrownUnifiedEvaluationRequest = z.infer<
+  typeof CrownUnifiedEvaluationRequestSchema
+>;
+
 export const WorkerScheduleRequestSchema = z.object({
   taskRunId: z.string(),
   scheduledStopAt: z.number().optional(),

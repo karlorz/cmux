@@ -8,5 +8,6 @@ export type {
   CandidateData,
   CrownEvaluationResponse,
   CrownSummarizationResponse,
+  CrownUnifiedEvaluationResponse,
   PullRequestMetadata,
 } from "@cmux/shared";
