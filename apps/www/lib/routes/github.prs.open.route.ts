@@ -265,6 +265,7 @@ githubPrsOpenRouter.openapi(
     const truncatedTitle =
       title.length > 72 ? `${title.slice(0, 69)}...` : title;
     const description =
+      task.pullRequestDescription ||
       task.text ||
       `## Summary\n\n${title}`;
 
