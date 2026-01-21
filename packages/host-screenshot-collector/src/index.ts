@@ -407,11 +407,12 @@ RECORDING STEPS:
    - Move cursor with xdotool: DISPLAY=:1 xdotool mousemove --sync X Y
    - Immediately click with Chrome MCP (NO sleeps between actions)
 
-4. After last action, wait for content to fully load, then STOP:
+4. Once result is visible, kill ffmpeg - this MUST be your next command after clicking:
    \`\`\`bash
    kill -INT $FFMPEG_PID
    wait $FFMPEG_PID 2>/dev/null || true
    \`\`\`
+   NEVER call list_pages or select_page after clicking - the video already captured it.
 
 WHEN TO STOP RECORDING:
 - After your last click, wait for the page/content to fully load and render
@@ -421,13 +422,14 @@ WHEN TO STOP RECORDING:
 - The kill command should be your VERY NEXT action after the result appears - do not hesitate
 - 1-2 seconds after content loads is enough, then STOP immediately
 - Do NOT use sleep before killing ffmpeg - just kill it directly
-- The video records the SCREEN - if you can see the result visually, just stop. No need for extra Chrome MCP commands to verify.
+
+IMPORTANT: The video records the X11 SCREEN, not the Chrome MCP state. If a new tab opens, you can SEE it on screen - no need to call list_pages or select_page. Just kill ffmpeg immediately after the click shows its result.
 
 Example timing:
-- Click button -> page navigates -> new page fully loads -> STOP
-- Click link -> new tab opens (visible on screen) -> STOP
-- Bad: clicking, then list_pages/select_page to verify, then stopping
-- Bad: clicking, then sleep 3, then stopping
+- Click button -> page navigates -> new page fully loads -> kill ffmpeg
+- Click link that opens new tab -> new tab visible on screen -> kill ffmpeg immediately
+- WRONG: click -> list_pages -> select_page -> kill (unnecessary MCP calls)
+- WRONG: click -> sleep -> kill (unnecessary sleep)
 
 COORDINATE CALCULATION (add 85 to Y for Chrome toolbar):
 \`\`\`javascript
