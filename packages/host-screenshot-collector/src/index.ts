@@ -464,19 +464,32 @@ Do not close the browser when done. Do not create summary documents.
       })}`
     );
 
-    const claudeEnv = {
+    const claudeEnv: NodeJS.ProcessEnv = {
       ...process.env,
       IS_SANDBOX: "1",
       CLAUDE_CODE_ENABLE_TELEMETRY: "0",
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
-      ...(useTaskRunJwt
-        ? {
-          ANTHROPIC_API_KEY: "sk_placeholder_cmux_anthropic_api_key",
-          ANTHROPIC_BASE_URL: anthropicBaseUrl,
-          ANTHROPIC_CUSTOM_HEADERS: `x-cmux-token:${auth.taskRunJwt}`,
-        }
-        : {}),
     };
+
+    // Only use proxy if convexSiteUrl is provided
+    if (convexSiteUrl) {
+      claudeEnv.ANTHROPIC_BASE_URL = anthropicBaseUrl;
+      claudeEnv.ANTHROPIC_API_KEY = "sk_placeholder_cmux_anthropic_api_key";
+
+      if (useTaskRunJwt) {
+        // Use JWT auth via Convex proxy
+        claudeEnv.ANTHROPIC_CUSTOM_HEADERS = `x-cmux-token:${auth.taskRunJwt}`;
+      } else {
+        // Using proxy without JWT - clear any inherited custom headers
+        delete claudeEnv.ANTHROPIC_CUSTOM_HEADERS;
+      }
+    } else {
+      // No proxy - use direct API key auth from environment or provided key
+      if (providedApiKey) {
+        claudeEnv.ANTHROPIC_API_KEY = providedApiKey;
+      }
+      delete claudeEnv.ANTHROPIC_CUSTOM_HEADERS;
+    }
 
     await logToScreenshotCollector(
       `[DEBUG] Claude env: ${JSON.stringify({

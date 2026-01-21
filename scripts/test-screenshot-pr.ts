@@ -49,7 +49,7 @@ interface ScreenshotOptions {
   devCommand?: string;
   pathToClaudeCodeExecutable?: string;
   auth: { anthropicApiKey: string };
-  convexUrl?: string;
+  convexSiteUrl?: string;
 }
 
 interface CLIArgs {
@@ -437,7 +437,7 @@ async function runScreenshotCollector(options: ScreenshotOptions & { useLocal?: 
   // Load the collector module (from Convex by default, or build locally with --use-local)
   const collectorPath = await loadCollectorModule(
     options.useLocal ?? false,
-    options.convexUrl
+    options.convexSiteUrl
   );
 
   log("Loading screenshot collector module...", { path: collectorPath });
@@ -472,6 +472,7 @@ async function runScreenshotCollector(options: ScreenshotOptions & { useLocal?: 
     devCommand: options.devCommand,
     pathToClaudeCodeExecutable: claudeExecutable,
     auth: options.auth,
+    convexSiteUrl: options.convexSiteUrl,
   });
 
   log("Screenshot collector completed", {
@@ -683,7 +684,7 @@ async function main(): Promise<void> {
       devCommand: args.devCommand,
       auth: { anthropicApiKey },
       useLocal: args.useLocal,
-      convexUrl: args.convexUrl,
+      convexSiteUrl: args.convexUrl || getConvexSiteUrl(),
     });
 
     log("Done! Media saved to:", { outputDir });
