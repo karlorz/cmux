@@ -338,7 +338,7 @@ OUTPUT FORMAT (Markdown)
     }
   }
 
-  const lastError = attemptErrors.at(-1)?.error;
+  const lastError = attemptErrors[attemptErrors.length - 1]?.error;
   const lastMessage =
     lastError instanceof Error ? lastError.message : String(lastError ?? "");
   console.warn(
