@@ -293,6 +293,11 @@ export function TaskTimeline({
           (task?.crownEvaluationRetryCount ?? 0) > 0);
 
       if (isInitialEvaluation) {
+        const phase = task?.crownEvaluationPhase ?? "evaluation";
+        const inProgressNote =
+          phase === "summarization"
+            ? "Generating PR summary..."
+            : "Evaluating submissions...";
         // Initial evaluation in progress - show neutral evaluating message
         timelineEvents.push({
           id: "crown-evaluation-pending",
@@ -300,10 +305,15 @@ export function TaskTimeline({
           timestamp: task?.updatedAt || Date.now(),
           isFallback: false,
           isEvaluating: true,
-          evaluationNote: "Evaluating submissions...",
+          evaluationNote: inProgressNote,
           crownReason: "Crown evaluation in progress",
         });
       } else {
+        const phase = task?.crownEvaluationPhase ?? "evaluation";
+        const retryNote =
+          phase === "summarization"
+            ? "Retrying PR summary generation..."
+            : "Retrying crown evaluation...";
         // Failed evaluation or retry in progress - show fallback/retry UI
         timelineEvents.push({
           id: "crown-evaluation-failed",
@@ -311,7 +321,7 @@ export function TaskTimeline({
           timestamp: task?.updatedAt || Date.now(),
           isFallback: true,
           evaluationNote: isRetryingNow
-            ? "Retrying crown evaluation..."
+            ? retryNote
             : task?.crownEvaluationError ||
               "Crown evaluation failed. No winner was selected.",
           crownReason: isRetryingNow ? "Retry in progress" : "Evaluation failed",
@@ -661,7 +671,7 @@ export function TaskTimeline({
                   ? "Retrying..."
                   : isRetryCooldownActive
                     ? `Retry in ${cooldownSeconds}s`
-                    : "Retry Evaluation"}
+                    : "Retry Crown Evaluation"}
               </button>
             )}
             {event.isFallback && (retryCount > 0 || isRetryCooldownActive) && (

@@ -29,6 +29,13 @@ export type CrownEvaluationStatus = z.infer<
   typeof CrownEvaluationStatusSchema
 >;
 
+export const CrownEvaluationPhaseSchema = z.enum([
+  "evaluation",
+  "summarization",
+  "completed",
+]);
+export type CrownEvaluationPhase = z.infer<typeof CrownEvaluationPhaseSchema>;
+
 export const CrownWorkerCheckResponseSchema = z.object({
   ok: z.literal(true),
   taskId: z.string(),
@@ -45,6 +52,7 @@ export const CrownWorkerCheckResponseSchema = z.object({
   task: z.object({
     text: z.string(),
     crownEvaluationStatus: CrownEvaluationStatusSchema.nullable(),
+    crownEvaluationPhase: CrownEvaluationPhaseSchema.nullable().optional(),
     crownEvaluationError: z.string().nullable(),
     isCompleted: z.boolean(),
     baseBranch: z.string().nullable(),
@@ -170,6 +178,13 @@ export type CrownEvaluationRequest = z.infer<
   typeof CrownEvaluationRequestSchema
 >;
 
+export const CrownEvaluationFlowRequestSchema = CrownEvaluationRequestSchema.extend({
+  taskId: typedZid("tasks").optional(),
+});
+export type CrownEvaluationFlowRequest = z.infer<
+  typeof CrownEvaluationFlowRequestSchema
+>;
+
 export const CrownEvaluationPromptSchema = z.object({
   prompt: z.string(),
   teamSlugOrId: z.string(),
@@ -188,6 +203,47 @@ export const CrownSummarizationPromptSchema = z.object({
   prompt: z.string(),
   teamSlugOrId: z.string(),
 });
+
+export const CrownEvaluationFlowStageSchema = z.enum([
+  "evaluation",
+  "summarization",
+]);
+
+const CrownEvaluationWithWinnerSchema = CrownEvaluationResponseSchema.extend({
+  winner: z.number().int().min(0),
+});
+
+const CrownEvaluationNoWinnerSchema = CrownEvaluationResponseSchema.extend({
+  winner: z.null(),
+});
+
+export const CrownEvaluationFlowSuccessSchema = z.union([
+  z.object({
+    ok: z.literal(true),
+    evaluation: CrownEvaluationWithWinnerSchema,
+    summary: CrownSummarizationResponseSchema,
+  }),
+  z.object({
+    ok: z.literal(true),
+    evaluation: CrownEvaluationNoWinnerSchema,
+    summary: z.null(),
+  }),
+]);
+
+export const CrownEvaluationFlowErrorSchema = z.object({
+  ok: z.literal(false),
+  stage: CrownEvaluationFlowStageSchema,
+  message: z.string(),
+});
+
+export const CrownEvaluationFlowResponseSchema = z.union([
+  CrownEvaluationFlowSuccessSchema,
+  CrownEvaluationFlowErrorSchema,
+]);
+
+export type CrownEvaluationFlowResponse = z.infer<
+  typeof CrownEvaluationFlowResponseSchema
+>;
 
 export const WorkerCheckSchema = z.object({
   taskId: typedZid("tasks").optional(),
@@ -219,6 +275,8 @@ export const WorkerFinalizeSchema = z.object({
   isFallback: z.boolean().optional(),
   /** Human-readable note about the evaluation process */
   evaluationNote: z.string().optional(),
+  /** If the flow failed, which stage failed (for UI + retry context). */
+  failurePhase: CrownEvaluationFlowStageSchema.optional(),
 });
 
 export const WorkerCompleteRequestSchema = z.object({

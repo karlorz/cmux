@@ -7,6 +7,7 @@ export type {
   WorkerAllRunsCompleteResponse,
   CandidateData,
   CrownEvaluationResponse,
+  CrownEvaluationFlowResponse,
   CrownSummarizationResponse,
   PullRequestMetadata,
 } from "@cmux/shared";

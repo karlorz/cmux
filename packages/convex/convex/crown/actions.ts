@@ -30,6 +30,7 @@ type CrownProvider = (typeof CROWN_PROVIDERS)[number];
 
 // Configuration for retry logic
 const MAX_CROWN_EVALUATION_ATTEMPTS = 3;
+const MAX_CROWN_SUMMARIZATION_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 1000; // 1 second base delay, doubles each retry
 
 /**
@@ -298,22 +299,60 @@ OUTPUT FORMAT (Markdown)
 - Follow-ups: optional bullets if applicable
 `;
 
-  try {
-    const { object } = await generateObject({
-      model,
-      schema: CrownSummarizationResponseSchema,
-      system:
-        "You are an expert reviewer summarizing pull requests. Provide a clear, concise summary following the requested format.",
-      prompt: summarizationPrompt,
-      maxRetries: 2,
-    });
+  const attemptErrors: Array<{ attempt: number; error: unknown }> = [];
 
-    console.info(`[convex.crown] Summarization completed via ${provider}`);
-    return CrownSummarizationResponseSchema.parse(object);
-  } catch (error) {
-    console.error(`[convex.crown] ${provider} summarization error`, error);
-    throw new ConvexError("Summarization failed");
+  for (let attempt = 1; attempt <= MAX_CROWN_SUMMARIZATION_ATTEMPTS; attempt++) {
+    try {
+      console.info(
+        `[convex.crown] Summarization attempt ${attempt}/${MAX_CROWN_SUMMARIZATION_ATTEMPTS} via ${provider}`
+      );
+
+      const { object } = await generateObject({
+        model,
+        schema: CrownSummarizationResponseSchema,
+        system:
+          "You are an expert reviewer summarizing pull requests. Provide a clear, concise summary following the requested format.",
+        prompt: summarizationPrompt,
+        maxRetries: 2,
+      });
+
+      console.info(`[convex.crown] Summarization completed via ${provider}`);
+      return CrownSummarizationResponseSchema.parse(object);
+    } catch (error) {
+      attemptErrors.push({ attempt, error });
+
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      console.error(
+        `[convex.crown] ${provider} summarization attempt ${attempt}/${MAX_CROWN_SUMMARIZATION_ATTEMPTS} failed:`,
+        errorMessage
+      );
+
+      if (attempt < MAX_CROWN_SUMMARIZATION_ATTEMPTS) {
+        const backoffDelay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+        console.info(
+          `[convex.crown] Retrying in ${backoffDelay}ms (attempt ${attempt + 1}/${MAX_CROWN_SUMMARIZATION_ATTEMPTS})`
+        );
+        await delay(backoffDelay);
+      }
+    }
   }
+
+  console.error(
+    `[convex.crown] All ${MAX_CROWN_SUMMARIZATION_ATTEMPTS} summarization attempts failed via ${provider}`,
+    {
+      provider,
+      totalAttempts: MAX_CROWN_SUMMARIZATION_ATTEMPTS,
+      errors: attemptErrors.map((e) => ({
+        attempt: e.attempt,
+        error: e.error instanceof Error ? e.error.message : String(e.error),
+      })),
+    }
+  );
+
+  throw new ConvexError(
+    `Summarization failed after ${MAX_CROWN_SUMMARIZATION_ATTEMPTS} attempts (provider: ${provider})`
+  );
 }
 
 export const evaluate = action({
@@ -335,6 +374,72 @@ export const summarize = action({
   },
   handler: async (_ctx, args) => {
     return performCrownSummarization(args.prompt, args.gitDiff);
+  },
+});
+
+export const evaluateAndSummarize = internalAction({
+  args: {
+    prompt: v.string(),
+    candidates: v.array(CrownEvaluationCandidateValidator),
+    teamSlugOrId: v.string(),
+    taskId: v.optional(v.id("tasks")),
+    teamId: v.optional(v.string()),
+    userId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    console.info(
+      "[convex.crown] Starting evaluation flow (evaluate + summarize)"
+    );
+
+    const setPhase = async (phase: "evaluation" | "summarization") => {
+      if (!args.taskId || !args.teamId || !args.userId) return;
+      await ctx.runMutation(internal.tasks.setCrownEvaluationStatusInternal, {
+        taskId: args.taskId,
+        teamId: args.teamId,
+        userId: args.userId,
+        status: "in_progress",
+        phase,
+        clearError: true,
+      });
+    };
+
+    let stage: "evaluation" | "summarization" = "evaluation";
+    try {
+      await setPhase("evaluation");
+      stage = "evaluation";
+      const evaluation = await performCrownEvaluation(args.prompt, args.candidates);
+
+      if (evaluation.winner === null) {
+        return { ok: true, evaluation, summary: null } as const;
+      }
+
+      const winnerCandidate = args.candidates[evaluation.winner];
+      if (!winnerCandidate) {
+        return {
+          ok: false,
+          stage: "evaluation",
+          message: `Winner index ${evaluation.winner} out of bounds`,
+        } as const;
+      }
+
+      await setPhase("summarization");
+      stage = "summarization";
+      const summary = await performCrownSummarization(
+        args.prompt,
+        winnerCandidate.gitDiff
+      );
+
+      return { ok: true, evaluation, summary } as const;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      console.error("[convex.crown] Evaluation flow error", {
+        stage,
+        message,
+      });
+
+      return { ok: false, stage, message } as const;
+    }
   },
 });
 
@@ -455,6 +560,7 @@ export const retryEvaluation = internalAction({
       teamId: retryData.teamId,
       userId: retryData.userId,
       status: "in_progress",
+      phase: "evaluation",
       clearError: true,
     });
 
@@ -472,8 +578,10 @@ export const retryEvaluation = internalAction({
 
     console.log(`[Crown] Retrying evaluation with ${evaluationCandidates.length} candidates`);
 
+    let stage: "evaluation" | "summarization" = "evaluation";
     try {
       // Perform the evaluation
+      stage = "evaluation";
       const evaluationResponse = await performCrownEvaluation(
         parsedData.prompt,
         evaluationCandidates
@@ -498,6 +606,7 @@ export const retryEvaluation = internalAction({
           candidateRunIds: retryData.candidateRunIds.map((id) => id as Id<"taskRuns">),
           isFallback: true,
           evaluationNote: evaluationResponse.evaluationNote || "Retry evaluation failed",
+          failurePhase: "evaluation",
         });
 
         return { success: false, reason: evaluationResponse.reason };
@@ -510,21 +619,25 @@ export const retryEvaluation = internalAction({
       }
 
       // Generate summary for the winning candidate (same as normal path)
-      let summary: string | undefined;
-      try {
-        console.log(`[Crown] Generating summary for retry winner ${winnerCandidate.runId}`);
-        const summaryResponse = await performCrownSummarization(
-          parsedData.prompt,
-          winnerCandidate.gitDiff
-        );
-        summary = summaryResponse?.summary?.slice(0, 8000);
-        console.log(`[Crown] Summary generated for retry winner`, {
-          summaryLength: summary?.length ?? 0,
-        });
-      } catch (summaryError) {
-        // Log but don't fail the retry if summarization fails
-        console.error("[Crown] Summary generation failed during retry, continuing without summary:", summaryError);
-      }
+      stage = "summarization";
+      await ctx.runMutation(internal.tasks.setCrownEvaluationStatusInternal, {
+        taskId: args.taskId,
+        teamId: retryData.teamId,
+        userId: retryData.userId,
+        status: "in_progress",
+        phase: "summarization",
+        clearError: true,
+      });
+
+      console.log(`[Crown] Generating summary for retry winner ${winnerCandidate.runId}`);
+      const summaryResponse = await performCrownSummarization(
+        parsedData.prompt,
+        winnerCandidate.gitDiff
+      );
+      const summary = summaryResponse?.summary?.slice(0, 8000);
+      console.log(`[Crown] Summary generated for retry winner`, {
+        summaryLength: summary?.length ?? 0,
+      });
 
       // Generate PR title and description (for consistency with normal path)
       const pullRequestTitle = buildPullRequestTitle(parsedData.prompt);
@@ -568,6 +681,7 @@ export const retryEvaluation = internalAction({
         teamId: retryData.teamId,
         userId: retryData.userId,
         status: "error",
+        phase: stage,
         errorMessage: message,
       });
       throw error;

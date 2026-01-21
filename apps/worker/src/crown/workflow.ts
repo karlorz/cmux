@@ -22,7 +22,7 @@ import {
 import {
   type CandidateData,
   type CrownEvaluationResponse,
-  type CrownSummarizationResponse,
+  type CrownEvaluationFlowResponse,
   type CrownWorkerCheckResponse,
   type WorkerAllRunsCompleteResponse,
   type WorkerRunContext,
@@ -477,7 +477,56 @@ async function startCrownEvaluation({
 
   const baseBranch = crownData.task.baseBranch ?? "main";
 
-  if (crownData.singleRunWinnerId) {
+  if (!runContext.teamId) {
+    log("ERROR", "Missing teamId for crown evaluation", { taskRunId });
+    return;
+  }
+
+  if (!crownData.task?.text) {
+    log("ERROR", "Missing task text for crown evaluation", {
+      taskRunId,
+      hasTask: !!crownData.task,
+      hasText: !!crownData.task?.text,
+    });
+    return;
+  }
+
+  const promptText = crownData.task.text;
+
+  const finalizeFailure = async (
+    failurePhase: "evaluation" | "summarization",
+    message: string,
+    candidatesForPrompt: CandidateData[]
+  ) => {
+    await convexRequest(
+      "/api/crown/finalize",
+      runContext.token,
+      {
+        taskId: crownData.taskId,
+        winnerRunId: null,
+        reason: message,
+        evaluationPrompt: `Task: ${promptText}\nCandidates: ${JSON.stringify(
+          candidatesForPrompt
+        )}`,
+        evaluationResponse: JSON.stringify({
+          winner: null,
+          reason: message,
+          isFallback: true,
+          evaluationNote: message,
+        }),
+        candidateRunIds: candidatesForPrompt.map((candidate) => candidate.runId),
+        isFallback: true,
+        evaluationNote: message,
+        failurePhase,
+      },
+      baseUrlOverride
+    );
+  };
+
+  const isSingleRun = Boolean(crownData.singleRunWinnerId);
+  let candidates: CandidateData[] = [];
+
+  if (isSingleRun) {
     if (crownData.singleRunWinnerId !== taskRunId) {
       log("INFO", "Single-run winner already handled by another run", {
         taskRunId,
@@ -518,104 +567,37 @@ async function startCrownEvaluation({
       return;
     }
 
-    log("INFO", "Single run detected, skipping evaluation", {
-      taskRunId,
-      runId: candidate.runId,
-      agentName: candidate.agentName,
-    });
-
-    const summarizationResponse =
-      await convexRequest<CrownSummarizationResponse>(
-        "/api/crown/summarize",
-        runContext.token,
-        {
-          prompt: crownData.task?.text || "Task description not available",
-          gitDiff: candidate.gitDiff,
-          teamSlugOrId: runContext.teamId,
-        },
-        baseUrlOverride
-      );
-
-    const summary = summarizationResponse?.summary
-      ? summarizationResponse.summary.slice(0, 8000)
-      : undefined;
-
-    log("INFO", "Single-run summarization response", {
-      taskRunId,
-      summaryPreview: summary?.slice(0, 120),
-    });
-
-    await convexRequest(
-      "/api/crown/finalize",
-      runContext.token,
-      {
-        taskId: crownData.taskId,
-        winnerRunId: candidate.runId,
-        reason: "Single run automatically selected (no competition)",
-        evaluationPrompt: "Single run - no evaluation needed",
-        evaluationResponse: JSON.stringify({
-          winner: 0,
-          reason: "Single run - no competition",
-        }),
-        candidateRunIds: [candidate.runId],
-        summary,
-      },
-      baseUrlOverride
+    candidates = [candidate];
+  } else {
+    const completedRunsWithDiff = await Promise.all(
+      completedRuns.map(async (run) => {
+        const gitDiff = await collectDiffForRun(baseBranch, run.newBranch);
+        log("INFO", "Built crown candidate", {
+          runId: run.id,
+          branch: run.newBranch,
+        });
+        return {
+          runId: run.id,
+          agentName: run.agentName ?? "unknown agent",
+          gitDiff,
+          newBranch: run.newBranch,
+        } satisfies CandidateData;
+      })
     );
 
-    log("INFO", "Crowned task with single-run winner", {
-      taskId: crownData.taskId,
-      winnerRunId: candidate.runId,
-      agentModel: agentModel ?? runContext.agentModel,
-      elapsedMs,
-    });
-    return;
-  }
+    candidates = completedRunsWithDiff.filter(
+      (candidate): candidate is CandidateData => Boolean(candidate)
+    );
 
-  const completedRunsWithDiff = await Promise.all(
-    completedRuns.map(async (run) => {
-      const gitDiff = await collectDiffForRun(baseBranch, run.newBranch);
-      log("INFO", "Built crown candidate", {
-        runId: run.id,
-        branch: run.newBranch,
+    if (candidates.length === 0) {
+      log("ERROR", "No candidates available for crown evaluation", {
+        taskRunId,
       });
-      return {
-        runId: run.id,
-        agentName: run.agentName ?? "unknown agent",
-        gitDiff,
-        newBranch: run.newBranch,
-      } satisfies CandidateData;
-    })
-  );
-
-  const candidates = completedRunsWithDiff.filter(
-    (candidate): candidate is CandidateData => Boolean(candidate)
-  );
-
-  if (candidates.length === 0) {
-    log("ERROR", "No candidates available for crown evaluation", {
-      taskRunId,
-    });
-    return;
+      return;
+    }
   }
 
-  if (!runContext.teamId) {
-    log("ERROR", "Missing teamId for crown evaluation", { taskRunId });
-    return;
-  }
-
-  if (!crownData.task?.text) {
-    log("ERROR", "Missing task text for crown evaluation", {
-      taskRunId,
-      hasTask: !!crownData.task,
-      hasText: !!crownData.task?.text,
-    });
-    return;
-  }
-
-  const promptText = crownData.task.text;
-
-  log("INFO", "Preparing crown evaluation request", {
+  log("INFO", "Preparing crown evaluation flow request", {
     taskRunId,
     hasPrompt: true,
     promptPreview: promptText.slice(0, 100),
@@ -623,25 +605,43 @@ async function startCrownEvaluation({
     teamId: runContext.teamId,
   });
 
-  const evaluationResponse = await convexRequest<CrownEvaluationResponse>(
-    "/api/crown/evaluate-agents",
+  const flowResponse = await convexRequest<CrownEvaluationFlowResponse>(
+    "/api/crown/evaluate-and-summarize",
     runContext.token,
     {
       prompt: promptText,
       candidates,
       teamSlugOrId: runContext.teamId,
+      taskId: crownData.taskId,
     },
     baseUrlOverride
   );
 
-  if (!evaluationResponse) {
-    log("ERROR", "Crown evaluation response missing", {
+  if (!flowResponse) {
+    log("ERROR", "Crown evaluation flow response missing", {
       taskRunId,
     });
+    await finalizeFailure(
+      "evaluation",
+      "Crown evaluation flow failed",
+      candidates
+    );
     return;
   }
 
-  log("INFO", "Crown evaluation response", {
+  if (!flowResponse.ok) {
+    log("ERROR", "Crown evaluation flow failed", {
+      taskRunId,
+      stage: flowResponse.stage,
+      message: flowResponse.message,
+    });
+    await finalizeFailure(flowResponse.stage, flowResponse.message, candidates);
+    return;
+  }
+
+  const evaluationResponse: CrownEvaluationResponse = flowResponse.evaluation;
+
+  log("INFO", "Crown evaluation flow response", {
     taskRunId,
     winner: evaluationResponse.winner,
     reason: evaluationResponse.reason,
@@ -650,27 +650,30 @@ async function startCrownEvaluation({
 
   // Handle "no winner" case (fallback)
   if (evaluationResponse.winner === null) {
-      log("WARN", "No winner selected by crown evaluation (fallback)", {
-          taskRunId,
-          reason: evaluationResponse.reason,
-      });
+    log("WARN", "No winner selected by crown evaluation (fallback)", {
+      taskRunId,
+      reason: evaluationResponse.reason,
+    });
 
-      await convexRequest(
-        "/api/crown/finalize",
-        runContext.token,
-        {
-          taskId: crownData.taskId,
-          winnerRunId: null,
-          reason: evaluationResponse.reason,
-          evaluationPrompt: `Task: ${promptText}\nCandidates: ${JSON.stringify(candidates)}`,
-          evaluationResponse: JSON.stringify(evaluationResponse),
-          candidateRunIds: candidates.map((candidate) => candidate.runId),
-          isFallback: true,
-          evaluationNote: evaluationResponse.evaluationNote || "No winner selected",
-        },
-        baseUrlOverride
-      );
-      return;
+    await convexRequest(
+      "/api/crown/finalize",
+      runContext.token,
+      {
+        taskId: crownData.taskId,
+        winnerRunId: null,
+        reason: evaluationResponse.reason,
+        evaluationPrompt: `Task: ${promptText}\nCandidates: ${JSON.stringify(
+          candidates
+        )}`,
+        evaluationResponse: JSON.stringify(evaluationResponse),
+        candidateRunIds: candidates.map((candidate) => candidate.runId),
+        isFallback: true,
+        evaluationNote: evaluationResponse.evaluationNote || "No winner selected",
+        failurePhase: "evaluation",
+      },
+      baseUrlOverride
+    );
+    return;
   }
 
   const winnerIndex = evaluationResponse.winner;
@@ -685,25 +688,44 @@ async function startCrownEvaluation({
     return;
   }
 
-  const summaryResponse = await convexRequest<CrownSummarizationResponse>(
-    "/api/crown/summarize",
-    runContext.token,
-    {
-      prompt: promptText,
-      gitDiff: winnerCandidate.gitDiff,
-      teamSlugOrId: runContext.teamId,
-    },
-    baseUrlOverride
-  );
-
-  log("INFO", "Crown summarization response", {
-    taskRunId,
-    summaryPreview: summaryResponse?.summary?.slice(0, 120),
-  });
-
-  const summary = summaryResponse?.summary
-    ? summaryResponse.summary.slice(0, 8000)
+  const summary = flowResponse.summary?.summary
+    ? flowResponse.summary.summary.slice(0, 8000)
     : undefined;
+
+  if (!summary) {
+    log("ERROR", "Missing PR summary from evaluation flow", { taskRunId });
+    await finalizeFailure("summarization", "PR summary generation failed", candidates);
+    return;
+  }
+
+  if (isSingleRun) {
+    await convexRequest(
+      "/api/crown/finalize",
+      runContext.token,
+      {
+        taskId: crownData.taskId,
+        winnerRunId: winnerCandidate.runId,
+        reason: "Single run automatically selected (no competition)",
+        evaluationPrompt: `Task: ${promptText}\nCandidates: ${JSON.stringify(
+          candidates
+        )}`,
+        evaluationResponse: JSON.stringify(evaluationResponse),
+        candidateRunIds: candidates.map((candidate) => candidate.runId),
+        summary,
+        isFallback: evaluationResponse.isFallback,
+        evaluationNote: evaluationResponse.evaluationNote,
+      },
+      baseUrlOverride
+    );
+
+    log("INFO", "Crowned task with single-run winner", {
+      taskId: crownData.taskId,
+      winnerRunId: winnerCandidate.runId,
+      agentModel: agentModel ?? runContext.agentModel,
+      elapsedMs,
+    });
+    return;
+  }
 
   // Always generate PR title and description (for manual draft PRs even if auto-PR is disabled)
   const pullRequestTitle = buildPullRequestTitle(promptText);

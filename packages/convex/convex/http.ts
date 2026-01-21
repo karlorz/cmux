@@ -1,6 +1,7 @@
 import { httpRouter } from "convex/server";
 import {
   crownEvaluate,
+  crownEvaluateAndSummarize,
   crownSummarize,
   crownWorkerCheck,
   crownWorkerFinalize,
@@ -50,6 +51,12 @@ http.route({
   path: "/api/crown/evaluate-agents",
   method: "POST",
   handler: crownEvaluate,
+});
+
+http.route({
+  path: "/api/crown/evaluate-and-summarize",
+  method: "POST",
+  handler: crownEvaluateAndSummarize,
 });
 
 http.route({

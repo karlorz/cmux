@@ -1,5 +1,6 @@
 import {
   CrownEvaluationRequestSchema,
+  CrownEvaluationFlowRequestSchema,
   CrownSummarizationRequestSchema,
   WorkerCheckSchema,
   WorkerCompleteRequestSchema,
@@ -291,6 +292,7 @@ export const crownEvaluate = httpAction(async (ctx, req) => {
           teamId: teamContext.teamId,
           userId: teamContext.userId,
           status: "in_progress",
+          phase: "evaluation",
           clearError: true,
         });
       }
@@ -322,6 +324,153 @@ export const crownEvaluate = httpAction(async (ctx, req) => {
     console.error("[convex.crown] Evaluation error", error);
     return jsonResponse({ code: 500, message: "Evaluation failed" }, 500);
   }
+});
+
+export const crownEvaluateAndSummarize = httpAction(async (ctx, req) => {
+  const workerAuth = await getWorkerAuth(req, {
+    loggerPrefix: "[convex.crown]",
+  });
+
+  if (!workerAuth) {
+    const stackAuthError = ensureStackAuth(req);
+    if (stackAuthError) throw stackAuthError;
+  }
+
+  const parsed = await ensureJsonRequest(req);
+  if (parsed instanceof Response) return parsed;
+
+  const validation = CrownEvaluationFlowRequestSchema.safeParse(parsed.json);
+  if (!validation.success) {
+    console.warn("[convex.crown] Invalid evaluation flow payload", {
+      errors: validation.error.issues,
+      receivedBody: parsed.json,
+    });
+    return jsonResponse({ code: 400, message: "Invalid input" }, 400);
+  }
+
+  const data = validation.data;
+
+  const teamSlugOrId = workerAuth
+    ? workerAuth.payload.teamId
+    : data.teamSlugOrId;
+
+  if (!teamSlugOrId) {
+    return jsonResponse(
+      { code: 400, message: "teamSlugOrId is required" },
+      400
+    );
+  }
+
+  let teamContext: { teamId: string; userId: string } | null = null;
+
+  if (workerAuth) {
+    teamContext = {
+      teamId: workerAuth.payload.teamId,
+      userId: workerAuth.payload.userId,
+    };
+  } else {
+    const membership = await ensureTeamMembership(ctx, teamSlugOrId);
+    if (membership instanceof Response) return membership;
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      console.warn("[convex.crown] Missing identity during evaluation flow request");
+      return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
+    }
+    teamContext = { teamId: membership.teamId, userId: identity.subject };
+  }
+
+  let targetTaskId: Id<"tasks"> | null = null;
+
+  if (data.taskId) {
+    try {
+      const task = await ctx.runQuery(internal.tasks.getByIdInternal, {
+        id: data.taskId as Id<"tasks">,
+      });
+      if (
+        task &&
+        task.teamId === teamContext.teamId &&
+        task.userId === teamContext.userId
+      ) {
+        targetTaskId = task._id;
+      }
+    } catch (error) {
+      console.error("[convex.crown] Failed to resolve task from taskId", {
+        taskId: data.taskId,
+        error,
+      });
+    }
+  }
+
+  if (!targetTaskId) {
+    const candidateWithRunId = data.candidates.find(
+      (candidate) => candidate.runId
+    );
+
+    if (candidateWithRunId?.runId) {
+      try {
+        const run = await ctx.runQuery(internal.taskRuns.getById, {
+          id: candidateWithRunId.runId as Id<"taskRuns">,
+        });
+        if (
+          run &&
+          run.teamId === teamContext.teamId &&
+          run.userId === teamContext.userId
+        ) {
+          targetTaskId = run.taskId;
+        }
+      } catch (error) {
+        console.error("[convex.crown] Failed to resolve task from candidate", {
+          runId: candidateWithRunId.runId,
+          error,
+        });
+      }
+    }
+  }
+
+  if (!targetTaskId && workerAuth?.payload.taskRunId) {
+    try {
+      const run = await ctx.runQuery(internal.taskRuns.getById, {
+        id: workerAuth.payload.taskRunId as Id<"taskRuns">,
+      });
+      if (run) {
+        targetTaskId = run.taskId;
+      }
+    } catch (error) {
+      console.error("[convex.crown] Failed to resolve task from worker run", {
+        taskRunId: workerAuth.payload.taskRunId,
+        error,
+      });
+    }
+  }
+
+  // Provide stable indices to ensure winner mapping matches array order.
+  const candidates = data.candidates.map((candidate, index) => ({
+    runId: candidate.runId,
+    agentName: candidate.agentName,
+    modelName:
+      candidate.agentName ??
+      candidate.modelName ??
+      `candidate-${index}`,
+    gitDiff: candidate.gitDiff,
+    newBranch: candidate.newBranch ?? null,
+    index,
+  }));
+
+  const result = await ctx.runAction(internal.crown.actions.evaluateAndSummarize, {
+    prompt: data.prompt,
+    candidates,
+    teamSlugOrId,
+    ...(targetTaskId
+      ? {
+          taskId: targetTaskId,
+          teamId: teamContext.teamId,
+          userId: teamContext.userId,
+        }
+      : {}),
+  });
+
+  // Always return 200 so workers can finalize with stage info.
+  return jsonResponse(result);
 });
 
 export const crownSummarize = httpAction(async (ctx, req) => {
@@ -620,6 +769,7 @@ async function handleCrownCheckRequest(
         teamId: workerAuth.payload.teamId,
         userId: workerAuth.payload.userId,
         status: "pending",
+        phase: "evaluation",
         clearError: true,
       });
       currentStatus = "pending";
@@ -648,6 +798,7 @@ async function handleCrownCheckRequest(
     task: {
       text: task.text,
       crownEvaluationStatus: currentStatus,
+      crownEvaluationPhase: task.crownEvaluationPhase ?? null,
       crownEvaluationError: currentError,
       isCompleted: task.isCompleted,
       baseBranch: task.baseBranch ?? null,
@@ -759,6 +910,7 @@ export const crownWorkerFinalize = httpAction(async (ctx, req) => {
       pullRequestDescription: validation.data.pullRequestDescription,
       isFallback,
       evaluationNote,
+      failurePhase: validation.data.failurePhase,
     });
 
     return jsonResponse({ ok: true, winnerRunId: winningId });

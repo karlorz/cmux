@@ -32,6 +32,7 @@ export function CrownStatus({ taskId, teamSlugOrId }: CrownStatusProps) {
 
   const crownStatus = task?.crownEvaluationStatus ?? null;
   const isCrownEvaluating = task?.crownEvaluationStatus === "in_progress";
+  const crownPhase = task?.crownEvaluationPhase ?? null;
   const rawCrownErrorMessage = task?.crownEvaluationError ?? null;
   const crownErrorMessage =
     rawCrownErrorMessage === "pending_evaluation" ||
@@ -145,7 +146,7 @@ export function CrownStatus({ taskId, teamSlugOrId }: CrownStatusProps) {
             <p className="text-xs text-muted-foreground">
               Multiple AI models are working on your task in parallel. Once
               all models complete, Claude will evaluate and select the best
-              implementation.
+              implementation and generate a PR summary for the winner.
             </p>
             <div className="border-t pt-2 mt-2">
               <p className="text-xs font-medium mb-1">Competing models:</p>
@@ -218,10 +219,12 @@ export function CrownStatus({ taskId, teamSlugOrId }: CrownStatusProps) {
     pillClassName +=
       " bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300";
   } else if (displayState === "evaluating") {
+    const phaseLabel =
+      crownPhase === "summarization" ? "Generating PR summary..." : "Evaluating...";
     const evaluatingContent = (
       <>
         <Loader2 className="w-3 h-3 animate-spin" />
-        <span>Evaluating...</span>
+        <span>{phaseLabel}</span>
       </>
     );
 
@@ -238,12 +241,15 @@ export function CrownStatus({ taskId, teamSlugOrId }: CrownStatusProps) {
           sideOffset={5}
         >
           <div className="space-y-2">
-            <p className="font-medium text-sm">AI Judge in Progress</p>
+            <p className="font-medium text-sm">
+              {crownPhase === "summarization"
+                ? "PR Summary in Progress"
+                : "AI Judge in Progress"}
+            </p>
             <p className="text-xs text-muted-foreground">
-              Claude is analyzing the code implementations from all models to
-              determine which one best solves your task. The evaluation
-              considers code quality, completeness, best practices, and
-              correctness.
+              {crownPhase === "summarization"
+                ? "The system is generating a PR summary for the selected winner."
+                : "The system is analyzing the code implementations from all models to determine which one best solves your task."}
             </p>
             <div className="border-t pt-2 mt-2">
               <p className="text-xs font-medium mb-1">Completed implementations:</p>
@@ -262,10 +268,12 @@ export function CrownStatus({ taskId, teamSlugOrId }: CrownStatusProps) {
     pillClassName +=
       " bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300";
   } else if (displayState === "error") {
+    const errorLabel =
+      crownPhase === "summarization" ? "Summary failed" : "Evaluation failed";
     const errorContent = (
       <div className="flex items-center gap-1.5 cursor-help">
         <AlertCircle className="w-3 h-3" />
-        <span>Evaluation failed</span>
+        <span>{errorLabel}</span>
       </div>
     );
 

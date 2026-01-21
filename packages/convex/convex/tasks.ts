@@ -629,6 +629,13 @@ export const setCrownEvaluationStatusInternal = internalMutation({
       v.literal("succeeded"),
       v.literal("error"),
     ),
+    phase: v.optional(
+      v.union(
+        v.literal("evaluation"),
+        v.literal("summarization"),
+        v.literal("completed"),
+      ),
+    ),
     errorMessage: v.optional(v.string()),
     clearError: v.optional(v.boolean()),
   },
@@ -642,6 +649,10 @@ export const setCrownEvaluationStatusInternal = internalMutation({
       crownEvaluationStatus: args.status,
       updatedAt: Date.now(),
     };
+
+    if (args.phase !== undefined) {
+      patch.crownEvaluationPhase = args.phase;
+    }
 
     if (args.clearError) {
       patch.crownEvaluationError = undefined;
@@ -688,6 +699,7 @@ export const tryBeginCrownEvaluation = authMutation({
     }
     await ctx.db.patch(args.id, {
       crownEvaluationStatus: "in_progress",
+      crownEvaluationPhase: "evaluation",
       crownEvaluationError: undefined,
       updatedAt: Date.now(),
     });

@@ -6,6 +6,7 @@ import { internalMutation, internalQuery } from "./_generated/server";
 import { authMutation, authQuery, taskIdWithFake } from "./users/utils";
 
 const CROWN_RETRY_COOLDOWN_MS = 30_000;
+const CROWN_RETRY_MAX_ATTEMPTS = 3;
 
 export const evaluateAndCrownWinner = authMutation({
   args: {
@@ -89,6 +90,7 @@ export const evaluateAndCrownWinner = authMutation({
       // The server will handle the actual evaluation using Claude Code
       await ctx.db.patch(args.taskId, {
         crownEvaluationStatus: "pending",
+        crownEvaluationPhase: "evaluation",
         crownEvaluationError: undefined,
         updatedAt: Date.now(),
       });
@@ -313,9 +315,16 @@ export const retryCrownEvaluation = authMutation({
 
     const nextRetryCount = (task.crownEvaluationRetryCount ?? 0) + 1;
 
+    if (nextRetryCount > CROWN_RETRY_MAX_ATTEMPTS) {
+      throw new Error(
+        `Maximum retry attempts reached (${CROWN_RETRY_MAX_ATTEMPTS}).`,
+      );
+    }
+
     // Reset to pending for re-evaluation
     await ctx.db.patch(args.taskId, {
       crownEvaluationStatus: "pending",
+      crownEvaluationPhase: "evaluation",
       crownEvaluationError: undefined,
       crownEvaluationRetryCount: nextRetryCount,
       crownEvaluationLastRetryAt: now,
@@ -386,6 +395,10 @@ export const workerFinalize = internalMutation({
     isFallback: v.optional(v.boolean()),
     /** Human-readable note about the evaluation process */
     evaluationNote: v.optional(v.string()),
+    /** If the flow failed, which stage failed (for UI + retry context). */
+    failurePhase: v.optional(
+      v.union(v.literal("evaluation"), v.literal("summarization")),
+    ),
   },
   handler: async (ctx, args) => {
     const task = await ctx.db.get(args.taskId);
@@ -423,6 +436,7 @@ export const workerFinalize = internalMutation({
       await ctx.db.patch(args.taskId, {
         crownEvaluationStatus: "error",
         crownEvaluationError: args.evaluationNote || args.reason,
+        ...(args.failurePhase ? { crownEvaluationPhase: args.failurePhase } : {}),
         crownEvaluationRetryData: JSON.stringify(retryData),
         crownEvaluationRetryCount: currentRetryCount,
         crownEvaluationLastRetryAt: task.crownEvaluationLastRetryAt,
@@ -492,6 +506,7 @@ export const workerFinalize = internalMutation({
     await ctx.db.patch(args.taskId, {
       crownEvaluationStatus: "succeeded",
       crownEvaluationError: undefined,
+      crownEvaluationPhase: "completed",
       isCompleted: true,
       updatedAt: now,
       crownEvaluationRetryData: undefined,
