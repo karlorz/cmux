@@ -1,6 +1,7 @@
 import type { ReplaceDiffEntry } from "@cmux/shared/diff-types";
 
 import { gitDiff as nativeGitDiff } from "../native/git";
+import { getGitHubOAuthToken } from "../utils/getGitHubToken";
 
 export interface GitDiffRequest {
   headRef: string;
@@ -25,6 +26,9 @@ export async function getGitDiff(
 
   const baseRef = request.baseRef?.trim();
 
+  // Get GitHub OAuth token for private repo authentication
+  const authToken = await getGitHubOAuthToken();
+
   return await nativeGitDiff({
     headRef,
     baseRef: baseRef ? baseRef : undefined,
@@ -36,5 +40,6 @@ export async function getGitDiff(
     maxBytes: request.maxBytes,
     lastKnownBaseSha: request.lastKnownBaseSha,
     lastKnownMergeCommitSha: request.lastKnownMergeCommitSha,
+    authToken: authToken ?? undefined,
   });
 }

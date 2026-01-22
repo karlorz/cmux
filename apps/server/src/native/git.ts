@@ -16,16 +16,20 @@ export interface GitDiffOptions {
   maxBytes?: number;
   lastKnownBaseSha?: string;
   lastKnownMergeCommitSha?: string;
+  authToken?: string;
+}
+
+export interface GitListRemoteBranchesOptions {
+  repoFullName?: string;
+  repoUrl?: string;
+  originPathOverride?: string;
+  authToken?: string;
 }
 
 type NativeGitModule = {
   // napi-rs exports as camelCase
   gitDiff?: (opts: GitDiffOptions) => Promise<ReplaceDiffEntry[]>;
-  gitListRemoteBranches?: (opts: {
-    repoFullName?: string;
-    repoUrl?: string;
-    originPathOverride?: string;
-  }) => Promise<
+  gitListRemoteBranches?: (opts: GitListRemoteBranchesOptions) => Promise<
     Array<{
       name: string;
       lastCommitSha?: string;
@@ -102,11 +106,7 @@ export async function gitDiff(opts: GitDiffOptions): Promise<ReplaceDiffEntry[]>
   return mod.gitDiff(opts);
 }
 
-export async function listRemoteBranches(opts: {
-  repoFullName?: string;
-  repoUrl?: string;
-  originPathOverride?: string;
-}): Promise<
+export async function listRemoteBranches(opts: GitListRemoteBranchesOptions): Promise<
   Array<{
     name: string;
     lastCommitSha?: string;

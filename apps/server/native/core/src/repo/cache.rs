@@ -9,6 +9,41 @@ use std::{
 
 use crate::util::run_git;
 
+/// Inject an authentication token into a GitHub HTTPS URL.
+/// Returns the URL with the token embedded as: https://x-access-token:{token}@github.com/...
+/// If the URL is not a GitHub HTTPS URL or no token is provided, returns the original URL.
+fn inject_auth_token(url: &str, auth_token: Option<&str>) -> String {
+    let Some(token) = auth_token else {
+        return url.to_string();
+    };
+    if token.is_empty() {
+        return url.to_string();
+    }
+
+    // Only handle GitHub HTTPS URLs
+    if let Some(path) = url.strip_prefix("https://github.com/") {
+        return format!("https://x-access-token:{}@github.com/{}", token, path);
+    }
+    if let Some(path) = url.strip_prefix("https://github.com:443/") {
+        return format!("https://x-access-token:{}@github.com/{}", token, path);
+    }
+
+    // Return original URL for non-GitHub URLs or SSH URLs
+    url.to_string()
+}
+
+/// Strip authentication credentials from a URL for safe storage.
+fn strip_auth_from_url(url: &str) -> String {
+    // Handle URLs with embedded credentials: https://user:pass@github.com/...
+    if let Some(rest) = url.strip_prefix("https://") {
+        if let Some(at_pos) = rest.find('@') {
+            let after_at = &rest[at_pos + 1..];
+            return format!("https://{}", after_at);
+        }
+    }
+    url.to_string()
+}
+
 const MAX_CACHE_REPOS: usize = 20;
 
 // Default SWR window for git fetches. Lower means fetch more often.
@@ -58,10 +93,12 @@ fn slug_from_url(url: &str) -> String {
     }
 }
 
-pub fn ensure_repo(url: &str) -> Result<PathBuf> {
+pub fn ensure_repo(url: &str, auth_token: Option<&str>) -> Result<PathBuf> {
     let root = default_cache_root();
     fs::create_dir_all(&root)?;
-    let path = root.join(slug_from_url(url));
+    // Use clean URL for cache path to ensure consistent caching regardless of auth
+    let clean_url = strip_auth_from_url(url);
+    let path = root.join(slug_from_url(&clean_url));
     let git_dir = path.join(".git");
     let head = git_dir.join("HEAD");
     if path.exists() && (!git_dir.exists() || !head.exists()) {
@@ -69,24 +106,33 @@ pub fn ensure_repo(url: &str) -> Result<PathBuf> {
     }
     if !path.exists() {
         fs::create_dir_all(&path)?;
+        // Use authenticated URL for clone
+        let clone_url = inject_auth_token(&clean_url, auth_token);
         run_git(
             root.to_string_lossy().as_ref(),
             &[
                 "clone",
                 "--no-single-branch",
-                url,
+                &clone_url,
                 path.file_name().unwrap().to_str().unwrap(),
             ],
         )?;
+        // After clone, reset remote URL to clean (non-authenticated) URL for security
+        let _ = run_git(
+            path.to_string_lossy().as_ref(),
+            &["remote", "set-url", "origin", &clean_url],
+        );
         let _ = update_cache_index_with(&root, &path, Some(now_ms()));
     } else {
-        let _ = swr_fetch_origin_all_path_bool(&path, fetch_window_ms());
+        let _ = swr_fetch_origin_all_path_bool(&path, fetch_window_ms(), auth_token);
     }
     let shallow = path.join(".git").join("shallow");
     if shallow.exists() {
+        // Use authenticated URL for unshallow fetch
+        let auth_url = inject_auth_token(&clean_url, auth_token);
         let _ = run_git(
             path.to_string_lossy().as_ref(),
-            &["fetch", "--unshallow", "--tags"],
+            &["-c", &format!("url.{}.insteadOf={}", auth_url, clean_url), "fetch", "--unshallow", "--tags"],
         );
     }
 
@@ -219,7 +265,11 @@ fn set_map_last_fetch(repo_path: &Path, t: u128) {
     }
 }
 
-pub fn swr_fetch_origin_all_path_bool(path: &std::path::Path, window_ms: u128) -> Result<bool> {
+pub fn swr_fetch_origin_all_path_bool(
+    path: &std::path::Path,
+    window_ms: u128,
+    auth_token: Option<&str>,
+) -> Result<bool> {
     let cwd = path.to_string_lossy().to_string();
     let root = default_cache_root();
     let now = now_ms();
@@ -228,12 +278,35 @@ pub fn swr_fetch_origin_all_path_bool(path: &std::path::Path, window_ms: u128) -
     let last_fetch_map = get_map_last_fetch(&PathBuf::from(&cwd));
     let last_fetch = last_fetch_idx.or(last_fetch_map);
 
+    // Get the remote URL for authenticated fetch
+    let origin_url = run_git(&cwd, &["remote", "get-url", "origin"])
+        .map(|s| s.trim().to_string())
+        .ok();
+
     if let Some(t) = last_fetch {
         if now.saturating_sub(t) <= window_ms {
             let cwd_bg = cwd.clone();
             let root_bg = root.clone();
+            let auth_token_owned = auth_token.map(|s| s.to_string());
+            let origin_url_bg = origin_url.clone();
             std::thread::spawn(move || {
-                let _ = run_git(&cwd_bg, &["fetch", "--all", "--tags", "--prune"]);
+                // Use authenticated fetch if token provided
+                if let (Some(ref token), Some(ref url)) = (&auth_token_owned, &origin_url_bg) {
+                    let auth_url = inject_auth_token(url, Some(token));
+                    let _ = run_git(
+                        &cwd_bg,
+                        &[
+                            "-c",
+                            &format!("url.{}.insteadOf={}", auth_url, url),
+                            "fetch",
+                            "--all",
+                            "--tags",
+                            "--prune",
+                        ],
+                    );
+                } else {
+                    let _ = run_git(&cwd_bg, &["fetch", "--all", "--tags", "--prune"]);
+                }
                 let _ = update_cache_index_with(&root_bg, &PathBuf::from(&cwd_bg), Some(now_ms()));
                 set_map_last_fetch(&PathBuf::from(&cwd_bg), now_ms());
             });
@@ -241,15 +314,35 @@ pub fn swr_fetch_origin_all_path_bool(path: &std::path::Path, window_ms: u128) -
         }
     }
 
-    let _ = run_git(&cwd, &["fetch", "--all", "--tags", "--prune"]);
+    // Use authenticated fetch if token provided
+    if let (Some(token), Some(ref url)) = (auth_token, &origin_url) {
+        let auth_url = inject_auth_token(url, Some(token));
+        let _ = run_git(
+            &cwd,
+            &[
+                "-c",
+                &format!("url.{}.insteadOf={}", auth_url, url),
+                "fetch",
+                "--all",
+                "--tags",
+                "--prune",
+            ],
+        );
+    } else {
+        let _ = run_git(&cwd, &["fetch", "--all", "--tags", "--prune"]);
+    }
     let now2 = now_ms();
     let _ = update_cache_index_with(&root, &PathBuf::from(&cwd), Some(now2));
     set_map_last_fetch(&PathBuf::from(&cwd), now2);
     Ok(true)
 }
 
-pub fn swr_fetch_origin_all_path(path: &std::path::Path, window_ms: u128) -> Result<()> {
-    let _ = swr_fetch_origin_all_path_bool(path, window_ms)?;
+pub fn swr_fetch_origin_all_path(
+    path: &std::path::Path,
+    window_ms: u128,
+    auth_token: Option<&str>,
+) -> Result<()> {
+    let _ = swr_fetch_origin_all_path_bool(path, window_ms, auth_token)?;
     Ok(())
 }
 #[allow(dead_code)]
@@ -262,7 +355,11 @@ pub fn fetch_origin_all_path(path: &std::path::Path) -> Result<()> {
 /// Fetch a specific ref from origin. Use this when a ref is missing locally.
 /// Unlike swr_fetch_origin_all_path, this always performs the fetch synchronously
 /// without checking the time window, since we know the ref doesn't exist.
-pub fn fetch_specific_ref(path: &std::path::Path, ref_name: &str) -> Result<bool> {
+pub fn fetch_specific_ref(
+    path: &std::path::Path,
+    ref_name: &str,
+    auth_token: Option<&str>,
+) -> Result<bool> {
     let cwd = path.to_string_lossy().to_string();
 
     // Extract the branch name, stripping common prefixes
@@ -272,8 +369,27 @@ pub fn fetch_specific_ref(path: &std::path::Path, ref_name: &str) -> Result<bool
         .or_else(|| ref_name.strip_prefix("refs/heads/"))
         .unwrap_or(ref_name);
 
+    // Get the remote URL for authenticated fetch
+    let origin_url = run_git(&cwd, &["remote", "get-url", "origin"])
+        .map(|s| s.trim().to_string())
+        .ok();
+
     // Try to fetch the specific branch from origin
-    let result = run_git(&cwd, &["fetch", "origin", branch]);
+    let result = if let (Some(token), Some(ref url)) = (auth_token, &origin_url) {
+        let auth_url = inject_auth_token(url, Some(token));
+        run_git(
+            &cwd,
+            &[
+                "-c",
+                &format!("url.{}.insteadOf={}", auth_url, url),
+                "fetch",
+                "origin",
+                branch,
+            ],
+        )
+    } else {
+        run_git(&cwd, &["fetch", "origin", branch])
+    };
 
     if result.is_ok() {
         // Update last fetch time since we just fetched
@@ -285,7 +401,23 @@ pub fn fetch_specific_ref(path: &std::path::Path, ref_name: &str) -> Result<bool
     }
 
     // If specific branch fetch failed, try fetching all (the branch might have a different name on remote)
-    let result_all = run_git(&cwd, &["fetch", "--all", "--tags", "--prune"]);
+    let result_all = if let (Some(token), Some(ref url)) = (auth_token, &origin_url) {
+        let auth_url = inject_auth_token(url, Some(token));
+        run_git(
+            &cwd,
+            &[
+                "-c",
+                &format!("url.{}.insteadOf={}", auth_url, url),
+                "fetch",
+                "--all",
+                "--tags",
+                "--prune",
+            ],
+        )
+    } else {
+        run_git(&cwd, &["fetch", "--all", "--tags", "--prune"])
+    };
+
     if result_all.is_ok() {
         let root = default_cache_root();
         let now = now_ms();
@@ -341,8 +473,8 @@ mod tests {
         .expect("spawn");
         assert!(status.success());
 
-        let first = swr_fetch_origin_all_path_bool(&repo_dir, 5_000).expect("swr fetch 1");
-        let second = swr_fetch_origin_all_path_bool(&repo_dir, 5_000).expect("swr fetch 2");
+        let first = swr_fetch_origin_all_path_bool(&repo_dir, 5_000, None).expect("swr fetch 1");
+        let second = swr_fetch_origin_all_path_bool(&repo_dir, 5_000, None).expect("swr fetch 2");
         assert!(first, "first call should be synchronous fetch");
         assert!(
             !second,

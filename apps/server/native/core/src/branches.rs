@@ -22,16 +22,18 @@ fn oid_to_hex(oid: ObjectId) -> String {
 }
 
 pub fn list_remote_branches(opts: GitListRemoteBranchesOptions) -> Result<Vec<BranchInfo>> {
+    let auth_token = opts.authToken.as_deref();
+
     // Resolve local repo path
     let repo_path = if let Some(p) = &opts.originPathOverride {
         std::path::PathBuf::from(p)
     } else {
         let url = resolve_repo_url(opts.repoFullName.as_deref(), opts.repoUrl.as_deref())?;
-        ensure_repo(&url)?
+        ensure_repo(&url, auth_token)?
     };
 
     // Make sure remotes are fresh (this is cheap if within SWR window)
-    let _ = swr_fetch_origin_all_path(&repo_path, crate::repo::cache::fetch_window_ms());
+    let _ = swr_fetch_origin_all_path(&repo_path, crate::repo::cache::fetch_window_ms(), auth_token);
 
     let repo = gix::open(&repo_path)?;
 
