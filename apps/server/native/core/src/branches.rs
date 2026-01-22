@@ -26,7 +26,11 @@ pub fn list_remote_branches(opts: GitListRemoteBranchesOptions) -> Result<Vec<Br
     let repo_path = if let Some(p) = &opts.originPathOverride {
         std::path::PathBuf::from(p)
     } else {
-        let url = resolve_repo_url(opts.repoFullName.as_deref(), opts.repoUrl.as_deref())?;
+        let url = resolve_repo_url(
+            opts.repoFullName.as_deref(),
+            opts.repoUrl.as_deref(),
+            opts.authToken.as_deref(),
+        )?;
         ensure_repo(&url)?
     };
 

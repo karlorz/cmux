@@ -197,7 +197,11 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
     let repo_path = if let Some(p) = &opts.originPathOverride {
         std::path::PathBuf::from(p)
     } else {
-        let url = resolve_repo_url(opts.repoFullName.as_deref(), opts.repoUrl.as_deref())?;
+        let url = resolve_repo_url(
+            opts.repoFullName.as_deref(),
+            opts.repoUrl.as_deref(),
+            opts.authToken.as_deref(),
+        )?;
         ensure_repo(&url)?
     };
     let _d_repo_path = t_repo_path.elapsed();

@@ -16,6 +16,8 @@ export interface GitDiffOptions {
   maxBytes?: number;
   lastKnownBaseSha?: string;
   lastKnownMergeCommitSha?: string;
+  /** GitHub OAuth token for authenticating private repo operations */
+  authToken?: string;
 }
 
 type NativeGitModule = {
@@ -25,6 +27,7 @@ type NativeGitModule = {
     repoFullName?: string;
     repoUrl?: string;
     originPathOverride?: string;
+    authToken?: string;
   }) => Promise<
     Array<{
       name: string;
@@ -106,6 +109,7 @@ export async function listRemoteBranches(opts: {
   repoFullName?: string;
   repoUrl?: string;
   originPathOverride?: string;
+  authToken?: string;
 }): Promise<
   Array<{
     name: string;

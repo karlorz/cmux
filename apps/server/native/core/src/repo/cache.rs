@@ -49,13 +49,32 @@ fn default_cache_root() -> PathBuf {
 }
 
 fn slug_from_url(url: &str) -> String {
-    let clean = url.trim_end_matches(".git");
+    // First clean any auth tokens from the URL
+    let clean_url = clean_repo_url(url);
+    let clean = clean_url.trim_end_matches(".git");
     let name = clean.split('/').rev().take(2).collect::<Vec<_>>();
     if name.len() == 2 {
         format!("{}__{}", name[1], name[0])
     } else {
         clean.replace(['/', ':', '@', '\\'], "_")
     }
+}
+
+/// Get a clean URL (without auth token) for cache key and storage purposes.
+/// This strips any embedded credentials from the URL.
+fn clean_repo_url(url: &str) -> String {
+    // Remove x-access-token credentials from URL
+    if url.contains("x-access-token:") {
+        // Pattern: https://x-access-token:TOKEN@github.com/...
+        if let Some(at_pos) = url.find('@') {
+            if let Some(scheme_end) = url.find("://") {
+                let scheme = &url[..scheme_end + 3]; // "https://"
+                let rest = &url[at_pos + 1..]; // "github.com/..."
+                return format!("{}{}", scheme, rest);
+            }
+        }
+    }
+    url.to_string()
 }
 
 pub fn ensure_repo(url: &str) -> Result<PathBuf> {
@@ -95,14 +114,33 @@ pub fn ensure_repo(url: &str) -> Result<PathBuf> {
     Ok(path)
 }
 
-pub fn resolve_repo_url(repo_full_name: Option<&str>, repo_url: Option<&str>) -> Result<String> {
-    if let Some(u) = repo_url {
-        return Ok(u.to_string());
+/// Construct a repository URL, optionally injecting an auth token for private repo access.
+/// When auth_token is provided, the URL becomes: https://x-access-token:{token}@github.com/{repo}.git
+pub fn resolve_repo_url(
+    repo_full_name: Option<&str>,
+    repo_url: Option<&str>,
+    auth_token: Option<&str>,
+) -> Result<String> {
+    let base_url = if let Some(u) = repo_url {
+        u.to_string()
+    } else if let Some(full) = repo_full_name {
+        format!("https://github.com/{}.git", full)
+    } else {
+        return Err(anyhow!("repoUrl or repoFullName required"));
+    };
+
+    // Inject auth token if provided and URL is a GitHub HTTPS URL
+    if let Some(token) = auth_token {
+        if !token.is_empty() && base_url.starts_with("https://github.com/") {
+            // Transform https://github.com/... to https://x-access-token:{token}@github.com/...
+            return Ok(base_url.replace(
+                "https://github.com/",
+                &format!("https://x-access-token:{}@github.com/", token),
+            ));
+        }
     }
-    if let Some(full) = repo_full_name {
-        return Ok(format!("https://github.com/{}.git", full));
-    }
-    Err(anyhow!("repoUrl or repoFullName required"))
+
+    Ok(base_url)
 }
 
 fn load_index(root: &Path) -> CacheIndex {
