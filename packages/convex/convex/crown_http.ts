@@ -713,11 +713,15 @@ async function handleCrownCheckRequest(
       ? completedRuns[0]._id
       : null;
 
-  if (
-    shouldEvaluate &&
+  // Set crown evaluation status to "pending" for both multi-run and single-run cases
+  // This ensures the UI shows "Crown evaluation in progress" consistently
+  const shouldSetPendingStatus =
+    (shouldEvaluate || singleRunWinnerId) &&
+    !existingEvaluation &&
     currentStatus !== "pending" &&
-    currentStatus !== "in_progress"
-  ) {
+    currentStatus !== "in_progress";
+
+  if (shouldSetPendingStatus) {
     try {
       await ctx.runMutation(internal.tasks.setCrownEvaluationStatusInternal, {
         taskId,
