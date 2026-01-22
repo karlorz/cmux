@@ -36,6 +36,10 @@ pub struct GitListRemoteBranchesOptions {
     pub repoFullName: Option<String>,
     pub repoUrl: Option<String>,
     pub originPathOverride: Option<String>,
+    /// GitHub OAuth token for private repo authentication.
+    /// When provided, injected into HTTPS URLs as x-access-token.
+    /// Never persisted to disk or included in cache keys.
+    pub authToken: Option<String>,
 }
 
 #[cfg(test)]
@@ -59,4 +63,8 @@ pub struct GitDiffOptions {
     pub maxBytes: Option<i32>,
     pub lastKnownBaseSha: Option<String>,
     pub lastKnownMergeCommitSha: Option<String>,
+    /// GitHub OAuth token for private repo authentication.
+    /// When provided, injected into HTTPS URLs as x-access-token.
+    /// Never persisted to disk or included in cache keys.
+    pub authToken: Option<String>,
 }

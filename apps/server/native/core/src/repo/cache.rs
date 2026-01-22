@@ -105,6 +105,33 @@ pub fn resolve_repo_url(repo_full_name: Option<&str>, repo_url: Option<&str>) ->
     Err(anyhow!("repoUrl or repoFullName required"))
 }
 
+/// Inject an auth token into a GitHub HTTPS URL for private repo access.
+/// Uses the x-access-token scheme: https://x-access-token:{token}@github.com/...
+/// Returns the original URL unchanged if:
+/// - No token is provided
+/// - The URL is not a GitHub HTTPS URL
+/// - The URL already contains credentials
+pub fn inject_auth_token(url: &str, auth_token: Option<&str>) -> String {
+    let Some(token) = auth_token else {
+        return url.to_string();
+    };
+    if token.is_empty() {
+        return url.to_string();
+    }
+    // Only inject for GitHub HTTPS URLs
+    if !url.starts_with("https://github.com/") {
+        return url.to_string();
+    }
+    // Don't inject if URL already has credentials
+    if url.contains("@github.com") {
+        return url.to_string();
+    }
+    url.replace(
+        "https://github.com/",
+        &format!("https://x-access-token:{}@github.com/", token),
+    )
+}
+
 fn load_index(root: &Path) -> CacheIndex {
     let idx_path = root.join("cache-index.json");
     if let Ok(data) = fs::read(&idx_path) {
