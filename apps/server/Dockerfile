@@ -46,7 +46,39 @@ RUN jq -r '.dependencies | keys[] | select(startswith("@cmux") | not)' \
     sort -u > /tmp/deps-to-hoist.txt
 
 # =============================================================================
-# Stage 2: Production
+# Stage 2: Build native Rust module
+# =============================================================================
+FROM rust:1.85-slim-bookworm AS rust-builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libssl-dev \
+    pkg-config \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js for napi-rs CLI
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy native module source
+COPY apps/server/native/core/Cargo.toml apps/server/native/core/Cargo.lock* ./apps/server/native/core/
+COPY apps/server/native/core/src ./apps/server/native/core/src
+COPY apps/server/native/core/.cargo ./apps/server/native/core/.cargo
+
+# Build native module
+WORKDIR /app/apps/server/native/core
+RUN npm install @napi-rs/cli
+# Pin home crate to version compatible with current Rust (0.5.12 requires Rust 1.88)
+RUN cargo update home --precise 0.5.11
+RUN npx napi build --platform --release
+
+# =============================================================================
+# Stage 3: Production
 # =============================================================================
 FROM oven/bun:1-slim AS production
 
@@ -73,6 +105,9 @@ COPY packages/www-openapi-client ./packages/www-openapi-client
 
 # Copy server source code
 COPY apps/server ./apps/server
+
+# Copy compiled native module from rust-builder
+COPY --from=rust-builder /app/apps/server/native/core/*.node ./apps/server/native/core/
 
 # Copy root config files
 COPY package.json bun.lock .npmrc ./
