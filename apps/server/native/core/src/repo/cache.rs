@@ -65,9 +65,16 @@ pub fn ensure_repo(url: &str) -> Result<PathBuf> {
 /// Ensure a repository is cloned and up-to-date, with optional auth token for private repos.
 /// The auth token is only used transiently for clone/fetch operations.
 /// Cache paths are derived from the clean URL (without token) to ensure consistent caching.
+/// If no explicit auth_token is provided but the URL contains embedded credentials,
+/// those credentials will be extracted and used for authentication.
 pub fn ensure_repo_with_auth(url: &str, auth_token: Option<&str>) -> Result<PathBuf> {
     let root = default_cache_root();
     fs::create_dir_all(&root)?;
+
+    // Extract token from URL if no explicit token provided (backwards compatibility)
+    let url_token = extract_token_from_url(url);
+    let effective_token: Option<&str> = auth_token.or(url_token.as_deref());
+
     // Use clean URL for cache path derivation (token stripped)
     let clean_url = strip_auth_from_url(url);
     let path = root.join(slug_from_url(&clean_url));
@@ -76,35 +83,59 @@ pub fn ensure_repo_with_auth(url: &str, auth_token: Option<&str>) -> Result<Path
     if path.exists() && (!git_dir.exists() || !head.exists()) {
         let _ = fs::remove_dir_all(&path);
     }
-    // Inject auth token for clone/fetch if provided
-    let auth_url = inject_auth_token(&clean_url, auth_token);
+
     if !path.exists() {
         fs::create_dir_all(&path)?;
-        run_git(
-            root.to_string_lossy().as_ref(),
-            &[
-                "clone",
-                "--no-single-branch",
-                &auth_url,
-                path.file_name().unwrap().to_str().unwrap(),
-            ],
-        )?;
-        // After clone, reset the remote URL to the clean URL (no token persisted)
-        let _ = run_git(
-            path.to_string_lossy().as_ref(),
-            &["remote", "set-url", "origin", &clean_url],
-        );
+        // Use git -c url.insteadOf for clone to avoid persisting token
+        let clone_result = if let Some(token) = effective_token {
+            if !token.is_empty() {
+                let auth_prefix = format!("https://x-access-token:{}@github.com/", token);
+                let config_arg = format!("url.{}.insteadOf=https://github.com/", auth_prefix);
+                run_git(
+                    root.to_string_lossy().as_ref(),
+                    &[
+                        "-c",
+                        &config_arg,
+                        "clone",
+                        "--no-single-branch",
+                        &clean_url,
+                        path.file_name().unwrap().to_str().unwrap(),
+                    ],
+                )
+            } else {
+                run_git(
+                    root.to_string_lossy().as_ref(),
+                    &[
+                        "clone",
+                        "--no-single-branch",
+                        &clean_url,
+                        path.file_name().unwrap().to_str().unwrap(),
+                    ],
+                )
+            }
+        } else {
+            run_git(
+                root.to_string_lossy().as_ref(),
+                &[
+                    "clone",
+                    "--no-single-branch",
+                    &clean_url,
+                    path.file_name().unwrap().to_str().unwrap(),
+                ],
+            )
+        };
+        clone_result?;
         let _ = update_cache_index_with(&root, &path, Some(now_ms()));
     } else {
-        let _ = swr_fetch_origin_all_path_with_auth(&path, fetch_window_ms(), auth_token);
+        let _ = swr_fetch_origin_all_path_with_auth(&path, fetch_window_ms(), effective_token);
     }
     let shallow = path.join(".git").join("shallow");
     if shallow.exists() {
-        // Use authenticated URL for unshallow fetch
+        // Use authenticated fetch for unshallow
         let _ = fetch_with_auth(
             path.to_string_lossy().as_ref(),
             &["fetch", "--unshallow", "--tags"],
-            auth_token,
+            effective_token,
         );
     }
 
@@ -128,6 +159,26 @@ fn strip_auth_from_url(url: &str) -> String {
         }
     }
     url.to_string()
+}
+
+/// Extract auth token from a URL if present.
+/// Handles URLs like https://x-access-token:TOKEN@github.com/...
+fn extract_token_from_url(url: &str) -> Option<String> {
+    if let Some(at_pos) = url.find('@') {
+        if url.starts_with("https://") {
+            if let Some(proto_end) = url.find("://") {
+                let before_at = &url[proto_end + 3..at_pos];
+                // Check for x-access-token:TOKEN format
+                if let Some(colon_pos) = before_at.find(':') {
+                    let token = &before_at[colon_pos + 1..];
+                    if !token.is_empty() {
+                        return Some(token.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Resolve the repository URL from either repoUrl or repoFullName.
@@ -309,34 +360,29 @@ pub fn fetch_origin_all_path(path: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-/// Execute a git command with optional auth token injected into the remote URL.
-/// The token is used transiently via GIT_ASKPASS to avoid persisting credentials.
+/// Execute a git fetch with optional auth token using git's URL replacement feature.
+/// This approach is concurrency-safe as it doesn't modify the repository config.
+/// The token is passed via environment-based URL rewriting to avoid persistence.
 fn fetch_with_auth(cwd: &str, args: &[&str], auth_token: Option<&str>) -> Result<String> {
     match auth_token {
         Some(token) if !token.is_empty() => {
-            // Use credential helper approach: set temp remote URL with token, fetch, then reset
-            // First, get the current origin URL
-            let origin_url_result = run_git(cwd, &["remote", "get-url", "origin"]);
-            let origin_url = origin_url_result.unwrap_or_default().trim().to_string();
+            // Use git's insteadOf config via -c to rewrite URLs without modifying .git/config
+            // This is concurrency-safe as it only affects this process
+            let auth_prefix = format!("https://x-access-token:{}@github.com/", token);
+            let config_arg = format!("url.{}.insteadOf=https://github.com/", auth_prefix);
 
-            if origin_url.starts_with("https://github.com/") {
-                let auth_url = inject_auth_token(&origin_url, Some(token));
-                // Temporarily set authenticated URL
-                let _ = run_git(cwd, &["remote", "set-url", "origin", &auth_url]);
-                // Perform the fetch
-                let result = run_git(cwd, args);
-                // Reset to clean URL (no token persisted)
-                let _ = run_git(cwd, &["remote", "set-url", "origin", &origin_url]);
-                result
-            } else {
-                run_git(cwd, args)
-            }
+            // Build args with -c config prepended
+            let mut full_args: Vec<&str> = vec!["-c", &config_arg];
+            full_args.extend(args);
+
+            run_git(cwd, &full_args)
         }
         _ => run_git(cwd, args),
     }
 }
 
 /// SWR fetch with auth token support for private repos.
+/// When auth_token is provided (private repo), background fetch is skipped to avoid failures.
 pub fn swr_fetch_origin_all_path_with_auth(
     path: &std::path::Path,
     window_ms: u128,
@@ -350,17 +396,24 @@ pub fn swr_fetch_origin_all_path_with_auth(
     let last_fetch_map = get_map_last_fetch(&PathBuf::from(&cwd));
     let last_fetch = last_fetch_idx.or(last_fetch_map);
 
+    let has_auth = auth_token.is_some_and(|t| !t.is_empty());
+
     if let Some(t) = last_fetch {
         if now.saturating_sub(t) <= window_ms {
-            // Within window - still do background fetch but return immediately
-            // Note: background fetch without auth (read-only cache refresh)
-            let cwd_bg = cwd.clone();
-            let root_bg = root.clone();
-            std::thread::spawn(move || {
-                let _ = run_git(&cwd_bg, &["fetch", "--all", "--tags", "--prune"]);
-                let _ = update_cache_index_with(&root_bg, &PathBuf::from(&cwd_bg), Some(now_ms()));
-                set_map_last_fetch(&PathBuf::from(&cwd_bg), now_ms());
-            });
+            // Within window - for public repos, do background fetch
+            // For private repos (auth required), skip background fetch to avoid failures
+            if !has_auth {
+                let cwd_bg = cwd.clone();
+                let root_bg = root.clone();
+                std::thread::spawn(move || {
+                    let _ = run_git(&cwd_bg, &["fetch", "--all", "--tags", "--prune"]);
+                    let _ =
+                        update_cache_index_with(&root_bg, &PathBuf::from(&cwd_bg), Some(now_ms()));
+                    set_map_last_fetch(&PathBuf::from(&cwd_bg), now_ms());
+                });
+            }
+            // For private repos within window, return early without background fetch
+            // They will get a fresh fetch on the next request outside the window
             return Ok(false);
         }
     }
