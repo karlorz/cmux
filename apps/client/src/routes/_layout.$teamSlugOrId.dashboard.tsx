@@ -121,6 +121,23 @@ function DashboardComponent() {
   const tasksQuery = useQuery(
     convexQuery(api.tasks.get, { teamSlugOrId })
   );
+  const archivedTasksQuery = useQuery(
+    convexQuery(api.tasks.get, { teamSlugOrId, archived: true })
+  );
+
+  const tasksReady = tasksQuery.isSuccess && archivedTasksQuery.isSuccess;
+  const { hasRealTasks, hasCompletedRealTasks } = useMemo(() => {
+    const activeTasks = tasksQuery.data ?? [];
+    const archivedTasks = archivedTasksQuery.data ?? [];
+    const allTasks = [...activeTasks, ...archivedTasks];
+    const realTasks = allTasks.filter(
+      (task) => !task.isCloudWorkspace && !task.isLocalWorkspace
+    );
+    return {
+      hasRealTasks: realTasks.length > 0,
+      hasCompletedRealTasks: realTasks.some((task) => task.isCompleted),
+    };
+  }, [tasksQuery.data, archivedTasksQuery.data]);
 
   // Auto-start onboarding for new users on the dashboard
   useEffect(() => {
@@ -133,23 +150,22 @@ function DashboardComponent() {
     // Don't start if onboarding is already active
     if (onboarding.isOnboardingActive) return;
 
-    // Wait for tasks query to load
-    if (tasksQuery.isLoading) return;
+    // Wait for tasks queries to load
+    if (!tasksReady) return;
 
-    // Only start for new users - check for real tasks (not standalone workspaces)
+    // Only start for new users - check for real tasks (not standalone workspaces),
+    // including archived tasks.
     // Standalone workspaces (isCloudWorkspace/isLocalWorkspace) don't count as "tasks"
-    const realTasks = tasksQuery.data?.filter(
-      (task) => !task.isCloudWorkspace && !task.isLocalWorkspace
-    );
-    const hasRealTasks = (realTasks?.length ?? 0) > 0;
     if (hasRealTasks) return;
+    if (hasCompletedRealTasks) return;
 
     // Start onboarding for new users
     onboarding.startOnboarding();
   }, [
     onboarding,
-    tasksQuery.isLoading,
-    tasksQuery.data,
+    tasksReady,
+    hasRealTasks,
+    hasCompletedRealTasks,
   ]);
 
   const [selectedProject, setSelectedProject] = useState<string[]>(() => {
