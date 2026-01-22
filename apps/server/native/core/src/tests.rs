@@ -129,7 +129,7 @@ fn ground_truth() -> &'static GroundTruthFile {
 
 fn ensure_repo_with_pull_refs(repo_slug: &str) -> PathBuf {
     let url = resolve_repo_url(Some(repo_slug), None).expect("resolve repo url");
-    let repo_path = ensure_repo(&url).expect("ensure repo path");
+    let repo_path = ensure_repo(&url, None).expect("ensure repo path");
     let repo_path_str = repo_path.to_string_lossy().to_string();
 
     let cache = PULL_FETCH_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
@@ -225,6 +225,7 @@ fn compute_diff_for_pr(pr: &PullRequestRecord) -> CachedDiff {
         maxBytes: Some(LARGE_MAX_BYTES),
         lastKnownBaseSha: None,
         lastKnownMergeCommitSha: None,
+        authToken: None,
     })
     .unwrap_or_else(|err| panic!("diff_refs failed for {}#{}: {err}", pr.repo, pr.number));
 
@@ -610,6 +611,7 @@ fn refs_diff_basic_on_local_repo() {
         maxBytes: Some(1024 * 1024),
         lastKnownBaseSha: None,
         lastKnownMergeCommitSha: None,
+        authToken: None,
     })
     .unwrap();
 
@@ -666,6 +668,7 @@ fn refs_merge_base_after_merge_is_branch_tip() {
         maxBytes: Some(1024 * 1024),
         lastKnownBaseSha: None,
         lastKnownMergeCommitSha: None,
+        authToken: None,
     })
     .unwrap();
     assert_eq!(
@@ -724,6 +727,7 @@ fn refs_diff_numstat_matches_known_pairs() {
             maxBytes: Some(10 * 1024 * 1024),
             lastKnownBaseSha: None,
             lastKnownMergeCommitSha: None,
+            authToken: None,
         })
         .expect("diff refs");
         let adds: i32 = out.iter().map(|e| e.additions).sum();
@@ -818,6 +822,7 @@ fn refs_diff_handles_binary_files() {
         maxBytes: Some(1024 * 1024),
         lastKnownBaseSha: None,
         lastKnownMergeCommitSha: None,
+        authToken: None,
     })
     .expect("diff refs binary");
 

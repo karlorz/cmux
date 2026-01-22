@@ -24,11 +24,10 @@ pub async fn get_time() -> String {
 pub async fn git_diff(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
     #[cfg(debug_assertions)]
     println!(
-    "[cmux_native_git] git_diff headRef={} baseRef={:?} originPathOverride={:?} repoUrl={:?} repoFullName={:?} includeContents={:?} maxBytes={:?}",
+    "[cmux_native_git] git_diff headRef={} baseRef={:?} originPathOverride={:?} repoFullName={:?} includeContents={:?} maxBytes={:?}",
     opts.headRef,
     opts.baseRef,
     opts.originPathOverride,
-    opts.repoUrl,
     opts.repoFullName,
     opts.includeContents,
     opts.maxBytes
@@ -45,9 +44,8 @@ pub async fn git_list_remote_branches(
 ) -> Result<Vec<BranchInfo>> {
     #[cfg(debug_assertions)]
     println!(
-    "[cmux_native_git] git_list_remote_branches repoFullName={:?} repoUrl={:?} originPathOverride={:?}",
+    "[cmux_native_git] git_list_remote_branches repoFullName={:?} originPathOverride={:?}",
     opts.repoFullName,
-    opts.repoUrl,
     opts.originPathOverride
   );
     tokio::task::spawn_blocking(move || branches::list_remote_branches(opts))

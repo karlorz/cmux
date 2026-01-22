@@ -198,7 +198,7 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
         std::path::PathBuf::from(p)
     } else {
         let url = resolve_repo_url(opts.repoFullName.as_deref(), opts.repoUrl.as_deref())?;
-        ensure_repo(&url)?
+        ensure_repo(&url, opts.authToken.as_deref())?
     };
     let _d_repo_path = t_repo_path.elapsed();
     let cwd = repo_path.to_string_lossy().to_string();
@@ -209,9 +209,10 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
         Duration::from_millis(0)
     } else {
         let t_fetch = Instant::now();
-        let _ = crate::repo::cache::swr_fetch_origin_all_path(
+        let _ = crate::repo::cache::swr_fetch_origin_all_path_with_auth(
             std::path::Path::new(&cwd),
             crate::repo::cache::fetch_window_ms(),
+            opts.authToken.as_deref(),
         );
         t_fetch.elapsed()
     };
@@ -230,7 +231,11 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
                 head_ref
             );
             let fetch_succeeded =
-                crate::repo::cache::fetch_specific_ref(std::path::Path::new(&cwd), head_ref)
+                crate::repo::cache::fetch_specific_ref(
+                    std::path::Path::new(&cwd),
+                    head_ref,
+                    opts.authToken.as_deref(),
+                )
                     .unwrap_or(false);
             if fetch_succeeded {
                 // Re-open repo after fetch to pick up new refs
@@ -297,7 +302,11 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
                 "[native.refs] base ref '{}' is a default branch, fetching fresh...",
                 spec
             );
-            let _ = crate::repo::cache::fetch_specific_ref(std::path::Path::new(&cwd), spec);
+            let _ = crate::repo::cache::fetch_specific_ref(
+                std::path::Path::new(&cwd),
+                spec,
+                opts.authToken.as_deref(),
+            );
         }
     }
 
@@ -319,7 +328,11 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
                     spec
                 );
                 let fetch_succeeded =
-                    crate::repo::cache::fetch_specific_ref(std::path::Path::new(&cwd), spec)
+                    crate::repo::cache::fetch_specific_ref(
+                        std::path::Path::new(&cwd),
+                        spec,
+                        opts.authToken.as_deref(),
+                    )
                         .unwrap_or(false);
                 if fetch_succeeded {
                     // Re-open repo after fetch to pick up new refs

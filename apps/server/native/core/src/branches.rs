@@ -2,7 +2,7 @@ use anyhow::Result;
 use gix::bstr::ByteSlice;
 use gix::hash::ObjectId;
 
-use crate::repo::cache::{ensure_repo, resolve_repo_url, swr_fetch_origin_all_path};
+use crate::repo::cache::{ensure_repo, resolve_repo_url, swr_fetch_origin_all_path_with_auth};
 use crate::types::{BranchInfo, GitListRemoteBranchesOptions};
 
 fn refname_to_branch(name: &str) -> Option<(String /*remote*/, String /*branch*/)> {
@@ -27,11 +27,15 @@ pub fn list_remote_branches(opts: GitListRemoteBranchesOptions) -> Result<Vec<Br
         std::path::PathBuf::from(p)
     } else {
         let url = resolve_repo_url(opts.repoFullName.as_deref(), opts.repoUrl.as_deref())?;
-        ensure_repo(&url)?
+        ensure_repo(&url, opts.authToken.as_deref())?
     };
 
     // Make sure remotes are fresh (this is cheap if within SWR window)
-    let _ = swr_fetch_origin_all_path(&repo_path, crate::repo::cache::fetch_window_ms());
+    let _ = swr_fetch_origin_all_path_with_auth(
+        &repo_path,
+        crate::repo::cache::fetch_window_ms(),
+        opts.authToken.as_deref(),
+    );
 
     let repo = gix::open(&repo_path)?;
 
@@ -228,6 +232,7 @@ mod tests {
             repoFullName: None,
             repoUrl: None,
             originPathOverride: Some(clone.to_string_lossy().to_string()),
+            authToken: None,
         })
         .expect("list branches");
         let names: Vec<String> = res.iter().map(|b| b.name.clone()).collect();

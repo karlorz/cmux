@@ -179,7 +179,7 @@ pub fn landed_diff(opts: GitDiffLandedOptions) -> Result<Vec<DiffEntry>> {
   let t_repo_path = Instant::now();
   let repo_path = if let Some(p) = &opts.originPathOverride { std::path::PathBuf::from(p) } else {
     let url = crate::repo::cache::resolve_repo_url(opts.repoFullName.as_deref(), opts.repoUrl.as_deref())?;
-    crate::repo::cache::ensure_repo(&url)?
+    crate::repo::cache::ensure_repo(&url, None)?
   };
   let _d_repo_path = t_repo_path.elapsed();
   let cwd = repo_path.to_string_lossy().to_string();

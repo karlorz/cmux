@@ -16,6 +16,11 @@ export interface GitDiffOptions {
   maxBytes?: number;
   lastKnownBaseSha?: string;
   lastKnownMergeCommitSha?: string;
+  /**
+   * Optional GitHub OAuth token for authenticated HTTPS clone/fetch in web mode.
+   * Must never be persisted or logged.
+   */
+  authToken?: string;
 }
 
 type NativeGitModule = {
@@ -25,6 +30,7 @@ type NativeGitModule = {
     repoFullName?: string;
     repoUrl?: string;
     originPathOverride?: string;
+    authToken?: string;
   }) => Promise<
     Array<{
       name: string;
@@ -106,6 +112,7 @@ export async function listRemoteBranches(opts: {
   repoFullName?: string;
   repoUrl?: string;
   originPathOverride?: string;
+  authToken?: string;
 }): Promise<
   Array<{
     name: string;

@@ -452,6 +452,8 @@ export function setupSocketHandlers(
     }
 
     socket.on("git-diff", async (data, callback) => {
+      const capturedAuthToken = currentAuthToken;
+      const capturedAuthHeaderJson = currentAuthHeaderJson;
       try {
         const parsed = GitSocketDiffRequestSchema.parse(data);
 
@@ -465,18 +467,23 @@ export function setupSocketHandlers(
           );
         }
 
-        const diffs = await getGitDiff({
-          headRef: parsed.headRef,
-          baseRef: parsed.baseRef,
-          repoFullName: parsed.repoFullName,
-          repoUrl: parsed.repoUrl,
-          originPathOverride: parsed.originPathOverride,
-          includeContents: parsed.includeContents ?? true,
-          maxBytes: parsed.maxBytes,
-          teamSlugOrId: safeTeam,
-          lastKnownBaseSha: parsed.lastKnownBaseSha,
-          lastKnownMergeCommitSha: parsed.lastKnownMergeCommitSha,
-        });
+        const diffs = await runWithAuth(
+          capturedAuthToken,
+          capturedAuthHeaderJson,
+          async () =>
+            await getGitDiff({
+              headRef: parsed.headRef,
+              baseRef: parsed.baseRef,
+              repoFullName: parsed.repoFullName,
+              repoUrl: parsed.repoUrl,
+              originPathOverride: parsed.originPathOverride,
+              includeContents: parsed.includeContents ?? true,
+              maxBytes: parsed.maxBytes,
+              teamSlugOrId: safeTeam,
+              lastKnownBaseSha: parsed.lastKnownBaseSha,
+              lastKnownMergeCommitSha: parsed.lastKnownMergeCommitSha,
+            })
+        );
 
         if (parsed.originPathOverride) {
           const workspacePath = parsed.originPathOverride;

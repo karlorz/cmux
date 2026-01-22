@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::util::run_git;
+use crate::util::{github_http_extraheader_value, run_git, run_git_with_config_env};
 
 const MAX_CACHE_REPOS: usize = 20;
 
@@ -58,10 +58,85 @@ fn slug_from_url(url: &str) -> String {
     }
 }
 
-pub fn ensure_repo(url: &str) -> Result<PathBuf> {
+fn strip_url_userinfo(url: &str) -> String {
+    let (scheme, rest) = match url.split_once("://") {
+        Some((s, r)) => (s, r),
+        None => return url.to_string(),
+    };
+    let (host, path) = match rest.split_once('/') {
+        Some((h, p)) => (h, format!("/{}", p)),
+        None => (rest, String::new()),
+    };
+    let host = match host.rsplit_once('@') {
+        Some((_userinfo, h)) => h,
+        None => host,
+    };
+    format!("{scheme}://{host}{path}")
+}
+
+fn is_github_https_url(url: &str) -> bool {
+    let u = url.trim();
+    u.starts_with("https://github.com/") || u.starts_with("http://github.com/")
+}
+
+fn git_configs_for_github_token(token: &str) -> Vec<(&'static str, String)> {
+    vec![
+        ("credential.helper", "".to_string()),
+        ("credential.interactive", "never".to_string()),
+        (
+            "http.https://github.com/.extraheader",
+            github_http_extraheader_value(token),
+        ),
+    ]
+}
+
+fn run_git_maybe_github_authed_by_url(
+    cwd: &str,
+    args: &[&str],
+    url: &str,
+    auth_token: Option<&str>,
+) -> Result<String> {
+    let url_clean = strip_url_userinfo(url);
+    if let Some(t) = auth_token {
+        if !t.is_empty() && is_github_https_url(&url_clean) {
+            return run_git_with_config_env(cwd, args, &git_configs_for_github_token(t));
+        }
+    }
+    run_git(cwd, args)
+}
+
+fn origin_url(repo_path: &Path) -> Option<String> {
+    let cwd = repo_path.to_string_lossy().to_string();
+    run_git(&cwd, &["remote", "get-url", "origin"])
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn run_git_maybe_github_authed_by_origin(
+    repo_path: &Path,
+    args: &[&str],
+    auth_token: Option<&str>,
+) -> Result<String> {
+    let cwd = repo_path.to_string_lossy().to_string();
+    if let Some(t) = auth_token {
+        if !t.is_empty() {
+            if let Some(u) = origin_url(repo_path) {
+                let u_clean = strip_url_userinfo(&u);
+                if is_github_https_url(&u_clean) {
+                    return run_git_with_config_env(&cwd, args, &git_configs_for_github_token(t));
+                }
+            }
+        }
+    }
+    run_git(&cwd, args)
+}
+
+pub fn ensure_repo(url: &str, auth_token: Option<&str>) -> Result<PathBuf> {
     let root = default_cache_root();
     fs::create_dir_all(&root)?;
-    let path = root.join(slug_from_url(url));
+    let url_clean = strip_url_userinfo(url);
+    let path = root.join(slug_from_url(&url_clean));
     let git_dir = path.join(".git");
     let head = git_dir.join("HEAD");
     if path.exists() && (!git_dir.exists() || !head.exists()) {
@@ -69,24 +144,27 @@ pub fn ensure_repo(url: &str) -> Result<PathBuf> {
     }
     if !path.exists() {
         fs::create_dir_all(&path)?;
-        run_git(
+        run_git_maybe_github_authed_by_url(
             root.to_string_lossy().as_ref(),
             &[
                 "clone",
                 "--no-single-branch",
-                url,
+                &url_clean,
                 path.file_name().unwrap().to_str().unwrap(),
             ],
+            &url_clean,
+            auth_token,
         )?;
         let _ = update_cache_index_with(&root, &path, Some(now_ms()));
     } else {
-        let _ = swr_fetch_origin_all_path_bool(&path, fetch_window_ms());
+        let _ = swr_fetch_origin_all_path_bool_with_auth(&path, fetch_window_ms(), auth_token);
     }
     let shallow = path.join(".git").join("shallow");
     if shallow.exists() {
-        let _ = run_git(
-            path.to_string_lossy().as_ref(),
+        let _ = run_git_maybe_github_authed_by_origin(
+            &path,
             &["fetch", "--unshallow", "--tags"],
+            auth_token,
         );
     }
 
@@ -97,7 +175,7 @@ pub fn ensure_repo(url: &str) -> Result<PathBuf> {
 
 pub fn resolve_repo_url(repo_full_name: Option<&str>, repo_url: Option<&str>) -> Result<String> {
     if let Some(u) = repo_url {
-        return Ok(u.to_string());
+        return Ok(strip_url_userinfo(u));
     }
     if let Some(full) = repo_full_name {
         return Ok(format!("https://github.com/{}.git", full));
@@ -220,6 +298,14 @@ fn set_map_last_fetch(repo_path: &Path, t: u128) {
 }
 
 pub fn swr_fetch_origin_all_path_bool(path: &std::path::Path, window_ms: u128) -> Result<bool> {
+    swr_fetch_origin_all_path_bool_with_auth(path, window_ms, None)
+}
+
+pub fn swr_fetch_origin_all_path_bool_with_auth(
+    path: &std::path::Path,
+    window_ms: u128,
+    auth_token: Option<&str>,
+) -> Result<bool> {
     let cwd = path.to_string_lossy().to_string();
     let root = default_cache_root();
     let now = now_ms();
@@ -232,8 +318,14 @@ pub fn swr_fetch_origin_all_path_bool(path: &std::path::Path, window_ms: u128) -
         if now.saturating_sub(t) <= window_ms {
             let cwd_bg = cwd.clone();
             let root_bg = root.clone();
+            let token_bg = auth_token.map(|t| t.to_string());
             std::thread::spawn(move || {
-                let _ = run_git(&cwd_bg, &["fetch", "--all", "--tags", "--prune"]);
+                let repo_path = PathBuf::from(&cwd_bg);
+                let _ = run_git_maybe_github_authed_by_origin(
+                    &repo_path,
+                    &["fetch", "--all", "--tags", "--prune"],
+                    token_bg.as_deref(),
+                );
                 let _ = update_cache_index_with(&root_bg, &PathBuf::from(&cwd_bg), Some(now_ms()));
                 set_map_last_fetch(&PathBuf::from(&cwd_bg), now_ms());
             });
@@ -241,7 +333,11 @@ pub fn swr_fetch_origin_all_path_bool(path: &std::path::Path, window_ms: u128) -
         }
     }
 
-    let _ = run_git(&cwd, &["fetch", "--all", "--tags", "--prune"]);
+    let _ = run_git_maybe_github_authed_by_origin(
+        Path::new(&cwd),
+        &["fetch", "--all", "--tags", "--prune"],
+        auth_token,
+    );
     let now2 = now_ms();
     let _ = update_cache_index_with(&root, &PathBuf::from(&cwd), Some(now2));
     set_map_last_fetch(&PathBuf::from(&cwd), now2);
@@ -249,20 +345,40 @@ pub fn swr_fetch_origin_all_path_bool(path: &std::path::Path, window_ms: u128) -
 }
 
 pub fn swr_fetch_origin_all_path(path: &std::path::Path, window_ms: u128) -> Result<()> {
-    let _ = swr_fetch_origin_all_path_bool(path, window_ms)?;
+    let _ = swr_fetch_origin_all_path_bool_with_auth(path, window_ms, None)?;
+    Ok(())
+}
+
+pub fn swr_fetch_origin_all_path_with_auth(
+    path: &std::path::Path,
+    window_ms: u128,
+    auth_token: Option<&str>,
+) -> Result<()> {
+    let _ = swr_fetch_origin_all_path_bool_with_auth(path, window_ms, auth_token)?;
     Ok(())
 }
 #[allow(dead_code)]
 pub fn fetch_origin_all_path(path: &std::path::Path) -> Result<()> {
-    let cwd = path.to_string_lossy().to_string();
-    let _ = run_git(&cwd, &["fetch", "--all", "--tags", "--prune"]);
+    fetch_origin_all_path_with_auth(path, None)
+}
+
+#[allow(dead_code)]
+pub fn fetch_origin_all_path_with_auth(
+    path: &std::path::Path,
+    auth_token: Option<&str>,
+) -> Result<()> {
+    let _ = run_git_maybe_github_authed_by_origin(
+        path,
+        &["fetch", "--all", "--tags", "--prune"],
+        auth_token,
+    );
     Ok(())
 }
 
 /// Fetch a specific ref from origin. Use this when a ref is missing locally.
 /// Unlike swr_fetch_origin_all_path, this always performs the fetch synchronously
 /// without checking the time window, since we know the ref doesn't exist.
-pub fn fetch_specific_ref(path: &std::path::Path, ref_name: &str) -> Result<bool> {
+pub fn fetch_specific_ref(path: &std::path::Path, ref_name: &str, auth_token: Option<&str>) -> Result<bool> {
     let cwd = path.to_string_lossy().to_string();
 
     // Extract the branch name, stripping common prefixes
@@ -273,7 +389,7 @@ pub fn fetch_specific_ref(path: &std::path::Path, ref_name: &str) -> Result<bool
         .unwrap_or(ref_name);
 
     // Try to fetch the specific branch from origin
-    let result = run_git(&cwd, &["fetch", "origin", branch]);
+    let result = run_git_maybe_github_authed_by_origin(path, &["fetch", "origin", branch], auth_token);
 
     if result.is_ok() {
         // Update last fetch time since we just fetched
@@ -285,7 +401,11 @@ pub fn fetch_specific_ref(path: &std::path::Path, ref_name: &str) -> Result<bool
     }
 
     // If specific branch fetch failed, try fetching all (the branch might have a different name on remote)
-    let result_all = run_git(&cwd, &["fetch", "--all", "--tags", "--prune"]);
+    let result_all = run_git_maybe_github_authed_by_origin(
+        path,
+        &["fetch", "--all", "--tags", "--prune"],
+        auth_token,
+    );
     if result_all.is_ok() {
         let root = default_cache_root();
         let now = now_ms();
