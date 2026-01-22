@@ -544,22 +544,16 @@ STEP 3 - CLICK ELEMENTS:
 Just click elements normally using their uid from the fresh snapshot. The cursor position is captured automatically.
 The cursor overlay starts at screen center and animates to each click position.
 
-STEP 4 - STOP RECORDING:
-\`\`\`bash
-kill -INT $FFMPEG_PID
-wait $FFMPEG_PID 2>/dev/null || true
-\`\`\`
-After the last click, just STOP. Do not sleep to "wait for page to load" - kill ffmpeg immediately.
+⚠️⚠️⚠️ CRITICAL - AFTER CLICKING, YOU MUST COMPLETE STEPS 4 AND 5 ⚠️⚠️⚠️
+The video is NOT VALID until you run the post-processing script. If you skip steps 4-5, the video will be CORRUPTED.
+- Do NOT end the session after clicking
+- Do NOT call list_pages or select_page after clicking
+- You MUST run the stop + post-process command below
 
-⚠️⚠️⚠️ CRITICAL - NEVER CALL list_pages OR select_page AFTER CLICKING ⚠️⚠️⚠️
-The video records the X11 SCREEN directly. When you click:
-- The result is ALREADY being recorded on screen
-- Do NOT call list_pages or select_page - just click → kill ffmpeg → done
-This is NON-NEGOTIABLE.
-
-STEP 5 - POST-PROCESS (adds cursor overlay automatically):
+STEP 4 & 5 - STOP RECORDING AND POST-PROCESS (MANDATORY - RUN THIS EXACT COMMAND):
 \`\`\`bash
-python3 << PYSCRIPT
+# First stop ffmpeg, then run post-processing
+kill -INT $FFMPEG_PID 2>/dev/null; wait $FFMPEG_PID 2>/dev/null; python3 << PYSCRIPT
 import subprocess, os, sys, json
 
 outdir = "${outputDir}"
@@ -815,11 +809,16 @@ else:
 PYSCRIPT
 \`\`\`
 
-IMPORTANT:
-- CLICK elements, not hover - show the full interaction flow
-- Kill ffmpeg immediately when result is visible
-- NEVER call list_pages or select_page after clicking
-- After last click: kill ffmpeg → run post-process. Done.
+⚠️ CRITICAL WORKFLOW - YOU MUST FOLLOW THIS EXACTLY:
+1. Start ffmpeg recording (step 2)
+2. Click elements to demonstrate the UI (step 3)
+3. IMMEDIATELY run the stop+post-process command above (step 4&5) - THIS IS MANDATORY
+4. Only THEN can you end - the video is INVALID without post-processing
+
+DO NOT:
+- End the session without running the post-process command
+- Call list_pages or select_page after clicking
+- Skip any step - the video will be corrupted
 </VIDEO_RECORDING>
 
 <OUTPUT>
