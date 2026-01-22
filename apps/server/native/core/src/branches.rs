@@ -27,11 +27,15 @@ pub fn list_remote_branches(opts: GitListRemoteBranchesOptions) -> Result<Vec<Br
         std::path::PathBuf::from(p)
     } else {
         let url = resolve_repo_url(opts.repoFullName.as_deref(), opts.repoUrl.as_deref())?;
-        ensure_repo(&url)?
+        ensure_repo(&url, opts.authToken.as_deref())?
     };
 
     // Make sure remotes are fresh (this is cheap if within SWR window)
-    let _ = swr_fetch_origin_all_path(&repo_path, crate::repo::cache::fetch_window_ms());
+    let _ = swr_fetch_origin_all_path(
+        &repo_path,
+        crate::repo::cache::fetch_window_ms(),
+        opts.authToken.as_deref(),
+    );
 
     let repo = gix::open(&repo_path)?;
 
@@ -227,6 +231,7 @@ mod tests {
         let res = list_remote_branches(GitListRemoteBranchesOptions {
             repoFullName: None,
             repoUrl: None,
+            authToken: None,
             originPathOverride: Some(clone.to_string_lossy().to_string()),
         })
         .expect("list branches");

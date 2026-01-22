@@ -10,6 +10,11 @@ export interface GitDiffOptions {
   baseRef?: string;
   repoFullName?: string;
   repoUrl?: string;
+  /**
+   * Optional GitHub OAuth token used for HTTPS clone/fetch in headless environments.
+   * Must never be persisted to disk.
+   */
+  authToken?: string;
   teamSlugOrId?: string;
   originPathOverride?: string;
   includeContents?: boolean;
@@ -24,6 +29,7 @@ type NativeGitModule = {
   gitListRemoteBranches?: (opts: {
     repoFullName?: string;
     repoUrl?: string;
+    authToken?: string;
     originPathOverride?: string;
   }) => Promise<
     Array<{
@@ -105,6 +111,7 @@ export async function gitDiff(opts: GitDiffOptions): Promise<ReplaceDiffEntry[]>
 export async function listRemoteBranches(opts: {
   repoFullName?: string;
   repoUrl?: string;
+  authToken?: string;
   originPathOverride?: string;
 }): Promise<
   Array<{

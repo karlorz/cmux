@@ -159,8 +159,11 @@ pub fn diff_workspace(opts: GitDiffWorkspaceOptions) -> Result<Vec<DiffEntry>> {
     let cwd = PathBuf::from(&opts.worktreePath);
     let include = opts.includeContents.unwrap_or(true);
     let max_bytes = opts.maxBytes.unwrap_or(950 * 1024) as usize;
-    let _ =
-        crate::repo::cache::swr_fetch_origin_all_path(&cwd, crate::repo::cache::fetch_window_ms());
+    let _ = crate::repo::cache::swr_fetch_origin_all_path(
+        &cwd,
+        crate::repo::cache::fetch_window_ms(),
+        None,
+    );
     let repo = gix::open(&cwd)?;
 
     // Determine base tree for diff. If HEAD is unborn (no commits), fall back to remote default.

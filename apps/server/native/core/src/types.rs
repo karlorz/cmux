@@ -35,6 +35,7 @@ pub struct BranchInfo {
 pub struct GitListRemoteBranchesOptions {
     pub repoFullName: Option<String>,
     pub repoUrl: Option<String>,
+    pub authToken: Option<String>,
     pub originPathOverride: Option<String>,
 }
 
@@ -53,6 +54,7 @@ pub struct GitDiffOptions {
     pub baseRef: Option<String>,
     pub repoFullName: Option<String>,
     pub repoUrl: Option<String>,
+    pub authToken: Option<String>,
     pub teamSlugOrId: Option<String>,
     pub originPathOverride: Option<String>,
     pub includeContents: Option<bool>,

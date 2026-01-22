@@ -452,57 +452,78 @@ export function setupSocketHandlers(
     }
 
     socket.on("git-diff", async (data, callback) => {
-      try {
-        const parsed = GitSocketDiffRequestSchema.parse(data);
+      const capturedAuthToken = currentAuthToken;
+      const capturedAuthHeaderJson = currentAuthHeaderJson;
+      await runWithAuth(capturedAuthToken, capturedAuthHeaderJson, async () => {
+        try {
+          const parsed = GitSocketDiffRequestSchema.parse(data);
 
-        if (
-          !parsed.repoFullName &&
-          !parsed.repoUrl &&
-          !parsed.originPathOverride
-        ) {
-          throw new Error(
-            "repoFullName, repoUrl, or originPathOverride is required"
-          );
-        }
-
-        const diffs = await getGitDiff({
-          headRef: parsed.headRef,
-          baseRef: parsed.baseRef,
-          repoFullName: parsed.repoFullName,
-          repoUrl: parsed.repoUrl,
-          originPathOverride: parsed.originPathOverride,
-          includeContents: parsed.includeContents ?? true,
-          maxBytes: parsed.maxBytes,
-          teamSlugOrId: safeTeam,
-          lastKnownBaseSha: parsed.lastKnownBaseSha,
-          lastKnownMergeCommitSha: parsed.lastKnownMergeCommitSha,
-        });
-
-        if (parsed.originPathOverride) {
-          const workspacePath = parsed.originPathOverride;
-          try {
-            void gitDiffManager.watchWorkspace(workspacePath, () => {
-              rt.emit("git-file-changed", {
-                workspacePath,
-                filePath: "",
-              });
-            });
-          } catch (e) {
-            serverLogger.warn(
-              `Failed to start watcher for ${parsed.originPathOverride}: ${String(e)}`
+          if (
+            !parsed.repoFullName &&
+            !parsed.repoUrl &&
+            !parsed.originPathOverride
+          ) {
+            throw new Error(
+              "repoFullName, repoUrl, or originPathOverride is required"
             );
           }
-        }
 
-        callback?.({ ok: true, diffs });
-      } catch (error) {
-        serverLogger.error("Error in git-diff:", error);
-        callback?.({
-          ok: false,
-          error: error instanceof Error ? error.message : "Unknown error",
-          diffs: [],
-        });
-      }
+          const repoUrl =
+            parsed.repoUrl ??
+            (parsed.repoFullName
+              ? `https://github.com/${parsed.repoFullName}.git`
+              : undefined);
+
+          // In web mode, the native git cache has no credential helper. Provide a
+          // user GitHub OAuth token for private repos (without persisting it).
+          const githubToken =
+            env.NEXT_PUBLIC_WEB_MODE &&
+            !parsed.originPathOverride &&
+            typeof repoUrl === "string" &&
+            repoUrl.startsWith("https://github.com/")
+              ? await getGitHubOAuthToken()
+              : null;
+
+          const diffs = await getGitDiff({
+            headRef: parsed.headRef,
+            baseRef: parsed.baseRef,
+            repoFullName: parsed.repoFullName,
+            repoUrl: parsed.repoUrl,
+            authToken: githubToken ?? undefined,
+            originPathOverride: parsed.originPathOverride,
+            includeContents: parsed.includeContents ?? true,
+            maxBytes: parsed.maxBytes,
+            teamSlugOrId: safeTeam,
+            lastKnownBaseSha: parsed.lastKnownBaseSha,
+            lastKnownMergeCommitSha: parsed.lastKnownMergeCommitSha,
+          });
+
+          if (parsed.originPathOverride) {
+            const workspacePath = parsed.originPathOverride;
+            try {
+              void gitDiffManager.watchWorkspace(workspacePath, () => {
+                rt.emit("git-file-changed", {
+                  workspacePath,
+                  filePath: "",
+                });
+              });
+            } catch (e) {
+              serverLogger.warn(
+                `Failed to start watcher for ${parsed.originPathOverride}: ${String(e)}`
+              );
+            }
+          }
+
+          callback?.({ ok: true, diffs });
+        } catch (error) {
+          serverLogger.error("Error in git-diff:", error);
+          callback?.({
+            ok: false,
+            error: error instanceof Error ? error.message : "Unknown error",
+            diffs: [],
+          });
+        }
+      });
     });
 
     void (async () => {

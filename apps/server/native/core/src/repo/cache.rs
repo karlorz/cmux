@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use base64::{engine::general_purpose, Engine as _};
 use dirs_next::cache_dir;
 use std::sync::{Mutex, OnceLock};
 use std::{
@@ -58,10 +59,78 @@ fn slug_from_url(url: &str) -> String {
     }
 }
 
-pub fn ensure_repo(url: &str) -> Result<PathBuf> {
+fn is_github_dot_com_url(url: &str) -> bool {
+    url.starts_with("https://github.com/")
+}
+
+fn split_github_token_from_url(url: &str) -> (String, Option<String>) {
+    // Accept legacy/basic-auth style URLs but never persist credentials to disk.
+    // Supported patterns:
+    // - https://x-access-token:<token>@github.com/<owner>/<repo>.git
+    // - https://<user>:<token>@github.com/<owner>/<repo>.git
+    if let Some(rest) = url.strip_prefix("https://") {
+        if let Some(at) = rest.find('@') {
+            let userinfo = &rest[..at];
+            let host_and_path = &rest[at + 1..];
+            if host_and_path.starts_with("github.com/") {
+                let clean = format!("https://{host_and_path}");
+                if let Some(tok) = userinfo.strip_prefix("x-access-token:") {
+                    return (clean, Some(tok.to_string()));
+                }
+                if let Some((_user, pass)) = userinfo.split_once(':') {
+                    return (clean, Some(pass.to_string()));
+                }
+                // If userinfo is present but unparsable, drop it from the URL anyway.
+                return (clean, None);
+            }
+        }
+    }
+    (url.to_string(), None)
+}
+
+fn repo_origin_is_github_dot_com(repo_path: &Path) -> bool {
+    // Avoid shelling out. Our cache clones GitHub via HTTPS, so a substring check
+    // on .git/config is sufficient to prevent sending tokens to other hosts.
+    let cfg = repo_path.join(".git").join("config");
+    if let Ok(s) = fs::read_to_string(cfg) {
+        return s.contains("https://github.com/");
+    }
+    false
+}
+
+fn git_auth_prefix_args_github(token: &str) -> Vec<String> {
+    // Use a per-invocation config override instead of embedding credentials in the URL.
+    // This avoids persisting tokens to disk via .git/config.
+    let basic = format!("x-access-token:{token}");
+    let encoded = general_purpose::STANDARD.encode(basic.as_bytes());
+    vec![
+        "-c".to_string(),
+        format!("http.extraHeader=AUTHORIZATION: basic {encoded}"),
+    ]
+}
+
+fn git_auth_prefix_args(url: &str, auth_token: Option<&str>) -> Vec<String> {
+    match auth_token {
+        Some(t) if is_github_dot_com_url(url) => git_auth_prefix_args_github(t),
+        _ => Vec::new(),
+    }
+}
+
+fn git_auth_prefix_args_for_repo_path(repo_path: &Path, auth_token: Option<&str>) -> Vec<String> {
+    match auth_token {
+        Some(t) if repo_origin_is_github_dot_com(repo_path) => git_auth_prefix_args_github(t),
+        _ => Vec::new(),
+    }
+}
+
+pub fn ensure_repo(url: &str, auth_token: Option<&str>) -> Result<PathBuf> {
+    let (clean_url, token_from_url) = split_github_token_from_url(url);
+    let effective_token = auth_token.map(|s| s.to_string()).or(token_from_url);
+    let effective_token_ref = effective_token.as_deref();
+
     let root = default_cache_root();
     fs::create_dir_all(&root)?;
-    let path = root.join(slug_from_url(url));
+    let path = root.join(slug_from_url(&clean_url));
     let git_dir = path.join(".git");
     let head = git_dir.join("HEAD");
     if path.exists() && (!git_dir.exists() || !head.exists()) {
@@ -69,25 +138,38 @@ pub fn ensure_repo(url: &str) -> Result<PathBuf> {
     }
     if !path.exists() {
         fs::create_dir_all(&path)?;
-        run_git(
-            root.to_string_lossy().as_ref(),
-            &[
-                "clone",
-                "--no-single-branch",
-                url,
-                path.file_name().unwrap().to_str().unwrap(),
-            ],
-        )?;
+        let mut args: Vec<String> = git_auth_prefix_args(&clean_url, effective_token_ref);
+        args.extend([
+            "clone".to_string(),
+            "--no-single-branch".to_string(),
+            clean_url.to_string(),
+            path.file_name().unwrap().to_str().unwrap().to_string(),
+        ]);
+        let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        run_git(root.to_string_lossy().as_ref(), &args_ref)?;
+
+        // Ensure we never persist credentials to disk via .git/config.
+        let set_url_args = ["remote", "set-url", "origin", clean_url.as_str()];
+        let _ = run_git(path.to_string_lossy().as_ref(), &set_url_args);
+
         let _ = update_cache_index_with(&root, &path, Some(now_ms()));
     } else {
-        let _ = swr_fetch_origin_all_path_bool(&path, fetch_window_ms());
+        // If the repo already exists, also ensure we don't have a credentialed origin URL persisted.
+        let set_url_args = ["remote", "set-url", "origin", clean_url.as_str()];
+        let _ = run_git(path.to_string_lossy().as_ref(), &set_url_args);
+
+        let _ = swr_fetch_origin_all_path_bool(&path, fetch_window_ms(), effective_token_ref);
     }
     let shallow = path.join(".git").join("shallow");
     if shallow.exists() {
-        let _ = run_git(
-            path.to_string_lossy().as_ref(),
-            &["fetch", "--unshallow", "--tags"],
-        );
+        let mut args: Vec<String> = git_auth_prefix_args(&clean_url, effective_token_ref);
+        args.extend([
+            "fetch".to_string(),
+            "--unshallow".to_string(),
+            "--tags".to_string(),
+        ]);
+        let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let _ = run_git(path.to_string_lossy().as_ref(), &args_ref);
     }
 
     update_cache_index(&root, &path)?;
@@ -219,7 +301,11 @@ fn set_map_last_fetch(repo_path: &Path, t: u128) {
     }
 }
 
-pub fn swr_fetch_origin_all_path_bool(path: &std::path::Path, window_ms: u128) -> Result<bool> {
+pub fn swr_fetch_origin_all_path_bool(
+    path: &std::path::Path,
+    window_ms: u128,
+    auth_token: Option<&str>,
+) -> Result<bool> {
     let cwd = path.to_string_lossy().to_string();
     let root = default_cache_root();
     let now = now_ms();
@@ -232,8 +318,17 @@ pub fn swr_fetch_origin_all_path_bool(path: &std::path::Path, window_ms: u128) -
         if now.saturating_sub(t) <= window_ms {
             let cwd_bg = cwd.clone();
             let root_bg = root.clone();
+            let auth_args_bg = git_auth_prefix_args_for_repo_path(path, auth_token).clone();
             std::thread::spawn(move || {
-                let _ = run_git(&cwd_bg, &["fetch", "--all", "--tags", "--prune"]);
+                let mut args: Vec<String> = auth_args_bg;
+                args.extend([
+                    "fetch".to_string(),
+                    "--all".to_string(),
+                    "--tags".to_string(),
+                    "--prune".to_string(),
+                ]);
+                let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+                let _ = run_git(&cwd_bg, &args_ref);
                 let _ = update_cache_index_with(&root_bg, &PathBuf::from(&cwd_bg), Some(now_ms()));
                 set_map_last_fetch(&PathBuf::from(&cwd_bg), now_ms());
             });
@@ -241,15 +336,28 @@ pub fn swr_fetch_origin_all_path_bool(path: &std::path::Path, window_ms: u128) -
         }
     }
 
-    let _ = run_git(&cwd, &["fetch", "--all", "--tags", "--prune"]);
+    let auth_args = git_auth_prefix_args_for_repo_path(path, auth_token);
+    let mut args: Vec<String> = auth_args;
+    args.extend([
+        "fetch".to_string(),
+        "--all".to_string(),
+        "--tags".to_string(),
+        "--prune".to_string(),
+    ]);
+    let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let _ = run_git(&cwd, &args_ref);
     let now2 = now_ms();
     let _ = update_cache_index_with(&root, &PathBuf::from(&cwd), Some(now2));
     set_map_last_fetch(&PathBuf::from(&cwd), now2);
     Ok(true)
 }
 
-pub fn swr_fetch_origin_all_path(path: &std::path::Path, window_ms: u128) -> Result<()> {
-    let _ = swr_fetch_origin_all_path_bool(path, window_ms)?;
+pub fn swr_fetch_origin_all_path(
+    path: &std::path::Path,
+    window_ms: u128,
+    auth_token: Option<&str>,
+) -> Result<()> {
+    let _ = swr_fetch_origin_all_path_bool(path, window_ms, auth_token)?;
     Ok(())
 }
 #[allow(dead_code)]
@@ -262,7 +370,11 @@ pub fn fetch_origin_all_path(path: &std::path::Path) -> Result<()> {
 /// Fetch a specific ref from origin. Use this when a ref is missing locally.
 /// Unlike swr_fetch_origin_all_path, this always performs the fetch synchronously
 /// without checking the time window, since we know the ref doesn't exist.
-pub fn fetch_specific_ref(path: &std::path::Path, ref_name: &str) -> Result<bool> {
+pub fn fetch_specific_ref(
+    path: &std::path::Path,
+    ref_name: &str,
+    auth_token: Option<&str>,
+) -> Result<bool> {
     let cwd = path.to_string_lossy().to_string();
 
     // Extract the branch name, stripping common prefixes
@@ -273,7 +385,11 @@ pub fn fetch_specific_ref(path: &std::path::Path, ref_name: &str) -> Result<bool
         .unwrap_or(ref_name);
 
     // Try to fetch the specific branch from origin
-    let result = run_git(&cwd, &["fetch", "origin", branch]);
+    let auth_args = git_auth_prefix_args_for_repo_path(path, auth_token);
+    let mut args: Vec<String> = auth_args;
+    args.extend(["fetch".to_string(), "origin".to_string(), branch.to_string()]);
+    let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let result = run_git(&cwd, &args_ref);
 
     if result.is_ok() {
         // Update last fetch time since we just fetched
@@ -285,7 +401,16 @@ pub fn fetch_specific_ref(path: &std::path::Path, ref_name: &str) -> Result<bool
     }
 
     // If specific branch fetch failed, try fetching all (the branch might have a different name on remote)
-    let result_all = run_git(&cwd, &["fetch", "--all", "--tags", "--prune"]);
+    let auth_args = git_auth_prefix_args_for_repo_path(path, auth_token);
+    let mut args: Vec<String> = auth_args;
+    args.extend([
+        "fetch".to_string(),
+        "--all".to_string(),
+        "--tags".to_string(),
+        "--prune".to_string(),
+    ]);
+    let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let result_all = run_git(&cwd, &args_ref);
     if result_all.is_ok() {
         let root = default_cache_root();
         let now = now_ms();
@@ -341,8 +466,10 @@ mod tests {
         .expect("spawn");
         assert!(status.success());
 
-        let first = swr_fetch_origin_all_path_bool(&repo_dir, 5_000).expect("swr fetch 1");
-        let second = swr_fetch_origin_all_path_bool(&repo_dir, 5_000).expect("swr fetch 2");
+        let first =
+            swr_fetch_origin_all_path_bool(&repo_dir, 5_000, None).expect("swr fetch 1");
+        let second =
+            swr_fetch_origin_all_path_bool(&repo_dir, 5_000, None).expect("swr fetch 2");
         assert!(first, "first call should be synchronous fetch");
         assert!(
             !second,

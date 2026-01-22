@@ -129,7 +129,7 @@ fn ground_truth() -> &'static GroundTruthFile {
 
 fn ensure_repo_with_pull_refs(repo_slug: &str) -> PathBuf {
     let url = resolve_repo_url(Some(repo_slug), None).expect("resolve repo url");
-    let repo_path = ensure_repo(&url).expect("ensure repo path");
+    let repo_path = ensure_repo(&url, None).expect("ensure repo path");
     let repo_path_str = repo_path.to_string_lossy().to_string();
 
     let cache = PULL_FETCH_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
@@ -219,6 +219,7 @@ fn compute_diff_for_pr(pr: &PullRequestRecord) -> CachedDiff {
         baseRef: None,
         repoFullName: Some(pr.repo.clone()),
         repoUrl: None,
+        authToken: None,
         teamSlugOrId: None,
         originPathOverride: Some(repo_path_str.clone()),
         includeContents: Some(true),
@@ -604,6 +605,7 @@ fn refs_diff_basic_on_local_repo() {
         headRef: "feature".into(),
         repoFullName: None,
         repoUrl: None,
+        authToken: None,
         teamSlugOrId: None,
         originPathOverride: Some(work.to_string_lossy().to_string()),
         includeContents: Some(true),
@@ -660,6 +662,7 @@ fn refs_merge_base_after_merge_is_branch_tip() {
         headRef: "feature".into(),
         repoFullName: None,
         repoUrl: None,
+        authToken: None,
         teamSlugOrId: None,
         originPathOverride: Some(work.to_string_lossy().to_string()),
         includeContents: Some(true),
@@ -681,6 +684,7 @@ fn refs_diff_numstat_matches_known_pairs() {
     // Ensure we run against the repo root so refs are available
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let repo_root = find_git_root(manifest_dir);
+    let repo_root_str = repo_root.to_string_lossy().to_string();
     // Proactively fetch to make sure remote-only commits are present locally
     // Use --force to handle tag conflicts between remotes (e.g., fork vs upstream)
     run(&repo_root, "git fetch --all --tags --prune --force");
@@ -713,11 +717,24 @@ fn refs_diff_numstat_matches_known_pairs() {
     ];
 
     for (from, to, exp_adds, exp_dels) in cases {
+        let from_spec = format!("{from}^{{commit}}");
+        let to_spec = format!("{to}^{{commit}}");
+        if run_git(&repo_root_str, &["cat-file", "-e", from_spec.as_str()]).is_err()
+            || run_git(&repo_root_str, &["cat-file", "-e", to_spec.as_str()]).is_err()
+        {
+            eprintln!(
+                "Skipping refs_diff_numstat case due to missing commits: {}..{}",
+                from, to
+            );
+            continue;
+        }
+
         let out = crate::diff::refs::diff_refs(GitDiffOptions {
             baseRef: Some(from.into()),
             headRef: to.into(),
             repoFullName: None,
             repoUrl: None,
+            authToken: None,
             teamSlugOrId: None,
             originPathOverride: Some(repo_root.to_string_lossy().to_string()),
             includeContents: Some(true),
@@ -812,6 +829,7 @@ fn refs_diff_handles_binary_files() {
         headRef: c2.clone(),
         repoFullName: None,
         repoUrl: None,
+        authToken: None,
         teamSlugOrId: None,
         originPathOverride: Some(work.to_string_lossy().to_string()),
         includeContents: Some(true),
