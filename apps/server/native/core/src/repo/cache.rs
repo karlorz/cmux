@@ -193,19 +193,6 @@ pub fn resolve_repo_url(repo_full_name: Option<&str>, repo_url: Option<&str>) ->
     Err(anyhow!("repoUrl or repoFullName required"))
 }
 
-/// Inject an auth token into a GitHub HTTPS URL for private repo access.
-/// Returns the original URL unchanged if it's not a GitHub URL or no token provided.
-/// The token is injected as: https://x-access-token:{token}@github.com/...
-pub fn inject_auth_token(url: &str, auth_token: Option<&str>) -> String {
-    match auth_token {
-        Some(token) if !token.is_empty() && url.starts_with("https://github.com/") => url.replace(
-            "https://github.com/",
-            &format!("https://x-access-token:{}@github.com/", token),
-        ),
-        _ => url.to_string(),
-    }
-}
-
 fn load_index(root: &Path) -> CacheIndex {
     let idx_path = root.join("cache-index.json");
     if let Ok(data) = fs::read(&idx_path) {
@@ -455,44 +442,6 @@ pub fn fetch_specific_ref_with_auth(
 
     // If specific branch fetch failed, try fetching all with auth
     let result_all = fetch_with_auth(&cwd, &["fetch", "--all", "--tags", "--prune"], auth_token);
-    if result_all.is_ok() {
-        let root = default_cache_root();
-        let now = now_ms();
-        let _ = update_cache_index_with(&root, &PathBuf::from(&cwd), Some(now));
-        set_map_last_fetch(&PathBuf::from(&cwd), now);
-        return Ok(true);
-    }
-
-    Ok(false)
-}
-
-/// Fetch a specific ref from origin. Use this when a ref is missing locally.
-/// Unlike swr_fetch_origin_all_path, this always performs the fetch synchronously
-/// without checking the time window, since we know the ref doesn't exist.
-pub fn fetch_specific_ref(path: &std::path::Path, ref_name: &str) -> Result<bool> {
-    let cwd = path.to_string_lossy().to_string();
-
-    // Extract the branch name, stripping common prefixes
-    let branch = ref_name
-        .strip_prefix("origin/")
-        .or_else(|| ref_name.strip_prefix("refs/remotes/origin/"))
-        .or_else(|| ref_name.strip_prefix("refs/heads/"))
-        .unwrap_or(ref_name);
-
-    // Try to fetch the specific branch from origin
-    let result = run_git(&cwd, &["fetch", "origin", branch]);
-
-    if result.is_ok() {
-        // Update last fetch time since we just fetched
-        let root = default_cache_root();
-        let now = now_ms();
-        let _ = update_cache_index_with(&root, &PathBuf::from(&cwd), Some(now));
-        set_map_last_fetch(&PathBuf::from(&cwd), now);
-        return Ok(true);
-    }
-
-    // If specific branch fetch failed, try fetching all (the branch might have a different name on remote)
-    let result_all = run_git(&cwd, &["fetch", "--all", "--tags", "--prune"]);
     if result_all.is_ok() {
         let root = default_cache_root();
         let now = now_ms();
