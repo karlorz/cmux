@@ -2109,8 +2109,33 @@ async def task_ensure_docker(ctx: PveTaskContext) -> None:
         DEBIAN_FRONTEND=noninteractive apt-get $APT_LOCK_WAIT_OPTS install -y \
           docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
+        # Disable socket activation - it doesn't work reliably in cloned LXC containers
+        # due to systemd namespace/cgroup isolation issues. Instead, configure Docker
+        # to manage its own socket directly via daemon.json.
+        # See: https://github.com/docker/docs/blob/main/content/manuals/engine/daemon/remote-access.md
+        echo "[docker] configuring Docker to bypass socket activation"
+        systemctl disable docker.socket || true
+        systemctl stop docker.socket || true
+
+        # Configure Docker to listen on unix socket directly (not via systemd socket activation)
+        mkdir -p /etc/docker
+        cat > /etc/docker/daemon.json <<'DAEMONJSON'
+{
+  "hosts": ["unix:///var/run/docker.sock"]
+}
+DAEMONJSON
+
+        # Clear ExecStart from systemd unit to avoid conflict with daemon.json hosts config
+        # (systemd unit uses -H fd:// which conflicts with hosts in daemon.json)
+        mkdir -p /etc/systemd/system/docker.service.d
+        cat > /etc/systemd/system/docker.service.d/override.conf <<'OVERRIDE'
+[Service]
+ExecStart=
+ExecStart=/usr/bin/dockerd --containerd=/run/containerd/containerd.sock
+OVERRIDE
+
+        systemctl daemon-reload
         systemctl enable docker.service || true
-        systemctl enable docker.socket || true
         systemctl start docker.service || true
 
         for attempt in $(seq 1 30); do
