@@ -2109,9 +2109,10 @@ async def task_ensure_docker(ctx: PveTaskContext) -> None:
         DEBIAN_FRONTEND=noninteractive apt-get $APT_LOCK_WAIT_OPTS install -y \
           docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-        systemctl enable docker.service || true
-        systemctl enable docker.socket || true
-        systemctl start docker.service || true
+        # Disable standard Docker services to avoid race condition with cmux-dockerd.service
+        # cmux-dockerd.service has fallback logic to run dockerd directly
+        systemctl disable docker.service docker.socket || true
+        systemctl stop docker.service docker.socket || true
 
         for attempt in $(seq 1 30); do
           if docker info >/dev/null 2>&1; then
