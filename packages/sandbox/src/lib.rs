@@ -38,7 +38,7 @@ pub const DEFAULT_WS_PORT: u16 = 46832;
 
 // Production version defaults (cmux)
 pub const DEFAULT_CONTAINER: &str = "cmux-sandbox-run";
-pub const DEFAULT_IMAGE: &str = "ghcr.io/manaflow-ai/cmux-sandbox:latest";
+pub const DEFAULT_IMAGE: &str = "ghcr.io/karlorz/cmux-sandbox:latest";
 
 // Debug/dev version defaults (dmux)
 pub const DMUX_DEFAULT_HTTP_PORT: u16 = 46833;
