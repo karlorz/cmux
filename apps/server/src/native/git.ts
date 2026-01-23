@@ -16,6 +16,11 @@ export interface GitDiffOptions {
   maxBytes?: number;
   lastKnownBaseSha?: string;
   lastKnownMergeCommitSha?: string;
+  /**
+   * GitHub OAuth token for authenticating private repo access.
+   * Used transiently for clone/fetch - never persisted to disk or logged.
+   */
+  authToken?: string;
 }
 
 type NativeGitModule = {

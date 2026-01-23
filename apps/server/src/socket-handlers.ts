@@ -465,6 +465,19 @@ export function setupSocketHandlers(
           );
         }
 
+        // Fetch GitHub OAuth token for private repo authentication.
+        // This is only needed when fetching from remote (not for local originPathOverride).
+        // The token is passed transiently and never persisted.
+        let authToken: string | undefined;
+        if (!parsed.originPathOverride) {
+          try {
+            const token = await getGitHubOAuthToken();
+            authToken = token ?? undefined;
+          } catch (error) {
+            serverLogger.warn("Failed to fetch GitHub OAuth token for git-diff:", error);
+          }
+        }
+
         const diffs = await getGitDiff({
           headRef: parsed.headRef,
           baseRef: parsed.baseRef,
@@ -476,6 +489,7 @@ export function setupSocketHandlers(
           teamSlugOrId: safeTeam,
           lastKnownBaseSha: parsed.lastKnownBaseSha,
           lastKnownMergeCommitSha: parsed.lastKnownMergeCommitSha,
+          authToken,
         });
 
         if (parsed.originPathOverride) {

@@ -13,6 +13,11 @@ export interface GitDiffRequest {
   maxBytes?: number;
   lastKnownBaseSha?: string;
   lastKnownMergeCommitSha?: string;
+  /**
+   * GitHub OAuth token for authenticating private repo access.
+   * Used transiently for clone/fetch - never persisted to disk or logged.
+   */
+  authToken?: string;
 }
 
 export async function getGitDiff(
@@ -36,5 +41,6 @@ export async function getGitDiff(
     maxBytes: request.maxBytes,
     lastKnownBaseSha: request.lastKnownBaseSha,
     lastKnownMergeCommitSha: request.lastKnownMergeCommitSha,
+    authToken: request.authToken,
   });
 }

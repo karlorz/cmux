@@ -59,4 +59,7 @@ pub struct GitDiffOptions {
     pub maxBytes: Option<i32>,
     pub lastKnownBaseSha: Option<String>,
     pub lastKnownMergeCommitSha: Option<String>,
+    /// GitHub OAuth token for authenticating private repo access.
+    /// Used transiently for clone/fetch - never persisted to disk or logged.
+    pub authToken: Option<String>,
 }
