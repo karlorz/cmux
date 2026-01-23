@@ -570,19 +570,48 @@ function DashboardComponent() {
             return;
           }
 
-          // Check if Docker worker image is available
+          // Check if Docker worker image is available, auto-pull if not
           if (dockerCheck.workerImage && !dockerCheck.workerImage.isAvailable) {
             const imageName = dockerCheck.workerImage.name;
             if (dockerCheck.workerImage.isPulling) {
               toast.error(
                 `Docker image "${imageName}" is currently being pulled. Please wait for it to complete.`
               );
-            } else {
-              toast.error(
-                `Docker image "${imageName}" is not available. Please pull it first: docker pull ${imageName}`
-              );
+              return;
             }
-            return;
+
+            // Auto-pull the image
+            const pullToastId = toast.loading(
+              `Pulling Docker image "${imageName}"... This may take a few minutes on first run.`
+            );
+
+            try {
+              const pullResult = await new Promise<{
+                success: boolean;
+                imageName?: string;
+                error?: string;
+              }>((resolve) => {
+                socket.emit("docker-pull-image", (response) => {
+                  resolve(response);
+                });
+              });
+
+              if (!pullResult.success) {
+                toast.dismiss(pullToastId);
+                toast.error(
+                  pullResult.error || `Failed to pull Docker image "${imageName}"`
+                );
+                return;
+              }
+
+              toast.dismiss(pullToastId);
+              toast.success(`Docker image "${imageName}" pulled successfully`);
+            } catch (pullError) {
+              toast.dismiss(pullToastId);
+              console.error("Error pulling Docker image:", pullError);
+              toast.error(`Failed to pull Docker image "${imageName}"`);
+              return;
+            }
           }
         } else {
           // If socket is not connected, we can't verify Docker status
