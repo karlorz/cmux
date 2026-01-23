@@ -2109,8 +2109,35 @@ async def task_ensure_docker(ctx: PveTaskContext) -> None:
         DEBIAN_FRONTEND=noninteractive apt-get $APT_LOCK_WAIT_OPTS install -y \
           docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
+        # LXC Fix: Disable socket activation - it doesn't work reliably in cloned LXC containers
+        # due to namespace/cgroup isolation issues. Instead, configure Docker to manage its own socket.
+        # See: https://github.com/docker/docs/blob/main/content/manuals/engine/daemon/remote-access.md
+        echo "[docker] configuring Docker for LXC (no socket activation)"
+
+        # 1. Disable docker.socket - we don't want systemd socket activation
+        systemctl disable docker.socket || true
+        systemctl stop docker.socket || true
+        systemctl mask docker.socket || true
+
+        # 2. Create daemon.json to have Docker manage its own socket
+        mkdir -p /etc/docker
+        cat > /etc/docker/daemon.json <<'DAEMON_JSON'
+{
+    "hosts": ["unix:///var/run/docker.sock"]
+}
+DAEMON_JSON
+
+        # 3. Create systemd override to clear the -H fd:// flag (conflicts with daemon.json hosts)
+        mkdir -p /etc/systemd/system/docker.service.d
+        cat > /etc/systemd/system/docker.service.d/override.conf <<'OVERRIDE'
+[Service]
+ExecStart=
+ExecStart=/usr/bin/dockerd
+OVERRIDE
+
+        # 4. Reload systemd and enable docker.service (not socket)
+        systemctl daemon-reload
         systemctl enable docker.service || true
-        systemctl enable docker.socket || true
         systemctl start docker.service || true
 
         for attempt in $(seq 1 30); do
