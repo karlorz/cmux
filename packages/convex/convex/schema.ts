@@ -101,6 +101,7 @@ const convexSchema = defineSchema({
     isPreview: v.optional(v.boolean()),
     isLocalWorkspace: v.optional(v.boolean()),
     isCloudWorkspace: v.optional(v.boolean()),
+    linkedFromCloudTaskRunId: v.optional(v.id("taskRuns")), // For local workspaces created from a cloud task run's git diff viewer
     description: v.optional(v.string()),
     pullRequestTitle: v.optional(v.string()),
     pullRequestDescription: v.optional(v.string()),
@@ -169,7 +170,8 @@ const convexSchema = defineSchema({
     .index("by_team_user_activity", ["teamId", "userId", "lastActivityAt"])
     .index("by_pinned", ["pinned", "teamId", "userId"])
     .index("by_team_user_preview", ["teamId", "userId", "isPreview"])
-    .index("by_team_preview", ["teamId", "isPreview"]),
+    .index("by_team_preview", ["teamId", "isPreview"])
+    .index("by_linked_cloud_task_run", ["linkedFromCloudTaskRunId"]),
 
   taskRuns: defineTable({
     taskId: v.id("tasks"),
@@ -351,6 +353,7 @@ const convexSchema = defineSchema({
           storageId: v.id("_storage"),
           mimeType: v.string(),
           fileName: v.optional(v.string()),
+          description: v.optional(v.string()),
         }),
       ),
     ),

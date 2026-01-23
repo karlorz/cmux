@@ -1911,6 +1911,14 @@ function TaskRunDetails({
   const location = useLocation();
   const navigate = useNavigate();
 
+  // Fetch linked local workspace for cloud runs (skip for local/cloud workspaces)
+  const linkedLocalWorkspace = useQuery(
+    api.tasks.getLinkedLocalWorkspace,
+    !isLocalWorkspace && !isCloudWorkspace
+      ? { teamSlugOrId, cloudTaskRunId: run._id }
+      : "skip"
+  );
+
   // Extract current previewId from URL if on preview route
   const currentPreviewId = location.pathname.includes("/preview/")
     ? location.pathname.split("/preview/")[1]?.split("/")[0]
@@ -2123,11 +2131,49 @@ function TaskRunDetails({
     <Loader2 className="w-3 h-3 animate-spin text-neutral-400" />
   ) : null;
 
+  // Determine linked local workspace status
+  const hasLinkedLocalWorkspace = Boolean(linkedLocalWorkspace);
+  const linkedLocalTaskRunId = linkedLocalWorkspace?.taskRun?._id;
+  const linkedLocalTaskId = linkedLocalWorkspace?.task?._id;
+  const isLinkedLocalVSCodeReady =
+    linkedLocalWorkspace?.taskRun?.vscode?.status === "running";
+
   // For VSCode, combine environment error with status indicator
   const vscodeTrailing = environmentErrorIndicator || statusIndicator;
 
+  // Trailing for linked local VS Code - show loading or Monitor icon
+  const linkedLocalVSCodeTrailing = !isLinkedLocalVSCodeReady ? (
+    <Loader2 className="w-3 h-3 animate-spin text-neutral-400" />
+  ) : (
+    <Monitor className="w-3 h-3 text-neutral-400" />
+  );
+
+  // Trailing for cloud VS Code when there's a linked local workspace
+  const cloudVSCodeTrailing = hasLinkedLocalWorkspace ? (
+    <Cloud className="w-3 h-3 text-neutral-400" />
+  ) : (
+    vscodeTrailing
+  );
+
   return (
     <Fragment>
+      {/* Linked local workspace VS Code (shown first with Monitor icon on trailing) */}
+      {hasLinkedLocalWorkspace && linkedLocalTaskId && linkedLocalTaskRunId ? (
+        <TaskRunDetailLink
+          to="/$teamSlugOrId/task/$taskId/run/$runId/vscode"
+          params={{
+            teamSlugOrId,
+            taskId: linkedLocalTaskId,
+            runId: linkedLocalTaskRunId,
+          }}
+          icon={<VSCodeIcon className="w-3 h-3 mr-2 text-neutral-400 grayscale opacity-60" />}
+          label="VS Code"
+          indentLevel={indentLevel}
+          trailing={linkedLocalVSCodeTrailing}
+        />
+      ) : null}
+
+      {/* Cloud VS Code (with Cloud icon on trailing if there's a linked local workspace) */}
       <TaskRunDetailLink
         to="/$teamSlugOrId/task/$taskId/run/$runId/vscode"
         params={{
@@ -2135,12 +2181,10 @@ function TaskRunDetails({
           taskId,
           runId: run._id,
         }}
-        icon={
-          <VSCodeIcon className="w-3 h-3 mr-2 text-neutral-400 grayscale opacity-60" />
-        }
+        icon={<VSCodeIcon className="w-3 h-3 mr-2 text-neutral-400 grayscale opacity-60" />}
         label="VS Code"
         indentLevel={indentLevel}
-        trailing={vscodeTrailing}
+        trailing={cloudVSCodeTrailing}
         onReload={handleReloadVSCode}
       />
 
