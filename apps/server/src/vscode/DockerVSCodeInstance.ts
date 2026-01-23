@@ -137,14 +137,9 @@ export class DockerVSCodeInstance extends VSCodeInstance {
     // Check if we should pull based on TTL for mutable tags
     const lastPullTime = DockerVSCodeInstance.imagePullTimes.get(this.imageName);
     const now = Date.now();
-    const isStale =
-      isLatestTag &&
-      (!lastPullTime ||
-        now - lastPullTime > DockerVSCodeInstance.IMAGE_TTL_MS);
 
-    // For mutable tags (:latest), always pull if stale to get newest version
     // For pinned tags, only pull if image doesn't exist locally
-    let shouldPull = isStale;
+    let shouldPull = false;
     let imageExistsLocally = false;
 
     try {
@@ -153,23 +148,36 @@ export class DockerVSCodeInstance extends VSCodeInstance {
       imageExistsLocally = true;
       dockerLogger.info(`Image ${this.imageName} found locally`);
 
-      if (isStale) {
-        const staleDuration = lastPullTime
-          ? Math.round((now - lastPullTime) / 1000 / 60)
-          : 0;
+      // For mutable tags, check TTL to decide if we should refresh
+      // Only consider stale if we have a lastPullTime that's expired
+      // This avoids stalling on first use after server restart
+      if (isLatestTag && lastPullTime) {
+        const timeSinceLastPull = now - lastPullTime;
+        if (timeSinceLastPull > DockerVSCodeInstance.IMAGE_TTL_MS) {
+          shouldPull = true;
+          const staleDuration = Math.round(timeSinceLastPull / 1000 / 60);
+          dockerLogger.info(
+            `Image ${this.imageName} is stale (last pulled ${staleDuration} minutes ago), will pull fresh copy`
+          );
+        }
+      }
+      // If no lastPullTime exists (first use after restart), seed it to avoid
+      // immediate pull attempts. The image will be refreshed after TTL expires.
+      if (isLatestTag && !lastPullTime) {
+        DockerVSCodeInstance.imagePullTimes.set(this.imageName, now);
         dockerLogger.info(
-          `Image ${this.imageName} is stale (last pulled ${staleDuration} minutes ago or never), will pull fresh copy`
+          `Image ${this.imageName} found locally, seeding TTL tracker (will refresh in ${DockerVSCodeInstance.IMAGE_TTL_MS / 1000 / 60 / 60} hours)`
         );
       }
     } catch (_error) {
-      // Image doesn't exist locally
+      // Image doesn't exist locally - must pull
       shouldPull = true;
       dockerLogger.info(
         `Image ${this.imageName} not found locally, will pull`
       );
     }
 
-    // If image exists and is fresh, we're done
+    // If image exists and doesn't need refresh, we're done
     if (imageExistsLocally && !shouldPull) {
       return;
     }
