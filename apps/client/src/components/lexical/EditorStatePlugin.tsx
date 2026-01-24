@@ -16,7 +16,7 @@ import {
 import { useEffect } from "react";
 import { $isImageNode, ImageNode } from "./ImageNode";
 
-// Custom transformer for ImageNode to export as markdown image syntax
+// Custom transformer for ImageNode to export as a plain text reference
 const IMAGE_TRANSFORMER: Transformer = {
   dependencies: [ImageNode],
   export: (node) => {
@@ -27,9 +27,10 @@ const IMAGE_TRANSFORMER: Transformer = {
     const altText = node.getAltText();
     // Use fileName if available, otherwise use altText as reference
     const imageRef = fileName || `image: ${altText}`;
-    // Export as markdown image syntax: ![alt](reference)
-    // The actual image data is handled separately via the images array
-    return `![${altText}](${imageRef})`;
+    // Export as plain text reference (avoid markdown image syntax like ![...](...)
+    // because those characters can be misinterpreted by shells/CLI tools later.
+    // Pad with spaces so the reference is separated from surrounding text.
+    return ` ${imageRef} `;
   },
   regExp: /!\[([^\]]*)\]\(([^)]+)\)/,
   replace: () => {
