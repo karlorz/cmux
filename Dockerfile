@@ -498,18 +498,19 @@ bun build ./apps/worker/src/runBrowserAgentFromPrompt.ts \
   --external node:*
 mv ./apps/worker/build/browser-agent/runBrowserAgentFromPrompt.js ./apps/worker/build/runBrowserAgentFromPrompt.js
 rm -rf ./apps/worker/build/browser-agent
-echo "Built worker"
-mkdir -p ./apps/worker/build/node_modules
-# Install express-compatible path-to-regexp 0.1.x explicitly
-# bun hoisting can place dependencies differently, so we install directly
-cd ./apps/worker/build/node_modules
-npm pack path-to-regexp@0.1.12 --silent
-tar -xzf path-to-regexp-0.1.12.tgz
-mv package path-to-regexp
-rm -f path-to-regexp-0.1.12.tgz
-cd /app
-shopt -s nullglob
-declare -A COPIED_PACKAGES=()
+	echo "Built worker"
+	mkdir -p /cmux/apps/worker/build/node_modules
+	# Install express-compatible path-to-regexp 0.1.x explicitly
+	# bun hoisting can place dependencies differently, so we install directly
+	(
+	  cd /cmux/apps/worker/build/node_modules
+	  npm pack path-to-regexp@0.1.12 --silent
+	  tar -xzf path-to-regexp-0.1.12.tgz
+	  mv package path-to-regexp
+	  rm -f path-to-regexp-0.1.12.tgz
+	)
+	shopt -s nullglob
+	declare -A COPIED_PACKAGES=()
 
 sanitize_package_name() {
   local package="$1"
@@ -522,38 +523,38 @@ sanitize_package_name() {
   fi
 }
 
-copy_scope_directory() {
-  local source_dir="$1"
-  local scope_name
-  scope_name="$(basename "$source_dir")"
-  mkdir -p "./apps/worker/build/node_modules/$scope_name"
-  for scoped_entry in "$source_dir"/*; do
-    if [ ! -e "$scoped_entry" ]; then
-      continue
-    fi
-    local scoped_name
-    scoped_name="$(basename "$scoped_entry")"
-    rm -rf "./apps/worker/build/node_modules/$scope_name/$scoped_name"
-    cp -RL "$scoped_entry" "./apps/worker/build/node_modules/$scope_name/$scoped_name"
-  done
-}
+	copy_scope_directory() {
+	  local source_dir="$1"
+	  local scope_name
+	  scope_name="$(basename "$source_dir")"
+	  mkdir -p "/cmux/apps/worker/build/node_modules/$scope_name"
+	  for scoped_entry in "$source_dir"/*; do
+	    if [ ! -e "$scoped_entry" ]; then
+	      continue
+	    fi
+	    local scoped_name
+	    scoped_name="$(basename "$scoped_entry")"
+	    rm -rf "/cmux/apps/worker/build/node_modules/$scope_name/$scoped_name"
+	    cp -RL "$scoped_entry" "/cmux/apps/worker/build/node_modules/$scope_name/$scoped_name"
+	  done
+	}
 
-copy_bundle_directory() {
-  local bundle_dir="$1"
-  for entry in "$bundle_dir"/*; do
-    if [ ! -d "$entry" ]; then
-      continue
-    fi
-    local entry_name
-    entry_name="$(basename "$entry")"
-    if [[ "$entry_name" == @* ]]; then
-      copy_scope_directory "$entry"
-    else
-      rm -rf "./apps/worker/build/node_modules/$entry_name"
-      cp -RL "$entry" "./apps/worker/build/node_modules/$entry_name"
-    fi
-  done
-}
+	copy_bundle_directory() {
+	  local bundle_dir="$1"
+	  for entry in "$bundle_dir"/*; do
+	    if [ ! -d "$entry" ]; then
+	      continue
+	    fi
+	    local entry_name
+	    entry_name="$(basename "$entry")"
+	    if [[ "$entry_name" == @* ]]; then
+	      copy_scope_directory "$entry"
+	    else
+	      rm -rf "/cmux/apps/worker/build/node_modules/$entry_name"
+	      cp -RL "$entry" "/cmux/apps/worker/build/node_modules/$entry_name"
+	    fi
+	  done
+	}
 
 copy_dependency_tree() {
   local package="$1"
@@ -562,15 +563,15 @@ copy_dependency_tree() {
   fi
   COPIED_PACKAGES["$package"]=1
 
-  local sanitized
-  sanitized="$(sanitize_package_name "$package")"
-  local found=false
+	  local sanitized
+	  sanitized="$(sanitize_package_name "$package")"
+	  local found=false
 
-  for bundle_dir in node_modules/.bun/"${sanitized}"@*/node_modules; do
-    if [ ! -d "$bundle_dir" ]; then
-      continue
-    fi
-    found=true
+	  for bundle_dir in /cmux/node_modules/.bun/"${sanitized}"@*/node_modules; do
+	    if [ ! -d "$bundle_dir" ]; then
+	      continue
+	    fi
+	    found=true
     copy_bundle_directory "$bundle_dir"
     local module_path="$bundle_dir/$package"
     if [ ! -d "$module_path" ] || [ ! -f "$module_path/package.json" ]; then
@@ -612,12 +613,12 @@ copy_dependency_tree() {
   if [ "$found" = false ]; then
     echo "Warning: package $package not found in Bun cache" >&2
   fi
-}
+	}
 
-copy_dependency_tree "magnitude-core"
-cp -r ./apps/worker/build /builtins/build
-cp ./apps/worker/wait-for-docker.sh /usr/local/bin/
-chmod +x /usr/local/bin/wait-for-docker.sh
+	copy_dependency_tree "magnitude-core"
+	cp -r /cmux/apps/worker/build /builtins/build
+	cp /cmux/apps/worker/wait-for-docker.sh /usr/local/bin/
+	chmod +x /usr/local/bin/wait-for-docker.sh
 EOF
 
 # Stage 2: Runtime base (shared between local and morph)
