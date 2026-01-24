@@ -3,6 +3,70 @@ import type {
   EnvironmentResult,
 } from "../common/environment-result";
 
+// Target model for migrations - change this when a new latest model is released.
+const MIGRATION_TARGET_MODEL = "gpt-5.2-codex";
+
+// Models to migrate (models without model_reasoning_effort support).
+const MODELS_TO_MIGRATE = [
+  "gpt-5.1-codex-max",
+  "gpt-5.2",
+  "gpt-5.1",
+  "gpt-5.1-codex",
+  "gpt-5.1-codex-mini",
+  "gpt-5",
+  "gpt-5-codex",
+  "o3",
+  "o4-mini",
+  "gpt-4.1",
+  "gpt-5-codex-mini",
+] as const;
+
+function generateModelMigrationsTomlSection(): string {
+  const migrations = MODELS_TO_MIGRATE.map(
+    (model) => `"${model}" = "${MIGRATION_TARGET_MODEL}"`
+  ).join("\n");
+  return `[notice.model_migrations]\n${migrations}\n`;
+}
+
+function stripExistingModelMigrationsSection(toml: string): string {
+  const lines = toml.split(/\r?\n/);
+  const out: string[] = [];
+  let skipping = false;
+
+  const isNoticeModelMigrationsHeader = (line: string) =>
+    /^\s*\[notice\.model_migrations\]\s*(#.*)?$/.test(line);
+  const isAnySectionHeader = (line: string) => {
+    const withoutComment = line.replace(/#.*$/, "").trim();
+    return withoutComment.startsWith("[") && withoutComment.endsWith("]");
+  };
+
+  for (const line of lines) {
+    if (!skipping && isNoticeModelMigrationsHeader(line)) {
+      skipping = true;
+      continue;
+    }
+
+    if (skipping) {
+      if (isAnySectionHeader(line)) {
+        skipping = false;
+        out.push(line);
+      }
+      continue;
+    }
+
+    out.push(line);
+  }
+
+  return out.join("\n").replace(/\n{3,}/g, "\n\n");
+}
+
+function withManagedModelMigrations(toml: string): string {
+  const base = stripExistingModelMigrationsSection(toml).trimEnd();
+  const section = generateModelMigrationsTomlSection();
+  if (base.length === 0) return section;
+  return `${base}\n\n${section}`;
+}
+
 /**
  * Apply API keys for OpenAI Codex.
  *
@@ -109,9 +173,10 @@ touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
   try {
     const rawToml = await readFile(`${homedir()}/.codex/config.toml`, "utf-8");
     const hasNotify = /(^|\n)\s*notify\s*=/.test(rawToml);
-    const tomlOut = hasNotify
+    let tomlOut = hasNotify
       ? rawToml
       : `notify = ["/root/lifecycle/codex-notify.sh"]\n` + rawToml;
+    tomlOut = withManagedModelMigrations(tomlOut);
     files.push({
       destinationPath: `$HOME/.codex/config.toml`,
       contentBase64: Buffer.from(tomlOut).toString("base64"),
@@ -119,7 +184,9 @@ touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
     });
   } catch (_error) {
     // No host config.toml; create a minimal one that sets notify
-    const toml = `notify = ["/root/lifecycle/codex-notify.sh"]\n`;
+    const toml = withManagedModelMigrations(
+      `notify = ["/root/lifecycle/codex-notify.sh"]\n`
+    );
     files.push({
       destinationPath: `$HOME/.codex/config.toml`,
       contentBase64: Buffer.from(toml).toString("base64"),
