@@ -416,7 +416,11 @@ async function renderScreenshotSetMarkdown(
   const lines: string[] = [heading, ""];
 
   const imageCount = set.images.length;
-  const videoCount = set.videos?.length ?? 0;
+  // Count unique video groups (GIF+MP4 pairs count as 1 video, not 2)
+  const uniqueVideoBaseNames = new Set(
+    (set.videos ?? []).map(v => getBaseName(v.fileName || "workflow.mp4"))
+  );
+  const videoCount = uniqueVideoBaseNames.size;
   const hasMedia = imageCount > 0 || videoCount > 0;
 
   if (set.status === "completed" && hasMedia) {
@@ -442,15 +446,7 @@ async function renderScreenshotSetMarkdown(
       const intro = `Captured ${parts.join(" and ")} for commit ${commitLabel} (${timestamp}).`;
       lines.push(intro, "");
 
-      // Render images
-      for (const image of set.images) {
-        const storageUrl = await ctx.storage.getUrl(image.storageId);
-        if (!storageUrl) continue;
-        const fileName = image.fileName || "screenshot";
-        lines.push(...formatScreenshotImageMarkdown(storageUrl, fileName, image.description));
-      }
-
-      // Render videos - upload to GitHub Release Assets
+      // Render videos FIRST - upload to GitHub Release Assets
       // Group videos by base name to pair animated preview (GIF/APNG) with MP4 (download)
       if (set.videos && set.videos.length > 0 && options?.accessToken && options?.repoFullName) {
         // Group videos by base name (e.g., "workflow.mp4" and "workflow.gif" share base "workflow")
@@ -566,22 +562,23 @@ async function renderScreenshotSetMarkdown(
             if (previewUrl) {
               // Have animated preview - show as animated image with optional MP4 download
               if (safeDescription) {
-                lines.push(`### 🎬 Workflow Preview`, "");
-                lines.push(`**${safeDescription}**`, "");
+                // Caption with (video) link if MP4 is available
+                if (mp4Url) {
+                  lines.push(`**${safeDescription}** ([video](${mp4Url}))`, "");
+                } else {
+                  lines.push(`**${safeDescription}**`, "");
+                }
               }
               const ext = group.preview ? getVideoExtension(group.preview.mimeType) : "gif";
               const safeFileName = sanitizeFileName(group.preview?.fileName || `${baseName}.${ext}`);
               lines.push(`![${safeFileName}](${previewUrl})`, "");
-              if (mp4Url) {
-                lines.push(`[📥 Download full video (MP4)](${mp4Url})`, "");
-              }
             } else if (mp4Url) {
-              // No APNG but have MP4 - show download link
+              // No animated preview but have MP4 - show caption with video link
               if (safeDescription) {
-                lines.push(`### 🎬 Workflow Video`, "");
-                lines.push(`**${safeDescription}**`, "");
+                lines.push(`**${safeDescription}** ([video](${mp4Url}))`, "");
+              } else {
+                lines.push(`[video](${mp4Url})`, "");
               }
-              lines.push(`[📥 Download video](${mp4Url})`, "");
             } else if (group.other) {
               // Fall back to other video format
               const video = group.other;
@@ -601,10 +598,10 @@ async function renderScreenshotSetMarkdown(
                   });
                   if (uploadResult.ok) {
                     if (safeDescription) {
-                      lines.push(`### 🎬 Workflow Video`, "");
-                      lines.push(`**${safeDescription}**`, "");
+                      lines.push(`**${safeDescription}** ([video](${uploadResult.assetUrl}))`, "");
+                    } else {
+                      lines.push(`[video](${uploadResult.assetUrl})`, "");
                     }
-                    lines.push(`[📥 Download video](${uploadResult.assetUrl})`, "");
                   }
                 }
               }
@@ -618,6 +615,14 @@ async function renderScreenshotSetMarkdown(
         }
       } else if (set.videos && set.videos.length > 0) {
         console.warn("[github_pr_comments] Cannot upload videos - missing accessToken or repoFullName");
+      }
+
+      // Render images AFTER videos
+      for (const image of set.images) {
+        const storageUrl = await ctx.storage.getUrl(image.storageId);
+        if (!storageUrl) continue;
+        const fileName = image.fileName || "screenshot";
+        lines.push(...formatScreenshotImageMarkdown(storageUrl, fileName, image.description));
       }
     }
   } else if (set.status === "failed") {
@@ -957,7 +962,7 @@ export const postInitialPreviewComment = internalAction({
       const octokit = createOctokit(accessToken);
 
       // Build the initial comment with diff heatmap link and loading state
-      const commentSections: string[] = ["## Preview Screenshots"];
+      const commentSections: string[] = ["## Preview Videos and Screenshots"];
 
       // Add diff heatmap link (available immediately)
       const heatmapUrl = `https://0github.com/${repoFullName}/pull/${prNumber}?${UTM_PARAMS}&utm_content=diff_heatmap`;
@@ -1128,7 +1133,7 @@ export const updatePreviewComment = internalAction({
       }
 
       // Build comment sections
-      const commentSections: string[] = ["## Preview Screenshots"];
+      const commentSections: string[] = ["## Preview Videos and Screenshots"];
 
       // Build links row (under the heading)
       const linkParts: string[] = [];
@@ -1342,7 +1347,7 @@ export const postPreviewComment = internalAction({
       }
 
       // Build comment sections
-      const commentSections: string[] = ["## Preview Screenshots"];
+      const commentSections: string[] = ["## Preview Videos and Screenshots"];
 
       // Build links row (under the heading)
       // Using HTML anchor tags with target="_blank" to open links in new tabs
