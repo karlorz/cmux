@@ -22,17 +22,6 @@ export interface GitDiffRequest {
   authToken?: string;
 }
 
-/**
- * Construct an authenticated GitHub URL by embedding the OAuth token.
- * This allows the native git operations to access private repositories.
- */
-function buildAuthenticatedGitHubUrl(
-  repoFullName: string,
-  token: string
-): string {
-  return `https://oauth:${token}@github.com/${repoFullName}.git`;
-}
-
 export async function getGitDiff(
   request: GitDiffRequest
 ): Promise<ReplaceDiffEntry[]> {
@@ -43,53 +32,39 @@ export async function getGitDiff(
 
   const baseRef = request.baseRef?.trim();
 
-  // Determine the final repoUrl to use
-  let effectiveRepoUrl = request.repoUrl;
-  let effectiveRepoFullName = request.repoFullName;
+  // Determine the authToken to use for private repo access
+  // Pass it to the native module which handles authentication without embedding in URLs
+  let effectiveAuthToken = request.authToken;
 
-  // If we have repoFullName but no originPathOverride or explicit repoUrl,
-  // inject GitHub OAuth credentials for private repo access.
-  // This is especially important in web mode where repos need to be cloned.
+  // If we have repoFullName but no originPathOverride and no explicit authToken,
+  // try to fetch GitHub OAuth credentials for private repo access.
   if (
     request.repoFullName &&
     !request.originPathOverride &&
-    !request.repoUrl
+    !effectiveAuthToken
   ) {
-    // Use the token passed from caller if available, otherwise fetch a new one
-    let token = request.authToken;
-    if (!token) {
-      try {
-        token = (await getGitHubOAuthToken()) ?? undefined;
-      } catch (error) {
-        // Non-fatal: if token fetch fails, fall back to unauthenticated access
-        // This will work for public repos
-        serverLogger.warn(
-          `[getGitDiff] Failed to get GitHub OAuth token for ${request.repoFullName}: ${String(error)}`
-        );
-      }
-    }
-
-    if (token) {
-      effectiveRepoUrl = buildAuthenticatedGitHubUrl(
-        request.repoFullName,
-        token
+    try {
+      effectiveAuthToken = (await getGitHubOAuthToken()) ?? undefined;
+    } catch (error) {
+      // Non-fatal: if token fetch fails, fall back to unauthenticated access
+      // This will work for public repos
+      serverLogger.warn(
+        `[getGitDiff] Failed to get GitHub OAuth token for ${request.repoFullName}: ${String(error)}`
       );
-      // Clear repoFullName since we're using repoUrl with embedded credentials
-      effectiveRepoFullName = undefined;
     }
   }
 
   return await nativeGitDiff({
     headRef,
     baseRef: baseRef ? baseRef : undefined,
-    repoFullName: effectiveRepoFullName,
-    repoUrl: effectiveRepoUrl,
+    repoFullName: request.repoFullName,
+    repoUrl: request.repoUrl,
     teamSlugOrId: request.teamSlugOrId,
     originPathOverride: request.originPathOverride,
     includeContents: request.includeContents,
     maxBytes: request.maxBytes,
     lastKnownBaseSha: request.lastKnownBaseSha,
     lastKnownMergeCommitSha: request.lastKnownMergeCommitSha,
-    authToken: request.authToken,
+    authToken: effectiveAuthToken,
   });
 }

@@ -238,18 +238,25 @@ githubBranchesRouter.openapi(
       // For sorting by commit date, we fetch branches and sort client-side.
       // We need to fetch at least (offset + limit) branches to return the requested page.
       const targetCount = offset + limit;
-      const fetchSize = Math.max(targetCount, 50);
+
+      // GitHub GraphQL API caps `refs(first:)` at 100, so we must clamp and paginate
+      const GITHUB_GRAPHQL_MAX_REFS = 100;
 
       const allBranches: Array<z.infer<typeof GithubBranch>> = [];
       let defaultBranchName: string | null = null;
       let afterCursor: string | null = null;
       let githubHasMore = true;
 
-      // For search, cap at 200 branches max to keep it fast
-      const maxBranchesToFetch = shouldFilter ? 200 : Math.max(fetchSize, 100);
+      // For search, cap at 500 branches max to keep it reasonably fast
+      // For non-search, we fetch enough to cover the requested page
+      const maxBranchesToFetch = shouldFilter ? 500 : Math.max(targetCount, 100);
       let totalFetched = 0;
 
       while (allBranches.length < targetCount && githubHasMore && totalFetched < maxBranchesToFetch) {
+        // Calculate how many more we need, clamped to GitHub's limit
+        const remaining = maxBranchesToFetch - totalFetched;
+        const fetchSize = Math.min(remaining, GITHUB_GRAPHQL_MAX_REFS);
+
         const rawResponse: unknown = await octokit.graphql(query, {
           owner,
           repo: repoName,

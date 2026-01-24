@@ -109,30 +109,50 @@ if ! acquire_lock; then
         echo -e "\033[0;33mAnother dev.sh instance is running (PID: $existing_pid). Stopping it...\033[0m"
 
         # Kill process group and descendants
-        kill -TERM -- "-$existing_pid" 2>/dev/null || true
-        sleep 1
-        kill -9 -- "-$existing_pid" 2>/dev/null || true
+        # Try killing the process group first (negative PID), then fall back to the PID itself
+        kill -TERM -- "-$existing_pid" 2>/dev/null || kill -TERM "$existing_pid" 2>/dev/null || true
 
-        # Clean up docker compose if path is known
-        if [ -f "$PATHFILE" ]; then
-            project_path=$(cat "$PATHFILE" 2>/dev/null || true)
-            if [ -d "$project_path/.devcontainer" ]; then
-                echo "Stopping docker compose..."
-                for compose_file in "$project_path/.devcontainer"/docker-compose*.yml; do
-                    [ -f "$compose_file" ] && docker compose -f "$compose_file" down 2>/dev/null || true
-                done
-            fi
+        # Wait for the process to exit (up to 3 seconds)
+        wait_count=0
+        while [ $wait_count -lt 6 ] && is_dev_script_pid "$existing_pid"; do
+            sleep 0.5
+            wait_count=$((wait_count + 1))
+        done
+
+        # Force kill if still running
+        if is_dev_script_pid "$existing_pid"; then
+            kill -9 -- "-$existing_pid" 2>/dev/null || kill -9 "$existing_pid" 2>/dev/null || true
+            sleep 1
         fi
 
-        # Clean up lock files
-        rm -rf "$LOCKDIR" 2>/dev/null || true
-        rm -f "$LOCKFILE" "$PIDFILE" "$PATHFILE" 2>/dev/null || true
+        # Verify the process is actually gone before cleaning up locks
+        if is_dev_script_pid "$existing_pid"; then
+            echo -e "\033[0;31mWarning: Failed to stop previous dev.sh instance (PID: $existing_pid)\033[0m"
+            echo "The old instance may still be running. Try killing it manually."
+        else
+            # Process is confirmed terminated - safe to clean up
 
-        # Retry acquiring lock
-        sleep 1
-        if acquire_lock; then
-            lock_failed=false
-            echo -e "\033[0;32mPrevious instance stopped. Starting new dev server...\033[0m"
+            # Clean up docker compose if path is known
+            if [ -f "$PATHFILE" ]; then
+                project_path=$(cat "$PATHFILE" 2>/dev/null || true)
+                if [ -d "$project_path/.devcontainer" ]; then
+                    echo "Stopping docker compose..."
+                    for compose_file in "$project_path/.devcontainer"/docker-compose*.yml; do
+                        [ -f "$compose_file" ] && docker compose -f "$compose_file" down 2>/dev/null || true
+                    done
+                fi
+            fi
+
+            # Clean up lock files only after confirming process terminated
+            rm -rf "$LOCKDIR" 2>/dev/null || true
+            rm -f "$LOCKFILE" "$PIDFILE" "$PATHFILE" 2>/dev/null || true
+
+            # Retry acquiring lock
+            sleep 1
+            if acquire_lock; then
+                lock_failed=false
+                echo -e "\033[0;32mPrevious instance stopped. Starting new dev server...\033[0m"
+            fi
         fi
     fi
 
