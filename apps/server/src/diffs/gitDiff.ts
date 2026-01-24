@@ -48,29 +48,34 @@ export async function getGitDiff(
   let effectiveRepoFullName = request.repoFullName;
 
   // If we have repoFullName but no originPathOverride or explicit repoUrl,
-  // try to inject GitHub OAuth credentials for private repo access.
+  // inject GitHub OAuth credentials for private repo access.
   // This is especially important in web mode where repos need to be cloned.
   if (
     request.repoFullName &&
     !request.originPathOverride &&
     !request.repoUrl
   ) {
-    try {
-      const token = await getGitHubOAuthToken();
-      if (token) {
-        effectiveRepoUrl = buildAuthenticatedGitHubUrl(
-          request.repoFullName,
-          token
+    // Use the token passed from caller if available, otherwise fetch a new one
+    let token = request.authToken;
+    if (!token) {
+      try {
+        token = (await getGitHubOAuthToken()) ?? undefined;
+      } catch (error) {
+        // Non-fatal: if token fetch fails, fall back to unauthenticated access
+        // This will work for public repos
+        serverLogger.warn(
+          `[getGitDiff] Failed to get GitHub OAuth token for ${request.repoFullName}: ${String(error)}`
         );
-        // Clear repoFullName since we're using repoUrl with embedded credentials
-        effectiveRepoFullName = undefined;
       }
-    } catch (error) {
-      // Non-fatal: if token fetch fails, fall back to unauthenticated access
-      // This will work for public repos
-      serverLogger.warn(
-        `[getGitDiff] Failed to get GitHub OAuth token for ${request.repoFullName}: ${String(error)}`
+    }
+
+    if (token) {
+      effectiveRepoUrl = buildAuthenticatedGitHubUrl(
+        request.repoFullName,
+        token
       );
+      // Clear repoFullName since we're using repoUrl with embedded credentials
+      effectiveRepoFullName = undefined;
     }
   }
 
