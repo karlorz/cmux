@@ -16,7 +16,9 @@ import {
 import { useEffect } from "react";
 import { $isImageNode, ImageNode } from "./ImageNode";
 
-// Custom transformer for ImageNode to export as markdown image syntax
+// Custom transformer for ImageNode to export as plain filename reference
+// We avoid markdown image syntax ![alt](ref) because CLI tools may interpret
+// special characters in filenames as shell patterns, causing "bad pattern" errors
 const IMAGE_TRANSFORMER: Transformer = {
   dependencies: [ImageNode],
   export: (node) => {
@@ -26,10 +28,8 @@ const IMAGE_TRANSFORMER: Transformer = {
     const fileName = node.getFileName();
     const altText = node.getAltText();
     // Use fileName if available, otherwise use altText as reference
-    const imageRef = fileName || `image: ${altText}`;
-    // Export as markdown image syntax: ![alt](reference)
-    // The actual image data is handled separately via the images array
-    return `![${altText}](${imageRef})`;
+    // Output just the filename - backend will replace it with sanitized path
+    return fileName || `image: ${altText}`;
   },
   regExp: /!\[([^\]]*)\]\(([^)]+)\)/,
   replace: () => {
