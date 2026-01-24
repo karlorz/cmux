@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-01-14T07:41:59Z",
+  "updatedAt": "2026-01-23T02:11:33Z",
   "presets": [
     {
       "presetId": "4vcpu_16gb_48gb",
@@ -293,6 +293,46 @@
           "version": 57,
           "snapshotId": "snapshot_p9vgqaay",
           "capturedAt": "2026-01-14T07:44:51Z"
+        },
+        {
+          "version": 58,
+          "snapshotId": "snapshot_zxj541w7",
+          "capturedAt": "2026-01-16T19:23:23Z"
+        },
+        {
+          "version": 59,
+          "snapshotId": "snapshot_hk6jonjg",
+          "capturedAt": "2026-01-16T21:09:02Z"
+        },
+        {
+          "version": 60,
+          "snapshotId": "snapshot_tac3s7qu",
+          "capturedAt": "2026-01-17T02:05:43Z"
+        },
+        {
+          "version": 61,
+          "snapshotId": "snapshot_5g92pacf",
+          "capturedAt": "2026-01-21T03:39:53Z"
+        },
+        {
+          "version": 62,
+          "snapshotId": "snapshot_i6s8rsr6",
+          "capturedAt": "2026-01-21T04:09:09Z"
+        },
+        {
+          "version": 63,
+          "snapshotId": "snapshot_0gzeycov",
+          "capturedAt": "2026-01-21T10:00:52Z"
+        },
+        {
+          "version": 64,
+          "snapshotId": "snapshot_09jelk9x",
+          "capturedAt": "2026-01-21T11:17:17Z"
+        },
+        {
+          "version": 65,
+          "snapshotId": "snapshot_ziotespn",
+          "capturedAt": "2026-01-23T02:10:32Z"
         }
       ],
       "description": "Great default for day-to-day work. Balanced CPU, memory, and storage."
@@ -588,6 +628,46 @@
           "version": 57,
           "snapshotId": "snapshot_8apf9s6p",
           "capturedAt": "2026-01-14T07:41:59Z"
+        },
+        {
+          "version": 58,
+          "snapshotId": "snapshot_v7hqwnl1",
+          "capturedAt": "2026-01-16T19:21:33Z"
+        },
+        {
+          "version": 59,
+          "snapshotId": "snapshot_e1ofdbpj",
+          "capturedAt": "2026-01-16T21:09:07Z"
+        },
+        {
+          "version": 60,
+          "snapshotId": "snapshot_hhybc4sj",
+          "capturedAt": "2026-01-17T02:04:29Z"
+        },
+        {
+          "version": 61,
+          "snapshotId": "snapshot_mukix3mh",
+          "capturedAt": "2026-01-21T03:37:26Z"
+        },
+        {
+          "version": 62,
+          "snapshotId": "snapshot_g18cbqgj",
+          "capturedAt": "2026-01-21T04:07:02Z"
+        },
+        {
+          "version": 63,
+          "snapshotId": "snapshot_3d2u3up6",
+          "capturedAt": "2026-01-21T10:00:24Z"
+        },
+        {
+          "version": 64,
+          "snapshotId": "snapshot_tv4jhunk",
+          "capturedAt": "2026-01-21T11:16:39Z"
+        },
+        {
+          "version": 65,
+          "snapshotId": "snapshot_pckmaysy",
+          "capturedAt": "2026-01-23T02:11:33Z"
         }
       ],
       "description": "Extra headroom for larger codebases or heavier workloads."
