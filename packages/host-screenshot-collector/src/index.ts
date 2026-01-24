@@ -216,7 +216,7 @@ echo ${apiKey}`;
 }
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp"]);
-const VIDEO_EXTENSIONS = new Set([".mp4", ".webm", ".mkv", ".gif"]);
+const VIDEO_EXTENSIONS = new Set([".mp4", ".webm", ".mkv", ".gif", ".apng"]);
 
 function isScreenshotFile(fileName: string): boolean {
   return IMAGE_EXTENSIONS.has(path.extname(fileName).toLowerCase());
@@ -225,6 +225,17 @@ function isScreenshotFile(fileName: string): boolean {
 function isVideoFile(fileName: string): boolean {
   return VIDEO_EXTENSIONS.has(path.extname(fileName).toLowerCase());
 }
+
+// Files to exclude from screenshot collection (internal/temporary files)
+const EXCLUDED_SCREENSHOT_FILES = new Set([
+  "cursor.png", // Cursor overlay image for video processing
+]);
+
+// Files to exclude from video collection (internal/temporary files)
+const EXCLUDED_VIDEO_FILES = new Set([
+  "raw.mp4", // Raw recording before processing
+  "with_cursor.mp4", // Intermediate video with cursor overlay
+]);
 
 async function collectMediaFiles(
   directory: string
@@ -242,9 +253,9 @@ async function collectMediaFiles(
       screenshots.push(...nested.screenshots);
       videos.push(...nested.videos);
     } else if (entry.isFile()) {
-      if (isScreenshotFile(entry.name)) {
+      if (isScreenshotFile(entry.name) && !EXCLUDED_SCREENSHOT_FILES.has(entry.name)) {
         screenshots.push(fullPath);
-      } else if (isVideoFile(entry.name)) {
+      } else if (isVideoFile(entry.name) && !EXCLUDED_VIDEO_FILES.has(entry.name)) {
         videos.push(fullPath);
       }
     }
@@ -520,7 +531,7 @@ INCOMPLETE CAPTURE: Missing important UI elements. Ensure full components are vi
 </CRITICAL_MISTAKES>
 
 <VIDEO_RECORDING>
-Record screen videos to demonstrate workflows. Cursor overlay is added automatically in post-processing.
+Record screen videos to demonstrate COMPLETE WORKFLOWS end-to-end. Cursor overlay is added automatically in post-processing.
 
 YOU MUST RECORD A VIDEO IF:
 - There is a button, link, or clickable element
@@ -532,33 +543,74 @@ Screenshots alone are NOT enough for interactive changes - you MUST record a vid
 
 SKIP VIDEO ONLY FOR: pure styling changes (colors, fonts, spacing), static text-only changes
 
-STEP 1 - TAKE FRESH SNAPSHOT:
+CRITICAL - SHOW COMPLETE INTERACTIONS:
+- DO NOT just hover over elements - CLICK them
+- After clicking a button, WAIT for and RECORD the result (loading state, modal, page change, toast, etc.)
+- If a button opens a modal, record: click button -> modal appears -> interact with modal content
+- If a button triggers an action, record: click button -> see the result/feedback
+- Wait 1-2 seconds after each significant UI change to capture the result clearly
+- The goal is to show reviewers what HAPPENS when users interact, not just what can be clicked
+
+STEP 1 - WRITE VIDEO METADATA:
+Before recording, write a video-metadata.json file describing what the video will demonstrate.
+Use echo to write the JSON - replace the placeholder values with your actual filename and description:
+\`\`\`bash
+echo '{"fileName": "YOUR-KEBAB-CASE-FILENAME", "description": "YOUR DESCRIPTION HERE"}' > "${outputDir}/video-metadata.json"
+\`\`\`
+
+For fileName, use kebab-case (no extension) like:
+- "submit-button-success-toast"
+- "login-validation-error"
+- "dropdown-navigation"
+- "modal-open-close"
+
+For description, explain what the video demonstrates:
+- What element is clicked/interacted with
+- What result is shown (modal opens, toast appears, page navigates, etc.)
+
+Example:
+\`\`\`bash
+echo '{"fileName": "cnn-link-button-click", "description": "Clicking the CNN link button navigates to the CNN website"}' > "${outputDir}/video-metadata.json"
+\`\`\`
+
+STEP 2 - TAKE FRESH SNAPSHOT:
 ALWAYS take a fresh snapshot immediately before starting the recording. Old snapshots go stale (uids become invalid). Do this right before ffmpeg:
 \`\`\`
 take_snapshot
 \`\`\`
 
-STEP 2 - START RECORDING:
+STEP 3 - START RECORDING:
 \`\`\`bash
 DISPLAY=:1 ffmpeg -y -f x11grab -draw_mouse 0 -framerate 24 -video_size 1920x1080 -i :1+0,0 -c:v libx264 -preset ultrafast -crf 26 -pix_fmt yuv420p -movflags +frag_keyframe+empty_moov "${outputDir}/raw.mp4" &
 FFMPEG_PID=$!
 sleep 0.3
 \`\`\`
 
-STEP 3 - CLICK ELEMENTS:
-Just click elements normally using their uid from the fresh snapshot. The cursor position is captured automatically.
+STEP 4 - CLICK ELEMENTS AND SHOW RESULTS:
+Click elements using their uid from the fresh snapshot. The cursor position is captured automatically.
 The cursor overlay starts at screen center and animates to each click position.
 
-CRITICAL - AFTER CLICKING, YOU MUST COMPLETE STEPS 4 AND 5
-The video is NOT VALID until you run the post-processing script. If you skip steps 4-5, the video will be CORRUPTED.
+IMPORTANT: After clicking, WAIT for the UI to respond before ending the recording:
+- Wait for modals/dialogs to fully appear
+- Wait for loading spinners to complete
+- Wait for success/error messages to show
+- Wait for page transitions to finish
+- Add sleep commands (sleep 1 or sleep 2) after clicks to capture the result
+
+CRITICAL - AFTER CLICKING, YOU MUST COMPLETE STEPS 5 AND 6
+The video is NOT VALID until you run both steps. If you skip them, the video will be CORRUPTED.
 - Do NOT end the session after clicking
 - Do NOT call list_pages or select_page after clicking
-- You MUST run the stop + post-process command below
+- You MUST run STEP 5 first, then STEP 6
 
-STEP 4 & 5 - STOP RECORDING AND POST-PROCESS (MANDATORY - RUN THIS EXACT COMMAND):
+STEP 5 - STOP RECORDING (run this first):
 \`\`\`bash
-# First stop ffmpeg gracefully, wait for it to finalize, then run post-processing
-kill -INT $FFMPEG_PID 2>/dev/null; sleep 1; wait $FFMPEG_PID 2>/dev/null; sleep 0.5; python3 << PYSCRIPT
+kill -INT $FFMPEG_PID 2>/dev/null; sleep 2; wait $FFMPEG_PID 2>/dev/null
+\`\`\`
+
+STEP 6 - POST-PROCESS VIDEO (run this after step 5 completes):
+\`\`\`bash
+python3 << PYSCRIPT
 import subprocess, os, sys, json
 
 outdir = "${outputDir}"
@@ -676,45 +728,17 @@ if clicks:
 
     print(f"Animation: center ({cx},{cy}) -> ({first_x},{first_y}) over {anim_dur:.2f}s", file=sys.stderr)
 
-    # Create cursor PNG using PIL (standard arrow pointer with black outline)
+    # Use pre-rendered cursor PNG (32x32 macOS-style cursor with white fill and black outline)
     cursor_path = f"{outdir}/cursor.png"
     try:
-        from PIL import Image, ImageDraw
-
-        # Cursor dimensions
-        cw, ch = 24, 32
-        img = Image.new('RGBA', (cw, ch), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-
-        # Classic arrow cursor - white fill with black border
-        # Symmetric shape with inward notch on both sides where tail connects
-        cursor_points = [
-            (4, 4),      # tip (top)
-            (4, 20),     # left edge down
-            (8, 16),     # left notch (inward)
-            (11, 23),    # tail left
-            (13, 21),    # tail right
-            (10, 14),    # right notch (inward)
-            (14, 10),    # right edge
-        ]
-
-        # Draw black border by drawing expanded shape
-        for dx in [-2, -1, 0, 1, 2]:
-            for dy in [-2, -1, 0, 1, 2]:
-                if dx == 0 and dy == 0:
-                    continue
-                offset_points = [(x + dx, y + dy) for x, y in cursor_points]
-                draw.polygon(offset_points, fill=(0, 0, 0, 255))
-
-        # Draw white fill on top
-        draw.polygon(cursor_points, fill=(255, 255, 255, 255))
-
-        img.save(cursor_path)
+        import base64
+        # Pre-rendered cursor PNG as base64 (32x32 macOS-style pointer)
+        cursor_b64 = "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAABX0lEQVR4nO2U4XGCQBCF31ag6eBSQehA7CAdZKlASzg6oANJCalA6EArQCsIHZB3msQxAsJBxj98Mzs7DOy8j72ZEzyYSWASmAQmgUlgEhgkUFVVCOAgIgd4MlTgk82xFJEde2+GClRRFGGz2ZR8XIqHxGABhkJVvSVGEXCop8R52hPm/wo41EPiMu0B868EHNpT4nq6J8y/EXBoD4nb6R4wv1bAoR0l6qc7wvxGAYdeJJ5FxPUbmqc7wPxWAcd2u0UYhksRyVBD+/QdmF8rUBQFjDH4Zs8K+d3/boCrRpqmyPMcq9UKSZK8i4jiDudpT5hfrtfrmTvrIAj2FHiJeDXP5/PTFtifKFH75z8MFQjYLIAdK2EdjDGz4/F42oiqxiJi0cIggb9QKLXWvsVxjMVigSzLchEJ0cLYAqYsy4J/7o4E1toPCrzyVSOjCjgooeAVAKBkKQVcb2R0gb58AQH2qSGP9lZkAAAAAElFTkSuQmCC"
+        cursor_data = base64.b64decode(cursor_b64)
+        with open(cursor_path, 'wb') as f:
+            f.write(cursor_data)
         print(f"Created cursor PNG at {cursor_path}", file=sys.stderr)
         use_cursor_png = True
-    except ImportError:
-        print("PIL not available, falling back to drawtext cursor", file=sys.stderr)
-        use_cursor_png = False
     except Exception as e:
         print(f"Failed to create cursor PNG: {e}, falling back to drawtext", file=sys.stderr)
         use_cursor_png = False
@@ -725,9 +749,10 @@ if clicks:
         # First, generate intermediate video with cursor, then process further
 
         # Animation expressions for smooth movement from center to first click
-        # For overlay, x/y position the top-left of the overlay image (cursor tip is at ~1,1)
-        anim_x_expr = f"({cx}+({first_x}-{cx})*min(t/{anim_dur},1))"
-        anim_y_expr = f"({cy}+({first_y}-{cy})*min(t/{anim_dur},1))"
+        # For overlay, x/y position the top-left of the overlay image (cursor tip is at ~4,4 for the 32x32 cursor)
+        tip_offset = 4  # cursor tip offset within the 32x32 image
+        anim_x_expr = f"({cx}-{tip_offset}+({first_x}-{cx})*min(t/{anim_dur},1))"
+        anim_y_expr = f"({cy}-{tip_offset}+({first_y}-{cy})*min(t/{anim_dur},1))"
 
         # Build overlay filter - cursor moves during animation phase, then jumps to click positions
         # We'll use multiple overlay applications with enable expressions
@@ -736,12 +761,12 @@ if clicks:
         # Animation phase - cursor moves from center to first click
         overlay_parts.append(f"overlay=x='{anim_x_expr}':y='{anim_y_expr}':enable='between(t,0,{anim_dur:.2f})'")
 
-        # Static cursor at each click position
+        # Static cursor at each click position (offset by tip position)
         for i, (t, x, y) in enumerate(clicks):
             end_t = clicks[i+1][0] if i+1 < len(clicks) else 9999
             if end_t <= t:
                 continue
-            overlay_parts.append(f"overlay=x={x}:y={y}:enable='between(t,{t:.2f},{end_t:.2f})'")
+            overlay_parts.append(f"overlay=x={x-tip_offset}:y={y-tip_offset}:enable='between(t,{t:.2f},{end_t:.2f})'")
 
         # Build filter: load cursor image, apply overlays sequentially
         # Format: [0:v][1:v]overlay...[tmp];[tmp][1:v]overlay...
@@ -825,19 +850,25 @@ if clicks:
         print(f"Video duration: {video_duration:.1f}s", file=sys.stderr)
 
         # STEP 2: Trim inactive sections and speed up transitions
-        # Goal: Short, focused videos showing only the action
-        FAST_SPEED = 8  # Speed for transition segments
-        ACTION_BEFORE = 0.3  # seconds before click at normal speed
-        ACTION_AFTER = 0.5   # seconds after click at normal speed
-        MAX_TRANSITION = 0.5  # max seconds to keep from gaps (before speedup)
+        # Goal: Videos showing complete end-to-end workflows with FULL action results
+        FAST_SPEED = 4  # Speed for transition segments (slower = less jarring)
+        ACTION_BEFORE = 0.5  # seconds before click at normal speed (shows hover/approach)
+        ACTION_AFTER = 4.0   # seconds after click at normal speed (shows result: navigation, modals, page loads)
+        LAST_ACTION_AFTER = 6.0  # extra time for LAST click to show final result
+        MAX_TRANSITION = 1.5  # max seconds to keep from gaps (before speedup) - gives context between actions
+        END_OF_VIDEO_BUFFER = 3.0  # seconds to keep at end of video to show final state
 
         # Build segments - TRIM long gaps, keep only action windows
         video_segments = []  # (start, end, speed)
         prev_action_end = 0.0
+        num_clicks = len(clicks)
 
         for i, (t, x, y) in enumerate(clicks):
+            is_last_click = (i == num_clicks - 1)
             action_start = max(0, t - ACTION_BEFORE)
-            action_end = min(video_duration, t + ACTION_AFTER)
+            # Give more time after the last click to show the final result
+            after_time = LAST_ACTION_AFTER if is_last_click else ACTION_AFTER
+            action_end = min(video_duration, t + after_time)
 
             # Handle gap before this action
             gap = action_start - prev_action_end
@@ -862,14 +893,17 @@ if clicks:
 
             prev_action_end = action_end
 
-        # Handle end of video - trim to brief ending
+        # Handle end of video - keep more to show final state
         if prev_action_end < video_duration:
             remaining = video_duration - prev_action_end
-            if remaining > MAX_TRANSITION:
-                # Only keep a brief ending
-                video_segments.append((prev_action_end, prev_action_end + MAX_TRANSITION, FAST_SPEED))
+            if remaining > END_OF_VIDEO_BUFFER:
+                # Keep END_OF_VIDEO_BUFFER seconds at normal speed, then fast forward remainder
+                video_segments.append((prev_action_end, prev_action_end + END_OF_VIDEO_BUFFER, 1))
+                if prev_action_end + END_OF_VIDEO_BUFFER < video_duration:
+                    video_segments.append((prev_action_end + END_OF_VIDEO_BUFFER, video_duration, FAST_SPEED))
             else:
-                video_segments.append((prev_action_end, video_duration, FAST_SPEED))
+                # Keep all remaining at normal speed
+                video_segments.append((prev_action_end, video_duration, 1))
 
         print(f"Video segments (trimmed): {video_segments}", file=sys.stderr)
 
@@ -912,42 +946,29 @@ else:
     print("No clicks found, drawing cursor at center and speeding up 2x", file=sys.stderr)
     cx, cy = 960, 540  # screen center
 
-    # Try to create cursor PNG for no-click case too
+    # Use pre-rendered cursor PNG for no-click case
     cursor_path = f"{outdir}/cursor.png"
     use_cursor_png = False
+    tip_offset = 4  # cursor tip offset within the 32x32 image
     try:
-        from PIL import Image, ImageDraw
-
-        cw, ch = 24, 32
-        img = Image.new('RGBA', (cw, ch), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-
-        # Classic arrow cursor - white fill with black border
-        cursor_points = [
-            (4, 4), (4, 20), (8, 16), (11, 23), (13, 21), (10, 14), (14, 10),
-        ]
-        # Draw black border by drawing expanded shape
-        for dx in [-2, -1, 0, 1, 2]:
-            for dy in [-2, -1, 0, 1, 2]:
-                if dx == 0 and dy == 0:
-                    continue
-                offset_points = [(x + dx, y + dy) for x, y in cursor_points]
-                draw.polygon(offset_points, fill=(0, 0, 0, 255))
-        # Draw white fill
-        draw.polygon(cursor_points, fill=(255, 255, 255, 255))
-        img.save(cursor_path)
+        import base64
+        # Pre-rendered cursor PNG as base64 (32x32 macOS-style pointer)
+        cursor_b64 = "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAABX0lEQVR4nO2U4XGCQBCF31ag6eBSQehA7CAdZKlASzg6oANJCalA6EArQCsIHZB3msQxAsJBxj98Mzs7DOy8j72ZEzyYSWASmAQmgUlgEhgkUFVVCOAgIgd4MlTgk82xFJEde2+GClRRFGGz2ZR8XIqHxGABhkJVvSVGEXCop8R52hPm/wo41EPiMu0B868EHNpT4nq6J8y/EXBoD4nb6R4wv1bAoR0l6qc7wvxGAYdeJJ5FxPUbmqc7wPxWAcd2u0UYhksRyVBD+/QdmF8rUBQFjDH4Zs8K+d3/boCrRpqmyPMcq9UKSZK8i4jiDudpT5hfrtfrmTvrIAj2FHiJeDXP5/PTFtifKFH75z8MFQjYLIAdK2EdjDGz4/F42oiqxiJi0cIggb9QKLXWvsVxjMVigSzLchEJ0cLYAqYsy4J/7o4E1toPCrzyVSOjCjgooeAVAKBkKQVcb2R0gb58AQH2qSGP9lZkAAAAAElFTkSuQmCC"
+        cursor_data = base64.b64decode(cursor_b64)
+        with open(cursor_path, 'wb') as f:
+            f.write(cursor_data)
         use_cursor_png = True
         print(f"Created cursor PNG at {cursor_path}", file=sys.stderr)
-    except:
-        print("PIL not available for no-click cursor, using drawtext fallback", file=sys.stderr)
+    except Exception as e:
+        print(f"Failed to create cursor PNG for no-click case: {e}, using drawtext fallback", file=sys.stderr)
 
     if use_cursor_png:
-        # Use overlay filter with cursor PNG, then speed up
+        # Use overlay filter with cursor PNG (offset by tip position), then speed up
         result = subprocess.run([
             "ffmpeg", "-y",
             "-i", f"{outdir}/raw.mp4",
             "-i", cursor_path,
-            "-filter_complex", f"[0:v][1:v]overlay=x={cx}:y={cy},setpts=0.5*PTS[out]",
+            "-filter_complex", f"[0:v][1:v]overlay=x={cx-tip_offset}:y={cy-tip_offset},setpts=0.5*PTS[out]",
             "-map", "[out]",
             "-movflags", "+faststart",
             f"{outdir}/workflow.mp4"
@@ -994,14 +1015,81 @@ if os.path.exists(workflow_path):
         print(f"ffprobe stderr: {probe_result.stderr}", file=sys.stderr)
 else:
     print(f"ERROR: Output video not found at {workflow_path}", file=sys.stderr)
+
+# Generate APNG preview from the video (for GitHub comment embedding)
+# APNG renders inline in GitHub comments as an animated image with full color support
+apng_path = f"{outdir}/workflow.apng"
+if os.path.exists(workflow_path):
+    print(f"Generating APNG preview from video...", file=sys.stderr)
+
+    try:
+        # Simple APNG conversion: -plays 0 means loop forever
+        apng_result = subprocess.run([
+            "ffmpeg", "-y",
+            "-i", workflow_path,
+            "-plays", "0",
+            "-f", "apng",
+            apng_path
+        ], capture_output=True, text=True, timeout=120)
+
+        if apng_result.returncode == 0 and os.path.exists(apng_path):
+            apng_size = os.path.getsize(apng_path)
+            apng_size_mb = apng_size / 1024 / 1024
+            print(f"APNG generated: {apng_path} ({apng_size_mb:.2f} MB)", file=sys.stderr)
+
+            # If too large (>25MB), delete and skip
+            if apng_size_mb > 25:
+                print(f"APNG too large ({apng_size_mb:.2f} MB), removing...", file=sys.stderr)
+                os.remove(apng_path)
+        else:
+            print(f"APNG generation failed: {apng_result.stderr}", file=sys.stderr)
+    except subprocess.TimeoutExpired:
+        print(f"APNG generation timed out, skipping", file=sys.stderr)
+        if os.path.exists(apng_path):
+            os.remove(apng_path)
+
+# Read video metadata and rename files if custom filename is specified
+metadata_path = f"{outdir}/video-metadata.json"
+if os.path.exists(metadata_path):
+    try:
+        with open(metadata_path) as f:
+            metadata = json.load(f)
+        custom_filename = metadata.get("fileName", "").strip()
+        if custom_filename:
+            # Sanitize filename: only allow alphanumeric, hyphens, underscores
+            import re
+            safe_filename = re.sub(r'[^a-zA-Z0-9_-]', '-', custom_filename)
+            safe_filename = re.sub(r'-+', '-', safe_filename).strip('-')
+            if safe_filename:
+                # Rename workflow.mp4 to custom name
+                new_mp4_path = f"{outdir}/{safe_filename}.mp4"
+                new_apng_path = f"{outdir}/{safe_filename}.apng"
+                if os.path.exists(workflow_path) and workflow_path != new_mp4_path:
+                    os.rename(workflow_path, new_mp4_path)
+                    print(f"Renamed video: {workflow_path} -> {new_mp4_path}", file=sys.stderr)
+                if os.path.exists(apng_path) and apng_path != new_apng_path:
+                    os.rename(apng_path, new_apng_path)
+                    print(f"Renamed APNG: {apng_path} -> {new_apng_path}", file=sys.stderr)
+        print(f"Video metadata: {metadata}", file=sys.stderr)
+    except Exception as e:
+        print(f"Warning: Could not process video metadata: {e}", file=sys.stderr)
+
+# Cleanup: remove temporary cursor.png file
+cursor_cleanup_path = f"{outdir}/cursor.png"
+if os.path.exists(cursor_cleanup_path):
+    os.remove(cursor_cleanup_path)
+    print(f"Cleaned up cursor.png", file=sys.stderr)
 PYSCRIPT
 \`\`\`
 
 CRITICAL WORKFLOW - YOU MUST FOLLOW THIS EXACTLY:
-1. Start ffmpeg recording (step 2)
-2. Click elements to demonstrate the UI (step 3)
-3. IMMEDIATELY run the stop+post-process command above (step 4&5) - THIS IS MANDATORY
-4. Only THEN can you end - the video is INVALID without post-processing
+1. Write video metadata (step 1) - describe what you're about to record
+2. Take fresh snapshot (step 2)
+3. Start ffmpeg recording (step 3)
+4. Click elements to demonstrate the UI (step 4)
+5. STOP the recording (step 5) - wait for ffmpeg to finish
+6. Run post-processing (step 6) - THIS IS MANDATORY
+7. Only THEN can you end - the video is INVALID without post-processing
 
 DO NOT:
 - End the session without running the post-process command
@@ -1317,15 +1405,73 @@ After capturing screenshots/videos, briefly state what you captured and leave th
       });
     }
 
+    // Helper to generate description from filename
+    const generateDescriptionFromFileName = (filePath: string): string => {
+      const fileName = path.basename(filePath);
+      // Remove extension and branch suffix (e.g., "-cmux-branch-xyz123.png")
+      const nameWithoutExt = fileName.replace(/\.[^.]+$/, "");
+      // Remove the branch/random suffix (typically last hyphen-separated segment with random chars)
+      const parts = nameWithoutExt.split("-");
+      // Remove last part if it looks like a random ID (short alphanumeric)
+      if (parts.length > 1 && /^[a-z0-9]{5,8}$/i.test(parts[parts.length - 1] || "")) {
+        parts.pop();
+      }
+      // Remove "cmux" prefix parts if present
+      const filteredParts = parts.filter(p => !p.toLowerCase().startsWith("cmux"));
+      // Convert remaining parts to readable description
+      const description = filteredParts
+        .join(" ")
+        .replace(/_/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      // Capitalize first letter of each word
+      return description
+        .split(" ")
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(" ");
+    };
+
     const screenshotsWithDescriptions = screenshotPaths.map((absolutePath) => {
+      const description = generateDescriptionFromFileName(absolutePath);
       return {
         path: absolutePath,
+        description: description || undefined,
       };
     });
 
+    // Try to read video metadata for descriptions
+    let videoMetadata: { fileName?: string; description?: string } | null = null;
+    const metadataPath = path.join(outputDir, "video-metadata.json");
+    try {
+      const metadataContent = await fs.readFile(metadataPath, "utf-8");
+      videoMetadata = JSON.parse(metadataContent);
+      log("INFO", "Read video metadata", { metadata: videoMetadata });
+    } catch {
+      // No metadata file or invalid JSON - that's fine, we'll generate descriptions
+    }
+
     const videosWithDescriptions = videoPaths.map((absolutePath) => {
+      const fileName = path.basename(absolutePath);
+      const fileNameWithoutExt = fileName.replace(/\.[^.]+$/, "");
+
+      // Check if this video matches the metadata filename (with or without extension)
+      const metadataFileName = videoMetadata?.fileName?.replace(/\.[^.]+$/, "");
+      const hasMatchingMetadata = metadataFileName &&
+        (fileNameWithoutExt === metadataFileName ||
+         fileNameWithoutExt.toLowerCase() === metadataFileName.toLowerCase());
+
+      // Use metadata description if available and filename matches
+      let description: string;
+      if (hasMatchingMetadata && videoMetadata?.description) {
+        description = videoMetadata.description;
+      } else {
+        // Fall back to generated description from filename
+        description = generateDescriptionFromFileName(absolutePath);
+      }
+
       return {
         path: absolutePath,
+        description: description || undefined,
       };
     });
 

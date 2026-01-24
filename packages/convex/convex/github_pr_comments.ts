@@ -44,8 +44,26 @@ const getVideoExtension = (mimeType: string): string => {
     "video/webm": "webm",
     "video/quicktime": "mov",
     "video/x-msvideo": "avi",
+    "image/apng": "apng",
   };
   return mimeToExt[mimeType.toLowerCase()] ?? "mp4";
+};
+
+/**
+ * Check if a MIME type is for APNG (animated PNG).
+ * APNG files render as animated images in GitHub comments.
+ */
+const isApngMimeType = (mimeType: string): boolean => {
+  return mimeType.toLowerCase() === "image/apng";
+};
+
+/**
+ * Get the base name of a file (without extension).
+ * e.g., "workflow.mp4" -> "workflow", "workflow.apng" -> "workflow"
+ */
+const getBaseName = (fileName: string): string => {
+  const lastDot = fileName.lastIndexOf(".");
+  return lastDot > 0 ? fileName.substring(0, lastDot) : fileName;
 };
 
 /**
@@ -62,6 +80,164 @@ const getMediaProxyUrl = (storageId: string, mimeType: string): string | null =>
   const extension = getVideoExtension(mimeType);
   return `${siteUrl}/api/media/${storageId}.${extension}`;
 };
+
+const ASSET_RELEASE_TAG = "cmux-preview-assets";
+
+/**
+ * Upload a video file to GitHub using Release Assets API.
+ * This is the official API that works with GitHub App installation tokens.
+ *
+ * Flow:
+ * 1. Get or create a release tagged 'cmux-preview-assets'
+ * 2. Upload the video as a release asset
+ * 3. Return the asset download URL
+ *
+ * The URL can be embedded in comments using <video src="..." controls></video>
+ */
+async function uploadVideoToGitHub(options: {
+  repoFullName: string;
+  accessToken: string;
+  videoData: ArrayBuffer;
+  fileName: string;
+  contentType: string;
+}): Promise<{ ok: true; assetUrl: string } | { ok: false; error: string }> {
+  const { repoFullName, accessToken, videoData, fileName, contentType } = options;
+  const [owner, repo] = repoFullName.split("/");
+
+  if (!owner || !repo) {
+    return { ok: false, error: `Invalid repo name: ${repoFullName}` };
+  }
+
+  const headers = {
+    "Authorization": `token ${accessToken}`,
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+
+  try {
+    // Step 1: Get or create the assets release
+    console.log("[github_pr_comments] Getting or creating assets release...");
+
+    let releaseId: number | null = null;
+
+    // Try to get existing release
+    const getReleaseResponse = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/releases/tags/${ASSET_RELEASE_TAG}`,
+      { headers }
+    );
+
+    if (getReleaseResponse.ok) {
+      const releaseData = await getReleaseResponse.json() as { id: number };
+      releaseId = releaseData.id;
+      console.log("[github_pr_comments] Found existing release", { releaseId });
+    } else if (getReleaseResponse.status === 404) {
+      // Create new release
+      console.log("[github_pr_comments] Creating new assets release...");
+
+      // Get default branch
+      const repoResponse = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}`,
+        { headers }
+      );
+
+      if (!repoResponse.ok) {
+        const error = await repoResponse.text();
+        return { ok: false, error: `Failed to get repo info: ${error}` };
+      }
+
+      const repoData = await repoResponse.json() as { default_branch: string };
+      const defaultBranch = repoData.default_branch;
+
+      // Create the release
+      const createReleaseResponse = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/releases`,
+        {
+          method: "POST",
+          headers: { ...headers, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tag_name: ASSET_RELEASE_TAG,
+            target_commitish: defaultBranch,
+            name: "Preview Assets (cmux)",
+            body: "Auto-generated release for storing preview screenshots and videos. Do not delete.",
+            draft: false,
+            prerelease: true,
+          }),
+        }
+      );
+
+      if (!createReleaseResponse.ok) {
+        const error = await createReleaseResponse.text();
+        return { ok: false, error: `Failed to create release: ${error}` };
+      }
+
+      const newRelease = await createReleaseResponse.json() as { id: number };
+      releaseId = newRelease.id;
+      console.log("[github_pr_comments] Created new release", { releaseId });
+    } else {
+      const error = await getReleaseResponse.text();
+      return { ok: false, error: `Failed to get release: ${error}` };
+    }
+
+    // Step 2: Upload the video as a release asset
+    console.log("[github_pr_comments] Uploading video as release asset...", {
+      releaseId,
+      fileName,
+      size: videoData.byteLength,
+    });
+
+    // Generate unique filename with timestamp to avoid conflicts
+    // Sanitize filename: remove spaces, parentheses, and other special chars that GitHub mangles
+    // This ensures the final URL ends in .mp4 (not .1.mp4) so GitHub renders it as a video
+    const timestamp = Date.now();
+    const sanitizedFileName = fileName
+      .replace(/\s+/g, "-")           // spaces to dashes
+      .replace(/[()[\]{}]/g, "")      // remove brackets/parens
+      .replace(/--+/g, "-")           // collapse multiple dashes
+      .replace(/[^a-zA-Z0-9._-]/g, ""); // remove other special chars
+    const uniqueFileName = `${timestamp}-${sanitizedFileName}`;
+
+    const uploadUrl = `https://uploads.github.com/repos/${owner}/${repo}/releases/${releaseId}/assets?name=${encodeURIComponent(uniqueFileName)}`;
+
+    const uploadResponse = await fetch(uploadUrl, {
+      method: "POST",
+      headers: {
+        ...headers,
+        "Content-Type": contentType,
+        "Content-Length": String(videoData.byteLength),
+      },
+      body: videoData,
+    });
+
+    if (!uploadResponse.ok) {
+      const error = await uploadResponse.text();
+      console.error("[github_pr_comments] Failed to upload asset", {
+        status: uploadResponse.status,
+        error,
+      });
+      return { ok: false, error: `Failed to upload asset: ${uploadResponse.status} ${error}` };
+    }
+
+    const assetData = await uploadResponse.json() as {
+      browser_download_url: string;
+      id: number;
+      name: string;
+    };
+
+    console.log("[github_pr_comments] Video uploaded successfully", {
+      assetId: assetData.id,
+      assetName: assetData.name,
+      downloadUrl: assetData.browser_download_url,
+    });
+
+    return { ok: true, assetUrl: assetData.browser_download_url };
+  } catch (error) {
+    console.error("[github_pr_comments] Error uploading video to GitHub", { error });
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
 const PREVIEW_SIGNATURE = `_Generated by [cmux](${CMUX_BASE_URL}?${UTM_PARAMS}&utm_content=preview_signature) preview system_`;
 const COMMENT_SIGNATURE_MATCHERS = [
   COMMENT_SIGNATURE,
@@ -216,10 +392,23 @@ const formatScreenshotVideoMarkdown = (
   return lines;
 };
 
+/**
+ * Options for rendering screenshot set markdown
+ */
+interface RenderScreenshotSetOptions {
+  /** Map of storageId -> GitHub asset URL for videos already uploaded to GitHub */
+  githubVideoUrls?: Map<string, string>;
+  /** GitHub access token for uploading videos (if not pre-uploaded) */
+  accessToken?: string;
+  /** Repository full name for uploading videos */
+  repoFullName?: string;
+}
+
 async function renderScreenshotSetMarkdown(
   ctx: ActionCtx,
   set: ScreenshotSetDoc,
   heading: string,
+  options?: RenderScreenshotSetOptions,
 ): Promise<string> {
   const commitLabel = formatCommitLabel(set);
   const timestamp = formatTimestamp(set.capturedAt);
@@ -260,18 +449,191 @@ async function renderScreenshotSetMarkdown(
         lines.push(...formatScreenshotImageMarkdown(storageUrl, fileName, image.description));
       }
 
-      // Render videos using proxy URLs
-      // Note: GitHub only auto-embeds videos from trusted domains (github.com, githubusercontent.com)
-      // External URLs will be shown as links. The proxy URL ends in .mp4 for compatibility.
-      if (set.videos && set.videos.length > 0) {
+      // Render videos - upload to GitHub Release Assets
+      // Group videos by base name to pair APNG (preview) with MP4 (download)
+      if (set.videos && set.videos.length > 0 && options?.accessToken && options?.repoFullName) {
+        // Group videos by base name (e.g., "workflow.mp4" and "workflow.apng" share base "workflow")
+        const videoGroups = new Map<string, {
+          apng?: typeof set.videos[0];
+          mp4?: typeof set.videos[0];
+          other?: typeof set.videos[0];
+        }>();
+
         for (const video of set.videos) {
-          // Use proxy URL (preferred - ends in .mp4) or fall back to direct storage URL
-          const proxyUrl = getMediaProxyUrl(video.storageId, video.mimeType);
-          const videoUrl = proxyUrl ?? await ctx.storage.getUrl(video.storageId);
-          if (!videoUrl) continue;
           const fileName = video.fileName || "workflow.mp4";
-          lines.push(...formatScreenshotVideoMarkdown(videoUrl, fileName, video.description));
+          const baseName = getBaseName(fileName);
+          const group = videoGroups.get(baseName) ?? {};
+
+          if (isApngMimeType(video.mimeType)) {
+            group.apng = video;
+          } else if (video.mimeType === "video/mp4") {
+            group.mp4 = video;
+          } else {
+            group.other = video;
+          }
+
+          videoGroups.set(baseName, group);
         }
+
+        // Process each video group
+        for (const [baseName, group] of videoGroups) {
+          try {
+            // If we have an APNG, show it as an image (renders as animated) with optional MP4 download
+            if (group.apng) {
+              const apngFile = group.apng;
+              const apngFileName = apngFile.fileName || `${baseName}.apng`;
+
+              // Get APNG from Convex storage
+              const apngStorageUrl = await ctx.storage.getUrl(apngFile.storageId);
+              if (!apngStorageUrl) {
+                console.warn("[github_pr_comments] Could not get storage URL for APNG", {
+                  storageId: apngFile.storageId,
+                });
+                continue;
+              }
+
+              // Fetch APNG data
+              const apngResponse = await fetch(apngStorageUrl);
+              if (!apngResponse.ok) {
+                console.error("[github_pr_comments] Failed to fetch APNG from storage", {
+                  storageId: apngFile.storageId,
+                  status: apngResponse.status,
+                });
+                continue;
+              }
+
+              const apngData = await apngResponse.arrayBuffer();
+
+              // Upload APNG to GitHub
+              const apngUploadResult = await uploadVideoToGitHub({
+                repoFullName: options.repoFullName,
+                accessToken: options.accessToken,
+                videoData: apngData,
+                fileName: apngFileName,
+                contentType: "image/apng",
+              });
+
+              if (!apngUploadResult.ok) {
+                console.error("[github_pr_comments] Failed to upload APNG to GitHub", {
+                  storageId: apngFile.storageId,
+                  error: apngUploadResult.error,
+                });
+                continue;
+              }
+
+              // Upload MP4 if available (for download link)
+              let mp4Url: string | null = null;
+              if (group.mp4) {
+                const mp4File = group.mp4;
+                const mp4FileName = mp4File.fileName || `${baseName}.mp4`;
+
+                const mp4StorageUrl = await ctx.storage.getUrl(mp4File.storageId);
+                if (mp4StorageUrl) {
+                  const mp4Response = await fetch(mp4StorageUrl);
+                  if (mp4Response.ok) {
+                    const mp4Data = await mp4Response.arrayBuffer();
+                    const mp4UploadResult = await uploadVideoToGitHub({
+                      repoFullName: options.repoFullName,
+                      accessToken: options.accessToken,
+                      videoData: mp4Data,
+                      fileName: mp4FileName,
+                      contentType: "video/mp4",
+                    });
+                    if (mp4UploadResult.ok) {
+                      mp4Url = mp4UploadResult.assetUrl;
+                    }
+                  }
+                }
+              }
+
+              // Render APNG as image (will animate in GitHub) with optional MP4 download
+              // Use description from MP4 if APNG doesn't have one (APNG is generated from MP4)
+              const description = apngFile.description || group.mp4?.description;
+              const safeDescription = sanitizeDescription(description);
+              const safeFileName = sanitizeFileName(apngFileName);
+
+              if (safeDescription) {
+                lines.push(`### 🎬 Workflow Preview`, "");
+                lines.push(`**${safeDescription}**`, "");
+              }
+
+              // Show APNG as an image (GitHub will render it as animated)
+              lines.push(`![${safeFileName}](${apngUploadResult.assetUrl})`, "");
+
+              // Add MP4 download link if available
+              if (mp4Url) {
+                lines.push(`[📥 Download full video (MP4)](${mp4Url})`, "");
+              }
+
+              console.log("[github_pr_comments] APNG preview rendered", {
+                apngStorageId: apngFile.storageId,
+                apngUrl: apngUploadResult.assetUrl,
+                mp4Url,
+              });
+            } else if (group.mp4 || group.other) {
+              // No APNG, fall back to showing video URL (may not auto-embed)
+              const video = group.mp4 ?? group.other;
+              if (!video) continue;
+
+              const fileName = video.fileName || `${baseName}.mp4`;
+
+              const storageUrl = await ctx.storage.getUrl(video.storageId);
+              if (!storageUrl) {
+                console.warn("[github_pr_comments] Could not get storage URL for video", {
+                  storageId: video.storageId,
+                });
+                continue;
+              }
+
+              const videoResponse = await fetch(storageUrl);
+              if (!videoResponse.ok) {
+                console.error("[github_pr_comments] Failed to fetch video from storage", {
+                  storageId: video.storageId,
+                  status: videoResponse.status,
+                });
+                continue;
+              }
+
+              const videoData = await videoResponse.arrayBuffer();
+
+              const uploadResult = await uploadVideoToGitHub({
+                repoFullName: options.repoFullName,
+                accessToken: options.accessToken,
+                videoData,
+                fileName,
+                contentType: video.mimeType,
+              });
+
+              if (uploadResult.ok) {
+                const safeDescription = sanitizeDescription(video.description);
+
+                if (safeDescription) {
+                  lines.push(`### 🎬 Workflow Video`, "");
+                  lines.push(`**${safeDescription}**`, "");
+                }
+                // Show as download link since MP4 URLs don't auto-embed reliably
+                lines.push(`[📥 Download video](${uploadResult.assetUrl})`, "");
+
+                console.log("[github_pr_comments] Video uploaded (no APNG preview)", {
+                  storageId: video.storageId,
+                  assetUrl: uploadResult.assetUrl,
+                });
+              } else {
+                console.error("[github_pr_comments] Failed to upload video to GitHub", {
+                  storageId: video.storageId,
+                  error: uploadResult.error,
+                });
+              }
+            }
+          } catch (error) {
+            console.error("[github_pr_comments] Error processing video group", {
+              baseName,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      } else if (set.videos && set.videos.length > 0) {
+        console.warn("[github_pr_comments] Cannot upload videos - missing accessToken or repoFullName");
       }
     }
   } else if (set.status === "failed") {
@@ -798,6 +1160,12 @@ export const updatePreviewComment = internalAction({
         commentSections.push(linkParts.join(" · "));
       }
 
+      // Options for rendering with GitHub video upload support
+      const renderOptions: RenderScreenshotSetOptions = {
+        accessToken,
+        repoFullName,
+      };
+
       // Render the main screenshot section
       const latestHeading = includePreviousRuns
         ? `### Latest commit ${formatCommitLabel(screenshotSet)}`
@@ -806,6 +1174,7 @@ export const updatePreviewComment = internalAction({
         ctx,
         screenshotSet,
         latestHeading,
+        renderOptions,
       );
 
       commentSections.push(latestSection);
@@ -842,7 +1211,7 @@ export const updatePreviewComment = internalAction({
           for (const entry of previousSetEntries) {
             const sectionHeading = `#### ${summarizeSet(entry.set, entry.run)}`;
             collapsedSections.push(
-              await renderScreenshotSetMarkdown(ctx, entry.set, sectionHeading),
+              await renderScreenshotSetMarkdown(ctx, entry.set, sectionHeading, renderOptions),
             );
           }
 
@@ -1006,6 +1375,12 @@ export const postPreviewComment = internalAction({
         commentSections.push(linkParts.join(" · "));
       }
 
+      // Options for rendering with GitHub video upload support
+      const renderOptions: RenderScreenshotSetOptions = {
+        accessToken,
+        repoFullName,
+      };
+
       // Render the main screenshot section
       const latestHeading = includePreviousRuns
         ? `### Latest commit ${formatCommitLabel(screenshotSet)}`
@@ -1014,6 +1389,7 @@ export const postPreviewComment = internalAction({
         ctx,
         screenshotSet,
         latestHeading,
+        renderOptions,
       );
 
       commentSections.push(latestSection);
@@ -1050,7 +1426,7 @@ export const postPreviewComment = internalAction({
           for (const entry of previousSetEntries) {
             const sectionHeading = `#### ${summarizeSet(entry.set, entry.run)}`;
             collapsedSections.push(
-              await renderScreenshotSetMarkdown(ctx, entry.set, sectionHeading),
+              await renderScreenshotSetMarkdown(ctx, entry.set, sectionHeading, renderOptions),
             );
           }
 

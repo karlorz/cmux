@@ -45,6 +45,9 @@ function resolveVideoContentType(filePath: string): string {
   if (extension === ".gif") {
     return "image/gif";
   }
+  if (extension === ".apng") {
+    return "image/apng";
+  }
   return "video/mp4";
 }
 

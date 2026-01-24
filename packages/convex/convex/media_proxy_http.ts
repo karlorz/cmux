@@ -2,6 +2,25 @@ import { httpAction } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 
 /**
+ * Get Content-Type from file extension
+ */
+function getContentType(extension: string): string {
+  const mimeTypes: Record<string, string> = {
+    mp4: "video/mp4",
+    webm: "video/webm",
+    mov: "video/quicktime",
+    avi: "video/x-msvideo",
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    webp: "image/webp",
+    apng: "image/apng",
+  };
+  return mimeTypes[extension.toLowerCase()] ?? "application/octet-stream";
+}
+
+/**
  * Media proxy endpoint for serving Convex storage files with proper Content-Type headers.
  *
  * This is primarily needed for GitHub PR comments, which require:
@@ -15,7 +34,7 @@ import type { Id } from "./_generated/dataModel";
  * The endpoint will:
  * 1. Validate the storage ID format
  * 2. Look up the file in Convex storage
- * 3. Redirect to the storage URL with proper caching headers
+ * 3. Fetch and serve the file with proper Content-Type headers
  */
 export const serveMedia = httpAction(async (ctx, req) => {
   const url = new URL(req.url);
@@ -31,8 +50,10 @@ export const serveMedia = httpAction(async (ctx, req) => {
     });
   }
 
-  // Remove file extension if present (e.g., ".mp4", ".webm", ".png", ".jpg")
-  const storageId = lastSegment.replace(/\.(mp4|webm|mov|avi|png|jpg|jpeg|gif|webp)$/i, "");
+  // Extract file extension and storage ID
+  const extensionMatch = lastSegment.match(/\.(mp4|webm|mov|avi|png|jpg|jpeg|gif|webp|apng)$/i);
+  const extension = extensionMatch ? extensionMatch[1] : "mp4";
+  const storageId = lastSegment.replace(/\.(mp4|webm|mov|avi|png|jpg|jpeg|gif|webp|apng)$/i, "");
 
   if (!storageId) {
     return new Response(JSON.stringify({ error: "Missing storage ID" }), {
@@ -61,15 +82,31 @@ export const serveMedia = httpAction(async (ctx, req) => {
       });
     }
 
-    // Redirect to the actual storage URL
-    // Using 302 (temporary redirect) since Convex URLs may expire
-    // This allows caching of the redirect but not the underlying URL
-    return new Response(null, {
-      status: 302,
+    // Fetch the file from Convex storage
+    const fileResponse = await fetch(storageUrl);
+    if (!fileResponse.ok) {
+      console.error("[media_proxy] Failed to fetch file from storage:", {
+        storageId,
+        status: fileResponse.status,
+      });
+      return new Response(JSON.stringify({ error: "Failed to fetch file" }), {
+        status: 502,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Get the file data
+    const fileData = await fileResponse.arrayBuffer();
+    const contentType = getContentType(extension);
+
+    // Serve the file directly with proper headers
+    return new Response(fileData, {
+      status: 200,
       headers: {
-        "Location": storageUrl,
-        // Allow browser caching of the redirect for a short time
-        "Cache-Control": "public, max-age=300",
+        "Content-Type": contentType,
+        "Content-Length": String(fileData.byteLength),
+        // Allow browser caching
+        "Cache-Control": "public, max-age=3600",
         // CORS headers for cross-origin access
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
