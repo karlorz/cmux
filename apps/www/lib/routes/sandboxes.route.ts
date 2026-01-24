@@ -657,6 +657,9 @@ sandboxesRouter.openapi(
               permissions: {
                 contents: "write",
                 metadata: "read",
+                // Required for pushing workflow files (.github/workflows/*)
+                // Without this, pushes containing workflow files are rejected
+                workflows: "write",
               },
             });
             gitAuthToken = appToken;
