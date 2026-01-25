@@ -801,14 +801,24 @@ function PreviewTestDashboardInner({
                                       className="overflow-hidden rounded-lg border border-neutral-700 bg-neutral-800"
                                     >
                                       {video.url ? (
-                                        <video
-                                          src={video.url}
-                                          controls
-                                          className="aspect-video w-full object-cover"
-                                          preload="metadata"
-                                        >
-                                          Your browser does not support the video tag.
-                                        </video>
+                                        // Render GIF/APNG as animated images, not videos
+                                        video.mimeType === "image/gif" ||
+                                        video.mimeType === "image/apng" ? (
+                                          <img
+                                            src={video.url}
+                                            alt={video.description ?? video.fileName ?? "Preview"}
+                                            className="aspect-video w-full object-cover"
+                                          />
+                                        ) : (
+                                          <video
+                                            src={video.url}
+                                            controls
+                                            className="aspect-video w-full object-cover"
+                                            preload="metadata"
+                                          >
+                                            Your browser does not support the video tag.
+                                          </video>
+                                        )
                                       ) : (
                                         <div className="flex aspect-video items-center justify-center bg-neutral-900">
                                           <VideoIcon className="h-8 w-8 text-neutral-600" />
