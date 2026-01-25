@@ -612,3 +612,24 @@ export const CODEX_GPT_5_2_HIGH_REASONING_CONFIG: AgentConfig = {
   applyApiKeys: applyCodexApiKeys,
   completionDetector: startCodexCompletionDetector,
 };
+
+export const CODEX_GPT_5_2_XHIGH_REASONING_CONFIG: AgentConfig = {
+  name: "codex/gpt-5.2-xhigh",
+  command: "codex",
+  args: [
+    "--model",
+    "gpt-5.2",
+    "--sandbox",
+    "danger-full-access",
+    "--ask-for-approval",
+    "never",
+    "-c",
+    'model_reasoning_effort="xhigh"',
+    "$PROMPT",
+  ],
+  environment: getOpenAIEnvironment,
+  checkRequirements: checkOpenAIRequirements,
+  apiKeys: [OPENAI_API_KEY, CODEX_AUTH_JSON],
+  applyApiKeys: applyCodexApiKeys,
+  completionDetector: startCodexCompletionDetector,
+};
