@@ -79,6 +79,57 @@ function stripModelMigrations(toml: string): string {
   return toml.replace(/\[notice\.model_migrations\][\s\S]*?(?=\n\[|$)/g, "");
 }
 
+// Keys to filter from user's config.toml (controlled by cmux CLI args)
+const FILTERED_CONFIG_KEYS = ["model", "model_reasoning_effort"] as const;
+
+function escapeRegex(literal: string): string {
+  return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Strip keys that are controlled by cmux CLI args.
+// Handles single-line values as well as common multi-line TOML forms (multi-line strings and arrays).
+export function stripFilteredConfigKeys(toml: string): string {
+  let result = toml;
+  for (const key of FILTERED_CONFIG_KEYS) {
+    const escapedKey = escapeRegex(key);
+
+    // Multiline basic string: key = """ ... """
+    result = result.replace(
+      new RegExp(
+        `^\\s*${escapedKey}\\s*=\\s*\"\"\"[\\s\\S]*?\"\"\".*(?:\\r?\\n)?`,
+        "gm"
+      ),
+      ""
+    );
+
+    // Multiline literal string: key = ''' ... '''
+    result = result.replace(
+      new RegExp(
+        `^\\s*${escapedKey}\\s*=\\s*'''[\\s\\S]*?'''.*(?:\\r?\\n)?`,
+        "gm"
+      ),
+      ""
+    );
+
+    // Arrays (single or multi-line): key = [ ... ]
+    result = result.replace(
+      new RegExp(
+        `^\\s*${escapedKey}\\s*=\\s*\\[[\\s\\S]*?\\]\\s*(?:#.*)?(?:\\r?\\n)?`,
+        "gm"
+      ),
+      ""
+    );
+
+    // Single-line assignment: key = value
+    result = result.replace(
+      new RegExp(`^\\s*${escapedKey}\\s*=\\s*.*(?:\\r?\\n)?`, "gm"),
+      ""
+    );
+  }
+
+  return result.replace(/\n{3,}/g, "\n\n").trim();
+}
+
 export async function getOpenAIEnvironment(
   _ctx: EnvironmentContext
 ): Promise<EnvironmentResult> {
@@ -139,10 +190,11 @@ touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
   // Ensure config.toml exists and contains notify hook + model migrations
   try {
     const rawToml = await readFile(`${homedir()}/.codex/config.toml`, "utf-8");
-    const hasNotify = /(^|\n)\s*notify\s*=/.test(rawToml);
+    const filteredToml = stripFilteredConfigKeys(rawToml);
+    const hasNotify = /(^|\n)\s*notify\s*=/.test(filteredToml);
     let tomlOut = hasNotify
-      ? rawToml
-      : `notify = ["/root/lifecycle/codex-notify.sh"]\n` + rawToml;
+      ? filteredToml
+      : `notify = ["/root/lifecycle/codex-notify.sh"]\n` + filteredToml;
     // Strip existing model_migrations and append managed ones
     tomlOut = stripModelMigrations(tomlOut) + generateModelMigrations();
     files.push({
