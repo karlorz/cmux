@@ -1943,8 +1943,8 @@ async def task_configure_memory_protection(ctx: TaskContext) -> None:
     cmd = textwrap.dedent(
         """
         set -euo pipefail
-        CMUX_FORCE_SWAP=1 CMUX_SWAPFILE_SIZE_GIB=6 /usr/local/sbin/cmux-configure-memory
-        expected_kib=$((6 * 1024 * 1024))
+        CMUX_FORCE_SWAP=1 CMUX_SWAPFILE_SIZE_GIB=2 /usr/local/sbin/cmux-configure-memory
+        expected_kib=$((2 * 1024 * 1024))
         tolerance_kib=8
         min_expected_kib=$((expected_kib - tolerance_kib))
         actual_kib="$(awk '$1 == "/var/swap/cmux-swapfile" {print $3}' /proc/swaps 2>/dev/null || true)"
@@ -1961,7 +1961,7 @@ async def task_configure_memory_protection(ctx: TaskContext) -> None:
                 ;;
         esac
         if [ "${actual_kib}" -lt "${min_expected_kib}" ]; then
-            echo "Swapfile size ${actual_kib} KiB is below required ${min_expected_kib} KiB minimum (6 GiB minus tolerance)." >&2
+            echo "Swapfile size ${actual_kib} KiB is below required ${min_expected_kib} KiB minimum (2 GiB minus tolerance)." >&2
             swapon --show=NAME,TYPE,SIZE,USED,PRIO || true
             exit 1
         fi
