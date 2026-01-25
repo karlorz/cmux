@@ -447,7 +447,7 @@ export type SetupInstanceBody = {
     instanceId?: string;
     selectedRepos?: Array<string>;
     ttlSeconds?: number;
-    snapshotId?: string | ('snapshot_8lakqugu' | 'snapshot_cq0i2hpy');
+    snapshotId?: string | ('snapshot_fkw7hxnk' | 'snapshot_g1wxo7e3');
 };
 
 export type InstanceInfo = {
@@ -3358,6 +3358,13 @@ export type GetApiPreviewTestJobsResponses = {
                     description?: string | null;
                     url?: string | null;
                 }>;
+                videos?: Array<{
+                    storageId: string;
+                    mimeType: string;
+                    fileName?: string | null;
+                    description?: string | null;
+                    url?: string | null;
+                }> | null;
             } | null;
         }>;
     };
@@ -3525,6 +3532,13 @@ export type GetApiPreviewTestJobsByPreviewRunIdResponses = {
                 description?: string | null;
                 url?: string | null;
             }>;
+            videos?: Array<{
+                storageId: string;
+                mimeType: string;
+                fileName?: string | null;
+                description?: string | null;
+                url?: string | null;
+            }> | null;
         } | null;
         prDescription?: string | null;
         baseSha?: string | null;
