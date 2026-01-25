@@ -2029,7 +2029,7 @@ async def task_install_base_packages(ctx: PveTaskContext) -> None:
             gh \
             zsh \
             zsh-autosuggestions \
-            ripgrep
+            ripgrep ffmpeg xdotool
 
         # Download and install Chrome
         arch="$(dpkg --print-architecture)"

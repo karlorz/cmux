@@ -18,6 +18,8 @@ export async function getWorkerAuth(
   options?: GetWorkerAuthOptions
 ): Promise<WorkerAuthContext | null> {
   const token = req.headers.get("x-cmux-token");
+  const prefix = options?.loggerPrefix ?? "[convex.workerAuth]";
+
   if (!token) {
     return null;
   }
@@ -29,7 +31,6 @@ export async function getWorkerAuth(
     );
     return { token, payload };
   } catch (error) {
-    const prefix = options?.loggerPrefix ?? "[convex.workerAuth]";
     console.error(`${prefix} Failed to verify task run token`, error);
     return null;
   }
