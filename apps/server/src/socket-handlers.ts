@@ -17,6 +17,8 @@ import {
   type CreateLocalWorkspaceResponse,
   CreateCloudWorkspaceSchema,
   type CreateCloudWorkspaceResponse,
+  TriggerLocalCloudSyncSchema,
+  type TriggerLocalCloudSyncResponse,
   type AvailableEditors,
   type FileInfo,
   isLoopbackHostname,
@@ -2719,6 +2721,69 @@ ${title}`;
           success: false,
           error: error instanceof Error ? error.message : "Unknown error",
         });
+      }
+    });
+
+    socket.on("trigger-local-cloud-sync", async (data, callback) => {
+      try {
+        const parsed = TriggerLocalCloudSyncSchema.safeParse(data);
+        if (!parsed.success) {
+          const response: TriggerLocalCloudSyncResponse = {
+            success: false,
+            error: `Invalid request: ${parsed.error.message}`,
+          };
+          callback(response);
+          return;
+        }
+
+        const { localWorkspacePath, cloudTaskRunId } = parsed.data;
+
+        serverLogger.info(
+          `[trigger-local-cloud-sync] Manual sync requested: ${localWorkspacePath} -> ${cloudTaskRunId}`
+        );
+        console.log(
+          `[trigger-local-cloud-sync] Manual sync requested: ${localWorkspacePath} -> ${cloudTaskRunId}`
+        );
+
+        // Check if sync session exists
+        const status = localCloudSyncManager.getStatus(localWorkspacePath);
+        if (!status.found) {
+          // Start a new sync session if none exists
+          serverLogger.info(
+            `[trigger-local-cloud-sync] No existing session, starting new sync`
+          );
+          await localCloudSyncManager.startSync({
+            localWorkspacePath,
+            cloudTaskRunId,
+          });
+        }
+
+        // Trigger the sync
+        const result =
+          await localCloudSyncManager.triggerSync(localWorkspacePath);
+
+        if (result.success) {
+          const response: TriggerLocalCloudSyncResponse = {
+            success: true,
+            message: `Queued ${result.filesQueued} files for sync`,
+            filesQueued: result.filesQueued,
+          };
+          callback(response);
+        } else {
+          const response: TriggerLocalCloudSyncResponse = {
+            success: false,
+            error: result.error,
+          };
+          callback(response);
+        }
+      } catch (error) {
+        serverLogger.error("[trigger-local-cloud-sync] Error:", error);
+        console.error("[trigger-local-cloud-sync] Error:", error);
+        const response: TriggerLocalCloudSyncResponse = {
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+        callback(response);
       }
     });
   });

@@ -127,6 +127,9 @@ class LocalCloudSyncSession {
   private disposed = false;
   private instance: VSCodeInstance | null = null;
   private initialSyncQueued = false;
+  private lastSyncTime: number | null = null;
+  private lastSyncFileCount = 0;
+  private lastSyncError: string | null = null;
   private readonly onWorkerConnected = () => {
     this.scheduleFlush(250);
   };
@@ -213,6 +216,74 @@ class LocalCloudSyncSession {
     this.pending.clear();
   }
 
+  getStatus(): {
+    localPath: string;
+    cloudTaskRunId: string;
+    pendingCount: number;
+    syncing: boolean;
+    lastSyncTime: number | null;
+    lastSyncFileCount: number;
+    lastSyncError: string | null;
+    workerConnected: boolean;
+  } {
+    return {
+      localPath: this.localPath,
+      cloudTaskRunId: this.cloudTaskRunId,
+      pendingCount: this.pending.size,
+      syncing: this.syncing,
+      lastSyncTime: this.lastSyncTime,
+      lastSyncFileCount: this.lastSyncFileCount,
+      lastSyncError: this.lastSyncError,
+      workerConnected: this.instance?.isWorkerConnected() ?? false,
+    };
+  }
+
+  async triggerFullSync(): Promise<{ filesQueued: number; error?: string }> {
+    if (this.disposed) {
+      return { filesQueued: 0, error: "Session disposed" };
+    }
+
+    // Clear any pending changes
+    this.pending.clear();
+
+    try {
+      const files = await collectWorkspaceFiles(
+        this.localPath,
+        this.ignoreMatcher
+      );
+      for (const absolutePath of files) {
+        const rel = path.relative(this.localPath, absolutePath);
+        if (!rel || rel.startsWith("..")) {
+          continue;
+        }
+        const normalizedRel = normalizeRelativePath(rel);
+        this.pending.set(normalizedRel, {
+          action: "write",
+          absolutePath,
+          relativePath: normalizedRel,
+        });
+      }
+
+      const filesQueued = this.pending.size;
+      serverLogger.info(
+        `[localCloudSync] Manual sync triggered: ${filesQueued} files queued for ${this.localPath} -> ${this.cloudTaskRunId}`
+      );
+      console.log(
+        `[localCloudSync] Manual sync triggered: ${filesQueued} files queued`
+      );
+
+      // Immediately flush
+      this.scheduleFlush(0);
+
+      return { filesQueued };
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error("[localCloudSync] Failed to trigger full sync", error);
+      serverLogger.error("[localCloudSync] Failed to trigger full sync", error);
+      return { filesQueued: 0, error: errorMsg };
+    }
+  }
+
   private recordChange(filePath: string, action: SyncAction): void {
     if (this.disposed) {
       return;
@@ -284,10 +355,15 @@ class LocalCloudSyncSession {
 
     this.syncing = true;
     this.needsFlush = false;
+    this.lastSyncError = null;
 
     const workerSocket = this.getWorkerSocket();
     if (!workerSocket) {
       this.syncing = false;
+      this.lastSyncError = "Worker socket not connected";
+      console.log(
+        `[localCloudSync] No worker socket for ${this.cloudTaskRunId}, retrying in 2s`
+      );
       this.scheduleFlush(2000);
       return;
     }
@@ -295,9 +371,23 @@ class LocalCloudSyncSession {
     const entries = Array.from(this.pending.values());
     this.pending.clear();
 
+    console.log(
+      `[localCloudSync] Syncing ${entries.length} files to ${this.cloudTaskRunId}`
+    );
+
     try {
       await this.applyChanges(workerSocket, entries);
+      this.lastSyncTime = Date.now();
+      this.lastSyncFileCount = entries.length;
+      console.log(
+        `[localCloudSync] Successfully synced ${entries.length} files`
+      );
+      serverLogger.info(
+        `[localCloudSync] Synced ${entries.length} files to ${this.cloudTaskRunId}`
+      );
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.lastSyncError = errorMsg;
       console.error("[localCloudSync] Failed to sync changes", error);
       serverLogger.error("[localCloudSync] Failed to sync changes", error);
       for (const entry of entries) {
@@ -491,9 +581,54 @@ export class LocalCloudSyncManager {
     if (session) {
       session.stop();
       this.sessions.delete(resolvedPath);
-      serverLogger.info(
-        `[localCloudSync] Stopped sync for ${resolvedPath}`
-      );
+      serverLogger.info(`[localCloudSync] Stopped sync for ${resolvedPath}`);
     }
+  }
+
+  async triggerSync(
+    localWorkspacePath: string
+  ): Promise<{ success: boolean; filesQueued?: number; error?: string }> {
+    const resolvedPath = path.resolve(localWorkspacePath);
+    const session = this.sessions.get(resolvedPath);
+
+    if (!session) {
+      return {
+        success: false,
+        error: `No sync session found for ${resolvedPath}`,
+      };
+    }
+
+    const result = await session.triggerFullSync();
+    if (result.error) {
+      return { success: false, error: result.error };
+    }
+
+    return { success: true, filesQueued: result.filesQueued };
+  }
+
+  getStatus(localWorkspacePath: string): {
+    found: boolean;
+    status?: ReturnType<LocalCloudSyncSession["getStatus"]>;
+  } {
+    const resolvedPath = path.resolve(localWorkspacePath);
+    const session = this.sessions.get(resolvedPath);
+
+    if (!session) {
+      return { found: false };
+    }
+
+    return { found: true, status: session.getStatus() };
+  }
+
+  getAllSessions(): Array<{
+    localPath: string;
+    cloudTaskRunId: string;
+    status: ReturnType<LocalCloudSyncSession["getStatus"]>;
+  }> {
+    return Array.from(this.sessions.entries()).map(([localPath, session]) => ({
+      localPath,
+      cloudTaskRunId: session.getStatus().cloudTaskRunId,
+      status: session.getStatus(),
+    }));
   }
 }

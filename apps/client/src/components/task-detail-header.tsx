@@ -38,6 +38,7 @@ import {
   FolderOpen,
   GitBranch,
   GitMerge,
+  RefreshCw,
   Settings,
   Trash2,
 } from "lucide-react";
@@ -73,6 +74,7 @@ interface TaskDetailHeaderProps {
   onCollapseAllChecks?: () => void;
   onPanelSettings?: () => void;
   onOpenLocalWorkspace?: () => void;
+  onTriggerSync?: () => void;
   teamSlugOrId: string;
   isAiReviewActive?: boolean;
   onToggleAiReview?: () => void;
@@ -211,6 +213,7 @@ export function TaskDetailHeader({
   onCollapseAllChecks,
   onPanelSettings,
   onOpenLocalWorkspace,
+  onTriggerSync,
   teamSlugOrId,
   isAiReviewActive,
   onToggleAiReview,
@@ -390,6 +393,17 @@ export function TaskDetailHeader({
               title="Open local workspace from this branch"
             >
               <FolderOpen className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          {onTriggerSync && (
+            <button
+              onClick={onTriggerSync}
+              className="p-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-white select-none"
+              aria-label="Sync local to cloud"
+              title="Sync local workspace files to cloud"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
             </button>
           )}
 

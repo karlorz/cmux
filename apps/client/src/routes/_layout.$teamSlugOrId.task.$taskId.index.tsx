@@ -58,7 +58,10 @@ import z from "zod";
 import { useLocalVSCodeServeWebQuery } from "@/queries/local-vscode-serve-web";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { useSocket } from "@/contexts/socket/use-socket";
-import type { CreateLocalWorkspaceResponse } from "@cmux/shared";
+import type {
+  CreateLocalWorkspaceResponse,
+  TriggerLocalCloudSyncResponse,
+} from "@cmux/shared";
 import { toast } from "sonner";
 
 type TaskRunListItem = (typeof api.taskRuns.getByTask._returnType)[number];
@@ -714,6 +717,54 @@ function TaskDetailPage() {
     );
   }, [socket, teamSlugOrId, primaryRepo, selectedRun?.newBranch, selectedRun?._id, linkedLocalWorkspace]);
 
+  // Handle triggering a manual sync from local workspace to cloud
+  const handleTriggerSync = useCallback(() => {
+    if (!socket) {
+      toast.error("Socket not connected");
+      return;
+    }
+
+    if (!linkedLocalWorkspace) {
+      toast.error("No linked local workspace found");
+      return;
+    }
+
+    if (!selectedRun?._id) {
+      toast.error("No cloud task run selected");
+      return;
+    }
+
+    const worktreePath = linkedLocalWorkspace.taskRun?.worktreePath;
+    if (!worktreePath) {
+      toast.error("Local workspace path not available");
+      return;
+    }
+
+    const loadingToast = toast.loading("Syncing files to cloud...");
+
+    socket.emit(
+      "trigger-local-cloud-sync",
+      {
+        localWorkspacePath: worktreePath,
+        cloudTaskRunId: selectedRun._id,
+      },
+      (response: TriggerLocalCloudSyncResponse) => {
+        if (response.success) {
+          toast.success(response.message || "Sync triggered!", {
+            id: loadingToast,
+            description: response.filesQueued
+              ? `${response.filesQueued} files queued for sync`
+              : undefined,
+          });
+        } else {
+          toast.error(response.error || "Failed to trigger sync", {
+            id: loadingToast,
+          });
+        }
+      }
+    );
+  }, [socket, linkedLocalWorkspace, selectedRun?._id]);
+
   // Determine workspace type for layout overrides
   const isLocalWorkspaceTask = task?.isLocalWorkspace;
   const isCloudWorkspaceTask = task?.isCloudWorkspace;
@@ -864,6 +915,10 @@ function TaskDetailPage() {
             !isLocalWorkspaceTask && !isCloudWorkspaceTask
               ? handleOpenLocalWorkspace
               : undefined
+          }
+          onTriggerSync={
+            // Only show sync button when there's a linked local workspace
+            linkedLocalWorkspace ? handleTriggerSync : undefined
           }
         />
         <PanelConfigModal
