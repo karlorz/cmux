@@ -1,5 +1,5 @@
 import { DiffEditor, type DiffOnMount } from "@monaco-editor/react";
-import { PanelLeftClose, PanelLeft } from "lucide-react";
+import { Flame, PanelLeftClose, PanelLeft } from "lucide-react";
 import type { editor } from "monaco-editor";
 import {
   memo,
@@ -74,7 +74,10 @@ type DiffBlock =
       modifiedLength: number;
     };
 
-export type MonacoGitDiffViewerWithSidebarProps = GitDiffViewerProps;
+export type MonacoGitDiffViewerWithSidebarProps = GitDiffViewerProps & {
+  isHeatmapActive?: boolean;
+  onToggleHeatmap?: () => void;
+};
 
 // ============================================================================
 // Constants
@@ -984,7 +987,7 @@ function MonacoFileDiffRow({
       id={anchorId}
       ref={rowContainerRef}
       className={cn(
-        "bg-white dark:bg-neutral-900 border-b border-neutral-200/80 dark:border-neutral-800/70",
+        "bg-white dark:bg-neutral-900",
         classNames?.container
       )}
     >
@@ -1086,6 +1089,8 @@ export function MonacoGitDiffViewerWithSidebar({
   onControlsChange,
   classNames,
   onFileToggle,
+  isHeatmapActive,
+  onToggleHeatmap,
 }: MonacoGitDiffViewerWithSidebarProps) {
   const { theme } = useTheme();
 
@@ -1388,34 +1393,45 @@ export function MonacoGitDiffViewerWithSidebar({
         <button
           type="button"
           onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-          className="flex items-center gap-1.5 px-2 py-1 rounded text-sm font-medium text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+          className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[13px] font-medium text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
           title={isSidebarCollapsed ? "Show files (F)" : "Hide files (F)"}
         >
           {isSidebarCollapsed ? (
-            <PanelLeft className="w-4 h-4" />
+            <PanelLeft className="w-3.5 h-3.5" />
           ) : (
-            <PanelLeftClose className="w-4 h-4" />
+            <PanelLeftClose className="w-3.5 h-3.5" />
           )}
           <span>Files</span>
         </button>
-        <div className="flex items-center gap-2 text-xs font-medium">
+        <div className="flex items-center gap-2 text-[11px] font-medium">
           <span className="text-green-600 dark:text-green-400">+{totalAdditions}</span>
           <span className="text-red-600 dark:text-red-400">−{totalDeletions}</span>
         </div>
+        {onToggleHeatmap && (
+          <button
+            type="button"
+            onClick={onToggleHeatmap}
+            className="flex items-center gap-1.5 text-[11px] font-medium ml-auto text-neutral-500 dark:text-neutral-400"
+            title={isHeatmapActive ? "Switch to standard diff" : "Switch to heatmap diff"}
+          >
+            <Flame className="w-3 h-3" />
+            <span>Diff Heatmap</span>
+          </button>
+        )}
       </div>
 
       {/* Content area */}
       <div className="flex flex-1 min-h-0">
         {/* Sidebar */}
         {!isSidebarCollapsed && (
-          <div className="flex-shrink-0 sticky top-[var(--cmux-diff-header-offset,0px)] h-[calc(100vh-var(--cmux-diff-header-offset,0px)-41px)] overflow-hidden">
+          <div className="flex-shrink-0 self-stretch border-r border-neutral-200/80 dark:border-neutral-800/70">
             <DiffSidebarFilter
               diffs={diffs}
               viewedFiles={viewedFiles}
               activePath={activePath}
               onSelectFile={handleSelectFile}
               onToggleViewed={handleToggleViewed}
-              className="h-full min-h-0"
+              className="sticky top-[var(--cmux-diff-header-offset,0px)] h-[calc(100vh-var(--cmux-diff-header-offset,0px)-41px)]"
             />
           </div>
         )}

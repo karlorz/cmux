@@ -217,12 +217,12 @@ const FileTreeNavigator = memo(function FileTreeNavigatorComponent({
                 type="button"
                 onClick={() => onToggleDirectory(node.path)}
                 className={cn(
-                  "flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-[13px] transition hover:bg-neutral-100/80 dark:hover:bg-neutral-800/70",
+                  "flex w-full items-center gap-1.5 px-2.5 py-1 text-left text-xs transition hover:bg-neutral-100 dark:hover:bg-neutral-800",
                   isExpanded
                     ? "text-neutral-900 dark:text-neutral-100"
                     : "text-neutral-700 dark:text-neutral-300"
                 )}
-                style={{ paddingLeft: depth * 14 + 12 }}
+                style={{ paddingLeft: depth * 14 + 10 }}
               >
                 {isExpanded ? (
                   <ChevronDown
@@ -273,15 +273,15 @@ const FileTreeNavigator = memo(function FileTreeNavigatorComponent({
 
         const isViewed = viewedFiles.has(node.path);
         // Extra indent for files to align with folder text (account for chevron space)
-        const fileIndent = depth * 14 + 12 + 20;
+        const fileIndent = depth * 14 + 32;
 
         return (
           <div
             key={node.path}
             className={cn(
-              "group flex w-full items-center gap-1.5 pr-2 text-[13px] transition-colors",
+              "group flex w-full items-center gap-1.5 pr-2 text-xs transition-colors",
               isActive
-                ? "bg-sky-500/10 text-neutral-900 dark:text-neutral-100"
+                ? "bg-sky-100/80 text-sky-900 dark:bg-sky-900/40 dark:text-sky-100"
                 : "text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
             )}
             style={{ paddingLeft: fileIndent }}
@@ -290,7 +290,7 @@ const FileTreeNavigator = memo(function FileTreeNavigatorComponent({
               type="button"
               onClick={() => onSelectFile(node.path)}
               className={cn(
-                "flex flex-1 items-center gap-1.5 py-1.5 text-left min-w-0 focus:outline-none",
+                "flex flex-1 items-center gap-1.5 py-1 text-left min-w-0 focus:outline-none",
                 isActive ? "font-semibold" : ""
               )}
             >
@@ -606,7 +606,7 @@ export function DiffSidebarFilter({
     <div className={cn("relative h-full min-h-0", className)}>
       <aside
         id={sidebarPanelId}
-        className="flex h-full min-h-0 flex-col border-r border-neutral-200/80 dark:border-neutral-800/70"
+        className="flex h-full min-h-0 flex-col"
         style={
           {
             width: `${sidebarWidth}px`,
@@ -618,7 +618,7 @@ export function DiffSidebarFilter({
         {/* Search input */}
         <div className="flex-shrink-0 p-2">
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400" />
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-neutral-400" />
             <input
               ref={filterInputRef}
               type="text"
@@ -626,13 +626,13 @@ export function DiffSidebarFilter({
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
               className={cn(
-                "w-full pl-8 pr-8 py-1.5 text-sm",
+                "w-full pl-7 pr-7 py-1 text-xs",
                 "bg-neutral-100 dark:bg-neutral-800",
-                "border-none",
+                "border border-neutral-200 dark:border-neutral-700",
                 "rounded-md",
                 "placeholder:text-neutral-500 dark:placeholder:text-neutral-400",
                 "text-neutral-900 dark:text-neutral-100",
-                "focus:outline-none focus:ring-2 focus:ring-sky-500"
+                "focus:outline-none focus:border-neutral-400 dark:focus:border-neutral-500"
               )}
             />
             {filterText && (
@@ -660,7 +660,7 @@ export function DiffSidebarFilter({
               onToggleViewed={onToggleViewed}
             />
           ) : filterText.trim() ? (
-            <div className="px-4 py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
+            <div className="px-4 py-8 text-center text-xs text-neutral-500 dark:text-neutral-400">
               No files match &ldquo;{filterText}&rdquo;
             </div>
           ) : null}

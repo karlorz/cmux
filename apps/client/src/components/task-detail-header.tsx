@@ -34,7 +34,6 @@ import {
   Copy,
   Crown,
   ExternalLink,
-  Flame,
   FolderOpen,
   GitBranch,
   GitMerge,
@@ -74,8 +73,6 @@ interface TaskDetailHeaderProps {
   onPanelSettings?: () => void;
   onOpenLocalWorkspace?: () => void;
   teamSlugOrId: string;
-  isAiReviewActive?: boolean;
-  onToggleAiReview?: () => void;
 }
 
 const ENABLE_MERGE_BUTTON = false;
@@ -212,8 +209,6 @@ export function TaskDetailHeader({
   onPanelSettings,
   onOpenLocalWorkspace,
   teamSlugOrId,
-  isAiReviewActive,
-  onToggleAiReview,
 }: TaskDetailHeaderProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -296,7 +291,7 @@ export function TaskDetailHeader({
 
   return (
     <div
-      className="bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white px-3.5 sticky top-0 z-[var(--z-sticky)] py-2"
+      className="bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white px-3.5 sticky top-0 z-[var(--z-sticky)] py-2 border-b border-neutral-200/80 dark:border-neutral-800/70"
       style={dragStyle}
     >
       <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-3 gap-y-1">
@@ -364,23 +359,6 @@ export function TaskDetailHeader({
           </Suspense>
 
           <OpenEditorSplitButton worktreePath={worktreePath} />
-
-          {onToggleAiReview && (
-            <button
-              onClick={onToggleAiReview}
-              className={clsx(
-                "p-1 select-none transition-colors",
-                isAiReviewActive
-                  ? "text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300"
-                  : "text-neutral-400 hover:text-neutral-700 dark:hover:text-white"
-              )}
-              aria-label={isAiReviewActive ? "Switch to diff view" : "Switch to AI review"}
-              aria-pressed={isAiReviewActive}
-              title={isAiReviewActive ? "Viewing AI Review" : "View AI Review"}
-            >
-              <Flame className="w-3.5 h-3.5" />
-            </button>
-          )}
 
           {onOpenLocalWorkspace && (
             <button

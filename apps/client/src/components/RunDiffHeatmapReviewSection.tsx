@@ -7,7 +7,6 @@ import {
   type StreamFileState,
 } from "@/components/heatmap-diff-viewer";
 import type { HeatmapColorSettings } from "@/components/heatmap-diff-viewer/heatmap-gradient";
-import type { HeatmapModelOptionValue, TooltipLanguageValue } from "@/lib/heatmap-settings";
 import type { DiffViewerControls } from "@/components/heatmap-diff-viewer";
 import { kitties } from "./kitties";
 
@@ -27,17 +26,14 @@ export interface RunDiffHeatmapReviewSectionProps {
   >;
   heatmapThreshold: number;
   heatmapColors: HeatmapColorSettings;
-  heatmapModel: HeatmapModelOptionValue;
-  heatmapTooltipLanguage: TooltipLanguageValue;
   streamStateByFile?: Map<string, StreamFileState>;
   fileOutputs?: Array<{
     filePath: string;
     codexReviewOutput: unknown;
   }>;
-  onHeatmapThresholdChange?: (next: number) => void;
   onHeatmapColorsChange?: (next: HeatmapColorSettings) => void;
-  onHeatmapModelChange?: (next: HeatmapModelOptionValue) => void;
-  onHeatmapTooltipLanguageChange?: (next: TooltipLanguageValue) => void;
+  isHeatmapActive?: boolean;
+  onToggleHeatmap?: () => void;
 }
 
 function applyRepoPrefix(
@@ -70,14 +66,11 @@ export function RunDiffHeatmapReviewSection(
     metadataByRepo,
     heatmapThreshold,
     heatmapColors,
-    heatmapModel,
-    heatmapTooltipLanguage,
     streamStateByFile,
     fileOutputs,
-    onHeatmapThresholdChange,
     onHeatmapColorsChange,
-    onHeatmapModelChange,
-    onHeatmapTooltipLanguageChange,
+    isHeatmapActive,
+    onToggleHeatmap,
   } = props;
 
   const repoFullNames = useMemo(() => {
@@ -171,13 +164,10 @@ export function RunDiffHeatmapReviewSection(
       shouldPrefixDiffs={shouldPrefix}
       heatmapThreshold={heatmapThreshold}
       heatmapColors={heatmapColors}
-      heatmapModel={heatmapModel}
-      heatmapTooltipLanguage={heatmapTooltipLanguage}
-      onHeatmapThresholdChange={onHeatmapThresholdChange}
       onHeatmapColorsChange={onHeatmapColorsChange}
-      onHeatmapModelChange={onHeatmapModelChange}
-      onHeatmapTooltipLanguageChange={onHeatmapTooltipLanguageChange}
       onControlsChange={onControlsChange}
+      isHeatmapActive={isHeatmapActive}
+      onToggleHeatmap={onToggleHeatmap}
     />
   );
 }

@@ -1,4 +1,5 @@
 import { FloatingPane } from "@/components/floating-pane";
+import { MessageSquareText } from "lucide-react";
 import { RunDiffHeatmapReviewSection } from "@/components/RunDiffHeatmapReviewSection";
 import type {
   DiffViewerControls,
@@ -402,22 +403,6 @@ function RunDiffPage() {
     );
   }, [workspaceSettings]);
 
-  const handleHeatmapThresholdChange = useCallback(
-    (next: number) => {
-      if (next === heatmapThreshold) {
-        return;
-      }
-      setHeatmapThreshold(next);
-      void updateWorkspaceSettings({
-        teamSlugOrId,
-        heatmapThreshold: next,
-      }).catch((error) => {
-        console.error("Failed to update heatmap threshold:", error);
-      });
-    },
-    [heatmapThreshold, teamSlugOrId, updateWorkspaceSettings]
-  );
-
   const handleHeatmapColorsChange = useCallback(
     (next: HeatmapColorSettings) => {
       setHeatmapColors(next);
@@ -429,38 +414,6 @@ function RunDiffPage() {
       });
     },
     [teamSlugOrId, updateWorkspaceSettings]
-  );
-
-  const handleHeatmapModelChange = useCallback(
-    (next: HeatmapModelOptionValue) => {
-      if (next === heatmapModel) {
-        return;
-      }
-      setHeatmapModel(next);
-      void updateWorkspaceSettings({
-        teamSlugOrId,
-        heatmapModel: next,
-      }).catch((error) => {
-        console.error("Failed to update heatmap model:", error);
-      });
-    },
-    [heatmapModel, teamSlugOrId, updateWorkspaceSettings]
-  );
-
-  const handleHeatmapTooltipLanguageChange = useCallback(
-    (next: TooltipLanguageValue) => {
-      if (next === heatmapTooltipLanguage) {
-        return;
-      }
-      setHeatmapTooltipLanguage(next);
-      void updateWorkspaceSettings({
-        teamSlugOrId,
-        heatmapTooltipLanguage: next,
-      }).catch((error) => {
-        console.error("Failed to update heatmap tooltip language:", error);
-      });
-    },
-    [heatmapTooltipLanguage, teamSlugOrId, updateWorkspaceSettings]
   );
 
   const runDiffContextQuery = useRQ({
@@ -1072,17 +1025,22 @@ function RunDiffPage() {
             onCollapseAllChecks={collapseAllChecks}
             onOpenLocalWorkspace={isWorkspace ? undefined : handleOpenLocalWorkspace}
             teamSlugOrId={teamSlugOrId}
-            isAiReviewActive={isAiReviewActive}
-            onToggleAiReview={handleToggleAiReview}
           />
           {task?.text && (
-            <div className="mb-2 px-3.5">
-              <div className="text-xs text-neutral-600 dark:text-neutral-300">
-                <span className="text-neutral-500 dark:text-neutral-400 select-none">
-                  Prompt:{" "}
-                </span>
-                <span className="font-medium">{task.text}</span>
-              </div>
+            <div className="px-2 py-1.5 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(task.text);
+                  toast.success("Copied to clipboard");
+                }}
+                className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[13px] font-medium text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                title="Copy description"
+              >
+                <MessageSquareText className="w-3.5 h-3.5" />
+                <span>Description</span>
+              </button>
+              <span className="text-xs text-neutral-500 dark:text-neutral-400">{task.text}</span>
             </div>
           )}
           <div className="bg-white dark:bg-neutral-900 flex-1 min-h-0 flex flex-col">
@@ -1136,18 +1094,17 @@ function RunDiffPage() {
                       streamStateByFile={deferredStreamStateByFile}
                       heatmapThreshold={heatmapThreshold}
                       heatmapColors={heatmapColors}
-                      heatmapModel={heatmapModel}
-                      heatmapTooltipLanguage={heatmapTooltipLanguage}
-                      onHeatmapThresholdChange={handleHeatmapThresholdChange}
                       onHeatmapColorsChange={handleHeatmapColorsChange}
-                      onHeatmapModelChange={handleHeatmapModelChange}
-                      onHeatmapTooltipLanguageChange={handleHeatmapTooltipLanguageChange}
+                      isHeatmapActive={isAiReviewActive}
+                      onToggleHeatmap={handleToggleAiReview}
                     />
                   ) : (
                     <MonacoGitDiffViewerWithSidebar
                       diffs={diffQuery.data ?? []}
                       isLoading={diffQuery.isLoading}
                       onControlsChange={setDiffControls}
+                      isHeatmapActive={isAiReviewActive}
+                      onToggleHeatmap={handleToggleAiReview}
                     />
                   )
                 ) : (

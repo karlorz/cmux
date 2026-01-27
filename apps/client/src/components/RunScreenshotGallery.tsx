@@ -518,25 +518,25 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
   const emptyReason = totalMediaCount === 0 ? detectEmptyReason(latestScreenshotSet) : null;
 
   return (
-    <section className="border-b border-neutral-200/80 dark:border-neutral-800/70">
+    <section>
       <div className="px-2 py-1.5 flex items-center gap-2">
         {totalMediaCount > 0 ? (
           <button
             type="button"
             onClick={openFirstMedia}
-            className="flex items-center gap-1.5 px-2 py-1 rounded text-sm font-medium text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+            className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[13px] font-medium text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
             title="View previews"
           >
-            <Images className="w-4 h-4" />
+            <Images className="w-3.5 h-3.5" />
             <span>Previews</span>
           </button>
         ) : (
-          <div className="flex items-center gap-1.5 px-2 py-1 text-sm font-medium text-neutral-600 dark:text-neutral-400">
-            <Images className="w-4 h-4" />
+          <div className="flex items-center gap-1.5 px-2 py-0.5 text-[13px] font-medium text-neutral-600 dark:text-neutral-400">
+            <Images className="w-3.5 h-3.5" />
             <span>Previews</span>
           </div>
         )}
-        <span className="text-xs text-neutral-500 dark:text-neutral-500">
+        <span className="text-[11px] text-neutral-500 dark:text-neutral-500">
           {imageCount > 0 && `${imageCount} ${imageCount === 1 ? "screenshot" : "screenshots"}`}
           {imageCount > 0 && videoCount > 0 && " and "}
           {videoCount > 0 && `${videoCount} ${videoCount === 1 ? "video" : "videos"}`}
