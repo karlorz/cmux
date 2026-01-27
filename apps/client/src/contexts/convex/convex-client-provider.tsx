@@ -3,7 +3,7 @@
 import { getRandomKitty } from "@/components/kitties";
 import CmuxLogoMarkAnimated from "@/components/logo/cmux-logo-mark-animated";
 import { useQuery } from "@tanstack/react-query";
-import { useMatch, useNavigate } from "@tanstack/react-router";
+import { useLocation, useMatch, useNavigate } from "@tanstack/react-router";
 import { ConvexProvider } from "convex/react";
 import { type ReactNode, useEffect, useState } from "react";
 import { authJsonQueryOptions } from "./authJsonQueryOptions";
@@ -14,6 +14,7 @@ import clsx from "clsx";
 function BootLoader({ children }: { children: ReactNode }) {
   const [minimumDelayPassed, setMinimumDelayPassed] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const convexAuthReadyQuery = useQuery({
     queryKey: ["convexAuthReadyPromise"],
     queryFn: () => convexAuthReadyPromise,
@@ -40,10 +41,18 @@ function BootLoader({ children }: { children: ReactNode }) {
     if (authFailed && minimumDelayPassed) {
       void navigate({
         to: "/sign-in",
-        search: { after_auth_return_to: window.location.hash.slice(1) || "/" },
+        search: {
+          after_auth_return_to: `${location.pathname}${location.searchStr}`,
+        },
       });
     }
-  }, [authFailed, minimumDelayPassed, navigate]);
+  }, [
+    authFailed,
+    location.pathname,
+    location.searchStr,
+    minimumDelayPassed,
+    navigate,
+  ]);
 
   const isConvexReady = Boolean(convexAuthReadyQuery.data);
   const isReady =
