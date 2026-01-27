@@ -1000,13 +1000,30 @@ app.whenReady().then(async () => {
       return new Response("Not found", { status: 404 });
     }
 
-    const response = await net.fetch(pathToFileURL(fsPath).toString());
     const contentSecurityPolicy =
       "default-src * 'unsafe-inline' 'unsafe-eval' data: blob: ws: wss:; " +
       "connect-src * sentry-ipc:; " +
       "worker-src * blob:; child-src * blob:; frame-src *";
-    response.headers.set("Content-Security-Policy", contentSecurityPolicy);
-    return response;
+
+    // Try to fetch the requested file
+    try {
+      const response = await net.fetch(pathToFileURL(fsPath).toString());
+      response.headers.set("Content-Security-Policy", contentSecurityPolicy);
+      return response;
+    } catch (error) {
+      // SPA fallback: if the file doesn't exist and it's not an asset request,
+      // serve index-electron.html so the client-side router can handle the route.
+      // Asset files (with extensions like .js, .css, etc.) should return 404.
+      const hasFileExtension = /\.[a-zA-Z0-9]+$/.test(pathname);
+      if (!hasFileExtension) {
+        const indexPath = path.join(baseDir, "index-electron.html");
+        const fallbackResponse = await net.fetch(pathToFileURL(indexPath).toString());
+        fallbackResponse.headers.set("Content-Security-Policy", contentSecurityPolicy);
+        return fallbackResponse;
+      }
+      // Re-throw for asset files to return proper error
+      throw error;
+    }
   };
 
   ses.protocol.handle("https", handleCmuxProtocol);
