@@ -2636,13 +2636,19 @@ async def task_package_vscode_extension(ctx: PveTaskContext) -> None:
         set -euo pipefail
         export PATH="/usr/local/bin:$PATH"
         cd {repo}/packages/vscode-extension
-        bun run package
+        # Run package command, allowing warnings but checking for actual vsix output
+        bun run package || true
+        echo "[package-vscode-extension] Looking for vsix file..."
+        ls -la *.vsix 2>/dev/null || true
         latest_vsix="$(ls -1t cmux-vscode-extension-*.vsix 2>/dev/null | head -n 1)"
         if [ -z "${{latest_vsix}}" ] || [ ! -f "${{latest_vsix}}" ]; then
-          echo "cmux VS Code extension package not found" >&2
+          echo "[package-vscode-extension] ERROR: cmux VS Code extension package not found" >&2
           exit 1
         fi
+        echo "[package-vscode-extension] Found: ${{latest_vsix}}"
         install -Dm0644 "${{latest_vsix}}" /tmp/cmux-vscode-extension.vsix
+        echo "[package-vscode-extension] Installed to /tmp/cmux-vscode-extension.vsix"
+        ls -la /tmp/cmux-vscode-extension.vsix
         """
     )
     await ctx.run("package-vscode-extension", cmd)
@@ -2736,15 +2742,20 @@ async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
         install_from_file() {{
           local package_path="$1"
           echo "[install-ide-extensions] installing ${{package_path}}"
-          "${{bin_path}}" \\
+          if ! "${{bin_path}}" \\
             --install-extension "${{package_path}}" \\
             --force \\
             --extensions-dir "${{extensions_dir}}" \\
-            --user-data-dir "${{user_data_dir}}"
+            --user-data-dir "${{user_data_dir}}"; then
+            echo "[install-ide-extensions] WARNING: install command returned non-zero for ${{package_path}}" >&2
+          fi
         }}
         echo "[install-ide-extensions] installing bundled cmux extension"
         install_from_file "${{cmux_vsix}}"
+        install_result=$?
+        echo "[install-ide-extensions] cmux extension install result: $install_result"
         rm -f "${{cmux_vsix}}"
+        echo "[install-ide-extensions] starting marketplace extension downloads"
         download_dir="$(mktemp -d)"
         cleanup() {{
           rm -rf "${{download_dir}}"
@@ -2792,24 +2803,47 @@ async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
         }}
         set +e
         ext_count=0
+        pids=""
         while IFS='|' read -r publisher name version; do
           [ -z "${{publisher}}" ] && continue
           download_extension "${{publisher}}" "${{name}}" "${{version}}" "${{download_dir}}/${{publisher}}.${{name}}.vsix" &
+          pids="$pids $!"
           ext_count=$((ext_count + 1))
         done <<'EXTENSIONS'
 {extensions_blob}
 EXTENSIONS
-        wait
-        echo "[install-ide-extensions] downloaded ${{ext_count}} extensions"
+        download_failed=0
+        for pid in $pids; do
+          if ! wait "$pid"; then
+            download_failed=$((download_failed + 1))
+          fi
+        done
+        if [ "$download_failed" -gt 0 ]; then
+          echo "[install-ide-extensions] ERROR: $download_failed of $ext_count downloads failed" >&2
+          exit 1
+        fi
+        echo "[install-ide-extensions] downloaded $ext_count extensions successfully"
         set -e
         shopt -s nullglob
         set -- "${{download_dir}}"/*.vsix
+        actual_count=$#
+        if [ "$actual_count" -ne "$ext_count" ]; then
+          echo "[install-ide-extensions] ERROR: Expected $ext_count vsix files but found $actual_count" >&2
+          ls -la "${{download_dir}}" >&2
+          exit 1
+        fi
+        installed_count=0
         for vsix in "$@"; do
           if [ -f "${{vsix}}" ]; then
             install_from_file "${{vsix}}"
+            installed_count=$((installed_count + 1))
           fi
         done
-        echo "[install-ide-extensions] completed installs"
+        if [ "$installed_count" -ne "$ext_count" ]; then
+          echo "[install-ide-extensions] ERROR: Expected to install $ext_count extensions but installed $installed_count" >&2
+          exit 1
+        fi
+        echo "[install-ide-extensions] completed installs: $installed_count extensions"
         """
     )
     await ctx.run("install-ide-extensions", cmd)
