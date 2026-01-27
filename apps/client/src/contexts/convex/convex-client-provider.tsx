@@ -3,7 +3,7 @@
 import { getRandomKitty } from "@/components/kitties";
 import CmuxLogoMarkAnimated from "@/components/logo/cmux-logo-mark-animated";
 import { useQuery } from "@tanstack/react-query";
-import { useMatch } from "@tanstack/react-router";
+import { useMatch, useNavigate } from "@tanstack/react-router";
 import { ConvexProvider } from "convex/react";
 import { type ReactNode, useEffect, useState } from "react";
 import { authJsonQueryOptions } from "./authJsonQueryOptions";
@@ -13,6 +13,7 @@ import clsx from "clsx";
 
 function BootLoader({ children }: { children: ReactNode }) {
   const [minimumDelayPassed, setMinimumDelayPassed] = useState(false);
+  const navigate = useNavigate();
   const convexAuthReadyQuery = useQuery({
     queryKey: ["convexAuthReadyPromise"],
     queryFn: () => convexAuthReadyPromise,
@@ -24,6 +25,8 @@ function BootLoader({ children }: { children: ReactNode }) {
   });
   const needsTeamAuth = Boolean(teamRouteMatch?.params.teamSlugOrId);
   const hasAuthToken = Boolean(authJsonQuery.data?.accessToken);
+  const authQuerySettled = !authJsonQuery.isPending;
+  const authFailed = authQuerySettled && needsTeamAuth && !hasAuthToken;
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -31,6 +34,16 @@ function BootLoader({ children }: { children: ReactNode }) {
     }, 250);
     return () => clearTimeout(timer);
   }, []);
+
+  // Redirect to sign-in if auth is required but failed/missing after query settled
+  useEffect(() => {
+    if (authFailed && minimumDelayPassed) {
+      void navigate({
+        to: "/sign-in",
+        search: { after_auth_return_to: window.location.hash.slice(1) || "/" },
+      });
+    }
+  }, [authFailed, minimumDelayPassed, navigate]);
 
   const isConvexReady = Boolean(convexAuthReadyQuery.data);
   const isReady =
