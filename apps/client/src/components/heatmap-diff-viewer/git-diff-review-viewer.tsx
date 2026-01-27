@@ -1285,7 +1285,7 @@ const FileDiffCard = memo(function FileDiffCardComponent({
         errorMessage={entry.error ?? null}
         defaultCollapsed={isCollapsed}
         onCollapseChange={handleCollapseChange}
-        className="border-x border-b border-neutral-200 dark:border-neutral-700"
+        className=""
       />
     </div>
   );
@@ -2289,12 +2289,12 @@ export function GitDiffHeatmapReviewViewer({
 
       {/* Content area */}
       <div className="flex flex-1 min-h-0">
-        {/* Sidebar */}
+        {/* Sidebar with resize handle */}
         {!isSidebarCollapsed && (
-          <>
+          <div className="relative flex-shrink-0">
             <aside
               id={sidebarPanelId}
-              className="relative flex-shrink-0 flex flex-col border-r border-neutral-200/80 dark:border-neutral-800/70 h-[calc(100vh-var(--cmux-diff-header-offset,0px)-41px)] max-h-[calc(100vh-var(--cmux-diff-header-offset,0px)-41px)] overflow-hidden"
+              className="flex flex-col border-r border-neutral-200/80 dark:border-neutral-800/70 h-[calc(100vh-var(--cmux-diff-header-offset,0px)-41px)] max-h-[calc(100vh-var(--cmux-diff-header-offset,0px)-41px)] overflow-hidden"
               style={
                 {
                   width: `${sidebarWidth}px`,
@@ -2346,10 +2346,9 @@ export function GitDiffHeatmapReviewViewer({
             {/* Resize handle */}
             <div
               className={cn(
-                "absolute top-[41px] bottom-0 w-2 cursor-col-resize select-none touch-none group/resize z-10",
+                "absolute top-0 bottom-0 right-0 w-2 cursor-col-resize select-none touch-none group/resize z-10 translate-x-1/2",
                 "focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-sky-500"
               )}
-              style={{ left: `${sidebarWidth - 4}px` }}
               role="separator"
               aria-label="Resize file navigation panel"
               aria-orientation="vertical"
@@ -2375,7 +2374,7 @@ export function GitDiffHeatmapReviewViewer({
                 aria-hidden
               />
             </div>
-          </>
+          </div>
         )}
 
         {/* Main content */}

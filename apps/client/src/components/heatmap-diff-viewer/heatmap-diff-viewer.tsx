@@ -840,10 +840,6 @@ export const HeatmapDiffViewer = memo(function HeatmapDiffViewerComponent({
       skipDelayDuration={0}
       disableHoverableContent
     >
-      <style
-        data-heatmap-gradient
-        dangerouslySetInnerHTML={{ __html: heatmapGradientCss }}
-      />
       <article
         className={cn(
           "bg-white dark:bg-neutral-900 transition",
@@ -856,11 +852,10 @@ export const HeatmapDiffViewer = memo(function HeatmapDiffViewerComponent({
             type="button"
             onClick={handleToggleCollapse}
             className={cn(
-              "sticky top-[var(--cmux-diff-header-offset,0px)] z-10 flex w-full items-center gap-0",
-              "border-t border-neutral-200/80 dark:border-neutral-800/70",
-              "bg-neutral-50/80 dark:bg-neutral-900/95",
-              "px-3.5 py-2.5 text-left font-sans font-medium transition",
-              "hover:bg-neutral-100 dark:hover:bg-neutral-800/80",
+              "sticky top-0 z-20 flex w-full items-center gap-0",
+              "bg-neutral-50 dark:bg-neutral-900",
+              !isCollapsed && "border-b border-neutral-200 dark:border-neutral-800",
+              "px-3.5 py-2.5 text-left font-sans font-medium",
               "focus:outline-none focus-visible:outline-none"
             )}
             aria-expanded={!isCollapsed}
@@ -1033,6 +1028,10 @@ export const HeatmapDiffViewer = memo(function HeatmapDiffViewerComponent({
           )}
         </div>
       </article>
+      <style
+        data-heatmap-gradient
+        dangerouslySetInnerHTML={{ __html: heatmapGradientCss }}
+      />
     </TooltipProvider>
   );
 });
