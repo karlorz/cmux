@@ -850,15 +850,15 @@ export const HeatmapDiffViewer = memo(function HeatmapDiffViewerComponent({
           className
         )}
       >
-        <div className="flex flex-col divide-y divide-neutral-200 dark:divide-neutral-800">
+        <div className="flex flex-col">
           {/* Header */}
           <button
             type="button"
             onClick={handleToggleCollapse}
             className={cn(
               "sticky top-[var(--cmux-diff-header-offset,0px)] z-10 flex w-full items-center gap-0",
-              "border-t border-neutral-200 dark:border-neutral-700",
-              "bg-neutral-50 dark:bg-neutral-900/95",
+              "border-t border-neutral-200/80 dark:border-neutral-800/70",
+              "bg-neutral-50/80 dark:bg-neutral-900/95",
               "px-3.5 py-2.5 text-left font-sans font-medium transition",
               "hover:bg-neutral-100 dark:hover:bg-neutral-800/80",
               "focus:outline-none focus-visible:outline-none"
@@ -918,7 +918,8 @@ export const HeatmapDiffViewer = memo(function HeatmapDiffViewerComponent({
 
           {/* Diff Content */}
           {!isCollapsed && (
-            parsedDiff ? (
+            <div className="overflow-hidden">
+            {parsedDiff ? (
               <Diff
                 diffType={parsedDiff.type}
                 hunks={parsedDiff.hunks}
@@ -1027,7 +1028,8 @@ export const HeatmapDiffViewer = memo(function HeatmapDiffViewerComponent({
                 {errorMessage ??
                   "Diff content is unavailable for this file. It might be binary or too large to display."}
               </div>
-            )
+            )}
+            </div>
           )}
         </div>
       </article>
