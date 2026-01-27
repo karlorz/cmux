@@ -48,7 +48,7 @@ function BootLoader({ children }: { children: ReactNode }) {
           {getRandomKitty()}
         </pre>
       </div>
-      {children}
+      {isReady ? children : null}
     </>
   );
 }
