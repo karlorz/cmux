@@ -2,7 +2,7 @@ import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import { getTeamId, resolveTeamIdLoose } from "../_shared/team";
 import { api } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { authMutation, authQuery, taskIdWithFake } from "./users/utils";
 
@@ -201,6 +201,160 @@ export const getWithNotificationOrder = authQuery({
   },
 });
 
+/**
+ * Helper to project a task to list view fields only.
+ * Reduces bandwidth by excluding large fields: description, images, pullRequestDescription,
+ * crownEvaluationRetryData, and 10+ screenshot-related fields.
+ */
+function projectTaskToListItem(
+  task: Doc<"tasks">,
+  hasUnread: boolean,
+) {
+  return {
+    _id: task._id,
+    _creationTime: task._creationTime,
+    text: task.text,
+    isCompleted: task.isCompleted,
+    isArchived: task.isArchived,
+    pinned: task.pinned,
+    isPreview: task.isPreview,
+    isLocalWorkspace: task.isLocalWorkspace,
+    isCloudWorkspace: task.isCloudWorkspace,
+    linkedFromCloudTaskRunId: task.linkedFromCloudTaskRunId,
+    projectFullName: task.projectFullName,
+    baseBranch: task.baseBranch,
+    generatedBranchName: task.generatedBranchName,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt,
+    lastActivityAt: task.lastActivityAt,
+    userId: task.userId,
+    teamId: task.teamId,
+    environmentId: task.environmentId,
+    crownEvaluationStatus: task.crownEvaluationStatus,
+    mergeStatus: task.mergeStatus,
+    pullRequestTitle: task.pullRequestTitle,
+    selectedTaskRunId: task.selectedTaskRunId,
+    hasUnread,
+  };
+}
+
+/**
+ * Optimized version of `get` that returns only fields needed for list views.
+ * Excludes large fields to reduce bandwidth (saves ~1-2KB per task).
+ */
+export const getListItems = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    projectFullName: v.optional(v.string()),
+    archived: v.optional(v.boolean()),
+    excludeLocalWorkspaces: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    let q = ctx.db
+      .query("tasks")
+      .withIndex("by_team_user", (idx) =>
+        idx.eq("teamId", teamId).eq("userId", userId),
+      );
+
+    if (args.archived === true) {
+      q = q.filter((qq) => qq.eq(qq.field("isArchived"), true));
+    } else {
+      q = q.filter((qq) => qq.neq(qq.field("isArchived"), true));
+    }
+
+    q = q.filter((qq) => qq.neq(qq.field("isPreview"), true));
+    q = q.filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined));
+
+    if (args.excludeLocalWorkspaces) {
+      q = q.filter((qq) => qq.neq(qq.field("isLocalWorkspace"), true));
+    }
+
+    if (args.projectFullName) {
+      q = q.filter((qq) =>
+        qq.eq(qq.field("projectFullName"), args.projectFullName),
+      );
+    }
+
+    const tasks = await q.collect();
+
+    const unreadRuns = await ctx.db
+      .query("unreadTaskRuns")
+      .withIndex("by_team_user", (q) => q.eq("teamId", teamId).eq("userId", userId))
+      .collect();
+
+    const tasksWithUnread = new Set(
+      unreadRuns.map((ur) => ur.taskId).filter((id): id is Id<"tasks"> => id !== undefined)
+    );
+
+    const sorted = [...tasks].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+
+    return sorted.map((task) => projectTaskToListItem(task, tasksWithUnread.has(task._id)));
+  },
+});
+
+/**
+ * Optimized version of `getWithNotificationOrder` that returns only fields needed for list views.
+ * Excludes large fields to reduce bandwidth (saves ~1-2KB per task).
+ */
+export const getWithNotificationOrderListItems = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    projectFullName: v.optional(v.string()),
+    archived: v.optional(v.boolean()),
+    excludeLocalWorkspaces: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    let q = ctx.db
+      .query("tasks")
+      .withIndex("by_team_user", (idx) =>
+        idx.eq("teamId", teamId).eq("userId", userId),
+      );
+
+    if (args.archived === true) {
+      q = q.filter((qq) => qq.eq(qq.field("isArchived"), true));
+    } else {
+      q = q.filter((qq) => qq.neq(qq.field("isArchived"), true));
+    }
+
+    q = q.filter((qq) => qq.neq(qq.field("isPreview"), true));
+    q = q.filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined));
+
+    if (args.excludeLocalWorkspaces) {
+      q = q.filter((qq) => qq.neq(qq.field("isLocalWorkspace"), true));
+    }
+
+    if (args.projectFullName) {
+      q = q.filter((qq) =>
+        qq.eq(qq.field("projectFullName"), args.projectFullName),
+      );
+    }
+
+    const tasks = await q.collect();
+
+    const unreadRuns = await ctx.db
+      .query("unreadTaskRuns")
+      .withIndex("by_team_user", (q) => q.eq("teamId", teamId).eq("userId", userId))
+      .collect();
+
+    const tasksWithUnread = new Set(
+      unreadRuns.map((ur) => ur.taskId).filter((id): id is Id<"tasks"> => id !== undefined)
+    );
+
+    const sorted = [...tasks].sort((a, b) => {
+      const aTime = a.lastActivityAt ?? a.createdAt ?? 0;
+      const bTime = b.lastActivityAt ?? b.createdAt ?? 0;
+      return bTime - aTime;
+    });
+
+    return sorted.map((task) => projectTaskToListItem(task, tasksWithUnread.has(task._id)));
+  },
+});
+
 export const getPreviewTasks = authQuery({
   args: {
     teamSlugOrId: v.string(),
@@ -316,35 +470,69 @@ export const getTasksWithTaskRuns = authQuery({
       (a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0),
     );
 
-    const tasksWithRuns = await Promise.all(
-      sortedTasks.map(async (task) => {
-        const crownedRun = await ctx.db
-          .query("taskRuns")
-          .withIndex("by_task", (query) => query.eq("taskId", task._id))
-          .filter((query) => query.eq(query.field("isCrowned"), true))
-          .filter((query) => query.neq(query.field("isArchived"), true))
-          .first();
+    // Batch fetch selected runs using denormalized IDs (O(N) direct lookups instead of O(2N) queries)
+    const tasksWithSelectedId = sortedTasks.filter(
+      (t): t is typeof t & { selectedTaskRunId: Id<"taskRuns"> } =>
+        t.selectedTaskRunId !== undefined,
+    );
+    const tasksNeedingFallback = sortedTasks.filter(
+      (t) => t.selectedTaskRunId === undefined,
+    );
 
-        let selectedTaskRun = crownedRun ?? null;
+    // Batch fetch all selected runs in parallel (single query per run vs 2 queries per task before)
+    const selectedRuns = await Promise.all(
+      tasksWithSelectedId.map((t) => ctx.db.get(t.selectedTaskRunId)),
+    );
 
-        if (!selectedTaskRun) {
+    // Build map for O(1) lookup
+    const runMap = new Map<Id<"tasks">, Doc<"taskRuns"> | null>();
+    for (let i = 0; i < tasksWithSelectedId.length; i++) {
+      const task = tasksWithSelectedId[i];
+      const run = selectedRuns[i];
+      // Only include non-archived runs; if archived, will fall back below
+      if (run && run.isArchived !== true) {
+        runMap.set(task._id, run);
+      }
+    }
+
+    // Fallback for tasks without selectedTaskRunId or with archived selected run
+    // This handles migration period and edge cases
+    const fallbackTasks = [
+      ...tasksNeedingFallback,
+      ...tasksWithSelectedId.filter((t) => !runMap.has(t._id)),
+    ];
+
+    if (fallbackTasks.length > 0) {
+      const fallbackRuns = await Promise.all(
+        fallbackTasks.map(async (task) => {
+          // Try crowned run first
+          const crownedRun = await ctx.db
+            .query("taskRuns")
+            .withIndex("by_task", (query) => query.eq("taskId", task._id))
+            .filter((query) => query.eq(query.field("isCrowned"), true))
+            .filter((query) => query.neq(query.field("isArchived"), true))
+            .first();
+          if (crownedRun) return { taskId: task._id, run: crownedRun };
+
+          // Fall back to latest non-archived run
           const [latestRun] = await ctx.db
             .query("taskRuns")
             .withIndex("by_task", (query) => query.eq("taskId", task._id))
             .filter((query) => query.neq(query.field("isArchived"), true))
             .order("desc")
             .take(1);
-          selectedTaskRun = latestRun ?? null;
-        }
+          return { taskId: task._id, run: latestRun ?? null };
+        }),
+      );
+      for (const { taskId, run } of fallbackRuns) {
+        runMap.set(taskId, run);
+      }
+    }
 
-        return {
-          ...task,
-          selectedTaskRun,
-        };
-      }),
-    );
-
-    return tasksWithRuns;
+    return sortedTasks.map((task) => ({
+      ...task,
+      selectedTaskRun: runMap.get(task._id) ?? null,
+    }));
   },
 });
 

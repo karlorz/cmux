@@ -190,7 +190,8 @@ export const TaskList = memo(function TaskList({
   // In web mode, exclude local workspaces from the task list
   const excludeLocalWorkspaces = env.NEXT_PUBLIC_WEB_MODE || undefined;
 
-  const allTasks = useQuery(api.tasks.get, { teamSlugOrId, excludeLocalWorkspaces });
+  // Use optimized query with projected fields (lower bandwidth)
+  const allTasks = useQuery(api.tasks.getListItems, { teamSlugOrId, excludeLocalWorkspaces });
   const {
     results: archivedTasks,
     status: archivedStatus,

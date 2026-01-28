@@ -425,7 +425,11 @@ export const create = authMutation({
 
     // Update task's lastActivityAt for sorting
     const generatedBranchName = deriveGeneratedBranchName(args.newBranch);
-    const taskPatch: { generatedBranchName?: string; lastActivityAt: number } = {
+    const taskPatch: {
+      generatedBranchName?: string;
+      lastActivityAt: number;
+      selectedTaskRunId?: typeof taskRunId;
+    } = {
       lastActivityAt: now,
     };
     if (
@@ -433,6 +437,11 @@ export const create = authMutation({
       task.generatedBranchName !== generatedBranchName
     ) {
       taskPatch.generatedBranchName = generatedBranchName;
+    }
+    // Set selectedTaskRunId if task doesn't have one yet (first run or no crowned run)
+    // This will be overwritten by crown evaluation when multiple runs complete
+    if (!task.selectedTaskRunId) {
+      taskPatch.selectedTaskRunId = taskRunId;
     }
     await ctx.db.patch(args.taskId, taskPatch);
     const jwt = await new SignJWT({

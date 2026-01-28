@@ -51,6 +51,11 @@ export const evaluateAndCrownWinner = authMutation({
             isCrowned: true,
             crownReason: "Only one model completed the task",
           });
+          // Denormalize selectedTaskRunId on task for efficient lookups
+          await ctx.db.patch(args.taskId, {
+            selectedTaskRunId: taskRuns[0]._id,
+            updatedAt: Date.now(),
+          });
         }
         return taskRuns[0]?._id || null;
       }
@@ -152,10 +157,11 @@ export const setCrownWinner = authMutation({
       }
     }
 
-    // Clear crown evaluation error
+    // Clear crown evaluation error and set denormalized selectedTaskRunId
     await ctx.db.patch(taskRun.taskId, {
       crownEvaluationStatus: "succeeded",
       crownEvaluationError: undefined,
+      selectedTaskRunId: args.taskRunId,
       updatedAt: Date.now(),
     });
 
@@ -584,6 +590,7 @@ export const workerFinalize = internalMutation({
       crownEvaluationStatus: "succeeded",
       crownEvaluationError: undefined,
       isCompleted: true,
+      selectedTaskRunId: args.winnerRunId, // Denormalize for efficient lookups
       updatedAt: now,
       crownEvaluationRetryData: undefined,
       crownEvaluationRetryCount: undefined,

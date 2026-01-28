@@ -242,6 +242,44 @@ export const backfillUnreadTaskRunsTaskId = migrations.define({
   },
 });
 
+// Backfill tasks.selectedTaskRunId from crowned/latest non-archived run
+// Run with: bunx convex run migrations:run '{fn: "migrations:backfillTasksSelectedTaskRunId"}'
+export const backfillTasksSelectedTaskRunId = migrations.define({
+  table: "tasks",
+  migrateOne: async (ctx, doc) => {
+    if (doc.selectedTaskRunId !== undefined) {
+      return; // Already set
+    }
+
+    // Find crowned run first (preferred)
+    const crownedRun = await ctx.db
+      .query("taskRuns")
+      .withIndex("by_task", (q) => q.eq("taskId", doc._id))
+      .filter((q) => q.eq(q.field("isCrowned"), true))
+      .filter((q) => q.neq(q.field("isArchived"), true))
+      .first();
+
+    if (crownedRun) {
+      return { selectedTaskRunId: crownedRun._id };
+    }
+
+    // Fall back to latest non-archived run
+    const latestRun = await ctx.db
+      .query("taskRuns")
+      .withIndex("by_task", (q) => q.eq("taskId", doc._id))
+      .filter((q) => q.neq(q.field("isArchived"), true))
+      .order("desc")
+      .first();
+
+    if (latestRun) {
+      return { selectedTaskRunId: latestRun._id };
+    }
+
+    // No runs found - leave selectedTaskRunId unset
+    return;
+  },
+});
+
 // Generic runner; choose migrations from CLI or dashboard when invoking
 export const run = migrations.runner();
 

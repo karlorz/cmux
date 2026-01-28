@@ -82,9 +82,10 @@ function LayoutComponent() {
   const excludeLocalWorkspaces = env.NEXT_PUBLIC_WEB_MODE || undefined;
   // Use React Query-wrapped Convex queries to avoid real-time subscriptions
   // that cause excessive re-renders cascading to all child components.
-  // Uses getWithNotificationOrder which sorts tasks with unread notifications first
+  // Uses getWithNotificationOrderListItems which returns projected fields (lower bandwidth)
+  // and sorts tasks with unread notifications first
   const tasksQuery = useRQ({
-    ...convexQuery(api.tasks.getWithNotificationOrder, { teamSlugOrId, excludeLocalWorkspaces }),
+    ...convexQuery(api.tasks.getWithNotificationOrderListItems, { teamSlugOrId, excludeLocalWorkspaces }),
     enabled: Boolean(teamSlugOrId),
   });
   const tasks = tasksQuery.data;

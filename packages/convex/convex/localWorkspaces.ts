@@ -126,6 +126,9 @@ export const reserve = authMutation({
       },
     });
 
+    // Set selectedTaskRunId for the new task (denormalized for efficient lookups)
+    await ctx.db.patch(taskId, { selectedTaskRunId: taskRunId });
+
     return {
       sequence,
       suffix: workspaceSequenceToName(sequence),
