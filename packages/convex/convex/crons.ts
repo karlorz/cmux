@@ -28,11 +28,19 @@ crons.daily(
 );
 
 // Recover crown evaluations stuck in pending/in_progress state
-// Runs every 5 minutes to detect evaluations that failed without proper error handling
+// Runs every hour to detect evaluations that failed without proper error handling
 crons.interval(
   "recover stuck crown evaluations",
-  { minutes: 5 },
+  { hours: 1 },
   internal.crown.recoverStuckEvaluations
+);
+
+// Auto-refresh crown evaluations that succeeded with empty diffs
+// Runs every hour to re-evaluate when fresh diffs may be available from GitHub
+crons.interval(
+  "auto-refresh empty diff evaluations",
+  { hours: 1 },
+  internal.crown.autoRefreshEmptyDiffEvaluations
 );
 
 export default crons;
