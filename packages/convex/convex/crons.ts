@@ -27,4 +27,13 @@ crons.daily(
   internal.sandboxInstanceMaintenance.cleanupOrphanedContainers
 );
 
+// Recover stuck crown evaluations
+// Tasks stuck in "pending" or "in_progress" for >5 minutes are marked as "error"
+// Runs every 5 minutes
+crons.interval(
+  "recover stuck crown evaluations",
+  { minutes: 5 },
+  internal.crown.recoverStuckEvaluations
+);
+
 export default crons;

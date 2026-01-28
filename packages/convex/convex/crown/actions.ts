@@ -18,6 +18,7 @@ import {
   CLOUDFLARE_GEMINI_BASE_URL,
 } from "@cmux/shared";
 import { action, internalAction } from "../_generated/server";
+import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { parseCrownEvaluationPrompt } from "./retryData";
@@ -617,3 +618,451 @@ export const retryEvaluation = internalAction({
     }
   },
 });
+
+// Type definitions for server-side crown evaluation
+interface TaskRunData {
+  _id: Id<"taskRuns">;
+  agentName?: string | null;
+  newBranch?: string | null;
+  gitDiff?: string | null;
+  status: string;
+}
+
+interface TaskData {
+  _id: Id<"tasks">;
+  text: string;
+  teamId: string;
+  userId: string;
+}
+
+interface EvaluationArgs {
+  taskId: Id<"tasks">;
+  teamId: string;
+  userId: string;
+}
+
+/**
+ * Build evaluation prompt for retry data storage (local version)
+ */
+function buildCrownEvaluationPromptLocal(
+  prompt: string,
+  candidates: Array<{
+    runId?: string;
+    agentName?: string;
+    modelName?: string;
+    gitDiff: string;
+    newBranch?: string | null;
+    index?: number;
+  }>
+): string {
+  return `Task: ${prompt}
+Candidates: ${JSON.stringify(
+    candidates.map((c, idx) => ({
+      runId: c.runId,
+      agentName: c.agentName,
+      modelName: c.modelName,
+      gitDiff: c.gitDiff,
+      newBranch: c.newBranch,
+      index: c.index ?? idx,
+    }))
+  )}`;
+}
+
+/**
+ * Server-side crown evaluation action.
+ * Called by crownWorkerComplete when all task runs are finished.
+ * This ensures crown evaluation happens even if the worker process terminates.
+ */
+export const evaluateFromServer = internalAction({
+  args: {
+    taskId: v.id("tasks"),
+    teamId: v.string(),
+    userId: v.string(),
+  },
+  handler: async (ctx, args): Promise<{
+    success: boolean;
+    alreadyEvaluated?: boolean;
+    winnerRunId?: Id<"taskRuns"> | null;
+    reason?: string;
+  }> => {
+    console.log(`[Crown] Starting server-side evaluation for task ${args.taskId}`);
+
+    // Get task
+    const task = await ctx.runQuery(internal.tasks.getByIdInternal, {
+      id: args.taskId,
+    }) as TaskData | null;
+
+    if (!task) {
+      console.error(`[Crown] Task ${args.taskId} not found`);
+      return { success: false, reason: "Task not found" };
+    }
+
+    if (task.teamId !== args.teamId || task.userId !== args.userId) {
+      console.error(`[Crown] Task ${args.taskId} unauthorized`);
+      return { success: false, reason: "Unauthorized" };
+    }
+
+    // Check if evaluation already exists
+    const existingEvaluation = await ctx.runQuery(
+      internal.crown.getEvaluationByTaskInternal,
+      {
+        taskId: args.taskId,
+        teamId: args.teamId,
+        userId: args.userId,
+      }
+    ) as { winnerRunId: Id<"taskRuns"> | null } | null;
+
+    if (existingEvaluation) {
+      console.log(`[Crown] Evaluation already exists for task ${args.taskId}`);
+      return {
+        success: true,
+        alreadyEvaluated: true,
+        winnerRunId: existingEvaluation.winnerRunId,
+      };
+    }
+
+    // Get all runs for this task
+    const runs = await ctx.runQuery(internal.taskRuns.listByTaskAndTeamInternal, {
+      taskId: args.taskId,
+      teamId: args.teamId,
+      userId: args.userId,
+    }) as TaskRunData[];
+
+    const completedRuns = runs.filter((run) => run.status === "completed");
+
+    console.log(
+      `[Crown] Task ${args.taskId} has ${completedRuns.length} completed runs out of ${runs.length} total`
+    );
+
+    if (completedRuns.length === 0) {
+      console.log(`[Crown] No completed runs for task ${args.taskId}`);
+      return { success: false, reason: "No completed runs" };
+    }
+
+    // Set crown status to in_progress
+    await ctx.runMutation(internal.tasks.setCrownEvaluationStatusInternal, {
+      taskId: args.taskId,
+      teamId: args.teamId,
+      userId: args.userId,
+      status: "in_progress",
+      clearError: true,
+    });
+
+    try {
+      if (completedRuns.length === 1) {
+        // Single run - skip AI evaluation, just summarize and crown
+        return await handleSingleRunCrown(ctx, task, completedRuns[0], args);
+      } else {
+        // Multiple runs - perform full AI evaluation
+        return await handleMultiRunEvaluation(ctx, task, completedRuns, args);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[Crown] Server-side evaluation failed for task ${args.taskId}:`, message);
+
+      await ctx.runMutation(internal.tasks.setCrownEvaluationStatusInternal, {
+        taskId: args.taskId,
+        teamId: args.teamId,
+        userId: args.userId,
+        status: "error",
+        errorMessage: message,
+      });
+
+      return { success: false, reason: message };
+    }
+  },
+});
+
+/**
+ * Handle single-run crown evaluation (no AI comparison needed).
+ * Just summarize the changes and crown the single winner.
+ */
+async function handleSingleRunCrown(
+  ctx: ActionCtx,
+  task: TaskData,
+  run: TaskRunData,
+  args: EvaluationArgs
+): Promise<{ success: boolean; winnerRunId?: Id<"taskRuns">; reason?: string }> {
+  console.log(`[Crown] Single run crown for task ${args.taskId}, run ${run._id}`);
+
+  const gitDiff = run.gitDiff ?? "";
+  const agentName = run.agentName ?? "unknown agent";
+
+  // Build retry data for potential future retries
+  const candidates = [
+    {
+      runId: run._id,
+      agentName,
+      modelName: agentName,
+      gitDiff,
+      newBranch: run.newBranch ?? null,
+      index: 0,
+    },
+  ];
+
+  const evaluationPrompt = buildCrownEvaluationPromptLocal(task.text, candidates);
+
+  // Store retry data
+  const retryData = JSON.stringify({
+    evaluationPrompt,
+    candidateRunIds: [run._id],
+    teamId: args.teamId,
+    userId: args.userId,
+  });
+
+  await ctx.runMutation(internal.tasks.setCrownRetryDataInternal, {
+    taskId: args.taskId,
+    teamId: args.teamId,
+    userId: args.userId,
+    retryData,
+    overwrite: false,
+  });
+
+  // Perform summarization
+  let summary: string | undefined;
+  try {
+    console.log(`[Crown] Summarizing single run ${run._id}`);
+    const summaryResponse = await performCrownSummarization(task.text, gitDiff);
+    summary = summaryResponse?.summary?.slice(0, 8000);
+  } catch (summaryError) {
+    const message =
+      summaryError instanceof Error ? summaryError.message : String(summaryError);
+    console.error(`[Crown] Summary failed for single run ${run._id}:`, message);
+
+    await ctx.runMutation(internal.crown.workerFinalize, {
+      taskId: args.taskId,
+      teamId: args.teamId,
+      userId: args.userId,
+      winnerRunId: null,
+      reason: "Summarization failed",
+      evaluationPrompt,
+      evaluationResponse: JSON.stringify({ winner: 0, reason: "Single run" }),
+      candidateRunIds: [run._id],
+      isFallback: false,
+      evaluationNote: `Summarization failed: ${message}`,
+    });
+
+    return { success: false, reason: "Summarization failed" };
+  }
+
+  if (!summary || summary.trim().length === 0) {
+    await ctx.runMutation(internal.crown.workerFinalize, {
+      taskId: args.taskId,
+      teamId: args.teamId,
+      userId: args.userId,
+      winnerRunId: null,
+      reason: "Summarization returned empty output",
+      evaluationPrompt,
+      evaluationResponse: JSON.stringify({ winner: 0, reason: "Single run" }),
+      candidateRunIds: [run._id],
+      isFallback: false,
+      evaluationNote: "Summarization returned empty output",
+    });
+
+    return { success: false, reason: "Summarization returned empty output" };
+  }
+
+  // Generate PR metadata
+  const pullRequestTitle = buildPullRequestTitle(task.text);
+  const pullRequestDescription = buildPullRequestBody({
+    summary,
+    prompt: task.text,
+    agentName,
+    branch: run.newBranch ?? "",
+    taskId: args.taskId,
+    runId: run._id,
+  });
+
+  // Finalize with the single run as winner
+  await ctx.runMutation(internal.crown.workerFinalize, {
+    taskId: args.taskId,
+    teamId: args.teamId,
+    userId: args.userId,
+    winnerRunId: run._id,
+    reason: "Only one model completed the task",
+    summary,
+    evaluationPrompt,
+    evaluationResponse: JSON.stringify({
+      winner: 0,
+      reason: "Only one model completed the task",
+    }),
+    candidateRunIds: [run._id],
+    isFallback: false,
+    pullRequestTitle,
+    pullRequestDescription,
+  });
+
+  console.log(`[Crown] Single run crown completed for task ${args.taskId}`);
+  return { success: true, winnerRunId: run._id };
+}
+
+/**
+ * Handle multi-run crown evaluation with AI comparison.
+ */
+async function handleMultiRunEvaluation(
+  ctx: ActionCtx,
+  task: TaskData,
+  completedRuns: TaskRunData[],
+  args: EvaluationArgs
+): Promise<{ success: boolean; winnerRunId?: Id<"taskRuns">; reason?: string }> {
+  console.log(
+    `[Crown] Multi-run evaluation for task ${args.taskId} with ${completedRuns.length} candidates`
+  );
+
+  // Build candidates for evaluation
+  const candidates: CrownEvaluationCandidate[] = completedRuns.map((run, idx) => ({
+    runId: run._id,
+    agentName: run.agentName ?? `candidate-${idx}`,
+    modelName: run.agentName ?? `candidate-${idx}`,
+    gitDiff: run.gitDiff ?? "",
+    newBranch: run.newBranch ?? null,
+    index: idx,
+  }));
+
+  const evaluationPrompt = buildCrownEvaluationPromptLocal(task.text, candidates);
+  const candidateRunIds = completedRuns.map((r) => r._id);
+
+  // Store retry data
+  const retryData = JSON.stringify({
+    evaluationPrompt,
+    candidateRunIds,
+    teamId: args.teamId,
+    userId: args.userId,
+  });
+
+  await ctx.runMutation(internal.tasks.setCrownRetryDataInternal, {
+    taskId: args.taskId,
+    teamId: args.teamId,
+    userId: args.userId,
+    retryData,
+    overwrite: true,
+  });
+
+  // Perform AI evaluation
+  const evaluationResponse = await performCrownEvaluation(task.text, candidates);
+
+  console.log(`[Crown] Multi-run evaluation result:`, {
+    winner: evaluationResponse.winner,
+    isFallback: evaluationResponse.isFallback,
+  });
+
+  if (evaluationResponse.winner === null) {
+    // Evaluation failed - store error state
+    await ctx.runMutation(internal.crown.workerFinalize, {
+      taskId: args.taskId,
+      teamId: args.teamId,
+      userId: args.userId,
+      winnerRunId: null,
+      reason: evaluationResponse.reason,
+      evaluationPrompt,
+      evaluationResponse: JSON.stringify(evaluationResponse),
+      candidateRunIds,
+      isFallback: true,
+      evaluationNote:
+        evaluationResponse.evaluationNote || "Evaluation failed",
+    });
+
+    return { success: false, reason: evaluationResponse.reason };
+  }
+
+  // Get winning candidate
+  const winnerCandidate = candidates[evaluationResponse.winner];
+  if (!winnerCandidate) {
+    const errorMsg = `Winner index ${evaluationResponse.winner} out of bounds`;
+    console.error(`[Crown] ${errorMsg}`);
+
+    await ctx.runMutation(internal.tasks.setCrownEvaluationStatusInternal, {
+      taskId: args.taskId,
+      teamId: args.teamId,
+      userId: args.userId,
+      status: "error",
+      errorMessage: errorMsg,
+    });
+
+    return { success: false, reason: errorMsg };
+  }
+
+  // Summarize winner's changes
+  let summary: string | undefined;
+  try {
+    console.log(`[Crown] Summarizing winner ${winnerCandidate.runId}`);
+    const summaryResponse = await performCrownSummarization(
+      task.text,
+      winnerCandidate.gitDiff ?? ""
+    );
+    summary = summaryResponse?.summary?.slice(0, 8000);
+  } catch (summaryError) {
+    const message =
+      summaryError instanceof Error ? summaryError.message : String(summaryError);
+    console.error(`[Crown] Summary failed for winner:`, message);
+
+    await ctx.runMutation(internal.crown.workerFinalize, {
+      taskId: args.taskId,
+      teamId: args.teamId,
+      userId: args.userId,
+      winnerRunId: null,
+      reason: "Summarization failed",
+      evaluationPrompt,
+      evaluationResponse: JSON.stringify(evaluationResponse),
+      candidateRunIds,
+      isFallback: false,
+      evaluationNote: `Summarization failed: ${message}`,
+    });
+
+    return { success: false, reason: "Summarization failed" };
+  }
+
+  if (!summary || summary.trim().length === 0) {
+    await ctx.runMutation(internal.crown.workerFinalize, {
+      taskId: args.taskId,
+      teamId: args.teamId,
+      userId: args.userId,
+      winnerRunId: null,
+      reason: "Summarization returned empty output",
+      evaluationPrompt,
+      evaluationResponse: JSON.stringify(evaluationResponse),
+      candidateRunIds,
+      isFallback: false,
+      evaluationNote: "Summarization returned empty output",
+    });
+
+    return { success: false, reason: "Summarization returned empty output" };
+  }
+
+  // Generate PR metadata
+  const pullRequestTitle = buildPullRequestTitle(task.text);
+  const pullRequestDescription = buildPullRequestBody({
+    summary,
+    prompt: task.text,
+    agentName: winnerCandidate.agentName ?? "unknown",
+    branch: winnerCandidate.newBranch ?? "",
+    taskId: args.taskId,
+    runId: winnerCandidate.runId ?? "",
+  });
+
+  // Finalize with winner
+  await ctx.runMutation(internal.crown.workerFinalize, {
+    taskId: args.taskId,
+    teamId: args.teamId,
+    userId: args.userId,
+    winnerRunId: winnerCandidate.runId as Id<"taskRuns">,
+    reason: evaluationResponse.reason,
+    summary,
+    evaluationPrompt,
+    evaluationResponse: JSON.stringify(evaluationResponse),
+    candidateRunIds,
+    isFallback: false,
+    pullRequestTitle,
+    pullRequestDescription,
+  });
+
+  // Clear retry data on success
+  await ctx.runMutation(internal.tasks.clearCrownRetryData, {
+    taskId: args.taskId,
+  });
+
+  console.log(
+    `[Crown] Multi-run evaluation completed, winner: ${winnerCandidate.runId}`
+  );
+  return { success: true, winnerRunId: winnerCandidate.runId as Id<"taskRuns"> };
+}

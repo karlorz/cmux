@@ -1061,6 +1061,71 @@ export const crownWorkerComplete = httpAction(async (ctx, req) => {
     });
   }
 
+  // Server-side crown evaluation trigger:
+  // After marking this task run as complete, check if all runs are done.
+  // If so, schedule server-side crown evaluation to avoid relying on the worker process.
+  if (updatedRun) {
+    try {
+      const runsForTask = await ctx.runQuery(
+        internal.taskRuns.listByTaskAndTeamInternal,
+        {
+          taskId: updatedRun.taskId,
+          teamId: auth.payload.teamId,
+          userId: auth.payload.userId,
+        }
+      );
+
+      const completedRuns = runsForTask.filter(
+        (run: TaskRunDoc) => run.status === "completed"
+      );
+      const allComplete = runsForTask.every(
+        (run: TaskRunDoc) => run.status === "completed" || run.status === "failed"
+      );
+
+      // Only trigger server-side evaluation if all runs are finished
+      if (allComplete && completedRuns.length >= 1) {
+        // Check if evaluation already exists
+        const existingEvaluation = await ctx.runQuery(
+          internal.crown.getEvaluationByTaskInternal,
+          {
+            taskId: updatedRun.taskId,
+            teamId: auth.payload.teamId,
+            userId: auth.payload.userId,
+          }
+        );
+
+        if (!existingEvaluation) {
+          // Schedule server-side crown evaluation
+          // This ensures crown evaluation happens even if worker terminates
+          await ctx.scheduler.runAfter(
+            0,
+            internal.crown.actions.evaluateFromServer,
+            {
+              taskId: updatedRun.taskId,
+              teamId: auth.payload.teamId,
+              userId: auth.payload.userId,
+            }
+          );
+          console.log(
+            "[convex.crown] Scheduled server-side crown evaluation",
+            {
+              taskId: updatedRun.taskId,
+              taskRunId,
+              completedRuns: completedRuns.length,
+              totalRuns: runsForTask.length,
+            }
+          );
+        }
+      }
+    } catch (error) {
+      // Don't fail the completion if scheduling crown evaluation fails
+      console.error(
+        "[convex.crown] Failed to schedule server-side crown evaluation",
+        { taskRunId, error }
+      );
+    }
+  }
+
   const response = {
     ok: true,
     taskRun: updatedRun

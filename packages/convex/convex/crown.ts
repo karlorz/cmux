@@ -353,6 +353,67 @@ export const getEvaluationByTaskInternal = internalQuery({
   },
 });
 
+/**
+ * Recovery cron: Detect and fix stuck crown evaluations.
+ * Tasks stuck in "pending" or "in_progress" for >5 minutes are marked as "error"
+ * so users can retry them via the UI.
+ */
+export const recoverStuckEvaluations = internalMutation({
+  handler: async (ctx) => {
+    const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+
+    // Find tasks stuck in pending/in_progress for >5 minutes
+    // We check updatedAt to determine when they became stuck
+    const allTasks = await ctx.db.query("tasks").collect();
+
+    const stuckTasks = allTasks.filter((task) => {
+      const status = task.crownEvaluationStatus;
+      const isStuckStatus = status === "pending" || status === "in_progress";
+      const isOld = (task.updatedAt ?? 0) < fiveMinutesAgo;
+      return isStuckStatus && isOld;
+    });
+
+    let recovered = 0;
+    for (const task of stuckTasks) {
+      // Check if there's no existing evaluation
+      const existingEvaluation = await ctx.db
+        .query("crownEvaluations")
+        .withIndex("by_task", (q) => q.eq("taskId", task._id))
+        .filter((q) => q.eq(q.field("teamId"), task.teamId))
+        .filter((q) => q.eq(q.field("userId"), task.userId))
+        .first();
+
+      if (!existingEvaluation) {
+        // Mark as error so user can retry
+        await ctx.db.patch(task._id, {
+          crownEvaluationStatus: "error",
+          crownEvaluationError:
+            "Crown evaluation timed out after 5 minutes. Click retry to try again.",
+          updatedAt: Date.now(),
+        });
+        recovered++;
+        console.log(`[crown] Recovered stuck evaluation for task ${task._id}`);
+      } else {
+        // Evaluation exists but status was wrong - fix the status
+        await ctx.db.patch(task._id, {
+          crownEvaluationStatus: "succeeded",
+          crownEvaluationError: undefined,
+          updatedAt: Date.now(),
+        });
+        console.log(
+          `[crown] Fixed status for task ${task._id} (evaluation already exists)`
+        );
+      }
+    }
+
+    if (recovered > 0) {
+      console.log(`[crown] Recovery cron: recovered ${recovered} stuck evaluations`);
+    }
+
+    return { recovered, checked: stuckTasks.length };
+  },
+});
+
 export const workerFinalize = internalMutation({
   args: {
     taskId: v.id("tasks"),
