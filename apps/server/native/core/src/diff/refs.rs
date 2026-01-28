@@ -395,6 +395,10 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
             }
         }
     }
+
+    let mut head_oid = head_oid; // Make mutable for potential update
+    let repo_path = std::path::Path::new(&cwd);
+
     let t_merge_base = Instant::now();
     // Compute merge-base; prefer BFS (pure gix) to avoid shelling out
     let mut compare_base_oid = crate::merge_base::merge_base(
@@ -452,6 +456,42 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
         "[native.refs] MB({}, {})={}",
         resolved_base_oid, head_oid, compare_base_oid
     );
+
+    // Detect potentially stale refs: if merge-base == head, the branch appears to have no commits
+    // ahead of base. This is suspicious and may indicate a stale ref that needs fetching.
+    // This happens when a branch is pushed but the local cache has old refs.
+    let repo = if compare_base_oid == head_oid {
+        let fetch_ok =
+            crate::repo::cache::fetch_specific_ref_with_auth(repo_path, head_ref, auth_token)
+                .unwrap_or(false);
+        if fetch_ok {
+            // Re-open repo and re-resolve head after targeted fetch
+            match gix::open(&cwd) {
+                Ok(repo_fresh) => {
+                    if let Ok(fresh_oid) = oid_from_rev_parse(&repo_fresh, head_ref) {
+                        if fresh_oid != head_oid {
+                            head_oid = fresh_oid;
+                            // Recompute merge-base with updated head
+                            compare_base_oid = crate::merge_base::merge_base(
+                                &cwd,
+                                &repo_fresh,
+                                resolved_base_oid,
+                                head_oid,
+                                crate::merge_base::MergeBaseStrategy::Bfs,
+                            )
+                            .unwrap_or(resolved_base_oid);
+                        }
+                    }
+                    repo_fresh
+                }
+                Err(_) => repo,
+            }
+        } else {
+            repo
+        }
+    } else {
+        repo
+    };
 
     let t_tree_ids = Instant::now();
     let base_commit = repo.find_object(compare_base_oid)?.try_into_commit()?;

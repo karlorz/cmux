@@ -96,7 +96,7 @@ export default defineConfig({
   renderer: {
     root: ".",
     envDir: repoRoot,
-    base: "./",
+    base: "/",
     build: {
       rollupOptions: {
         input: {
