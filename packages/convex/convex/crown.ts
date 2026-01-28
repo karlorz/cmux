@@ -348,6 +348,7 @@ export const retryCrownEvaluation = authMutation({
         crownEvaluationError: undefined,
         crownEvaluationRetryCount: nextRetryCount,
         crownEvaluationLastRetryAt: now,
+        crownEvaluationIsRefreshing: false,
         updatedAt: now,
       });
 
@@ -375,6 +376,7 @@ export const retryCrownEvaluation = authMutation({
       crownEvaluationError: undefined,
       crownEvaluationRetryCount: nextRetryCount,
       crownEvaluationLastRetryAt: now,
+      crownEvaluationIsRefreshing: false,
       updatedAt: now,
     });
 
@@ -472,7 +474,7 @@ export const refreshCrownEvaluation = authMutation({
     // Delete the existing evaluation record
     await ctx.db.delete(existingEvaluation._id);
 
-    // Reset task to pending state
+    // Reset task to pending state (mark as refreshing, not retrying)
     const nextRetryCount = (task.crownEvaluationRetryCount ?? 0) + 1;
     await ctx.db.patch(args.taskId, {
       crownEvaluationStatus: "pending",
@@ -480,6 +482,7 @@ export const refreshCrownEvaluation = authMutation({
       crownEvaluationRetryData: undefined,
       crownEvaluationRetryCount: nextRetryCount,
       crownEvaluationLastRetryAt: now,
+      crownEvaluationIsRefreshing: true,
       isCompleted: false,
       updatedAt: now,
     });
@@ -636,6 +639,7 @@ export const workerFinalize = internalMutation({
         crownEvaluationRetryData: retryDataToStore,
         crownEvaluationRetryCount: currentRetryCount,
         crownEvaluationLastRetryAt: task.crownEvaluationLastRetryAt,
+        crownEvaluationIsRefreshing: undefined,
         isCompleted: true, // Mark completed to unblock the task flow
         updatedAt: now,
       });
@@ -712,6 +716,7 @@ export const workerFinalize = internalMutation({
       crownEvaluationRetryData: undefined,
       crownEvaluationRetryCount: undefined,
       crownEvaluationLastRetryAt: undefined,
+      crownEvaluationIsRefreshing: undefined,
       ...(finalPullRequestTitle ? { pullRequestTitle: finalPullRequestTitle } : {}),
       ...(args.pullRequestDescription
         ? { pullRequestDescription: args.pullRequestDescription }

@@ -130,6 +130,8 @@ const convexSchema = defineSchema({
     crownEvaluationRetryCount: v.optional(v.number()),
     /** Timestamp of the last retry attempt */
     crownEvaluationLastRetryAt: v.optional(v.number()),
+    /** True when refreshing a succeeded evaluation (vs retrying a failed one) */
+    crownEvaluationIsRefreshing: v.optional(v.boolean()),
     mergeStatus: v.optional(
       v.union(
         v.literal("none"), // No PR activity yet

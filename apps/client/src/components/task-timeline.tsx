@@ -317,16 +317,24 @@ export function TaskTimeline({
           task?.crownEvaluationStatus === "in_progress") &&
           (task?.crownEvaluationRetryCount ?? 0) > 0);
 
-      if (isInitialEvaluation) {
-        // Initial evaluation in progress - show neutral evaluating message
+      // Check if this is a refresh (re-evaluating a previously succeeded evaluation)
+      const isRefreshingNow =
+        isRetryingNow && task?.crownEvaluationIsRefreshing === true;
+
+      if (isInitialEvaluation || isRefreshingNow) {
+        // Initial evaluation OR refresh in progress - show neutral evaluating message
         timelineEvents.push({
           id: "crown-evaluation-pending",
           type: "crown_evaluation",
           timestamp: task?.updatedAt || Date.now(),
           isFallback: false,
           isEvaluating: true,
-          evaluationNote: "Evaluating submissions...",
-          crownReason: "Crown evaluation in progress",
+          evaluationNote: isRefreshingNow
+            ? "Refreshing crown evaluation..."
+            : "Evaluating submissions...",
+          crownReason: isRefreshingNow
+            ? "Refresh in progress"
+            : "Crown evaluation in progress",
         });
       } else {
         // Failed evaluation or retry in progress - show fallback/retry UI
@@ -696,15 +704,16 @@ export function TaskTimeline({
                 {isRetryCooldownActive ? `Cooldown: ${cooldownSeconds}s` : null}
               </div>
             )}
-            {/* Show refresh button for succeeded evaluations with empty diffs */}
+            {/* Show refresh button for all succeeded evaluations */}
             {task?.crownEvaluationStatus === "succeeded" &&
-              crownEvaluation?.hadEmptyDiffs &&
               !isRetrying && (
                 <div className="mt-2">
-                  <div className="text-[13px] text-neutral-600 dark:text-neutral-400 mb-2">
-                    <AlertCircle className="inline size-3 mr-1.5" />
-                    Code diffs may have been incomplete. Try refreshing to fetch updated diffs from GitHub.
-                  </div>
+                  {crownEvaluation?.hadEmptyDiffs && (
+                    <div className="text-[13px] text-neutral-600 dark:text-neutral-400 mb-2">
+                      <AlertCircle className="inline size-3 mr-1.5" />
+                      Code diffs may have been incomplete. Try refreshing to fetch updated diffs from GitHub.
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={handleRefreshEvaluation}
@@ -716,7 +725,7 @@ export function TaskTimeline({
                       ? `Refresh in ${cooldownSeconds}s`
                       : "Refresh Evaluation"}
                   </button>
-                  {crownEvaluation.autoRefreshCount !== undefined &&
+                  {crownEvaluation?.autoRefreshCount !== undefined &&
                     crownEvaluation.autoRefreshCount > 0 && (
                       <div className="mt-1 text-[12px] text-neutral-500 dark:text-neutral-500">
                         Auto-refreshed {crownEvaluation.autoRefreshCount} time
@@ -727,7 +736,6 @@ export function TaskTimeline({
               )}
             {/* Show refreshing state */}
             {task?.crownEvaluationStatus === "succeeded" &&
-              crownEvaluation?.hadEmptyDiffs &&
               isRetrying && (
                 <div className="mt-2">
                   <button
