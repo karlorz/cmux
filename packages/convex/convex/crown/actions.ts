@@ -19,7 +19,7 @@ import {
 } from "@cmux/shared";
 import { action, internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import { parseCrownEvaluationPrompt } from "./retryData";
 
 const OPENAI_CROWN_MODEL = "gpt-5-mini-2025-08-07";
@@ -615,5 +615,170 @@ export const retryEvaluation = internalAction({
       });
       throw error;
     }
+  },
+});
+
+/**
+ * Fresh retry evaluation when stored retry data is missing.
+ * This happens when evaluation failed before storing candidate data.
+ *
+ * Since git diffs are not stored in the database, this action marks
+ * the task for manual intervention - user needs to restart the sandbox
+ * workflow to collect fresh diffs.
+ */
+export const retryEvaluationFresh = internalAction({
+  args: {
+    taskId: v.id("tasks"),
+    teamId: v.string(),
+    userId: v.string(),
+    taskRunIds: v.array(v.id("taskRuns")),
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ success: boolean; winnerRunId?: string; reason?: string }> => {
+    console.log(
+      `[Crown] Fresh retry evaluation requested for task ${args.taskId}`
+    );
+
+    // Get task runs to check their status
+    const taskRuns: Array<Doc<"taskRuns"> | null> = await Promise.all(
+      args.taskRunIds.map(
+        (id): Promise<Doc<"taskRuns"> | null> =>
+          ctx.runQuery(internal.taskRuns.getById, { id })
+      )
+    );
+
+    const validRuns = taskRuns.filter(
+      (run): run is Doc<"taskRuns"> =>
+        run !== null && run.status === "completed"
+    );
+
+    if (validRuns.length === 0) {
+      await ctx.runMutation(internal.tasks.setCrownEvaluationStatusInternal, {
+        taskId: args.taskId,
+        teamId: args.teamId,
+        userId: args.userId,
+        status: "error",
+        errorMessage: "No completed task runs found for fresh retry.",
+      });
+      return { success: false, reason: "No completed runs" };
+    }
+
+    // Check if any sandbox is still running
+    const runningSandboxes = validRuns.filter(
+      (run: Doc<"taskRuns">) => run.vscode?.status === "running"
+    );
+
+    if (runningSandboxes.length === 0) {
+      // No running sandboxes - cannot collect fresh diffs
+      await ctx.runMutation(internal.tasks.setCrownEvaluationStatusInternal, {
+        taskId: args.taskId,
+        teamId: args.teamId,
+        userId: args.userId,
+        status: "error",
+        errorMessage:
+          "Cannot retry: All sandboxes have been stopped. " +
+          "Git diffs cannot be collected without a running sandbox. " +
+          "Please create a new task to re-run the evaluation.",
+      });
+      return { success: false, reason: "No running sandboxes" };
+    }
+
+    // Get the task for context
+    const task = await ctx.runQuery(internal.tasks.getByIdInternal, {
+      id: args.taskId,
+    });
+
+    if (!task) {
+      await ctx.runMutation(internal.tasks.setCrownEvaluationStatusInternal, {
+        taskId: args.taskId,
+        teamId: args.teamId,
+        userId: args.userId,
+        status: "error",
+        errorMessage: "Task not found",
+      });
+      return { success: false, reason: "Task not found" };
+    }
+
+    // For single run: auto-crown since no comparison needed
+    if (validRuns.length === 1) {
+      const singleRun: Doc<"taskRuns"> = validRuns[0];
+      console.log(
+        `[Crown] Single run found, auto-crowning ${singleRun._id}`
+      );
+
+      try {
+        // Generate summary without diff (best effort)
+        let summary: string | undefined;
+        try {
+          const summaryResponse = await performCrownSummarization(
+            task.text || "Task completion",
+            "<git diff not available - sandbox evaluation>"
+          );
+          summary = summaryResponse?.summary?.slice(0, 8000);
+        } catch (summaryError) {
+          console.warn(
+            "[Crown] Summary generation failed for fresh retry",
+            summaryError
+          );
+          summary = "Summary not available - evaluation retried without git diff data.";
+        }
+
+        // Finalize with single run as winner
+        await ctx.runMutation(internal.crown.workerFinalize, {
+          taskId: args.taskId,
+          teamId: args.teamId,
+          userId: args.userId,
+          winnerRunId: singleRun._id,
+          reason: "Single completed run - automatically selected as winner.",
+          summary,
+          evaluationPrompt: `Task: ${task.text || "N/A"}`,
+          evaluationResponse: JSON.stringify({
+            winner: 0,
+            reason: "Single run auto-crowned",
+          }),
+          candidateRunIds: [singleRun._id],
+          isFallback: false,
+          evaluationNote:
+            "Fresh retry with single run - no comparison evaluation needed.",
+        });
+
+        console.log(
+          `[Crown] Fresh retry succeeded with single run: ${singleRun._id}`
+        );
+        return { success: true, winnerRunId: singleRun._id };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("[Crown] Fresh retry failed", { error: message });
+        await ctx.runMutation(internal.tasks.setCrownEvaluationStatusInternal, {
+          taskId: args.taskId,
+          teamId: args.teamId,
+          userId: args.userId,
+          status: "error",
+          errorMessage: `Fresh retry failed: ${message}`,
+        });
+        return { success: false, reason: message };
+      }
+    }
+
+    // Multiple runs - cannot perform fair evaluation without git diffs
+    // Mark as error with guidance
+    await ctx.runMutation(internal.tasks.setCrownEvaluationStatusInternal, {
+      taskId: args.taskId,
+      teamId: args.teamId,
+      userId: args.userId,
+      status: "error",
+      errorMessage:
+        `Cannot retry with ${validRuns.length} completed runs: ` +
+        "Git diffs were not stored from the original evaluation. " +
+        "To compare multiple runs, please open each sandbox and use the " +
+        "'Crown Winner' button in the UI to manually select the best solution.",
+    });
+
+    return {
+      success: false,
+      reason: "Multiple runs require manual selection without stored diffs",
+    };
   },
 });

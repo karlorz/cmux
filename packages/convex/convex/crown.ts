@@ -304,17 +304,69 @@ export const retryCrownEvaluation = authMutation({
       );
     }
 
-    // Check if we have retry data
-    if (!task.crownEvaluationRetryData) {
-      console.log(`[Crown] No retry data available for task ${args.taskId}`);
-      throw new Error(
-        "No retry data available. This evaluation cannot be retried."
-      );
-    }
-
     const nextRetryCount = (task.crownEvaluationRetryCount ?? 0) + 1;
 
-    // Reset to pending for re-evaluation
+    // Check if we have retry data
+    if (!task.crownEvaluationRetryData) {
+      console.log(
+        `[Crown] No stored retry data for task ${args.taskId}, checking for running sandboxes`
+      );
+
+      // Get completed task runs to check sandbox status
+      const taskRuns = await ctx.db
+        .query("taskRuns")
+        .withIndex("by_task", (q) => q.eq("taskId", args.taskId))
+        .filter((q) => q.eq(q.field("teamId"), teamId))
+        .filter((q) => q.eq(q.field("userId"), userId))
+        .filter((q) => q.eq(q.field("status"), "completed"))
+        .collect();
+
+      if (taskRuns.length === 0) {
+        throw new Error(
+          "Cannot retry: No completed task runs found for this task."
+        );
+      }
+
+      // Check if any sandbox is still running
+      const hasRunningSandbox = taskRuns.some(
+        (run) => run.vscode?.status === "running"
+      );
+
+      if (!hasRunningSandbox) {
+        throw new Error(
+          "Cannot retry: No sandbox available to collect diffs. " +
+            "The sandboxes have been stopped. Please create a new task."
+        );
+      }
+
+      // Reset to pending and schedule fresh evaluation
+      await ctx.db.patch(args.taskId, {
+        crownEvaluationStatus: "pending",
+        crownEvaluationError: undefined,
+        crownEvaluationRetryCount: nextRetryCount,
+        crownEvaluationLastRetryAt: now,
+        updatedAt: now,
+      });
+
+      // Schedule fresh evaluation that will collect diffs from running sandbox
+      await ctx.scheduler.runAfter(
+        0,
+        internal.crown.actions.retryEvaluationFresh,
+        {
+          taskId: args.taskId,
+          teamId,
+          userId,
+          taskRunIds: taskRuns.map((r) => r._id),
+        }
+      );
+
+      console.log(
+        `[Crown] Scheduled fresh retry evaluation for task ${args.taskId}`
+      );
+      return "pending";
+    }
+
+    // Reset to pending for re-evaluation (has stored retry data)
     await ctx.db.patch(args.taskId, {
       crownEvaluationStatus: "pending",
       crownEvaluationError: undefined,
@@ -323,7 +375,7 @@ export const retryCrownEvaluation = authMutation({
       updatedAt: now,
     });
 
-    // Schedule the retry action
+    // Schedule the retry action with stored data
     await ctx.scheduler.runAfter(0, internal.crown.actions.retryEvaluation, {
       taskId: args.taskId,
     });
@@ -520,5 +572,90 @@ export const workerFinalize = internalMutation({
     });
 
     return args.winnerRunId;
+  },
+});
+
+/**
+ * Recover crown evaluations that are stuck in pending/in_progress state.
+ * This can happen when the worker process crashes or terminates before
+ * completing the crown evaluation flow.
+ *
+ * Runs every 5 minutes via cron job.
+ */
+export const recoverStuckEvaluations = internalMutation({
+  handler: async (ctx) => {
+    const STUCK_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+    const cutoffTime = Date.now() - STUCK_THRESHOLD_MS;
+
+    // Find tasks stuck in pending/in_progress for >5 minutes
+    const pendingTasks = await ctx.db
+      .query("tasks")
+      .filter((q) =>
+        q.or(
+          q.eq(q.field("crownEvaluationStatus"), "pending"),
+          q.eq(q.field("crownEvaluationStatus"), "in_progress")
+        )
+      )
+      .collect();
+
+    const stuckTasks = pendingTasks.filter(
+      (task) => task.updatedAt && task.updatedAt < cutoffTime
+    );
+
+    if (stuckTasks.length === 0) {
+      return { recovered: 0 };
+    }
+
+    console.log(
+      `[crown] Found ${stuckTasks.length} stuck crown evaluations to recover`
+    );
+
+    let recoveredCount = 0;
+
+    for (const task of stuckTasks) {
+      // Check if there's already an evaluation for this task
+      const existingEvaluation = await ctx.db
+        .query("crownEvaluations")
+        .withIndex("by_task", (q) => q.eq("taskId", task._id))
+        .filter((q) =>
+          q.and(
+            q.eq(q.field("teamId"), task.teamId),
+            q.eq(q.field("userId"), task.userId)
+          )
+        )
+        .first();
+
+      if (existingEvaluation) {
+        // Evaluation exists but status not updated - fix the status
+        console.log(
+          `[crown] Task ${task._id} has evaluation but wrong status, fixing to succeeded`
+        );
+        await ctx.db.patch(task._id, {
+          crownEvaluationStatus: "succeeded",
+          crownEvaluationError: undefined,
+          updatedAt: Date.now(),
+        });
+        recoveredCount++;
+        continue;
+      }
+
+      // No evaluation exists - mark as error so user can retry
+      const stuckDuration = Math.round(
+        (Date.now() - (task.updatedAt ?? task.createdAt ?? Date.now())) / 1000 / 60
+      );
+      console.log(
+        `[crown] Recovering stuck evaluation for task ${task._id} (stuck for ${stuckDuration} minutes)`
+      );
+
+      await ctx.db.patch(task._id, {
+        crownEvaluationStatus: "error",
+        crownEvaluationError: `Crown evaluation timed out after ${stuckDuration} minutes. This may have been caused by a worker crash or network issue. Click "Retry" to try again.`,
+        updatedAt: Date.now(),
+      });
+      recoveredCount++;
+    }
+
+    console.log(`[crown] Recovered ${recoveredCount} stuck crown evaluations`);
+    return { recovered: recoveredCount };
   },
 });
