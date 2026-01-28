@@ -36,10 +36,15 @@ const RETRY_BASE_DELAY_MS = 1000; // 1 second base delay, doubles each retry
 
 /**
  * Build PR title from task prompt (inline version for Convex action)
+ * @param prompt - The task prompt
+ * @param isCrownCompetition - If true, adds [Crown] prefix (for multi-candidate competition)
  */
-function buildPullRequestTitle(prompt: string): string {
+function buildPullRequestTitle(
+  prompt: string,
+  isCrownCompetition = true
+): string {
   const base = prompt.trim() || "cmux changes";
-  const title = `[Crown] ${base}`;
+  const title = isCrownCompetition ? `[Crown] ${base}` : base;
   return title.length > 72 ? `${title.slice(0, 69)}...` : title;
 }
 
@@ -570,7 +575,9 @@ export const retryEvaluation = internalAction({
       }
 
       // Generate PR title and description (for consistency with normal path)
-      const pullRequestTitle = buildPullRequestTitle(parsedData.prompt);
+      // Only use [Crown] prefix if there were multiple candidates (competition)
+      const isCrownCompetition = retryData.candidateRunIds.length > 1;
+      const pullRequestTitle = buildPullRequestTitle(parsedData.prompt, isCrownCompetition);
       const pullRequestDescription = buildPullRequestBody({
         summary,
         prompt: parsedData.prompt,

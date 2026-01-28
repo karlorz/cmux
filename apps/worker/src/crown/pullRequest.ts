@@ -8,9 +8,12 @@ import type {
   WorkerRunContext,
 } from "./types";
 
-export function buildPullRequestTitle(prompt: string): string {
+export function buildPullRequestTitle(
+  prompt: string,
+  isCrownCompetition = true
+): string {
   const base = prompt.trim() || "cmux changes";
-  const title = `[Crown] ${base}`;
+  const title = isCrownCompetition ? `[Crown] ${base}` : base;
   return title.length > 72 ? `${title.slice(0, 69)}...` : title;
 }
 

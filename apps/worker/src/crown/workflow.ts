@@ -546,6 +546,20 @@ async function startCrownEvaluation({
       summaryPreview: summary?.slice(0, 120),
     });
 
+    // Generate PR title and description for single run (no [Crown] prefix since no competition)
+    const pullRequestTitle = buildPullRequestTitle(
+      crownData.task?.text || "cmux changes",
+      false // Not a crown competition
+    );
+    const pullRequestDescription = buildPullRequestBody({
+      summary,
+      prompt: crownData.task?.text || "Task description not available",
+      agentName: candidate.agentName,
+      branch: candidate.newBranch || "",
+      taskId: crownData.taskId,
+      runId: candidate.runId,
+    });
+
     await convexRequest(
       "/api/crown/finalize",
       runContext.token,
@@ -560,6 +574,8 @@ async function startCrownEvaluation({
         }),
         candidateRunIds: [candidate.runId],
         summary,
+        pullRequestTitle,
+        pullRequestDescription,
       },
       baseUrlOverride
     );
@@ -707,7 +723,8 @@ async function startCrownEvaluation({
     : undefined;
 
   // Always generate PR title and description (for manual draft PRs even if auto-PR is disabled)
-  const pullRequestTitle = buildPullRequestTitle(promptText);
+  // Use [Crown] prefix since this is a multi-candidate competition
+  const pullRequestTitle = buildPullRequestTitle(promptText, true);
   const pullRequestDescription = buildPullRequestBody({
     summary,
     prompt: promptText,
