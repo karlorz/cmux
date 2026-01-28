@@ -3,6 +3,7 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
+import { Octokit } from "octokit";
 import { generateObject, type LanguageModel } from "ai";
 import { ConvexError, v } from "convex/values";
 import {
@@ -21,6 +22,7 @@ import { action, internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import { parseCrownEvaluationPrompt } from "./retryData";
+import { fetchInstallationAccessToken } from "../../_shared/githubApp";
 
 const OPENAI_CROWN_MODEL = "gpt-5-mini-2025-08-07";
 const ANTHROPIC_CROWN_MODEL = "claude-sonnet-4-5-20250929";
@@ -31,6 +33,65 @@ type CrownProvider = (typeof CROWN_PROVIDERS)[number];
 
 // Configuration for retry logic
 const MAX_CROWN_EVALUATION_ATTEMPTS = 3;
+
+/**
+ * Fetch git diff from GitHub using the GitHub API.
+ * Compares baseBranch to headBranch and returns a unified diff string.
+ */
+async function fetchGitDiffFromGitHub(options: {
+  installationId: number;
+  repoFullName: string;
+  baseBranch: string;
+  headBranch: string;
+}): Promise<string> {
+  const { installationId, repoFullName, baseBranch, headBranch } = options;
+
+  // Get access token for GitHub API
+  const accessToken = await fetchInstallationAccessToken(installationId);
+  const octokit = new Octokit({
+    auth: accessToken,
+    userAgent: "cmux-crown-evaluator",
+  });
+
+  // Parse owner/repo from fullName
+  const [owner, repo] = repoFullName.split("/");
+  if (!owner || !repo) {
+    throw new Error(`Invalid repo full name: ${repoFullName}`);
+  }
+
+  // Compare commits to get diff
+  const response = await octokit.rest.repos.compareCommitsWithBasehead({
+    owner,
+    repo,
+    basehead: `${baseBranch}...${headBranch}`,
+    per_page: 100,
+  });
+
+  // Build unified diff from files
+  const files = response.data.files ?? [];
+  if (files.length === 0) {
+    return "<no code changes>";
+  }
+
+  // Combine patches into a single diff string
+  const diffParts: string[] = [];
+  for (const file of files) {
+    if (file.patch) {
+      diffParts.push(`diff --git a/${file.filename} b/${file.filename}`);
+      diffParts.push(`--- a/${file.filename}`);
+      diffParts.push(`+++ b/${file.filename}`);
+      diffParts.push(file.patch);
+      diffParts.push(""); // Empty line between files
+    } else if (file.status === "added" || file.status === "removed") {
+      // Binary files or files without patch
+      diffParts.push(`diff --git a/${file.filename} b/${file.filename}`);
+      diffParts.push(`[${file.status} file: ${file.filename}]`);
+      diffParts.push("");
+    }
+  }
+
+  return diffParts.join("\n") || "<no code changes>";
+}
 const MAX_CROWN_SUMMARIZATION_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 1000; // 1 second base delay, doubles each retry
 
@@ -709,12 +770,55 @@ export const retryEvaluationFresh = internalAction({
       );
 
       try {
-        // Generate summary without diff (best effort)
+        // Try to fetch git diff from GitHub if we have the required info
+        let gitDiff = "<git diff not available>";
+        if (task.projectFullName && task.baseBranch && singleRun.newBranch) {
+          console.log(
+            `[Crown] Attempting to fetch git diff from GitHub for ${task.projectFullName}`
+          );
+          try {
+            // Get installation ID for the repo
+            const installationId = await ctx.runQuery(
+              internal.github.getRepoInstallationIdInternal,
+              {
+                teamId: args.teamId,
+                repoFullName: task.projectFullName,
+              }
+            );
+
+            if (installationId) {
+              gitDiff = await fetchGitDiffFromGitHub({
+                installationId,
+                repoFullName: task.projectFullName,
+                baseBranch: task.baseBranch,
+                headBranch: singleRun.newBranch,
+              });
+              console.log(
+                `[Crown] Successfully fetched git diff from GitHub (${gitDiff.length} chars)`
+              );
+            } else {
+              console.warn(
+                `[Crown] No installation ID found for repo ${task.projectFullName}, using placeholder diff`
+              );
+            }
+          } catch (diffError) {
+            console.warn(
+              "[Crown] Failed to fetch git diff from GitHub, using placeholder",
+              diffError instanceof Error ? diffError.message : diffError
+            );
+          }
+        } else {
+          console.log(
+            "[Crown] Missing projectFullName, baseBranch, or newBranch - cannot fetch diff from GitHub"
+          );
+        }
+
+        // Generate summary with the git diff (real or placeholder)
         let summary: string | undefined;
         try {
           const summaryResponse = await performCrownSummarization(
             task.text || "Task completion",
-            "<git diff not available - sandbox evaluation>"
+            gitDiff
           );
           summary = summaryResponse?.summary?.slice(0, 8000);
         } catch (summaryError) {
