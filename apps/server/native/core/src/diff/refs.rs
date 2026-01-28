@@ -397,16 +397,22 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
     }
 
     // Detect potentially stale refs: if head == base, the branch may not have been fetched
-    // This happens when a new branch is pushed but the local cache has old refs
+    // This happens when a new branch is pushed but the local cache has old refs.
+    // Only force a fetch if we're outside the SWR window to avoid redundant network calls
+    // for legitimate zero-diff branches that were recently fetched.
     let mut head_oid = head_oid; // Make mutable for potential update
-    if head_oid == resolved_base_oid {
+    let repo_path = std::path::Path::new(&cwd);
+    let recently_fetched =
+        crate::repo::cache::was_recently_fetched(repo_path, crate::repo::cache::fetch_window_ms());
+
+    if head_oid == resolved_base_oid && !recently_fetched {
         #[cfg(debug_assertions)]
         println!(
-            "[native.refs] head_oid == resolved_base_oid ({}), possible stale ref - forcing fetch for {}",
+            "[native.refs] head_oid == resolved_base_oid ({}) and not recently fetched, possible stale ref - forcing fetch for {}",
             head_oid, head_ref
         );
         let fetch_ok = crate::repo::cache::fetch_specific_ref_with_auth(
-            std::path::Path::new(&cwd),
+            repo_path,
             head_ref,
             auth_token,
         )
