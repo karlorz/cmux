@@ -588,18 +588,24 @@ export const recoverStuckEvaluations = internalMutation({
     const cutoffTime = Date.now() - STUCK_THRESHOLD_MS;
 
     // Find tasks stuck in pending/in_progress for >5 minutes
+    // Use index to avoid full table scan
     const pendingTasks = await ctx.db
       .query("tasks")
-      .filter((q) =>
-        q.or(
-          q.eq(q.field("crownEvaluationStatus"), "pending"),
-          q.eq(q.field("crownEvaluationStatus"), "in_progress")
-        )
+      .withIndex("by_crown_status", (q) =>
+        q.eq("crownEvaluationStatus", "pending")
       )
       .collect();
 
-    const stuckTasks = pendingTasks.filter(
-      (task) => task.updatedAt && task.updatedAt < cutoffTime
+    const inProgressTasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_crown_status", (q) =>
+        q.eq("crownEvaluationStatus", "in_progress")
+      )
+      .collect();
+
+    // Filter by cutoff time, using createdAt as fallback for tasks without updatedAt
+    const stuckTasks = [...pendingTasks, ...inProgressTasks].filter(
+      (task) => (task.updatedAt ?? task.createdAt ?? 0) < cutoffTime
     );
 
     if (stuckTasks.length === 0) {

@@ -702,6 +702,15 @@ export const retryEvaluationFresh = internalAction({
       `[Crown] Fresh retry evaluation requested for task ${args.taskId}`
     );
 
+    // Mark as in_progress and update timestamp to prevent recovery cron interference
+    await ctx.runMutation(internal.tasks.setCrownEvaluationStatusInternal, {
+      taskId: args.taskId,
+      teamId: args.teamId,
+      userId: args.userId,
+      status: "in_progress",
+      clearError: true,
+    });
+
     // Get task runs to check their status
     const taskRuns: Array<Doc<"taskRuns"> | null> = await Promise.all(
       args.taskRunIds.map(

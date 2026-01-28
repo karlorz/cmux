@@ -177,7 +177,8 @@ const convexSchema = defineSchema({
     .index("by_pinned", ["pinned", "teamId", "userId"])
     .index("by_team_user_preview", ["teamId", "userId", "isPreview"])
     .index("by_team_preview", ["teamId", "isPreview"])
-    .index("by_linked_cloud_task_run", ["linkedFromCloudTaskRunId"]),
+    .index("by_linked_cloud_task_run", ["linkedFromCloudTaskRunId"])
+    .index("by_crown_status", ["crownEvaluationStatus", "updatedAt"]),
 
   taskRuns: defineTable({
     taskId: v.id("tasks"),
