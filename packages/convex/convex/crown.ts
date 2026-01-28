@@ -7,6 +7,33 @@ import { authMutation, authQuery, taskIdWithFake } from "./users/utils";
 import { parseCrownEvaluationPrompt } from "./crown/retryData";
 
 const CROWN_RETRY_COOLDOWN_MS = 30_000;
+const CROWN_PULL_REQUEST_TITLE_PREFIX = "[Crown]";
+const CROWN_PULL_REQUEST_TITLE_PREFIX_WITH_SPACE = "[Crown] ";
+
+function stripCrownPullRequestTitlePrefix(title: string): string {
+  const trimmed = title.trim();
+
+  if (trimmed.startsWith(CROWN_PULL_REQUEST_TITLE_PREFIX_WITH_SPACE)) {
+    return trimmed.slice(CROWN_PULL_REQUEST_TITLE_PREFIX_WITH_SPACE.length).trim();
+  }
+
+  if (trimmed.startsWith(CROWN_PULL_REQUEST_TITLE_PREFIX)) {
+    return trimmed.slice(CROWN_PULL_REQUEST_TITLE_PREFIX.length).trim();
+  }
+
+  return trimmed;
+}
+
+function buildPullRequestTitle(
+  titleSource: string,
+  isCrownCompetition: boolean,
+): string {
+  const base = stripCrownPullRequestTitlePrefix(titleSource) || "cmux changes";
+  const title = isCrownCompetition
+    ? `${CROWN_PULL_REQUEST_TITLE_PREFIX_WITH_SPACE}${base}`
+    : base;
+  return title.length > 72 ? `${title.slice(0, 69)}...` : title;
+}
 
 export const evaluateAndCrownWinner = authMutation({
   args: {
@@ -461,6 +488,11 @@ export const workerFinalize = internalMutation({
     }
 
     const now = Date.now();
+    const isCrownCompetition = args.candidateRunIds.length > 1;
+    const finalPullRequestTitle = buildPullRequestTitle(
+      args.pullRequestTitle ?? task.pullRequestTitle ?? task.text,
+      isCrownCompetition,
+    );
 
     const summaryMissing = !args.summary || args.summary.trim().length === 0;
 
@@ -565,7 +597,7 @@ export const workerFinalize = internalMutation({
       crownEvaluationRetryData: undefined,
       crownEvaluationRetryCount: undefined,
       crownEvaluationLastRetryAt: undefined,
-      ...(args.pullRequestTitle ? { pullRequestTitle: args.pullRequestTitle } : {}),
+      pullRequestTitle: finalPullRequestTitle,
       ...(args.pullRequestDescription
         ? { pullRequestDescription: args.pullRequestDescription }
         : {}),
