@@ -161,9 +161,14 @@ function AdditionsAndDeletions({
   // useCallback must be called before any early returns to comply with React's rules of hooks
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
+    const toastId = toast.loading("Refreshing git diff...");
     try {
       // Invalidate all git-diff queries to force a fresh fetch from the server
       await queryClient.invalidateQueries({ queryKey: ["git-diff"] });
+      toast.success("Git diff refreshed", { id: toastId });
+    } catch (error) {
+      console.error("[AdditionsAndDeletions] Failed to refresh git diff:", error);
+      toast.error("Failed to refresh git diff", { id: toastId });
     } finally {
       setIsRefreshing(false);
     }
@@ -216,12 +221,14 @@ function AdditionsAndDeletions({
         type="button"
         onClick={handleRefresh}
         disabled={isLoading || isRefreshing}
-        className="p-0.5 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="p-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-white select-none disabled:opacity-50 disabled:cursor-not-allowed"
+        aria-label="Refresh git diff"
         title="Refresh git diff"
+        style={isElectron ? { WebkitAppRegion: "no-drag" } as React.CSSProperties : undefined}
       >
         <RefreshCw
           className={cn(
-            "w-3 h-3 text-neutral-500 dark:text-neutral-400",
+            "w-3.5 h-3.5",
             isRefreshing && "animate-spin"
           )}
         />
