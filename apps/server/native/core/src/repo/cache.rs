@@ -308,7 +308,8 @@ fn set_map_last_fetch(repo_path: &Path, t: u128) {
 }
 
 /// Returns true if the repo was fetched within the given window (ms).
-/// Used to avoid redundant fetches when refs appear stale but were recently fetched.
+/// Currently unused but kept for potential future optimizations.
+#[allow(dead_code)]
 pub fn was_recently_fetched(path: &std::path::Path, window_ms: u128) -> bool {
     let cwd = path.to_string_lossy().to_string();
     let root = default_cache_root();
