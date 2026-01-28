@@ -411,12 +411,9 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
             "[native.refs] head_oid == resolved_base_oid ({}) and not recently fetched, possible stale ref - forcing fetch for {}",
             head_oid, head_ref
         );
-        let fetch_ok = crate::repo::cache::fetch_specific_ref_with_auth(
-            repo_path,
-            head_ref,
-            auth_token,
-        )
-        .unwrap_or(false);
+        let fetch_ok =
+            crate::repo::cache::fetch_specific_ref_with_auth(repo_path, head_ref, auth_token)
+                .unwrap_or(false);
         if fetch_ok {
             // Re-open repo and re-resolve head after targeted fetch
             if let Ok(repo_fresh) = gix::open(&cwd) {
