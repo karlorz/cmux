@@ -67,6 +67,10 @@ interface TaskTimelineProps {
     isFallback?: boolean;
     /** Human-readable note about the evaluation process */
     evaluationNote?: string;
+    /** Whether all candidates had empty diffs at evaluation time */
+    hadEmptyDiffs?: boolean;
+    /** Number of auto-refresh attempts */
+    autoRefreshCount?: number;
   } | null;
 }
 
@@ -83,6 +87,7 @@ export function TaskTimeline({
   });
 
   const retryCrownEvaluationMutation = useMutation(api.crown.retryCrownEvaluation);
+  const refreshCrownEvaluationMutation = useMutation(api.crown.refreshCrownEvaluation);
 
   // Optimistic state for immediate UI feedback on click
   const [isSubmittingRetry, setIsSubmittingRetry] = useState(false);
@@ -189,6 +194,26 @@ export function TaskTimeline({
     } catch (error) {
       console.error("[TaskTimeline] Failed to retry crown evaluation:", error);
       setIsSubmittingRetry(false); // Revert on error
+      statusAtRetryStartRef.current = undefined;
+      errorAtRetryStartRef.current = undefined;
+    }
+  };
+
+  // Handle refresh for succeeded evaluations with empty diffs
+  const handleRefreshEvaluation = async () => {
+    if (!task?._id || isRetrying || isRetryCooldownActive) return;
+    // Use the same state tracking as retry for UI consistency
+    statusAtRetryStartRef.current = task.crownEvaluationStatus;
+    errorAtRetryStartRef.current = task.crownEvaluationError;
+    setIsSubmittingRetry(true);
+    try {
+      await refreshCrownEvaluationMutation({
+        teamSlugOrId: params.teamSlugOrId,
+        taskId: task._id,
+      });
+    } catch (error) {
+      console.error("[TaskTimeline] Failed to refresh crown evaluation:", error);
+      setIsSubmittingRetry(false);
       statusAtRetryStartRef.current = undefined;
       errorAtRetryStartRef.current = undefined;
     }
@@ -671,6 +696,50 @@ export function TaskTimeline({
                 {isRetryCooldownActive ? `Cooldown: ${cooldownSeconds}s` : null}
               </div>
             )}
+            {/* Show refresh button for succeeded evaluations with empty diffs */}
+            {task?.crownEvaluationStatus === "succeeded" &&
+              crownEvaluation?.hadEmptyDiffs &&
+              !isRetrying && (
+                <div className="mt-2">
+                  <div className="text-[13px] text-neutral-600 dark:text-neutral-400 mb-2">
+                    <AlertCircle className="inline size-3 mr-1.5" />
+                    Code diffs may have been incomplete. Try refreshing to fetch updated diffs from GitHub.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRefreshEvaluation}
+                    disabled={isRetryCooldownActive}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 rounded-md transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw className="size-3" />
+                    {isRetryCooldownActive
+                      ? `Refresh in ${cooldownSeconds}s`
+                      : "Refresh Evaluation"}
+                  </button>
+                  {crownEvaluation.autoRefreshCount !== undefined &&
+                    crownEvaluation.autoRefreshCount > 0 && (
+                      <div className="mt-1 text-[12px] text-neutral-500 dark:text-neutral-500">
+                        Auto-refreshed {crownEvaluation.autoRefreshCount} time
+                        {crownEvaluation.autoRefreshCount > 1 ? "s" : ""}
+                      </div>
+                    )}
+                </div>
+              )}
+            {/* Show refreshing state */}
+            {task?.crownEvaluationStatus === "succeeded" &&
+              crownEvaluation?.hadEmptyDiffs &&
+              isRetrying && (
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    disabled
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30 rounded-md opacity-50"
+                  >
+                    <RefreshCw className="size-3 animate-spin" />
+                    Refreshing...
+                  </button>
+                </div>
+              )}
             {/* Show normal crown reason with purple styling */}
             {!event.isFallback && !event.isEvaluating && event.crownReason && (
               <div className="mt-2 text-[13px] text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 rounded-md p-3">

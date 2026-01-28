@@ -714,10 +714,17 @@ const convexSchema = defineSchema({
     isFallback: v.optional(v.boolean()),
     /** Human-readable note about the evaluation process (e.g., fallback details) */
     evaluationNote: v.optional(v.string()),
+    /** True if all candidates had empty or placeholder diffs at evaluation time */
+    hadEmptyDiffs: v.optional(v.boolean()),
+    /** Number of auto-refresh attempts (max 2 to prevent infinite loops) */
+    autoRefreshCount: v.optional(v.number()),
+    /** Timestamp of last auto-refresh attempt */
+    lastAutoRefreshAt: v.optional(v.number()),
   })
     .index("by_task", ["taskId"])
     .index("by_winner", ["winnerRunId"])
-    .index("by_team_user", ["teamId", "userId"]),
+    .index("by_team_user", ["teamId", "userId"])
+    .index("by_empty_diffs", ["hadEmptyDiffs", "evaluatedAt"]),
   containerSettings: defineTable({
     maxRunningContainers: v.optional(v.number()), // Max containers to keep running (default: 5)
     reviewPeriodMinutes: v.optional(v.number()), // Minutes to keep container after task completion (default: 60)
