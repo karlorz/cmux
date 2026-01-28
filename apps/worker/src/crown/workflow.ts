@@ -492,7 +492,40 @@ async function startCrownEvaluation({
       return;
     }
 
-    const gitDiff = await collectDiffForRun(baseBranch, singleRun.newBranch);
+    let gitDiff: string;
+    try {
+      gitDiff = await collectDiffForRun(baseBranch, singleRun.newBranch);
+    } catch (diffError) {
+      const errorMessage = diffError instanceof Error ? diffError.message : String(diffError);
+      log("ERROR", "Failed to collect diff for single-run crown evaluation", {
+        taskRunId,
+        baseBranch,
+        branch: singleRun.newBranch,
+        error: errorMessage,
+      });
+
+      // Mark the crown evaluation as error so user can retry
+      await convexRequest(
+        "/api/crown/finalize",
+        runContext.token,
+        {
+          taskId: crownData.taskId,
+          winnerRunId: null,
+          reason: `Diff collection failed: ${errorMessage}`,
+          evaluationPrompt: "Failed to collect git diff",
+          evaluationResponse: JSON.stringify({
+            winner: null,
+            reason: errorMessage,
+            isFallback: true,
+          }),
+          candidateRunIds: [singleRun.id],
+          isFallback: true,
+          evaluationNote: `Failed to collect git diff between ${baseBranch} and ${singleRun.newBranch}: ${errorMessage}. This may happen if the workspace is not a git repository or the branches don't exist.`,
+        },
+        baseUrlOverride
+      );
+      return;
+    }
 
     log("INFO", "Built crown candidate", {
       runId: singleRun.id,
@@ -573,30 +606,93 @@ async function startCrownEvaluation({
     return;
   }
 
-  const completedRunsWithDiff = await Promise.all(
-    completedRuns.map(async (run) => {
-      const gitDiff = await collectDiffForRun(baseBranch, run.newBranch);
-      log("INFO", "Built crown candidate", {
-        runId: run.id,
-        branch: run.newBranch,
-      });
-      return {
-        runId: run.id,
-        agentName: run.agentName ?? "unknown agent",
-        gitDiff,
-        newBranch: run.newBranch,
-      } satisfies CandidateData;
-    })
-  );
+  let completedRunsWithDiff: (CandidateData | null)[];
+  try {
+    completedRunsWithDiff = await Promise.all(
+      completedRuns.map(async (run) => {
+        try {
+          const gitDiff = await collectDiffForRun(baseBranch, run.newBranch);
+          log("INFO", "Built crown candidate", {
+            runId: run.id,
+            branch: run.newBranch,
+          });
+          return {
+            runId: run.id,
+            agentName: run.agentName ?? "unknown agent",
+            gitDiff,
+            newBranch: run.newBranch,
+          } satisfies CandidateData;
+        } catch (diffError) {
+          const errorMessage = diffError instanceof Error ? diffError.message : String(diffError);
+          log("ERROR", "Failed to collect diff for run", {
+            runId: run.id,
+            baseBranch,
+            branch: run.newBranch,
+            error: errorMessage,
+          });
+          // Return null for failed runs - we'll filter them out
+          return null;
+        }
+      })
+    );
+  } catch (allDiffError) {
+    const errorMessage = allDiffError instanceof Error ? allDiffError.message : String(allDiffError);
+    log("ERROR", "Failed to collect diffs for multi-run crown evaluation", {
+      taskRunId,
+      error: errorMessage,
+    });
+
+    // Mark the crown evaluation as error so user can retry
+    await convexRequest(
+      "/api/crown/finalize",
+      runContext.token,
+      {
+        taskId: crownData.taskId,
+        winnerRunId: null,
+        reason: `Diff collection failed: ${errorMessage}`,
+        evaluationPrompt: "Failed to collect git diffs",
+        evaluationResponse: JSON.stringify({
+          winner: null,
+          reason: errorMessage,
+          isFallback: true,
+        }),
+        candidateRunIds: completedRuns.map((run) => run.id),
+        isFallback: true,
+        evaluationNote: `Failed to collect git diffs for crown evaluation: ${errorMessage}`,
+      },
+      baseUrlOverride
+    );
+    return;
+  }
 
   const candidates = completedRunsWithDiff.filter(
-    (candidate): candidate is CandidateData => Boolean(candidate)
+    (candidate): candidate is CandidateData => candidate !== null
   );
 
   if (candidates.length === 0) {
-    log("ERROR", "No candidates available for crown evaluation", {
+    log("ERROR", "No candidates available for crown evaluation (all diff collections failed)", {
       taskRunId,
     });
+    // Mark the crown evaluation as error since all candidates failed
+    await convexRequest(
+      "/api/crown/finalize",
+      runContext.token,
+      {
+        taskId: crownData.taskId,
+        winnerRunId: null,
+        reason: "All candidate diff collections failed",
+        evaluationPrompt: "No diffs available for evaluation",
+        evaluationResponse: JSON.stringify({
+          winner: null,
+          reason: "All candidate diff collections failed - workspace may not be a git repository",
+          isFallback: true,
+        }),
+        candidateRunIds: completedRuns.map((run) => run.id),
+        isFallback: true,
+        evaluationNote: "Failed to collect git diffs for all candidates. This may happen if the workspace is not a git repository or the branches don't exist.",
+      },
+      baseUrlOverride
+    );
     return;
   }
 
