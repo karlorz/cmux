@@ -772,6 +772,7 @@ export const retryEvaluationFresh = internalAction({
       try {
         // Try to fetch git diff from GitHub if we have the required info
         let gitDiff = "<git diff not available>";
+        let fetchedDiffFromGitHub = false;
         if (task.projectFullName && task.baseBranch && singleRun.newBranch) {
           console.log(
             `[Crown] Attempting to fetch git diff from GitHub for ${task.projectFullName}`
@@ -793,6 +794,7 @@ export const retryEvaluationFresh = internalAction({
                 baseBranch: task.baseBranch,
                 headBranch: singleRun.newBranch,
               });
+              fetchedDiffFromGitHub = true;
               console.log(
                 `[Crown] Successfully fetched git diff from GitHub (${gitDiff.length} chars)`
               );
@@ -822,11 +824,31 @@ export const retryEvaluationFresh = internalAction({
           );
           summary = summaryResponse?.summary?.slice(0, 8000);
         } catch (summaryError) {
+          // Match multi-run behavior: if summary fails, fail the whole operation
+          // so user can retry to get a proper summary.
+          // IMPORTANT: Don't store retry data - we want retryEvaluationFresh to be called
+          // again on retry (not retryEvaluation which requires parseable candidate data).
+          const message =
+            summaryError instanceof Error
+              ? summaryError.message
+              : String(summaryError);
           console.warn(
-            "[Crown] Summary generation failed for fresh retry",
+            "[Crown] Summary generation failed for fresh retry - marking as error for retry",
             summaryError
           );
-          summary = "Summary not available - evaluation retried without git diff data.";
+
+          await ctx.runMutation(internal.tasks.setCrownEvaluationStatusInternal, {
+            taskId: args.taskId,
+            teamId: args.teamId,
+            userId: args.userId,
+            status: "error",
+            errorMessage: `Summarization failed: ${message}. Single completed run ready to be crowned on retry.`,
+          });
+
+          console.log(
+            `[Crown] Fresh retry failed for single run due to summarization error`
+          );
+          return { success: false, reason: "Summarization failed" };
         }
 
         // Finalize with single run as winner

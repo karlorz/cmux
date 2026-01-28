@@ -659,3 +659,63 @@ export const recoverStuckEvaluations = internalMutation({
     return { recovered: recoveredCount };
   },
 });
+
+/**
+ * TEST ONLY: Clear retry data for a task to test the fresh retry flow.
+ * Use internalMutation so it can be called from Convex dashboard.
+ */
+export const _testClearRetryData = internalMutation({
+  args: {
+    taskId: v.id("tasks"),
+    resetStatus: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.taskId);
+    if (!task) {
+      throw new Error("Task not found");
+    }
+
+    console.log(`[Crown TEST] Clearing retry data for task ${args.taskId}`);
+
+    const updates: Record<string, unknown> = {
+      crownEvaluationRetryData: undefined,
+      updatedAt: Date.now(),
+    };
+
+    // Also reset status to error if requested
+    if (args.resetStatus) {
+      updates.crownEvaluationStatus = "error";
+      updates.crownEvaluationError = "Test reset for retry";
+
+      // Also delete any existing crown evaluation record
+      const existingEval = await ctx.db
+        .query("crownEvaluations")
+        .withIndex("by_task", (q) => q.eq("taskId", args.taskId))
+        .first();
+      if (existingEval) {
+        console.log(`[Crown TEST] Deleting crown evaluation ${existingEval._id}`);
+        await ctx.db.delete(existingEval._id);
+      }
+
+      // Also uncrown any runs
+      const taskRuns = await ctx.db
+        .query("taskRuns")
+        .withIndex("by_task", (q) => q.eq("taskId", args.taskId))
+        .collect();
+      for (const run of taskRuns) {
+        if (run.isCrowned) {
+          console.log(`[Crown TEST] Uncrowning run ${run._id}`);
+          await ctx.db.patch(run._id, {
+            isCrowned: false,
+            crownReason: undefined,
+            summary: undefined,
+          });
+        }
+      }
+    }
+
+    await ctx.db.patch(args.taskId, updates);
+
+    return { success: true };
+  },
+});
