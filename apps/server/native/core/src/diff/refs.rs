@@ -395,6 +395,39 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
             }
         }
     }
+
+    // Detect potentially stale refs: if head == base, the branch may not have been fetched
+    // This happens when a new branch is pushed but the local cache has old refs
+    let mut head_oid = head_oid; // Make mutable for potential update
+    if head_oid == resolved_base_oid {
+        #[cfg(debug_assertions)]
+        println!(
+            "[native.refs] head_oid == resolved_base_oid ({}), possible stale ref - forcing fetch for {}",
+            head_oid, head_ref
+        );
+        let fetch_ok = crate::repo::cache::fetch_specific_ref_with_auth(
+            std::path::Path::new(&cwd),
+            head_ref,
+            auth_token,
+        )
+        .unwrap_or(false);
+        if fetch_ok {
+            // Re-open repo and re-resolve head after targeted fetch
+            if let Ok(repo_fresh) = gix::open(&cwd) {
+                if let Ok(fresh_oid) = oid_from_rev_parse(&repo_fresh, head_ref) {
+                    if fresh_oid != head_oid {
+                        #[cfg(debug_assertions)]
+                        println!(
+                            "[native.refs] Updated stale ref {} from {} to {}",
+                            head_ref, head_oid, fresh_oid
+                        );
+                        head_oid = fresh_oid;
+                    }
+                }
+            }
+        }
+    }
+
     let t_merge_base = Instant::now();
     // Compute merge-base; prefer BFS (pure gix) to avoid shelling out
     let mut compare_base_oid = crate::merge_base::merge_base(

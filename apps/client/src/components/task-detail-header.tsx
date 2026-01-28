@@ -13,6 +13,7 @@ import { useClipboard } from "@mantine/hooks";
 import {
   useMutation,
   useQueries,
+  useQueryClient,
   type DefaultError,
 } from "@tanstack/react-query";
 import {
@@ -38,6 +39,7 @@ import {
   FolderOpen,
   GitBranch,
   GitMerge,
+  RefreshCw,
   Settings,
   Trash2,
 } from "lucide-react";
@@ -95,6 +97,9 @@ function AdditionsAndDeletions({
   defaultBaseRef?: string;
   defaultHeadRef?: string;
 }) {
+  const queryClient = useQueryClient();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   const repoConfigs = useMemo(() => {
     const normalizedDefaults = {
       base: normalizeGitRef(defaultBaseRef),
@@ -153,6 +158,17 @@ function AdditionsAndDeletions({
     return Boolean(query.error);
   });
 
+  // useCallback must be called before any early returns to comply with React's rules of hooks
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      // Invalidate all git-diff queries to force a fresh fetch from the server
+      await queryClient.invalidateQueries({ queryKey: ["git-diff"] });
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [queryClient]);
+
   if (!isLoading && firstError?.error) {
     return (
       <div className="flex items-center gap-2 text-[11px] ml-2 shrink-0">
@@ -196,6 +212,20 @@ function AdditionsAndDeletions({
           </span>
         )}
       </Skeleton>
+      <button
+        type="button"
+        onClick={handleRefresh}
+        disabled={isLoading || isRefreshing}
+        className="p-0.5 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        title="Refresh git diff"
+      >
+        <RefreshCw
+          className={cn(
+            "w-3 h-3 text-neutral-500 dark:text-neutral-400",
+            isRefreshing && "animate-spin"
+          )}
+        />
+      </button>
     </div>
   );
 }
