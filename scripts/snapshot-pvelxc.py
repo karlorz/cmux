@@ -2830,21 +2830,29 @@ EXTENSIONS
           echo "[install-ide-extensions] ERROR: $download_failed of $ext_count downloads failed" >&2
           exit 1
         fi
-        echo "[install-ide-extensions] downloaded $ext_count extensions successfully"
+        echo "[install-ide-extensions] downloaded $ext_count extensions"
+        echo "[install-ide-extensions] DEBUG: Listing download directory contents:"
+        ls -la "${{download_dir}}" >&2
         set -e
         shopt -s nullglob
-        set -- "${{download_dir}}"/*.vsix
-        actual_count=$#
+        vsix_files=("${{download_dir}}"/*.vsix)
+        actual_count=${{#vsix_files[@]}}
+        echo "[install-ide-extensions] DEBUG: Found $actual_count vsix files via glob"
         if [ "$actual_count" -ne "$ext_count" ]; then
           echo "[install-ide-extensions] ERROR: Expected $ext_count vsix files but found $actual_count" >&2
-          ls -la "${{download_dir}}" >&2
+          echo "[install-ide-extensions] DEBUG: Full download_dir listing:"
+          find "${{download_dir}}" -type f -ls >&2
           exit 1
         fi
         installed_count=0
-        for vsix in "$@"; do
+        for vsix in "${{vsix_files[@]}}"; do
           if [ -f "${{vsix}}" ]; then
+            echo "[install-ide-extensions] DEBUG: Installing ${{vsix}}"
             install_from_file "${{vsix}}"
             installed_count=$((installed_count + 1))
+            echo "[install-ide-extensions] DEBUG: Installed $installed_count of $ext_count"
+          else
+            echo "[install-ide-extensions] DEBUG: File not found: ${{vsix}}" >&2
           fi
         done
         if [ "$installed_count" -ne "$ext_count" ]; then
