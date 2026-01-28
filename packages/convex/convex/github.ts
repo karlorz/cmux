@@ -895,3 +895,29 @@ export const getRepoByFullNameInternal = internalQuery({
       .first();
   },
 });
+
+/**
+ * Get the GitHub installation ID for a repo.
+ * Looks up the repo by fullName and returns the installation ID from its provider connection.
+ */
+export const getRepoInstallationIdInternal = internalQuery({
+  args: {
+    teamId: v.string(),
+    repoFullName: v.string(),
+  },
+  handler: async (ctx, { teamId, repoFullName }): Promise<number | null> => {
+    const repo = await ctx.db
+      .query("repos")
+      .withIndex("by_team_fullName", (q) =>
+        q.eq("teamId", teamId).eq("fullName", repoFullName)
+      )
+      .first();
+
+    if (!repo?.connectionId) {
+      return null;
+    }
+
+    const connection = await ctx.db.get(repo.connectionId);
+    return connection?.installationId ?? null;
+  },
+});

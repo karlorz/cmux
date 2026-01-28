@@ -130,6 +130,8 @@ const convexSchema = defineSchema({
     crownEvaluationRetryCount: v.optional(v.number()),
     /** Timestamp of the last retry attempt */
     crownEvaluationLastRetryAt: v.optional(v.number()),
+    /** True when refreshing a succeeded evaluation (vs retrying a failed one) */
+    crownEvaluationIsRefreshing: v.optional(v.boolean()),
     mergeStatus: v.optional(
       v.union(
         v.literal("none"), // No PR activity yet
@@ -177,7 +179,8 @@ const convexSchema = defineSchema({
     .index("by_pinned", ["pinned", "teamId", "userId"])
     .index("by_team_user_preview", ["teamId", "userId", "isPreview"])
     .index("by_team_preview", ["teamId", "isPreview"])
-    .index("by_linked_cloud_task_run", ["linkedFromCloudTaskRunId"]),
+    .index("by_linked_cloud_task_run", ["linkedFromCloudTaskRunId"])
+    .index("by_crown_status", ["crownEvaluationStatus", "updatedAt"]),
 
   taskRuns: defineTable({
     taskId: v.id("tasks"),
@@ -610,6 +613,7 @@ const convexSchema = defineSchema({
   workspaceSettings: defineTable({
     worktreePath: v.optional(v.string()), // Custom path for git worktrees
     autoPrEnabled: v.optional(v.boolean()), // Auto-create PR for crown winner (default: false)
+    autoSyncEnabled: v.optional(v.boolean()), // Auto-sync workspace changes
     nextLocalWorkspaceSequence: v.optional(v.number()), // Counter for local workspace naming
     // Heatmap review settings
     heatmapModel: v.optional(v.string()), // Model to use for heatmap review (e.g., "anthropic-opus-4-5", "cmux-heatmap-2")
@@ -712,10 +716,17 @@ const convexSchema = defineSchema({
     isFallback: v.optional(v.boolean()),
     /** Human-readable note about the evaluation process (e.g., fallback details) */
     evaluationNote: v.optional(v.string()),
+    /** True if all candidates had empty or placeholder diffs at evaluation time */
+    hadEmptyDiffs: v.optional(v.boolean()),
+    /** Number of auto-refresh attempts (max 2 to prevent infinite loops) */
+    autoRefreshCount: v.optional(v.number()),
+    /** Timestamp of last auto-refresh attempt */
+    lastAutoRefreshAt: v.optional(v.number()),
   })
     .index("by_task", ["taskId"])
     .index("by_winner", ["winnerRunId"])
-    .index("by_team_user", ["teamId", "userId"]),
+    .index("by_team_user", ["teamId", "userId"])
+    .index("by_empty_diffs", ["hadEmptyDiffs", "evaluatedAt"]),
   containerSettings: defineTable({
     maxRunningContainers: v.optional(v.number()), // Max containers to keep running (default: 5)
     reviewPeriodMinutes: v.optional(v.number()), // Minutes to keep container after task completion (default: 60)

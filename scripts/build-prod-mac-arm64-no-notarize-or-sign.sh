@@ -162,6 +162,8 @@ start_step "Build native addon (release)"
 end_step
 
 start_step "Build Electron app"
+# Clean previous build output to ensure config changes (like base path) take effect
+rm -rf "$CLIENT_DIR/out"
 (cd "$CLIENT_DIR" && bunx electron-vite build -c electron.vite.config.ts)
 end_step
 
