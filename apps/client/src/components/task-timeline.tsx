@@ -20,6 +20,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import CmuxLogoMark from "./logo/cmux-logo-mark";
 import { TaskMessage } from "./task-message";
+import { ConfirmDialog } from "./ui/confirm-dialog";
 
 const RETRY_COOLDOWN_MS = 30_000;
 
@@ -92,6 +93,8 @@ export function TaskTimeline({
   // Optimistic state for immediate UI feedback on click
   const [isSubmittingRetry, setIsSubmittingRetry] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  // State for refresh confirmation dialog
+  const [showRefreshConfirm, setShowRefreshConfirm] = useState(false);
   const prevCrownStatusRef = useRef<Doc<"tasks">["crownEvaluationStatus"]>(
     undefined
   );
@@ -199,9 +202,26 @@ export function TaskTimeline({
     }
   };
 
-  // Handle refresh for succeeded evaluations with empty diffs
+  // Handle refresh for succeeded evaluations
+  // Requires confirmation if evaluation doesn't have empty diffs
   const handleRefreshEvaluation = async () => {
     if (!task?._id || isRetrying || isRetryCooldownActive) return;
+
+    // Require confirmation if this evaluation didn't have empty diffs
+    // (user is refreshing a complete evaluation)
+    if (!crownEvaluation?.hadEmptyDiffs) {
+      setShowRefreshConfirm(true);
+      return;
+    }
+
+    // Proceed with refresh directly if evaluation had empty diffs
+    await executeRefresh();
+  };
+
+  // Execute the actual refresh mutation
+  const executeRefresh = async () => {
+    if (!task?._id) return;
+
     // Use the same state tracking as retry for UI consistency
     statusAtRetryStartRef.current = task.crownEvaluationStatus;
     errorAtRetryStartRef.current = task.crownEvaluationError;
@@ -284,8 +304,14 @@ export function TaskTimeline({
       }
     });
 
+    // Check if a refresh is in progress (non-destructive: old evaluation exists but we're refreshing)
+    const isRefreshInProgress =
+      task?.crownEvaluationIsRefreshing === true ||
+      (isSubmittingRetry && task?.crownEvaluationStatus === "succeeded");
+
     // Add crown evaluation event if exists or if status is error/retrying
-    if (crownEvaluation?.evaluatedAt) {
+    if (crownEvaluation?.evaluatedAt && !isRefreshInProgress) {
+      // Show existing evaluation (not refreshing)
       timelineEvents.push({
         id: "crown-evaluation",
         type: "crown_evaluation",
@@ -294,6 +320,17 @@ export function TaskTimeline({
         crownReason: crownEvaluation.reason,
         isFallback: crownEvaluation.isFallback,
         evaluationNote: crownEvaluation.evaluationNote,
+      });
+    } else if (isRefreshInProgress) {
+      // Show refresh in progress indicator
+      timelineEvents.push({
+        id: "crown-evaluation-refreshing",
+        type: "crown_evaluation",
+        timestamp: task?.updatedAt || Date.now(),
+        isFallback: false,
+        isEvaluating: true,
+        evaluationNote: "Refreshing crown evaluation with fresh GitHub diffs...",
+        crownReason: "Refresh in progress",
       });
     } else if (
       task?.crownEvaluationStatus === "error" ||
@@ -846,6 +883,17 @@ export function TaskTimeline({
           ))}
         </div>
       ) : null}
+
+      {/* Refresh confirmation dialog */}
+      <ConfirmDialog
+        open={showRefreshConfirm}
+        onOpenChange={setShowRefreshConfirm}
+        title="This evaluation appears complete."
+        description="Re-running may produce different results. Continue?"
+        confirmLabel="OK"
+        cancelLabel="Cancel"
+        onConfirm={executeRefresh}
+      />
     </div>
   );
 }

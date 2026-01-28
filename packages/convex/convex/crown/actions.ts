@@ -704,6 +704,10 @@ export const retryEvaluationFresh = internalAction({
     isRefresh: v.optional(v.boolean()),
     /** Auto-refresh count to preserve across re-evaluations */
     autoRefreshCount: v.optional(v.number()),
+    /** Existing evaluation to delete on successful refresh (non-destructive pattern) */
+    existingEvaluationId: v.optional(v.id("crownEvaluations")),
+    /** Existing winner run to uncrown on successful refresh (non-destructive pattern) */
+    existingWinnerRunId: v.optional(v.id("taskRuns")),
   },
   handler: async (
     ctx,
@@ -847,16 +851,23 @@ export const retryEvaluationFresh = internalAction({
         } catch (summaryError) {
           // Match multi-run behavior: if summary fails, fail the whole operation
           // so user can retry to get a proper summary.
-          // IMPORTANT: Don't store retry data - we want retryEvaluationFresh to be called
-          // again on retry (not retryEvaluation which requires parseable candidate data).
           const message =
             summaryError instanceof Error
               ? summaryError.message
               : String(summaryError);
-          console.warn(
-            "[Crown] Summary generation failed for fresh retry - marking as error for retry",
-            summaryError
+          console.error(
+            "[Crown] Summary generation failed for fresh retry - marking as error",
+            { taskId: args.taskId, error: message }
           );
+
+          // Non-destructive: restore to succeeded if we have existing evaluation
+          if (args.existingEvaluationId) {
+            await ctx.runMutation(internal.crown.restoreAfterFailedRefresh, {
+              taskId: args.taskId,
+              errorMessage: `Summarization failed: ${message}`,
+            });
+            return { success: false, reason: "Summarization failed (restored)" };
+          }
 
           await ctx.runMutation(internal.tasks.setCrownEvaluationStatusInternal, {
             taskId: args.taskId,
@@ -870,6 +881,14 @@ export const retryEvaluationFresh = internalAction({
             `[Crown] Fresh retry failed for single run due to summarization error`
           );
           return { success: false, reason: "Summarization failed" };
+        }
+
+        // SUCCESS: Clean up old evaluation before creating new one (non-destructive pattern)
+        if (args.existingEvaluationId) {
+          await ctx.runMutation(internal.crown.cleanupOldEvaluation, {
+            existingEvaluationId: args.existingEvaluationId,
+            existingWinnerRunId: args.existingWinnerRunId,
+          });
         }
 
         // Finalize with single run as winner
@@ -889,6 +908,7 @@ export const retryEvaluationFresh = internalAction({
           isFallback: false,
           evaluationNote:
             "Fresh retry with single run - no comparison evaluation needed.",
+          autoRefreshCount: args.autoRefreshCount,
         });
 
         console.log(
@@ -898,6 +918,14 @@ export const retryEvaluationFresh = internalAction({
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error("[Crown] Fresh retry failed", { error: message });
+        // Non-destructive: restore to succeeded if we have existing evaluation
+        if (args.existingEvaluationId) {
+          await ctx.runMutation(internal.crown.restoreAfterFailedRefresh, {
+            taskId: args.taskId,
+            errorMessage: `Fresh retry failed: ${message}`,
+          });
+          return { success: false, reason: `${message} (restored)` };
+        }
         await ctx.runMutation(internal.tasks.setCrownEvaluationStatusInternal, {
           taskId: args.taskId,
           teamId: args.teamId,
@@ -928,6 +956,15 @@ export const retryEvaluationFresh = internalAction({
         console.warn(
           `[Crown] No installation ID found for repo ${task.projectFullName}`
         );
+        // Non-destructive: restore to succeeded if we have existing evaluation
+        if (args.existingEvaluationId) {
+          await ctx.runMutation(internal.crown.restoreAfterFailedRefresh, {
+            taskId: args.taskId,
+            errorMessage:
+              "Refresh failed: GitHub App not installed for this repository.",
+          });
+          return { success: false, reason: "No GitHub installation (restored)" };
+        }
         await ctx.runMutation(internal.tasks.setCrownEvaluationStatusInternal, {
           taskId: args.taskId,
           teamId: args.teamId,
@@ -993,6 +1030,16 @@ export const retryEvaluationFresh = internalAction({
         console.log(
           `[Crown] No real diffs found for any run - marking as error`
         );
+        // Non-destructive: restore to succeeded if we have existing evaluation
+        if (args.existingEvaluationId) {
+          await ctx.runMutation(internal.crown.restoreAfterFailedRefresh, {
+            taskId: args.taskId,
+            errorMessage:
+              "Refresh failed: Could not fetch code diffs from GitHub. " +
+              "The branches may have been deleted or merged.",
+          });
+          return { success: false, reason: "No diffs available (restored)" };
+        }
         await ctx.runMutation(internal.tasks.setCrownEvaluationStatusInternal, {
           taskId: args.taskId,
           teamId: args.teamId,
@@ -1031,7 +1078,7 @@ export const retryEvaluationFresh = internalAction({
         const winnerCandidate = candidates[winnerIndex];
         const winnerRunId = winnerCandidate.runId as Id<"taskRuns">;
 
-        // Generate summary for winner
+        // Generate summary for winner (Fix 5: fail properly if summarization fails)
         let summary: string | undefined;
         try {
           const summaryResponse = await performCrownSummarization(
@@ -1040,10 +1087,57 @@ export const retryEvaluationFresh = internalAction({
           );
           summary = summaryResponse?.summary?.slice(0, 8000);
         } catch (summaryError) {
-          console.warn(
-            "[Crown] Summary generation failed during refresh",
-            summaryError
+          const summaryMessage =
+            summaryError instanceof Error
+              ? summaryError.message
+              : String(summaryError);
+          console.error(
+            "[Crown] Summary generation failed during refresh - marking as error",
+            { taskId: args.taskId, error: summaryMessage }
           );
+          // Non-destructive: restore to succeeded if we have existing evaluation
+          if (args.existingEvaluationId) {
+            await ctx.runMutation(internal.crown.restoreAfterFailedRefresh, {
+              taskId: args.taskId,
+              errorMessage: `Summarization failed: ${summaryMessage}`,
+            });
+            return { success: false, reason: "Summarization failed (restored)" };
+          }
+          await ctx.runMutation(internal.tasks.setCrownEvaluationStatusInternal, {
+            taskId: args.taskId,
+            teamId: args.teamId,
+            userId: args.userId,
+            status: "error",
+            errorMessage: `Summarization failed: ${summaryMessage}`,
+          });
+          return { success: false, reason: "Summarization failed" };
+        }
+
+        if (!summary || summary.trim().length === 0) {
+          // Non-destructive: restore to succeeded if we have existing evaluation
+          if (args.existingEvaluationId) {
+            await ctx.runMutation(internal.crown.restoreAfterFailedRefresh, {
+              taskId: args.taskId,
+              errorMessage: "Summarization returned empty output",
+            });
+            return { success: false, reason: "Empty summary (restored)" };
+          }
+          await ctx.runMutation(internal.tasks.setCrownEvaluationStatusInternal, {
+            taskId: args.taskId,
+            teamId: args.teamId,
+            userId: args.userId,
+            status: "error",
+            errorMessage: "Summarization returned empty output",
+          });
+          return { success: false, reason: "Empty summary" };
+        }
+
+        // SUCCESS: Clean up old evaluation before creating new one (non-destructive pattern)
+        if (args.existingEvaluationId) {
+          await ctx.runMutation(internal.crown.cleanupOldEvaluation, {
+            existingEvaluationId: args.existingEvaluationId,
+            existingWinnerRunId: args.existingWinnerRunId,
+          });
         }
 
         // Finalize with fresh evaluation results
@@ -1062,6 +1156,7 @@ export const retryEvaluationFresh = internalAction({
           candidateRunIds: candidates.map((c) => c.runId as Id<"taskRuns">),
           isFallback: false,
           evaluationNote: `Refreshed with fresh GitHub diffs. ${args.autoRefreshCount ? `Auto-refresh attempt ${args.autoRefreshCount}.` : ""}`,
+          autoRefreshCount: args.autoRefreshCount,
         });
 
         console.log(
@@ -1072,6 +1167,14 @@ export const retryEvaluationFresh = internalAction({
         const message =
           evalError instanceof Error ? evalError.message : String(evalError);
         console.error("[Crown] Refresh evaluation failed", { error: message });
+        // Non-destructive: restore to succeeded if we have existing evaluation
+        if (args.existingEvaluationId) {
+          await ctx.runMutation(internal.crown.restoreAfterFailedRefresh, {
+            taskId: args.taskId,
+            errorMessage: `Refresh evaluation failed: ${message}`,
+          });
+          return { success: false, reason: `${message} (restored)` };
+        }
         await ctx.runMutation(internal.tasks.setCrownEvaluationStatusInternal, {
           taskId: args.taskId,
           teamId: args.teamId,

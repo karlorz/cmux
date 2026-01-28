@@ -14,6 +14,7 @@ const EMPTY_DIFF_PLACEHOLDERS = [
   "<no code changes>",
   "<no code changes captured>",
   "<git diff not available>",
+  "<no branch available>",
 ];
 
 /**
