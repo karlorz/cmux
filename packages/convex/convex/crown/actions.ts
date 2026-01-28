@@ -772,7 +772,6 @@ export const retryEvaluationFresh = internalAction({
       try {
         // Try to fetch git diff from GitHub if we have the required info
         let gitDiff = "<git diff not available>";
-        let fetchedDiffFromGitHub = false;
         if (task.projectFullName && task.baseBranch && singleRun.newBranch) {
           console.log(
             `[Crown] Attempting to fetch git diff from GitHub for ${task.projectFullName}`
@@ -794,7 +793,6 @@ export const retryEvaluationFresh = internalAction({
                 baseBranch: task.baseBranch,
                 headBranch: singleRun.newBranch,
               });
-              fetchedDiffFromGitHub = true;
               console.log(
                 `[Crown] Successfully fetched git diff from GitHub (${gitDiff.length} chars)`
               );
