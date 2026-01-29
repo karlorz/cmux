@@ -2492,7 +2492,7 @@ EOF
 
 @registry.task(
     name="install-cmux-code",
-    deps=("apt-bootstrap",),
+    deps=("apt-bootstrap", "restart-execd-early"),
     description="Install Cmux Code (VSCode fork with OpenVSIX)",
 )
 async def task_install_cmux_code(ctx: PveTaskContext) -> None:
@@ -2552,7 +2552,28 @@ EOF
         echo "cmux-code binary verified at ${bin_path}"
         """
     )
-    await ctx.run("install-cmux-code", cmd)
+    # Write the script to a local temp file, push it to the container,
+    # then execute it. This avoids shell escaping issues with large scripts.
+    import tempfile
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".sh", delete=False
+    ) as script_file:
+        script_file.write(cmd)
+        script_file.flush()
+        local_script_path = script_file.name
+
+    try:
+        remote_script_path = "/tmp/install-cmux-code.sh"
+        await ctx.push_file(local_script_path, remote_script_path)
+        # Note: Don't use 'exec' here - it replaces the shell process which can
+        # cause the HTTP exec daemon to think the command completed prematurely
+        await ctx.run(
+            "install-cmux-code",
+            f"chmod +x {remote_script_path} && bash {remote_script_path}",
+        )
+    finally:
+        import os
+        os.unlink(local_script_path)
 
 
 @registry.task(
@@ -2621,12 +2642,12 @@ async def task_install_repo_dependencies(ctx: PveTaskContext) -> None:
 
 @registry.task(
     name="package-vscode-extension",
-    deps=("install-repo-dependencies",),
+    deps=("install-repo-dependencies", "restart-execd-early"),
     description="Package the cmux VS Code extension for installation",
 )
 @update_registry.task(
     name="package-vscode-extension",
-    deps=("install-repo-dependencies",),
+    deps=("install-repo-dependencies", "restart-execd-early"),
     description="Package the cmux VS Code extension for installation",
 )
 async def task_package_vscode_extension(ctx: PveTaskContext) -> None:
@@ -2656,15 +2677,18 @@ async def task_package_vscode_extension(ctx: PveTaskContext) -> None:
 
 @registry.task(
     name="install-ide-extensions",
-    deps=("install-openvscode", "install-coder", "install-cmux-code", "package-vscode-extension"),
+    deps=("install-openvscode", "install-coder", "install-cmux-code", "package-vscode-extension", "restart-execd-early"),
     description="Preinstall language extensions for the IDE",
 )
 @update_registry.task(
     name="install-ide-extensions",
-    deps=("package-vscode-extension",),  # IDEs already installed
+    # Depends on restart-execd-early to ensure the new execd is running before this task
+    deps=("package-vscode-extension", "restart-execd-early"),
     description="Preinstall language extensions for the IDE",
 )
 async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
+    # Note: restart-execd-early has already restarted execd with the streaming fix,
+    # so we don't need to restart it again here.
     ide_provider = get_ide_provider()
     if ide_provider == IDE_PROVIDER_CODER:
         server_root = "/app/code-server"
@@ -2693,7 +2717,7 @@ async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
     if not isinstance(extensions, list):
         raise RuntimeError("configs/ide-deps.json extensions must be an array.")
 
-    extension_lines: list[str] = []
+    # Validate extensions
     for ext in extensions:
         if not isinstance(ext, dict):
             raise RuntimeError(f"Invalid extension entry {ext!r}")
@@ -2706,163 +2730,66 @@ async def task_install_ide_extensions(ctx: PveTaskContext) -> None:
             or not isinstance(version, str)
         ):
             raise RuntimeError(f"Invalid extension entry {ext!r}")
-        extension_lines.append(f"{publisher}|{name}|{version}")
 
-    if not extension_lines:
+    if not extensions:
         raise RuntimeError("No extensions found in configs/ide-deps.json.")
 
-    extensions_blob = "\n".join(extension_lines)
+    # Install extensions using smaller inline commands instead of a large script file.
+    # This works around HTTP exec streaming issues where large scripts get truncated.
 
-    cmd = textwrap.dedent(
+    # Step 1: Install the bundled cmux extension
+    cmux_vsix = "/tmp/cmux-vscode-extension.vsix"
+    install_cmd = textwrap.dedent(
         f"""
         set -eux
         export HOME=/root
-        server_root="{server_root}"
-        echo "[install-ide-extensions] provider={ide_provider} server_root={server_root}"
-        
-        echo "DEBUG: Checking content of {server_root}..."
-        ls -R "{server_root}" || echo "Failed to list {server_root}"
-        
-        bin_path="{bin_path}"
-        echo "[install-ide-extensions] bin_path=${{bin_path}}"
-        if [ ! -x "${{bin_path}}" ]; then
-          echo "IDE binary not found at ${{bin_path}}" >&2
-          exit 1
-        fi
-        extensions_dir="{extensions_dir}"
-        user_data_dir="{user_data_dir}"
-        echo "[install-ide-extensions] extensions_dir=${{extensions_dir}} user_data_dir=${{user_data_dir}}"
-        mkdir -p "${{extensions_dir}}" "${{user_data_dir}}"
-        cmux_vsix="/tmp/cmux-vscode-extension.vsix"
-        if [ ! -f "${{cmux_vsix}}" ]; then
-          echo "cmux extension package missing at ${{cmux_vsix}}" >&2
-          exit 1
-        fi
-        ls -lh "${{cmux_vsix}}"
-        install_from_file() {{
-          local package_path="$1"
-          echo "[install-ide-extensions] DEBUG: install_from_file called with: ${{package_path}}"
-          echo "[install-ide-extensions] DEBUG: bin_path=${{bin_path}}"
-          echo "[install-ide-extensions] DEBUG: extensions_dir=${{extensions_dir}}"
-          echo "[install-ide-extensions] DEBUG: user_data_dir=${{user_data_dir}}"
-          echo "[install-ide-extensions] installing ${{package_path}}"
-          if ! "${{bin_path}}" \\
-            --install-extension "${{package_path}}" \\
-            --force \\
-            --extensions-dir "${{extensions_dir}}" \\
-            --user-data-dir "${{user_data_dir}}"; then
-            echo "[install-ide-extensions] WARNING: install command returned non-zero for ${{package_path}}" >&2
-          fi
-          echo "[install-ide-extensions] DEBUG: install_from_file completed for ${{package_path}}"
-        }}
-        echo "[install-ide-extensions] DEBUG: About to install bundled cmux extension"
+        echo "[install-ide-extensions] checking cmux extension"
+        ls -la {cmux_vsix}
         echo "[install-ide-extensions] installing bundled cmux extension"
-        install_from_file "${{cmux_vsix}}"
-        install_result=$?
-        echo "[install-ide-extensions] cmux extension install result: $install_result"
-        echo "[install-ide-extensions] DEBUG: Removing cmux vsix file"
-        rm -f "${{cmux_vsix}}"
-        echo "[install-ide-extensions] DEBUG: About to start marketplace downloads"
-        echo "[install-ide-extensions] starting marketplace extension downloads"
-        download_dir="$(mktemp -d)"
-        cleanup() {{
-          rm -rf "${{download_dir}}"
-        }}
-        trap cleanup EXIT
-        echo "[install-ide-extensions] downloading marketplace extensions to ${{download_dir}}"
-        download_extension() {{
-          local publisher="$1"
-          local name="$2"
-          local version="$3"
-          local destination="$4"
-          local tmpfile="${{destination}}.download"
-          local curl_stderr="${{tmpfile}}.stderr"
-          local url="https://marketplace.visualstudio.com/_apis/public/gallery/publishers/${{publisher}}/vsextensions/${{name}}/${{version}}/vspackage"
-          local attempt=1
-          local max_attempts=3
-          while [ "${{attempt}}" -le "${{max_attempts}}" ]; do
-            echo "[install-ide-extensions] fetch ${{publisher}}.${{name}}@${{version}} attempt ${{attempt}}"
-            if curl -fSL --retry 6 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 600 -o "${{tmpfile}}" "${{url}}" 2>"${{curl_stderr}}"; then
-              rm -f "${{curl_stderr}}"
-              break
-            fi
-            echo "Download attempt ${{attempt}}/${{max_attempts}} failed for ${{publisher}}.${{name}}@${{version}}; retrying..." >&2
-            if [ -s "${{curl_stderr}}" ]; then
-              cat "${{curl_stderr}}" >&2
-            fi
-            rm -f "${{tmpfile}}"
-            attempt=$((attempt + 1))
-            sleep $((attempt * 2))
-          done
-          if [ "${{attempt}}" -gt "${{max_attempts}}" ]; then
-            echo "Failed to download ${{publisher}}.${{name}}@${{version}} after ${{max_attempts}} attempts" >&2
-            if [ -s "${{curl_stderr}}" ]; then
-              cat "${{curl_stderr}}" >&2
-            fi
-            rm -f "${{curl_stderr}}"
-            return 1
-          fi
-          if gzip -t "${{tmpfile}}" >/dev/null 2>&1; then
-            gunzip -c "${{tmpfile}}" > "${{destination}}"
-            rm -f "${{tmpfile}}"
-          else
-            mv "${{tmpfile}}" "${{destination}}"
-          fi
-        }}
-        set +e
-        ext_count=0
-        pids=""
-        while IFS='|' read -r publisher name version; do
-          [ -z "${{publisher}}" ] && continue
-          download_extension "${{publisher}}" "${{name}}" "${{version}}" "${{download_dir}}/${{publisher}}.${{name}}.vsix" &
-          pids="$pids $!"
-          ext_count=$((ext_count + 1))
-        done <<'EXTENSIONS'
-{extensions_blob}
-EXTENSIONS
-        download_failed=0
-        for pid in $pids; do
-          if ! wait "$pid"; then
-            download_failed=$((download_failed + 1))
-          fi
-        done
-        if [ "$download_failed" -gt 0 ]; then
-          echo "[install-ide-extensions] ERROR: $download_failed of $ext_count downloads failed" >&2
-          exit 1
-        fi
-        echo "[install-ide-extensions] downloaded $ext_count extensions"
-        echo "[install-ide-extensions] DEBUG: Listing download directory contents:"
-        ls -la "${{download_dir}}" >&2
-        set -e
-        shopt -s nullglob
-        vsix_files=("${{download_dir}}"/*.vsix)
-        actual_count=${{#vsix_files[@]}}
-        echo "[install-ide-extensions] DEBUG: Found $actual_count vsix files via glob"
-        if [ "$actual_count" -ne "$ext_count" ]; then
-          echo "[install-ide-extensions] ERROR: Expected $ext_count vsix files but found $actual_count" >&2
-          echo "[install-ide-extensions] DEBUG: Full download_dir listing:"
-          find "${{download_dir}}" -type f -ls >&2
-          exit 1
-        fi
-        installed_count=0
-        for vsix in "${{vsix_files[@]}}"; do
-          if [ -f "${{vsix}}" ]; then
-            echo "[install-ide-extensions] DEBUG: Installing ${{vsix}}"
-            install_from_file "${{vsix}}"
-            installed_count=$((installed_count + 1))
-            echo "[install-ide-extensions] DEBUG: Installed $installed_count of $ext_count"
-          else
-            echo "[install-ide-extensions] DEBUG: File not found: ${{vsix}}" >&2
-          fi
-        done
-        if [ "$installed_count" -ne "$ext_count" ]; then
-          echo "[install-ide-extensions] ERROR: Expected to install $ext_count extensions but installed $installed_count" >&2
-          exit 1
-        fi
-        echo "[install-ide-extensions] completed installs: $installed_count extensions"
+        {bin_path} --install-extension {cmux_vsix} --force --extensions-dir {extensions_dir} --user-data-dir {user_data_dir} </dev/null || true
+        echo "[install-ide-extensions] cmux extension installed"
+        rm -f {cmux_vsix}
         """
     )
-    await ctx.run("install-ide-extensions", cmd)
+    await ctx.run("install-cmux-ext", install_cmd)
+
+    # Step 2: Download and install marketplace extensions one at a time
+    for ext in extensions:
+        publisher = ext.get("publisher")
+        name = ext.get("name")
+        version = ext.get("version")
+        ext_id = f"{publisher}.{name}"
+        vsix_path = f"/tmp/{ext_id}.vsix"
+        url = f"https://marketplace.visualstudio.com/_apis/public/gallery/publishers/{publisher}/vsextensions/{name}/{version}/vspackage"
+
+        download_cmd = textwrap.dedent(
+            f"""
+            set -eux
+            export HOME=/root
+            echo "[install-ide-extensions] downloading {ext_id}@{version}"
+            curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 300 -o {vsix_path}.tmp "{url}"
+            if gzip -t {vsix_path}.tmp 2>/dev/null; then
+                gunzip -c {vsix_path}.tmp > {vsix_path}
+                rm -f {vsix_path}.tmp
+            else
+                mv {vsix_path}.tmp {vsix_path}
+            fi
+            echo "[install-ide-extensions] downloaded {ext_id}"
+            """
+        )
+        await ctx.run(f"download-{ext_id}", download_cmd)
+
+        install_ext_cmd = textwrap.dedent(
+            f"""
+            set -eux
+            export HOME=/root
+            echo "[install-ide-extensions] installing {ext_id}"
+            {bin_path} --install-extension {vsix_path} --force --extensions-dir {extensions_dir} --user-data-dir {user_data_dir} </dev/null || true
+            echo "[install-ide-extensions] installed {ext_id}"
+            rm -f {vsix_path}
+            """
+        )
+        await ctx.run(f"install-{ext_id}", install_ext_cmd)
 
 
 @registry.task(
@@ -3106,6 +3033,8 @@ async def task_build_execd(ctx: PveTaskContext) -> None:
         export PATH="/usr/local/go/bin:${{PATH}}"
         install -d /usr/local/bin
         cd {repo}/scripts/execd
+        # Force rebuild by touching source files (git apply doesn't always update timestamps)
+        touch main.go
         go build -trimpath -o /usr/local/bin/{EXECD_BINARY_NAME} .
         if [ ! -x /usr/local/bin/{EXECD_BINARY_NAME} ]; then
           echo "Failed to build {EXECD_BINARY_NAME}" >&2
@@ -3114,6 +3043,37 @@ async def task_build_execd(ctx: PveTaskContext) -> None:
         """
     )
     await ctx.run("build-execd", cmd)
+
+
+@registry.task(
+    name="restart-execd-early",
+    deps=("build-execd",),
+    description="Restart execd service to use newly-built binary for long-running tasks",
+)
+@update_registry.task(
+    name="restart-execd-early",
+    deps=("build-execd",),
+    description="Restart execd service to use newly-built binary for long-running tasks",
+)
+async def task_restart_execd_early(ctx: PveTaskContext) -> None:
+    """Restart execd to use the newly-built binary with streaming fixes.
+
+    This must run after build-execd and before any long-running tasks (like
+    build-rust-binaries) to ensure they use the fixed execd that properly
+    streams output to completion.
+
+    We use nohup with a small delay because the current HTTP request is being
+    handled by the old execd - we need to let the restart happen after this
+    request returns.
+    """
+    import asyncio
+
+    await ctx.run(
+        "restart-execd-early",
+        "nohup sh -c 'sleep 0.5 && systemctl restart cmux-execd.service' >/dev/null 2>&1 &",
+    )
+    # Wait for the background restart to complete
+    await asyncio.sleep(2)
 
 
 @registry.task(
@@ -3165,12 +3125,12 @@ JSON
 
 @registry.task(
     name="build-rust-binaries",
-    deps=("upload-repo", "install-rust-toolchain"),
+    deps=("upload-repo", "install-rust-toolchain", "restart-execd-early"),
     description="Build Rust binaries with a shared target dir",
 )
 @update_registry.task(
     name="build-rust-binaries",
-    deps=("upload-repo",),  # Rust toolchain already installed
+    deps=("upload-repo", "restart-execd-early"),  # Rust toolchain already installed
     description="Build Rust binaries with a shared target dir",
 )
 async def task_build_rust_binaries(ctx: PveTaskContext) -> None:
