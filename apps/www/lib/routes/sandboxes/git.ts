@@ -57,8 +57,14 @@ export const configureGithubAccess = async (
       // regardless of what profile scripts might set (bash -l sources ~/.profile etc.)
       // NOTE: The \\$ escapes are critical - they prevent the outer shell (cmux-execd's bash -c)
       // from expanding variables before bash -l runs. Without this, $GH_CONFIG_DIR expands to empty.
+      //
+      // IMPORTANT: We explicitly set credential.helper after gh auth setup-git because:
+      // - gh auth setup-git may silently fail to configure the credential helper
+      // - gh auth status checks ~/.config/gh/hosts.yml directly
+      // - git push/pull uses the credential helper configured in .gitconfig
+      // - These are two separate systems that must both be configured correctly
       const ghAuthRes = await instance.exec(
-        `bash -lc "export GH_CONFIG_DIR=/root/.config/gh HOME=/root && rm -rf \\"\\$GH_CONFIG_DIR\\" && mkdir -p \\"\\$GH_CONFIG_DIR\\" && printf %s ${singleQuote(token)} | gh auth login --with-token && gh auth setup-git 2>&1"`
+        `bash -lc "export GH_CONFIG_DIR=/root/.config/gh HOME=/root && rm -rf \\"\\$GH_CONFIG_DIR\\" && mkdir -p \\"\\$GH_CONFIG_DIR\\" && printf %s ${singleQuote(token)} | gh auth login --with-token && gh auth setup-git 2>&1 && git config --global credential.helper '!/usr/bin/gh auth git-credential'"`
       );
 
       if (ghAuthRes.exit_code === 0) {
