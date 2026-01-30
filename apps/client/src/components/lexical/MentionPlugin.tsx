@@ -185,6 +185,7 @@ export function MentionPlugin({
   // Fetch all files once when repository URL is available
   useEffect(() => {
     if ((repoUrl || environmentId) && socket) {
+      let cancelled = false;
       setIsLoading(true);
       socket.emit(
         "list-files",
@@ -194,6 +195,7 @@ export function MentionPlugin({
           ...(branch ? { branch } : {}),
         },
         (resp) => {
+          if (cancelled) return;
           setIsLoading(false);
           if (resp.ok) {
             setFiles(resp.files);
@@ -202,7 +204,9 @@ export function MentionPlugin({
           }
         }
       );
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
 
     setFiles([]);

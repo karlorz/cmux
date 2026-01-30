@@ -273,10 +273,17 @@ export const FileInfoSchema = z.object({
   repoFullName: z.string().optional(),
 });
 
-export const ListFilesResponseSchema = z.object({
-  files: z.array(FileInfoSchema),
-  error: z.string().optional(),
-});
+export const ListFilesResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    files: z.array(FileInfoSchema),
+  }),
+  z.object({
+    ok: z.literal(false),
+    files: z.array(FileInfoSchema),
+    error: z.string().optional(),
+  }),
+]);
 
 // VSCode instance events (used for notifications)
 export const VSCodeSpawnedSchema = z.object({
