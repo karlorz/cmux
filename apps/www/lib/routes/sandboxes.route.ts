@@ -874,9 +874,67 @@ sandboxesRouter.openapi(
           ? "morph"
           : undefined);
 
-    const tokenResult = await getFreshGitHubToken(user);
-    if ("error" in tokenResult) {
-      return c.text(tokenResult.error, tokenResult.status);
+    // Try to use GitHub App installation token (same logic as /sandboxes/start)
+    // to maintain consistency with initial sandbox setup
+    let gitAuthToken: string | undefined;
+
+    // Look up the taskRun to get the repo owner for GitHub App token preference
+    const taskRun = await convex.query(api.taskRuns.getByContainerName, {
+      teamSlugOrId,
+      containerName: id,
+    });
+
+    if (taskRun) {
+      const task = await convex.query(api.tasks.getById, {
+        teamSlugOrId,
+        id: taskRun.taskId,
+      });
+      if (task?.projectFullName) {
+        const [owner] = task.projectFullName.split("/");
+        try {
+          const connections = await convex.query(api.github.listProviderConnections, {
+            teamSlugOrId,
+          });
+          const targetConnection = connections.find(
+            (co) =>
+              co.isActive && co.accountLogin?.toLowerCase() === owner.toLowerCase()
+          );
+          if (targetConnection) {
+            console.log(
+              `[sandboxes.refresh-github-auth] Found GitHub App installation ${targetConnection.installationId} for ${owner}`
+            );
+            gitAuthToken = await generateGitHubInstallationToken({
+              installationId: targetConnection.installationId,
+              repositories: [task.projectFullName],
+              permissions: {
+                contents: "write",
+                metadata: "read",
+                workflows: "write",
+              },
+            });
+            console.log(
+              `[sandboxes.refresh-github-auth] Using GitHub App token for git authentication`
+            );
+          }
+        } catch (error) {
+          console.error(
+            `[sandboxes.refresh-github-auth] Failed to get GitHub App token, falling back to user OAuth:`,
+            error
+          );
+        }
+      }
+    }
+
+    // Fall back to personal OAuth token if no GitHub App token
+    if (!gitAuthToken) {
+      const tokenResult = await getFreshGitHubToken(user);
+      if ("error" in tokenResult) {
+        return c.text(tokenResult.error, tokenResult.status);
+      }
+      gitAuthToken = tokenResult.token;
+      console.log(
+        `[sandboxes.refresh-github-auth] Using personal OAuth token for git authentication`
+      );
     }
 
     try {
@@ -895,7 +953,7 @@ sandboxesRouter.openapi(
           return c.text("Instance is paused - resume it first", 409);
         }
 
-        await configureGithubAccess(wrapMorphInstance(instance), tokenResult.token);
+        await configureGithubAccess(wrapMorphInstance(instance), gitAuthToken);
       } else if (provider === "pve-lxc") {
         if (!env.PVE_API_URL || !env.PVE_API_TOKEN) {
           return c.text("PVE LXC provider not configured", 503);
@@ -913,7 +971,7 @@ sandboxesRouter.openapi(
           return c.text("Container is stopped - resume it first", 409);
         }
 
-        await configureGithubAccess(wrapPveLxcInstance(instance), tokenResult.token);
+        await configureGithubAccess(wrapPveLxcInstance(instance), gitAuthToken);
       } else {
         return c.text("Unsupported sandbox provider", 400);
       }
