@@ -15,6 +15,7 @@ import { type Instance, MorphCloudClient } from "morphcloud";
 import { getConvex } from "../utils/get-convex";
 import { selectGitIdentity } from "../utils/gitIdentity";
 import { stackServerAppJs } from "../utils/stack";
+import { generateGitHubInstallationToken } from "@/lib/utils/github-app-token";
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
 import {
@@ -399,14 +400,65 @@ morphRouter.openapi(
         return c.text("Instance is paused - resume it first", 409);
       }
 
-      // Get fresh GitHub token (server-side, never from client)
-      const tokenResult = await getFreshGitHubToken(user);
-      if ("error" in tokenResult) {
-        return c.text(tokenResult.error, tokenResult.status);
+      // Try to use GitHub App installation token (same logic as /sandboxes/start)
+      // to maintain consistency with initial sandbox setup
+      let gitAuthToken: string | undefined;
+
+      // Get the task to find projectFullName for GitHub App token preference
+      const task = await convex.query(api.tasks.getById, {
+        teamSlugOrId,
+        id: taskRun.taskId,
+      });
+
+      if (task?.projectFullName) {
+        const [owner] = task.projectFullName.split("/");
+        try {
+          const connections = await convex.query(api.github.listProviderConnections, {
+            teamSlugOrId,
+          });
+          const targetConnection = connections.find(
+            (co) =>
+              co.isActive && co.accountLogin?.toLowerCase() === owner.toLowerCase()
+          );
+          if (targetConnection) {
+            console.log(
+              `[morph.refresh-github-auth] Found GitHub App installation ${targetConnection.installationId} for ${owner}`
+            );
+            gitAuthToken = await generateGitHubInstallationToken({
+              installationId: targetConnection.installationId,
+              repositories: [task.projectFullName],
+              permissions: {
+                contents: "write",
+                metadata: "read",
+                workflows: "write",
+              },
+            });
+            console.log(
+              `[morph.refresh-github-auth] Using GitHub App token for git authentication`
+            );
+          }
+        } catch (error) {
+          console.error(
+            `[morph.refresh-github-auth] Failed to get GitHub App token, falling back to user OAuth:`,
+            error
+          );
+        }
+      }
+
+      // Fall back to personal OAuth token if no GitHub App token
+      if (!gitAuthToken) {
+        const tokenResult = await getFreshGitHubToken(user);
+        if ("error" in tokenResult) {
+          return c.text(tokenResult.error, tokenResult.status);
+        }
+        gitAuthToken = tokenResult.token;
+        console.log(
+          `[morph.refresh-github-auth] Using personal OAuth token for git authentication`
+        );
       }
 
       // Use the existing configureGithubAccess function to refresh auth
-      await configureGithubAccess(wrapMorphInstance(instance), tokenResult.token);
+      await configureGithubAccess(wrapMorphInstance(instance), gitAuthToken);
 
       console.log(
         `[morph.refresh-github-auth] Successfully refreshed GitHub auth for instance ${instanceId}`
