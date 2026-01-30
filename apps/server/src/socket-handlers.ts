@@ -2460,7 +2460,7 @@ export function setupSocketHandlers(
       }
     });
 
-    socket.on("list-files", async (data) => {
+    socket.on("list-files", async (data, callback) => {
       try {
         const {
           repoPath: repoUrl,
@@ -2634,7 +2634,8 @@ export function setupSocketHandlers(
           });
 
           if (!environment) {
-            socket.emit("list-files-response", {
+            callback?.({
+              ok: false,
               files: [],
               error: "Environment not found",
             });
@@ -2646,7 +2647,8 @@ export function setupSocketHandlers(
             .filter((repo): repo is string => Boolean(repo));
 
           if (repoFullNames.length === 0) {
-            socket.emit("list-files-response", {
+            callback?.({
+              ok: false,
               files: [],
               error: "This environment has no repositories configured",
             });
@@ -2670,7 +2672,7 @@ export function setupSocketHandlers(
             }
           }
 
-          socket.emit("list-files-response", { files: aggregatedFiles });
+          callback?.({ ok: true, files: aggregatedFiles });
           return;
         }
 
@@ -2679,17 +2681,19 @@ export function setupSocketHandlers(
             targetRepoUrl: repoUrl,
             branchOverride: branch,
           });
-          socket.emit("list-files-response", { files: fileList });
+          callback?.({ ok: true, files: fileList });
           return;
         }
 
-        socket.emit("list-files-response", {
+        callback?.({
+          ok: false,
           files: [],
           error: "Repository information missing",
         });
       } catch (error) {
         serverLogger.error("Error listing files:", error);
-        socket.emit("list-files-response", {
+        callback?.({
+          ok: false,
           files: [],
           error: error instanceof Error ? error.message : "Unknown error",
         });

@@ -273,10 +273,17 @@ export const FileInfoSchema = z.object({
   repoFullName: z.string().optional(),
 });
 
-export const ListFilesResponseSchema = z.object({
-  files: z.array(FileInfoSchema),
-  error: z.string().optional(),
-});
+export const ListFilesResponseSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    files: z.array(FileInfoSchema),
+  }),
+  z.object({
+    ok: z.literal(false),
+    files: z.array(FileInfoSchema),
+    error: z.string().optional(),
+  }),
+]);
 
 // VSCode instance events (used for notifications)
 export const VSCodeSpawnedSchema = z.object({
@@ -552,7 +559,14 @@ export interface ClientToServerEvents {
     data: OpenInEditor,
     callback: (response: OpenInEditorResponse) => void
   ) => void;
-  "list-files": (data: ListFilesRequest) => void;
+  "list-files": (
+    data: ListFilesRequest,
+    callback: (
+      response:
+        | { ok: true; files: FileInfo[] }
+        | { ok: false; files: FileInfo[]; error: string }
+    ) => void
+  ) => void;
   // GitHub operations
   "github-test-auth": (
     callback: (response: GitHubAuthResponse) => void
@@ -653,7 +667,6 @@ export interface ServerToClientEvents {
   "git-file-changed": (data: GitFileChanged) => void;
   "git-full-diff-response": (data: GitFullDiffResponse) => void;
   "open-in-editor-error": (data: OpenInEditorError) => void;
-  "list-files-response": (data: ListFilesResponse) => void;
   "vscode-spawned": (data: VSCodeSpawned) => void;
   "default-repo": (data: DefaultRepo) => void;
   "available-editors": (data: AvailableEditors) => void;
