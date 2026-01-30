@@ -217,9 +217,9 @@ async function loadConfig(envFilePath?: string): Promise<Config> {
     env = await loadEnvFile(envFilePath);
   }
 
-  // Merge with process.env (process.env takes precedence)
+  // Merge with process.env (env file takes precedence when specified)
   const getVar = (key: string): string | undefined => {
-    return process.env[key] ?? env[key];
+    return env[key] ?? process.env[key];
   };
 
   const sourceUrl = getVar("NEXT_PUBLIC_CONVEX_URL");
