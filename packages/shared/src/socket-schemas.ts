@@ -552,7 +552,14 @@ export interface ClientToServerEvents {
     data: OpenInEditor,
     callback: (response: OpenInEditorResponse) => void
   ) => void;
-  "list-files": (data: ListFilesRequest) => void;
+  "list-files": (
+    data: ListFilesRequest,
+    callback: (
+      response:
+        | { ok: true; files: FileInfo[] }
+        | { ok: false; files: FileInfo[]; error: string }
+    ) => void
+  ) => void;
   // GitHub operations
   "github-test-auth": (
     callback: (response: GitHubAuthResponse) => void
