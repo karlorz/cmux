@@ -1324,11 +1324,16 @@ auth: none
 cert: false
 EOF
 
-        # Create code-server user settings to disable welcome screen
+        # Create code-server user settings
         mkdir -p /root/.code-server/User
         cat > /root/.code-server/User/settings.json << 'EOF'
 {
-  "workbench.startupEditor": "none"
+  "workbench.startupEditor": "none",
+  "security.workspace.trust.enabled": false,
+  "editor.formatOnSave": true,
+  "editor.formatOnSaveMode": "file",
+  "files.autoSave": "afterDelay",
+  "files.autoSaveDelay": 0
 }
 EOF
         """
@@ -1371,7 +1376,11 @@ async def task_install_cmux_code(ctx: TaskContext) -> None:
   "security.workspace.trust.enabled": false,
   "telemetry.telemetryLevel": "off",
   "update.mode": "none",
-  "extensions.verifySignature": false
+  "extensions.verifySignature": false,
+  "editor.formatOnSave": true,
+  "editor.formatOnSaveMode": "file",
+  "files.autoSave": "afterDelay",
+  "files.autoSaveDelay": 1000
 }
 EOF
         """
