@@ -51,10 +51,12 @@ export const configureGithubAccess = async (
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      // First, remove existing hosts.yml to ensure clean state
-      // This prevents stale entries (e.g., old bot tokens) from causing auth failures
+      // Remove entire gh config directory to ensure completely clean state
+      // This prevents stale entries from accumulating across refreshes
+      // We explicitly set GH_CONFIG_DIR and HOME to ensure gh uses the correct paths
+      // regardless of what profile scripts might set (bash -l sources ~/.profile etc.)
       const ghAuthRes = await instance.exec(
-        `bash -lc "rm -f /root/.config/gh/hosts.yml && printf %s ${singleQuote(token)} | gh auth login --with-token && gh auth setup-git 2>&1"`
+        `bash -lc "export GH_CONFIG_DIR=/root/.config/gh HOME=/root && rm -rf \\"$GH_CONFIG_DIR\\" && mkdir -p \\"$GH_CONFIG_DIR\\" && printf %s ${singleQuote(token)} | gh auth login --with-token && gh auth setup-git 2>&1"`
       );
 
       if (ghAuthRes.exit_code === 0) {
