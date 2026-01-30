@@ -51,8 +51,10 @@ export const configureGithubAccess = async (
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
+      // First, remove existing hosts.yml to ensure clean state
+      // This prevents stale entries (e.g., old bot tokens) from causing auth failures
       const ghAuthRes = await instance.exec(
-        `bash -lc "printf %s ${singleQuote(token)} | gh auth login --with-token && gh auth setup-git 2>&1"`
+        `bash -lc "rm -f /root/.config/gh/hosts.yml && printf %s ${singleQuote(token)} | gh auth login --with-token && gh auth setup-git 2>&1"`
       );
 
       if (ghAuthRes.exit_code === 0) {
