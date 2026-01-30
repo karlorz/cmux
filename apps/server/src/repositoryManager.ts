@@ -9,6 +9,7 @@ import {
 } from "./gitHooks";
 import { serverLogger } from "./utils/fileLogger";
 import { getGitHubOAuthToken } from "./utils/getGitHubToken";
+import { sanitizeGitUrl, hasEmbeddedCredentials } from "./utils/gitUrl.js";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -369,6 +370,8 @@ export class RepositoryManager {
    * If authenticatedUrl is provided, use it directly.
    * Otherwise, try to get a GitHub OAuth token and inject it into the origin URL.
    * Falls back to "origin" if no authentication is available.
+   *
+   * Also auto-fixes stale embedded credentials in the remote URL.
    */
   private async getFetchSource(
     repoPath: string,
@@ -384,7 +387,17 @@ export class RepositoryManager {
         `git remote get-url origin`,
         { cwd: repoPath, suppressErrorLogging: true }
       );
-      const originUrl = stdout.trim();
+      let originUrl = stdout.trim();
+
+      // Auto-fix: If URL has stale embedded credentials, clean it up
+      if (hasEmbeddedCredentials(originUrl)) {
+        serverLogger.warn("Found stale credentials in git remote URL, cleaning up...");
+        originUrl = sanitizeGitUrl(originUrl);
+        await this.executeGitCommand(
+          `git remote set-url origin "${originUrl}"`,
+          { cwd: repoPath, suppressErrorLogging: true }
+        );
+      }
 
       // Only try to authenticate GitHub URLs
       if (originUrl.startsWith("https://github.com/")) {
@@ -759,6 +772,21 @@ export class RepositoryManager {
             `git remote set-url origin "${remoteUrl}"`,
             { cwd: originPath }
           );
+
+          // Verify cleanup succeeded
+          const { stdout: currentUrl } = await this.executeGitCommand(
+            `git remote get-url origin`,
+            { cwd: originPath }
+          );
+
+          if (hasEmbeddedCredentials(currentUrl.trim())) {
+            serverLogger.warn("First cleanup attempt failed, retrying with sanitized URL");
+            await this.executeGitCommand(
+              `git remote set-url origin "${sanitizeGitUrl(currentUrl.trim())}"`,
+              { cwd: originPath }
+            );
+          }
+
           serverLogger.info("Reset remote origin to clean URL");
         } catch (error) {
           serverLogger.warn("Failed to reset remote origin URL:", error);
