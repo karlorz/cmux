@@ -1164,7 +1164,7 @@ async def task_install_go_toolchain(ctx: TaskContext) -> None:
     cmd = textwrap.dedent(
         """
         set -eux
-        GO_VERSION="1.25.2"
+        GO_VERSION="1.25.5"
         ARCH="$(uname -m)"
         case "${ARCH}" in
           x86_64)
@@ -1371,7 +1371,11 @@ async def task_install_cmux_code(ctx: TaskContext) -> None:
   "security.workspace.trust.enabled": false,
   "telemetry.telemetryLevel": "off",
   "update.mode": "none",
-  "extensions.verifySignature": false
+  "extensions.verifySignature": false,
+  "editor.formatOnSave": true,
+  "editor.formatOnSaveMode": "file",
+  "files.autoSave": "afterDelay",
+  "files.autoSaveDelay": 1000
 }
 EOF
         """
