@@ -274,6 +274,7 @@ export const FileInfoSchema = z.object({
 });
 
 export const ListFilesResponseSchema = z.object({
+  ok: z.boolean(),
   files: z.array(FileInfoSchema),
   error: z.string().optional(),
 });
@@ -552,7 +553,10 @@ export interface ClientToServerEvents {
     data: OpenInEditor,
     callback: (response: OpenInEditorResponse) => void
   ) => void;
-  "list-files": (data: ListFilesRequest) => void;
+  "list-files": (
+    data: ListFilesRequest,
+    callback: (response: ListFilesResponse) => void
+  ) => void;
   // GitHub operations
   "github-test-auth": (
     callback: (response: GitHubAuthResponse) => void
