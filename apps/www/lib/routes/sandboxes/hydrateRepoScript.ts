@@ -16,6 +16,26 @@ interface HydrateConfig {
   newBranch?: string;
 }
 
+/**
+ * Remove embedded credentials from a git URL.
+ * @example
+ * sanitizeGitUrl("https://x-access-token:TOKEN@github.com/user/repo.git")
+ * // Returns: "https://github.com/user/repo.git"
+ */
+function sanitizeGitUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return url;
+    if (!parsed.username && !parsed.password) return url;
+
+    parsed.username = "";
+    parsed.password = "";
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
 function log(message: string, level: "info" | "error" | "debug" = "info") {
   const prefix = `[hydrate-repo]`;
   const timestamp = new Date().toISOString();
@@ -152,6 +172,22 @@ function cloneRepository(config: HydrateConfig) {
   }
 
   log("Repository cloned successfully");
+
+  // SECURITY: Reset the remote URL to remove embedded credentials
+  // This prevents tokens from persisting in .git/config
+  const cleanUrl = sanitizeGitUrl(cloneUrl || "");
+  if (cleanUrl && cleanUrl !== cloneUrl) {
+    log("Removing embedded credentials from remote URL");
+    const { exitCode: setUrlExitCode } = exec(
+      `git remote set-url origin "${cleanUrl}"`,
+      { cwd: workspacePath, throwOnError: false }
+    );
+    if (setUrlExitCode === 0) {
+      log("Remote URL sanitized successfully");
+    } else {
+      log("Failed to sanitize remote URL", "error");
+    }
+  }
 }
 
 function fetchUpdates(workspacePath: string) {
