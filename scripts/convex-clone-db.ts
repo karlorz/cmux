@@ -174,6 +174,9 @@ async function importDatabase(options: ImportOptions): Promise<void> {
   console.log(`\nImporting to ${deploymentName} from ${options.backupPath}...`);
 
   const args = ["import", "--replace-all", options.backupPath];
+  if (options.skipConfirmation) {
+    args.push("--yes");
+  }
 
   const result = runConvexCommand(args, {
     env: { CONVEX_DEPLOY_KEY: options.deployKey },
