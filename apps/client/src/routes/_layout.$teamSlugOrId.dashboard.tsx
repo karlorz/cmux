@@ -1,8 +1,5 @@
 import { env } from "@/client-env";
-import {
-  DashboardInput,
-  type EditorApi,
-} from "@/components/dashboard/DashboardInput";
+import type { EditorApi } from "@/components/dashboard/DashboardInput";
 import { DashboardInputControls } from "@/components/dashboard/DashboardInputControls";
 import { DashboardInputFooter } from "@/components/dashboard/DashboardInputFooter";
 import { DashboardStartTaskButton } from "@/components/dashboard/DashboardStartTaskButton";
@@ -48,33 +45,62 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useAction, useMutation } from "convex/react";
 import { Server as ServerIcon } from "lucide-react";
 import { useDebouncedValue } from "@mantine/hooks";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 
+// Lazy load DashboardInput (contains heavy Lexical editor)
+const DashboardInput = lazy(() =>
+  import("@/components/dashboard/DashboardInput").then((m) => ({
+    default: m.DashboardInput,
+  }))
+);
+
+// Skeleton fallback for DashboardInput while loading
+function DashboardInputSkeleton() {
+  return (
+    <div className="p-4 min-h-[120px] animate-pulse">
+      <div className="h-4 bg-neutral-200 dark:bg-neutral-600 rounded w-3/4 mb-3" />
+      <div className="h-4 bg-neutral-200 dark:bg-neutral-600 rounded w-1/2" />
+    </div>
+  );
+}
+
 export const Route = createFileRoute("/_layout/$teamSlugOrId/dashboard")({
   component: DashboardComponent,
-  loader: async (opts) => {
+  loader: (opts) => {
     const { teamSlugOrId } = opts.params;
     // In web mode, exclude local workspaces (must match TaskList query args)
     const excludeLocalWorkspaces = env.NEXT_PUBLIC_WEB_MODE || undefined;
-    // Prewarm queries used in the dashboard
-    convexQueryClient.convexClient.prewarmQuery({
-      query: api.github.getReposByOrg,
-      args: { teamSlugOrId },
-    });
-    convexQueryClient.convexClient.prewarmQuery({
-      query: api.environments.list,
-      args: { teamSlugOrId },
-    });
-    // Prewarm queries used in TaskList (args must match exactly)
-    convexQueryClient.convexClient.prewarmQuery({
-      query: api.tasks.get,
-      args: { teamSlugOrId, excludeLocalWorkspaces },
-    });
-    convexQueryClient.convexClient.prewarmQuery({
-      query: api.tasks.getPinned,
-      args: { teamSlugOrId, excludeLocalWorkspaces },
+    // Defer prewarm queries to next tick - don't block route transition
+    // Convex will handle loading states via Suspense
+    queueMicrotask(() => {
+      // Prewarm queries used in the dashboard
+      convexQueryClient.convexClient.prewarmQuery({
+        query: api.github.getReposByOrg,
+        args: { teamSlugOrId },
+      });
+      convexQueryClient.convexClient.prewarmQuery({
+        query: api.environments.list,
+        args: { teamSlugOrId },
+      });
+      // Prewarm queries used in TaskList (args must match exactly)
+      convexQueryClient.convexClient.prewarmQuery({
+        query: api.tasks.get,
+        args: { teamSlugOrId, excludeLocalWorkspaces },
+      });
+      convexQueryClient.convexClient.prewarmQuery({
+        query: api.tasks.getPinned,
+        args: { teamSlugOrId, excludeLocalWorkspaces },
+      });
     });
   },
 });
@@ -1402,16 +1428,18 @@ function DashboardMainCard({
       className="relative bg-white dark:bg-neutral-700/50 border border-neutral-500/15 dark:border-neutral-500/15 rounded-2xl transition-all"
       data-onboarding="dashboard-input"
     >
-      <DashboardInput
-        ref={editorApiRef}
-        onTaskDescriptionChange={onTaskDescriptionChange}
-        onSubmit={onSubmit}
-        repoUrl={lexicalRepoUrl}
-        environmentId={lexicalEnvironmentId}
-        branch={lexicalBranch}
-        persistenceKey="dashboard-task-description"
-        maxHeight="300px"
-      />
+      <Suspense fallback={<DashboardInputSkeleton />}>
+        <DashboardInput
+          ref={editorApiRef}
+          onTaskDescriptionChange={onTaskDescriptionChange}
+          onSubmit={onSubmit}
+          repoUrl={lexicalRepoUrl}
+          environmentId={lexicalEnvironmentId}
+          branch={lexicalBranch}
+          persistenceKey="dashboard-task-description"
+          maxHeight="300px"
+        />
+      </Suspense>
 
       <DashboardInputFooter>
         <DashboardInputControls

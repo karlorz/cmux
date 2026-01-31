@@ -540,12 +540,18 @@ sandboxesRouter.openapi(
 
       // SDK bug: instances.start() returns empty httpServices array
       // Re-fetch instance to get the actual networking data
-      const refreshedInstance: SandboxInstance =
-        provider === "morph" && instance.networking.httpServices.length === 0
-          ? wrapMorphInstance(
-              await getMorphClient().instances.get({ instanceId: instance.id }),
-            )
-          : instance;
+      let refreshedInstance: SandboxInstance = instance;
+      if (instance.networking.httpServices.length === 0) {
+        if (provider === "morph") {
+          refreshedInstance = wrapMorphInstance(
+            await getMorphClient().instances.get({ instanceId: instance.id }),
+          );
+        } else if (provider === "pve-lxc") {
+          refreshedInstance = wrapPveLxcInstance(
+            await getPveLxcClient().instances.get({ instanceId: instance.id }),
+          );
+        }
+      }
 
       const exposed = refreshedInstance.networking.httpServices;
       const vscodeService = exposed.find((service) => service.port === 39378);
