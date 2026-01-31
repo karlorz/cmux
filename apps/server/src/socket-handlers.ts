@@ -2023,6 +2023,7 @@ export function setupSocketHandlers(
           }
 
           const sandboxId = data.instanceId;
+          const sandboxProvider = data.provider ?? "morph";
           const vscodeBaseUrl = data.vscodeUrl;
           const workspaceUrl = `${vscodeBaseUrl}?folder=/root/workspace`;
 
@@ -2041,7 +2042,7 @@ export function setupSocketHandlers(
             teamSlugOrId,
             id: taskRunId,
             vscode: {
-              provider: "morph",
+              provider: sandboxProvider,
               containerName: sandboxId,
               status: "running",
               url: vscodeBaseUrl,
@@ -2067,7 +2068,7 @@ export function setupSocketHandlers(
             instanceId: sandboxId,
             url: vscodeBaseUrl,
             workspaceUrl,
-            provider: "morph",
+            provider: sandboxProvider,
           });
 
           serverLogger.info(
