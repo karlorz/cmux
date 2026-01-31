@@ -1112,7 +1112,7 @@ function TaskDetailPage() {
           ) : null}
           <FlexiblePanelLayout
             layoutMode={effectiveLayoutMode}
-            storageKey="taskDetailGrid"
+            storageKey={`taskDetailGrid-${effectiveLayoutMode}`}
             topLeft={
               isPanelPositionActive("topLeft") && currentLayout.topLeft ? (
                 <RenderPanel
