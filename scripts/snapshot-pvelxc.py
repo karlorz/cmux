@@ -3110,7 +3110,18 @@ async def task_build_worker(ctx: PveTaskContext) -> None:
         # Install express-compatible path-to-regexp 0.1.x explicitly
         # bun hoisting can place dependencies differently, so we install directly
         cd ./apps/worker/build/node_modules
-        npm pack path-to-regexp@0.1.12 --silent
+        # npm pack with retry logic for network resilience
+        for i in 1 2 3; do
+          if npm pack path-to-regexp@0.1.12 --silent; then
+            break
+          fi
+          echo "npm pack attempt $i failed, retrying in $((i * 2))s..."
+          sleep $((i * 2))
+          if [ $i -eq 3 ]; then
+            echo "npm pack failed after 3 attempts" >&2
+            exit 1
+          fi
+        done
         tar -xzf path-to-regexp-0.1.12.tgz
         mv package path-to-regexp
         rm -f path-to-regexp-0.1.12.tgz
