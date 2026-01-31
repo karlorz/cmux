@@ -3,7 +3,7 @@
     {
       "publisher": "anthropic",
       "name": "claude-code",
-      "version": "2.1.27"
+      "version": "2.1.29"
     },
     {
       "publisher": "openai",
@@ -30,9 +30,9 @@
     "@openai/codex": "0.93.0",
     "@anthropic-ai/claude-code": "2.1.17",
     "@google/gemini-cli": "0.26.0",
-    "opencode-ai": "1.1.47",
+    "opencode-ai": "1.1.48",
     "codebuff": "1.0.603",
     "@devcontainers/cli": "0.82.0",
-    "@sourcegraph/amp": "0.0.1769833703-g34a0e2"
+    "@sourcegraph/amp": "0.0.1769889688-g296e2e"
   }
 }
