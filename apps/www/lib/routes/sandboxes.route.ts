@@ -90,6 +90,39 @@ async function waitForVSCodeReady(
 }
 
 /**
+ * Wait for the Worker socket server to be ready by polling the socket.io endpoint.
+ * This prevents "Worker socket not available" errors when the agent spawner tries to connect
+ * before the worker service is actually listening.
+ */
+async function waitForWorkerReady(
+  workerUrl: string,
+  options: { timeoutMs?: number; intervalMs?: number } = {}
+): Promise<boolean> {
+  const { timeoutMs = 15_000, intervalMs = 500 } = options;
+  const start = Date.now();
+
+  while (Date.now() - start < timeoutMs) {
+    try {
+      // Worker service uses socket.io - check if the HTTP endpoint responds
+      // Socket.io exposes a polling transport at /socket.io/?EIO=4&transport=polling
+      const response = await fetch(`${workerUrl}/socket.io/?EIO=4&transport=polling`, {
+        method: "GET",
+        signal: AbortSignal.timeout(3_000),
+      });
+      // Socket.io returns 200 with polling data when ready
+      if (response.ok) {
+        return true;
+      }
+    } catch {
+      // Connection refused or timeout - server not ready yet
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+
+  return false;
+}
+
+/**
  * Extract a safe, descriptive error message from sandbox start errors.
  * Avoids leaking sensitive information like API keys, tokens, or internal paths.
  */
@@ -507,12 +540,18 @@ sandboxesRouter.openapi(
 
       // SDK bug: instances.start() returns empty httpServices array
       // Re-fetch instance to get the actual networking data
-      const refreshedInstance: SandboxInstance =
-        provider === "morph" && instance.networking.httpServices.length === 0
-          ? wrapMorphInstance(
-              await getMorphClient().instances.get({ instanceId: instance.id }),
-            )
-          : instance;
+      let refreshedInstance: SandboxInstance = instance;
+      if (instance.networking.httpServices.length === 0) {
+        if (provider === "morph") {
+          refreshedInstance = wrapMorphInstance(
+            await getMorphClient().instances.get({ instanceId: instance.id }),
+          );
+        } else if (provider === "pve-lxc") {
+          refreshedInstance = wrapPveLxcInstance(
+            await getPveLxcClient().instances.get({ instanceId: instance.id }),
+          );
+        }
+      }
 
       const exposed = refreshedInstance.networking.httpServices;
       const vscodeService = exposed.find((service) => service.port === 39378);
@@ -535,6 +574,20 @@ sandboxesRouter.openapi(
       } else {
         console.log(
           `[sandboxes.start] VSCode server ready for ${instance.id}`,
+        );
+      }
+
+      // Wait for Worker socket server to be ready before returning
+      // This prevents "Worker socket not available" errors when the agent spawner
+      // tries to connect before the worker service is actually listening
+      const workerReady = await waitForWorkerReady(workerService.url);
+      if (!workerReady) {
+        console.warn(
+          `[sandboxes.start] Worker server did not become ready within timeout for ${instance.id}, proceeding anyway`,
+        );
+      } else {
+        console.log(
+          `[sandboxes.start] Worker server ready for ${instance.id}`,
         );
       }
 

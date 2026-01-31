@@ -1,18 +1,34 @@
 "use client";
 
-import { getRandomKitty } from "@/components/kitties";
-import CmuxLogoMarkAnimated from "@/components/logo/cmux-logo-mark-animated";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useMatch, useNavigate } from "@tanstack/react-router";
 import { ConvexProvider } from "convex/react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect } from "react";
 import { authJsonQueryOptions } from "./authJsonQueryOptions";
 import { convexAuthReadyPromise } from "./convex-auth-ready";
 import { convexQueryClient } from "./convex-query-client";
 import clsx from "clsx";
 
+// Lightweight skeleton that shows immediately - no artificial delays
+function LoadingSkeleton() {
+  return (
+    <div className="absolute inset-0 w-screen h-dvh flex flex-col bg-white dark:bg-black z-[var(--z-global-blocking)]">
+      <div className="h-12 border-b border-neutral-200 dark:border-neutral-800" />
+      <div className="flex-1 flex flex-col items-center pt-32 px-4">
+        <div className="w-full max-w-4xl space-y-4 animate-pulse">
+          <div className="h-32 bg-neutral-100 dark:bg-neutral-900 rounded-2xl" />
+          <div className="h-8 bg-neutral-100 dark:bg-neutral-900 rounded w-1/3" />
+          <div className="space-y-2">
+            <div className="h-16 bg-neutral-100 dark:bg-neutral-900 rounded-xl" />
+            <div className="h-16 bg-neutral-100 dark:bg-neutral-900 rounded-xl" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BootLoader({ children }: { children: ReactNode }) {
-  const [minimumDelayPassed, setMinimumDelayPassed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const convexAuthReadyQuery = useQuery({
@@ -29,16 +45,9 @@ function BootLoader({ children }: { children: ReactNode }) {
   const authQuerySettled = !authJsonQuery.isPending;
   const authFailed = authQuerySettled && needsTeamAuth && !hasAuthToken;
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setMinimumDelayPassed(true);
-    }, 250);
-    return () => clearTimeout(timer);
-  }, []);
-
   // Redirect to sign-in if auth is required but failed/missing after query settled
   useEffect(() => {
-    if (authFailed && minimumDelayPassed) {
+    if (authFailed) {
       void navigate({
         to: "/sign-in",
         search: {
@@ -46,29 +55,20 @@ function BootLoader({ children }: { children: ReactNode }) {
         },
       });
     }
-  }, [
-    authFailed,
-    location.pathname,
-    location.searchStr,
-    minimumDelayPassed,
-    navigate,
-  ]);
+  }, [authFailed, location.pathname, location.searchStr, navigate]);
 
   const isConvexReady = Boolean(convexAuthReadyQuery.data);
-  const isReady =
-    isConvexReady && minimumDelayPassed && (!needsTeamAuth || hasAuthToken);
+  // Removed 250ms artificial delay - show content immediately when ready
+  const isReady = isConvexReady && (!needsTeamAuth || hasAuthToken);
   return (
     <>
       <div
         className={clsx(
-          "absolute inset-0 w-screen h-dvh flex flex-col items-center justify-center bg-white dark:bg-black z-[var(--z-global-blocking)] transition-opacity",
-          isReady ? "opacity-0 pointer-events-none" : "opacity-100",
+          "transition-opacity duration-150",
+          isReady ? "opacity-0 pointer-events-none hidden" : "opacity-100",
         )}
       >
-        <CmuxLogoMarkAnimated height={40} duration={2.9} />
-        <pre className="text-xs font-mono text-neutral-200 dark:text-neutral-800 absolute bottom-0 left-0 pl-4 pb-4">
-          {getRandomKitty()}
-        </pre>
+        <LoadingSkeleton />
       </div>
       {isReady ? children : null}
     </>

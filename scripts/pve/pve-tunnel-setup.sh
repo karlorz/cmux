@@ -453,12 +453,18 @@ configure_caddy() {
                 dial_timeout 10s
             }
             # Strip headers that block iframe embedding (e.g., noVNC sends Cross-Origin-Resource-Policy: same-origin)
+            # Also strip CORS headers to avoid duplicates (Caddy adds its own)
             header_down -X-Frame-Options
             header_down -Content-Security-Policy
             header_down -Content-Security-Policy-Report-Only
             header_down -Cross-Origin-Embedder-Policy
             header_down -Cross-Origin-Opener-Policy
             header_down -Cross-Origin-Resource-Policy
+            header_down -Access-Control-Allow-Origin
+            header_down -Access-Control-Allow-Methods
+            header_down -Access-Control-Allow-Headers
+            header_down -Access-Control-Expose-Headers
+            header_down -Access-Control-Allow-Credentials
         }
         # Add permissive CORS headers for iframe embedding
         header Access-Control-Allow-Origin "*"
