@@ -3338,8 +3338,12 @@ Please address the issue mentioned in the comment above.`;
       try {
         const { taskId } = ArchiveTaskSchema.parse(data);
 
-        // Stop/pause all containers via helper (handles Docker and Morph instances)
-        const results = await stopContainersForRuns(taskId, safeTeam);
+        // Wrap in runWithAuth to propagate auth context to stopCmuxSandbox()
+        const results = await runWithAuth(
+          currentAuthToken,
+          currentAuthHeaderJson,
+          async () => stopContainersForRuns(taskId, safeTeam)
+        );
 
         try {
           const runsTree = await getConvex().query(api.taskRuns.getByTask, {
@@ -3391,8 +3395,12 @@ Please address the issue mentioned in the comment above.`;
       try {
         const { taskId } = ArchiveTaskSchema.parse(data);
 
-        // Resume all containers via helper (handles Docker and Morph instances)
-        const results = await resumeContainersForRuns(taskId, safeTeam);
+        // Wrap in runWithAuth to propagate auth context to resumeCmuxSandbox()
+        const results = await runWithAuth(
+          currentAuthToken,
+          currentAuthHeaderJson,
+          async () => resumeContainersForRuns(taskId, safeTeam)
+        );
 
         // Log summary
         const successful = results.filter((r) => r.success).length;
