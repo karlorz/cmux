@@ -2,9 +2,9 @@ import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
-import tsconfigPaths from "vite-tsconfig-paths";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
+import { createLogger, defineConfig } from "vite";
+import tsconfigPaths from "vite-tsconfig-paths";
 
 import { relatedProjects } from "@vercel/related-projects";
 
@@ -27,8 +27,22 @@ const SentryVitePlugin = process.env.SENTRY_AUTH_TOKEN
     })
   : undefined;
 
+// Suppress missing source map warnings for monaco-editor vendored libs (marked, dompurify)
+const logger = createLogger();
+const originalWarn = logger.warn;
+logger.warn = (msg, options) => {
+  if (
+    msg.includes("Failed to load source map") &&
+    msg.includes("node_modules/monaco-editor")
+  ) {
+    return;
+  }
+  originalWarn(msg, options);
+};
+
 // https://vite.dev/config/
 export default defineConfig({
+  customLogger: logger,
   plugins: [
     tsconfigPaths({
       // Only scan from apps/client to avoid dev-docs submodules with unresolved tsconfig extends
