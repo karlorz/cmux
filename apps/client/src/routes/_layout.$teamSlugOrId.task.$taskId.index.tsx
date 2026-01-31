@@ -944,17 +944,14 @@ function TaskDetailPage() {
 
   // Determine effective layout mode based on workspace type
   // - Local workspaces: single panel (just VSCode)
-  // - Cloud workspaces: two-horizontal (VSCode left, browser right)
-  // - Regular tasks: use user's configured layout
+  // - Cloud workspaces and regular tasks: use user's configured layout
   const effectiveLayoutMode = useMemo(() => {
     if (isLocalWorkspaceTask) {
       return "single-panel" as const;
     }
-    if (isCloudWorkspaceTask) {
-      return "two-horizontal" as const;
-    }
+    // Cloud workspaces and regular tasks: use user's configured layout
     return panelConfig.layoutMode;
-  }, [isLocalWorkspaceTask, isCloudWorkspaceTask, panelConfig.layoutMode]);
+  }, [isLocalWorkspaceTask, panelConfig.layoutMode]);
 
   const currentLayout = useMemo(() => {
     // For local workspaces: just VSCode
