@@ -976,9 +976,9 @@ function TaskDetailPage() {
       return panels.filter((p) => p !== "gitDiff" && p !== "browser");
     }
 
-    // For cloud workspaces, exclude gitDiff (browser is used)
+    // For cloud workspaces, only support: workspace, browser, terminal
     if (isCloudWorkspaceTask) {
-      return panels.filter((p) => p !== "gitDiff");
+      return panels.filter((p) => p === "workspace" || p === "browser" || p === "terminal");
     }
 
     return panels;
