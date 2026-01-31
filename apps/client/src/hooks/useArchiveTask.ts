@@ -192,13 +192,34 @@ export function useArchiveTask(teamSlugOrId: string) {
     [archivingTaskIds]
   );
 
+  const unarchive = useCallback(
+    async (id: string) => {
+      const taskId = id as Doc<"tasks">["_id"];
+
+      await unarchiveMutation({
+        teamSlugOrId,
+        id: taskId,
+      });
+
+      // Emit socket event to resume containers
+      if (socket) {
+        socket.emit(
+          "unarchive-task",
+          { taskId },
+          (response: { success: boolean; error?: string }) => {
+            if (!response.success) {
+              console.error("Failed to resume containers:", response.error);
+            }
+          }
+        );
+      }
+    },
+    [unarchiveMutation, socket, teamSlugOrId]
+  );
+
   return {
     archive,
-    unarchive: (id: string) =>
-      unarchiveMutation({
-        teamSlugOrId,
-        id: id as Doc<"tasks">["_id"],
-      }),
+    unarchive,
     archiveWithUndo,
     isArchiving,
   };

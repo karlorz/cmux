@@ -683,7 +683,20 @@ export const archive = authMutation({
     if (task === null || task.teamId !== teamId || task.userId !== userId) {
       throw new Error("Task not found or unauthorized");
     }
-    await ctx.db.patch(args.id, { isArchived: true, updatedAt: Date.now() });
+    const now = Date.now();
+    await ctx.db.patch(args.id, { isArchived: true, updatedAt: now });
+
+    // Also archive all task runs for this task
+    const taskRuns = await ctx.db
+      .query("taskRuns")
+      .withIndex("by_task", (q) => q.eq("taskId", args.id))
+      .filter((q) => q.neq(q.field("isArchived"), true))
+      .collect();
+    await Promise.all(
+      taskRuns.map((run) =>
+        ctx.db.patch(run._id, { isArchived: true, updatedAt: now })
+      )
+    );
   },
 });
 
@@ -696,7 +709,20 @@ export const unarchive = authMutation({
     if (task === null || task.teamId !== teamId || task.userId !== userId) {
       throw new Error("Task not found or unauthorized");
     }
-    await ctx.db.patch(args.id, { isArchived: false, updatedAt: Date.now() });
+    const now = Date.now();
+    await ctx.db.patch(args.id, { isArchived: false, updatedAt: now });
+
+    // Also unarchive all task runs for this task
+    const taskRuns = await ctx.db
+      .query("taskRuns")
+      .withIndex("by_task", (q) => q.eq("taskId", args.id))
+      .filter((q) => q.eq(q.field("isArchived"), true))
+      .collect();
+    await Promise.all(
+      taskRuns.map((run) =>
+        ctx.db.patch(run._id, { isArchived: false, updatedAt: now })
+      )
+    );
   },
 });
 
