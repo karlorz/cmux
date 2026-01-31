@@ -8,6 +8,28 @@ import { fileURLToPath } from "node:url";
 import tsconfigPaths from "vite-tsconfig-paths";
 import { resolveWorkspacePackages } from "./electron-vite-plugin-resolve-workspace";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
+import MagicString from "magic-string";
+
+// Plugin to inject __dirname/__filename shims for ESM compatibility with rolldown-vite
+function esmDirnameShimPlugin(): Plugin {
+  const shimCode = `import { fileURLToPath as ___fileURLToPath___ } from "node:url";
+import { dirname as ___pathDirname___ } from "node:path";
+const __filename = ___fileURLToPath___(import.meta.url);
+const __dirname = ___pathDirname___(__filename);
+`;
+  return {
+    name: "esm-dirname-shim",
+    renderChunk(code) {
+      // Only inject if code contains __dirname or __filename
+      if (code.includes("__dirname") || code.includes("__filename")) {
+        const s = new MagicString(code);
+        s.prepend(shimCode);
+        return { code: s.toString(), map: s.generateMap({ hires: true }) };
+      }
+      return null;
+    },
+  };
+}
 
 function createExternalizeDepsPlugin(
   options?: Parameters<typeof externalizeDepsPlugin>[0]
@@ -44,6 +66,7 @@ export default defineConfig({
   main: {
     plugins: [
       createExternalizeDepsPlugin({
+        include: ["electron"],
         exclude: [
           "@cmux/server",
           "@cmux/server/**",
@@ -55,6 +78,7 @@ export default defineConfig({
         ],
       }),
       resolveWorkspacePackages(),
+      esmDirnameShimPlugin(),
       SentryVitePlugin,
     ],
     envDir: repoRoot,
@@ -63,7 +87,8 @@ export default defineConfig({
         input: {
           index: resolve("electron/main/bootstrap.ts"),
         },
-        treeshake: "smallest",
+        external: ["electron"],
+        treeshake: "recommended",
       },
       sourcemap: true,
     },
@@ -72,6 +97,7 @@ export default defineConfig({
   preload: {
     plugins: [
       createExternalizeDepsPlugin({
+        include: ["electron"],
         exclude: ["@cmux/server", "@cmux/server/**", "@sentry/electron"],
       }),
       resolveWorkspacePackages(),
@@ -87,6 +113,7 @@ export default defineConfig({
           format: "cjs",
           entryFileNames: "[name].cjs",
         },
+        external: ["electron"],
         treeshake: "smallest",
       },
       sourcemap: true,
