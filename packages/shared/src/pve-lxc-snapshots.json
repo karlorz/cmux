@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "updatedAt": "2026-01-30T22:33:39Z",
+  "updatedAt": "2026-01-31T07:56:14Z",
   "presets": [
     {
       "presetId": "4vcpu_8gb_32gb",
@@ -230,6 +230,12 @@
           "snapshotId": "snapshot_b01af3e4",
           "templateVmid": 9003,
           "capturedAt": "2026-01-30T22:33:10Z"
+        },
+        {
+          "version": 38,
+          "snapshotId": "snapshot_5aec7a8d",
+          "templateVmid": 9006,
+          "capturedAt": "2026-01-31T07:56:11Z"
         }
       ],
       "description": "Great default for day-to-day work. Balanced CPU, memory, and storage."
@@ -424,6 +430,12 @@
           "snapshotId": "snapshot_f908ee4f",
           "templateVmid": 9051,
           "capturedAt": "2026-01-29T06:51:38Z"
+        },
+        {
+          "version": 4,
+          "snapshotId": "snapshot_d32fa147",
+          "templateVmid": 9007,
+          "capturedAt": "2026-01-31T07:56:14Z"
         }
       ]
     }
