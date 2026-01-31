@@ -3338,30 +3338,39 @@ Please address the issue mentioned in the comment above.`;
       try {
         const { taskId } = ArchiveTaskSchema.parse(data);
 
-        // Stop/pause all containers via helper (handles Docker and Morph instances)
-        const results = await stopContainersForRuns(taskId, safeTeam);
+        // Wrap in runWithAuth to propagate auth context to stopCmuxSandbox()
+        const results = await runWithAuth(
+          currentAuthToken,
+          currentAuthHeaderJson,
+          async () => {
+            // Stop/pause all containers via helper (handles Docker and Morph instances)
+            const stopResults = await stopContainersForRuns(taskId, safeTeam);
 
-        try {
-          const runsTree = await getConvex().query(api.taskRuns.getByTask, {
-            teamSlugOrId: safeTeam,
-            taskId,
-          });
-          const worktreePaths = collectWorktreePaths(runsTree);
-          if (worktreePaths.length > 0) {
-            for (const worktreePath of worktreePaths) {
-              gitDiffManager.unwatchWorkspace(worktreePath);
-              localCloudSyncManager.stopSync(worktreePath);
+            try {
+              const runsTree = await getConvex().query(api.taskRuns.getByTask, {
+                teamSlugOrId: safeTeam,
+                taskId,
+              });
+              const worktreePaths = collectWorktreePaths(runsTree);
+              if (worktreePaths.length > 0) {
+                for (const worktreePath of worktreePaths) {
+                  gitDiffManager.unwatchWorkspace(worktreePath);
+                  localCloudSyncManager.stopSync(worktreePath);
+                }
+                serverLogger.info(
+                  `Stopped git diff watchers for archived task ${taskId}: ${worktreePaths.join(", ")}`
+                );
+              }
+            } catch (error) {
+              serverLogger.error(
+                `Failed to clean up git diff watchers for archived task ${taskId}:`,
+                error
+              );
             }
-            serverLogger.info(
-              `Stopped git diff watchers for archived task ${taskId}: ${worktreePaths.join(", ")}`
-            );
+
+            return stopResults;
           }
-        } catch (error) {
-          serverLogger.error(
-            `Failed to clean up git diff watchers for archived task ${taskId}:`,
-            error
-          );
-        }
+        );
 
         // Log summary
         const successful = results.filter((r) => r.success).length;
@@ -3391,8 +3400,15 @@ Please address the issue mentioned in the comment above.`;
       try {
         const { taskId } = ArchiveTaskSchema.parse(data);
 
-        // Resume all containers via helper (handles Docker and Morph instances)
-        const results = await resumeContainersForRuns(taskId, safeTeam);
+        // Wrap in runWithAuth to propagate auth context to resumeCmuxSandbox()
+        const results = await runWithAuth(
+          currentAuthToken,
+          currentAuthHeaderJson,
+          async () => {
+            // Resume all containers via helper (handles Docker and Morph instances)
+            return resumeContainersForRuns(taskId, safeTeam);
+          }
+        );
 
         // Log summary
         const successful = results.filter((r) => r.success).length;
