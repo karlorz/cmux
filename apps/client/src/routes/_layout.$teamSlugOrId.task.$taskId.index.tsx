@@ -964,19 +964,9 @@ function TaskDetailPage() {
       };
     }
 
-    // For cloud workspaces: VSCode left, browser right
-    if (isCloudWorkspaceTask) {
-      return {
-        topLeft: "workspace" as const,
-        topRight: "browser" as const,
-        bottomLeft: null,
-        bottomRight: null,
-      };
-    }
-
-    // Regular tasks: use configured layout
+    // Cloud workspaces and regular tasks: use user's configured panels
     return getCurrentLayoutPanels(panelConfig);
-  }, [panelConfig, isLocalWorkspaceTask, isCloudWorkspaceTask]);
+  }, [panelConfig, isLocalWorkspaceTask]);
 
   const availablePanels = useMemo(() => {
     const panels = getAvailablePanels(panelConfig);
