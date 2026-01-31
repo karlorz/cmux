@@ -57,23 +57,31 @@ export class CmuxIpcSocketClient {
         team: this.query.team,
         auth_json: this.query.auth_json,
       });
+
       this.connected = true;
       this.disconnected = false;
       this.reconnectAttempts = 0; // Reset on successful connection
+
+      // Clear any pending reconnect timer
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
 
       // Wire existing handlers to IPC events (only if not already wired)
       this.handlers.forEach((_set, event) => {
         this.ensureIpcListener(event);
       });
       this.trigger("connect");
+      return this;
     } catch (error) {
       console.error("[CmuxIpcSocketClient] Connection failed:", error);
       this.connected = false;
       this.disconnected = true;
       this.trigger("connect_error", error);
       this.scheduleReconnect();
+      return this;
     }
-    return this;
   }
 
   private scheduleReconnect(): void {
