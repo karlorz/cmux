@@ -207,6 +207,8 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
     // If a specific repo path is provided, assume the caller ensures freshness.
     // Avoid synchronous fetch here to reduce latency.
     let force_refresh = opts.forceRefresh.unwrap_or(false);
+    #[cfg(debug_assertions)]
+    println!("[native.refs] force_refresh={}", force_refresh);
     let _d_fetch = if opts.originPathOverride.is_some() {
         Duration::from_millis(0)
     } else {
