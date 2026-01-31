@@ -4020,6 +4020,7 @@ async def _verify_template_artifacts(
         ("/usr/local/cargo/bin/cargo", "Rust/Cargo"),
         ("/usr/local/go/bin/go", "Go toolchain"),
         ("/root/.bun/bin/bun", "Bun runtime"),
+        ("/builtins/build/index.js", "cmux-worker service"),
     ])
 
     # Verify artifacts exist
