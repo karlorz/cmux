@@ -115,7 +115,8 @@ export default defineConfig({
         ),
       },
       // Dedupe so Monaco services (e.g. hoverService) are registered once
-      dedupe: ["monaco-editor"],
+      // Also dedupe react/react-dom required after @vitejs/plugin-react-swc
+      dedupe: ["monaco-editor", "react", "react-dom"],
     },
     optimizeDeps: {
       // Skip pre-bundling to avoid shipping a second Monaco runtime copy
