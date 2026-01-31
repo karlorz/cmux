@@ -14,6 +14,7 @@ import { Route as MonacoSingleBufferRouteImport } from './routes/monaco-single-b
 import { Route as ElectronWebContentsRouteImport } from './routes/electron-web-contents'
 import { Route as ElectronErrorRouteImport } from './routes/electron-error'
 import { Route as DebugWebcontentsRouteImport } from './routes/debug-webcontents'
+import { Route as DebugPanelLayoutRouteImport } from './routes/debug-panel-layout'
 import { Route as DebugMonacoRouteImport } from './routes/debug-monaco'
 import { Route as DebugIconRouteImport } from './routes/debug-icon'
 import { Route as LayoutRouteImport } from './routes/_layout'
@@ -73,6 +74,11 @@ const ElectronErrorRoute = ElectronErrorRouteImport.update({
 const DebugWebcontentsRoute = DebugWebcontentsRouteImport.update({
   id: '/debug-webcontents',
   path: '/debug-webcontents',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DebugPanelLayoutRoute = DebugPanelLayoutRouteImport.update({
+  id: '/debug-panel-layout',
+  path: '/debug-panel-layout',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DebugMonacoRoute = DebugMonacoRouteImport.update({
@@ -276,6 +282,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/debug-icon': typeof DebugIconRoute
   '/debug-monaco': typeof DebugMonacoRoute
+  '/debug-panel-layout': typeof DebugPanelLayoutRoute
   '/debug-webcontents': typeof DebugWebcontentsRoute
   '/electron-error': typeof ElectronErrorRoute
   '/electron-web-contents': typeof ElectronWebContentsRoute
@@ -317,6 +324,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/debug-icon': typeof DebugIconRoute
   '/debug-monaco': typeof DebugMonacoRoute
+  '/debug-panel-layout': typeof DebugPanelLayoutRoute
   '/debug-webcontents': typeof DebugWebcontentsRoute
   '/electron-error': typeof ElectronErrorRoute
   '/electron-web-contents': typeof ElectronWebContentsRoute
@@ -358,6 +366,7 @@ export interface FileRoutesById {
   '/_layout': typeof LayoutRouteWithChildren
   '/debug-icon': typeof DebugIconRoute
   '/debug-monaco': typeof DebugMonacoRoute
+  '/debug-panel-layout': typeof DebugPanelLayoutRoute
   '/debug-webcontents': typeof DebugWebcontentsRoute
   '/electron-error': typeof ElectronErrorRoute
   '/electron-web-contents': typeof ElectronWebContentsRoute
@@ -401,6 +410,7 @@ export interface FileRouteTypes {
     | '/'
     | '/debug-icon'
     | '/debug-monaco'
+    | '/debug-panel-layout'
     | '/debug-webcontents'
     | '/electron-error'
     | '/electron-web-contents'
@@ -442,6 +452,7 @@ export interface FileRouteTypes {
     | '/'
     | '/debug-icon'
     | '/debug-monaco'
+    | '/debug-panel-layout'
     | '/debug-webcontents'
     | '/electron-error'
     | '/electron-web-contents'
@@ -482,6 +493,7 @@ export interface FileRouteTypes {
     | '/_layout'
     | '/debug-icon'
     | '/debug-monaco'
+    | '/debug-panel-layout'
     | '/debug-webcontents'
     | '/electron-error'
     | '/electron-web-contents'
@@ -525,6 +537,7 @@ export interface RootRouteChildren {
   LayoutRoute: typeof LayoutRouteWithChildren
   DebugIconRoute: typeof DebugIconRoute
   DebugMonacoRoute: typeof DebugMonacoRoute
+  DebugPanelLayoutRoute: typeof DebugPanelLayoutRoute
   DebugWebcontentsRoute: typeof DebugWebcontentsRoute
   ElectronErrorRoute: typeof ElectronErrorRoute
   ElectronWebContentsRoute: typeof ElectronWebContentsRoute
@@ -569,6 +582,13 @@ declare module '@tanstack/react-router' {
       path: '/debug-webcontents'
       fullPath: '/debug-webcontents'
       preLoaderRoute: typeof DebugWebcontentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/debug-panel-layout': {
+      id: '/debug-panel-layout'
+      path: '/debug-panel-layout'
+      fullPath: '/debug-panel-layout'
+      preLoaderRoute: typeof DebugPanelLayoutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/debug-monaco': {
@@ -952,6 +972,7 @@ const rootRouteChildren: RootRouteChildren = {
   LayoutRoute: LayoutRouteWithChildren,
   DebugIconRoute: DebugIconRoute,
   DebugMonacoRoute: DebugMonacoRoute,
+  DebugPanelLayoutRoute: DebugPanelLayoutRoute,
   DebugWebcontentsRoute: DebugWebcontentsRoute,
   ElectronErrorRoute: ElectronErrorRoute,
   ElectronWebContentsRoute: ElectronWebContentsRoute,
