@@ -76,9 +76,10 @@ export const ElectronSocketProvider: React.FC<React.PropsWithChildren> = ({
       return;
     }
 
-    // If socket already exists and team hasn't changed, skip reconnection
+    // If socket already exists, is connected, and team hasn't changed, skip reconnection
     // (token refresh is handled by the separate effect above)
-    if (socketRef.current && hasConnectedRef.current) {
+    // Note: We check socketRef.current?.connected to detect stale connections
+    if (socketRef.current?.connected && hasConnectedRef.current) {
       return;
     }
 
@@ -117,6 +118,20 @@ export const ElectronSocketProvider: React.FC<React.PropsWithChildren> = ({
 
       createdSocket.on("connect_error", (error: unknown) => {
         console.error("[ElectronSocket] Connection error:", error);
+      });
+
+      // IPC-specific reconnection events (not in ServerToClientEvents)
+      (createdSocket as CmuxIpcSocketClient).on(
+        "reconnect_attempt",
+        (attempt: unknown) => {
+          console.log(`[ElectronSocket] Reconnection attempt ${attempt}`);
+        }
+      );
+
+      (createdSocket as CmuxIpcSocketClient).on("reconnect_failed", () => {
+        console.error(
+          "[ElectronSocket] Reconnection failed after max attempts"
+        );
       });
 
       createdSocket.on("available-editors", (editors: AvailableEditors) => {

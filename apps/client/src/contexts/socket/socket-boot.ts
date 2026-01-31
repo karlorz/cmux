@@ -47,6 +47,7 @@ interface GlobalSocketState {
   connectedWaiters: Waiter[];
   listeningSocket: CmuxSocket | null;
   onConnect?: () => void;
+  onDisconnect?: () => void;
 }
 
 declare global {
@@ -99,8 +100,12 @@ function ensureSocketListeners(state: GlobalSocketState) {
     if (state.onConnect) {
       state.listeningSocket.off("connect", state.onConnect);
     }
+    if (state.onDisconnect) {
+      state.listeningSocket.off("disconnect", state.onDisconnect);
+    }
     state.listeningSocket = null;
     state.onConnect = undefined;
+    state.onDisconnect = undefined;
   }
 
   if (sock.connected) {
@@ -112,6 +117,14 @@ function ensureSocketListeners(state: GlobalSocketState) {
     state.onConnect = () => resolveConnectedWaiters(state);
     sock.on("connect", state.onConnect);
     state.listeningSocket = sock;
+  }
+
+  // Track disconnect for logging purposes
+  if (!state.onDisconnect) {
+    state.onDisconnect = () => {
+      console.log("[socket-boot] Socket disconnected");
+    };
+    sock.on("disconnect", state.onDisconnect);
   }
 }
 

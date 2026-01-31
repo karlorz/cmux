@@ -38,24 +38,95 @@ export class CmuxIpcSocketClient {
   public id = "cmux-ipc";
   private disposed = false;
 
+  // Reconnection state
+  private reconnectAttempts = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly reconnectBaseDelayMs = 500;
+  private readonly reconnectMaxDelayMs = 30000;
+  private readonly maxReconnectAttempts = 10;
+
   constructor(private readonly query: Record<string, string>) {}
 
   async connect() {
     if (this.connected) return this;
-    await window.cmux.register({
-      auth: this.query.auth,
-      team: this.query.team,
-      auth_json: this.query.auth_json,
-    });
-    this.connected = true;
-    this.disconnected = false;
+    if (this.disposed) return this;
 
-    // Wire existing handlers to IPC events (only if not already wired)
-    this.handlers.forEach((_set, event) => {
-      this.ensureIpcListener(event);
-    });
-    this.trigger("connect");
+    try {
+      await window.cmux.register({
+        auth: this.query.auth,
+        team: this.query.team,
+        auth_json: this.query.auth_json,
+      });
+      this.connected = true;
+      this.disconnected = false;
+      this.reconnectAttempts = 0; // Reset on successful connection
+
+      // Wire existing handlers to IPC events (only if not already wired)
+      this.handlers.forEach((_set, event) => {
+        this.ensureIpcListener(event);
+      });
+      this.trigger("connect");
+    } catch (error) {
+      console.error("[CmuxIpcSocketClient] Connection failed:", error);
+      this.connected = false;
+      this.disconnected = true;
+      this.trigger("connect_error", error);
+      this.scheduleReconnect();
+    }
     return this;
+  }
+
+  private scheduleReconnect(): void {
+    if (this.disposed) return;
+    if (this.reconnectTimer) return;
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.error(
+        "[CmuxIpcSocketClient] Max reconnection attempts reached"
+      );
+      this.trigger("reconnect_failed");
+      return;
+    }
+
+    const delay = Math.min(
+      this.reconnectBaseDelayMs * Math.pow(2, this.reconnectAttempts),
+      this.reconnectMaxDelayMs
+    );
+
+    console.log(
+      `[CmuxIpcSocketClient] Scheduling reconnect attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts} in ${delay}ms`
+    );
+    this.trigger("reconnect_attempt", this.reconnectAttempts + 1);
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.reconnectAttempts += 1;
+      void this.connect();
+    }, delay);
+  }
+
+  /**
+   * Force a reconnection attempt, resetting the attempt counter.
+   * Useful for manual reconnection or after detecting a stale connection.
+   */
+  reconnect(): void {
+    if (this.disposed) return;
+
+    // Clear any pending reconnect timer
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    // Mark as disconnected and reset attempts
+    this.connected = false;
+    this.disconnected = true;
+    this.reconnectAttempts = 0;
+
+    // Trigger disconnect event if we were connected
+    this.trigger("disconnect");
+
+    // Start fresh connection
+    void this.connect();
   }
 
   private ensureIpcListener(event: string) {
@@ -74,6 +145,13 @@ export class CmuxIpcSocketClient {
     this.disposed = true;
     this.connected = false;
     this.disconnected = true;
+
+    // Clear any pending reconnect timer
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
     this.trigger("disconnect");
     // Clean up all IPC listeners to prevent memory leaks
     for (const cleanup of this.ipcCleanups.values()) {
