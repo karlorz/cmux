@@ -44,7 +44,8 @@ export default defineConfig({
   ],
   resolve: {
     // Dedupe so Monaco services (e.g. hoverService) are registered once
-    dedupe: ["monaco-editor"],
+    // Also dedupe react/react-dom required after @vitejs/plugin-react 5.x upgrade
+    dedupe: ["monaco-editor", "react", "react-dom"],
     alias: {
       // Explicitly resolve workspace package subpath exports for rolldown-vite compatibility
       "@cmux/www-openapi-client/client.gen": path.resolve(
