@@ -20,6 +20,11 @@ export interface GitDiffRequest {
    * Used transiently for clone/fetch - never persisted to disk or logged.
    */
   authToken?: string;
+  /**
+   * When true, bypasses SWR fetch window and forces fresh git fetch.
+   * Use this when explicitly refreshing to get the latest data.
+   */
+  forceRefresh?: boolean;
 }
 
 export async function getGitDiff(
@@ -66,5 +71,6 @@ export async function getGitDiff(
     lastKnownBaseSha: request.lastKnownBaseSha,
     lastKnownMergeCommitSha: request.lastKnownMergeCommitSha,
     authToken: effectiveAuthToken,
+    forceRefresh: request.forceRefresh,
   });
 }

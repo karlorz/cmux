@@ -206,14 +206,16 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
 
     // If a specific repo path is provided, assume the caller ensures freshness.
     // Avoid synchronous fetch here to reduce latency.
+    let force_refresh = opts.forceRefresh.unwrap_or(false);
     let _d_fetch = if opts.originPathOverride.is_some() {
         Duration::from_millis(0)
     } else {
         let t_fetch = Instant::now();
-        let _ = crate::repo::cache::swr_fetch_origin_all_path_with_auth(
+        let _ = crate::repo::cache::swr_fetch_origin_all_path_with_auth_force(
             std::path::Path::new(&cwd),
             crate::repo::cache::fetch_window_ms(),
             auth_token,
+            force_refresh,
         );
         t_fetch.elapsed()
     };
