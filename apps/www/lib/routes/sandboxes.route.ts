@@ -1929,7 +1929,7 @@ sandboxesRouter.openapi(
         }
 
         await pveLxcInstance.resume();
-        console.log(`[sandboxes.resume] PVE LXC container ${id} resumed (restarted)`);
+        console.log(`[sandboxes.resume] PVE LXC container ${id} started`);
 
         // Record resume activity for PVE LXC instance
         if (teamSlugOrId) {
@@ -2026,7 +2026,7 @@ sandboxesRouter.openapi(
           }
 
           await pveLxcInstance.resume();
-          console.log(`[sandboxes.resume] PVE LXC container ${taskRun.vscode.containerName} resumed (restarted)`);
+          console.log(`[sandboxes.resume] PVE LXC container ${taskRun.vscode.containerName} started`);
 
           // Record resume activity for PVE LXC instance
           try {

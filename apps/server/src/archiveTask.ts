@@ -305,9 +305,10 @@ export function stopContainersForRunsFromTree(
         }
         if (t.provider === "pve-lxc") {
           // PVE LXC uses the same sandbox API endpoint as Morph
+          // Note: LXC doesn't support hibernate, so containers are stopped (not paused)
           await stopCmuxSandbox(t.containerName);
           serverLogger.info(
-            `Successfully paused PVE LXC instance: ${t.containerName}`
+            `Successfully stopped PVE LXC instance: ${t.containerName}`
           );
           return {
             success: true,
@@ -481,9 +482,10 @@ export function resumeContainersForRunsFromTree(
         }
         if (t.provider === "pve-lxc") {
           // PVE LXC uses the same sandbox API endpoint as Morph
+          // Note: LXC containers are restarted (not resumed from hibernate)
           await resumeCmuxSandbox(t.containerName, teamSlugOrId);
           serverLogger.info(
-            `Successfully resumed PVE LXC instance: ${t.containerName}`
+            `Successfully started PVE LXC instance: ${t.containerName}`
           );
           return {
             success: true,
