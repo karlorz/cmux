@@ -24,6 +24,7 @@
     "node": ">=20.0.0"
   },
   "overrides": {
+    "vite": "npm:rolldown-vite@^7.3.1",
     "@sentry/browser": "10.32.1",
     "@sentry/core": "10.32.1",
     "@sentry/types": "10.32.1",
