@@ -4,6 +4,8 @@ set -e
 # Default values
 ENV_FILE=".env"
 MODE="auto"  # auto-detect based on CONVEX_DEPLOY_KEY
+STRICT_MODE=false
+USE_ENV_FILE=true
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -24,13 +26,18 @@ while [[ $# -gt 0 ]]; do
       ENV_FILE="${1#*=}"
       shift
       ;;
+    --strict)
+      STRICT_MODE=true
+      shift
+      ;;
     -h|--help)
       echo "Usage: $0 [OPTIONS]"
       echo ""
       echo "Options:"
-      echo "  --prod, --production    Force Convex cloud mode"
+      echo "  --prod, --production    Force Convex cloud mode (requires env file)"
       echo "  --local                 Force local self-hosted mode"
       echo "  --env-file FILE         Env file to read (default: .env)"
+      echo "  --strict                Require env file to exist (no fallback to env vars)"
       echo "  -h, --help              Show this help"
       echo ""
       echo "Auto-detection (default):"
@@ -38,10 +45,11 @@ while [[ $# -gt 0 ]]; do
       echo "  - If CONVEX_SELF_HOSTED_ADMIN_KEY is set  -> uses local self-hosted"
       echo ""
       echo "Examples:"
-      echo "  $0                                 # Auto-detect from .env"
-      echo "  $0 --prod                          # Force production mode"
+      echo "  $0                                 # Auto-detect from .env (fallback to env vars)"
+      echo "  $0 --prod                          # Force production mode (requires env file)"
       echo "  $0 --local                         # Force local mode"
       echo "  $0 --env-file .env.custom          # Use custom env file"
+      echo "  $0 --strict                        # Require env file to exist"
       exit 0
       ;;
     *)
@@ -54,21 +62,35 @@ done
 
 # Check if env file exists
 if [ ! -f "$ENV_FILE" ]; then
-  echo "Error: $ENV_FILE not found"
-  exit 1
+  # In strict mode or production mode, env file must exist
+  if [ "$STRICT_MODE" = true ] || [ "$MODE" = "production" ]; then
+    echo "Error: $ENV_FILE not found (required for production/strict mode)"
+    exit 1
+  fi
+  echo "Note: $ENV_FILE not found, using in-memory environment variables"
+  USE_ENV_FILE=false
 fi
 
-# Extract value from .env file, handling quoted values
+# Extract value from .env file, falling back to in-memory environment variables
 get_env_value() {
   local key=$1
-  local value=$(grep "^${key}=" "$ENV_FILE" | cut -d'=' -f2- | sed 's/^"//' | sed 's/"$//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-  # Handle multi-line values (like private keys)
-  if [[ $value == *"-----BEGIN"* ]]; then
-    # Extract full private key including newlines
-    awk "/^${key}=/{flag=1} flag{print} /END.*KEY/{flag=0}" "$ENV_FILE" | sed "s/^${key}=//" | sed 's/^"//' | sed 's/"$//'
-  else
-    echo "$value"
+  local value=""
+
+  # Try to get from env file first if it exists
+  if [ "$USE_ENV_FILE" = true ]; then
+    value=$(grep "^${key}=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | sed 's/^"//' | sed 's/"$//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    # Handle multi-line values (like private keys)
+    if [[ $value == *"-----BEGIN"* ]]; then
+      value=$(awk "/^${key}=/{flag=1} flag{print} /END.*KEY/{flag=0}" "$ENV_FILE" | sed "s/^${key}=//" | sed 's/^"//' | sed 's/"$//')
+    fi
   fi
+
+  # Fall back to in-memory environment variable if not found in file (non-strict mode only)
+  if [ -z "$value" ] && [ "$USE_ENV_FILE" = false ]; then
+    value="${!key}"
+  fi
+
+  echo "$value"
 }
 
 # Auto-detect mode if not explicitly set
@@ -149,7 +171,14 @@ fi
 # Read the GitHub private key properly (multi-line)
 # Note: PKCS#1 to PKCS#8 conversion is now handled at runtime in Convex
 # (see packages/convex/_shared/githubApp.ts wrapPkcs1InPkcs8 function)
-GITHUB_PRIVATE_KEY=$(sed -n '/^CMUX_GITHUB_APP_PRIVATE_KEY=/,/-----END.*KEY-----/p' "$ENV_FILE" | sed 's/^CMUX_GITHUB_APP_PRIVATE_KEY="//' | sed 's/"$//')
+GITHUB_PRIVATE_KEY=""
+if [ "$USE_ENV_FILE" = true ]; then
+  GITHUB_PRIVATE_KEY=$(sed -n '/^CMUX_GITHUB_APP_PRIVATE_KEY=/,/-----END.*KEY-----/p' "$ENV_FILE" | sed 's/^CMUX_GITHUB_APP_PRIVATE_KEY="//' | sed 's/"$//')
+fi
+# Fall back to in-memory environment variable (non-strict mode only)
+if [ -z "$GITHUB_PRIVATE_KEY" ] && [ "$USE_ENV_FILE" = false ]; then
+  GITHUB_PRIVATE_KEY="${CMUX_GITHUB_APP_PRIVATE_KEY}"
+fi
 
 # Set INSTALL_STATE_SECRET based on mode
 if [ "$MODE" = "production" ]; then

@@ -4,7 +4,11 @@ DEVCONTAINER_DIR := .devcontainer
 COMPOSE_FILE := docker-compose.convex.yml
 PROJECT_NAME := cmux-convex
 
-.PHONY: convex-up convex-down convex-restart convex-clean convex-init convex-init-prod convex-clear-prod convex-fresh dev dev-electron sync-upstream-tags
+# Default environment files (can be overridden: make target ENV_FILE=.env.custom)
+ENV_FILE ?= .env
+ENV_FILE_PROD ?= .env.production
+
+.PHONY: convex-up convex-down convex-restart convex-clean convex-init convex-init-prod convex-clear convex-clear-prod convex-reset convex-reset-prod convex-fresh dev dev-electron sync-upstream-tags
 .PHONY: clone-proxy-linux-amd64 clone-proxy-linux-arm64
 
 convex-up:
@@ -21,30 +25,80 @@ convex-clean:
 	@echo "✅ Convex containers and volumes removed"
 
 convex-init:
-	@echo "🔧 Initializing Convex environment variables (local)..."
-	./scripts/setup-convex-env.sh
+	@echo "Initializing Convex environment variables..."
+	./scripts/setup-convex-env.sh --env-file $(ENV_FILE)
 
 convex-init-prod:
-	@echo "🔧 Initializing Convex environment variables (production)..."
-	./scripts/setup-convex-env.sh --prod --env-file .env.production
+	@echo "Initializing Convex environment variables (production)..."
+	./scripts/setup-convex-env.sh --prod --env-file $(ENV_FILE_PROD)
 
-convex-clear-prod:
-	@echo "⚠️  WARNING: This will DELETE ALL DATA from production Convex!"
+convex-clear:
+	@echo "WARNING: This will DELETE ALL DATA from local Convex!"
+	@echo "Using env file: $(ENV_FILE)"
 	@echo "Press Ctrl+C within 5 seconds to cancel..."
 	@sleep 5
-	@echo "🗑️  Clearing all tables in production Convex..."
+	@echo "Clearing all tables in local Convex..."
 	@rm -rf /tmp/convex-empty && mkdir -p /tmp/convex-empty/dummy
 	@touch /tmp/convex-empty/dummy/.gitkeep
 	@cd /tmp/convex-empty && zip -r empty.zip dummy
-	cd packages/convex && bunx convex import --env-file ../../.env.production --replace-all -y /tmp/convex-empty/empty.zip
+	cd packages/convex && bunx convex import --env-file ../../$(ENV_FILE) --replace-all -y /tmp/convex-empty/empty.zip
 	@rm -rf /tmp/convex-empty
-	@echo "✅ Production database cleared"
+	@echo "Local database cleared"
+
+convex-clear-prod:
+	@echo "WARNING: This will DELETE ALL DATA from production Convex!"
+	@echo "Using env file: $(ENV_FILE_PROD)"
+	@test -f "$(ENV_FILE_PROD)" || (echo "Error: $(ENV_FILE_PROD) not found (required for production)" && exit 1)
+	@echo "Press Ctrl+C within 5 seconds to cancel..."
+	@sleep 5
+	@echo "Clearing all tables in production Convex..."
+	@rm -rf /tmp/convex-empty && mkdir -p /tmp/convex-empty/dummy
+	@touch /tmp/convex-empty/dummy/.gitkeep
+	@cd /tmp/convex-empty && zip -r empty.zip dummy
+	cd packages/convex && bunx convex import --env-file ../../$(ENV_FILE_PROD) --replace-all -y /tmp/convex-empty/empty.zip
+	@rm -rf /tmp/convex-empty
+	@echo "Production database cleared"
+
+convex-reset:
+	@echo "WARNING: This will DELETE ALL DATA, FILES, and FUNCTIONS from local Convex!"
+	@echo "Using env file: $(ENV_FILE)"
+	@echo "Press Ctrl+C within 5 seconds to cancel..."
+	@sleep 5
+	@echo "Step 1: Clearing file storage..."
+	cd packages/convex && bunx convex run admin:clearStorage --env-file ../../$(ENV_FILE)
+	@echo "Step 2: Clearing all tables..."
+	@rm -rf /tmp/convex-empty-data && mkdir -p /tmp/convex-empty-data/dummy
+	@touch /tmp/convex-empty-data/dummy/.gitkeep
+	@cd /tmp/convex-empty-data && zip -r empty.zip dummy
+	cd packages/convex && bunx convex import --env-file ../../$(ENV_FILE) --replace-all -y /tmp/convex-empty-data/empty.zip
+	@rm -rf /tmp/convex-empty-data
+	@echo "Step 3: Deploying empty functions (clears all functions and crons)..."
+	cd scripts/convex-empty && bun install --frozen-lockfile && bunx convex deploy --env-file ../../$(ENV_FILE) -y
+	@echo "Full reset complete (all data, files, functions, and crons cleared)"
+
+convex-reset-prod:
+	@echo "WARNING: This will DELETE ALL DATA, FILES, and FUNCTIONS from production Convex!"
+	@echo "Using env file: $(ENV_FILE_PROD)"
+	@test -f "$(ENV_FILE_PROD)" || (echo "Error: $(ENV_FILE_PROD) not found (required for production)" && exit 1)
+	@echo "Press Ctrl+C within 5 seconds to cancel..."
+	@sleep 5
+	@echo "Step 1: Clearing file storage..."
+	cd packages/convex && bunx convex run admin:clearStorage --env-file ../../$(ENV_FILE_PROD)
+	@echo "Step 2: Clearing all tables..."
+	@rm -rf /tmp/convex-empty-data && mkdir -p /tmp/convex-empty-data/dummy
+	@touch /tmp/convex-empty-data/dummy/.gitkeep
+	@cd /tmp/convex-empty-data && zip -r empty.zip dummy
+	cd packages/convex && bunx convex import --env-file ../../$(ENV_FILE_PROD) --replace-all -y /tmp/convex-empty-data/empty.zip
+	@rm -rf /tmp/convex-empty-data
+	@echo "Step 3: Deploying empty functions (clears all functions and crons)..."
+	cd scripts/convex-empty && bun install --frozen-lockfile && bunx convex deploy --env-file ../../$(ENV_FILE_PROD) -y
+	@echo "Full production reset complete (all data, files, functions, and crons cleared)"
 
 convex-fresh: convex-clean convex-up
-	@echo "⏳ Waiting for containers to be ready..."
+	@echo "Waiting for containers to be ready..."
 	@sleep 5
-	@$(MAKE) convex-init
-	@echo "🎉 Fresh Convex setup complete! Ready to deploy."
+	@$(MAKE) convex-init ENV_FILE=$(ENV_FILE)
+	@echo "Fresh Convex setup complete! Ready to deploy."
 
 dev:
 	./scripts/dev.sh
