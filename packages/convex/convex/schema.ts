@@ -178,6 +178,8 @@ const convexSchema = defineSchema({
     .index("by_user", ["userId", "createdAt"])
     .index("by_team_user", ["teamId", "userId"])
     .index("by_team_user_activity", ["teamId", "userId", "lastActivityAt"])
+    .index("by_team_user_workspace", ["teamId", "userId", "isCloudWorkspace"])
+    .index("by_team_user_merged", ["teamId", "userId", "mergeStatus"])
     .index("by_pinned", ["pinned", "teamId", "userId"])
     .index("by_team_user_preview", ["teamId", "userId", "isPreview"])
     .index("by_team_preview", ["teamId", "isPreview"])

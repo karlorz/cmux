@@ -506,6 +506,171 @@ export const getPinned = authQuery({
   },
 });
 
+// Paginated workspaces query (cloud and, when enabled, local workspaces).
+// Uses a dedicated index for cloud workspaces to avoid scanning all tasks.
+export const getWorkspacesPaginated = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    excludeLocalWorkspaces: v.optional(v.boolean()),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    // In web mode we only show cloud workspaces, so we can use the dedicated index.
+    // In desktop mode, we also include local workspaces. Without an index on
+    // `isLocalWorkspace`, we fall back to scanning the activity index and filtering.
+    let q = args.excludeLocalWorkspaces
+      ? ctx.db
+          .query("tasks")
+          .withIndex("by_team_user_workspace", (idx) =>
+            idx.eq("teamId", teamId).eq("userId", userId).eq("isCloudWorkspace", true),
+          )
+      : ctx.db
+          .query("tasks")
+          .withIndex("by_team_user_activity", (idx) =>
+            idx.eq("teamId", teamId).eq("userId", userId),
+          )
+          .filter((qq) =>
+            qq.or(
+              qq.eq(qq.field("isCloudWorkspace"), true),
+              qq.eq(qq.field("isLocalWorkspace"), true),
+            ),
+          );
+
+    q = q
+      .filter((qq) => qq.neq(qq.field("isArchived"), true))
+      .filter((qq) => qq.neq(qq.field("isPreview"), true))
+      .filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined))
+      .filter((qq) => qq.neq(qq.field("pinned"), true));
+
+    const paginatedResult = await q.order("desc").paginate(args.paginationOpts);
+
+    return {
+      ...paginatedResult,
+      page: paginatedResult.page.map((task) => projectTaskForList(task)),
+    };
+  },
+});
+
+// Paginated ready-to-review tasks (crown evaluation succeeded).
+export const getReadyToReviewPaginated = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    excludeLocalWorkspaces: v.optional(v.boolean()),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    let q = ctx.db
+      .query("tasks")
+      .withIndex("by_team_user_activity", (idx) =>
+        idx.eq("teamId", teamId).eq("userId", userId),
+      )
+      .filter((qq) => qq.neq(qq.field("isArchived"), true))
+      .filter((qq) => qq.neq(qq.field("isPreview"), true))
+      .filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined))
+      .filter((qq) => qq.neq(qq.field("pinned"), true))
+      .filter((qq) => qq.eq(qq.field("crownEvaluationStatus"), "succeeded"))
+      // Workspaces take precedence over ready-to-review.
+      .filter((qq) => qq.neq(qq.field("isCloudWorkspace"), true))
+      .filter((qq) => qq.neq(qq.field("isLocalWorkspace"), true))
+      // Merged takes precedence over ready-to-review.
+      .filter((qq) => qq.neq(qq.field("mergeStatus"), "pr_merged"));
+
+    if (args.excludeLocalWorkspaces) {
+      q = q.filter((qq) => qq.neq(qq.field("isLocalWorkspace"), true));
+    }
+
+    const paginatedResult = await q.order("desc").paginate(args.paginationOpts);
+
+    return {
+      ...paginatedResult,
+      page: paginatedResult.page.map((task) => projectTaskForList(task)),
+    };
+  },
+});
+
+// Paginated in-progress tasks.
+// Definition: not pinned, not workspaces, not ready-to-review, not merged.
+export const getInProgressPaginated = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    excludeLocalWorkspaces: v.optional(v.boolean()),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    let q = ctx.db
+      .query("tasks")
+      .withIndex("by_team_user_activity", (idx) =>
+        idx.eq("teamId", teamId).eq("userId", userId),
+      )
+      .filter((qq) => qq.neq(qq.field("isArchived"), true))
+      .filter((qq) => qq.neq(qq.field("isPreview"), true))
+      .filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined))
+      .filter((qq) => qq.neq(qq.field("pinned"), true))
+      // Exclude categories with higher precedence.
+      .filter((qq) => qq.neq(qq.field("isCloudWorkspace"), true))
+      .filter((qq) => qq.neq(qq.field("isLocalWorkspace"), true))
+      .filter((qq) => qq.neq(qq.field("mergeStatus"), "pr_merged"))
+      .filter((qq) => qq.neq(qq.field("crownEvaluationStatus"), "succeeded"));
+
+    if (args.excludeLocalWorkspaces) {
+      q = q.filter((qq) => qq.neq(qq.field("isLocalWorkspace"), true));
+    }
+
+    const paginatedResult = await q.order("desc").paginate(args.paginationOpts);
+
+    return {
+      ...paginatedResult,
+      page: paginatedResult.page.map((task) => projectTaskForList(task)),
+    };
+  },
+});
+
+// Paginated merged tasks (collapsed by default in UI).
+export const getMergedPaginated = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    excludeLocalWorkspaces: v.optional(v.boolean()),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    let q = ctx.db
+      .query("tasks")
+      .withIndex("by_team_user_merged", (idx) =>
+        idx.eq("teamId", teamId).eq("userId", userId).eq("mergeStatus", "pr_merged"),
+      )
+      .filter((qq) => qq.neq(qq.field("isArchived"), true))
+      .filter((qq) => qq.neq(qq.field("isPreview"), true))
+      .filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined))
+      .filter((qq) => qq.neq(qq.field("pinned"), true))
+      // Workspaces take precedence over merged.
+      .filter((qq) => qq.neq(qq.field("isCloudWorkspace"), true))
+      .filter((qq) => qq.neq(qq.field("isLocalWorkspace"), true));
+
+    if (args.excludeLocalWorkspaces) {
+      q = q.filter((qq) => qq.neq(qq.field("isLocalWorkspace"), true));
+    }
+
+    const paginatedResult = await q.order("desc").paginate(args.paginationOpts);
+
+    return {
+      ...paginatedResult,
+      page: paginatedResult.page.map((task) => projectTaskForList(task)),
+    };
+  },
+});
+
 export const getTasksWithTaskRuns = authQuery({
   args: {
     teamSlugOrId: v.string(),

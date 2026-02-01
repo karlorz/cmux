@@ -16,6 +16,12 @@ type TaskCategoryKey =
   | "in_progress"
   | "merged";
 
+type PaginatedQueryStatus =
+  | "LoadingFirstPage"
+  | "LoadingMore"
+  | "CanLoadMore"
+  | "Exhausted";
+
 const CATEGORY_ORDER: TaskCategoryKey[] = [
   "pinned",
   "workspaces",
@@ -50,57 +56,6 @@ const CATEGORY_META: Record<
   },
 };
 
-const createEmptyCategoryBuckets = (): Record<
-  TaskCategoryKey,
-  Doc<"tasks">[]
-> => ({
-  pinned: [],
-  workspaces: [],
-  ready_to_review: [],
-  in_progress: [],
-  merged: [],
-});
-
-const getTaskCategory = (task: Doc<"tasks">): TaskCategoryKey => {
-  if (task.isCloudWorkspace || task.isLocalWorkspace) {
-    return "workspaces";
-  }
-  if (task.mergeStatus === "pr_merged") {
-    return "merged";
-  }
-  if (task.crownEvaluationStatus === "succeeded") {
-    return "ready_to_review";
-  }
-  return "in_progress";
-};
-
-const sortByRecentUpdate = (tasks: Doc<"tasks">[]): Doc<"tasks">[] => {
-  if (tasks.length <= 1) {
-    return tasks;
-  }
-  return [...tasks].sort(
-    (a, b) =>
-      (b.updatedAt ?? b.createdAt ?? 0) - (a.updatedAt ?? a.createdAt ?? 0)
-  );
-};
-
-const categorizeTasks = (
-  tasks: Doc<"tasks">[] | undefined
-): Record<TaskCategoryKey, Doc<"tasks">[]> | null => {
-  if (!tasks) {
-    return null;
-  }
-  const buckets = createEmptyCategoryBuckets();
-  for (const task of tasks) {
-    const key = getTaskCategory(task);
-    buckets[key].push(task);
-  }
-  for (const key of CATEGORY_ORDER) {
-    buckets[key] = sortByRecentUpdate(buckets[key]);
-  }
-  return buckets;
-};
-
 const createCollapsedCategoryState = (
   defaultValue = false
 ): Record<TaskCategoryKey, boolean> => ({
@@ -108,7 +63,7 @@ const createCollapsedCategoryState = (
   workspaces: defaultValue,
   ready_to_review: defaultValue,
   in_progress: defaultValue,
-  merged: defaultValue,
+  merged: true,
 });
 
 // Preview run types
@@ -181,6 +136,10 @@ const createCollapsedPreviewCategoryState = (
 
 const ARCHIVED_PAGE_SIZE = 20;
 const PREVIEW_PAGE_SIZE = 20;
+const WORKSPACES_PAGE_SIZE = 20;
+const READY_TO_REVIEW_PAGE_SIZE = 20;
+const IN_PROGRESS_PAGE_SIZE = 20;
+const MERGED_PAGE_SIZE = 10;
 
 export const TaskList = memo(function TaskList({
   teamSlugOrId,
@@ -190,7 +149,42 @@ export const TaskList = memo(function TaskList({
   // In web mode, exclude local workspaces from the task list
   const excludeLocalWorkspaces = env.NEXT_PUBLIC_WEB_MODE || undefined;
 
-  const allTasks = useQuery(api.tasks.get, { teamSlugOrId, excludeLocalWorkspaces });
+  const {
+    results: workspaces,
+    status: workspacesStatus,
+    loadMore: loadMoreWorkspaces,
+  } = usePaginatedQuery(
+    api.tasks.getWorkspacesPaginated,
+    { teamSlugOrId, excludeLocalWorkspaces },
+    { initialNumItems: WORKSPACES_PAGE_SIZE },
+  );
+  const {
+    results: readyToReview,
+    status: readyToReviewStatus,
+    loadMore: loadMoreReadyToReview,
+  } = usePaginatedQuery(
+    api.tasks.getReadyToReviewPaginated,
+    { teamSlugOrId, excludeLocalWorkspaces },
+    { initialNumItems: READY_TO_REVIEW_PAGE_SIZE },
+  );
+  const {
+    results: inProgress,
+    status: inProgressStatus,
+    loadMore: loadMoreInProgress,
+  } = usePaginatedQuery(
+    api.tasks.getInProgressPaginated,
+    { teamSlugOrId, excludeLocalWorkspaces },
+    { initialNumItems: IN_PROGRESS_PAGE_SIZE },
+  );
+  const {
+    results: merged,
+    status: mergedStatus,
+    loadMore: loadMoreMerged,
+  } = usePaginatedQuery(
+    api.tasks.getMergedPaginated,
+    { teamSlugOrId, excludeLocalWorkspaces },
+    { initialNumItems: MERGED_PAGE_SIZE },
+  );
   const {
     results: archivedTasks,
     status: archivedStatus,
@@ -267,24 +261,13 @@ export const TaskList = memo(function TaskList({
     };
   }, [tab, previewRunsStatus, loadMorePreviewRuns]);
 
-  const categorizedTasks = useMemo(() => {
-    const categorized = categorizeTasks(allTasks);
-    if (categorized && pinnedData) {
-      // Filter pinned tasks out from other categories
-      const pinnedTaskIds = new Set(pinnedData.map(t => t._id));
+  const isAllTasksLoading =
+    pinnedData === undefined &&
+    workspacesStatus === "LoadingFirstPage" &&
+    readyToReviewStatus === "LoadingFirstPage" &&
+    inProgressStatus === "LoadingFirstPage" &&
+    mergedStatus === "LoadingFirstPage";
 
-      for (const key of CATEGORY_ORDER) {
-        if (key !== 'pinned') {
-          categorized[key] = categorized[key].filter(t => !pinnedTaskIds.has(t._id));
-        }
-      }
-
-      // Add pinned tasks to the pinned category (already sorted by the API)
-      categorized.pinned = pinnedData;
-    }
-    return categorized;
-  }, [allTasks, pinnedData]);
-  const categoryBuckets = categorizedTasks ?? createEmptyCategoryBuckets();
   const collapsedStorageKey = useMemo(
     () => `dashboard-collapsed-categories-${teamSlugOrId}`,
     [teamSlugOrId]
@@ -450,7 +433,7 @@ export const TaskList = memo(function TaskList({
               </div>
             </div>
           )
-        ) : allTasks === undefined ? (
+        ) : isAllTasksLoading ? (
           <div className="text-sm text-neutral-500 dark:text-neutral-400 py-2 pl-4 select-none">
             Loading...
           </div>
@@ -458,14 +441,62 @@ export const TaskList = memo(function TaskList({
           <div className="mt-1 w-full flex flex-col space-y-[-1px] transform -translate-y-px">
             {CATEGORY_ORDER.map((categoryKey) => {
               // Don't render the pinned category if it's empty
-              if (categoryKey === 'pinned' && categoryBuckets[categoryKey].length === 0) {
+              const pinnedTasks = pinnedData ?? [];
+              if (categoryKey === 'pinned' && pinnedTasks.length === 0) {
                 return null;
               }
+
+              const categoryData: {
+                tasks: Doc<"tasks">[];
+                status: PaginatedQueryStatus;
+                loadMore?: (numItems: number) => void;
+                pageSize?: number;
+              } = (() => {
+                switch (categoryKey) {
+                  case "pinned":
+                    return {
+                      tasks: pinnedTasks,
+                      status: pinnedData === undefined ? "LoadingFirstPage" : "Exhausted",
+                    };
+                  case "workspaces":
+                    return {
+                      tasks: workspaces,
+                      status: workspacesStatus,
+                      loadMore: loadMoreWorkspaces,
+                      pageSize: WORKSPACES_PAGE_SIZE,
+                    };
+                  case "ready_to_review":
+                    return {
+                      tasks: readyToReview,
+                      status: readyToReviewStatus,
+                      loadMore: loadMoreReadyToReview,
+                      pageSize: READY_TO_REVIEW_PAGE_SIZE,
+                    };
+                  case "in_progress":
+                    return {
+                      tasks: inProgress,
+                      status: inProgressStatus,
+                      loadMore: loadMoreInProgress,
+                      pageSize: IN_PROGRESS_PAGE_SIZE,
+                    };
+                  case "merged":
+                    return {
+                      tasks: merged,
+                      status: mergedStatus,
+                      loadMore: loadMoreMerged,
+                      pageSize: MERGED_PAGE_SIZE,
+                    };
+                }
+              })();
+
               return (
                 <TaskCategorySection
                   key={categoryKey}
                   categoryKey={categoryKey}
-                  tasks={categoryBuckets[categoryKey]}
+                  tasks={categoryData.tasks}
+                  paginationStatus={categoryData.status}
+                  loadMore={categoryData.loadMore}
+                  pageSize={categoryData.pageSize}
                   teamSlugOrId={teamSlugOrId}
                   collapsed={Boolean(collapsedCategories[categoryKey])}
                   onToggle={toggleCategoryCollapse}
@@ -482,17 +513,25 @@ export const TaskList = memo(function TaskList({
 function TaskCategorySection({
   categoryKey,
   tasks,
+  paginationStatus,
+  loadMore,
+  pageSize,
   teamSlugOrId,
   collapsed,
   onToggle,
 }: {
   categoryKey: TaskCategoryKey;
   tasks: Doc<"tasks">[];
+  paginationStatus: PaginatedQueryStatus;
+  loadMore?: (numItems: number) => void;
+  pageSize?: number;
   teamSlugOrId: string;
   collapsed: boolean;
   onToggle: (key: TaskCategoryKey) => void;
 }) {
   const meta = CATEGORY_META[categoryKey];
+  const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
+
   const handleToggle = useCallback(
     () => onToggle(categoryKey),
     [categoryKey, onToggle]
@@ -501,6 +540,41 @@ function TaskCategorySection({
   const toggleLabel = collapsed
     ? `Expand ${meta.title}`
     : `Collapse ${meta.title}`;
+
+  const countLabel = useMemo(() => {
+    if (paginationStatus === "CanLoadMore" || paginationStatus === "LoadingMore") {
+      return `${tasks.length}+`;
+    }
+    return String(tasks.length);
+  }, [paginationStatus, tasks.length]);
+
+  useEffect(() => {
+    if (collapsed) return;
+    if (!loadMore) return;
+    if (!pageSize) return;
+    if (paginationStatus !== "CanLoadMore") return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          loadMore(pageSize);
+        }
+      },
+      { threshold: 0.1 },
+    );
+
+    const trigger = loadMoreTriggerRef.current;
+    if (trigger) {
+      observer.observe(trigger);
+    }
+
+    return () => {
+      if (trigger) {
+        observer.unobserve(trigger);
+      }
+    };
+  }, [collapsed, loadMore, pageSize, paginationStatus]);
+
   return (
     <div className="w-full">
       <div
@@ -527,16 +601,33 @@ function TaskCategorySection({
           <div className="flex items-center gap-2 text-xs font-medium tracking-tight text-neutral-900 dark:text-neutral-100">
             <span>{meta.title}</span>
             <span className="text-xs text-neutral-500 dark:text-neutral-400">
-              {tasks.length}
+              {countLabel}
             </span>
           </div>
         </div>
       </div>
-      {collapsed ? null : tasks.length > 0 ? (
+      {collapsed ? null : paginationStatus === "LoadingFirstPage" ? (
+        <div className="flex w-full items-center px-4 py-3">
+          <p className="pl-5 text-xs text-neutral-500 dark:text-neutral-400 select-none">
+            Loading...
+          </p>
+        </div>
+      ) : tasks.length > 0 ? (
         <div id={contentId} className="flex flex-col w-full">
           {tasks.map((task) => (
             <TaskItem key={task._id} task={task} teamSlugOrId={teamSlugOrId} />
           ))}
+          {loadMore ? (
+            <div ref={loadMoreTriggerRef} className="w-full py-2">
+              {paginationStatus === "LoadingMore" && (
+                <div className="flex items-center justify-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Loading more...</span>
+                </div>
+              )}
+              {paginationStatus === "CanLoadMore" && <div className="h-1" />}
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="flex w-full items-center px-4 py-3">

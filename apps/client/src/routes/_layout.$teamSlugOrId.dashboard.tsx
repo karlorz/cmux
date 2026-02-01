@@ -92,11 +92,7 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/dashboard")({
         query: api.environments.list,
         args: { teamSlugOrId },
       });
-      // Prewarm queries used in TaskList (args must match exactly)
-      convexQueryClient.convexClient.prewarmQuery({
-        query: api.tasks.get,
-        args: { teamSlugOrId, excludeLocalWorkspaces },
-      });
+      // Prewarm pinned tasks used in TaskList (args must match exactly)
       convexQueryClient.convexClient.prewarmQuery({
         query: api.tasks.getPinned,
         args: { teamSlugOrId, excludeLocalWorkspaces },
@@ -224,17 +220,27 @@ function DashboardComponent() {
   }, [renderDockerPullToast, socket]);
 
   // Query tasks to check if user is new (has no tasks)
+  // Use paginated variants to avoid loading the entire task list.
+  const excludeLocalWorkspaces = env.NEXT_PUBLIC_WEB_MODE || undefined;
   const tasksQuery = useQuery(
-    convexQuery(api.tasks.get, { teamSlugOrId })
+    convexQuery(api.tasks.getPaginated, {
+      teamSlugOrId,
+      excludeLocalWorkspaces,
+      paginationOpts: { numItems: 20, cursor: null },
+    })
   );
   const archivedTasksQuery = useQuery(
-    convexQuery(api.tasks.get, { teamSlugOrId, archived: true })
+    convexQuery(api.tasks.getArchivedPaginated, {
+      teamSlugOrId,
+      excludeLocalWorkspaces,
+      paginationOpts: { numItems: 20, cursor: null },
+    })
   );
 
   const tasksReady = tasksQuery.isSuccess && archivedTasksQuery.isSuccess;
   const { hasRealTasks, hasCompletedRealTasks } = useMemo(() => {
-    const activeTasks = tasksQuery.data ?? [];
-    const archivedTasks = archivedTasksQuery.data ?? [];
+    const activeTasks = tasksQuery.data?.page ?? [];
+    const archivedTasks = archivedTasksQuery.data?.page ?? [];
     const allTasks = [...activeTasks, ...archivedTasks];
     const realTasks = allTasks.filter(
       (task) => !task.isCloudWorkspace && !task.isLocalWorkspace

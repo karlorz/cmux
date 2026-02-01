@@ -62,8 +62,12 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId")({
     // In web mode, exclude local workspaces
     const excludeLocalWorkspaces = env.NEXT_PUBLIC_WEB_MODE || undefined;
     convexQueryClient.convexClient.prewarmQuery({
-      query: api.tasks.getWithNotificationOrder,
-      args: { teamSlugOrId: params.teamSlugOrId, excludeLocalWorkspaces },
+      query: api.tasks.getWithNotificationOrderPaginated,
+      args: {
+        teamSlugOrId: params.teamSlugOrId,
+        excludeLocalWorkspaces,
+        paginationOpts: { numItems: 50, cursor: null },
+      },
     });
     convexQueryClient.convexClient.prewarmQuery({
       query: api.github_prs.listPullRequests,
@@ -84,10 +88,14 @@ function LayoutComponent() {
   // that cause excessive re-renders cascading to all child components.
   // Uses getWithNotificationOrder which sorts tasks with unread notifications first
   const tasksQuery = useRQ({
-    ...convexQuery(api.tasks.getWithNotificationOrder, { teamSlugOrId, excludeLocalWorkspaces }),
+    ...convexQuery(api.tasks.getWithNotificationOrderPaginated, {
+      teamSlugOrId,
+      excludeLocalWorkspaces,
+      paginationOpts: { numItems: 50, cursor: null },
+    }),
     enabled: Boolean(teamSlugOrId),
   });
-  const tasks = tasksQuery.data;
+  const tasks = tasksQuery.data?.page;
 
   // Tasks are already sorted by the query (unread notifications first, then by createdAt)
   const displayTasks = tasks;

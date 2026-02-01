@@ -1,27 +1,17 @@
 import { TaskTree } from "@/components/TaskTree";
 import { TaskTreeSkeleton } from "@/components/TaskTreeSkeleton";
 import { FloatingPane } from "@/components/floating-pane";
-import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
 import { isFakeConvexId } from "@/lib/fakeConvexId";
 import { api } from "@cmux/convex/api";
 import { type Id } from "@cmux/convex/dataModel";
-import { convexQuery } from "@convex-dev/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useQueries, useQuery } from "convex/react";
-import { useMemo } from "react";
+import { usePaginatedQuery, useQueries, useQuery } from "convex/react";
+import { useEffect, useMemo, useRef } from "react";
 import { env } from "@/client-env";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/workspaces")({
   component: WorkspacesRoute,
-  loader: async ({ params }) => {
-    const { teamSlugOrId } = params;
-    // In web mode, exclude local workspaces
-    const excludeLocalWorkspaces = env.NEXT_PUBLIC_WEB_MODE || undefined;
-    void convexQueryClient.queryClient.ensureQueryData(
-      convexQuery(api.tasks.getWithNotificationOrder, { teamSlugOrId, excludeLocalWorkspaces })
-    );
-  },
 });
 
 function WorkspacesRoute() {
@@ -29,17 +19,44 @@ function WorkspacesRoute() {
   // In web mode, exclude local workspaces
   const excludeLocalWorkspaces = env.NEXT_PUBLIC_WEB_MODE || undefined;
   // Use notification-aware ordering: unread notifications first, then by createdAt
-  const tasks = useQuery(api.tasks.getWithNotificationOrder, { teamSlugOrId, excludeLocalWorkspaces });
+  const { results: tasks, status, loadMore } = usePaginatedQuery(
+    api.tasks.getWithNotificationOrderPaginated,
+    { teamSlugOrId, excludeLocalWorkspaces },
+    { initialNumItems: 30 },
+  );
   const tasksWithUnread = useQuery(api.taskNotifications.getTasksWithUnread, {
     teamSlugOrId,
   });
   const { expandTaskIds } = useExpandTasks();
 
+  const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (status !== "CanLoadMore") return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          loadMore(30);
+        }
+      },
+      { threshold: 0.1 },
+    );
+
+    const trigger = loadMoreTriggerRef.current;
+    if (trigger) {
+      observer.observe(trigger);
+    }
+
+    return () => {
+      if (trigger) {
+        observer.unobserve(trigger);
+      }
+    };
+  }, [loadMore, status]);
+
   // Tasks are already sorted by the query (unread notifications first)
-  const orderedTasks = useMemo(
-    () => tasks ?? ([] as NonNullable<typeof tasks>),
-    [tasks]
-  );
+  const orderedTasks = useMemo(() => tasks, [tasks]);
 
   // Create a Set for quick lookup of task IDs with unread notifications
   const tasksWithUnreadSet = useMemo(() => {
@@ -95,7 +112,7 @@ function WorkspacesRoute() {
           </h1>
         </div>
         <div className="overflow-y-auto px-4 pb-6">
-          {tasks === undefined ? (
+          {status === "LoadingFirstPage" ? (
             <TaskTreeSkeleton count={10} />
           ) : tasksWithRuns.length === 0 ? (
             <p className="mt-6 text-sm text-neutral-500 dark:text-neutral-400 select-none">
@@ -112,6 +129,12 @@ function WorkspacesRoute() {
                   hasUnreadNotification={tasksWithUnreadSet.has(task._id)}
                 />
               ))}
+              <div ref={loadMoreTriggerRef} className="w-full py-3">
+                {status === "LoadingMore" && (
+                  <TaskTreeSkeleton count={3} />
+                )}
+                {status === "CanLoadMore" && <div className="h-1" />}
+              </div>
             </div>
           )}
         </div>
