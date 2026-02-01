@@ -80,13 +80,17 @@ cleanup_instance() {
                 echo "Killing dev server (PID: $pid) for: $project_path"
                 kill_process_group "$pid" TERM
                 kill_descendants "$pid" TERM
-                sleep 2
+                # Give processes 3 seconds to cleanup gracefully (increased for Next.js/Vite)
+                sleep 3
                 kill_process_group "$pid" 9
                 kill_descendants "$pid" 9
                 if kill -0 "$pid" 2>/dev/null; then
                     echo "PID $pid is still running; leaving lock files in place."
                     should_clear=false
                 fi
+                # Clean up any orphaned port listeners (uses ss/netstat fallback on Linux)
+                source "$SCRIPT_DIR/_port-clean.sh" 2>/dev/null || true
+                clean_ports 5173 9776 9779 2>/dev/null || true
             fi
         else
             echo "Stale pidfile for: $project_path (process not running)"

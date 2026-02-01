@@ -37,6 +37,16 @@ clean_ports() {
       fi
     done)
 
+    # Fallback to ss if lsof found nothing (Linux-specific, lsof often fails on Linux)
+    if [ -z "$pids" ] && command -v ss >/dev/null 2>&1; then
+      pids=$(ss -tlnp "sport = :$port" 2>/dev/null | grep -oP 'pid=\K[0-9]+' || true)
+    fi
+
+    # Final fallback to netstat if ss also failed
+    if [ -z "$pids" ] && command -v netstat >/dev/null 2>&1; then
+      pids=$(netstat -tlnp 2>/dev/null | grep ":$port " | grep -oP '\s\K[0-9]+(?=/)' || true)
+    fi
+
     if [ -n "$pids" ]; then
       echo -e "${YELLOW}Killing processes on port $port (excluding Chrome/OrbStack)...${NC}"
       for pid in $pids; do
