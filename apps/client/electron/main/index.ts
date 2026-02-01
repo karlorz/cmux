@@ -1238,6 +1238,14 @@ function jwksForIssuer(issuer: string) {
 async function verifyJwtAndGetPayload(
   token: string
 ): Promise<JWTPayload | null> {
+  // JWT format: three base64url segments separated by dots
+  // Opaque tokens (like Stack Auth refresh tokens) don't have this structure
+  const parts = token.split(".");
+  if (parts.length !== 3) {
+    // Not a JWT - likely an opaque token, silently return null
+    return null;
+  }
+
   try {
     const decoded = decodeJwt(token);
     const iss = decoded.iss;
@@ -1245,8 +1253,9 @@ async function verifyJwtAndGetPayload(
     const JWKS = jwksForIssuer(iss);
     const { payload } = await jwtVerify(token, JWKS, { issuer: iss });
     return payload;
-  } catch (error) {
-    console.error("Failed to verify JWT and get payload", error);
+  } catch {
+    // JWT decode/verify failed - return null silently
+    // The caller logs a warning if both tokens fail verification
     return null;
   }
 }
