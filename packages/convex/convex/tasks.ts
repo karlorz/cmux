@@ -1531,3 +1531,334 @@ export const getLinkedLocalWorkspace = authQuery({
     };
   },
 });
+
+// ============================================================================
+// Category-specific paginated queries for bandwidth optimization
+// ============================================================================
+
+/**
+ * Lightweight query to get counts per category without reading full documents.
+ * Used to show category badges with total counts while only loading paginated items.
+ */
+export const getCategoryCounts = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    excludeLocalWorkspaces: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    // Get pinned count (uses efficient index)
+    let pinnedQuery = ctx.db
+      .query("tasks")
+      .withIndex("by_pinned", (idx) =>
+        idx.eq("pinned", true).eq("teamId", teamId).eq("userId", userId),
+      )
+      .filter((q) => q.neq(q.field("isArchived"), true))
+      .filter((q) => q.neq(q.field("isPreview"), true));
+    if (args.excludeLocalWorkspaces) {
+      pinnedQuery = pinnedQuery.filter((q) => q.neq(q.field("isLocalWorkspace"), true));
+    }
+    const pinnedTasks = await pinnedQuery.collect();
+    const pinnedIds = new Set(pinnedTasks.map((t) => t._id));
+
+    // Get all non-archived tasks to count categories
+    // Note: We need to read all to count accurately, but we only read minimal fields
+    // This is acceptable for counts since we're just iterating, not returning full docs
+    let allQuery = ctx.db
+      .query("tasks")
+      .withIndex("by_team_user", (idx) =>
+        idx.eq("teamId", teamId).eq("userId", userId),
+      )
+      .filter((q) => q.neq(q.field("isArchived"), true))
+      .filter((q) => q.neq(q.field("isPreview"), true))
+      .filter((q) => q.eq(q.field("linkedFromCloudTaskRunId"), undefined));
+    if (args.excludeLocalWorkspaces) {
+      allQuery = allQuery.filter((q) => q.neq(q.field("isLocalWorkspace"), true));
+    }
+    const allTasks = await allQuery.collect();
+
+    // Count categories (excluding pinned items from other categories)
+    let workspaces = 0;
+    let readyToReview = 0;
+    let inProgress = 0;
+    let merged = 0;
+
+    for (const task of allTasks) {
+      // Skip if pinned (counted separately)
+      if (pinnedIds.has(task._id)) continue;
+
+      if (task.isCloudWorkspace || task.isLocalWorkspace) {
+        workspaces++;
+      } else if (task.mergeStatus === "pr_merged") {
+        merged++;
+      } else if (task.crownEvaluationStatus === "succeeded") {
+        readyToReview++;
+      } else {
+        inProgress++;
+      }
+    }
+
+    return {
+      pinned: pinnedTasks.length,
+      workspaces,
+      readyToReview,
+      inProgress,
+      merged,
+    };
+  },
+});
+
+/**
+ * Paginated query for workspace tasks (isCloudWorkspace || isLocalWorkspace).
+ */
+export const getWorkspacesPaginated = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    excludeLocalWorkspaces: v.optional(v.boolean()),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    // Get pinned IDs to exclude
+    const pinnedTasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_pinned", (idx) =>
+        idx.eq("pinned", true).eq("teamId", teamId).eq("userId", userId),
+      )
+      .filter((q) => q.neq(q.field("isArchived"), true))
+      .collect();
+    const pinnedIds = new Set(pinnedTasks.map((t) => t._id));
+
+    // Query workspace tasks using the composite index
+    let q = ctx.db
+      .query("tasks")
+      .withIndex("by_team_user_workspace", (idx) =>
+        idx.eq("teamId", teamId).eq("userId", userId).eq("isCloudWorkspace", true),
+      )
+      .filter((qq) => qq.neq(qq.field("isArchived"), true))
+      .filter((qq) => qq.neq(qq.field("isPreview"), true))
+      .filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined));
+
+    if (args.excludeLocalWorkspaces) {
+      q = q.filter((qq) => qq.neq(qq.field("isLocalWorkspace"), true));
+    }
+
+    // Filter out pinned tasks
+    q = q.filter((qq) => {
+      // Can't use Set in filter, so we check pinned field directly
+      return qq.neq(qq.field("pinned"), true);
+    });
+
+    const paginatedResult = await q.order("desc").paginate(args.paginationOpts);
+
+    // Also need to include isLocalWorkspace tasks (not covered by the index on isCloudWorkspace=true)
+    // For workspaces, we need to handle both isCloudWorkspace and isLocalWorkspace
+    // Since we can only use one index, we'll do a separate query for local workspaces
+    // and merge the results
+    let localWorkspaceResults: typeof paginatedResult.page = [];
+    if (!args.excludeLocalWorkspaces) {
+      const localQuery = await ctx.db
+        .query("tasks")
+        .withIndex("by_team_user", (idx) =>
+          idx.eq("teamId", teamId).eq("userId", userId),
+        )
+        .filter((qq) => qq.eq(qq.field("isLocalWorkspace"), true))
+        .filter((qq) => qq.neq(qq.field("isCloudWorkspace"), true)) // Avoid duplicates
+        .filter((qq) => qq.neq(qq.field("isArchived"), true))
+        .filter((qq) => qq.neq(qq.field("isPreview"), true))
+        .filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined))
+        .filter((qq) => qq.neq(qq.field("pinned"), true))
+        .collect();
+      localWorkspaceResults = localQuery;
+    }
+
+    // Get unread task runs for this user
+    const unreadRuns = await ctx.db
+      .query("unreadTaskRuns")
+      .withIndex("by_team_user", (q) => q.eq("teamId", teamId).eq("userId", userId))
+      .take(1000);
+
+    const tasksWithUnread = new Set(
+      unreadRuns.map((ur) => ur.taskId).filter((id): id is Id<"tasks"> => id !== undefined)
+    );
+
+    // Merge cloud and local workspaces, sort by updatedAt
+    const allWorkspaces = [...paginatedResult.page, ...localWorkspaceResults]
+      .filter((t) => !pinnedIds.has(t._id))
+      .sort((a, b) => (b.updatedAt ?? b.createdAt ?? 0) - (a.updatedAt ?? a.createdAt ?? 0));
+
+    return {
+      ...paginatedResult,
+      page: allWorkspaces.map((task) => ({
+        ...projectTaskForList(task),
+        hasUnread: tasksWithUnread.has(task._id),
+      })),
+    };
+  },
+});
+
+/**
+ * Paginated query for merged tasks (mergeStatus === "pr_merged").
+ */
+export const getMergedPaginated = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    excludeLocalWorkspaces: v.optional(v.boolean()),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    // Query merged tasks using the composite index
+    let q = ctx.db
+      .query("tasks")
+      .withIndex("by_team_user_merged", (idx) =>
+        idx.eq("teamId", teamId).eq("userId", userId).eq("mergeStatus", "pr_merged"),
+      )
+      .filter((qq) => qq.neq(qq.field("isArchived"), true))
+      .filter((qq) => qq.neq(qq.field("isPreview"), true))
+      .filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined))
+      .filter((qq) => qq.neq(qq.field("pinned"), true));
+
+    if (args.excludeLocalWorkspaces) {
+      q = q.filter((qq) => qq.neq(qq.field("isLocalWorkspace"), true));
+    }
+
+    const paginatedResult = await q.order("desc").paginate(args.paginationOpts);
+
+    // Get unread task runs for this user
+    const unreadRuns = await ctx.db
+      .query("unreadTaskRuns")
+      .withIndex("by_team_user", (q) => q.eq("teamId", teamId).eq("userId", userId))
+      .take(1000);
+
+    const tasksWithUnread = new Set(
+      unreadRuns.map((ur) => ur.taskId).filter((id): id is Id<"tasks"> => id !== undefined)
+    );
+
+    return {
+      ...paginatedResult,
+      page: paginatedResult.page.map((task) => ({
+        ...projectTaskForList(task),
+        hasUnread: tasksWithUnread.has(task._id),
+      })),
+    };
+  },
+});
+
+/**
+ * Paginated query for in-progress tasks.
+ * Excludes: pinned, workspaces, ready_to_review, merged
+ */
+export const getInProgressPaginated = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    excludeLocalWorkspaces: v.optional(v.boolean()),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    // Use activity index for sorting
+    let q = ctx.db
+      .query("tasks")
+      .withIndex("by_team_user_activity", (idx) =>
+        idx.eq("teamId", teamId).eq("userId", userId),
+      )
+      .filter((qq) => qq.neq(qq.field("isArchived"), true))
+      .filter((qq) => qq.neq(qq.field("isPreview"), true))
+      .filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined))
+      .filter((qq) => qq.neq(qq.field("pinned"), true))
+      // Exclude workspaces
+      .filter((qq) => qq.neq(qq.field("isCloudWorkspace"), true))
+      .filter((qq) => qq.neq(qq.field("isLocalWorkspace"), true))
+      // Exclude merged
+      .filter((qq) => qq.neq(qq.field("mergeStatus"), "pr_merged"))
+      // Exclude ready_to_review (crownEvaluationStatus === "succeeded")
+      .filter((qq) => qq.neq(qq.field("crownEvaluationStatus"), "succeeded"));
+
+    if (args.excludeLocalWorkspaces) {
+      q = q.filter((qq) => qq.neq(qq.field("isLocalWorkspace"), true));
+    }
+
+    const paginatedResult = await q.order("desc").paginate(args.paginationOpts);
+
+    // Get unread task runs for this user
+    const unreadRuns = await ctx.db
+      .query("unreadTaskRuns")
+      .withIndex("by_team_user", (q) => q.eq("teamId", teamId).eq("userId", userId))
+      .take(1000);
+
+    const tasksWithUnread = new Set(
+      unreadRuns.map((ur) => ur.taskId).filter((id): id is Id<"tasks"> => id !== undefined)
+    );
+
+    return {
+      ...paginatedResult,
+      page: paginatedResult.page.map((task) => ({
+        ...projectTaskForList(task),
+        hasUnread: tasksWithUnread.has(task._id),
+      })),
+    };
+  },
+});
+
+/**
+ * Paginated query for ready-to-review tasks (crownEvaluationStatus === "succeeded").
+ */
+export const getReadyToReviewPaginated = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    excludeLocalWorkspaces: v.optional(v.boolean()),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    // Use crown_status index for efficient querying
+    let q = ctx.db
+      .query("tasks")
+      .withIndex("by_crown_status", (idx) =>
+        idx.eq("crownEvaluationStatus", "succeeded"),
+      )
+      .filter((qq) => qq.eq(qq.field("teamId"), teamId))
+      .filter((qq) => qq.eq(qq.field("userId"), userId))
+      .filter((qq) => qq.neq(qq.field("isArchived"), true))
+      .filter((qq) => qq.neq(qq.field("isPreview"), true))
+      .filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined))
+      .filter((qq) => qq.neq(qq.field("pinned"), true))
+      // Exclude merged (they go in merged category, not ready_to_review)
+      .filter((qq) => qq.neq(qq.field("mergeStatus"), "pr_merged"));
+
+    if (args.excludeLocalWorkspaces) {
+      q = q.filter((qq) => qq.neq(qq.field("isLocalWorkspace"), true));
+    }
+
+    const paginatedResult = await q.order("desc").paginate(args.paginationOpts);
+
+    // Get unread task runs for this user
+    const unreadRuns = await ctx.db
+      .query("unreadTaskRuns")
+      .withIndex("by_team_user", (q) => q.eq("teamId", teamId).eq("userId", userId))
+      .take(1000);
+
+    const tasksWithUnread = new Set(
+      unreadRuns.map((ur) => ur.taskId).filter((id): id is Id<"tasks"> => id !== undefined)
+    );
+
+    return {
+      ...paginatedResult,
+      page: paginatedResult.page.map((task) => ({
+        ...projectTaskForList(task),
+        hasUnread: tasksWithUnread.has(task._id),
+      })),
+    };
+  },
+});

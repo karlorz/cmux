@@ -50,57 +50,6 @@ const CATEGORY_META: Record<
   },
 };
 
-const createEmptyCategoryBuckets = (): Record<
-  TaskCategoryKey,
-  Doc<"tasks">[]
-> => ({
-  pinned: [],
-  workspaces: [],
-  ready_to_review: [],
-  in_progress: [],
-  merged: [],
-});
-
-const getTaskCategory = (task: Doc<"tasks">): TaskCategoryKey => {
-  if (task.isCloudWorkspace || task.isLocalWorkspace) {
-    return "workspaces";
-  }
-  if (task.mergeStatus === "pr_merged") {
-    return "merged";
-  }
-  if (task.crownEvaluationStatus === "succeeded") {
-    return "ready_to_review";
-  }
-  return "in_progress";
-};
-
-const sortByRecentUpdate = (tasks: Doc<"tasks">[]): Doc<"tasks">[] => {
-  if (tasks.length <= 1) {
-    return tasks;
-  }
-  return [...tasks].sort(
-    (a, b) =>
-      (b.updatedAt ?? b.createdAt ?? 0) - (a.updatedAt ?? a.createdAt ?? 0)
-  );
-};
-
-const categorizeTasks = (
-  tasks: Doc<"tasks">[] | undefined
-): Record<TaskCategoryKey, Doc<"tasks">[]> | null => {
-  if (!tasks) {
-    return null;
-  }
-  const buckets = createEmptyCategoryBuckets();
-  for (const task of tasks) {
-    const key = getTaskCategory(task);
-    buckets[key].push(task);
-  }
-  for (const key of CATEGORY_ORDER) {
-    buckets[key] = sortByRecentUpdate(buckets[key]);
-  }
-  return buckets;
-};
-
 const createCollapsedCategoryState = (
   defaultValue = false
 ): Record<TaskCategoryKey, boolean> => ({
@@ -108,7 +57,7 @@ const createCollapsedCategoryState = (
   workspaces: defaultValue,
   ready_to_review: defaultValue,
   in_progress: defaultValue,
-  merged: defaultValue,
+  merged: true, // Merged is collapsed by default
 });
 
 // Preview run types
@@ -181,6 +130,39 @@ const createCollapsedPreviewCategoryState = (
 
 const ARCHIVED_PAGE_SIZE = 20;
 const PREVIEW_PAGE_SIZE = 20;
+const CATEGORY_PAGE_SIZE = 20;
+const MERGED_PAGE_SIZE = 10; // Smaller initial size for merged (collapsed by default)
+
+// Type for projected task from API (matches the return type of projectTaskForList + hasUnread)
+type ProjectedTask = {
+  _id: Id<"tasks">;
+  _creationTime: number;
+  text: string;
+  isCompleted: boolean;
+  isArchived?: boolean;
+  pinned?: boolean;
+  isPreview?: boolean;
+  isLocalWorkspace?: boolean;
+  isCloudWorkspace?: boolean;
+  linkedFromCloudTaskRunId?: Id<"taskRuns">;
+  projectFullName?: string;
+  baseBranch?: string;
+  worktreePath?: string;
+  generatedBranchName?: string;
+  createdAt?: number;
+  updatedAt?: number;
+  lastActivityAt?: number;
+  userId: string;
+  teamId: string;
+  environmentId?: Id<"environments">;
+  crownEvaluationStatus?: "pending" | "in_progress" | "succeeded" | "error";
+  crownEvaluationError?: string;
+  mergeStatus?: "none" | "pr_draft" | "pr_open" | "pr_approved" | "pr_changes_requested" | "pr_merged" | "pr_closed";
+  screenshotStatus?: "pending" | "running" | "completed" | "failed" | "skipped";
+  selectedTaskRunId?: Id<"taskRuns">;
+  pullRequestTitle?: string;
+  hasUnread: boolean;
+};
 
 export const TaskList = memo(function TaskList({
   teamSlugOrId,
@@ -190,7 +172,54 @@ export const TaskList = memo(function TaskList({
   // In web mode, exclude local workspaces from the task list
   const excludeLocalWorkspaces = env.NEXT_PUBLIC_WEB_MODE || undefined;
 
-  const allTasks = useQuery(api.tasks.get, { teamSlugOrId, excludeLocalWorkspaces });
+  // Category counts for badges (lightweight query)
+  const categoryCounts = useQuery(api.tasks.getCategoryCounts, { teamSlugOrId, excludeLocalWorkspaces });
+
+  // Pinned tasks (already efficient with index)
+  const pinnedData = useQuery(api.tasks.getPinned, { teamSlugOrId, excludeLocalWorkspaces });
+
+  // Category-specific paginated queries
+  const {
+    results: workspaces,
+    status: workspacesStatus,
+    loadMore: loadMoreWorkspaces,
+  } = usePaginatedQuery(
+    api.tasks.getWorkspacesPaginated,
+    { teamSlugOrId, excludeLocalWorkspaces },
+    { initialNumItems: CATEGORY_PAGE_SIZE },
+  );
+
+  const {
+    results: readyToReview,
+    status: readyToReviewStatus,
+    loadMore: loadMoreReadyToReview,
+  } = usePaginatedQuery(
+    api.tasks.getReadyToReviewPaginated,
+    { teamSlugOrId, excludeLocalWorkspaces },
+    { initialNumItems: CATEGORY_PAGE_SIZE },
+  );
+
+  const {
+    results: inProgress,
+    status: inProgressStatus,
+    loadMore: loadMoreInProgress,
+  } = usePaginatedQuery(
+    api.tasks.getInProgressPaginated,
+    { teamSlugOrId, excludeLocalWorkspaces },
+    { initialNumItems: CATEGORY_PAGE_SIZE },
+  );
+
+  const {
+    results: merged,
+    status: mergedStatus,
+    loadMore: loadMoreMerged,
+  } = usePaginatedQuery(
+    api.tasks.getMergedPaginated,
+    { teamSlugOrId, excludeLocalWorkspaces },
+    { initialNumItems: MERGED_PAGE_SIZE },
+  );
+
+  // Archived tasks (paginated)
   const {
     results: archivedTasks,
     status: archivedStatus,
@@ -200,7 +229,8 @@ export const TaskList = memo(function TaskList({
     { teamSlugOrId, excludeLocalWorkspaces },
     { initialNumItems: ARCHIVED_PAGE_SIZE },
   );
-  const pinnedData = useQuery(api.tasks.getPinned, { teamSlugOrId, excludeLocalWorkspaces });
+
+  // Preview runs (paginated)
   const {
     results: previewRuns,
     status: previewRunsStatus,
@@ -210,6 +240,7 @@ export const TaskList = memo(function TaskList({
     { teamSlugOrId },
     { initialNumItems: PREVIEW_PAGE_SIZE },
   );
+
   const [tab, setTab] = useState<"all" | "archived" | "previews">("all");
 
   // Infinite scroll for archived tasks
@@ -267,24 +298,36 @@ export const TaskList = memo(function TaskList({
     };
   }, [tab, previewRunsStatus, loadMorePreviewRuns]);
 
-  const categorizedTasks = useMemo(() => {
-    const categorized = categorizeTasks(allTasks);
-    if (categorized && pinnedData) {
-      // Filter pinned tasks out from other categories
-      const pinnedTaskIds = new Set(pinnedData.map(t => t._id));
+  // Build category data from paginated queries
+  const categoryData = useMemo(() => ({
+    pinned: pinnedData ?? [],
+    workspaces: workspaces ?? [],
+    ready_to_review: readyToReview ?? [],
+    in_progress: inProgress ?? [],
+    merged: merged ?? [],
+  }), [pinnedData, workspaces, readyToReview, inProgress, merged]);
 
-      for (const key of CATEGORY_ORDER) {
-        if (key !== 'pinned') {
-          categorized[key] = categorized[key].filter(t => !pinnedTaskIds.has(t._id));
-        }
-      }
+  const categoryLoadMore = useMemo(() => ({
+    pinned: null, // Pinned doesn't paginate
+    workspaces: workspacesStatus === "CanLoadMore" ? () => loadMoreWorkspaces(CATEGORY_PAGE_SIZE) : null,
+    ready_to_review: readyToReviewStatus === "CanLoadMore" ? () => loadMoreReadyToReview(CATEGORY_PAGE_SIZE) : null,
+    in_progress: inProgressStatus === "CanLoadMore" ? () => loadMoreInProgress(CATEGORY_PAGE_SIZE) : null,
+    merged: mergedStatus === "CanLoadMore" ? () => loadMoreMerged(CATEGORY_PAGE_SIZE) : null,
+  }), [
+    workspacesStatus, loadMoreWorkspaces,
+    readyToReviewStatus, loadMoreReadyToReview,
+    inProgressStatus, loadMoreInProgress,
+    mergedStatus, loadMoreMerged,
+  ]);
 
-      // Add pinned tasks to the pinned category (already sorted by the API)
-      categorized.pinned = pinnedData;
-    }
-    return categorized;
-  }, [allTasks, pinnedData]);
-  const categoryBuckets = categorizedTasks ?? createEmptyCategoryBuckets();
+  const categoryLoadingMore = useMemo(() => ({
+    pinned: false,
+    workspaces: workspacesStatus === "LoadingMore",
+    ready_to_review: readyToReviewStatus === "LoadingMore",
+    in_progress: inProgressStatus === "LoadingMore",
+    merged: mergedStatus === "LoadingMore",
+  }), [workspacesStatus, readyToReviewStatus, inProgressStatus, mergedStatus]);
+
   const collapsedStorageKey = useMemo(
     () => `dashboard-collapsed-categories-${teamSlugOrId}`,
     [teamSlugOrId]
@@ -337,6 +380,14 @@ export const TaskList = memo(function TaskList({
       [categoryKey]: !prev[categoryKey],
     }));
   }, [setCollapsedPreviewCategories]);
+
+  // Check if all category queries are loading
+  const isLoadingCategories =
+    pinnedData === undefined ||
+    workspacesStatus === "LoadingFirstPage" ||
+    readyToReviewStatus === "LoadingFirstPage" ||
+    inProgressStatus === "LoadingFirstPage" ||
+    mergedStatus === "LoadingFirstPage";
 
   return (
     <div className="mt-6 w-full">
@@ -450,7 +501,7 @@ export const TaskList = memo(function TaskList({
               </div>
             </div>
           )
-        ) : allTasks === undefined ? (
+        ) : isLoadingCategories ? (
           <div className="text-sm text-neutral-500 dark:text-neutral-400 py-2 pl-4 select-none">
             Loading...
           </div>
@@ -458,17 +509,24 @@ export const TaskList = memo(function TaskList({
           <div className="mt-1 w-full flex flex-col space-y-[-1px] transform -translate-y-px">
             {CATEGORY_ORDER.map((categoryKey) => {
               // Don't render the pinned category if it's empty
-              if (categoryKey === 'pinned' && categoryBuckets[categoryKey].length === 0) {
+              if (categoryKey === 'pinned' && categoryData[categoryKey].length === 0) {
                 return null;
               }
               return (
                 <TaskCategorySection
                   key={categoryKey}
                   categoryKey={categoryKey}
-                  tasks={categoryBuckets[categoryKey]}
+                  tasks={categoryData[categoryKey]}
                   teamSlugOrId={teamSlugOrId}
                   collapsed={Boolean(collapsedCategories[categoryKey])}
                   onToggle={toggleCategoryCollapse}
+                  totalCount={categoryCounts?.[
+                    categoryKey === "ready_to_review" ? "readyToReview" :
+                    categoryKey === "in_progress" ? "inProgress" :
+                    categoryKey
+                  ]}
+                  loadMore={categoryLoadMore[categoryKey]}
+                  isLoadingMore={categoryLoadingMore[categoryKey]}
                 />
               );
             })}
@@ -485,12 +543,18 @@ function TaskCategorySection({
   teamSlugOrId,
   collapsed,
   onToggle,
+  totalCount,
+  loadMore,
+  isLoadingMore,
 }: {
   categoryKey: TaskCategoryKey;
-  tasks: Doc<"tasks">[];
+  tasks: ProjectedTask[];
   teamSlugOrId: string;
   collapsed: boolean;
   onToggle: (key: TaskCategoryKey) => void;
+  totalCount?: number;
+  loadMore: (() => void) | null;
+  isLoadingMore: boolean;
 }) {
   const meta = CATEGORY_META[categoryKey];
   const handleToggle = useCallback(
@@ -501,6 +565,37 @@ function TaskCategorySection({
   const toggleLabel = collapsed
     ? `Expand ${meta.title}`
     : `Collapse ${meta.title}`;
+
+  // Infinite scroll within category
+  const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (collapsed || !loadMore) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && loadMore) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1 },
+    );
+
+    const trigger = loadMoreTriggerRef.current;
+    if (trigger) {
+      observer.observe(trigger);
+    }
+
+    return () => {
+      if (trigger) {
+        observer.unobserve(trigger);
+      }
+    };
+  }, [collapsed, loadMore]);
+
+  // Display count: use totalCount if available, otherwise use loaded count
+  const displayCount = totalCount !== undefined ? totalCount : tasks.length;
+
   return (
     <div className="w-full">
       <div
@@ -527,7 +622,7 @@ function TaskCategorySection({
           <div className="flex items-center gap-2 text-xs font-medium tracking-tight text-neutral-900 dark:text-neutral-100">
             <span>{meta.title}</span>
             <span className="text-xs text-neutral-500 dark:text-neutral-400">
-              {tasks.length}
+              {displayCount}
             </span>
           </div>
         </div>
@@ -537,6 +632,17 @@ function TaskCategorySection({
           {tasks.map((task) => (
             <TaskItem key={task._id} task={task} teamSlugOrId={teamSlugOrId} />
           ))}
+          {/* Infinite scroll trigger for this category */}
+          {loadMore && (
+            <div ref={loadMoreTriggerRef} className="w-full py-2">
+              {isLoadingMore && (
+                <div className="flex items-center justify-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Loading more...</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <div className="flex w-full items-center px-4 py-3">

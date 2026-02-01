@@ -182,7 +182,10 @@ const convexSchema = defineSchema({
     .index("by_team_user_preview", ["teamId", "userId", "isPreview"])
     .index("by_team_preview", ["teamId", "isPreview"])
     .index("by_linked_cloud_task_run", ["linkedFromCloudTaskRunId"])
-    .index("by_crown_status", ["crownEvaluationStatus", "updatedAt"]),
+    .index("by_crown_status", ["crownEvaluationStatus", "updatedAt"])
+    // Composite indexes for category-specific pagination (bandwidth optimization)
+    .index("by_team_user_workspace", ["teamId", "userId", "isCloudWorkspace"])
+    .index("by_team_user_merged", ["teamId", "userId", "mergeStatus"]),
 
   taskRuns: defineTable({
     taskId: v.id("tasks"),
