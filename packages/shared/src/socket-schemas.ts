@@ -290,6 +290,8 @@ export const VSCodeSpawnedSchema = z.object({
   instanceId: z.string(),
   url: z.string(),
   workspaceUrl: z.string(),
+  vncUrl: z.string().optional(),
+  xtermUrl: z.string().optional(),
   provider: z.enum(["docker", "morph", "daytona", "pve-lxc", "other"]),
 });
 

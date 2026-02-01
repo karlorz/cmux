@@ -308,6 +308,7 @@ const StartSandboxResponse = z
     vscodeUrl: z.string(),
     workerUrl: z.string(),
     vncUrl: z.string().optional(),
+    xtermUrl: z.string().optional(),
     provider: z.enum(["morph", "pve-lxc"]).default("morph"),
     vscodePersisted: z.boolean().optional(),
   })
@@ -824,6 +825,7 @@ sandboxesRouter.openapi(
         vscodeUrl: vscodeService.url,
         workerUrl: workerService.url,
         vncUrl: vncService?.url,
+        xtermUrl: xtermService?.url,
         provider: provider === "pve-lxc" ? "pve-lxc" : "morph",
         vscodePersisted,
       });
