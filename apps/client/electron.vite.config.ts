@@ -150,7 +150,9 @@ export default defineConfig({
       exclude: ["monaco-editor"],
     },
     plugins: [
-      tsconfigPaths(),
+      tsconfigPaths({
+        skip: (dir) => dir.includes("dev-docs"),
+      }),
       tanstackRouter({
         target: "react",
         autoCodeSplitting: true,
