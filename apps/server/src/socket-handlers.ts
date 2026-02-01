@@ -2027,6 +2027,8 @@ export function setupSocketHandlers(
           const sandboxId = data.instanceId;
           const sandboxProvider = data.provider ?? "morph";
           const vscodeBaseUrl = data.vscodeUrl;
+          const vncUrl = data.vncUrl;
+          const xtermUrl = data.xtermUrl;
           const workspaceUrl = `${vscodeBaseUrl}?folder=/root/workspace`;
 
           serverLogger.info(
@@ -2049,6 +2051,8 @@ export function setupSocketHandlers(
               status: "running",
               url: vscodeBaseUrl,
               workspaceUrl,
+              vncUrl,
+              xtermUrl,
               startedAt: now,
             },
           });
@@ -2070,6 +2074,8 @@ export function setupSocketHandlers(
             instanceId: sandboxId,
             url: vscodeBaseUrl,
             workspaceUrl,
+            vncUrl,
+            xtermUrl,
             provider: sandboxProvider,
           });
 
