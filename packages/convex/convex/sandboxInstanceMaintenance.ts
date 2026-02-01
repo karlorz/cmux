@@ -479,7 +479,7 @@ export const pauseOldSandboxInstances = internalAction({
   args: {},
   handler: async (ctx) => {
     // Only run in production
-    if (!env.CONVEX_IS_PRODUCTION) {
+    if (env.CONVEX_IS_PRODUCTION !== "true") {
       console.log("[sandboxMaintenance:pause] Skipping: not in production");
       return;
     }
@@ -627,7 +627,7 @@ export const stopOldSandboxInstances = internalAction({
   args: {},
   handler: async (ctx) => {
     // Only run in production
-    if (!env.CONVEX_IS_PRODUCTION) {
+    if (env.CONVEX_IS_PRODUCTION !== "true") {
       console.log("[sandboxMaintenance:stop] Skipping: not in production");
       return;
     }
@@ -794,6 +794,12 @@ export const stopOldSandboxInstances = internalAction({
 export const cleanupOrphanedContainers = internalAction({
   args: {},
   handler: async (ctx) => {
+    // Only run in production
+    if (env.CONVEX_IS_PRODUCTION !== "true") {
+      console.log("[sandboxMaintenance:orphanCleanup] Skipping: not in production");
+      return;
+    }
+
     console.log("[sandboxMaintenance:orphanCleanup] Starting orphan cleanup...");
     const now = Date.now();
     const orphanMinAgeMs = ORPHAN_MIN_AGE_DAYS * 24 * MILLISECONDS_PER_HOUR;
