@@ -434,9 +434,11 @@ cleanup() {
         return
     fi
     CLEANUP_STARTED=true
-    # Ignore signals during cleanup to prevent interruption
-    trap '' INT TERM HUP QUIT
+    # Ignore ALL signals during cleanup to ensure it completes
+    trap '' INT TERM HUP QUIT PIPE
     trap - EXIT
+    # Disable errexit to prevent early exit on command failures
+    set +e
 
     echo -e "\n${BLUE}Shutting down...${NC}"
 
@@ -458,9 +460,9 @@ cleanup() {
     # Force kill any remaining descendants
     kill_descendants $$ 9 "$$"
 
-    # Clean up any orphaned port listeners
-    source "$SCRIPT_DIR/_port-clean.sh" 2>/dev/null || true
-    clean_ports 5173 9776 9779 2>/dev/null || true
+    # Clean up any orphaned port listeners - CRITICAL for Linux
+    # This must run even if the above kills fail
+    "$SCRIPT_DIR/_port-clean.sh" 5173 9776 9779 2>/dev/null || true
 
     # Clean up any docker compose in this project's .devcontainer (if exists)
     if [ -d "$APP_DIR/.devcontainer" ]; then
@@ -596,7 +598,7 @@ else
         echo -e "${GREEN}Convex backend already running in devcontainer...${NC}"
     else
         # On host, start Convex via docker-compose
-        (cd .devcontainer && exec bash -c 'trap "kill -9 0" EXIT; \
+        (cd .devcontainer && exec bash -c 'trap "pkill -9 -P $$ 2>/dev/null || true" EXIT; \
           COMPOSE_PROJECT_NAME=cmux-convex docker compose -f docker-compose.convex.yml up 2>&1 | tee "$LOG_DIR/docker-compose.log" | { \
             if [ "${SHOW_COMPOSE_LOGS}" = "true" ]; then \
               prefix_output "DOCKER-COMPOSE" "$MAGENTA"; \
@@ -626,9 +628,9 @@ fi
 # Start convex dev (works the same in both environments)
 if [ "$CONVEX_AGENT_MODE" = "true" ]; then
     echo -e "${GREEN}Starting convex dev in agent mode...${NC}"
-    (cd "$APP_DIR/packages/convex" && exec bash -c 'trap "kill -9 0" EXIT; source ~/.nvm/nvm.sh 2>/dev/null || true; CONVEX_AGENT_MODE=anonymous npx convex dev </dev/null 2>&1 | tee "$LOG_DIR/convex-dev.log" | prefix_output "CONVEX-DEV" "$BLUE"') &
+    (cd "$APP_DIR/packages/convex" && exec bash -c 'trap "pkill -9 -P $$ 2>/dev/null || true" EXIT; source ~/.nvm/nvm.sh 2>/dev/null || true; CONVEX_AGENT_MODE=anonymous npx convex dev </dev/null 2>&1 | tee "$LOG_DIR/convex-dev.log" | prefix_output "CONVEX-DEV" "$BLUE"') &
 else
-    (cd "$APP_DIR/packages/convex" && exec bash -c 'trap "kill -9 0" EXIT; source ~/.nvm/nvm.sh 2>/dev/null || true; bunx convex dev </dev/null 2>&1 | tee "$LOG_DIR/convex-dev.log" | prefix_output "CONVEX-DEV" "$BLUE"') &
+    (cd "$APP_DIR/packages/convex" && exec bash -c 'trap "pkill -9 -P $$ 2>/dev/null || true" EXIT; source ~/.nvm/nvm.sh 2>/dev/null || true; bunx convex dev </dev/null 2>&1 | tee "$LOG_DIR/convex-dev.log" | prefix_output "CONVEX-DEV" "$BLUE"') &
 fi
 CONVEX_DEV_PID=$!
 check_process $CONVEX_DEV_PID "Convex Dev"
@@ -636,13 +638,13 @@ CONVEX_PID=$CONVEX_DEV_PID
 
 # Start the backend server
 echo -e "${GREEN}Starting backend server on port 9776...${NC}"
-(cd "$APP_DIR/apps/server" && exec bash -c 'trap "kill -9 0" EXIT; bun run dev </dev/null 2>&1 | tee "$LOG_DIR/server.log" | prefix_output "SERVER" "$YELLOW"') &
+(cd "$APP_DIR/apps/server" && exec bash -c 'trap "pkill -9 -P $$ 2>/dev/null || true" EXIT; bun run dev </dev/null 2>&1 | tee "$LOG_DIR/server.log" | prefix_output "SERVER" "$YELLOW"') &
 SERVER_PID=$!
 check_process $SERVER_PID "Backend Server"
 
 # Start the openapi client generator before frontend/www so generated files are ready
 echo -e "${GREEN}Starting openapi client generator...${NC}"
-(cd "$APP_DIR/apps/www" && exec bash -c 'trap "kill -9 0" EXIT; bun run generate-openapi-client:watch </dev/null 2>&1 | tee "$LOG_DIR/openapi-client.log" | prefix_output "OPENAPI-CLIENT" "$MAGENTA"') &
+(cd "$APP_DIR/apps/www" && exec bash -c 'trap "pkill -9 -P $$ 2>/dev/null || true" EXIT; bun run generate-openapi-client:watch </dev/null 2>&1 | tee "$LOG_DIR/openapi-client.log" | prefix_output "OPENAPI-CLIENT" "$MAGENTA"') &
 OPENAPI_CLIENT_PID=$!
 check_process $OPENAPI_CLIENT_PID "OpenAPI Client Generator"
 OPENAPI_LOG_FILE="$LOG_DIR/openapi-client.log"
@@ -651,13 +653,13 @@ wait_for_log_message "$OPENAPI_LOG_FILE" "$OPENAPI_READY_MARKER" "$OPENAPI_CLIEN
 
 # Start the frontend
 echo -e "${GREEN}Starting frontend on port 5173...${NC}"
-(cd "$APP_DIR/apps/client" && exec bash -c 'trap "kill -9 0" EXIT; bun run dev --host 0.0.0.0 </dev/null 2>&1 | tee "$LOG_DIR/client.log" | prefix_output "CLIENT" "$CYAN"') &
+(cd "$APP_DIR/apps/client" && exec bash -c 'trap "pkill -9 -P $$ 2>/dev/null || true" EXIT; bun run dev --host 0.0.0.0 </dev/null 2>&1 | tee "$LOG_DIR/client.log" | prefix_output "CLIENT" "$CYAN"') &
 CLIENT_PID=$!
 check_process $CLIENT_PID "Frontend Client"
 
 # Start the www app
 echo -e "${GREEN}Starting www app on port 9779...${NC}"
-(cd "$APP_DIR/apps/www" && exec bash -c 'trap "kill -9 0" EXIT; bun run dev </dev/null 2>&1 | tee "$LOG_DIR/www.log" | prefix_output "WWW" "$GREEN"') &
+(cd "$APP_DIR/apps/www" && exec bash -c 'trap "pkill -9 -P $$ 2>/dev/null || true" EXIT; bun run dev </dev/null 2>&1 | tee "$LOG_DIR/www.log" | prefix_output "WWW" "$GREEN"') &
 WWW_PID=$!
 check_process $WWW_PID "WWW App"
 
@@ -688,10 +690,10 @@ if [ "$RUN_ELECTRON" = "true" ]; then
     if [ "$ELECTRON_DEBUG" = "true" ]; then
         echo -e "${GREEN}Starting Electron app with remote debugging on port $ELECTRON_DEBUG_PORT...${NC}"
         export ELECTRON_DEBUG_PORT
-        (cd "$APP_DIR/apps/client" && exec bash -c 'trap "kill -9 0" EXIT; bun run dev:electron -- --remote-debugging-port='"$ELECTRON_DEBUG_PORT"' </dev/null 2>&1 | tee "$LOG_DIR/electron.log" | prefix_output "ELECTRON" "$RED"') &
+        (cd "$APP_DIR/apps/client" && exec bash -c 'trap "pkill -9 -P $$ 2>/dev/null || true" EXIT; bun run dev:electron -- --remote-debugging-port='"$ELECTRON_DEBUG_PORT"' </dev/null 2>&1 | tee "$LOG_DIR/electron.log" | prefix_output "ELECTRON" "$RED"') &
     else
         echo -e "${GREEN}Starting Electron app...${NC}"
-        (cd "$APP_DIR/apps/client" && exec bash -c 'trap "kill -9 0" EXIT; bun run dev:electron </dev/null 2>&1 | tee "$LOG_DIR/electron.log" | prefix_output "ELECTRON" "$RED"') &
+        (cd "$APP_DIR/apps/client" && exec bash -c 'trap "pkill -9 -P $$ 2>/dev/null || true" EXIT; bun run dev:electron </dev/null 2>&1 | tee "$LOG_DIR/electron.log" | prefix_output "ELECTRON" "$RED"') &
     fi
     ELECTRON_PID=$!
     check_process $ELECTRON_PID "Electron App"
