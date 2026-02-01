@@ -93,6 +93,11 @@ cleanup_instance() {
         fi
     fi
 
+    # Always clean ports - catches orphaned child processes (next-server, vite, etc.)
+    # This runs regardless of whether dev.sh was running or stale
+    source "$SCRIPT_DIR/_port-clean.sh" 2>/dev/null || true
+    clean_ports 5173 9776 9779 2>/dev/null || true
+
     # Clean up docker compose if we know the project path
     if [ -d "$project_path/.devcontainer" ]; then
         echo "Stopping docker compose in: $project_path"
