@@ -9,12 +9,13 @@ export const getReposByOrg = authQuery({
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
     const teamId = await getTeamId(ctx, args.teamSlugOrId);
+    // Limit to 500 repos to avoid excessive bandwidth (most users have <100 repos)
     const repos = await ctx.db
       .query("repos")
       .withIndex("by_team_user", (q) =>
         q.eq("teamId", teamId).eq("userId", userId)
       )
-      .collect();
+      .take(500);
 
     // Group by organization
     const reposByOrg = repos.reduce(
