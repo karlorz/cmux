@@ -11,6 +11,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQueries, useQuery } from "convex/react";
 import { useMemo } from "react";
 import { env } from "@/client-env";
+import { useTeamLayoutContext } from "./_layout.$teamSlugOrId";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/workspaces")({
   component: WorkspacesRoute,
@@ -26,10 +27,7 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/workspaces")({
 
 function WorkspacesRoute() {
   const { teamSlugOrId } = Route.useParams();
-  // In web mode, exclude local workspaces
-  const excludeLocalWorkspaces = env.NEXT_PUBLIC_WEB_MODE || undefined;
-  // Use notification-aware ordering: unread notifications first, then by createdAt
-  const tasks = useQuery(api.tasks.getWithNotificationOrder, { teamSlugOrId, excludeLocalWorkspaces });
+  const { tasks } = useTeamLayoutContext();
   const tasksWithUnread = useQuery(api.taskNotifications.getTasksWithUnread, {
     teamSlugOrId,
   });

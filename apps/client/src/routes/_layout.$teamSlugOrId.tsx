@@ -8,11 +8,31 @@ import { cachedGetUser } from "@/lib/cachedGetUser";
 import { setLastTeamSlugOrId } from "@/lib/lastTeam";
 import { stackClientApp } from "@/lib/stack";
 import { api } from "@cmux/convex/api";
+import type { Doc } from "@cmux/convex/dataModel";
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery as useRQ } from "@tanstack/react-query";
-import { Suspense, useEffect } from "react";
+import { Suspense, createContext, useContext, useEffect } from "react";
 import { env } from "@/client-env";
+
+type TaskWithUnread = Doc<"tasks"> & { hasUnread: boolean };
+
+export type TeamLayoutContext = {
+  tasks: TaskWithUnread[] | undefined;
+  teamSlugOrId: string;
+};
+
+const TeamLayoutReactContext = createContext<TeamLayoutContext | null>(null);
+
+export function useTeamLayoutContext(): TeamLayoutContext {
+  const ctx = useContext(TeamLayoutReactContext);
+  if (!ctx) {
+    throw new Error(
+      "useTeamLayoutContext must be used within TeamLayoutReactContext.Provider"
+    );
+  }
+  return ctx;
+}
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId")({
   component: LayoutComponentWrapper,
@@ -101,7 +121,9 @@ function LayoutComponent() {
 
         <div className="min-w-full md:min-w-0 grow snap-start snap-always flex flex-col">
           <Suspense fallback={<div>Loading...</div>}>
-            <Outlet />
+            <TeamLayoutReactContext.Provider value={{ tasks: displayTasks, teamSlugOrId }}>
+              <Outlet />
+            </TeamLayoutReactContext.Provider>
           </Suspense>
         </div>
       </div>

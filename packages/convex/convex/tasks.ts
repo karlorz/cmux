@@ -506,6 +506,43 @@ export const getPinned = authQuery({
   },
 });
 
+/**
+ * Lightweight query for command bar - minimal fields for search/display.
+ */
+export const getForCommandBar = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    const tasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_team_user", (idx) =>
+        idx.eq("teamId", teamId).eq("userId", userId),
+      )
+      .filter((q) => q.neq(q.field("isArchived"), true))
+      .filter((q) => q.neq(q.field("isPreview"), true))
+      .filter((q) => q.eq(q.field("linkedFromCloudTaskRunId"), undefined))
+      .collect();
+
+    // Keep ordering consistent with getTasksWithTaskRuns (newest first)
+    const sorted = tasks.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+
+    return sorted.map((task) => ({
+      _id: task._id,
+      text: task.text,
+      pullRequestTitle: task.pullRequestTitle,
+      projectFullName: task.projectFullName,
+      isCloudWorkspace: task.isCloudWorkspace,
+      isLocalWorkspace: task.isLocalWorkspace,
+      isCompleted: task.isCompleted,
+      selectedTaskRunId: task.selectedTaskRunId,
+    }));
+  },
+});
+
 export const getTasksWithTaskRuns = authQuery({
   args: {
     teamSlugOrId: v.string(),

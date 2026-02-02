@@ -84,23 +84,6 @@ const sortByRecentUpdate = (tasks: Doc<"tasks">[]): Doc<"tasks">[] => {
   );
 };
 
-const categorizeTasks = (
-  tasks: Doc<"tasks">[] | undefined
-): Record<TaskCategoryKey, Doc<"tasks">[]> | null => {
-  if (!tasks) {
-    return null;
-  }
-  const buckets = createEmptyCategoryBuckets();
-  for (const task of tasks) {
-    const key = getTaskCategory(task);
-    buckets[key].push(task);
-  }
-  for (const key of CATEGORY_ORDER) {
-    buckets[key] = sortByRecentUpdate(buckets[key]);
-  }
-  return buckets;
-};
-
 const createCollapsedCategoryState = (
   defaultValue = false
 ): Record<TaskCategoryKey, boolean> => ({
@@ -200,7 +183,6 @@ export const TaskList = memo(function TaskList({
     { teamSlugOrId, excludeLocalWorkspaces },
     { initialNumItems: ARCHIVED_PAGE_SIZE },
   );
-  const pinnedData = useQuery(api.tasks.getPinned, { teamSlugOrId, excludeLocalWorkspaces });
   const {
     results: previewRuns,
     status: previewRunsStatus,
@@ -268,22 +250,25 @@ export const TaskList = memo(function TaskList({
   }, [tab, previewRunsStatus, loadMorePreviewRuns]);
 
   const categorizedTasks = useMemo(() => {
-    const categorized = categorizeTasks(allTasks);
-    if (categorized && pinnedData) {
-      // Filter pinned tasks out from other categories
-      const pinnedTaskIds = new Set(pinnedData.map(t => t._id));
+    if (!allTasks) return null;
 
-      for (const key of CATEGORY_ORDER) {
-        if (key !== 'pinned') {
-          categorized[key] = categorized[key].filter(t => !pinnedTaskIds.has(t._id));
-        }
+    const buckets = createEmptyCategoryBuckets();
+    for (const task of allTasks) {
+      if (task.pinned) {
+        buckets.pinned.push(task);
+      } else {
+        const key = getTaskCategory(task);
+        buckets[key].push(task);
       }
-
-      // Add pinned tasks to the pinned category (already sorted by the API)
-      categorized.pinned = pinnedData;
     }
-    return categorized;
-  }, [allTasks, pinnedData]);
+
+    // Sort each bucket by recent update
+    for (const key of CATEGORY_ORDER) {
+      buckets[key] = sortByRecentUpdate(buckets[key]);
+    }
+
+    return buckets;
+  }, [allTasks]);
   const categoryBuckets = categorizedTasks ?? createEmptyCategoryBuckets();
   const collapsedStorageKey = useMemo(
     () => `dashboard-collapsed-categories-${teamSlugOrId}`,

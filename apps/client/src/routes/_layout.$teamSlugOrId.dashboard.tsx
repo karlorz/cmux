@@ -97,10 +97,6 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/dashboard")({
         query: api.tasks.get,
         args: { teamSlugOrId, excludeLocalWorkspaces },
       });
-      convexQueryClient.convexClient.prewarmQuery({
-        query: api.tasks.getPinned,
-        args: { teamSlugOrId, excludeLocalWorkspaces },
-      });
     });
   },
 });
