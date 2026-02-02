@@ -410,6 +410,7 @@ sandboxesRouter.openapi(
         environmentDataVaultKey,
         environmentMaintenanceScript,
         environmentDevScript,
+        environmentSelectedRepos,
       } = await resolveTeamAndSnapshot({
         req: c.req.raw,
         convex,
@@ -422,8 +423,10 @@ sandboxesRouter.openapi(
         ? loadEnvironmentEnvVars(environmentDataVaultKey)
         : Promise.resolve<string | null>(null);
 
+      const repoUrl = body.repoUrl ?? environmentSelectedRepos?.[0] ?? null;
+
       // Parse repo URL once if provided
-      const parsedRepoUrl = body.repoUrl ? parseGithubRepoUrl(body.repoUrl) : null;
+      const parsedRepoUrl = repoUrl ? parseGithubRepoUrl(repoUrl) : null;
 
       // Load workspace config if we're in cloud mode with a repository (not an environment)
       let workspaceConfig: { maintenanceScript?: string; envVarsContent?: string } | null = null;
@@ -745,7 +748,7 @@ sandboxesRouter.openapi(
       await configureGithubAccess(instance, gitAuthToken);
 
       let repoConfig: HydrateRepoConfig | undefined;
-      if (body.repoUrl) {
+      if (repoUrl) {
         console.log(`[sandboxes.start] Hydrating repo for ${instance.id}`);
         if (!parsedRepoUrl) {
           return c.text("Unsupported repo URL; expected GitHub URL", 400);

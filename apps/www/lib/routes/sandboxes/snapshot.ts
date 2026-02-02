@@ -25,6 +25,7 @@ export interface SnapshotResolution {
   /** The sandbox provider to use */
   provider: SandboxProvider;
   resolvedTemplateVmid?: number;
+  environmentSelectedRepos?: string[];
   environmentDataVaultKey?: string;
   environmentMaintenanceScript?: string;
   environmentDevScript?: string;
@@ -164,6 +165,7 @@ export const resolveTeamAndSnapshot = async ({
       provider: environmentProvider,
       resolvedSnapshotId: snapshotId,
       resolvedTemplateVmid: environmentDoc.templateVmid ?? undefined,
+      environmentSelectedRepos: environmentDoc.selectedRepos ?? undefined,
       environmentDataVaultKey: environmentDoc.dataVaultKey ?? undefined,
       environmentMaintenanceScript: environmentDoc.maintenanceScript ?? undefined,
       environmentDevScript: environmentDoc.devScript ?? undefined,
