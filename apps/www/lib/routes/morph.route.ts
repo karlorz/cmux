@@ -775,6 +775,11 @@ morphRouter.openapi(
       const failedClones: { repo: string; error: string; isAuth: boolean }[] =
         [];
 
+      // Fetch GitHub App connections for private repo support
+      const connections = await convex.query(api.github.listProviderConnections, {
+        teamSlugOrId,
+      });
+
       if (selectedRepos && selectedRepos.length > 0) {
         const repoNames = new Map<string, string>();
         const reposByOwner = new Map<string, string[]>();
@@ -854,17 +859,51 @@ morphRouter.openapi(
           }
         }
 
-        for (const [, repos] of reposByOwner) {
+        for (const [owner, repos] of reposByOwner) {
+          // Try to get GitHub App token for this owner and re-auth gh CLI
+          // This enables cloning private repos via gh repo clone
+          const targetConnection = connections.find(
+            (co) => co.isActive && co.accountLogin?.toLowerCase() === owner.toLowerCase()
+          );
+
+          if (targetConnection) {
+            try {
+              const appToken = await generateGitHubInstallationToken({
+                installationId: targetConnection.installationId,
+                repositories: repos,
+                permissions: {
+                  contents: "write",
+                  metadata: "read",
+                },
+              });
+              // Re-authenticate gh CLI with the GitHub App token for this owner
+              await configureGithubAccess(sandboxInstance, appToken);
+              console.log(
+                `[morph.setup-instance] Re-authenticated gh CLI with GitHub App token for ${owner}`
+              );
+            } catch (error) {
+              console.error(
+                `[morph.setup-instance] Failed to get GitHub App token for ${owner}, using user OAuth:`,
+                error
+              );
+            }
+          } else {
+            console.log(
+              `[morph.setup-instance] No GitHub App installation found for ${owner}, using user OAuth token`
+            );
+          }
+
           const clonePromises = repos.map(async (repo) => {
             const repoName = repo.split("/").pop()!;
             if (!existingRepos.has(repoName)) {
-              console.log(`Cloning repository: ${repo}`);
+              console.log(`[morph.setup-instance] Cloning repository: ${repo}`);
 
               const maxRetries = 3;
               let lastError: string | undefined;
               let isAuthError = false;
 
               for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                // Use gh repo clone instead of git clone to leverage authenticated gh CLI
                 const cloneCmd = await Sentry.startSpan(
                   {
                     name: `instance.exec (clone ${repoName})`,
@@ -873,7 +912,7 @@ morphRouter.openapi(
                   },
                   () =>
                     sandboxInstance.exec(
-                      `mkdir -p /root/workspace && cd /root/workspace && git clone https://github.com/${repo}.git ${repoName} 2>&1`
+                      `mkdir -p /root/workspace && cd /root/workspace && gh repo clone ${repo} ${repoName} 2>&1`
                     )
                 );
 
@@ -889,18 +928,19 @@ morphRouter.openapi(
                     lastError.includes("Invalid username or password") ||
                     lastError.includes("Permission denied") ||
                     lastError.includes("Repository not found") ||
-                    lastError.includes("403");
+                    lastError.includes("403") ||
+                    lastError.includes("HTTP 404");
 
                   if (isAuthError) {
                     console.error(
-                      `Authentication failed for ${repo}: ${lastError}`
+                      `[morph.setup-instance] Authentication failed for ${repo}: ${lastError}`
                     );
                     break;
                   }
 
                   if (attempt < maxRetries) {
                     console.log(
-                      `Clone attempt ${attempt} failed for ${repo}, retrying...`
+                      `[morph.setup-instance] Clone attempt ${attempt} failed for ${repo}, retrying...`
                     );
                     await sandboxInstance.exec(`rm -rf /root/workspace/${repoName}`);
                     await new Promise((resolve) =>
@@ -915,7 +955,7 @@ morphRouter.openapi(
                 : `Failed after ${maxRetries} attempts`;
 
               console.error(
-                `Failed to clone ${repo}: ${errorMsg}\nDetails: ${lastError}`
+                `[morph.setup-instance] Failed to clone ${repo}: ${errorMsg}\nDetails: ${lastError}`
               );
               return {
                 success: false as const,
@@ -925,7 +965,7 @@ morphRouter.openapi(
               };
             } else {
               console.log(
-                `Repository ${repo} already exists with correct remote, skipping clone`
+                `[morph.setup-instance] Repository ${repo} already exists with correct remote, skipping clone`
               );
               return null;
             }
