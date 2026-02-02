@@ -1214,6 +1214,15 @@ const convexSchema = defineSchema({
     .index("by_task", ["taskId", "createdAt"]) // Get notifications for a task
     .index("by_task_user_unread", ["taskId", "userId", "readAt"]), // Check unread per task
 
+  // Active task viewers (heartbeat-based for unread suppression)
+  activeTaskViewers: defineTable({
+    taskId: v.id("tasks"),
+    userId: v.string(),
+    lastHeartbeatAt: v.number(),
+  })
+    .index("by_task_user", ["taskId", "userId"])
+    .index("by_user", ["userId"]),
+
   // Explicit unread tracking for task runs
   // Row exists = unread, no row = read (safe default)
   unreadTaskRuns: defineTable({

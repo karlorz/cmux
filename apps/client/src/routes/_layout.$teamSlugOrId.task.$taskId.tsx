@@ -13,7 +13,7 @@ import { Suspense, useEffect } from "react";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery as useRQ } from "@tanstack/react-query";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { useSetTaskReadState } from "@/hooks/useMarkTaskAsRead";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/task/$taskId")({
@@ -60,6 +60,12 @@ function TaskDetailPage() {
   const taskRuns = taskRunsQuery.data;
   const clipboard = useClipboard({ timeout: 2000 });
   const setTaskReadState = useSetTaskReadState(teamSlugOrId);
+  const registerActiveViewer = useMutation(
+    api.taskNotifications.registerActiveViewer
+  );
+  const unregisterActiveViewer = useMutation(
+    api.taskNotifications.unregisterActiveViewer
+  );
 
   // Real-time subscription to unread state for mark-as-read triggering
   const hasUnread = useQuery(api.taskNotifications.hasUnreadForTask, {
@@ -67,24 +73,63 @@ function TaskDetailPage() {
     taskId,
   });
 
+  // Track active task viewer with heartbeat
+  useEffect(() => {
+    if (!taskId || !teamSlugOrId) return;
+
+    const registerIfVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      void registerActiveViewer({ teamSlugOrId, taskId }).catch((err) => {
+        console.error("Failed to register active task viewer:", err);
+      });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        registerIfVisible();
+        return;
+      }
+
+      void unregisterActiveViewer({ teamSlugOrId, taskId }).catch((err) => {
+        console.error("Failed to unregister active task viewer:", err);
+      });
+    };
+
+    registerIfVisible();
+    const interval = window.setInterval(registerIfVisible, 30000);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      void unregisterActiveViewer({ teamSlugOrId, taskId }).catch((err) => {
+        console.error("Failed to unregister active task viewer:", err);
+      });
+    };
+  }, [registerActiveViewer, taskId, teamSlugOrId, unregisterActiveViewer]);
+
   // Mark as read when viewing AND focused, triggers when unread state changes
   useEffect(() => {
     if (!taskId || !hasUnread) return;
 
-    const markReadIfFocused = () => {
-      if (document.hasFocus()) {
+    const markReadIfVisible = () => {
+      if (document.visibilityState === "visible") {
         setTaskReadState(taskId, true).catch((err) => {
           console.error("Failed to mark task notifications as read:", err);
         });
       }
     };
 
-    // Mark as read immediately if focused
-    markReadIfFocused();
+    // Mark as read immediately if visible
+    markReadIfVisible();
 
     // Handle user returning to the page
-    window.addEventListener("focus", markReadIfFocused);
-    return () => window.removeEventListener("focus", markReadIfFocused);
+    window.addEventListener("focus", markReadIfVisible);
+    document.addEventListener("visibilitychange", markReadIfVisible);
+    return () => {
+      window.removeEventListener("focus", markReadIfVisible);
+      document.removeEventListener("visibilitychange", markReadIfVisible);
+    };
   }, [hasUnread, taskId, setTaskReadState]);
 
   // Get the deepest matched child to extract runId if present

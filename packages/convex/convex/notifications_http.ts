@@ -160,7 +160,12 @@ export const createAgentStoppedNotification = internalMutation({
       )
       .first();
 
-    if (!existing) {
+    const isViewing = await ctx.runQuery(
+      internal.taskNotifications.isActivelyViewing,
+      { taskId: args.taskId, userId: args.userId }
+    );
+
+    if (!existing && !isViewing) {
       await ctx.db.insert("unreadTaskRuns", {
         taskRunId: args.taskRunId,
         taskId: args.taskId,

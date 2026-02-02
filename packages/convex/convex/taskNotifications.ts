@@ -4,6 +4,8 @@ import type { Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { authMutation, authQuery } from "./users/utils";
 
+const ACTIVE_VIEWER_STALE_MS = 60_000;
+
 // Get all notifications for the current user (paginated, newest first)
 export const list = authQuery({
   args: {
@@ -86,6 +88,72 @@ export const hasUnreadForTask = authQuery({
       .first();
 
     return unread !== null;
+  },
+});
+
+// Register active viewer (heartbeat)
+export const registerActiveViewer = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    taskId: v.id("tasks"),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    const task = await ctx.db.get(args.taskId);
+    if (!task || task.teamId !== teamId) {
+      throw new ConvexError("Task not found");
+    }
+
+    const now = Date.now();
+    const existing = await ctx.db
+      .query("activeTaskViewers")
+      .withIndex("by_task_user", (q) =>
+        q.eq("taskId", args.taskId).eq("userId", userId),
+      )
+      .first();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, { lastHeartbeatAt: now });
+      return;
+    }
+
+    await ctx.db.insert("activeTaskViewers", {
+      taskId: args.taskId,
+      userId,
+      lastHeartbeatAt: now,
+    });
+  },
+});
+
+// Unregister active viewer
+export const unregisterActiveViewer = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    taskId: v.id("tasks"),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    const task = await ctx.db.get(args.taskId);
+    if (!task || task.teamId !== teamId) {
+      throw new ConvexError("Task not found");
+    }
+
+    const existing = await ctx.db
+      .query("activeTaskViewers")
+      .withIndex("by_task_user", (q) =>
+        q.eq("taskId", args.taskId).eq("userId", userId),
+      )
+      .collect();
+
+    if (existing.length === 0) {
+      return;
+    }
+
+    await Promise.all(existing.map((row) => ctx.db.delete(row._id)));
   },
 });
 
@@ -406,6 +474,28 @@ export const createInternal = internalMutation({
         });
       }
     }
+  },
+});
+
+// Internal query to check if a user is actively viewing a task
+export const isActivelyViewing = internalQuery({
+  args: {
+    taskId: v.id("tasks"),
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const active = await ctx.db
+      .query("activeTaskViewers")
+      .withIndex("by_task_user", (q) =>
+        q.eq("taskId", args.taskId).eq("userId", args.userId),
+      )
+      .first();
+
+    if (!active) {
+      return false;
+    }
+
+    return active.lastHeartbeatAt >= Date.now() - ACTIVE_VIEWER_STALE_MS;
   },
 });
 
