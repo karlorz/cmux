@@ -211,34 +211,23 @@ exit 0`;
   const settingsConfig: Record<string, unknown> = {
     alwaysThinkingEnabled: true,
     // Always use apiKeyHelper when not using OAuth (helper outputs correct key based on user config)
-    ...(hasOAuthToken ? {} : { apiKeyHelper: claudeApiKeyHelperPath }),
-    hooks: {
-      Stop: [
-        {
-          hooks: [
-            {
-              type: "command",
-              command: `${claudeLifecycleDir}/stop-hook.sh`,
-            },
-          ],
-        },
-      ],
-      Notification: [
-        {
-          matcher: ".*",
-          hooks: [
-            {
-              type: "command",
-              command: `${claudeLifecycleDir}/stop-hook.sh`,
-            },
-          ],
-        },
-      ],
-    },
-    env: {
-      CLAUDE_CODE_ENABLE_TELEMETRY: 0,
-      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: 1,
-      CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: 1,
+	    ...(hasOAuthToken ? {} : { apiKeyHelper: claudeApiKeyHelperPath }),
+	    hooks: {
+	      Stop: [
+	        {
+	          hooks: [
+	            {
+	              type: "command",
+	              command: `${claudeLifecycleDir}/stop-hook.sh`,
+	            },
+	          ],
+	        },
+	      ],
+	    },
+	    env: {
+	      CLAUDE_CODE_ENABLE_TELEMETRY: 0,
+	      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: 1,
+	      CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: 1,
       ...(hasOAuthToken
         ? {}
         : {
