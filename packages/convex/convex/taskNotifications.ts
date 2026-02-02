@@ -427,3 +427,94 @@ export const hasUnreadForTaskInternal = internalQuery({
     return unread !== null;
   },
 });
+
+// Staleness threshold for active viewer heartbeats (60 seconds)
+const VIEWER_STALENESS_THRESHOLD_MS = 60_000;
+
+// Register user as actively viewing a task (upsert with heartbeat)
+// Called on mount and every 30s while viewing
+export const registerActiveViewer = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    taskId: v.id("tasks"),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const now = Date.now();
+
+    // Check if viewer record already exists
+    const existing = await ctx.db
+      .query("activeTaskViewers")
+      .withIndex("by_task_user", (q) =>
+        q.eq("taskId", args.taskId).eq("userId", userId),
+      )
+      .first();
+
+    if (existing) {
+      // Update heartbeat timestamp
+      await ctx.db.patch(existing._id, { lastHeartbeatAt: now });
+    } else {
+      // Create new viewer record
+      await ctx.db.insert("activeTaskViewers", {
+        taskId: args.taskId,
+        userId,
+        teamId,
+        lastHeartbeatAt: now,
+      });
+    }
+  },
+});
+
+// Unregister user from actively viewing a task
+// Called on unmount when leaving task page
+export const unregisterActiveViewer = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    taskId: v.id("tasks"),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    // Validate team access
+    await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    // Find and delete viewer record
+    const existing = await ctx.db
+      .query("activeTaskViewers")
+      .withIndex("by_task_user", (q) =>
+        q.eq("taskId", args.taskId).eq("userId", userId),
+      )
+      .first();
+
+    if (existing) {
+      await ctx.db.delete(existing._id);
+    }
+  },
+});
+
+// Internal query to check if user is actively viewing a task
+// Returns true if viewer exists and heartbeat is within staleness threshold
+export const isActivelyViewing = internalQuery({
+  args: {
+    taskId: v.id("tasks"),
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const viewer = await ctx.db
+      .query("activeTaskViewers")
+      .withIndex("by_task_user", (q) =>
+        q.eq("taskId", args.taskId).eq("userId", args.userId),
+      )
+      .first();
+
+    if (!viewer) {
+      return false;
+    }
+
+    // Check if heartbeat is stale (older than threshold)
+    const now = Date.now();
+    const isStale = now - viewer.lastHeartbeatAt > VIEWER_STALENESS_THRESHOLD_MS;
+
+    return !isStale;
+  },
+});

@@ -1227,6 +1227,18 @@ const convexSchema = defineSchema({
     .index("by_team_user", ["teamId", "userId"]) // Get unread runs for a user in a team
     .index("by_task_user", ["taskId", "userId"]), // Get unread runs for a task
 
+  // Track users actively viewing tasks (for race condition prevention)
+  // Used to prevent marking tasks as unread when user is actively viewing them
+  activeTaskViewers: defineTable({
+    taskId: v.id("tasks"),
+    userId: v.string(),
+    teamId: v.string(),
+    lastHeartbeatAt: v.number(), // For staleness detection (60s threshold)
+  })
+    .index("by_task_user", ["taskId", "userId"])
+    .index("by_user", ["userId"])
+    .index("by_team_user", ["teamId", "userId"]),
+
   // Track Morph instance activity for cleanup cron decisions
   // DEPRECATED: Use sandboxInstanceActivity for new code (provider-agnostic)
   morphInstanceActivity: defineTable({

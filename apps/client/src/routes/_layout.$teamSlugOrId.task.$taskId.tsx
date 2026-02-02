@@ -9,11 +9,11 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import clsx from "clsx";
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery as useRQ } from "@tanstack/react-query";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { useSetTaskReadState } from "@/hooks/useMarkTaskAsRead";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/task/$taskId")({
@@ -60,6 +60,45 @@ function TaskDetailPage() {
   const taskRuns = taskRunsQuery.data;
   const clipboard = useClipboard({ timeout: 2000 });
   const setTaskReadState = useSetTaskReadState(teamSlugOrId);
+
+  // Active viewer registration mutations
+  const registerViewer = useMutation(api.taskNotifications.registerActiveViewer);
+  const unregisterViewer = useMutation(api.taskNotifications.unregisterActiveViewer);
+
+  // Track if component is mounted to avoid state updates after unmount
+  const isMountedRef = useRef(true);
+
+  // Register as active viewer on mount, heartbeat every 30s, unregister on unmount
+  // This prevents race condition where agent-stopped notification marks task as unread
+  // while user is actively viewing it
+  useEffect(() => {
+    if (!taskId) return;
+    isMountedRef.current = true;
+
+    // Register immediately when viewing
+    registerViewer({ teamSlugOrId, taskId }).catch((err) => {
+      console.error("Failed to register active viewer:", err);
+    });
+
+    // Heartbeat every 30s to keep viewer status alive
+    const heartbeatInterval = setInterval(() => {
+      if (isMountedRef.current) {
+        registerViewer({ teamSlugOrId, taskId }).catch((err) => {
+          console.error("Failed to send viewer heartbeat:", err);
+        });
+      }
+    }, 30_000);
+
+    // Cleanup: unregister on unmount
+    return () => {
+      isMountedRef.current = false;
+      clearInterval(heartbeatInterval);
+      unregisterViewer({ teamSlugOrId, taskId }).catch((err) => {
+        // Ignore errors on unmount - component is already gone
+        console.error("Failed to unregister active viewer:", err);
+      });
+    };
+  }, [taskId, teamSlugOrId, registerViewer, unregisterViewer]);
 
   // Real-time subscription to unread state for mark-as-read triggering
   const hasUnread = useQuery(api.taskNotifications.hasUnreadForTask, {

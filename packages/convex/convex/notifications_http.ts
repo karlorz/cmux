@@ -151,22 +151,31 @@ export const createAgentStoppedNotification = internalMutation({
     // Update task's lastActivityAt for sorting (notification received = activity)
     await ctx.db.patch(args.taskId, { lastActivityAt: now });
 
-    // Insert unread row for this task run (explicit unread tracking)
-    // Check if already unread (avoid duplicates)
-    const existing = await ctx.db
-      .query("unreadTaskRuns")
-      .withIndex("by_run_user", (q) =>
-        q.eq("taskRunId", args.taskRunId).eq("userId", args.userId)
-      )
-      .first();
+    // Check if user is actively viewing this task before marking as unread
+    // This prevents the race condition where a task reverts to unread while user is viewing
+    const isViewing = await ctx.runQuery(
+      internal.taskNotifications.isActivelyViewing,
+      { taskId: args.taskId, userId: args.userId }
+    );
 
-    if (!existing) {
-      await ctx.db.insert("unreadTaskRuns", {
-        taskRunId: args.taskRunId,
-        taskId: args.taskId,
-        userId: args.userId,
-        teamId: args.teamId,
-      });
+    // Only insert unread row if user is NOT actively viewing the task
+    if (!isViewing) {
+      // Check if already unread (avoid duplicates)
+      const existing = await ctx.db
+        .query("unreadTaskRuns")
+        .withIndex("by_run_user", (q) =>
+          q.eq("taskRunId", args.taskRunId).eq("userId", args.userId)
+        )
+        .first();
+
+      if (!existing) {
+        await ctx.db.insert("unreadTaskRuns", {
+          taskRunId: args.taskRunId,
+          taskId: args.taskId,
+          userId: args.userId,
+          teamId: args.teamId,
+        });
+      }
     }
 
     return { success: true };
