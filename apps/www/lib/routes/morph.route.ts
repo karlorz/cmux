@@ -854,11 +854,55 @@ morphRouter.openapi(
           }
         }
 
-        for (const [, repos] of reposByOwner) {
+        // Get GitHub App tokens for each owner (for private repo access)
+        const ownerTokens = new Map<string, string>();
+        const connections = await convex.query(api.github.listProviderConnections, {
+          teamSlugOrId,
+        });
+
+        for (const [owner, repos] of reposByOwner) {
+          const targetConnection = connections.find(
+            (co) =>
+              co.isActive &&
+              co.accountLogin?.toLowerCase() === owner.toLowerCase()
+          );
+
+          if (targetConnection) {
+            try {
+              const appToken = await generateGitHubInstallationToken({
+                installationId: targetConnection.installationId,
+                repositories: repos,
+                permissions: {
+                  contents: "write",
+                  metadata: "read",
+                },
+              });
+              ownerTokens.set(owner, appToken);
+              console.log(
+                `[morph.setup-instance] Using GitHub App token for ${owner}`
+              );
+            } catch (error) {
+              console.error(
+                `[morph.setup-instance] Failed to get GitHub App token for ${owner}:`,
+                error
+              );
+            }
+          }
+        }
+
+        for (const [owner, repos] of reposByOwner) {
           const clonePromises = repos.map(async (repo) => {
             const repoName = repo.split("/").pop()!;
             if (!existingRepos.has(repoName)) {
-              console.log(`Cloning repository: ${repo}`);
+              // Use GitHub App token if available, otherwise fall back to OAuth token
+              const token = ownerTokens.get(owner) || githubAccessToken;
+              const cloneUrl = token
+                ? `https://x-access-token:${token}@github.com/${repo}.git`
+                : `https://github.com/${repo}.git`;
+              const maskedUrl = token
+                ? `https://x-access-token:***@github.com/${repo}.git`
+                : `https://github.com/${repo}.git`;
+              console.log(`Cloning repository: ${repo} using ${maskedUrl}`);
 
               const maxRetries = 3;
               let lastError: string | undefined;
@@ -873,7 +917,7 @@ morphRouter.openapi(
                   },
                   () =>
                     sandboxInstance.exec(
-                      `mkdir -p /root/workspace && cd /root/workspace && git clone https://github.com/${repo}.git ${repoName} 2>&1`
+                      `mkdir -p /root/workspace && cd /root/workspace && git clone ${cloneUrl} ${repoName} 2>&1`
                     )
                 );
 
