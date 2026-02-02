@@ -18,6 +18,9 @@ export interface TaskRunGitDiffPanelProps {
 }
 
 export function TaskRunGitDiffPanel({ task, selectedRun, teamSlugOrId, taskId, selectedRunId }: TaskRunGitDiffPanelProps) {
+  // Check for cloud/local workspace (no GitHub repo to diff against)
+  const isCloudOrLocalWorkspace = task?.isCloudWorkspace || task?.isLocalWorkspace;
+
   const normalizedBaseBranch = useMemo(() => {
     const candidate = task?.baseBranch;
     if (candidate && candidate.trim()) {
@@ -41,11 +44,17 @@ export function TaskRunGitDiffPanel({ task, selectedRun, teamSlugOrId, taskId, s
 
   const repoFullNames = useMemo(() => {
     const names = new Set<string>();
-    if (task?.projectFullName?.trim()) {
-      names.add(task.projectFullName.trim());
+    const projectName = task?.projectFullName?.trim();
+    // Skip environment-based project names (format: env:<environmentId>)
+    if (projectName && !projectName.startsWith("env:")) {
+      names.add(projectName);
     }
     for (const repo of environmentRepos) {
-      names.add(repo);
+      const trimmed = repo?.trim();
+      // Skip environment references in selectedRepos as well
+      if (trimmed && !trimmed.startsWith("env:")) {
+        names.add(trimmed);
+      }
     }
     return Array.from(names);
   }, [task?.projectFullName, environmentRepos]);
@@ -79,6 +88,15 @@ export function TaskRunGitDiffPanel({ task, selectedRun, teamSlugOrId, taskId, s
 
   const screenshotSets = runDiffContext?.screenshotSets ?? [];
   const screenshotSetsLoading = runDiffContext === undefined && screenshotSets.length === 0;
+
+  // Skip git diff for cloud/local workspaces (no GitHub repo to diff against)
+  if (isCloudOrLocalWorkspace) {
+    return (
+      <div className="flex h-full items-center justify-center px-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
+        Git diff not available for cloud workspaces
+      </div>
+    );
+  }
 
   if (!selectedRun || !normalizedHeadBranch) {
     return (
