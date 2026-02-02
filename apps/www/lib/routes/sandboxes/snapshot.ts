@@ -28,6 +28,8 @@ export interface SnapshotResolution {
   environmentDataVaultKey?: string;
   environmentMaintenanceScript?: string;
   environmentDevScript?: string;
+  /** Selected repositories from the environment (for auto-cloning) */
+  environmentSelectedRepos?: string[];
 }
 
 /**
@@ -167,6 +169,7 @@ export const resolveTeamAndSnapshot = async ({
       environmentDataVaultKey: environmentDoc.dataVaultKey ?? undefined,
       environmentMaintenanceScript: environmentDoc.maintenanceScript ?? undefined,
       environmentDevScript: environmentDoc.devScript ?? undefined,
+      environmentSelectedRepos: environmentDoc.selectedRepos ?? undefined,
     };
   }
 
