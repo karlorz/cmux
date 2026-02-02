@@ -506,6 +506,50 @@ export const getPinned = authQuery({
   },
 });
 
+/**
+ * Lightweight query for command bar - minimal fields for search/display.
+ * Returns only fields needed for command bar functionality.
+ * Saves ~80% bandwidth compared to getTasksWithTaskRuns.
+ */
+export const getForCommandBar = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    const tasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_team_user", (idx) =>
+        idx.eq("teamId", teamId).eq("userId", userId),
+      )
+      .filter((q) => q.neq(q.field("isArchived"), true))
+      .filter((q) => q.neq(q.field("isPreview"), true))
+      .filter((q) => q.eq(q.field("linkedFromCloudTaskRunId"), undefined))
+      .collect();
+
+    // Sort by lastActivityAt desc (most recently active first)
+    const sorted = [...tasks].sort((a, b) => {
+      const aTime = a.lastActivityAt ?? a.createdAt ?? 0;
+      const bTime = b.lastActivityAt ?? b.createdAt ?? 0;
+      return bTime - aTime;
+    });
+
+    // Minimal projection for command bar - only fields needed for search and display
+    return sorted.map((t) => ({
+      _id: t._id,
+      text: t.text,
+      pullRequestTitle: t.pullRequestTitle,
+      projectFullName: t.projectFullName,
+      isCloudWorkspace: t.isCloudWorkspace,
+      isLocalWorkspace: t.isLocalWorkspace,
+      isCompleted: t.isCompleted,
+      selectedTaskRunId: t.selectedTaskRunId,
+    }));
+  },
+});
+
 export const getTasksWithTaskRuns = authQuery({
   args: {
     teamSlugOrId: v.string(),

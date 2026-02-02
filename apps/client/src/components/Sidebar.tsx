@@ -17,6 +17,7 @@ import { Bell, Home, Plus, Server, Settings } from "lucide-react";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ComponentType,
@@ -109,9 +110,11 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
 
   const { expandTaskIds } = useExpandTasks();
 
-  // Fetch pinned items (exclude local workspaces in web mode)
-  const excludeLocalWorkspaces = env.NEXT_PUBLIC_WEB_MODE || undefined;
-  const pinnedData = useQuery(api.tasks.getPinned, { teamSlugOrId, excludeLocalWorkspaces });
+  // Derive pinned items from tasks prop (saves a separate getPinned query)
+  const pinnedData = useMemo(() => {
+    if (!tasks) return undefined;
+    return tasks.filter(t => t.pinned);
+  }, [tasks]);
 
   useWarmLocalWorkspaces({
     teamSlugOrId,

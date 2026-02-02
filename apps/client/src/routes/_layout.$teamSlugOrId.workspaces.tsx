@@ -5,12 +5,16 @@ import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
 import { isFakeConvexId } from "@/lib/fakeConvexId";
 import { api } from "@cmux/convex/api";
-import { type Id } from "@cmux/convex/dataModel";
+import type { Doc, Id } from "@cmux/convex/dataModel";
 import { convexQuery } from "@convex-dev/react-query";
+import { useQuery as useRQ } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useQueries, useQuery } from "convex/react";
+import { useQueries } from "convex/react";
 import { useMemo } from "react";
 import { env } from "@/client-env";
+
+// Tasks with hasUnread indicator from the query
+type TaskWithUnread = Doc<"tasks"> & { hasUnread: boolean };
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/workspaces")({
   component: WorkspacesRoute,
@@ -28,24 +32,21 @@ function WorkspacesRoute() {
   const { teamSlugOrId } = Route.useParams();
   // In web mode, exclude local workspaces
   const excludeLocalWorkspaces = env.NEXT_PUBLIC_WEB_MODE || undefined;
-  // Use notification-aware ordering: unread notifications first, then by createdAt
-  const tasks = useQuery(api.tasks.getWithNotificationOrder, { teamSlugOrId, excludeLocalWorkspaces });
-  const tasksWithUnread = useQuery(api.taskNotifications.getTasksWithUnread, {
-    teamSlugOrId,
+  // Use React Query to share cache with parent layout (both use getWithNotificationOrder)
+  // This leverages the prewarm from the loader and shares data with the sidebar
+  const tasksQuery = useRQ({
+    ...convexQuery(api.tasks.getWithNotificationOrder, { teamSlugOrId, excludeLocalWorkspaces }),
+    enabled: Boolean(teamSlugOrId),
   });
+  const tasks = tasksQuery.data as TaskWithUnread[] | undefined;
   const { expandTaskIds } = useExpandTasks();
 
   // Tasks are already sorted by the query (unread notifications first)
+  // and already include hasUnread field
   const orderedTasks = useMemo(
-    () => tasks ?? ([] as NonNullable<typeof tasks>),
+    () => tasks ?? ([] as TaskWithUnread[]),
     [tasks]
   );
-
-  // Create a Set for quick lookup of task IDs with unread notifications
-  const tasksWithUnreadSet = useMemo(() => {
-    if (!tasksWithUnread) return new Set<string>();
-    return new Set(tasksWithUnread.map((t) => t.taskId));
-  }, [tasksWithUnread]);
 
   const taskRunQueries = useMemo(() => {
     return orderedTasks
@@ -109,7 +110,7 @@ function WorkspacesRoute() {
                   task={task}
                   defaultExpanded={expandTaskIds?.includes(task._id) ?? false}
                   teamSlugOrId={teamSlugOrId}
-                  hasUnreadNotification={tasksWithUnreadSet.has(task._id)}
+                  hasUnreadNotification={task.hasUnread}
                 />
               ))}
             </div>

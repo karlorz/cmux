@@ -673,7 +673,8 @@ export function CommandBar({
     ? "No teams available yet."
     : "Sign in to view teams.";
 
-  const allTasks = useQuery(api.tasks.getTasksWithTaskRuns, { teamSlugOrId, archived: false });
+  // Use lightweight query for command bar - minimal fields for search/display
+  const allTasks = useQuery(api.tasks.getForCommandBar, { teamSlugOrId });
   const reserveLocalWorkspace = useMutation(api.localWorkspaces.reserve);
   const createTask = useMutation(api.tasks.create);
   const failTaskRun = useMutation(api.taskRuns.fail);
@@ -1282,7 +1283,7 @@ export function CommandBar({
         const taskId = parts[0] as Id<"tasks">;
         const action = parts[1];
         const task = allTasks?.find((t) => t._id === taskId);
-        const runId = task?.selectedTaskRun?._id;
+        const runId = task?.selectedTaskRunId;
 
         try {
           if (!action) {
@@ -1509,7 +1510,7 @@ export function CommandBar({
         const taskId = parts[0] as Id<"tasks">;
         const action = parts[1];
         const task = allTasks?.find((t) => t._id === taskId);
-        const runId = task?.selectedTaskRun?._id;
+        const runId = task?.selectedTaskRunId;
 
         if (!action) {
           navigate({
@@ -1865,7 +1866,7 @@ export function CommandBar({
             const statusClassName = task.isCompleted
               ? "text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
               : "text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400";
-            const run = task.selectedTaskRun;
+            const hasSelectedRun = Boolean(task.selectedTaskRunId);
 
             const entriesForTask: CommandListEntry[] = [
               {
@@ -1887,7 +1888,7 @@ export function CommandBar({
               },
             ];
 
-            if (run) {
+            if (hasSelectedRun) {
               const vsKeywords = [...keywords, "vs", "vscode"];
               entriesForTask.push({
                 value: `${index + 1} vs:task:${task._id}`,
