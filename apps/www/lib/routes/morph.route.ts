@@ -854,7 +854,46 @@ morphRouter.openapi(
           }
         }
 
-        for (const [, repos] of reposByOwner) {
+        // Get GitHub App installations for all repo owners
+      const connections = await convex.query(api.github.listProviderConnections, {
+        teamSlugOrId,
+      });
+
+      for (const [owner, repos] of reposByOwner) {
+          // Try to get GitHub App token for this owner and re-auth gh CLI
+          const targetConnection = connections.find(
+            (co) =>
+              co.isActive &&
+              co.accountLogin?.toLowerCase() === owner.toLowerCase()
+          );
+
+          if (targetConnection) {
+            try {
+              const appToken = await generateGitHubInstallationToken({
+                installationId: targetConnection.installationId,
+                repositories: repos,
+                permissions: {
+                  contents: "write",
+                  metadata: "read",
+                },
+              });
+              // Re-authenticate gh CLI with the GitHub App token for this owner
+              await configureGithubAccess(sandboxInstance, appToken);
+              console.log(
+                `[morph.setup-instance] Re-authenticated gh CLI with GitHub App token for ${owner}`
+              );
+            } catch (error) {
+              console.error(
+                `[morph.setup-instance] Failed to get GitHub App token for ${owner}, using user OAuth:`,
+                error
+              );
+            }
+          } else {
+            console.log(
+              `[morph.setup-instance] No GitHub App installation found for ${owner}, using user OAuth token`
+            );
+          }
+
           const clonePromises = repos.map(async (repo) => {
             const repoName = repo.split("/").pop()!;
             if (!existingRepos.has(repoName)) {
@@ -873,7 +912,7 @@ morphRouter.openapi(
                   },
                   () =>
                     sandboxInstance.exec(
-                      `mkdir -p /root/workspace && cd /root/workspace && git clone https://github.com/${repo}.git ${repoName} 2>&1`
+                      `mkdir -p /root/workspace && cd /root/workspace && gh repo clone ${repo} ${repoName} 2>&1`
                     )
                 );
 
