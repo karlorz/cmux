@@ -94,11 +94,12 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/dashboard")({
       });
       // Prewarm queries used in TaskList (args must match exactly)
       convexQueryClient.convexClient.prewarmQuery({
-        query: api.tasks.get,
+        query: api.tasks.getPinned,
         args: { teamSlugOrId, excludeLocalWorkspaces },
       });
+      // Prewarm onboarding check query (lightweight - reads at most 2 docs)
       convexQueryClient.convexClient.prewarmQuery({
-        query: api.tasks.getPinned,
+        query: api.tasks.hasAnyTasks,
         args: { teamSlugOrId, excludeLocalWorkspaces },
       });
     });
@@ -146,6 +147,8 @@ const parseStoredAgentSelection = (stored: string | null): string[] => {
 function DashboardComponent() {
   const { teamSlugOrId } = Route.useParams();
   const searchParams = Route.useSearch() as { environmentId?: string };
+  // In web mode, exclude local workspaces
+  const excludeLocalWorkspaces = env.NEXT_PUBLIC_WEB_MODE || undefined;
   const { socket } = useSocket();
   const { theme } = useTheme();
   const { addTaskToExpand } = useExpandTasks();
@@ -223,27 +226,14 @@ function DashboardComponent() {
     };
   }, [renderDockerPullToast, socket]);
 
-  // Query tasks to check if user is new (has no tasks)
-  const tasksQuery = useQuery(
-    convexQuery(api.tasks.get, { teamSlugOrId })
-  );
-  const archivedTasksQuery = useQuery(
-    convexQuery(api.tasks.get, { teamSlugOrId, archived: true })
+  // Lightweight query to check if user is new (has no tasks) - reads at most 2 docs
+  const hasAnyTasksQuery = useQuery(
+    convexQuery(api.tasks.hasAnyTasks, { teamSlugOrId, excludeLocalWorkspaces })
   );
 
-  const tasksReady = tasksQuery.isSuccess && archivedTasksQuery.isSuccess;
-  const { hasRealTasks, hasCompletedRealTasks } = useMemo(() => {
-    const activeTasks = tasksQuery.data ?? [];
-    const archivedTasks = archivedTasksQuery.data ?? [];
-    const allTasks = [...activeTasks, ...archivedTasks];
-    const realTasks = allTasks.filter(
-      (task) => !task.isCloudWorkspace && !task.isLocalWorkspace
-    );
-    return {
-      hasRealTasks: realTasks.length > 0,
-      hasCompletedRealTasks: realTasks.some((task) => task.isCompleted),
-    };
-  }, [tasksQuery.data, archivedTasksQuery.data]);
+  const tasksReady = hasAnyTasksQuery.isSuccess;
+  const hasRealTasks = hasAnyTasksQuery.data?.hasRealTasks ?? false;
+  const hasCompletedRealTasks = hasAnyTasksQuery.data?.hasCompletedRealTasks ?? false;
 
   // Auto-start onboarding for new users on the dashboard
   useEffect(() => {

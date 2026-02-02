@@ -1862,3 +1862,103 @@ export const getReadyToReviewPaginated = authQuery({
     };
   },
 });
+
+// ============================================================================
+// Lightweight queries for specific use cases (bandwidth optimization)
+// ============================================================================
+
+/**
+ * Lightweight query to check if user has any real tasks.
+ * Used for onboarding check on dashboard - reads at most 2 documents.
+ * "Real tasks" excludes standalone workspaces (isCloudWorkspace/isLocalWorkspace).
+ */
+export const hasAnyTasks = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    excludeLocalWorkspaces: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    // Check for any real task (not workspace) - active or archived
+    let realTaskQuery = ctx.db
+      .query("tasks")
+      .withIndex("by_team_user", (idx) => idx.eq("teamId", teamId).eq("userId", userId))
+      .filter((q) => q.neq(q.field("isCloudWorkspace"), true))
+      .filter((q) => q.neq(q.field("isLocalWorkspace"), true));
+
+    if (args.excludeLocalWorkspaces) {
+      realTaskQuery = realTaskQuery.filter((q) => q.neq(q.field("isLocalWorkspace"), true));
+    }
+
+    const firstRealTask = await realTaskQuery.first();
+
+    // Check for completed real task
+    let completedQuery = ctx.db
+      .query("tasks")
+      .withIndex("by_team_user", (idx) => idx.eq("teamId", teamId).eq("userId", userId))
+      .filter((q) => q.neq(q.field("isCloudWorkspace"), true))
+      .filter((q) => q.neq(q.field("isLocalWorkspace"), true))
+      .filter((q) => q.eq(q.field("isCompleted"), true));
+
+    if (args.excludeLocalWorkspaces) {
+      completedQuery = completedQuery.filter((q) => q.neq(q.field("isLocalWorkspace"), true));
+    }
+
+    const firstCompletedTask = await completedQuery.first();
+
+    return {
+      hasRealTasks: firstRealTask !== null,
+      hasCompletedRealTasks: firstCompletedTask !== null,
+    };
+  },
+});
+
+/**
+ * Lightweight query for command bar task list.
+ * Returns minimal projection for quick task switching.
+ * Includes selectedTaskRun for navigation to VS Code view.
+ */
+export const getForCommandBar = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    const tasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_team_user_activity", (idx) =>
+        idx.eq("teamId", teamId).eq("userId", userId),
+      )
+      .order("desc")
+      .filter((q) => q.neq(q.field("isArchived"), true))
+      .collect();
+
+    // Get selected task run IDs for navigation
+    const taskRunPromises = tasks.map(async (task) => {
+      if (!task.selectedTaskRunId) return null;
+      return ctx.db.get(task.selectedTaskRunId);
+    });
+    const taskRuns = await Promise.all(taskRunPromises);
+
+    return tasks.map((task, index) => {
+      const selectedRun = taskRuns[index];
+      return {
+        _id: task._id,
+        text: task.text,
+        pullRequestTitle: task.pullRequestTitle,
+        isCompleted: task.isCompleted,
+        isCloudWorkspace: task.isCloudWorkspace,
+        isLocalWorkspace: task.isLocalWorkspace,
+        selectedTaskRun: selectedRun
+          ? {
+              _id: selectedRun._id,
+            }
+          : null,
+      };
+    });
+  },
+});

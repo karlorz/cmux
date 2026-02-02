@@ -673,7 +673,8 @@ export function CommandBar({
     ? "No teams available yet."
     : "Sign in to view teams.";
 
-  const allTasks = useQuery(api.tasks.getTasksWithTaskRuns, { teamSlugOrId, archived: false });
+  // Lightweight query for command bar - returns minimal projection
+  const allTasks = useQuery(api.tasks.getForCommandBar, { teamSlugOrId });
   const reserveLocalWorkspace = useMutation(api.localWorkspaces.reserve);
   const createTask = useMutation(api.tasks.create);
   const failTaskRun = useMutation(api.taskRuns.fail);
