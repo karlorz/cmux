@@ -385,6 +385,29 @@ export const backfillTaskRunPullRequestsContinue = internalMutation({
   },
 });
 
+// Normalize tasks.isArchived field from boolean | undefined to always boolean.
+// This enables efficient index-based queries on the by_team_user_archived index.
+// Run with: bunx convex run migrations:run '{fn: "migrations:normalizeTasksIsArchived"}'
+export const normalizeTasksIsArchived = migrations.define({
+  table: "tasks",
+  migrateOne: (_ctx, doc) => {
+    if (doc.isArchived === undefined) {
+      return { isArchived: false };
+    }
+  },
+});
+
+// Normalize taskRuns.isArchived field from boolean | undefined to always boolean.
+// Run with: bunx convex run migrations:run '{fn: "migrations:normalizeTaskRunsIsArchived"}'
+export const normalizeTaskRunsIsArchived = migrations.define({
+  table: "taskRuns",
+  migrateOne: (_ctx, doc) => {
+    if (doc.isArchived === undefined) {
+      return { isArchived: false };
+    }
+  },
+});
+
 // Backfill selectedTaskRunId for existing tasks.
 // Sets it to the crowned run if one exists, otherwise the latest non-archived run.
 // Run with: bunx convex run migrations:run '{fn: "migrations:backfillTasksSelectedTaskRunId"}'
