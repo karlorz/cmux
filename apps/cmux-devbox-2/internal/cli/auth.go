@@ -34,7 +34,7 @@ var whoamiCmd = &cobra.Command{
 	Short:   "Show current user and team",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !auth.IsLoggedIn() {
-			fmt.Println("Not logged in. Run 'cmux-e2b login' to authenticate.")
+			fmt.Println("Not logged in. Run 'cmux login' to authenticate.")
 			return nil
 		}
 

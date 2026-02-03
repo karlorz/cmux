@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Post-install script for cmux2
+ * Post-install script for cmux
  * Copies the platform-specific binary to the bin directory
  */
 
@@ -8,11 +8,11 @@ const fs = require('fs');
 const path = require('path');
 
 const PLATFORMS = {
-  'darwin-arm64': 'cmux2-darwin-arm64',
-  'darwin-x64': 'cmux2-darwin-x64',
-  'linux-arm64': 'cmux2-linux-arm64',
-  'linux-x64': 'cmux2-linux-x64',
-  'win32-x64': 'cmux2-win32-x64',
+  'darwin-arm64': 'cmux-darwin-arm64',
+  'darwin-x64': 'cmux-darwin-x64',
+  'linux-arm64': 'cmux-linux-arm64',
+  'linux-x64': 'cmux-linux-x64',
+  'win32-x64': 'cmux-win32-x64',
 };
 
 function getPlatformPackage() {
@@ -40,7 +40,7 @@ function findBinary(packageName) {
   ];
 
   for (const p of possiblePaths) {
-    const binName = process.platform === 'win32' ? 'cmux2.exe' : 'cmux2';
+    const binName = process.platform === 'win32' ? 'cmux.exe' : 'cmux';
     const binPath = path.join(p, binName);
     if (fs.existsSync(binPath)) {
       return binPath;
@@ -70,7 +70,7 @@ function main() {
   }
 
   const binDir = path.join(__dirname, '..', 'bin');
-  const destBinary = path.join(binDir, process.platform === 'win32' ? 'cmux2.exe' : 'cmux2');
+  const destBinary = path.join(binDir, process.platform === 'win32' ? 'cmux.exe' : 'cmux');
 
   // Ensure bin directory exists
   if (!fs.existsSync(binDir)) {
@@ -85,7 +85,7 @@ function main() {
     fs.chmodSync(destBinary, 0o755);
   }
 
-  console.log(`cmux2: Installed ${platformPackage} binary`);
+  console.log(`cmux: Installed ${platformPackage} binary`);
 }
 
 main();

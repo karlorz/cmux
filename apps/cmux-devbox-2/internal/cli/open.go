@@ -13,25 +13,22 @@ import (
 
 // buildAuthURL builds a URL with token authentication
 // E2B gives each port its own subdomain, so we use query params for auth
+// Both VSCode and VNC use the same ?tkn= pattern for consistent auth
 func buildAuthURL(baseURL, token string, isVNC bool) (string, error) {
 	parsed, err := url.Parse(baseURL)
 	if err != nil {
 		return "", fmt.Errorf("invalid URL: %w", err)
 	}
 	query := parsed.Query()
+	// Both VSCode and VNC use 'tkn' param for token-based auth
+	query.Set("tkn", token)
 	if isVNC {
-		// noVNC uses 'password' param, first 8 chars of token
-		if len(token) >= 8 {
-			query.Set("password", token[:8])
-		}
-		// Add default noVNC params
+		// Add default noVNC params for better experience
 		query.Set("resize", "scale")
 		query.Set("quality", "9")
 		query.Set("compression", "0")
 	} else {
-		// VSCode uses 'tkn' param
-		query.Set("tkn", token)
-		// Set default folder
+		// Set default folder for VSCode
 		query.Set("folder", "/home/user/workspace")
 	}
 	parsed.RawQuery = query.Encode()

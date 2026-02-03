@@ -1,4 +1,4 @@
-# Makefile for cmux2 CLI (E2B version)
+# Makefile for cmux CLI (E2B version)
 
 VERSION ?= 0.1.0
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -35,11 +35,11 @@ build-dev:
 	@echo "Building for development (Mode=dev)..."
 	@echo "  Dev defaults: localhost:9779, famous-camel-162.convex.site"
 	go build -ldflags "-X main.Version=$(VERSION) -X main.Commit=$(COMMIT) -X main.BuildTime=$(BUILD_TIME) -X main.Mode=dev" \
-		-o bin/cmux2 ./cmd/cmux
-	@echo "Dev build complete: bin/cmux2"
+		-o bin/cmux ./cmd/cmux
+	@echo "Dev build complete: bin/cmux"
 
 install-dev: build-dev
-	cp bin/cmux2 /usr/local/bin/cmux2
+	cp bin/cmux /usr/local/bin/cmux
 
 # =============================================================================
 # Production builds
@@ -53,22 +53,22 @@ build-prod:
 	@if [ -z "$(STACK_PUBLISHABLE_CLIENT_KEY)" ]; then echo "Error: STACK_PUBLISHABLE_CLIENT_KEY is required"; exit 1; fi
 	@if [ -z "$(CMUX_API_URL)" ]; then echo "Error: CMUX_API_URL is required"; exit 1; fi
 	@if [ -z "$(CONVEX_SITE_URL)" ]; then echo "Error: CONVEX_SITE_URL is required"; exit 1; fi
-	go build -ldflags "$(LDFLAGS)" -o bin/cmux2 ./cmd/cmux
-	@echo "Production build complete: bin/cmux2"
+	go build -ldflags "$(LDFLAGS)" -o bin/cmux ./cmd/cmux
+	@echo "Production build complete: bin/cmux"
 
 install: build
-	cp bin/cmux2 /usr/local/bin/cmux2
+	cp bin/cmux /usr/local/bin/cmux
 
 # =============================================================================
 # Cross-platform builds
 # =============================================================================
 
 build-all:
-	GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/cmux2-darwin-amd64 ./cmd/cmux
-	GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o bin/cmux2-darwin-arm64 ./cmd/cmux
-	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/cmux2-linux-amd64 ./cmd/cmux
-	GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o bin/cmux2-linux-arm64 ./cmd/cmux
-	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/cmux2-windows-amd64.exe ./cmd/cmux
+	GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/cmux-darwin-amd64 ./cmd/cmux
+	GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o bin/cmux-darwin-arm64 ./cmd/cmux
+	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/cmux-linux-amd64 ./cmd/cmux
+	GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o bin/cmux-linux-arm64 ./cmd/cmux
+	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/cmux-windows-amd64.exe ./cmd/cmux
 
 # =============================================================================
 # NPM package builds
@@ -83,26 +83,26 @@ build-npm:
 	@if [ -z "$(CMUX_API_URL)" ]; then echo "Error: CMUX_API_URL is required"; exit 1; fi
 	@if [ -z "$(CONVEX_SITE_URL)" ]; then echo "Error: CONVEX_SITE_URL is required"; exit 1; fi
 	@mkdir -p npm/darwin-arm64/bin npm/darwin-x64/bin npm/linux-arm64/bin npm/linux-x64/bin npm/win32-x64/bin
-	GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o npm/darwin-arm64/bin/cmux2 ./cmd/cmux
-	GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o npm/darwin-x64/bin/cmux2 ./cmd/cmux
-	GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o npm/linux-arm64/bin/cmux2 ./cmd/cmux
-	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o npm/linux-x64/bin/cmux2 ./cmd/cmux
-	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o npm/win32-x64/bin/cmux2.exe ./cmd/cmux
-	@chmod +x npm/cmux2/bin/cmux2 2>/dev/null || true
+	GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o npm/darwin-arm64/bin/cmux ./cmd/cmux
+	GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o npm/darwin-x64/bin/cmux ./cmd/cmux
+	GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o npm/linux-arm64/bin/cmux ./cmd/cmux
+	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o npm/linux-x64/bin/cmux ./cmd/cmux
+	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o npm/win32-x64/bin/cmux.exe ./cmd/cmux
+	@chmod +x npm/cmux/bin/cmux 2>/dev/null || true
 	@echo "Done! Binaries built in npm/*/bin/"
 
 # Update version in all npm package.json files
 npm-version:
 	@echo "Updating npm package versions to $(VERSION)..."
-	@for pkg in cmux2 darwin-arm64 darwin-x64 linux-arm64 linux-x64 win32-x64; do \
+	@for pkg in cmux darwin-arm64 darwin-x64 linux-arm64 linux-x64 win32-x64; do \
 		if [ -f "npm/$$pkg/package.json" ]; then \
 			sed -i '' 's/"version": "[^"]*"/"version": "$(VERSION)"/' npm/$$pkg/package.json; \
-			if [ "$$pkg" = "cmux2" ]; then \
-				sed -i '' 's/"cmux2-darwin-arm64": "[^"]*"/"cmux2-darwin-arm64": "$(VERSION)"/' npm/$$pkg/package.json; \
-				sed -i '' 's/"cmux2-darwin-x64": "[^"]*"/"cmux2-darwin-x64": "$(VERSION)"/' npm/$$pkg/package.json; \
-				sed -i '' 's/"cmux2-linux-arm64": "[^"]*"/"cmux2-linux-arm64": "$(VERSION)"/' npm/$$pkg/package.json; \
-				sed -i '' 's/"cmux2-linux-x64": "[^"]*"/"cmux2-linux-x64": "$(VERSION)"/' npm/$$pkg/package.json; \
-				sed -i '' 's/"cmux2-win32-x64": "[^"]*"/"cmux2-win32-x64": "$(VERSION)"/' npm/$$pkg/package.json; \
+			if [ "$$pkg" = "cmux" ]; then \
+				sed -i '' 's/"cmux-darwin-arm64": "[^"]*"/"cmux-darwin-arm64": "$(VERSION)"/' npm/$$pkg/package.json; \
+				sed -i '' 's/"cmux-darwin-x64": "[^"]*"/"cmux-darwin-x64": "$(VERSION)"/' npm/$$pkg/package.json; \
+				sed -i '' 's/"cmux-linux-arm64": "[^"]*"/"cmux-linux-arm64": "$(VERSION)"/' npm/$$pkg/package.json; \
+				sed -i '' 's/"cmux-linux-x64": "[^"]*"/"cmux-linux-x64": "$(VERSION)"/' npm/$$pkg/package.json; \
+				sed -i '' 's/"cmux-win32-x64": "[^"]*"/"cmux-win32-x64": "$(VERSION)"/' npm/$$pkg/package.json; \
 			fi; \
 		fi; \
 	done
@@ -118,7 +118,7 @@ npm-publish: build-npm
 	cd npm/linux-x64 && npm publish --access public
 	cd npm/win32-x64 && npm publish --access public
 	@echo "2. Publishing main package..."
-	cd npm/cmux2 && npm publish --access public
+	cd npm/cmux && npm publish --access public
 	@echo "Done!"
 
 # Dry-run publish (for testing)
@@ -129,7 +129,7 @@ npm-publish-dry: build-npm
 	cd npm/linux-arm64 && npm publish --access public --dry-run
 	cd npm/linux-x64 && npm publish --access public --dry-run
 	cd npm/win32-x64 && npm publish --access public --dry-run
-	cd npm/cmux2 && npm publish --access public --dry-run
+	cd npm/cmux && npm publish --access public --dry-run
 	@echo "Done!"
 
 # =============================================================================
@@ -138,7 +138,7 @@ npm-publish-dry: build-npm
 
 clean:
 	rm -rf bin/
-	rm -rf npm/*/bin/cmux2 npm/*/bin/cmux2.exe
+	rm -rf npm/*/bin/cmux npm/*/bin/cmux.exe
 
 test:
 	go test -v ./...

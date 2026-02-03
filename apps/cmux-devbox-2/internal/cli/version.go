@@ -10,7 +10,7 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version information",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("cmux-e2b %s\n", versionStr)
+		fmt.Printf("cmux %s\n", versionStr)
 		if flagVerbose {
 			fmt.Printf("  Commit: %s\n", commitStr)
 			fmt.Printf("  Built:  %s\n", buildTimeStr)

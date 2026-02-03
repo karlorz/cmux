@@ -99,6 +99,7 @@ export const getInstance = internalAction({
 
 /**
  * Execute a command in an E2B sandbox.
+ * Returns result even for non-zero exit codes.
  */
 export const execCommand = internalAction({
   args: {
@@ -106,15 +107,25 @@ export const execCommand = internalAction({
     command: v.string(),
   },
   handler: async (_ctx, args) => {
-    const client = getE2BClient();
-    const instance = await client.instances.get({ instanceId: args.instanceId });
-    const result = await instance.exec(args.command);
+    try {
+      const client = getE2BClient();
+      const instance = await client.instances.get({ instanceId: args.instanceId });
+      const result = await instance.exec(args.command);
 
-    return {
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exit_code: result.exit_code,
-    };
+      return {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exit_code: result.exit_code,
+      };
+    } catch (err) {
+      console.error("[e2b_actions.execCommand] Error:", err);
+      // Return error as stderr instead of throwing
+      return {
+        stdout: "",
+        stderr: err instanceof Error ? err.message : String(err),
+        exit_code: 1,
+      };
+    }
   },
 });
 

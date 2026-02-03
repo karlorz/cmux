@@ -77,7 +77,37 @@ RUN useradd -m -s /bin/bash -u 1000 user \
 
 # Setup for user
 RUN mkdir -p /home/user/workspace /home/user/.vnc /home/user/.chrome-data /home/user/.chrome-visible /home/user/.config /home/user/.local/share/applications \
+    && mkdir -p /home/user/.openvscode-server/data/User \
+    && mkdir -p /home/user/.openvscode-server/data/User/profiles/default-profile \
+    && mkdir -p /home/user/.openvscode-server/data/Machine \
+    && mkdir -p /home/user/.openvscode-server/extensions \
     && chown -R user:user /home/user
+
+# Configure OpenVSCode Server settings (disable workspace trust, good defaults)
+RUN echo '{ \
+  "workbench.colorTheme": "Default Dark Modern", \
+  "workbench.startupEditor": "none", \
+  "workbench.welcomePage.walkthroughs.openOnInstall": false, \
+  "workbench.tips.enabled": false, \
+  "editor.fontSize": 14, \
+  "editor.tabSize": 2, \
+  "editor.minimap.enabled": false, \
+  "files.autoSave": "afterDelay", \
+  "files.autoSaveDelay": 1000, \
+  "terminal.integrated.fontSize": 14, \
+  "terminal.integrated.defaultProfile.linux": "bash", \
+  "terminal.integrated.shellIntegration.enabled": false, \
+  "security.workspace.trust.enabled": false, \
+  "security.workspace.trust.startupPrompt": "never", \
+  "security.workspace.trust.untrustedFiles": "open", \
+  "security.workspace.trust.emptyWindow": false, \
+  "git.openDiffOnClick": true, \
+  "scm.defaultViewMode": "tree", \
+  "settingsSync.ignoredSettings": [] \
+}' > /home/user/.openvscode-server/data/User/settings.json \
+    && cp /home/user/.openvscode-server/data/User/settings.json /home/user/.openvscode-server/data/User/profiles/default-profile/settings.json \
+    && cp /home/user/.openvscode-server/data/User/settings.json /home/user/.openvscode-server/data/Machine/settings.json \
+    && chown -R user:user /home/user/.openvscode-server
 
 # Set up VNC password (empty)
 RUN echo "" | vncpasswd -f > /home/user/.vnc/passwd \
@@ -96,6 +126,9 @@ RUN chmod +x /usr/local/bin/start-services.sh
 # Create the worker daemon script and install dependencies
 COPY scripts/worker-daemon.js /usr/local/bin/worker-daemon.js
 RUN cd /usr/local/bin && npm install ws
+
+# Create the VNC auth proxy (token-based auth like VSCode)
+COPY scripts/vnc-auth-proxy.js /usr/local/bin/vnc-auth-proxy.js
 
 # Make sure user can run services - add to sudoers
 RUN echo "user ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers

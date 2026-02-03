@@ -28,27 +28,24 @@ chmod 644 "$BOOT_ID_FILE"
 chown user:user "$BOOT_ID_FILE"
 echo "[cmux-e2b] Boot ID saved: ${BOOT_ID:0:8}..."
 
-# Set VNC password (use first 8 chars of auth token for VNC which has 8 char limit)
-VNC_PASSWORD="${AUTH_TOKEN:0:8}"
-echo "$VNC_PASSWORD" | vncpasswd -f > /home/user/.vnc/passwd
-chmod 600 /home/user/.vnc/passwd
-chown user:user /home/user/.vnc/passwd
-echo "[cmux-e2b] VNC password set (first 8 chars of auth token)"
+# VNC password not needed - auth proxy validates tokens before allowing access
+echo "[cmux-e2b] VNC auth handled by token proxy (no VNC password needed)"
 
 # Start D-Bus for desktop environment
 echo "[cmux-e2b] Starting D-Bus..."
 sudo mkdir -p /run/dbus 2>/dev/null || true
 sudo dbus-daemon --system --fork 2>/dev/null || true
 
-# Start VNC server on display :1 (port 5901)
-echo "[cmux-e2b] Starting VNC server on display :1..."
+# Start VNC server on display :1 (port 5901) - no password, auth handled by proxy
+echo "[cmux-e2b] Starting VNC server on display :1 (no password - auth via proxy)..."
 rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null || true
-vncserver :1 -geometry 1920x1080 -depth 24 2>/dev/null &
+vncserver :1 -geometry 1920x1080 -depth 24 -SecurityTypes None 2>/dev/null &
 sleep 3
 
-# Start noVNC on port 39380
-echo "[cmux-e2b] Starting noVNC on port 39380..."
-/opt/noVNC/utils/novnc_proxy --vnc localhost:5901 --listen 39380 2>/dev/null &
+# Start VNC auth proxy on port 39380 (serves noVNC + proxies WebSocket to VNC)
+# This replaces the separate noVNC proxy - architecture matches Morph Go proxy
+echo "[cmux-e2b] Starting VNC auth proxy on port 39380..."
+node /usr/local/bin/vnc-auth-proxy.js &
 
 # Start OpenVSCode Server on port 39378 with connection token
 echo "[cmux-e2b] Starting OpenVSCode Server on port 39378 (with token auth)..."
@@ -57,6 +54,10 @@ echo "[cmux-e2b] Starting OpenVSCode Server on port 39378 (with token auth)..."
     --port 39378 \
     --connection-token-file "$VSCODE_TOKEN_FILE" \
     --telemetry-level off \
+    --disable-workspace-trust \
+    --server-data-dir /home/user/.openvscode-server/data \
+    --user-data-dir /home/user/.openvscode-server/data \
+    --extensions-dir /home/user/.openvscode-server/extensions \
     /home/user/workspace 2>/dev/null &
 
 # Start Chrome in headless mode with CDP on port 9222
@@ -87,10 +88,11 @@ echo "[cmux-e2b] All services started!"
 echo "[cmux-e2b] Services:"
 echo "  - VSCode:  http://localhost:39378?tkn=$AUTH_TOKEN"
 echo "  - Worker:  http://localhost:39377 (use Bearer token)"
-echo "  - VNC:     http://localhost:39380 (password: first 8 chars of token)"
+echo "  - VNC:     http://localhost:39380?tkn=$AUTH_TOKEN"
 echo "  - Chrome:  http://localhost:9222"
 echo ""
 echo "[cmux-e2b] Auth token stored at: $AUTH_TOKEN_FILE"
+echo "[cmux-e2b] Both VSCode and VNC use ?tkn= for authentication"
 
 # Keep running
 tail -f /dev/null

@@ -87,14 +87,35 @@ export class E2BInstance {
 
   /**
    * Execute a command in the sandbox
+   * Handles non-zero exit codes gracefully (doesn't throw)
    */
   async exec(command: string): Promise<E2BExecResult> {
-    const result = await this.sandbox.commands.run(command);
-    return {
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exit_code: result.exitCode,
-    };
+    try {
+      const result = await this.sandbox.commands.run(command);
+      return {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exit_code: result.exitCode,
+      };
+    } catch (err: unknown) {
+      // E2B SDK throws CommandExitError for non-zero exit codes
+      // Extract the result from the error if available
+      if (err && typeof err === 'object' && 'stdout' in err && 'stderr' in err && 'exitCode' in err) {
+        const cmdErr = err as { stdout: string; stderr: string; exitCode: number };
+        return {
+          stdout: cmdErr.stdout || '',
+          stderr: cmdErr.stderr || '',
+          exit_code: cmdErr.exitCode,
+        };
+      }
+      // For other errors, return empty result with exit code 1
+      console.error('[E2BInstance.exec] Error:', err);
+      return {
+        stdout: '',
+        stderr: err instanceof Error ? err.message : String(err),
+        exit_code: 1,
+      };
+    }
   }
 
   /**
