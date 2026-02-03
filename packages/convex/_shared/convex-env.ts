@@ -28,6 +28,10 @@ export const env = createEnv({
     // CMUX_IS_STAGING="false" in sandbox env to always use production releases
     CONVEX_IS_PRODUCTION: z.string().optional(),
     POSTHOG_API_KEY: z.string().optional(),
+    // Opt-in flags for expensive features (disabled by default to save tokens)
+    // Set to "true" or "1" to enable
+    CMUX_ENABLE_PREVIEW_RUNS: z.string().optional(),
+    CMUX_ENABLE_SCREENSHOT_WORKFLOW: z.string().optional(),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,

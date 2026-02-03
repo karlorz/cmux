@@ -539,6 +539,20 @@ export const githubWebhook = httpAction(async (_ctx, req) => {
             );
 
             if (previewConfig) {
+              // Check if preview runs are enabled (disabled by default to save tokens)
+              const previewRunsEnabled =
+                process.env.CMUX_ENABLE_PREVIEW_RUNS === "true" ||
+                process.env.CMUX_ENABLE_PREVIEW_RUNS === "1";
+
+              if (!previewRunsEnabled) {
+                console.log("[preview-jobs] Preview runs disabled (CMUX_ENABLE_PREVIEW_RUNS not set)", {
+                  repoFullName,
+                  prNumber: prPayload.pull_request?.number,
+                  headSha: prPayload.pull_request?.head?.sha?.slice(0, 7),
+                });
+                break;
+              }
+
               const prNumber = Number(prPayload.pull_request?.number ?? 0);
               const prUrl = prPayload.pull_request?.html_url ?? null;
               const prTitle = prPayload.pull_request?.title ?? undefined;
