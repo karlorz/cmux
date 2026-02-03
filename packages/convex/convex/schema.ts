@@ -334,6 +334,8 @@ const convexSchema = defineSchema({
         })
       )
     ),
+    // Auto-discovered git repos in the sandbox (for custom environments where user clones repos)
+    discoveredRepos: v.optional(v.array(v.string())), // GitHub repos found in sandbox (e.g., ["owner/repo"])
   })
     .index("by_task", ["taskId", "createdAt"])
     .index("by_parent", ["parentRunId"])

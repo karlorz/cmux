@@ -1943,6 +1943,53 @@ export const updateEnvironmentError = authMutation({
   },
 });
 
+/**
+ * Update discovered repos for a task run (internal, from server)
+ * Called when scanning sandbox for git repos in custom environment tasks
+ */
+export const updateDiscoveredReposInternal = internalMutation({
+  args: {
+    runId: v.id("taskRuns"),
+    discoveredRepos: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.runId);
+    if (!run) {
+      throw new Error("Task run not found");
+    }
+    await ctx.db.patch(args.runId, {
+      discoveredRepos: args.discoveredRepos,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+/**
+ * Update discovered repos for a task run (authenticated, from client)
+ * Allows UI to trigger repo discovery and update the task run
+ */
+export const updateDiscoveredRepos = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    runId: v.id("taskRuns"),
+    discoveredRepos: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    const run = await ctx.db.get(args.runId);
+    if (!run || run.teamId !== teamId || run.userId !== userId) {
+      throw new Error("Task run not found or unauthorized");
+    }
+
+    await ctx.db.patch(args.runId, {
+      discoveredRepos: args.discoveredRepos,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
 export const archive = authMutation({
   args: {
     teamSlugOrId: v.string(),

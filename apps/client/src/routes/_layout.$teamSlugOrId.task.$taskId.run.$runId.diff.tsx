@@ -9,6 +9,7 @@ import { MonacoGitDiffViewer } from "@/components/monaco/monaco-git-diff-viewer"
 import { RunScreenshotGallery } from "@/components/RunScreenshotGallery";
 import { TaskDetailHeader } from "@/components/task-detail-header";
 import { useSocket } from "@/contexts/socket/use-socket";
+import { useDiscoverRepos } from "@/hooks/useDiscoverRepos";
 import { cachedGetUser } from "@/lib/cachedGetUser";
 import type { ReviewHeatmapLine } from "@/lib/heatmap";
 import { stackClientApp } from "@/lib/stack";
@@ -285,14 +286,26 @@ export const Route = createFileRoute(
 
         const trimmedProjectFullName = task.projectFullName?.trim();
         const targetRepos = new Set<string>();
+
+        // Add environment's selectedRepos (skip env: references)
         for (const repo of selectedTaskRun.environment?.selectedRepos ?? []) {
           const trimmed = repo?.trim();
-          if (trimmed) {
+          if (trimmed && !trimmed.startsWith("env:")) {
             targetRepos.add(trimmed);
           }
         }
-        if (trimmedProjectFullName) {
+
+        // Add projectFullName if it's a real repo (not env:xxx)
+        if (trimmedProjectFullName && !trimmedProjectFullName.startsWith("env:")) {
           targetRepos.add(trimmedProjectFullName);
+        }
+
+        // Add discovered repos from sandbox
+        for (const repo of selectedTaskRun.discoveredRepos ?? []) {
+          const trimmed = repo?.trim();
+          if (trimmed && !trimmed.startsWith("env:")) {
+            targetRepos.add(trimmed);
+          }
         }
 
         if (targetRepos.size === 0) {
@@ -513,12 +526,34 @@ function RunDiffPage() {
     return Array.from(new Set(trimmed));
   }, [selectedRun]);
 
+  // Combine all repo sources: projectFullName, environment repos, and discovered repos
   const repoFullNames = useMemo(() => {
-    if (task?.projectFullName) {
-      return [task.projectFullName];
+    const names = new Set<string>();
+
+    // 1. Add projectFullName if it's a real repo (not env:xxx)
+    const projectName = task?.projectFullName?.trim();
+    if (projectName && !projectName.startsWith("env:")) {
+      names.add(projectName);
     }
-    return environmentRepos;
-  }, [task?.projectFullName, environmentRepos]);
+
+    // 2. Add environment's selectedRepos (skip env: references)
+    for (const repo of environmentRepos) {
+      const trimmed = repo?.trim();
+      if (trimmed && !trimmed.startsWith("env:")) {
+        names.add(trimmed);
+      }
+    }
+
+    // 3. Add discovered repos from sandbox (for custom environments)
+    for (const repo of selectedRun?.discoveredRepos ?? []) {
+      const trimmed = repo?.trim();
+      if (trimmed && !trimmed.startsWith("env:")) {
+        names.add(trimmed);
+      }
+    }
+
+    return Array.from(names);
+  }, [task?.projectFullName, environmentRepos, selectedRun?.discoveredRepos]);
 
   const [primaryRepo, ...additionalRepos] = repoFullNames;
   const shouldPrefixDiffs = repoFullNames.length > 1;
@@ -1043,6 +1078,75 @@ function RunDiffPage() {
     );
   }, [socket, teamSlugOrId, primaryRepo, selectedRun?.newBranch, selectedRun?._id, linkedLocalWorkspace, linkedLocalWorkspaceQuery.isLoading, baseBranch]);
 
+  // Discover repos hook - for custom environments where agent clones repos
+  const discoverReposMutation = useDiscoverRepos();
+
+  // Handler to trigger repo discovery in the sandbox
+  const handleDiscoverRepos = useCallback(() => {
+    const sandboxId = selectedRun?.vscode?.containerName;
+    if (!sandboxId || !selectedRun?._id) {
+      toast.error("Sandbox not available");
+      return;
+    }
+
+    discoverReposMutation.mutate({
+      sandboxId,
+      taskRunId: selectedRun._id,
+      teamSlugOrId,
+    });
+  }, [selectedRun?.vscode?.containerName, selectedRun?._id, teamSlugOrId, discoverReposMutation]);
+
+  // Check if we can discover repos (sandbox is running)
+  const canDiscoverRepos = selectedRun?.vscode?.status === "running" && selectedRun?.vscode?.containerName;
+
+  // Track if we've already attempted discovery for this run
+  const [hasAttemptedDiscovery, setHasAttemptedDiscovery] = useState(false);
+
+  // Reset discovery attempt tracking when run changes
+  useEffect(() => {
+    setHasAttemptedDiscovery(false);
+  }, [selectedRun?._id]);
+
+  // Auto-discover repos when diff view opens and no repos are found
+  useEffect(() => {
+    // Skip if:
+    // - Already have repos (from projectFullName, environment, or previous discovery)
+    // - Can't discover (sandbox not running)
+    // - Already attempted discovery
+    // - Already have discovered repos
+    // - Discovery is in progress
+    if (
+      repoFullNames.length > 0 ||
+      !canDiscoverRepos ||
+      hasAttemptedDiscovery ||
+      (selectedRun?.discoveredRepos?.length ?? 0) > 0 ||
+      discoverReposMutation.isPending
+    ) {
+      return;
+    }
+
+    const sandboxId = selectedRun?.vscode?.containerName;
+    if (!sandboxId || !selectedRun?._id) {
+      return;
+    }
+
+    setHasAttemptedDiscovery(true);
+    discoverReposMutation.mutate({
+      sandboxId,
+      taskRunId: selectedRun._id,
+      teamSlugOrId,
+    });
+  }, [
+    repoFullNames.length,
+    canDiscoverRepos,
+    hasAttemptedDiscovery,
+    selectedRun?.discoveredRepos?.length,
+    selectedRun?.vscode?.containerName,
+    selectedRun?._id,
+    teamSlugOrId,
+    discoverReposMutation,
+  ]);
+
   // 404 if selected run is missing
   if (!selectedRun) {
     return (
@@ -1150,8 +1254,28 @@ function RunDiffPage() {
                     />
                   )
                 ) : (
-                  <div className="flex h-full items-center justify-center p-6 text-sm text-neutral-600 dark:text-neutral-300">
-                    Missing repo or branches to show diff.
+                  <div className="flex h-full flex-col items-center justify-center p-6 text-sm text-neutral-600 dark:text-neutral-300 gap-4">
+                    {discoverReposMutation.isPending ? (
+                      // Auto-scanning in progress
+                      <span>Scanning for repositories...</span>
+                    ) : hasAttemptedDiscovery ? (
+                      // Scan completed but no repos found
+                      <>
+                        <span>No repositories found in workspace.</span>
+                        {canDiscoverRepos && (
+                          <button
+                            type="button"
+                            onClick={handleDiscoverRepos}
+                            className="px-4 py-2 text-sm font-medium rounded-md bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 transition-colors"
+                          >
+                            Retry Scan
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      // No repos and can't scan (sandbox not running)
+                      <span>Missing repo or branches to show diff.</span>
+                    )}
                   </div>
                 )}
               </Suspense>

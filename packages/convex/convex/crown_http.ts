@@ -1000,6 +1000,23 @@ export const crownWorkerComplete = httpAction(async (ctx, req) => {
       })
     : null;
 
+  // Trigger repo discovery for custom environment tasks
+  // This enables git diff UI to work immediately without client-side discovery
+  if (
+    updatedRun?.vscode?.containerName &&
+    !updatedRun.discoveredRepos?.length &&
+    updatedRun.environmentId
+  ) {
+    console.log(
+      "[convex.crown] Scheduling repo discovery for custom env task:",
+      taskRunId
+    );
+    await ctx.scheduler.runAfter(0, internal.discoverReposAction.discoverRepos, {
+      runId: taskRunId,
+      sandboxId: updatedRun.vscode.containerName,
+    });
+  }
+
   const containerSettings = await ctx.runQuery(
     internal.containerSettings.getContainerSettingsInternal,
     {

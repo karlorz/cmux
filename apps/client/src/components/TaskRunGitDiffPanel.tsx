@@ -56,8 +56,15 @@ export function TaskRunGitDiffPanel({ task, selectedRun, teamSlugOrId, taskId, s
         names.add(trimmed);
       }
     }
+    // Add discovered repos from sandbox (for custom environments)
+    for (const repo of selectedRun?.discoveredRepos ?? []) {
+      const trimmed = repo?.trim();
+      if (trimmed && !trimmed.startsWith("env:")) {
+        names.add(trimmed);
+      }
+    }
     return Array.from(names);
-  }, [task?.projectFullName, environmentRepos]);
+  }, [task?.projectFullName, environmentRepos, selectedRun?.discoveredRepos]);
 
   const diffQueries = useQueries({
     queries: repoFullNames.map((repoFullName) => ({
