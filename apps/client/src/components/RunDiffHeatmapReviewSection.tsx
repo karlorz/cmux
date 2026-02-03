@@ -13,7 +13,7 @@ import { kitties } from "./kitties";
 
 export interface RunDiffHeatmapReviewSectionProps {
   repoFullName: string;
-  ref1: string;
+  ref1?: string;
   ref2: string;
   onControlsChange?: (controls: DiffViewerControls) => void;
   additionalRepoFullNames?: string[];
@@ -92,7 +92,7 @@ export function RunDiffHeatmapReviewSection(
     return Array.from(unique);
   }, [repoFullName, additionalRepoFullNames]);
 
-  const canFetch = repoFullNames.length > 0 && Boolean(ref1) && Boolean(ref2);
+  const canFetch = repoFullNames.length > 0 && Boolean(ref2);
 
   const queries = useQueries({
     queries: repoFullNames.map((repo) => ({

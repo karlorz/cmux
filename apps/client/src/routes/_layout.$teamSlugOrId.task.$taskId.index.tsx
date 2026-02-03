@@ -858,7 +858,7 @@ function TaskDetailPage() {
 
   // Get primary repo from task for local workspace creation
   const primaryRepo = task?.projectFullName;
-  const baseBranch = task?.baseBranch ?? "main";
+  const baseBranch = task?.baseBranch;
 
   // Handle opening a local workspace for the current task run
   const handleOpenLocalWorkspace = useCallback(() => {
