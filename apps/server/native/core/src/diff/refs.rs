@@ -70,6 +70,7 @@ fn collect_tree_blobs(
 }
 
 fn resolve_default_base(repo: &Repository, head_oid: ObjectId) -> ObjectId {
+    // 1. Check refs/remotes/origin/HEAD first (symref to default branch)
     if let Ok(r) = repo.find_reference("refs/remotes/origin/HEAD") {
         if let Some(name) = r.target().try_name() {
             let s = name.as_bstr().to_str_lossy().into_owned();
@@ -80,11 +81,19 @@ fn resolve_default_base(repo: &Repository, head_oid: ObjectId) -> ObjectId {
             }
         }
     }
+    // 2. Try origin/main (most common default branch name)
     if let Ok(r) = repo.find_reference("refs/remotes/origin/main") {
         if let Some(id) = r.target().try_id() {
             return id.to_owned();
         }
     }
+    // 3. Try origin/master (legacy default branch name, still used by many repos)
+    if let Ok(r) = repo.find_reference("refs/remotes/origin/master") {
+        if let Some(id) = r.target().try_id() {
+            return id.to_owned();
+        }
+    }
+    // 4. Last resort: HEAD commit (often wrong for branch comparisons)
     if let Ok(commit) = repo.head_commit() {
         return commit.id;
     }
