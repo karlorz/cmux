@@ -1,69 +1,104 @@
-# devbox-e2b
+# E2B Template for cmux
 
-E2B-based sandbox environment for cmux. This provides an alternative to Morph Cloud using E2B's sandbox infrastructure.
+E2B sandbox template with VSCode, VNC desktop, and Chrome browser.
 
-## Overview
+## Features
 
-This directory contains scripts and configuration for creating and managing E2B sandbox templates that can run cmux workspaces.
+- **Ubuntu 22.04** base image
+- **TigerVNC** + noVNC for web-based desktop access
+- **Chrome** browser (opens by default in VNC)
+- **OpenVSCode Server** for browser-based IDE
+- **Chrome CDP** for headless browser automation
+- **Node.js 20**, Bun, Git, GitHub CLI
 
-## Prerequisites
+## Ports
 
-- E2B account and API key
-- Node.js 20+
-- Docker (for building custom templates)
+| Service | Port | Description |
+|---------|------|-------------|
+| Worker API | 39377 | Auth-protected worker daemon |
+| VSCode | 39378 | OpenVSCode Server (token auth) |
+| VNC (noVNC) | 39380 | Web-based VNC desktop |
+| VNC (native) | 5901 | TigerVNC server |
+| Chrome CDP | 9222 | Headless Chrome DevTools Protocol |
 
-## Environment Setup
-
-Set your E2B API key:
+## Build Template
 
 ```bash
+# Set E2B API key
 export E2B_API_KEY="your-api-key"
+
+# Build the template
+cd apps/devbox-e2b
+e2b template build
+
+# Or with custom name
+e2b template build --name cmux-devbox
 ```
 
-## Creating a Custom Template
+Template ID after build: `pou9b3m5z92g2hafjxrl`
 
-E2B templates are built from Dockerfiles. To create a custom cmux template:
+## Use with CLI
 
-1. Build the template:
-   ```bash
-   cd apps/devbox-e2b
-   e2b template build --name cmux-devbox
-   ```
+```bash
+# Install CLI
+cd apps/cmux-devbox-2
+make build-dev && make install-dev
 
-2. The template will be available in your E2B dashboard and can be used by setting the `templateId` when creating sandboxes.
+# Create sandbox
+/usr/local/bin/cmux start --name test -t <team>
 
-## Template Features
+# Open VNC (Chrome opens automatically)
+/usr/local/bin/cmux open <id> --vnc -t <team>
 
-The cmux E2B template includes:
-- Ubuntu 22.04 base
-- Node.js 20
-- Bun runtime
-- Git and GitHub CLI
-- OpenVSCode Server on port 39378
-- Worker daemon on port 39377
-- Chrome with CDP support (headless)
-- Docker support
+# Open VSCode
+/usr/local/bin/cmux open <id> -t <team>
+```
 
-## Port Mapping
+## What's Inside
 
-| Service | Port |
-|---------|------|
-| VSCode | 39378 |
-| Worker | 39377 |
-| Chrome CDP | 9222 |
-| User App | 10000 |
+### VNC Desktop
+- **TigerVNC** server on display :1
+- **XFCE4** desktop environment
+- **Chrome** opens maximized on startup
+- **noVNC** web proxy on port 39380
 
-## Scripts
+### VSCode
+- OpenVSCode Server with token authentication
+- Workspace at `/home/user/workspace`
 
-- `scripts/setup_template.sh` - Setup script run inside the template
-- `e2b.Dockerfile` - Dockerfile for building the custom template
-- `e2b.toml` - E2B template configuration
+### Chrome
+- **Visible instance**: Opens in VNC desktop for manual browsing
+- **Headless instance**: CDP on port 9222 for automation
 
-## Differences from Morph
+## Files
 
-| Feature | Morph | E2B |
-|---------|-------|-----|
-| Snapshots | Full VM snapshot | Docker-based templates |
-| Pause/Resume | Native | Not supported (extended timeout instead) |
-| SSH Access | Native | Via E2B CLI |
-| Networking | HTTP services | Port-based host URLs |
+```
+apps/devbox-e2b/
+├── e2b.Dockerfile      # Template Dockerfile
+├── e2b.toml            # E2B config (template ID, resources)
+├── scripts/
+│   ├── start-services.sh   # Main entrypoint
+│   ├── xstartup             # VNC desktop startup (launches Chrome)
+│   └── worker-daemon.js     # Worker API server
+└── README.md
+```
+
+## Authentication
+
+Each sandbox generates a unique auth token on startup:
+- **VSCode**: `?tkn=<token>` query parameter
+- **VNC**: First 8 chars of token as password
+- **Worker API**: `Authorization: Bearer <token>` header
+
+Token is stored at `/home/user/.worker-auth-token` inside the sandbox.
+
+## Rebuild After Changes
+
+If you modify the Dockerfile or scripts:
+
+```bash
+cd apps/devbox-e2b
+e2b template build
+```
+
+New sandboxes will use the updated template.
