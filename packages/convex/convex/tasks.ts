@@ -106,75 +106,35 @@ export const get = authQuery({
     const userId = ctx.identity.subject;
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
 
-    // Use the by_team_user_archived index for efficient archived filtering
-    // This avoids scanning all tasks and filtering post-index
-    let tasks: Doc<"tasks">[];
+    // Use the by_team_user index and filter for archived status
+    // This handles tasks where isArchived may be undefined (not yet migrated)
+    let q = ctx.db
+      .query("tasks")
+      .withIndex("by_team_user", (idx) =>
+        idx.eq("teamId", teamId).eq("userId", userId),
+      );
 
     if (args.archived === true) {
-      // Query archived tasks directly using the index
-      tasks = await ctx.db
-        .query("tasks")
-        .withIndex("by_team_user_archived", (idx) =>
-          idx.eq("teamId", teamId).eq("userId", userId).eq("isArchived", true),
-        )
-        .filter((qq) => qq.neq(qq.field("isPreview"), true))
-        .filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined))
-        .filter((qq) =>
-          args.excludeLocalWorkspaces
-            ? qq.neq(qq.field("isLocalWorkspace"), true)
-            : true,
-        )
-        .filter((qq) =>
-          args.projectFullName
-            ? qq.eq(qq.field("projectFullName"), args.projectFullName)
-            : true,
-        )
-        .collect();
+      q = q.filter((qq) => qq.eq(qq.field("isArchived"), true));
     } else {
-      // Query non-archived tasks using the index (isArchived: false)
-      const nonArchivedTasks = await ctx.db
-        .query("tasks")
-        .withIndex("by_team_user_archived", (idx) =>
-          idx.eq("teamId", teamId).eq("userId", userId).eq("isArchived", false),
-        )
-        .filter((qq) => qq.neq(qq.field("isPreview"), true))
-        .filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined))
-        .filter((qq) =>
-          args.excludeLocalWorkspaces
-            ? qq.neq(qq.field("isLocalWorkspace"), true)
-            : true,
-        )
-        .filter((qq) =>
-          args.projectFullName
-            ? qq.eq(qq.field("projectFullName"), args.projectFullName)
-            : true,
-        )
-        .collect();
-
-      // Also query tasks with isArchived: undefined (pre-migration data)
-      // This can be removed after migration completes
-      const undefinedArchivedTasks = await ctx.db
-        .query("tasks")
-        .withIndex("by_team_user", (idx) =>
-          idx.eq("teamId", teamId).eq("userId", userId),
-        )
-        .filter((qq) => qq.eq(qq.field("isArchived"), undefined))
-        .filter((qq) => qq.neq(qq.field("isPreview"), true))
-        .filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined))
-        .filter((qq) =>
-          args.excludeLocalWorkspaces
-            ? qq.neq(qq.field("isLocalWorkspace"), true)
-            : true,
-        )
-        .filter((qq) =>
-          args.projectFullName
-            ? qq.eq(qq.field("projectFullName"), args.projectFullName)
-            : true,
-        )
-        .collect();
-
-      tasks = [...nonArchivedTasks, ...undefinedArchivedTasks];
+      // Include tasks where isArchived is false OR undefined (not yet set)
+      q = q.filter((qq) => qq.neq(qq.field("isArchived"), true));
     }
+
+    const tasks = await q
+      .filter((qq) => qq.neq(qq.field("isPreview"), true))
+      .filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined))
+      .filter((qq) =>
+        args.excludeLocalWorkspaces
+          ? qq.neq(qq.field("isLocalWorkspace"), true)
+          : true,
+      )
+      .filter((qq) =>
+        args.projectFullName
+          ? qq.eq(qq.field("projectFullName"), args.projectFullName)
+          : true,
+      )
+      .collect();
 
     // Get unread task runs for this user in this team
     // Uses taskId directly (denormalized) for O(1) lookup instead of O(N) fetches
@@ -271,74 +231,35 @@ export const getWithNotificationOrder = authQuery({
     const userId = ctx.identity.subject;
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
 
-    // Use the by_team_user_archived index for efficient archived filtering
-    let tasks: Doc<"tasks">[];
+    // Use the by_team_user index and filter for archived status
+    // This handles tasks where isArchived may be undefined (not yet migrated)
+    let q = ctx.db
+      .query("tasks")
+      .withIndex("by_team_user", (idx) =>
+        idx.eq("teamId", teamId).eq("userId", userId),
+      );
 
     if (args.archived === true) {
-      // Query archived tasks directly using the index
-      tasks = await ctx.db
-        .query("tasks")
-        .withIndex("by_team_user_archived", (idx) =>
-          idx.eq("teamId", teamId).eq("userId", userId).eq("isArchived", true),
-        )
-        .filter((qq) => qq.neq(qq.field("isPreview"), true))
-        .filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined))
-        .filter((qq) =>
-          args.excludeLocalWorkspaces
-            ? qq.neq(qq.field("isLocalWorkspace"), true)
-            : true,
-        )
-        .filter((qq) =>
-          args.projectFullName
-            ? qq.eq(qq.field("projectFullName"), args.projectFullName)
-            : true,
-        )
-        .collect();
+      q = q.filter((qq) => qq.eq(qq.field("isArchived"), true));
     } else {
-      // Query non-archived tasks using the index (isArchived: false)
-      const nonArchivedTasks = await ctx.db
-        .query("tasks")
-        .withIndex("by_team_user_archived", (idx) =>
-          idx.eq("teamId", teamId).eq("userId", userId).eq("isArchived", false),
-        )
-        .filter((qq) => qq.neq(qq.field("isPreview"), true))
-        .filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined))
-        .filter((qq) =>
-          args.excludeLocalWorkspaces
-            ? qq.neq(qq.field("isLocalWorkspace"), true)
-            : true,
-        )
-        .filter((qq) =>
-          args.projectFullName
-            ? qq.eq(qq.field("projectFullName"), args.projectFullName)
-            : true,
-        )
-        .collect();
-
-      // Also query tasks with isArchived: undefined (pre-migration data)
-      // This can be removed after migration completes
-      const undefinedArchivedTasks = await ctx.db
-        .query("tasks")
-        .withIndex("by_team_user", (idx) =>
-          idx.eq("teamId", teamId).eq("userId", userId),
-        )
-        .filter((qq) => qq.eq(qq.field("isArchived"), undefined))
-        .filter((qq) => qq.neq(qq.field("isPreview"), true))
-        .filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined))
-        .filter((qq) =>
-          args.excludeLocalWorkspaces
-            ? qq.neq(qq.field("isLocalWorkspace"), true)
-            : true,
-        )
-        .filter((qq) =>
-          args.projectFullName
-            ? qq.eq(qq.field("projectFullName"), args.projectFullName)
-            : true,
-        )
-        .collect();
-
-      tasks = [...nonArchivedTasks, ...undefinedArchivedTasks];
+      // Include tasks where isArchived is false OR undefined (not yet set)
+      q = q.filter((qq) => qq.neq(qq.field("isArchived"), true));
     }
+
+    const tasks = await q
+      .filter((qq) => qq.neq(qq.field("isPreview"), true))
+      .filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined))
+      .filter((qq) =>
+        args.excludeLocalWorkspaces
+          ? qq.neq(qq.field("isLocalWorkspace"), true)
+          : true,
+      )
+      .filter((qq) =>
+        args.projectFullName
+          ? qq.eq(qq.field("projectFullName"), args.projectFullName)
+          : true,
+      )
+      .collect();
 
     // Get unread task runs for this user in this team
     // Uses taskId directly (denormalized) for O(1) lookup instead of O(N) fetches
@@ -593,56 +514,29 @@ export const getTasksWithTaskRuns = authQuery({
     const userId = ctx.identity.subject;
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
 
-    // Use the by_team_user_archived index for efficient archived filtering
-    let tasks: Doc<"tasks">[];
+    // Use the by_team_user index and filter for archived status
+    // This handles tasks where isArchived may be undefined (not yet migrated)
+    let q = ctx.db
+      .query("tasks")
+      .withIndex("by_team_user", (idx) =>
+        idx.eq("teamId", teamId).eq("userId", userId),
+      );
 
     if (args.archived === true) {
-      // Query archived tasks directly using the index
-      tasks = await ctx.db
-        .query("tasks")
-        .withIndex("by_team_user_archived", (idx) =>
-          idx.eq("teamId", teamId).eq("userId", userId).eq("isArchived", true),
-        )
-        .filter((qq) => qq.neq(qq.field("isPreview"), true))
-        .filter((qq) =>
-          args.projectFullName
-            ? qq.eq(qq.field("projectFullName"), args.projectFullName)
-            : true,
-        )
-        .collect();
+      q = q.filter((qq) => qq.eq(qq.field("isArchived"), true));
     } else {
-      // Query non-archived tasks using the index (isArchived: false)
-      const nonArchivedTasks = await ctx.db
-        .query("tasks")
-        .withIndex("by_team_user_archived", (idx) =>
-          idx.eq("teamId", teamId).eq("userId", userId).eq("isArchived", false),
-        )
-        .filter((qq) => qq.neq(qq.field("isPreview"), true))
-        .filter((qq) =>
-          args.projectFullName
-            ? qq.eq(qq.field("projectFullName"), args.projectFullName)
-            : true,
-        )
-        .collect();
-
-      // Also query tasks with isArchived: undefined (pre-migration data)
-      // This can be removed after migration completes
-      const undefinedArchivedTasks = await ctx.db
-        .query("tasks")
-        .withIndex("by_team_user", (idx) =>
-          idx.eq("teamId", teamId).eq("userId", userId),
-        )
-        .filter((qq) => qq.eq(qq.field("isArchived"), undefined))
-        .filter((qq) => qq.neq(qq.field("isPreview"), true))
-        .filter((qq) =>
-          args.projectFullName
-            ? qq.eq(qq.field("projectFullName"), args.projectFullName)
-            : true,
-        )
-        .collect();
-
-      tasks = [...nonArchivedTasks, ...undefinedArchivedTasks];
+      // Include tasks where isArchived is false OR undefined (not yet set)
+      q = q.filter((qq) => qq.neq(qq.field("isArchived"), true));
     }
+
+    const tasks = await q
+      .filter((qq) => qq.neq(qq.field("isPreview"), true))
+      .filter((qq) =>
+        args.projectFullName
+          ? qq.eq(qq.field("projectFullName"), args.projectFullName)
+          : true,
+      )
+      .collect();
 
     // Collect unique selectedTaskRunIds (filter out undefined)
     const runIds = tasks

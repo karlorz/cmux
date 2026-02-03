@@ -46,7 +46,6 @@ import type * as http from "../http.js";
 import type * as localWorkspaces from "../localWorkspaces.js";
 import type * as media_proxy_http from "../media_proxy_http.js";
 import type * as migrations from "../migrations.js";
-import type * as migrations_normalizeIsArchived from "../migrations/normalizeIsArchived.js";
 import type * as morphInstanceMaintenance from "../morphInstanceMaintenance.js";
 import type * as morphInstances from "../morphInstances.js";
 import type * as notifications_http from "../notifications_http.js";
@@ -126,7 +125,6 @@ declare const fullApi: ApiFromModules<{
   localWorkspaces: typeof localWorkspaces;
   media_proxy_http: typeof media_proxy_http;
   migrations: typeof migrations;
-  "migrations/normalizeIsArchived": typeof migrations_normalizeIsArchived;
   morphInstanceMaintenance: typeof morphInstanceMaintenance;
   morphInstances: typeof morphInstances;
   notifications_http: typeof notifications_http;
