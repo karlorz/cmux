@@ -76,6 +76,7 @@ type Instance struct {
 	CreatedAt int64  `json:"createdAt,omitempty"`
 	VSCodeURL string `json:"vscodeUrl,omitempty"`
 	VNCURL    string `json:"vncUrl,omitempty"`
+	WorkerURL string `json:"workerUrl,omitempty"`
 }
 
 type CreateInstanceRequest struct {
@@ -237,4 +238,25 @@ func (c *Client) ListTemplates(teamSlug string) ([]Template, error) {
 		return nil, err
 	}
 	return resp.Templates, nil
+}
+
+type AuthTokenResponse struct {
+	Token string `json:"token"`
+}
+
+// GetAuthToken fetches the auth token from the sandbox
+func (c *Client) GetAuthToken(teamSlug, id string) (string, error) {
+	path := fmt.Sprintf("/api/v2/cmux/instances/%s/token", id)
+	body := map[string]string{"teamSlugOrId": teamSlug}
+
+	respBody, err := c.doRequest("POST", path, body)
+	if err != nil {
+		return "", err
+	}
+
+	var resp AuthTokenResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		return "", err
+	}
+	return resp.Token, nil
 }

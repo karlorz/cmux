@@ -25,19 +25,19 @@ LDFLAGS := -s -w \
 .PHONY: build build-dev clean test install
 
 build:
-	go build -ldflags "$(LDFLAGS)" -o bin/cmux ./cmd/cmux
+	go build -ldflags "$(LDFLAGS)" -o bin/cmux2 ./cmd/cmux
 
 build-dev:
 	@echo "Building for development (Mode=dev)..."
 	go build -ldflags "-X main.Version=$(VERSION) -X main.Commit=$(COMMIT) -X main.BuildTime=$(BUILD_TIME) -X main.Mode=dev" \
-		-o bin/cmux ./cmd/cmux
-	@echo "Dev build complete: bin/cmux"
+		-o bin/cmux2 ./cmd/cmux
+	@echo "Dev build complete: bin/cmux2"
 
 install: build
-	cp bin/cmux /usr/local/bin/cmux
+	cp bin/cmux2 /usr/local/bin/cmux2
 
 install-dev: build-dev
-	cp bin/cmux /usr/local/bin/cmux
+	cp bin/cmux2 /usr/local/bin/cmux2
 
 clean:
 	rm -rf bin/
@@ -51,8 +51,8 @@ deps:
 
 # Build for all platforms
 build-all:
-	GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/cmux-darwin-amd64 ./cmd/cmux
-	GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o bin/cmux-darwin-arm64 ./cmd/cmux
-	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/cmux-linux-amd64 ./cmd/cmux
-	GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o bin/cmux-linux-arm64 ./cmd/cmux
-	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/cmux-windows-amd64.exe ./cmd/cmux
+	GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/cmux2-darwin-amd64 ./cmd/cmux
+	GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o bin/cmux2-darwin-arm64 ./cmd/cmux
+	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/cmux2-linux-amd64 ./cmd/cmux
+	GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o bin/cmux2-linux-arm64 ./cmd/cmux
+	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/cmux2-windows-amd64.exe ./cmd/cmux

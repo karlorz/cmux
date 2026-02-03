@@ -21,30 +21,32 @@ This installs `cmux` to `/usr/local/bin/cmux`.
 
 ```bash
 # 1. Login (opens browser, one-time setup)
-/usr/local/bin/cmux login
+/usr/local/bin/cmux2 login
 
-# 2. Create a sandbox
-/usr/local/bin/cmux start --name my-sandbox -t <your-team>
+# 2. Create a sandbox (team auto-detected from auth)
+/usr/local/bin/cmux2 start --name my-sandbox
 
 # 3. List your sandboxes
-/usr/local/bin/cmux ls -t <your-team>
+/usr/local/bin/cmux2 ls
 
 # 4. Run commands in a sandbox
-/usr/local/bin/cmux exec <id> "echo hello" -t <your-team>
-/usr/local/bin/cmux exec <id> "ls -la /home" -t <your-team>
+/usr/local/bin/cmux2 exec <id> "echo hello"
+/usr/local/bin/cmux2 exec <id> "ls -la /home"
 
 # 5. Open VSCode in browser
-/usr/local/bin/cmux open <id> -t <your-team>
+/usr/local/bin/cmux2 open <id>
 
 # 6. Open VNC desktop
-/usr/local/bin/cmux open <id> --vnc -t <your-team>
+/usr/local/bin/cmux2 open <id> --vnc
 
 # 7. Extend timeout (keeps sandbox alive longer)
-/usr/local/bin/cmux extend <id> --seconds 7200 -t <your-team>
+/usr/local/bin/cmux2 extend <id> --seconds 7200
 
 # 8. Stop sandbox when done
-/usr/local/bin/cmux stop <id> -t <your-team>
+/usr/local/bin/cmux2 stop <id>
 ```
+
+Note: Team is auto-detected from your login. Use `-t <team>` to override.
 
 ## Example Session
 
@@ -52,27 +54,27 @@ This installs `cmux` to `/usr/local/bin/cmux`.
 # Setup (one time)
 cd apps/cmux-devbox-2
 make build-dev && make install-dev
-/usr/local/bin/cmux login
+/usr/local/bin/cmux2 login
 
 # Create and use a sandbox
-/usr/local/bin/cmux start --name test -t austin-dev
+/usr/local/bin/cmux2 start --name test
 # Output: Created sandbox: cmux_abc12345
 #         VSCode: https://39378-xxx.e2b.app
 #         VNC:    https://39380-xxx.e2b.app
 
 # Run commands
-/usr/local/bin/cmux exec cmux_abc12345 "uname -a" -t austin-dev
+/usr/local/bin/cmux2 exec cmux_abc12345 "uname -a"
 # Output: Linux e2b.local 6.1.158 ...
 
-/usr/local/bin/cmux exec cmux_abc12345 "pwd" -t austin-dev
+/usr/local/bin/cmux2 exec cmux_abc12345 "pwd"
 # Output: /home/user
 
 # Open VSCode
-/usr/local/bin/cmux open cmux_abc12345 -t austin-dev
+/usr/local/bin/cmux2 open cmux_abc12345
 # Opens browser to VSCode
 
 # Cleanup
-/usr/local/bin/cmux stop cmux_abc12345 -t austin-dev
+/usr/local/bin/cmux2 stop cmux_abc12345
 ```
 
 ## All Commands
@@ -97,7 +99,7 @@ make build-dev && make install-dev
 
 | Flag | Description |
 |------|-------------|
-| `-t, --team` | Team slug (required for most commands) |
+| `-t, --team` | Team slug (optional, auto-detected from login) |
 | `-n, --name` | Name for new sandbox (with `start`) |
 | `-o, --open` | Open VSCode after creation (with `start`) |
 | `--seconds` | Timeout in seconds (with `extend`, default: 3600) |

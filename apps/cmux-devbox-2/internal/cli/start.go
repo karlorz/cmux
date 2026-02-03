@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/cmux-cli/cmux-devbox-2/internal/api"
 	"github.com/spf13/cobra"
@@ -30,26 +31,69 @@ var startCmd = &cobra.Command{
 			return err
 		}
 
+		// Try to fetch auth token (may need a few retries as sandbox boots)
+		var token string
+		fmt.Print("Waiting for sandbox to initialize")
+		for i := 0; i < 10; i++ {
+			time.Sleep(2 * time.Second)
+			fmt.Print(".")
+			token, err = client.GetAuthToken(teamSlug, resp.DevboxID)
+			if err == nil && token != "" {
+				break
+			}
+		}
+		fmt.Println()
+
+		// Build authenticated URLs
+		var vscodeAuthURL, vncAuthURL string
+		if token != "" {
+			if resp.VSCodeURL != "" {
+				vscodeAuthURL, _ = buildAuthURL(resp.VSCodeURL, token, false)
+			}
+			if resp.VNCURL != "" {
+				vncAuthURL, _ = buildAuthURL(resp.VNCURL, token, true)
+			}
+		}
+
 		if flagJSON {
-			data, _ := json.MarshalIndent(resp, "", "  ")
+			output := map[string]interface{}{
+				"devboxId":      resp.DevboxID,
+				"e2bInstanceId": resp.E2BInstanceID,
+				"status":        resp.Status,
+			}
+			if vscodeAuthURL != "" {
+				output["vscodeUrl"] = vscodeAuthURL
+			} else if resp.VSCodeURL != "" {
+				output["vscodeUrl"] = resp.VSCodeURL
+			}
+			if vncAuthURL != "" {
+				output["vncUrl"] = vncAuthURL
+			} else if resp.VNCURL != "" {
+				output["vncUrl"] = resp.VNCURL
+			}
+			data, _ := json.MarshalIndent(output, "", "  ")
 			fmt.Println(string(data))
 		} else {
 			fmt.Printf("Created sandbox: %s\n", resp.DevboxID)
 			fmt.Printf("  Status: %s\n", resp.Status)
-			if resp.VSCodeURL != "" {
+			if vscodeAuthURL != "" {
+				fmt.Printf("  VSCode: %s\n", vscodeAuthURL)
+			} else if resp.VSCodeURL != "" {
 				fmt.Printf("  VSCode: %s\n", resp.VSCodeURL)
 			}
-			if resp.VNCURL != "" {
+			if vncAuthURL != "" {
+				fmt.Printf("  VNC:    %s\n", vncAuthURL)
+			} else if resp.VNCURL != "" {
 				fmt.Printf("  VNC:    %s\n", resp.VNCURL)
 			}
-			if resp.E2BInstanceID != "" {
+			if resp.E2BInstanceID != "" && flagVerbose {
 				fmt.Printf("  E2B ID: %s\n", resp.E2BInstanceID)
 			}
 		}
 
-		if startFlagOpen && resp.VSCodeURL != "" {
+		if startFlagOpen && vscodeAuthURL != "" {
 			fmt.Println("\nOpening VSCode...")
-			openURL(resp.VSCodeURL)
+			openURL(vscodeAuthURL)
 		}
 
 		return nil

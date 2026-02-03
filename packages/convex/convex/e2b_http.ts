@@ -360,6 +360,48 @@ async function handleExtendTimeout(
   }
 }
 
+async function handleGetAuthToken(
+  ctx: ActionCtx,
+  instanceId: string,
+  teamSlugOrId: string
+): Promise<Response> {
+  try {
+    // Resolve to E2B instance ID
+    const resolved = await resolveToE2BInstanceId(ctx, instanceId);
+    if (!resolved) {
+      return jsonResponse({ code: 404, message: "Instance not found" }, 404);
+    }
+    const { e2bInstanceId } = resolved;
+
+    // Verify the user owns this instance
+    const instance = await ctx.runQuery(devboxApi.getByProviderInstanceId, {
+      teamSlugOrId,
+      providerInstanceId: e2bInstanceId,
+      provider: "e2b",
+    });
+
+    if (!instance) {
+      return jsonResponse({ code: 404, message: "Instance not found" }, 404);
+    }
+
+    // Read the auth token from the sandbox
+    const result = await ctx.runAction(e2bActionsApi.execCommand, {
+      instanceId: e2bInstanceId,
+      command: "cat /home/user/.worker-auth-token 2>/dev/null || echo ''",
+    });
+
+    const token = result.stdout?.trim() || "";
+    if (!token) {
+      return jsonResponse({ code: 503, message: "Auth token not yet available" }, 503);
+    }
+
+    return jsonResponse({ token });
+  } catch (error) {
+    console.error("[e2b.getAuthToken] Error:", error);
+    return jsonResponse({ code: 500, message: "Failed to get auth token" }, 500);
+  }
+}
+
 async function handleStopInstance(
   ctx: ActionCtx,
   instanceId: string,
@@ -460,6 +502,8 @@ export const instanceActionRouter = httpAction(async (ctx, req) => {
     return handleExtendTimeout(ctx, e2bInstanceId, body.teamSlugOrId, body.timeoutMs);
   } else if (path.endsWith("/stop")) {
     return handleStopInstance(ctx, e2bInstanceId, body.teamSlugOrId);
+  } else if (path.endsWith("/token")) {
+    return handleGetAuthToken(ctx, e2bInstanceId, body.teamSlugOrId);
   }
 
   return jsonResponse({ code: 404, message: "Not found" }, 404);

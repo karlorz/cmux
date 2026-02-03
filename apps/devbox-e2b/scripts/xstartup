@@ -9,10 +9,14 @@ unset DBUS_SESSION_BUS_ADDRESS
 startxfce4 &
 
 # Wait for desktop to initialize
-sleep 3
+sleep 5
 
-# Launch Chrome browser (visible in VNC, separate from headless CDP instance)
-google-chrome \
+# Ensure user owns their home directory (fix permissions if needed)
+chown -R user:user /home/user 2>/dev/null || true
+
+# Launch Chrome browser as user (visible in VNC, separate profile from headless CDP)
+# Use --user-data-dir to avoid conflict with headless Chrome instance
+sudo -u user google-chrome \
     --no-sandbox \
     --disable-gpu \
     --no-first-run \
@@ -20,6 +24,7 @@ google-chrome \
     --disable-default-apps \
     --start-maximized \
     --new-window \
+    --user-data-dir=/home/user/.chrome-visible \
     "https://google.com" &
 
 # Keep the script running

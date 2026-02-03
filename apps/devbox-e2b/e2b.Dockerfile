@@ -76,7 +76,7 @@ RUN useradd -m -s /bin/bash -u 1000 user \
     && echo "user:user" | chpasswd
 
 # Setup for user
-RUN mkdir -p /home/user/workspace /home/user/.vnc /home/user/.chrome-data \
+RUN mkdir -p /home/user/workspace /home/user/.vnc /home/user/.chrome-data /home/user/.chrome-visible /home/user/.config /home/user/.local/share/applications \
     && chown -R user:user /home/user
 
 # Set up VNC password (empty)

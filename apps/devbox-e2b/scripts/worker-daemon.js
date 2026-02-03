@@ -21,10 +21,13 @@ const { WebSocketServer } = require("ws");
 
 const PORT = process.env.PORT || 39377;
 const CDP_PORT = process.env.CDP_PORT || 9222;
+const VSCODE_PORT = 39378;
+const VNC_PORT = 39380;
 
 // Auth token file path
 const AUTH_TOKEN_PATH = "/home/user/.worker-auth-token";
 const VSCODE_TOKEN_PATH = "/home/user/.vscode-token";
+const AUTH_COOKIE_NAME = "_cmux_auth";
 // File to track which boot this token was generated for
 const TOKEN_BOOT_ID_PATH = "/home/user/.token-boot-id";
 
@@ -55,6 +58,24 @@ function getSavedBootId() {
 }
 
 /**
+ * Update VNC password to match token (first 8 chars)
+ */
+function updateVncPassword(token) {
+  try {
+    const vncPassword = token.substring(0, 8);
+    const { execSync } = require("child_process");
+    // Use vncpasswd to update the password
+    execSync(`echo "${vncPassword}" | vncpasswd -f > /home/user/.vnc/passwd`, {
+      shell: "/bin/bash",
+    });
+    fs.chmodSync("/home/user/.vnc/passwd", 0o600);
+    console.log(`[worker-daemon] VNC password updated to match token`);
+  } catch (e) {
+    console.error("[worker-daemon] Failed to update VNC password:", e.message);
+  }
+}
+
+/**
  * Generate fresh auth token and save with current boot ID
  */
 function generateFreshAuthToken() {
@@ -68,6 +89,8 @@ function generateFreshAuthToken() {
     if (bootId) {
       fs.writeFileSync(TOKEN_BOOT_ID_PATH, bootId, { mode: 0o644 });
     }
+    // Also update VNC password to stay in sync
+    updateVncPassword(token);
     console.log(`[worker-daemon] Fresh auth token generated: ${token.substring(0, 8)}...`);
   } catch (e) {
     console.error("[worker-daemon] Failed to save auth token:", e.message);
@@ -112,22 +135,74 @@ function ensureValidToken() {
 AUTH_TOKEN = ensureValidToken();
 
 /**
+ * Parse cookies from request
+ */
+function parseCookies(req) {
+  const cookies = {};
+  const cookieHeader = req.headers.cookie;
+  if (cookieHeader) {
+    cookieHeader.split(";").forEach((cookie) => {
+      const [name, ...rest] = cookie.trim().split("=");
+      if (name && rest.length > 0) {
+        cookies[name] = decodeURIComponent(rest.join("="));
+      }
+    });
+  }
+  return cookies;
+}
+
+/**
+ * Set auth cookie
+ */
+function setAuthCookie(res, token) {
+  const parts = [
+    `${AUTH_COOKIE_NAME}=${encodeURIComponent(token)}`,
+    "HttpOnly",
+    "Path=/",
+    "Max-Age=86400", // 24 hours
+  ];
+  res.setHeader("Set-Cookie", parts.join("; "));
+}
+
+/**
+ * Get auth token from request (header, query, or cookie)
+ */
+function getAuthTokenFromRequest(req, url) {
+  // Check Authorization header first
+  const authHeader = req.headers.authorization;
+  if (authHeader) {
+    return authHeader.startsWith("Bearer ")
+      ? authHeader.slice(7)
+      : authHeader;
+  }
+
+  // Check query parameter
+  const queryToken = url.searchParams.get("token");
+  if (queryToken) {
+    return queryToken;
+  }
+
+  // Check cookie
+  const cookies = parseCookies(req);
+  if (cookies[AUTH_COOKIE_NAME]) {
+    return cookies[AUTH_COOKIE_NAME];
+  }
+
+  return null;
+}
+
+/**
  * Verify authentication
  * Also checks for boot ID changes and regenerates token if needed
  */
-function verifyAuth(req) {
+function verifyAuth(req, url) {
   // Always ensure token is valid for current boot
   ensureValidToken();
 
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
+  const token = getAuthTokenFromRequest(req, url);
+  if (!token) {
     return false;
   }
-
-  // Support both "Bearer <token>" and just "<token>"
-  const token = authHeader.startsWith("Bearer ")
-    ? authHeader.slice(7)
-    : authHeader;
 
   return token === AUTH_TOKEN;
 }
@@ -287,8 +362,27 @@ async function handleRequest(req, res) {
     return;
   }
 
+  // /_cmux/auth - Set auth cookie and redirect (like Morph worker)
+  if (reqPath === "/_cmux/auth" && req.method === "GET") {
+    const token = url.searchParams.get("token");
+    const returnPath = url.searchParams.get("return") || "/";
+
+    // Verify the token
+    ensureValidToken();
+    if (!token || token !== AUTH_TOKEN) {
+      sendJson(res, { error: "Invalid token" }, 401);
+      return;
+    }
+
+    // Set auth cookie and redirect
+    setAuthCookie(res, token);
+    res.writeHead(302, { Location: returnPath });
+    res.end();
+    return;
+  }
+
   // All other endpoints require authentication
-  if (!verifyAuth(req)) {
+  if (!verifyAuth(req, url)) {
     sendJson(res, { error: "Unauthorized" }, 401);
     return;
   }

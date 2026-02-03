@@ -366,6 +366,12 @@ http.route({
   handler: e2bListTemplates,
 });
 
+http.route({
+  path: "/api/v2/cmux/me",
+  method: "GET",
+  handler: cmuxGetMe,
+});
+
 // Instance-specific routes use pathPrefix to capture the instance ID
 http.route({
   pathPrefix: "/api/v2/cmux/instances/",

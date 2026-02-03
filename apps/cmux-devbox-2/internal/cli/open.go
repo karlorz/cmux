@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"net/url"
 	"os/exec"
 	"runtime"
 
@@ -10,6 +11,33 @@ import (
 )
 
 var openFlagVNC bool
+
+// buildAuthURL builds a URL with token authentication
+// E2B gives each port its own subdomain, so we use query params for auth
+func buildAuthURL(baseURL, token string, isVNC bool) (string, error) {
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid URL: %w", err)
+	}
+	query := parsed.Query()
+	if isVNC {
+		// noVNC uses 'password' param, first 8 chars of token
+		if len(token) >= 8 {
+			query.Set("password", token[:8])
+		}
+		// Add default noVNC params
+		query.Set("resize", "scale")
+		query.Set("quality", "9")
+		query.Set("compression", "0")
+	} else {
+		// VSCode uses 'tkn' param
+		query.Set("tkn", token)
+		// Set default folder
+		query.Set("folder", "/home/user/workspace")
+	}
+	parsed.RawQuery = query.Encode()
+	return parsed.String(), nil
+}
 
 var openCmd = &cobra.Command{
 	Use:   "open <id>",
@@ -27,21 +55,40 @@ var openCmd = &cobra.Command{
 			return err
 		}
 
-		var url string
-		if openFlagVNC {
-			url = inst.VNCURL
-			if url == "" {
-				return fmt.Errorf("no VNC URL available for this sandbox")
-			}
-		} else {
-			url = inst.VSCodeURL
-			if url == "" {
-				return fmt.Errorf("no VSCode URL available for this sandbox")
-			}
+		// Fetch auth token from the sandbox
+		token, err := client.GetAuthToken(teamSlug, args[0])
+		if err != nil {
+			return fmt.Errorf("failed to get auth token: %w", err)
 		}
 
-		fmt.Printf("Opening: %s\n", url)
-		return openURL(url)
+		var authURL string
+		if openFlagVNC {
+			if inst.VNCURL == "" {
+				return fmt.Errorf("VNC URL not available")
+			}
+			authURL, err = buildAuthURL(inst.VNCURL, token, true)
+			if err != nil {
+				return err
+			}
+			if flagVerbose {
+				fmt.Printf("VNC URL: %s\n", authURL)
+			}
+			fmt.Println("Opening VNC...")
+		} else {
+			if inst.VSCodeURL == "" {
+				return fmt.Errorf("VSCode URL not available")
+			}
+			authURL, err = buildAuthURL(inst.VSCodeURL, token, false)
+			if err != nil {
+				return err
+			}
+			if flagVerbose {
+				fmt.Printf("VSCode URL: %s\n", authURL)
+			}
+			fmt.Println("Opening VSCode...")
+		}
+
+		return openURL(authURL)
 	},
 }
 

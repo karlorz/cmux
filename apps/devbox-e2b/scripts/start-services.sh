@@ -6,6 +6,9 @@ echo "[cmux-e2b] Starting services..."
 
 # Always generate a fresh auth token on startup (security: each instance gets unique token)
 AUTH_TOKEN_FILE="/home/user/.worker-auth-token"
+VSCODE_TOKEN_FILE="/home/user/.vscode-token"
+BOOT_ID_FILE="/home/user/.token-boot-id"
+
 AUTH_TOKEN=$(openssl rand -hex 32)
 echo "$AUTH_TOKEN" > "$AUTH_TOKEN_FILE"
 chmod 644 "$AUTH_TOKEN_FILE"
@@ -14,15 +17,22 @@ chown user:user "$AUTH_TOKEN_FILE"
 echo "[cmux-e2b] Auth token generated: ${AUTH_TOKEN:0:8}..."
 
 # Create VSCode connection token file (same as worker auth)
-VSCODE_TOKEN_FILE="/home/user/.vscode-token"
 echo "$AUTH_TOKEN" > "$VSCODE_TOKEN_FILE"
 chmod 644 "$VSCODE_TOKEN_FILE"
 chown user:user "$VSCODE_TOKEN_FILE"
+
+# Save current boot ID so worker-daemon knows not to regenerate token
+BOOT_ID=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo "unknown")
+echo "$BOOT_ID" > "$BOOT_ID_FILE"
+chmod 644 "$BOOT_ID_FILE"
+chown user:user "$BOOT_ID_FILE"
+echo "[cmux-e2b] Boot ID saved: ${BOOT_ID:0:8}..."
 
 # Set VNC password (use first 8 chars of auth token for VNC which has 8 char limit)
 VNC_PASSWORD="${AUTH_TOKEN:0:8}"
 echo "$VNC_PASSWORD" | vncpasswd -f > /home/user/.vnc/passwd
 chmod 600 /home/user/.vnc/passwd
+chown user:user /home/user/.vnc/passwd
 echo "[cmux-e2b] VNC password set (first 8 chars of auth token)"
 
 # Start D-Bus for desktop environment
