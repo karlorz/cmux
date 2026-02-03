@@ -289,12 +289,14 @@ export function TaskDetailHeader({
     [selectedRun?.worktreePath, task?.worktreePath],
   );
 
+  // When baseBranch is not set, pass undefined to let native code auto-detect
+  // the default branch (via refs/remotes/origin/HEAD → origin/main → origin/master)
   const normalizedBaseBranch = useMemo(() => {
     const candidate = task?.baseBranch;
     if (candidate && candidate.trim()) {
       return normalizeGitRef(candidate);
     }
-    return normalizeGitRef("main");
+    return undefined;
   }, [task?.baseBranch]);
   const normalizedHeadBranch = useMemo(
     () => normalizeGitRef(selectedRun?.newBranch),

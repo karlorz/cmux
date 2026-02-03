@@ -21,12 +21,14 @@ export function TaskRunGitDiffPanel({ task, selectedRun, teamSlugOrId, taskId, s
   // Check for cloud/local workspace (no GitHub repo to diff against)
   const isCloudOrLocalWorkspace = task?.isCloudWorkspace || task?.isLocalWorkspace;
 
+  // When baseBranch is not set, pass undefined to let native code auto-detect
+  // the default branch (via refs/remotes/origin/HEAD → origin/main → origin/master)
   const normalizedBaseBranch = useMemo(() => {
     const candidate = task?.baseBranch;
     if (candidate && candidate.trim()) {
       return normalizeGitRef(candidate);
     }
-    return normalizeGitRef("main");
+    return undefined;
   }, [task?.baseBranch]);
 
   const normalizedHeadBranch = useMemo(

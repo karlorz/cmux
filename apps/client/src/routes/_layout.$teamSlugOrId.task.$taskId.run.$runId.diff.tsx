@@ -312,9 +312,13 @@ export const Route = createFileRoute(
           return;
         }
 
-        const baseRefForDiff = normalizeGitRef(task.baseBranch || "main");
+        // When baseBranch is not set, pass undefined to let native code auto-detect
+        // the default branch (via refs/remotes/origin/HEAD)
+        const baseRefForDiff = task.baseBranch
+          ? normalizeGitRef(task.baseBranch)
+          : undefined;
         const headRefForDiff = normalizeGitRef(selectedTaskRun.newBranch);
-        if (!headRefForDiff || !baseRefForDiff) {
+        if (!headRefForDiff) {
           return;
         }
 
@@ -564,9 +568,12 @@ function RunDiffPage() {
   // base, resulting in extra unrelated files appearing in the diff.
 
   // Fetch diffs for heatmap review (this reuses the cached data from RunDiffSection)
-  const baseRefForHeatmap = normalizeGitRef(task?.baseBranch || "main");
+  // When baseBranch is not set, pass undefined to let native code auto-detect
+  const baseRefForHeatmap = task?.baseBranch
+    ? normalizeGitRef(task.baseBranch)
+    : undefined;
   const headRefForHeatmap = normalizeGitRef(selectedRun?.newBranch);
-  const diffQueryEnabled = Boolean(primaryRepo) && Boolean(baseRefForHeatmap) && Boolean(headRefForHeatmap);
+  const diffQueryEnabled = Boolean(primaryRepo) && Boolean(headRefForHeatmap);
   const diffQuery = useRQ({
     ...gitDiffQueryOptions({
       repoFullName: primaryRepo ?? "",
@@ -1016,7 +1023,9 @@ function RunDiffPage() {
   ]);
 
   const taskRunId = selectedRun?._id ?? runId;
-  const baseBranch = task?.baseBranch ?? "main";
+  // Use explicit baseBranch if set, otherwise "main" for local workspace display
+  // (the native diff code will auto-detect, but we need a display value)
+  const baseBranch = task?.baseBranch || "main";
 
   const handleOpenLocalWorkspace = useCallback(() => {
     // If query is still loading, don't allow creation to prevent duplicates
@@ -1156,10 +1165,12 @@ function RunDiffPage() {
     );
   }
 
-  const baseRef = normalizeGitRef(task?.baseBranch || "main");
+  // When baseBranch is not set, pass undefined to let native code auto-detect
+  const baseRef = task?.baseBranch
+    ? normalizeGitRef(task.baseBranch)
+    : undefined;
   const headRef = normalizeGitRef(selectedRun.newBranch);
-  const hasDiffSources =
-    Boolean(primaryRepo) && Boolean(baseRef) && Boolean(headRef);
+  const hasDiffSources = Boolean(primaryRepo) && Boolean(headRef);
 
   // Only show the "Open local workspace" button for regular tasks (not local/cloud workspaces)
   const isWorkspace = task?.isLocalWorkspace || task?.isCloudWorkspace;

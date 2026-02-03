@@ -475,7 +475,8 @@ async function startCrownEvaluation({
     return;
   }
 
-  const baseBranch = crownData.task.baseBranch ?? "main";
+  // Pass undefined to let collectDiffForRun auto-detect the default branch
+  const baseBranch = crownData.task.baseBranch || undefined;
 
   if (crownData.singleRunWinnerId) {
     if (crownData.singleRunWinnerId !== taskRunId) {

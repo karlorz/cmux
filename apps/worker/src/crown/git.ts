@@ -181,6 +181,28 @@ async function getRemoteHeadBranch(repoPath: string): Promise<string | null> {
   return normalized.length > 0 ? normalized : null;
 }
 
+/**
+ * Auto-detect the default base branch for the repository.
+ * Tries: refs/remotes/origin/HEAD -> origin/main -> origin/master
+ */
+export async function getDefaultBaseBranch(): Promise<string> {
+  const repoPath = await detectGitRepoPath();
+
+  // Try refs/remotes/origin/HEAD first (symref to default branch)
+  const remoteHead = await getRemoteHeadBranch(repoPath);
+  if (remoteHead) {
+    return remoteHead;
+  }
+
+  // Fallback: check if origin/main exists, otherwise use master
+  const mainExists = await runGitCommand(
+    "git rev-parse --verify origin/main",
+    true,
+    repoPath,
+  );
+  return mainExists?.exitCode === 0 ? "main" : "master";
+}
+
 async function checkProtectedBranch(
   branchName: string,
   repoPath: string,
@@ -366,14 +388,32 @@ function formatDiff(diff: string): string {
 }
 
 export async function collectDiffForRun(
-  baseBranch: string,
+  baseBranch: string | undefined,
   branch: string | null,
 ): Promise<string> {
   if (!branch) {
     return "No changes detected";
   }
 
-  const sanitizedBase = baseBranch || "main";
+  const repoPath = await detectGitRepoPath();
+
+  // Auto-detect base branch if not provided
+  let sanitizedBase = baseBranch?.trim();
+  if (!sanitizedBase) {
+    // Try refs/remotes/origin/HEAD first (symref to default branch)
+    sanitizedBase = await getRemoteHeadBranch(repoPath) ?? undefined;
+    if (!sanitizedBase) {
+      // Fallback: check if origin/main exists, otherwise use master
+      const mainExists = await runGitCommand(
+        "git rev-parse --verify origin/main",
+        true,
+        repoPath,
+      );
+      sanitizedBase = mainExists?.exitCode === 0 ? "main" : "master";
+    }
+    log("INFO", "Auto-detected base branch", { detectedBase: sanitizedBase });
+  }
+
   log("INFO", "Collecting diff from remote branches", {
     baseBranch: sanitizedBase,
     branch,
@@ -388,7 +428,6 @@ export async function collectDiffForRun(
   const branchRef = branch.startsWith("origin/") ? branch : `origin/${branch}`;
 
   let result;
-  const repoPath = await detectGitRepoPath();
   try {
     result = await execAsync("/usr/local/bin/cmux-collect-crown-diff.sh", {
       cwd: repoPath,
@@ -441,9 +480,10 @@ export async function collectDiffForRun(
 
 export async function ensureBranchesAvailable(
   completedRuns: Array<{ id: string; newBranch: string | null }>,
-  baseBranch: string,
+  baseBranch: string | undefined,
 ): Promise<boolean> {
-  const sanitizedBase = baseBranch || "main";
+  // Auto-detect base branch if not provided
+  const sanitizedBase = baseBranch || await getDefaultBaseBranch();
   const baseOk = await fetchRemoteRef(sanitizedBase);
   log("INFO", "Ensuring branches available", {
     baseBranch: sanitizedBase,
