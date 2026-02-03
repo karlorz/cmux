@@ -22,9 +22,11 @@ const pveHttpsAgent = new Agent({
 });
 
 function parseGitRemoteUrl(url: string): string | null {
-  const httpsMatch = url.match(/github\.com\/([^/]+)\/([^/.]+)/);
+  // Match GitHub HTTPS URLs: https://github.com/owner/repo.git or https://github.com/owner/repo
+  const httpsMatch = url.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/)?$/);
   if (httpsMatch) return `${httpsMatch[1]}/${httpsMatch[2]}`;
-  const sshMatch = url.match(/git@github\.com:([^/]+)\/([^/.]+)/);
+  // Match GitHub SSH URLs: git@github.com:owner/repo.git or git@github.com:owner/repo
+  const sshMatch = url.match(/git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?(?:\/)?$/);
   if (sshMatch) return `${sshMatch[1]}/${sshMatch[2]}`;
   return null;
 }
@@ -89,6 +91,7 @@ async function execPveLxc(sandboxId: string, cmd: string): Promise<string> {
   const execUrl = `https://port-39375-${sandboxId}.${publicDomain}/exec`;
 
   const response = await undiciFetch(execUrl, {
+    dispatcher: pveHttpsAgent,
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ command: cmd }),
