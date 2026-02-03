@@ -2132,13 +2132,14 @@ sandboxesRouter.openapi(
  */
 function parseGitRemoteUrl(url: string): string | null {
   // HTTPS URL: https://github.com/owner/repo.git or https://github.com/owner/repo
-  const httpsMatch = url.match(/github\.com\/([^/]+)\/([^/.]+)/);
+  // Use non-greedy match to support repo names with dots (e.g., next.js)
+  const httpsMatch = url.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/)?$/);
   if (httpsMatch) {
     return `${httpsMatch[1]}/${httpsMatch[2]}`;
   }
 
   // SSH URL: git@github.com:owner/repo.git
-  const sshMatch = url.match(/git@github\.com:([^/]+)\/([^/.]+)/);
+  const sshMatch = url.match(/git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?(?:\/)?$/);
   if (sshMatch) {
     return `${sshMatch[1]}/${sshMatch[2]}`;
   }
@@ -2183,6 +2184,7 @@ sandboxesRouter.openapi(
         },
         description: "Discovered repositories",
       },
+      400: { description: "Invalid workspace path" },
       401: { description: "Unauthorized" },
       404: { description: "Sandbox not found" },
       500: { description: "Failed to discover repos" },
@@ -2191,7 +2193,14 @@ sandboxesRouter.openapi(
   async (c) => {
     const id = c.req.valid("param").id;
     const body = c.req.valid("json");
-    const workspacePath = body.workspacePath ?? "/root/workspace";
+    const rawWorkspacePath = body.workspacePath ?? "/root/workspace";
+
+    // Sanitize workspacePath to prevent shell injection
+    // Only allow alphanumeric, /, -, _, and . characters (standard path characters)
+    if (!/^[a-zA-Z0-9/_.-]+$/.test(rawWorkspacePath)) {
+      return c.text("Invalid workspace path: contains disallowed characters", 400);
+    }
+    const workspacePath = rawWorkspacePath;
 
     const token = await getAccessTokenFromRequest(c.req.raw);
     if (!token) return c.text("Unauthorized", 401);
@@ -2256,6 +2265,15 @@ sandboxesRouter.openapi(
         paths: pathsWithRepos,
       });
     } catch (error) {
+      // Check if error indicates sandbox not found
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (
+        errorMessage.includes("not found") ||
+        errorMessage.includes("does not exist") ||
+        errorMessage.includes("404")
+      ) {
+        return c.text("Sandbox not found", 404);
+      }
       console.error("[sandboxes.discover-repos] Failed to discover repos:", error);
       return c.text("Failed to discover repos", 500);
     }

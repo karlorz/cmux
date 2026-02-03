@@ -2980,6 +2980,10 @@ export type PostApiSandboxesByIdDiscoverReposData = {
 
 export type PostApiSandboxesByIdDiscoverReposErrors = {
     /**
+     * Invalid workspace path
+     */
+    400: unknown;
+    /**
      * Unauthorized
      */
     401: unknown;

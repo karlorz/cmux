@@ -73,8 +73,11 @@ export function TaskRunGitDiffPanel({ task, selectedRun, teamSlugOrId, taskId, s
         baseRef: normalizedBaseBranch || undefined,
         headRef: normalizedHeadBranch ?? "",
       }),
+      // Skip queries for cloud/local workspaces since they don't have GitHub repos
       enabled:
-        Boolean(repoFullName?.trim()) && Boolean(normalizedHeadBranch?.trim()),
+        !isCloudOrLocalWorkspace &&
+        Boolean(repoFullName?.trim()) &&
+        Boolean(normalizedHeadBranch?.trim()),
     })),
   });
 
@@ -85,10 +88,10 @@ export function TaskRunGitDiffPanel({ task, selectedRun, teamSlugOrId, taskId, s
   const isLoading = diffQueries.some((query) => query.isLoading);
   const hasError = diffQueries.some((query) => query.isError);
 
-  // Fetch screenshot sets for the selected run
+  // Fetch screenshot sets for the selected run (skip for cloud/local workspaces)
   const runDiffContext = useQuery(
     api.taskRuns.getRunDiffContext,
-    selectedRunId && teamSlugOrId && taskId
+    !isCloudOrLocalWorkspace && selectedRunId && teamSlugOrId && taskId
       ? { teamSlugOrId, taskId, runId: selectedRunId }
       : "skip"
   );
