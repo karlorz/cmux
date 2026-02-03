@@ -23,10 +23,15 @@ func buildAuthURL(baseURL, token string, isVNC bool) (string, error) {
 	// Both VSCode and VNC use 'tkn' param for token-based auth
 	query.Set("tkn", token)
 	if isVNC {
-		// Add default noVNC params for better experience
-		query.Set("resize", "scale")
-		query.Set("quality", "9")
-		query.Set("compression", "0")
+		// noVNC params for best experience
+		// See: https://github.com/novnc/noVNC/blob/master/docs/EMBEDDING.md
+		query.Set("autoconnect", "true")      // Auto-connect to VNC
+		query.Set("resize", "scale")          // Local scaling mode
+		query.Set("quality", "9")             // Highest JPEG quality (0-9)
+		query.Set("compression", "0")         // No compression (0-9, 0=best quality)
+		query.Set("show_dot", "true")         // Show local cursor
+		query.Set("reconnect", "true")        // Auto-reconnect on disconnect
+		query.Set("reconnect_delay", "1000")  // 1 second reconnect delay
 	} else {
 		// Set default folder for VSCode
 		query.Set("folder", "/home/user/workspace")

@@ -74,7 +74,26 @@ build-all:
 # NPM package builds
 # =============================================================================
 
-# Build binaries for npm packages
+# Dev ldflags for npm packages (uses Mode=dev which enables hardcoded dev defaults)
+DEV_LDFLAGS := -s -w \
+               -X main.Version=$(VERSION) \
+               -X main.Commit=$(COMMIT) \
+               -X main.BuildTime=$(BUILD_TIME) \
+               -X main.Mode=dev
+
+# Build npm packages with dev mode (no credentials needed - uses hardcoded dev defaults)
+build-npm-dev:
+	@echo "Building npm packages with dev mode..."
+	@mkdir -p npm/darwin-arm64/bin npm/darwin-x64/bin npm/linux-arm64/bin npm/linux-x64/bin npm/win32-x64/bin
+	GOOS=darwin GOARCH=arm64 go build -ldflags "$(DEV_LDFLAGS)" -o npm/darwin-arm64/bin/cmux ./cmd/cmux
+	GOOS=darwin GOARCH=amd64 go build -ldflags "$(DEV_LDFLAGS)" -o npm/darwin-x64/bin/cmux ./cmd/cmux
+	GOOS=linux GOARCH=arm64 go build -ldflags "$(DEV_LDFLAGS)" -o npm/linux-arm64/bin/cmux ./cmd/cmux
+	GOOS=linux GOARCH=amd64 go build -ldflags "$(DEV_LDFLAGS)" -o npm/linux-x64/bin/cmux ./cmd/cmux
+	GOOS=windows GOARCH=amd64 go build -ldflags "$(DEV_LDFLAGS)" -o npm/win32-x64/bin/cmux.exe ./cmd/cmux
+	@echo "Done! Dev binaries built in npm/*/bin/"
+	@echo "Dev defaults: localhost:9779, famous-camel-162.convex.site"
+
+# Build binaries for npm packages (production)
 # Usage: make build-npm STACK_PROJECT_ID=... STACK_PUBLISHABLE_CLIENT_KEY=... CMUX_API_URL=... CONVEX_SITE_URL=...
 build-npm:
 	@echo "Building npm packages..."
