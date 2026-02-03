@@ -627,6 +627,27 @@ sandboxesRouter.openapi(
             error,
           );
         }
+
+        // Store environment repos as discovered repos for git diff
+        // This allows the git diff UI to work immediately without waiting for discovery
+        if (environmentSelectedRepos && environmentSelectedRepos.length > 0) {
+          try {
+            await convex.mutation(api.taskRuns.updateDiscoveredRepos, {
+              teamSlugOrId: body.teamSlugOrId,
+              runId: body.taskRunId as Id<"taskRuns">,
+              discoveredRepos: environmentSelectedRepos,
+            });
+            console.log(
+              `[sandboxes.start] Stored discovered repos for ${body.taskRunId}:`,
+              environmentSelectedRepos
+            );
+          } catch (error) {
+            console.error(
+              "[sandboxes.start] Failed to store discovered repos (non-fatal):",
+              error,
+            );
+          }
+        }
       }
 
       // Get environment variables from the environment if configured
@@ -2098,6 +2119,163 @@ sandboxesRouter.openapi(
       }
       console.error("[sandboxes.resume] Failed to resume sandbox:", error);
       return c.text("Failed to resume sandbox", 500);
+    }
+  },
+);
+
+/**
+ * Parse a git remote URL to extract owner/repo format.
+ * Supports:
+ * - https://github.com/owner/repo.git
+ * - git@github.com:owner/repo.git
+ * - https://github.com/owner/repo
+ */
+function parseGitRemoteUrl(url: string): string | null {
+  // HTTPS URL: https://github.com/owner/repo.git or https://github.com/owner/repo
+  // Use non-greedy match to support repo names with dots (e.g., next.js)
+  const httpsMatch = url.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/)?$/);
+  if (httpsMatch) {
+    return `${httpsMatch[1]}/${httpsMatch[2]}`;
+  }
+
+  // SSH URL: git@github.com:owner/repo.git
+  const sshMatch = url.match(/git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?(?:\/)?$/);
+  if (sshMatch) {
+    return `${sshMatch[1]}/${sshMatch[2]}`;
+  }
+
+  return null;
+}
+
+// Discover git repositories inside a sandbox
+// This scans the workspace for .git directories and returns their GitHub remote URLs
+sandboxesRouter.openapi(
+  createRoute({
+    method: "post" as const,
+    path: "/sandboxes/{id}/discover-repos",
+    tags: ["Sandboxes"],
+    summary: "Discover git repositories in sandbox workspace",
+    description: "Scans the sandbox workspace for git repositories and returns their GitHub remote URLs in owner/repo format.",
+    request: {
+      params: z.object({ id: z.string() }),
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              workspacePath: z.string().optional().describe("Path to scan for repos (default: /root/workspace)"),
+            }),
+          },
+        },
+        required: true,
+      },
+    },
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              repos: z.array(z.string()).describe("Array of discovered repos in owner/repo format"),
+              paths: z.array(z.object({
+                path: z.string(),
+                repo: z.string().nullable(),
+              })).describe("Detailed info about each discovered .git directory"),
+            }),
+          },
+        },
+        description: "Discovered repositories",
+      },
+      400: { description: "Invalid workspace path" },
+      401: { description: "Unauthorized" },
+      404: { description: "Sandbox not found" },
+      500: { description: "Failed to discover repos" },
+    },
+  }),
+  async (c) => {
+    const id = c.req.valid("param").id;
+    const body = c.req.valid("json");
+    const rawWorkspacePath = body.workspacePath ?? "/root/workspace";
+
+    // Sanitize workspacePath to prevent shell injection
+    // Only allow alphanumeric, /, -, _, and . characters (standard path characters)
+    if (!/^[a-zA-Z0-9/_.-]+$/.test(rawWorkspacePath)) {
+      return c.text("Invalid workspace path: contains disallowed characters", 400);
+    }
+    const workspacePath = rawWorkspacePath;
+
+    const token = await getAccessTokenFromRequest(c.req.raw);
+    if (!token) return c.text("Unauthorized", 401);
+
+    try {
+      // Determine provider based on instance ID prefix
+      const isPveLxc = isPveLxcInstanceId(id);
+
+      let sandbox: SandboxInstance;
+
+      if (isPveLxc) {
+        const pveClient = getPveLxcClient();
+        const pveLxcInstance = await pveClient.instances.get({ instanceId: id });
+        sandbox = wrapPveLxcInstance(pveLxcInstance);
+      } else {
+        const morphClient = getMorphClient();
+        const instance = await morphClient.instances.get({ instanceId: id });
+        sandbox = wrapMorphInstance(instance);
+      }
+
+      // Find all .git directories in the workspace
+      const findResult = await sandbox.exec(
+        `find "${workspacePath}" -maxdepth 3 -name ".git" -type d 2>/dev/null || true`,
+        { timeoutMs: 10_000 }
+      );
+
+      const gitDirs = findResult.stdout
+        .split("\n")
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0);
+
+      // For each .git directory, get the remote URL
+      const pathsWithRepos: Array<{ path: string; repo: string | null }> = [];
+      const repos = new Set<string>();
+
+      for (const gitDir of gitDirs) {
+        // Get the parent directory (the actual repo directory)
+        const repoDir = gitDir.replace(/\/\.git$/, "");
+
+        try {
+          const remoteResult = await sandbox.exec(
+            `git -C "${repoDir}" remote get-url origin 2>/dev/null || echo ""`,
+            { timeoutMs: 5_000 }
+          );
+
+          const remoteUrl = remoteResult.stdout.trim();
+          const repo = remoteUrl ? parseGitRemoteUrl(remoteUrl) : null;
+
+          pathsWithRepos.push({ path: repoDir, repo });
+
+          if (repo) {
+            repos.add(repo);
+          }
+        } catch {
+          // If we can't get remote URL, skip this repo
+          pathsWithRepos.push({ path: repoDir, repo: null });
+        }
+      }
+
+      return c.json({
+        repos: Array.from(repos),
+        paths: pathsWithRepos,
+      });
+    } catch (error) {
+      // Check if error indicates sandbox not found
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (
+        errorMessage.includes("not found") ||
+        errorMessage.includes("does not exist") ||
+        errorMessage.includes("404")
+      ) {
+        return c.text("Sandbox not found", 404);
+      }
+      console.error("[sandboxes.discover-repos] Failed to discover repos:", error);
+      return c.text("Failed to discover repos", 500);
     }
   },
 );

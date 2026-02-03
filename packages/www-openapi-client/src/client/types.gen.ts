@@ -2964,6 +2964,60 @@ export type PostApiSandboxesByIdResumeResponses = {
 
 export type PostApiSandboxesByIdResumeResponse = PostApiSandboxesByIdResumeResponses[keyof PostApiSandboxesByIdResumeResponses];
 
+export type PostApiSandboxesByIdDiscoverReposData = {
+    body: {
+        /**
+         * Path to scan for repos (default: /root/workspace)
+         */
+        workspacePath?: string;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/sandboxes/{id}/discover-repos';
+};
+
+export type PostApiSandboxesByIdDiscoverReposErrors = {
+    /**
+     * Invalid workspace path
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Sandbox not found
+     */
+    404: unknown;
+    /**
+     * Failed to discover repos
+     */
+    500: unknown;
+};
+
+export type PostApiSandboxesByIdDiscoverReposResponses = {
+    /**
+     * Discovered repositories
+     */
+    200: {
+        /**
+         * Array of discovered repos in owner/repo format
+         */
+        repos: Array<string>;
+        /**
+         * Detailed info about each discovered .git directory
+         */
+        paths: Array<{
+            path: string;
+            repo: string | null;
+        }>;
+    };
+};
+
+export type PostApiSandboxesByIdDiscoverReposResponse = PostApiSandboxesByIdDiscoverReposResponses[keyof PostApiSandboxesByIdDiscoverReposResponses];
+
 export type GetApiTeamsData = {
     body?: never;
     path?: never;

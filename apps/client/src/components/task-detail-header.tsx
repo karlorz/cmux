@@ -311,14 +311,27 @@ export function TaskDetailHeader({
 
   const repoFullNames = useMemo(() => {
     const names = new Set<string>();
-    if (task?.projectFullName?.trim()) {
-      names.add(task.projectFullName.trim());
+    const projectName = task?.projectFullName?.trim();
+    // Skip environment-based project names (format: env:<environmentId>)
+    if (projectName && !projectName.startsWith("env:")) {
+      names.add(projectName);
     }
     for (const repo of environmentRepos) {
-      names.add(repo);
+      const trimmed = repo?.trim();
+      // Skip environment references in selectedRepos as well
+      if (trimmed && !trimmed.startsWith("env:")) {
+        names.add(trimmed);
+      }
+    }
+    // Add discovered repos from sandbox (for custom environments)
+    for (const repo of selectedRun?.discoveredRepos ?? []) {
+      const trimmed = repo?.trim();
+      if (trimmed && !trimmed.startsWith("env:")) {
+        names.add(trimmed);
+      }
     }
     return Array.from(names);
-  }, [task?.projectFullName, environmentRepos]);
+  }, [task?.projectFullName, environmentRepos, selectedRun?.discoveredRepos]);
 
   const repoDiffTargets = useMemo<RepoDiffTarget[]>(() => {
     const baseRef = normalizedBaseBranch || undefined;
@@ -693,13 +706,15 @@ function SocketActions({
     const names = new Set<string>();
     for (const target of repoDiffTargets) {
       const trimmed = target.repoFullName?.trim();
-      if (trimmed) {
+      // Skip environment-based project names (format: env:<environmentId>)
+      if (trimmed && !trimmed.startsWith("env:")) {
         names.add(trimmed);
       }
     }
     for (const pr of pullRequests) {
       const trimmed = pr.repoFullName?.trim();
-      if (trimmed) {
+      // Skip environment references in pull requests as well
+      if (trimmed && !trimmed.startsWith("env:")) {
         names.add(trimmed);
       }
     }
