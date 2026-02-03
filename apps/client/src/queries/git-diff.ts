@@ -34,11 +34,6 @@ export function gitDiffQueryOptions({
   const canonicalBaseRef =
     normalizeGitRef(baseRef) || baseRef?.trim() || "";
 
-  // Debug log for auto-detect base branch feature
-  if (typeof window !== "undefined") {
-    console.debug("[git-diff] baseRef:", baseRef, "→ canonical:", canonicalBaseRef || "(empty, will auto-detect)");
-  }
-
   return queryOptions({
     queryKey: [
       "git-diff",

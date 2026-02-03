@@ -135,6 +135,9 @@ fn is_ancestor(repo: &Repository, anc: ObjectId, desc: ObjectId) -> bool {
     )
 }
 
+/// Walks backward from base_tip looking for merge commits containing head_tip.
+/// Currently unused but kept for potential future merge detection improvements.
+#[allow(dead_code)]
 fn find_merge_parent_on_base(
     repo: &Repository,
     mut base_tip: ObjectId,
@@ -413,13 +416,14 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
     let repo_path = std::path::Path::new(&cwd);
 
     let t_merge_base = Instant::now();
-    // Compute merge-base; prefer BFS (pure gix) to avoid shelling out
+    // Compute merge-base using git CLI for correctness.
+    // The BFS algorithm has a bug that returns incorrect merge-base in some cases.
     let mut compare_base_oid = crate::merge_base::merge_base(
         &cwd,
         &repo,
         resolved_base_oid,
         head_oid,
-        crate::merge_base::MergeBaseStrategy::Bfs,
+        crate::merge_base::MergeBaseStrategy::Git,
     )
     .unwrap_or(resolved_base_oid);
     #[cfg(test)]
@@ -440,18 +444,10 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
                 }
             }
         }
-    } else if base_ref_input.is_none() {
-        if let Some((merge_commit_oid, parent_oid)) =
-            find_merge_parent_on_base(&repo, resolved_base_oid, head_oid, 20_000)
-        {
-            compare_base_oid = parent_oid;
-            #[cfg(test)]
-            {
-                merge_commit_for_debug = Some(merge_commit_oid.to_string());
-            }
-            let _ = merge_commit_oid;
-        }
     }
+    // NOTE: We used to call find_merge_parent_on_base() when base_ref_input.is_none(),
+    // but that heuristic returned incorrect results in some cases.
+    // The Git CLI merge-base computed above is already correct.
     #[cfg(test)]
     LAST_DIFF_DEBUG.with(|cell| {
         *cell.borrow_mut() = Some(DiffComputationDebug {
@@ -484,13 +480,13 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
                     if let Ok(fresh_oid) = oid_from_rev_parse(&repo_fresh, head_ref) {
                         if fresh_oid != head_oid {
                             head_oid = fresh_oid;
-                            // Recompute merge-base with updated head
+                            // Recompute merge-base with updated head using git CLI
                             compare_base_oid = crate::merge_base::merge_base(
                                 &cwd,
                                 &repo_fresh,
                                 resolved_base_oid,
                                 head_oid,
-                                crate::merge_base::MergeBaseStrategy::Bfs,
+                                crate::merge_base::MergeBaseStrategy::Git,
                             )
                             .unwrap_or(resolved_base_oid);
                         }
