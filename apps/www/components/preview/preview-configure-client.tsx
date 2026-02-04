@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { formatEnvVarsContent } from "@cmux/shared/utils/format-env-vars-content";
-import type { SandboxConfig, SandboxPreset } from "@cmux/shared";
+import type { SandboxConfig } from "@cmux/shared";
 import clsx from "clsx";
 import {
   FrameworkPresetSelect,
