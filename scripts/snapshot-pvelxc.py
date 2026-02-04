@@ -2837,13 +2837,51 @@ async def task_install_global_cli(ctx: PveTaskContext) -> None:
     if not package_args:
         raise RuntimeError("No packages found in configs/ide-deps.json.")
 
-    bun_line = "bun add -g " + " ".join(package_args)
-    cmd = textwrap.dedent(
-        f"""
-        {bun_line}
+    # Install each package individually with retries for resilience
+    max_retries = 3
+    retry_delay = 5  # seconds
+
+    for i, pkg in enumerate(package_args, 1):
+        ctx.console.info(f"Installing package {i}/{len(package_args)}: {pkg}")
+        last_error: Exception | None = None
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                cmd = f"bun add -g {pkg}"
+                await ctx.run(f"install-pkg-{pkg.split('@')[0].replace('/', '-')}", cmd)
+                ctx.console.info(f"Successfully installed {pkg}")
+                break
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries:
+                    ctx.console.info(
+                        f"Attempt {attempt}/{max_retries} failed for {pkg}, "
+                        f"retrying in {retry_delay}s..."
+                    )
+                    await asyncio.sleep(retry_delay)
+                else:
+                    ctx.console.info(f"All {max_retries} attempts failed for {pkg}")
+
+        if last_error is not None:
+            raise RuntimeError(f"Failed to install {pkg} after {max_retries} attempts") from last_error
+
+    # Verify critical binaries are installed
+    verify_cmd = textwrap.dedent(
+        """
+        set -e
+        echo "Verifying installed CLIs..."
+        which claude && claude --version || echo "claude not found"
+        which codex && codex --version || echo "codex not found"
+        which opencode && opencode --version || echo "opencode not found"
+        which gemini && gemini --version || echo "gemini not found"
+        # amp and codebuff may not have --version, just check existence
+        which amp || echo "amp not found"
+        which codebuff || echo "codebuff not found"
+        which devcontainer && devcontainer --version || echo "devcontainer not found"
+        echo "CLI verification complete"
         """
     )
-    await ctx.run("install-global-cli", cmd)
+    await ctx.run("verify-global-cli", verify_cmd)
 
 
 @registry.task(
