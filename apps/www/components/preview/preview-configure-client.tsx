@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { formatEnvVarsContent } from "@cmux/shared/utils/format-env-vars-content";
-import { DEFAULT_PREVIEW_CONFIGURE_SNAPSHOT_ID } from "@cmux/shared";
+import type { SandboxConfig, SandboxPreset } from "@cmux/shared";
 import clsx from "clsx";
 import {
   FrameworkPresetSelect,
@@ -487,9 +487,13 @@ export function PreviewConfigureClient({
   const [envVars, setEnvVars] = useState<EnvVar[]>(initialEnvVars);
   const [hasTouchedEnvVars, setHasTouchedEnvVars] = useState(false);
   const [frameworkPreset, setFrameworkPreset] = useState<FrameworkPreset>("other");
-  const [selectedSnapshotId, setSelectedSnapshotId] = useState<MachinePresetId>(
-    DEFAULT_PREVIEW_CONFIGURE_SNAPSHOT_ID
-  );
+
+  // Sandbox config state - fetched on mount
+  const [sandboxConfig, setSandboxConfig] = useState<SandboxConfig | null>(null);
+  const [isLoadingSandboxConfig, setIsLoadingSandboxConfig] = useState(true);
+
+  // Selected snapshot - initialized from sandbox config default
+  const [selectedSnapshotId, setSelectedSnapshotId] = useState<MachinePresetId>("");
   const [maintenanceScript, setMaintenanceScript] = useState("");
   const [devScript, setDevScript] = useState("");
   const [hasUserEditedScripts, setHasUserEditedScripts] = useState(false);
@@ -577,6 +581,31 @@ export function PreviewConfigureClient({
 
     void detectFramework();
   }, [repo]);
+
+  // Fetch sandbox config on mount to get provider-specific presets
+  useEffect(() => {
+    const fetchSandboxConfig = async () => {
+      try {
+        const response = await fetch("/api/config/sandbox");
+        if (!response.ok) {
+          console.error("Failed to fetch sandbox config:", response.statusText);
+          return;
+        }
+        const config = await response.json() as SandboxConfig;
+        setSandboxConfig(config);
+        // Set default snapshot ID from config if not already set
+        if (config.defaultPresetId) {
+          setSelectedSnapshotId(config.defaultPresetId);
+        }
+      } catch (error) {
+        console.error("Failed to fetch sandbox config:", error);
+      } finally {
+        setIsLoadingSandboxConfig(false);
+      }
+    };
+
+    void fetchSandboxConfig();
+  }, []);
 
   const persistentIframeManager = iframeManager;
 
@@ -1557,6 +1586,8 @@ export function PreviewConfigureClient({
         <MachinePresetSelect
           value={selectedSnapshotId}
           onValueChange={setSelectedSnapshotId}
+          presets={sandboxConfig?.presets ?? []}
+          isLoading={isLoadingSandboxConfig}
         />
 
         {/* Maintenance and Dev Scripts - Always expanded on initial setup */}

@@ -1,24 +1,23 @@
 "use client";
 
-import {
-  MORPH_SNAPSHOT_PRESETS,
-  type MorphSnapshotPresetWithLatest,
-} from "@cmux/shared";
+import type { SandboxPreset } from "@cmux/shared";
 import * as SelectPrimitive from "@radix-ui/react-select";
-import { ChevronDown, Check, Cpu } from "lucide-react";
+import { ChevronDown, Check, Cpu, Loader2 } from "lucide-react";
 import { forwardRef } from "react";
 import clsx from "clsx";
 
-export type MachinePresetId = MorphSnapshotPresetWithLatest["id"];
+export type MachinePresetId = string;
 
 type MachinePresetSelectProps = {
   value: MachinePresetId;
   onValueChange: (value: MachinePresetId) => void;
+  presets: SandboxPreset[];
+  isLoading?: boolean;
 };
 
 const SelectTrigger = forwardRef<
   HTMLButtonElement,
-  SelectPrimitive.SelectTriggerProps & { preset: MorphSnapshotPresetWithLatest }
+  SelectPrimitive.SelectTriggerProps & { preset: SandboxPreset }
 >(({ className, preset, ...props }, ref) => {
   return (
     <SelectPrimitive.Trigger
@@ -81,7 +80,7 @@ SelectContent.displayName = "SelectContent";
 
 const SelectItem = forwardRef<
   HTMLDivElement,
-  SelectPrimitive.SelectItemProps & { preset: MorphSnapshotPresetWithLatest }
+  SelectPrimitive.SelectItemProps & { preset: SandboxPreset }
 >(({ className, preset, ...props }, ref) => {
   return (
     <SelectPrimitive.Item
@@ -122,24 +121,52 @@ const SelectItem = forwardRef<
 });
 SelectItem.displayName = "SelectItem";
 
-// Only show 4vCPU (Standard) and 8vCPU (Performance) options
-const ALLOWED_PRESET_IDS = ["4vcpu_16gb_48gb", "8vcpu_32gb_48gb"];
-const FILTERED_PRESETS = MORPH_SNAPSHOT_PRESETS.filter((p) =>
-  ALLOWED_PRESET_IDS.includes(p.presetId)
-);
-
 export function MachinePresetSelect({
   value,
   onValueChange,
+  presets,
+  isLoading = false,
 }: MachinePresetSelectProps) {
-  const selectedPreset = FILTERED_PRESETS.find((p) => p.id === value);
-  const fallbackPreset = FILTERED_PRESETS[0];
+  const selectedPreset = presets.find((p) => p.id === value);
+  const fallbackPreset = presets[0];
+  const currentPreset = selectedPreset ?? fallbackPreset;
 
-  if (!selectedPreset && !fallbackPreset) {
-    return null;
+  // Loading state
+  if (isLoading) {
+    return (
+      <div>
+        <label
+          id="machine-preset-label"
+          className="block text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-2"
+        >
+          Machine Size
+        </label>
+        <div className="flex w-full items-center gap-3 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm">
+          <span className="flex h-8 w-8 items-center justify-center rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-100 dark:bg-neutral-800">
+            <Loader2 className="h-4 w-4 text-neutral-400 animate-spin" />
+          </span>
+          <span className="text-neutral-400">Loading presets...</span>
+        </div>
+      </div>
+    );
   }
 
-  const currentPreset = selectedPreset ?? fallbackPreset;
+  // No presets available
+  if (!currentPreset) {
+    return (
+      <div>
+        <label
+          id="machine-preset-label"
+          className="block text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-2"
+        >
+          Machine Size
+        </label>
+        <div className="flex w-full items-center gap-3 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm text-neutral-400">
+          No presets available
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -158,7 +185,7 @@ export function MachinePresetSelect({
           aria-labelledby="machine-preset-label"
         />
         <SelectContent>
-          {FILTERED_PRESETS.map((preset) => (
+          {presets.map((preset) => (
             <SelectItem key={preset.id} value={preset.id} preset={preset}>
               {preset.label}
             </SelectItem>
