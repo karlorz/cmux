@@ -26,9 +26,9 @@ This provides efficient incremental file transfers.
 
 The remote path defaults to /home/user/workspace if not specified.
 
-Prerequisites: rsync and sshpass must be installed locally.
-  macOS:   brew install rsync sshpass
-  Ubuntu:  apt install rsync sshpass
+Prerequisites: rsync must be installed locally.
+  macOS:   brew install rsync
+  Ubuntu:  apt install rsync
 
 Examples:
   cmux sync cmux_abc123 .                    # Sync current dir to workspace

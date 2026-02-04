@@ -135,7 +135,7 @@ RUN chmod +x /usr/local/bin/start-services.sh
 # Create the worker daemon script and install dependencies
 COPY worker/worker-daemon.js /usr/local/bin/worker-daemon.js
 COPY worker/browser-agent-runner.js /usr/local/bin/browser-agent-runner.js
-RUN cd /usr/local/bin && npm install ws puppeteer-core
+RUN cd /usr/local/bin && npm install ws puppeteer-core ssh2
 
 # Create the VNC auth proxy (token-based auth like VSCode)
 COPY worker/vnc-auth-proxy.js /usr/local/bin/vnc-auth-proxy.js

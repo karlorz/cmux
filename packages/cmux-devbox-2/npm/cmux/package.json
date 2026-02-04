@@ -1,6 +1,6 @@
 {
   "name": "cmux",
-  "version": "0.6.0",
+  "version": "0.7.2",
   "description": "Cloud sandboxes for development - spawn isolated dev environments instantly",
   "keywords": [
     "cli",
@@ -31,11 +31,11 @@
     "postinstall": "node lib/postinstall.js"
   },
   "optionalDependencies": {
-    "cmux-darwin-arm64": "0.5.0",
-    "cmux-darwin-x64": "0.5.0",
-    "cmux-linux-arm64": "0.5.0",
-    "cmux-linux-x64": "0.5.0",
-    "cmux-win32-x64": "0.5.0"
+    "cmux-darwin-arm64": "0.7.2",
+    "cmux-darwin-x64": "0.7.2",
+    "cmux-linux-arm64": "0.7.2",
+    "cmux-linux-x64": "0.7.2",
+    "cmux-win32-x64": "0.7.2"
   },
   "engines": {
     "node": ">=16"
