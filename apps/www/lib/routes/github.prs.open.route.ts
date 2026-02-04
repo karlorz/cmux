@@ -1294,11 +1294,14 @@ async function collectRepoFullNamesForRun({
   teamSlugOrId: string;
 }): Promise<string[]> {
   const repos = new Set<string>();
+
+  // 1. Task's configured project
   const project = task.projectFullName?.trim();
   if (project) {
     repos.add(project);
   }
 
+  // 2. Environment's selected repos
   const environmentId = run.environmentId;
   if (environmentId) {
     try {
@@ -1318,6 +1321,16 @@ async function collectRepoFullNamesForRun({
         error,
       );
     }
+  }
+
+  // 3. Discovered repos from sandbox scanning
+  if (run.discoveredRepos?.length) {
+    run.discoveredRepos.forEach((repoName) => {
+      const trimmed = typeof repoName === "string" ? repoName.trim() : "";
+      if (trimmed) {
+        repos.add(trimmed);
+      }
+    });
   }
 
   return Array.from(repos);
