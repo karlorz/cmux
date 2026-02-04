@@ -1223,6 +1223,14 @@ const convexSchema = defineSchema({
     .index("by_devboxId", ["devboxId"])
     .index("by_providerInstanceId", ["providerInstanceId"]),
 
+  // E2B instance activity tracking (for managing instance lifecycle)
+  e2bInstanceActivity: defineTable({
+    instanceId: v.string(), // E2B sandbox instance ID
+    lastResumedAt: v.optional(v.number()),
+    lastPausedAt: v.optional(v.number()),
+    stoppedAt: v.optional(v.number()),
+  }).index("by_instanceId", ["instanceId"]),
+
 });
 
 export default convexSchema;
