@@ -123,7 +123,7 @@ export function EnvironmentSetupFlow({
   );
   const [maintenanceScript, setMaintenanceScript] = useState(initialMaintenanceScript);
   const [devScript, setDevScript] = useState(initialDevScript);
-  const [exposedPorts] = useState(initialExposedPorts);
+  const [exposedPorts, setExposedPorts] = useState(initialExposedPorts);
 
   // Error state
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -490,6 +490,7 @@ export function EnvironmentSetupFlow({
       maintenanceScript={maintenanceScript}
       devScript={devScript}
       envVars={envVars}
+      exposedPorts={exposedPorts}
       vscodeUrl={vscodeUrl}
       vncWebsocketUrl={vncWebsocketUrl}
       isSaving={createEnvironmentMutation.isPending}
@@ -498,6 +499,7 @@ export function EnvironmentSetupFlow({
       onMaintenanceScriptChange={handleMaintenanceScriptChange}
       onDevScriptChange={handleDevScriptChange}
       onEnvVarsChange={handleEnvVarsChange}
+      onExposedPortsChange={setExposedPorts}
       onConfigStepChange={handleConfigStepChange}
       onSave={handleSaveEnvironment}
       onBack={handleBackToInitialSetup}

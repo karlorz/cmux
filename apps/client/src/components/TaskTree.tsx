@@ -98,7 +98,7 @@ type TaskRunStatus = "pending" | "running" | "completed" | "failed" | "skipped";
  * Feature flag to show/hide preview URLs in the sidebar.
  * Set to true to re-enable preview URLs and "Add preview URL" button.
  */
-const SHOW_PREVIEW_URLS = false;
+const SHOW_PREVIEW_URLS = true;
 
 function getStatusIcon(status: TaskRunStatus): ReactElement {
   switch (status) {

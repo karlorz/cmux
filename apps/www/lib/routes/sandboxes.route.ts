@@ -1552,21 +1552,28 @@ sandboxesRouter.openapi(
         ? (parsed.forwardPorts as number[])
         : [];
 
-      // Read environmentId from instance metadata (set during start)
-      const instanceMeta = (
-        instance as unknown as {
-          metadata?: { environmentId?: string };
-        }
-      ).metadata;
-
-      // Resolve environment-exposed ports (preferred)
+      // Get environmentId from the taskRun (PVE-LXC doesn't persist metadata on instances)
       const convex = getConvex({ accessToken: token });
       let environmentPorts: number[] | undefined;
-      if (instanceMeta?.environmentId) {
+
+      // First try to get environmentId from the taskRun
+      let environmentId: string | undefined;
+      try {
+        const taskRun = await convex.query(api.taskRuns.get, {
+          teamSlugOrId,
+          id: taskRunId as unknown as string & { __tableName: "taskRuns" },
+        });
+        environmentId = taskRun?.environmentId;
+      } catch {
+        // ignore lookup errors
+      }
+
+      // If we have an environmentId, fetch the environment's exposedPorts
+      if (environmentId) {
         try {
           const envDoc = await convex.query(api.environments.get, {
             teamSlugOrId,
-            id: instanceMeta.environmentId as string & {
+            id: environmentId as string & {
               __tableName: "environments";
             },
           });
@@ -1642,7 +1649,12 @@ sandboxesRouter.openapi(
         }
       }
 
-      await reloadInstance();
+      // For Morph, reload to get persisted state from their API
+      // For PVE-LXC, skip reload as exposeHttpService only updates in-memory state
+      // and reloading would wipe out the services we just added
+      if (!isPveLxc) {
+        await reloadInstance();
+      }
 
       const networking = workingInstance.networking.httpServices
         .filter((s) => allowedPorts.has(s.port))

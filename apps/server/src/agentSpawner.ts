@@ -532,8 +532,8 @@ export async function spawnAgent(
       `VSCode instance spawned for agent ${agent.name}: ${vscodeUrl}`
     );
 
-    if (options.isCloudMode && vscodeInstance instanceof CmuxVSCodeInstance) {
-      console.log("[AgentSpawner] [isCloudMode] Setting up devcontainer");
+    if (vscodeInstance instanceof CmuxVSCodeInstance) {
+      console.log("[AgentSpawner] Setting up devcontainer");
       void vscodeInstance
         .setupDevcontainer()
         .catch((err) =>
