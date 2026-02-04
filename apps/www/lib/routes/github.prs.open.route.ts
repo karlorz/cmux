@@ -1320,6 +1320,16 @@ async function collectRepoFullNamesForRun({
     }
   }
 
+  // Discovered repos from sandbox scanning (for manually cloned repos)
+  if (run.discoveredRepos?.length) {
+    run.discoveredRepos.forEach((repo) => {
+      const trimmed = typeof repo === "string" ? repo.trim() : "";
+      if (trimmed) {
+        repos.add(trimmed);
+      }
+    });
+  }
+
   return Array.from(repos);
 }
 
