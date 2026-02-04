@@ -57,6 +57,7 @@ interface EnvironmentWorkspaceConfigProps {
   maintenanceScript: string;
   devScript: string;
   envVars: EnvVar[];
+  exposedPorts: string;
   vscodeUrl?: string;
   vncWebsocketUrl?: string;
   isSaving: boolean;
@@ -65,6 +66,7 @@ interface EnvironmentWorkspaceConfigProps {
   onMaintenanceScriptChange: (value: string) => void;
   onDevScriptChange: (value: string) => void;
   onEnvVarsChange: (updater: (prev: EnvVar[]) => EnvVar[]) => void;
+  onExposedPortsChange: (value: string) => void;
   onConfigStepChange?: (step: ConfigStep) => void;
   onSave: () => void;
   onBack: () => void;
@@ -90,6 +92,7 @@ export function EnvironmentWorkspaceConfig({
   maintenanceScript,
   devScript,
   envVars,
+  exposedPorts,
   vscodeUrl,
   vncWebsocketUrl,
   isSaving,
@@ -98,6 +101,7 @@ export function EnvironmentWorkspaceConfig({
   onMaintenanceScriptChange,
   onDevScriptChange,
   onEnvVarsChange,
+  onExposedPortsChange,
   onConfigStepChange,
   onSave,
   onBack,
@@ -630,6 +634,31 @@ export function EnvironmentWorkspaceConfig({
             })}
           </div>
         )}
+
+        {/* Exposed Ports (always visible, not a numbered step) */}
+        <details className="group" open>
+          <summary
+            className={clsx(
+              "flex items-center gap-2 cursor-pointer text-[13px] font-medium text-neutral-900 dark:text-neutral-100 list-none",
+              isSaving && "cursor-not-allowed opacity-60"
+            )}
+          >
+            <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform -rotate-90 group-open:rotate-0" />
+            Exposed Ports
+          </summary>
+          <div className="mt-3 pl-5 space-y-2">
+            <input
+              type="text"
+              value={exposedPorts}
+              onChange={(e) => onExposedPortsChange(e.target.value)}
+              placeholder="3000, 5173, 8080"
+              className="w-full rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-neutral-700"
+            />
+            <p className="text-xs text-neutral-400">
+              Comma-separated list of ports for preview URLs (e.g., dev server port)
+            </p>
+          </div>
+        </details>
 
         {/* Step 3: Run Scripts */}
         {isStepVisible("run-scripts") && (
