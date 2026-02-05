@@ -9,7 +9,7 @@ ENV_FILE ?= .env
 ENV_FILE_PROD ?= .env.production
 
 .PHONY: convex-up convex-down convex-restart convex-clean convex-init convex-init-prod convex-clear convex-clear-prod convex-reset convex-reset-prod convex-fresh dev dev-electron sync-upstream-tags
-.PHONY: clone-proxy-linux-amd64 clone-proxy-linux-arm64
+.PHONY: clone-proxy-linux-amd64 clone-proxy-linux-arm64 screenshot-collector-upload screenshot-collector-upload-prod
 
 convex-up:
 	cd $(DEVCONTAINER_DIR) && COMPOSE_PROJECT_NAME=$(PROJECT_NAME) docker compose -f $(COMPOSE_FILE) up -d
@@ -116,3 +116,28 @@ clone-proxy-linux-amd64:
 clone-proxy-linux-arm64:
 	cd scripts/pve/clone-proxy && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /tmp/pve-clone-proxy .
 	@echo "Built linux/arm64 proxy to /tmp/pve-clone-proxy"
+
+# Screenshot Collector Upload
+# Uploads the host-screenshot-collector to Convex file storage
+# The collector is downloaded by preview jobs to capture screenshots
+
+screenshot-collector-upload:
+	@echo "Uploading screenshot collector to local Convex..."
+	@CONVEX_URL=$$(grep -E '^NEXT_PUBLIC_CONVEX_URL=' $(ENV_FILE) | head -1 | cut -d'=' -f2 | sed 's/.convex.cloud/.convex.site/'); \
+	if [ -z "$$CONVEX_URL" ]; then \
+		echo "Error: NEXT_PUBLIC_CONVEX_URL not found in $(ENV_FILE)"; \
+		exit 1; \
+	fi; \
+	echo "Using Convex URL: $$CONVEX_URL"; \
+	cd packages/host-screenshot-collector && CONVEX_URL="$$CONVEX_URL" ./scripts/upload-to-convex.sh
+
+screenshot-collector-upload-prod:
+	@echo "Uploading screenshot collector to production Convex..."
+	@test -f "$(ENV_FILE_PROD)" || (echo "Error: $(ENV_FILE_PROD) not found" && exit 1)
+	@CONVEX_URL=$$(grep -E '^NEXT_PUBLIC_CONVEX_URL=' $(ENV_FILE_PROD) | head -1 | cut -d'=' -f2 | sed 's/.convex.cloud/.convex.site/'); \
+	if [ -z "$$CONVEX_URL" ]; then \
+		echo "Error: NEXT_PUBLIC_CONVEX_URL not found in $(ENV_FILE_PROD)"; \
+		exit 1; \
+	fi; \
+	echo "Using Convex URL: $$CONVEX_URL"; \
+	cd packages/host-screenshot-collector && CONVEX_URL="$$CONVEX_URL" ./scripts/upload-to-convex.sh --production
