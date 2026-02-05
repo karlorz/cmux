@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -70,7 +71,7 @@ func main() {
 	// Start SSH server in goroutine
 	go startSSHServer()
 
-	// Start HTTP server
+	// Start HTTP server (browser manager is cleaned up on shutdown)
 	startHTTPServer()
 }
 
@@ -227,6 +228,7 @@ func startHTTPServer() {
 		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 		<-sigCh
 		log.Printf("[worker] Shutting down...")
+		browser.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		server.Shutdown(ctx)
@@ -363,6 +365,8 @@ func handleAPI(w http.ResponseWriter, r *http.Request) {
 		"/scroll", "/back", "/forward", "/reload", "/url", "/title",
 		"/wait", "/hover":
 		handleBrowserCommand(w, r, path[1:], body)
+	case "/browser-agent":
+		handleBrowserAgent(w, r, body)
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		sendJSON(w, map[string]string{"error": "Not found"})
@@ -587,36 +591,47 @@ func handleCDPInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleScreenshot(w http.ResponseWriter, r *http.Request, body map[string]interface{}) {
-	// Use chromedp or call Chrome CDP directly
-	// For now, use a simple approach via curl
-	cmd := exec.Command("curl", "-s", fmt.Sprintf("http://localhost:%d/json", cdpPort))
-	output, err := cmd.Output()
+	result, err := browser.Screenshot()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		sendJSON(w, map[string]string{"error": "Chrome CDP not available"})
+		sendJSON(w, map[string]string{"error": err.Error()})
 		return
 	}
 
-	var pages []map[string]interface{}
-	if err := json.Unmarshal(output, &pages); err != nil || len(pages) == 0 {
-		w.WriteHeader(http.StatusInternalServerError)
-		sendJSON(w, map[string]string{"error": "No pages available"})
-		return
+	// If a custom path was requested, save there too.
+	if p, ok := body["path"].(string); ok && p != "" {
+		if b64, ok := result["base64"].(string); ok {
+			if raw, err := base64.StdEncoding.DecodeString(b64); err == nil {
+				if err := os.WriteFile(p, raw, 0644); err != nil {
+					log.Printf("[worker] failed to save screenshot to %s: %v", p, err)
+				} else {
+					result["path"] = p
+				}
+			}
+		}
 	}
 
-	// For now, return that screenshot functionality requires chromedp
-	sendJSON(w, map[string]interface{}{
-		"success": false,
-		"error":   "Screenshot requires chromedp - use browser automation commands instead",
-	})
+	sendJSON(w, result)
 }
 
 func handleBrowserCommand(w http.ResponseWriter, r *http.Request, command string, body map[string]interface{}) {
-	// Browser commands need chromedp - for now return not implemented
-	// TODO: Integrate chromedp
-	sendJSON(w, map[string]interface{}{
-		"error": fmt.Sprintf("Browser command '%s' requires chromedp integration", command),
-	})
+	result, err := browser.Execute(command, body)
+	if err != nil {
+		log.Printf("[worker] browser command %s failed: %v", command, err)
+		sendJSON(w, map[string]interface{}{"error": err.Error()})
+		return
+	}
+	sendJSON(w, result)
+}
+
+func handleBrowserAgent(w http.ResponseWriter, r *http.Request, body map[string]interface{}) {
+	result, err := browser.RunBrowserAgent(body)
+	if err != nil {
+		log.Printf("[worker] browser-agent failed: %v", err)
+		sendJSON(w, map[string]interface{}{"error": err.Error()})
+		return
+	}
+	sendJSON(w, result)
 }
 
 // =============================================================================
