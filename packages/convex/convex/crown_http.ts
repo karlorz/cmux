@@ -10,6 +10,7 @@ import {
   type WorkerRunStatus,
   type WorkerTaskRunResponse,
 } from "@cmux/shared/convex-safe";
+import { env } from "../_shared/convex-env";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { httpAction } from "./_generated/server";
@@ -572,6 +573,10 @@ async function handleInfoRequest(
     id: taskRun.taskId,
   });
 
+  const screenshotWorkflowEnabled =
+    env.CMUX_ENABLE_SCREENSHOT_WORKFLOW === "true" ||
+    env.CMUX_ENABLE_SCREENSHOT_WORKFLOW === "1";
+
   const response = {
     ok: true,
     taskRun: {
@@ -588,6 +593,7 @@ async function handleInfoRequest(
           text: task.text,
         }
       : null,
+    screenshotWorkflowEnabled,
   } satisfies WorkerTaskRunResponse;
   return jsonResponse(response);
 }
@@ -1039,43 +1045,53 @@ export const crownWorkerComplete = httpAction(async (ctx, req) => {
 
   // Try to create/link a preview run for this task run if it has PR info
   // This enables screenshot capture and GitHub comment posting for crown tasks
-  try {
-    const previewResult = await ctx.runMutation(
-      internal.previewRuns.enqueueFromTaskRun,
-      { taskRunId }
-    );
+  const previewRunsEnabled =
+    env.CMUX_ENABLE_PREVIEW_RUNS === "true" ||
+    env.CMUX_ENABLE_PREVIEW_RUNS === "1";
 
-    if (previewResult.created && previewResult.previewRunId) {
-      console.log("[convex.crown] Preview run created/linked for task run", {
-        taskRunId,
-        previewRunId: previewResult.previewRunId,
-        isNew: previewResult.isNew,
-      });
+  if (!previewRunsEnabled) {
+    console.log("[convex.crown] Preview runs disabled (CMUX_ENABLE_PREVIEW_RUNS not set to true/1)", {
+      taskRunId,
+    });
+  } else {
+    try {
+      const previewResult = await ctx.runMutation(
+        internal.previewRuns.enqueueFromTaskRun,
+        { taskRunId }
+      );
 
-      // If a new preview run was created, dispatch it to start the preview job
-      if (previewResult.isNew) {
-        await ctx.scheduler.runAfter(
-          0,
-          internal.preview_jobs.requestDispatch,
-          { previewRunId: previewResult.previewRunId }
-        );
-        console.log("[convex.crown] Preview job dispatch scheduled", {
+      if (previewResult.created && previewResult.previewRunId) {
+        console.log("[convex.crown] Preview run created/linked for task run", {
           taskRunId,
           previewRunId: previewResult.previewRunId,
+          isNew: previewResult.isNew,
+        });
+
+        // If a new preview run was created, dispatch it to start the preview job
+        if (previewResult.isNew) {
+          await ctx.scheduler.runAfter(
+            0,
+            internal.preview_jobs.requestDispatch,
+            { previewRunId: previewResult.previewRunId }
+          );
+          console.log("[convex.crown] Preview job dispatch scheduled", {
+            taskRunId,
+            previewRunId: previewResult.previewRunId,
+          });
+        }
+      } else {
+        console.log("[convex.crown] No preview run created for task run", {
+          taskRunId,
+          reason: previewResult.reason,
         });
       }
-    } else {
-      console.log("[convex.crown] No preview run created for task run", {
+    } catch (error) {
+      // Don't fail the completion if preview run creation fails
+      console.error("[convex.crown] Failed to create preview run for task run", {
         taskRunId,
-        reason: previewResult.reason,
+        error,
       });
     }
-  } catch (error) {
-    // Don't fail the completion if preview run creation fails
-    console.error("[convex.crown] Failed to create preview run for task run", {
-      taskRunId,
-      error,
-    });
   }
 
   const response = {

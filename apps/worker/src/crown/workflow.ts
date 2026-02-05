@@ -145,15 +145,23 @@ export async function handleWorkerTaskCompletion(
 
   const taskRunInfo = info.taskRun;
 
-  void uploadScreenshotsWithLogging(
-    {
-      taskId: info.taskRun.taskId as Id<"tasks">,
-      taskRunId: taskRunId as Id<"taskRuns">,
-      token: runContext.token,
-      convexUrl: runContext.convexUrl,
-    },
-    taskRunId
-  );
+  const screenshotWorkflowEnabled = info.screenshotWorkflowEnabled ?? false;
+
+  if (screenshotWorkflowEnabled) {
+    void uploadScreenshotsWithLogging(
+      {
+        taskId: info.taskRun.taskId as Id<"tasks">,
+        taskRunId: taskRunId as Id<"taskRuns">,
+        token: runContext.token,
+        convexUrl: runContext.convexUrl,
+      },
+      taskRunId
+    );
+  } else {
+    log("INFO", "Screenshot workflow disabled (CMUX_ENABLE_SCREENSHOT_WORKFLOW not set to true/1)", {
+      taskRunId,
+    });
+  }
 
   const hasGitRepo = existsSync(join(detectedGitPath, ".git"));
 
