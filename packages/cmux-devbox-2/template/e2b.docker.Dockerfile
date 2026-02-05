@@ -182,7 +182,8 @@ ENV DISPLAY=:1
 ENV HOME=/home/user
 
 # Expose ports (E2B handles exposure, no nginx needed)
-EXPOSE 39377 39378 39380 5901 9222 10000
+# Note: 5901 (VNC) and 9222 (Chrome CDP) bind to localhost only for security
+EXPOSE 39377 39378 39380 10000
 
 # Default command
 CMD ["/usr/local/bin/start-services.sh"]

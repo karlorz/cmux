@@ -41,10 +41,10 @@ echo "[cmux-e2b] Starting D-Bus..."
 sudo mkdir -p /run/dbus 2>/dev/null || true
 sudo dbus-daemon --system --fork 2>/dev/null || true
 
-# Start VNC server on display :1 (port 5901) - no password, auth handled by proxy
-echo "[cmux-e2b] Starting VNC server on display :1 (no password - auth via proxy)..."
+# Start VNC server on display :1 (port 5901) - localhost only, auth handled by proxy on 39380
+echo "[cmux-e2b] Starting VNC server on display :1 (localhost only - auth via proxy)..."
 rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null || true
-vncserver :1 -geometry 1920x1080 -depth 24 -SecurityTypes None 2>/dev/null &
+vncserver :1 -geometry 1920x1080 -depth 24 -SecurityTypes None -localhost yes 2>/dev/null &
 sleep 3
 
 # Start VNC auth proxy on port 39380 (serves noVNC + proxies WebSocket to VNC)
@@ -53,13 +53,12 @@ echo "[cmux-e2b] Starting VNC auth proxy on port 39380..."
 node /usr/local/bin/vnc-auth-proxy.js &
 
 # Start cmux-code (our VSCode fork) on port 39378
-# Note: Using --without-connection-token since auth is handled by E2B proxy layer
-# The sandbox URLs are only accessible with valid E2B session tokens
-echo "[cmux-e2b] Starting cmux-code on port 39378..."
+# Uses connection-token-file for auth (same token as worker + VNC)
+echo "[cmux-e2b] Starting cmux-code on port 39378 (token-protected)..."
 /app/cmux-code/bin/code-server-oss \
     --host 0.0.0.0 \
     --port 39378 \
-    --without-connection-token \
+    --connection-token-file "$VSCODE_TOKEN_FILE" \
     --disable-workspace-trust \
     --disable-telemetry \
     /home/user/workspace 2>/dev/null &
