@@ -12,12 +12,21 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Template IDs for E2B sandboxes
+const (
+	// Default template without Docker (faster builds)
+	defaultTemplateID = "jwxrccum0mglnp704hnk"
+	// Template with Docker support (for running containers)
+	dockerTemplateID = "pou9b3m5z92g2hafjxrl"
+)
+
 var (
 	startFlagName     string
 	startFlagTemplate string
 	startFlagOpen     bool
 	startFlagGit      string
 	startFlagBranch   string
+	startFlagDocker   bool
 )
 
 // isGitURL checks if the string looks like a git URL
@@ -42,7 +51,8 @@ Examples:
   cmux start https://github.com/user/repo # Clone git repo into sandbox
   cmux start --git https://github.com/x/y # Clone git repo (explicit)
   cmux start --git user/repo              # Clone from GitHub shorthand
-  cmux start -o                           # Create sandbox and open VS Code`,
+  cmux start -o                           # Create sandbox and open VS Code
+  cmux start --docker                     # Create sandbox with Docker support`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		teamSlug, err := getTeamSlug()
@@ -110,8 +120,18 @@ Examples:
 			}
 		}
 
+		// Determine which template to use
+		templateID := startFlagTemplate
+		if templateID == "" {
+			if startFlagDocker {
+				templateID = dockerTemplateID
+			} else {
+				templateID = defaultTemplateID
+			}
+		}
+
 		client := api.NewClient()
-		resp, err := client.CreateInstance(teamSlug, startFlagTemplate, name)
+		resp, err := client.CreateInstance(teamSlug, templateID, name)
 		if err != nil {
 			return err
 		}
@@ -217,8 +237,9 @@ Examples:
 
 func init() {
 	startCmd.Flags().StringVarP(&startFlagName, "name", "n", "", "Name for the sandbox")
-	startCmd.Flags().StringVarP(&startFlagTemplate, "template", "T", "", "E2B template ID")
+	startCmd.Flags().StringVarP(&startFlagTemplate, "template", "T", "", "E2B template ID (overrides --docker)")
 	startCmd.Flags().BoolVarP(&startFlagOpen, "open", "o", false, "Open VSCode after creation")
 	startCmd.Flags().StringVar(&startFlagGit, "git", "", "Git repository URL to clone (or user/repo shorthand)")
 	startCmd.Flags().StringVarP(&startFlagBranch, "branch", "b", "", "Git branch to clone")
+	startCmd.Flags().BoolVar(&startFlagDocker, "docker", false, "Use template with Docker support (slower to build but includes Docker)")
 }

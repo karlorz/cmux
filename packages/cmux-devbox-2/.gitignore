@@ -2,3 +2,6 @@
 npm/*/bin/
 npm/cmux/lib/cmux
 npm/*/*.tgz
+
+# Binary outputs
+bin/

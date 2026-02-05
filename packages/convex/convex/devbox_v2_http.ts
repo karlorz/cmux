@@ -10,7 +10,10 @@ import { api, internal } from "./_generated/api";
 import type { FunctionReference } from "convex/server";
 
 // Default template ID for E2B instances (cmux-devbox with VSCode, VNC, Chrome)
-const DEFAULT_E2B_TEMPLATE_ID = "pou9b3m5z92g2hafjxrl";
+// Base template without Docker (faster builds)
+const DEFAULT_E2B_TEMPLATE_ID = "jwxrccum0mglnp704hnk";
+// Template with Docker support
+const DOCKER_E2B_TEMPLATE_ID = "pou9b3m5z92g2hafjxrl";
 
 const JSON_HEADERS = {
   "Content-Type": "application/json",
