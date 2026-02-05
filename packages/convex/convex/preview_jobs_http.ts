@@ -67,6 +67,22 @@ export const dispatchPreviewJob = httpAction(async (ctx, req) => {
   }
 
   const previewRunId = body.previewRunId as Id<"previewRuns">;
+
+  // Check if preview runs are enabled
+  const previewRunsEnabled =
+    env.CMUX_ENABLE_PREVIEW_RUNS === "true" ||
+    env.CMUX_ENABLE_PREVIEW_RUNS === "1";
+
+  if (!previewRunsEnabled) {
+    console.log("[preview-jobs-http] Preview runs disabled (CMUX_ENABLE_PREVIEW_RUNS not set to true/1)", {
+      previewRunId,
+    });
+    return jsonResponse({
+      success: false,
+      error: "Preview runs disabled (CMUX_ENABLE_PREVIEW_RUNS not set to true/1)",
+    }, 400);
+  }
+
   console.log("[preview-jobs-http] Dispatching preview job", {
     previewRunId,
   });
@@ -605,6 +621,23 @@ export const createTestPreviewTask = httpAction(async (ctx, req) => {
   }
 
   const repoFullName = `${prInfo.owner}/${prInfo.repo}`.toLowerCase();
+
+  // Check if preview runs are enabled
+  const previewRunsEnabled =
+    env.CMUX_ENABLE_PREVIEW_RUNS === "true" ||
+    env.CMUX_ENABLE_PREVIEW_RUNS === "1";
+
+  if (!previewRunsEnabled) {
+    console.log("[preview-jobs-http] Preview runs disabled (CMUX_ENABLE_PREVIEW_RUNS not set to true/1)", {
+      teamId,
+      userId,
+      prUrl,
+    });
+    return jsonResponse({
+      success: false,
+      error: "Preview runs disabled (CMUX_ENABLE_PREVIEW_RUNS not set to true/1)",
+    }, 400);
+  }
 
   console.log("[preview-jobs-http] Creating test preview task", {
     teamId,
