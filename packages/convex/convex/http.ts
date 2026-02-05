@@ -60,6 +60,7 @@ import {
 import {
   createInstance as devboxV2CreateInstance,
   listInstances as devboxV2ListInstances,
+  listTemplates as devboxV2ListTemplates,
   getConfig as devboxV2GetConfig,
   getMe as devboxV2GetMe,
   instanceActionRouter as devboxV2InstanceActionRouter,
@@ -405,6 +406,12 @@ http.route({
   path: "/api/v2/devbox/config",
   method: "GET",
   handler: devboxV2GetConfig,
+});
+
+http.route({
+  path: "/api/v2/devbox/templates",
+  method: "GET",
+  handler: devboxV2ListTemplates,
 });
 
 http.route({

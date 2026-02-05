@@ -213,9 +213,8 @@ Examples:
 
 		if flagJSON {
 			output := map[string]interface{}{
-				"devboxId":      resp.DevboxID,
-				"e2bInstanceId": resp.E2BInstanceID,
-				"status":        resp.Status,
+				"id":     resp.DevboxID,
+				"status": resp.Status,
 			}
 			if vscodeAuthURL != "" {
 				output["vscodeUrl"] = vscodeAuthURL
@@ -241,9 +240,6 @@ Examples:
 				fmt.Printf("  VNC:    %s\n", vncAuthURL)
 			} else if resp.VNCURL != "" {
 				fmt.Printf("  VNC:    %s\n", resp.VNCURL)
-			}
-			if resp.E2BInstanceID != "" && flagVerbose {
-				fmt.Printf("  E2B ID: %s\n", resp.E2BInstanceID)
 			}
 		}
 
