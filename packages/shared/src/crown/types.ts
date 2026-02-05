@@ -88,6 +88,7 @@ export const WorkerTaskRunResponseSchema = z.object({
       projectFullName: z.string().nullable().optional(),
     })
     .nullable(),
+  screenshotWorkflowEnabled: z.boolean().optional(),
 });
 export type WorkerTaskRunResponse = z.infer<typeof WorkerTaskRunResponseSchema>;
 
