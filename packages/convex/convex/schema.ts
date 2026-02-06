@@ -188,6 +188,7 @@ const convexSchema = defineSchema({
   taskRuns: defineTable({
     taskId: v.id("tasks"),
     parentRunId: v.optional(v.id("taskRuns")), // For tree structure
+    startingCommitSha: v.optional(v.string()), // Commit SHA when run started (for diff baseline)
     prompt: v.string(), // The prompt that will be passed to claude
     agentName: v.optional(v.string()), // Name of the agent that ran this task (e.g., "claude/sonnet-4")
     summary: v.optional(v.string()), // Markdown summary of the run
