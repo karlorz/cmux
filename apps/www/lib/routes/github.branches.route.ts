@@ -103,8 +103,8 @@ githubBranchesRouter.openapi(
 
     try {
       const { data } = await octokit.request("GET /repos/{owner}/{repo}", {
-        owner: owner!,
-        repo: repoName!,
+        owner,
+        repo: repoName,
       });
 
       return c.json({ defaultBranch: data.default_branch, error: null }, 200);
