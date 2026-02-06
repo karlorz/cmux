@@ -36,8 +36,8 @@ COPY packages/host-screenshot-collector/package.json ./packages/host-screenshot-
 COPY scripts/package.json ./scripts/
 
 # Install production dependencies
-# Note: Using --no-save to avoid lockfile modifications during build
-RUN bun install --production --ignore-scripts
+# --no-save prevents lockfile updates, avoiding frozen lockfile errors
+RUN bun install --production --ignore-scripts --no-save
 
 # Extract all non-workspace dependencies from server and convex packages
 # These need to be hoisted for proper module resolution
