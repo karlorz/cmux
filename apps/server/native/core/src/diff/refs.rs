@@ -230,8 +230,7 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
                 let fetch_result = match auth_token {
                     Some(token) if !token.is_empty() => {
                         // Use git's insteadOf URL rewriting via -c to avoid persisting the token.
-                        let auth_prefix =
-                            format!("https://x-access-token:{}@github.com/", token);
+                        let auth_prefix = format!("https://x-access-token:{}@github.com/", token);
                         let config_arg =
                             format!("url.{}.insteadOf=https://github.com/", auth_prefix);
                         crate::util::run_git(
