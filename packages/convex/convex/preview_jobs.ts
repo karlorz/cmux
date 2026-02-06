@@ -190,12 +190,12 @@ export const executePreviewJob = internalAction({
     previewRunId: v.id("previewRuns"),
   },
   handler: async (ctx, args) => {
-    const previewRunsEnabled =
-      env.CMUX_ENABLE_PREVIEW_RUNS === "true" ||
-      env.CMUX_ENABLE_PREVIEW_RUNS === "1";
+    const screenshotWorkflowEnabled =
+      env.CMUX_ENABLE_SCREENSHOT_WORKFLOW === "true" ||
+      env.CMUX_ENABLE_SCREENSHOT_WORKFLOW === "1";
 
-    if (!previewRunsEnabled) {
-      console.log("[preview-jobs] Preview runs disabled (CMUX_ENABLE_PREVIEW_RUNS not set to true/1)", {
+    if (!screenshotWorkflowEnabled) {
+      console.log("[preview-jobs] Screenshot workflow disabled (CMUX_ENABLE_SCREENSHOT_WORKFLOW not set to true/1)", {
         previewRunId: args.previewRunId,
       });
       return;
