@@ -52,6 +52,21 @@ const areHeatmapColorsEqual = (a: HeatmapColors, b: HeatmapColors): boolean =>
   a.token.start === b.token.start &&
   a.token.end === b.token.end;
 
+const CODEX_53_PREFIX = "codex/gpt-5.3-codex";
+
+function prioritizeCodex53First(models: readonly string[]): string[] {
+  const codex53: string[] = [];
+  const rest: string[] = [];
+  for (const model of models) {
+    if (model.startsWith(CODEX_53_PREFIX)) {
+      codex53.push(model);
+    } else {
+      rest.push(model);
+    }
+  }
+  return codex53.length > 0 ? [...codex53, ...rest] : [...models];
+}
+
 const PROVIDER_INFO: Record<string, ProviderInfo> = {
   CLAUDE_CODE_OAUTH_TOKEN: {
     helpText:
@@ -1280,6 +1295,15 @@ function SettingsComponent() {
                       {apiKeys.map((key) => {
                         const providerInfo = PROVIDER_INFO[key.envVar];
                         const usedModels = apiKeyModelsByEnv[key.envVar] ?? [];
+                        const hasCodex53Agents = usedModels.some((model) =>
+                          model.startsWith(CODEX_53_PREFIX)
+                        );
+                        const usedModelsForDisplay =
+                          expandedUsedList[key.envVar] &&
+                          (key.envVar === "OPENAI_API_KEY" ||
+                            key.envVar === "CODEX_AUTH_JSON")
+                            ? prioritizeCodex53First(usedModels)
+                            : usedModels;
 
                         return (
                           <div
@@ -1295,6 +1319,13 @@ function SettingsComponent() {
                                   >
                                     {key.displayName}
                                   </label>
+                                  {(key.envVar === "OPENAI_API_KEY" ||
+                                    key.envVar === "CODEX_AUTH_JSON") &&
+                                    hasCodex53Agents && (
+                                      <p className="text-[10px] text-neutral-500 dark:text-neutral-400 mt-0.5">
+                                        Includes {CODEX_53_PREFIX}*
+                                      </p>
+                                    )}
                                   {providerInfo?.helpText && (
                                     <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
                                       {providerInfo.helpText}
@@ -1317,7 +1348,7 @@ function SettingsComponent() {
                                                   : "flex-1 truncate"
                                                 }`}
                                             >
-                                              {usedModels.join(", ")}
+                                              {usedModelsForDisplay.join(", ")}
                                             </span>
                                             {overflowUsedList[key.envVar] && (
                                               <a

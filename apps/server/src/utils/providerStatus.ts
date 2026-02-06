@@ -7,6 +7,7 @@ import {
 } from "@cmux/shared";
 import { checkDockerStatus } from "@cmux/shared/providers/common/check-docker";
 import { getConvex } from "./convexClient.js";
+import { serverLogger } from "./fileLogger";
 
 type CheckAllProvidersStatusOptions = {
   teamSlugOrId?: string;
@@ -112,6 +113,15 @@ export async function checkAllProvidersStatusWebMode(options: {
         const hasApiKey =
           apiKeys.OPENAI_API_KEY && apiKeys.OPENAI_API_KEY.trim() !== "";
         if (!hasAuthJson && !hasApiKey) {
+          serverLogger.debug(
+            "[providerStatus:web] Codex requirements missing",
+            {
+              teamSlugOrId: options.teamSlugOrId,
+              agent: agent.name,
+              hasCodexAuthJson: hasAuthJson,
+              hasOpenaiApiKey: hasApiKey,
+            }
+          );
           missingRequirements.push("Codex Auth JSON or OpenAI API Key");
         }
       } else {

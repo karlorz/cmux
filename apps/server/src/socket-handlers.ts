@@ -3102,11 +3102,21 @@ Please address the issue mentioned in the comment above.`;
         const status = env.NEXT_PUBLIC_WEB_MODE
           ? await checkAllProvidersStatusWebMode({ teamSlugOrId: safeTeam })
           : await checkAllProvidersStatus({ teamSlugOrId: safeTeam });
-        callback({ success: true, ...status });
+        const providers = status.providers ?? [];
+        callback({
+          success: true,
+          teamSlugOrId: safeTeam,
+          providerCount: providers.length,
+          hasCodex53: providers.some((p) =>
+            p.name.startsWith("codex/gpt-5.3-codex")
+          ),
+          ...status,
+        });
       } catch (error) {
         serverLogger.error("Error checking provider status:", error);
         callback({
           success: false,
+          teamSlugOrId: safeTeam,
           error: error instanceof Error ? error.message : "Unknown error",
         });
       }
