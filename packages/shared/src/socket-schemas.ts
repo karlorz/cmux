@@ -446,6 +446,9 @@ export const GitHubStatusSchema = z.object({
 
 export const ProviderStatusResponseSchema = z.object({
   success: z.boolean(),
+  teamSlugOrId: z.string().optional(),
+  providerCount: z.number().optional(),
+  hasCodex53: z.boolean().optional(),
   providers: z.array(ProviderStatusSchema).optional(),
   dockerStatus: DockerStatusSchema.optional(),
   gitStatus: GitStatusSchema.optional(),

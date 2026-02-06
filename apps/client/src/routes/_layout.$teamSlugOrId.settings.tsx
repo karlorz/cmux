@@ -87,6 +87,35 @@ const PROVIDER_INFO: Record<string, ProviderInfo> = {
   },
 };
 
+const CODEX_53_PREFIX = "codex/gpt-5.3-codex";
+
+const isCodex53Model = (model: string): boolean =>
+  model === CODEX_53_PREFIX || model.startsWith(`${CODEX_53_PREFIX}-`);
+
+const prioritizeCodex53 = (models: string[]): string[] => {
+  const codexModels = models.filter(isCodex53Model);
+  if (codexModels.length === 0) {
+    return models;
+  }
+  const rest = models.filter((model) => !isCodex53Model(model));
+  return [...codexModels, ...rest];
+};
+
+const renderUsedModelList = (models: string[], highlightCodex53: boolean) =>
+  models.map((model, index) => (
+    <span
+      key={`${model}-${index}`}
+      className={
+        highlightCodex53 && isCodex53Model(model)
+          ? "text-blue-600 dark:text-blue-400"
+          : undefined
+      }
+    >
+      {model}
+      {index < models.length - 1 ? ", " : ""}
+    </span>
+  ));
+
 function GitHubIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="currentColor">
@@ -1280,6 +1309,18 @@ function SettingsComponent() {
                       {apiKeys.map((key) => {
                         const providerInfo = PROVIDER_INFO[key.envVar];
                         const usedModels = apiKeyModelsByEnv[key.envVar] ?? [];
+                        const hasCodex53 = usedModels.some(isCodex53Model);
+                        const showCodex53Indicator =
+                          hasCodex53 &&
+                          (key.envVar === "OPENAI_API_KEY" ||
+                            key.envVar === "CODEX_AUTH_JSON");
+                        const isExpanded = !!expandedUsedList[key.envVar];
+                        const usedModelsForDisplay = isExpanded
+                          ? prioritizeCodex53(usedModels)
+                          : usedModels;
+                        const usedModelsContent = isExpanded
+                          ? renderUsedModelList(usedModelsForDisplay, true)
+                          : usedModelsForDisplay.join(", ");
 
                         return (
                           <div
@@ -1300,6 +1341,11 @@ function SettingsComponent() {
                                       {providerInfo.helpText}
                                     </p>
                                   )}
+                                  {showCodex53Indicator && (
+                                    <p className="text-[10px] text-blue-600 dark:text-blue-400 mt-1">
+                                      Includes gpt-5.3-codex
+                                    </p>
+                                  )}
                                   {usedModels.length > 0 && (
                                     <div className="mt-1 space-y-1">
                                       <div className="flex items-center gap-2 min-w-0">
@@ -1317,7 +1363,7 @@ function SettingsComponent() {
                                                   : "flex-1 truncate"
                                                 }`}
                                             >
-                                              {usedModels.join(", ")}
+                                              {usedModelsContent}
                                             </span>
                                             {overflowUsedList[key.envVar] && (
                                               <a

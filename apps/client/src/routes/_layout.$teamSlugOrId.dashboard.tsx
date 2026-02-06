@@ -20,6 +20,10 @@ import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
 import { useOnboardingOptional } from "@/contexts/onboarding";
 import { useSocket } from "@/contexts/socket/use-socket";
 import { createFakeConvexId } from "@/lib/fakeConvexId";
+import {
+  filterKnownAgents,
+  reconcileAgentSelection,
+} from "@/lib/agentSelection";
 import { attachTaskLifecycleListeners } from "@/lib/socket/taskLifecycleListeners";
 import { getApiIntegrationsGithubBranches } from "@/queries/branches";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
@@ -33,7 +37,6 @@ import type {
   TaskError,
   TaskStarted,
 } from "@cmux/shared";
-import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import type { GithubBranchesResponse } from "@cmux/www-openapi-client";
 import { convexQuery } from "@convex-dev/react-query";
 import {
@@ -107,21 +110,9 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/dashboard")({
 
 // Default agents (not persisted to localStorage)
 const DEFAULT_AGENTS = ["claude/opus-4.5"];
-const KNOWN_AGENT_NAMES = new Set(AGENT_CONFIGS.map((agent) => agent.name));
-const DISABLED_AGENT_NAMES = new Set(
-  AGENT_CONFIGS.filter((agent) => agent.disabled).map((agent) => agent.name)
-);
-const DEFAULT_AGENT_SELECTION = DEFAULT_AGENTS.filter(
-  (agent) => KNOWN_AGENT_NAMES.has(agent) && !DISABLED_AGENT_NAMES.has(agent)
-);
+const DEFAULT_AGENT_SELECTION = filterKnownAgents(DEFAULT_AGENTS);
 
 const AGENT_SELECTION_SCHEMA = z.array(z.string());
-
-// Filter to known agents and exclude disabled ones
-const filterKnownAgents = (agents: string[]): string[] =>
-  agents.filter(
-    (agent) => KNOWN_AGENT_NAMES.has(agent) && !DISABLED_AGENT_NAMES.has(agent)
-  );
 
 const parseStoredAgentSelection = (stored: string | null): string[] => {
   if (!stored) {
@@ -538,6 +529,8 @@ function DashboardComponent() {
         if (typeof isRunning === "boolean") {
           setDockerReady(isRunning);
         }
+      } else {
+        return;
       }
 
       const currentAgents = selectedAgentsRef.current;
@@ -545,41 +538,27 @@ function DashboardComponent() {
         return;
       }
 
-      const providers = response.providers;
-      if (!providers || providers.length === 0) {
-        const normalizedOnly = filterKnownAgents(currentAgents);
-        if (normalizedOnly.length !== currentAgents.length) {
-          setSelectedAgents(normalizedOnly);
-          persistAgentSelection(normalizedOnly);
-        }
-        return;
-      }
+      const {
+        filteredAgents,
+        removedUnknownClient,
+        removedUnavailableKnown,
+        removedUnknownMissing,
+      } = reconcileAgentSelection(currentAgents, response.providers);
 
-      const availableAgents = new Set(
-        providers
-          .filter((provider) => provider.isAvailable)
-          .map((provider) => provider.name)
-      );
+      const hasRemovals =
+        removedUnknownClient.length > 0 ||
+        removedUnavailableKnown.length > 0 ||
+        removedUnknownMissing.length > 0;
 
-      const normalizedAgents = filterKnownAgents(currentAgents);
-      const removedUnknown = normalizedAgents.length !== currentAgents.length;
-
-      const filteredAgents = normalizedAgents.filter((agent) =>
-        availableAgents.has(agent)
-      );
-      const removedUnavailable = normalizedAgents.filter(
-        (agent) => !availableAgents.has(agent)
-      );
-
-      if (!removedUnknown && removedUnavailable.length === 0) {
+      if (!hasRemovals) {
         return;
       }
 
       setSelectedAgents(filteredAgents);
       persistAgentSelection(filteredAgents);
 
-      if (removedUnavailable.length > 0) {
-        const uniqueMissing = Array.from(new Set(removedUnavailable));
+      if (removedUnavailableKnown.length > 0) {
+        const uniqueMissing = Array.from(new Set(removedUnavailableKnown));
         if (uniqueMissing.length > 0) {
           const label = uniqueMissing.length === 1 ? "model" : "models";
           const verb = uniqueMissing.length === 1 ? "is" : "are";
@@ -589,6 +568,20 @@ function DashboardComponent() {
             : `Update credentials in Settings to use ${thisThese} ${label}.`;
           toast.warning(
             `${uniqueMissing.join(", ")} ${verb} not configured and was removed from the selection. ${actionMessage}`
+          );
+        }
+      }
+
+      if (removedUnknownMissing.length > 0) {
+        const uniqueMissing = Array.from(new Set(removedUnknownMissing));
+        if (uniqueMissing.length > 0) {
+          const label = uniqueMissing.length === 1 ? "agent" : "agents";
+          const verb = uniqueMissing.length === 1 ? "is" : "are";
+          const actionMessage = env.NEXT_PUBLIC_WEB_MODE
+            ? "Refresh the page or redeploy the server to sync the agent list."
+            : "Restart or redeploy the server to sync the agent list.";
+          toast.warning(
+            `${uniqueMissing.join(", ")} ${verb} not recognized by this server and was removed from the selection. ${actionMessage}`
           );
         }
       }
