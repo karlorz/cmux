@@ -513,6 +513,12 @@ export function setupSocketHandlers(
     socket.on("git-diff", async (data, callback) => {
       try {
         const parsed = GitSocketDiffRequestSchema.parse(data);
+        serverLogger.debug("[socket.git-diff] inputs", {
+          headRef: parsed.headRef,
+          baseRef: parsed.baseRef,
+          originPathOverride: parsed.originPathOverride,
+          forceRefresh: parsed.forceRefresh,
+        });
 
         if (
           !parsed.repoFullName &&

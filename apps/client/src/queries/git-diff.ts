@@ -34,6 +34,14 @@ export function gitDiffQueryOptions({
   const canonicalBaseRef =
     normalizeGitRef(baseRef) || baseRef?.trim() || "";
 
+  const omitLastKnown = forceRefresh === true;
+  const lastKnownBaseShaForRequest = omitLastKnown
+    ? undefined
+    : lastKnownBaseSha;
+  const lastKnownMergeCommitShaForRequest = omitLastKnown
+    ? undefined
+    : lastKnownMergeCommitSha;
+
   return queryOptions({
     queryKey: [
       "git-diff",
@@ -42,8 +50,8 @@ export function gitDiffQueryOptions({
       canonicalBaseRef,
       includeContents ? "with-contents" : "no-contents",
       maxBytes ?? "",
-      lastKnownBaseSha ?? "",
-      lastKnownMergeCommitSha ?? "",
+      lastKnownBaseShaForRequest ?? "",
+      lastKnownMergeCommitShaForRequest ?? "",
       forceRefresh ? "force" : "",
     ],
     queryFn: async () => {
@@ -59,8 +67,8 @@ export function gitDiffQueryOptions({
             baseRef: canonicalBaseRef || undefined,
             includeContents,
             maxBytes,
-            lastKnownBaseSha,
-            lastKnownMergeCommitSha,
+            lastKnownBaseSha: lastKnownBaseShaForRequest,
+            lastKnownMergeCommitSha: lastKnownMergeCommitShaForRequest,
             forceRefresh,
           },
           (

@@ -216,22 +216,45 @@ pub fn diff_refs(opts: GitDiffOptions) -> Result<Vec<DiffEntry>> {
     let _d_repo_path = t_repo_path.elapsed();
     let cwd = repo_path.to_string_lossy().to_string();
 
-    // If a specific repo path is provided, assume the caller ensures freshness.
-    // Avoid synchronous fetch here to reduce latency.
     let force_refresh = opts.forceRefresh.unwrap_or(false);
     #[cfg(debug_assertions)]
     println!("[native.refs] force_refresh={}", force_refresh);
-    let _d_fetch = if opts.originPathOverride.is_some() {
-        Duration::from_millis(0)
-    } else {
-        let t_fetch = Instant::now();
-        let _ = crate::repo::cache::swr_fetch_origin_all_path_with_auth_force(
-            std::path::Path::new(&cwd),
-            crate::repo::cache::fetch_window_ms(),
-            auth_token,
-            force_refresh,
-        );
-        t_fetch.elapsed()
+    let _d_fetch = match opts.originPathOverride.is_some() {
+        // If a specific repo path is provided, assume the caller ensures freshness.
+        // However, when forceRefresh is set (explicit user action), we should still fetch.
+        true => {
+            if !force_refresh {
+                Duration::from_millis(0)
+            } else {
+                let t_fetch = Instant::now();
+                let fetch_result = match auth_token {
+                    Some(token) if !token.is_empty() => {
+                        // Use git's insteadOf URL rewriting via -c to avoid persisting the token.
+                        let auth_prefix =
+                            format!("https://x-access-token:{}@github.com/", token);
+                        let config_arg =
+                            format!("url.{}.insteadOf=https://github.com/", auth_prefix);
+                        crate::util::run_git(
+                            &cwd,
+                            &["-c", &config_arg, "fetch", "--all", "--prune"],
+                        )
+                    }
+                    _ => crate::util::run_git(&cwd, &["fetch", "--all", "--prune"]),
+                };
+                let _ = fetch_result;
+                t_fetch.elapsed()
+            }
+        }
+        false => {
+            let t_fetch = Instant::now();
+            let _ = crate::repo::cache::swr_fetch_origin_all_path_with_auth_force(
+                std::path::Path::new(&cwd),
+                crate::repo::cache::fetch_window_ms(),
+                auth_token,
+                force_refresh,
+            );
+            t_fetch.elapsed()
+        }
     };
 
     let t_open = Instant::now();
