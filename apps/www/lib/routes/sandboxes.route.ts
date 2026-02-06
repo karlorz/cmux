@@ -810,6 +810,55 @@ sandboxesRouter.openapi(
         return c.text("Failed to hydrate sandbox", 500);
       }
 
+      // Capture starting commit SHA for diff baseline (after hydration, before agent runs)
+      if (body.taskRunId) {
+        console.log(
+          "[sandboxes.start] Capturing starting commit SHA for taskRunId:",
+          body.taskRunId,
+        );
+        try {
+          const execResult = await instance.exec(
+            "git -C /root/workspace rev-parse HEAD",
+          );
+          console.log("[sandboxes.start] git rev-parse HEAD result:", {
+            exit_code: execResult.exit_code,
+            stdout: execResult.stdout?.substring(0, 50),
+          });
+          if (execResult.exit_code === 0 && execResult.stdout) {
+            const startingCommitSha = execResult.stdout.trim();
+            console.log(
+              "[sandboxes.start] Starting commit SHA:",
+              startingCommitSha,
+              "length:",
+              startingCommitSha.length,
+            );
+            if (startingCommitSha.length === 40) {
+              console.log(
+                "[sandboxes.start] Saving startingCommitSha to Convex:",
+                startingCommitSha,
+              );
+              void convex
+                .mutation(api.taskRuns.updateStartingCommitSha, {
+                  teamSlugOrId: body.teamSlugOrId,
+                  id: body.taskRunId as Id<"taskRuns">,
+                  startingCommitSha,
+                })
+                .catch((error) => {
+                  console.error(
+                    "[sandboxes.start] Failed to update starting commit SHA:",
+                    error,
+                  );
+                });
+            }
+          }
+        } catch (error) {
+          console.error(
+            "[sandboxes.start] Failed to capture starting commit SHA:",
+            error,
+          );
+        }
+      }
+
       // Update status to "running" after hydration completes
       if (body.taskRunId && vscodePersisted) {
         void convex

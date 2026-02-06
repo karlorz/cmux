@@ -11,25 +11,43 @@ import { api } from "@cmux/convex/api";
 
 export interface TaskRunGitDiffPanelProps {
   task: Doc<"tasks"> | null | undefined;
+  taskRuns?: TaskRunWithChildren[] | null | undefined;
   selectedRun: TaskRunWithChildren | null | undefined;
   teamSlugOrId: string;
   taskId: Id<"tasks">;
   selectedRunId: Id<"taskRuns"> | null | undefined;
 }
 
-export function TaskRunGitDiffPanel({ task, selectedRun, teamSlugOrId, taskId, selectedRunId }: TaskRunGitDiffPanelProps) {
+export function TaskRunGitDiffPanel({ task, taskRuns, selectedRun, teamSlugOrId, taskId, selectedRunId }: TaskRunGitDiffPanelProps) {
   // Check for cloud/local workspace (no GitHub repo to diff against)
   const isCloudOrLocalWorkspace = task?.isCloudWorkspace || task?.isLocalWorkspace;
 
-  // When baseBranch is not set, pass undefined to let native code auto-detect
-  // the default branch (via refs/remotes/origin/HEAD → origin/main → origin/master)
+  // Find parent run if this is a child run (for comparing against parent's branch)
+  const parentRun = useMemo(() => {
+    if (!selectedRun?.parentRunId || !taskRuns) return null;
+    return taskRuns.find((run) => run._id === selectedRun.parentRunId) ?? null;
+  }, [selectedRun?.parentRunId, taskRuns]);
+
+  // Determine base ref for diff comparison with priority:
+  // 1. Parent run's branch (for child runs)
+  // 2. Starting commit SHA (for new tasks in custom environments)
+  // 3. Task's base branch (explicit user choice)
   const normalizedBaseBranch = useMemo(() => {
+    // Priority 1: Parent run's branch (for child runs)
+    if (parentRun?.newBranch) {
+      return normalizeGitRef(parentRun.newBranch);
+    }
+    // Priority 2: Starting commit SHA (for new tasks in custom environments)
+    if (selectedRun?.startingCommitSha) {
+      return selectedRun.startingCommitSha; // Direct SHA, no normalization needed
+    }
+    // Priority 3: Task's base branch
     const candidate = task?.baseBranch;
     if (candidate && candidate.trim()) {
       return normalizeGitRef(candidate);
     }
     return undefined;
-  }, [task?.baseBranch]);
+  }, [parentRun?.newBranch, selectedRun?.startingCommitSha, task?.baseBranch]);
 
   const normalizedHeadBranch = useMemo(
     () => normalizeGitRef(selectedRun?.newBranch),
