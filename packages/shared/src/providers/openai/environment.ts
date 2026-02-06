@@ -65,9 +65,9 @@ export function stripFilteredConfigKeys(toml: string): string {
 }
 
 // Target model for migrations - change this when a new latest model is released
-const MIGRATION_TARGET_MODEL = "gpt-5.2-codex";
+const MIGRATION_TARGET_MODEL = "gpt-5.3-codex";
 
-// Models to migrate (models without model_reasoning_effort support)
+// Models to migrate (legacy models and models without model_reasoning_effort support)
 const MODELS_TO_MIGRATE = [
   "gpt-5.1-codex-max",
   "gpt-5.2",
@@ -78,6 +78,7 @@ const MODELS_TO_MIGRATE = [
   "o3",
   "o4-mini",
   "gpt-4.1",
+  "gpt-5-codex",
   "gpt-5-codex-mini",
 ];
 
@@ -102,6 +103,8 @@ export async function getOpenAIEnvironment(
   const { readFile } = await import("node:fs/promises");
   const { homedir } = await import("node:os");
   const { Buffer } = await import("node:buffer");
+
+  const homeDir = process.env.HOME || process.env.USERPROFILE || homedir();
 
   const files: EnvironmentResult["files"] = [];
   const env: Record<string, string> = {};
@@ -138,7 +141,7 @@ touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
   for (const file of codexFiles) {
     try {
       const content = await readFile(
-        `${homedir()}/.codex/${file.name}`,
+        `${homeDir}/.codex/${file.name}`,
         "utf-8"
       );
       files.push({
@@ -154,7 +157,7 @@ touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
 
   // Ensure config.toml exists and contains notify hook + model migrations
   try {
-    const rawToml = await readFile(`${homedir()}/.codex/config.toml`, "utf-8");
+    const rawToml = await readFile(`${homeDir}/.codex/config.toml`, "utf-8");
     // Filter out keys controlled by cmux CLI args (model, model_reasoning_effort)
     const filteredToml = stripFilteredConfigKeys(rawToml);
     const hasNotify = /(^|\n)\s*notify\s*=/.test(filteredToml);
