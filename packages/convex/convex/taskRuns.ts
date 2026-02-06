@@ -708,6 +708,14 @@ export const getRunDiffContext = authQuery({
       taskRuns,
       branchMetadataByRepo,
       screenshotSets,
+      screenshotConfig: {
+        previewRunsEnabled:
+          env.CMUX_ENABLE_PREVIEW_RUNS === "true" ||
+          env.CMUX_ENABLE_PREVIEW_RUNS === "1",
+        screenshotWorkflowEnabled:
+          env.CMUX_ENABLE_SCREENSHOT_WORKFLOW === "true" ||
+          env.CMUX_ENABLE_SCREENSHOT_WORKFLOW === "1",
+      },
     };
   },
 });

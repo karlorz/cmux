@@ -11,6 +11,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import {
   ChevronLeft,
   ChevronRight,
+  Info,
   Maximize2,
   Play,
   RotateCcw,
@@ -49,9 +50,14 @@ interface RunScreenshotSet {
   videos?: ScreenshotVideo[];
 }
 
+interface ScreenshotConfig {
+  previewRunsEnabled: boolean;
+  screenshotWorkflowEnabled: boolean;
+}
+
 interface RunScreenshotGalleryProps {
   screenshotSets: RunScreenshotSet[];
-  // Note: highlightedSetId was removed as the component now only shows the latest set
+  screenshotConfig?: ScreenshotConfig;
 }
 
 const MIN_ZOOM = 0.2;
@@ -90,6 +96,70 @@ function isNoUiChangesError(error?: string | null): boolean {
   );
 }
 
+const NOTICE_MESSAGES = {
+  previewRunsDisabled: {
+    title: "Preview runs disabled",
+    description: "Preview screenshot capture is disabled.",
+  },
+  screenshotWorkflowDisabled: {
+    title: "Screenshot workflow disabled",
+    description: "Screenshot collection is disabled.",
+  },
+  noUiChanges: {
+    title: "No UI changes detected",
+    description: "No visual changes requiring screenshots.",
+  },
+} as const;
+
+type NoticeType = keyof typeof NOTICE_MESSAGES;
+
+function getNoticeType(
+  latestSet: RunScreenshotSet | undefined | null,
+  config: ScreenshotConfig,
+): NoticeType | null {
+  if (latestSet) {
+    // Check for no UI changes (existing logic)
+    if (
+      latestSet.hasUiChanges === false ||
+      isNoUiChangesError(latestSet.error)
+    ) {
+      return "noUiChanges";
+    }
+    // Check for workflow disabled
+    if (
+      latestSet.status === "skipped" &&
+      latestSet.error?.includes("Screenshot workflow disabled")
+    ) {
+      return "screenshotWorkflowDisabled";
+    }
+    return null; // Has content, show gallery
+  }
+
+  // No sets - check feature flags
+  if (!config.previewRunsEnabled) return "previewRunsDisabled";
+  if (!config.screenshotWorkflowEnabled) return "screenshotWorkflowDisabled";
+  return null;
+}
+
+function ScreenshotNotice({ type }: { type: NoticeType }) {
+  const notice = NOTICE_MESSAGES[type];
+  return (
+    <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
+      <div className="flex items-start gap-3">
+        <Info className="h-4 w-4 text-neutral-400 dark:text-neutral-500 flex-shrink-0 mt-0.5" />
+        <div>
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+            {notice.title}
+          </p>
+          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+            {notice.description}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type MediaKind = "image" | "video";
 
 type GalleryItem = {
@@ -112,7 +182,7 @@ const getMediaKey = (
 ) => `${setId}:${kind}:${media.storageId}:${indexInSet}`;
 
 export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
-  const { screenshotSets } = props;
+  const { screenshotSets, screenshotConfig } = props;
   // Only show the latest screenshot set
   const latestScreenshotSet = useMemo(() => {
     if (screenshotSets.length === 0) return null;
@@ -477,7 +547,18 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
     };
   }, [goNext, goPrev, isSlideshowOpen]);
 
-  if (!latestScreenshotSet) {
+  const config: ScreenshotConfig = screenshotConfig ?? {
+    previewRunsEnabled: true,
+    screenshotWorkflowEnabled: true,
+  };
+  const noticeType = getNoticeType(latestScreenshotSet, config);
+  const hasGalleryContent =
+    latestScreenshotSet &&
+    (latestScreenshotSet.images.length > 0 ||
+      (latestScreenshotSet.videos?.length ?? 0) > 0);
+
+  // Don't show section if no notice and no content
+  if (!noticeType && !latestScreenshotSet) {
     return null;
   }
 
@@ -487,12 +568,16 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
         <h2 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
           Screenshots and videos
         </h2>
-        <span className="text-xs text-neutral-600 dark:text-neutral-400">
-          Latest capture
-        </span>
+        {hasGalleryContent && (
+          <span className="text-xs text-neutral-600 dark:text-neutral-400">
+            Latest capture
+          </span>
+        )}
       </div>
       <div className="px-3.5 pb-4 space-y-4">
-        {currentEntry ? (
+        {noticeType && !hasGalleryContent ? (
+          <ScreenshotNotice type={noticeType} />
+        ) : currentEntry ? (
           <Dialog.Root
             open={isSlideshowOpen}
             onOpenChange={(open) => !open && closeSlideshow()}
@@ -692,7 +777,7 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
             </Dialog.Portal>
           </Dialog.Root>
         ) : null}
-        {(() => {
+        {latestScreenshotSet ? (() => {
           const set = latestScreenshotSet;
           const capturedAtDate = new Date(set.capturedAt);
           const relativeCapturedAt = formatDistanceToNow(capturedAtDate, {
@@ -831,7 +916,7 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
               ) : null}
             </article>
           );
-        })()}
+        })() : null}
       </div>
     </section>
   );
