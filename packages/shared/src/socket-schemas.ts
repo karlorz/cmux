@@ -444,6 +444,12 @@ export const GitHubStatusSchema = z.object({
   error: z.string().optional(),
 });
 
+// Codex key presence diagnostics (no secrets, just booleans)
+export const CodexKeyPresenceSchema = z.object({
+  hasOpenaiApiKey: z.boolean(),
+  hasCodexAuthJson: z.boolean(),
+});
+
 export const ProviderStatusResponseSchema = z.object({
   success: z.boolean(),
   providers: z.array(ProviderStatusSchema).optional(),
@@ -454,6 +460,11 @@ export const ProviderStatusResponseSchema = z.object({
   teamSlugOrId: z.string().optional(),
   providerCount: z.number().int().nonnegative().optional(),
   hasCodex53: z.boolean().optional(),
+  // Extended diagnostics for version drift detection
+  modelRegistryFingerprint: z.string().optional(),
+  serverBuildId: z.string().optional(),
+  codexKeyPresence: CodexKeyPresenceSchema.optional(),
+  legacyCodexPresent: z.boolean().optional(),
   error: z.string().optional(),
 });
 
@@ -527,6 +538,7 @@ export type DockerPullProgress = z.infer<typeof DockerPullProgressSchema>;
 export type GitStatus = z.infer<typeof GitStatusSchema>;
 export type GitHubStatus = z.infer<typeof GitHubStatusSchema>;
 export type GitHubFetchRepos = z.infer<typeof GitHubFetchReposSchema>;
+export type CodexKeyPresence = z.infer<typeof CodexKeyPresenceSchema>;
 export type ProviderStatusResponse = z.infer<
   typeof ProviderStatusResponseSchema
 >;

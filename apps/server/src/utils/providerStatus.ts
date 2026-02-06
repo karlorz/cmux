@@ -1,6 +1,7 @@
 import { api } from "@cmux/convex/api";
 import {
   AGENT_CONFIGS,
+  type CodexKeyPresence,
   type DockerStatus,
   type ProviderRequirementsContext,
   type ProviderStatus as SharedProviderStatus,
@@ -8,6 +9,57 @@ import {
 import { checkDockerStatus } from "@cmux/shared/providers/common/check-docker";
 import { getConvex } from "./convexClient.js";
 import { serverLogger } from "./fileLogger";
+
+/**
+ * Compute a fingerprint hash of the model registry.
+ * This allows clients to detect version drift (client expects models server doesn't have).
+ */
+export function computeModelRegistryFingerprint(): string {
+  const names = AGENT_CONFIGS.map((c) => c.name).sort();
+  // Simple hash: join names and compute a short checksum
+  const str = names.join("|");
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash + char) | 0;
+  }
+  return `v1-${Math.abs(hash).toString(36)}`;
+}
+
+/**
+ * Legacy Codex model patterns that have been removed from the registry.
+ * Used to detect if a deployment is serving stale/old models.
+ */
+const LEGACY_CODEX_PATTERNS = [
+  /^codex\/gpt-5$/,
+  /^codex\/gpt-5-/,
+  /^codex\/o3$/,
+  /^codex\/o4-mini$/,
+  /^codex\/gpt-4\.1$/,
+  /^codex\/gpt-5-codex$/,
+  /^codex\/gpt-5-codex-/,
+];
+
+/**
+ * Check if any legacy Codex models are present in the registry.
+ */
+export function checkLegacyCodexPresent(): boolean {
+  return AGENT_CONFIGS.some((c) =>
+    LEGACY_CODEX_PATTERNS.some((pattern) => pattern.test(c.name))
+  );
+}
+
+/**
+ * Get server build ID from environment if available.
+ */
+export function getServerBuildId(): string | undefined {
+  return (
+    process.env.CMUX_BUILD_ID ||
+    process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 8) ||
+    process.env.GIT_COMMIT_SHA?.slice(0, 8) ||
+    undefined
+  );
+}
 
 type CheckAllProvidersStatusOptions = {
   teamSlugOrId?: string;
@@ -73,6 +125,7 @@ export async function checkAllProvidersStatusWebMode(options: {
 }): Promise<{
   providers: SharedProviderStatus[];
   dockerStatus: DockerStatus;
+  codexKeyPresence: CodexKeyPresence;
 }> {
   // In web mode, Docker is managed by cloud provider - always report as ready
   const dockerStatus: DockerStatus = { isRunning: true, version: "web-mode" };
@@ -91,6 +144,16 @@ export async function checkAllProvidersStatusWebMode(options: {
     );
   }
 
+  // Compute codex key presence for diagnostics
+  const codexKeyPresence: CodexKeyPresence = {
+    hasOpenaiApiKey: Boolean(
+      apiKeys.OPENAI_API_KEY && apiKeys.OPENAI_API_KEY.trim() !== ""
+    ),
+    hasCodexAuthJson: Boolean(
+      apiKeys.CODEX_AUTH_JSON && apiKeys.CODEX_AUTH_JSON.trim() !== ""
+    ),
+  };
+
   // Check each agent's required API keys (skip local file checks)
   const providerChecks = AGENT_CONFIGS.map((agent) => {
     const missingRequirements: string[] = [];
@@ -108,18 +171,14 @@ export async function checkAllProvidersStatusWebMode(options: {
         // Claude agents always available in web mode due to Vertex AI fallback
         // (server-side VERTEX_PRIVATE_KEY handles auth when user key is missing)
       } else if (isCodexAgent) {
-        const hasAuthJson =
-          apiKeys.CODEX_AUTH_JSON && apiKeys.CODEX_AUTH_JSON.trim() !== "";
-        const hasApiKey =
-          apiKeys.OPENAI_API_KEY && apiKeys.OPENAI_API_KEY.trim() !== "";
-        if (!hasAuthJson && !hasApiKey) {
+        if (!codexKeyPresence.hasCodexAuthJson && !codexKeyPresence.hasOpenaiApiKey) {
           serverLogger.debug(
             "[providerStatus:web] Codex requirements missing",
             {
               teamSlugOrId: options.teamSlugOrId,
               agent: agent.name,
-              hasCodexAuthJson: hasAuthJson,
-              hasOpenaiApiKey: hasApiKey,
+              hasCodexAuthJson: codexKeyPresence.hasCodexAuthJson,
+              hasOpenaiApiKey: codexKeyPresence.hasOpenaiApiKey,
             }
           );
           missingRequirements.push("Codex Auth JSON or OpenAI API Key");
@@ -146,5 +205,6 @@ export async function checkAllProvidersStatusWebMode(options: {
   return {
     providers: providerChecks,
     dockerStatus,
+    codexKeyPresence,
   };
 }

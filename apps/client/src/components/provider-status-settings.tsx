@@ -1,7 +1,8 @@
 import { useSocket } from "@/contexts/socket/use-socket";
 import type { ProviderStatus, ProviderStatusResponse } from "@cmux/shared";
-import { AlertCircle, CheckCircle2, RefreshCw, XCircle } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle2, RefreshCw, XCircle } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 export function ProviderStatusSettings() {
   const { socket } = useSocket();
@@ -76,22 +77,58 @@ export function ProviderStatusSettings() {
   const gitOk = status.gitStatus?.isAvailable ?? false;
   const dockerImage = status.dockerStatus?.workerImage;
 
+  // Check for version drift indicators
+  const hasVersionDrift = status.legacyCodexPresent === true;
+  const serverBuildId = status.serverBuildId;
+  const fingerprint = status.modelRegistryFingerprint;
+
   return (
     <div className="space-y-3">
+      {/* Version drift warning */}
+      {hasVersionDrift && (
+        <div className="flex items-center gap-2 p-2 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+          <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+          <div className="text-xs text-amber-800 dark:text-amber-200">
+            <span className="font-medium">Version mismatch detected.</span>{" "}
+            Server is running legacy models. Redeploy to get latest Codex 5.3 support.
+            {serverBuildId && (
+              <span className="text-amber-600 dark:text-amber-400">
+                {" "}
+                (build: {serverBuildId})
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Refresh button */}
       <div className="flex justify-end -mt-1 -mb-2">
-        <button
-          onClick={checkProviderStatus}
-          className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
-          disabled={loading}
-        >
-          {loading ? (
-            <RefreshCw className="w-3 h-3 animate-spin" />
-          ) : (
-            <RefreshCw className="w-3 h-3" />
+        <div className="flex items-center gap-2">
+          {fingerprint && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="text-[10px] text-neutral-400 dark:text-neutral-500 font-mono">
+                  {fingerprint}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="text-xs">Model registry fingerprint</p>
+              </TooltipContent>
+            </Tooltip>
           )}
-          Refresh
-        </button>
+          <button
+            onClick={checkProviderStatus}
+            className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+            disabled={loading}
+          >
+            {loading ? (
+              <RefreshCw className="w-3 h-3 animate-spin" />
+            ) : (
+              <RefreshCw className="w-3 h-3" />
+            )}
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Combined Status Grid */}

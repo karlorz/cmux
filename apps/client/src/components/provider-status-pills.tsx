@@ -3,7 +3,7 @@ import { useSocket } from "@/contexts/socket/use-socket";
 import type { ProviderStatus, ProviderStatusResponse } from "@cmux/shared";
 import { useNavigate } from "@tanstack/react-router";
 import clsx from "clsx";
-import { RefreshCw } from "lucide-react";
+import { AlertTriangle, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 export function ProviderStatusPills({ teamSlugOrId }: { teamSlugOrId: string }) {
@@ -43,6 +43,9 @@ export function ProviderStatusPills({ teamSlugOrId }: { teamSlugOrId: string }) 
     !status.dockerStatus.workerImage.isAvailable;
   const dockerImagePulling = status.dockerStatus?.workerImage?.isPulling;
 
+  // Check for version drift
+  const hasVersionDrift = status.legacyCodexPresent === true;
+
   // Count total available and unavailable providers
   const totalProviders = status.providers?.length ?? 0;
   const availableProviders = totalProviders - unavailableProviders.length;
@@ -51,7 +54,8 @@ export function ProviderStatusPills({ teamSlugOrId }: { teamSlugOrId: string }) 
   if (
     unavailableProviders.length === 0 &&
     !dockerNotReady &&
-    !dockerImageNotReady
+    !dockerImageNotReady &&
+    !hasVersionDrift
   ) {
     return null;
   }
@@ -194,6 +198,41 @@ export function ProviderStatusPills({ teamSlugOrId }: { teamSlugOrId: string }) 
                     ? `Pulling ${status.dockerStatus?.workerImage?.name}...`
                     : `${status.dockerStatus?.workerImage?.name} needs to be downloaded`}
                 </p>
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {hasVersionDrift && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() =>
+                    navigate({
+                      to: "/$teamSlugOrId/settings",
+                      params: { teamSlugOrId },
+                    })
+                  }
+                  className={clsx(
+                    "flex w-full items-center gap-1 rounded-md px-1.5 py-1",
+                    "bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700",
+                    "text-amber-800 dark:text-amber-200",
+                    "text-[10px] font-medium cursor-default select-none leading-tight",
+                    "min-w-0"
+                  )}
+                >
+                  <AlertTriangle className="h-3 w-3 text-amber-500" />
+                  <span className="truncate font-medium">Outdated</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="font-medium">Version Mismatch</p>
+                <p className="text-xs opacity-90">
+                  Server is running legacy models. Redeploy for Codex 5.3 support.
+                </p>
+                {status.serverBuildId && (
+                  <p className="text-xs text-neutral-400 mt-1">
+                    Build: {status.serverBuildId}
+                  </p>
+                )}
               </TooltipContent>
             </Tooltip>
           )}

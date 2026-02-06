@@ -59,6 +59,9 @@ import { getOctokit } from "./utils/octokit";
 import {
   checkAllProvidersStatus,
   checkAllProvidersStatusWebMode,
+  checkLegacyCodexPresent,
+  computeModelRegistryFingerprint,
+  getServerBuildId,
 } from "./utils/providerStatus";
 import { refreshGitHubData } from "./utils/refreshGitHubData";
 import { runWithAuth, runWithAuthToken } from "./utils/requestContext";
@@ -3103,6 +3106,12 @@ Please address the issue mentioned in the comment above.`;
           ? await checkAllProvidersStatusWebMode({ teamSlugOrId: safeTeam })
           : await checkAllProvidersStatus({ teamSlugOrId: safeTeam });
         const providers = status.providers ?? [];
+
+        // Compute diagnostics for version drift detection
+        const modelRegistryFingerprint = computeModelRegistryFingerprint();
+        const legacyCodexPresent = checkLegacyCodexPresent();
+        const serverBuildId = getServerBuildId();
+
         callback({
           success: true,
           teamSlugOrId: safeTeam,
@@ -3110,6 +3119,9 @@ Please address the issue mentioned in the comment above.`;
           hasCodex53: providers.some((p) =>
             p.name.startsWith("codex/gpt-5.3-codex")
           ),
+          modelRegistryFingerprint,
+          legacyCodexPresent,
+          serverBuildId,
           ...status,
         });
       } catch (error) {
