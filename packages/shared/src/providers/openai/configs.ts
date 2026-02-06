@@ -5,6 +5,109 @@ import { checkOpenAIRequirements } from "./check-requirements";
 import { startCodexCompletionDetector } from "./completion-detector";
 import { applyCodexApiKeys, getOpenAIEnvironment } from "./environment";
 
+export const CODEX_GPT_5_3_CODEX_XHIGH_REASONING_CONFIG: AgentConfig = {
+  name: "codex/gpt-5.3-codex-xhigh",
+  command: "codex",
+  args: [
+    "--model",
+    "gpt-5.3-codex",
+    "--sandbox",
+    "danger-full-access",
+    "--ask-for-approval",
+    "never",
+    "-c",
+    'model_reasoning_effort="xhigh"',
+    "$PROMPT",
+  ],
+  environment: getOpenAIEnvironment,
+  checkRequirements: checkOpenAIRequirements,
+  apiKeys: [OPENAI_API_KEY, CODEX_AUTH_JSON],
+  applyApiKeys: applyCodexApiKeys,
+  completionDetector: startCodexCompletionDetector,
+};
+
+export const CODEX_GPT_5_3_CODEX_HIGH_REASONING_CONFIG: AgentConfig = {
+  name: "codex/gpt-5.3-codex-high",
+  command: "codex",
+  args: [
+    "--model",
+    "gpt-5.3-codex",
+    "--sandbox",
+    "danger-full-access",
+    "--ask-for-approval",
+    "never",
+    "-c",
+    'model_reasoning_effort="high"',
+    "$PROMPT",
+  ],
+  environment: getOpenAIEnvironment,
+  checkRequirements: checkOpenAIRequirements,
+  apiKeys: [OPENAI_API_KEY, CODEX_AUTH_JSON],
+  applyApiKeys: applyCodexApiKeys,
+  completionDetector: startCodexCompletionDetector,
+};
+
+export const CODEX_GPT_5_3_CODEX_MEDIUM_REASONING_CONFIG: AgentConfig = {
+  name: "codex/gpt-5.3-codex-medium",
+  command: "codex",
+  args: [
+    "--model",
+    "gpt-5.3-codex",
+    "--sandbox",
+    "danger-full-access",
+    "--ask-for-approval",
+    "never",
+    "-c",
+    'model_reasoning_effort="medium"',
+    "$PROMPT",
+  ],
+  environment: getOpenAIEnvironment,
+  checkRequirements: checkOpenAIRequirements,
+  apiKeys: [OPENAI_API_KEY, CODEX_AUTH_JSON],
+  applyApiKeys: applyCodexApiKeys,
+  completionDetector: startCodexCompletionDetector,
+};
+
+export const CODEX_GPT_5_3_CODEX_LOW_REASONING_CONFIG: AgentConfig = {
+  name: "codex/gpt-5.3-codex-low",
+  command: "codex",
+  args: [
+    "--model",
+    "gpt-5.3-codex",
+    "--sandbox",
+    "danger-full-access",
+    "--ask-for-approval",
+    "never",
+    "-c",
+    'model_reasoning_effort="low"',
+    "$PROMPT",
+  ],
+  environment: getOpenAIEnvironment,
+  checkRequirements: checkOpenAIRequirements,
+  apiKeys: [OPENAI_API_KEY, CODEX_AUTH_JSON],
+  applyApiKeys: applyCodexApiKeys,
+  completionDetector: startCodexCompletionDetector,
+};
+
+export const CODEX_GPT_5_3_CODEX_CONFIG: AgentConfig = {
+  name: "codex/gpt-5.3-codex",
+  command: "codex",
+  args: [
+    "--model",
+    "gpt-5.3-codex",
+    "--sandbox",
+    "danger-full-access",
+    "--ask-for-approval",
+    "never",
+    "$PROMPT",
+  ],
+  environment: getOpenAIEnvironment,
+  checkRequirements: checkOpenAIRequirements,
+  apiKeys: [OPENAI_API_KEY, CODEX_AUTH_JSON],
+  applyApiKeys: applyCodexApiKeys,
+  completionDetector: startCodexCompletionDetector,
+};
+
 export const CODEX_GPT_5_2_CODEX_XHIGH_REASONING_CONFIG: AgentConfig = {
   name: "codex/gpt-5.2-codex-xhigh",
   command: "codex",
@@ -274,248 +377,6 @@ export const CODEX_GPT_5_1_CODEX_HIGH_REASONING_CONFIG: AgentConfig = {
   args: [
     "--model",
     "gpt-5.1-codex",
-    "--sandbox",
-    "danger-full-access",
-    "--ask-for-approval",
-    "never",
-    "-c",
-    'model_reasoning_effort="high"',
-    "$PROMPT",
-  ],
-  environment: getOpenAIEnvironment,
-  checkRequirements: checkOpenAIRequirements,
-  apiKeys: [OPENAI_API_KEY, CODEX_AUTH_JSON],
-  applyApiKeys: applyCodexApiKeys,
-  completionDetector: startCodexCompletionDetector,
-};
-
-export const CODEX_GPT_5_CONFIG: AgentConfig = {
-  name: "codex/gpt-5",
-  command: "codex",
-  args: [
-    "--model",
-    "gpt-5",
-    "--sandbox",
-    "danger-full-access",
-    "--ask-for-approval",
-    "never",
-    "$PROMPT",
-  ],
-  environment: getOpenAIEnvironment,
-  checkRequirements: checkOpenAIRequirements,
-  apiKeys: [OPENAI_API_KEY, CODEX_AUTH_JSON],
-  applyApiKeys: applyCodexApiKeys,
-  completionDetector: startCodexCompletionDetector,
-};
-
-export const CODEX_GPT_5_HIGH_REASONING_CONFIG: AgentConfig = {
-  name: "codex/gpt-5-high",
-  command: "codex",
-  args: [
-    "--model",
-    "gpt-5",
-    "--sandbox",
-    "danger-full-access",
-    "--ask-for-approval",
-    "never",
-    "-c",
-    'model_reasoning_effort="high"',
-    "$PROMPT",
-  ],
-  environment: getOpenAIEnvironment,
-  checkRequirements: checkOpenAIRequirements,
-  apiKeys: [OPENAI_API_KEY, CODEX_AUTH_JSON],
-  applyApiKeys: applyCodexApiKeys,
-  completionDetector: startCodexCompletionDetector,
-};
-
-export const CODEX_GPT_5_MEDIUM_REASONING_CONFIG: AgentConfig = {
-  name: "codex/gpt-5-medium",
-  command: "codex",
-  args: [
-    "--model",
-    "gpt-5",
-    "--sandbox",
-    "danger-full-access",
-    "--ask-for-approval",
-    "never",
-    "-c",
-    'model_reasoning_effort="medium"',
-    "$PROMPT",
-  ],
-  environment: getOpenAIEnvironment,
-  checkRequirements: checkOpenAIRequirements,
-  apiKeys: [OPENAI_API_KEY, CODEX_AUTH_JSON],
-  applyApiKeys: applyCodexApiKeys,
-  completionDetector: startCodexCompletionDetector,
-};
-
-export const CODEX_GPT_5_LOW_REASONING_CONFIG: AgentConfig = {
-  name: "codex/gpt-5-low",
-  command: "codex",
-  args: [
-    "--model",
-    "gpt-5",
-    "--sandbox",
-    "danger-full-access",
-    "--ask-for-approval",
-    "never",
-    "-c",
-    'model_reasoning_effort="low"',
-    "$PROMPT",
-  ],
-  environment: getOpenAIEnvironment,
-  checkRequirements: checkOpenAIRequirements,
-  apiKeys: [OPENAI_API_KEY, CODEX_AUTH_JSON],
-  applyApiKeys: applyCodexApiKeys,
-  completionDetector: startCodexCompletionDetector,
-};
-
-export const CODEX_GPT_5_MINIMAL_REASONING_CONFIG: AgentConfig = {
-  name: "codex/gpt-5-minimal",
-  command: "codex",
-  args: [
-    "--model",
-    "gpt-5",
-    "--sandbox",
-    "danger-full-access",
-    "--ask-for-approval",
-    "never",
-    "-c",
-    'model_reasoning_effort="minimal"',
-    "$PROMPT",
-  ],
-  environment: getOpenAIEnvironment,
-  checkRequirements: checkOpenAIRequirements,
-  apiKeys: [OPENAI_API_KEY, CODEX_AUTH_JSON],
-  applyApiKeys: applyCodexApiKeys,
-  completionDetector: startCodexCompletionDetector,
-};
-
-export const CODEX_O3_CONFIG: AgentConfig = {
-  name: "codex/o3",
-  command: "codex",
-  args: [
-    "--model",
-    "o3",
-    "--sandbox",
-    "danger-full-access",
-    "--ask-for-approval",
-    "never",
-    "$PROMPT",
-  ],
-  environment: getOpenAIEnvironment,
-  checkRequirements: checkOpenAIRequirements,
-  apiKeys: [OPENAI_API_KEY, CODEX_AUTH_JSON],
-  applyApiKeys: applyCodexApiKeys,
-  completionDetector: startCodexCompletionDetector,
-};
-
-export const CODEX_O4_MINI_CONFIG: AgentConfig = {
-  name: "codex/o4-mini",
-  command: "codex",
-  args: [
-    "--model",
-    "o4-mini",
-    "--sandbox",
-    "danger-full-access",
-    "--ask-for-approval",
-    "never",
-    "$PROMPT",
-  ],
-  environment: getOpenAIEnvironment,
-  checkRequirements: checkOpenAIRequirements,
-  apiKeys: [OPENAI_API_KEY, CODEX_AUTH_JSON],
-  applyApiKeys: applyCodexApiKeys,
-  completionDetector: startCodexCompletionDetector,
-};
-
-export const CODEX_GPT_4_1_CONFIG: AgentConfig = {
-  name: "codex/gpt-4.1",
-  command: "codex",
-  args: [
-    "--model",
-    "gpt-4.1",
-    "--sandbox",
-    "danger-full-access",
-    "--ask-for-approval",
-    "never",
-    "$PROMPT",
-  ],
-  environment: getOpenAIEnvironment,
-  checkRequirements: checkOpenAIRequirements,
-  apiKeys: [OPENAI_API_KEY, CODEX_AUTH_JSON],
-  applyApiKeys: applyCodexApiKeys,
-  completionDetector: startCodexCompletionDetector,
-};
-
-export const CODEX_GPT_5_CODEX_MINI_CONFIG: AgentConfig = {
-  name: "codex/gpt-5-codex-mini",
-  command: "codex",
-  args: [
-    "--model",
-    "gpt-5-codex-mini",
-    "--sandbox",
-    "danger-full-access",
-    "--ask-for-approval",
-    "never",
-    "$PROMPT",
-  ],
-  environment: getOpenAIEnvironment,
-  checkRequirements: checkOpenAIRequirements,
-  apiKeys: [OPENAI_API_KEY, CODEX_AUTH_JSON],
-  applyApiKeys: applyCodexApiKeys,
-  completionDetector: startCodexCompletionDetector,
-};
-
-export const CODEX_GPT_5_CODEX_LOW_REASONING_CONFIG: AgentConfig = {
-  name: "codex/gpt-5-codex-low",
-  command: "codex",
-  args: [
-    "--model",
-    "gpt-5-codex",
-    "--sandbox",
-    "danger-full-access",
-    "--ask-for-approval",
-    "never",
-    "-c",
-    'model_reasoning_effort="low"',
-    "$PROMPT",
-  ],
-  environment: getOpenAIEnvironment,
-  checkRequirements: checkOpenAIRequirements,
-  apiKeys: [OPENAI_API_KEY, CODEX_AUTH_JSON],
-  applyApiKeys: applyCodexApiKeys,
-  completionDetector: startCodexCompletionDetector,
-};
-
-export const CODEX_GPT_5_CODEX_MEDIUM_REASONING_CONFIG: AgentConfig = {
-  name: "codex/gpt-5-codex-medium",
-  command: "codex",
-  args: [
-    "--model",
-    "gpt-5-codex",
-    "--sandbox",
-    "danger-full-access",
-    "--ask-for-approval",
-    "never",
-    "-c",
-    'model_reasoning_effort="medium"',
-    "$PROMPT",
-  ],
-  environment: getOpenAIEnvironment,
-  checkRequirements: checkOpenAIRequirements,
-  apiKeys: [OPENAI_API_KEY, CODEX_AUTH_JSON],
-  applyApiKeys: applyCodexApiKeys,
-  completionDetector: startCodexCompletionDetector,
-};
-
-export const CODEX_GPT_5_CODEX_HIGH_REASONING_CONFIG: AgentConfig = {
-  name: "codex/gpt-5-codex-high",
-  command: "codex",
-  args: [
-    "--model",
-    "gpt-5-codex",
     "--sandbox",
     "danger-full-access",
     "--ask-for-approval",
