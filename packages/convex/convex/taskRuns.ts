@@ -1150,6 +1150,31 @@ export const updateVSCodeStatus = authMutation({
   },
 });
 
+// Update starting commit SHA (for diff baseline in custom environments)
+export const updateStartingCommitSha = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    id: v.id("taskRuns"),
+    startingCommitSha: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const run = await ctx.db.get(args.id);
+    if (!run) {
+      throw new Error("Task run not found");
+    }
+    if (run.teamId !== teamId || run.userId !== userId) {
+      throw new Error("Unauthorized");
+    }
+
+    await ctx.db.patch(args.id, {
+      startingCommitSha: args.startingCommitSha,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
 // Update VSCode instance ports
 export const updateVSCodePorts = authMutation({
   args: {

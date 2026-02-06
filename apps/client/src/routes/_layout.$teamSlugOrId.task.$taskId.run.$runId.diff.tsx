@@ -312,11 +312,23 @@ export const Route = createFileRoute(
           return;
         }
 
-        // When baseBranch is not set, pass undefined to let native code auto-detect
-        // the default branch (via refs/remotes/origin/HEAD)
-        const baseRefForDiff = task.baseBranch
-          ? normalizeGitRef(task.baseBranch)
-          : undefined;
+        // Find parent run if this is a child run
+        const parentTaskRun = selectedTaskRun.parentRunId
+          ? taskRuns.find((run) => run._id === selectedTaskRun.parentRunId)
+          : null;
+
+        // Determine base ref for diff comparison with priority:
+        // 1. Parent run's branch (for child runs)
+        // 2. Starting commit SHA (for new tasks in custom environments)
+        // 3. Task's base branch (explicit user choice)
+        let baseRefForDiff: string | undefined;
+        if (parentTaskRun?.newBranch) {
+          baseRefForDiff = normalizeGitRef(parentTaskRun.newBranch);
+        } else if (selectedTaskRun.startingCommitSha) {
+          baseRefForDiff = selectedTaskRun.startingCommitSha; // Direct SHA
+        } else if (task.baseBranch) {
+          baseRefForDiff = normalizeGitRef(task.baseBranch);
+        }
         const headRefForDiff = normalizeGitRef(selectedTaskRun.newBranch);
         if (!headRefForDiff) {
           return;
@@ -567,11 +579,29 @@ function RunDiffPage() {
   // Passing stale hints from the base branch (e.g., main) can cause the diff to use the wrong comparison
   // base, resulting in extra unrelated files appearing in the diff.
 
-  // Fetch diffs for heatmap review (this reuses the cached data from RunDiffSection)
-  // When baseBranch is not set, pass undefined to let native code auto-detect
-  const baseRefForHeatmap = task?.baseBranch
-    ? normalizeGitRef(task.baseBranch)
-    : undefined;
+  // Find parent run if this is a child run (for comparing against parent's branch)
+  const parentRun = useMemo(() => {
+    if (!selectedRun?.parentRunId || !taskRuns) return null;
+    return taskRuns.find((run) => run._id === selectedRun.parentRunId) ?? null;
+  }, [selectedRun?.parentRunId, taskRuns]);
+
+  // Determine base ref for diff comparison with priority:
+  // 1. Parent run's branch (for child runs)
+  // 2. Starting commit SHA (for new tasks in custom environments)
+  // 3. Task's base branch (explicit user choice)
+  const baseRefForHeatmap = useMemo(() => {
+    // Priority 1: Parent run's branch (for child runs)
+    if (parentRun?.newBranch) {
+      return normalizeGitRef(parentRun.newBranch);
+    }
+    // Priority 2: Starting commit SHA (for new tasks in custom environments)
+    // This is captured when the sandbox starts, providing an accurate baseline
+    if (selectedRun?.startingCommitSha) {
+      return selectedRun.startingCommitSha; // Direct SHA, no normalization needed
+    }
+    // Priority 3: Task's base branch
+    return task?.baseBranch ? normalizeGitRef(task.baseBranch) : undefined;
+  }, [parentRun?.newBranch, selectedRun?.startingCommitSha, task?.baseBranch]);
   const headRefForHeatmap = normalizeGitRef(selectedRun?.newBranch);
   const diffQueryEnabled = Boolean(primaryRepo) && Boolean(headRefForHeatmap);
   const diffQuery = useRQ({
@@ -594,12 +624,13 @@ function RunDiffPage() {
   }, [diffQuery.data, primaryRepo, shouldPrefixDiffs]);
 
   const reviewLabel = useMemo(() => {
-    const baseBranch = task?.baseBranch || "main";
+    // Use parent's branch if this is a child run, otherwise task's baseBranch or "main"
+    const baseBranch = parentRun?.newBranch || task?.baseBranch || "main";
     if (primaryRepo && selectedRun?.newBranch) {
       return `${primaryRepo} ${baseBranch}...${selectedRun.newBranch}`;
     }
     return `task:${taskId} run:${runId}`;
-  }, [primaryRepo, runId, selectedRun?.newBranch, task?.baseBranch, taskId]);
+  }, [parentRun?.newBranch, primaryRepo, runId, selectedRun?.newBranch, task?.baseBranch, taskId]);
 
   const startSimpleReview = useCallback(
     async ({
@@ -1165,10 +1196,8 @@ function RunDiffPage() {
     );
   }
 
-  // When baseBranch is not set, pass undefined to let native code auto-detect
-  const baseRef = task?.baseBranch
-    ? normalizeGitRef(task.baseBranch)
-    : undefined;
+  // Use baseRefForHeatmap which already handles parent run logic
+  const baseRef = baseRefForHeatmap;
   const headRef = normalizeGitRef(selectedRun.newBranch);
   const hasDiffSources = Boolean(primaryRepo) && Boolean(headRef);
 

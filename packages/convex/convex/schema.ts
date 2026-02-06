@@ -254,6 +254,7 @@ const convexSchema = defineSchema({
       )
     ),
     diffsLastUpdated: v.optional(v.number()), // Timestamp when diffs were last fetched/updated
+    startingCommitSha: v.optional(v.string()), // Commit SHA when run started (for diff baseline)
     screenshotStorageId: v.optional(v.id("_storage")),
     screenshotCapturedAt: v.optional(v.number()),
     screenshotMimeType: v.optional(v.string()),

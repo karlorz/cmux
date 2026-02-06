@@ -624,7 +624,7 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
     }
 
     case "gitDiff": {
-      const { task, selectedRun, TaskRunGitDiffPanel, teamSlugOrId, taskId } = props;
+      const { task, taskRuns, selectedRun, TaskRunGitDiffPanel, teamSlugOrId, taskId } = props;
       if (!TaskRunGitDiffPanel || !teamSlugOrId || !taskId) return null;
 
       return panelWrapper(
@@ -634,6 +634,7 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
           <TaskRunGitDiffPanel
             key={selectedRun?._id}
             task={task}
+            taskRuns={taskRuns}
             selectedRun={selectedRun}
             teamSlugOrId={teamSlugOrId}
             taskId={taskId}
