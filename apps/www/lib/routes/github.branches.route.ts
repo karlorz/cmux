@@ -57,17 +57,22 @@ githubBranchesRouter.openapi(
     const { repo } = c.req.valid("query");
 
     try {
+      // Try to get authenticated Octokit first, fall back to unauthenticated for public repos
+      let octokit: Octokit;
       const githubAccount = await user.getConnectedAccount("github");
-      if (!githubAccount) {
-        return c.json({ defaultBranch: null, error: "GitHub account not connected" }, 200);
+      if (githubAccount) {
+        const { accessToken } = await githubAccount.getAccessToken();
+        if (accessToken && accessToken.trim().length > 0) {
+          octokit = new Octokit({ auth: accessToken.trim() });
+        } else {
+          // No valid token, use unauthenticated (works for public repos)
+          octokit = new Octokit();
+        }
+      } else {
+        // No GitHub account connected, use unauthenticated (works for public repos)
+        octokit = new Octokit();
       }
 
-      const { accessToken } = await githubAccount.getAccessToken();
-      if (!accessToken || accessToken.trim().length === 0) {
-        return c.json({ defaultBranch: null, error: "GitHub access token not found" }, 200);
-      }
-
-      const octokit = new Octokit({ auth: accessToken.trim() });
       const [owner, repoName] = repo.split("/");
 
       const { data } = await octokit.request("GET /repos/{owner}/{repo}", {
@@ -78,9 +83,14 @@ githubBranchesRouter.openapi(
       return c.json({ defaultBranch: data.default_branch, error: null }, 200);
     } catch (error) {
       console.error("[github.branches] Error getting default branch:", error);
+      // For 404 errors on unauthenticated requests, suggest connecting GitHub
+      const isNotFound = error instanceof Error && error.message.includes("Not Found");
+      const errorMessage = isNotFound
+        ? "Repository not found. Connect your GitHub account to access private repos."
+        : error instanceof Error ? error.message : "Failed to get default branch";
       return c.json({
         defaultBranch: null,
-        error: error instanceof Error ? error.message : "Failed to get default branch",
+        error: errorMessage,
       }, 200);
     }
   }
@@ -159,17 +169,22 @@ githubBranchesRouter.openapi(
     const { repo, search, limit = 30, offset = 0 } = c.req.valid("query");
 
     try {
+      // Try to get authenticated Octokit first, fall back to unauthenticated for public repos
+      let octokit: Octokit;
       const githubAccount = await user.getConnectedAccount("github");
-      if (!githubAccount) {
-        return c.json(branchesErrorResponse("GitHub account not connected"), 200);
+      if (githubAccount) {
+        const { accessToken } = await githubAccount.getAccessToken();
+        if (accessToken && accessToken.trim().length > 0) {
+          octokit = new Octokit({ auth: accessToken.trim() });
+        } else {
+          // No valid token, use unauthenticated (works for public repos)
+          octokit = new Octokit();
+        }
+      } else {
+        // No GitHub account connected, use unauthenticated (works for public repos)
+        octokit = new Octokit();
       }
 
-      const { accessToken } = await githubAccount.getAccessToken();
-      if (!accessToken || accessToken.trim().length === 0) {
-        return c.json(branchesErrorResponse("GitHub access token not found"), 200);
-      }
-
-      const octokit = new Octokit({ auth: accessToken.trim() });
       const [owner, repoName] = repo.split("/");
       if (!owner || !repoName) {
         return c.json(branchesErrorResponse("Invalid repository format"), 200);
@@ -325,7 +340,11 @@ githubBranchesRouter.openapi(
       }, 200);
     } catch (error) {
       console.error("[github.branches] Error fetching branches:", error);
-      const message = error instanceof Error ? error.message : "Failed to fetch branches";
+      // For 404 errors on unauthenticated requests, suggest connecting GitHub
+      const isNotFound = error instanceof Error && error.message.includes("Not Found");
+      const message = isNotFound
+        ? "Repository not found. Connect your GitHub account to access private repos."
+        : error instanceof Error ? error.message : "Failed to fetch branches";
       return c.json(branchesErrorResponse(message), 200);
     }
   }

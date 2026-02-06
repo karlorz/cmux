@@ -467,15 +467,19 @@ function DashboardComponent() {
     setBranchSearch(search);
   }, []);
 
-  // Show toast if branches query fails
+  // Show toast if branches query fails (HTTP error or error in response body)
+  const branchesResponseError = branchPages[0]?.error;
   useEffect(() => {
     if (branchesQuery.isError) {
       const err = branchesQuery.error;
       const message =
         err instanceof Error ? err.message : "Failed to load branches";
       toast.error("Failed to load branches", { description: message });
+    } else if (branchesResponseError) {
+      // Handle error returned in the response body (e.g., repo not found for private repos)
+      toast.error("Failed to load branches", { description: branchesResponseError });
     }
-  }, [branchesQuery.isError, branchesQuery.error]);
+  }, [branchesQuery.isError, branchesQuery.error, branchesResponseError]);
 
   // Callback for project selection changes
   const handleProjectChange = useCallback(

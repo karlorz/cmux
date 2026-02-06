@@ -177,7 +177,7 @@ function ConnectedAccountsSection({ teamSlugOrId }: { teamSlugOrId: string }) {
                 </p>
               ) : (
                 <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                  Required for cloning private repos
+                  Required for private repos and higher API limits
                 </p>
               )}
             </div>
