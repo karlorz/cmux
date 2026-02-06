@@ -51,8 +51,8 @@ interface RunScreenshotSet {
 }
 
 interface ScreenshotConfig {
-  previewRunsEnabled: boolean;
   screenshotWorkflowEnabled: boolean;
+  taskRunCompleted: boolean;
 }
 
 interface RunScreenshotGalleryProps {
@@ -65,15 +65,11 @@ const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 40;
 
 const DEFAULT_SCREENSHOT_CONFIG: ScreenshotConfig = {
-  previewRunsEnabled: true,
   screenshotWorkflowEnabled: true,
+  taskRunCompleted: false,
 };
 
 const NOTICE_MESSAGES = {
-  previewRunsDisabled: {
-    title: "Preview runs disabled",
-    description: "Preview screenshot capture is disabled.",
-  },
   screenshotWorkflowDisabled: {
     title: "Screenshot workflow disabled",
     description: "Screenshot collection is disabled.",
@@ -142,6 +138,7 @@ function getNoticeType(
   latestSet: RunScreenshotSet | null | undefined,
   config: ScreenshotConfig,
 ): NoticeType | null {
+  // If we have a screenshot set, check its status
   if (latestSet) {
     if (latestSet.hasUiChanges === false || isNoUiChangesError(latestSet.error)) {
       return "noUiChanges";
@@ -152,18 +149,16 @@ function getNoticeType(
     ) {
       return "screenshotWorkflowDisabled";
     }
-    if (
-      latestSet.status === "skipped" &&
-      latestSet.error?.includes("Preview runs disabled")
-    ) {
-      return "previewRunsDisabled";
-    }
     return null;
   }
 
-  if (!config.previewRunsEnabled) {
-    return "previewRunsDisabled";
+  // No screenshot set yet - only show notice if task run is completed
+  // This prevents showing notices while the task is still running
+  if (!config.taskRunCompleted) {
+    return null;
   }
+
+  // Task completed but no screenshot set - show appropriate notice
   if (!config.screenshotWorkflowEnabled) {
     return "screenshotWorkflowDisabled";
   }
