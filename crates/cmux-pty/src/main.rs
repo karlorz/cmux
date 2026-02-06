@@ -738,18 +738,11 @@ async fn spawn_pty_reader(
                 read_count += 1;
                 total_bytes_read += n;
 
-                // Process through virtual terminal emulator for state tracking
-                let responses = session.process_terminal(&buf[..n]);
-                if !responses.is_empty() {
-                    for response in responses {
-                        if let Err(e) = session.write_input_bytes(response) {
-                            error!(
-                                "[reader:{}] Failed to send terminal response: {}",
-                                session_id, e
-                            );
-                        }
-                    }
-                }
+                // Process through the virtual terminal emulator for state tracking only.
+                // Terminal query responses must be handled by the real terminal emulator
+                // (e.g. xterm.js) and returned to the PTY by the client, otherwise they can
+                // end up being echoed back as visible text.
+                let _ = session.process_terminal(&buf[..n]);
 
                 // Apply DaFilter to raw bytes to remove DA query/response sequences
                 let filtered_bytes = {
