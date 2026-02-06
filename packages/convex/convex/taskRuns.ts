@@ -603,6 +603,15 @@ export const getRunDiffContext = authQuery({
   handler: async (ctx, args) => {
     const teamId = await getTeamId(ctx, args.teamSlugOrId);
 
+    const screenshotConfig = {
+      previewRunsEnabled:
+        env.CMUX_ENABLE_PREVIEW_RUNS === "true" ||
+        env.CMUX_ENABLE_PREVIEW_RUNS === "1",
+      screenshotWorkflowEnabled:
+        env.CMUX_ENABLE_SCREENSHOT_WORKFLOW === "true" ||
+        env.CMUX_ENABLE_SCREENSHOT_WORKFLOW === "1",
+    };
+
     const [taskDoc, taskRuns] = await Promise.all([
       ctx.db.get(args.taskId),
       fetchTaskRunsForTask(ctx, teamId, args.taskId, true),
@@ -614,6 +623,7 @@ export const getRunDiffContext = authQuery({
         taskRuns,
         branchMetadataByRepo: {} as Record<string, Doc<"branches">[]>,
         screenshotSets: [],
+        screenshotConfig,
       };
     }
 
@@ -708,6 +718,7 @@ export const getRunDiffContext = authQuery({
       taskRuns,
       branchMetadataByRepo,
       screenshotSets,
+      screenshotConfig,
     };
   },
 });
