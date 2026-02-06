@@ -20,6 +20,10 @@ import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
 import { useOnboardingOptional } from "@/contexts/onboarding";
 import { useSocket } from "@/contexts/socket/use-socket";
 import { createFakeConvexId } from "@/lib/fakeConvexId";
+import {
+  buildAgentSelectionWarnings,
+  pruneKnownAgentsByProviderStatus,
+} from "@/lib/provider-selection";
 import { attachTaskLifecycleListeners } from "@/lib/socket/taskLifecycleListeners";
 import { getApiIntegrationsGithubBranches } from "@/queries/branches";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
@@ -314,6 +318,7 @@ function DashboardComponent() {
   const [, setDockerReady] = useState<boolean | null>(null);
   const [providerStatus, setProviderStatus] =
     useState<ProviderStatusResponse | null>(null);
+  const lastProviderStatusTeamMismatchRef = useRef<string | null>(null);
   const [isStartingTask, setIsStartingTask] = useState(false);
   const isStartingTaskRef = useRef(false);
 
@@ -545,55 +550,70 @@ function DashboardComponent() {
         return;
       }
 
-      const providers = response.providers;
-      if (!providers || providers.length === 0) {
-        const normalizedOnly = filterKnownAgents(currentAgents);
-        if (normalizedOnly.length !== currentAgents.length) {
-          setSelectedAgents(normalizedOnly);
-          persistAgentSelection(normalizedOnly);
+      const normalizedAgents = filterKnownAgents(currentAgents);
+      const removedUnknown = normalizedAgents.length !== currentAgents.length;
+
+      const serverTeam = response.teamSlugOrId;
+      if (response.success && serverTeam && serverTeam !== teamSlugOrId) {
+        const mismatchKey = `${serverTeam}!=${teamSlugOrId}`;
+        if (lastProviderStatusTeamMismatchRef.current !== mismatchKey) {
+          lastProviderStatusTeamMismatchRef.current = mismatchKey;
+          toast.warning(
+            `Provider status is being checked for team "${serverTeam}" while you're viewing "${teamSlugOrId}". Refresh the page or reconnect to the correct team.`
+          );
+        }
+
+        if (removedUnknown) {
+          setSelectedAgents(normalizedAgents);
+          persistAgentSelection(normalizedAgents);
         }
         return;
       }
 
-      const availableAgents = new Set(
-        providers
-          .filter((provider) => provider.isAvailable)
-          .map((provider) => provider.name)
-      );
+      lastProviderStatusTeamMismatchRef.current = null;
 
-      const normalizedAgents = filterKnownAgents(currentAgents);
-      const removedUnknown = normalizedAgents.length !== currentAgents.length;
+      const providers = response.success ? response.providers : undefined;
+      if (!providers || providers.length === 0) {
+        if (removedUnknown) {
+          setSelectedAgents(normalizedAgents);
+          persistAgentSelection(normalizedAgents);
+        }
+        return;
+      }
 
-      const filteredAgents = normalizedAgents.filter((agent) =>
-        availableAgents.has(agent)
-      );
-      const removedUnavailable = normalizedAgents.filter(
-        (agent) => !availableAgents.has(agent)
-      );
+      const { filteredAgents, unavailableKnown, unknownMissing } =
+        pruneKnownAgentsByProviderStatus({
+          agents: normalizedAgents,
+          providers,
+        });
 
-      if (!removedUnknown && removedUnavailable.length === 0) {
+      if (
+        !removedUnknown &&
+        unavailableKnown.length === 0 &&
+        unknownMissing.length === 0
+      ) {
         return;
       }
 
       setSelectedAgents(filteredAgents);
       persistAgentSelection(filteredAgents);
 
-      if (removedUnavailable.length > 0) {
-        const uniqueMissing = Array.from(new Set(removedUnavailable));
-        if (uniqueMissing.length > 0) {
-          const label = uniqueMissing.length === 1 ? "model" : "models";
-          const verb = uniqueMissing.length === 1 ? "is" : "are";
-          const thisThese = uniqueMissing.length === 1 ? "this" : "these";
-          const actionMessage = env.NEXT_PUBLIC_WEB_MODE
-            ? `Add your API keys in Settings to use ${thisThese} ${label}.`
-            : `Update credentials in Settings to use ${thisThese} ${label}.`;
-          toast.warning(
-            `${uniqueMissing.join(", ")} ${verb} not configured and was removed from the selection. ${actionMessage}`
-          );
-        }
+      const warnings = buildAgentSelectionWarnings({
+        unavailableKnown,
+        unknownMissing,
+        isWebMode: env.NEXT_PUBLIC_WEB_MODE,
+      });
+      for (const warning of warnings) {
+        toast.warning(warning.message);
       }
     });
-  }, [persistAgentSelection, setDockerReady, setSelectedAgents, socket]);
+  }, [
+    persistAgentSelection,
+    setDockerReady,
+    setSelectedAgents,
+    socket,
+    teamSlugOrId,
+  ]);
 
   // Mutation to create tasks with optimistic update
   const createTask = useMutation(api.tasks.create).withOptimisticUpdate(

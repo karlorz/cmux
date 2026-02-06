@@ -450,6 +450,10 @@ export const ProviderStatusResponseSchema = z.object({
   dockerStatus: DockerStatusSchema.optional(),
   gitStatus: GitStatusSchema.optional(),
   githubStatus: GitHubStatusSchema.optional(),
+  // Diagnostics for frontend/backend parity issues
+  teamSlugOrId: z.string().optional(),
+  providerCount: z.number().int().nonnegative().optional(),
+  hasCodex53: z.boolean().optional(),
   error: z.string().optional(),
 });
 
