@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "updatedAt": "2026-02-05T22:34:58Z",
+  "updatedAt": "2026-02-06T22:31:49Z",
   "presets": [
     {
       "presetId": "4vcpu_8gb_32gb",
@@ -254,6 +254,12 @@
           "snapshotId": "snapshot_2db3deae",
           "templateVmid": 9027,
           "capturedAt": "2026-02-05T22:34:24Z"
+        },
+        {
+          "version": 42,
+          "snapshotId": "snapshot_0554880b",
+          "templateVmid": 9019,
+          "capturedAt": "2026-02-06T22:31:17Z"
         }
       ],
       "description": "Great default for day-to-day work. Balanced CPU, memory, and storage."
@@ -438,6 +444,12 @@
           "snapshotId": "snapshot_1e539cab",
           "templateVmid": 9028,
           "capturedAt": "2026-02-05T22:34:58Z"
+        },
+        {
+          "version": 30,
+          "snapshotId": "snapshot_1fe6d0d3",
+          "templateVmid": 9025,
+          "capturedAt": "2026-02-06T22:31:49Z"
         }
       ],
       "description": "Extra headroom for larger codebases or heavier workloads."
