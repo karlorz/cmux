@@ -149,7 +149,10 @@ export function TaskRunGitDiffPanel({ task, selectedRun, teamSlugOrId, taskId, s
           Loading screenshots...
         </div>
       ) : (
-        <RunScreenshotGallery screenshotSets={screenshotSets} />
+        <RunScreenshotGallery
+          screenshotSets={screenshotSets}
+          screenshotConfig={runDiffContext?.screenshotConfig}
+        />
       )}
       <MonacoGitDiffViewer diffs={allDiffs} />
     </div>

@@ -603,6 +603,14 @@ export const getRunDiffContext = authQuery({
   handler: async (ctx, args) => {
     const teamId = await getTeamId(ctx, args.teamSlugOrId);
 
+    // Note: taskRunCompleted will be updated below after fetching runDoc
+    const screenshotConfig = {
+      screenshotWorkflowEnabled:
+        env.CMUX_ENABLE_SCREENSHOT_WORKFLOW === "true" ||
+        env.CMUX_ENABLE_SCREENSHOT_WORKFLOW === "1",
+      taskRunCompleted: false, // Will be updated below
+    };
+
     const [taskDoc, taskRuns] = await Promise.all([
       ctx.db.get(args.taskId),
       fetchTaskRunsForTask(ctx, teamId, args.taskId, true),
@@ -614,6 +622,7 @@ export const getRunDiffContext = authQuery({
         taskRuns,
         branchMetadataByRepo: {} as Record<string, Doc<"branches">[]>,
         screenshotSets: [],
+        screenshotConfig,
       };
     }
 
@@ -652,8 +661,12 @@ export const getRunDiffContext = authQuery({
       }
     }
 
+    // Fetch the run document to check status and get screenshots
+    const runDoc = await ctx.db.get(args.runId);
+    const taskRunCompleted =
+      runDoc?.status === "completed" || runDoc?.status === "failed";
+
     const screenshotSets = await (async () => {
-      const runDoc = await ctx.db.get(args.runId);
       // Prevent leaking screenshots for runs outside the authenticated task/team
       if (
         !runDoc ||
@@ -708,6 +721,10 @@ export const getRunDiffContext = authQuery({
       taskRuns,
       branchMetadataByRepo,
       screenshotSets,
+      screenshotConfig: {
+        ...screenshotConfig,
+        taskRunCompleted,
+      },
     };
   },
 });

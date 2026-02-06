@@ -549,12 +549,12 @@ export const githubWebhook = httpAction(async (_ctx, req) => {
               const headRepoFullName = prPayload.pull_request?.head?.repo?.full_name ?? undefined;
               const headRepoCloneUrl = prPayload.pull_request?.head?.repo?.clone_url ?? undefined;
 
-              const previewRunsEnabled =
-                env.CMUX_ENABLE_PREVIEW_RUNS === "true" ||
-                env.CMUX_ENABLE_PREVIEW_RUNS === "1";
+              const screenshotWorkflowEnabled =
+                env.CMUX_ENABLE_SCREENSHOT_WORKFLOW === "true" ||
+                env.CMUX_ENABLE_SCREENSHOT_WORKFLOW === "1";
 
-              if (!previewRunsEnabled) {
-                console.log("[preview-jobs] Preview runs disabled (CMUX_ENABLE_PREVIEW_RUNS not set to true/1)", {
+              if (!screenshotWorkflowEnabled) {
+                console.log("[preview-jobs] Screenshot workflow disabled (CMUX_ENABLE_SCREENSHOT_WORKFLOW not set to true/1)", {
                   repoFullName,
                   prNumber,
                   prUrl,

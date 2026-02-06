@@ -1223,9 +1223,12 @@ function RunDiffPage() {
               <div className="border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-950/40 px-3.5 py-3 text-sm text-neutral-500 dark:text-neutral-400">
                 Loading screenshots...
               </div>
-            ) : screenshotSets.length > 0 ? (
-              <RunScreenshotGallery screenshotSets={screenshotSets} />
-            ) : null}
+            ) : (
+              <RunScreenshotGallery
+                screenshotSets={screenshotSets}
+                screenshotConfig={runDiffContextQuery.data?.screenshotConfig}
+              />
+            )}
             <div
               className={cn("flex-1 min-h-0", screenshotSets.length > 0 && "mt-6")}
               style={{ "--cmux-diff-header-offset": "56px" } as React.CSSProperties}

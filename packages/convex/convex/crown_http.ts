@@ -1045,12 +1045,12 @@ export const crownWorkerComplete = httpAction(async (ctx, req) => {
 
   // Try to create/link a preview run for this task run if it has PR info
   // This enables screenshot capture and GitHub comment posting for crown tasks
-  const previewRunsEnabled =
-    env.CMUX_ENABLE_PREVIEW_RUNS === "true" ||
-    env.CMUX_ENABLE_PREVIEW_RUNS === "1";
+  const screenshotWorkflowEnabled =
+    env.CMUX_ENABLE_SCREENSHOT_WORKFLOW === "true" ||
+    env.CMUX_ENABLE_SCREENSHOT_WORKFLOW === "1";
 
-  if (!previewRunsEnabled) {
-    console.log("[convex.crown] Preview runs disabled (CMUX_ENABLE_PREVIEW_RUNS not set to true/1)", {
+  if (!screenshotWorkflowEnabled) {
+    console.log("[convex.crown] Screenshot workflow disabled (CMUX_ENABLE_SCREENSHOT_WORKFLOW not set to true/1)", {
       taskRunId,
     });
   } else {
