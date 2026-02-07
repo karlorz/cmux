@@ -83,8 +83,7 @@ jobs:
           auth_header="Authorization: Bearer ${COOLIFY_API_TOKEN}"
 
           tmp_dir="$(mktemp -d)"
-          cleanup() { rm -rf "$tmp_dir"; }
-          trap cleanup EXIT
+          trap 'rm -rf "$tmp_dir"' EXIT
 
           poll_interval_seconds=10
           find_timeout_seconds=$((5 * 60))
@@ -148,9 +147,11 @@ jobs:
             ' "$apps_resp" 2>/dev/null || true
           }
 
+          auto_detected_app_uuid="$(detect_app_uuid || true)"
+
           if [[ -z "${COOLIFY_APP_UUID:-}" ]]; then
             echo "COOLIFY_APP_UUID is not set; attempting auto-detection for base_directory=/apps/server..." >&2
-            COOLIFY_APP_UUID="$(detect_app_uuid || true)"
+            COOLIFY_APP_UUID="${auto_detected_app_uuid}"
             if [[ -z "${COOLIFY_APP_UUID:-}" ]]; then
               echo "Could not auto-detect COOLIFY_APP_UUID. Set the COOLIFY_APP_UUID secret (application UUID) or run: bash scripts/coolify-find-app-uuid.sh" >&2
               exit 1
@@ -230,6 +231,28 @@ jobs:
             esac
           }
 
+          is_http_url() {
+            local url="${1:-}"
+            [[ "$url" =~ ^https?://[^[:space:]]+$ ]]
+          }
+
+          resolve_deployment_url() {
+            local deployment_url_raw="${1:-}"
+            if is_http_url "$deployment_url_raw"; then
+              echo "$deployment_url_raw"
+              return 0
+            fi
+            if is_http_url "${COOLIFY_ENV_URL:-}"; then
+              echo "${COOLIFY_ENV_URL}"
+              return 0
+            fi
+            if [[ -n "$deployment_url_raw" ]]; then
+              echo "${base_url}/${deployment_url_raw#/}"
+              return 0
+            fi
+            echo ""
+          }
+
           echo "Looking for Coolify deployment for commit ${sha7}..." >&2
           start_epoch="$(now_epoch)"
           deployment_uuid="$(find_deployment_uuid "$start_epoch" || true)"
@@ -237,7 +260,8 @@ jobs:
           if [[ -z "${deployment_uuid:-}" ]]; then
             echo "conclusion=failure" >> "$GITHUB_OUTPUT"
             echo "coolify_status=no_deployment_found" >> "$GITHUB_OUTPUT"
-            echo "deployment_url=${COOLIFY_ENV_URL:-}" >> "$GITHUB_OUTPUT"
+            deployment_url="$(resolve_deployment_url "")"
+            echo "deployment_url=${deployment_url:-}" >> "$GITHUB_OUTPUT"
             echo "No Coolify deployment detected for SHA ${sha}." >&2
             exit 1
           fi
@@ -259,10 +283,8 @@ jobs:
             raw_status="$(jq -r '.status // empty' "$resp" 2>/dev/null || true)"
             norm_status="$(normalize_status "${raw_status:-unknown}")"
 
-            deployment_url="$(jq -r '.deployment_url // empty' "$resp" 2>/dev/null || true)"
-            if [[ -z "${deployment_url:-}" && -n "${COOLIFY_ENV_URL:-}" ]]; then
-              deployment_url="${COOLIFY_ENV_URL}"
-            fi
+            deployment_url_raw="$(jq -r '.deployment_url // empty' "$resp" 2>/dev/null || true)"
+            deployment_url="$(resolve_deployment_url "${deployment_url_raw:-}")"
 
             echo "coolify_status=${raw_status:-unknown}" >> "$GITHUB_OUTPUT"
             echo "deployment_url=${deployment_url:-}" >> "$GITHUB_OUTPUT"
@@ -292,7 +314,8 @@ jobs:
 
           echo "conclusion=failure" >> "$GITHUB_OUTPUT"
           echo "coolify_status=timeout" >> "$GITHUB_OUTPUT"
-          echo "deployment_url=${COOLIFY_ENV_URL:-}" >> "$GITHUB_OUTPUT"
+          deployment_url="$(resolve_deployment_url "")"
+          echo "deployment_url=${deployment_url:-}" >> "$GITHUB_OUTPUT"
           echo "Timed out waiting for Coolify deployment ${deployment_uuid}." >&2
           exit 1
 
@@ -316,8 +339,12 @@ jobs:
             const deploymentId = Number(deploymentIdRaw);
             const runUrl = process.env.RUN_URL;
             const conclusion = process.env.CONCLUSION || "failure";
-            const envUrl = process.env.ENVIRONMENT_URL || undefined;
+            const envUrlRaw = (process.env.ENVIRONMENT_URL || "").trim();
+            const envUrl = /^https?:\/\/\S+$/i.test(envUrlRaw) ? envUrlRaw : undefined;
             const coolifyStatus = process.env.COOLIFY_STATUS || "unknown";
+            if (envUrlRaw && !envUrl) {
+              core.warning(`Ignoring invalid environment_url: ${envUrlRaw}`);
+            }
 
             const state = conclusion === "success" ? "success" : "failure";
             const description =
@@ -325,12 +352,16 @@ jobs:
                 ? "Coolify deployment succeeded"
                 : `Coolify deployment failed (${coolifyStatus})`;
 
-            await github.rest.repos.createDeploymentStatus({
+            const payload = {
               owner,
               repo,
               deployment_id: deploymentId,
               state,
               log_url: runUrl,
-              environment_url: envUrl,
               description,
-            });
+            };
+            if (envUrl) {
+              payload.environment_url = envUrl;
+            }
+
+            await github.rest.repos.createDeploymentStatus(payload);
