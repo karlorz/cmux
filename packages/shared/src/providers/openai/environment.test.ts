@@ -100,7 +100,7 @@ approval_mode = "full"`);
 });
 
 describe("getOpenAIEnvironment", () => {
-  it("generates managed model migrations targeting gpt-5.3-codex", async () => {
+  it("generates managed model migrations targeting gpt-5.2-codex", async () => {
     const homeDir = await mkdtemp(join(tmpdir(), "cmux-openai-home-"));
     const previousHome = process.env.HOME;
     process.env.HOME = homeDir;
@@ -121,13 +121,13 @@ describe("getOpenAIEnvironment", () => {
       );
       expect(toml).toContain('notify = ["/root/lifecycle/codex-notify.sh"]');
       expect(toml).toContain("[notice.model_migrations]");
-      expect(toml).toContain('"gpt-5-codex" = "gpt-5.3-codex"');
-      expect(toml).toContain('"gpt-5" = "gpt-5.3-codex"');
-      expect(toml).toContain('"o3" = "gpt-5.3-codex"');
-      expect(toml).toContain('"o4-mini" = "gpt-5.3-codex"');
-      expect(toml).toContain('"gpt-4.1" = "gpt-5.3-codex"');
-      expect(toml).toContain('"gpt-5-codex-mini" = "gpt-5.3-codex"');
-      expect(toml).not.toContain('"gpt-5.2-codex" =');
+      expect(toml).toContain('"gpt-5-codex" = "gpt-5.2-codex"');
+      expect(toml).toContain('"gpt-5" = "gpt-5.2-codex"');
+      expect(toml).toContain('"o3" = "gpt-5.2-codex"');
+      expect(toml).toContain('"o4-mini" = "gpt-5.2-codex"');
+      expect(toml).toContain('"gpt-4.1" = "gpt-5.2-codex"');
+      expect(toml).toContain('"gpt-5-codex-mini" = "gpt-5.2-codex"');
+      expect(toml).not.toContain('"gpt-5.3-codex" =');
     } finally {
       process.env.HOME = previousHome;
       await rm(homeDir, { recursive: true, force: true });
@@ -151,7 +151,7 @@ model = "gpt-5"
 model_reasoning_effort = "high"
 
 [notice.model_migrations]
-"o3" = "gpt-5.2-codex"
+"o3" = "gpt-5.3-codex"
 
 [some_section]
 foo = "bar"
@@ -177,8 +177,8 @@ foo = "bar"
       expect(toml).not.toContain('model = "gpt-5"');
       expect(toml).not.toContain('model_reasoning_effort = "high"');
 
-      expect(toml).not.toContain('"o3" = "gpt-5.2-codex"');
-      expect(toml).toContain('"o3" = "gpt-5.3-codex"');
+      expect(toml).not.toContain('"o3" = "gpt-5.3-codex"');
+      expect(toml).toContain('"o3" = "gpt-5.2-codex"');
 
       const noticeSections = toml.match(/\[notice\.model_migrations\]/g) ?? [];
       expect(noticeSections).toHaveLength(1);
