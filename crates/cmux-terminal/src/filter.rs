@@ -275,7 +275,10 @@ mod tests {
         // ESC [ 6 n - DSR cursor position query
         let mut filter = DaFilter::new();
         let result = filter.filter(b"\x1b[6n");
-        assert!(result.is_empty(), "DSR cursor position query should be filtered");
+        assert!(
+            result.is_empty(),
+            "DSR cursor position query should be filtered"
+        );
     }
 
     #[test]
@@ -299,7 +302,10 @@ mod tests {
         // ESC [ 24 ; 80 R - CPR response with larger values
         let mut filter = DaFilter::new();
         let result = filter.filter(b"\x1b[24;80R");
-        assert!(result.is_empty(), "CPR response with large values should be filtered");
+        assert!(
+            result.is_empty(),
+            "CPR response with large values should be filtered"
+        );
     }
 
     #[test]
