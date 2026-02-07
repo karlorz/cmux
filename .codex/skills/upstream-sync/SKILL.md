@@ -55,6 +55,11 @@ gh pr create --repo karlorz/cmux --base main --head sync/upstream-main-$(date +%
 - **Fork-only features**: when upstream touches forked areas, prefer keeping fork behavior and selectively pull upstream fixes. If unsure, keep fork version and leave a FIXME note for follow-up.
 - **Generated clients/snapshots**: avoid regenerating unless required by upstream changes; keep fork snapshots unless intentionally refreshed.
 
+# Review guidelines
+- Read `REVIEW.md` early (before resolving conflicts) and re-scan before opening the PR.
+- Apply the relevant sections (TypeScript/Convex/Rust/Swift/general) to any manual edits you make during the merge.
+- If you intentionally keep a known issue or defer cleanup, call it out explicitly in the PR description with a short checklist.
+
 # PR checklist
 - Merge commit present (no rebase).
 - Conflicts resolved per rules above.
