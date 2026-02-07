@@ -75,10 +75,6 @@ jobs:
             echo "Missing required secret: COOLIFY_API_TOKEN" >&2
             exit 1
           fi
-          if [[ -z "${COOLIFY_APP_UUID:-}" ]]; then
-            echo "Missing required secret: COOLIFY_APP_UUID" >&2
-            exit 1
-          fi
 
           base_url="${COOLIFY_BASE_URL%/}"
           sha="${GITHUB_SHA}"
@@ -106,6 +102,61 @@ jobs:
               "$url" || true)"
             echo "$code"
           }
+
+          normalize_path() {
+            local p="${1:-}"
+            if [[ -z "$p" ]]; then
+              echo ""
+              return 0
+            fi
+            if [[ "$p" != /* ]]; then
+              p="/$p"
+            fi
+            echo "${p%/}"
+          }
+
+          detect_app_uuid() {
+            local apps_resp="$tmp_dir/apps.json"
+            local code
+            code="$(http_get_json "${base_url}/api/v1/applications" "$apps_resp")"
+            if [[ "$code" != "200" ]]; then
+              echo "" # signal failure
+              return 0
+            fi
+
+            local base_dir
+            base_dir="$(normalize_path "/apps/server")"
+
+            # Prefer docker-compose location if it helps disambiguate; otherwise accept any match.
+            local preferred_compose
+            preferred_compose="$(normalize_path "/docker-compose.yml")"
+
+            jq -r --arg base "$base_dir" --arg compose "$preferred_compose" '
+              def norm_path($p):
+                if ($p|type) != "string" or ($p|length)==0 then ""
+                else ($p | if startswith("/") then . else "/" + . end | sub("/+$";""))
+                end;
+
+              [ .[]
+                | { uuid: (.uuid // ""), base: norm_path(.base_directory), compose: norm_path(.docker_compose_location), name: (.name // "") }
+                | select(.uuid != "" and .base == $base)
+              ]
+              | (if length == 1 then .[0]
+                 else (map(select(.compose == $compose)) | if length == 1 then .[0] else empty end)
+                 end)
+              | (.uuid // empty)
+            ' "$apps_resp" 2>/dev/null || true
+          }
+
+          if [[ -z "${COOLIFY_APP_UUID:-}" ]]; then
+            echo "COOLIFY_APP_UUID is not set; attempting auto-detection for base_directory=/apps/server..." >&2
+            COOLIFY_APP_UUID="$(detect_app_uuid || true)"
+            if [[ -z "${COOLIFY_APP_UUID:-}" ]]; then
+              echo "Could not auto-detect COOLIFY_APP_UUID. Set the COOLIFY_APP_UUID secret (application UUID) or run: bash scripts/coolify-find-app-uuid.sh" >&2
+              exit 1
+            fi
+            echo "Detected Coolify application UUID: ${COOLIFY_APP_UUID}" >&2
+          fi
 
           find_deployment_uuid() {
             local start_epoch="$1"
