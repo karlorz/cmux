@@ -119,10 +119,41 @@ export async function getOpenAIEnvironment(
   );
 
   // Add a small notify handler script that appends the payload to JSONL and marks completion
+  // Also calls the completion API for remote sandbox support (matching Claude's stop hook pattern)
   const notifyScript = `#!/usr/bin/env sh
 set -eu
+
+LOG_FILE="/root/lifecycle/codex-hook.log"
+
+echo "[CMUX Codex Hook] Script started at $(date)" >> "$LOG_FILE"
 echo "$1" >> /root/lifecycle/codex-turns.jsonl
 touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
+
+# Call completion API for remote sandbox support
+if [ -n "\${CMUX_TASK_RUN_JWT:-}" ] && [ -n "\${CMUX_TASK_RUN_ID:-}" ] && [ -n "\${CMUX_CALLBACK_URL:-}" ]; then
+  (
+    echo "[CMUX Codex Hook] Calling crown/complete..." >> "$LOG_FILE"
+    curl -s -X POST "\${CMUX_CALLBACK_URL}/api/crown/complete" \\
+      -H "Content-Type: application/json" \\
+      -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+      -d "{\\"taskRunId\\": \\"\${CMUX_TASK_RUN_ID}\\", \\"exitCode\\": 0}" \\
+      >> "$LOG_FILE" 2>&1
+    echo "" >> "$LOG_FILE"
+
+    echo "[CMUX Codex Hook] Calling notifications/agent-stopped..." >> "$LOG_FILE"
+    curl -s -X POST "\${CMUX_CALLBACK_URL}/api/notifications/agent-stopped" \\
+      -H "Content-Type: application/json" \\
+      -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+      -d "{\\"taskRunId\\": \\"\${CMUX_TASK_RUN_ID}\\"}" \\
+      >> "$LOG_FILE" 2>&1
+    echo "" >> "$LOG_FILE"
+    echo "[CMUX Codex Hook] API calls completed at $(date)" >> "$LOG_FILE"
+  ) &
+else
+  echo "[CMUX Codex Hook] Missing required env vars, skipping API calls" >> "$LOG_FILE"
+fi
+
+exit 0
 `;
   files.push({
     destinationPath: "/root/lifecycle/codex-notify.sh",
