@@ -39,8 +39,7 @@ export function SignInComponent() {
     if (!isElectron) return true;
     if (!protocolStatus) return true; // optimistic until we know otherwise
     if (!protocolStatus.ok) return true;
-    // On macOS, cmux:// can only be registered in a packaged .app (Info.plist).
-    return protocolStatus.isPackaged && protocolStatus.isDefaultProtocolClient;
+    return protocolStatus.isDefaultProtocolClient;
   }, [protocolStatus]);
 
   const showEmbeddedSignIn =
@@ -73,8 +72,8 @@ export function SignInComponent() {
                 </p>
                 {!browserSignInSupported ? (
                   <p className="mt-2 text-xs text-neutral-600 dark:text-neutral-400">
-                    The <code className="font-mono">cmux://</code> deeplink isn&apos;t registered in this build (common
-                    in Electron dev/preview runs). Use the embedded sign-in below or run the packaged app.
+                    The <code className="font-mono">cmux://</code> deeplink isn&apos;t registered on this machine for
+                    this app build. Restart cmux to re-register, or use the embedded sign-in below.
                   </p>
                 ) : null}
               </div>

@@ -56,6 +56,7 @@ import {
   buildStackAuthCookieSpecs,
   isStackAuthCookieName,
 } from "./stack-auth-cookies";
+import { computeSetAsDefaultProtocolClientCall } from "./protocol-registration";
 
 // Use a cookieable HTTPS origin intercepted locally instead of a custom scheme.
 const PARTITION = "persist:cmux";
@@ -964,10 +965,30 @@ app.whenReady().then(async () => {
   // will add CFBundleURLTypes on macOS, but calling this is harmless and also
   // helps on Windows/Linux when packaged.
   try {
-    const ok = app.setAsDefaultProtocolClient("cmux");
+    const call = computeSetAsDefaultProtocolClientCall({
+      scheme: "cmux",
+      defaultApp: process.defaultApp,
+      execPath: process.execPath,
+      argv: process.argv,
+    });
+    const ok =
+      call.kind === "withArgs"
+        ? app.setAsDefaultProtocolClient(call.scheme, call.execPath, call.args)
+        : app.setAsDefaultProtocolClient(call.scheme);
+    let isDefaultProtocolClient = false;
+    try {
+      isDefaultProtocolClient = app.isDefaultProtocolClient("cmux");
+    } catch (error) {
+      mainWarn("isDefaultProtocolClient(cmux) failed after registration", error);
+    }
     mainLog("setAsDefaultProtocolClient(cmux)", {
       ok,
+      isDefaultProtocolClient,
       packaged: app.isPackaged,
+      defaultApp: process.defaultApp,
+      registrationKind: call.kind,
+      execPath: call.kind === "withArgs" ? call.execPath : null,
+      args: call.kind === "withArgs" ? call.args : null,
     });
   } catch (e) {
     mainWarn("setAsDefaultProtocolClient failed", e);
