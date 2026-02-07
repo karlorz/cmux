@@ -45,9 +45,10 @@ async function buildOpencodeEnvironment(
     }
   }
   // Install OpenCode lifecycle completion hook script
-  // Also calls the completion API for remote sandbox support (matching Claude's stop hook pattern)
+  // Note: crown/complete is called by the worker after the completion detector resolves,
+  // NOT here. This hook only writes marker files for the filesystem watcher.
   const completionHook = `#!/bin/bash
-set -eo pipefail
+set -euo pipefail
 
 MARKER_DIR="/root/lifecycle"
 TASK_ID="\${CMUX_TASK_RUN_ID:-unknown}"
@@ -67,30 +68,6 @@ touch "\${GENERIC_MARKER}"
 
 echo "[CMUX] OpenCode session complete for task \${TASK_ID}" >> "\${LOG_FILE}"
 ls -la "\${MARKER_FILE}" >> "\${LOG_FILE}" 2>&1
-
-# Call completion API for remote sandbox support
-if [ -n "\${CMUX_TASK_RUN_JWT:-}" ] && [ -n "\${CMUX_TASK_RUN_ID:-}" ] && [ -n "\${CMUX_CALLBACK_URL:-}" ]; then
-  (
-    echo "[CMUX OpenCode Hook] Calling crown/complete..." >> "\${LOG_FILE}"
-    curl -s -X POST "\${CMUX_CALLBACK_URL}/api/crown/complete" \\
-      -H "Content-Type: application/json" \\
-      -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
-      -d "{\\"taskRunId\\": \\"\${CMUX_TASK_RUN_ID}\\", \\"exitCode\\": 0}" \\
-      >> "\${LOG_FILE}" 2>&1
-    echo "" >> "\${LOG_FILE}"
-
-    echo "[CMUX OpenCode Hook] Calling notifications/agent-stopped..." >> "\${LOG_FILE}"
-    curl -s -X POST "\${CMUX_CALLBACK_URL}/api/notifications/agent-stopped" \\
-      -H "Content-Type: application/json" \\
-      -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
-      -d "{\\"taskRunId\\": \\"\${CMUX_TASK_RUN_ID}\\"}" \\
-      >> "\${LOG_FILE}" 2>&1
-    echo "" >> "\${LOG_FILE}"
-    echo "[CMUX OpenCode Hook] API calls completed at $(date)" >> "\${LOG_FILE}"
-  ) &
-else
-  echo "[CMUX OpenCode Hook] Missing required env vars, skipping API calls" >> "\${LOG_FILE}"
-fi
 `;
 
   files.push({
@@ -128,7 +105,7 @@ export const NotificationPlugin = async ({ project: _project, client, $, directo
             const content = fs.readFileSync(path.join(sessionPath, msgFile), "utf-8");
             messages.push(JSON.parse(content));
           } catch (e) {
-            // Skip invalid files
+            log("Failed to parse message file " + msgFile + ": " + e);
           }
         }
       }
