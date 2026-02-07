@@ -24,8 +24,10 @@ export const env = createEnv({
     // Note: PVE_* variables are accessed via process.env directly in
     // sandboxInstanceMaintenance.ts to avoid Convex static analysis
     // requiring them to be set in all deployments
-    // Note: CMUX_IS_STAGING was removed - preview_jobs_worker.ts now hardcodes
-    // CMUX_IS_STAGING="false" in sandbox env to always use production releases
+    E2B_API_KEY: z.string().min(1).optional(),
+    // preview_jobs_worker.ts hardcodes CMUX_IS_STAGING="false" for screenshot jobs.
+    // Keep this optional env var for compatibility with existing deployments/tools.
+    CMUX_IS_STAGING: z.string().optional(),
     CONVEX_IS_PRODUCTION: z.string().optional(),
     // Opt-in flag for screenshot workflow (disabled by default)
     // Set to "true" or "1" to enable screenshot capture for task runs and PR previews
