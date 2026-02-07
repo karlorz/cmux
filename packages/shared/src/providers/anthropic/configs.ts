@@ -58,6 +58,25 @@ function createApplyClaudeApiKeys(): NonNullable<AgentConfig["applyApiKeys"]> {
   };
 }
 
+export const CLAUDE_OPUS_4_6_CONFIG: AgentConfig = {
+  name: "claude/opus-4.6",
+  command: "claude",
+  args: [
+    "--allow-dangerously-skip-permissions",
+    "--dangerously-skip-permissions",
+    "--model",
+    "claude-opus-4-6",
+    "--ide",
+    "$PROMPT",
+  ],
+  environment: getClaudeEnvironment,
+  checkRequirements: checkClaudeRequirements,
+  // User-configurable: OAuth token (preferred) or API key; falls back to platform proxy
+  apiKeys: [CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY],
+  applyApiKeys: createApplyClaudeApiKeys(),
+  completionDetector: startClaudeCompletionDetector,
+};
+
 export const CLAUDE_OPUS_4_5_CONFIG: AgentConfig = {
   name: "claude/opus-4.5",
   command: "claude",
