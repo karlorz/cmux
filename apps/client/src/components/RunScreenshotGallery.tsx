@@ -11,7 +11,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import {
   ChevronLeft,
   ChevronRight,
-  Info,
+  Images,
   Maximize2,
   Play,
   RotateCcw,
@@ -50,125 +50,69 @@ interface RunScreenshotSet {
   videos?: ScreenshotVideo[];
 }
 
-interface ScreenshotConfig {
-  screenshotWorkflowEnabled: boolean;
-  taskRunCompleted: boolean;
-}
-
 interface RunScreenshotGalleryProps {
   screenshotSets: RunScreenshotSet[];
-  screenshotConfig?: ScreenshotConfig;
-  // Note: highlightedSetId was removed as the component now only shows the latest set
+  highlightedSetId?: Id<"taskRunScreenshotSets"> | null;
 }
 
 const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 40;
 
-const DEFAULT_SCREENSHOT_CONFIG: ScreenshotConfig = {
-  screenshotWorkflowEnabled: true,
-  taskRunCompleted: false,
-};
-
-const NOTICE_MESSAGES = {
-  screenshotWorkflowDisabled: {
-    title: "Screenshot workflow disabled",
-    description: "Screenshot collection is disabled.",
-  },
-  noUiChanges: {
-    title: "No UI changes",
-    description:
-      "No UI changes detected in this diff. Screenshot capture was skipped since there were no visual changes to verify.",
-  },
-} as const;
-
-type NoticeType = keyof typeof NOTICE_MESSAGES;
-
-function formatMediaCount(imageCount: number, videoCount: number): string {
-  const parts: string[] = [];
-  if (imageCount > 0) {
-    parts.push(`${imageCount} screenshot${imageCount !== 1 ? "s" : ""}`);
-  }
-  if (videoCount > 0) {
-    parts.push(`${videoCount} video${videoCount !== 1 ? "s" : ""}`);
-  }
-  return parts.length === 2 ? parts.join(" and ") : parts[0] || "";
-}
-
-function formatDisplayName(fileName: string): string {
-  return fileName
-    .replace(/[-_]/g, " ")
-    .replace(/\.[^.]+$/, "")
-    .replace(/\b\w/g, (char) => char.toUpperCase())
-    .trim();
-}
-
-function ScreenshotNotice({ type }: { type: NoticeType }) {
-  const notice = NOTICE_MESSAGES[type];
-  return (
-    <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
-      <div className="flex items-start gap-3">
-        <Info className="h-4 w-4 text-neutral-400 dark:text-neutral-500 flex-shrink-0 mt-0.5" />
-        <div>
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-            {notice.title}
-          </p>
-          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-            {notice.description}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const NO_UI_CHANGES_MESSAGE =
-  "No UI changes detected in this diff. Screenshot capture was skipped since there were no visual changes to verify.";
-
 const NO_UI_CHANGES_ERROR_SNIPPETS = [
   "Claude collector reported success but returned no files",
   "returned no files in the git diff",
+  "no ui changes",
+  "no files to capture",
   "No UI changes detected",
 ];
 
-function isNoUiChangesError(error?: string | null): boolean {
-  if (!error) {
-    return false;
+function detectEmptyReason(set: RunScreenshotSet): {
+  reason: "no-ui-changes" | "failed" | "skipped" | "empty";
+  message: string;
+} {
+  // Check explicit hasUiChanges flag
+  if (set.hasUiChanges === false) {
+    return {
+      reason: "no-ui-changes",
+      message: "No UI changes detected in this diff. Screenshot capture was skipped since there were no visual changes to verify.",
+    };
   }
-  const normalized = error.toLowerCase();
-  return NO_UI_CHANGES_ERROR_SNIPPETS.some((snippet) =>
-    normalized.includes(snippet.toLowerCase())
-  );
-}
 
-function getNoticeType(
-  latestSet: RunScreenshotSet | null | undefined,
-  config: ScreenshotConfig,
-): NoticeType | null {
-  // If we have a screenshot set, check its status
-  if (latestSet) {
-    if (latestSet.hasUiChanges === false || isNoUiChangesError(latestSet.error)) {
-      return "noUiChanges";
+  // Check for error messages indicating no UI changes
+  if (set.error) {
+    const normalizedError = set.error.toLowerCase();
+    const isNoUiChangesError = NO_UI_CHANGES_ERROR_SNIPPETS.some((snippet) =>
+      normalizedError.includes(snippet.toLowerCase())
+    );
+    if (isNoUiChangesError) {
+      return {
+        reason: "no-ui-changes",
+        message: "No UI changes detected in this diff. Screenshot capture was skipped since there were no visual changes to verify.",
+      };
     }
-    if (
-      latestSet.status === "skipped" &&
-      latestSet.error?.includes("Screenshot workflow disabled")
-    ) {
-      return "screenshotWorkflowDisabled";
-    }
-    return null;
   }
 
-  // No screenshot set yet - only show notice if task run is completed
-  // This prevents showing notices while the task is still running
-  if (!config.taskRunCompleted) {
-    return null;
+  // Check status
+  if (set.status === "failed") {
+    return {
+      reason: "failed",
+      message: set.error
+        ? `Screenshot capture failed: ${set.error}`
+        : "Screenshot capture failed before any media could be saved.",
+    };
   }
 
-  // Task completed but no screenshot set - show appropriate notice
-  if (!config.screenshotWorkflowEnabled) {
-    return "screenshotWorkflowDisabled";
+  if (set.status === "skipped") {
+    return {
+      reason: "skipped",
+      message: "Screenshot capture was skipped for this run.",
+    };
   }
-  return null;
+
+  return {
+    reason: "empty",
+    message: "No screenshots or videos were captured for this run.",
+  };
 }
 
 type MediaKind = "image" | "video";
@@ -193,7 +137,7 @@ const getMediaKey = (
 ) => `${setId}:${kind}:${media.storageId}:${indexInSet}`;
 
 export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
-  const { screenshotSets, screenshotConfig } = props;
+  const { screenshotSets } = props;
   // Only show the latest screenshot set
   const latestScreenshotSet = useMemo(() => {
     if (screenshotSets.length === 0) return null;
@@ -558,34 +502,50 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
     };
   }, [goNext, goPrev, isSlideshowOpen]);
 
-  const config = screenshotConfig ?? DEFAULT_SCREENSHOT_CONFIG;
-  const noticeType = getNoticeType(latestScreenshotSet, config);
-  const hasGalleryContent = mediaItems.length > 0;
-  const totalImageCount = mediaItems.filter((entry) => entry.kind === "image").length;
-  const totalVideoCount = mediaItems.filter((entry) => entry.kind === "video").length;
+  const openFirstMedia = useCallback(() => {
+    if (flattenedMedia.length > 0 && flattenedMedia[0]) {
+      setActiveMediaKey(flattenedMedia[0].key);
+    }
+  }, [flattenedMedia]);
 
-  if (!noticeType && !latestScreenshotSet) {
+  if (!latestScreenshotSet) {
     return null;
   }
 
+  const imageCount = latestScreenshotSet.images.length;
+  const videoCount = latestScreenshotSet.videos?.filter((v) => v.mimeType !== "image/apng" && v.mimeType !== "image/gif").length ?? 0;
+  const totalMediaCount = imageCount + videoCount;
+
+  const emptyReason = totalMediaCount === 0 ? detectEmptyReason(latestScreenshotSet) : null;
+
   return (
-    <section className="border-b border-neutral-200 dark:border-neutral-800">
-      <div className="px-3.5 pt-3 pb-2 flex items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-sm font-medium text-neutral-900 dark:text-neutral-100">
-          Previews
-          {hasGalleryContent ? (
-            <span className="text-xs font-normal text-neutral-500 dark:text-neutral-400">
-              {formatMediaCount(totalImageCount, totalVideoCount)}
-            </span>
-          ) : null}
-        </h2>
-      </div>
-      <div className="px-3.5 pb-4 space-y-4">
-        {noticeType && !hasGalleryContent ? (
-          <ScreenshotNotice type={noticeType} />
+    <section>
+      <div className="px-2 py-1.5 flex items-center gap-2">
+        {totalMediaCount > 0 ? (
+          <button
+            type="button"
+            onClick={openFirstMedia}
+            className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[13px] font-medium text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+            title="View previews"
+          >
+            <Images className="w-3.5 h-3.5" />
+            <span>Previews</span>
+          </button>
         ) : (
-          <>
-            {currentEntry ? (
+          <div className="flex items-center gap-1.5 px-2 py-0.5 text-[13px] font-medium text-neutral-600 dark:text-neutral-400">
+            <Images className="w-3.5 h-3.5" />
+            <span>Previews</span>
+          </div>
+        )}
+        <span className="text-[11px] text-neutral-500 dark:text-neutral-500">
+          {imageCount > 0 && `${imageCount} ${imageCount === 1 ? "screenshot" : "screenshots"}`}
+          {imageCount > 0 && videoCount > 0 && " and "}
+          {videoCount > 0 && `${videoCount} ${videoCount === 1 ? "video" : "videos"}`}
+          {totalMediaCount === 0 && "0 items"}
+        </span>
+      </div>
+      <div className="px-3 pb-3">
+        {currentEntry ? (
           <Dialog.Root
             open={isSlideshowOpen}
             onOpenChange={(open) => !open && closeSlideshow()}
@@ -785,103 +745,74 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
             </Dialog.Portal>
           </Dialog.Root>
         ) : null}
-            {latestScreenshotSet
-              ? (() => {
-                  const set = latestScreenshotSet;
-                  const isNoUiChanges =
-                    set.hasUiChanges === false || isNoUiChangesError(set.error);
-                  const detailMessage = isNoUiChanges
-                    ? NO_UI_CHANGES_MESSAGE
-                    : set.error;
-                  const detailClass = isNoUiChanges
-                    ? "text-neutral-500 dark:text-neutral-400"
-                    : "text-rose-600 dark:text-rose-400";
-                  const totalMediaCount = totalImageCount + totalVideoCount;
-                  const showEmptyStateMessage =
-                    totalMediaCount === 0 && !isNoUiChanges;
+        {totalMediaCount > 0 ? (
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {mediaItems.map((entry) => {
+              const displayLabel =
+                entry.media.description ??
+                entry.media.fileName ??
+                (entry.kind === "video" ? "Video" : "Screenshot");
+              const stableKey = entry.key;
+              if (!entry.media.url) {
+                return (
+                  <div
+                    key={stableKey}
+                    className="flex h-48 w-80 flex-shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-100 text-sm text-neutral-500 dark:border-neutral-700 dark:bg-neutral-800/50 dark:text-neutral-400"
+                  >
+                    URL expired
+                  </div>
+                );
+              }
+              const flatIndex = globalIndexByKey.get(stableKey) ?? null;
+              const humanIndex = flatIndex !== null ? flatIndex + 1 : null;
 
-                  return (
-                    <div className="space-y-2">
-                      {detailMessage ? (
-                        <p className={cn("text-xs", detailClass)}>
-                          {detailMessage}
-                        </p>
-                      ) : null}
-                      {totalMediaCount > 0 ? (
-                        <div className="flex gap-3 overflow-x-auto pb-1">
-                          {mediaItems.map((entry) => {
-                            const rawDisplayName =
-                              entry.media.fileName ??
-                              (entry.kind === "video" ? "Video" : "Screenshot");
-                            const caption =
-                              entry.media.description?.trim() ||
-                              formatDisplayName(rawDisplayName);
-                            const stableKey = entry.key;
-                            if (!entry.media.url) {
-                              return (
-                                <div
-                                  key={stableKey}
-                                  className="flex h-48 min-w-[180px] items-center justify-center rounded-lg border border-dashed border-neutral-300 bg-neutral-100 text-xs text-neutral-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-400"
-                                >
-                                  URL expired
-                                </div>
-                              );
-                            }
-                            const flatIndex = globalIndexByKey.get(stableKey) ?? null;
-                            const humanIndex = flatIndex !== null ? flatIndex + 1 : null;
-
-                            return (
-                              <button
-                                key={stableKey}
-                                type="button"
-                                onClick={() => setActiveMediaKey(stableKey)}
-                                className="group relative flex w-[180px] flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white text-left transition-all hover:border-emerald-500 hover:ring-1 hover:ring-emerald-500/30 dark:border-neutral-700 dark:bg-neutral-900/70 dark:hover:border-emerald-500 dark:hover:ring-emerald-500/40"
-                                aria-label={`Open ${rawDisplayName} in slideshow`}
-                              >
-                                {entry.kind === "image" ? (
-                                  <img
-                                    src={entry.media.url}
-                                    alt={caption}
-                                    className="h-48 w-[180px] object-contain bg-neutral-100 dark:bg-neutral-950"
-                                    loading="lazy"
-                                  />
-                                ) : (
-                                  <video
-                                    src={entry.media.url}
-                                    className="h-48 w-[180px] object-contain bg-neutral-100 dark:bg-neutral-950"
-                                    muted
-                                    preload="metadata"
-                                    playsInline
-                                  />
-                                )}
-                                <div className="absolute top-2 right-2 text-neutral-600 opacity-0 transition group-hover:opacity-100 dark:text-neutral-300">
-                                  {entry.kind === "video" ? (
-                                    <Play className="h-3.5 w-3.5" />
-                                  ) : (
-                                    <Maximize2 className="h-3.5 w-3.5" />
-                                  )}
-                                </div>
-                                <div className="truncate px-2 py-1.5 text-xs text-neutral-700 dark:text-neutral-300">
-                                  {humanIndex !== null ? `${humanIndex}. ` : ""}
-                                  {caption}
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ) : showEmptyStateMessage ? (
-                        <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                          {set.status === "failed"
-                            ? "Screenshot capture failed before any media was saved."
-                            : "No screenshots or videos were captured for this attempt."}
-                        </p>
-                      ) : null}
+              return (
+                <button
+                  key={stableKey}
+                  type="button"
+                  onClick={() => setActiveMediaKey(stableKey)}
+                  className="group relative flex flex-shrink-0 flex-col text-left"
+                  aria-label={`Open ${displayLabel} in slideshow`}
+                  title={displayLabel}
+                >
+                  <div className="relative overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-700">
+                    {entry.kind === "image" ? (
+                      <img
+                        src={entry.media.url}
+                        alt={displayLabel}
+                        className="h-48 w-80 object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <video
+                        src={entry.media.url}
+                        className="h-48 w-80 object-cover"
+                        muted
+                        preload="metadata"
+                        playsInline
+                      />
+                    )}
+                    <div className="absolute top-1.5 right-1.5 rounded bg-neutral-900/70 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                      {entry.kind === "video" ? (
+                        <Play className="h-3.5 w-3.5" />
+                      ) : (
+                        <Maximize2 className="h-3.5 w-3.5" />
+                      )}
                     </div>
-                  );
-                })()
-              : null}
-          </>
-        )}
+                  </div>
+                  <span className="mt-2 text-xs text-neutral-500 dark:text-neutral-400 line-clamp-3 w-80">
+                    {humanIndex !== null ? `${humanIndex}. ` : ""}
+                    {displayLabel}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ) : emptyReason ? (
+          <p className="text-xs text-neutral-500 dark:text-neutral-400 py-1">
+            {emptyReason.message}
+          </p>
+        ) : null}
       </div>
     </section>
   );

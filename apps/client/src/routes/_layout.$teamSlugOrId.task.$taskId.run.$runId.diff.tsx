@@ -1209,7 +1209,6 @@ function RunDiffPage() {
             ) : (
               <RunScreenshotGallery
                 screenshotSets={screenshotSets}
-                screenshotConfig={runDiffContextQuery.data?.screenshotConfig}
               />
             )}
             <div
