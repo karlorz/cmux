@@ -461,6 +461,17 @@ export const anthropicProxy = httpAction(async (ctx, req) => {
           headers[key] = value;
         }
       });
+
+      // When using custom base URL (not official Anthropic), convert auth header.
+      // Many third-party proxies use OpenAI-style "Authorization: Bearer" instead of "x-api-key".
+      if (userCustomBaseUrl && !userCustomBaseUrl.includes("anthropic.com")) {
+        const apiKey = headers["x-api-key"];
+        if (apiKey) {
+          delete headers["x-api-key"];
+          headers["authorization"] = `Bearer ${apiKey}`;
+        }
+      }
+
       // Ensure upstream returns identity encoding so Convex can parse it.
       headers["accept-encoding"] = "identity";
 
