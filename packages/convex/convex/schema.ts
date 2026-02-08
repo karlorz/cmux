@@ -1240,6 +1240,33 @@ const convexSchema = defineSchema({
     gpu: v.optional(v.string()), // GPU config used (e.g., "T4", "A100", "H100:2")
   }).index("by_instanceId", ["instanceId"]),
 
+  // Prewarmed Morph instances for fast task startup.
+  // Instances are provisioned with a specific repo already cloned,
+  // triggered when a user starts typing a task description.
+  warmPool: defineTable({
+    instanceId: v.string(), // Morph instance ID (morphvm_xxx)
+    snapshotId: v.string(), // Snapshot used to create this instance
+    status: v.union(
+      v.literal("provisioning"), // Instance is being created + repo cloning
+      v.literal("ready"), // Instance ready with repo cloned
+      v.literal("claimed"), // Claimed by a task
+      v.literal("failed") // Failed to provision
+    ),
+    teamId: v.string(), // Team that requested the prewarm
+    userId: v.string(), // User that requested the prewarm
+    repoUrl: v.optional(v.string()), // GitHub repo URL (if repo-specific)
+    branch: v.optional(v.string()), // Base branch
+    vscodeUrl: v.optional(v.string()), // Pre-resolved VSCode URL
+    workerUrl: v.optional(v.string()), // Pre-resolved worker URL
+    claimedAt: v.optional(v.number()),
+    claimedByTaskRunId: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    errorMessage: v.optional(v.string()),
+  })
+    .index("by_status", ["status", "createdAt"])
+    .index("by_instanceId", ["instanceId"])
+    .index("by_team_status", ["teamId", "status", "createdAt"]),
 });
 
 export default convexSchema;
