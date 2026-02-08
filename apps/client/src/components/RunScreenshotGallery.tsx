@@ -105,7 +105,7 @@ function detectEmptyReason(set: RunScreenshotSet): {
   if (set.status === "skipped") {
     return {
       reason: "skipped",
-      message: "Screenshot capture was skipped for this run.",
+      message: set.error ?? "Screenshot capture was skipped for this run.",
     };
   }
 
@@ -508,15 +508,17 @@ export function RunScreenshotGallery(props: RunScreenshotGalleryProps) {
     }
   }, [flattenedMedia]);
 
-  if (!latestScreenshotSet) {
-    return null;
-  }
-
-  const imageCount = latestScreenshotSet.images.length;
-  const videoCount = latestScreenshotSet.videos?.filter((v) => v.mimeType !== "image/apng" && v.mimeType !== "image/gif").length ?? 0;
+  const imageCount = latestScreenshotSet?.images.length ?? 0;
+  const videoCount = latestScreenshotSet?.videos?.filter((v) => v.mimeType !== "image/apng" && v.mimeType !== "image/gif").length ?? 0;
   const totalMediaCount = imageCount + videoCount;
 
-  const emptyReason = totalMediaCount === 0 ? detectEmptyReason(latestScreenshotSet) : null;
+  const emptyReason = latestScreenshotSet && totalMediaCount === 0 ? detectEmptyReason(latestScreenshotSet) : null;
+
+  // Don't render at all if there's no screenshot set and no media
+  // This avoids showing an empty "Previews" section during loading or when screenshots aren't applicable
+  if (!latestScreenshotSet && totalMediaCount === 0) {
+    return null;
+  }
 
   return (
     <section>
