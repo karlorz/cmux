@@ -112,6 +112,9 @@ func init() {
 	// Upload command (single file upload)
 	rootCmd.AddCommand(uploadCmd)
 
+	// Download command (download from sandbox)
+	rootCmd.AddCommand(downloadCmd)
+
 	// PTY commands (terminal session)
 	rootCmd.AddCommand(ptyCmd)
 	rootCmd.AddCommand(ptyListCmd)
