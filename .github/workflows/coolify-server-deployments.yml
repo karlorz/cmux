@@ -262,7 +262,70 @@ jobs:
             echo "coolify_status=no_deployment_found" >> "$GITHUB_OUTPUT"
             deployment_url="$(resolve_deployment_url "")"
             echo "deployment_url=${deployment_url:-}" >> "$GITHUB_OUTPUT"
-            echo "No Coolify deployment detected for SHA ${sha}." >&2
+
+            # --- Debug output for deployment not found ---
+            echo "::group::Debug: Deployment Search Details"
+            echo "Looking for commit SHA: ${sha} (short: ${sha7})"
+            echo "App UUID: ${COOLIFY_APP_UUID:-not set}"
+            if [[ -n "${auto_detected_app_uuid:-}" ]]; then
+              echo "Auto-detected App UUID: ${auto_detected_app_uuid}"
+            fi
+            echo ""
+
+            # Show deployments for this specific app
+            echo "Available deployments for this app (${COOLIFY_APP_UUID}):"
+            debug_app_deps="$tmp_dir/debug_app_deps.json"
+            code="$(http_get_json "${base_url}/api/v1/applications/${COOLIFY_APP_UUID}/deployments?skip=0&take=10" "$debug_app_deps")"
+            if [[ "$code" == "200" ]]; then
+              jq -r '
+                (if type=="array" then . elif has("data") then .data elif has("deployments") then .deployments else [] end)
+                | .[:10]
+                | if length == 0 then "  (no deployments found for this app)"
+                  else .[] | "  - commit: \(.commit // .git_commit_sha // "N/A" | .[0:7]) status: \(.status // "unknown") uuid: \(.deployment_uuid // .uuid // "N/A")"
+                  end
+              ' "$debug_app_deps" 2>/dev/null || echo "  (could not parse deployments response)"
+            else
+              echo "  (API returned HTTP ${code})"
+            fi
+            echo ""
+
+            # Show all recent deployments across all apps
+            echo "Recent deployments (all apps, last 10):"
+            debug_all_deps="$tmp_dir/debug_all_deps.json"
+            code="$(http_get_json "${base_url}/api/v1/deployments?skip=0&take=10" "$debug_all_deps")"
+            if [[ "$code" == "200" ]]; then
+              jq -r '
+                (if type=="array" then . else [] end)
+                | .[:10]
+                | if length == 0 then "  (no recent deployments found)"
+                  else .[] | "  - commit: \(.commit // .git_commit_sha // "N/A" | .[0:7]) app: \(.application_uuid // "N/A") status: \(.status // "unknown")"
+                  end
+              ' "$debug_all_deps" 2>/dev/null || echo "  (could not parse deployments response)"
+            else
+              echo "  (API returned HTTP ${code})"
+            fi
+            echo ""
+
+            # Show endpoints checked
+            echo "API endpoints checked during polling:"
+            echo "  - ${base_url}/api/v1/deployments/applications/${COOLIFY_APP_UUID}"
+            echo "  - ${base_url}/api/v1/applications/${COOLIFY_APP_UUID}/deployments"
+            echo "  - ${base_url}/api/v1/deployments"
+            echo "::endgroup::"
+
+            # Enhanced error message
+            echo ""
+            echo "::error::No Coolify deployment found for SHA ${sha} (${sha7})"
+            echo "This usually means:" >&2
+            echo "  1. Coolify webhook did not trigger for this push" >&2
+            echo "  2. Deployment is still pending/not yet created" >&2
+            echo "  3. Commit SHA mismatch between GitHub and Coolify" >&2
+            echo "  4. App UUID mismatch - verify COOLIFY_APP_UUID secret" >&2
+            echo "" >&2
+            echo "Troubleshooting steps:" >&2
+            echo "  - Check Coolify dashboard for recent deployments" >&2
+            echo "  - Verify webhook configuration in Coolify" >&2
+            echo "  - Run: bash scripts/coolify-find-app-uuid.sh" >&2
             exit 1
           fi
 
@@ -365,3 +428,93 @@ jobs:
             }
 
             await github.rest.repos.createDeploymentStatus(payload);
+
+      - name: Write debug summary on failure
+        if: failure()
+        env:
+          COOLIFY_STATUS: ${{ steps.coolify.outputs.coolify_status }}
+          DEPLOYMENT_URL: ${{ steps.coolify.outputs.deployment_url }}
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          ## Coolify Deployment Status Check Failed
+
+          | Field | Value |
+          |-------|-------|
+          | **Commit** | \`${{ github.sha }}\` |
+          | **Short SHA** | \`$(echo "${{ github.sha }}" | cut -c1-7)\` |
+          | **Status** | \`${COOLIFY_STATUS:-unknown}\` |
+          | **Branch** | \`${{ github.ref_name }}\` |
+
+          ### Troubleshooting
+
+          Based on the status \`${COOLIFY_STATUS:-unknown}\`:
+
+          EOF
+
+          case "${COOLIFY_STATUS:-}" in
+            no_deployment_found)
+              cat >> "$GITHUB_STEP_SUMMARY" << 'EOF'
+          #### No Deployment Found
+
+          The workflow polled for 5 minutes but could not find a Coolify deployment for this commit.
+
+          **Possible causes:**
+          1. **Webhook not triggered** - Coolify webhook may not have fired for this push
+          2. **Webhook misconfigured** - Check webhook URL and secret in Coolify settings
+          3. **App UUID mismatch** - The `COOLIFY_APP_UUID` secret may point to wrong app
+          4. **Network issue** - Coolify may not have received the webhook
+
+          **Actions to take:**
+          1. Visit Coolify dashboard and check if deployment exists
+          2. Verify webhook configuration in Coolify > Application > Webhooks
+          3. Run `bash scripts/coolify-find-app-uuid.sh` to verify app UUID
+          4. Check Coolify server logs for webhook errors
+          EOF
+              ;;
+            timeout)
+              cat >> "$GITHUB_STEP_SUMMARY" << 'EOF'
+          #### Deployment Timed Out
+
+          A deployment was found but did not complete within 30 minutes.
+
+          **Possible causes:**
+          1. **Build stuck** - Docker build may be hung or very slow
+          2. **Resource constraints** - Server may be out of memory/disk
+          3. **Network issues** - Pulling images may be failing
+
+          **Actions to take:**
+          1. Check Coolify dashboard for build logs
+          2. SSH into server and check `docker ps` and `docker logs`
+          3. Check server resources with `df -h` and `free -m`
+          EOF
+              ;;
+            *)
+              cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          #### Deployment Failed
+
+          The Coolify deployment failed with status: \`${COOLIFY_STATUS:-unknown}\`
+
+          **Actions to take:**
+          1. Check Coolify dashboard for detailed error logs
+          2. Review the build output in Coolify
+          3. Check docker-compose configuration
+          EOF
+              ;;
+          esac
+
+          cat >> "$GITHUB_STEP_SUMMARY" << 'EOF'
+
+          ### Debug Commands
+
+          ```bash
+          # List recent deployments via API
+          curl -fsS "$COOLIFY_BASE_URL/api/v1/deployments?skip=0&take=5" \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" | jq '.[] | {commit, status, uuid: .deployment_uuid}'
+
+          # Find app UUID for apps/server
+          bash scripts/coolify-find-app-uuid.sh
+
+          # Check Coolify logs (on server)
+          docker logs coolify -n 100
+          ```
+          EOF
