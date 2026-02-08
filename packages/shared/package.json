@@ -129,6 +129,10 @@
     "./e2b-templates": {
       "import": "./src/e2b-templates.ts",
       "types": "./src/e2b-templates.ts"
+    },
+    "./apiKeys": {
+      "import": "./src/apiKeys.ts",
+      "types": "./src/apiKeys.ts"
     }
   },
   "peerDependencies": {

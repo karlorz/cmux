@@ -621,6 +621,8 @@ const convexSchema = defineSchema({
     autoPrEnabled: v.optional(v.boolean()), // Auto-create PR for crown winner (default: false)
     autoSyncEnabled: v.optional(v.boolean()), // Auto-sync local workspace to cloud (default: true)
     nextLocalWorkspaceSequence: v.optional(v.number()), // Counter for local workspace naming
+    // AI provider base URL settings
+    bypassAnthropicProxy: v.optional(v.boolean()), // When true, agent connects directly to custom ANTHROPIC_BASE_URL
     // Heatmap review settings
     heatmapModel: v.optional(v.string()), // Model to use for heatmap review (e.g., "anthropic-opus-4-5", "cmux-heatmap-2")
     heatmapThreshold: v.optional(v.number()), // Score threshold for filtering (0-1, default: 0)

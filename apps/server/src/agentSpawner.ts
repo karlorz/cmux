@@ -321,6 +321,11 @@ export async function spawnAgent(
       ...userApiKeys,
     };
 
+    // Fetch workspace settings for bypassAnthropicProxy flag
+    const workspaceSettings = await getConvex().query(api.workspaceSettings.get, {
+      teamSlugOrId,
+    });
+
     // Use environment property if available
     if (agent.environment) {
       const envResult = await agent.environment({
@@ -329,6 +334,9 @@ export async function spawnAgent(
         taskRunJwt,
         apiKeys,
         callbackUrl,
+        workspaceSettings: {
+          bypassAnthropicProxy: workspaceSettings?.bypassAnthropicProxy ?? false,
+        },
       });
       envVars = {
         ...envVars,

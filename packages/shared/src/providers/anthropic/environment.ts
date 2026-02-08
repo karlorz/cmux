@@ -192,6 +192,10 @@ exit 0`;
     ctx.apiKeys?.ANTHROPIC_API_KEY &&
     ctx.apiKeys.ANTHROPIC_API_KEY.trim().length > 0;
 
+  // Check for user's custom base URL and bypass proxy setting
+  const userCustomBaseUrl = ctx.apiKeys?.ANTHROPIC_BASE_URL?.trim();
+  const bypassProxy = ctx.workspaceSettings?.bypassAnthropicProxy ?? false;
+
   // If OAuth token is provided, write it to /etc/claude-code/env
   // The wrapper scripts (claude and other launchers) source this file before running claude-code
   // This is necessary because CLAUDE_CODE_OAUTH_TOKEN must be set as an env var
@@ -204,6 +208,31 @@ exit 0`;
       mode: "600", // Restrictive permissions for the token
     });
   }
+
+  // Determine ANTHROPIC_BASE_URL configuration based on auth method and user settings
+  // Priority:
+  // 1. OAuth token: direct to Anthropic (no custom URL override for OAuth)
+  // 2. API key + bypassProxy + customUrl: agent connects directly to user's endpoint
+  // 3. API key (default): agent goes through cmux proxy (which may forward to user's URL)
+  const getAnthropicEnvConfig = (): Record<string, string | number> => {
+    if (hasOAuthToken) {
+      // OAuth: direct to Anthropic (no custom URL override for OAuth)
+      return {};
+    }
+    if (bypassProxy && userCustomBaseUrl) {
+      // Bypass ON + custom URL: agent connects directly to user's endpoint
+      // No custom headers needed - user's endpoint doesn't need cmux headers
+      return {
+        ANTHROPIC_BASE_URL: userCustomBaseUrl,
+      };
+    }
+    // Default: agent goes through cmux proxy
+    // The proxy will look up user's custom base URL if set and forward there
+    return {
+      ANTHROPIC_BASE_URL: `${ctx.callbackUrl}/api/anthropic`,
+      ANTHROPIC_CUSTOM_HEADERS: `x-cmux-token:${ctx.taskRunJwt}\nx-cmux-source:cmux`,
+    };
+  };
 
   // Create settings.json with hooks configuration
   // When OAuth token is present, we don't use the cmux proxy (user pays directly via their subscription)
@@ -228,13 +257,7 @@ exit 0`;
       CLAUDE_CODE_ENABLE_TELEMETRY: 0,
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: 1,
       CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: 1,
-      ...(hasOAuthToken
-        ? {}
-        : {
-          ANTHROPIC_BASE_URL: `${ctx.callbackUrl}/api/anthropic`,
-          ANTHROPIC_CUSTOM_HEADERS: `x-cmux-token:${ctx.taskRunJwt}\nx-cmux-source:cmux`,
-        }
-      ),
+      ...getAnthropicEnvConfig(),
     },
   };
 

@@ -1,5 +1,77 @@
 import type { AgentConfigApiKey } from "./agentConfig";
 
+// Base URL configuration type
+export interface BaseUrlConfig {
+  envVar: string;
+  displayName: string;
+  description: string;
+  placeholder: string;
+}
+
+// Base URL definitions for all providers
+export const ANTHROPIC_BASE_URL_KEY: BaseUrlConfig = {
+  envVar: "ANTHROPIC_BASE_URL",
+  displayName: "Anthropic Base URL",
+  description: "Custom API endpoint for Anthropic/Claude models (e.g., self-hosted proxy)",
+  placeholder: "https://api.anthropic.com",
+};
+
+export const OPENAI_BASE_URL_KEY: BaseUrlConfig = {
+  envVar: "OPENAI_BASE_URL",
+  displayName: "OpenAI Base URL",
+  description: "Custom API endpoint for OpenAI/Codex models",
+  placeholder: "https://api.openai.com/v1",
+};
+
+export const GEMINI_BASE_URL_KEY: BaseUrlConfig = {
+  envVar: "GEMINI_BASE_URL",
+  displayName: "Gemini Base URL",
+  description: "Custom API endpoint for Google Gemini models",
+  placeholder: "https://generativelanguage.googleapis.com/v1beta",
+};
+
+export const OPENROUTER_BASE_URL_KEY: BaseUrlConfig = {
+  envVar: "OPENROUTER_BASE_URL",
+  displayName: "OpenRouter Base URL",
+  description: "Custom API endpoint for OpenRouter",
+  placeholder: "https://openrouter.ai/api/v1",
+};
+
+export const XAI_BASE_URL_KEY: BaseUrlConfig = {
+  envVar: "XAI_BASE_URL",
+  displayName: "xAI Base URL",
+  description: "Custom API endpoint for xAI Grok models",
+  placeholder: "https://api.x.ai/v1",
+};
+
+export const MODEL_STUDIO_BASE_URL_KEY: BaseUrlConfig = {
+  envVar: "MODEL_STUDIO_BASE_URL",
+  displayName: "ModelStudio Base URL",
+  description: "Custom API endpoint for Alibaba ModelStudio",
+  placeholder: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+};
+
+// Map: which API key shows which base URL input (avoid duplicates)
+// CLAUDE_CODE_OAUTH_TOKEN, CODEX_AUTH_JSON, AMP_API_KEY, CURSOR_API_KEY
+// do NOT get base URL fields (share provider or not applicable)
+export const API_KEY_TO_BASE_URL: Record<string, BaseUrlConfig> = {
+  ANTHROPIC_API_KEY: ANTHROPIC_BASE_URL_KEY,
+  OPENAI_API_KEY: OPENAI_BASE_URL_KEY,
+  GEMINI_API_KEY: GEMINI_BASE_URL_KEY,
+  OPENROUTER_API_KEY: OPENROUTER_BASE_URL_KEY,
+  XAI_API_KEY: XAI_BASE_URL_KEY,
+  MODEL_STUDIO_API_KEY: MODEL_STUDIO_BASE_URL_KEY,
+};
+
+export const ALL_BASE_URL_KEYS: BaseUrlConfig[] = [
+  ANTHROPIC_BASE_URL_KEY,
+  OPENAI_BASE_URL_KEY,
+  GEMINI_BASE_URL_KEY,
+  OPENROUTER_BASE_URL_KEY,
+  XAI_BASE_URL_KEY,
+  MODEL_STUDIO_BASE_URL_KEY,
+];
+
 export const ANTHROPIC_API_KEY: AgentConfigApiKey = {
   envVar: "ANTHROPIC_API_KEY",
   displayName: "Anthropic API Key",

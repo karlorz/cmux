@@ -1,4 +1,5 @@
 import { httpAction } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { getWorkerAuth } from "./users/utils/getWorkerAuth";
 import {
   BEDROCK_BASE_URL,
@@ -420,9 +421,24 @@ export const anthropicProxy = httpAction(async (_ctx, req) => {
 
     if (useUserApiKey) {
       // User provided their own Anthropic API key - proxy directly to Anthropic
-      // TODO: get user's ANTHROPIC_BASE_URL from request/config to override default
-      const userBaseUrl = process.env.AIGATEWAY_ANTHROPIC_BASE_URL;
-      const baseUrl = userBaseUrl || CLOUDFLARE_ANTHROPIC_BASE_URL;
+      // Check for user's custom ANTHROPIC_BASE_URL from apiKeys table
+      let userCustomBaseUrl: string | undefined;
+      if (workerAuth?.payload.teamId && workerAuth?.payload.userId) {
+        const userBaseUrlEntry = await _ctx.runQuery(internal.apiKeys.getByEnvVarInternal, {
+          teamId: workerAuth.payload.teamId,
+          userId: workerAuth.payload.userId,
+          envVar: "ANTHROPIC_BASE_URL",
+        });
+        if (userBaseUrlEntry?.value?.trim()) {
+          userCustomBaseUrl = userBaseUrlEntry.value.trim();
+        }
+      }
+
+      // User API key: use their custom URL, or fall back to AI Gateway / Cloudflare
+      // NOTE: NO Bedrock fallback here - user's API key won't work with Bedrock
+      const baseUrl = userCustomBaseUrl ||
+        process.env.AIGATEWAY_ANTHROPIC_BASE_URL ||
+        CLOUDFLARE_ANTHROPIC_BASE_URL;
 
       const headers: Record<string, string> = {};
       req.headers.forEach((value, key) => {
