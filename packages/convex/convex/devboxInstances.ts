@@ -31,7 +31,7 @@ export const list = authQuery({
   args: {
     teamSlugOrId: v.string(),
     includeStoppedAfter: v.optional(v.number()),
-    provider: v.optional(v.union(v.literal("morph"), v.literal("e2b"))),
+    provider: v.optional(v.union(v.literal("morph"), v.literal("e2b"), v.literal("modal"))),
   },
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
@@ -135,6 +135,28 @@ export const getInfo = internalQuery({
 });
 
 /**
+ * Get provider info for multiple devbox instances.
+ */
+export const getInfoBatch = internalQuery({
+  args: {
+    devboxIds: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const results: Array<{ devboxId: string; provider: string }> = [];
+    for (const devboxId of args.devboxIds) {
+      const info = await ctx.db
+        .query("devboxInfo")
+        .withIndex("by_devboxId", (q) => q.eq("devboxId", devboxId))
+        .first();
+      if (info) {
+        results.push({ devboxId: info.devboxId, provider: info.provider });
+      }
+    }
+    return results;
+  },
+});
+
+/**
  * Get devbox ID from provider instance ID.
  */
 export const getDevboxIdFromProvider = internalQuery({
@@ -159,7 +181,7 @@ export const getByProviderInstanceId = authQuery({
   args: {
     teamSlugOrId: v.string(),
     providerInstanceId: v.string(),
-    provider: v.optional(v.union(v.literal("morph"), v.literal("e2b"))),
+    provider: v.optional(v.union(v.literal("morph"), v.literal("e2b"), v.literal("modal"))),
   },
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
@@ -203,7 +225,7 @@ export const create = authMutation({
   args: {
     teamSlugOrId: v.string(),
     providerInstanceId: v.string(), // e.g., morphvm_xxx or E2B sandbox ID
-    provider: v.optional(v.union(v.literal("morph"), v.literal("e2b"))),
+    provider: v.optional(v.union(v.literal("morph"), v.literal("e2b"), v.literal("modal"))),
     name: v.optional(v.string()),
     snapshotId: v.optional(v.string()),
     templateId: v.optional(v.string()), // For E2B templates
@@ -294,7 +316,7 @@ export const updateStatus = authMutation({
     teamSlugOrId: v.string(),
     id: v.optional(v.string()), // The devboxId
     providerInstanceId: v.optional(v.string()), // Or provider instance ID
-    provider: v.optional(v.union(v.literal("morph"), v.literal("e2b"))),
+    provider: v.optional(v.union(v.literal("morph"), v.literal("e2b"), v.literal("modal"))),
     status: instanceStatusValidator,
   },
   handler: async (ctx, args) => {
@@ -361,7 +383,7 @@ export const recordAccess = authMutation({
     teamSlugOrId: v.string(),
     id: v.optional(v.string()), // The devboxId
     providerInstanceId: v.optional(v.string()), // Or provider instance ID
-    provider: v.optional(v.union(v.literal("morph"), v.literal("e2b"))),
+    provider: v.optional(v.union(v.literal("morph"), v.literal("e2b"), v.literal("modal"))),
   },
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
