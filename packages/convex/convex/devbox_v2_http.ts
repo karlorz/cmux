@@ -1,16 +1,25 @@
 /**
- * v2/devbox HTTP API - E2B devbox management.
+ * v2/devbox HTTP API - Multi-provider devbox management (E2B + Modal).
  *
- * This API uses E2B as the backend provider.
+ * This API supports E2B and Modal as backend providers.
+ * Provider is selected via "provider" field in request body (defaults to "e2b").
  * All endpoints require Stack Auth authentication.
  * Instance data is tracked in devboxInstances table, with provider info in devboxInfo.
  */
 import { httpAction, type ActionCtx } from "./_generated/server";
 import { api, internal } from "./_generated/api";
+import type { FunctionReference } from "convex/server";
 import {
   DEFAULT_E2B_TEMPLATE_ID,
   E2B_TEMPLATE_PRESETS,
 } from "@cmux/shared/e2b-templates";
+import {
+  DEFAULT_MODAL_TEMPLATE_ID,
+  MODAL_TEMPLATE_PRESETS,
+  isModalGpuGated,
+} from "@cmux/shared/modal-templates";
+
+type SandboxProvider = "e2b" | "modal";
 
 const JSON_HEADERS = {
   "Content-Type": "application/json",
@@ -57,25 +66,75 @@ async function getAuthenticatedUser(
   return { identity, error: null };
 }
 
+// Type-safe references to devboxInstances functions
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const devboxApi = (api as any).devboxInstances as {
+  create: FunctionReference<"mutation", "public">;
+  list: FunctionReference<"query", "public">;
+  getById: FunctionReference<"query", "public">;
+  updateStatus: FunctionReference<"mutation", "public">;
+  recordAccess: FunctionReference<"mutation", "public">;
+  remove: FunctionReference<"mutation", "public">;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const devboxInternalApi = (internal as any).devboxInstances as {
+  getInfo: FunctionReference<"query", "internal">;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const e2bActionsApi = (internal as any).e2b_actions as {
+  startInstance: FunctionReference<"action", "internal">;
+  getInstance: FunctionReference<"action", "internal">;
+  execCommand: FunctionReference<"action", "internal">;
+  extendTimeout: FunctionReference<"action", "internal">;
+  stopInstance: FunctionReference<"action", "internal">;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const modalActionsApi = (internal as any).modal_actions as {
+  startInstance: FunctionReference<"action", "internal">;
+  getInstance: FunctionReference<"action", "internal">;
+  execCommand: FunctionReference<"action", "internal">;
+  stopInstance: FunctionReference<"action", "internal">;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const e2bInstancesApi = (internal as any).e2bInstances as {
+  recordResumeInternal: FunctionReference<"mutation", "internal">;
+  recordPauseInternal: FunctionReference<"mutation", "internal">;
+  recordStopInternal: FunctionReference<"mutation", "internal">;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const modalInstancesApi = (internal as any).modalInstances as {
+  recordResumeInternal: FunctionReference<"mutation", "internal">;
+  recordPauseInternal: FunctionReference<"mutation", "internal">;
+  recordStopInternal: FunctionReference<"mutation", "internal">;
+};
+
 /**
- * Record activity for an E2B instance
+ * Record activity for a provider instance
  */
-async function recordE2BActivity(
+async function recordProviderActivity(
   ctx: ActionCtx,
+  provider: SandboxProvider,
   providerInstanceId: string,
   action: "resume" | "pause" | "stop"
 ): Promise<void> {
   try {
+    const activityApi =
+      provider === "modal" ? modalInstancesApi : e2bInstancesApi;
     if (action === "resume") {
-      await ctx.runMutation(internal.e2bInstances.recordResumeInternal, {
+      await ctx.runMutation(activityApi.recordResumeInternal, {
         instanceId: providerInstanceId,
       });
     } else if (action === "pause") {
-      await ctx.runMutation(internal.e2bInstances.recordPauseInternal, {
+      await ctx.runMutation(activityApi.recordPauseInternal, {
         instanceId: providerInstanceId,
       });
     } else if (action === "stop") {
-      await ctx.runMutation(internal.e2bInstances.recordStopInternal, {
+      await ctx.runMutation(activityApi.recordStopInternal, {
         instanceId: providerInstanceId,
       });
     }
@@ -85,20 +144,24 @@ async function recordE2BActivity(
 }
 
 /**
- * Get the provider instance ID for a devbox ID
+ * Get the provider info for a devbox ID
  */
-async function getProviderInstanceId(
+async function getProviderInfo(
   ctx: ActionCtx,
   devboxId: string
-): Promise<string | null> {
-  const info = (await ctx.runQuery(internal.devboxInstances.getInfo, {
+): Promise<{ provider: SandboxProvider; providerInstanceId: string } | null> {
+  const info = (await ctx.runQuery(devboxInternalApi.getInfo, {
     devboxId,
   })) as { provider: string; providerInstanceId: string } | null;
-  return info?.providerInstanceId ?? null;
+  if (!info) return null;
+  return {
+    provider: info.provider as SandboxProvider,
+    providerInstanceId: info.providerInstanceId,
+  };
 }
 
 // ============================================================================
-// POST /api/v2/devbox/instances - Start a new E2B instance
+// POST /api/v2/devbox/instances - Start a new instance (E2B or Modal)
 // ============================================================================
 export const createInstance = httpAction(async (ctx, req) => {
   const contentTypeError = verifyContentType(req);
@@ -109,11 +172,17 @@ export const createInstance = httpAction(async (ctx, req) => {
 
   let body: {
     teamSlugOrId: string;
+    provider?: SandboxProvider;
     templateId?: string;
     name?: string;
     ttlSeconds?: number;
     metadata?: Record<string, string>;
     envs?: Record<string, string>;
+    // Modal-specific options
+    gpu?: string;
+    cpu?: number;
+    memoryMiB?: number;
+    image?: string;
   };
 
   try {
@@ -129,11 +198,79 @@ export const createInstance = httpAction(async (ctx, req) => {
     );
   }
 
+  const provider: SandboxProvider = body.provider ?? "e2b";
+
   try {
+    if (provider === "modal") {
+      // Gate expensive GPUs
+      if (body.gpu && isModalGpuGated(body.gpu)) {
+        return jsonResponse(
+          {
+            code: 403,
+            message: `GPU type "${body.gpu}" requires approval. Please contact the Manaflow team at founders@manaflow.com for inquiry.`,
+          },
+          403,
+        );
+      }
+
+      const templateId = body.templateId ?? DEFAULT_MODAL_TEMPLATE_ID;
+
+      const result = (await ctx.runAction(modalActionsApi.startInstance, {
+        templateId,
+        gpu: body.gpu,
+        cpu: body.cpu,
+        memoryMiB: body.memoryMiB,
+        ttlSeconds: body.ttlSeconds ?? 60 * 60,
+        metadata: {
+          app: "cmux-devbox-v2",
+          userId: identity!.subject,
+          ...(body.metadata || {}),
+        },
+        envs: body.envs,
+        image: body.image,
+      })) as {
+        instanceId: string;
+        status: string;
+        gpu?: string | null;
+        authToken?: string;
+        jupyterUrl?: string;
+        vscodeUrl?: string;
+        workerUrl?: string;
+        vncUrl?: string;
+      };
+
+      const instanceResult = (await ctx.runMutation(devboxApi.create, {
+        teamSlugOrId: body.teamSlugOrId,
+        providerInstanceId: result.instanceId,
+        provider: "modal",
+        name: body.name,
+        templateId,
+        vscodeUrl: result.vscodeUrl,
+        workerUrl: result.workerUrl,
+        metadata: {
+          ...(body.metadata || {}),
+          ...(result.gpu ? { gpu: result.gpu } : {}),
+        },
+        source: "cli",
+      })) as { id: string; isExisting: boolean };
+
+      return jsonResponse({
+        id: instanceResult.id,
+        provider: "modal",
+        status: result.status,
+        templateId,
+        gpu: result.gpu ?? undefined,
+        jupyterUrl: result.jupyterUrl,
+        vscodeUrl: result.vscodeUrl,
+        workerUrl: result.workerUrl,
+        vncUrl: result.vncUrl,
+      });
+    }
+
+    // Default: E2B provider
     const templateId = body.templateId ?? DEFAULT_E2B_TEMPLATE_ID;
 
-    // Start E2B instance via internal action
-    const result = (await ctx.runAction(internal.e2b_actions.startInstance, {
+    const result = (await ctx.runAction(e2bActionsApi.startInstance, {
       templateId,
       ttlSeconds: body.ttlSeconds ?? 60 * 60,
       metadata: {
@@ -150,8 +287,7 @@ export const createInstance = httpAction(async (ctx, req) => {
       vncUrl?: string;
     };
 
-    // Store in Convex
-    const instanceResult = (await ctx.runMutation(api.devboxInstances.create, {
+    const instanceResult = (await ctx.runMutation(devboxApi.create, {
       teamSlugOrId: body.teamSlugOrId,
       providerInstanceId: result.instanceId,
       provider: "e2b",
@@ -174,8 +310,10 @@ export const createInstance = httpAction(async (ctx, req) => {
     });
   } catch (error) {
     console.error("[devbox_v2.create] Error:", error);
+    const errorMessage =
+      error instanceof Error ? error.message : "Failed to create instance";
     return jsonResponse(
-      { code: 500, message: "Failed to create instance" },
+      { code: 500, message: errorMessage },
       500
     );
   }
@@ -190,6 +328,9 @@ export const listInstances = httpAction(async (ctx, req) => {
 
   const url = new URL(req.url);
   const teamSlugOrId = url.searchParams.get("teamSlugOrId");
+  const providerFilter = url.searchParams.get("provider") as
+    | SandboxProvider
+    | null;
 
   if (!teamSlugOrId) {
     return jsonResponse(
@@ -199,9 +340,9 @@ export const listInstances = httpAction(async (ctx, req) => {
   }
 
   try {
-    const rawInstances = (await ctx.runQuery(api.devboxInstances.list, {
+    const rawInstances = (await ctx.runQuery(devboxApi.list, {
       teamSlugOrId,
-      provider: "e2b",
+      provider: providerFilter ?? undefined,
     })) as Array<{
       devboxId: string;
       status: string;
@@ -237,7 +378,7 @@ async function handleGetInstance(
   teamSlugOrId: string
 ): Promise<Response> {
   try {
-    const instance = (await ctx.runQuery(api.devboxInstances.getById, {
+    const instance = (await ctx.runQuery(devboxApi.getById, {
       teamSlugOrId,
       id,
     })) as { id: string; status: string; name?: string } | null;
@@ -246,17 +387,21 @@ async function handleGetInstance(
       return jsonResponse({ code: 404, message: "Instance not found" }, 404);
     }
 
-    const providerInstanceId = await getProviderInstanceId(ctx, id);
-    if (!providerInstanceId) {
+    const providerInfo = await getProviderInfo(ctx, id);
+    if (!providerInfo) {
       return jsonResponse({
         id,
-        provider: "e2b",
+        provider: "unknown",
         status: instance.status,
         name: instance.name,
       });
     }
 
-    const e2bResult = (await ctx.runAction(internal.e2b_actions.getInstance, {
+    const { provider, providerInstanceId } = providerInfo;
+    const actionsApi =
+      provider === "modal" ? modalActionsApi : e2bActionsApi;
+
+    const providerResult = (await ctx.runAction(actionsApi.getInstance, {
       instanceId: providerInstanceId,
     })) as {
       instanceId: string;
@@ -266,10 +411,10 @@ async function handleGetInstance(
       vncUrl?: string | null;
     };
 
-    const status = e2bResult.status as "running" | "stopped";
+    const status = providerResult.status as "running" | "stopped";
 
     if (status !== instance.status) {
-      await ctx.runMutation(api.devboxInstances.updateStatus, {
+      await ctx.runMutation(devboxApi.updateStatus, {
         teamSlugOrId,
         id,
         status,
@@ -278,12 +423,12 @@ async function handleGetInstance(
 
     return jsonResponse({
       id,
-      provider: "e2b",
+      provider,
       status,
       name: instance.name,
-      vscodeUrl: e2bResult.vscodeUrl ?? undefined,
-      workerUrl: e2bResult.workerUrl ?? undefined,
-      vncUrl: e2bResult.vncUrl ?? undefined,
+      vscodeUrl: providerResult.vscodeUrl ?? undefined,
+      workerUrl: providerResult.workerUrl ?? undefined,
+      vncUrl: providerResult.vncUrl ?? undefined,
     });
   } catch (error) {
     console.error("[devbox_v2.get] Error:", error);
@@ -301,7 +446,7 @@ async function handleExecCommand(
   command: string | string[]
 ): Promise<Response> {
   try {
-    const instance = await ctx.runQuery(api.devboxInstances.getById, {
+    const instance = await ctx.runQuery(devboxApi.getById, {
       teamSlugOrId,
       id,
     });
@@ -310,21 +455,25 @@ async function handleExecCommand(
       return jsonResponse({ code: 404, message: "Instance not found" }, 404);
     }
 
-    const providerInstanceId = await getProviderInstanceId(ctx, id);
-    if (!providerInstanceId) {
+    const providerInfo = await getProviderInfo(ctx, id);
+    if (!providerInfo) {
       return jsonResponse(
         { code: 404, message: "Provider mapping not found" },
         404
       );
     }
 
+    const { provider, providerInstanceId } = providerInfo;
+    const actionsApi =
+      provider === "modal" ? modalActionsApi : e2bActionsApi;
+
     const commandStr = Array.isArray(command) ? command.join(" ") : command;
-    const result = await ctx.runAction(internal.e2b_actions.execCommand, {
+    const result = await ctx.runAction(actionsApi.execCommand, {
       instanceId: providerInstanceId,
       command: commandStr,
     });
 
-    await ctx.runMutation(api.devboxInstances.recordAccess, { teamSlugOrId, id });
+    await ctx.runMutation(devboxApi.recordAccess, { teamSlugOrId, id });
     return jsonResponse(result);
   } catch (error) {
     console.error("[devbox_v2.exec] Error:", error);
@@ -344,7 +493,7 @@ async function handlePauseInstance(
   teamSlugOrId: string
 ): Promise<Response> {
   try {
-    const instance = await ctx.runQuery(api.devboxInstances.getById, {
+    const instance = await ctx.runQuery(devboxApi.getById, {
       teamSlugOrId,
       id,
     });
@@ -353,32 +502,39 @@ async function handlePauseInstance(
       return jsonResponse({ code: 404, message: "Instance not found" }, 404);
     }
 
-    const providerInstanceId = await getProviderInstanceId(ctx, id);
-    if (!providerInstanceId) {
+    const providerInfo = await getProviderInfo(ctx, id);
+    if (!providerInfo) {
       return jsonResponse(
         { code: 404, message: "Provider mapping not found" },
         404
       );
     }
 
-    // E2B doesn't have pause, extend timeout instead
-    await ctx.runAction(internal.e2b_actions.extendTimeout, {
-      instanceId: providerInstanceId,
-      timeoutMs: 60 * 60 * 1000, // 1 hour
-    });
+    const { provider, providerInstanceId } = providerInfo;
 
-    await ctx.runMutation(api.devboxInstances.updateStatus, {
+    // Neither E2B nor Modal has native pause
+    if (provider === "e2b") {
+      await ctx.runAction(e2bActionsApi.extendTimeout, {
+        instanceId: providerInstanceId,
+        timeoutMs: 60 * 60 * 1000,
+      });
+    }
+
+    await ctx.runMutation(devboxApi.updateStatus, {
       teamSlugOrId,
       id,
       status: "paused",
     });
 
-    await recordE2BActivity(ctx, providerInstanceId, "pause");
+    await recordProviderActivity(ctx, provider, providerInstanceId, "pause");
 
     return jsonResponse({
       paused: true,
-      provider: "e2b",
-      note: "E2B timeout extended (no true pause)",
+      provider,
+      note:
+        provider === "modal"
+          ? "Modal status updated (no true pause)"
+          : "E2B timeout extended (no true pause)",
     });
   } catch (error) {
     console.error("[devbox_v2.pause] Error:", error);
@@ -398,7 +554,7 @@ async function handleResumeInstance(
   teamSlugOrId: string
 ): Promise<Response> {
   try {
-    const instance = await ctx.runQuery(api.devboxInstances.getById, {
+    const instance = await ctx.runQuery(devboxApi.getById, {
       teamSlugOrId,
       id,
     });
@@ -407,27 +563,28 @@ async function handleResumeInstance(
       return jsonResponse({ code: 404, message: "Instance not found" }, 404);
     }
 
-    const providerInstanceId = await getProviderInstanceId(ctx, id);
-    if (!providerInstanceId) {
+    const providerInfo = await getProviderInfo(ctx, id);
+    if (!providerInfo) {
       return jsonResponse(
         { code: 404, message: "Provider mapping not found" },
         404
       );
     }
 
-    // E2B doesn't have pause/resume, just update status
-    await ctx.runMutation(api.devboxInstances.updateStatus, {
+    const { provider, providerInstanceId } = providerInfo;
+
+    await ctx.runMutation(devboxApi.updateStatus, {
       teamSlugOrId,
       id,
       status: "running",
     });
 
-    await recordE2BActivity(ctx, providerInstanceId, "resume");
+    await recordProviderActivity(ctx, provider, providerInstanceId, "resume");
 
     return jsonResponse({
       resumed: true,
-      provider: "e2b",
-      note: "E2B status updated (already running)",
+      provider,
+      note: `${provider} status updated (already running)`,
     });
   } catch (error) {
     console.error("[devbox_v2.resume] Error:", error);
@@ -447,7 +604,7 @@ async function handleStopInstance(
   teamSlugOrId: string
 ): Promise<Response> {
   try {
-    const instance = await ctx.runQuery(api.devboxInstances.getById, {
+    const instance = await ctx.runQuery(devboxApi.getById, {
       teamSlugOrId,
       id,
     });
@@ -456,27 +613,31 @@ async function handleStopInstance(
       return jsonResponse({ code: 404, message: "Instance not found" }, 404);
     }
 
-    const providerInstanceId = await getProviderInstanceId(ctx, id);
-    if (!providerInstanceId) {
+    const providerInfo = await getProviderInfo(ctx, id);
+    if (!providerInfo) {
       return jsonResponse(
         { code: 404, message: "Provider mapping not found" },
         404
       );
     }
 
-    await ctx.runAction(internal.e2b_actions.stopInstance, {
+    const { provider, providerInstanceId } = providerInfo;
+    const actionsApi =
+      provider === "modal" ? modalActionsApi : e2bActionsApi;
+
+    await ctx.runAction(actionsApi.stopInstance, {
       instanceId: providerInstanceId,
     });
 
-    await ctx.runMutation(api.devboxInstances.updateStatus, {
+    await ctx.runMutation(devboxApi.updateStatus, {
       teamSlugOrId,
       id,
       status: "stopped",
     });
 
-    await recordE2BActivity(ctx, providerInstanceId, "stop");
+    await recordProviderActivity(ctx, provider, providerInstanceId, "stop");
 
-    return jsonResponse({ stopped: true, provider: "e2b" });
+    return jsonResponse({ stopped: true, provider });
   } catch (error) {
     console.error("[devbox_v2.stop] Error:", error);
     return jsonResponse({ code: 500, message: "Failed to stop instance" }, 500);
@@ -493,7 +654,7 @@ async function handleUpdateTtl(
   ttlSeconds: number
 ): Promise<Response> {
   try {
-    const instance = await ctx.runQuery(api.devboxInstances.getById, {
+    const instance = await ctx.runQuery(devboxApi.getById, {
       teamSlugOrId,
       id,
     });
@@ -502,20 +663,25 @@ async function handleUpdateTtl(
       return jsonResponse({ code: 404, message: "Instance not found" }, 404);
     }
 
-    const providerInstanceId = await getProviderInstanceId(ctx, id);
-    if (!providerInstanceId) {
+    const providerInfo = await getProviderInfo(ctx, id);
+    if (!providerInfo) {
       return jsonResponse(
         { code: 404, message: "Provider mapping not found" },
         404
       );
     }
 
-    await ctx.runAction(internal.e2b_actions.extendTimeout, {
-      instanceId: providerInstanceId,
-      timeoutMs: ttlSeconds * 1000,
-    });
+    const { provider, providerInstanceId } = providerInfo;
 
-    return jsonResponse({ updated: true, ttlSeconds, provider: "e2b" });
+    if (provider === "e2b") {
+      await ctx.runAction(e2bActionsApi.extendTimeout, {
+        instanceId: providerInstanceId,
+        timeoutMs: ttlSeconds * 1000,
+      });
+    }
+    // Modal sandbox timeout is set at creation; TTL extension is a no-op
+
+    return jsonResponse({ updated: true, ttlSeconds, provider });
   } catch (error) {
     console.error("[devbox_v2.ttl] Error:", error);
     return jsonResponse({ code: 500, message: "Failed to update TTL" }, 500);
@@ -530,8 +696,15 @@ export const getConfig = httpAction(async (ctx) => {
   if (error) return error;
 
   return jsonResponse({
-    provider: "e2b",
-    defaultTemplateId: DEFAULT_E2B_TEMPLATE_ID,
+    providers: ["e2b", "modal"],
+    defaultProvider: "e2b",
+    e2b: {
+      defaultTemplateId: DEFAULT_E2B_TEMPLATE_ID,
+    },
+    modal: {
+      defaultTemplateId: DEFAULT_MODAL_TEMPLATE_ID,
+      gpuOptions: ["T4", "L4", "A10G", "L40S", "A100", "A100-80GB", "H100", "H200", "B200"],
+    },
   });
 });
 
@@ -617,7 +790,7 @@ async function handleGetAuthToken(
   teamSlugOrId: string
 ): Promise<Response> {
   try {
-    const instance = await ctx.runQuery(api.devboxInstances.getById, {
+    const instance = await ctx.runQuery(devboxApi.getById, {
       teamSlugOrId,
       id,
     });
@@ -626,15 +799,19 @@ async function handleGetAuthToken(
       return jsonResponse({ code: 404, message: "Instance not found" }, 404);
     }
 
-    const providerInstanceId = await getProviderInstanceId(ctx, id);
-    if (!providerInstanceId) {
+    const providerInfo = await getProviderInfo(ctx, id);
+    if (!providerInfo) {
       return jsonResponse(
         { code: 404, message: "Provider mapping not found" },
         404
       );
     }
 
-    const result = (await ctx.runAction(internal.e2b_actions.execCommand, {
+    const { provider, providerInstanceId } = providerInfo;
+    const actionsApi =
+      provider === "modal" ? modalActionsApi : e2bActionsApi;
+
+    const result = (await ctx.runAction(actionsApi.execCommand, {
       instanceId: providerInstanceId,
       command: "cat /home/user/.worker-auth-token 2>/dev/null || echo ''",
     })) as { stdout?: string; stderr?: string; exit_code?: number };
@@ -760,19 +937,49 @@ export const instanceGetRouter = httpAction(async (ctx, req) => {
 });
 
 // ============================================================================
-// GET /api/v2/devbox/templates - List available templates
+// GET /api/v2/devbox/templates - List available templates (all providers)
 // ============================================================================
-export const listTemplates = httpAction(async (ctx) => {
+export const listTemplates = httpAction(async (ctx, req) => {
   const { error } = await getAuthenticatedUser(ctx);
   if (error) return error;
 
-  const templates = E2B_TEMPLATE_PRESETS.map((preset) => ({
-    presetId: preset.templateId,
-    templateId: preset.id,
-    name: preset.label,
-    description: preset.description,
-    supportsDocker: preset.templateId.includes("docker"),
-  }));
+  const url = new URL(req.url);
+  const providerFilter = url.searchParams.get("provider") as
+    | SandboxProvider
+    | null;
 
-  return jsonResponse({ templates });
+  const e2bTemplates =
+    !providerFilter || providerFilter === "e2b"
+      ? E2B_TEMPLATE_PRESETS.map((preset) => ({
+          provider: "e2b" as const,
+          presetId: preset.id,
+          templateId: preset.templateId,
+          name: preset.label,
+          description: preset.description,
+          cpu: preset.cpu,
+          memory: preset.memory,
+          disk: preset.disk,
+          supportsDocker: preset.templateId.includes("docker"),
+        }))
+      : [];
+
+  const modalTemplates =
+    !providerFilter || providerFilter === "modal"
+      ? MODAL_TEMPLATE_PRESETS.map((preset) => ({
+          provider: "modal" as const,
+          templateId: preset.templateId,
+          name: preset.label,
+          description: preset.description,
+          cpu: preset.cpu,
+          memory: preset.memory,
+          disk: preset.disk,
+          gpu: preset.gpu,
+          image: preset.image,
+          gated: preset.gpu ? isModalGpuGated(preset.gpu) : false,
+        }))
+      : [];
+
+  return jsonResponse({
+    templates: [...e2bTemplates, ...modalTemplates],
+  });
 });

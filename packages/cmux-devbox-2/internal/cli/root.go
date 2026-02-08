@@ -9,7 +9,6 @@ import (
 )
 
 var (
-	flagJSON    bool
 	flagVerbose bool
 	flagTeam    string
 )
@@ -27,14 +26,25 @@ var rootCmd = &cobra.Command{
 
 Quick start:
   cmux login                      # Authenticate (or: cmux auth login)
-  cmux start ./my-project         # Create sandbox, sync directory → returns ID
+  cmux start                      # Create a sandbox
+  cmux start --gpu T4             # Create a sandbox with GPU
+  cmux start --docker             # Create a sandbox with Docker
+  cmux start ./my-project         # Create sandbox + upload directory
   cmux code <id>                  # Open VS Code
   cmux pty <id>                   # Open terminal session
   cmux sync <id> ./my-project     # Sync files via rsync (incremental)
   cmux computer screenshot <id>   # Take browser screenshot
   cmux stop <id>                  # Stop sandbox
   cmux delete <id>                # Delete sandbox
-  cmux ls                         # List all sandboxes`,
+  cmux ls                         # List all sandboxes
+
+GPU options (--gpu):
+  T4          16GB VRAM  - inference, fine-tuning small models
+  L4          24GB VRAM  - inference, image generation
+  A10G        24GB VRAM  - training medium models
+
+  The following require approval (contact founders@manaflow.com):
+  L40S, A100, A100-80GB, H100, H200, B200`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
@@ -74,7 +84,6 @@ Quick start:
 }
 
 func init() {
-	rootCmd.PersistentFlags().BoolVar(&flagJSON, "json", false, "Output as JSON")
 	rootCmd.PersistentFlags().BoolVarP(&flagVerbose, "verbose", "v", false, "Verbose output")
 	rootCmd.PersistentFlags().StringVarP(&flagTeam, "team", "t", "", "Team slug (overrides default)")
 

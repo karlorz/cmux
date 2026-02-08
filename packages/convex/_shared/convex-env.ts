@@ -26,6 +26,9 @@ export const env = createEnv({
     // sandboxInstanceMaintenance.ts to avoid Convex static analysis
     // requiring them to be set in all deployments
     E2B_API_KEY: z.string().min(1).optional(),
+    MODAL_TOKEN_ID: z.string().min(1).optional(),
+    MODAL_TOKEN_SECRET: z.string().min(1).optional(),
+    MODAL_SNAPSHOT_IMAGE_ID: z.string().min(1).optional(),
     // preview_jobs_worker.ts hardcodes CMUX_IS_STAGING="false" for screenshot jobs.
     // Keep this optional env var for compatibility with existing deployments/tools.
     CMUX_IS_STAGING: z.string().optional(),
