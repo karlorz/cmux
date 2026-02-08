@@ -12,13 +12,11 @@ import {
   type CrownEvaluationCandidate,
   type CrownEvaluationResponse,
   type CrownSummarizationResponse,
-} from "@cmux/shared/convex-safe";
-import {
   CLOUDFLARE_OPENAI_BASE_URL,
   CLOUDFLARE_ANTHROPIC_BASE_URL,
   CLOUDFLARE_GEMINI_BASE_URL,
   normalizeAnthropicBaseUrl,
-} from "@cmux/shared";
+} from "@cmux/shared/convex-safe";
 import { action, internalAction, type ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";

@@ -1,5 +1,4 @@
 import { getUserFromRequest } from "@/lib/utils/auth";
-import Anthropic from "@anthropic-ai/sdk";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 
 export const settingsRouter = new OpenAPIHono();
@@ -149,60 +148,99 @@ settingsRouter.openapi(
     const startTime = Date.now();
 
     try {
-      const client = new Anthropic({
-        apiKey,
-        baseURL: normalizedBaseUrl,
-        timeout: 10000,
-      });
+      const authHeaders: Array<Record<string, string>> = [
+        { Authorization: `Bearer ${apiKey}` },
+        { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+      ];
 
-      const models = await client.models.list({ limit: 1 });
+      const errorMessages: Record<number, string> = {
+        401: "Authentication failed - check your API key",
+        403: "Permission denied - API key may lack required permissions",
+        404: "Endpoint not found - check your base URL",
+        429: "Rate limited - too many requests",
+        500: "Server error - endpoint returned an internal error",
+        502: "Bad gateway - proxy or endpoint issue",
+        503: "Service unavailable - endpoint is temporarily down",
+      };
+
+      let lastNetworkError: Error | null = null;
+      let sawUnauthorized = false;
+
+      for (const headers of authHeaders) {
+        let response: Response;
+        try {
+          response = await fetch(endpoint, {
+            method: "GET",
+            headers: {
+              ...headers,
+              "Content-Type": "application/json",
+            },
+            signal: AbortSignal.timeout(10000),
+          });
+        } catch (fetchError) {
+          lastNetworkError =
+            fetchError instanceof Error ? fetchError : new Error(String(fetchError));
+          continue;
+        }
+
+        if (response.ok) {
+          let modelsCount = 0;
+          try {
+            const data = await response.json();
+            modelsCount = Array.isArray(data?.data) ? data.data.length : 0;
+          } catch {
+            // Treat non-JSON success responses as a valid connection.
+          }
+
+          return c.json({
+            success: true,
+            message: "Connection successful - endpoint and API key validated",
+            details: {
+              statusCode: response.status,
+              responseTime: Date.now() - startTime,
+              endpoint,
+              modelsFound: modelsCount,
+            },
+          });
+        }
+
+        if (response.status === 401) {
+          sawUnauthorized = true;
+          continue;
+        }
+
+        return c.json({
+          success: false,
+          message: errorMessages[response.status] || `API error: HTTP ${response.status}`,
+          details: {
+            statusCode: response.status,
+            responseTime: Date.now() - startTime,
+            endpoint,
+          },
+        });
+      }
+
+      if (lastNetworkError && !sawUnauthorized) {
+        return c.json({
+          success: false,
+          message: `Connection failed - endpoint unreachable: ${lastNetworkError.message}`,
+          details: {
+            responseTime: Date.now() - startTime,
+            endpoint,
+          },
+        });
+      }
+
       return c.json({
-        success: true,
-        message: "Connection successful - endpoint and API key validated",
+        success: false,
+        message: "Authentication failed - check your API key",
         details: {
-          statusCode: 200,
+          statusCode: 401,
           responseTime: Date.now() - startTime,
           endpoint,
-          modelsFound: models.data.length,
         },
       });
     } catch (error) {
-      const responseTime = Date.now() - startTime;
-
-      // Check APIConnectionError first - it extends APIError, so order matters
-      if (error instanceof Anthropic.APIConnectionError) {
-        return c.json({
-          success: false,
-          message: `Connection failed - endpoint unreachable: ${error.message}`,
-          details: {
-            responseTime,
-            endpoint,
-          },
-        });
-      }
-
-      if (error instanceof Anthropic.APIError) {
-        const errorMessages: Record<number, string> = {
-          401: "Authentication failed - check your API key",
-          403: "Permission denied - API key may lack required permissions",
-          404: "Endpoint not found - check your base URL",
-          429: "Rate limited - too many requests",
-          500: "Server error - endpoint returned an internal error",
-          502: "Bad gateway - proxy or endpoint issue",
-          503: "Service unavailable - endpoint is temporarily down",
-        };
-
-        return c.json({
-          success: false,
-          message: errorMessages[error.status] || `API error: ${error.message}`,
-          details: {
-            statusCode: error.status,
-            responseTime,
-            endpoint,
-          },
-        });
-      }
-
       return c.json({
         success: false,
         message: `Unexpected error: ${error instanceof Error ? error.message : "Unknown error"}`,

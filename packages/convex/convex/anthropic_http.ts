@@ -11,7 +11,7 @@ import {
   CLOUDFLARE_ANTHROPIC_BASE_URL as SHARED_CLOUDFLARE_ANTHROPIC_BASE_URL,
   CMUX_ANTHROPIC_PROXY_PLACEHOLDER_API_KEY,
   normalizeAnthropicBaseUrl,
-} from "@cmux/shared";
+} from "@cmux/shared/convex-safe";
 
 const hardCodedApiKey = CMUX_ANTHROPIC_PROXY_PLACEHOLDER_API_KEY;
 
