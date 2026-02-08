@@ -34,6 +34,7 @@ COPY packages/cmux/package.json ./packages/cmux/
 COPY packages/vscode-extension/package.json ./packages/vscode-extension/
 COPY packages/host-screenshot-collector/package.json ./packages/host-screenshot-collector/
 COPY packages/e2b-client/package.json ./packages/e2b-client/
+COPY packages/modal-client/package.json ./packages/modal-client/
 COPY scripts/package.json ./scripts/
 
 # Install production dependencies
@@ -108,6 +109,7 @@ COPY packages/shared ./packages/shared
 COPY packages/convex ./packages/convex
 COPY packages/www-openapi-client ./packages/www-openapi-client
 COPY packages/e2b-client ./packages/e2b-client
+COPY packages/modal-client ./packages/modal-client
 
 # Copy server source code
 COPY apps/server ./apps/server
@@ -124,7 +126,8 @@ RUN rm -rf node_modules/@cmux && mkdir -p node_modules/@cmux \
     && ln -s ../../packages/shared node_modules/@cmux/shared \
     && ln -s ../../packages/convex node_modules/@cmux/convex \
     && ln -s ../../packages/www-openapi-client node_modules/@cmux/www-openapi-client \
-    && ln -s ../../packages/e2b-client node_modules/@cmux/e2b-client
+    && ln -s ../../packages/e2b-client node_modules/@cmux/e2b-client \
+    && ln -s ../../packages/modal-client node_modules/@cmux/modal-client
 
 # Auto-hoist packages from .bun/ cache to node_modules root
 # Bun's --production install puts packages in nested .bun/ directory
