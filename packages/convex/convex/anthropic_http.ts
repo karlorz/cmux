@@ -1,5 +1,6 @@
 import { httpAction } from "./_generated/server";
 import { getWorkerAuth } from "./users/utils/getWorkerAuth";
+import { env } from "../_shared/convex-env";
 import {
   BEDROCK_BASE_URL,
   toBedrockModelId,
@@ -299,35 +300,29 @@ function trackAnthropicProxyRequest(event: AnthropicProxyEvent): void {
  * Strip unsupported fields from cache_control objects in the request body.
  * Some clients (e.g. Claude Code) send cache_control with a "scope" field
  * that the Anthropic API rejects. The API only accepts { "type": "ephemeral" }.
+ *
+ * Recursively walks the body to catch cache_control at any nesting depth
+ * (e.g. tool_result blocks with nested content arrays).
  */
 function sanitizeCacheControl(body: Record<string, unknown>): void {
-  function stripScope(block: unknown): void {
-    if (isRecord(block) && isRecord(block.cache_control)) {
-      delete (block.cache_control as Record<string, unknown>).scope;
-    }
-  }
+  function walk(node: unknown): void {
+    if (!isRecord(node)) return;
 
-  if (Array.isArray(body.system)) {
-    for (const block of body.system) {
-      stripScope(block);
+    if (isRecord(node.cache_control)) {
+      delete (node.cache_control as Record<string, unknown>).scope;
     }
-  }
 
-  if (Array.isArray(body.messages)) {
-    for (const message of body.messages) {
-      if (isRecord(message) && Array.isArray(message.content)) {
-        for (const block of message.content) {
-          stripScope(block);
+    // Recurse into arrays (system, messages, content, tools, etc.)
+    for (const value of Object.values(node)) {
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          walk(item);
         }
       }
     }
   }
 
-  if (Array.isArray(body.tools)) {
-    for (const tool of body.tools) {
-      stripScope(tool);
-    }
-  }
+  walk(body);
 }
 
 function getSource(req: Request): AnthropicProxySource {
@@ -420,10 +415,6 @@ export const anthropicProxy = httpAction(async (_ctx, req) => {
 
     if (useUserApiKey) {
       // User provided their own Anthropic API key - proxy directly to Anthropic
-      // TODO: get user's ANTHROPIC_BASE_URL from request/config to override default
-      const userBaseUrl = process.env.AIGATEWAY_ANTHROPIC_BASE_URL;
-      const baseUrl = userBaseUrl || CLOUDFLARE_ANTHROPIC_BASE_URL;
-
       const headers: Record<string, string> = {};
       req.headers.forEach((value, key) => {
         // Skip hop-by-hop headers and internal headers
@@ -433,14 +424,15 @@ export const anthropicProxy = httpAction(async (_ctx, req) => {
           headers[key] = value;
         }
       });
-      // Ensure upstream returns identity encoding so Convex can parse it.
-      headers["accept-encoding"] = "identity";
 
-      const response = await fetch(`${baseUrl}/v1/messages`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-      });
+      const response = await fetch(
+        `${CLOUDFLARE_ANTHROPIC_BASE_URL}/v1/messages`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+        }
+      );
 
       // Track non-streaming responses with token usage
       if (!isStreaming) {
@@ -463,57 +455,17 @@ export const anthropicProxy = httpAction(async (_ctx, req) => {
       return handleResponse(response, isStreaming);
     }
 
-    // Platform credits path: try AI Gateway first, then fall back to Bedrock
-    // Note: AIGATEWAY_* accessed via process.env to avoid Convex static analysis
-    const aiGatewayBaseUrl = process.env.AIGATEWAY_ANTHROPIC_BASE_URL;
-
-    if (aiGatewayBaseUrl) {
-      // AI Gateway path: proxy request directly without modification
-      const headers: Record<string, string> = {};
-      req.headers.forEach((value, key) => {
-        // Skip hop-by-hop headers and internal headers
-        if (
-          !["host", "x-cmux-token", "content-length"].includes(key.toLowerCase())
-        ) {
-          headers[key] = value;
-        }
-      });
-      headers["accept-encoding"] = "identity";
-
-      console.log("[anthropic-proxy] AI Gateway request summary:", {
-        requestedModel,
-        stream: payloadSummary.stream ?? false,
-        maxTokens: payloadSummary.maxTokens ?? null,
-        messageCount: payloadSummary.messages.count,
-        contentBlocks: payloadSummary.messages.contentBlocks,
-        textChars: payloadSummary.messages.textChars,
-        toolUseCount: payloadSummary.messages.toolUseCount,
-        toolResultCount: payloadSummary.messages.toolResultCount,
-        toolsCount: payloadSummary.tools.count,
-        toolNamesPreview: payloadSummary.tools.namePreview,
-        toolChoiceType: payloadSummary.toolChoiceType ?? null,
-      });
-
-      const response = await fetch(`${aiGatewayBaseUrl}/v1/messages`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-      });
-
-      return handleResponse(response, body.stream);
-    }
-
-    // AWS Bedrock fallback: using platform credits (placeholder key)
+    // AWS Bedrock path: using platform credits (placeholder key)
     {
-      const bedrockToken = process.env.AWS_BEARER_TOKEN_BEDROCK;
+      const bedrockToken = env.AWS_BEARER_TOKEN_BEDROCK;
       if (!bedrockToken) {
         console.error(
-          "[anthropic-proxy] Neither AIGATEWAY_ANTHROPIC_BASE_URL+ANTHROPIC_API_KEY nor AWS_BEARER_TOKEN_BEDROCK is configured"
+          "[anthropic-proxy] AWS_BEARER_TOKEN_BEDROCK environment variable is not set"
         );
         trackEvent(requestedModel, isStreaming, 503, { errorType: "bedrock_not_configured" });
         await drainPosthogEvents();
         return jsonResponse(
-          { error: "No backend proxy configured" },
+          { error: "Bedrock proxy not configured" },
           503
         );
       }
@@ -619,38 +571,7 @@ async function handleResponse(
     });
   }
 
-  // Clone before reading so we can fall back to text if JSON parsing fails.
-  const clonedResponse = response.clone();
-  let data: unknown;
-  try {
-    data = await response.json();
-  } catch (error) {
-    // Upstream sometimes returns non-JSON (e.g. HTML error pages or gzip
-    // without proper headers). Fall back to text so we can return a useful
-    // payload instead of throwing and masking the real issue.
-    const raw = new Uint8Array(await clonedResponse.arrayBuffer());
-    const decoded = new TextDecoder().decode(raw.slice(0, 2048));
-    const hexPreview = Array.from(raw.slice(0, 64))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-    console.error("[anthropic-proxy] Failed to parse JSON response", {
-      status: response.status,
-      contentType: response.headers.get("content-type"),
-      error,
-      textPreview: decoded.slice(0, 300),
-      hexPreview,
-    });
-    return jsonResponse(
-      {
-        error: "Invalid JSON response from upstream",
-        status: response.status,
-        contentType: response.headers.get("content-type"),
-        bodyPreview: decoded.slice(0, 300),
-        hexPreview,
-      },
-      response.status || 500
-    );
-  }
+  const data = await response.json();
 
   if (!response.ok) {
     console.error("[anthropic-proxy] API error:", data);
@@ -666,7 +587,7 @@ async function handleResponse(
  * Bedrock doesn't have an equivalent count_tokens endpoint.
  */
 export const anthropicCountTokens = httpAction(async (_ctx, req) => {
-  const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+  const anthropicApiKey = env.ANTHROPIC_API_KEY;
   if (!anthropicApiKey) {
     // Bedrock doesn't have count_tokens API - return unavailable
     return jsonResponse(
@@ -689,7 +610,6 @@ export const anthropicCountTokens = httpAction(async (_ctx, req) => {
           "Content-Type": "application/json",
           "x-api-key": anthropicApiKey,
           "anthropic-version": "2023-06-01",
-          "accept-encoding": "identity",
         },
         body: JSON.stringify(body),
       }
