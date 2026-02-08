@@ -61,7 +61,7 @@ var extendCmd = &cobra.Command{
 		}
 
 		client := api.NewClient()
-		if err := client.ExtendTimeout(teamSlug, args[0], extendFlagTimeout*1000); err != nil {
+		if err := client.ExtendTimeout(teamSlug, args[0], extendFlagTimeout); err != nil {
 			return err
 		}
 		fmt.Printf("Extended timeout by %d seconds: %s\n", extendFlagTimeout, args[0])

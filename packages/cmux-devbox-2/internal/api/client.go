@@ -151,11 +151,11 @@ func (c *Client) StopInstance(teamSlug, id string) error {
 }
 
 // ExtendTimeout extends the sandbox timeout (E2B doesn't have pause/resume)
-func (c *Client) ExtendTimeout(teamSlug, id string, timeoutMs int) error {
+func (c *Client) ExtendTimeout(teamSlug, id string, ttlSeconds int) error {
 	path := fmt.Sprintf("/api/v2/devbox/instances/%s/extend", id)
 	body := map[string]interface{}{
 		"teamSlugOrId": teamSlug,
-		"timeoutMs":    timeoutMs,
+		"ttlSeconds":   ttlSeconds,
 	}
 	_, err := c.doRequest("POST", path, body)
 	return err
@@ -170,7 +170,7 @@ type ExecRequest struct {
 type ExecResponse struct {
 	Stdout   string `json:"stdout"`
 	Stderr   string `json:"stderr"`
-	ExitCode int    `json:"exitCode"`
+	ExitCode int    `json:"exit_code"`
 }
 
 func (c *Client) Exec(teamSlug, id, command string, timeout int) (*ExecResponse, error) {

@@ -767,8 +767,8 @@ export const listTemplates = httpAction(async (ctx) => {
   if (error) return error;
 
   const templates = E2B_TEMPLATE_PRESETS.map((preset) => ({
-    presetId: preset.id,
-    templateId: preset.templateId,
+    presetId: preset.templateId,
+    templateId: preset.id,
     name: preset.label,
     description: preset.description,
     supportsDocker: preset.templateId.includes("docker"),
