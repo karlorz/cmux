@@ -23,7 +23,8 @@ function isAllowedBaseUrl(urlString: string): { allowed: boolean; reason?: strin
   const hostname = url.hostname.toLowerCase();
 
   // Block localhost variants
-  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+  // Note: URL.hostname returns bracketed IPv6 (e.g., "[::1]"), so check both formats
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]") {
     return { allowed: false, reason: "Localhost URLs are not allowed" };
   }
 
