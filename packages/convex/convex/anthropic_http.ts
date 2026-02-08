@@ -417,32 +417,35 @@ export const anthropicProxy = httpAction(async (ctx, req) => {
   }
 
   try {
-    const useUserApiKey = hasUserApiKey(xApiKey);
+    let userCustomBaseUrl: string | undefined;
+    if (workerAuth?.payload.teamId && workerAuth?.payload.userId) {
+      const userBaseUrlEntry = await ctx.runQuery(
+        internal.apiKeys.getByEnvVarInternal,
+        {
+          teamId: workerAuth.payload.teamId,
+          userId: workerAuth.payload.userId,
+          envVar: "ANTHROPIC_BASE_URL",
+        },
+      );
+      if (userBaseUrlEntry?.value?.trim()) {
+        userCustomBaseUrl = userBaseUrlEntry.value.trim();
+      }
+    }
+
+    const hasOfficialAnthropicKey = hasUserApiKey(xApiKey);
+    const hasCustomUrlWithAnyKey =
+      !!userCustomBaseUrl && xApiKey !== null && xApiKey !== hardCodedApiKey;
+    const useUserPath = hasOfficialAnthropicKey || hasCustomUrlWithAnyKey;
+
     const body = await req.json();
     sanitizeCacheControl(body);
     const requestedModel = body.model ?? "unknown";
     const isStreaming = body.stream ?? false;
     const payloadSummary = summarizeAnthropicPayload(body);
 
-    if (useUserApiKey) {
-      // User provided their own Anthropic API key - use their custom base URL if configured.
-      let userCustomBaseUrl: string | undefined;
-      if (workerAuth?.payload.teamId && workerAuth?.payload.userId) {
-        const userBaseUrlEntry = await ctx.runQuery(
-          internal.apiKeys.getByEnvVarInternal,
-          {
-            teamId: workerAuth.payload.teamId,
-            userId: workerAuth.payload.userId,
-            envVar: "ANTHROPIC_BASE_URL",
-          },
-        );
-        if (userBaseUrlEntry?.value?.trim()) {
-          userCustomBaseUrl = userBaseUrlEntry.value.trim();
-        }
-      }
-
+    if (useUserPath) {
       // User key path: custom URL (if present), otherwise AI gateway/cloudflare.
-      // No Bedrock fallback here because user keys are Anthropic-compatible keys.
+      // If user configured a custom URL, accept provider-specific key formats.
       const rawBaseUrl = normalizeAnthropicBaseUrl(
         userCustomBaseUrl ||
           process.env.AIGATEWAY_ANTHROPIC_BASE_URL ||
