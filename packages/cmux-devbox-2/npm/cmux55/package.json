@@ -1,6 +1,6 @@
 {
   "name": "cmux55",
-  "version": "0.8.0-dev.1",
+  "version": "0.8.0-dev.2",
   "description": "cmux CLI (dev/test build) - Cloud sandboxes with E2B and Modal provider support",
   "keywords": [
     "cli",
@@ -28,11 +28,11 @@
     "postinstall": "node lib/postinstall.js"
   },
   "optionalDependencies": {
-    "cmux55-darwin-arm64": "0.8.0-dev.1",
-    "cmux55-darwin-x64": "0.8.0-dev.1",
-    "cmux55-linux-arm64": "0.8.0-dev.1",
-    "cmux55-linux-x64": "0.8.0-dev.1",
-    "cmux55-win32-x64": "0.8.0-dev.1"
+    "cmux55-darwin-arm64": "0.8.0-dev.2",
+    "cmux55-darwin-x64": "0.8.0-dev.2",
+    "cmux55-linux-arm64": "0.8.0-dev.2",
+    "cmux55-linux-x64": "0.8.0-dev.2",
+    "cmux55-win32-x64": "0.8.0-dev.2"
   },
   "engines": {
     "node": ">=16"

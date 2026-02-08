@@ -64,13 +64,7 @@ var startCmd = &cobra.Command{
 	Short:   "Create a new sandbox",
 	Long: `Create a new sandbox and optionally sync files or clone a git repo.
 
-Providers:
-  e2b    (default) VS Code + VNC desktop. Best for web dev, Docker.
-  modal  Jupyter Lab + VS Code + GPU. Best for ML/AI, data science.
-
-Using --gpu auto-selects Modal. No need to specify --provider.
-
-GPU options (Modal):
+GPU options (--gpu):
   T4          16GB VRAM  - inference, fine-tuning small models
   L4          24GB VRAM  - inference, image generation
   A10G        24GB VRAM  - training medium models
@@ -84,14 +78,13 @@ GPU options (Modal):
   B200        192GB VRAM - latest gen, frontier models
 
 Examples:
-  cmux start                          # E2B sandbox (default, web dev)
-  cmux start --gpu T4                 # Modal + T4 GPU + Jupyter
-  cmux start --gpu A100               # Modal + A100 GPU + Jupyter
-  cmux start --gpu H100:2             # Modal + 2x H100 GPUs
-  cmux start --provider modal         # Modal CPU-only + Jupyter
+  cmux start                          # Create a sandbox
+  cmux start --gpu T4                 # Sandbox with T4 GPU
+  cmux start --gpu A100               # Sandbox with A100 GPU
+  cmux start --gpu H100:2             # Sandbox with 2x H100 GPUs
   cmux start .                        # Sync current directory
   cmux start https://github.com/u/r   # Clone git repo
-  cmux start --docker                 # E2B with Docker support`,
+  cmux start --docker                 # Sandbox with Docker support`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		teamSlug, err := getTeamSlug()
@@ -161,6 +154,11 @@ Examples:
 
 		client := api.NewClient()
 		provider := startFlagProvider
+
+		// --docker and --gpu are mutually exclusive
+		if startFlagDocker && startFlagGPU != "" {
+			return fmt.Errorf("--docker and --gpu cannot be used together")
+		}
 
 		// If --gpu is specified without --provider, default to modal
 		if startFlagGPU != "" && provider == "" {
@@ -370,9 +368,9 @@ func init() {
 	// Provider selection
 	startCmd.Flags().StringVarP(&startFlagProvider, "provider", "p", "", "Sandbox provider: e2b (default), modal")
 
-	// Modal-specific options
-	startCmd.Flags().StringVar(&startFlagGPU, "gpu", "", "GPU type for Modal (e.g., T4, L4, A10G, L40S, A100, H100, H200, B200)")
-	startCmd.Flags().Float64Var(&startFlagCPU, "cpu", 0, "CPU cores for Modal (fractional ok, e.g., 4, 8)")
-	startCmd.Flags().IntVar(&startFlagMemory, "memory", 0, "Memory in MiB for Modal (e.g., 8192, 65536)")
-	startCmd.Flags().StringVar(&startFlagImage, "image", "", "Container image for Modal (e.g., ubuntu:22.04)")
+	// GPU and resource options
+	startCmd.Flags().StringVar(&startFlagGPU, "gpu", "", "GPU type (T4, L4, A10G, L40S, A100, H100, H200, B200)")
+	startCmd.Flags().Float64Var(&startFlagCPU, "cpu", 0, "CPU cores (e.g., 4, 8)")
+	startCmd.Flags().IntVar(&startFlagMemory, "memory", 0, "Memory in MiB (e.g., 8192, 65536)")
+	startCmd.Flags().StringVar(&startFlagImage, "image", "", "Container image (e.g., ubuntu:22.04)")
 }

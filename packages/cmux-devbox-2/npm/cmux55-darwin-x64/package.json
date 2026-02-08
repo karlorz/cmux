@@ -1,6 +1,6 @@
 {
   "name": "cmux55-darwin-x64",
-  "version": "0.8.0-dev.1",
+  "version": "0.8.0-dev.2",
   "description": "cmux55 binary for macOS x64",
   "os": ["darwin"],
   "cpu": ["x64"],
