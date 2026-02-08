@@ -502,15 +502,16 @@ export const anthropicProxy = httpAction(async (ctx, req) => {
       return handleResponse(response, isStreaming);
     }
 
-    // Platform credits path: try AI Gateway first, then fall back to Bedrock
-    // Note: AIGATEWAY_* accessed via process.env to avoid Convex static analysis
-    const aiGatewayBaseUrl = process.env.AIGATEWAY_ANTHROPIC_BASE_URL;
-    const aiGatewayRawBaseUrl = aiGatewayBaseUrl
-      ? normalizeAnthropicBaseUrl(aiGatewayBaseUrl).forRawFetch
+    // Platform credits path: try user custom URL (if set), then AI Gateway, then Bedrock.
+    // Note: AIGATEWAY_* accessed via process.env to avoid Convex static analysis.
+    const effectiveGatewayBaseUrl =
+      userCustomBaseUrl || process.env.AIGATEWAY_ANTHROPIC_BASE_URL;
+    const effectiveGatewayRawBaseUrl = effectiveGatewayBaseUrl
+      ? normalizeAnthropicBaseUrl(effectiveGatewayBaseUrl).forRawFetch
       : undefined;
 
-    if (aiGatewayRawBaseUrl) {
-      // AI Gateway path: proxy request directly without modification
+    if (effectiveGatewayRawBaseUrl) {
+      // Custom URL / AI Gateway path: proxy request directly without modification
       const headers: Record<string, string> = {};
       req.headers.forEach((value, key) => {
         // Skip hop-by-hop headers and internal headers
@@ -522,8 +523,9 @@ export const anthropicProxy = httpAction(async (ctx, req) => {
       });
       headers["accept-encoding"] = "identity";
 
-      console.log("[anthropic-proxy] AI Gateway request summary:", {
+      console.log("[anthropic-proxy] Gateway request summary:", {
         requestedModel,
+        usingCustomBaseUrl: !!userCustomBaseUrl,
         stream: payloadSummary.stream ?? false,
         maxTokens: payloadSummary.maxTokens ?? null,
         messageCount: payloadSummary.messages.count,
@@ -536,7 +538,7 @@ export const anthropicProxy = httpAction(async (ctx, req) => {
         toolChoiceType: payloadSummary.toolChoiceType ?? null,
       });
 
-      const response = await fetch(`${aiGatewayRawBaseUrl}/v1/messages`, {
+      const response = await fetch(`${effectiveGatewayRawBaseUrl}/v1/messages`, {
         method: "POST",
         headers,
         body: JSON.stringify(body),
