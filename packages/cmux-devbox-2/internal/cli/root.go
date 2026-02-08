@@ -28,6 +28,7 @@ Quick start:
   cmux login                      # Authenticate
   cmux start                      # Create a sandbox
   cmux start --gpu T4             # Create a sandbox with GPU
+  cmux start --docker             # Create a sandbox with Docker
   cmux start ./my-project         # Create sandbox + upload directory
   cmux code <id>                  # Open VS Code
   cmux pty <id>                   # Open terminal session
