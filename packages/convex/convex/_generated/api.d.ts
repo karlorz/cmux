@@ -25,10 +25,10 @@ import type * as crown from "../crown.js";
 import type * as crown_actions from "../crown/actions.js";
 import type * as crown_retryData from "../crown/retryData.js";
 import type * as crown_http from "../crown_http.js";
-import type * as discoverReposAction from "../discoverReposAction.js";
 import type * as devboxInstances from "../devboxInstances.js";
 import type * as devbox_http from "../devbox_http.js";
 import type * as devbox_v2_http from "../devbox_v2_http.js";
+import type * as discoverReposAction from "../discoverReposAction.js";
 import type * as e2bInstances from "../e2bInstances.js";
 import type * as e2b_actions from "../e2b_actions.js";
 import type * as environmentSnapshots from "../environmentSnapshots.js";
@@ -84,6 +84,8 @@ import type * as userEditorSettings from "../userEditorSettings.js";
 import type * as users from "../users.js";
 import type * as users_utils_getWorkerAuth from "../users/utils/getWorkerAuth.js";
 import type * as users_utils_index from "../users/utils/index.js";
+import type * as warmPool from "../warmPool.js";
+import type * as warmPoolMaintenance from "../warmPoolMaintenance.js";
 import type * as workspaceConfigs from "../workspaceConfigs.js";
 import type * as workspaceSettings from "../workspaceSettings.js";
 
@@ -96,7 +98,6 @@ import type {
 declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   analytics: typeof analytics;
-  admin: typeof admin;
   anthropic_http: typeof anthropic_http;
   apiKeys: typeof apiKeys;
   backfill: typeof backfill;
@@ -112,10 +113,10 @@ declare const fullApi: ApiFromModules<{
   "crown/actions": typeof crown_actions;
   "crown/retryData": typeof crown_retryData;
   crown_http: typeof crown_http;
-  discoverReposAction: typeof discoverReposAction;
   devboxInstances: typeof devboxInstances;
   devbox_http: typeof devbox_http;
   devbox_v2_http: typeof devbox_v2_http;
+  discoverReposAction: typeof discoverReposAction;
   e2bInstances: typeof e2bInstances;
   e2b_actions: typeof e2b_actions;
   environmentSnapshots: typeof environmentSnapshots;
@@ -171,6 +172,8 @@ declare const fullApi: ApiFromModules<{
   users: typeof users;
   "users/utils/getWorkerAuth": typeof users_utils_getWorkerAuth;
   "users/utils/index": typeof users_utils_index;
+  warmPool: typeof warmPool;
+  warmPoolMaintenance: typeof warmPoolMaintenance;
   workspaceConfigs: typeof workspaceConfigs;
   workspaceSettings: typeof workspaceSettings;
 }>;
