@@ -16,6 +16,7 @@ import {
 import {
   DEFAULT_MODAL_TEMPLATE_ID,
   MODAL_TEMPLATE_PRESETS,
+  getModalTemplateByPresetId,
   isModalGpuGated,
 } from "@cmux/shared/modal-templates";
 
@@ -80,6 +81,7 @@ const devboxApi = (api as any).devboxInstances as {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const devboxInternalApi = (internal as any).devboxInstances as {
   getInfo: FunctionReference<"query", "internal">;
+  getInfoBatch: FunctionReference<"query", "internal">;
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -202,18 +204,20 @@ export const createInstance = httpAction(async (ctx, req) => {
 
   try {
     if (provider === "modal") {
-      // Gate expensive GPUs
-      if (body.gpu && isModalGpuGated(body.gpu)) {
+      const templateId = body.templateId ?? DEFAULT_MODAL_TEMPLATE_ID;
+      const preset = getModalTemplateByPresetId(templateId);
+      const resolvedGpu = body.gpu ?? preset?.gpu;
+
+      // Gate expensive GPUs (check both explicit gpu param and template's gpu)
+      if (resolvedGpu && isModalGpuGated(resolvedGpu)) {
         return jsonResponse(
           {
             code: 403,
-            message: `GPU type "${body.gpu}" requires approval. Please contact the Manaflow team at founders@manaflow.com for inquiry.`,
+            message: `GPU type "${resolvedGpu}" requires approval. Please contact the Manaflow team at founders@manaflow.com for inquiry.`,
           },
           403,
         );
       }
-
-      const templateId = body.templateId ?? DEFAULT_MODAL_TEMPLATE_ID;
 
       const result = (await ctx.runAction(modalActionsApi.startInstance, {
         templateId,
@@ -351,8 +355,19 @@ export const listInstances = httpAction(async (ctx, req) => {
       updatedAt: number;
     }>;
 
+    // Fetch provider info for all instances
+    const devboxIds = rawInstances.map((inst) => inst.devboxId);
+    const providerInfos = (await ctx.runQuery(devboxInternalApi.getInfoBatch, {
+      devboxIds,
+    })) as Array<{ devboxId: string; provider: string }>;
+
+    const providerMap = new Map(
+      providerInfos.map((info) => [info.devboxId, info.provider])
+    );
+
     const instances = rawInstances.map((inst) => ({
       id: inst.devboxId,
+      provider: providerMap.get(inst.devboxId) ?? "unknown",
       status: inst.status,
       name: inst.name,
       createdAt: inst.createdAt,

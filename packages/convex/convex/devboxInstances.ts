@@ -135,6 +135,28 @@ export const getInfo = internalQuery({
 });
 
 /**
+ * Get provider info for multiple devbox instances.
+ */
+export const getInfoBatch = internalQuery({
+  args: {
+    devboxIds: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const results: Array<{ devboxId: string; provider: string }> = [];
+    for (const devboxId of args.devboxIds) {
+      const info = await ctx.db
+        .query("devboxInfo")
+        .withIndex("by_devboxId", (q) => q.eq("devboxId", devboxId))
+        .first();
+      if (info) {
+        results.push({ devboxId: info.devboxId, provider: info.provider });
+      }
+    }
+    return results;
+  },
+});
+
+/**
  * Get devbox ID from provider instance ID.
  */
 export const getDevboxIdFromProvider = internalQuery({

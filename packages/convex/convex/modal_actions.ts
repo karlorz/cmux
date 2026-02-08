@@ -279,6 +279,7 @@ export const startInstance = internalAction({
         const result = await instance.exec(buildStartupScript(authToken));
         if (result.exit_code !== 0) {
           console.error("[modal_actions] Startup script failed:", result.stderr);
+          throw new Error(`Startup script failed with exit code ${result.exit_code}: ${result.stderr}`);
         }
       } else {
         // No snapshot — run the full install + startup (slow path)
@@ -286,10 +287,12 @@ export const startInstance = internalAction({
         const installResult = await instance.exec(buildInstallScript());
         if (installResult.exit_code !== 0) {
           console.error("[modal_actions] Install failed:", installResult.stderr);
+          throw new Error(`Install script failed with exit code ${installResult.exit_code}: ${installResult.stderr}`);
         }
         const startResult = await instance.exec(buildStartupScript(authToken));
         if (startResult.exit_code !== 0) {
           console.error("[modal_actions] Startup failed:", startResult.stderr);
+          throw new Error(`Startup script failed with exit code ${startResult.exit_code}: ${startResult.stderr}`);
         }
       }
 
