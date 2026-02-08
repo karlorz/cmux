@@ -17,9 +17,10 @@ export const env = createEnv({
     BASE_APP_URL: z.string().min(1),
     CMUX_TASK_RUN_JWT_SECRET: z.string().min(1),
     // Note: OPENAI_API_KEY is accessed via process.env directly in crown/actions.ts
-    // to allow deployments without forcing an OpenAI key. Keep other AI keys optional
-    // so Convex does not require them. Anthropic/Bedrock/Vertex are also read via
-    // process.env where needed, so omit them here to avoid validation requirements.
+    // to allow deployments without forcing an OpenAI key.
+    // These remain optional so Convex does not require them in all deployments.
+    ANTHROPIC_API_KEY: z.string().min(1).optional(),
+    AWS_BEARER_TOKEN_BEDROCK: z.string().min(1).optional(),
     MORPH_API_KEY: z.string().min(1).optional(),
     // Note: PVE_* variables are accessed via process.env directly in
     // sandboxInstanceMaintenance.ts to avoid Convex static analysis
