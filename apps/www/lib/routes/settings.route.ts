@@ -4,6 +4,66 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 
 export const settingsRouter = new OpenAPIHono();
 
+/**
+ * Validates that a URL is safe to make server-side requests to.
+ * Prevents SSRF by blocking private/internal IP ranges and metadata endpoints.
+ */
+function isAllowedBaseUrl(urlString: string): { allowed: boolean; reason?: string } {
+  let url: URL;
+  try {
+    url = new URL(urlString);
+  } catch {
+    return { allowed: false, reason: "Invalid URL format" };
+  }
+
+  // Only allow HTTPS
+  if (url.protocol !== "https:") {
+    return { allowed: false, reason: "Only HTTPS URLs are allowed" };
+  }
+
+  const hostname = url.hostname.toLowerCase();
+
+  // Block localhost variants
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+    return { allowed: false, reason: "Localhost URLs are not allowed" };
+  }
+
+  // Block metadata endpoints (AWS, GCP, Azure)
+  if (hostname === "169.254.169.254" || hostname === "metadata.google.internal") {
+    return { allowed: false, reason: "Metadata endpoints are not allowed" };
+  }
+
+  // Check for private IP ranges
+  const ipv4Match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4Match) {
+    const octets = ipv4Match.slice(1).map(Number);
+    const [first, second] = octets;
+
+    // 10.0.0.0/8
+    if (first === 10) {
+      return { allowed: false, reason: "Private IP ranges are not allowed" };
+    }
+    // 172.16.0.0/12
+    if (first === 172 && second >= 16 && second <= 31) {
+      return { allowed: false, reason: "Private IP ranges are not allowed" };
+    }
+    // 192.168.0.0/16
+    if (first === 192 && second === 168) {
+      return { allowed: false, reason: "Private IP ranges are not allowed" };
+    }
+    // 169.254.0.0/16 (link-local)
+    if (first === 169 && second === 254) {
+      return { allowed: false, reason: "Link-local addresses are not allowed" };
+    }
+    // 127.0.0.0/8 (loopback)
+    if (first === 127) {
+      return { allowed: false, reason: "Loopback addresses are not allowed" };
+    }
+  }
+
+  return { allowed: true };
+}
+
 const TestAnthropicConnectionBody = z
   .object({
     baseUrl: z.string().url(),
@@ -72,6 +132,19 @@ settingsRouter.openapi(
     const normalizedBaseUrl = baseUrl
       .replace(/\/v1\/?$/, "")
       .replace(/\/+$/, "");
+
+    // SSRF protection: validate the URL before making server-side requests
+    const urlValidation = isAllowedBaseUrl(normalizedBaseUrl);
+    if (!urlValidation.allowed) {
+      return c.json({
+        success: false,
+        message: `Invalid base URL: ${urlValidation.reason}`,
+        details: {
+          endpoint: normalizedBaseUrl,
+        },
+      });
+    }
+
     const endpoint = `${normalizedBaseUrl}/v1/models`;
     const startTime = Date.now();
 
@@ -95,6 +168,19 @@ settingsRouter.openapi(
       });
     } catch (error) {
       const responseTime = Date.now() - startTime;
+
+      // Check APIConnectionError first - it extends APIError, so order matters
+      if (error instanceof Anthropic.APIConnectionError) {
+        return c.json({
+          success: false,
+          message: `Connection failed - endpoint unreachable: ${error.message}`,
+          details: {
+            responseTime,
+            endpoint,
+          },
+        });
+      }
+
       if (error instanceof Anthropic.APIError) {
         const errorMessages: Record<number, string> = {
           401: "Authentication failed - check your API key",
@@ -112,16 +198,6 @@ settingsRouter.openapi(
           details: {
             statusCode: error.status,
             responseTime,
-            endpoint,
-          },
-        });
-      }
-
-      if (error instanceof Anthropic.APIConnectionError) {
-        return c.json({
-          success: false,
-          message: `Connection failed - endpoint unreachable: ${error.message}`,
-          details: {
             endpoint,
           },
         });
