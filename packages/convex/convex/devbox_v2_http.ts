@@ -7,7 +7,6 @@
  */
 import { httpAction, type ActionCtx } from "./_generated/server";
 import { api, internal } from "./_generated/api";
-import type { FunctionReference } from "convex/server";
 import {
   DEFAULT_E2B_TEMPLATE_ID,
   E2B_TEMPLATE_PRESETS,
@@ -58,38 +57,6 @@ async function getAuthenticatedUser(
   return { identity, error: null };
 }
 
-// Type-safe references to devboxInstances functions
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const devboxApi = (api as any).devboxInstances as {
-  create: FunctionReference<"mutation", "public">;
-  list: FunctionReference<"query", "public">;
-  getById: FunctionReference<"query", "public">;
-  updateStatus: FunctionReference<"mutation", "public">;
-  recordAccess: FunctionReference<"mutation", "public">;
-  remove: FunctionReference<"mutation", "public">;
-};
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const devboxInternalApi = (internal as any).devboxInstances as {
-  getInfo: FunctionReference<"query", "internal">;
-};
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const e2bActionsApi = (internal as any).e2b_actions as {
-  startInstance: FunctionReference<"action", "internal">;
-  getInstance: FunctionReference<"action", "internal">;
-  execCommand: FunctionReference<"action", "internal">;
-  extendTimeout: FunctionReference<"action", "internal">;
-  stopInstance: FunctionReference<"action", "internal">;
-};
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const e2bInstancesApi = (internal as any).e2bInstances as {
-  recordResumeInternal: FunctionReference<"mutation", "internal">;
-  recordPauseInternal: FunctionReference<"mutation", "internal">;
-  recordStopInternal: FunctionReference<"mutation", "internal">;
-};
-
 /**
  * Record activity for an E2B instance
  */
@@ -100,15 +67,15 @@ async function recordE2BActivity(
 ): Promise<void> {
   try {
     if (action === "resume") {
-      await ctx.runMutation(e2bInstancesApi.recordResumeInternal, {
+      await ctx.runMutation(internal.e2bInstances.recordResumeInternal, {
         instanceId: providerInstanceId,
       });
     } else if (action === "pause") {
-      await ctx.runMutation(e2bInstancesApi.recordPauseInternal, {
+      await ctx.runMutation(internal.e2bInstances.recordPauseInternal, {
         instanceId: providerInstanceId,
       });
     } else if (action === "stop") {
-      await ctx.runMutation(e2bInstancesApi.recordStopInternal, {
+      await ctx.runMutation(internal.e2bInstances.recordStopInternal, {
         instanceId: providerInstanceId,
       });
     }
@@ -124,7 +91,7 @@ async function getProviderInstanceId(
   ctx: ActionCtx,
   devboxId: string
 ): Promise<string | null> {
-  const info = (await ctx.runQuery(devboxInternalApi.getInfo, {
+  const info = (await ctx.runQuery(internal.devboxInstances.getInfo, {
     devboxId,
   })) as { provider: string; providerInstanceId: string } | null;
   return info?.providerInstanceId ?? null;
@@ -166,7 +133,7 @@ export const createInstance = httpAction(async (ctx, req) => {
     const templateId = body.templateId ?? DEFAULT_E2B_TEMPLATE_ID;
 
     // Start E2B instance via internal action
-    const result = (await ctx.runAction(e2bActionsApi.startInstance, {
+    const result = (await ctx.runAction(internal.e2b_actions.startInstance, {
       templateId,
       ttlSeconds: body.ttlSeconds ?? 60 * 60,
       metadata: {
@@ -184,7 +151,7 @@ export const createInstance = httpAction(async (ctx, req) => {
     };
 
     // Store in Convex
-    const instanceResult = (await ctx.runMutation(devboxApi.create, {
+    const instanceResult = (await ctx.runMutation(api.devboxInstances.create, {
       teamSlugOrId: body.teamSlugOrId,
       providerInstanceId: result.instanceId,
       provider: "e2b",
@@ -232,7 +199,7 @@ export const listInstances = httpAction(async (ctx, req) => {
   }
 
   try {
-    const rawInstances = (await ctx.runQuery(devboxApi.list, {
+    const rawInstances = (await ctx.runQuery(api.devboxInstances.list, {
       teamSlugOrId,
       provider: "e2b",
     })) as Array<{
@@ -270,7 +237,7 @@ async function handleGetInstance(
   teamSlugOrId: string
 ): Promise<Response> {
   try {
-    const instance = (await ctx.runQuery(devboxApi.getById, {
+    const instance = (await ctx.runQuery(api.devboxInstances.getById, {
       teamSlugOrId,
       id,
     })) as { id: string; status: string; name?: string } | null;
@@ -289,7 +256,7 @@ async function handleGetInstance(
       });
     }
 
-    const e2bResult = (await ctx.runAction(e2bActionsApi.getInstance, {
+    const e2bResult = (await ctx.runAction(internal.e2b_actions.getInstance, {
       instanceId: providerInstanceId,
     })) as {
       instanceId: string;
@@ -302,7 +269,7 @@ async function handleGetInstance(
     const status = e2bResult.status as "running" | "stopped";
 
     if (status !== instance.status) {
-      await ctx.runMutation(devboxApi.updateStatus, {
+      await ctx.runMutation(api.devboxInstances.updateStatus, {
         teamSlugOrId,
         id,
         status,
@@ -334,7 +301,7 @@ async function handleExecCommand(
   command: string | string[]
 ): Promise<Response> {
   try {
-    const instance = await ctx.runQuery(devboxApi.getById, {
+    const instance = await ctx.runQuery(api.devboxInstances.getById, {
       teamSlugOrId,
       id,
     });
@@ -352,12 +319,12 @@ async function handleExecCommand(
     }
 
     const commandStr = Array.isArray(command) ? command.join(" ") : command;
-    const result = await ctx.runAction(e2bActionsApi.execCommand, {
+    const result = await ctx.runAction(internal.e2b_actions.execCommand, {
       instanceId: providerInstanceId,
       command: commandStr,
     });
 
-    await ctx.runMutation(devboxApi.recordAccess, { teamSlugOrId, id });
+    await ctx.runMutation(api.devboxInstances.recordAccess, { teamSlugOrId, id });
     return jsonResponse(result);
   } catch (error) {
     console.error("[devbox_v2.exec] Error:", error);
@@ -377,7 +344,7 @@ async function handlePauseInstance(
   teamSlugOrId: string
 ): Promise<Response> {
   try {
-    const instance = await ctx.runQuery(devboxApi.getById, {
+    const instance = await ctx.runQuery(api.devboxInstances.getById, {
       teamSlugOrId,
       id,
     });
@@ -395,12 +362,12 @@ async function handlePauseInstance(
     }
 
     // E2B doesn't have pause, extend timeout instead
-    await ctx.runAction(e2bActionsApi.extendTimeout, {
+    await ctx.runAction(internal.e2b_actions.extendTimeout, {
       instanceId: providerInstanceId,
       timeoutMs: 60 * 60 * 1000, // 1 hour
     });
 
-    await ctx.runMutation(devboxApi.updateStatus, {
+    await ctx.runMutation(api.devboxInstances.updateStatus, {
       teamSlugOrId,
       id,
       status: "paused",
@@ -431,7 +398,7 @@ async function handleResumeInstance(
   teamSlugOrId: string
 ): Promise<Response> {
   try {
-    const instance = await ctx.runQuery(devboxApi.getById, {
+    const instance = await ctx.runQuery(api.devboxInstances.getById, {
       teamSlugOrId,
       id,
     });
@@ -449,7 +416,7 @@ async function handleResumeInstance(
     }
 
     // E2B doesn't have pause/resume, just update status
-    await ctx.runMutation(devboxApi.updateStatus, {
+    await ctx.runMutation(api.devboxInstances.updateStatus, {
       teamSlugOrId,
       id,
       status: "running",
@@ -480,7 +447,7 @@ async function handleStopInstance(
   teamSlugOrId: string
 ): Promise<Response> {
   try {
-    const instance = await ctx.runQuery(devboxApi.getById, {
+    const instance = await ctx.runQuery(api.devboxInstances.getById, {
       teamSlugOrId,
       id,
     });
@@ -497,11 +464,11 @@ async function handleStopInstance(
       );
     }
 
-    await ctx.runAction(e2bActionsApi.stopInstance, {
+    await ctx.runAction(internal.e2b_actions.stopInstance, {
       instanceId: providerInstanceId,
     });
 
-    await ctx.runMutation(devboxApi.updateStatus, {
+    await ctx.runMutation(api.devboxInstances.updateStatus, {
       teamSlugOrId,
       id,
       status: "stopped",
@@ -526,7 +493,7 @@ async function handleUpdateTtl(
   ttlSeconds: number
 ): Promise<Response> {
   try {
-    const instance = await ctx.runQuery(devboxApi.getById, {
+    const instance = await ctx.runQuery(api.devboxInstances.getById, {
       teamSlugOrId,
       id,
     });
@@ -543,7 +510,7 @@ async function handleUpdateTtl(
       );
     }
 
-    await ctx.runAction(e2bActionsApi.extendTimeout, {
+    await ctx.runAction(internal.e2b_actions.extendTimeout, {
       instanceId: providerInstanceId,
       timeoutMs: ttlSeconds * 1000,
     });
@@ -650,7 +617,7 @@ async function handleGetAuthToken(
   teamSlugOrId: string
 ): Promise<Response> {
   try {
-    const instance = await ctx.runQuery(devboxApi.getById, {
+    const instance = await ctx.runQuery(api.devboxInstances.getById, {
       teamSlugOrId,
       id,
     });
@@ -667,7 +634,7 @@ async function handleGetAuthToken(
       );
     }
 
-    const result = (await ctx.runAction(e2bActionsApi.execCommand, {
+    const result = (await ctx.runAction(internal.e2b_actions.execCommand, {
       instanceId: providerInstanceId,
       command: "cat /home/user/.worker-auth-token 2>/dev/null || echo ''",
     })) as { stdout?: string; stderr?: string; exit_code?: number };
