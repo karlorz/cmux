@@ -447,7 +447,7 @@ export type SetupInstanceBody = {
     instanceId?: string;
     selectedRepos?: Array<string>;
     ttlSeconds?: number;
-    snapshotId?: string | ('snapshot_nc7vchfb' | 'snapshot_htjy9ek7');
+    snapshotId?: string | ('snapshot_40tltpm1' | 'snapshot_ychnckx4');
 };
 
 export type ListInstancesResponse = Array<InstanceInfo>;
@@ -553,6 +553,11 @@ export type GetEnvironmentResponse = {
 };
 
 export type GetEnvironmentVarsResponse = {
+    envVarsContent: string;
+};
+
+export type UpdateEnvironmentVarsBody = {
+    teamSlugOrId: string;
     envVarsContent: string;
 };
 
@@ -2701,6 +2706,43 @@ export type GetApiEnvironmentsByIdVarsResponses = {
 };
 
 export type GetApiEnvironmentsByIdVarsResponse = GetApiEnvironmentsByIdVarsResponses[keyof GetApiEnvironmentsByIdVarsResponses];
+
+export type PatchApiEnvironmentsByIdVarsData = {
+    body: UpdateEnvironmentVarsBody;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/environments/{id}/vars';
+};
+
+export type PatchApiEnvironmentsByIdVarsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    /**
+     * Environment not found
+     */
+    404: unknown;
+    /**
+     * Failed to update environment variables
+     */
+    500: unknown;
+};
+
+export type PatchApiEnvironmentsByIdVarsResponses = {
+    /**
+     * Environment variables updated successfully
+     */
+    200: GetEnvironmentVarsResponse;
+};
+
+export type PatchApiEnvironmentsByIdVarsResponse = PatchApiEnvironmentsByIdVarsResponses[keyof PatchApiEnvironmentsByIdVarsResponses];
 
 export type PatchApiEnvironmentsByIdPortsData = {
     body: UpdateEnvironmentPortsBody;
