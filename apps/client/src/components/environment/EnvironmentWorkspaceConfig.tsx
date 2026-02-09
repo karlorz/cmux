@@ -12,6 +12,7 @@
 import { GitHubIcon } from "@/components/icons/github";
 import { PersistentWebView } from "@/components/persistent-webview";
 import { WorkspaceLoadingIndicator } from "@/components/workspace-loading-indicator";
+import { WorkspaceSetupPanel } from "@/components/WorkspaceSetupPanel";
 import {
   disableDragPointerEvents,
   restoreDragPointerEvents,
@@ -63,6 +64,7 @@ interface EnvironmentWorkspaceConfigProps {
   isSaving: boolean;
   errorMessage?: string | null;
   initialConfigStep?: ConfigStep;
+  teamSlugOrId: string;
   onMaintenanceScriptChange: (value: string) => void;
   onDevScriptChange: (value: string) => void;
   onEnvVarsChange: (updater: (prev: EnvVar[]) => EnvVar[]) => void;
@@ -98,6 +100,7 @@ export function EnvironmentWorkspaceConfig({
   isSaving,
   errorMessage,
   initialConfigStep,
+  teamSlugOrId,
   onMaintenanceScriptChange,
   onDevScriptChange,
   onEnvVarsChange,
@@ -633,6 +636,34 @@ export function EnvironmentWorkspaceConfig({
               isDone: isStepCompleted("env-vars"),
             })}
           </div>
+        )}
+
+        {/* Per-Repository Configuration (not a numbered step) */}
+        {selectedRepos.length > 0 && (
+          <details className="group" open>
+            <summary
+              className={clsx(
+                "flex items-center gap-2 cursor-pointer text-[13px] font-medium text-neutral-900 dark:text-neutral-100 list-none",
+                isSaving && "cursor-not-allowed opacity-60"
+              )}
+            >
+              <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform -rotate-90 group-open:rotate-0" />
+              Per-Repository Configuration
+            </summary>
+            <div className="mt-3 pl-5 space-y-2">
+              <p className="text-xs text-neutral-400 mb-3">
+                Configure maintenance scripts and environment variables for each repository.
+                These settings are applied alongside the environment-level settings above.
+              </p>
+              {selectedRepos.map((repoFullName) => (
+                <WorkspaceSetupPanel
+                  key={repoFullName}
+                  teamSlugOrId={teamSlugOrId}
+                  projectFullName={repoFullName}
+                />
+              ))}
+            </div>
+          </details>
         )}
 
         {/* Exposed Ports (always visible, not a numbered step) */}

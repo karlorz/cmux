@@ -496,6 +496,7 @@ export function EnvironmentSetupFlow({
       isSaving={createEnvironmentMutation.isPending}
       errorMessage={errorMessage}
       initialConfigStep={initialConfigStep}
+      teamSlugOrId={teamSlugOrId}
       onMaintenanceScriptChange={handleMaintenanceScriptChange}
       onDevScriptChange={handleDevScriptChange}
       onEnvVarsChange={handleEnvVarsChange}

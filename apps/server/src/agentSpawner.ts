@@ -43,7 +43,7 @@ import rawSwitchBranchScript from "./utils/switch-branch.ts?raw";
 
 const SWITCH_BRANCH_BUN_SCRIPT = rawSwitchBranchScript;
 
-const { getApiEnvironmentsByIdVars } = await getWwwOpenApiModule();
+const { getApiEnvironmentsByIdVars, getApiEnvironmentsById, getApiWorkspaceConfigs } = await getWwwOpenApiModule();
 
 export interface AgentSpawnResult {
   agentName: string;
@@ -268,6 +268,84 @@ export async function spawnAgent(
       PROMPT: processedTaskDescription,
     };
 
+    // Determine which repos to load workspace configs for
+    // In environment mode: use environment's selectedRepos
+    // In non-environment mode: use options.repoUrl if provided
+    let reposForWorkspaceConfig: string[] = [];
+    if (options.environmentId) {
+      try {
+        // Fetch environment to get selectedRepos
+        const envDetailsRes = await getApiEnvironmentsById({
+          client: getWwwClient(),
+          path: { id: String(options.environmentId) },
+          query: { teamSlugOrId },
+        });
+        reposForWorkspaceConfig = envDetailsRes.data?.selectedRepos ?? [];
+      } catch (error) {
+        serverLogger.warn(
+          `[AgentSpawner] Failed to fetch environment details for workspace config lookup`,
+          error
+        );
+      }
+    } else if (options.repoUrl) {
+      const parsedRepo = parseGithubRepoUrl(options.repoUrl);
+      if (parsedRepo) {
+        reposForWorkspaceConfig = [parsedRepo.fullName];
+      }
+    }
+
+    // Load workspace config env vars for each repo
+    // Merge order: workspace configs (base) -> environment vars (overrides) -> CMUX system vars (always preserved)
+    if (reposForWorkspaceConfig.length > 0) {
+      try {
+        const workspaceConfigResults = await Promise.all(
+          reposForWorkspaceConfig.map(async (repoFullName) => {
+            try {
+              const configRes = await getApiWorkspaceConfigs({
+                client: getWwwClient(),
+                query: { teamSlugOrId, projectFullName: repoFullName },
+              });
+              return configRes.data;
+            } catch (error) {
+              serverLogger.warn(
+                `[AgentSpawner] Failed to fetch workspace config for ${repoFullName}`,
+                error
+              );
+              return null;
+            }
+          })
+        );
+
+        // Merge all workspace config env vars
+        let workspaceEnvVarsCount = 0;
+        for (const config of workspaceConfigResults) {
+          if (config?.envVarsContent && config.envVarsContent.trim().length > 0) {
+            const parsed = parseDotenv(config.envVarsContent);
+            if (Object.keys(parsed).length > 0) {
+              // Apply workspace config vars (environment vars will override later)
+              envVars = {
+                ...envVars,
+                ...parsed,
+              };
+              workspaceEnvVarsCount += Object.keys(parsed).length;
+            }
+          }
+        }
+
+        if (workspaceEnvVarsCount > 0) {
+          serverLogger.info(
+            `[AgentSpawner] Injected ${workspaceEnvVarsCount} env vars from ${workspaceConfigResults.filter(Boolean).length} workspace configs`
+          );
+        }
+      } catch (error) {
+        serverLogger.error(
+          `[AgentSpawner] Failed to load workspace config env vars`,
+          error
+        );
+      }
+    }
+
+    // Load environment env vars (these override workspace config vars)
     if (options.environmentId) {
       try {
         const envRes = await getApiEnvironmentsByIdVars({

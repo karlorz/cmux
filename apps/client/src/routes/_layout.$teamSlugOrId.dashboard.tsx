@@ -1097,7 +1097,15 @@ function DashboardComponent() {
     return selectedProject[0];
   }, [selectedProject, isEnvSelected]);
 
-  const shouldShowWorkspaceSetup = !!selectedRepoFullName && !isEnvSelected;
+  // Extract repos from the selected environment (if any)
+  const selectedEnvironmentRepos = useMemo(() => {
+    if (!isEnvSelected || !selectedProject[0]) return [];
+    const envId = selectedProject[0].replace(/^env:/, "");
+    const env = environmentsQuery.data?.find((e) => e._id === envId);
+    return env?.selectedRepos ?? [];
+  }, [isEnvSelected, selectedProject, environmentsQuery.data]);
+
+  const shouldShowWorkspaceSetup = (!!selectedRepoFullName && !isEnvSelected) || selectedEnvironmentRepos.length > 0;
 
   // const shouldShowCloudRepoOnboarding =
   //   !!selectedRepoFullName && isCloudMode && !isEnvSelected && !hasDismissedCloudRepoOnboarding;
@@ -1388,10 +1396,22 @@ function DashboardComponent() {
               isStartingTask={isStartingTask}
             />
             {shouldShowWorkspaceSetup ? (
-              <WorkspaceSetupPanel
-                teamSlugOrId={teamSlugOrId}
-                projectFullName={selectedRepoFullName}
-              />
+              selectedRepoFullName && !isEnvSelected ? (
+                // Single repo selected (non-environment mode)
+                <WorkspaceSetupPanel
+                  teamSlugOrId={teamSlugOrId}
+                  projectFullName={selectedRepoFullName}
+                />
+              ) : (
+                // Environment selected - show panel for each repo
+                selectedEnvironmentRepos.map((repoFullName) => (
+                  <WorkspaceSetupPanel
+                    key={repoFullName}
+                    teamSlugOrId={teamSlugOrId}
+                    projectFullName={repoFullName}
+                  />
+                ))
+              )
             ) : null}
 
             {/* {shouldShowCloudRepoOnboarding && createEnvironmentSearch ? (

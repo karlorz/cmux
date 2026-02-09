@@ -432,33 +432,80 @@ sandboxesRouter.openapi(
       // Parse repo URL once if provided
       const parsedRepoUrl = repoUrl ? parseGithubRepoUrl(repoUrl) : null;
 
-      // Load workspace config if we're in cloud mode with a repository (not an environment)
+      // Load workspace configs for repositories
+      // For environments: load configs for ALL repos in environmentSelectedRepos
+      // For non-environments: load config for the single repo (parsedRepoUrl)
       let workspaceConfig: { maintenanceScript?: string; envVarsContent?: string } | null = null;
-      if (parsedRepoUrl && !body.environmentId) {
+      const reposToLoadConfigs = body.environmentId && environmentSelectedRepos?.length
+        ? environmentSelectedRepos
+        : parsedRepoUrl
+          ? [parsedRepoUrl.fullName]
+          : [];
+
+      if (reposToLoadConfigs.length > 0) {
         try {
-          const config = await convex.query(api.workspaceConfigs.get, {
-            teamSlugOrId: body.teamSlugOrId,
-            projectFullName: parsedRepoUrl.fullName,
-          });
-          if (config) {
-            const envVarsContent = config.dataVaultKey
-              ? await loadEnvironmentEnvVars(config.dataVaultKey)
-              : null;
+          // Fetch workspace configs for all repos in parallel
+          const configResults = await Promise.all(
+            reposToLoadConfigs.map(async (repoFullName) => {
+              try {
+                const config = await convex.query(api.workspaceConfigs.get, {
+                  teamSlugOrId: body.teamSlugOrId,
+                  projectFullName: repoFullName,
+                });
+                if (config) {
+                  const envVarsContent = config.dataVaultKey
+                    ? await loadEnvironmentEnvVars(config.dataVaultKey)
+                    : null;
+                  return {
+                    repoFullName,
+                    maintenanceScript: config.maintenanceScript ?? undefined,
+                    envVarsContent: envVarsContent ?? undefined,
+                  };
+                }
+                return null;
+              } catch (error) {
+                console.error(`[sandboxes.start] Failed to load workspace config for ${repoFullName}`, error);
+                return null;
+              }
+            })
+          );
+
+          // Merge all workspace configs: concatenate env vars and maintenance scripts
+          const validConfigs = configResults.filter((c): c is NonNullable<typeof c> => c !== null);
+          if (validConfigs.length > 0) {
+            const mergedEnvVars = validConfigs
+              .map((c) => c.envVarsContent)
+              .filter((content): content is string => Boolean(content))
+              .join("\n");
+            const mergedMaintenanceScripts = validConfigs
+              .map((c) => c.maintenanceScript)
+              .filter((script): script is string => Boolean(script))
+              .join("\n\n");
+
             workspaceConfig = {
-              maintenanceScript: config.maintenanceScript ?? undefined,
-              envVarsContent: envVarsContent ?? undefined,
+              maintenanceScript: mergedMaintenanceScripts || undefined,
+              envVarsContent: mergedEnvVars || undefined,
             };
-            console.log(`[sandboxes.start] Loaded workspace config for ${parsedRepoUrl.fullName}`, {
+
+            console.log(`[sandboxes.start] Loaded workspace configs for ${validConfigs.length} repos`, {
+              repos: validConfigs.map((c) => c.repoFullName),
               hasMaintenanceScript: Boolean(workspaceConfig.maintenanceScript),
               hasEnvVars: Boolean(workspaceConfig.envVarsContent),
             });
           }
         } catch (error) {
-          console.error(`[sandboxes.start] Failed to load workspace config for ${parsedRepoUrl.fullName}`, error);
+          console.error(`[sandboxes.start] Failed to load workspace configs`, error);
         }
       }
 
-      const maintenanceScript = environmentMaintenanceScript ?? workspaceConfig?.maintenanceScript ?? null;
+      // Merge maintenance scripts: workspace config first, then environment
+      // This allows environment to add additional setup on top of per-repo setup
+      let maintenanceScript: string | null = null;
+      if (workspaceConfig?.maintenanceScript && environmentMaintenanceScript) {
+        maintenanceScript = `${workspaceConfig.maintenanceScript}\n\n${environmentMaintenanceScript}`;
+      } else {
+        maintenanceScript = environmentMaintenanceScript ?? workspaceConfig?.maintenanceScript ?? null;
+      }
       const devScript = environmentDevScript ?? null;
 
       const isCloudWorkspace =
@@ -716,8 +763,16 @@ sandboxesRouter.openapi(
       const environmentEnvVarsContent = await environmentEnvVarsPromise;
 
       // Prepare environment variables including task JWT if present
-      // Workspace env vars take precedence if no environment is configured
-      let envVarsToApply = environmentEnvVarsContent || workspaceConfig?.envVarsContent || "";
+      // Merge order: workspace config (base) -> environment (overrides) -> CMUX system vars
+      // Later values override earlier values for duplicate keys
+      const envVarParts: string[] = [];
+      if (workspaceConfig?.envVarsContent) {
+        envVarParts.push(workspaceConfig.envVarsContent);
+      }
+      if (environmentEnvVarsContent) {
+        envVarParts.push(environmentEnvVarsContent);
+      }
+      let envVarsToApply = envVarParts.join("\n");
 
       // Add CMUX task-related env vars if present
       if (body.taskRunId) {
