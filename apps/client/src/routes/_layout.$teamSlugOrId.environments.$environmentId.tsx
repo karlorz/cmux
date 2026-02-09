@@ -17,8 +17,10 @@ import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { validateExposedPorts } from "@cmux/shared/utils/validate-exposed-ports";
 import type { StartSandboxResponse } from "@cmux/www-openapi-client";
 import {
+  getApiEnvironmentsByIdVarsOptions,
   patchApiEnvironmentsByIdPortsMutation,
   patchApiEnvironmentsByIdMutation,
+  patchApiEnvironmentsByIdVarsMutation,
   postApiEnvironmentsByIdSnapshotsBySnapshotVersionIdActivateMutation,
   postApiSandboxesStartMutation,
   deleteApiEnvironmentsByIdMutation,
@@ -26,6 +28,7 @@ import {
 import { convexQuery } from "@convex-dev/react-query";
 import {
   useMutation as useRQMutation,
+  useQuery as useRQQuery,
   useSuspenseQuery,
 } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -35,7 +38,10 @@ import {
   ArrowLeft,
   Calendar,
   Code,
+  Eye,
+  EyeOff,
   GitBranch,
+  KeyRound,
   Loader2,
   Package,
   Plus,
@@ -120,6 +126,15 @@ function EnvironmentDetailsPage() {
   );
   const modifyVmMutation = useRQMutation(postApiSandboxesStartMutation());
   const snapshotLaunchMutation = useRQMutation(postApiSandboxesStartMutation());
+  const envVarsQuery = useRQQuery(
+    getApiEnvironmentsByIdVarsOptions({
+      path: { id: String(environmentId) },
+      query: { teamSlugOrId },
+    })
+  );
+  const updateEnvVarsMutation = useRQMutation(
+    patchApiEnvironmentsByIdVarsMutation()
+  );
   const [renameError, setRenameError] = useState<string | null>(null);
   const [isEditingPorts, setIsEditingPorts] = useState(false);
   const [portsDraft, setPortsDraft] = useState<number[]>(
@@ -142,6 +157,9 @@ function EnvironmentDetailsPage() {
   const [maintenanceScriptDraft, setMaintenanceScriptDraft] = useState(
     environment?.maintenanceScript ?? ""
   );
+  const [isEditingEnvVars, setIsEditingEnvVars] = useState(false);
+  const [envVarsDraft, setEnvVarsDraft] = useState("");
+  const [showEnvVars, setShowEnvVars] = useState(false);
 
   const handleRenameStart = () => {
     updateEnvironmentMutation.reset();
@@ -207,6 +225,12 @@ function EnvironmentDetailsPage() {
       setMaintenanceScriptDraft(environment.maintenanceScript ?? "");
     }
   }, [environment.maintenanceScript, isEditingMaintenanceScript]);
+
+  useEffect(() => {
+    if (!isEditingEnvVars && envVarsQuery.data) {
+      setEnvVarsDraft(envVarsQuery.data.envVarsContent ?? "");
+    }
+  }, [envVarsQuery.data, isEditingEnvVars]);
 
   const handleStartEditingPorts = () => {
     setPortsDraft(environment.exposedPorts ?? []);
@@ -294,6 +318,57 @@ function EnvironmentDetailsPage() {
           : "Failed to update maintenance script";
       toast.error(message);
     }
+  };
+
+  const handleStartEditingEnvVars = () => {
+    setEnvVarsDraft(envVarsQuery.data?.envVarsContent ?? "");
+    setIsEditingEnvVars(true);
+    updateEnvVarsMutation.reset();
+  };
+
+  const handleCancelEnvVars = () => {
+    setEnvVarsDraft(envVarsQuery.data?.envVarsContent ?? "");
+    setIsEditingEnvVars(false);
+    updateEnvVarsMutation.reset();
+  };
+
+  const handleSaveEnvVars = async () => {
+    try {
+      await updateEnvVarsMutation.mutateAsync({
+        path: { id: String(environmentId) },
+        body: {
+          teamSlugOrId,
+          envVarsContent: envVarsDraft,
+        },
+      });
+      toast.success("Environment variables updated");
+      setIsEditingEnvVars(false);
+      void envVarsQuery.refetch();
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to update environment variables";
+      toast.error(message);
+    }
+  };
+
+  const maskEnvVarsContent = (content: string): string => {
+    return content
+      .split("\n")
+      .map((line) => {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("#") || trimmed.length === 0) {
+          return line;
+        }
+        const eqIndex = line.indexOf("=");
+        if (eqIndex === -1) {
+          return line;
+        }
+        const key = line.slice(0, eqIndex);
+        return `${key}=--------`;
+      })
+      .join("\n");
   };
 
   const handleAddPort = () => {
@@ -946,6 +1021,122 @@ function EnvironmentDetailsPage() {
                       </div>
                     )}
                   </div>
+                )}
+              </div>
+
+              {/* Environment Variables */}
+              <div>
+                <div className="mb-2 flex items-start justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <KeyRound className="w-4 h-4 text-neutral-500" />
+                      <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                        Environment Variables
+                      </h3>
+                    </div>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-500 mt-1">
+                      Stored securely and injected when your setup script runs.
+                      Paste directly from .env files.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {!isEditingEnvVars &&
+                      envVarsQuery.data?.envVarsContent &&
+                      envVarsQuery.data.envVarsContent.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowEnvVars((prev) => !prev)}
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded-md border border-neutral-300 px-3 py-1 text-xs font-medium text-neutral-700 dark:border-neutral-700 dark:text-neutral-300",
+                            "hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                          )}
+                        >
+                          {showEnvVars ? (
+                            <>
+                              <EyeOff className="w-3 h-3" />
+                              Hide
+                            </>
+                          ) : (
+                            <>
+                              <Eye className="w-3 h-3" />
+                              Show
+                            </>
+                          )}
+                        </button>
+                      )}
+                    {!isEditingEnvVars && (
+                      <button
+                        type="button"
+                        onClick={handleStartEditingEnvVars}
+                        disabled={
+                          updateEnvVarsMutation.isPending ||
+                          envVarsQuery.isLoading
+                        }
+                        className={cn(
+                          "inline-flex items-center gap-1 rounded-md border border-neutral-300 px-3 py-1 text-xs font-medium text-neutral-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-neutral-700 dark:text-neutral-300",
+                          !updateEnvVarsMutation.isPending &&
+                            "hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                        )}
+                      >
+                        {envVarsQuery.data?.envVarsContent &&
+                        envVarsQuery.data.envVarsContent.length > 0
+                          ? "Edit"
+                          : "Add"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {isEditingEnvVars ? (
+                  <div className="space-y-2">
+                    <ScriptTextareaField
+                      description=""
+                      value={envVarsDraft}
+                      onChange={(next) => setEnvVarsDraft(next)}
+                      placeholder="DATABASE_URL=postgres://localhost:5432/db&#10;API_KEY=your-api-key&#10;# Comments are preserved"
+                      disabled={updateEnvVarsMutation.isPending}
+                      minHeightClassName="min-h-[130px]"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={handleSaveEnvVars}
+                        disabled={updateEnvVarsMutation.isPending}
+                        className="inline-flex h-8 items-center justify-center rounded-md bg-neutral-900 px-4 text-sm font-medium text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
+                      >
+                        {updateEnvVarsMutation.isPending ? "Saving..." : "Save"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCancelEnvVars}
+                        disabled={updateEnvVarsMutation.isPending}
+                        className={cn(
+                          "inline-flex h-8 items-center justify-center rounded-md border border-neutral-300 px-4 text-sm font-medium text-neutral-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-neutral-700 dark:text-neutral-300",
+                          !updateEnvVarsMutation.isPending &&
+                            "hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                        )}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : envVarsQuery.isLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-neutral-500">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading...
+                  </div>
+                ) : envVarsQuery.data?.envVarsContent &&
+                  envVarsQuery.data.envVarsContent.length > 0 ? (
+                  <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-3 dark:bg-neutral-950">
+                    <pre className="whitespace-pre-wrap break-words font-mono text-sm text-green-400">
+                      {showEnvVars
+                        ? envVarsQuery.data.envVarsContent
+                        : maskEnvVarsContent(envVarsQuery.data.envVarsContent)}
+                    </pre>
+                  </div>
+                ) : (
+                  <p className="text-sm text-neutral-500 dark:text-neutral-500">
+                    No environment variables configured.
+                  </p>
                 )}
               </div>
 
