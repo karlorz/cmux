@@ -1097,7 +1097,23 @@ function DashboardComponent() {
     return selectedProject[0];
   }, [selectedProject, isEnvSelected]);
 
-  const shouldShowWorkspaceSetup = !!selectedRepoFullName && !isEnvSelected;
+  const selectedEnvironmentRepos = useMemo(() => {
+    if (!isEnvSelected || !selectedProject[0]) return [];
+    const envId = selectedProject[0].replace(/^env:/, "") as Id<"environments">;
+    const selectedEnvironment = environmentsQuery.data?.find(
+      (environment) => environment._id === envId
+    );
+    return Array.from(new Set(selectedEnvironment?.selectedRepos ?? []));
+  }, [environmentsQuery.data, isEnvSelected, selectedProject]);
+
+  const workspaceSetupProjects = useMemo(() => {
+    if (selectedRepoFullName && !isEnvSelected) {
+      return [selectedRepoFullName];
+    }
+    return selectedEnvironmentRepos;
+  }, [isEnvSelected, selectedEnvironmentRepos, selectedRepoFullName]);
+
+  const shouldShowWorkspaceSetup = workspaceSetupProjects.length > 0;
 
   // const shouldShowCloudRepoOnboarding =
   //   !!selectedRepoFullName && isCloudMode && !isEnvSelected && !hasDismissedCloudRepoOnboarding;
@@ -1388,10 +1404,15 @@ function DashboardComponent() {
               isStartingTask={isStartingTask}
             />
             {shouldShowWorkspaceSetup ? (
-              <WorkspaceSetupPanel
-                teamSlugOrId={teamSlugOrId}
-                projectFullName={selectedRepoFullName}
-              />
+              <div className="space-y-1">
+                {workspaceSetupProjects.map((projectFullName) => (
+                  <WorkspaceSetupPanel
+                    key={projectFullName}
+                    teamSlugOrId={teamSlugOrId}
+                    projectFullName={projectFullName}
+                  />
+                ))}
+              </div>
             ) : null}
 
             {/* {shouldShowCloudRepoOnboarding && createEnvironmentSearch ? (

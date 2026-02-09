@@ -11,6 +11,7 @@
 
 import { GitHubIcon } from "@/components/icons/github";
 import { PersistentWebView } from "@/components/persistent-webview";
+import { WorkspaceSetupPanel } from "@/components/WorkspaceSetupPanel";
 import { WorkspaceLoadingIndicator } from "@/components/workspace-loading-indicator";
 import {
   disableDragPointerEvents,
@@ -53,6 +54,7 @@ import {
 } from "react";
 
 interface EnvironmentWorkspaceConfigProps {
+  teamSlugOrId: string;
   selectedRepos: string[];
   maintenanceScript: string;
   devScript: string;
@@ -88,6 +90,7 @@ function StepBadge({ step, done }: { step: number; done: boolean }) {
 }
 
 export function EnvironmentWorkspaceConfig({
+  teamSlugOrId,
   selectedRepos,
   maintenanceScript,
   devScript,
@@ -633,6 +636,28 @@ export function EnvironmentWorkspaceConfig({
               isDone: isStepCompleted("env-vars"),
             })}
           </div>
+        )}
+
+        {selectedRepos.length > 0 && (
+          <details className="group" open>
+            <summary className="flex items-center gap-2 cursor-pointer text-[13px] font-medium text-neutral-900 dark:text-neutral-100 list-none">
+              <ChevronDown className="h-3.5 w-3.5 text-neutral-400 transition-transform -rotate-90 group-open:rotate-0" />
+              Per-Repository Configuration
+            </summary>
+            <div className="mt-3 pl-5 space-y-1.5">
+              <p className="text-xs text-neutral-400">
+                Repository settings are applied alongside environment-level scripts and
+                variables.
+              </p>
+              {selectedRepos.map((repo) => (
+                <WorkspaceSetupPanel
+                  key={repo}
+                  teamSlugOrId={teamSlugOrId}
+                  projectFullName={repo}
+                />
+              ))}
+            </div>
+          </details>
         )}
 
         {/* Exposed Ports (always visible, not a numbered step) */}
