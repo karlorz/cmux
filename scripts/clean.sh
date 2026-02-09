@@ -17,7 +17,7 @@ CORES=1
 if command -v nproc >/dev/null 2>&1; then CORES="$(nproc)"; elif command -v sysctl >/dev/null 2>&1; then CORES="$(sysctl -n hw.ncpu)"; fi
 
 # Prefer fd (much faster); fall back to find. Both avoid descending into node_modules.
-# Exclude dev-docs/ which contains git submodules that may track node_modules as test fixtures.
+# Exclude dev-docs/ which may contain node_modules as test fixtures in synced documentation.
 if command -v fd >/dev/null 2>&1; then
   FIND_CMD=(fd -HI -t d -0 --exclude 'dev-docs' '^node_modules$' "$TARGET")
 else
