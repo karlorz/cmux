@@ -663,13 +663,14 @@ async function handlePushEnv(
       return jsonResponse({ code: 404, message: "Instance not found" }, 404);
     }
 
-    const providerInstanceId = await getProviderInstanceId(ctx, id);
-    if (!providerInstanceId) {
+    const providerInfo = await getProviderInfo(ctx, id);
+    if (!providerInfo) {
       return jsonResponse(
         { code: 404, message: "Provider mapping not found" },
         404
       );
     }
+    const { providerInstanceId } = providerInfo;
 
     // Get the worker URL from the E2B instance
     const e2bResult = (await ctx.runAction(e2bActionsApi.getInstance, {
