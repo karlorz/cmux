@@ -1,6 +1,7 @@
 // Do NOT export Node-only utilities here; browser builds import this index.
 
 export * from "./agentConfig";
+export * from "./apiKeys";
 export * from "./convex-ready";
 export * from "./crown";
 export * from "./diff-types";
@@ -28,6 +29,7 @@ export * from "./iframe-preflight";
 export * from "./morph-snapshots";
 export * from "./pve-lxc-snapshots";
 export * from "./sandbox-presets";
+export * from "./e2b-templates";
 export * from "./screenshots/types";
 export * from "./config/host-config";
 // Note: useNetwork hook is NOT exported here to avoid SSR issues.

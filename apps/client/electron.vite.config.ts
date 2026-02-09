@@ -151,6 +151,7 @@ export default defineConfig({
     },
     plugins: [
       tsconfigPaths({
+        // Skip synced documentation snapshots that are not part of the app workspace.
         skip: (dir) => dir.includes("dev-docs"),
       }),
       tanstackRouter({

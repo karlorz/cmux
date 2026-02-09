@@ -447,7 +447,7 @@ export type SetupInstanceBody = {
     instanceId?: string;
     selectedRepos?: Array<string>;
     ttlSeconds?: number;
-    snapshotId?: string | ('snapshot_nc7vchfb' | 'snapshot_htjy9ek7');
+    snapshotId?: string | ('snapshot_40tltpm1' | 'snapshot_ychnckx4');
 };
 
 export type ListInstancesResponse = Array<InstanceInfo>;
@@ -653,6 +653,17 @@ export type StartSandboxBody = {
     branch?: string;
     newBranch?: string;
     depth?: number;
+};
+
+export type PrewarmSandboxResponse = {
+    id: string;
+    alreadyExists: boolean;
+};
+
+export type PrewarmSandboxBody = {
+    teamSlugOrId: string;
+    repoUrl?: string;
+    branch?: string;
 };
 
 export type SandboxRefreshGitHubAuthResponse = {
@@ -944,6 +955,22 @@ export type EditorSettingsBody = {
         content: string;
     }>;
     extensions?: string;
+};
+
+export type TestAnthropicConnectionResult = {
+    success: boolean;
+    message: string;
+    details?: {
+        statusCode?: number;
+        responseTime?: number;
+        endpoint: string;
+        modelsFound?: number;
+    };
+};
+
+export type TestAnthropicConnectionBody = {
+    baseUrl: string;
+    apiKey: string;
 };
 
 export type GetApiHealthData = {
@@ -2887,6 +2914,33 @@ export type PostApiSandboxesStartResponses = {
 
 export type PostApiSandboxesStartResponse = PostApiSandboxesStartResponses[keyof PostApiSandboxesStartResponses];
 
+export type PostApiSandboxesPrewarmData = {
+    body: PrewarmSandboxBody;
+    path?: never;
+    query?: never;
+    url: '/api/sandboxes/prewarm';
+};
+
+export type PostApiSandboxesPrewarmErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Failed to create prewarm entry
+     */
+    500: unknown;
+};
+
+export type PostApiSandboxesPrewarmResponses = {
+    /**
+     * Prewarm entry created (provisioning in background)
+     */
+    200: PrewarmSandboxResponse;
+};
+
+export type PostApiSandboxesPrewarmResponse = PostApiSandboxesPrewarmResponses[keyof PostApiSandboxesPrewarmResponses];
+
 export type PostApiSandboxesByIdRefreshGithubAuthData = {
     body: SandboxRefreshGitHubAuthBody;
     path: {
@@ -3937,6 +3991,29 @@ export type PostApiEditorSettingsResponses = {
 };
 
 export type PostApiEditorSettingsResponse = PostApiEditorSettingsResponses[keyof PostApiEditorSettingsResponses];
+
+export type PostApiSettingsTestAnthropicConnectionData = {
+    body: TestAnthropicConnectionBody;
+    path?: never;
+    query?: never;
+    url: '/api/settings/test-anthropic-connection';
+};
+
+export type PostApiSettingsTestAnthropicConnectionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiSettingsTestAnthropicConnectionResponses = {
+    /**
+     * Connection test result
+     */
+    200: TestAnthropicConnectionResult;
+};
+
+export type PostApiSettingsTestAnthropicConnectionResponse = PostApiSettingsTestAnthropicConnectionResponses[keyof PostApiSettingsTestAnthropicConnectionResponses];
 
 export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});

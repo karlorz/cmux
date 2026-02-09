@@ -1,10 +1,11 @@
 ---
 name: cmux-upstream-sync
-description: Merge upstream manaflow-ai/cmux into fork karlorz/cmux while keeping fork-only features. Use when updating branches like sync/upstream-main-YYYYMMDD, resolving conflicts with .gitattributes rules, running bun check, and preparing a PR to karlorz/cmux:main.
+description: Merge upstream manaflow-ai/cmux into fork karlorz/cmux while keeping fork-only features and reviewing Morph VM upstream changes for required PVE-LXC parity updates. Use when updating branches like sync/upstream-main-YYYYMMDD, resolving conflicts with .gitattributes rules, running bun check, generating a Morph-to-PVE parity report, and preparing a PR to karlorz/cmux:main.
 ---
 
 # Purpose
 - Keep fork custom work while pulling new fixes/features from upstream.
+- Detect Morph-only upstream changes that may require matching PVE-LXC changes in the fork.
 - Use merges (not rebases) into `sync/upstream-main-YYYYMMDD` then open PR to `karlorz/cmux:main`.
 
 # Remotes
@@ -38,13 +39,29 @@ git commit  # finalize merge
 bun install  # if new deps
 bun check
 ```
-6) Push + PR:
+6) Run Morph -> PVE-LXC parity audit:
+- Read `.codex/skills/upstream-sync/references/morph-pve-parity.md`.
+- Generate the report skeleton:
+```bash
+./.codex/skills/upstream-sync/scripts/print-parity-report.sh
+```
+- Default range is `main...HEAD`. Pass a custom range when needed, for example:
+```bash
+./.codex/skills/upstream-sync/scripts/print-parity-report.sh origin/main...HEAD
+```
+- Produce a short parity report with:
+  - Morph hotspot files changed.
+  - Matching PVE-LXC counterpart files changed (or not changed).
+  - Suggested follow-up for every Morph-only change (`mirror now`, `safe to defer`, or `not applicable` with reason).
+- If a Morph hotspot changed and the PVE-LXC counterpart did not, add an explicit follow-up checklist item in the PR.
+7) Push + PR:
 ```bash
 git push -u origin sync/upstream-main-$(date +%Y%m%d)
 gh pr create --repo karlorz/cmux --base main --head sync/upstream-main-$(date +%Y%m%d) --fill
 ```
-7) Summarize changes for reviewers:
+8) Summarize changes for reviewers:
 - Note notable upstream changes pulled in, key conflicts and decisions, and any follow-up fixes needed (e.g., TODOs you left to keep fork behavior).
+- Include the Morph -> PVE-LXC parity report summary in the PR description.
 - If follow-ups are required, add a short checklist in the PR description.
 
 # Conflict rules
@@ -59,9 +76,15 @@ gh pr create --repo karlorz/cmux --base main --head sync/upstream-main-$(date +%
 - Read `REVIEW.md` early (before resolving conflicts) and re-scan before opening the PR.
 - Apply the relevant sections (TypeScript/Convex/Rust/Swift/general) to any manual edits you make during the merge.
 - If you intentionally keep a known issue or defer cleanup, call it out explicitly in the PR description with a short checklist.
+- Treat provider parity as a review gate: call out Morph-only changes that could impact PVE-LXC behavior, even when code still compiles.
 
 # PR checklist
 - Merge commit present (no rebase).
 - Conflicts resolved per rules above.
 - `bun check` passes.
+- Morph -> PVE-LXC parity report included (or explicitly marked no-impact with evidence).
 - PR target: `karlorz/cmux:main`. Include a short summary of major upstream changes, conflict choices (especially if keeping fork code over upstream), and any follow-up items.
+
+# References
+- `.codex/skills/upstream-sync/references/morph-pve-parity.md`
+- `.codex/skills/upstream-sync/scripts/print-parity-report.sh`
