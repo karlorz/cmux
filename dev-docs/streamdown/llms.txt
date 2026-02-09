@@ -1,0 +1,579 @@
+# Streamdown
+
+Streamdown is a React component library that serves as a drop-in replacement for `react-markdown`, specifically designed for AI-powered streaming applications. It intelligently handles the unique challenges that arise when Markdown content is tokenized and streamed in real-time from AI models, such as incomplete syntax, partial code blocks, and unterminated links. The library provides seamless formatting even with incomplete Markdown blocks, ensuring a smooth user experience during content streaming.
+
+The monorepo contains the core `streamdown` package along with several plugin packages (`@streamdown/code`, `@streamdown/math`, `@streamdown/mermaid`, `@streamdown/cjk`) and a supporting utility package called `remend` that handles incomplete Markdown completion. Built with performance in mind, Streamdown uses memoized rendering, processor caching, and optimized string operations to efficiently handle real-time streaming updates.
+
+---
+
+## Streamdown Component
+
+The main `Streamdown` component renders Markdown content with streaming-optimized features, including automatic completion of incomplete syntax, block-based rendering for efficient updates, and support for various plugins.
+
+```tsx
+import { Streamdown } from 'streamdown';
+import { code } from '@streamdown/code';
+import { mermaid } from '@streamdown/mermaid';
+import { math } from '@streamdown/math';
+import { cjk } from '@streamdown/cjk';
+import 'katex/dist/katex.min.css';
+
+export default function ChatMessage({ content, isStreaming }) {
+  return (
+    <Streamdown
+      plugins={{ code, mermaid, math, cjk }}
+      isAnimating={isStreaming}
+      caret="block"
+      mode="streaming"
+      parseIncompleteMarkdown={true}
+      shikiTheme={['github-light', 'github-dark']}
+      controls={{
+        table: true,
+        code: true,
+        mermaid: {
+          download: true,
+          copy: true,
+          fullscreen: true,
+          panZoom: true,
+        },
+      }}
+      className="prose dark:prose-invert"
+    >
+      {content}
+    </Streamdown>
+  );
+}
+```
+
+---
+
+## Basic Usage with AI SDK
+
+Streamdown integrates seamlessly with the Vercel AI SDK for building chat applications with real-time streaming Markdown rendering.
+
+```tsx
+'use client';
+
+import { useChat } from '@ai-sdk/react';
+import { Streamdown } from 'streamdown';
+import { code } from '@streamdown/code';
+import { mermaid } from '@streamdown/mermaid';
+
+export default function ChatPage() {
+  const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat();
+
+  return (
+    <div className="flex flex-col h-screen">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {messages.map((message) => (
+          <div key={message.id}>
+            <Streamdown
+              plugins={{ code, mermaid }}
+              isAnimating={isLoading && message.role === 'assistant'}
+              caret={message.role === 'assistant' ? 'block' : undefined}
+            >
+              {message.content}
+            </Streamdown>
+          </div>
+        ))}
+      </div>
+      <form onSubmit={handleSubmit} className="p-4 border-t">
+        <input
+          value={input}
+          onChange={handleInputChange}
+          placeholder="Ask me anything..."
+          className="w-full px-4 py-2 border rounded-lg"
+          disabled={isLoading}
+        />
+      </form>
+    </div>
+  );
+}
+```
+
+---
+
+## Static Mode
+
+Static mode is optimized for rendering pre-generated Markdown content like blog posts or documentation, where streaming features are unnecessary.
+
+```tsx
+import { Streamdown } from 'streamdown';
+import { code } from '@streamdown/code';
+import { mermaid } from '@streamdown/mermaid';
+
+export default function BlogPost({ content }: { content: string }) {
+  return (
+    <Streamdown
+      mode="static"
+      plugins={{ code, mermaid }}
+      shikiTheme={['github-light', 'github-dark']}
+      mermaid={{ config: { theme: 'neutral' } }}
+    >
+      {content}
+    </Streamdown>
+  );
+}
+```
+
+---
+
+## remend - Incomplete Markdown Completion
+
+The `remend` package is a standalone utility that intelligently completes unterminated Markdown syntax during streaming. It auto-closes bold, italic, code, links, images, strikethrough, and math blocks.
+
+```typescript
+import remend from 'remend';
+
+// Complete incomplete bold text
+const partialBold = 'This is **bold text';
+const completedBold = remend(partialBold);
+// Result: "This is **bold text**"
+
+// Complete incomplete link
+const partialLink = 'Check out [this link](https://exampl';
+const completedLink = remend(partialLink);
+// Result: "Check out [this link](streamdown:incomplete-link)"
+
+// Complete incomplete code block
+const partialCode = 'Here is `some code';
+const completedCode = remend(partialCode);
+// Result: "Here is `some code`"
+
+// Disable specific completions
+const customCompleted = remend(partialBold, {
+  links: false,
+  katex: false,
+  bold: true,
+  italic: true,
+});
+
+// Use text-only mode for incomplete links (no placeholder URL)
+const textOnlyLink = remend(partialLink, { linkMode: 'text-only' });
+// Result: "Check out this link"
+```
+
+---
+
+## Custom remend Handlers
+
+Extend remend with custom handlers to complete your own Markdown-like syntax patterns during streaming.
+
+```typescript
+import remend, { type RemendHandler, isWithinCodeBlock } from 'remend';
+
+const jokeHandler: RemendHandler = {
+  name: 'joke',
+  handle: (text) => {
+    // Skip if we're inside a code block
+    if (isWithinCodeBlock(text, text.length - 1)) {
+      return text;
+    }
+    // Complete <<<JOKE>>> blocks that aren't closed
+    const match = text.match(/<<<JOKE>>>([^<]*)$/);
+    if (match && !text.endsWith('<<</JOKE>>>')) {
+      return `${text}<<</JOKE>>>`;
+    }
+    return text;
+  },
+  priority: 80, // Runs after most built-ins (0-70)
+};
+
+const content = 'Here is a joke: <<<JOKE>>>Why did the chicken';
+const result = remend(content, { handlers: [jokeHandler] });
+// Result: "Here is a joke: <<<JOKE>>>Why did the chicken<<</JOKE>>>"
+```
+
+---
+
+## @streamdown/code - Syntax Highlighting Plugin
+
+The code plugin provides syntax highlighting for code blocks using Shiki, supporting 200+ programming languages with lazy loading and dual theme support.
+
+```tsx
+import { Streamdown } from 'streamdown';
+import { code, createCodePlugin } from '@streamdown/code';
+
+// Use default configuration
+<Streamdown plugins={{ code }}>
+  {`\`\`\`typescript
+const greeting: string = "Hello, World!";
+console.log(greeting);
+\`\`\``}
+</Streamdown>
+
+// Custom theme configuration
+const customCode = createCodePlugin({
+  themes: ['one-dark-pro', 'one-light'], // [light, dark]
+});
+
+<Streamdown plugins={{ code: customCode }}>
+  {markdown}
+</Streamdown>
+
+// Check language support
+console.log(code.supportsLanguage('typescript')); // true
+console.log(code.getSupportedLanguages()); // ['javascript', 'typescript', ...]
+console.log(code.getThemes()); // ['github-light', 'github-dark']
+```
+
+---
+
+## @streamdown/math - LaTeX Math Rendering Plugin
+
+The math plugin renders mathematical expressions using KaTeX, supporting both inline and block math syntax.
+
+```tsx
+import { Streamdown } from 'streamdown';
+import { math, createMathPlugin } from '@streamdown/math';
+import 'katex/dist/katex.min.css';
+
+// Use default configuration (double dollar for block math only)
+<Streamdown plugins={{ math }}>
+  {`The quadratic formula is $$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$
+
+Einstein's famous equation: $$E = mc^2$$`}
+</Streamdown>
+
+// Enable single dollar sign for inline math
+const customMath = createMathPlugin({
+  singleDollarTextMath: true, // Enable $...$ syntax
+  errorColor: '#ff0000', // Custom error color
+});
+
+<Streamdown plugins={{ math: customMath }}>
+  {`Inline math $x^2 + y^2 = r^2$ in a sentence.`}
+</Streamdown>
+
+// Get CSS path for manual import
+const cssPath = math.getStyles();
+// Returns: "katex/dist/katex.min.css"
+```
+
+---
+
+## @streamdown/mermaid - Diagram Plugin
+
+The mermaid plugin renders Mermaid diagrams with interactive controls including fullscreen, download, and copy functionality.
+
+```tsx
+import { Streamdown } from 'streamdown';
+import { mermaid, createMermaidPlugin } from '@streamdown/mermaid';
+
+// Use default configuration
+<Streamdown plugins={{ mermaid }}>
+  {`\`\`\`mermaid
+graph LR
+    A[Start] --> B{Decision}
+    B -->|Yes| C[Action 1]
+    B -->|No| D[Action 2]
+    C --> E[End]
+    D --> E
+\`\`\``}
+</Streamdown>
+
+// Custom Mermaid configuration
+const customMermaid = createMermaidPlugin({
+  config: {
+    theme: 'dark',
+    fontFamily: 'monospace',
+    securityLevel: 'strict',
+  },
+});
+
+<Streamdown
+  plugins={{ mermaid: customMermaid }}
+  mermaid={{
+    config: { theme: 'neutral' },
+    errorComponent: ({ error, chart, retry }) => (
+      <div className="text-red-500">
+        <p>Error: {error}</p>
+        <button onClick={retry}>Retry</button>
+      </div>
+    ),
+  }}
+>
+  {markdown}
+</Streamdown>
+```
+
+---
+
+## @streamdown/cjk - CJK Language Support Plugin
+
+The CJK plugin improves handling of Chinese, Japanese, and Korean text with proper emphasis formatting and autolink boundary handling.
+
+```tsx
+import { Streamdown } from 'streamdown';
+import { cjk, createCjkPlugin } from '@streamdown/cjk';
+
+// Use default configuration
+<Streamdown plugins={{ cjk }}>
+  {`这是**粗体**文本和*斜体*文本。
+
+日本語の**強調**テキスト。
+
+한국어 **굵은 글씨** 테스트。
+
+Visit https://example.com。这是句号。`}
+</Streamdown>
+
+// The plugin provides remark plugins for proper ordering
+const cjkPlugin = createCjkPlugin();
+console.log(cjkPlugin.remarkPluginsBefore); // Plugins that run BEFORE remarkGfm
+console.log(cjkPlugin.remarkPluginsAfter);  // Plugins that run AFTER remarkGfm
+```
+
+---
+
+## Custom Components
+
+Override default HTML element rendering with custom React components for full control over Markdown output styling.
+
+```tsx
+import { Streamdown } from 'streamdown';
+import { code } from '@streamdown/code';
+
+const customComponents = {
+  h1: ({ children, ...props }) => (
+    <h1 className="text-4xl font-bold text-blue-600 mb-4" {...props}>
+      {children}
+    </h1>
+  ),
+  h2: ({ children, ...props }) => (
+    <h2 className="text-2xl font-semibold text-gray-800 mb-3" {...props}>
+      {children}
+    </h2>
+  ),
+  a: ({ href, children, ...props }) => (
+    <a
+      href={href}
+      className="text-blue-500 hover:underline"
+      target="_blank"
+      rel="noopener noreferrer"
+      {...props}
+    >
+      {children}
+    </a>
+  ),
+  blockquote: ({ children, ...props }) => (
+    <blockquote
+      className="border-l-4 border-gray-300 pl-4 italic text-gray-600"
+      {...props}
+    >
+      {children}
+    </blockquote>
+  ),
+};
+
+<Streamdown
+  plugins={{ code }}
+  components={customComponents}
+>
+  {`# Custom Heading
+
+> This is a styled blockquote
+
+Check out [this link](https://example.com)`}
+</Streamdown>
+```
+
+---
+
+## Custom Allowed Tags
+
+Allow custom HTML tags through sanitization for rendering specialized elements like references or mentions in AI-generated content.
+
+```tsx
+import { Streamdown } from 'streamdown';
+
+// Define custom tags with their allowed attributes
+const allowedTags = {
+  'ref': ['id', 'type', 'data-source'],
+  'mention': ['user-id', 'display-name'],
+  'custom-widget': ['config'],
+};
+
+// Define custom components to render the tags
+const components = {
+  ref: ({ id, type, ...props }) => (
+    <span className="bg-blue-100 px-1 rounded" data-ref-id={id} {...props}>
+      [Reference: {id}]
+    </span>
+  ),
+  mention: ({ 'user-id': userId, 'display-name': name, ...props }) => (
+    <span className="text-blue-600 font-medium" {...props}>
+      @{name}
+    </span>
+  ),
+};
+
+<Streamdown
+  allowedTags={allowedTags}
+  components={components}
+>
+  {`Check <ref id="doc-123" type="document">this reference</ref> and
+contact <mention user-id="42" display-name="John">@John</mention>.`}
+</Streamdown>
+```
+
+---
+
+## Customizing Built-in Plugins
+
+Extend or replace the default Remark and Rehype plugins for custom Markdown processing.
+
+```tsx
+import {
+  Streamdown,
+  defaultRemarkPlugins,
+  defaultRehypePlugins
+} from 'streamdown';
+import remarkEmoji from 'remark-emoji';
+import rehypeSlug from 'rehype-slug';
+
+// Add custom plugins to defaults
+<Streamdown
+  remarkPlugins={[
+    ...Object.values(defaultRemarkPlugins),
+    remarkEmoji, // Add emoji support
+  ]}
+  rehypePlugins={[
+    ...Object.values(defaultRehypePlugins),
+    rehypeSlug, // Add IDs to headings
+  ]}
+>
+  {`# Hello :wave:
+
+This has emoji support and heading IDs!`}
+</Streamdown>
+
+// Access default plugins individually
+// defaultRemarkPlugins.gfm = [remarkGfm, {}]
+// defaultRehypePlugins.raw = rehypeRaw
+// defaultRehypePlugins.sanitize = [rehypeSanitize, {}]
+// defaultRehypePlugins.harden = [harden, { allowedImagePrefixes: ['*'], ... }]
+```
+
+---
+
+## Link Safety Configuration
+
+Configure link safety features to protect users from potentially malicious URLs with custom validation and modal rendering.
+
+```tsx
+import { Streamdown } from 'streamdown';
+
+const trustedDomains = ['example.com', 'trusted-site.org'];
+
+<Streamdown
+  linkSafety={{
+    enabled: true,
+    onLinkCheck: async (url) => {
+      try {
+        const urlObj = new URL(url);
+        return trustedDomains.includes(urlObj.hostname);
+      } catch {
+        return false;
+      }
+    },
+    renderModal: ({ url, isOpen, onClose, onConfirm }) => (
+      isOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center">
+          <div className="bg-white p-6 rounded-lg max-w-md">
+            <h2 className="text-lg font-bold mb-2">External Link Warning</h2>
+            <p className="mb-4">You are about to visit: {url}</p>
+            <div className="flex gap-2">
+              <button onClick={onClose} className="px-4 py-2 border rounded">
+                Cancel
+              </button>
+              <button onClick={onConfirm} className="px-4 py-2 bg-blue-500 text-white rounded">
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )
+    ),
+  }}
+>
+  {markdown}
+</Streamdown>
+```
+
+---
+
+## Using remend with Unified Pipeline
+
+Integrate remend as a preprocessor in a custom unified/remark processing pipeline for advanced Markdown transformations.
+
+```typescript
+import remend from 'remend';
+import { unified } from 'unified';
+import remarkParse from 'remark-parse';
+import remarkGfm from 'remark-gfm';
+import remarkRehype from 'remark-rehype';
+import rehypeStringify from 'rehype-stringify';
+
+async function processStreamingMarkdown(streamedMarkdown: string): Promise<string> {
+  // Step 1: Run remend first to complete incomplete syntax
+  const completedMarkdown = remend(streamedMarkdown, {
+    bold: true,
+    italic: true,
+    links: true,
+    inlineCode: true,
+    katex: true,
+    linkMode: 'protocol',
+  });
+
+  // Step 2: Process with unified pipeline
+  const file = await unified()
+    .use(remarkParse)
+    .use(remarkGfm)
+    .use(remarkRehype)
+    .use(rehypeStringify)
+    .process(completedMarkdown);
+
+  return String(file);
+}
+
+// Example usage
+const partial = 'This is **incomplete bold and a [link](https://';
+const html = await processStreamingMarkdown(partial);
+// Output: "<p>This is <strong>incomplete bold and a <a href=\"streamdown:incomplete-link\">link</a></strong></p>"
+```
+
+---
+
+## Tailwind CSS Configuration
+
+Configure Tailwind CSS to include Streamdown's styles for proper rendering of all components.
+
+```css
+/* globals.css - Tailwind v4 */
+@import "tailwindcss";
+@source "../node_modules/streamdown/dist/*.js";
+```
+
+```javascript
+// tailwind.config.js - Tailwind v3
+module.exports = {
+  content: [
+    './app/**/*.{js,ts,jsx,tsx,mdx}',
+    './components/**/*.{js,ts,jsx,tsx,mdx}',
+    './node_modules/streamdown/dist/*.js',
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+};
+```
+
+---
+
+## Summary
+
+Streamdown is purpose-built for AI chat applications that stream Markdown content in real-time. Its primary use cases include building conversational AI interfaces with the Vercel AI SDK, rendering documentation with code syntax highlighting and diagrams, displaying mathematical equations in educational applications, and supporting multilingual content with CJK language optimization. The library excels at handling the edge cases that arise during streaming, such as incomplete formatting markers, partial code blocks, and unterminated links.
+
+Integration patterns typically involve importing the core `Streamdown` component with desired plugins, configuring streaming-specific props like `isAnimating` and `caret`, and optionally customizing components for brand-specific styling. For static content rendering, the `mode="static"` option bypasses streaming optimizations for better performance. The modular plugin architecture allows developers to include only the features they need, keeping bundle sizes minimal while providing comprehensive Markdown rendering capabilities for modern React applications.
