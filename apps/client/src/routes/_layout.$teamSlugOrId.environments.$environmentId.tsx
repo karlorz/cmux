@@ -7,6 +7,7 @@ import { TitleBar } from "@/components/TitleBar";
 import { WorkspaceSetupPanel } from "@/components/WorkspaceSetupPanel";
 import { queryClient } from "@/query-client";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
+import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
@@ -42,6 +43,8 @@ import { formatDistanceToNow } from "date-fns";
 import {
   ArrowLeft,
   Calendar,
+  ChevronDown,
+  ChevronRight,
   Code,
   GitBranch,
   KeyRound,
@@ -162,6 +165,18 @@ function EnvironmentDetailsPage() {
   );
   const [envVars, setEnvVars] = useState<EnvVar[]>(() => ensureInitialEnvVars());
   const hasInitializedEnvVarsRef = useRef(false);
+  const [isEnvVarsExpanded, setIsEnvVarsExpanded] = useState(() => {
+    const saved = localStorage.getItem("env-vars-expanded");
+    return saved === null ? true : saved === "true";
+  });
+
+  const toggleEnvVarsExpanded = useCallback(() => {
+    setIsEnvVarsExpanded((prev) => {
+      const next = !prev;
+      localStorage.setItem("env-vars-expanded", String(next));
+      return next;
+    });
+  }, []);
 
   const handleRenameStart = () => {
     updateEnvironmentMutation.reset();
@@ -281,6 +296,11 @@ function EnvironmentDetailsPage() {
 
   const hasEnvVarsChanges = currentEnvContent !== normalizedServerEnvContent;
 
+  const envVarsCount = useMemo(
+    () => envVars.filter((row) => row.name.trim().length > 0).length,
+    [envVars]
+  );
+
   const handleStartEditingPorts = () => {
     setPortsDraft(environment.exposedPorts ?? []);
     setPortInput("");
@@ -389,11 +409,6 @@ function EnvironmentDetailsPage() {
       toast.error(message);
     }
   }, [currentEnvContent, environmentId, envVarsQuery, teamSlugOrId, updateEnvVarsMutation]);
-
-  const handleDiscardEnvVars = useCallback(() => {
-    hasInitializedEnvVarsRef.current = false;
-    void envVarsQuery.refetch();
-  }, [envVarsQuery]);
 
   const handleAddPort = () => {
     if (portInput.trim().length === 0) {
@@ -1050,63 +1065,113 @@ function EnvironmentDetailsPage() {
 
               {/* Environment Variables */}
               <div>
-                <div className="mb-2">
-                  <div className="flex items-center gap-2">
-                    <KeyRound className="w-4 h-4 text-neutral-500" />
-                    <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                      Environment Variables
-                    </h3>
-                  </div>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-500 mt-1">
-                    Stored securely and injected when your setup script runs.
-                    Paste directly from .env files.
-                  </p>
-                </div>
-                {envVarsQuery.isLoading ? (
-                  <div className="flex items-center gap-2 text-sm text-neutral-500">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Loading...
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <EnvVarsKeyValueGrid
-                      envVars={envVars}
-                      onUpdate={updateEnvVars}
-                      disabled={updateEnvVarsMutation.isPending}
+                {/* Static title row - matches Maintenance Script / Exposed Ports */}
+                <div className="mb-2 flex items-center gap-2">
+                  <KeyRound className="w-4 h-4 text-neutral-500" />
+                  <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                    Environment Variables
+                  </h3>
+                  {envVarsQuery.isLoading && (
+                    <Loader2
+                      className="w-3.5 h-3.5 text-neutral-500 animate-spin"
+                      aria-label="Loading"
                     />
-                    <div className="flex items-center justify-end gap-2 pt-1">
-                      {hasEnvVarsChanges && !updateEnvVarsMutation.isPending && (
-                        <span className="text-xs text-amber-600 dark:text-amber-400">
-                          Unsaved changes
+                  )}
+                </div>
+
+                {/* Collapsible row - matches "Configure workspace for..." */}
+                <div className="mt-2 rounded-2xl relative">
+                  {/* Animated border overlay */}
+                  <div
+                    className={cn(
+                      "absolute inset-0 rounded-2xl border pointer-events-none",
+                      isEnvVarsExpanded
+                        ? "border-neutral-200 dark:border-neutral-700"
+                        : "border-transparent"
+                    )}
+                    style={{
+                      clipPath: isEnvVarsExpanded
+                        ? "inset(0 0 0 0)"
+                        : "inset(0 0 100% 0)",
+                    }}
+                  />
+
+                  {/* Collapsible header */}
+                  <button
+                    type="button"
+                    onClick={toggleEnvVarsExpanded}
+                    className="w-full flex items-start justify-between gap-2 text-left px-2 py-1.5"
+                  >
+                    <div className="inline-flex items-center gap-1.5 pt-1 font-medium text-xs text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200">
+                      {isEnvVarsExpanded ? (
+                        <ChevronDown className="w-4 h-4 transition-transform duration-300" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4 transition-transform duration-300" />
+                      )}
+                      <span>Configure</span>
+                      {!isEnvVarsExpanded && envVarsCount > 0 && (
+                        <span className="text-neutral-500 dark:text-neutral-500">
+                          ({envVarsCount})
                         </span>
                       )}
-                      {hasEnvVarsChanges && (
-                        <button
-                          type="button"
-                          onClick={handleDiscardEnvVars}
-                          disabled={updateEnvVarsMutation.isPending}
-                          className={cn(
-                            "inline-flex h-7 items-center justify-center rounded-md border border-neutral-300 px-3 text-xs font-medium text-neutral-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-neutral-700 dark:text-neutral-300",
-                            !updateEnvVarsMutation.isPending &&
-                              "hover:bg-neutral-100 dark:hover:bg-neutral-900"
-                          )}
-                        >
-                          Discard
-                        </button>
+                    </div>
+                  </button>
+
+                {/* Collapsible content */}
+                <div
+                  className={cn(
+                    "overflow-hidden",
+                    isEnvVarsExpanded ? "max-h-[2000px]" : "max-h-0"
+                  )}
+                >
+                  <div
+                    style={{
+                      clipPath: isEnvVarsExpanded
+                        ? "inset(0 0 0 0)"
+                        : "inset(0 0 100% 0)",
+                      opacity: isEnvVarsExpanded ? 1 : 0,
+                    }}
+                  >
+                    <div className="pl-[30px] pr-2 pb-1">
+                      {envVarsQuery.isLoading ? (
+                        <p className="mt-3 text-[11px] text-neutral-500 dark:text-neutral-400">
+                          Loading saved configuration...
+                        </p>
+                      ) : (
+                        <div className="mt-1.5">
+                          <EnvVarsKeyValueGrid
+                            envVars={envVars}
+                            onUpdate={updateEnvVars}
+                            disabled={updateEnvVarsMutation.isPending}
+                            title="Environment variables"
+                            description="Stored securely and injected when your setup script runs. Paste directly from .env files."
+                            footerRight={
+                              <div className="flex items-center gap-2">
+                                {hasEnvVarsChanges && !updateEnvVarsMutation.isPending && (
+                                  <span className="text-[11px] text-amber-600 dark:text-amber-400">
+                                    Unsaved changes
+                                  </span>
+                                )}
+                                <Button
+                                  size="sm"
+                                  variant="default"
+                                  className="!h-7 focus-visible:ring-offset-1 focus-visible:ring-offset-white dark:focus-visible:ring-offset-neutral-900"
+                                  onClick={handleSaveEnvVars}
+                                  disabled={
+                                    !hasEnvVarsChanges || updateEnvVarsMutation.isPending
+                                  }
+                                >
+                                  {updateEnvVarsMutation.isPending ? "Saving..." : "Save setup"}
+                                </Button>
+                              </div>
+                            }
+                          />
+                        </div>
                       )}
-                      <button
-                        type="button"
-                        onClick={handleSaveEnvVars}
-                        disabled={
-                          !hasEnvVarsChanges || updateEnvVarsMutation.isPending
-                        }
-                        className="inline-flex h-7 items-center justify-center rounded-md bg-neutral-900 px-3 text-xs font-medium text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
-                      >
-                        {updateEnvVarsMutation.isPending ? "Saving..." : "Save"}
-                      </button>
                     </div>
                   </div>
-                )}
+                </div>
+                </div>
               </div>
 
               {/* Per-Repository Workspace Configuration */}

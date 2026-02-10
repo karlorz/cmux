@@ -9,12 +9,18 @@ type EnvVarsKeyValueGridProps = {
   envVars: EnvVar[];
   onUpdate: (updater: (prev: EnvVar[]) => EnvVar[]) => void;
   disabled?: boolean;
+  title?: string;
+  description?: string;
+  footerRight?: React.ReactNode;
 };
 
 export function EnvVarsKeyValueGrid({
   envVars,
   onUpdate,
   disabled = false,
+  title,
+  description,
+  footerRight,
 }: EnvVarsKeyValueGridProps) {
   const [areEnvValuesHidden, setAreEnvValuesHidden] = useState(true);
   const [activeEnvValueIndex, setActiveEnvValueIndex] = useState<number | null>(
@@ -64,11 +70,23 @@ export function EnvVarsKeyValueGrid({
   );
 
   return (
-    <div className="space-y-1.5" onPasteCapture={handleEnvPaste}>
-      <div className="flex flex-wrap items-center justify-end gap-2">
+    <div className="space-y-1 pt-1" onPasteCapture={handleEnvPaste}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-col gap-0.5">
+          {title && (
+            <p className="text-xs font-medium text-neutral-900 dark:text-neutral-100">
+              {title}
+            </p>
+          )}
+          {description && (
+            <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+              {description}
+            </p>
+          )}
+        </div>
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800"
+          className="inline-flex items-center gap-1 rounded-md border border-neutral-200 bg-white px-2 py-1 text-[11px] font-medium text-neutral-700 transition-colors hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
           onClick={() => {
             setActiveEnvValueIndex(null);
             setAreEnvValuesHidden((previous) => !previous);
@@ -97,7 +115,7 @@ export function EnvVarsKeyValueGrid({
 
       <div className="space-y-1.5">
         <div
-          className="grid gap-2 text-xs font-medium text-neutral-600 dark:text-neutral-400 items-center"
+          className="grid gap-2 text-[11px] font-medium text-neutral-600 dark:text-neutral-400 items-center"
           style={{ gridTemplateColumns: "3fr 7fr 36px" }}
         >
           <span>Key</span>
@@ -189,10 +207,10 @@ export function EnvVarsKeyValueGrid({
         </div>
       </div>
 
-      <div className="flex items-start pt-1">
+      <div className="flex items-start justify-between gap-2 pt-1 pb-1">
         <button
           type="button"
-          className="inline-flex items-center gap-1 text-xs text-neutral-500 transition-colors hover:text-neutral-700 disabled:cursor-not-allowed disabled:opacity-60 dark:text-neutral-400 dark:hover:text-neutral-200"
+          className="inline-flex items-center gap-1 text-[11px] text-neutral-500 transition-colors hover:text-neutral-700 disabled:cursor-not-allowed disabled:opacity-60 dark:text-neutral-400 dark:hover:text-neutral-200"
           onClick={() =>
             onUpdate((prev) => [
               ...prev,
@@ -208,6 +226,7 @@ export function EnvVarsKeyValueGrid({
           <Plus className="h-3.5 w-3.5" />
           Add variable
         </button>
+        {footerRight}
       </div>
     </div>
   );
