@@ -10,6 +10,7 @@ import net, { type Socket } from "node:net";
 import tls, { type TLSSocket } from "node:tls";
 import { randomBytes, createHash } from "node:crypto";
 import { pipeline as streamPipeline } from "node:stream/promises";
+import { Transform as TransformStream } from "node:stream";
 import { URL } from "node:url";
 import type { Session, WebContents } from "electron";
 import { isLoopbackHostname } from "@cmux/shared";
@@ -114,6 +115,7 @@ interface ProxyContext {
   session: Session;
   webContentsId: number;
   persistKey?: string;
+  wsOverrideScript?: string; // HTML <script> tag for injection into HTML responses
 }
 
 interface CmuxProxyMetadata {
@@ -213,6 +215,141 @@ function proxyWarn(event: string, data?: Record<string, unknown>): void {
   } catch (error) {
     console.error("Failed to log preview proxy", error);
   }
+}
+
+/**
+ * Check if response Content-Type indicates HTML
+ */
+function isHtmlResponse(
+  headers: http.IncomingHttpHeaders | http2.IncomingHttpHeaders
+): boolean {
+  const contentType = headers["content-type"];
+  if (!contentType) {
+    return false;
+  }
+  const value = Array.isArray(contentType) ? contentType[0] : contentType;
+  return value?.toLowerCase().includes("text/html") ?? false;
+}
+
+/**
+ * Build the WebSocket override script for HTML injection.
+ * Returns both scriptTag (for HTML injection) and rawScript (for executeJavaScript fallback).
+ */
+function buildWsOverrideScript(
+  proxyHostBase: string,
+  proxyIsSecure: boolean
+): { scriptTag: string; rawScript: string } {
+  const rawScript = `
+(function() {
+  if (window.__cmuxWebSocketOverrideInstalled) return;
+  window.__cmuxWebSocketOverrideInstalled = true;
+
+  var proxyHostBase = ${JSON.stringify(proxyHostBase)};
+  var proxyIsSecure = ${JSON.stringify(proxyIsSecure)};
+  var loopbackHosts = ['localhost', '127.0.0.1', '0.0.0.0', '::1'];
+
+  function isLoopback(hostname) {
+    if (loopbackHosts.indexOf(hostname) >= 0) return true;
+    if (hostname.indexOf('127.') === 0) return true;
+    return false;
+  }
+
+  function rewriteWsUrl(url) {
+    try {
+      var parsed = new URL(url);
+      if (!isLoopback(parsed.hostname)) return url;
+      // Replace port in proxyHostBase with the requested port
+      var targetHost = proxyHostBase.replace(/^port-\\d+/, 'port-' + (parsed.port || '80'));
+      var wsProtocol = proxyIsSecure ? 'wss:' : 'ws:';
+      var newUrl = wsProtocol + '//' + targetHost + parsed.pathname + parsed.search;
+      console.log('[cmux-ws-override] Rewriting:', url, '->', newUrl);
+      return newUrl;
+    } catch (e) {
+      console.error('[cmux-ws-override] Error rewriting URL:', e);
+      return url;
+    }
+  }
+
+  var OriginalWebSocket = window.WebSocket;
+  window.WebSocket = function(url, protocols) {
+    var newUrl = typeof url === 'string' ? rewriteWsUrl(url) : url;
+    if (protocols !== undefined) {
+      return new OriginalWebSocket(newUrl, protocols);
+    }
+    return new OriginalWebSocket(newUrl);
+  };
+  window.WebSocket.prototype = OriginalWebSocket.prototype;
+  window.WebSocket.CONNECTING = OriginalWebSocket.CONNECTING;
+  window.WebSocket.OPEN = OriginalWebSocket.OPEN;
+  window.WebSocket.CLOSING = OriginalWebSocket.CLOSING;
+  window.WebSocket.CLOSED = OriginalWebSocket.CLOSED;
+
+  console.log('[cmux-ws-override] WebSocket override installed, proxyHostBase:', proxyHostBase);
+})();
+`;
+  const scriptTag = `<script data-cmux-injected="true">${rawScript}</script>`;
+  return { scriptTag, rawScript };
+}
+
+/**
+ * Create a Transform stream that injects a script tag after <head> in HTML responses.
+ * Falls back to passthrough if no <head> found within 64KB.
+ */
+function createHtmlInjectionTransform(scriptTag: string): TransformStream {
+  let buffer = Buffer.alloc(0);
+  let injected = false;
+  const MAX_BUFFER_SIZE = 64 * 1024; // 64KB
+
+  return new TransformStream({
+    transform(chunk: Buffer, _encoding, callback) {
+      if (injected) {
+        // Already injected, pass through
+        callback(null, chunk);
+        return;
+      }
+
+      buffer = Buffer.concat([buffer, chunk]);
+
+      // Look for <head> tag (with optional attributes)
+      const headMatch = buffer.toString("utf8").match(/<head(\s[^>]*)?>/i);
+      if (headMatch && headMatch.index !== undefined) {
+        // Found <head>, inject script after it
+        const headEndIndex = headMatch.index + headMatch[0].length;
+        const beforeHead = buffer.subarray(0, headEndIndex);
+        const afterHead = buffer.subarray(headEndIndex);
+
+        injected = true;
+
+        // Push: before <head>, the <head> tag, our script, then after
+        this.push(beforeHead);
+        this.push(Buffer.from(scriptTag, "utf8"));
+        this.push(afterHead);
+        buffer = Buffer.alloc(0);
+        callback();
+        return;
+      }
+
+      // If buffer exceeds max size without finding <head>, flush and pass through
+      if (buffer.length > MAX_BUFFER_SIZE) {
+        injected = true; // Mark as done to avoid further buffering
+        this.push(buffer);
+        buffer = Buffer.alloc(0);
+        callback();
+        return;
+      }
+
+      // Continue buffering
+      callback();
+    },
+
+    flush(callback) {
+      if (buffer.length > 0) {
+        // Flush remaining buffer (no <head> found)
+        this.push(buffer);
+      }
+      callback();
+    },
+  });
 }
 
 export function isTaskRunPreviewPersistKey(
@@ -337,71 +474,36 @@ export async function configurePreviewProxyForView(
 
   webContents.once("destroyed", cleanup);
 
-  // Inject WebSocket override script on each page load
+  // Inject WebSocket override script
   // Chromium's session.setProxy() doesn't proxy ws:// URLs through HTTP proxies,
-  // so we override the WebSocket constructor in JavaScript to rewrite localhost URLs
+  // so we override the WebSocket constructor in JavaScript to rewrite localhost URLs.
+  //
+  // Primary injection: Via HTML response modification at the proxy level (stored in context.wsOverrideScript).
+  // This ensures the script runs BEFORE page scripts like Convex client.
+  //
+  // Fallback injection: Via executeJavaScript on dom-ready and SPA navigations.
+  // This covers cases where proxy injection doesn't apply (e.g., non-HTML responses, already loaded pages).
   if (route.cmuxProxyOrigin) {
     const proxyOrigin = new URL(route.cmuxProxyOrigin);
     const proxyHostBase = proxyOrigin.hostname; // e.g., "port-39379-pvelxc-5a68172e.alphasolves.com"
     const proxyIsSecure = proxyOrigin.protocol === "https:";
 
+    // Build the script for both HTML injection and JS fallback
+    const { scriptTag, rawScript } = buildWsOverrideScript(proxyHostBase, proxyIsSecure);
+
+    // Store scriptTag in context for HTML response injection by the proxy
+    context.wsOverrideScript = scriptTag;
+
     const injectWebSocketOverride = () => {
-      const script = `
-        (function() {
-          if (window.__cmuxWebSocketOverrideInstalled) return;
-          window.__cmuxWebSocketOverrideInstalled = true;
-
-          var proxyHostBase = ${JSON.stringify(proxyHostBase)};
-          var proxyIsSecure = ${JSON.stringify(proxyIsSecure)};
-          var loopbackHosts = ['localhost', '127.0.0.1', '0.0.0.0', '::1'];
-
-          function isLoopback(hostname) {
-            if (loopbackHosts.indexOf(hostname) >= 0) return true;
-            if (hostname.indexOf('127.') === 0) return true;
-            return false;
-          }
-
-          function rewriteWsUrl(url) {
-            try {
-              var parsed = new URL(url);
-              if (!isLoopback(parsed.hostname)) return url;
-              // Replace port in proxyHostBase with the requested port
-              var targetHost = proxyHostBase.replace(/^port-\\d+/, 'port-' + (parsed.port || '80'));
-              var wsProtocol = proxyIsSecure ? 'wss:' : 'ws:';
-              var newUrl = wsProtocol + '//' + targetHost + parsed.pathname + parsed.search;
-              console.log('[cmux-ws-override] Rewriting:', url, '->', newUrl);
-              return newUrl;
-            } catch (e) {
-              console.error('[cmux-ws-override] Error rewriting URL:', e);
-              return url;
-            }
-          }
-
-          var OriginalWebSocket = window.WebSocket;
-          window.WebSocket = function(url, protocols) {
-            var newUrl = typeof url === 'string' ? rewriteWsUrl(url) : url;
-            if (protocols !== undefined) {
-              return new OriginalWebSocket(newUrl, protocols);
-            }
-            return new OriginalWebSocket(newUrl);
-          };
-          window.WebSocket.prototype = OriginalWebSocket.prototype;
-          window.WebSocket.CONNECTING = OriginalWebSocket.CONNECTING;
-          window.WebSocket.OPEN = OriginalWebSocket.OPEN;
-          window.WebSocket.CLOSING = OriginalWebSocket.CLOSING;
-          window.WebSocket.CLOSED = OriginalWebSocket.CLOSED;
-
-          console.log('[cmux-ws-override] WebSocket override installed, proxyHostBase:', proxyHostBase);
-        })();
-      `;
-
-      webContents.executeJavaScript(script).catch((err) => {
+      // The __cmuxWebSocketOverrideInstalled guard prevents double installation
+      webContents.executeJavaScript(rawScript).catch((err) => {
         proxyWarn("websocket-override-inject-failed", { error: err });
       });
     };
 
-    // Inject on current page and on each navigation
-    webContents.on("did-finish-load", injectWebSocketOverride);
+    // Fallback: Inject via JS on dom-ready (earlier than did-finish-load)
+    // This covers SPA navigations and cases where HTML injection didn't apply
+    webContents.on("dom-ready", injectWebSocketOverride);
     webContents.on("did-navigate-in-page", injectWebSocketOverride);
 
     // Also inject immediately if page is already loaded
@@ -1178,6 +1280,11 @@ function forwardHttpRequestViaHttp1(
     const requestHeaders = buildHttp1Headers(clientReq.headers, target);
     const agent = secure ? HTTPS1_KEEP_ALIVE_AGENT : HTTP1_KEEP_ALIVE_AGENT;
 
+    // Strip Accept-Encoding when injecting to avoid decompression complexity
+    if (context.wsOverrideScript) {
+      deleteHeaderCaseInsensitive(requestHeaders.headers, "accept-encoding");
+    }
+
     const requestOptions = {
       protocol: secure ? "https:" : "http:",
       hostname: url.hostname,
@@ -1191,30 +1298,62 @@ function forwardHttpRequestViaHttp1(
 
     const httpModule = secure ? https : http;
     const proxyReq = httpModule.request(requestOptions, (proxyRes) => {
+      // Check if we should inject WebSocket override into HTML response
+      const shouldInject = context.wsOverrideScript && isHtmlResponse(proxyRes.headers);
+
       if (!clientRes.headersSent) {
+        const responseHeaders = { ...proxyRes.headers };
+
+        // Delete content-length and content-encoding for modified responses
+        if (shouldInject) {
+          delete responseHeaders["content-length"];
+          delete responseHeaders["content-encoding"];
+        }
+
         clientRes.writeHead(
           proxyRes.statusCode ?? 500,
           proxyRes.statusMessage ?? "",
-          proxyRes.headers
+          responseHeaders
         );
       }
-      void streamPipeline(proxyRes, clientRes)
-        .then(() => {
-          resolve();
-        })
-        .catch((pipelineError) => {
-          proxyWarn("http1-response-pipeline-error", {
-            error: pipelineError,
-            host: url.hostname,
+
+      if (shouldInject) {
+        // Inject the script into HTML response
+        const injector = createHtmlInjectionTransform(context.wsOverrideScript!);
+        void streamPipeline(proxyRes, injector, clientRes)
+          .then(() => {
+            resolve();
+          })
+          .catch((pipelineError) => {
+            proxyWarn("http1-response-pipeline-error", {
+              error: pipelineError,
+              host: url.hostname,
+              injecting: true,
+            });
+            if (!clientRes.writableEnded) {
+              clientRes.end();
+            }
+            resolve();
           });
-          if (!clientRes.headersSent) {
-            clientRes.writeHead(502);
-            clientRes.end("Bad Gateway");
-          } else if (!clientRes.writableEnded) {
-            clientRes.end();
-          }
-          resolve();
-        });
+      } else {
+        void streamPipeline(proxyRes, clientRes)
+          .then(() => {
+            resolve();
+          })
+          .catch((pipelineError) => {
+            proxyWarn("http1-response-pipeline-error", {
+              error: pipelineError,
+              host: url.hostname,
+            });
+            if (!clientRes.headersSent) {
+              clientRes.writeHead(502);
+              clientRes.end("Bad Gateway");
+            } else if (!clientRes.writableEnded) {
+              clientRes.end();
+            }
+            resolve();
+          });
+      }
     });
 
     proxyReq.on("error", (error) => {
@@ -1252,6 +1391,11 @@ async function forwardHttpRequestViaHttp2(
   headers[":scheme"] = target.url.protocol.replace(":", "");
   headers[":authority"] = target.url.host;
 
+  // Strip accept-encoding when injecting to avoid decompression complexity
+  if (context.wsOverrideScript) {
+    delete headers["accept-encoding"];
+  }
+
   await new Promise<void>((resolve, reject) => {
     const upstreamReq: ClientHttp2Stream = session.request(headers);
     const logHttp2 = (event: string, data?: Record<string, unknown>) => {
@@ -1271,6 +1415,9 @@ async function forwardHttpRequestViaHttp2(
       path: headers[":path"],
     });
 
+    let shouldInject = false;
+    let injector: TransformStream | null = null;
+
     upstreamReq.on("response", (upstreamHeaders) => {
       const status = Number(upstreamHeaders[":status"] ?? 502);
       const responseHeaders: Record<string, string | string[]> = {};
@@ -1284,33 +1431,73 @@ async function forwardHttpRequestViaHttp2(
           responseHeaders[name] = String(value);
         }
       }
+
+      // Check if we should inject WebSocket override into HTML response
+      shouldInject = Boolean(context.wsOverrideScript) && isHtmlResponse(upstreamHeaders);
+
+      // Delete content-length for modified responses
+      if (shouldInject) {
+        delete responseHeaders["content-length"];
+        delete responseHeaders["content-encoding"];
+        injector = createHtmlInjectionTransform(context.wsOverrideScript!);
+        injector.on("data", (chunk: Buffer) => {
+          if (!clientRes.writableEnded) {
+            clientRes.write(chunk);
+          }
+        });
+        injector.on("end", () => {
+          if (!clientRes.writableEnded) {
+            clientRes.end();
+          }
+          logHttp2("response-end", { injected: true });
+          resolve();
+        });
+        injector.on("error", (error: Error) => {
+          logHttp2("injector-error", { message: error.message });
+          if (!clientRes.writableEnded) {
+            clientRes.end();
+          }
+          resolve();
+        });
+      }
+
       if (!clientRes.headersSent) {
         clientRes.writeHead(status, responseHeaders);
       }
       logHttp2("response-headers", {
         status,
         headerCount: Object.keys(responseHeaders).length,
+        injecting: shouldInject,
       });
     });
 
     upstreamReq.on("data", (chunk) => {
-      if (!clientRes.writableEnded) {
+      if (shouldInject && injector) {
+        injector.write(chunk);
+      } else if (!clientRes.writableEnded) {
         clientRes.write(chunk);
       }
     });
 
     upstreamReq.on("end", () => {
-      if (!clientRes.writableEnded) {
-        clientRes.end();
+      if (shouldInject && injector) {
+        injector.end();
+      } else {
+        if (!clientRes.writableEnded) {
+          clientRes.end();
+        }
+        logHttp2("response-end");
+        resolve();
       }
-      logHttp2("response-end");
-      resolve();
     });
 
     upstreamReq.on("error", (error) => {
       logHttp2("stream-error", {
         message: (error as Error).message,
       });
+      if (injector) {
+        injector.destroy();
+      }
       if (!clientRes.headersSent) {
         clientRes.writeHead(502);
         clientRes.end("Bad Gateway");
@@ -1324,6 +1511,9 @@ async function forwardHttpRequestViaHttp2(
     clientReq.pipe(upstreamReq);
     clientReq.on("aborted", () => {
       logHttp2("client-aborted");
+      if (injector) {
+        injector.destroy();
+      }
       upstreamReq.close(HTTP2_CANCEL_CODE);
     });
   });
@@ -1919,12 +2109,12 @@ async function forwardHttp2StreamToHttp2(
   clientStream: http2.ServerHttp2Stream,
   clientHeaders: http2.IncomingHttpHeaders,
   target: ProxyTarget,
-  _context: ProxyContext
+  context: ProxyContext
 ) {
 
   const session = await getHttp2SessionFor(target);
 
-  
+
   const upstreamHeaders = { ...clientHeaders };
   // Filter pseudo-headers and connection-specific headers
   for (const key of Object.keys(upstreamHeaders)) {
@@ -1935,7 +2125,12 @@ async function forwardHttp2StreamToHttp2(
       delete upstreamHeaders[key];
     }
   }
-  
+
+  // Strip accept-encoding when injecting to avoid decompression complexity
+  if (context.wsOverrideScript) {
+    delete upstreamHeaders["accept-encoding"];
+  }
+
   // Re-add pseudo headers
   upstreamHeaders[":method"] = clientHeaders[":method"];
   upstreamHeaders[":path"] = clientHeaders[":path"];
@@ -1944,28 +2139,59 @@ async function forwardHttp2StreamToHttp2(
 
   if (target.cmuxProxy) {
      injectCmuxProxyHeaders(upstreamHeaders as Record<string, string>, target.cmuxProxy);
-     upstreamHeaders[":authority"] = target.url.host; 
+     upstreamHeaders[":authority"] = target.url.host;
   }
 
 
   const upstreamStream = session.request(upstreamHeaders);
 
+  let shouldInject = false;
+  let injector: TransformStream | null = null;
 
   upstreamStream.on("response", (responseHeaders) => {
+    // Check if we should inject WebSocket override into HTML response
+    shouldInject = Boolean(context.wsOverrideScript) && isHtmlResponse(responseHeaders);
 
-    clientStream.respond(responseHeaders);
+    const modifiedHeaders = { ...responseHeaders };
+
+    // Delete content-length for modified responses
+    if (shouldInject) {
+      delete modifiedHeaders["content-length"];
+      delete modifiedHeaders["content-encoding"];
+      injector = createHtmlInjectionTransform(context.wsOverrideScript!);
+      injector.pipe(clientStream);
+    }
+
+    clientStream.respond(modifiedHeaders);
   });
 
-  upstreamStream.pipe(clientStream);
+  upstreamStream.on("data", (chunk: Buffer) => {
+    if (shouldInject && injector) {
+      injector.write(chunk);
+    } else {
+      clientStream.write(chunk);
+    }
+  });
+
+  upstreamStream.on("end", () => {
+    if (shouldInject && injector) {
+      injector.end();
+    } else {
+      clientStream.end();
+    }
+  });
+
   clientStream.pipe(upstreamStream);
 
   upstreamStream.on("error", (err) => {
      console.error("Upstream stream error:", err);
+     if (injector) injector.destroy();
      if (!clientStream.closed) clientStream.close(http2.constants.NGHTTP2_INTERNAL_ERROR);
   });
-  
+
   clientStream.on("error", (err) => {
       console.error("Client stream error:", err);
+      if (injector) injector.destroy();
       if (!upstreamStream.closed) upstreamStream.close(http2.constants.NGHTTP2_INTERNAL_ERROR);
   });
 }
@@ -1974,14 +2200,14 @@ async function forwardHttp2StreamToHttp1(
   clientStream: http2.ServerHttp2Stream,
   clientHeaders: http2.IncomingHttpHeaders,
   target: ProxyTarget,
-  _context: ProxyContext
+  context: ProxyContext
 ) {
     // This is a bit more complex: H2 stream -> H1 request
     // We can use the 'http2' compatibility or just manual mapping.
-    
+
     const method = (clientHeaders[":method"] as string) || "GET";
     const path = (clientHeaders[":path"] as string) || "/";
-    
+
     const headers: Record<string, string> = {};
     for (const [key, value] of Object.entries(clientHeaders)) {
         if (key.startsWith(":") || HOP_BY_HOP_HEADERS.has(key)) continue;
@@ -1989,7 +2215,12 @@ async function forwardHttp2StreamToHttp1(
         if (Array.isArray(value)) headers[key] = value.join(", ");
         else if (value) headers[key] = value;
     }
-    
+
+    // Strip accept-encoding when injecting to avoid decompression complexity
+    if (context.wsOverrideScript) {
+        deleteHeaderCaseInsensitive(headers, "accept-encoding");
+    }
+
     injectCmuxProxyHeaders(headers, target.cmuxProxy);
     if (!target.cmuxProxy) {
         headers["host"] = target.url.host;
@@ -2008,15 +2239,26 @@ async function forwardHttp2StreamToHttp1(
 
     const httpModule = target.secure ? https : http;
     const proxyReq = httpModule.request(requestOptions, (proxyRes) => {
+        // Check if we should inject WebSocket override into HTML response
+        const shouldInject = Boolean(context.wsOverrideScript) && isHtmlResponse(proxyRes.headers);
+
         const responseHeaders: http2.OutgoingHttpHeaders = {
             ":status": proxyRes.statusCode || 200,
         };
         for (const [key, value] of Object.entries(proxyRes.headers)) {
             if (HOP_BY_HOP_HEADERS.has(key)) continue;
+            // Delete content-length for modified responses
+            if (shouldInject && (key === "content-length" || key === "content-encoding")) continue;
             responseHeaders[key] = value;
         }
         clientStream.respond(responseHeaders);
-        proxyRes.pipe(clientStream);
+
+        if (shouldInject) {
+            const injector = createHtmlInjectionTransform(context.wsOverrideScript!);
+            proxyRes.pipe(injector).pipe(clientStream);
+        } else {
+            proxyRes.pipe(clientStream);
+        }
     });
 
     proxyReq.on("error", (_err) => {
