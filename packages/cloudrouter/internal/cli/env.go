@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/cmux-cli/cmux-devbox-2/internal/api"
+	"github.com/manaflow-ai/cloudrouter/internal/api"
 	"github.com/spf13/cobra"
 )
 
