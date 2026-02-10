@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Source_Serif_4 } from "next/font/google";
+import CmuxLogo from "../../components/logo/cmux-logo";
 
 const sourceSerif = Source_Serif_4({
   subsets: ["latin"],
@@ -72,7 +73,10 @@ export default function CloudRouterPage() {
       <div className="w-full max-w-2xl">
         {/* Header */}
         <header className="mb-12 flex items-center justify-between text-sm">
-          <span className="font-semibold">cloudrouter</span>
+          <span className="flex items-center gap-2 font-semibold">
+            <CmuxLogo height={20} showWordmark={false} />
+            cloudrouter
+          </span>
           <nav className="flex gap-4 text-neutral-500 dark:text-neutral-400">
             <a href="#install" className="transition hover:text-neutral-900 dark:hover:text-white">
               Install
