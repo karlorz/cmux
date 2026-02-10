@@ -855,7 +855,8 @@ morphRouter.openapi(
           const rootRepoMatchesSelected =
             hasRootRepo &&
             rootRepoRemote !== "no-remote" &&
-            rootRepoRemote.includes(selectedRepo);
+            (rootRepoRemote.endsWith(`/${selectedRepo}.git`) ||
+              rootRepoRemote.endsWith(`/${selectedRepo}`));
 
           if (hasRootRepo && !rootRepoMatchesSelected) {
             console.log(
@@ -984,7 +985,13 @@ morphRouter.openapi(
                 () => sandboxInstance.exec(`rm -rf /root/workspace/${existingName}`)
               );
               removedRepos.push(existingName);
-            } else if (existingUrl && !existingUrl.includes(selectedRepo)) {
+            } else if (
+              existingUrl &&
+              !(
+                existingUrl.endsWith(`/${selectedRepo}.git`) ||
+                existingUrl.endsWith(`/${selectedRepo}`)
+              )
+            ) {
               console.log(
                 `Repository ${existingName} points to different remote, removing for re-clone`
               );
