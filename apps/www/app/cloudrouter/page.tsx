@@ -1,20 +1,20 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "cloudrouter — cloud dev sandboxes for agents and developers",
+  title: "cloudrouter — Cloud VMs/GPUs for Claude Code/Codex",
   description:
-    "CLI tool that gives AI coding agents and developers instant cloud sandboxes with VS Code, terminal, VNC, and browser automation via Chrome CDP.",
+    "Cloud VMs/GPUs for Claude Code/Codex. Instant remote sandboxes with VS Code, terminal, VNC, and browser automation via Chrome CDP.",
   openGraph: {
-    title: "cloudrouter — cloud dev sandboxes for agents and developers",
+    title: "cloudrouter — Cloud VMs/GPUs for Claude Code/Codex",
     description:
-      "CLI tool that gives AI coding agents and developers instant cloud sandboxes with VS Code, terminal, VNC, and browser automation via Chrome CDP.",
+      "Cloud VMs/GPUs for Claude Code/Codex. Instant remote sandboxes with VS Code, terminal, VNC, and browser automation via Chrome CDP.",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "cloudrouter — cloud dev sandboxes for agents and developers",
+    title: "cloudrouter — Cloud VMs/GPUs for Claude Code/Codex",
     description:
-      "CLI tool that gives AI coding agents and developers instant cloud sandboxes with VS Code, terminal, VNC, and browser automation via Chrome CDP.",
+      "Cloud VMs/GPUs for Claude Code/Codex. Instant remote sandboxes with VS Code, terminal, VNC, and browser automation via Chrome CDP.",
   },
 };
 
@@ -89,7 +89,7 @@ export default function CloudRouterPage() {
         {/* Hero */}
         <section className="mb-16">
           <h1 className="mb-6 text-2xl font-bold leading-tight sm:text-3xl">
-            Cloud dev sandboxes for agents and developers
+            Cloud VMs/GPUs for Claude Code/Codex
           </h1>
           <p className="mb-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
             cloudrouter is a CLI that gives AI coding agents and developers instant remote VMs
