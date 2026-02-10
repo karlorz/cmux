@@ -68,7 +68,8 @@ export function deriveProxyServiceUrl(
     const parsed = new URL(fallbackUrl);
     if (!isLoopbackHostname(parsed.hostname)) return fallbackUrl;
   } catch {
-    // If we can't parse the fallback URL, proceed with proxy detection
+    // Invalid fallback URL: return as-is instead of deriving a proxy URL.
+    return fallbackUrl;
   }
 
   const components = parseProxyHostname(window.location.hostname);

@@ -122,6 +122,14 @@ describe("deriveProxyServiceUrl", () => {
     expect(result).toBe("https://api.production.example.com");
   });
 
+  it("returns malformed fallback URL as-is", () => {
+    (globalThis as Record<string, unknown>).window = {
+      location: { hostname: "port-5173-pvelxc-abc123.alphasolves.com" },
+    };
+    const result = deriveProxyServiceUrl(9776, "not-a-valid-url");
+    expect(result).toBe("not-a-valid-url");
+  });
+
   it("derives proxy URL when on PVE LXC proxy", () => {
     (globalThis as Record<string, unknown>).window = {
       location: { hostname: "port-5173-pvelxc-30b1cc26.alphasolves.com" },

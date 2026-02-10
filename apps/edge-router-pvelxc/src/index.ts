@@ -469,19 +469,17 @@ history.replaceState = function(state, title, url) {
 // Intercept WebSocket constructor to rewrite localhost URLs
 var OriginalWebSocket = window.WebSocket;
 window.WebSocket = function(url, protocols) {
-  if (typeof url === 'string') {
-    var newUrl = replaceLocalhostUrl(url);
-    if (newUrl !== url) {
-      // replaceLocalhostUrl sets protocol to https:, convert to wss: for WebSocket
-      newUrl = newUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
-    }
-    return protocols !== undefined
-      ? new OriginalWebSocket(newUrl, protocols)
-      : new OriginalWebSocket(newUrl);
+  var rawUrl = typeof url === 'string'
+    ? url
+    : (url && typeof url.toString === 'function' ? url.toString() : String(url));
+  var newUrl = replaceLocalhostUrl(rawUrl);
+  if (newUrl !== rawUrl) {
+    // replaceLocalhostUrl sets protocol to https:, convert to wss: for WebSocket
+    newUrl = newUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
   }
   return protocols !== undefined
-    ? new OriginalWebSocket(url, protocols)
-    : new OriginalWebSocket(url);
+    ? new OriginalWebSocket(newUrl, protocols)
+    : new OriginalWebSocket(newUrl);
 };
 window.WebSocket.prototype = OriginalWebSocket.prototype;
 window.WebSocket.CONNECTING = OriginalWebSocket.CONNECTING;
@@ -493,7 +491,10 @@ window.WebSocket.CLOSED = OriginalWebSocket.CLOSED;
 var OriginalEventSource = window.EventSource;
 if (OriginalEventSource) {
   window.EventSource = function(url, init) {
-    var newUrl = typeof url === 'string' ? replaceLocalhostUrl(url) : url;
+    var rawUrl = typeof url === 'string'
+      ? url
+      : (url && typeof url.toString === 'function' ? url.toString() : String(url));
+    var newUrl = replaceLocalhostUrl(rawUrl);
     return new OriginalEventSource(newUrl, init);
   };
   window.EventSource.prototype = OriginalEventSource.prototype;
