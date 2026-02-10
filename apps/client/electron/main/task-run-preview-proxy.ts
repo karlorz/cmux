@@ -513,6 +513,26 @@ function isHtmlResponse(
   return false;
 }
 
+function isCompressedResponse(
+  headers: Record<string, string | number | string[] | undefined>
+): boolean {
+  for (const [name, value] of Object.entries(headers)) {
+    if (name.toLowerCase() !== "content-encoding") {
+      continue;
+    }
+    const raw = Array.isArray(value)
+      ? value.join(", ")
+      : typeof value === "string"
+        ? value
+        : "";
+    const normalized = raw.toLowerCase().trim();
+    if (normalized && normalized !== "identity") {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function startPreviewProxy(logger: Logger): Promise<number> {
   return ensureProxyServer(logger);
 }
@@ -1290,11 +1310,12 @@ function forwardHttpRequestViaHttp1(
     const httpModule = secure ? https : http;
     const proxyReq = httpModule.request(requestOptions, (proxyRes) => {
       const shouldInjectWsOverride =
-        Boolean(context.wsOverrideScript) && isHtmlResponse(proxyRes.headers);
+        Boolean(context.wsOverrideScript) &&
+        isHtmlResponse(proxyRes.headers) &&
+        !isCompressedResponse(proxyRes.headers);
       const responseHeaders = { ...proxyRes.headers };
       if (shouldInjectWsOverride) {
         deleteHeaderCaseInsensitive(responseHeaders, "content-length");
-        deleteHeaderCaseInsensitive(responseHeaders, "content-encoding");
       }
       if (!clientRes.headersSent) {
         clientRes.writeHead(
@@ -1412,7 +1433,9 @@ async function forwardHttpRequestViaHttp2(
         }
       }
       const shouldInjectWsOverride =
-        Boolean(context.wsOverrideScript) && isHtmlResponse(upstreamHeaders);
+        Boolean(context.wsOverrideScript) &&
+        isHtmlResponse(upstreamHeaders) &&
+        !isCompressedResponse(upstreamHeaders);
       if (shouldInjectWsOverride) {
         deleteHeaderCaseInsensitive(responseHeaders, "content-length");
       }
@@ -2101,11 +2124,12 @@ async function forwardHttp2StreamToHttp2(
 
   upstreamStream.on("response", (responseHeaders) => {
     const shouldInjectWsOverride =
-      Boolean(context.wsOverrideScript) && isHtmlResponse(responseHeaders);
+      Boolean(context.wsOverrideScript) &&
+      isHtmlResponse(responseHeaders) &&
+      !isCompressedResponse(responseHeaders);
     const outgoingHeaders = { ...responseHeaders };
     if (shouldInjectWsOverride) {
       deleteHeaderCaseInsensitive(outgoingHeaders, "content-length");
-      deleteHeaderCaseInsensitive(outgoingHeaders, "content-encoding");
     }
 
     clientStream.respond(outgoingHeaders);
@@ -2178,7 +2202,9 @@ async function forwardHttp2StreamToHttp1(
     const httpModule = target.secure ? https : http;
     const proxyReq = httpModule.request(requestOptions, (proxyRes) => {
         const shouldInjectWsOverride =
-            Boolean(context.wsOverrideScript) && isHtmlResponse(proxyRes.headers);
+            Boolean(context.wsOverrideScript) &&
+            isHtmlResponse(proxyRes.headers) &&
+            !isCompressedResponse(proxyRes.headers);
         const responseHeaders: http2.OutgoingHttpHeaders = {
             ":status": proxyRes.statusCode || 200,
         };
@@ -2190,10 +2216,6 @@ async function forwardHttp2StreamToHttp1(
             deleteHeaderCaseInsensitive(
                 responseHeaders as Record<string, unknown>,
                 "content-length"
-            );
-            deleteHeaderCaseInsensitive(
-                responseHeaders as Record<string, unknown>,
-                "content-encoding"
             );
         }
         clientStream.respond(responseHeaders);
@@ -2212,7 +2234,8 @@ async function forwardHttp2StreamToHttp1(
         });
     });
 
-    proxyReq.on("error", (_err) => {
+    proxyReq.on("error", (err) => {
+        console.error("HTTP/1 proxy request error:", err);
         if (!clientStream.closed) {
             clientStream.respond({ ":status": 502 });
             clientStream.end();
@@ -2236,7 +2259,7 @@ function deriveRoute(url: string): ProxyRoute | null {
                 cmuxProxyOrigin: process.env.TEST_CMUX_PROXY_ORIGIN
             };
         }
-      } catch (_e) { /* ignore */ }
+      } catch (e) { console.error("Failed to parse test proxy URL", e); }
   }
 
   try {
