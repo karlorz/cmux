@@ -776,6 +776,7 @@ morphRouter.openapi(
         [];
 
       if (selectedRepos && selectedRepos.length > 0) {
+        // Validation
         const repoNames = new Map<string, string>();
         const reposByOwner = new Map<string, string[]>();
         for (const repo of selectedRepos) {
@@ -806,143 +807,313 @@ morphRouter.openapi(
           reposByOwner.get(owner)!.push(repo);
         }
 
-        const listReposCmd = await Sentry.startSpan(
-          { name: "instance.exec (list repos)", op: "sandbox.exec" },
+        const isSingleRepo = selectedRepos.length === 1;
+
+        // Check if workspace root itself has a git repo (single-repo layout)
+        const rootRepoCheck = await Sentry.startSpan(
+          { name: "instance.exec (check root repo)", op: "sandbox.exec" },
           () =>
             sandboxInstance.exec(
-              "for dir in /root/workspace/*/; do " +
-                'if [ -d "$dir/.git" ]; then ' +
-                'basename "$dir"; ' +
-                "cd \"$dir\" && git remote get-url origin 2>/dev/null || echo 'no-remote'; " +
-                "fi; done"
+              'if [ -d "/root/workspace/.git" ]; then git -C /root/workspace remote get-url origin 2>/dev/null || echo "no-remote"; else echo "no-git"; fi'
             )
         );
+        const rootRepoRemote = rootRepoCheck.stdout.trim();
+        const hasRootRepo = rootRepoRemote !== "no-git";
 
-        const lines = listReposCmd.stdout.split("\n").filter(Boolean);
-        const existingRepos = new Map<string, string>();
+        if (isSingleRepo) {
+          // Single-repo path: clone directly to /root/workspace
+          const selectedRepo = selectedRepos[0]!;
 
-        for (let i = 0; i < lines.length; i += 2) {
-          const repoName = lines[i]?.trim();
-          const remoteUrl = lines[i + 1]?.trim();
-          if (repoName && remoteUrl && remoteUrl !== "no-remote") {
-            existingRepos.set(repoName, remoteUrl);
-          } else if (repoName) {
-            existingRepos.set(repoName, "");
-          }
-        }
-
-        for (const [existingName, existingUrl] of existingRepos) {
-          const selectedRepo = repoNames.get(existingName);
-
-          if (!selectedRepo) {
-            console.log(`Removing repository: ${existingName}`);
-            await Sentry.startSpan(
-              { name: `instance.exec (rm ${existingName})`, op: "sandbox.exec" },
-              () => sandboxInstance.exec(`rm -rf /root/workspace/${existingName}`)
-            );
-            removedRepos.push(existingName);
-          } else if (existingUrl && !existingUrl.includes(selectedRepo)) {
+          // Remove any subdirectory repos (from previous multi-repo layout)
+          const listSubdirReposCmd = await Sentry.startSpan(
+            { name: "instance.exec (list subdir repos)", op: "sandbox.exec" },
+            () =>
+              sandboxInstance.exec(
+                "for dir in /root/workspace/*/; do " +
+                  'if [ -d "$dir/.git" ]; then ' +
+                  'basename "$dir"; ' +
+                  "fi; done"
+              )
+          );
+          const subdirRepos = listSubdirReposCmd.stdout
+            .split("\n")
+            .filter(Boolean);
+          for (const subdirRepo of subdirRepos) {
             console.log(
-              `Repository ${existingName} points to different remote, removing for re-clone`
+              `Removing subdirectory repository: ${subdirRepo} (switching to single-repo layout)`
             );
             await Sentry.startSpan(
-              { name: `instance.exec (rm ${existingName})`, op: "sandbox.exec" },
-              () => sandboxInstance.exec(`rm -rf /root/workspace/${existingName}`)
+              {
+                name: `instance.exec (rm ${subdirRepo})`,
+                op: "sandbox.exec",
+              },
+              () => sandboxInstance.exec(`rm -rf /root/workspace/${subdirRepo}`)
             );
-            removedRepos.push(existingName);
-            existingRepos.delete(existingName);
+            removedRepos.push(subdirRepo);
           }
-        }
 
-        for (const [, repos] of reposByOwner) {
-          const clonePromises = repos.map(async (repo) => {
-            const repoName = repo.split("/").pop()!;
-            if (!existingRepos.has(repoName)) {
-              console.log(`Cloning repository: ${repo}`);
+          // Check if root repo matches the selected repo
+          const repoMatchesRoot =
+            hasRootRepo &&
+            rootRepoRemote !== "no-remote" &&
+            rootRepoRemote.includes(selectedRepo);
 
-              const maxRetries = 3;
-              let lastError: string | undefined;
-              let isAuthError = false;
+          if (repoMatchesRoot) {
+            console.log(
+              `Repository ${selectedRepo} already exists at workspace root, skipping clone`
+            );
+          } else {
+            // Clear workspace if there's a different repo or leftover files
+            if (hasRootRepo) {
+              console.log(
+                `Root repo points to different remote, clearing workspace for re-clone`
+              );
+            }
+            await Sentry.startSpan(
+              { name: "instance.exec (clear workspace)", op: "sandbox.exec" },
+              () =>
+                sandboxInstance.exec(
+                  'rm -rf /root/workspace/.git /root/workspace/* /root/workspace/.[!.]* 2>/dev/null || true'
+                )
+            );
 
-              for (let attempt = 1; attempt <= maxRetries; attempt++) {
-                const cloneCmd = await Sentry.startSpan(
-                  {
-                    name: `instance.exec (clone ${repoName})`,
-                    op: "sandbox.exec",
-                    attributes: { attempt },
-                  },
-                  () =>
-                    sandboxInstance.exec(
-                      `mkdir -p /root/workspace && cd /root/workspace && git clone https://github.com/${repo}.git ${repoName} 2>&1`
-                    )
-                );
+            // Clone directly to /root/workspace
+            console.log(
+              `Cloning repository ${selectedRepo} directly to workspace root`
+            );
 
-                if (cloneCmd.exit_code === 0) {
-                  return { success: true as const, repo };
+            const maxRetries = 3;
+            let lastError: string | undefined;
+            let isAuthError = false;
+
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+              const cloneCmd = await Sentry.startSpan(
+                {
+                  name: `instance.exec (clone ${selectedRepo} to root)`,
+                  op: "sandbox.exec",
+                  attributes: { attempt },
+                },
+                () =>
+                  sandboxInstance.exec(
+                    `cd /root/workspace && git clone https://github.com/${selectedRepo}.git . 2>&1`
+                  )
+              );
+
+              if (cloneCmd.exit_code === 0) {
+                clonedRepos.push(selectedRepo);
+                break;
+              } else {
+                lastError = cloneCmd.stderr || cloneCmd.stdout;
+
+                isAuthError =
+                  lastError.includes("Authentication failed") ||
+                  lastError.includes("could not read Username") ||
+                  lastError.includes("could not read Password") ||
+                  lastError.includes("Invalid username or password") ||
+                  lastError.includes("Permission denied") ||
+                  lastError.includes("Repository not found") ||
+                  lastError.includes("403");
+
+                if (isAuthError) {
+                  console.error(
+                    `Authentication failed for ${selectedRepo}: ${lastError}`
+                  );
+                  failedClones.push({
+                    repo: selectedRepo,
+                    error: "Authentication failed - check repository access permissions",
+                    isAuth: true,
+                  });
+                  break;
+                }
+
+                if (attempt < maxRetries) {
+                  console.log(
+                    `Clone attempt ${attempt} failed for ${selectedRepo}, retrying...`
+                  );
+                  await sandboxInstance.exec(
+                    'rm -rf /root/workspace/.git /root/workspace/* /root/workspace/.[!.]* 2>/dev/null || true'
+                  );
+                  await new Promise((resolve) =>
+                    setTimeout(resolve, attempt * 1000)
+                  );
                 } else {
-                  lastError = cloneCmd.stderr || cloneCmd.stdout;
-
-                  isAuthError =
-                    lastError.includes("Authentication failed") ||
-                    lastError.includes("could not read Username") ||
-                    lastError.includes("could not read Password") ||
-                    lastError.includes("Invalid username or password") ||
-                    lastError.includes("Permission denied") ||
-                    lastError.includes("Repository not found") ||
-                    lastError.includes("403");
-
-                  if (isAuthError) {
-                    console.error(
-                      `Authentication failed for ${repo}: ${lastError}`
-                    );
-                    break;
-                  }
-
-                  if (attempt < maxRetries) {
-                    console.log(
-                      `Clone attempt ${attempt} failed for ${repo}, retrying...`
-                    );
-                    await sandboxInstance.exec(`rm -rf /root/workspace/${repoName}`);
-                    await new Promise((resolve) =>
-                      setTimeout(resolve, attempt * 1000)
-                    );
-                  }
+                  console.error(
+                    `Failed to clone ${selectedRepo}: Failed after ${maxRetries} attempts\nDetails: ${lastError}`
+                  );
+                  failedClones.push({
+                    repo: selectedRepo,
+                    error: lastError || "Unknown error",
+                    isAuth: false,
+                  });
                 }
               }
-
-              const errorMsg = isAuthError
-                ? `Authentication failed - check repository access permissions`
-                : `Failed after ${maxRetries} attempts`;
-
-              console.error(
-                `Failed to clone ${repo}: ${errorMsg}\nDetails: ${lastError}`
-              );
-              return {
-                success: false as const,
-                repo,
-                error: lastError || "Unknown error",
-                isAuth: isAuthError,
-              };
-            } else {
-              console.log(
-                `Repository ${repo} already exists with correct remote, skipping clone`
-              );
-              return null;
             }
-          });
+          }
+        } else {
+          // Multi-repo path: clone to /root/workspace/{repoName} subdirectories
 
-          const results = await Promise.all(clonePromises);
+          // If transitioning from single-repo layout, clear workspace first
+          if (hasRootRepo) {
+            console.log(
+              `Clearing root repo (switching to multi-repo layout)`
+            );
+            await Sentry.startSpan(
+              { name: "instance.exec (clear root repo)", op: "sandbox.exec" },
+              () =>
+                sandboxInstance.exec(
+                  'rm -rf /root/workspace/.git /root/workspace/* /root/workspace/.[!.]* 2>/dev/null || true'
+                )
+            );
+          }
 
-          for (const result of results) {
-            if (result && "success" in result) {
-              if (result.success) {
-                clonedRepos.push(result.repo);
+          const listReposCmd = await Sentry.startSpan(
+            { name: "instance.exec (list repos)", op: "sandbox.exec" },
+            () =>
+              sandboxInstance.exec(
+                "for dir in /root/workspace/*/; do " +
+                  'if [ -d "$dir/.git" ]; then ' +
+                  'basename "$dir"; ' +
+                  "cd \"$dir\" && git remote get-url origin 2>/dev/null || echo 'no-remote'; " +
+                  "fi; done"
+              )
+          );
+
+          const lines = listReposCmd.stdout.split("\n").filter(Boolean);
+          const existingRepos = new Map<string, string>();
+
+          for (let i = 0; i < lines.length; i += 2) {
+            const repoName = lines[i]?.trim();
+            const remoteUrl = lines[i + 1]?.trim();
+            if (repoName && remoteUrl && remoteUrl !== "no-remote") {
+              existingRepos.set(repoName, remoteUrl);
+            } else if (repoName) {
+              existingRepos.set(repoName, "");
+            }
+          }
+
+          for (const [existingName, existingUrl] of existingRepos) {
+            const selectedRepo = repoNames.get(existingName);
+
+            if (!selectedRepo) {
+              console.log(`Removing repository: ${existingName}`);
+              await Sentry.startSpan(
+                {
+                  name: `instance.exec (rm ${existingName})`,
+                  op: "sandbox.exec",
+                },
+                () =>
+                  sandboxInstance.exec(`rm -rf /root/workspace/${existingName}`)
+              );
+              removedRepos.push(existingName);
+            } else if (existingUrl && !existingUrl.includes(selectedRepo)) {
+              console.log(
+                `Repository ${existingName} points to different remote, removing for re-clone`
+              );
+              await Sentry.startSpan(
+                {
+                  name: `instance.exec (rm ${existingName})`,
+                  op: "sandbox.exec",
+                },
+                () =>
+                  sandboxInstance.exec(`rm -rf /root/workspace/${existingName}`)
+              );
+              removedRepos.push(existingName);
+              existingRepos.delete(existingName);
+            }
+          }
+
+          for (const [, repos] of reposByOwner) {
+            const clonePromises = repos.map(async (repo) => {
+              const repoName = repo.split("/").pop()!;
+              if (!existingRepos.has(repoName)) {
+                console.log(`Cloning repository: ${repo}`);
+
+                const maxRetries = 3;
+                let lastError: string | undefined;
+                let isAuthError = false;
+
+                for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                  const cloneCmd = await Sentry.startSpan(
+                    {
+                      name: `instance.exec (clone ${repoName})`,
+                      op: "sandbox.exec",
+                      attributes: { attempt },
+                    },
+                    () =>
+                      sandboxInstance.exec(
+                        `mkdir -p /root/workspace && cd /root/workspace && git clone https://github.com/${repo}.git ${repoName} 2>&1`
+                      )
+                  );
+
+                  if (cloneCmd.exit_code === 0) {
+                    return { success: true as const, repo };
+                  } else {
+                    lastError = cloneCmd.stderr || cloneCmd.stdout;
+
+                    isAuthError =
+                      lastError.includes("Authentication failed") ||
+                      lastError.includes("could not read Username") ||
+                      lastError.includes("could not read Password") ||
+                      lastError.includes("Invalid username or password") ||
+                      lastError.includes("Permission denied") ||
+                      lastError.includes("Repository not found") ||
+                      lastError.includes("403");
+
+                    if (isAuthError) {
+                      console.error(
+                        `Authentication failed for ${repo}: ${lastError}`
+                      );
+                      break;
+                    }
+
+                    if (attempt < maxRetries) {
+                      console.log(
+                        `Clone attempt ${attempt} failed for ${repo}, retrying...`
+                      );
+                      await sandboxInstance.exec(
+                        `rm -rf /root/workspace/${repoName}`
+                      );
+                      await new Promise((resolve) =>
+                        setTimeout(resolve, attempt * 1000)
+                      );
+                    }
+                  }
+                }
+
+                const errorMsg = isAuthError
+                  ? `Authentication failed - check repository access permissions`
+                  : `Failed after ${maxRetries} attempts`;
+
+                console.error(
+                  `Failed to clone ${repo}: ${errorMsg}\nDetails: ${lastError}`
+                );
+                return {
+                  success: false as const,
+                  repo,
+                  error: lastError || "Unknown error",
+                  isAuth: isAuthError,
+                };
               } else {
-                failedClones.push({
-                  repo: result.repo,
-                  error: result.error,
-                  isAuth: result.isAuth,
-                });
+                console.log(
+                  `Repository ${repo} already exists with correct remote, skipping clone`
+                );
+                return null;
+              }
+            });
+
+            const results = await Promise.all(clonePromises);
+
+            for (const result of results) {
+              if (result && "success" in result) {
+                if (result.success) {
+                  clonedRepos.push(result.repo);
+                } else {
+                  failedClones.push({
+                    repo: result.repo,
+                    error: result.error,
+                    isAuth: result.isAuth,
+                  });
+                }
               }
             }
           }
