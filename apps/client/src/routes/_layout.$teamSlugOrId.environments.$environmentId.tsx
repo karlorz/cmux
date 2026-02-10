@@ -1,4 +1,5 @@
 import { EditableLabel } from "@/components/editable-label";
+import { EnvVarsKeyValueGrid } from "@/components/EnvVarsKeyValueGrid";
 import { FloatingPane } from "@/components/floating-pane";
 import { ScriptTextareaField } from "@/components/ScriptTextareaField";
 import { SCRIPT_COPY } from "@/components/scriptCopy";
@@ -11,9 +12,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { parseEnvBlock } from "@/lib/parseEnvBlock";
 import { cn } from "@/lib/utils";
+import { ensureInitialEnvVars, type EnvVar } from "@/types/environment";
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
+import { formatEnvVarsContent } from "@cmux/shared/utils/format-env-vars-content";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { validateExposedPorts } from "@cmux/shared/utils/validate-exposed-ports";
 import type { StartSandboxResponse } from "@cmux/www-openapi-client";
@@ -39,8 +43,6 @@ import {
   ArrowLeft,
   Calendar,
   Code,
-  Eye,
-  EyeOff,
   GitBranch,
   KeyRound,
   Loader2,
@@ -51,7 +53,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute(
@@ -158,9 +160,44 @@ function EnvironmentDetailsPage() {
   const [maintenanceScriptDraft, setMaintenanceScriptDraft] = useState(
     environment?.maintenanceScript ?? ""
   );
-  const [isEditingEnvVars, setIsEditingEnvVars] = useState(false);
-  const [envVarsDraft, setEnvVarsDraft] = useState("");
-  const [showEnvVars, setShowEnvVars] = useState(false);
+  const [envVars, setEnvVars] = useState<EnvVar[]>(() =>
+    ensureInitialEnvVars()
+  );
+  const hasInitializedEnvVarsRef = useRef(false);
+
+  const updateEnvVars = useCallback((updater: (prev: EnvVar[]) => EnvVar[]) => {
+    setEnvVars((prev) => {
+      const updated = updater(prev);
+      return updated.length === 0
+        ? [
+            {
+              name: "",
+              value: "",
+              isSecret: true,
+            },
+          ]
+        : updated;
+    });
+  }, []);
+
+  const currentEnvContent = useMemo(() => {
+    const filtered = envVars
+      .filter((row) => row.name.trim().length > 0 || row.value.trim().length > 0)
+      .map((row) => ({ name: row.name, value: row.value }));
+    return formatEnvVarsContent(filtered);
+  }, [envVars]);
+
+  const normalizedServerContent = useMemo(() => {
+    const parsed = parseEnvBlock(envVarsQuery.data?.envVarsContent ?? "");
+    return formatEnvVarsContent(
+      parsed.map((entry) => ({
+        name: entry.name,
+        value: entry.value,
+      }))
+    );
+  }, [envVarsQuery.data?.envVarsContent]);
+
+  const hasEnvVarsChanges = currentEnvContent !== normalizedServerContent;
 
   const handleRenameStart = () => {
     updateEnvironmentMutation.reset();
@@ -228,10 +265,23 @@ function EnvironmentDetailsPage() {
   }, [environment.maintenanceScript, isEditingMaintenanceScript]);
 
   useEffect(() => {
-    if (!isEditingEnvVars && envVarsQuery.data) {
-      setEnvVarsDraft(envVarsQuery.data.envVarsContent ?? "");
+    if (hasInitializedEnvVarsRef.current) {
+      return;
     }
-  }, [envVarsQuery.data, isEditingEnvVars]);
+    if (envVarsQuery.isFetching || !envVarsQuery.data) {
+      return;
+    }
+
+    const parsedEnvVars = parseEnvBlock(envVarsQuery.data.envVarsContent ?? "").map(
+      (entry) => ({
+        name: entry.name,
+        value: entry.value,
+        isSecret: true,
+      })
+    );
+    setEnvVars(ensureInitialEnvVars(parsedEnvVars));
+    hasInitializedEnvVarsRef.current = true;
+  }, [envVarsQuery.data, envVarsQuery.isFetching]);
 
   const handleStartEditingPorts = () => {
     setPortsDraft(environment.exposedPorts ?? []);
@@ -321,29 +371,17 @@ function EnvironmentDetailsPage() {
     }
   };
 
-  const handleStartEditingEnvVars = () => {
-    setEnvVarsDraft(envVarsQuery.data?.envVarsContent ?? "");
-    setIsEditingEnvVars(true);
-    updateEnvVarsMutation.reset();
-  };
-
-  const handleCancelEnvVars = () => {
-    setEnvVarsDraft(envVarsQuery.data?.envVarsContent ?? "");
-    setIsEditingEnvVars(false);
-    updateEnvVarsMutation.reset();
-  };
-
   const handleSaveEnvVars = async () => {
     try {
       await updateEnvVarsMutation.mutateAsync({
         path: { id: String(environmentId) },
         body: {
           teamSlugOrId,
-          envVarsContent: envVarsDraft,
+          envVarsContent: currentEnvContent,
         },
       });
       toast.success("Environment variables updated");
-      setIsEditingEnvVars(false);
+      hasInitializedEnvVarsRef.current = false;
       void envVarsQuery.refetch();
     } catch (error) {
       const message =
@@ -354,22 +392,10 @@ function EnvironmentDetailsPage() {
     }
   };
 
-  const maskEnvVarsContent = (content: string): string => {
-    return content
-      .split("\n")
-      .map((line) => {
-        const trimmed = line.trim();
-        if (trimmed.startsWith("#") || trimmed.length === 0) {
-          return line;
-        }
-        const eqIndex = line.indexOf("=");
-        if (eqIndex === -1) {
-          return line;
-        }
-        const key = line.slice(0, eqIndex);
-        return `${key}=--------`;
-      })
-      .join("\n");
+  const handleDiscardEnvVars = () => {
+    updateEnvVarsMutation.reset();
+    hasInitializedEnvVarsRef.current = false;
+    void envVarsQuery.refetch();
   };
 
   const handleAddPort = () => {
@@ -1027,7 +1053,7 @@ function EnvironmentDetailsPage() {
 
               {/* Environment Variables */}
               <div>
-                <div className="mb-2 flex items-start justify-between gap-2">
+                <div className="mb-2">
                   <div>
                     <div className="flex items-center gap-2">
                       <KeyRound className="w-4 h-4 text-neutral-500" />
@@ -1040,104 +1066,61 @@ function EnvironmentDetailsPage() {
                       Paste directly from .env files.
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {!isEditingEnvVars &&
-                      envVarsQuery.data?.envVarsContent &&
-                      envVarsQuery.data.envVarsContent.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setShowEnvVars((prev) => !prev)}
-                          className={cn(
-                            "inline-flex items-center gap-1 rounded-md border border-neutral-300 px-3 py-1 text-xs font-medium text-neutral-700 dark:border-neutral-700 dark:text-neutral-300",
-                            "hover:bg-neutral-100 dark:hover:bg-neutral-900"
-                          )}
-                        >
-                          {showEnvVars ? (
-                            <>
-                              <EyeOff className="w-3 h-3" />
-                              Hide
-                            </>
-                          ) : (
-                            <>
-                              <Eye className="w-3 h-3" />
-                              Show
-                            </>
-                          )}
-                        </button>
-                      )}
-                    {!isEditingEnvVars && (
-                      <button
-                        type="button"
-                        onClick={handleStartEditingEnvVars}
-                        disabled={
-                          updateEnvVarsMutation.isPending ||
-                          envVarsQuery.isLoading
-                        }
-                        className={cn(
-                          "inline-flex items-center gap-1 rounded-md border border-neutral-300 px-3 py-1 text-xs font-medium text-neutral-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-neutral-700 dark:text-neutral-300",
-                          !updateEnvVarsMutation.isPending &&
-                            "hover:bg-neutral-100 dark:hover:bg-neutral-900"
-                        )}
-                      >
-                        {envVarsQuery.data?.envVarsContent &&
-                        envVarsQuery.data.envVarsContent.length > 0
-                          ? "Edit"
-                          : "Add"}
-                      </button>
-                    )}
-                  </div>
                 </div>
-                {isEditingEnvVars ? (
-                  <div className="space-y-2">
-                    <ScriptTextareaField
-                      description=""
-                      value={envVarsDraft}
-                      onChange={(next) => setEnvVarsDraft(next)}
-                      placeholder="DATABASE_URL=postgres://localhost:5432/db&#10;API_KEY=your-api-key&#10;# Comments are preserved"
-                      disabled={updateEnvVarsMutation.isPending}
-                      minHeightClassName="min-h-[130px]"
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={handleSaveEnvVars}
-                        disabled={updateEnvVarsMutation.isPending}
-                        className="inline-flex h-8 items-center justify-center rounded-md bg-neutral-900 px-4 text-sm font-medium text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
-                      >
-                        {updateEnvVarsMutation.isPending ? "Saving..." : "Save"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleCancelEnvVars}
-                        disabled={updateEnvVarsMutation.isPending}
-                        className={cn(
-                          "inline-flex h-8 items-center justify-center rounded-md border border-neutral-300 px-4 text-sm font-medium text-neutral-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-neutral-700 dark:text-neutral-300",
-                          !updateEnvVarsMutation.isPending &&
-                            "hover:bg-neutral-100 dark:hover:bg-neutral-900"
-                        )}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : envVarsQuery.isLoading ? (
+                {!hasInitializedEnvVarsRef.current && envVarsQuery.isLoading ? (
                   <div className="flex items-center gap-2 text-sm text-neutral-500">
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Loading...
                   </div>
-                ) : envVarsQuery.data?.envVarsContent &&
-                  envVarsQuery.data.envVarsContent.length > 0 ? (
-                  <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-3 dark:bg-neutral-950">
-                    <pre className="whitespace-pre-wrap break-words font-mono text-sm text-green-400">
-                      {showEnvVars
-                        ? envVarsQuery.data.envVarsContent
-                        : maskEnvVarsContent(envVarsQuery.data.envVarsContent)}
-                    </pre>
-                  </div>
                 ) : (
-                  <p className="text-sm text-neutral-500 dark:text-neutral-500">
-                    No environment variables configured.
-                  </p>
+                  <div className="space-y-3">
+                    <EnvVarsKeyValueGrid
+                      envVars={envVars}
+                      onUpdate={updateEnvVars}
+                      disabled={
+                        updateEnvVarsMutation.isPending || envVarsQuery.isFetching
+                      }
+                    />
+                    <div className="flex items-center gap-2">
+                      {hasEnvVarsChanges && !updateEnvVarsMutation.isPending ? (
+                        <span className="text-xs text-amber-600 dark:text-amber-400">
+                          Unsaved changes
+                        </span>
+                      ) : null}
+                      <div className="ml-auto flex items-center gap-2">
+                        {hasEnvVarsChanges ? (
+                          <button
+                            type="button"
+                            onClick={handleDiscardEnvVars}
+                            disabled={
+                              updateEnvVarsMutation.isPending ||
+                              envVarsQuery.isFetching
+                            }
+                            className={cn(
+                              "inline-flex h-8 items-center justify-center rounded-md border border-neutral-300 px-4 text-sm font-medium text-neutral-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-neutral-700 dark:text-neutral-300",
+                              !updateEnvVarsMutation.isPending &&
+                                !envVarsQuery.isFetching &&
+                                "hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                            )}
+                          >
+                            Discard
+                          </button>
+                        ) : null}
+                      <button
+                        type="button"
+                        onClick={handleSaveEnvVars}
+                        disabled={
+                          updateEnvVarsMutation.isPending ||
+                          envVarsQuery.isFetching ||
+                          !hasEnvVarsChanges
+                        }
+                        className="inline-flex h-8 items-center justify-center rounded-md bg-neutral-900 px-4 text-sm font-medium text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
+                      >
+                        {updateEnvVarsMutation.isPending ? "Saving..." : "Save"}
+                      </button>
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
 
