@@ -2785,7 +2785,7 @@ Please address the issue mentioned in the comment above.`;
         const { taskId } = await getConvex().mutation(api.tasks.create, {
           teamSlugOrId: safeTeam,
           text: formattedPrompt,
-          projectFullName: "manaflow-ai/cmux",
+          projectFullName: "manaflow-ai/manaflow",
         });
         // Create a comment reply with link to the task
         try {
@@ -2809,15 +2809,15 @@ Please address the issue mentioned in the comment above.`;
         const agentResults = await spawnAllAgents(
           taskId,
           {
-            repoUrl: "https://github.com/manaflow-ai/cmux.git",
+            repoUrl: "https://github.com/manaflow-ai/manaflow.git",
             branch: "main",
             taskDescription: formattedPrompt,
             isCloudMode: true,
             theme: "dark",
-            // Use provided selectedAgents or default to claude/sonnet-4 and codex/gpt-5.1-codex-high
+            // Use provided selectedAgents or default to claude/opus-4.6 and codex/gpt-5.3-codex-xhigh
             selectedAgents: selectedAgents || [
-              "claude/sonnet-4",
-              "codex/gpt-5.1-codex-high",
+              "claude/opus-4.6",
+              "codex/gpt-5.3-codex-xhigh",
             ],
           },
           safeTeam

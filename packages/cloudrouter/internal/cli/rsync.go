@@ -200,7 +200,7 @@ func runRsyncOverWebSocket(workerURL, token, localPath, remotePath string) error
 	// Split entries into chunks for parallel processing
 	chunks := splitEntries(syncEntries, parallelism)
 
-	fmt.Printf("Syncing %d files in %d parallel streams...\n", totalFiles, len(chunks))
+	fmt.Printf("Syncing %d files...\n", totalFiles)
 
 	// Run parallel rsync processes
 	var wg sync.WaitGroup
@@ -562,12 +562,19 @@ func runRsyncDownloadWithBridge(wsURL, token, remotePath, localPath string) (*rs
 
 // buildRsyncDownloadArgs builds rsync arguments for download (minimal excludes)
 func buildRsyncDownloadArgs() []string {
-	return []string{
+	args := []string{
 		"-az",
 		"--stats",
 		"--no-owner",
 		"--no-group",
 	}
+
+	// Apply default excludes (e.g., .env files, secrets, build artifacts)
+	for _, ex := range defaultExcludes {
+		args = append(args, "--exclude", ex)
+	}
+
+	return args
 }
 
 // buildRsyncArgsSingleFile builds rsync arguments for single file transfer
@@ -690,6 +697,15 @@ var defaultExcludes = []string{
 	".hypothesis",
 	"*.egg-info",
 	".eggs",
+
+	// === Environment files (use 'cmux env push' instead) ===
+	".env",
+	".env.*",
+	".env.local",
+	".env.development",
+	".env.production",
+	".env.staging",
+	".env.test",
 
 	// === Secrets and credentials (security) ===
 	".npmrc",     // May contain auth tokens

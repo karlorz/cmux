@@ -119,6 +119,50 @@ Examples:
 	},
 }
 
+var jupyterCmd = &cobra.Command{
+	Use:   "jupyter <id>",
+	Short: "Open Jupyter Lab in browser",
+	Long: `Open Jupyter Lab for a sandbox in your browser (Modal sandboxes only).
+
+Examples:
+  cloudrouter jupyter cr_abc123`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		teamSlug, err := getTeamSlug()
+		if err != nil {
+			return fmt.Errorf("failed to get team: %w", err)
+		}
+
+		client := api.NewClient()
+		inst, err := client.GetInstance(teamSlug, args[0])
+		if err != nil {
+			return err
+		}
+
+		if inst.JupyterURL == "" {
+			return fmt.Errorf("Jupyter URL not available (only available on Modal sandboxes)")
+		}
+
+		// Fetch auth token from the sandbox
+		token, err := client.GetAuthToken(teamSlug, args[0])
+		if err != nil {
+			return fmt.Errorf("failed to get auth token: %w", err)
+		}
+
+		// Jupyter uses ?token= for auth
+		parsed, err := url.Parse(inst.JupyterURL)
+		if err != nil {
+			return fmt.Errorf("invalid Jupyter URL: %w", err)
+		}
+		query := parsed.Query()
+		query.Set("token", token)
+		parsed.RawQuery = query.Encode()
+
+		fmt.Println("Opening Jupyter Lab...")
+		return openBrowser(parsed.String())
+	},
+}
+
 var statusCmd = &cobra.Command{
 	Use:   "status <id>",
 	Short: "Show sandbox status",
@@ -157,12 +201,24 @@ Examples:
 					vncURL, _ := buildAuthURL(inst.VNCURL, token, true)
 					fmt.Printf("VNC:      %s\n", vncURL)
 				}
+				if inst.JupyterURL != "" {
+					parsed, _ := url.Parse(inst.JupyterURL)
+					if parsed != nil {
+						q := parsed.Query()
+						q.Set("token", token)
+						parsed.RawQuery = q.Encode()
+						fmt.Printf("Jupyter:  %s\n", parsed.String())
+					}
+				}
 			} else {
 				if inst.VSCodeURL != "" {
 					fmt.Printf("VS Code:  %s\n", inst.VSCodeURL)
 				}
 				if inst.VNCURL != "" {
 					fmt.Printf("VNC:      %s\n", inst.VNCURL)
+				}
+				if inst.JupyterURL != "" {
+					fmt.Printf("Jupyter:  %s\n", inst.JupyterURL)
 				}
 			}
 		}

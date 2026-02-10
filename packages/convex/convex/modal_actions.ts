@@ -9,7 +9,7 @@ import {
 } from "@cmux/shared/modal-templates";
 import { ModalClient, type ModalInstance } from "@cmux/modal-client";
 
-const CMUX_CODE_VERSION = "0.9.0";
+const MODAL_SNAPSHOT_IMAGE_ID = "im-oFT8A193wId9GMCThyNsac";
 
 /**
  * Get Modal client with credentials from env
@@ -59,56 +59,6 @@ function extractNetworkingUrls(instance: ModalInstance) {
 }
 
 /**
- * HEAVY install script — runs once to build the snapshot image.
- * Installs all system packages, cmux-code, worker-daemon, Jupyter, XFCE, Chrome.
- * Does NOT start any services (that happens in the startup script).
- */
-function buildInstallScript(): string {
-  return `#!/bin/bash
-set -e
-
-# Create workspace directory
-mkdir -p /home/user/workspace
-
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq > /dev/null 2>&1
-apt-get install -y -qq \\
-  curl procps jq wget gnupg pip \\
-  tigervnc-standalone-server tigervnc-common \\
-  xfce4 xfce4-terminal dbus-x11 \\
-  novnc python3-websockify \\
-  fonts-liberation fonts-dejavu \\
-  > /dev/null 2>&1
-
-# Install Google Chrome
-curl -fsSL https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -o /tmp/chrome.deb
-apt-get install -y -qq /tmp/chrome.deb > /dev/null 2>&1 || apt-get install -y -qq -f > /dev/null 2>&1
-rm -f /tmp/chrome.deb
-
-# Install cmux-code (VSCode fork)
-mkdir -p /app/cmux-code
-curl -fSL --retry 3 --retry-delay 2 -o /tmp/cmux-code.tar.gz \\
-  "https://github.com/manaflow-ai/vscode-1/releases/download/v${CMUX_CODE_VERSION}/vscode-server-linux-x64-web.tar.gz"
-tar xf /tmp/cmux-code.tar.gz -C /app/cmux-code/ --strip-components=1
-rm -f /tmp/cmux-code.tar.gz
-
-# Install worker daemon (Go binary for PTY/SSH)
-curl -fSL --retry 3 --retry-delay 2 -o /usr/local/bin/worker-daemon \\
-  "https://github.com/manaflow-ai/vscode-1/releases/download/v${CMUX_CODE_VERSION}/worker-daemon"
-chmod +x /usr/local/bin/worker-daemon
-
-# Install JupyterLab
-pip install -q jupyterlab 2>/dev/null || true
-
-# Clean apt cache to reduce snapshot size
-apt-get clean > /dev/null 2>&1
-rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-
-echo "INSTALL_COMPLETE"
-`;
-}
-
-/**
  * LIGHTWEIGHT startup script — runs on each new instance from a snapshot.
  * Only writes auth token and starts services. No package installation needed.
  */
@@ -116,7 +66,10 @@ function buildStartupScript(authToken: string): string {
   return `#!/bin/bash
 set -e
 
+# Ensure 'user' account exists (safety net for older snapshots)
+id -u user >/dev/null 2>&1 || useradd -m -s /bin/bash -u 1000 user
 mkdir -p /home/user/workspace
+chown user:user /home/user/workspace
 
 # Write auth token and boot ID so worker-daemon uses our token
 echo -n '${authToken}' > /home/user/.worker-auth-token
@@ -139,13 +92,19 @@ sleep 1
 # XFCE desktop
 export DISPLAY=:1
 export HOME=/root
+export BROWSER=/usr/bin/google-chrome-stable
 export XDG_RUNTIME_DIR=/tmp/runtime-root
 mkdir -p /tmp/runtime-root
 eval \$(dbus-launch --sh-syntax) 2>/dev/null || true
 nohup startxfce4 > /tmp/xfce.log 2>&1 &
 sleep 2
 
-# Chrome
+# Set Chrome as XFCE default browser (must be after startxfce4 creates config)
+mkdir -p /root/.config/xfce4
+echo 'WebBrowser=google-chrome' > /root/.config/xfce4/helpers.rc
+xfconf-query -c xfce4-session -p /compat/LaunchGNOME -s false 2>/dev/null || true
+
+# Chrome (with CDP enabled for cloudrouter computer commands)
 mkdir -p /root/.config/chrome
 nohup google-chrome \\
   --no-sandbox --disable-dev-shm-usage --disable-gpu --disable-software-rasterizer \\
@@ -153,11 +112,15 @@ nohup google-chrome \\
   --disable-default-apps --disable-sync --disable-translate --disable-infobars \\
   --disable-features=ChromeWhatsNewUI,AutofillServerCommunication \\
   --start-maximized --window-position=0,0 --window-size=1920,1080 \\
+  --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 \\
   --user-data-dir=/root/.config/chrome --password-store=basic \\
+  --remote-debugging-port=9222 \\
+  --remote-debugging-address=127.0.0.1 \\
   about:blank > /tmp/chrome.log 2>&1 &
+sleep 1
 
-# noVNC + websockify on port 39380
-nohup websockify --web /usr/share/novnc --heartbeat 1 0.0.0.0:39380 localhost:5901 > /tmp/novnc.log 2>&1 &
+# VNC auth proxy on port 39380 (token-validated, serves noVNC + proxies WebSocket)
+nohup node /usr/local/bin/vnc-auth-proxy.js > /tmp/novnc.log 2>&1 &
 
 # cmux-code on port 39378
 nohup /app/cmux-code/bin/code-server-oss \\
@@ -183,49 +146,7 @@ echo "STARTUP_COMPLETE"
 }
 
 /**
- * Build a snapshot image with all software pre-installed.
- * Run this once, then use the returned imageId for fast starts.
- */
-export const buildSnapshot = internalAction({
-  args: {
-    image: v.optional(v.string()),
-  },
-  handler: async (_ctx, args) => {
-    const client = getModalClient();
-    try {
-      const baseImage = args.image ?? "python:3.11-slim";
-      console.log(`[modal_actions.buildSnapshot] Creating sandbox from ${baseImage}...`);
-
-      const instance = await client.instances.start({
-        image: baseImage,
-        timeoutSeconds: 30 * 60,
-        encryptedPorts: [8888, 39377, 39378, 39380],
-      });
-
-      console.log("[modal_actions.buildSnapshot] Running install script...");
-      const result = await instance.exec(buildInstallScript());
-      if (result.exit_code !== 0) {
-        console.error("[modal_actions.buildSnapshot] Install failed:", result.stderr);
-        throw new Error(`Install script failed: ${result.stderr}`);
-      }
-      console.log("[modal_actions.buildSnapshot] Install complete, snapshotting...");
-
-      const snapshotImageId = await instance.snapshotFilesystem(5 * 60 * 1000);
-      console.log(`[modal_actions.buildSnapshot] Snapshot created: ${snapshotImageId}`);
-
-      await instance.stop();
-
-      return { snapshotImageId };
-    } finally {
-      client.close();
-    }
-  },
-});
-
-/**
- * Start a new Modal sandbox instance.
- * Uses MODAL_SNAPSHOT_IMAGE_ID env var for fast startup if available,
- * otherwise falls back to installing everything from scratch.
+ * Start a new Modal sandbox instance from a pre-built snapshot.
  */
 export const startInstance = internalAction({
   args: {
@@ -245,18 +166,10 @@ export const startInstance = internalAction({
     const presetId = args.templateId ?? DEFAULT_MODAL_TEMPLATE_ID;
     const preset = getModalTemplateByPresetId(presetId);
     const gpu = args.gpu ?? preset?.gpu;
-    const baseImage = args.image ?? preset?.image ?? "python:3.11-slim";
-
-    // Check for pre-built snapshot
-    const snapshotImageId = env.MODAL_SNAPSHOT_IMAGE_ID;
-    const useSnapshot = !!snapshotImageId;
+    const snapshotImageId = MODAL_SNAPSHOT_IMAGE_ID;
 
     try {
-      console.log(
-        useSnapshot
-          ? `[modal_actions] Starting from snapshot ${snapshotImageId}`
-          : `[modal_actions] Starting from base image ${baseImage} (no snapshot)`,
-      );
+      console.log(`[modal_actions] Starting from snapshot ${snapshotImageId}`);
 
       const instance = await client.instances.start({
         gpu,
@@ -265,32 +178,16 @@ export const startInstance = internalAction({
         timeoutSeconds: args.ttlSeconds ?? 60 * 60,
         metadata: args.metadata,
         envs: args.envs,
-        ...(useSnapshot
-          ? { snapshotImageId }
-          : { image: baseImage }),
+        snapshotImageId,
         encryptedPorts: [8888, 39377, 39378, 39380],
       });
 
       const authToken = generateAuthToken();
 
-      if (useSnapshot) {
-        // Snapshot has everything installed — just start services
-        console.log("[modal_actions] Running lightweight startup script...");
-        const result = await instance.exec(buildStartupScript(authToken));
-        if (result.exit_code !== 0) {
-          console.error("[modal_actions] Startup script failed:", result.stderr);
-        }
-      } else {
-        // No snapshot — run the full install + startup (slow path)
-        console.log("[modal_actions] No snapshot, running full setup...");
-        const installResult = await instance.exec(buildInstallScript());
-        if (installResult.exit_code !== 0) {
-          console.error("[modal_actions] Install failed:", installResult.stderr);
-        }
-        const startResult = await instance.exec(buildStartupScript(authToken));
-        if (startResult.exit_code !== 0) {
-          console.error("[modal_actions] Startup failed:", startResult.stderr);
-        }
+      console.log("[modal_actions] Running startup script...");
+      const result = await instance.exec(buildStartupScript(authToken));
+      if (result.exit_code !== 0) {
+        console.error("[modal_actions] Startup script failed:", result.stderr);
       }
 
       // Refresh tunnel URLs
@@ -311,7 +208,7 @@ export const startInstance = internalAction({
           : undefined,
         workerUrl: workerUrl ?? undefined,
         vncUrl: vncUrl
-          ? `${vncUrl}/vnc.html?autoconnect=true&resize=scale&quality=9&compression=0&show_dot=true&reconnect=true&reconnect_delay=1000`
+          ? `${vncUrl}/vnc.html?tkn=${authToken}&autoconnect=true&resize=scale&quality=9&compression=0&show_dot=true&reconnect=true&reconnect_delay=1000`
           : undefined,
       };
     } finally {
@@ -347,7 +244,7 @@ export const getInstance = internalAction({
         vscodeUrl,
         workerUrl: workerUrl ?? null,
         vncUrl: vncUrl
-          ? `${vncUrl}/vnc.html?autoconnect=true&resize=scale`
+          ? `${vncUrl}/viewer.html?autoconnect=true&resize=scale`
           : null,
       };
     } catch {

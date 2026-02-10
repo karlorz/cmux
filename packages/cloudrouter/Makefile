@@ -113,7 +113,7 @@ build-npm:
 	@echo "Done! Binaries built in npm/*/bin/"
 	@# Verify all binaries report same version
 	@echo "Verifying binary versions..."
-	@EXPECTED="cmux version $(VERSION)"; \
+	@EXPECTED="cloudrouter version $(VERSION)"; \
 	for bin in npm/darwin-arm64/bin/cmux npm/darwin-x64/bin/cmux npm/cmux/lib/cmux; do \
 		ACTUAL=$$($$bin --version 2>/dev/null || echo "failed"); \
 		if [ "$$ACTUAL" != "$$EXPECTED" ]; then \

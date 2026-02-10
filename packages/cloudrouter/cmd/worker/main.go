@@ -350,6 +350,8 @@ func handleAPI(w http.ResponseWriter, r *http.Request) {
 		handleDeleteFile(w, r, body)
 	case "/list-files":
 		handleListFiles(w, r, body)
+	case "/env":
+		handleEnv(w, r, body)
 	case "/status":
 		handleStatus(w, r)
 	case "/services":
@@ -535,6 +537,124 @@ func handleListFiles(w http.ResponseWriter, r *http.Request, body map[string]int
 		"files":    files,
 		"basePath": dirPath,
 	})
+}
+
+const envFilePath = "/home/user/.env"
+
+func handleEnv(w http.ResponseWriter, r *http.Request, body map[string]interface{}) {
+	switch r.Method {
+	case "GET":
+		content, err := os.ReadFile(envFilePath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				sendJSON(w, map[string]string{"content": ""})
+				return
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+			sendJSON(w, map[string]string{"error": err.Error()})
+			return
+		}
+		sendJSON(w, map[string]string{"content": string(content)})
+
+	case "POST":
+		content, _ := body["content"].(string)
+		encoding, _ := body["encoding"].(string)
+
+		if encoding == "base64" {
+			decoded, err := base64.StdEncoding.DecodeString(content)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				sendJSON(w, map[string]string{"error": "invalid base64 content"})
+				return
+			}
+			content = string(decoded)
+		}
+
+		if content == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			sendJSON(w, map[string]string{"error": "content required"})
+			return
+		}
+
+		// Write env file with restricted permissions
+		if err := os.WriteFile(envFilePath, []byte(content), 0600); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			sendJSON(w, map[string]string{"error": err.Error()})
+			return
+		}
+
+		// Chown to user:user (UID/GID 1000) so the sandbox user can read it
+		if err := os.Chown(envFilePath, 1000, 1000); err != nil {
+			log.Printf("[worker] Failed to chown .env: %v", err)
+		}
+
+		// Ensure .bashrc sources the .env file (idempotent)
+		ensureEnvSourced()
+
+		// Best-effort: load into envctl daemon if available
+		tryLoadEnvctl()
+
+		sendJSON(w, map[string]bool{"success": true})
+
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		sendJSON(w, map[string]string{"error": "Method not allowed"})
+	}
+}
+
+// ensureEnvSourced appends a source line to /home/user/.profile so env vars
+// are available in both interactive and non-interactive shells (login shells
+// source .profile, and .bashrc has an early return for non-interactive shells).
+func ensureEnvSourced() {
+	sourceLine := "\n# Load environment variables\nif [ -f /home/user/.env ]; then set -a; . /home/user/.env; set +a; fi\n"
+
+	for _, rcPath := range []string{"/home/user/.profile", "/home/user/.bashrc"} {
+		appendSourceLine(rcPath, sourceLine)
+	}
+}
+
+func appendSourceLine(rcPath, sourceLine string) {
+	content, err := os.ReadFile(rcPath)
+	if err != nil {
+		log.Printf("[worker] Failed to read %s: %v", rcPath, err)
+		return
+	}
+
+	if strings.Contains(string(content), "/home/user/.env") {
+		return // Already sourced
+	}
+
+	f, err := os.OpenFile(rcPath, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Printf("[worker] Failed to open %s for append: %v", rcPath, err)
+		return
+	}
+	defer f.Close()
+
+	if _, err := f.WriteString(sourceLine); err != nil {
+		log.Printf("[worker] Failed to append to %s: %v", rcPath, err)
+	}
+}
+
+// tryLoadEnvctl attempts to load the .env file into the envctl daemon.
+// This is best-effort: if envctl is not installed or the daemon is not
+// running, we log and continue. The .env file is still sourced via
+// .bashrc/.profile as a fallback.
+func tryLoadEnvctl() {
+	var cmd *exec.Cmd
+	if userExists() {
+		cmd = exec.Command("su", "-", "user", "-c", "envctl load /home/user/.env")
+	} else {
+		cmd = exec.Command("bash", "-c", "envctl load /home/user/.env")
+	}
+	cmd.Dir = "/home/user"
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("[worker] envctl load (best-effort): %v: %s", err, strings.TrimSpace(string(output)))
+		return
+	}
+	log.Printf("[worker] envctl loaded .env successfully")
 }
 
 func handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -860,12 +980,20 @@ func startSSHServer() {
 }
 
 func handleSSHSession(s ssh.Session) {
+	hasUser := userExists()
 	cmd := s.Command()
 	if len(cmd) > 0 {
-		// Exec command as 'user' (not root)
-		c := exec.Command("su", "-", "user", "-c", strings.Join(cmd, " "))
+		var c *exec.Cmd
+		if hasUser {
+			// Exec command as 'user' (not root)
+			c = exec.Command("su", "-", "user", "-c", strings.Join(cmd, " "))
+			c.Env = append(os.Environ(), "HOME=/home/user", "USER=user")
+		} else {
+			// No 'user' account (e.g. Modal) - run directly
+			c = exec.Command("bash", "-c", strings.Join(cmd, " "))
+			c.Env = append(os.Environ(), "HOME=/home/user")
+		}
 		c.Dir = workspaceDir
-		c.Env = append(os.Environ(), "HOME=/home/user", "USER=user")
 
 		stdin, _ := c.StdinPipe()
 		stdout, _ := c.StdoutPipe()
@@ -887,16 +1015,25 @@ func handleSSHSession(s ssh.Session) {
 		}
 		s.Exit(exitCode)
 	} else {
-		// Interactive shell as 'user' (not root)
+		// Interactive shell
 		ptyReq, winCh, isPty := s.Pty()
 		if isPty {
-			shell := exec.Command("su", "-", "user")
+			var shell *exec.Cmd
+			if hasUser {
+				shell = exec.Command("su", "-", "user")
+				shell.Env = append(os.Environ(),
+					"TERM="+ptyReq.Term,
+					"HOME=/home/user",
+					"USER=user",
+				)
+			} else {
+				shell = exec.Command("/bin/bash")
+				shell.Env = append(os.Environ(),
+					"TERM="+ptyReq.Term,
+					"HOME=/home/user",
+				)
+			}
 			shell.Dir = workspaceDir
-			shell.Env = append(os.Environ(),
-				"TERM="+ptyReq.Term,
-				"HOME=/home/user",
-				"USER=user",
-			)
 
 			ptmx, err := pty.Start(shell)
 			if err != nil {
@@ -956,6 +1093,12 @@ func generateSessionID() string {
 	bytes := make([]byte, 8)
 	rand.Read(bytes)
 	return hex.EncodeToString(bytes)
+}
+
+// userExists checks if the "user" account exists on the system
+func userExists() bool {
+	_, err := exec.Command("id", "user").Output()
+	return err == nil
 }
 
 func isProcessRunning(pattern string) bool {

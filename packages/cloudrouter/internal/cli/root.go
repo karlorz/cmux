@@ -101,6 +101,7 @@ func init() {
 	// Open commands
 	rootCmd.AddCommand(codeCmd)
 	rootCmd.AddCommand(vncCmd)
+	rootCmd.AddCommand(jupyterCmd)
 
 	// Lifecycle commands
 	rootCmd.AddCommand(stopCmd)
@@ -115,6 +116,9 @@ func init() {
 	// File transfer commands
 	rootCmd.AddCommand(uploadCmd)
 	rootCmd.AddCommand(downloadCmd)
+
+	// Environment variable management
+	rootCmd.AddCommand(envCmd)
 
 	// PTY commands (terminal session)
 	rootCmd.AddCommand(ptyCmd)
