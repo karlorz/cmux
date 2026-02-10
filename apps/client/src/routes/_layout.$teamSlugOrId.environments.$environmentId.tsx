@@ -3,6 +3,7 @@ import { FloatingPane } from "@/components/floating-pane";
 import { ScriptTextareaField } from "@/components/ScriptTextareaField";
 import { SCRIPT_COPY } from "@/components/scriptCopy";
 import { TitleBar } from "@/components/TitleBar";
+import { WorkspaceSetupPanel } from "@/components/WorkspaceSetupPanel";
 import { queryClient } from "@/query-client";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import {
@@ -1139,6 +1140,30 @@ function EnvironmentDetailsPage() {
                   </p>
                 )}
               </div>
+
+              {/* Per-Repository Workspace Configuration */}
+              {environment.selectedRepos && environment.selectedRepos.length > 0 && (
+                <div>
+                  <div className="mb-2">
+                    <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                      Per-Repository Configuration
+                    </h3>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-500 mt-1">
+                      Repository settings are applied alongside environment-level
+                      scripts and variables.
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    {environment.selectedRepos.map((repo) => (
+                      <WorkspaceSetupPanel
+                        key={repo}
+                        teamSlugOrId={teamSlugOrId}
+                        projectFullName={repo}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Snapshot Versions */}
               <div className="pt-4 border-t border-neutral-200 dark:border-neutral-800">
