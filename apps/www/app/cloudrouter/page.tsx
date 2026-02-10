@@ -3,18 +3,18 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "cloudrouter — Cloud VMs/GPUs for Claude Code/Codex",
   description:
-    "Cloud VMs/GPUs for Claude Code/Codex. Instant remote sandboxes with VS Code, terminal, VNC, and browser automation via Chrome CDP.",
+    "Cloud sandboxes for development. Instant remote VMs with VS Code, terminal, VNC, and browser automation via Chrome CDP.",
   openGraph: {
     title: "cloudrouter — Cloud VMs/GPUs for Claude Code/Codex",
     description:
-      "Cloud VMs/GPUs for Claude Code/Codex. Instant remote sandboxes with VS Code, terminal, VNC, and browser automation via Chrome CDP.",
+      "Cloud sandboxes for development. Instant remote VMs with VS Code, terminal, VNC, and browser automation via Chrome CDP.",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
     title: "cloudrouter — Cloud VMs/GPUs for Claude Code/Codex",
     description:
-      "Cloud VMs/GPUs for Claude Code/Codex. Instant remote sandboxes with VS Code, terminal, VNC, and browser automation via Chrome CDP.",
+      "Cloud sandboxes for development. Instant remote VMs with VS Code, terminal, VNC, and browser automation via Chrome CDP.",
   },
 };
 
@@ -89,12 +89,9 @@ export default function CloudRouterPage() {
             Cloud VMs/GPUs for Claude Code/Codex
           </h1>
           <p className="mb-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
-            cloudrouter is a CLI that gives AI coding agents and developers instant remote VMs
-            with VS Code, terminal access, VNC desktop, and browser automation via Chrome CDP.
-          </p>
-          <p className="text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
-            Spin up a sandbox from your local directory, run commands, transfer files,
-            and automate browsers — all from the command line or as an agent skill.
+            Cloud sandboxes for development. Spin up a sandbox from your local directory,
+            run commands, transfer files, and automate browsers — all from the command line
+            or as an agent skill.
           </p>
         </section>
 
