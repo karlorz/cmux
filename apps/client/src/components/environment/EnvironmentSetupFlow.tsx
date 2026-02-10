@@ -486,6 +486,7 @@ export function EnvironmentSetupFlow({
   // Workspace Configuration Phase - full-width split view
   return (
     <EnvironmentWorkspaceConfig
+      teamSlugOrId={teamSlugOrId}
       selectedRepos={selectedRepos}
       maintenanceScript={maintenanceScript}
       devScript={devScript}

@@ -52,6 +52,19 @@ function getMorphClient(): MorphCloudClient {
   return new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
 }
 
+function concatConfigBlocks(
+  blocks: Array<string | null | undefined>,
+  separator: string,
+): string | null {
+  const normalizedBlocks = blocks
+    .map((block) => block?.trim())
+    .filter((block): block is string => Boolean(block && block.length > 0));
+  if (normalizedBlocks.length === 0) {
+    return null;
+  }
+  return normalizedBlocks.join(separator);
+}
+
 function isPveLxcInstanceId(instanceId: string): boolean {
   return (
     instanceId.startsWith("pvelxc-") ||
@@ -432,33 +445,73 @@ sandboxesRouter.openapi(
       // Parse repo URL once if provided
       const parsedRepoUrl = repoUrl ? parseGithubRepoUrl(repoUrl) : null;
 
-      // Load workspace config if we're in cloud mode with a repository (not an environment)
-      let workspaceConfig: { maintenanceScript?: string; envVarsContent?: string } | null = null;
-      if (parsedRepoUrl && !body.environmentId) {
-        try {
-          const config = await convex.query(api.workspaceConfigs.get, {
-            teamSlugOrId: body.teamSlugOrId,
-            projectFullName: parsedRepoUrl.fullName,
-          });
-          if (config) {
+      const workspaceConfigRepoInputs = body.environmentId
+        ? environmentSelectedRepos ?? []
+        : parsedRepoUrl
+          ? [parsedRepoUrl.fullName]
+          : [];
+      const workspaceConfigRepos = Array.from(
+        new Set(
+          workspaceConfigRepoInputs.flatMap((repoInput) => {
+            const parsedRepo = parseGithubRepoUrl(repoInput);
+            if (!parsedRepo) {
+              console.warn(
+                `[sandboxes.start] Skipping invalid workspace config repo "${repoInput}"`,
+              );
+              return [];
+            }
+            return [parsedRepo.fullName];
+          }),
+        ),
+      );
+
+      const workspaceConfigs = await Promise.all(
+        workspaceConfigRepos.map(async (projectFullName) => {
+          try {
+            const config = await convex.query(api.workspaceConfigs.get, {
+              teamSlugOrId: body.teamSlugOrId,
+              projectFullName,
+            });
+            if (!config) {
+              return null;
+            }
             const envVarsContent = config.dataVaultKey
               ? await loadEnvironmentEnvVars(config.dataVaultKey)
               : null;
-            workspaceConfig = {
+            console.log(`[sandboxes.start] Loaded workspace config for ${projectFullName}`, {
+              hasMaintenanceScript: Boolean(config.maintenanceScript),
+              hasEnvVars: Boolean(envVarsContent),
+            });
+            return {
+              projectFullName,
               maintenanceScript: config.maintenanceScript ?? undefined,
               envVarsContent: envVarsContent ?? undefined,
             };
-            console.log(`[sandboxes.start] Loaded workspace config for ${parsedRepoUrl.fullName}`, {
-              hasMaintenanceScript: Boolean(workspaceConfig.maintenanceScript),
-              hasEnvVars: Boolean(workspaceConfig.envVarsContent),
-            });
+          } catch (error) {
+            console.error(
+              `[sandboxes.start] Failed to load workspace config for ${projectFullName}`,
+              error,
+            );
+            return null;
           }
-        } catch (error) {
-          console.error(`[sandboxes.start] Failed to load workspace config for ${parsedRepoUrl.fullName}`, error);
-        }
-      }
+        }),
+      );
+      const loadedWorkspaceConfigs = workspaceConfigs.flatMap((config) =>
+        config ? [config] : [],
+      );
+      const workspaceMaintenanceScript = concatConfigBlocks(
+        loadedWorkspaceConfigs.map((config) => config.maintenanceScript),
+        "\n\n",
+      );
+      const workspaceEnvVarsContent = concatConfigBlocks(
+        loadedWorkspaceConfigs.map((config) => config.envVarsContent),
+        "\n",
+      );
 
-      const maintenanceScript = environmentMaintenanceScript ?? workspaceConfig?.maintenanceScript ?? null;
+      const maintenanceScript = concatConfigBlocks(
+        [workspaceMaintenanceScript, environmentMaintenanceScript],
+        "\n\n",
+      );
       const devScript = environmentDevScript ?? null;
 
       const isCloudWorkspace =
@@ -716,8 +769,12 @@ sandboxesRouter.openapi(
       const environmentEnvVarsContent = await environmentEnvVarsPromise;
 
       // Prepare environment variables including task JWT if present
-      // Workspace env vars take precedence if no environment is configured
-      let envVarsToApply = environmentEnvVarsContent || workspaceConfig?.envVarsContent || "";
+      // Workspace config env vars are the base layer, environment vars override later.
+      let envVarsToApply =
+        concatConfigBlocks(
+          [workspaceEnvVarsContent, environmentEnvVarsContent],
+          "\n",
+        ) ?? "";
 
       // Add CMUX task-related env vars if present
       if (body.taskRunId) {
@@ -746,7 +803,7 @@ sandboxesRouter.openapi(
               `[sandboxes.start] Applied environment variables via envctl`,
               {
                 hasEnvironmentVars: Boolean(environmentEnvVarsContent),
-                hasWorkspaceVars: Boolean(workspaceConfig?.envVarsContent),
+                hasWorkspaceVars: Boolean(workspaceEnvVarsContent),
                 hasTaskRunId: Boolean(body.taskRunId),
                 hasTaskRunJwt: Boolean(body.taskRunJwt),
               },
