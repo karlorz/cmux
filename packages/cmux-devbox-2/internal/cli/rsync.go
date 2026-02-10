@@ -200,7 +200,7 @@ func runRsyncOverWebSocket(workerURL, token, localPath, remotePath string) error
 	// Split entries into chunks for parallel processing
 	chunks := splitEntries(syncEntries, parallelism)
 
-	fmt.Printf("Syncing %d files in %d parallel streams...\n", totalFiles, len(chunks))
+	fmt.Printf("Syncing %d files...\n", totalFiles)
 
 	// Run parallel rsync processes
 	var wg sync.WaitGroup

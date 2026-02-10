@@ -46,13 +46,15 @@ const CMUX_CODE_VERSION = "0.9.0";
 const INSTALL_SCRIPT = `#!/bin/bash
 set -e
 
-# Create workspace directory
+# Create 'user' account (matches E2B sandbox layout)
+id -u user >/dev/null 2>&1 || useradd -m -s /bin/bash -u 1000 user
 mkdir -p /home/user/workspace
+chown -R user:user /home/user
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq > /dev/null 2>&1
 apt-get install -y -qq \\
-  curl procps jq wget gnupg pip \\
+  curl procps jq wget gnupg pip rsync \\
   tigervnc-standalone-server tigervnc-common \\
   xfce4 xfce4-terminal dbus-x11 \\
   novnc python3-websockify \\
@@ -111,6 +113,39 @@ cat > /usr/share/novnc/viewer.html << 'VIEWER_EOF'
 VIEWER_EOF
 
 # auth-websockify is created as a separate step after install
+
+# Configure cmux-code directories and default settings (matches E2B layout)
+mkdir -p /root/.vscode-server-oss/data/User/profiles/default-profile
+mkdir -p /root/.vscode-server-oss/data/User/snippets
+mkdir -p /root/.vscode-server-oss/data/Machine
+mkdir -p /root/.vscode-server-oss/extensions
+cat > /root/.vscode-server-oss/data/User/settings.json << 'SETTINGS_EOF'
+{
+  "workbench.colorTheme": "Default Dark Modern",
+  "workbench.startupEditor": "none",
+  "workbench.welcomePage.walkthroughs.openOnInstall": false,
+  "workbench.tips.enabled": false,
+  "workbench.secondarySideBar.defaultVisibility": "hidden",
+  "editor.fontSize": 14,
+  "editor.tabSize": 2,
+  "editor.minimap.enabled": false,
+  "editor.formatOnSave": true,
+  "files.autoSave": "afterDelay",
+  "files.autoSaveDelay": 1000,
+  "terminal.integrated.fontSize": 14,
+  "terminal.integrated.shellIntegration.enabled": false,
+  "security.workspace.trust.enabled": false,
+  "security.workspace.trust.startupPrompt": "never",
+  "security.workspace.trust.untrustedFiles": "open",
+  "security.workspace.trust.emptyWindow": false,
+  "extensions.verifySignature": false,
+  "git.openDiffOnClick": true,
+  "scm.defaultViewMode": "tree",
+  "settingsSync.ignoredSettings": []
+}
+SETTINGS_EOF
+cp /root/.vscode-server-oss/data/User/settings.json /root/.vscode-server-oss/data/User/profiles/default-profile/settings.json
+cp /root/.vscode-server-oss/data/User/settings.json /root/.vscode-server-oss/data/Machine/settings.json
 
 # Clean apt cache to reduce snapshot size
 apt-get clean > /dev/null 2>&1
@@ -175,61 +210,32 @@ async function main() {
       }
     }
 
-    // Create auth-websockify script (separate exec to avoid heredoc issues in main script)
-    console.log("[build-snapshot] Installing auth-websockify...");
-    const authWsScript = [
-      "#!/usr/bin/python3",
-      "import sys, os, urllib.parse",
-      "from websockify import websocketproxy",
-      "",
-      "TOKEN_FILE = '/home/user/.worker-auth-token'",
-      "",
-      "def _read_token():",
-      "    try:",
-      "        with open(TOKEN_FILE) as f:",
-      "            return f.read().strip()",
-      "    except Exception:",
-      "        return None",
-      "",
-      "def _validate_token(handler):",
-      "    parsed = urllib.parse.urlparse(handler.path)",
-      "    params = urllib.parse.parse_qs(parsed.query)",
-      "    tkn = params.get('tkn', params.get('token', [None]))[0]",
-      "    expected = _read_token()",
-      "    return tkn is not None and expected is not None and tkn == expected",
-      "",
-      "class AuthRequestHandler(websocketproxy.ProxyRequestHandler):",
-      "    def do_GET(self):",
-      "        if not _validate_token(self):",
-      "            self.send_error(403, 'Forbidden: missing or invalid token')",
-      "            return",
-      "        return super().do_GET()",
-      "",
-      "    def do_proxy(self):",
-      "        if not _validate_token(self):",
-      "            self.send_error(403, 'Forbidden: missing or invalid token')",
-      "            return",
-      "        return super().do_proxy()",
-      "",
-      "# Override WebSocketProxy to always use AuthRequestHandler",
-      "# (default param is evaluated at define time, so monkey-patching module attr won't work)",
-      "OrigWebSocketProxy = websocketproxy.WebSocketProxy",
-      "class AuthWebSocketProxy(OrigWebSocketProxy):",
-      "    def __init__(self, RequestHandlerClass=AuthRequestHandler, *args, **kwargs):",
-      "        super().__init__(RequestHandlerClass=RequestHandlerClass, *args, **kwargs)",
-      "websocketproxy.WebSocketProxy = AuthWebSocketProxy",
-      "",
-      "if __name__ == '__main__':",
-      "    websocketproxy.websockify_init()",
-    ].join("\n");
-    const authWsB64 = Buffer.from(authWsScript).toString("base64");
-    const authResult = await instance.exec(
-      `echo '${authWsB64}' | base64 -d > /usr/local/bin/auth-websockify && chmod +x /usr/local/bin/auth-websockify && echo AUTH_WS_OK`,
+    // Install vnc-auth-proxy.js (same Node.js proxy used by E2B, adjusted for Modal paths)
+    console.log("[build-snapshot] Installing vnc-auth-proxy...");
+    const vncProxySrc = readFileSync(
+      resolve(import.meta.dirname!, "../packages/cmux-devbox-2/worker/vnc-auth-proxy.js"),
+      "utf-8",
     );
-    if (authResult.stdout.includes("AUTH_WS_OK")) {
-      console.log("[build-snapshot] auth-websockify installed successfully");
+    // Adjust NOVNC_DIR for Modal (apt-installed noVNC is at /usr/share/novnc)
+    const vncProxyAdjusted = vncProxySrc.replace(
+      "const NOVNC_DIR = '/opt/noVNC';",
+      "const NOVNC_DIR = '/usr/share/novnc';",
+    );
+    const vncProxyB64 = Buffer.from(vncProxyAdjusted).toString("base64");
+    const vncProxyChunkSize = 65536;
+    const vncProxyChunks = Math.ceil(vncProxyB64.length / vncProxyChunkSize);
+    await instance.exec("rm -f /tmp/vnc-auth-proxy.b64");
+    for (let i = 0; i < vncProxyChunks; i++) {
+      const chunk = vncProxyB64.slice(i * vncProxyChunkSize, (i + 1) * vncProxyChunkSize);
+      await instance.exec(`printf '%s' '${chunk}' >> /tmp/vnc-auth-proxy.b64`);
+    }
+    const vncResult = await instance.exec(
+      "base64 -d /tmp/vnc-auth-proxy.b64 > /usr/local/bin/vnc-auth-proxy.js && chmod +x /usr/local/bin/vnc-auth-proxy.js && rm /tmp/vnc-auth-proxy.b64 && echo VNC_PROXY_OK",
+    );
+    if (vncResult.stdout.includes("VNC_PROXY_OK")) {
+      console.log("[build-snapshot] vnc-auth-proxy installed successfully");
     } else {
-      console.error("[build-snapshot] Failed to install auth-websockify:", authResult.stderr);
+      console.error("[build-snapshot] Failed to install vnc-auth-proxy:", vncResult.stderr);
     }
 
     console.log("[build-snapshot] Snapshotting filesystem...");

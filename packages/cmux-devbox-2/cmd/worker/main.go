@@ -641,7 +641,12 @@ func appendSourceLine(rcPath, sourceLine string) {
 // running, we log and continue. The .env file is still sourced via
 // .bashrc/.profile as a fallback.
 func tryLoadEnvctl() {
-	cmd := exec.Command("su", "-", "user", "-c", "envctl load /home/user/.env")
+	var cmd *exec.Cmd
+	if userExists() {
+		cmd = exec.Command("su", "-", "user", "-c", "envctl load /home/user/.env")
+	} else {
+		cmd = exec.Command("bash", "-c", "envctl load /home/user/.env")
+	}
 	cmd.Dir = "/home/user"
 
 	output, err := cmd.CombinedOutput()
@@ -975,12 +980,20 @@ func startSSHServer() {
 }
 
 func handleSSHSession(s ssh.Session) {
+	hasUser := userExists()
 	cmd := s.Command()
 	if len(cmd) > 0 {
-		// Exec command as 'user' (not root)
-		c := exec.Command("su", "-", "user", "-c", strings.Join(cmd, " "))
+		var c *exec.Cmd
+		if hasUser {
+			// Exec command as 'user' (not root)
+			c = exec.Command("su", "-", "user", "-c", strings.Join(cmd, " "))
+			c.Env = append(os.Environ(), "HOME=/home/user", "USER=user")
+		} else {
+			// No 'user' account (e.g. Modal) - run directly
+			c = exec.Command("bash", "-c", strings.Join(cmd, " "))
+			c.Env = append(os.Environ(), "HOME=/home/user")
+		}
 		c.Dir = workspaceDir
-		c.Env = append(os.Environ(), "HOME=/home/user", "USER=user")
 
 		stdin, _ := c.StdinPipe()
 		stdout, _ := c.StdoutPipe()
@@ -1002,16 +1015,25 @@ func handleSSHSession(s ssh.Session) {
 		}
 		s.Exit(exitCode)
 	} else {
-		// Interactive shell as 'user' (not root)
+		// Interactive shell
 		ptyReq, winCh, isPty := s.Pty()
 		if isPty {
-			shell := exec.Command("su", "-", "user")
+			var shell *exec.Cmd
+			if hasUser {
+				shell = exec.Command("su", "-", "user")
+				shell.Env = append(os.Environ(),
+					"TERM="+ptyReq.Term,
+					"HOME=/home/user",
+					"USER=user",
+				)
+			} else {
+				shell = exec.Command("/bin/bash")
+				shell.Env = append(os.Environ(),
+					"TERM="+ptyReq.Term,
+					"HOME=/home/user",
+				)
+			}
 			shell.Dir = workspaceDir
-			shell.Env = append(os.Environ(),
-				"TERM="+ptyReq.Term,
-				"HOME=/home/user",
-				"USER=user",
-			)
 
 			ptmx, err := pty.Start(shell)
 			if err != nil {
@@ -1071,6 +1093,12 @@ func generateSessionID() string {
 	bytes := make([]byte, 8)
 	rand.Read(bytes)
 	return hex.EncodeToString(bytes)
+}
+
+// userExists checks if the "user" account exists on the system
+func userExists() bool {
+	_, err := exec.Command("id", "user").Output()
+	return err == nil
 }
 
 func isProcessRunning(pattern string) bool {
