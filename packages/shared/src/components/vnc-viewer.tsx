@@ -316,10 +316,28 @@ export const VncViewer = forwardRef<VncViewerHandle, VncViewerProps>(
         if (isUnmountedRef.current) return;
 
         const wsUrl = urlRef.current;
-        const rfb = new RFB(containerRef.current, wsUrl, {
+        const containerEl = containerRef.current;
+        if (!containerEl) return;
+
+        const previouslyFocused =
+          typeof document !== "undefined" ? document.activeElement : null;
+        const focusWasOutsideVnc =
+          previouslyFocused !== null &&
+          previouslyFocused !== containerEl &&
+          !containerEl.contains(previouslyFocused);
+
+        const rfb = new RFB(containerEl, wsUrl, {
           credentials: undefined,
           wsProtocols: ["binary"],
         });
+
+        if (focusWasOutsideVnc && previouslyFocused instanceof HTMLElement) {
+          try {
+            previouslyFocused.focus({ preventScroll: true });
+          } catch (e) {
+            console.error("[VncViewer] Failed to restore focus:", e);
+          }
+        }
 
         rfb.scaleViewport = scaleViewport;
         rfb.clipViewport = clipViewport;
@@ -980,7 +998,7 @@ export const VncViewer = forwardRef<VncViewerHandle, VncViewerProps>(
           ref={containerRef}
           className="absolute inset-0"
           style={{ background }}
-          tabIndex={0}
+          tabIndex={-1}
           data-drag-disable-pointer
         />
 
