@@ -89,14 +89,25 @@ app.use("*", prettyJSON());
 app.use(
   "*",
   cors({
-    origin: [
-      getHostUrl(defaultHostConfig.client),
-      getHostUrl(defaultHostConfig.server),
-      "https://cmux.sh",
-      "https://www.cmux.sh",
-      ...(clientPreviewOrigin ? [clientPreviewOrigin] : []),
-      ...additionalClientOrigins,
-    ],
+    origin: (requestOrigin) => {
+      const staticOrigins = new Set([
+        getHostUrl(defaultHostConfig.client),
+        getHostUrl(defaultHostConfig.server),
+        "https://cmux.sh",
+        "https://www.cmux.sh",
+        ...(clientPreviewOrigin ? [clientPreviewOrigin] : []),
+        ...additionalClientOrigins,
+      ]);
+      if (staticOrigins.has(requestOrigin)) return requestOrigin;
+      // Allow proxy URL patterns (PVE LXC, Morph, etc.)
+      try {
+        const u = new URL(requestOrigin);
+        if (/^port-\d+-[^.]+\..+$/.test(u.hostname)) return requestOrigin;
+      } catch {
+        // Not a valid URL, reject
+      }
+      return undefined;
+    },
     credentials: true,
     allowHeaders: ["x-stack-auth", "content-type", "authorization"],
   }),
