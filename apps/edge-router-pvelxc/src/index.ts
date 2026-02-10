@@ -466,6 +466,43 @@ history.replaceState = function(state, title, url) {
   return originalReplaceState.apply(this, arguments);
 };
 
+// Intercept WebSocket constructor to rewrite localhost URLs
+var OriginalWebSocket = window.WebSocket;
+window.WebSocket = function(url, protocols) {
+  var rawUrl = typeof url === 'string'
+    ? url
+    : (url && typeof url.toString === 'function' ? url.toString() : String(url));
+  var newUrl = replaceLocalhostUrl(rawUrl);
+  if (newUrl !== rawUrl) {
+    // replaceLocalhostUrl sets protocol to https:, convert to wss: for WebSocket
+    newUrl = newUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+  }
+  return protocols !== undefined
+    ? new OriginalWebSocket(newUrl, protocols)
+    : new OriginalWebSocket(newUrl);
+};
+window.WebSocket.prototype = OriginalWebSocket.prototype;
+window.WebSocket.CONNECTING = OriginalWebSocket.CONNECTING;
+window.WebSocket.OPEN = OriginalWebSocket.OPEN;
+window.WebSocket.CLOSING = OriginalWebSocket.CLOSING;
+window.WebSocket.CLOSED = OriginalWebSocket.CLOSED;
+
+// Intercept EventSource constructor (for SSE like Vite HMR)
+var OriginalEventSource = window.EventSource;
+if (OriginalEventSource) {
+  window.EventSource = function(url, init) {
+    var rawUrl = typeof url === 'string'
+      ? url
+      : (url && typeof url.toString === 'function' ? url.toString() : String(url));
+    var newUrl = replaceLocalhostUrl(rawUrl);
+    return new OriginalEventSource(newUrl, init);
+  };
+  window.EventSource.prototype = OriginalEventSource.prototype;
+  window.EventSource.CONNECTING = OriginalEventSource.CONNECTING;
+  window.EventSource.OPEN = OriginalEventSource.OPEN;
+  window.EventSource.CLOSED = OriginalEventSource.CLOSED;
+}
+
 function startMutationObserver() {
   if (!document.body) {
     if (document.readyState === 'loading') {

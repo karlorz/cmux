@@ -1,4 +1,10 @@
-import { normalizeOrigin, defaultHostConfig, getHostUrl } from "@cmux/shared";
+import {
+  buildTrustedProxyDomainSet,
+  defaultHostConfig,
+  getHostUrl,
+  isTrustedProxyHostname,
+  normalizeOrigin,
+} from "@cmux/shared";
 import { githubPrsBackfillRepoRouter } from "@/lib/routes/github.prs.backfill-repo.route";
 import { githubPrsBackfillRouter } from "@/lib/routes/github.prs.backfill.route";
 import { githubPrsCodeRouter } from "@/lib/routes/github.prs.code.route";
@@ -55,6 +61,17 @@ const clientPreviewOrigin = clientPreviewOriginRaw
 // Supports comma-separated values: NEXT_PUBLIC_CLIENT_ORIGIN=https://a.com,https://b.com
 const additionalClientOrigins =
   process.env.NEXT_PUBLIC_CLIENT_ORIGIN?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
+const staticCorsOrigins = new Set([
+  getHostUrl(defaultHostConfig.client),
+  getHostUrl(defaultHostConfig.server),
+  "https://cmux.sh",
+  "https://www.cmux.sh",
+  ...(clientPreviewOrigin ? [clientPreviewOrigin] : []),
+  ...additionalClientOrigins,
+]);
+const trustedProxyDomains = buildTrustedProxyDomainSet([
+  process.env.PVE_PUBLIC_DOMAIN,
+]);
 
 const app = new OpenAPIHono({
   defaultHook: (result, c) => {
@@ -89,14 +106,20 @@ app.use("*", prettyJSON());
 app.use(
   "*",
   cors({
-    origin: [
-      getHostUrl(defaultHostConfig.client),
-      getHostUrl(defaultHostConfig.server),
-      "https://cmux.sh",
-      "https://www.cmux.sh",
-      ...(clientPreviewOrigin ? [clientPreviewOrigin] : []),
-      ...additionalClientOrigins,
-    ],
+    origin: (requestOrigin) => {
+      if (!requestOrigin) return undefined;
+      if (staticCorsOrigins.has(requestOrigin)) return requestOrigin;
+      // Allow trusted proxy URL patterns only (PVE LXC, Morph, etc.)
+      try {
+        const u = new URL(requestOrigin);
+        if (isTrustedProxyHostname(u.hostname, trustedProxyDomains)) {
+          return requestOrigin;
+        }
+      } catch {
+        // Not a valid URL, reject
+      }
+      return undefined;
+    },
     credentials: true,
     allowHeaders: ["x-stack-auth", "content-type", "authorization"],
   }),
