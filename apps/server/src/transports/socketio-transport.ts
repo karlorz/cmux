@@ -30,6 +30,8 @@ export function createSocketIOTransport(
       if (defaultAllowed.has(origin) || dynamicAllowed.has(origin)) return true;
       // Allow localhost during development regardless of port
       if (u.hostname === "localhost" || u.hostname === "127.0.0.1") return true;
+      // Allow proxy URL patterns (PVE LXC, Morph, etc.)
+      if (/^port-\d+-[^.]+\..+$/.test(u.hostname)) return true;
     } catch {
       // Non-URL origin strings: be permissive
       return true;

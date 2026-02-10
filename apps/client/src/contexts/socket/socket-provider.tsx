@@ -10,6 +10,7 @@ import { setGlobalSocket, socketBoot } from "./socket-boot";
 import { WebSocketContext } from "./socket-context";
 import type { SocketContextType } from "./types";
 import { env } from "@/client-env";
+import { deriveProxyServiceUrl } from "@/lib/deriveProxyServiceUrl";
 
 interface SocketProviderProps {
   children: React.ReactNode;
@@ -18,7 +19,9 @@ interface SocketProviderProps {
 
 export const SocketProvider: React.FC<SocketProviderProps> = ({
   children,
-  url = env.NEXT_PUBLIC_SERVER_ORIGIN || "http://localhost:9776",
+  url =
+    env.NEXT_PUBLIC_SERVER_ORIGIN ||
+    deriveProxyServiceUrl(9776, "http://localhost:9776"),
 }) => {
   const authJsonQuery = useQuery(authJsonQueryOptions());
   const authToken = authJsonQuery.data?.accessToken;

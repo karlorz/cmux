@@ -55,6 +55,14 @@ const clientPreviewOrigin = clientPreviewOriginRaw
 // Supports comma-separated values: NEXT_PUBLIC_CLIENT_ORIGIN=https://a.com,https://b.com
 const additionalClientOrigins =
   process.env.NEXT_PUBLIC_CLIENT_ORIGIN?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
+const staticCorsOrigins = new Set([
+  getHostUrl(defaultHostConfig.client),
+  getHostUrl(defaultHostConfig.server),
+  "https://cmux.sh",
+  "https://www.cmux.sh",
+  ...(clientPreviewOrigin ? [clientPreviewOrigin] : []),
+  ...additionalClientOrigins,
+]);
 
 const app = new OpenAPIHono({
   defaultHook: (result, c) => {
@@ -89,14 +97,22 @@ app.use("*", prettyJSON());
 app.use(
   "*",
   cors({
-    origin: [
-      getHostUrl(defaultHostConfig.client),
-      getHostUrl(defaultHostConfig.server),
-      "https://cmux.sh",
-      "https://www.cmux.sh",
-      ...(clientPreviewOrigin ? [clientPreviewOrigin] : []),
-      ...additionalClientOrigins,
-    ],
+    origin: (requestOrigin) => {
+      if (staticCorsOrigins.has(requestOrigin)) {
+        return requestOrigin;
+      }
+
+      try {
+        const parsed = new URL(requestOrigin);
+        if (/^port-\d+-[^.]+\..+$/.test(parsed.hostname)) {
+          return requestOrigin;
+        }
+      } catch {
+        // Ignore invalid origins
+      }
+
+      return undefined;
+    },
     credentials: true,
     allowHeaders: ["x-stack-auth", "content-type", "authorization"],
   }),
