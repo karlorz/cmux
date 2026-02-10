@@ -69,9 +69,6 @@ export default function CloudRouterPage() {
             <a href="#install" className="transition hover:text-neutral-900 dark:hover:text-white">
               Install
             </a>
-            <a href="#skill" className="transition hover:text-neutral-900 dark:hover:text-white">
-              Skill
-            </a>
             <a href="#features" className="transition hover:text-neutral-900 dark:hover:text-white">
               Features
             </a>
@@ -103,9 +100,32 @@ export default function CloudRouterPage() {
 
         <hr className="mb-16 border-neutral-200 dark:border-neutral-800" />
 
-        {/* Install */}
+        {/* Install as agent skill */}
         <section id="install" className="mb-16 scroll-mt-16">
           <h2 className="mb-4 text-lg font-semibold">Install</h2>
+          <p className="mb-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
+            Install cloudrouter as a skill for Claude Code, Codex, or other coding agents.
+          </p>
+          <CodeBlock>
+            {[
+              "# Add to any agent",
+              "npx skills add manaflow-ai/cloudrouter",
+              "",
+              "# Or target a specific agent",
+              "npx skills add manaflow-ai/cloudrouter -a claude-code",
+              "npx skills add manaflow-ai/cloudrouter -a cursor",
+            ].join("\n")}
+          </CodeBlock>
+        </section>
+
+        <hr className="mb-16 border-neutral-200 dark:border-neutral-800" />
+
+        {/* Manual installation */}
+        <section id="manual-install" className="mb-16 scroll-mt-16">
+          <h2 className="mb-4 text-lg font-semibold">Manual installation</h2>
+          <p className="mb-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
+            You can also install cloudrouter as a standalone CLI.
+          </p>
           <CodeBlock>{`npm install -g cloudrouter`}</CodeBlock>
           <p className="mt-4 text-sm text-neutral-500 dark:text-neutral-400">
             Then authenticate:
@@ -136,27 +156,6 @@ export default function CloudRouterPage() {
               "",
               "# Open VNC desktop",
               "cloudrouter vnc cr_abc123",
-            ].join("\n")}
-          </CodeBlock>
-        </section>
-
-        <hr className="mb-16 border-neutral-200 dark:border-neutral-800" />
-
-        {/* Agent skill */}
-        <section id="skill" className="mb-16 scroll-mt-16">
-          <h2 className="mb-4 text-lg font-semibold">Add as an agent skill</h2>
-          <p className="mb-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
-            Give your AI coding agent the ability to create sandboxes, run code, transfer files,
-            and automate browsers.
-          </p>
-          <CodeBlock>
-            {[
-              "# Add to any agent",
-              "npx skills add manaflow-ai/cloudrouter",
-              "",
-              "# Or target a specific agent",
-              "npx skills add manaflow-ai/cloudrouter -a claude-code",
-              "npx skills add manaflow-ai/cloudrouter -a cursor",
             ].join("\n")}
           </CodeBlock>
         </section>
