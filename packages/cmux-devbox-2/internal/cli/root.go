@@ -101,6 +101,7 @@ func init() {
 	// Open commands
 	rootCmd.AddCommand(codeCmd)
 	rootCmd.AddCommand(vncCmd)
+	rootCmd.AddCommand(jupyterCmd)
 
 	// Lifecycle commands
 	rootCmd.AddCommand(stopCmd)

@@ -406,6 +406,7 @@ async function handleGetInstance(
     })) as {
       instanceId: string;
       status: string;
+      jupyterUrl?: string | null;
       vscodeUrl?: string | null;
       workerUrl?: string | null;
       vncUrl?: string | null;
@@ -426,6 +427,7 @@ async function handleGetInstance(
       provider,
       status,
       name: instance.name,
+      jupyterUrl: providerResult.jupyterUrl ?? undefined,
       vscodeUrl: providerResult.vscodeUrl ?? undefined,
       workerUrl: providerResult.workerUrl ?? undefined,
       vncUrl: providerResult.vncUrl ?? undefined,
