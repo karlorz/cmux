@@ -308,34 +308,34 @@ func (c *Client) GetConfig() (*ConfigResponse, error) {
 	return &resp, nil
 }
 
-// DoWorkerGetRequest makes a GET request to the worker daemon
-func DoWorkerGetRequest(workerURL, path, token string) ([]byte, error) {
-	client := &http.Client{Timeout: 60 * time.Second}
-
-	req, err := http.NewRequest("GET", workerURL+path, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("worker error (%d): %s", resp.StatusCode, string(respBody))
-	}
-
-	return respBody, nil
-}
+// // DoWorkerGetRequest makes a GET request to the worker daemon
+// func DoWorkerGetRequest(workerURL, path, token string) ([]byte, error) {
+// 	client := &http.Client{Timeout: 60 * time.Second}
+//
+// 	req, err := http.NewRequest("GET", workerURL+path, nil)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+//
+// 	req.Header.Set("Authorization", "Bearer "+token)
+//
+// 	resp, err := client.Do(req)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	defer resp.Body.Close()
+//
+// 	respBody, err := io.ReadAll(resp.Body)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+//
+// 	if resp.StatusCode >= 400 {
+// 		return nil, fmt.Errorf("worker error (%d): %s", resp.StatusCode, string(respBody))
+// 	}
+//
+// 	return respBody, nil
+// }
 
 // DoWorkerRequest makes a direct request to the worker daemon
 func DoWorkerRequest(workerURL, path, token string, body []byte) ([]byte, error) {
