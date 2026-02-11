@@ -16,19 +16,16 @@ import {
   getActivePanelPositions,
   removePanelFromAllPositions,
   getCurrentLayoutPanels,
-  ensureTerminalPanelVisible,
   PANEL_LABELS,
 } from "@/lib/panel-config";
 import type { PanelConfig, PanelType, PanelPosition } from "@/lib/panel-config";
 import {
-  cleanupTaskRunIframes,
   getTaskRunBrowserPersistKey,
   getTaskRunPersistKey,
 } from "@/lib/persistent-webview-keys";
 import {
   toGenericVncUrl,
   toMorphXtermBaseUrl,
-  toVncViewerUrl,
 } from "@/lib/toProxyWorkspaceUrl";
 import { getWorkspaceUrl } from "@/lib/workspace-url";
 import {
@@ -47,7 +44,6 @@ import { api } from "@cmux/convex/api";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { convexQuery } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "convex/react";
-import { useQuery as useTanstackQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -114,32 +110,12 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/task/$taskId/")({
     });
 
     void (async () => {
-      // Invalidate stale cache data before preloading iframes.
-      // This ensures we fetch fresh data from Convex instead of using
-      // potentially stale cached data from previous navigations.
-      const taskQueryOptions = convexQuery(api.tasks.getById, {
-        teamSlugOrId: opts.params.teamSlugOrId,
-        id: opts.params.taskId,
-      });
-      const taskRunsQueryOptions = convexQuery(api.taskRuns.getByTask, {
-        teamSlugOrId: opts.params.teamSlugOrId,
-        taskId: opts.params.taskId,
-      });
-
-      // Fetch task and task runs in parallel
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: taskQueryOptions.queryKey }),
-        queryClient.invalidateQueries({ queryKey: taskRunsQueryOptions.queryKey }),
-      ]);
-      const [task, taskRuns] = await Promise.all([
-        queryClient.fetchQuery(taskQueryOptions),
-        queryClient.fetchQuery(taskRunsQueryOptions),
-      ]);
-
-      // Don't preload iframes for archived tasks - prevents Wake on HTTP from resuming paused VMs
-      if (task?.isArchived) {
-        return;
-      }
+      const taskRuns = await queryClient.ensureQueryData(
+        convexQuery(api.taskRuns.getByTask, {
+          teamSlugOrId: opts.params.teamSlugOrId,
+          taskId: opts.params.taskId,
+        })
+      );
 
       if (!taskRuns?.length) {
         return;
@@ -156,7 +132,6 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/task/$taskId/")({
         : taskRuns[0];
 
       const rawWorkspaceUrl = selectedRun?.vscode?.workspaceUrl ?? null;
-      const rawVncUrl = selectedRun?.vscode?.vncUrl ?? null;
       const rawBrowserUrl =
         selectedRun?.vscode?.url ?? rawWorkspaceUrl ?? null;
 
@@ -175,14 +150,8 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/task/$taskId/")({
           });
         }
       }
-      // Preload browser iframe - prefer direct vncUrl for PVE LXC, fall back to Morph derivation
-      if (selectedRun) {
-        let vncUrl: string | null = null;
-        if (rawVncUrl) {
-          vncUrl = toVncViewerUrl(rawVncUrl);
-        } else if (rawBrowserUrl) {
-          vncUrl = toGenericVncUrl(rawBrowserUrl);
-        }
+      if (selectedRun && rawBrowserUrl) {
+        const vncUrl = toGenericVncUrl(rawBrowserUrl);
         if (vncUrl) {
           void preloadTaskRunBrowserIframe(selectedRun._id, vncUrl).catch(
             (error) => {
@@ -578,9 +547,6 @@ function TaskDetailPage() {
   }, [selectedRunId]);
   const headerTaskRunId = selectedRunId ?? taskRuns?.[0]?._id ?? null;
 
-  // Check if task is archived - if so, disable all HTTP requests to VM to prevent Wake on HTTP
-  const isTaskArchived = task?.isArchived === true;
-
   const rawWorkspaceUrl = selectedRun?.vscode?.workspaceUrl ?? null;
   const workspaceUrl = getWorkspaceUrl(
     rawWorkspaceUrl,
@@ -592,8 +558,6 @@ function TaskDetailPage() {
     : null;
 
   useEffect(() => {
-    // Don't preload iframes for archived tasks - prevents Wake on HTTP
-    if (isTaskArchived) return;
     if (selectedRunId && workspaceUrl) {
       void preloadTaskRunIframes([
         {
@@ -602,92 +566,7 @@ function TaskDetailPage() {
         },
       ]);
     }
-  }, [selectedRunId, workspaceUrl, isTaskArchived]);
-
-  // Clean up cached iframes when task becomes archived - prevents Wake on HTTP
-  // This handles the reactive case when task.isArchived changes via Convex real-time updates
-  useEffect(() => {
-    if (!isTaskArchived || !taskRuns?.length) return;
-
-    // Clean up iframes for all runs in this task
-    const cleanupAllRuns = (
-      runs: TaskRunListItem[]
-    ): void => {
-      for (const run of runs) {
-        cleanupTaskRunIframes(run._id);
-        if (run.children?.length) {
-          cleanupAllRuns(run.children);
-        }
-      }
-    };
-
-    cleanupAllRuns(taskRuns);
-  }, [isTaskArchived, taskRuns]);
-
-  // Track if we've already attempted terminal auto-add (prevent re-adding after user closes)
-  const hasAttemptedTerminalAutoAdd = useRef(false);
-
-  // Query terminal sessions to detect if Claude Code is running
-  // Disable for archived tasks to prevent Wake on HTTP (the query has refetchInterval: 10_000)
-  // Prefer direct xtermUrl from vscode info (works for PVE LXC), fall back to deriving from Morph URL
-  const xtermBaseUrl = useMemo(
-    () => {
-      if (isTaskArchived) return null;
-      // Prefer direct xtermUrl if available (PVE LXC and future providers)
-      if (selectedRun?.vscode?.xtermUrl) {
-        return selectedRun.vscode.xtermUrl;
-      }
-      // Fall back to deriving from Morph workspace URL
-      return rawWorkspaceUrl ? toMorphXtermBaseUrl(rawWorkspaceUrl) : null;
-    },
-    [rawWorkspaceUrl, isTaskArchived, selectedRun?.vscode?.xtermUrl]
-  );
-  const terminalTabsQuery = useTanstackQuery(
-    terminalTabsQueryOptions({
-      baseUrl: xtermBaseUrl,
-      contextKey: selectedRunId,
-      // Disable query entirely for archived tasks - prevents Wake on HTTP from polling
-      enabled: Boolean(xtermBaseUrl) && !isTaskArchived,
-    })
-  );
-
-  // Auto-show terminal panel when sessions exist (only once per mount)
-  useEffect(() => {
-    // Only attempt once per run (don't re-add if user closes panel)
-    if (hasAttemptedTerminalAutoAdd.current) return;
-
-    // Wait for query to complete
-    if (terminalTabsQuery.isLoading || terminalTabsQuery.isError) return;
-
-    // Check if sessions exist
-    const hasTerminalSessions =
-      terminalTabsQuery.data && terminalTabsQuery.data.length > 0;
-    if (!hasTerminalSessions) return;
-
-    // Mark as attempted
-    hasAttemptedTerminalAutoAdd.current = true;
-
-    setPanelConfig((prev) => {
-      const updated = ensureTerminalPanelVisible(prev);
-      if (updated !== prev) {
-        // Config changed - save and trigger resize
-        savePanelConfig(updated);
-        requestAnimationFrame(() => {
-          window.dispatchEvent(new Event("resize"));
-        });
-      }
-      return updated;
-    });
-  }, [
-    terminalTabsQuery.data,
-    terminalTabsQuery.isLoading,
-    terminalTabsQuery.isError,
-  ]);
-
-  // Reset auto-add flag when run changes (new run = new attempt allowed)
-  useEffect(() => {
-    hasAttemptedTerminalAutoAdd.current = false;
-  }, [selectedRunId]);
+  }, [selectedRunId, workspaceUrl]);
 
   // Restore sync session when returning to a page with a local workspace linked to a cloud task run
   // This handles two scenarios:
@@ -773,27 +652,20 @@ function TaskDetailPage() {
     []
   );
 
-  // For browser panel, prefer direct vncUrl (works with PVE LXC and other providers),
-  // fall back to deriving VNC URL from workspace URL for Morph provider
-  const rawVncUrl = selectedRun?.vscode?.vncUrl ?? null;
   const rawBrowserUrl =
     selectedRun?.vscode?.url ?? selectedRun?.vscode?.workspaceUrl ?? null;
   const browserUrl = useMemo(() => {
-    // Use vncUrl directly if available (PVE LXC, etc.)
-    if (rawVncUrl) {
-      return toVncViewerUrl(rawVncUrl);
+    if (!rawBrowserUrl) {
+      return null;
     }
-    // Fall back to deriving from workspace URL (works for Morph and PVE LXC)
-    if (rawBrowserUrl) {
-      return toGenericVncUrl(rawBrowserUrl);
-    }
-    return null;
-  }, [rawVncUrl, rawBrowserUrl]);
+    return toGenericVncUrl(rawBrowserUrl);
+  }, [rawBrowserUrl]);
   const browserPersistKey = selectedRunId
     ? getTaskRunBrowserPersistKey(selectedRunId)
     : null;
   const hasBrowserView = Boolean(browserUrl);
   const isMorphProvider = selectedRun?.vscode?.provider === "morph";
+  const isBrowserSupported = selectedRun?.vscode?.provider === "morph" || selectedRun?.vscode?.provider === "pve-lxc";
 
   const handleBrowserStatusChange = useCallback(
     (status: PersistentIframeStatus) => {
@@ -814,13 +686,6 @@ function TaskDetailPage() {
     Boolean(selectedRun) && (!hasBrowserView || browserStatus !== "loaded");
 
   const workspacePlaceholder = useMemo(() => {
-    // Show archived message for archived tasks
-    if (isTaskArchived) {
-      return {
-        title: "Task is archived",
-        description: "Unarchive this task to access the workspace.",
-      };
-    }
     if (!taskRuns?.length) {
       return {
         title: "Workspace becomes available once a run starts.",
@@ -829,16 +694,9 @@ function TaskDetailPage() {
     }
 
     return null;
-  }, [taskRuns?.length, isTaskArchived]);
+  }, [taskRuns?.length]);
 
   const browserPlaceholder = useMemo(() => {
-    // Show archived message for archived tasks
-    if (isTaskArchived) {
-      return {
-        title: "Task is archived",
-        description: "Unarchive this task to access the browser preview.",
-      };
-    }
     if (!selectedRun) {
       if (taskRuns?.length) {
         return {
@@ -854,7 +712,7 @@ function TaskDetailPage() {
       description:
         "Start a cloud workspace run to expose a live browser session.",
     };
-  }, [selectedRun, taskRuns?.length, isTaskArchived]);
+  }, [selectedRun, taskRuns?.length]);
 
   // Get primary repo from task for local workspace creation
   const primaryRepo = task?.projectFullName;
@@ -944,14 +802,17 @@ function TaskDetailPage() {
 
   // Determine effective layout mode based on workspace type
   // - Local workspaces: single panel (just VSCode)
-  // - Cloud workspaces and regular tasks: use user's configured layout
+  // - Cloud workspaces: two-horizontal (VSCode left, browser right)
+  // - Regular tasks: use user's configured layout
   const effectiveLayoutMode = useMemo(() => {
     if (isLocalWorkspaceTask) {
       return "single-panel" as const;
     }
-    // Cloud workspaces and regular tasks: use user's configured layout
+    if (isCloudWorkspaceTask) {
+      return "two-horizontal" as const;
+    }
     return panelConfig.layoutMode;
-  }, [isLocalWorkspaceTask, panelConfig.layoutMode]);
+  }, [isLocalWorkspaceTask, isCloudWorkspaceTask, panelConfig.layoutMode]);
 
   const currentLayout = useMemo(() => {
     // For local workspaces: just VSCode
@@ -964,9 +825,19 @@ function TaskDetailPage() {
       };
     }
 
-    // Cloud workspaces and regular tasks: use user's configured panels
+    // For cloud workspaces: VSCode left, browser right
+    if (isCloudWorkspaceTask) {
+      return {
+        topLeft: "workspace" as const,
+        topRight: "browser" as const,
+        bottomLeft: null,
+        bottomRight: null,
+      };
+    }
+
+    // Regular tasks: use configured layout
     return getCurrentLayoutPanels(panelConfig);
-  }, [panelConfig, isLocalWorkspaceTask]);
+  }, [panelConfig, isLocalWorkspaceTask, isCloudWorkspaceTask]);
 
   const availablePanels = useMemo(() => {
     const panels = getAvailablePanels(panelConfig);
@@ -976,9 +847,9 @@ function TaskDetailPage() {
       return panels.filter((p) => p !== "gitDiff" && p !== "browser");
     }
 
-    // For cloud workspaces, only support: workspace, browser, terminal
+    // For cloud workspaces, exclude gitDiff (browser is used)
     if (isCloudWorkspaceTask) {
-      return panels.filter((p) => p === "workspace" || p === "browser" || p === "terminal");
+      return panels.filter((p) => p !== "gitDiff");
     }
 
     return panels;
@@ -1001,9 +872,8 @@ function TaskDetailPage() {
       task: task ?? null,
       taskRuns: taskRuns ?? null,
       crownEvaluation,
-      // For archived tasks, pass null URLs to prevent iframe loading (Wake on HTTP)
-      workspaceUrl: isTaskArchived ? null : workspaceUrl,
-      workspacePersistKey: isTaskArchived ? null : workspacePersistKey,
+      workspaceUrl,
+      workspacePersistKey,
       selectedRun: selectedRun ?? null,
       editorStatus,
       setEditorStatus: handleWorkspaceStatusChange,
@@ -1013,15 +883,14 @@ function TaskDetailPage() {
       editorErrorFallback,
       isEditorBusy,
       workspacePlaceholder,
-      // For archived tasks, pass null URLs to prevent iframe loading (Wake on HTTP)
-      rawWorkspaceUrl: isTaskArchived ? null : rawWorkspaceUrl,
-      xtermUrl: isTaskArchived ? null : xtermBaseUrl,
-      browserUrl: isTaskArchived ? null : browserUrl,
-      browserPersistKey: isTaskArchived ? null : browserPersistKey,
+      rawWorkspaceUrl,
+      browserUrl,
+      browserPersistKey,
       browserStatus,
       setBrowserStatus: handleBrowserStatusChange,
       browserPlaceholder,
       isMorphProvider,
+      isBrowserSupported,
       isBrowserBusy,
       TaskRunChatPane,
       PersistentWebView,
@@ -1050,18 +919,17 @@ function TaskDetailPage() {
       isEditorBusy,
       workspacePlaceholder,
       rawWorkspaceUrl,
-      xtermBaseUrl,
       browserUrl,
       browserPersistKey,
       browserStatus,
       handleBrowserStatusChange,
       browserPlaceholder,
       isMorphProvider,
+      isBrowserSupported,
       isBrowserBusy,
       handlePanelClose,
       teamSlugOrId,
       taskId,
-      isTaskArchived,
     ]
   );
 
@@ -1099,7 +967,7 @@ function TaskDetailPage() {
           ) : null}
           <FlexiblePanelLayout
             layoutMode={effectiveLayoutMode}
-            storageKey={`taskDetailGrid-${effectiveLayoutMode}`}
+            storageKey="taskDetailGrid"
             topLeft={
               isPanelPositionActive("topLeft") && currentLayout.topLeft ? (
                 <RenderPanel
