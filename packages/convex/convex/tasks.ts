@@ -1525,6 +1525,31 @@ export const setCompletedInternal = internalMutation({
 });
 
 /**
+ * Internal mutation to set projectFullName and baseBranch on a task.
+ * Used for backfilling tasks that were created before these fields were populated.
+ */
+export const setProjectAndBranchInternal = internalMutation({
+  args: {
+    taskId: v.id("tasks"),
+    projectFullName: v.optional(v.string()),
+    baseBranch: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const patch: Record<string, unknown> = {};
+    if (args.projectFullName) {
+      patch.projectFullName = args.projectFullName;
+    }
+    if (args.baseBranch) {
+      patch.baseBranch = args.baseBranch;
+    }
+    if (Object.keys(patch).length > 0) {
+      patch.updatedAt = Date.now();
+      await ctx.db.patch(args.taskId, patch);
+    }
+  },
+});
+
+/**
  * Get local workspace task linked from a cloud task run.
  * Used to show linked local VS Code entry in the sidebar under cloud task runs.
  */
