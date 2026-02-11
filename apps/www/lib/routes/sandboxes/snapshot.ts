@@ -1,17 +1,16 @@
-import { DEFAULT_MORPH_SNAPSHOT_ID } from "@/lib/utils/morph-defaults";
-import {
-  DEFAULT_PVE_LXC_SNAPSHOT_ID,
-  PVE_LXC_SNAPSHOT_PRESETS,
-} from "@/lib/utils/pve-lxc-defaults";
 import {
   getActiveSandboxProvider,
   isMorphAvailable,
   isProxmoxAvailable,
-  type SandboxProvider,
-} from "@/lib/utils/sandbox-provider";
+} from "@/lib/utils/sandbox-providers-bridge";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { api } from "@cmux/convex/api";
-import { MORPH_SNAPSHOT_PRESETS } from "@cmux/shared";
+import {
+  getDefaultSnapshotId,
+  isKnownDefaultSnapshot,
+  resolveProviderForSnapshotId,
+  type SandboxProvider,
+} from "@cmux/sandbox-providers";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { HTTPException } from "hono/http-exception";
 
@@ -30,60 +29,6 @@ export interface SnapshotResolution {
   environmentDevScript?: string;
   /** Selected repositories from the environment (for auto-cloning) */
   environmentSelectedRepos?: string[];
-}
-
-/**
- * Get the default snapshot ID based on the active provider
- */
-function getDefaultSnapshotId(provider: SandboxProvider): string {
-  switch (provider) {
-    case "pve-lxc":
-      return DEFAULT_PVE_LXC_SNAPSHOT_ID;
-    case "pve-vm":
-      // TODO: Add default PVE VM snapshot when implemented
-      return DEFAULT_MORPH_SNAPSHOT_ID;
-    case "morph":
-    default:
-      return DEFAULT_MORPH_SNAPSHOT_ID;
-  }
-}
-
-/**
- * Check if a snapshot ID is a known default snapshot for any provider
- */
-function isKnownDefaultSnapshot(snapshotId: string): boolean {
-  // Check Morph snapshots
-  const isMorphSnapshot = MORPH_SNAPSHOT_PRESETS.some((preset) =>
-    preset.versions.some((v) => v.snapshotId === snapshotId)
-  );
-  if (isMorphSnapshot) {
-    return true;
-  }
-
-  // Check PVE LXC templates (canonical snapshot_*)
-  const isPveTemplate = PVE_LXC_SNAPSHOT_PRESETS.some((preset) =>
-    preset.versions.some((v) => v.snapshotId === snapshotId)
-  );
-  return isPveTemplate;
-}
-
-function resolveProviderForSnapshotId(
-  snapshotId: string
-): SandboxProvider | null {
-  const isMorphSnapshot = MORPH_SNAPSHOT_PRESETS.some((preset) =>
-    preset.versions.some((v) => v.snapshotId === snapshotId)
-  );
-  const isPveSnapshot = PVE_LXC_SNAPSHOT_PRESETS.some((preset) =>
-    preset.versions.some((v) => v.snapshotId === snapshotId)
-  );
-
-  if (isMorphSnapshot && !isPveSnapshot) {
-    return "morph";
-  }
-  if (isPveSnapshot && !isMorphSnapshot) {
-    return "pve-lxc";
-  }
-  return null;
 }
 
 function ensureProviderAvailable(provider: SandboxProvider): void {

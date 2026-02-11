@@ -1,13 +1,15 @@
 import { getAccessTokenFromRequest } from "@/lib/utils/auth";
 import { getConvex } from "@/lib/utils/get-convex";
-import { getPveLxcClient } from "@/lib/utils/pve-lxc-client";
 import { PVE_LXC_SNAPSHOT_PRESETS } from "@/lib/utils/pve-lxc-defaults";
-import { getActiveSandboxProvider } from "@/lib/utils/sandbox-provider";
+import {
+  getActiveSandboxProvider,
+  getPveLxcClient,
+} from "@/lib/utils/sandbox-providers-bridge";
 import {
   type SandboxInstance,
   wrapMorphInstance,
   wrapPveLxcInstance,
-} from "@/lib/utils/sandbox-instance";
+} from "@cmux/sandbox-providers";
 import { stackServerAppJs } from "@/lib/utils/stack";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { env } from "@/lib/utils/www-env";

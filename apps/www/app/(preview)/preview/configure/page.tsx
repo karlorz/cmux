@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { PreviewConfigureClient } from "@/components/preview/preview-configure-client";
 import { getConvex } from "@/lib/utils/get-convex";
-import { getActiveSandboxProvider } from "@/lib/utils/sandbox-provider";
+import { getActiveSandboxProvider } from "@/lib/utils/sandbox-providers-bridge";
 import { stackServerApp } from "@/lib/utils/stack";
 import { api } from "@cmux/convex/api";
 import {

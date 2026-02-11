@@ -1,6 +1,8 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
-import { getActiveSandboxProvider } from "@/lib/utils/sandbox-provider";
-import { getPveLxcClient } from "@/lib/utils/pve-lxc-client";
+import {
+  getActiveSandboxProvider,
+  getPveLxcClient,
+} from "@/lib/utils/sandbox-providers-bridge";
 import { env } from "@/lib/utils/www-env";
 
 const HealthSchema = z

@@ -6,6 +6,5 @@ export {
   type ContainerMetadata,
   type ContainerNetworking,
   type ContainerStatus,
-} from "@cmux/sandbox-providers/pve-lxc";
-export type { ExecResult, HttpService } from "@cmux/sandbox-providers";
-export { getPveLxcClient } from "./sandbox-providers-bridge";
+} from "./pve-lxc-client";
+export { wrapPveLxcInstance } from "./pve-lxc-adapter";

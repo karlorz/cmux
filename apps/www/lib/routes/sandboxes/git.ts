@@ -1,5 +1,5 @@
 import { fetchGithubUserInfoForRequest } from "@/lib/utils/githubUserInfo";
-import type { SandboxInstance } from "@/lib/utils/sandbox-instance";
+import type { SandboxInstance } from "@cmux/sandbox-providers";
 import { api } from "@cmux/convex/api";
 
 import type { ConvexClient } from "./snapshot";

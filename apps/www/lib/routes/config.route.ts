@@ -2,7 +2,7 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import {
   getActiveSandboxProvider,
   type SandboxProvider,
-} from "@/lib/utils/sandbox-provider";
+} from "@/lib/utils/sandbox-providers-bridge";
 import {
   DEFAULT_MORPH_SNAPSHOT_ID,
   MORPH_SNAPSHOT_PRESETS,
