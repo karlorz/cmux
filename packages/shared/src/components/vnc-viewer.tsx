@@ -363,6 +363,8 @@ export const VncViewer = forwardRef<VncViewerHandle, VncViewerProps>(
 
           if (!isClean && shouldReconnectRef.current) {
             scheduleReconnect("Connection lost unexpectedly");
+          } else if (!isClean) {
+            updateStatus("error", "Connection lost unexpectedly");
           }
         });
 
