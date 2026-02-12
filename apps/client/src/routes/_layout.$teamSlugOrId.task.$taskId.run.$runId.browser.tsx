@@ -147,9 +147,6 @@ function BrowserComponent() {
               background="#000000"
               scaleViewport
               autoConnect
-              autoReconnect
-              reconnectDelay={1000}
-              maxReconnectDelay={30000}
               focusOnClick
               onConnect={onConnect}
               onDisconnect={onDisconnect}

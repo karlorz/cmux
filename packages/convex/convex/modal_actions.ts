@@ -314,7 +314,7 @@ export const startInstance = internalAction({
           : undefined,
         workerUrl: workerUrl ?? undefined,
         vncUrl: vncUrl
-          ? `${vncUrl}/vnc.html?autoconnect=true&resize=scale&quality=9&compression=0&show_dot=true&reconnect=true&reconnect_delay=1000`
+          ? `${vncUrl}/vnc.html?autoconnect=true&resize=scale&quality=9&compression=0&show_dot=true&reconnect=false`
           : undefined,
       };
     } finally {
@@ -350,7 +350,7 @@ export const getInstance = internalAction({
         vscodeUrl,
         workerUrl: workerUrl ?? null,
         vncUrl: vncUrl
-          ? `${vncUrl}/vnc.html?autoconnect=true&resize=scale`
+          ? `${vncUrl}/vnc.html?autoconnect=true&resize=scale&reconnect=false`
           : null,
       };
     } catch {
