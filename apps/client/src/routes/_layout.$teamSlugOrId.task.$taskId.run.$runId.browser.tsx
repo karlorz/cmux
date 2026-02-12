@@ -4,7 +4,7 @@ import {
   type VncViewerHandle,
 } from "@cmux/shared/components/vnc-viewer";
 import { WorkspaceLoadingIndicator } from "@/components/workspace-loading-indicator";
-import { toMorphVncWebsocketUrl } from "@/lib/toProxyWorkspaceUrl";
+import { toGenericVncWebsocketUrl } from "@/lib/toProxyWorkspaceUrl";
 import { api } from "@cmux/convex/api";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { createFileRoute } from "@tanstack/react-router";
@@ -75,9 +75,9 @@ function BrowserComponent() {
     if (vscodeInfo?.vncUrl) {
       return toVncWebsocketUrl(vscodeInfo.vncUrl);
     }
-    // Fall back to Morph URL derivation for backward compatibility
+    // Fall back to URL derivation for backward compatibility (works for both Morph and PVE LXC)
     if (rawMorphUrl) {
-      return toMorphVncWebsocketUrl(rawMorphUrl);
+      return toGenericVncWebsocketUrl(rawMorphUrl);
     }
     return null;
   }, [vscodeInfo?.vncUrl, rawMorphUrl]);
@@ -147,9 +147,6 @@ function BrowserComponent() {
               background="#000000"
               scaleViewport
               autoConnect
-              autoReconnect
-              reconnectDelay={1000}
-              maxReconnectDelay={30000}
               focusOnClick
               onConnect={onConnect}
               onDisconnect={onDisconnect}

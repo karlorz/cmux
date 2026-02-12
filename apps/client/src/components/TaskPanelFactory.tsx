@@ -166,7 +166,6 @@ interface PanelFactoryProps {
   } | null;
   // Terminal panel props
   rawWorkspaceUrl?: string | null;
-  xtermUrl?: string | null;
   // Browser panel props
   browserUrl?: string | null;
   browserPersistKey?: string | null;
@@ -176,7 +175,9 @@ interface PanelFactoryProps {
     title: string;
     description?: string;
   } | null;
+  /** @deprecated Use isBrowserSupported instead */
   isMorphProvider?: boolean;
+  isBrowserSupported?: boolean;
   isBrowserBusy?: boolean;
   // Additional components
   TaskRunChatPane?: React.ComponentType<TaskRunChatPaneProps>;
@@ -541,7 +542,7 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
     }
 
     case "terminal": {
-      const { rawWorkspaceUrl, xtermUrl, TaskRunTerminalPane } = props;
+      const { rawWorkspaceUrl, TaskRunTerminalPane } = props;
       if (!TaskRunTerminalPane) return null;
 
       return panelWrapper(
@@ -549,9 +550,8 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
         PANEL_LABELS.terminal,
         <div className="flex-1 bg-black">
           <TaskRunTerminalPane
-            key={xtermUrl ?? rawWorkspaceUrl ?? "no-workspace"}
+            key={rawWorkspaceUrl ?? "no-workspace"}
             workspaceUrl={rawWorkspaceUrl ?? null}
-            xtermUrl={xtermUrl}
           />
         </div>
       );
@@ -565,6 +565,7 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
         browserPlaceholder,
         selectedRun,
         isMorphProvider,
+        isBrowserSupported,
         isBrowserBusy,
         PersistentWebView,
         WorkspaceLoadingIndicator,
@@ -573,7 +574,9 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
       } = props;
 
       if (!PersistentWebView || !WorkspaceLoadingIndicator) return null;
-      const shouldShowBrowserLoader = Boolean(selectedRun) && isMorphProvider && (!browserUrl || !browserPersistKey);
+      // Support both new isBrowserSupported prop and deprecated isMorphProvider
+      const browserSupported = isBrowserSupported ?? isMorphProvider;
+      const shouldShowBrowserLoader = Boolean(selectedRun) && browserSupported && (!browserUrl || !browserPersistKey);
 
       return panelWrapper(
         <Globe2 className="size-3" aria-hidden />,
@@ -624,7 +627,7 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
     }
 
     case "gitDiff": {
-      const { task, taskRuns, selectedRun, TaskRunGitDiffPanel, teamSlugOrId, taskId } = props;
+      const { task, selectedRun, TaskRunGitDiffPanel, teamSlugOrId, taskId } = props;
       if (!TaskRunGitDiffPanel || !teamSlugOrId || !taskId) return null;
 
       return panelWrapper(
@@ -634,7 +637,6 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
           <TaskRunGitDiffPanel
             key={selectedRun?._id}
             task={task}
-            taskRuns={taskRuns}
             selectedRun={selectedRun}
             teamSlugOrId={teamSlugOrId}
             taskId={taskId}
@@ -675,10 +677,9 @@ export const RenderPanel = React.memo(RenderPanelComponent, (prevProps, nextProp
     }
   }
 
-  // For terminal panel, check workspace URL and xtermUrl
+  // For terminal panel, check workspace URL
   if (prevProps.type === "terminal") {
-    if (prevProps.rawWorkspaceUrl !== nextProps.rawWorkspaceUrl ||
-      prevProps.xtermUrl !== nextProps.xtermUrl) {
+    if (prevProps.rawWorkspaceUrl !== nextProps.rawWorkspaceUrl) {
       return false;
     }
   }
@@ -686,10 +687,6 @@ export const RenderPanel = React.memo(RenderPanelComponent, (prevProps, nextProp
   // For chat panel, check task and run changes
   if (prevProps.type === "chat") {
     if (prevProps.task?._id !== nextProps.task?._id ||
-      prevProps.task?.crownEvaluationStatus !== nextProps.task?.crownEvaluationStatus ||
-      prevProps.task?.crownEvaluationError !== nextProps.task?.crownEvaluationError ||
-      prevProps.task?.crownEvaluationRetryCount !== nextProps.task?.crownEvaluationRetryCount ||
-      prevProps.task?.crownEvaluationLastRetryAt !== nextProps.task?.crownEvaluationLastRetryAt ||
       prevProps.taskRuns !== nextProps.taskRuns ||
       prevProps.crownEvaluation !== nextProps.crownEvaluation) {
       return false;
@@ -699,7 +696,6 @@ export const RenderPanel = React.memo(RenderPanelComponent, (prevProps, nextProp
   // For gitDiff panel, check task and selectedRun changes
   if (prevProps.type === "gitDiff") {
     if (prevProps.task?._id !== nextProps.task?._id ||
-      prevProps.taskRuns !== nextProps.taskRuns ||
       prevProps.selectedRun?._id !== nextProps.selectedRun?._id ||
       prevProps.teamSlugOrId !== nextProps.teamSlugOrId ||
       prevProps.taskId !== nextProps.taskId) {

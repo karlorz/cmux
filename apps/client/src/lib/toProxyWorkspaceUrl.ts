@@ -122,8 +122,7 @@ export function toMorphVncUrl(sourceUrl: string): string | null {
   const searchParams = new URLSearchParams();
   searchParams.set("autoconnect", "1");
   searchParams.set("resize", "scale");
-  searchParams.set("reconnect", "1");
-  searchParams.set("reconnect_delay", "1000");
+  searchParams.set("reconnect", "0");
   vncUrl.search = `?${searchParams.toString()}`;
   vncUrl.hash = "";
 
@@ -169,8 +168,7 @@ export function toVncViewerUrl(vncBaseUrl: string): string | null {
     const searchParams = new URLSearchParams();
     searchParams.set("autoconnect", "1");
     searchParams.set("resize", "scale");
-    searchParams.set("reconnect", "1");
-    searchParams.set("reconnect_delay", "1000");
+    searchParams.set("reconnect", "0");
     url.search = `?${searchParams.toString()}`;
     url.hash = "";
 
@@ -226,11 +224,35 @@ export function toGenericVncUrl(sourceUrl: string): string | null {
     const searchParams = new URLSearchParams();
     searchParams.set("autoconnect", "1");
     searchParams.set("resize", "scale");
-    searchParams.set("reconnect", "1");
-    searchParams.set("reconnect_delay", "1000");
+    searchParams.set("reconnect", "0");
     url.search = `?${searchParams.toString()}`;
     url.hash = "";
 
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Convert a direct VNC base URL to a WebSocket URL for noVNC/RFB connection.
+ * Works with any VNC URL (PVE LXC, Morph, etc.) by converting protocol and setting /websockify path.
+ *
+ * @param vncBaseUrl - The base VNC URL (e.g., https://vnc-201.{PVE_PUBLIC_DOMAIN})
+ * @returns The wss:// or ws:// URL pointing to /websockify endpoint, or null if invalid
+ */
+export function toVncWebsocketUrl(vncBaseUrl: string): string | null {
+  if (!vncBaseUrl) {
+    return null;
+  }
+
+  try {
+    const url = new URL(vncBaseUrl);
+    // Convert protocol: https -> wss, http -> ws
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    url.pathname = "/websockify";
+    url.search = "";
+    url.hash = "";
     return url.toString();
   } catch {
     return null;

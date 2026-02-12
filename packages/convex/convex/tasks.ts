@@ -719,6 +719,42 @@ export const updateWorktreePath = authMutation({
   },
 });
 
+/**
+ * Set projectFullName and baseBranch on a task.
+ * Called during sandbox startup to populate GitHub info for crown evaluation refresh.
+ * Only updates fields if provided AND task doesn't already have them.
+ */
+export const setProjectAndBranch = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    id: v.id("tasks"),
+    projectFullName: v.optional(v.string()),
+    baseBranch: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const task = await ctx.db.get(args.id);
+    if (!task || task.teamId !== teamId || task.userId !== userId) {
+      throw new Error("Task not found or unauthorized");
+    }
+
+    // Only update if values are provided and task doesn't already have them
+    const patch: Record<string, unknown> = {};
+    if (args.projectFullName && !task.projectFullName) {
+      patch.projectFullName = args.projectFullName;
+    }
+    if (args.baseBranch && !task.baseBranch) {
+      patch.baseBranch = args.baseBranch;
+    }
+
+    if (Object.keys(patch).length > 0) {
+      patch.updatedAt = Date.now();
+      await ctx.db.patch(args.id, patch);
+    }
+  },
+});
+
 export const getById = authQuery({
   args: { teamSlugOrId: v.string(), id: taskIdWithFake },
   handler: async (ctx, args) => {
@@ -1485,6 +1521,31 @@ export const setCompletedInternal = internalMutation({
         crownEvaluationStatus: args.crownEvaluationStatus,
       }),
     });
+  },
+});
+
+/**
+ * Internal mutation to set projectFullName and baseBranch on a task.
+ * Used for backfilling tasks that were created before these fields were populated.
+ */
+export const setProjectAndBranchInternal = internalMutation({
+  args: {
+    taskId: v.id("tasks"),
+    projectFullName: v.optional(v.string()),
+    baseBranch: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const patch: Record<string, unknown> = {};
+    if (args.projectFullName) {
+      patch.projectFullName = args.projectFullName;
+    }
+    if (args.baseBranch) {
+      patch.baseBranch = args.baseBranch;
+    }
+    if (Object.keys(patch).length > 0) {
+      patch.updatedAt = Date.now();
+      await ctx.db.patch(args.taskId, patch);
+    }
   },
 });
 
