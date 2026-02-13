@@ -69,12 +69,20 @@ exec sshpass -p '' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/nu
 		askpassFile.Close()
 		os.Chmod(askpassFile.Name(), 0700)
 
+		// Use setsid on Linux to detach TTY so SSH_ASKPASS works reliably.
+		// On macOS, SSH_ASKPASS_REQUIRE=force should work (OpenSSH 8.4+).
+		setsidPrefix := ""
+		if runtime.GOOS == "linux" {
+			if _, setsidErr := exec.LookPath("setsid"); setsidErr == nil {
+				setsidPrefix = "setsid "
+			}
+		}
 		scriptContent = fmt.Sprintf(`#!/bin/sh
 export SSH_ASKPASS="%s"
 export SSH_ASKPASS_REQUIRE=force
 export DISPLAY=dummy
-exec ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -p %d "$@"
-`, askpassFile.Name(), port)
+exec %sssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -p %d "$@"
+`, askpassFile.Name(), setsidPrefix, port)
 	}
 
 	if _, err := tmpFile.WriteString(scriptContent); err != nil {
