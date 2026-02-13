@@ -38,6 +38,8 @@ git commit  # finalize merge
 ```bash
 bun install  # if new deps
 bun check
+# audit repository URLs in all package.json files (fails on upstream monorepo URL)
+./.codex/skills/upstream-sync/scripts/audit-package-repo-links.sh
 ```
 6) Run Morph -> PVE-LXC parity audit:
 - Read `.codex/skills/upstream-sync/references/morph-pve-parity.md`.
@@ -70,6 +72,11 @@ gh pr create --repo karlorz/cmux --base main --head sync/upstream-main-$(date +%
   - `packages/shared/src/morph-snapshots.json`, `configs/ide-deps.json`, `packages/www-openapi-client/src/client/types.gen.ts` => keep ours.
 - **.gitattributes conflicts**: preserve all existing fork-specific merge rules; append any new upstream entries. Ensure `merge=theirs`/`merge=ours` settings stay intact.
 - **Fork-only features**: when upstream touches forked areas, prefer keeping fork behavior and selectively pull upstream fixes. If unsure, keep fork version and leave a FIXME note for follow-up.
+- **`package.json` metadata conflicts**:
+  - Audit all package metadata with `./.codex/skills/upstream-sync/scripts/audit-package-repo-links.sh`.
+  - For fork-owned packages/apps, keep `repository.url` on `https://github.com/karlorz/cmux.git` when conflicts include `https://github.com/manaflow-ai/manaflow.git`.
+  - Take upstream release progression for `version` unless the fork intentionally pins a different version.
+  - Do not mass-rewrite external package repository links (for example `packages/cmux*` and `packages/vscode-extension`) when they intentionally point to `manaflow-ai/cmux` or `lawrencecchen/cmux`.
 - **Generated clients/snapshots**: avoid regenerating unless required by upstream changes; keep fork snapshots unless intentionally refreshed.
 
 # Review guidelines
@@ -87,4 +94,5 @@ gh pr create --repo karlorz/cmux --base main --head sync/upstream-main-$(date +%
 
 # References
 - `.codex/skills/upstream-sync/references/morph-pve-parity.md`
+- `.codex/skills/upstream-sync/scripts/audit-package-repo-links.sh`
 - `.codex/skills/upstream-sync/scripts/print-parity-report.sh`
