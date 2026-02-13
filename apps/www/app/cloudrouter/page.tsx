@@ -87,11 +87,11 @@ export default function CloudRouterPage() {
         <CloudrouterHeader />
 
         {/* Hero */}
-        <section className="mb-10 text-center">
+        <section className="mb-10">
           <h1 className="mb-3 text-2xl font-bold leading-tight sm:text-3xl">
-            Cloud VMs and GPUs for AI coding agents
+            Skill that lets Claude Code/Codex spin up VMs and GPUs
           </h1>
-          <p className="mx-auto max-w-xl text-sm leading-relaxed text-neutral-500 dark:text-neutral-400">
+          <p className="max-w-xl text-sm leading-relaxed text-neutral-500 dark:text-neutral-400">
             Give Claude Code, Codex, and other agents the ability to spin up cloud sandboxes,
             run commands, transfer files, and automate browsers — all from the CLI.
           </p>
