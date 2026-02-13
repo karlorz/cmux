@@ -9,6 +9,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func init() {
+	// Stop parsing flags after the first positional arg (the sandbox ID).
+	// This ensures "ssh <id> ls -la" works without quoting.
+	execCmd.Flags().SetInterspersed(false)
+}
+
 var execCmd = &cobra.Command{
 	Use:   "ssh <id> <command...>",
 	Short: "Run a command in a sandbox via SSH",

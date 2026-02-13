@@ -162,9 +162,9 @@ const STEPS: Step[] = [
     ],
     pauseAfter: 400,
   },
-  // 6. Execute a command
+  // 6. Run a command via SSH
   {
-    command: 'cloudrouter exec cr_x7k9m2p "npm install && npm run dev"',
+    command: 'cloudrouter ssh cr_x7k9m2p "npm install && npm run dev"',
     output: [
       [{ text: "added 847 packages in 12s", color: "#d4d4d4" }],
       [{ text: "137 packages are looking for funding", color: "#d4d4d4" }],

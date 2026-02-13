@@ -33,30 +33,16 @@ export const metadata: Metadata = {
   },
 };
 
-const MAILTO_SUBJECT = encodeURIComponent("GPU Access Request — cloudrouter");
-const MAILTO_BODY = encodeURIComponent(
-  `Hi Manaflow team,
-
-I'd like to request access to GPU sandboxes on cloudrouter.
-
-Team/Company:
-Use case:
-GPU type(s) needed:
-
-Thanks!`,
-);
-const MAILTO_HREF = `mailto:founders@manaflow.com?subject=${MAILTO_SUBJECT}&body=${MAILTO_BODY}`;
-
 const instances = [
-  { gpu: "T4", vram: "16 GB", bestFor: "Inference, fine-tuning small models", availability: "self-serve" },
-  { gpu: "L4", vram: "24 GB", bestFor: "Inference, image generation", availability: "self-serve" },
-  { gpu: "A10G", vram: "24 GB", bestFor: "Training medium models", availability: "self-serve" },
-  { gpu: "L40S", vram: "48 GB", bestFor: "Inference, video generation", availability: "approval" },
-  { gpu: "A100", vram: "40 GB", bestFor: "Training large models (7B–70B)", availability: "approval" },
-  { gpu: "A100-80GB", vram: "80 GB", bestFor: "Very large models", availability: "approval" },
-  { gpu: "H100", vram: "80 GB", bestFor: "Fast training, research", availability: "approval" },
-  { gpu: "H200", vram: "141 GB", bestFor: "Maximum memory capacity", availability: "approval" },
-  { gpu: "B200", vram: "192 GB", bestFor: "Latest gen, frontier models", availability: "approval" },
+  { gpu: "T4", vram: "16 GB", bestFor: "Inference, fine-tuning small models" },
+  { gpu: "L4", vram: "24 GB", bestFor: "Inference, image generation" },
+  { gpu: "A10G", vram: "24 GB", bestFor: "Training medium models" },
+  { gpu: "L40S", vram: "48 GB", bestFor: "Inference, video generation" },
+  { gpu: "A100", vram: "40 GB", bestFor: "Training large models (7B–70B)" },
+  { gpu: "A100-80GB", vram: "80 GB", bestFor: "Very large models" },
+  { gpu: "H100", vram: "80 GB", bestFor: "Fast training, research" },
+  { gpu: "H200", vram: "141 GB", bestFor: "Maximum memory capacity" },
+  { gpu: "B200", vram: "192 GB", bestFor: "Latest gen, frontier models" },
 ] as const;
 
 const features = [
@@ -167,7 +153,7 @@ export default function CloudRouterPage() {
                 "cloudrouter pty cr_abc123",
                 "",
                 "# Run a command",
-                'cloudrouter exec cr_abc123 "npm install && npm run dev"',
+                'cloudrouter ssh cr_abc123 "npm install && npm run dev"',
                 "",
                 "# Open VNC desktop",
                 "cloudrouter vnc cr_abc123",
@@ -238,7 +224,6 @@ export default function CloudRouterPage() {
                     <th className="px-4 py-2 font-semibold">GPU</th>
                     <th className="px-4 py-2 font-semibold">VRAM</th>
                     <th className="px-4 py-2 font-semibold">Best for</th>
-                    <th className="px-4 py-2 font-semibold">Availability</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -247,18 +232,6 @@ export default function CloudRouterPage() {
                       <td className="whitespace-nowrap px-4 py-2 font-mono text-xs">{row.gpu}</td>
                       <td className="whitespace-nowrap px-4 py-2 text-neutral-600 dark:text-neutral-400">{row.vram}</td>
                       <td className="px-4 py-2 text-neutral-600 dark:text-neutral-400">{row.bestFor}</td>
-                      <td className="whitespace-nowrap px-4 py-2">
-                        {row.availability === "self-serve" ? (
-                          <span className="text-green-600 dark:text-green-400">Self-serve</span>
-                        ) : (
-                          <a
-                            href={MAILTO_HREF}
-                            className="text-neutral-500 underline transition hover:text-neutral-900 dark:hover:text-white"
-                          >
-                            Requires approval
-                          </a>
-                        )}
-                      </td>
                     </tr>
                   ))}
                 </tbody>
