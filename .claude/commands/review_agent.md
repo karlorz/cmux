@@ -1,5 +1,5 @@
 ---
-description: Codex-backed review with upstream gap analysis against manaflow-ai/cmux:main
+description: Codex-backed review with upstream gap analysis against manaflow-ai/manaflow:main
 argument-hint: [optional focus]
 allowed-tools: Bash, Read, Grep
 ---
@@ -56,6 +56,5 @@ User focus (optional): $ARGUMENTS
   - `fix locally first`
 
 ### Gap Reduction Plan
-- Provide concrete steps to reduce drift vs `manaflow-ai/cmux:main`:
+- Provide concrete steps to reduce drift vs `manaflow-ai/manaflow:main`:
   - quick wins (safe cherry-picks now)
-

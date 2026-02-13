@@ -4,7 +4,7 @@
 - Do not use emojis in shell scripts or debug messages
 
 # Git/PR
-- All PRs should target `karlorz/cmux:main` unless explicitly requested to submit to upstream `manaflow-ai/cmux`
+- All PRs should target `karlorz/cmux:main` unless explicitly requested to submit to upstream `manaflow-ai/manaflow`
 - gh repo set-default karlorz/cmux
 ✓ Set karlorz/cmux as the default repository for the current directory
 

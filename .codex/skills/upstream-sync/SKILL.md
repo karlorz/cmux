@@ -1,6 +1,6 @@
 ---
 name: cmux-upstream-sync
-description: Merge upstream manaflow-ai/cmux into fork karlorz/cmux while keeping fork-only features and reviewing Morph VM upstream changes for required PVE-LXC parity updates. Use when updating branches like sync/upstream-main-YYYYMMDD, resolving conflicts with .gitattributes rules, running bun check, generating a Morph-to-PVE parity report, and preparing a PR to karlorz/cmux:main.
+description: Merge upstream manaflow-ai/manaflow into fork karlorz/cmux while keeping fork-only features and reviewing Morph VM upstream changes for required PVE-LXC parity updates. Use when updating branches like sync/upstream-main-YYYYMMDD, resolving conflicts with .gitattributes rules, running bun check, generating a Morph-to-PVE parity report, and preparing a PR to karlorz/cmux:main.
 ---
 
 # Purpose
@@ -9,7 +9,7 @@ description: Merge upstream manaflow-ai/cmux into fork karlorz/cmux while keepin
 - Use merges (not rebases) into `sync/upstream-main-YYYYMMDD` then open PR to `karlorz/cmux:main`.
 
 # Remotes
-- Require `origin` -> fork and `upstream` -> manaflow-ai/cmux.
+- Require `origin` -> fork and `upstream` -> manaflow-ai/manaflow.
 - If both `upstream` and `manaflow-ai` point to the same URL, prefer keeping `origin` + `upstream` and optionally remove the duplicate: `git remote remove manaflow-ai`.
 
 # Quick workflow
