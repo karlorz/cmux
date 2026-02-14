@@ -188,8 +188,9 @@ export class PveLxcInstance {
   async delete(): Promise<void> {
     try {
       await this.client.stopContainer(this.vmid);
-    } catch {
-      // May already be stopped
+    } catch (err) {
+      // Expected: container may already be stopped
+      console.warn(`[PveLxcInstance.delete] Stop failed for ${this.vmid} (may be already stopped):`, err);
     }
     await this.client.deleteContainer(this.vmid);
   }
@@ -415,7 +416,8 @@ export class PveLxcClient {
         this.instanceHostnames.set(vmid, hostname);
       }
       return hostname;
-    } catch {
+    } catch (err) {
+      console.warn(`[PveLxcClient.getContainerHostname] Failed to get hostname for ${vmid}:`, err);
       return null;
     }
   }
@@ -704,8 +706,9 @@ export class PveLxcClient {
               stderr += (event.message ?? "Unknown error") + "\n";
               break;
           }
-        } catch {
-          // Skip malformed lines
+        } catch (err) {
+          // Skip malformed JSON lines but log for debugging
+          console.warn(`[PveLxcClient.httpExec] Skipping malformed line: ${line}`, err);
         }
       }
 
@@ -1150,8 +1153,9 @@ export class PveLxcClient {
           console.log(
             `[PveLxcClient] Cleaned up partial linked clone ${linkedCloneVmid}`
           );
-        } catch {
-          // Ignore - container might not exist
+        } catch (cleanupErr) {
+          // Expected: container might not exist yet
+          console.warn(`[PveLxcClient] Cleanup of linked clone ${linkedCloneVmid} failed (may not exist):`, cleanupErr);
         }
       }
     }
@@ -1284,8 +1288,9 @@ export class PveLxcClient {
     // Stop first if running
     try {
       await this.stopContainer(vmid);
-    } catch {
-      // May already be stopped
+    } catch (err) {
+      // Expected: container may already be stopped
+      console.warn(`[PveLxcClient.deleteContainer] Stop failed for ${vmid} (may be already stopped):`, err);
     }
 
     const node = await this.getNode();
@@ -1324,7 +1329,8 @@ export class PveLxcClient {
         default:
           return "unknown";
       }
-    } catch {
+    } catch (err) {
+      console.warn(`[PveLxcClient.getContainerStatus] Failed to get status for ${vmid}:`, err);
       return "unknown";
     }
   }

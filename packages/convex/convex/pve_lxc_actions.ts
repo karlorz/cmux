@@ -120,7 +120,8 @@ export const getInstance = internalAction({
         vncUrl,
         xtermUrl,
       };
-    } catch {
+    } catch (err) {
+      console.warn(`[pve_lxc_actions.getInstance] Failed to get instance ${args.instanceId}:`, err);
       return {
         instanceId: args.instanceId,
         status: "stopped",
