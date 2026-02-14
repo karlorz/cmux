@@ -720,9 +720,21 @@ export const cleanupOrphanedContainers = internalAction({
                 totalSkipped++;
                 continue;
               }
-              console.log(
-                `[sandboxMaintenance:orphanCleanup] PVE orphan verified (no activity, no devbox): ${orphan.id}`
-              );
+              // PVE orphan verified: no activity record, no devbox record, stopped status
+              // Delete immediately (skip age check since created=0 would miscalculate)
+              try {
+                console.log(
+                  `[sandboxMaintenance:orphanCleanup] Deleting verified PVE orphan (no activity, no devbox): ${orphan.id}`
+                );
+                await config.client.stopInstance(orphan.id);
+                totalCleaned++;
+              } catch (error) {
+                console.error(
+                  `[sandboxMaintenance:orphanCleanup] Failed to delete PVE orphan ${orphan.id}:`,
+                  error
+                );
+              }
+              continue;
             } else {
               console.warn(
                 `[sandboxMaintenance:orphanCleanup] Skipping orphan with unknown creation time: ${orphan.id} (provider=${config.provider})`
