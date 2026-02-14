@@ -331,6 +331,14 @@ export const createInstance = httpAction(async (ctx, req) => {
         xtermUrl?: string;
       };
 
+      // Record activity for maintenance tracking
+      await ctx.runMutation(internal.sandboxInstances.recordCreateInternal, {
+        instanceId: result.instanceId,
+        provider: "pve-lxc",
+        snapshotId,
+        snapshotProvider: "pve-lxc",
+      });
+
       const instanceResult = (await ctx.runMutation(devboxApi.create, {
         teamSlugOrId: body.teamSlugOrId,
         providerInstanceId: result.instanceId,

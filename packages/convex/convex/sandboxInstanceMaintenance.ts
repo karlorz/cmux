@@ -705,7 +705,10 @@ export const cleanupOrphanedContainers = internalAction({
             continue;
           }
 
-          if (orphan.created === 0) {
+          // PVE-LXC doesn't provide creation time in list API, and stopped containers
+          // don't preserve state anyway - safe to clean up without age check.
+          // For other providers, still require known creation time for safety.
+          if (orphan.created === 0 && config.provider !== "pve-lxc") {
             console.warn(
               `[sandboxMaintenance:orphanCleanup] Skipping orphan with unknown creation time: ${orphan.id} (provider=${config.provider})`
             );
@@ -713,14 +716,24 @@ export const cleanupOrphanedContainers = internalAction({
             continue;
           }
 
-          const ageMs = now - orphan.created * 1000;
-          const ageDays = Math.floor(ageMs / (24 * MILLISECONDS_PER_HOUR));
-          if (ageMs < orphanMinAgeMs) {
+          // For non-PVE providers, check age threshold
+          if (orphan.created !== 0) {
+            const ageMs = now - orphan.created * 1000;
+            const ageDays = Math.floor(ageMs / (24 * MILLISECONDS_PER_HOUR));
+            if (ageMs < orphanMinAgeMs) {
+              console.log(
+                `[sandboxMaintenance:orphanCleanup] Skipping young orphan: ${orphan.id} (${ageDays}d old, provider=${config.provider})`
+              );
+              totalSkipped++;
+              continue;
+            }
+          }
+
+          // Log for visibility when deleting PVE orphans without creation time
+          if (config.provider === "pve-lxc" && orphan.created === 0) {
             console.log(
-              `[sandboxMaintenance:orphanCleanup] Skipping young orphan: ${orphan.id} (${ageDays}d old, provider=${config.provider})`
+              `[sandboxMaintenance:orphanCleanup] Deleting PVE orphan with unknown creation time: ${orphan.id} (status=${orphan.status})`
             );
-            totalSkipped++;
-            continue;
           }
 
           try {

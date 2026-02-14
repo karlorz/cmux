@@ -2040,6 +2040,19 @@ export async function runPreviewJob(
         ttlAction: "stop",
         readinessTimeoutMs: 5 * 60 * 1000,
       });
+
+      // Record activity for maintenance tracking
+      await ctx.runMutation(internal.sandboxInstances.recordCreateInternal, {
+        instanceId: pveLxcInstance.instanceId,
+        provider: "pve-lxc",
+        vmid: pveLxcInstance.vmid,
+        hostname: pveLxcInstance.networking?.hostname,
+        snapshotId,
+        snapshotProvider: "pve-lxc",
+        templateVmid: environment.templateVmid,
+        teamId: run.teamId,
+      });
+
       unifiedInstance = pveLxcToUnifiedInstance(pveLxcInstance);
       execFn = createPveLxcExecFn(pveLxcInstance.instanceId);
       stopFn = () => stopPveLxcInstance(pveLxcInstance.instanceId);
