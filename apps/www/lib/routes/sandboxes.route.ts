@@ -1506,8 +1506,8 @@ sandboxesRouter.openapi(
         }
       }
 
-      // Get instance via provider dispatch
-      const instance = await tryGetInstanceById(id, getMorphClient(), "sandboxes.env");
+      // Get instance via provider dispatch (use nullable client for PVE-only deployments)
+      const instance = await tryGetInstanceById(id, getMorphClientOrNull(), "sandboxes.env");
       if (!instance) {
         return c.text("Sandbox not found", 404);
       }
@@ -1609,8 +1609,8 @@ sandboxesRouter.openapi(
         teamSlugOrId,
       });
 
-      // Get instance via provider dispatch
-      const instance = await tryGetInstanceById(id, getMorphClient(), "sandboxes.run-scripts");
+      // Get instance via provider dispatch (use nullable client for PVE-only deployments)
+      const instance = await tryGetInstanceById(id, getMorphClientOrNull(), "sandboxes.run-scripts");
       if (!instance) {
         return c.text("Sandbox not found", 404);
       }

@@ -124,6 +124,7 @@ const pveLxcActionsApi = (internal as any).pve_lxc_actions as {
   startInstance: FunctionReference<"action", "internal">;
   getInstance: FunctionReference<"action", "internal">;
   execCommand: FunctionReference<"action", "internal">;
+  pauseInstance: FunctionReference<"action", "internal">;
   extendTimeout: FunctionReference<"action", "internal">;
   stopInstance: FunctionReference<"action", "internal">;
   resumeInstance: FunctionReference<"action", "internal">;
@@ -616,8 +617,8 @@ async function handlePauseInstance(
         timeoutMs: 60 * 60 * 1000,
       });
     } else if (provider === "pve-lxc") {
-      // PVE LXC doesn't support hibernate; stop the container
-      await ctx.runAction(pveLxcActionsApi.stopInstance, {
+      // PVE LXC doesn't support hibernate; stop (not delete) the container
+      await ctx.runAction(pveLxcActionsApi.pauseInstance, {
         instanceId: providerInstanceId,
       });
     }

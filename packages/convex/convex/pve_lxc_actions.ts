@@ -24,7 +24,7 @@ function getPveLxcClient(): PveLxcClient {
     apiToken,
     node: process.env.PVE_NODE,
     publicDomain: process.env.PVE_PUBLIC_DOMAIN,
-    verifyTls: process.env.PVE_VERIFY_TLS === "true",
+    verifyTls: ["true", "1"].includes(process.env.PVE_VERIFY_TLS ?? ""),
     snapshotResolver: resolveSnapshot,
   });
 }
@@ -166,6 +166,23 @@ export const execCommand = internalAction({
 });
 
 /**
+ * Pause (stop without deleting) a PVE LXC container.
+ * The container can be resumed later with resumeInstance.
+ */
+export const pauseInstance = internalAction({
+  args: {
+    instanceId: v.string(),
+  },
+  handler: async (_ctx, args) => {
+    const client = getPveLxcClient();
+    const instance = await client.instances.get({ instanceId: args.instanceId });
+    await instance.pause();
+
+    return { paused: true };
+  },
+});
+
+/**
  * Extend timeout for a PVE LXC container.
  * PVE LXC doesn't have native TTL - this is a no-op for compatibility.
  */
@@ -183,6 +200,7 @@ export const extendTimeout = internalAction({
 
 /**
  * Stop (destroy) a PVE LXC container.
+ * Deletes the container to match other providers' stop semantics.
  */
 export const stopInstance = internalAction({
   args: {
@@ -191,7 +209,7 @@ export const stopInstance = internalAction({
   handler: async (_ctx, args) => {
     const client = getPveLxcClient();
     const instance = await client.instances.get({ instanceId: args.instanceId });
-    await instance.stop();
+    await instance.delete();
 
     return { stopped: true };
   },
