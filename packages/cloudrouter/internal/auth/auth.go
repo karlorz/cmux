@@ -116,7 +116,15 @@ func GetConfig() Config {
 	projectID := resolve(cliProjectID, []string{"STACK_PROJECT_ID", "NEXT_PUBLIC_STACK_PROJECT_ID"}, ProjectID, defaultProjectID)
 	publishableKey := resolve(cliPublishableKey, []string{"STACK_PUBLISHABLE_CLIENT_KEY", "NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY"}, PublishableKey, defaultPublishableKey)
 	cmuxURL := resolve(cliCmuxURL, []string{"CMUX_API_URL", "BASE_APP_URL"}, CmuxURL, defaultCmuxURL)
-	convexSiteURL := resolve(cliConvexSiteURL, []string{"CONVEX_SITE_URL", "NEXT_PUBLIC_CONVEX_URL"}, ConvexSiteURL, defaultConvexSiteURL)
+	// CONVEX_SITE_URL is for HTTP routes (.convex.site), NEXT_PUBLIC_CONVEX_URL is for API (.convex.cloud)
+	// If only NEXT_PUBLIC_CONVEX_URL is set, transform .convex.cloud -> .convex.site
+	convexSiteURL := resolve(cliConvexSiteURL, []string{"CONVEX_SITE_URL"}, ConvexSiteURL, defaultConvexSiteURL)
+	if convexSiteURL == "" || convexSiteURL == defaultConvexSiteURL {
+		if convexCloudURL := resolveEnv("NEXT_PUBLIC_CONVEX_URL"); convexCloudURL != "" {
+			// Transform https://xxx.convex.cloud -> https://xxx.convex.site
+			convexSiteURL = strings.Replace(convexCloudURL, ".convex.cloud", ".convex.site", 1)
+		}
+	}
 
 	stackAuthURL := os.Getenv("AUTH_API_URL")
 	if stackAuthURL == "" {
