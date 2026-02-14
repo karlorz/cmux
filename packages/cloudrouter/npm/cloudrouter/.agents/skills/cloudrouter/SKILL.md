@@ -330,7 +330,7 @@ cloudrouter browser screenshot cr_abc123 # Visual capture
    - Use `--seconds <N>` to set a custom duration (default is 3600 = 1 hour). **Do NOT use `--timeout`** — that flag does not exist.
    - Example: `cloudrouter extend cr_abc123 --seconds 1800` extends by 30 minutes.
 
-3. **Stop, don't delete, by default.** Prefer `cloudrouter stop <id>` over `cloudrouter delete <id>` unless the sandbox is clearly disposable (e.g., a quick test that produced no artifacts). Stopped sandboxes can be restarted; deleted ones are gone forever.
+3. **Stop, don't delete, by default.** Prefer `cloudrouter stop <id>` over `cloudrouter delete <id>` unless the sandbox is clearly disposable (e.g., a quick test that produced no artifacts). Stopped sandboxes can be restarted; deleted ones are gone forever. **If `cloudrouter stop` fails, fall back to `cloudrouter delete <id>` to ensure cleanup.**
 
 4. **Clean up when you're done.** When your task is complete and the user no longer needs the sandbox, stop it. Don't leave sandboxes running indefinitely — they count toward the concurrency limit.
 
