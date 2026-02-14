@@ -1711,6 +1711,7 @@ export RUSTUP_HOME=/usr/local/rustup
 export CARGO_HOME=/usr/local/cargo
 export PATH="/usr/local/bin:/usr/local/cargo/bin:$HOME/.local/bin:$HOME/.bun/bin:$PATH"
 EOF
+        install -Dm0644 {repo}/configs/profile.d/cmux-env.sh /etc/profile.d/cmux-env.sh
         if ! grep -q "alias g='git'" /root/.bashrc 2>/dev/null; then
           echo "alias g='git'" >> /root/.bashrc
         fi

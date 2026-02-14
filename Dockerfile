@@ -1106,6 +1106,8 @@ RUN chmod +x /usr/local/bin/envctl /usr/local/bin/envd /usr/local/bin/cmux-proxy
   printf 'export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"\n' > /etc/profile.d/local-bin.sh && \
   chmod +x /etc/profile.d/local-bin.sh
 
+COPY configs/profile.d/cmux-env.sh /etc/profile.d/cmux-env.sh
+
 # Install tmux configuration for better mouse scrolling behavior
 COPY configs/tmux.conf /etc/tmux.conf
 
