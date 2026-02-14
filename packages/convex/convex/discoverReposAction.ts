@@ -15,11 +15,7 @@ import {
   createMorphCloudClient,
   execInstanceInstanceIdExecPost,
 } from "@cmux/morphcloud-openapi-client";
-import { Agent, fetch as undiciFetch } from "undici";
-
-const pveHttpsAgent = new Agent({
-  connect: { rejectUnauthorized: false },
-});
+import { PveLxcClient } from "@cmux/pve-lxc-client";
 
 function parseGitRemoteUrl(url: string): string | null {
   // Match GitHub HTTPS URLs: https://github.com/owner/repo.git or https://github.com/owner/repo
@@ -43,7 +39,10 @@ export const discoverRepos = internalAction({
     try {
       let stdout: string;
 
-      if (args.sandboxId.startsWith("pvelxc-")) {
+      if (
+        args.sandboxId.startsWith("pvelxc-") ||
+        args.sandboxId.startsWith("cmux-")
+      ) {
         stdout = await execPveLxc(args.sandboxId, cmd);
       } else {
         stdout = await execMorph(args.sandboxId, cmd);
@@ -80,45 +79,30 @@ async function execMorph(sandboxId: string, cmd: string): Promise<string> {
 }
 
 async function execPveLxc(sandboxId: string, cmd: string): Promise<string> {
-  // PVE LXC containers use cmux-execd daemon on port 39375 for command execution
-  // sandboxId format: pvelxc-XXXXXXXX where XXXXXXXX is the hostname suffix
+  const apiUrl = process.env.PVE_API_URL;
+  const apiToken = process.env.PVE_API_TOKEN;
+  if (!apiUrl || !apiToken) {
+    throw new Error("PVE_API_URL and PVE_API_TOKEN must be set");
+  }
 
-  const publicDomain = process.env.PVE_PUBLIC_DOMAIN;
-  if (!publicDomain) throw new Error("PVE_PUBLIC_DOMAIN not set");
+  const verifyTlsRaw = process.env.PVE_VERIFY_TLS;
+  const verifyTls =
+    verifyTlsRaw === "1" || verifyTlsRaw?.toLowerCase() === "true";
 
-  // Build public exec URL (same format as pve-lxc-client.ts buildPublicServiceUrl)
-  // Format: https://port-{port}-{hostId}.{domain}/exec (Caddyfile routing pattern)
-  const execUrl = `https://port-39375-${sandboxId}.${publicDomain}/exec`;
-
-  const response = await undiciFetch(execUrl, {
-    dispatcher: pveHttpsAgent,
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ command: cmd }),
+  const client = new PveLxcClient({
+    apiUrl,
+    apiToken,
+    node: process.env.PVE_NODE,
+    publicDomain: process.env.PVE_PUBLIC_DOMAIN,
+    verifyTls,
   });
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`cmux-execd failed: ${response.status} - ${text}`);
+  const instance = await client.instances.get({ instanceId: sandboxId });
+  const result = await instance.exec(cmd);
+  if (result.exit_code !== 0 && !result.stdout.trim()) {
+    throw new Error(result.stderr || `Command failed with exit ${result.exit_code}`);
   }
-
-  // Parse streaming response - each line is a JSON object like:
-  // {"type":"stdout","data":"..."}
-  // {"type":"exit","code":0}
-  const text = await response.text();
-  let stdout = "";
-  for (const line of text.split("\n")) {
-    if (!line.trim()) continue;
-    try {
-      const parsed = JSON.parse(line) as { type?: string; data?: string };
-      if (parsed.type === "stdout" && parsed.data) {
-        stdout += parsed.data + "\n";
-      }
-    } catch {
-      // Skip malformed lines
-    }
-  }
-  return stdout;
+  return result.stdout;
 }
 
 function parseRepos(stdout: string): string[] {

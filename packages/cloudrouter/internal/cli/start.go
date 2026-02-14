@@ -40,10 +40,10 @@ var (
 
 // sizePreset defines a machine size preset (cpu, memory, disk).
 type sizePreset struct {
-	CPU      float64
+	CPU       float64
 	MemoryMiB int
-	DiskGB   int
-	Label    string
+	DiskGB    int
+	Label     string
 }
 
 var sizePresets = map[string]sizePreset{
@@ -223,6 +223,14 @@ Examples:
 							}
 						}
 					}
+				} else if provider == "pve-lxc" {
+					// For PVE-LXC, pick the first matching provider template
+					for _, t := range templates {
+						if t.Provider == "pve-lxc" {
+							templateID = t.ID
+							break
+						}
+					}
 				} else {
 					// E2B provider (always uses docker template)
 					for _, t := range templates {
@@ -341,6 +349,8 @@ Examples:
 			} else {
 				typeLabel = "GPU"
 			}
+		} else if resp.Provider == "pve-lxc" {
+			typeLabel = "PVE LXC"
 		}
 
 		fmt.Printf("Created sandbox: %s\n", resp.DevboxID)
@@ -360,7 +370,7 @@ Examples:
 			fmt.Printf("  VNC:     %s\n", resp.VNCURL)
 		}
 
-		// Auto-open: prefer Jupyter for GPU, VSCode for Docker
+		// Auto-open: prefer Jupyter for GPU, VSCode for Docker/PVE-LXC
 		openableURL := vscodeAuthURL
 		if resp.Provider == "modal" && jupyterAuthURL != "" {
 			openableURL = jupyterAuthURL
@@ -385,8 +395,8 @@ func init() {
 	startCmd.Flags().StringVar(&startFlagGit, "git", "", "Git repository URL to clone (or user/repo shorthand)")
 	startCmd.Flags().StringVarP(&startFlagBranch, "branch", "b", "", "Git branch to clone")
 
-	// Provider selection (internal: e2b = Docker, modal = GPU)
-	startCmd.Flags().StringVarP(&startFlagProvider, "provider", "p", "", "Sandbox provider: e2b (default), modal")
+	// Provider selection (internal: e2b = Docker, modal = GPU, pve-lxc = self-hosted LXC)
+	startCmd.Flags().StringVarP(&startFlagProvider, "provider", "p", "", "Sandbox provider: e2b (default), modal, pve-lxc")
 
 	// GPU and resource options
 	startCmd.Flags().StringVar(&startFlagGPU, "gpu", "", "GPU type (T4, L4, A10G, L40S, A100, H100, H200, B200)")

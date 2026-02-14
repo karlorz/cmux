@@ -1,7 +1,6 @@
 /**
- * v2/devbox HTTP API - Multi-provider devbox management (E2B + Modal).
+ * v2/devbox HTTP API - Multi-provider devbox management (E2B + Modal + PVE LXC).
  *
- * This API supports E2B and Modal as backend providers.
  * Provider is selected via "provider" field in request body (defaults to "e2b").
  * All endpoints require Stack Auth authentication.
  * Instance data is tracked in devboxInstances table, with provider info in devboxInfo.
@@ -19,8 +18,12 @@ import {
   getModalTemplateByPresetId,
   isModalGpuGated,
 } from "@cmux/shared/modal-templates";
+import {
+  DEFAULT_PVE_LXC_SNAPSHOT_ID,
+  PVE_LXC_SNAPSHOT_PRESETS,
+} from "@cmux/shared/pve-lxc-snapshots";
 
-type SandboxProvider = "e2b" | "modal";
+type SandboxProvider = "e2b" | "modal" | "pve-lxc";
 
 const JSON_HEADERS = {
   "Content-Type": "application/json",
@@ -102,6 +105,15 @@ const modalActionsApi = (internal as any).modal_actions as {
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+const pveLxcActionsApi = (internal as any).pve_lxc_actions as {
+  startInstance: FunctionReference<"action", "internal">;
+  getInstance: FunctionReference<"action", "internal">;
+  execCommand: FunctionReference<"action", "internal">;
+  extendTimeout: FunctionReference<"action", "internal">;
+  stopInstance: FunctionReference<"action", "internal">;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const e2bInstancesApi = (internal as any).e2bInstances as {
   recordResumeInternal: FunctionReference<"mutation", "internal">;
   recordPauseInternal: FunctionReference<"mutation", "internal">;
@@ -115,6 +127,43 @@ const modalInstancesApi = (internal as any).modalInstances as {
   recordStopInternal: FunctionReference<"mutation", "internal">;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const pveLxcInstancesApi = (internal as any).pveLxcInstances as {
+  recordResumeInternal: FunctionReference<"mutation", "internal">;
+  recordPauseInternal: FunctionReference<"mutation", "internal">;
+  recordStopInternal: FunctionReference<"mutation", "internal">;
+};
+
+function getActionsApiForProvider(provider: SandboxProvider): {
+  startInstance: FunctionReference<"action", "internal">;
+  getInstance: FunctionReference<"action", "internal">;
+  execCommand: FunctionReference<"action", "internal">;
+  stopInstance: FunctionReference<"action", "internal">;
+  extendTimeout?: FunctionReference<"action", "internal">;
+} {
+  if (provider === "modal") {
+    return modalActionsApi;
+  }
+  if (provider === "pve-lxc") {
+    return pveLxcActionsApi;
+  }
+  return e2bActionsApi;
+}
+
+function getInstanceActivityApiForProvider(provider: SandboxProvider): {
+  recordResumeInternal: FunctionReference<"mutation", "internal">;
+  recordPauseInternal: FunctionReference<"mutation", "internal">;
+  recordStopInternal: FunctionReference<"mutation", "internal">;
+} {
+  if (provider === "modal") {
+    return modalInstancesApi;
+  }
+  if (provider === "pve-lxc") {
+    return pveLxcInstancesApi;
+  }
+  return e2bInstancesApi;
+}
+
 /**
  * Record activity for a provider instance
  */
@@ -125,8 +174,7 @@ async function recordProviderActivity(
   action: "resume" | "pause" | "stop"
 ): Promise<void> {
   try {
-    const activityApi =
-      provider === "modal" ? modalInstancesApi : e2bInstancesApi;
+    const activityApi = getInstanceActivityApiForProvider(provider);
     if (action === "resume") {
       await ctx.runMutation(activityApi.recordResumeInternal, {
         instanceId: providerInstanceId,
@@ -163,7 +211,7 @@ async function getProviderInfo(
 }
 
 // ============================================================================
-// POST /api/v2/devbox/instances - Start a new instance (E2B or Modal)
+// POST /api/v2/devbox/instances - Start a new instance (E2B, Modal, or PVE LXC)
 // ============================================================================
 export const createInstance = httpAction(async (ctx, req) => {
   const contentTypeError = verifyContentType(req);
@@ -265,6 +313,49 @@ export const createInstance = httpAction(async (ctx, req) => {
         templateId,
         gpu: result.gpu ?? undefined,
         jupyterUrl: result.jupyterUrl,
+        vscodeUrl: result.vscodeUrl,
+        workerUrl: result.workerUrl,
+        vncUrl: result.vncUrl,
+      });
+    }
+
+    if (provider === "pve-lxc") {
+      const templateId = body.templateId ?? DEFAULT_PVE_LXC_SNAPSHOT_ID;
+
+      const result = (await ctx.runAction(pveLxcActionsApi.startInstance, {
+        templateId,
+        ttlSeconds: body.ttlSeconds ?? 60 * 60,
+        metadata: {
+          app: "cmux-devbox-v2",
+          userId: identity!.subject,
+          ...(body.metadata || {}),
+        },
+        envs: body.envs,
+      })) as {
+        instanceId: string;
+        status: string;
+        vscodeUrl?: string;
+        workerUrl?: string;
+        vncUrl?: string;
+      };
+
+      const instanceResult = (await ctx.runMutation(devboxApi.create, {
+        teamSlugOrId: body.teamSlugOrId,
+        providerInstanceId: result.instanceId,
+        provider: "pve-lxc",
+        name: body.name,
+        templateId,
+        vscodeUrl: result.vscodeUrl,
+        workerUrl: result.workerUrl,
+        metadata: body.metadata,
+        source: "cli",
+      })) as { id: string; isExisting: boolean };
+
+      return jsonResponse({
+        id: instanceResult.id,
+        provider: "pve-lxc",
+        status: result.status,
+        templateId,
         vscodeUrl: result.vscodeUrl,
         workerUrl: result.workerUrl,
         vncUrl: result.vncUrl,
@@ -413,8 +504,7 @@ async function handleGetInstance(
     }
 
     const { provider, providerInstanceId } = providerInfo;
-    const actionsApi =
-      provider === "modal" ? modalActionsApi : e2bActionsApi;
+    const actionsApi = getActionsApiForProvider(provider);
 
     const providerResult = (await ctx.runAction(actionsApi.getInstance, {
       instanceId: providerInstanceId,
@@ -479,8 +569,7 @@ async function handleExecCommand(
     }
 
     const { provider, providerInstanceId } = providerInfo;
-    const actionsApi =
-      provider === "modal" ? modalActionsApi : e2bActionsApi;
+    const actionsApi = getActionsApiForProvider(provider);
 
     const commandStr = Array.isArray(command) ? command.join(" ") : command;
     const result = await ctx.runAction(actionsApi.execCommand, {
@@ -527,12 +616,15 @@ async function handlePauseInstance(
 
     const { provider, providerInstanceId } = providerInfo;
 
-    // Neither E2B nor Modal has native pause
-    if (provider === "e2b") {
-      await ctx.runAction(e2bActionsApi.extendTimeout, {
-        instanceId: providerInstanceId,
-        timeoutMs: 60 * 60 * 1000,
-      });
+    // Providers currently use status updates (and optional timeout extension) for pause.
+    if (provider !== "modal") {
+      const actionsApi = getActionsApiForProvider(provider);
+      if (actionsApi.extendTimeout) {
+        await ctx.runAction(actionsApi.extendTimeout, {
+          instanceId: providerInstanceId,
+          timeoutMs: 60 * 60 * 1000,
+        });
+      }
     }
 
     await ctx.runMutation(devboxApi.updateStatus, {
@@ -549,7 +641,9 @@ async function handlePauseInstance(
       note:
         provider === "modal"
           ? "Modal status updated (no true pause)"
-          : "E2B timeout extended (no true pause)",
+          : provider === "pve-lxc"
+            ? "PVE LXC status updated (no true pause)"
+            : "E2B timeout extended (no true pause)",
     });
   } catch (error) {
     console.error("[devbox_v2.pause] Error:", error);
@@ -637,8 +731,7 @@ async function handleStopInstance(
     }
 
     const { provider, providerInstanceId } = providerInfo;
-    const actionsApi =
-      provider === "modal" ? modalActionsApi : e2bActionsApi;
+    const actionsApi = getActionsApiForProvider(provider);
 
     await ctx.runAction(actionsApi.stopInstance, {
       instanceId: providerInstanceId,
@@ -688,13 +781,16 @@ async function handleUpdateTtl(
 
     const { provider, providerInstanceId } = providerInfo;
 
-    if (provider === "e2b") {
-      await ctx.runAction(e2bActionsApi.extendTimeout, {
-        instanceId: providerInstanceId,
-        timeoutMs: ttlSeconds * 1000,
-      });
+    if (provider !== "modal") {
+      const actionsApi = getActionsApiForProvider(provider);
+      if (actionsApi.extendTimeout) {
+        await ctx.runAction(actionsApi.extendTimeout, {
+          instanceId: providerInstanceId,
+          timeoutMs: ttlSeconds * 1000,
+        });
+      }
     }
-    // Modal sandbox timeout is set at creation; TTL extension is a no-op
+    // Modal sandbox timeout is set at creation; TTL extension is a no-op.
 
     return jsonResponse({ updated: true, ttlSeconds, provider });
   } catch (error) {
@@ -711,7 +807,7 @@ export const getConfig = httpAction(async (ctx) => {
   if (error) return error;
 
   return jsonResponse({
-    providers: ["e2b", "modal"],
+    providers: ["e2b", "modal", "pve-lxc"],
     defaultProvider: "e2b",
     e2b: {
       defaultTemplateId: DEFAULT_E2B_TEMPLATE_ID,
@@ -719,6 +815,9 @@ export const getConfig = httpAction(async (ctx) => {
     modal: {
       defaultTemplateId: DEFAULT_MODAL_TEMPLATE_ID,
       gpuOptions: ["T4", "L4", "A10G", "L40S", "A100", "A100-80GB", "H100", "H200", "B200"],
+    },
+    pveLxc: {
+      defaultTemplateId: DEFAULT_PVE_LXC_SNAPSHOT_ID,
     },
   });
 });
@@ -823,8 +922,7 @@ async function handleGetAuthToken(
     }
 
     const { provider, providerInstanceId } = providerInfo;
-    const actionsApi =
-      provider === "modal" ? modalActionsApi : e2bActionsApi;
+    const actionsApi = getActionsApiForProvider(provider);
 
     const result = (await ctx.runAction(actionsApi.execCommand, {
       instanceId: providerInstanceId,
@@ -994,7 +1092,25 @@ export const listTemplates = httpAction(async (ctx, req) => {
         }))
       : [];
 
+  const pveLxcTemplates =
+    !providerFilter || providerFilter === "pve-lxc"
+      ? PVE_LXC_SNAPSHOT_PRESETS.map((preset) => ({
+          provider: "pve-lxc" as const,
+          presetId: preset.presetId,
+          templateId: preset.id,
+          name: preset.label,
+          description: preset.description,
+          cpu: preset.cpu,
+          memory: preset.memory,
+          disk: preset.disk,
+          templateVmid: preset.templateVmid,
+          snapshotId: preset.id,
+          version: preset.latestVersion.version,
+          capturedAt: preset.latestVersion.capturedAt,
+        }))
+      : [];
+
   return jsonResponse({
-    templates: [...e2bTemplates, ...modalTemplates],
+    templates: [...e2bTemplates, ...modalTemplates, ...pveLxcTemplates],
   });
 });

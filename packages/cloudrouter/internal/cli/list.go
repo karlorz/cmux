@@ -21,7 +21,8 @@ var listCmd = &cobra.Command{
 Examples:
   cloudrouter list                        # List all sandboxes
   cloudrouter list --provider e2b         # List only Docker sandboxes
-  cloudrouter list --provider modal       # List only GPU sandboxes`,
+  cloudrouter list --provider modal       # List only GPU sandboxes
+  cloudrouter list --provider pve-lxc     # List only PVE LXC sandboxes`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		teamSlug, err := getTeamSlug()
 		if err != nil {
@@ -52,6 +53,8 @@ Examples:
 				} else {
 					typeLabel = "GPU"
 				}
+			} else if inst.Provider == "pve-lxc" {
+				typeLabel = "PVE LXC"
 			}
 			fmt.Printf("  %s - %s (%s) [%s]\n", inst.ID, inst.Status, name, typeLabel)
 		}
@@ -67,7 +70,8 @@ var templatesCmd = &cobra.Command{
 Examples:
   cloudrouter templates                   # List all templates
   cloudrouter templates --provider e2b    # List only Docker templates
-  cloudrouter templates --provider modal  # List only GPU templates`,
+  cloudrouter templates --provider modal  # List only GPU templates
+  cloudrouter templates --provider pve-lxc # List only PVE LXC templates`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		teamSlug, err := getTeamSlug()
 		if err != nil {
@@ -94,6 +98,8 @@ Examples:
 				} else {
 					typeLabel = "GPU"
 				}
+			} else if t.Provider == "pve-lxc" {
+				typeLabel = "PVE LXC"
 			}
 			fmt.Printf("  %s - %s [%s]\n", t.ID, t.Name, typeLabel)
 		}
@@ -102,6 +108,6 @@ Examples:
 }
 
 func init() {
-	listCmd.Flags().StringVarP(&listFlagProvider, "provider", "p", "", "Filter by provider: e2b, modal")
-	templatesCmd.Flags().StringVarP(&templatesFlagProvider, "provider", "p", "", "Filter by provider: e2b, modal")
+	listCmd.Flags().StringVarP(&listFlagProvider, "provider", "p", "", "Filter by provider: e2b, modal, pve-lxc")
+	templatesCmd.Flags().StringVarP(&templatesFlagProvider, "provider", "p", "", "Filter by provider: e2b, modal, pve-lxc")
 }
