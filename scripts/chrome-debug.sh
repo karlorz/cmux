@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Start Chrome with remote debugging enabled (default port: 9222).
+# Start Chrome with remote debugging in detached mode.
 # Usage: ./scripts/chrome-debug.sh [URL]
-# Defaults to a dedicated debug profile for reliable CDP availability.
-# Override profile path with CHROME_DEBUG_PROFILE.
 set -euo pipefail
 
 DEBUG_PORT="${CHROME_DEBUG_PORT:-9222}"
+PROFILE_MATCH_PATTERN="chrome-debug-profile"
 TARGET_URL="${1:-${CHROME_DEBUG_URL:-about:blank}}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -64,7 +63,7 @@ detect_chrome() {
 
 # Reuse existing healthy debug instance only if it matches our profile marker.
 if curl -fs "http://127.0.0.1:${DEBUG_PORT}/json/version" >/dev/null 2>&1; then
-  if pgrep -f "${PROFILE_DIR}" >/dev/null 2>&1; then
+  if pgrep -f "${PROFILE_MATCH_PATTERN}" >/dev/null 2>&1; then
     echo "[OK] Found existing debug Chrome instance on port ${DEBUG_PORT}; reusing."
     exit 0
   fi
@@ -83,8 +82,8 @@ else
   pkill -x "chromium-browser" 2>/dev/null || true
 fi
 
-if pgrep -f "${PROFILE_DIR}" >/dev/null 2>&1; then
-  pgrep -f "${PROFILE_DIR}" | xargs kill -9 2>/dev/null || true
+if pgrep -f "${PROFILE_MATCH_PATTERN}" >/dev/null 2>&1; then
+  pgrep -f "${PROFILE_MATCH_PATTERN}" | xargs kill -9 2>/dev/null || true
 fi
 sleep 2
 
@@ -104,14 +103,21 @@ echo "[INFO] Profile: ${PROFILE_DIR}"
 echo "[INFO] URL: ${TARGET_URL}"
 echo "[INFO] Log file: ${LOG_FILE}"
 
-nohup "${CHROME_BIN}" \
-  --remote-debugging-port="${DEBUG_PORT}" \
-  --remote-debugging-address=127.0.0.1 \
-  --remote-allow-origins=* \
-  --user-data-dir="${PROFILE_DIR}" \
-  --no-first-run \
-  --no-default-browser-check \
-  "${TARGET_URL}" > "${LOG_FILE}" 2>&1 &
+CHROME_ARGS=(
+  --remote-debugging-port="${DEBUG_PORT}"
+  --remote-debugging-address=127.0.0.1
+  --remote-allow-origins=*
+  --user-data-dir="${PROFILE_DIR}"
+  --no-first-run
+  --no-default-browser-check
+  "${TARGET_URL}"
+)
+
+if command -v setsid >/dev/null 2>&1; then
+  setsid nohup "${CHROME_BIN}" "${CHROME_ARGS[@]}" < /dev/null > "${LOG_FILE}" 2>&1 &
+else
+  nohup "${CHROME_BIN}" "${CHROME_ARGS[@]}" < /dev/null > "${LOG_FILE}" 2>&1 &
+fi
 
 echo -n "[INFO] Waiting for debugger on port ${DEBUG_PORT}"
 for _ in {1..20}; do
