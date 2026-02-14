@@ -175,6 +175,24 @@ export const getDevboxIdFromProvider = internalQuery({
 });
 
 /**
+ * Get devbox info record by provider instance ID.
+ * Used by orphan cleanup to verify if a provider instance is tracked.
+ */
+export const getByProviderInstanceIdInternal = internalQuery({
+  args: {
+    providerInstanceId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("devboxInfo")
+      .withIndex("by_providerInstanceId", (q) =>
+        q.eq("providerInstanceId", args.providerInstanceId)
+      )
+      .first();
+  },
+});
+
+/**
  * Get devbox instance by provider instance ID.
  */
 export const getByProviderInstanceId = authQuery({

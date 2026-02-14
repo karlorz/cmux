@@ -331,6 +331,18 @@ export const createInstance = httpAction(async (ctx, req) => {
         xtermUrl?: string;
       };
 
+      // Record activity for maintenance tracking
+      try {
+        await ctx.runMutation(internal.sandboxInstances.recordCreateInternal, {
+          instanceId: result.instanceId,
+          provider: "pve-lxc",
+          snapshotId,
+          snapshotProvider: "pve-lxc",
+        });
+      } catch (error) {
+        console.error("[devbox_v2.create] Failed to record PVE-LXC activity:", error);
+      }
+
       const instanceResult = (await ctx.runMutation(devboxApi.create, {
         teamSlugOrId: body.teamSlugOrId,
         providerInstanceId: result.instanceId,

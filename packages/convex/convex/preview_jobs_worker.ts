@@ -2040,6 +2040,22 @@ export async function runPreviewJob(
         ttlAction: "stop",
         readinessTimeoutMs: 5 * 60 * 1000,
       });
+
+      // Record activity for maintenance tracking
+      try {
+        await ctx.runMutation(internal.sandboxInstances.recordCreateInternal, {
+          instanceId: pveLxcInstance.instanceId,
+          provider: "pve-lxc",
+          vmid: pveLxcInstance.vmid,
+          hostname: pveLxcInstance.networking?.hostname,
+          snapshotId,
+          snapshotProvider: "pve-lxc",
+          templateVmid: environment.templateVmid,
+        });
+      } catch (error) {
+        console.error("[preview-jobs] Failed to record PVE-LXC activity:", error);
+      }
+
       unifiedInstance = pveLxcToUnifiedInstance(pveLxcInstance);
       execFn = createPveLxcExecFn(pveLxcInstance.instanceId);
       stopFn = () => stopPveLxcInstance(pveLxcInstance.instanceId);
