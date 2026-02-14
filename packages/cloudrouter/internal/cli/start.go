@@ -167,6 +167,13 @@ Examples:
 		client := api.NewClient()
 		provider := startFlagProvider
 
+		// If no provider specified, fetch default from server config
+		if provider == "" {
+			if config, err := client.GetConfig(); err == nil && config.DefaultProvider != "" {
+				provider = config.DefaultProvider
+			}
+		}
+
 		// If --gpu is specified without --provider, default to modal
 		if startFlagGPU != "" && provider == "" {
 			provider = "modal"
