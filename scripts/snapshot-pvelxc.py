@@ -2973,6 +2973,7 @@ EOF
 export RUSTUP_HOME=/usr/local/rustup
 export CARGO_HOME=/usr/local/cargo
 export PATH="/usr/local/bin:/usr/local/cargo/bin:$HOME/.local/bin:$HOME/.bun/bin:$PATH"
+export IS_SANDBOX=1
 EOF
         if ! grep -q "alias g='git'" /root/.bashrc 2>/dev/null; then
           echo "alias g='git'" >> /root/.bashrc

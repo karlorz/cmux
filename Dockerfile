@@ -1103,7 +1103,7 @@ RUN chmod +x /usr/local/bin/envctl /usr/local/bin/envd /usr/local/bin/cmux-proxy
   echo 'export XDG_RUNTIME_DIR=/run/user/0' >> /root/.bashrc && \
   echo 'export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"' >> /root/.bashrc && \
   echo 'export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"' >> /root/.zshrc && \
-  printf 'export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"\n' > /etc/profile.d/local-bin.sh && \
+  printf 'export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"\nexport IS_SANDBOX=1\n' > /etc/profile.d/local-bin.sh && \
   chmod +x /etc/profile.d/local-bin.sh
 
 # Install tmux configuration for better mouse scrolling behavior
