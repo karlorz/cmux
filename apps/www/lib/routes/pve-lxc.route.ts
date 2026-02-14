@@ -8,10 +8,12 @@
 import { getAccessTokenFromRequest } from "@/lib/utils/auth";
 import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { env } from "@/lib/utils/www-env";
+import { ConvexHttpClient } from "@cmux/shared/node/convex-cache";
+import { api, internal } from "@cmux/convex/api";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { getConvex } from "../utils/get-convex";
-import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
+import type { FunctionReference } from "convex/server";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
 import { getPveLxcClient } from "@/lib/utils/pve-lxc-client";
 
@@ -258,6 +260,29 @@ pveLxcRouter.openapi(
         ttlAction: body.ttlAction ?? "stop",
         metadata: body.metadata,
       });
+
+      // Record activity for maintenance tracking (non-fatal)
+      try {
+        const convex = new ConvexHttpClient(env.NEXT_PUBLIC_CONVEX_URL);
+        await convex.mutation(
+          internal.sandboxInstances
+            .recordCreateInternal as unknown as FunctionReference<"mutation">,
+          {
+            instanceId: instance.id,
+            provider: "pve-lxc",
+            vmid: instance.vmid,
+            hostname: instance.networking.hostname,
+            snapshotId: body.snapshotId,
+            snapshotProvider: "pve-lxc",
+            templateVmid: body.templateVmid,
+          }
+        );
+      } catch (error) {
+        console.error(
+          "[pve-lxc.preview.start] Failed to record instance creation activity (non-fatal)",
+          error
+        );
+      }
 
       return c.json({
         instanceId: instance.id,

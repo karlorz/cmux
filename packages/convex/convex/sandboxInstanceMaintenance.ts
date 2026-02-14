@@ -705,7 +705,10 @@ export const cleanupOrphanedContainers = internalAction({
             continue;
           }
 
-          if (orphan.created === 0) {
+          // PVE LXC doesn't provide creation time in list API, and stopped containers
+          // don't preserve state anyway - safe to clean up without age check.
+          // For other providers, still require known creation time for safety.
+          if (orphan.created === 0 && config.provider !== "pve-lxc") {
             console.warn(
               `[sandboxMaintenance:orphanCleanup] Skipping orphan with unknown creation time: ${orphan.id} (provider=${config.provider})`
             );
@@ -721,6 +724,12 @@ export const cleanupOrphanedContainers = internalAction({
             );
             totalSkipped++;
             continue;
+          }
+
+          if (config.provider === "pve-lxc" && orphan.created === 0) {
+            console.log(
+              `[sandboxMaintenance:orphanCleanup] Deleting PVE orphan with unknown creation time: ${orphan.id} (status=${orphan.status})`
+            );
           }
 
           try {
