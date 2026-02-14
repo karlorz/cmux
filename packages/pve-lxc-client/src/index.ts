@@ -79,7 +79,9 @@ export class PveLxcInstance {
   public networking: ContainerNetworking;
 
   private client: PveLxcClient;
-  private node: string;
+  // Node is stored for future use but currently container operations
+  // use the client's getNode() which auto-detects the node
+  private _node: string;
 
   constructor(
     client: PveLxcClient,
@@ -96,7 +98,7 @@ export class PveLxcInstance {
     this.status = status;
     this.metadata = metadata;
     this.networking = networking;
-    this.node = node;
+    this._node = node;
   }
 
   /**
@@ -1291,6 +1293,7 @@ export class PveLxcClient {
    * @see https://pve.proxmox.com/wiki/Linux_Container
    * @internal This is a PVE-specific experimental feature
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async suspendContainer(vmid: number): Promise<void> {
     const node = await this.getNode();
     const upid = await this.apiRequest<string>(
@@ -1314,6 +1317,7 @@ export class PveLxcClient {
    * @see https://pve.proxmox.com/wiki/Linux_Container
    * @internal This is a PVE-specific experimental feature
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async resumeContainer(vmid: number): Promise<void> {
     const node = await this.getNode();
     const upid = await this.apiRequest<string>(
