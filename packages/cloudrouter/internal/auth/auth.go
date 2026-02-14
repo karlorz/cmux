@@ -89,11 +89,21 @@ type Config struct {
 func GetConfig() Config {
 	defaultProjectID, defaultPublishableKey, defaultCmuxURL, defaultConvexSiteURL := getDefaultsForMode()
 
-	resolve := func(cliVal, envKey, buildVal, defaultVal string) string {
+	// resolveEnv checks multiple env var names (for compatibility with .env files)
+	resolveEnv := func(envKeys ...string) string {
+		for _, key := range envKeys {
+			if val := os.Getenv(key); val != "" {
+				return val
+			}
+		}
+		return ""
+	}
+
+	resolve := func(cliVal string, envKeys []string, buildVal, defaultVal string) string {
 		if cliVal != "" {
 			return cliVal
 		}
-		if envVal := os.Getenv(envKey); envVal != "" {
+		if envVal := resolveEnv(envKeys...); envVal != "" {
 			return envVal
 		}
 		if buildVal != "" {
@@ -102,10 +112,11 @@ func GetConfig() Config {
 		return defaultVal
 	}
 
-	projectID := resolve(cliProjectID, "STACK_PROJECT_ID", ProjectID, defaultProjectID)
-	publishableKey := resolve(cliPublishableKey, "STACK_PUBLISHABLE_CLIENT_KEY", PublishableKey, defaultPublishableKey)
-	cmuxURL := resolve(cliCmuxURL, "CMUX_API_URL", CmuxURL, defaultCmuxURL)
-	convexSiteURL := resolve(cliConvexSiteURL, "CONVEX_SITE_URL", ConvexSiteURL, defaultConvexSiteURL)
+	// Support both STACK_* (CLI convention) and NEXT_PUBLIC_STACK_* (.env convention)
+	projectID := resolve(cliProjectID, []string{"STACK_PROJECT_ID", "NEXT_PUBLIC_STACK_PROJECT_ID"}, ProjectID, defaultProjectID)
+	publishableKey := resolve(cliPublishableKey, []string{"STACK_PUBLISHABLE_CLIENT_KEY", "NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY"}, PublishableKey, defaultPublishableKey)
+	cmuxURL := resolve(cliCmuxURL, []string{"CMUX_API_URL", "BASE_APP_URL"}, CmuxURL, defaultCmuxURL)
+	convexSiteURL := resolve(cliConvexSiteURL, []string{"CONVEX_SITE_URL", "NEXT_PUBLIC_CONVEX_URL"}, ConvexSiteURL, defaultConvexSiteURL)
 
 	stackAuthURL := os.Getenv("AUTH_API_URL")
 	if stackAuthURL == "" {
