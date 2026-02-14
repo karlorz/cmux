@@ -3,7 +3,7 @@ name: cloudrouter
 description: Manage cloud development sandboxes with cloudrouter. Create, sync, and access remote VMs with GPU support, Docker, and browser automation. Use when asked to create a sandbox, spin up a dev environment, run code in the cloud, use GPUs, automate a browser, or interact with remote VMs.
 license: MIT
 metadata:
-  author: manaflow-ai
+  author: karlorz
   version: "0.0.3"
 ---
 
@@ -47,7 +47,7 @@ cloudrouter - Cloud Development Sandboxes
 **Before doing anything else, always run these two commands at the start of any cloudrouter task.** Do not ask the user — just run them automatically:
 
 ```bash
-npm install -g @manaflow-ai/cloudrouter   # Install/update CLI
+npm install -g @karlorz/cloudrouter   # Install/update CLI
 cloudrouter skills update                 # Update this skill to latest version
 ```
 

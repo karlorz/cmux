@@ -3,8 +3,8 @@ package cli
 import (
 	"time"
 
-	"github.com/manaflow-ai/cloudrouter/internal/auth"
-	"github.com/manaflow-ai/cloudrouter/internal/version"
+	"github.com/karlorz/cloudrouter/internal/auth"
+	"github.com/karlorz/cloudrouter/internal/version"
 	"github.com/spf13/cobra"
 )
 

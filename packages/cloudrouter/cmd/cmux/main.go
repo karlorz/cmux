@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/manaflow-ai/cloudrouter/internal/auth"
-	"github.com/manaflow-ai/cloudrouter/internal/cli"
-	"github.com/manaflow-ai/cloudrouter/internal/version"
+	"github.com/karlorz/cloudrouter/internal/auth"
+	"github.com/karlorz/cloudrouter/internal/cli"
+	"github.com/karlorz/cloudrouter/internal/version"
 )
 
 // Build-time variables set via ldflags

@@ -113,7 +113,7 @@ export default function CloudRouterPage() {
             <p className="mb-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
               Install cloudrouter as a skill for Claude Code, Codex, or other coding agents.
             </p>
-            <CodeBlock>{`npx skills add manaflow-ai/cloudrouter`}</CodeBlock>
+            <CodeBlock>{`npx skills add karlorz/cloudrouter`}</CodeBlock>
           </section>
 
           <hr className="mb-8 border-neutral-200 dark:border-neutral-800" />
@@ -124,7 +124,7 @@ export default function CloudRouterPage() {
             <p className="mb-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
               You can also install cloudrouter as a standalone CLI.
             </p>
-            <CodeBlock>{`npm install -g @manaflow-ai/cloudrouter`}</CodeBlock>
+            <CodeBlock>{`npm install -g @karlorz/cloudrouter`}</CodeBlock>
             <p className="mt-4 text-sm text-neutral-500 dark:text-neutral-400">
               Then authenticate:
             </p>

@@ -12,7 +12,7 @@ CMUX_API_URL ?=
 CONVEX_SITE_URL ?=
 
 # Package path for ldflags
-AUTH_PKG := github.com/manaflow-ai/cloudrouter/internal/auth
+AUTH_PKG := github.com/karlorz/cloudrouter/internal/auth
 
 # Production ldflags - strips debug info, bakes in config
 LDFLAGS := -s -w \
@@ -165,7 +165,7 @@ npm-publish-dry: build-npm
 	@echo "Done!"
 
 # =============================================================================
-# Cloudrouter NPM package builds (@manaflow-ai/cloudrouter)
+# Cloudrouter NPM package builds (@karlorz/cloudrouter)
 # =============================================================================
 
 # Build cloudrouter npm packages with dev mode (no credentials needed)
@@ -215,7 +215,7 @@ build-npm-cloudrouter:
 
 # Publish cloudrouter to npm
 npm-publish-cloudrouter: build-npm-cloudrouter
-	@echo "Publishing @manaflow-ai/cloudrouter to npm..."
+	@echo "Publishing @karlorz/cloudrouter to npm..."
 	@echo "1. Publishing platform packages..."
 	cd npm/cloudrouter-darwin-arm64 && npm publish --access public
 	cd npm/cloudrouter-darwin-x64 && npm publish --access public
@@ -224,11 +224,11 @@ npm-publish-cloudrouter: build-npm-cloudrouter
 	cd npm/cloudrouter-win32-x64 && npm publish --access public
 	@echo "2. Publishing main package..."
 	cd npm/cloudrouter && npm publish --access public
-	@echo "Done! Published @manaflow-ai/cloudrouter"
+	@echo "Done! Published @karlorz/cloudrouter"
 
 # Dry-run publish cloudrouter (for testing)
 npm-publish-cloudrouter-dry: build-npm-cloudrouter
-	@echo "Dry-run publishing @manaflow-ai/cloudrouter to npm..."
+	@echo "Dry-run publishing @karlorz/cloudrouter to npm..."
 	cd npm/cloudrouter-darwin-arm64 && npm publish --access public --dry-run
 	cd npm/cloudrouter-darwin-x64 && npm publish --access public --dry-run
 	cd npm/cloudrouter-linux-arm64 && npm publish --access public --dry-run
