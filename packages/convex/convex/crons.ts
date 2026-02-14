@@ -27,6 +27,14 @@ crons.daily(
   internal.sandboxInstanceMaintenance.cleanupOrphanedContainers
 );
 
+// Clean up orphaned PVE templates daily at 22:00 UTC (6:00 AM HKT)
+// These are intermediate templates created during custom environment saving
+crons.daily(
+  "cleanup orphaned pve templates",
+  { hourUTC: 22, minuteUTC: 0 },
+  internal.sandboxInstanceMaintenance.cleanupOrphanedPveTemplates
+);
+
 // Recover crown evaluations stuck in pending/in_progress state
 // Runs every hour to detect evaluations that failed without proper error handling
 crons.interval(

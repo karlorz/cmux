@@ -269,3 +269,24 @@ export const getByDataVaultKey = authQuery({
       .first();
   },
 });
+
+/**
+ * Get all template VMIDs that are in use by environment snapshot versions.
+ * Used by maintenance cron to avoid deleting templates that are still needed.
+ */
+export const getUsedTemplateVmidsInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const versions = await ctx.db
+      .query("environmentSnapshotVersions")
+      .collect();
+
+    const vmids: number[] = [];
+    for (const version of versions) {
+      if (version.templateVmid !== undefined) {
+        vmids.push(version.templateVmid);
+      }
+    }
+    return vmids;
+  },
+});
