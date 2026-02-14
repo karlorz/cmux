@@ -34,6 +34,7 @@ COPY packages/cmux/package.json ./packages/cmux/
 COPY packages/vscode-extension/package.json ./packages/vscode-extension/
 COPY packages/host-screenshot-collector/package.json ./packages/host-screenshot-collector/
 COPY packages/e2b-client/package.json ./packages/e2b-client/
+COPY packages/pve-lxc-client/package.json ./packages/pve-lxc-client/
 COPY scripts/package.json ./scripts/
 
 # Install production dependencies
