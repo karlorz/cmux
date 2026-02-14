@@ -33,8 +33,8 @@ const PAUSE_HOURS_THRESHOLD = 20;
 // Provider-specific threshold for PVE LXC
 // PVE LXC doesn't preserve memory state on pause, so use longer pause threshold
 const PAUSE_DAYS_THRESHOLD_PVE = 3;
-const STOP_DAYS_THRESHOLD = 14; // 2 weeks
-const ORPHAN_MIN_AGE_DAYS = 7;
+const STOP_DAYS_THRESHOLD = 7;
+const ORPHAN_MIN_AGE_DAYS = 5;
 const MILLISECONDS_PER_HOUR = 60 * 60 * 1000;
 const BATCH_SIZE = 5;
 
