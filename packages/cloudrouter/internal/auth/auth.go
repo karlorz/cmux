@@ -20,11 +20,12 @@ const (
 	ConfigDirName   = "cloudrouter"
 	StackAuthAPIURL = "https://api.stack-auth.com"
 
-	// Dev defaults
-	DevProjectID      = "1467bed0-8522-45ee-a8d8-055de324118c"
-	DevPublishableKey = "pck_pt4nwry6sdskews2pxk4g2fbe861ak2zvaf3mqendspa0"
+	// Dev defaults (fork uses .env auto-loading, these are fallbacks)
+	// Upstream: 1467bed0-8522-45ee-a8d8-055de324118c / famous-camel-162.convex.site
+	DevProjectID      = "83284430-ba13-44be-ba8c-7430b8207c91"
+	DevPublishableKey = "pck_bpq62qtst4yj2skdckbf136qr8wsgmkxahrfg40smpbrr"
 	DevCmuxURL        = "http://localhost:9779"
-	DevConvexSiteURL  = "https://famous-camel-162.convex.site"
+	DevConvexSiteURL  = "https://bold-bandicoot-96.convex.site"
 )
 
 // Prod defaults (set via ldflags) - must be var not const for ldflags to work
