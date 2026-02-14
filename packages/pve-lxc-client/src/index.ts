@@ -79,9 +79,6 @@ export class PveLxcInstance {
   public networking: ContainerNetworking;
 
   private client: PveLxcClient;
-  // Node is stored for future use but currently container operations
-  // use the client's getNode() which auto-detects the node
-  private _node: string;
 
   constructor(
     client: PveLxcClient,
@@ -98,7 +95,8 @@ export class PveLxcInstance {
     this.status = status;
     this.metadata = metadata;
     this.networking = networking;
-    this._node = node;
+    // Note: node parameter available but not stored - client.getNode() is used for operations
+    void node;
   }
 
   /**
@@ -1274,58 +1272,10 @@ export class PveLxcClient {
     }
   }
 
-  /**
-   * Suspend (freeze) a container using CRIU.
-   *
-   * **EXPERIMENTAL - NOT FOR PRODUCTION USE**
-   *
-   * This method uses PVE's `pct suspend` which is marked as experimental
-   * in the official Proxmox documentation. Limitations include:
-   *
-   * - Requires CRIU package installed on PVE host
-   * - Requires kernel support for CRIU
-   * - FUSE mounts inside containers are incompatible
-   * - Linux kernel freezer subsystem can cause I/O deadlocks
-   * - Not all processes/applications checkpoint cleanly
-   *
-   * For production use, prefer `stopContainer()` instead.
-   *
-   * @see https://pve.proxmox.com/wiki/Linux_Container
-   * @internal This is a PVE-specific experimental feature
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  private async suspendContainer(vmid: number): Promise<void> {
-    const node = await this.getNode();
-    const upid = await this.apiRequest<string>(
-      "POST",
-      `/api2/json/nodes/${node}/lxc/${vmid}/status/suspend`
-    );
-    await this.waitForTaskNormalized(upid, `suspend container ${vmid}`);
-  }
-
-  /**
-   * Resume a suspended container using CRIU.
-   *
-   * **EXPERIMENTAL - NOT FOR PRODUCTION USE**
-   *
-   * This method uses PVE's `pct resume` which is marked as experimental
-   * in the official Proxmox documentation. See `suspendContainer()` for
-   * full list of limitations.
-   *
-   * For production use, prefer `startContainer()` instead.
-   *
-   * @see https://pve.proxmox.com/wiki/Linux_Container
-   * @internal This is a PVE-specific experimental feature
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  private async resumeContainer(vmid: number): Promise<void> {
-    const node = await this.getNode();
-    const upid = await this.apiRequest<string>(
-      "POST",
-      `/api2/json/nodes/${node}/lxc/${vmid}/status/resume`
-    );
-    await this.waitForTaskNormalized(upid, `resume container ${vmid}`);
-  }
+  // Note: CRIU-based suspend/resume methods removed - experimental PVE feature
+  // with many limitations (FUSE incompatibility, I/O deadlocks, etc.)
+  // Use stopContainer/startContainer instead for production use.
+  // See: https://pve.proxmox.com/wiki/Linux_Container
 
   /**
    * Delete a container
