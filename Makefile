@@ -8,7 +8,7 @@ PROJECT_NAME := cmux-convex
 ENV_FILE ?= .env
 ENV_FILE_PROD ?= .env.production
 
-.PHONY: convex-up convex-down convex-restart convex-clean convex-init convex-init-prod convex-clear convex-clear-prod convex-reset convex-reset-prod convex-fresh dev dev-electron sync-upstream-tags
+.PHONY: convex-up convex-down convex-restart convex-clean convex-init convex-init-prod convex-clear convex-clear-prod convex-reset convex-reset-prod convex-fresh dev dev-electron sync-upstream-tags chrome-debug
 .PHONY: clone-proxy-linux-amd64 clone-proxy-linux-arm64 screenshot-collector-upload screenshot-collector-upload-prod
 .PHONY: cloudrouter-npm-republish-prod cloudrouter-npm-republish-prod-dry
 
@@ -106,6 +106,11 @@ dev:
 
 dev-electron:
 	./scripts/dev.sh --electron --electron-debug
+
+# Start Chrome with remote debugging on port 9222 (for CDP/MCP)
+chrome-debug:
+	@chmod +x scripts/chrome-debug.sh
+	./scripts/chrome-debug.sh
 
 sync-upstream-tags:
 	./scripts/sync-upstream-tags.sh
