@@ -58,6 +58,17 @@ function getMorphClient(): MorphCloudClient {
   return new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
 }
 
+/**
+ * Get MorphCloudClient if configured, or null for PVE-only deployments.
+ * Use with getInstanceById() which handles null Morph client for PVE instances.
+ */
+function getMorphClientOrNull(): MorphCloudClient | null {
+  if (!env.MORPH_API_KEY) {
+    return null;
+  }
+  return new MorphCloudClient({ apiKey: env.MORPH_API_KEY });
+}
+
 function concatConfigBlocks(
   blocks: Array<string | null | undefined>,
   separator: string,
@@ -665,7 +676,7 @@ sandboxesRouter.openapi(
       // Re-fetch instance to get the actual networking data
       let refreshedInstance: SandboxInstance = instance;
       if (instance.networking.httpServices.length === 0) {
-        refreshedInstance = await getInstanceById(instance.id, getMorphClient());
+        refreshedInstance = await getInstanceById(instance.id, getMorphClientOrNull());
       }
 
       const exposed = refreshedInstance.networking.httpServices;
@@ -1405,7 +1416,7 @@ sandboxesRouter.openapi(
         return c.text("Unsupported sandbox provider", 400);
       }
 
-      const instance = await getInstanceById(id, getMorphClient());
+      const instance = await getInstanceById(id, getMorphClientOrNull());
 
       const metadataTeamId = getInstanceTeamId(instance);
       if (metadataTeamId && metadataTeamId !== team.uuid) {
@@ -1668,7 +1679,7 @@ sandboxesRouter.openapi(
     try {
       // Get instance via provider dispatch and pause it
       // Morph preserves RAM state; PVE LXC pause() stops the container
-      const instance = await getInstanceById(id, getMorphClient());
+      const instance = await getInstanceById(id, getMorphClientOrNull());
       await instance.pause();
       if (isPveLxcInstanceId(id)) {
         console.log(`[sandboxes.stop] PVE LXC container ${id} stopped`);
@@ -1716,7 +1727,7 @@ sandboxesRouter.openapi(
     try {
       // Get instance via provider dispatch
       const isPveLxc = isPveLxcInstanceId(id);
-      const instance = await getInstanceById(id, getMorphClient());
+      const instance = await getInstanceById(id, getMorphClientOrNull());
       const vscodeService = instance.networking.httpServices.find(
         (s) => s.port === 39378,
       );
@@ -1787,7 +1798,7 @@ sandboxesRouter.openapi(
     const { teamSlugOrId, taskRunId } = c.req.valid("json");
     try {
       // Get instance via provider dispatch
-      const instance = await getInstanceById(id, getMorphClient());
+      const instance = await getInstanceById(id, getMorphClientOrNull());
 
       const isPveLxc = isPveLxcInstanceId(id);
 
@@ -1860,7 +1871,7 @@ sandboxesRouter.openapi(
 
       let workingInstance = instance;
       const reloadInstance = async () => {
-        workingInstance = await getInstanceById(instance.id, getMorphClient());
+        workingInstance = await getInstanceById(instance.id, getMorphClientOrNull());
       };
 
       await reloadInstance();
@@ -2467,7 +2478,7 @@ sandboxesRouter.openapi(
 
     try {
       // Get instance via provider dispatch
-      const sandbox = await getInstanceById(id, getMorphClient());
+      const sandbox = await getInstanceById(id, getMorphClientOrNull());
 
       // Find all .git directories in the workspace
       const findResult = await sandbox.exec(

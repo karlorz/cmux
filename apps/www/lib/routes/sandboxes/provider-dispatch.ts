@@ -27,15 +27,23 @@ export function isPveLxcInstanceId(instanceId: string): boolean {
 /**
  * Get a wrapped SandboxInstance by ID, automatically dispatching
  * to the correct provider based on the instance ID prefix.
+ *
+ * For PVE-only deployments, morphClient can be null - it will only
+ * be used if the instance ID indicates a Morph instance.
  */
 export async function getInstanceById(
   instanceId: string,
-  morphClient: MorphCloudClient,
+  morphClient: MorphCloudClient | null,
 ): Promise<SandboxInstance> {
   if (isPveLxcInstanceId(instanceId)) {
     const pveClient = getPveLxcClient();
     const pveLxcInstance = await pveClient.instances.get({ instanceId });
     return wrapPveLxcInstance(pveLxcInstance);
+  }
+  if (!morphClient) {
+    throw new Error(
+      `Cannot get Morph instance ${instanceId}: MORPH_API_KEY not configured`
+    );
   }
   const morphInstance = await morphClient.instances.get({ instanceId });
   return wrapMorphInstance(morphInstance);
@@ -46,7 +54,7 @@ export async function getInstanceById(
  */
 export async function tryGetInstanceById(
   instanceId: string,
-  morphClient: MorphCloudClient,
+  morphClient: MorphCloudClient | null,
   logTag: string,
 ): Promise<SandboxInstance | null> {
   try {

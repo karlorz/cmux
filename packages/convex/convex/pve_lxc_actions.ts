@@ -197,6 +197,32 @@ export const stopInstance = internalAction({
 });
 
 /**
+ * Resume a stopped PVE LXC container.
+ */
+export const resumeInstance = internalAction({
+  args: {
+    instanceId: v.string(),
+  },
+  handler: async (_ctx, args) => {
+    const client = getPveLxcClient();
+    const instance = await client.instances.get({ instanceId: args.instanceId });
+    await instance.resume();
+
+    const { vscodeUrl, workerUrl, vncUrl, xtermUrl } = extractNetworkingUrls(instance);
+
+    return {
+      resumed: true,
+      instanceId: args.instanceId,
+      status: "running",
+      vscodeUrl,
+      workerUrl,
+      vncUrl,
+      xtermUrl,
+    };
+  },
+});
+
+/**
  * List all running PVE LXC containers.
  */
 export const listInstances = internalAction({

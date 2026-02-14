@@ -126,6 +126,7 @@ const pveLxcActionsApi = (internal as any).pve_lxc_actions as {
   execCommand: FunctionReference<"action", "internal">;
   extendTimeout: FunctionReference<"action", "internal">;
   stopInstance: FunctionReference<"action", "internal">;
+  resumeInstance: FunctionReference<"action", "internal">;
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -677,6 +678,14 @@ async function handleResumeInstance(
 
     const { provider, providerInstanceId } = providerInfo;
 
+    // For PVE-LXC, we need to actually restart the container
+    // since pause stops it (PVE LXC doesn't have true pause/hibernate)
+    if (provider === "pve-lxc") {
+      await ctx.runAction(pveLxcActionsApi.resumeInstance, {
+        instanceId: providerInstanceId,
+      });
+    }
+
     await ctx.runMutation(devboxApi.updateStatus, {
       teamSlugOrId,
       id,
@@ -685,10 +694,16 @@ async function handleResumeInstance(
 
     await recordProviderActivity(ctx, provider, providerInstanceId, "resume");
 
+    const noteMap: Record<SandboxProvider, string> = {
+      "modal": "Modal status updated (already running)",
+      "e2b": "E2B status updated (already running)",
+      "pve-lxc": "PVE LXC container restarted",
+    };
+
     return jsonResponse({
       resumed: true,
       provider,
-      note: `${provider} status updated (already running)`,
+      note: noteMap[provider],
     });
   } catch (error) {
     console.error("[devbox_v2.resume] Error:", error);
