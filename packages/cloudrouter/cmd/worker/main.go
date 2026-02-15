@@ -29,17 +29,21 @@ import (
 )
 
 const (
-	httpPort    = 39377
-	sshPort     = 10000
-	cdpPort     = 9222
-	vscodePort  = 39378
-	vncPort     = 39380
-	workspaceDir = "/home/user/workspace"
+	httpPort   = 39377
+	sshPort    = 10000
+	cdpPort    = 9222
+	vscodePort = 39378
+	vncPort    = 39380
 
-	authTokenPath   = "/home/user/.worker-auth-token"
-	vscodeTokenPath = "/home/user/.vscode-token"
-	bootIDPath      = "/home/user/.token-boot-id"
-	authCookieName  = "_cmux_auth"
+	authCookieName = "_cmux_auth"
+)
+
+var (
+	// Paths resolved at startup based on environment (E2B: /home/user, PVE-LXC: /root)
+	workspaceDir    string
+	authTokenPath   string
+	vscodeTokenPath string
+	bootIDPath      string
 )
 
 var (
@@ -66,9 +70,32 @@ type ptySession struct {
 	Rows      uint16
 }
 
+// initPaths resolves file paths based on the environment.
+// E2B sandboxes use /home/user, PVE-LXC containers run as root.
+func initPaths() {
+	// Check if running as root or if /home/user doesn't exist
+	homeDir := "/home/user"
+	if os.Getuid() == 0 {
+		// Running as root - check if /home/user exists and is usable
+		if info, err := os.Stat("/home/user"); err != nil || !info.IsDir() {
+			homeDir = "/root"
+		}
+	}
+
+	workspaceDir = homeDir + "/workspace"
+	authTokenPath = homeDir + "/.worker-auth-token"
+	vscodeTokenPath = homeDir + "/.vscode-token"
+	bootIDPath = homeDir + "/.token-boot-id"
+
+	log.Printf("[worker] Using home directory: %s", homeDir)
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.Printf("[worker] Starting cmux worker daemon...")
+
+	// Resolve paths based on environment (E2B uses /home/user, PVE-LXC uses /root)
+	initPaths()
 
 	// Initialize auth token
 	initAuthToken()
@@ -828,10 +855,11 @@ func startSSHServer() {
 		},
 	}
 
-	// Generate or load host key
-	hostKeyPath := "/home/user/.ssh/host_key"
+	// Generate or load host key (use same base dir as auth tokens)
+	homeDir := filepath.Dir(authTokenPath)
+	hostKeyPath := filepath.Join(homeDir, ".ssh", "host_key")
 	if _, err := os.Stat(hostKeyPath); os.IsNotExist(err) {
-		os.MkdirAll("/home/user/.ssh", 0700)
+		os.MkdirAll(filepath.Join(homeDir, ".ssh"), 0700)
 		exec.Command("ssh-keygen", "-t", "ed25519", "-f", hostKeyPath, "-N", "", "-q").Run()
 	}
 

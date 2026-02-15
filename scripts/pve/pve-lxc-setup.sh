@@ -568,6 +568,112 @@ SERVICE
     mark_done "09-execd"
 fi
 
+# Step 9.5: Worker daemon (Go binary with SSH + HTTP API for devbox v2)
+if step_done "09.5-worker-daemon"; then
+    echo "[9.5/10] Worker daemon... SKIP (already done)"
+elif [[ -f /usr/local/bin/worker-daemon ]]; then
+    echo "[9.5/10] Worker daemon... SKIP (already installed)"
+    mark_done "09.5-worker-daemon"
+else
+    echo "[9.5/10] Building and installing worker-daemon..."
+
+    WORKER_BUILD_DIR=$(mktemp -d)
+    cd "$WORKER_BUILD_DIR"
+
+    # Clone only the worker daemon source (shallow, specific path)
+    git clone --depth 1 --filter=blob:none --sparse \
+        https://github.com/karlorz/cmux.git cmux-repo 2>/dev/null
+    cd cmux-repo
+    git sparse-checkout set packages/cloudrouter 2>/dev/null
+
+    # Build the binary
+    cd packages/cloudrouter
+    export PATH="/usr/local/go/bin:$PATH"
+    export GOPROXY="https://proxy.golang.org,direct"
+    CGO_ENABLED=0 go build -ldflags="-s -w" -o worker-daemon ./cmd/worker
+    mv worker-daemon /usr/local/bin/worker-daemon
+    chmod +x /usr/local/bin/worker-daemon
+
+    # Create token init script (runs at boot to generate auth token)
+    cat > /usr/local/bin/cmux-token-init << 'TOKEN_SCRIPT'
+#!/bin/bash
+# Generate auth token on first boot (like E2B's start-services-lite.sh)
+# This ensures worker-daemon has a valid token to read at startup
+AUTH_TOKEN_FILE="/root/.worker-auth-token"
+VSCODE_TOKEN_FILE="/root/.vscode-token"
+BOOT_ID_FILE="/root/.token-boot-id"
+
+CURRENT_BOOT_ID=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo "unknown")
+if [ -f "$BOOT_ID_FILE" ]; then
+    SAVED_BOOT_ID=$(cat "$BOOT_ID_FILE")
+    if [ "$CURRENT_BOOT_ID" = "$SAVED_BOOT_ID" ] && [ -f "$AUTH_TOKEN_FILE" ]; then
+        # Same boot, token already exists - skip regeneration
+        exit 0
+    fi
+fi
+
+# Generate new token
+AUTH_TOKEN=$(openssl rand -hex 32)
+printf "%s" "$AUTH_TOKEN" > "$AUTH_TOKEN_FILE"
+chmod 644 "$AUTH_TOKEN_FILE"
+printf "%s" "$AUTH_TOKEN" > "$VSCODE_TOKEN_FILE"
+chmod 644 "$VSCODE_TOKEN_FILE"
+echo "$CURRENT_BOOT_ID" > "$BOOT_ID_FILE"
+chmod 644 "$BOOT_ID_FILE"
+TOKEN_SCRIPT
+    chmod +x /usr/local/bin/cmux-token-init
+
+    # Create token generator systemd service (runs first at boot)
+    cat > /etc/systemd/system/cmux-token-generator.service << 'SERVICE'
+[Unit]
+Description=CMUX Auth Token Generator
+Before=cmux-execd.service cmux-worker.service
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/cmux-token-init
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+
+    # Create worker daemon systemd service
+    cat > /etc/systemd/system/cmux-worker.service << 'SERVICE'
+[Unit]
+Description=CMUX Worker Daemon (SSH on 10000, HTTP on 39377)
+After=network-online.target cmux-token-generator.service
+Wants=network-online.target
+Requires=cmux-token-generator.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/worker-daemon
+Restart=on-failure
+RestartSec=2
+StandardOutput=append:/var/log/cmux/cmux-worker.log
+StandardError=append:/var/log/cmux/cmux-worker.log
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+
+    # Enable services
+    systemctl daemon-reload
+    systemctl enable cmux-token-generator
+    systemctl enable cmux-worker
+    systemctl start cmux-token-generator
+    systemctl start cmux-worker
+
+    # Cleanup
+    cd /
+    rm -rf "$WORKER_BUILD_DIR"
+
+    echo "    worker-daemon installed (SSH:10000, HTTP:39377)"
+    mark_done "09.5-worker-daemon"
+fi
+
 # Step 10: Finalize
 if step_done "10-finalize"; then
     echo "[10/10] Finalize... SKIP (already done)"
@@ -620,6 +726,7 @@ criu --version 2>/dev/null && echo "  CRIU: $(criu --version 2>&1 | head -1)" ||
 echo ""
 echo "Services:"
 systemctl is-active cmux-execd 2>/dev/null && echo "  cmux-execd: running (port 39375)" || echo "  cmux-execd: not running"
+systemctl is-active cmux-worker 2>/dev/null && echo "  cmux-worker: running (SSH:10000, HTTP:39377)" || echo "  cmux-worker: not running"
 echo ""
 SETUP_EOF
 }
