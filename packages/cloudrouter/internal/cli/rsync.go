@@ -93,6 +93,19 @@ exec ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAu
 	return tmpFile.Name(), tmpFile.Name(), nil
 }
 
+// buildCurlSSHCommand builds an SSH command string for use with curl ProxyCommand
+// Uses sshpass for empty password auth to match the bridge path behavior
+func buildCurlSSHCommand(proxyCmd string) string {
+	// Check if sshpass is available
+	if _, err := exec.LookPath("sshpass"); err == nil {
+		// Use sshpass for password authentication with empty password
+		return fmt.Sprintf("sshpass -p '' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -o ProxyCommand=%q", proxyCmd)
+	}
+	// Fall back to BatchMode to prevent password prompts (will fail auth but won't hang)
+	// Note: This path is less reliable - sshpass should be installed for best results
+	return fmt.Sprintf("ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -o BatchMode=yes -o ProxyCommand=%q", proxyCmd)
+}
+
 // getCurlWithWebSocket returns the path to curl with WebSocket support, or empty string if not found
 // We need curl built with WebSocket protocol support (shows "ws" or "wss" in protocols)
 func getCurlWithWebSocket() string {
@@ -280,7 +293,7 @@ func runRsyncSingleFile(workerURL, token, localFile, remotePath string) error {
 	var err error
 
 	if curlPath != "" {
-		stats, err = runRsyncSingleFileWithCurl(curlPath, wsURL, localFile, remotePath)
+		stats, err = runRsyncSingleFileWithCurl(curlPath, wsURL, token, localFile, remotePath)
 	} else {
 		stats, err = runRsyncSingleFileWithBridge(wsURL, token, localFile, remotePath)
 	}
@@ -302,15 +315,17 @@ func runRsyncSingleFile(workerURL, token, localFile, remotePath string) error {
 }
 
 // runRsyncSingleFileWithCurl uses curl as SSH ProxyCommand for single file transfer
-func runRsyncSingleFileWithCurl(curlPath, wsURL, localFile, remotePath string) (*rsyncStats, error) {
+func runRsyncSingleFileWithCurl(curlPath, wsURL, token, localFile, remotePath string) (*rsyncStats, error) {
 	rsyncArgs := buildRsyncArgsSingleFile(localFile, remotePath)
 
+	// Build SSH command with sshpass for empty password auth
+	// Token is used as SSH username, empty password for authentication
 	proxyCmd := fmt.Sprintf("%s --no-progress-meter -N --http1.1 -T . '%s'", curlPath, wsURL)
-	sshCmd := fmt.Sprintf("ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand=%q", proxyCmd)
+	sshCmd := buildCurlSSHCommand(proxyCmd)
 	rsyncArgs = append(rsyncArgs, "-e", sshCmd)
 
-	// Remote destination
-	remoteSpec := fmt.Sprintf("user@e2b-sandbox:%s", remotePath)
+	// Remote destination - token as username (worker SSH server authenticates by conn.User() == token)
+	remoteSpec := fmt.Sprintf("%s@e2b-sandbox:%s", token, remotePath)
 	rsyncArgs = append(rsyncArgs, remoteSpec)
 
 	return execRsync(rsyncArgs)
@@ -430,7 +445,7 @@ func runRsyncDownload(workerURL, token, remotePath, localPath string) error {
 	var err error
 
 	if curlPath != "" {
-		stats, err = runRsyncDownloadWithCurl(curlPath, wsURL, remotePath, localPath)
+		stats, err = runRsyncDownloadWithCurl(curlPath, wsURL, token, remotePath, localPath)
 	} else {
 		stats, err = runRsyncDownloadWithBridge(wsURL, token, remotePath, localPath)
 	}
@@ -451,16 +466,17 @@ func runRsyncDownload(workerURL, token, remotePath, localPath string) error {
 	return nil
 }
 
-// runRsyncDownloadWithCurl uses curl as SSH ProxyCommand for download (remote → local)
-func runRsyncDownloadWithCurl(curlPath, wsURL, remotePath, localPath string) (*rsyncStats, error) {
+// runRsyncDownloadWithCurl uses curl as SSH ProxyCommand for download (remote -> local)
+func runRsyncDownloadWithCurl(curlPath, wsURL, token, remotePath, localPath string) (*rsyncStats, error) {
 	rsyncArgs := buildRsyncDownloadArgs()
 
+	// Build SSH command with sshpass for empty password auth
 	proxyCmd := fmt.Sprintf("%s --no-progress-meter -N --http1.1 -T . '%s'", curlPath, wsURL)
-	sshCmd := fmt.Sprintf("ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand=%q", proxyCmd)
+	sshCmd := buildCurlSSHCommand(proxyCmd)
 	rsyncArgs = append(rsyncArgs, "-e", sshCmd)
 
-	// Remote as source, local as destination
-	remoteSpec := fmt.Sprintf("user@e2b-sandbox:%s/", remotePath)
+	// Remote as source - token as username (worker SSH server authenticates by conn.User() == token)
+	remoteSpec := fmt.Sprintf("%s@e2b-sandbox:%s/", token, remotePath)
 	localDest := localPath
 	if !strings.HasSuffix(localDest, "/") {
 		localDest += "/"
@@ -801,7 +817,7 @@ func runSingleRsync(workerURL, token, localPath, remotePath string, items []stri
 	// Check if curl with WebSocket support is available
 	curlPath := getCurlWithWebSocket()
 	if curlPath != "" {
-		return runRsyncWithCurl(curlPath, wsURL, localPath, remotePath, items)
+		return runRsyncWithCurl(curlPath, wsURL, token, localPath, remotePath, items)
 	}
 
 	// Fall back to Go WebSocket bridge
@@ -809,7 +825,7 @@ func runSingleRsync(workerURL, token, localPath, remotePath string, items []stri
 }
 
 // runRsyncWithCurl uses curl as SSH ProxyCommand for WebSocket tunneling
-func runRsyncWithCurl(curlPath, wsURL, localPath, remotePath string, items []string) (*rsyncStats, error) {
+func runRsyncWithCurl(curlPath, wsURL, token, localPath, remotePath string, items []string) (*rsyncStats, error) {
 	rsyncArgs := buildRsyncArgs(localPath, remotePath, items)
 
 	// SSH command using curl as ProxyCommand for WebSocket tunneling
@@ -820,11 +836,12 @@ func runRsyncWithCurl(curlPath, wsURL, localPath, remotePath string, items []str
 	//   -T .: read stdin and send as request body (bidirectional tunnel)
 	// Note: URL must be single-quoted to prevent shell glob expansion of '?' in query string
 	proxyCmd := fmt.Sprintf("%s --no-progress-meter -N --http1.1 -T . '%s'", curlPath, wsURL)
-	sshCmd := fmt.Sprintf("ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand=%q", proxyCmd)
+	sshCmd := buildCurlSSHCommand(proxyCmd)
 	rsyncArgs = append(rsyncArgs, "-e", sshCmd)
 
-	// Remote destination - hostname doesn't matter since ProxyCommand handles the connection
-	remoteSpec := fmt.Sprintf("user@e2b-sandbox:%s/", remotePath)
+	// Remote destination - token as username (worker SSH server authenticates by conn.User() == token)
+	// Hostname doesn't matter since ProxyCommand handles the connection
+	remoteSpec := fmt.Sprintf("%s@e2b-sandbox:%s/", token, remotePath)
 	rsyncArgs = append(rsyncArgs, remoteSpec)
 
 	return execRsync(rsyncArgs)
