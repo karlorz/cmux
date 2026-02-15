@@ -21,6 +21,7 @@ import {
   buildCrownEvaluationPrompt,
   parseCrownEvaluationPrompt,
 } from "./crown/retryData";
+import { fetchInstallationAccessToken } from "../_shared/githubApp";
 
 type TaskRunDoc = Doc<"taskRuns">;
 type TeamMembershipDoc = Doc<"teamMemberships">;
@@ -550,6 +551,24 @@ export const crownWorkerCheck = httpAction(async (ctx, req) => {
     return handleAllCompleteRequest(ctx, workerAuth, taskId);
   }
 
+  if (requestType === "push-auth") {
+    const resolvedTaskRunId =
+      taskRunId ?? (workerAuth.payload.taskRunId as Id<"taskRuns"> | undefined);
+
+    if (!resolvedTaskRunId) {
+      return jsonResponse({
+        ok: true,
+        source: "none",
+        token: null,
+        repoFullName: null,
+        installationId: null,
+        reason: "No taskRunId provided",
+      });
+    }
+
+    return handlePushAuthRequest(ctx, workerAuth, resolvedTaskRunId);
+  }
+
   return handleCrownCheckRequest(ctx, workerAuth, validation.data);
 });
 
@@ -616,6 +635,97 @@ async function handleInfoRequest(
     screenshotWorkflowEnabled,
   } satisfies WorkerTaskRunResponse;
   return jsonResponse(response);
+}
+
+async function handlePushAuthRequest(
+  ctx: ActionCtx,
+  workerAuth: WorkerAuthContext,
+  taskRunId: Id<"taskRuns">
+): Promise<Response> {
+  console.log("[convex.crown] Handling push-auth request", {
+    taskRunId,
+    workerTeamId: workerAuth.payload.teamId,
+  });
+
+  // 1. Load task run with auth check
+  const taskRun = await ctx.runQuery(internal.taskRuns.getById, { id: taskRunId });
+  if (!taskRun || taskRun.teamId !== workerAuth.payload.teamId) {
+    return jsonResponse({
+      ok: true,
+      source: "none",
+      token: null,
+      repoFullName: null,
+      installationId: null,
+      reason: "Task run not found or unauthorized",
+    });
+  }
+
+  // 2. Load task to get projectFullName
+  const task = await ctx.runQuery(internal.tasks.getByIdInternal, { id: taskRun.taskId });
+  if (!task?.projectFullName) {
+    return jsonResponse({
+      ok: true,
+      source: "none",
+      token: null,
+      repoFullName: null,
+      installationId: null,
+      reason: "No project full name",
+    });
+  }
+
+  // 3. Resolve installation ID
+  const installationId = await ctx.runQuery(internal.github.getRepoInstallationIdInternal, {
+    teamId: taskRun.teamId,
+    repoFullName: task.projectFullName,
+  });
+
+  if (!installationId) {
+    console.log("[convex.crown] No GitHub App installation found for push-auth", {
+      taskRunId,
+      repoFullName: task.projectFullName,
+    });
+    return jsonResponse({
+      ok: true,
+      source: "none",
+      token: null,
+      repoFullName: task.projectFullName,
+      installationId: null,
+      reason: "No GitHub App installation",
+    });
+  }
+
+  // 4. Mint fresh token
+  const token = await fetchInstallationAccessToken(installationId);
+  if (!token) {
+    console.error("[convex.crown] Failed to mint GitHub App token for push-auth", {
+      taskRunId,
+      installationId,
+      repoFullName: task.projectFullName,
+    });
+    return jsonResponse({
+      ok: true,
+      source: "none",
+      token: null,
+      repoFullName: task.projectFullName,
+      installationId,
+      reason: "Token mint failed",
+    });
+  }
+
+  console.log("[convex.crown] Push-auth token obtained successfully", {
+    taskRunId,
+    installationId,
+    repoFullName: task.projectFullName,
+  });
+
+  // 5. Return token (will be short-lived, ~1hr)
+  return jsonResponse({
+    ok: true,
+    source: "github_app",
+    token,
+    repoFullName: task.projectFullName,
+    installationId,
+  });
 }
 
 async function handleAllCompleteRequest(

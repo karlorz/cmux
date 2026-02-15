@@ -13,6 +13,7 @@ import {
   ensureBranchesAvailable,
   getCurrentBranch,
   runGitCommand,
+  type TokenSupplier,
 } from "./git";
 import {
   buildPullRequestBody,
@@ -25,6 +26,7 @@ import {
   type CrownSummarizationResponse,
   type CrownWorkerCheckResponse,
   type WorkerAllRunsCompleteResponse,
+  type WorkerPushAuthResponse,
   type WorkerRunContext,
   type WorkerTaskRunResponse,
 } from "./types";
@@ -253,6 +255,34 @@ export async function handleWorkerTaskCompletion(
         ? `https://github.com/${info.task.projectFullName}.git`
         : undefined;
 
+      // Create token supplier for auth retry
+      const tokenSupplier: TokenSupplier = async () => {
+        const pushAuth = await convexRequest<WorkerPushAuthResponse>(
+          "/api/crown/check",
+          runContext.token,
+          {
+            taskRunId,
+            checkType: "push-auth",
+          },
+          baseUrlOverride
+        );
+
+        if (pushAuth?.ok && pushAuth.source === "github_app" && pushAuth.token && pushAuth.repoFullName) {
+          log("INFO", "[AUTOCOMMIT] Fresh push token obtained", {
+            taskRunId,
+            repoFullName: pushAuth.repoFullName,
+          });
+          return { token: pushAuth.token, repoFullName: pushAuth.repoFullName };
+        }
+
+        log("WARN", "[AUTOCOMMIT] Could not obtain fresh push token", {
+          taskRunId,
+          source: pushAuth?.source,
+          reason: pushAuth?.reason,
+        });
+        return null;
+      };
+
       log("INFO", "[AUTOCOMMIT] Starting autoCommitAndPush", {
         taskRunId,
         branchForCommit,
@@ -267,6 +297,7 @@ export async function handleWorkerTaskCompletion(
           branchName: branchForCommit,
           commitMessage,
           remoteUrl,
+          tokenSupplier,
         });
 
         if (autoCommitResult.success) {
