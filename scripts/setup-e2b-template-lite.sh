@@ -34,7 +34,7 @@ log_error() {
 }
 
 # Parse arguments
-BUILD_MODE="dev"
+BUILD_MODE="prod"
 while [[ $# -gt 0 ]]; do
     case $1 in
         --prod)
@@ -49,8 +49,8 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [--prod|--dev]"
             echo ""
             echo "Options:"
-            echo "  --dev   Build template in development mode (default)"
-            echo "  --prod  Build template in production mode"
+            echo "  --prod  Build template in production mode (default)"
+            echo "  --dev   Build template in development mode (smaller resources)"
             echo ""
             echo "This script builds the cmux-devbox-lite E2B template."
             echo "The lite template does NOT include Docker-in-Docker, making it:"
@@ -96,13 +96,25 @@ fi
 
 log_success "E2B Lite Template build complete!"
 log_info ""
+
+# Show correct template name based on build mode
+if [ "$BUILD_MODE" = "prod" ]; then
+    TEMPLATE_NAME="cmux-devbox-lite"
+else
+    TEMPLATE_NAME="cmux-devbox-lite-dev"
+fi
+
 log_info "Template Details:"
-log_info "  - Name: cmux-devbox-lite"
+log_info "  - Name: $TEMPLATE_NAME"
+log_info "  - Mode: $BUILD_MODE"
 log_info "  - Features: VSCode, VNC, JupyterLab, Worker Daemon"
 log_info "  - Excludes: Docker-in-Docker"
 log_info ""
 log_info "To use this template:"
-log_info "  cloudrouter start --template cmux-devbox-lite"
+log_info "  cloudrouter start --template $TEMPLATE_NAME"
 log_info ""
-log_info "Or set as default in Convex:"
-log_info "  Update packages/shared/src/e2b-templates.ts DEFAULT_E2B_SIZE_TIER to 'lite'"
+if [ "$BUILD_MODE" = "dev" ]; then
+    log_warn "This is a DEV template (smaller resources)."
+    log_warn "cloudrouter defaults to 'cmux-devbox-lite' (prod)."
+    log_warn "Use: cloudrouter start --template $TEMPLATE_NAME"
+fi

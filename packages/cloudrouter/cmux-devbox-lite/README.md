@@ -35,12 +35,15 @@ Use the **docker** template when you:
 ## Building
 
 ```bash
-# Development build (smaller resources)
+# Development build (smaller resources, publishes to cmux-devbox-lite-dev)
 bun run build:dev
 
-# Production build (full resources)
+# Production build (full resources, publishes to cmux-devbox-lite)
 bun run build:prod
 ```
+
+> **Note:** Dev and prod builds publish to **different template names** to prevent
+> accidentally overwriting production templates with smaller resources during local iteration.
 
 ## Manual Build
 
@@ -51,10 +54,10 @@ e2b template build --config e2b.lite.toml
 
 ## Template Resources
 
-| Mode | vCPUs | Memory | Disk |
-|------|-------|--------|------|
-| Dev  | 4     | 8 GB   | 20 GB |
-| Prod | 4     | 16 GB  | 20 GB |
+| Mode | Template Name | vCPUs | Memory | Disk |
+|------|---------------|-------|--------|------|
+| Dev  | cmux-devbox-lite-dev | 4 | 8 GB | 20 GB |
+| Prod | cmux-devbox-lite | 4 | 16 GB | 20 GB |
 
 ## Ports
 

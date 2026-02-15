@@ -21,6 +21,7 @@ interface BuildOptions {
   mode: "dev" | "prod";
   cpuCount?: number;
   memoryMB?: number;
+  templateName?: string;
 }
 
 interface BuildResult {
@@ -30,7 +31,8 @@ interface BuildResult {
 }
 
 // Template configuration
-const TEMPLATE_NAME = "cmux-devbox-lite";
+const TEMPLATE_NAME_PROD = "cmux-devbox-lite";
+const TEMPLATE_NAME_DEV = "cmux-devbox-lite-dev";
 const DOCKERFILE_PATH = "../template/e2b.lite.Dockerfile";
 const START_CMD = "/usr/local/bin/start-services-lite.sh";
 const READY_CMD = "curl -sf http://localhost:39377/health || exit 1";
@@ -38,11 +40,18 @@ const READY_CMD = "curl -sf http://localhost:39377/health || exit 1";
 /**
  * Build the cmux-devbox-lite template using E2B SDK v2 programmatic API.
  * Builds remotely on E2B infrastructure -- no local Docker required.
+ *
+ * Dev builds use a separate template name (cmux-devbox-lite-dev) to avoid
+ * overwriting production resources when iterating locally.
  */
 export async function buildTemplate(options: BuildOptions): Promise<BuildResult> {
   const { mode, cpuCount = 4, memoryMB = 8192 } = options;
 
-  console.log(`[template] Building ${TEMPLATE_NAME} (${mode} mode)`);
+  // Use separate template names for dev vs prod to avoid resource conflicts
+  const defaultTemplateName = mode === "prod" ? TEMPLATE_NAME_PROD : TEMPLATE_NAME_DEV;
+  const templateName = options.templateName ?? defaultTemplateName;
+
+  console.log(`[template] Building ${templateName} (${mode} mode)`);
   console.log(`[template] Resources: ${cpuCount} vCPU, ${memoryMB} MB RAM`);
 
   const dockerfilePath = path.resolve(__dirname, DOCKERFILE_PATH);
@@ -53,7 +62,7 @@ export async function buildTemplate(options: BuildOptions): Promise<BuildResult>
     .fromDockerfile(dockerfilePath)
     .setStartCmd(START_CMD, READY_CMD);
 
-  const result = await Template.build(template, TEMPLATE_NAME, {
+  const result = await Template.build(template, templateName, {
     cpuCount,
     memoryMB,
     onBuildLogs: defaultBuildLogger,

@@ -2,12 +2,16 @@
 /**
  * Production build script for cmux-devbox-lite E2B template.
  * Uses the E2B SDK v2 programmatic API to build templates.
+ *
+ * Prod builds publish to "cmux-devbox-lite" (the canonical template name).
+ * Use this for official releases only.
  */
 
 import { buildTemplate } from "./template";
 
 async function main() {
   console.log("[build.prod] Starting production template build...");
+  console.log("[build.prod] Publishing to: cmux-devbox-lite (production)");
 
   try {
     const result = await buildTemplate({
