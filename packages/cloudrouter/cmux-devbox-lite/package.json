@@ -1,0 +1,15 @@
+{
+  "name": "cmux-devbox-lite-template",
+  "private": true,
+  "scripts": {
+    "e2b:build:dev": "npx tsx build.dev.ts",
+    "e2b:build:prod": "npx tsx build.prod.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.0",
+    "e2b": "^2.12.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0"
+  }
+}

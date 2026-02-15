@@ -1,0 +1,26 @@
+# E2B cmux-lite template config
+# A lighter devbox template optimized for lower resource usage
+#
+# Services included:
+#   - VSCode (cmux-code) on port 39378
+#   - Worker daemon on port 39377
+#   - VNC (noVNC) on port 39380
+#   - Chrome CDP on port 9222
+#
+# Not included (to save resources):
+#   - JupyterLab
+#   - Docker-in-Docker
+#
+# Usage:
+#   e2b template build --config e2b.lite.toml
+
+# template_id will be updated after first build
+template_id = ""
+dockerfile = "template/e2b.lite.Dockerfile"
+template_name = "cmux-devbox-lite"
+start_cmd = "/usr/local/bin/start-services.sh"
+ready_cmd = "curl -sf http://localhost:39377/health || exit 1"
+
+# Lite resources (good for development, lower cost)
+cpu_count = 4
+memory_mb = 8192

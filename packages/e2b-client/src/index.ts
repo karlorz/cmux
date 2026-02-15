@@ -1,11 +1,11 @@
-import { Sandbox } from "e2b";
+import { CommandExitError, Sandbox, type SandboxInfo } from "e2b";
 
 export const DEFAULT_E2B_BASE_URL = "https://api.e2b.dev";
 
 /**
- * Default template ID for cmux devbox (with VSCode, VNC, Chrome CDP, Docker)
+ * Default template ID for cmux-lite (free tier compatible)
  */
-export const CMUX_DEVBOX_TEMPLATE_ID = "mknr7v3io3fqwpn7pbnk"; // high tier (8 vCPU / 32 GB)
+export const CMUX_DEVBOX_TEMPLATE_ID = "af5awbnr42dc2na15tup"; // cmux-lite (2 vCPU / 512 MB)
 
 /**
  * Configuration for creating an E2B client
@@ -45,6 +45,26 @@ export interface E2BNetworking {
  */
 export type E2BMetadata = Record<string, string>;
 
+export type E2BSandboxState = "running" | "paused";
+
+/**
+ * Sandbox info returned by list/getInfo APIs.
+ */
+export interface E2BSandboxSummary {
+  sandboxId: string;
+  templateId: string;
+  metadata: E2BMetadata;
+  state: E2BSandboxState;
+  startedAt: Date;
+  endAt: Date;
+}
+
+export interface E2BListOptions {
+  metadata?: E2BMetadata;
+  state?: E2BSandboxState[];
+  limit?: number;
+}
+
 /**
  * E2B Sandbox instance wrapper that provides a similar interface to MorphInstance
  */
@@ -58,13 +78,14 @@ export class E2BInstance {
   constructor(
     sandbox: Sandbox,
     metadata: E2BMetadata = {},
-    httpServices: E2BHttpService[] = []
+    httpServices: E2BHttpService[] = [],
+    status: "running" | "paused" | "stopped" = "running"
   ) {
     this.sandbox = sandbox;
     this._id = sandbox.sandboxId;
     this._metadata = metadata;
     this._httpServices = httpServices;
-    this._status = "running";
+    this._status = status;
   }
 
   get id(): string {
@@ -89,29 +110,51 @@ export class E2BInstance {
    * Execute a command in the sandbox
    * Handles non-zero exit codes gracefully (doesn't throw)
    */
-  async exec(command: string): Promise<E2BExecResult> {
+  async exec(
+    command: string,
+    opts: { timeoutMs?: number } = {}
+  ): Promise<E2BExecResult> {
     try {
-      const result = await this.sandbox.commands.run(command);
+      const result = await this.sandbox.commands.run(command, {
+        timeoutMs: opts.timeoutMs,
+      });
       return {
         stdout: result.stdout,
         stderr: result.stderr,
         exit_code: result.exitCode,
       };
     } catch (err: unknown) {
-      // E2B SDK throws CommandExitError for non-zero exit codes
-      // Extract the result from the error if available
-      if (err && typeof err === 'object' && 'stdout' in err && 'stderr' in err && 'exitCode' in err) {
-        const cmdErr = err as { stdout: string; stderr: string; exitCode: number };
+      if (err instanceof CommandExitError) {
         return {
-          stdout: cmdErr.stdout || '',
-          stderr: cmdErr.stderr || '',
+          stdout: err.stdout,
+          stderr: err.stderr,
+          exit_code: err.exitCode,
+        };
+      }
+
+      // Backward-compatible fallback if error shape changes.
+      if (
+        err &&
+        typeof err === "object" &&
+        "stdout" in err &&
+        "stderr" in err &&
+        "exitCode" in err
+      ) {
+        const cmdErr = err as {
+          stdout: string;
+          stderr: string;
+          exitCode: number;
+        };
+        return {
+          stdout: cmdErr.stdout || "",
+          stderr: cmdErr.stderr || "",
           exit_code: cmdErr.exitCode,
         };
       }
-      // For other errors, return empty result with exit code 1
-      console.error('[E2BInstance.exec] Error:', err);
+
+      console.error("[E2BInstance.exec] Error:", err);
       return {
-        stdout: '',
+        stdout: "",
         stderr: err instanceof Error ? err.message : String(err),
         exit_code: 1,
       };
@@ -157,11 +200,9 @@ export class E2BInstance {
 
   /**
    * Pause the sandbox
-   * Note: E2B doesn't have native pause, so we just keep it running with extended timeout
    */
   async pause(): Promise<void> {
-    // E2B doesn't have pause functionality, but we can extend timeout
-    // and mark as paused for our tracking
+    await this.sandbox.betaPause();
     this._status = "paused";
   }
 
@@ -169,6 +210,7 @@ export class E2BInstance {
    * Resume the sandbox
    */
   async resume(): Promise<void> {
+    this.sandbox = await this.sandbox.connect();
     this._status = "running";
   }
 
@@ -182,7 +224,9 @@ export class E2BInstance {
   /**
    * Set wake-on for the sandbox (no-op for E2B)
    */
-  async setWakeOn(_http: boolean, _ssh: boolean): Promise<void> {
+  async setWakeOn(http: boolean, ssh: boolean): Promise<void> {
+    void http;
+    void ssh;
     // E2B doesn't have wake-on functionality
   }
 
@@ -222,6 +266,42 @@ export class E2BClient {
     }
   }
 
+  private static toHttpServices(sandbox: Sandbox): E2BHttpService[] {
+    return [
+      {
+        name: "vscode",
+        port: 39378,
+        url: `https://${sandbox.getHost(39378)}`,
+      },
+      {
+        name: "worker",
+        port: 39377,
+        url: `https://${sandbox.getHost(39377)}`,
+      },
+      {
+        name: "vnc",
+        port: 39380,
+        url: `https://${sandbox.getHost(39380)}`,
+      },
+      {
+        name: "jupyter",
+        port: 8888,
+        url: `https://${sandbox.getHost(8888)}`,
+      },
+    ];
+  }
+
+  private static toSummary(info: SandboxInfo): E2BSandboxSummary {
+    return {
+      sandboxId: info.sandboxId,
+      templateId: info.templateId,
+      metadata: info.metadata,
+      state: info.state,
+      startedAt: info.startedAt,
+      endAt: info.endAt,
+    };
+  }
+
   /**
    * Instances namespace for managing E2B sandboxes
    */
@@ -235,88 +315,87 @@ export class E2BClient {
       ttlAction?: "pause" | "stop";
       metadata?: E2BMetadata;
       envs?: Record<string, string>;
+      autoPause?: boolean;
+      secure?: boolean;
+      allowInternetAccess?: boolean;
     }): Promise<E2BInstance> => {
       const timeoutMs = (options.ttlSeconds || 3600) * 1000;
+      const templateId = options.templateId || CMUX_DEVBOX_TEMPLATE_ID;
 
-      const sandbox = await Sandbox.create(options.templateId || CMUX_DEVBOX_TEMPLATE_ID, {
+      const createOptions = {
         apiKey: this.apiKey,
         timeoutMs,
         metadata: options.metadata,
         envs: options.envs,
-      });
+        secure: options.secure,
+        allowInternetAccess: options.allowInternetAccess,
+      };
 
-      // Set up default HTTP services for VSCode, worker, VNC, and Jupyter ports
-      const httpServices: E2BHttpService[] = [
-        {
-          name: "vscode",
-          port: 39378,
-          url: `https://${sandbox.getHost(39378)}`,
-        },
-        {
-          name: "worker",
-          port: 39377,
-          url: `https://${sandbox.getHost(39377)}`,
-        },
-        {
-          name: "vnc",
-          port: 39380,
-          url: `https://${sandbox.getHost(39380)}`,
-        },
-        {
-          name: "jupyter",
-          port: 8888,
-          url: `https://${sandbox.getHost(8888)}`,
-        },
-      ];
+      const sandbox = options.autoPause
+        ? await Sandbox.betaCreate(templateId, {
+            ...createOptions,
+            autoPause: true,
+          })
+        : await Sandbox.create(templateId, createOptions);
 
-      return new E2BInstance(sandbox, options.metadata || {}, httpServices);
+      const httpServices = E2BClient.toHttpServices(sandbox);
+      return new E2BInstance(
+        sandbox,
+        options.metadata || {},
+        httpServices,
+        "running"
+      );
     },
 
     /**
      * Get an existing sandbox by ID
+     * Note: connecting to a paused sandbox resumes it.
      */
-    get: async (options: { instanceId: string }): Promise<E2BInstance> => {
+    get: async (options: {
+      instanceId: string;
+      timeoutMs?: number;
+    }): Promise<E2BInstance> => {
       const sandbox = await Sandbox.connect(options.instanceId, {
         apiKey: this.apiKey,
+        timeoutMs: options.timeoutMs,
       });
 
-      // Rebuild HTTP services from the connected sandbox
-      const httpServices: E2BHttpService[] = [
-        {
-          name: "vscode",
-          port: 39378,
-          url: `https://${sandbox.getHost(39378)}`,
-        },
-        {
-          name: "worker",
-          port: 39377,
-          url: `https://${sandbox.getHost(39377)}`,
-        },
-        {
-          name: "vnc",
-          port: 39380,
-          url: `https://${sandbox.getHost(39380)}`,
-        },
-        {
-          name: "jupyter",
-          port: 8888,
-          url: `https://${sandbox.getHost(8888)}`,
-        },
-      ];
-
-      return new E2BInstance(sandbox, {}, httpServices);
+      const httpServices = E2BClient.toHttpServices(sandbox);
+      return new E2BInstance(sandbox, {}, httpServices, "running");
     },
 
     /**
-     * List all running sandboxes
+     * Get metadata and state for a sandbox by ID.
      */
-    list: async (): Promise<Array<{ sandboxId: string; templateId: string; startedAt: Date }>> => {
-      const sandboxes = await Sandbox.list({ apiKey: this.apiKey });
-      return sandboxes.map((s) => ({
-        sandboxId: s.sandboxId,
-        templateId: s.templateId,
-        startedAt: s.startedAt,
-      }));
+    getInfo: async (options: {
+      instanceId: string;
+    }): Promise<E2BSandboxSummary> => {
+      const info = await Sandbox.getInfo(options.instanceId, {
+        apiKey: this.apiKey,
+      });
+      return E2BClient.toSummary(info);
+    },
+
+    /**
+     * List running/paused sandboxes.
+     */
+    list: async (options: E2BListOptions = {}): Promise<E2BSandboxSummary[]> => {
+      const paginator = Sandbox.list({
+        apiKey: this.apiKey,
+        query: {
+          metadata: options.metadata,
+          state: options.state,
+        },
+        limit: options.limit,
+      });
+
+      const sandboxes: E2BSandboxSummary[] = [];
+      while (paginator.hasNext) {
+        const page = await paginator.nextItems();
+        sandboxes.push(...page.map(E2BClient.toSummary));
+      }
+
+      return sandboxes;
     },
 
     /**
@@ -324,6 +403,13 @@ export class E2BClient {
      */
     kill: async (sandboxId: string): Promise<void> => {
       await Sandbox.kill(sandboxId, { apiKey: this.apiKey });
+    },
+
+    /**
+     * Pause a sandbox by ID.
+     */
+    pause: async (sandboxId: string): Promise<void> => {
+      await Sandbox.betaPause(sandboxId, { apiKey: this.apiKey });
     },
   };
 }
