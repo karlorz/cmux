@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { v, type Validator } from "convex/values";
 import {
   CONFIG_PROVIDERS,
   DEVBOX_PROVIDERS,
@@ -6,15 +6,17 @@ import {
   SNAPSHOT_PROVIDERS,
 } from "@cmux/shared/provider-types";
 
-function literalsFromTuple<T extends readonly [string, string, ...string[]]>(
+// Return-type annotation is necessary because `.map()` widens literal types
+// to `string`. The cast is safe: the runtime validator matches `T[number]` exactly.
+function literalsFromTuple<const T extends readonly [string, string, ...string[]]>(
   values: T,
-) {
+): Validator<T[number]> {
   const [first, second, ...rest] = values;
   return v.union(
     v.literal(first),
     v.literal(second),
     ...rest.map((value) => v.literal(value)),
-  );
+  ) as Validator<T[number]>;
 }
 
 export const runtimeProviderValidator = literalsFromTuple(RUNTIME_PROVIDERS);

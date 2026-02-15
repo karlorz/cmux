@@ -10,7 +10,7 @@ import type { VSCodeProvider } from "@cmux/shared/provider-types";
  */
 export function getWorkspaceUrl(
   rawWorkspaceUrl: string | null | undefined,
-  provider: VSCodeProvider | string | undefined,
+  provider: VSCodeProvider | undefined,
   localServeWebBaseUrl: string | null | undefined
 ): string | null {
   if (!rawWorkspaceUrl) {

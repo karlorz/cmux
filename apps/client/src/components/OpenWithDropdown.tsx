@@ -7,7 +7,7 @@ import { EllipsisVertical, ExternalLink, GitBranch, Globe } from "lucide-react";
 
 interface OpenWithDropdownProps {
   vscodeUrl?: string | null;
-  vscodeProvider?: RuntimeProvider | string;
+  vscodeProvider?: RuntimeProvider;
   worktreePath?: string | null;
   branch?: string | null;
   networking?: Parameters<typeof useOpenWithActions>[0]["networking"];

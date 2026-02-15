@@ -2,15 +2,10 @@ import { env } from "./www-env";
 import type { ConfigProvider } from "@cmux/shared/provider-types";
 
 /**
- * Supported sandbox providers (unified naming)
- */
-export type SandboxProvider = ConfigProvider;
-
-/**
  * Configuration for the active sandbox provider
  */
 export interface SandboxProviderConfig {
-  provider: SandboxProvider;
+  provider: ConfigProvider;
   /** For Morph: API key; For Proxmox: not used here */
   apiKey?: string;
   /** For Proxmox: API URL */

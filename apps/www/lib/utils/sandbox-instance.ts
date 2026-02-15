@@ -143,16 +143,11 @@ export function wrapPveLxcInstance(instance: PveLxcInstance): SandboxInstance {
 }
 
 /**
- * Provider type
- */
-export type SandboxProvider = ConfigProvider;
-
-/**
  * Result of starting a sandbox
  */
 export interface StartSandboxResult {
   instance: SandboxInstance;
-  provider: SandboxProvider;
+  provider: ConfigProvider;
   vscodeService: HttpService | undefined;
   workerService: HttpService | undefined;
 }

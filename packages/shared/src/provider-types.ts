@@ -25,6 +25,5 @@ export type SnapshotProvider = (typeof SNAPSHOT_PROVIDERS)[number];
 export type DevboxProvider = (typeof DEVBOX_PROVIDERS)[number];
 export type ConfigProvider = (typeof CONFIG_PROVIDERS)[number];
 
-// Backward-compatible aliases for existing call sites.
+// Backward-compatible alias for existing call sites.
 export type VSCodeProvider = RuntimeProvider;
-export type SandboxProvider = RuntimeProvider;
