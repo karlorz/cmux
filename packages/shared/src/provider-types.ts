@@ -25,5 +25,10 @@ export type SnapshotProvider = (typeof SNAPSHOT_PROVIDERS)[number];
 export type DevboxProvider = (typeof DEVBOX_PROVIDERS)[number];
 export type ConfigProvider = (typeof CONFIG_PROVIDERS)[number];
 
+// Default sandbox provider used when SANDBOX_PROVIDER env is unset and
+// auto-detection finds no credentials.  Change this single constant to
+// switch the project-wide fallback.
+export const DEFAULT_SANDBOX_PROVIDER = "pve-lxc" as const;
+
 // Backward-compatible alias for existing call sites.
 export type VSCodeProvider = RuntimeProvider;

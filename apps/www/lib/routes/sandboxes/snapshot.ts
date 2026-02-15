@@ -22,8 +22,8 @@ export type ConvexClient = ReturnType<typeof getConvex>;
 export interface SnapshotResolution {
   team: Awaited<ReturnType<typeof verifyTeamAccess>>;
   resolvedSnapshotId: string;
-  /** The sandbox provider to use */
-  provider: ConfigProvider;
+  /** The sandbox provider to use (may be an unknown/external provider) */
+  provider: string;
   resolvedTemplateVmid?: number;
   environmentDataVaultKey?: string;
   environmentMaintenanceScript?: string;
@@ -35,7 +35,7 @@ export interface SnapshotResolution {
 /**
  * Get the default snapshot ID based on the active provider
  */
-function getDefaultSnapshotId(provider: ConfigProvider): string {
+function getDefaultSnapshotId(provider: string): string {
   switch (provider) {
     case "pve-lxc":
       return DEFAULT_PVE_LXC_SNAPSHOT_ID;
@@ -86,7 +86,7 @@ function resolveProviderForSnapshotId(
   return null;
 }
 
-function ensureProviderAvailable(provider: ConfigProvider): void {
+function ensureProviderAvailable(provider: string): void {
   if (provider === "pve-vm") {
     throw new HTTPException(501, {
       message: "PVE VM provider is not supported yet",
@@ -102,6 +102,8 @@ function ensureProviderAvailable(provider: ConfigProvider): void {
       message: "PVE LXC provider is not configured",
     });
   }
+  // Unknown providers (e.g. "e2b") -- no startup validation needed,
+  // credentials are managed elsewhere.
 }
 
 function isSandboxProvider(value: string | undefined): value is ConfigProvider {

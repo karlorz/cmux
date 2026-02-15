@@ -16,14 +16,14 @@ import {
   type SandboxPreset,
   type SandboxProviderType,
 } from "@cmux/shared";
-import { CONFIG_PROVIDERS, type ConfigProvider } from "@cmux/shared/provider-types";
+import { CONFIG_PROVIDERS } from "@cmux/shared/provider-types";
 
 export const configRouter = new OpenAPIHono();
 
 /**
  * Map internal provider name to API provider type
  */
-function toProviderType(provider: ConfigProvider): SandboxProviderType {
+function toProviderType(provider: string): SandboxProviderType {
   switch (provider) {
     case "pve-lxc":
       return "pve-lxc";
