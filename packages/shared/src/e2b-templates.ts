@@ -109,25 +109,26 @@ if (!firstPreset) {
   throw new Error("E2B template manifest must include a default template");
 }
 
-const highPreset = E2B_TEMPLATE_PRESETS.find(
-  (p) => p.templateId === "cmux-devbox-docker",
+const litePreset = E2B_TEMPLATE_PRESETS.find(
+  (p) => p.templateId === "cmux-lite",
 );
 export const DEFAULT_E2B_TEMPLATE_ID: E2BTemplateId =
-  highPreset?.id ?? firstPreset.id;
+  litePreset?.id ?? firstPreset.id;
 
 /**
- * Size tiers for E2B templates: low, mid, high.
- * Default is "high" (cmux-devbox-docker).
+ * Size tiers for E2B templates: lite, low, mid, high.
+ * Default is "lite" (cmux-lite) - free tier compatible.
  */
-export type E2BSizeTier = "low" | "mid" | "high";
+export type E2BSizeTier = "lite" | "low" | "mid" | "high";
 
 const E2B_SIZE_TIER_PRESET_IDS: Record<E2BSizeTier, string> = {
+  lite: "cmux-lite",
   low: "cmux-devbox-low",
   mid: "cmux-devbox-mid",
   high: "cmux-devbox-docker",
 };
 
-export const DEFAULT_E2B_SIZE_TIER: E2BSizeTier = "high";
+export const DEFAULT_E2B_SIZE_TIER: E2BSizeTier = "lite";
 
 /**
  * Get the latest E2B template ID for a size tier.

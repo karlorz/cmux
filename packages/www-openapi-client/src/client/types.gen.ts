@@ -447,7 +447,7 @@ export type SetupInstanceBody = {
     instanceId?: string;
     selectedRepos?: Array<string>;
     ttlSeconds?: number;
-    snapshotId?: string | ('snapshot_40tltpm1' | 'snapshot_ychnckx4');
+    snapshotId?: string | ('snapshot_mgmhjyrd' | 'snapshot_fe0cgqlw');
 };
 
 export type InstanceInfo = {
@@ -712,6 +712,107 @@ export type SandboxSshResponse = {
 
 export type SandboxResumeResponse = {
     resumed: true;
+};
+
+export type DevboxInstance = {
+    id: string;
+    provider?: string;
+    status: string;
+    name?: string;
+    templateId?: string;
+    gpu?: string;
+    createdAt?: number;
+    jupyterUrl?: string;
+    vscodeUrl?: string;
+    workerUrl?: string;
+    vncUrl?: string;
+};
+
+export type CreateDevboxBody = {
+    teamSlugOrId: string;
+    provider?: 'e2b' | 'modal';
+    templateId?: string;
+    name?: string;
+    gpu?: string;
+    cpu?: number;
+    memoryMiB?: number;
+    diskGB?: number;
+    image?: string;
+    ttlSeconds?: number;
+    envs?: {
+        [key: string]: string;
+    };
+    metadata?: {
+        [key: string]: string;
+    };
+};
+
+export type ListDevboxInstancesResponse = {
+    instances: Array<DevboxInstance>;
+};
+
+export type DevboxActionResponse = {
+    ok: boolean;
+    provider: string;
+};
+
+export type DevboxTeamBody = {
+    teamSlugOrId: string;
+};
+
+export type DevboxExtendResponse = {
+    ok: boolean;
+    provider: string;
+    timeoutMs: number;
+};
+
+export type DevboxExtendBody = {
+    teamSlugOrId: string;
+    timeoutMs?: number;
+    ttlSeconds?: number;
+};
+
+export type DevboxExecResponse = {
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+};
+
+export type DevboxExecBody = {
+    teamSlugOrId: string;
+    command: string | Array<string>;
+    timeout?: number;
+};
+
+export type DevboxTokenResponse = {
+    token: string;
+};
+
+export type DevboxTemplate = {
+    templateId: string;
+    presetId?: string;
+    provider?: string;
+    name: string;
+    description?: string;
+    cpu?: string;
+    memory?: string;
+    disk?: string;
+    gpu?: string;
+    image?: string;
+    supportsDocker?: boolean;
+    gated?: boolean;
+};
+
+export type ListDevboxTemplatesResponse = {
+    templates: Array<DevboxTemplate>;
+};
+
+export type DevboxConfigResponse = {
+    providers: Array<string>;
+    defaultProvider: string;
+    e2b?: {
+        defaultTemplateId: string;
+    };
 };
 
 export type Team = {
@@ -3298,6 +3399,394 @@ export type PostApiSandboxesByIdDiscoverReposResponses = {
 };
 
 export type PostApiSandboxesByIdDiscoverReposResponse = PostApiSandboxesByIdDiscoverReposResponses[keyof PostApiSandboxesByIdDiscoverReposResponses];
+
+export type GetApiV2DevboxInstancesData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+        provider?: 'e2b' | 'modal' | 'morph' | 'pve-lxc';
+    };
+    url: '/api/v2/devbox/instances';
+};
+
+export type GetApiV2DevboxInstancesErrors = {
+    /**
+     * Bad request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiV2DevboxInstancesResponses = {
+    /**
+     * List of instances
+     */
+    200: ListDevboxInstancesResponse;
+};
+
+export type GetApiV2DevboxInstancesResponse = GetApiV2DevboxInstancesResponses[keyof GetApiV2DevboxInstancesResponses];
+
+export type PostApiV2DevboxInstancesData = {
+    body: CreateDevboxBody;
+    path?: never;
+    query?: never;
+    url: '/api/v2/devbox/instances';
+};
+
+export type PostApiV2DevboxInstancesErrors = {
+    /**
+     * Bad request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiV2DevboxInstancesResponses = {
+    /**
+     * Created instance
+     */
+    200: DevboxInstance;
+};
+
+export type PostApiV2DevboxInstancesResponse = PostApiV2DevboxInstancesResponses[keyof PostApiV2DevboxInstancesResponses];
+
+export type GetApiV2DevboxInstancesByIdData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/v2/devbox/instances/{id}';
+};
+
+export type GetApiV2DevboxInstancesByIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiV2DevboxInstancesByIdResponses = {
+    /**
+     * Instance details
+     */
+    200: DevboxInstance;
+};
+
+export type GetApiV2DevboxInstancesByIdResponse = GetApiV2DevboxInstancesByIdResponses[keyof GetApiV2DevboxInstancesByIdResponses];
+
+export type PostApiV2DevboxInstancesByIdStopData = {
+    body: DevboxTeamBody;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v2/devbox/instances/{id}/stop';
+};
+
+export type PostApiV2DevboxInstancesByIdStopErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiV2DevboxInstancesByIdStopResponses = {
+    /**
+     * Action completed
+     */
+    200: DevboxActionResponse;
+};
+
+export type PostApiV2DevboxInstancesByIdStopResponse = PostApiV2DevboxInstancesByIdStopResponses[keyof PostApiV2DevboxInstancesByIdStopResponses];
+
+export type PostApiV2DevboxInstancesByIdPauseData = {
+    body: DevboxTeamBody;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v2/devbox/instances/{id}/pause';
+};
+
+export type PostApiV2DevboxInstancesByIdPauseErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiV2DevboxInstancesByIdPauseResponses = {
+    /**
+     * Action completed
+     */
+    200: DevboxActionResponse;
+};
+
+export type PostApiV2DevboxInstancesByIdPauseResponse = PostApiV2DevboxInstancesByIdPauseResponses[keyof PostApiV2DevboxInstancesByIdPauseResponses];
+
+export type PostApiV2DevboxInstancesByIdResumeData = {
+    body: DevboxTeamBody;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v2/devbox/instances/{id}/resume';
+};
+
+export type PostApiV2DevboxInstancesByIdResumeErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiV2DevboxInstancesByIdResumeResponses = {
+    /**
+     * Action completed
+     */
+    200: DevboxActionResponse;
+};
+
+export type PostApiV2DevboxInstancesByIdResumeResponse = PostApiV2DevboxInstancesByIdResumeResponses[keyof PostApiV2DevboxInstancesByIdResumeResponses];
+
+export type PostApiV2DevboxInstancesByIdDeleteData = {
+    body: DevboxTeamBody;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v2/devbox/instances/{id}/delete';
+};
+
+export type PostApiV2DevboxInstancesByIdDeleteErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiV2DevboxInstancesByIdDeleteResponses = {
+    /**
+     * Action completed
+     */
+    200: DevboxActionResponse;
+};
+
+export type PostApiV2DevboxInstancesByIdDeleteResponse = PostApiV2DevboxInstancesByIdDeleteResponses[keyof PostApiV2DevboxInstancesByIdDeleteResponses];
+
+export type PostApiV2DevboxInstancesByIdExtendData = {
+    body: DevboxExtendBody;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v2/devbox/instances/{id}/extend';
+};
+
+export type PostApiV2DevboxInstancesByIdExtendErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiV2DevboxInstancesByIdExtendResponses = {
+    /**
+     * Timeout extended
+     */
+    200: DevboxExtendResponse;
+};
+
+export type PostApiV2DevboxInstancesByIdExtendResponse = PostApiV2DevboxInstancesByIdExtendResponses[keyof PostApiV2DevboxInstancesByIdExtendResponses];
+
+export type PostApiV2DevboxInstancesByIdExecData = {
+    body: DevboxExecBody;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v2/devbox/instances/{id}/exec';
+};
+
+export type PostApiV2DevboxInstancesByIdExecErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiV2DevboxInstancesByIdExecResponses = {
+    /**
+     * Command output
+     */
+    200: DevboxExecResponse;
+};
+
+export type PostApiV2DevboxInstancesByIdExecResponse = PostApiV2DevboxInstancesByIdExecResponses[keyof PostApiV2DevboxInstancesByIdExecResponses];
+
+export type PostApiV2DevboxInstancesByIdTokenData = {
+    body: DevboxTeamBody;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v2/devbox/instances/{id}/token';
+};
+
+export type PostApiV2DevboxInstancesByIdTokenErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+    /**
+     * Token not ready
+     */
+    503: unknown;
+};
+
+export type PostApiV2DevboxInstancesByIdTokenResponses = {
+    /**
+     * Auth token
+     */
+    200: DevboxTokenResponse;
+};
+
+export type PostApiV2DevboxInstancesByIdTokenResponse = PostApiV2DevboxInstancesByIdTokenResponses[keyof PostApiV2DevboxInstancesByIdTokenResponses];
+
+export type GetApiV2DevboxTemplatesData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+        provider?: 'e2b' | 'modal' | 'morph' | 'pve-lxc';
+    };
+    url: '/api/v2/devbox/templates';
+};
+
+export type GetApiV2DevboxTemplatesErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiV2DevboxTemplatesResponses = {
+    /**
+     * List templates
+     */
+    200: ListDevboxTemplatesResponse;
+};
+
+export type GetApiV2DevboxTemplatesResponse = GetApiV2DevboxTemplatesResponses[keyof GetApiV2DevboxTemplatesResponses];
+
+export type GetApiV2DevboxConfigData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v2/devbox/config';
+};
+
+export type GetApiV2DevboxConfigErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiV2DevboxConfigResponses = {
+    /**
+     * Provider configuration
+     */
+    200: DevboxConfigResponse;
+};
+
+export type GetApiV2DevboxConfigResponse = GetApiV2DevboxConfigResponses[keyof GetApiV2DevboxConfigResponses];
 
 export type GetApiTeamsData = {
     body?: never;

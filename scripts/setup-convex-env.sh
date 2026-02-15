@@ -232,6 +232,7 @@ echo "  - PVE_NODE: $(get_env_value PVE_NODE)"
 echo "  - PVE_PUBLIC_DOMAIN: $(get_env_value PVE_PUBLIC_DOMAIN)"
 echo "  - PVE_STORAGE: $(get_env_value PVE_STORAGE)"
 echo "  - SANDBOX_PROVIDER: $(get_env_value SANDBOX_PROVIDER)"
+echo "  - E2B_API_KEY: $(show_optional_value "$(get_env_value E2B_API_KEY)")"
 # Opt-in feature flag for screenshot workflow (disabled by default)
 echo "  - CMUX_ENABLE_SCREENSHOT_WORKFLOW: $(show_optional_value "$(get_env_value CMUX_ENABLE_SCREENSHOT_WORKFLOW)" 10)"
 # Note: CMUX_IS_STAGING removed from Convex - preview_jobs_worker hardcodes "false" in sandbox
@@ -308,6 +309,7 @@ build_json_changes() {
   add_change "PVE_PUBLIC_DOMAIN" "$(get_env_value PVE_PUBLIC_DOMAIN)"
   add_change "PVE_STORAGE" "$(get_env_value PVE_STORAGE)"
   add_optional_change "SANDBOX_PROVIDER" "$(get_env_value SANDBOX_PROVIDER)"
+  add_optional_change "E2B_API_KEY" "$(get_env_value E2B_API_KEY)"
   # Opt-in feature flag: set to "true" to enable, delete (null) when not set to disable
   add_optional_change "CMUX_ENABLE_SCREENSHOT_WORKFLOW" "$(get_env_value CMUX_ENABLE_SCREENSHOT_WORKFLOW)"
   # Note: CMUX_IS_STAGING removed from Convex schema - preview_jobs_worker hardcodes "false" in sandbox

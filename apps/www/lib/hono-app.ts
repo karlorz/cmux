@@ -20,6 +20,7 @@ import {
   branchRouter,
   codeReviewRouter,
   configRouter,
+  devboxRouter,
   devServerRouter,
   editorSettingsRouter,
   environmentsRouter,
@@ -171,6 +172,7 @@ app.route("/", pveLxcRouter);
 app.route("/", iframePreflightRouter);
 app.route("/", environmentsRouter);
 app.route("/", sandboxesRouter);
+app.route("/", devboxRouter);
 app.route("/", teamsRouter);
 app.route("/", branchRouter);
 app.route("/", codeReviewRouter);

@@ -45,6 +45,7 @@ export const create = authMutation({
       v.literal("pve-vm"),
       v.literal("docker"),
       v.literal("daytona"),
+      v.literal("e2b"),
       v.literal("other")
     ),
     templateVmid: v.optional(v.number()),

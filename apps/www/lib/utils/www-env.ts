@@ -6,6 +6,7 @@ const getSandboxProviderSchema = () => {
   const provider = process.env.SANDBOX_PROVIDER;
   const isMorphRequired = !provider || provider === "morph";
   const isPveRequired = provider === "pve-lxc" || provider === "pve-vm";
+  const isE2bRequired = provider === "e2b";
 
   return {
     // Morph Cloud - required only if provider is "morph" or not specified
@@ -17,6 +18,10 @@ const getSandboxProviderSchema = () => {
       ? z.string().url()
       : z.string().url().optional(),
     PVE_API_TOKEN: isPveRequired
+      ? z.string().min(1)
+      : z.string().min(1).optional(),
+    // E2B - required only if provider is "e2b"
+    E2B_API_KEY: isE2bRequired
       ? z.string().min(1)
       : z.string().min(1).optional(),
   };
@@ -35,9 +40,11 @@ export const env = createEnv({
     CMUX_GITHUB_APP_ID: z.string().min(1),
     CMUX_GITHUB_APP_PRIVATE_KEY: z.string().min(1),
     // Sandbox providers (at least one required)
-    // Explicit provider selection: "morph", "pve-lxc", or "pve-vm"
-    // If not set, defaults to "morph"
-    SANDBOX_PROVIDER: z.enum(["morph", "pve-lxc", "pve-vm"]).optional(),
+    // Explicit provider selection: "e2b", "morph", "pve-lxc", or "pve-vm"
+    // If not set, defaults to "e2b"
+    SANDBOX_PROVIDER: z.enum(["e2b", "morph", "pve-lxc", "pve-vm"]).optional(),
+    // E2B - required if SANDBOX_PROVIDER is "e2b"
+    E2B_API_KEY: sandboxProviderSchema.E2B_API_KEY,
     // Morph Cloud - required if SANDBOX_PROVIDER is "morph" or unset
     MORPH_API_KEY: sandboxProviderSchema.MORPH_API_KEY,
     // Proxmox VE LXC - required if SANDBOX_PROVIDER is "pve-lxc" or "pve-vm"

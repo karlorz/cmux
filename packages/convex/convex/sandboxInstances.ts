@@ -21,6 +21,7 @@ export const SANDBOX_PROVIDERS = [
   "pve-lxc",
   "docker",
   "daytona",
+  "e2b",
   "other",
 ] as const;
 
@@ -33,6 +34,8 @@ export function detectProviderFromInstanceId(instanceId: string): SandboxProvide
   if (instanceId.startsWith("morphvm_")) return "morph";
   if (instanceId.startsWith("pvelxc-")) return "pve-lxc";
   if (instanceId.startsWith("docker_")) return "docker";
+  // E2B instance IDs are alphanumeric without prefix, detect via length/pattern
+  if (/^[a-z0-9]{20,}$/.test(instanceId)) return "e2b";
   if (instanceId.startsWith("daytona_")) return "daytona";
   return "other";
 }
@@ -77,6 +80,7 @@ export const listByProviderInternal = internalQuery({
       v.literal("pve-lxc"),
       v.literal("docker"),
       v.literal("daytona"),
+      v.literal("e2b"),
       v.literal("other")
     ),
     excludeStopped: v.optional(v.boolean()),
@@ -158,6 +162,7 @@ export const recordPauseInternal = internalMutation({
         v.literal("pve-lxc"),
         v.literal("docker"),
         v.literal("daytona"),
+        v.literal("e2b"),
         v.literal("other")
       )
     ),
@@ -197,6 +202,7 @@ export const recordStopInternal = internalMutation({
         v.literal("pve-lxc"),
         v.literal("docker"),
         v.literal("daytona"),
+        v.literal("e2b"),
         v.literal("other")
       )
     ),
@@ -236,6 +242,7 @@ export const recordCreateInternal = internalMutation({
       v.literal("pve-lxc"),
       v.literal("docker"),
       v.literal("daytona"),
+      v.literal("e2b"),
       v.literal("other")
     ),
     vmid: v.optional(v.number()),
@@ -248,6 +255,7 @@ export const recordCreateInternal = internalMutation({
         v.literal("pve-vm"),
         v.literal("docker"),
         v.literal("daytona"),
+        v.literal("e2b"),
         v.literal("other")
       )
     ),
@@ -302,6 +310,7 @@ export const recordCreate = authMutation({
       v.literal("pve-lxc"),
       v.literal("docker"),
       v.literal("daytona"),
+      v.literal("e2b"),
       v.literal("other")
     ),
     vmid: v.optional(v.number()),
@@ -314,6 +323,7 @@ export const recordCreate = authMutation({
         v.literal("pve-vm"),
         v.literal("docker"),
         v.literal("daytona"),
+        v.literal("e2b"),
         v.literal("other")
       )
     ),

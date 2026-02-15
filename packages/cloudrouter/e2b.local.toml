@@ -1,0 +1,11 @@
+# E2B sandbox template config for local/personal account
+# Build with: e2b template build -c e2b.local.toml
+
+dockerfile = "template/e2b.docker.Dockerfile"
+template_name = "cmux-devbox-local"
+start_cmd = "/usr/local/bin/start-services.sh"
+ready_cmd = "curl -sf http://localhost:39377/health || exit 1"
+
+# Note: Free tier cannot customize CPU/RAM, these are ignored
+# cpu_count = 4
+# memory_mb = 8192
