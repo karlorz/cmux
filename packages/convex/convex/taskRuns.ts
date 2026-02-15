@@ -1069,6 +1069,7 @@ export const updateVSCodeInstance = authMutation({
       provider: v.union(
         v.literal("docker"),
         v.literal("morph"),
+        v.literal("e2b"),
         v.literal("daytona"),
         v.literal("pve-lxc"),
         v.literal("other"),
@@ -1600,6 +1601,7 @@ export const updateVSCodeMetadataInternal = internalMutation({
           v.union(
             v.literal("docker"),
             v.literal("morph"),
+            v.literal("e2b"),
             v.literal("daytona"),
             v.literal("pve-lxc"),
             v.literal("other"),

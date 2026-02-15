@@ -286,6 +286,7 @@ const convexSchema = defineSchema({
         provider: v.union(
           v.literal("docker"),
           v.literal("morph"),
+          v.literal("e2b"),
           v.literal("daytona"),
           v.literal("pve-lxc"),
           v.literal("other")
@@ -847,6 +848,7 @@ const convexSchema = defineSchema({
     snapshotProvider: v.optional(
       v.union(
         v.literal("morph"),
+        v.literal("e2b"),
         v.literal("pve-lxc"),
         v.literal("pve-vm"),
         v.literal("docker"),
@@ -876,6 +878,7 @@ const convexSchema = defineSchema({
     snapshotProvider: v.optional(
       v.union(
         v.literal("morph"),
+        v.literal("e2b"),
         v.literal("pve-lxc"),
         v.literal("pve-vm"),
         v.literal("docker"),
@@ -1245,11 +1248,12 @@ const convexSchema = defineSchema({
   }).index("by_instanceId", ["instanceId"]),
 
   // Unified sandbox instance activity tracking (provider-agnostic)
-  // Supports: morph, pve-lxc, docker, daytona, and future providers
+  // Supports: morph, e2b, pve-lxc, docker, daytona, and future providers
   sandboxInstanceActivity: defineTable({
     instanceId: v.string(), // Instance ID (morphvm_xxx, pvelxc-xxx, etc.)
     provider: v.union(
       v.literal("morph"),
+      v.literal("e2b"),
       v.literal("pve-lxc"),
       v.literal("docker"),
       v.literal("daytona"),
@@ -1261,6 +1265,7 @@ const convexSchema = defineSchema({
     snapshotProvider: v.optional(
       v.union(
         v.literal("morph"),
+        v.literal("e2b"),
         v.literal("pve-lxc"),
         v.literal("pve-vm"),
         v.literal("docker"),

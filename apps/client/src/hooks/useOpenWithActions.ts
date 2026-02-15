@@ -10,6 +10,7 @@ type NetworkingInfo = Doc<"taskRuns">["networking"];
 type VSCodeProvider =
   | "docker"
   | "morph"
+  | "e2b"
   | "daytona"
   | "pve-lxc"
   | "other"

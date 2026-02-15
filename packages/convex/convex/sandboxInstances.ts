@@ -18,6 +18,7 @@ import { getTeamId } from "../_shared/team";
  */
 export const SANDBOX_PROVIDERS = [
   "morph",
+  "e2b",
   "pve-lxc",
   "docker",
   "daytona",
@@ -74,6 +75,7 @@ export const listByProviderInternal = internalQuery({
   args: {
     provider: v.union(
       v.literal("morph"),
+      v.literal("e2b"),
       v.literal("pve-lxc"),
       v.literal("docker"),
       v.literal("daytona"),
@@ -155,6 +157,7 @@ export const recordPauseInternal = internalMutation({
     provider: v.optional(
       v.union(
         v.literal("morph"),
+        v.literal("e2b"),
         v.literal("pve-lxc"),
         v.literal("docker"),
         v.literal("daytona"),
@@ -194,6 +197,7 @@ export const recordStopInternal = internalMutation({
     provider: v.optional(
       v.union(
         v.literal("morph"),
+        v.literal("e2b"),
         v.literal("pve-lxc"),
         v.literal("docker"),
         v.literal("daytona"),
@@ -233,6 +237,7 @@ export const recordCreateInternal = internalMutation({
     instanceId: v.string(),
     provider: v.union(
       v.literal("morph"),
+      v.literal("e2b"),
       v.literal("pve-lxc"),
       v.literal("docker"),
       v.literal("daytona"),
@@ -244,6 +249,7 @@ export const recordCreateInternal = internalMutation({
     snapshotProvider: v.optional(
       v.union(
         v.literal("morph"),
+        v.literal("e2b"),
         v.literal("pve-lxc"),
         v.literal("pve-vm"),
         v.literal("docker"),
@@ -299,6 +305,7 @@ export const recordCreate = authMutation({
     instanceId: v.string(),
     provider: v.union(
       v.literal("morph"),
+      v.literal("e2b"),
       v.literal("pve-lxc"),
       v.literal("docker"),
       v.literal("daytona"),
@@ -310,6 +317,7 @@ export const recordCreate = authMutation({
     snapshotProvider: v.optional(
       v.union(
         v.literal("morph"),
+        v.literal("e2b"),
         v.literal("pve-lxc"),
         v.literal("pve-vm"),
         v.literal("docker"),

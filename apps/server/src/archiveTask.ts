@@ -18,7 +18,7 @@ interface DockerPortMapping {
   vnc: string;
 }
 
-export type VSCodeProvider = "docker" | "morph" | "daytona" | "pve-lxc" | "other";
+export type VSCodeProvider = "docker" | "morph" | "e2b" | "daytona" | "pve-lxc" | "other";
 
 export interface StopResult {
   success: boolean;
