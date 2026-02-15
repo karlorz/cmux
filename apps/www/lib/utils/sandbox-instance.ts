@@ -7,6 +7,7 @@
 
 import type { Instance } from "morphcloud";
 import type { PveLxcInstance } from "./pve-lxc-client";
+import type { E2BInstance } from "@cmux/e2b-client";
 
 /**
  * Result of command execution
@@ -142,9 +143,42 @@ export function wrapPveLxcInstance(instance: PveLxcInstance): SandboxInstance {
 }
 
 /**
+ * Wrap an E2B instance to conform to SandboxInstance interface
+ */
+export function wrapE2BInstance(instance: E2BInstance): SandboxInstance {
+  return {
+    id: instance.id,
+    status: instance.status,
+    metadata: instance.metadata as Record<string, string | undefined>,
+    networking: {
+      httpServices: instance.networking.httpServices.map((s) => ({
+        name: s.name,
+        port: s.port,
+        url: s.url,
+      })),
+    },
+    exec: async (command: string, options?: ExecOptions) => {
+      const result = await instance.exec(command, { timeoutMs: options?.timeoutMs });
+      return {
+        exit_code: result.exit_code,
+        stdout: result.stdout || "",
+        stderr: result.stderr || "",
+      };
+    },
+    stop: () => instance.stop(),
+    pause: () => instance.pause(),
+    resume: () => instance.resume(),
+    exposeHttpService: (name: string, port: number) =>
+      instance.exposeHttpService(name, port),
+    hideHttpService: (name: string) => instance.hideHttpService(name),
+    setWakeOn: (_http: boolean, _ssh: boolean) => instance.setWakeOn(_http, _ssh),
+  };
+}
+
+/**
  * Provider type
  */
-export type SandboxProvider = "morph" | "pve-lxc" | "pve-vm";
+export type SandboxProvider = "morph" | "pve-lxc" | "pve-vm" | "e2b";
 
 /**
  * Result of starting a sandbox

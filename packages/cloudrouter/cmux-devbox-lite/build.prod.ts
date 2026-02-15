@@ -9,9 +9,9 @@ async function main() {
     process.exit(1)
   }
 
-  console.log('Building E2B template: cmux-lite')
+  console.log('Building E2B template: cmux-devbox-lite')
 
-  const result = await Template.build(template, 'cmux-lite', {
+  const result = await Template.build(template, 'cmux-devbox-lite', {
     apiKey,
     onBuildLogs: defaultBuildLogger(),
   })

@@ -3,8 +3,10 @@ import {
   DEFAULT_PVE_LXC_SNAPSHOT_ID,
   PVE_LXC_SNAPSHOT_PRESETS,
 } from "@/lib/utils/pve-lxc-defaults";
+import { DEFAULT_E2B_TEMPLATE_ID } from "@cmux/shared/e2b-templates";
 import {
   getActiveSandboxProvider,
+  isE2BAvailable,
   isMorphAvailable,
   isProxmoxAvailable,
   type SandboxProvider,
@@ -34,9 +36,12 @@ export interface SnapshotResolution {
 
 /**
  * Get the default snapshot ID based on the active provider
+ * For E2B, this returns the template ID instead of a snapshot ID.
  */
 function getDefaultSnapshotId(provider: SandboxProvider): string {
   switch (provider) {
+    case "e2b":
+      return DEFAULT_E2B_TEMPLATE_ID;
     case "pve-lxc":
       return DEFAULT_PVE_LXC_SNAPSHOT_ID;
     case "pve-vm":
@@ -105,7 +110,7 @@ function ensureProviderAvailable(provider: SandboxProvider): void {
 }
 
 function isSandboxProvider(value: string | undefined): value is SandboxProvider {
-  return value === "morph" || value === "pve-lxc" || value === "pve-vm";
+  return value === "morph" || value === "pve-lxc" || value === "pve-vm" || value === "e2b";
 }
 
 export const resolveTeamAndSnapshot = async ({
@@ -127,6 +132,9 @@ export const resolveTeamAndSnapshot = async ({
     try {
       return getActiveSandboxProvider().provider;
     } catch {
+      if (isE2BAvailable()) {
+        return "e2b";
+      }
       if (isMorphAvailable()) {
         return "morph";
       }
@@ -218,7 +226,8 @@ export const resolveTeamAndSnapshot = async ({
       {
         teamSlugOrId,
         snapshotId,
-        snapshotProvider: resolvedSnapshotProvider ?? undefined,
+        // Cast needed because SandboxProvider includes "e2b" which is valid but types haven't synced
+        snapshotProvider: (resolvedSnapshotProvider ?? undefined) as "morph" | "pve-lxc" | "pve-vm" | "docker" | "daytona" | "other" | undefined,
       }
     );
 

@@ -15,7 +15,10 @@ export interface HydrateRepoConfig {
   newBranch: string;
 }
 
-const MORPH_WORKSPACE_PATH = "/root/workspace";
+/** Default workspace path for Morph/PVE (root user) */
+const DEFAULT_WORKSPACE_PATH = "/root/workspace";
+/** Workspace path for E2B (user user) */
+export const E2B_WORKSPACE_PATH = "/home/user/workspace";
 
 const getHydrateScript = (): string => {
   const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -26,9 +29,12 @@ const getHydrateScript = (): string => {
 export const hydrateWorkspace = async ({
   instance,
   repo,
+  workspacePath,
 }: {
   instance: MorphInstance;
   repo?: HydrateRepoConfig;
+  /** Workspace path - defaults to /root/workspace, use /home/user/workspace for E2B */
+  workspacePath?: string;
 }): Promise<void> => {
   const hydrateScript = getHydrateScript();
 
@@ -37,7 +43,7 @@ export const hydrateWorkspace = async ({
 
   // Build environment variables
   const envVars: Record<string, string> = {
-    CMUX_WORKSPACE_PATH: MORPH_WORKSPACE_PATH,
+    CMUX_WORKSPACE_PATH: workspacePath ?? DEFAULT_WORKSPACE_PATH,
     CMUX_DEPTH: String(repo?.depth || 1),
   };
 

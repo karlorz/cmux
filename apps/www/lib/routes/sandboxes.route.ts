@@ -445,6 +445,13 @@ sandboxesRouter.openapi(
         snapshotId: body.snapshotId,
       });
 
+      // E2B provider is not yet fully supported for web app sandbox start
+      // The v2 devbox API will handle E2B; for now, reject early
+      if (provider === "e2b") {
+        console.warn("[sandboxes.start] E2B provider not yet supported, rejecting request");
+        return c.text("E2B provider not yet supported for sandbox start. Use Morph or PVE-LXC.", 501);
+      }
+
       const environmentEnvVarsPromise = environmentDataVaultKey
         ? loadEnvironmentEnvVars(environmentDataVaultKey)
         : Promise.resolve<string | null>(null);

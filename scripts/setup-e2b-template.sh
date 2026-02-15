@@ -1,8 +1,10 @@
 #!/bin/bash
 set -e
 
-# E2B Template Setup Script for cmux
-# Creates a cmux-lite template with full devbox services under your E2B account
+# E2B Template Setup Script for cmux (Full version)
+# Builds cmux-devbox-docker template with Docker, JupyterLab, and all services
+#
+# For lighter version without Docker, use: ./scripts/setup-e2b-template-lite.sh
 #
 # Prerequisites:
 #   - E2B account (https://e2b.dev/auth/sign-up)
@@ -16,6 +18,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CLOUDROUTER_DIR="$PROJECT_ROOT/packages/cloudrouter"
 
+TEMPLATE_NAME="cmux-devbox-docker"
+CONFIG_FILE="e2b.docker.toml"
+
 SKIP_TEST=false
 for arg in "$@"; do
   case $arg in
@@ -26,8 +31,8 @@ for arg in "$@"; do
   esac
 done
 
-echo "E2B Template Setup for cmux"
-echo "==========================="
+echo "E2B Template Setup: $TEMPLATE_NAME (Full)"
+echo "=========================================="
 echo ""
 
 # Load .env if exists
@@ -81,37 +86,27 @@ fi
 e2b auth info
 echo ""
 
-# Remove any existing E2B_TEMPLATE_ID from .env (we'll add the new one)
-if grep -q "^E2B_TEMPLATE_ID=" "$PROJECT_ROOT/.env" 2>/dev/null; then
-  echo "Removing existing E2B_TEMPLATE_ID from .env..."
-  if [[ "$OSTYPE" == "darwin"* ]]; then
-    sed -i '' '/^E2B_TEMPLATE_ID=/d' "$PROJECT_ROOT/.env"
-    sed -i '' '/^# E2B Template ID/d' "$PROJECT_ROOT/.env"
-  else
-    sed -i '/^E2B_TEMPLATE_ID=/d' "$PROJECT_ROOT/.env"
-    sed -i '/^# E2B Template ID/d' "$PROJECT_ROOT/.env"
-  fi
-fi
-
 # Build the template using E2B CLI with Dockerfile
 echo "Building E2B template from Dockerfile..."
-echo "This builds a devbox with:"
+echo "This builds a full devbox with:"
 echo "  - VSCode (cmux-code) on port 39378"
 echo "  - Worker daemon on port 39377"
 echo "  - VNC (noVNC) on port 39380"
+echo "  - JupyterLab on port 8888"
 echo "  - Chrome CDP on port 9222"
+echo "  - SSH on port 10000"
+echo "  - Docker-in-Docker support"
 echo "  - Node.js, Bun, Rust, Git, GitHub CLI"
 echo ""
-echo "Resource requirements: 4 vCPU / 8 GB RAM"
-echo "Build time: ~5-10 minutes"
+echo "Resources: 8 vCPU / 32 GB RAM"
+echo "Build time: ~10-15 minutes"
 echo ""
 
 cd "$CLOUDROUTER_DIR"
 
-# Use the e2b.lite.toml config (devbox without Docker/Jupyter for lower resources)
 BUILD_OUTPUT=$(e2b template build \
-  --config e2b.lite.toml \
-  --name cmux-lite \
+  --config "$CONFIG_FILE" \
+  --name "$TEMPLATE_NAME" \
   2>&1)
 
 echo "$BUILD_OUTPUT"
@@ -132,10 +127,10 @@ if [ -z "$TEMPLATE_ID" ]; then
 fi
 
 echo ""
-echo "==========================="
+echo "=========================================="
 echo "Template ID: $TEMPLATE_ID"
-echo "Template Name: cmux-lite"
-echo "==========================="
+echo "Template Name: $TEMPLATE_NAME"
+echo "=========================================="
 echo ""
 
 # Update e2b-templates.json
@@ -151,47 +146,38 @@ const json = JSON.parse(fs.readFileSync('$TEMPLATES_JSON', 'utf8'));
 // Update timestamp
 json.updatedAt = '$TIMESTAMP';
 
-// Find or create cmux-lite template
-let liteTemplate = json.templates.find(t => t.templateId === 'cmux-lite');
-if (liteTemplate) {
+// Find or create template
+let template = json.templates.find(t => t.templateId === '$TEMPLATE_NAME');
+if (template) {
   // Add new version
-  const maxVersion = Math.max(...liteTemplate.versions.map(v => v.version), 0);
-  liteTemplate.versions.push({
+  const maxVersion = Math.max(...template.versions.map(v => v.version), 0);
+  template.versions.push({
     version: maxVersion + 1,
     e2bTemplateId: '$TEMPLATE_ID',
     capturedAt: '$TIMESTAMP'
   });
-  console.log('Added new version', maxVersion + 1, 'to cmux-lite');
+  console.log('Added new version', maxVersion + 1, 'to $TEMPLATE_NAME');
 } else {
   // Create new template entry
-  json.templates.unshift({
-    templateId: 'cmux-lite',
-    label: 'Lite (2 vCPU / 512 MB - Free Tier)',
-    cpu: '2 vCPU',
-    memory: '512 MB RAM',
-    disk: '1 GB SSD',
+  json.templates.push({
+    templateId: '$TEMPLATE_NAME',
+    label: 'High (8 vCPU / 32 GB)',
+    cpu: '8 vCPU',
+    memory: '32 GB RAM',
+    disk: '20 GB SSD',
     versions: [{
       version: 1,
       e2bTemplateId: '$TEMPLATE_ID',
       capturedAt: '$TIMESTAMP'
     }],
-    description: 'Full devbox with VSCode, VNC, Chrome CDP, JupyterLab, Docker. Free tier compatible.'
+    description: 'Full devbox with Docker, JupyterLab, VSCode, VNC, Chrome CDP.'
   });
-  console.log('Created new cmux-lite template');
+  console.log('Created new $TEMPLATE_NAME template');
 }
 
 fs.writeFileSync('$TEMPLATES_JSON', JSON.stringify(json, null, 2) + '\n');
 console.log('Updated', '$TEMPLATES_JSON');
 "
-
-# Update e2b-client default
-echo "Updating e2b-client default template ID..."
-E2B_CLIENT="$PROJECT_ROOT/packages/e2b-client/src/index.ts"
-if [[ "$OSTYPE" == "darwin"* ]]; then
-  sed -i '' "s/CMUX_DEVBOX_TEMPLATE_ID = \"[^\"]*\"/CMUX_DEVBOX_TEMPLATE_ID = \"$TEMPLATE_ID\"/" "$E2B_CLIENT"
-else
-  sed -i "s/CMUX_DEVBOX_TEMPLATE_ID = \"[^\"]*\"/CMUX_DEVBOX_TEMPLATE_ID = \"$TEMPLATE_ID\"/" "$E2B_CLIENT"
-fi
 
 echo ""
 echo "Setup complete!"
@@ -200,6 +186,6 @@ echo "Template ID: $TEMPLATE_ID"
 echo ""
 echo "Next steps:"
 echo "  1. Restart dev server: make dev"
-echo "  2. Test with: cloudrouter start --provider e2b"
+echo "  2. Test with: cloudrouter start --provider e2b --template $TEMPLATE_NAME"
 echo ""
-echo "The cmux-lite template now includes full devbox services."
+echo "The $TEMPLATE_NAME template includes full devbox services with Docker."

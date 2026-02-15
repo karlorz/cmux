@@ -45,8 +45,11 @@ export const configureGitIdentity = async (
 export const configureGithubAccess = async (
   instance: MorphInstance,
   token: string,
-  maxRetries = 5
+  options: { maxRetries?: number; homeDir?: string } = {}
 ) => {
+  const maxRetries = options.maxRetries ?? 5;
+  // E2B runs as 'user' with home at /home/user, Morph/PVE run as 'root' with /root
+  const homeDir = options.homeDir ?? "/root";
   let lastError: Error | undefined;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -62,7 +65,7 @@ export const configureGithubAccess = async (
       // `gh auth setup-git` succeeds but does not persist credential helper config,
       // which breaks non-interactive git operations (e.g. OpenVSCode's git integration).
       const ghAuthRes = await instance.exec(
-        `bash -lc "export GH_CONFIG_DIR=/root/.config/gh HOME=/root && rm -rf \\"\\$GH_CONFIG_DIR\\" && mkdir -p \\"\\$GH_CONFIG_DIR\\" && printf %s ${singleQuote(token)} | gh auth login --with-token && gh auth setup-git && git config --global --replace-all credential.helper \\"!\\$(command -v gh) auth git-credential\\" && git config --global --replace-all credential.https://github.com.helper \\"!\\$(command -v gh) auth git-credential\\" && git config --global --replace-all credential.https://gist.github.com.helper \\"!\\$(command -v gh) auth git-credential\\" 2>&1"`
+        `bash -lc "export GH_CONFIG_DIR=${homeDir}/.config/gh HOME=${homeDir} && rm -rf \\"\\$GH_CONFIG_DIR\\" && mkdir -p \\"\\$GH_CONFIG_DIR\\" && printf %s ${singleQuote(token)} | gh auth login --with-token && gh auth setup-git && git config --global --replace-all credential.helper \\"!\\$(command -v gh) auth git-credential\\" && git config --global --replace-all credential.https://github.com.helper \\"!\\$(command -v gh) auth git-credential\\" && git config --global --replace-all credential.https://gist.github.com.helper \\"!\\$(command -v gh) auth git-credential\\" 2>&1"`
       );
 
       if (ghAuthRes.exit_code === 0) {

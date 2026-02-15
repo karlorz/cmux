@@ -13,10 +13,10 @@ import (
 
 const (
 	// Preset ID from packages/shared/src/e2b-templates.json (stable identifier)
-	defaultTemplatePresetID = "cmux-lite"
+	defaultTemplatePresetID = "cmux-devbox-lite"
 
 	// Template name in E2B (fallback if template list endpoint is unavailable)
-	defaultTemplateName = "cmux-lite"
+	defaultTemplateName = "cmux-devbox-lite"
 
 	// Modal preset IDs from packages/shared/src/modal-templates.json
 	modalDefaultPresetID = "cmux-devbox-gpu"

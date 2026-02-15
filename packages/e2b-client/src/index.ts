@@ -5,7 +5,7 @@ export const DEFAULT_E2B_BASE_URL = "https://api.e2b.dev";
 /**
  * Default template ID for cmux-lite (free tier compatible)
  */
-export const CMUX_DEVBOX_TEMPLATE_ID = "tg9gbs69k3ayuzwiszy4"; // cmux-lite (2 vCPU / 512 MB)
+export const CMUX_DEVBOX_TEMPLATE_ID = "af5awbnr42dc2na15tup"; // cmux-lite (2 vCPU / 512 MB)
 
 /**
  * Configuration for creating an E2B client

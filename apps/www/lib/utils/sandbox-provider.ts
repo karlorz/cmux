@@ -3,7 +3,7 @@ import { env } from "./www-env";
 /**
  * Supported sandbox providers (unified naming)
  */
-export type SandboxProvider = "morph" | "pve-lxc" | "pve-vm";
+export type SandboxProvider = "morph" | "pve-lxc" | "pve-vm" | "e2b";
 
 /**
  * Configuration for the active sandbox provider
@@ -71,7 +71,24 @@ export function getActiveSandboxProvider(): SandboxProviderConfig {
     };
   }
 
-  // Auto-detect: Morph takes priority if both are set
+  if (explicitProvider === "e2b") {
+    if (!env.E2B_API_KEY) {
+      throw new Error("SANDBOX_PROVIDER=e2b but E2B_API_KEY is not set.");
+    }
+    return {
+      provider: "e2b",
+      apiKey: env.E2B_API_KEY,
+    };
+  }
+
+  // Auto-detect: E2B first if configured, then Morph, then PVE
+  if (env.E2B_API_KEY) {
+    return {
+      provider: "e2b",
+      apiKey: env.E2B_API_KEY,
+    };
+  }
+
   if (env.MORPH_API_KEY) {
     return {
       provider: "morph",
@@ -102,6 +119,13 @@ export function isMorphAvailable(): boolean {
 }
 
 /**
+ * Check if E2B provider is available
+ */
+export function isE2BAvailable(): boolean {
+  return Boolean(env.E2B_API_KEY);
+}
+
+/**
  * Check if Proxmox provider is available
  */
 export function isProxmoxAvailable(): boolean {
@@ -111,8 +135,11 @@ export function isProxmoxAvailable(): boolean {
 /**
  * Get a list of all available sandbox providers
  */
-export function getAvailableSandboxProviders(): ("morph" | "pve-lxc")[] {
-  const providers: ("morph" | "pve-lxc")[] = [];
+export function getAvailableSandboxProviders(): ("morph" | "pve-lxc" | "e2b")[] {
+  const providers: ("morph" | "pve-lxc" | "e2b")[] = [];
+  if (isE2BAvailable()) {
+    providers.push("e2b");
+  }
   if (isMorphAvailable()) {
     providers.push("morph");
   }

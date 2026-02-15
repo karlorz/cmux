@@ -1071,6 +1071,7 @@ export const updateVSCodeInstance = authMutation({
         v.literal("morph"),
         v.literal("daytona"),
         v.literal("pve-lxc"),
+        v.literal("e2b"),
         v.literal("other"),
       ),
       containerName: v.optional(v.string()),

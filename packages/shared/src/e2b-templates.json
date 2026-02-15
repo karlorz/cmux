@@ -1,21 +1,36 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-02-15T00:00:00Z",
+  "updatedAt": "2026-02-15T11:57:58Z",
   "templates": [
     {
-      "templateId": "cmux-lite",
-      "label": "Lite (2 vCPU / 512 MB - Free Tier)",
-      "cpu": "2 vCPU",
-      "memory": "512 MB RAM",
-      "disk": "1 GB SSD",
+      "templateId": "cmux-devbox-lite",
+      "label": "Lite (4 vCPU / 8 GB)",
+      "cpu": "4 vCPU",
+      "memory": "8 GB RAM",
+      "disk": "10 GB SSD",
       "versions": [
         {
           "version": 1,
           "e2bTemplateId": "tg9gbs69k3ayuzwiszy4",
           "capturedAt": "2026-02-15T00:00:00Z"
+        },
+        {
+          "version": 2,
+          "e2bTemplateId": "7e11pkheqmzbx8x734x1",
+          "capturedAt": "2026-02-15T11:14:29Z"
+        },
+        {
+          "version": 3,
+          "e2bTemplateId": "rjyd3xp6pmjgmn3dozyc",
+          "capturedAt": "2026-02-15T11:26:33Z"
+        },
+        {
+          "version": 4,
+          "e2bTemplateId": "af5awbnr42dc2na15tup",
+          "capturedAt": "2026-02-15T11:57:58Z"
         }
       ],
-      "description": "Lightweight E2B sandbox for simple tasks. Free tier compatible."
+      "description": "Devbox with VSCode, VNC, Chrome CDP. Lower resource usage than full devbox."
     },
     {
       "templateId": "cmux-devbox-low",

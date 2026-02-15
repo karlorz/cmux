@@ -14,8 +14,10 @@
 # Usage:
 #   e2b template build --config e2b.lite.toml
 
+# template_id will be updated after first build
+template_id = ""
 dockerfile = "template/e2b.lite.Dockerfile"
-template_name = "cmux-lite"
+template_name = "cmux-devbox-lite"
 start_cmd = "/usr/local/bin/start-services.sh"
 ready_cmd = "curl -sf http://localhost:39377/health || exit 1"
 

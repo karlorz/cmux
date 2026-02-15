@@ -110,7 +110,7 @@ if (!firstPreset) {
 }
 
 const litePreset = E2B_TEMPLATE_PRESETS.find(
-  (p) => p.templateId === "cmux-lite",
+  (p) => p.templateId === "cmux-devbox-lite",
 );
 export const DEFAULT_E2B_TEMPLATE_ID: E2BTemplateId =
   litePreset?.id ?? firstPreset.id;
@@ -122,7 +122,7 @@ export const DEFAULT_E2B_TEMPLATE_ID: E2BTemplateId =
 export type E2BSizeTier = "lite" | "low" | "mid" | "high";
 
 const E2B_SIZE_TIER_PRESET_IDS: Record<E2BSizeTier, string> = {
-  lite: "cmux-lite",
+  lite: "cmux-devbox-lite",
   low: "cmux-devbox-low",
   mid: "cmux-devbox-mid",
   high: "cmux-devbox-docker",

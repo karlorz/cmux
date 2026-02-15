@@ -783,6 +783,26 @@ export async function spawnAgent(
       `[AgentSpawner] Preparing to send terminal creation command for ${agent.name}`
     );
 
+    // E2B provider uses a Go-based worker daemon with HTTP API (not socket.io)
+    // Terminal management for E2B is not yet implemented - needs HTTP-based terminal creation
+    if (vscodeInfo.provider === "e2b") {
+      serverLogger.error(
+        `[AgentSpawner] E2B provider detected - server-side terminal management not yet supported for E2B`
+      );
+      serverLogger.info(
+        `[AgentSpawner] E2B sandboxes should use www API for agent execution via E2B SDK exec()`
+      );
+      return {
+        agentName: agent.name,
+        terminalId,
+        taskRunId,
+        worktreePath,
+        vscodeUrl,
+        success: false,
+        error: "E2B provider not yet supported for server-side terminal management",
+      };
+    }
+
     // Wait for worker connection if not already connected
     if (!vscodeInstance.isWorkerConnected()) {
       serverLogger.info(`[AgentSpawner] Waiting for worker connection...`);

@@ -90,7 +90,9 @@ export class CmuxVSCodeInstance extends VSCodeInstance {
     );
 
     // Connect to the worker if available
-    if (this.workerUrl) {
+    // E2B lite uses a Go-based worker daemon with HTTP/WebSocket APIs (not socket.io)
+    // Skip socket.io connection for E2B - terminal management will use HTTP API instead
+    if (this.workerUrl && this.provider !== "e2b") {
       try {
         await this.connectToWorker(this.workerUrl);
         dockerLogger.info(
@@ -102,6 +104,10 @@ export class CmuxVSCodeInstance extends VSCodeInstance {
           error
         );
       }
+    } else if (this.provider === "e2b") {
+      dockerLogger.info(
+        `[CmuxVSCodeInstance ${this.instanceId}] E2B provider - skipping socket.io worker connection (uses HTTP API)`
+      );
     }
 
     return {
