@@ -11,8 +11,8 @@
       "versions": [
         {
           "version": 1,
-          "e2bTemplateId": "cmux-devbox-lite",
-          "capturedAt": "2026-02-15T00:00:00Z"
+          "e2bTemplateId": "6vjxue0nr5h66eec76kj",
+          "capturedAt": "2026-02-15T14:25:57Z"
         }
       ],
       "description": "Lightweight E2B workspace without Docker-in-Docker. Faster boot, lower overhead."

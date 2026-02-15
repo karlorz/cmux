@@ -14,16 +14,13 @@ async function main() {
       mode: "prod",
       // Production builds use full resources
       cpuCount: 4,
-      memoryMb: 16384,
+      memoryMB: 16384,
     });
 
     console.log("[build.prod] Template built successfully!");
     console.log(`  Template ID: ${result.templateId}`);
     console.log(`  Build ID: ${result.buildId}`);
-    if (result.logs) {
-      console.log("\n[build.prod] Build logs:");
-      console.log(result.logs);
-    }
+    console.log(`  Name: ${result.name}`);
   } catch (error) {
     console.error("[build.prod] Template build failed:", error);
     process.exit(1);

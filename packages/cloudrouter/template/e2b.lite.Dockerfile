@@ -96,8 +96,9 @@ RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearm
 
 # Create user account (E2B expects a 'user' account)
 # Note: NO docker group since we don't have Docker
-RUN useradd -m -s /bin/bash -u 1000 user \
-    && echo "user:user" | chpasswd
+# The E2B base image may already have the 'user' account, so skip if it exists.
+RUN id -u user >/dev/null 2>&1 || useradd -m -s /bin/bash -u 1000 user; \
+    echo "user:user" | chpasswd
 
 # Setup for user
 RUN mkdir -p /home/user/workspace /home/user/.vnc /home/user/.chrome-data /home/user/.chrome-visible /home/user/.config /home/user/.local/share/applications \
@@ -158,7 +159,9 @@ RUN wget -q https://go.dev/dl/go1.24.2.linux-amd64.tar.gz \
 ENV PATH="/usr/local/go/bin:$PATH"
 
 # Build Go worker daemon (standalone binary, no internal dependencies)
-COPY go.mod go.sum /tmp/worker-build/
+RUN mkdir -p /tmp/worker-build/cmd
+COPY go.mod /tmp/worker-build/go.mod
+COPY go.sum /tmp/worker-build/go.sum
 COPY cmd/worker /tmp/worker-build/cmd/worker/
 RUN cd /tmp/worker-build && \
     go mod download && \
