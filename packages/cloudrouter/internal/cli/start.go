@@ -13,10 +13,11 @@ import (
 
 const (
 	// Preset ID from packages/shared/src/e2b-templates.json (stable identifier)
-	defaultTemplatePresetID = "cmux-devbox-docker"
+	// Using lite template (no Docker-in-Docker) as default for faster boot times
+	defaultTemplatePresetID = "cmux-devbox-lite"
 
 	// Template name in E2B (fallback if template list endpoint is unavailable)
-	defaultTemplateName = "cmux-devbox-docker"
+	defaultTemplateName = "cmux-devbox-lite"
 
 	// Modal preset IDs from packages/shared/src/modal-templates.json
 	modalDefaultPresetID = "cmux-devbox-gpu"
