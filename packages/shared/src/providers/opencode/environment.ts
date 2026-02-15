@@ -103,15 +103,22 @@ export const NotificationPlugin = async ({ project: _project, client, $, directo
   const fetchMessagesViaClient = async () => {
     const sessions = await client.session.list();
     const sessionList = sessions?.data ?? sessions;
+    const allSessions = Array.isArray(sessionList) ? sessionList : [sessionList];
     const messages = [];
 
-    for (const session of (Array.isArray(sessionList) ? sessionList : [sessionList])) {
+    for (const session of allSessions) {
       if (!session?.id) continue;
       const result = await client.session.messages({ path: { id: session.id } });
       const msgArray = result?.data ?? result;
       for (const msg of (Array.isArray(msgArray) ? msgArray : [])) {
         messages.push(normalizeMessage(msg));
       }
+    }
+
+    // SDK can return soft errors (undefined/empty) without throwing;
+    // force fallback to HTTP layer when sessions exist but no messages found
+    if (messages.length === 0 && allSessions.length > 0) {
+      throw new Error("SDK returned 0 messages for " + allSessions.length + " session(s)");
     }
 
     return messages;
@@ -124,15 +131,25 @@ export const NotificationPlugin = async ({ project: _project, client, $, directo
     const sessionData = await res.json();
     const sessions = Array.isArray(sessionData) ? sessionData : [sessionData];
     const messages = [];
+    let anyMessageFetchOk = false;
 
     for (const session of sessions) {
       if (!session?.id) continue;
       const msgRes = await fetch("http://127.0.0.1:4096/session/" + session.id + "/message");
-      if (!msgRes.ok) continue;
+      if (!msgRes.ok) {
+        log("HTTP message fetch failed for session " + session.id + ": " + msgRes.status);
+        continue;
+      }
+      anyMessageFetchOk = true;
       const msgData = await msgRes.json();
       for (const msg of (Array.isArray(msgData) ? msgData : [])) {
         messages.push(normalizeMessage(msg));
       }
+    }
+
+    // If sessions exist but all message fetches failed, force fallback to filesystem
+    if (!anyMessageFetchOk && sessions.length > 0) {
+      throw new Error("All HTTP message fetches failed for " + sessions.length + " session(s)");
     }
 
     return messages;
@@ -257,6 +274,7 @@ export const NotificationPlugin = async ({ project: _project, client, $, directo
         return;
       }
 
+      // Set guard before await to prevent duplicate hook fires from concurrent idle events
       completionFired = true;
       try {
         await $\`/root/lifecycle/opencode/session-complete-hook.sh\`
