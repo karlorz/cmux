@@ -95,11 +95,14 @@ exec ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAu
 
 // buildCurlSSHCommand builds an SSH command string for use with curl ProxyCommand
 // Uses sshpass for empty password auth to match the bridge path behavior
+// Note: We use "sshpass -e" which reads from SSHPASS env var, avoiding empty argument
+// issues with macOS openrsync which fails to parse "sshpass -p ''" correctly.
 func buildCurlSSHCommand(proxyCmd string) string {
 	// Check if sshpass is available
 	if _, err := exec.LookPath("sshpass"); err == nil {
-		// Use sshpass for password authentication with empty password
-		return fmt.Sprintf("sshpass -p '' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -o ProxyCommand=%q", proxyCmd)
+		// Use sshpass -e (reads password from SSHPASS env var) to avoid shell parsing issues
+		// with macOS openrsync that fails on empty arguments like -p ''
+		return fmt.Sprintf("sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -o ProxyCommand=%q", proxyCmd)
 	}
 	// Fall back to BatchMode to prevent password prompts (will fail auth but won't hang)
 	// Note: This path is less reliable - sshpass should be installed for best results
@@ -1002,6 +1005,9 @@ func buildRsyncArgs(localPath, remotePath string, items []string) []string {
 // execRsync runs rsync and returns stats
 func execRsync(rsyncArgs []string) (*rsyncStats, error) {
 	rsyncExec := exec.Command("rsync", rsyncArgs...)
+
+	// Set SSHPASS env var for sshpass -e (empty password auth)
+	rsyncExec.Env = append(os.Environ(), "SSHPASS=")
 
 	var stdout, stderr bytes.Buffer
 	rsyncExec.Stdout = &stdout
