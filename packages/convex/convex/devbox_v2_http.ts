@@ -781,6 +781,67 @@ async function handleStopInstance(
 }
 
 // ============================================================================
+// POST /api/v2/devbox/instances/{id}/delete - Delete instance (terminate + remove)
+// ============================================================================
+async function handleDeleteInstance(
+  ctx: ActionCtx,
+  id: string,
+  teamSlugOrId: string
+): Promise<Response> {
+  try {
+    const instance = await ctx.runQuery(devboxApi.getById, {
+      teamSlugOrId,
+      id,
+    });
+
+    if (!instance) {
+      return jsonResponse({ code: 404, message: "Instance not found" }, 404);
+    }
+
+    const providerInfo = await getProviderInfo(ctx, id);
+    if (!providerInfo) {
+      // No provider info - just remove DB record (orphaned instance)
+      await ctx.runMutation(devboxApi.remove, { teamSlugOrId, id });
+      return jsonResponse({
+        deleted: true,
+        provider: "unknown",
+        note: "Orphaned record removed",
+      });
+    }
+
+    const { provider, providerInstanceId } = providerInfo;
+
+    // Stop the provider instance (which destroys PVE LXC containers)
+    try {
+      const actionsApi = getActionsApiForProvider(provider);
+      await ctx.runAction(actionsApi.stopInstance, {
+        instanceId: providerInstanceId,
+      });
+    } catch (providerError) {
+      // Log but continue - instance may already be gone
+      console.error(
+        `[devbox_v2.delete] Provider cleanup failed:`,
+        providerError
+      );
+    }
+
+    // Record activity before removing DB record
+    await recordProviderActivity(ctx, provider, providerInstanceId, "stop");
+
+    // Remove from database
+    await ctx.runMutation(devboxApi.remove, { teamSlugOrId, id });
+
+    return jsonResponse({ deleted: true, provider });
+  } catch (error) {
+    console.error("[devbox_v2.delete] Error:", error);
+    return jsonResponse(
+      { code: 500, message: "Failed to delete instance" },
+      500
+    );
+  }
+}
+
+// ============================================================================
 // POST /api/v2/devbox/instances/{id}/ttl - Update TTL
 // ============================================================================
 async function handleUpdateTtl(
@@ -1028,6 +1089,9 @@ export const instanceActionRouter = httpAction(async (ctx, req) => {
 
     case "stop":
       return handleStopInstance(ctx, id, body.teamSlugOrId);
+
+    case "delete":
+      return handleDeleteInstance(ctx, id, body.teamSlugOrId);
 
     case "ttl":
       if (!body.ttlSeconds) {
