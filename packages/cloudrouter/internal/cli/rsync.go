@@ -93,6 +93,49 @@ exec ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAu
 	return tmpFile.Name(), tmpFile.Name(), nil
 }
 
+// buildSSHCommandWithProxy creates an SSH command for use with rsync when using
+// curl as ProxyCommand for WebSocket tunneling.
+// Returns: sshCmd string, script path (to be deleted after use), error
+func buildSSHCommandWithProxy(proxyCmd string) (string, string, error) {
+	if _, err := exec.LookPath("sshpass"); err == nil {
+		sshCmd := fmt.Sprintf("sshpass -p '' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -o ProxyCommand=%q", proxyCmd)
+		return sshCmd, "", nil
+	}
+
+	// Fall back to SSH_ASKPASS by using the wrapper script itself as askpass.
+	tmpFile, err := os.CreateTemp("", "cmux-ssh-proxy-*.sh")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create SSH proxy wrapper script: %w", err)
+	}
+
+	scriptContent := fmt.Sprintf(`#!/bin/sh
+if [ "${CMUX_SSH_ASKPASS_MODE:-}" = "1" ]; then
+  echo ''
+  exit 0
+fi
+
+export SSH_ASKPASS="$0"
+export SSH_ASKPASS_REQUIRE=force
+export DISPLAY=dummy
+export CMUX_SSH_ASKPASS_MODE=1
+exec ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -o ProxyCommand=%q "$@"
+`, proxyCmd)
+
+	if _, err := tmpFile.WriteString(scriptContent); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpFile.Name())
+		return "", "", fmt.Errorf("failed to write SSH proxy wrapper script: %w", err)
+	}
+	tmpFile.Close()
+
+	if err := os.Chmod(tmpFile.Name(), 0700); err != nil {
+		os.Remove(tmpFile.Name())
+		return "", "", fmt.Errorf("failed to chmod SSH proxy wrapper script: %w", err)
+	}
+
+	return tmpFile.Name(), tmpFile.Name(), nil
+}
+
 // getCurlWithWebSocket returns the path to curl with WebSocket support, or empty string if not found
 // We need curl built with WebSocket protocol support (shows "ws" or "wss" in protocols)
 func getCurlWithWebSocket() string {
@@ -280,7 +323,7 @@ func runRsyncSingleFile(workerURL, token, localFile, remotePath string) error {
 	var err error
 
 	if curlPath != "" {
-		stats, err = runRsyncSingleFileWithCurl(curlPath, wsURL, localFile, remotePath)
+		stats, err = runRsyncSingleFileWithCurl(curlPath, wsURL, token, localFile, remotePath)
 	} else {
 		stats, err = runRsyncSingleFileWithBridge(wsURL, token, localFile, remotePath)
 	}
@@ -302,15 +345,21 @@ func runRsyncSingleFile(workerURL, token, localFile, remotePath string) error {
 }
 
 // runRsyncSingleFileWithCurl uses curl as SSH ProxyCommand for single file transfer
-func runRsyncSingleFileWithCurl(curlPath, wsURL, localFile, remotePath string) (*rsyncStats, error) {
+func runRsyncSingleFileWithCurl(curlPath, wsURL, token, localFile, remotePath string) (*rsyncStats, error) {
 	rsyncArgs := buildRsyncArgsSingleFile(localFile, remotePath)
 
 	proxyCmd := fmt.Sprintf("%s --no-progress-meter -N --http1.1 -T . '%s'", curlPath, wsURL)
-	sshCmd := fmt.Sprintf("ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand=%q", proxyCmd)
+	sshCmd, scriptPath, err := buildSSHCommandWithProxy(proxyCmd)
+	if err != nil {
+		return nil, err
+	}
+	if scriptPath != "" {
+		defer os.Remove(scriptPath)
+	}
 	rsyncArgs = append(rsyncArgs, "-e", sshCmd)
 
 	// Remote destination
-	remoteSpec := fmt.Sprintf("user@e2b-sandbox:%s", remotePath)
+	remoteSpec := fmt.Sprintf("%s@e2b-sandbox:%s", token, remotePath)
 	rsyncArgs = append(rsyncArgs, remoteSpec)
 
 	return execRsync(rsyncArgs)
@@ -430,7 +479,7 @@ func runRsyncDownload(workerURL, token, remotePath, localPath string) error {
 	var err error
 
 	if curlPath != "" {
-		stats, err = runRsyncDownloadWithCurl(curlPath, wsURL, remotePath, localPath)
+		stats, err = runRsyncDownloadWithCurl(curlPath, wsURL, token, remotePath, localPath)
 	} else {
 		stats, err = runRsyncDownloadWithBridge(wsURL, token, remotePath, localPath)
 	}
@@ -452,15 +501,21 @@ func runRsyncDownload(workerURL, token, remotePath, localPath string) error {
 }
 
 // runRsyncDownloadWithCurl uses curl as SSH ProxyCommand for download (remote → local)
-func runRsyncDownloadWithCurl(curlPath, wsURL, remotePath, localPath string) (*rsyncStats, error) {
+func runRsyncDownloadWithCurl(curlPath, wsURL, token, remotePath, localPath string) (*rsyncStats, error) {
 	rsyncArgs := buildRsyncDownloadArgs()
 
 	proxyCmd := fmt.Sprintf("%s --no-progress-meter -N --http1.1 -T . '%s'", curlPath, wsURL)
-	sshCmd := fmt.Sprintf("ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand=%q", proxyCmd)
+	sshCmd, scriptPath, err := buildSSHCommandWithProxy(proxyCmd)
+	if err != nil {
+		return nil, err
+	}
+	if scriptPath != "" {
+		defer os.Remove(scriptPath)
+	}
 	rsyncArgs = append(rsyncArgs, "-e", sshCmd)
 
 	// Remote as source, local as destination
-	remoteSpec := fmt.Sprintf("user@e2b-sandbox:%s/", remotePath)
+	remoteSpec := fmt.Sprintf("%s@e2b-sandbox:%s/", token, remotePath)
 	localDest := localPath
 	if !strings.HasSuffix(localDest, "/") {
 		localDest += "/"
@@ -582,8 +637,8 @@ func buildRsyncArgsSingleFile(localFile, remotePath string) []string {
 	rsyncArgs := []string{
 		"-az",
 		"--stats",
-		"--no-owner",  // Don't preserve owner (use remote user)
-		"--no-group",  // Don't preserve group (use remote group)
+		"--no-owner", // Don't preserve owner (use remote user)
+		"--no-group", // Don't preserve group (use remote group)
 	}
 
 	if rsyncFlagDryRun {
@@ -699,8 +754,8 @@ var defaultExcludes = []string{
 	".eggs",
 
 	// === Secrets and credentials (security) ===
-	".npmrc",     // May contain auth tokens
-	".yarnrc",    // May contain auth tokens
+	".npmrc",  // May contain auth tokens
+	".yarnrc", // May contain auth tokens
 	".yarnrc.yml",
 	"auth.json",
 	".netrc",
@@ -719,13 +774,13 @@ var defaultExcludes = []string{
 	"desktop.ini",
 	".Spotlight-V100",
 	".Trashes",
-	".idea",        // JetBrains
-	"*.swp",        // Vim
-	"*.swo",        // Vim
-	"*~",           // Backup files
-	".project",     // Eclipse
-	".classpath",   // Eclipse
-	".settings",    // Eclipse
+	".idea",      // JetBrains
+	"*.swp",      // Vim
+	"*.swo",      // Vim
+	"*~",         // Backup files
+	".project",   // Eclipse
+	".classpath", // Eclipse
+	".settings",  // Eclipse
 	"*.sublime-*",
 
 	// === Logs and temp files ===
@@ -801,7 +856,7 @@ func runSingleRsync(workerURL, token, localPath, remotePath string, items []stri
 	// Check if curl with WebSocket support is available
 	curlPath := getCurlWithWebSocket()
 	if curlPath != "" {
-		return runRsyncWithCurl(curlPath, wsURL, localPath, remotePath, items)
+		return runRsyncWithCurl(curlPath, wsURL, token, localPath, remotePath, items)
 	}
 
 	// Fall back to Go WebSocket bridge
@@ -809,7 +864,7 @@ func runSingleRsync(workerURL, token, localPath, remotePath string, items []stri
 }
 
 // runRsyncWithCurl uses curl as SSH ProxyCommand for WebSocket tunneling
-func runRsyncWithCurl(curlPath, wsURL, localPath, remotePath string, items []string) (*rsyncStats, error) {
+func runRsyncWithCurl(curlPath, wsURL, token, localPath, remotePath string, items []string) (*rsyncStats, error) {
 	rsyncArgs := buildRsyncArgs(localPath, remotePath, items)
 
 	// SSH command using curl as ProxyCommand for WebSocket tunneling
@@ -820,11 +875,17 @@ func runRsyncWithCurl(curlPath, wsURL, localPath, remotePath string, items []str
 	//   -T .: read stdin and send as request body (bidirectional tunnel)
 	// Note: URL must be single-quoted to prevent shell glob expansion of '?' in query string
 	proxyCmd := fmt.Sprintf("%s --no-progress-meter -N --http1.1 -T . '%s'", curlPath, wsURL)
-	sshCmd := fmt.Sprintf("ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand=%q", proxyCmd)
+	sshCmd, scriptPath, err := buildSSHCommandWithProxy(proxyCmd)
+	if err != nil {
+		return nil, err
+	}
+	if scriptPath != "" {
+		defer os.Remove(scriptPath)
+	}
 	rsyncArgs = append(rsyncArgs, "-e", sshCmd)
 
 	// Remote destination - hostname doesn't matter since ProxyCommand handles the connection
-	remoteSpec := fmt.Sprintf("user@e2b-sandbox:%s/", remotePath)
+	remoteSpec := fmt.Sprintf("%s@e2b-sandbox:%s/", token, remotePath)
 	rsyncArgs = append(rsyncArgs, remoteSpec)
 
 	return execRsync(rsyncArgs)
@@ -932,8 +993,8 @@ func buildRsyncArgs(localPath, remotePath string, items []string) []string {
 	rsyncArgs := []string{
 		"-az",
 		"--stats",
-		"--no-owner",  // Don't preserve owner (use remote user)
-		"--no-group",  // Don't preserve group (use remote group)
+		"--no-owner", // Don't preserve owner (use remote user)
+		"--no-group", // Don't preserve group (use remote group)
 	}
 
 	if rsyncFlagDelete {
@@ -1119,4 +1180,3 @@ func parseRsyncStats(output string) *rsyncStats {
 
 	return stats
 }
-
