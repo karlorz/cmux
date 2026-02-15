@@ -311,15 +311,10 @@ export class E2BClient {
      * List all running sandboxes
      */
     list: async (): Promise<Array<{ sandboxId: string; templateId: string; startedAt: Date }>> => {
-      // e2b@1.x returns Promise<ListedSandbox[]>, e2b@2.x returns SandboxPaginator
-      // Handle both by checking if result has nextItems method
-      const result = Sandbox.list({ apiKey: this.apiKey });
-      const sandboxes = Array.isArray(result)
-        ? result
-        : "nextItems" in result
-          ? await (result as { nextItems: () => Promise<Array<{ sandboxId: string; templateId: string; startedAt: Date }>> }).nextItems()
-          : await (result as Promise<Array<{ sandboxId: string; templateId: string; startedAt: Date }>>);
-      return sandboxes.map((s: { sandboxId: string; templateId: string; startedAt: Date }) => ({
+      // e2b@2.x returns SandboxPaginator; fetch first page
+      const paginator = Sandbox.list({ apiKey: this.apiKey });
+      const sandboxes = await paginator.nextItems();
+      return sandboxes.map((s) => ({
         sandboxId: s.sandboxId,
         templateId: s.templateId,
         startedAt: s.startedAt,
