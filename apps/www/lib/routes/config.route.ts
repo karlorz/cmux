@@ -19,6 +19,7 @@ import {
   type SandboxPreset,
   type SandboxProviderType,
 } from "@cmux/shared";
+import { CONFIG_PROVIDERS } from "@cmux/shared/provider-types";
 
 export const configRouter = new OpenAPIHono();
 
@@ -110,7 +111,7 @@ const SandboxProviderCapabilitiesSchema = z
 
 const SandboxConfigSchema = z
   .object({
-    provider: z.enum(["morph", "pve-lxc", "pve-vm"]),
+    provider: z.enum(CONFIG_PROVIDERS),
     providerDisplayName: z.string(),
     presets: z.array(SandboxPresetSchema),
     defaultPresetId: z.string(),

@@ -1,9 +1,10 @@
 import { env } from "./www-env";
+import type { ConfigProvider } from "@cmux/shared/provider-types";
 
 /**
  * Supported sandbox providers (unified naming)
  */
-export type SandboxProvider = "morph" | "pve-lxc" | "pve-vm";
+export type SandboxProvider = ConfigProvider;
 
 /**
  * Configuration for the active sandbox provider
@@ -111,8 +112,8 @@ export function isProxmoxAvailable(): boolean {
 /**
  * Get a list of all available sandbox providers
  */
-export function getAvailableSandboxProviders(): ("morph" | "pve-lxc")[] {
-  const providers: ("morph" | "pve-lxc")[] = [];
+export function getAvailableSandboxProviders(): Array<Extract<ConfigProvider, "morph" | "pve-lxc">> {
+  const providers: Array<Extract<ConfigProvider, "morph" | "pve-lxc">> = [];
   if (isMorphAvailable()) {
     providers.push("morph");
   }

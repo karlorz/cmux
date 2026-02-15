@@ -23,8 +23,9 @@ import {
   DEFAULT_PVE_LXC_SNAPSHOT_ID,
   PVE_LXC_SNAPSHOT_PRESETS,
 } from "@cmux/shared/pve-lxc-snapshots";
+import type { DevboxProvider } from "@cmux/shared/provider-types";
 
-type SandboxProvider = "e2b" | "modal" | "pve-lxc";
+type SandboxProvider = Extract<DevboxProvider, "e2b" | "modal" | "pve-lxc">;
 
 const JSON_HEADERS = {
   "Content-Type": "application/json",

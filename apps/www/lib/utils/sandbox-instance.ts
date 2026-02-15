@@ -6,6 +6,7 @@
  */
 
 import type { Instance } from "morphcloud";
+import type { ConfigProvider } from "@cmux/shared/provider-types";
 import type { PveLxcInstance } from "./pve-lxc-client";
 
 /**
@@ -144,7 +145,7 @@ export function wrapPveLxcInstance(instance: PveLxcInstance): SandboxInstance {
 /**
  * Provider type
  */
-export type SandboxProvider = "morph" | "pve-lxc" | "pve-vm";
+export type SandboxProvider = ConfigProvider;
 
 /**
  * Result of starting a sandbox
