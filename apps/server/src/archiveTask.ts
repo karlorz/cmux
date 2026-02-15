@@ -7,6 +7,7 @@ import { getConvex } from "./utils/convexClient";
 import { serverLogger } from "./utils/fileLogger";
 import { getAuthHeaderJson, getAuthToken } from "./utils/requestContext";
 import { getWwwBaseUrl } from "./utils/server-env";
+import { type RuntimeProvider } from "@cmux/shared/provider-types";
 
 const execAsync = promisify(exec);
 
@@ -18,7 +19,7 @@ interface DockerPortMapping {
   vnc: string;
 }
 
-export type VSCodeProvider = "docker" | "morph" | "daytona" | "pve-lxc" | "other";
+export type VSCodeProvider = RuntimeProvider;
 
 export interface StopResult {
   success: boolean;

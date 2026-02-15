@@ -12,19 +12,17 @@ import { internalMutation, internalQuery, query } from "./_generated/server";
 import { v } from "convex/values";
 import { authMutation } from "./users/utils";
 import { getTeamId } from "../_shared/team";
+import { runtimeProviderValidator, snapshotProviderValidator } from "../_shared/provider-validators";
+import { RUNTIME_PROVIDERS, type RuntimeProvider, type SnapshotProvider } from "@cmux/shared/provider-types";
 
 /**
- * Sandbox provider types - keep in sync with schema.ts
+ * Sandbox provider types - re-exported from shared package for backward compatibility
+ * @deprecated Import from @cmux/shared/provider-types instead
  */
-export const SANDBOX_PROVIDERS = [
-  "morph",
-  "pve-lxc",
-  "docker",
-  "daytona",
-  "other",
-] as const;
+export const SANDBOX_PROVIDERS = RUNTIME_PROVIDERS;
 
-export type SandboxProvider = (typeof SANDBOX_PROVIDERS)[number];
+/** @deprecated Use RuntimeProvider from @cmux/shared/provider-types */
+export type SandboxProvider = RuntimeProvider;
 
 /**
  * Detect provider from instance ID prefix
@@ -72,13 +70,7 @@ export const getActivityInternal = internalQuery({
  */
 export const listByProviderInternal = internalQuery({
   args: {
-    provider: v.union(
-      v.literal("morph"),
-      v.literal("pve-lxc"),
-      v.literal("docker"),
-      v.literal("daytona"),
-      v.literal("other")
-    ),
+    provider: runtimeProviderValidator,
     excludeStopped: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
@@ -152,15 +144,7 @@ export const recordResume = authMutation({
 export const recordPauseInternal = internalMutation({
   args: {
     instanceId: v.string(),
-    provider: v.optional(
-      v.union(
-        v.literal("morph"),
-        v.literal("pve-lxc"),
-        v.literal("docker"),
-        v.literal("daytona"),
-        v.literal("other")
-      )
-    ),
+    provider: v.optional(runtimeProviderValidator),
   },
   handler: async (ctx, args) => {
     const provider = args.provider ?? detectProviderFromInstanceId(args.instanceId);
@@ -191,15 +175,7 @@ export const recordPauseInternal = internalMutation({
 export const recordStopInternal = internalMutation({
   args: {
     instanceId: v.string(),
-    provider: v.optional(
-      v.union(
-        v.literal("morph"),
-        v.literal("pve-lxc"),
-        v.literal("docker"),
-        v.literal("daytona"),
-        v.literal("other")
-      )
-    ),
+    provider: v.optional(runtimeProviderValidator),
   },
   handler: async (ctx, args) => {
     const provider = args.provider ?? detectProviderFromInstanceId(args.instanceId);
@@ -231,26 +207,11 @@ export const recordStopInternal = internalMutation({
 export const recordCreateInternal = internalMutation({
   args: {
     instanceId: v.string(),
-    provider: v.union(
-      v.literal("morph"),
-      v.literal("pve-lxc"),
-      v.literal("docker"),
-      v.literal("daytona"),
-      v.literal("other")
-    ),
+    provider: runtimeProviderValidator,
     vmid: v.optional(v.number()),
     hostname: v.optional(v.string()),
     snapshotId: v.optional(v.string()),
-    snapshotProvider: v.optional(
-      v.union(
-        v.literal("morph"),
-        v.literal("pve-lxc"),
-        v.literal("pve-vm"),
-        v.literal("docker"),
-        v.literal("daytona"),
-        v.literal("other")
-      )
-    ),
+    snapshotProvider: v.optional(snapshotProviderValidator),
     templateVmid: v.optional(v.number()),
     teamId: v.optional(v.string()),
     userId: v.optional(v.string()),
@@ -297,26 +258,11 @@ export const recordCreateInternal = internalMutation({
 export const recordCreate = authMutation({
   args: {
     instanceId: v.string(),
-    provider: v.union(
-      v.literal("morph"),
-      v.literal("pve-lxc"),
-      v.literal("docker"),
-      v.literal("daytona"),
-      v.literal("other")
-    ),
+    provider: runtimeProviderValidator,
     vmid: v.optional(v.number()),
     hostname: v.optional(v.string()),
     snapshotId: v.optional(v.string()),
-    snapshotProvider: v.optional(
-      v.union(
-        v.literal("morph"),
-        v.literal("pve-lxc"),
-        v.literal("pve-vm"),
-        v.literal("docker"),
-        v.literal("daytona"),
-        v.literal("other")
-      )
-    ),
+    snapshotProvider: v.optional(snapshotProviderValidator),
     templateVmid: v.optional(v.number()),
     teamSlugOrId: v.string(),
   },
@@ -371,11 +317,11 @@ export const getActivitiesByInstanceIdsInternal = internalQuery({
       string,
       {
         instanceId: string;
-        provider: SandboxProvider;
+        provider: RuntimeProvider;
         vmid?: number;
         hostname?: string;
         snapshotId?: string;
-        snapshotProvider?: SandboxProvider | "pve-vm";
+        snapshotProvider?: SnapshotProvider;
         templateVmid?: number;
         lastPausedAt?: number;
         lastResumedAt?: number;

@@ -2,6 +2,7 @@ import type { Id } from "@cmux/convex/dataModel";
 import { connectToWorkerManagement } from "@cmux/shared/socket";
 import { EventEmitter } from "node:events";
 import { dockerLogger } from "../utils/fileLogger";
+import { type RuntimeProvider } from "@cmux/shared/provider-types";
 
 export interface VSCodeInstanceConfig {
   workspacePath?: string;
@@ -28,7 +29,7 @@ export interface VSCodeInstanceInfo {
   workspaceUrl: string;
   instanceId: string;
   taskRunId: Id<"taskRuns">;
-  provider: "docker" | "morph" | "daytona" | "pve-lxc";
+  provider: RuntimeProvider;
   /** If true, VSCode URLs were already persisted to Convex by www */
   vscodePersisted?: boolean;
 }

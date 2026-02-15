@@ -141,10 +141,12 @@ export function wrapPveLxcInstance(instance: PveLxcInstance): SandboxInstance {
   };
 }
 
+import { type ConfigProvider } from "@cmux/shared/provider-types";
+
 /**
  * Provider type
  */
-export type SandboxProvider = "morph" | "pve-lxc" | "pve-vm";
+export type SandboxProvider = ConfigProvider;
 
 /**
  * Result of starting a sandbox

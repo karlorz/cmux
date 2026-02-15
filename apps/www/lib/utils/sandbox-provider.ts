@@ -1,9 +1,10 @@
 import { env } from "./www-env";
+import { type ConfigProvider } from "@cmux/shared/provider-types";
 
 /**
  * Supported sandbox providers (unified naming)
  */
-export type SandboxProvider = "morph" | "pve-lxc" | "pve-vm";
+export type SandboxProvider = ConfigProvider;
 
 /**
  * Configuration for the active sandbox provider

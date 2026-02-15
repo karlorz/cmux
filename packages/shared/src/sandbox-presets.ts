@@ -10,6 +10,8 @@
  * 3. Create a mapping function in the provider's module
  */
 
+import { type ConfigProvider } from "./provider-types";
+
 /**
  * Supported sandbox provider types.
  * Add new providers here as they are implemented.
@@ -19,7 +21,7 @@
  * - pve-lxc: Proxmox VE LXC containers
  * - pve-vm: Proxmox VE QEMU virtual machines
  */
-export type SandboxProviderType = "morph" | "pve-lxc" | "pve-vm";
+export type SandboxProviderType = ConfigProvider;
 
 /**
  * Display names for providers (for UI)

@@ -5,15 +5,10 @@ import { useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import { rewriteLocalWorkspaceUrlIfNeeded } from "@/lib/toProxyWorkspaceUrl";
 import { useLocalVSCodeServeWebQuery } from "@/queries/local-vscode-serve-web";
+import { type RuntimeProvider } from "@cmux/shared/provider-types";
 
 type NetworkingInfo = Doc<"taskRuns">["networking"];
-type VSCodeProvider =
-  | "docker"
-  | "morph"
-  | "daytona"
-  | "pve-lxc"
-  | "other"
-  | undefined;
+type VSCodeProvider = RuntimeProvider | undefined;
 
 type OpenWithAction = {
   id: EditorType;

@@ -6,6 +6,7 @@ import type {
   PullRequestActionResult,
 } from "./pull-request-state";
 import type { IframePreflightResult } from "./iframe-preflight";
+import { RUNTIME_PROVIDERS } from "./provider-types";
 
 // Client to Server Events
 export const CreateTerminalSchema = z.object({
@@ -292,7 +293,7 @@ export const VSCodeSpawnedSchema = z.object({
   workspaceUrl: z.string(),
   vncUrl: z.string().optional(),
   xtermUrl: z.string().optional(),
-  provider: z.enum(["docker", "morph", "daytona", "pve-lxc", "other"]),
+  provider: z.enum(RUNTIME_PROVIDERS),
 });
 
 
