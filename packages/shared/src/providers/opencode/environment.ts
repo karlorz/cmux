@@ -78,6 +78,10 @@ ls -la "\${MARKER_FILE}" >> "\${LOG_FILE}" 2>&1
 
   // Install OpenCode Notification plugin to invoke completion hook
   // Only fires completion when session is idle AND has assistant messages (not just errors)
+  // Uses three-layer fallback for maximum backward compatibility across OpenCode versions:
+  // 1. SDK client (OpenCode >= 1.2.2 with working SDK)
+  // 2. HTTP REST API (OpenCode >= 1.2.2 with HTTP server)
+  // 3. Filesystem (OpenCode < 1.2.0 with file-based storage)
   const pluginContent = `\
 export const NotificationPlugin = async ({ project: _project, client, $, directory: _directory, worktree: _worktree }) => {
   let completionFired = false;
@@ -88,29 +92,73 @@ export const NotificationPlugin = async ({ project: _project, client, $, directo
     fs.appendFileSync("/root/lifecycle/opencode-plugin.log", line);
   };
 
-  // Read messages directly from storage (SDK API is broken)
+  // Normalize message to flat format {id, role, finish, time, error}
+  const normalizeMessage = (msg) => {
+    // OpenCode 1.2.2+ uses {info: {...}, parts: [...]} format
+    const info = msg.info || msg;
+    return {
+      id: info.id,
+      role: info.role,
+      finish: info.finish,
+      time: info.time,
+      error: info.error
+    };
+  };
+
+  // Layer 1: SDK client (OpenCode >= 1.2.2 with working SDK)
+  const fetchMessagesViaClient = async () => {
+    const sessions = await client.session.list();
+    const sessionList = sessions.data || sessions;
+    const messages = [];
+    for (const s of (Array.isArray(sessionList) ? sessionList : [sessionList])) {
+      if (!s.id) continue;
+      const result = await client.session.messages({ path: { id: s.id } });
+      const msgArray = result.data || result;
+      for (const msg of (Array.isArray(msgArray) ? msgArray : [])) {
+        messages.push(normalizeMessage(msg));
+      }
+    }
+    return messages;
+  };
+
+  // Layer 2: HTTP REST API (OpenCode >= 1.2.2 with HTTP server)
+  const fetchMessagesViaHttp = async () => {
+    const res = await fetch("http://127.0.0.1:4096/session");
+    if (!res.ok) throw new Error("Session API returned " + res.status);
+    const sessionData = await res.json();
+    const sessions = Array.isArray(sessionData) ? sessionData : [sessionData];
+    const messages = [];
+    for (const s of sessions) {
+      if (!s.id) continue;
+      const msgRes = await fetch("http://127.0.0.1:4096/session/" + s.id + "/message");
+      if (!msgRes.ok) continue;
+      const msgData = await msgRes.json();
+      for (const msg of (Array.isArray(msgData) ? msgData : [])) {
+        messages.push(normalizeMessage(msg));
+      }
+    }
+    return messages;
+  };
+
+  // Layer 3: Filesystem (OpenCode < 1.2.0 with file-based storage)
   const readMessagesFromStorage = () => {
     const storageBase = path.join(process.env.HOME || "/root", ".local/share/opencode/storage");
     const messageDir = path.join(storageBase, "message");
     const messages = [];
 
-    try {
-      // Find all session directories
-      const sessionDirs = fs.readdirSync(messageDir).filter(d => d.startsWith("ses_"));
-      for (const sessionDir of sessionDirs) {
-        const sessionPath = path.join(messageDir, sessionDir);
-        const msgFiles = fs.readdirSync(sessionPath).filter(f => f.endsWith(".json"));
-        for (const msgFile of msgFiles) {
-          try {
-            const content = fs.readFileSync(path.join(sessionPath, msgFile), "utf-8");
-            messages.push(JSON.parse(content));
-          } catch (e) {
-            log("Failed to parse message file " + msgFile + ": " + e);
-          }
+    // Find all session directories
+    const sessionDirs = fs.readdirSync(messageDir).filter(d => d.startsWith("ses_"));
+    for (const sessionDir of sessionDirs) {
+      const sessionPath = path.join(messageDir, sessionDir);
+      const msgFiles = fs.readdirSync(sessionPath).filter(f => f.endsWith(".json"));
+      for (const msgFile of msgFiles) {
+        try {
+          const content = fs.readFileSync(path.join(sessionPath, msgFile), "utf-8");
+          messages.push(normalizeMessage(JSON.parse(content)));
+        } catch (e) {
+          log("Failed to parse message file " + msgFile + ": " + e);
         }
       }
-    } catch (e) {
-      log("Error reading message storage: " + e);
     }
 
     return messages;
@@ -140,9 +188,24 @@ export const NotificationPlugin = async ({ project: _project, client, $, directo
       let shouldComplete = false; // Default to NOT completing - must prove success
 
       try {
-        // Read messages directly from storage (SDK client.session.messages() is broken)
-        const messages = readMessagesFromStorage();
-        log("Got " + messages.length + " messages from storage");
+        // Three-layer fallback: SDK client -> HTTP API -> Filesystem
+        let messages = [];
+        let source = "none";
+        try {
+          messages = await fetchMessagesViaClient();
+          source = "sdk-client";
+        } catch (sdkErr) {
+          log("SDK client failed (" + sdkErr + "), trying HTTP API");
+          try {
+            messages = await fetchMessagesViaHttp();
+            source = "http-api";
+          } catch (httpErr) {
+            log("HTTP API failed (" + httpErr + "), trying filesystem");
+            messages = readMessagesFromStorage();
+            source = "filesystem";
+          }
+        }
+        log("Got " + messages.length + " messages from " + source);
 
         // Find assistant messages
         const assistantMsgs = messages.filter((m) => m.role === "assistant");
@@ -305,7 +368,7 @@ for attempt in $(seq 1 12); do
     log "Prompt already submitted; waiting for title update (attempt \${attempt})"
   fi
   sleep 2
-  title=$(curl -sf "\${BASE_URL}/session" | jq -r '.title // ""' 2>>"$LOG" || true)
+  title=$(curl -sf "\${BASE_URL}/session" | jq -r 'if type == "array" then (.[0].title // "") else (.title // "") end' 2>>"$LOG" || true)
   log "Session title after attempt \${attempt}: \${title}"
   if [ -n "$title" ] && printf '%s' "$title" | grep -Fq "$expected_fragment"; then
     log "Session title matched expected fragment"
