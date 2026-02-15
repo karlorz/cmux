@@ -1,0 +1,88 @@
+@import "@git-diff-view/react/styles/diff-view.css";
+
+/* Override CSS variables to match cmux neutral palette */
+
+/* Light mode */
+:root {
+  /* Addition colors */
+  --diff-add-line-bg-color: rgb(226 252 237);
+  --diff-add-widget-bg-color: rgb(172 246 202);
+  --diff-add-line-num-color: #1a7f37;
+  --diff-add-content-color: #1f2328;
+
+  /* Deletion colors */
+  --diff-del-line-bg-color: rgb(252 208 204);
+  --diff-del-widget-bg-color: rgb(255 184 179);
+  --diff-del-line-num-color: #cf222e;
+  --diff-del-content-color: #1f2328;
+
+  /* Hunk header */
+  --diff-hunk-line-bg-color: rgb(219 234 254);
+  --diff-hunk-content-color: #57606a;
+
+  /* Plain lines */
+  --diff-plain-line-bg-color: transparent;
+  --diff-plain-line-num-color: #656d76;
+  --diff-plain-content-color: #1f2328;
+
+  /* Widget expand */
+  --diff-expand-content-bg-color: rgb(229 231 235);
+
+  /* Borders */
+  --diff-border-color: rgb(209 213 219);
+}
+
+/* Dark mode */
+.dark {
+  /* Addition colors */
+  --diff-add-line-bg-color: rgba(34, 197, 94, 0.15);
+  --diff-add-widget-bg-color: rgba(34, 197, 94, 0.25);
+  --diff-add-line-num-color: #3fb950;
+  --diff-add-content-color: #e6edf3;
+
+  /* Deletion colors */
+  --diff-del-line-bg-color: rgba(248, 81, 73, 0.15);
+  --diff-del-widget-bg-color: rgba(248, 81, 73, 0.25);
+  --diff-del-line-num-color: #f85149;
+  --diff-del-content-color: #e6edf3;
+
+  /* Hunk header */
+  --diff-hunk-line-bg-color: rgba(56, 139, 253, 0.15);
+  --diff-hunk-content-color: #8b949e;
+
+  /* Plain lines */
+  --diff-plain-line-bg-color: transparent;
+  --diff-plain-line-num-color: #6e7681;
+  --diff-plain-content-color: #e6edf3;
+
+  /* Widget expand */
+  --diff-expand-content-bg-color: rgb(55 65 81);
+
+  /* Borders */
+  --diff-border-color: rgb(55 65 81);
+}
+
+/* Container styling */
+.diff-view-container {
+  font-family:
+    "JetBrains Mono",
+    ui-monospace,
+    SFMono-Regular,
+    "SF Mono",
+    Menlo,
+    Consolas,
+    "Liberation Mono",
+    monospace;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* Ensure line numbers and content align properly */
+.diff-view-container [data-state] {
+  border: none;
+}
+
+/* Override any aggressive backgrounds */
+.diff-view-container .diff-line {
+  border: none;
+}

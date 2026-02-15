@@ -1,9 +1,18 @@
+// New @git-diff-view based components (default)
 export {
-  MonacoGitDiffViewer as GitDiffViewer,
+  GitDiffViewer,
+  GitDiffViewerWithSidebar,
   type GitDiffViewerProps,
+  type GitDiffViewerWithSidebarProps,
+} from "./git-diff-view";
+
+// Legacy Monaco-based components (for fallback via ?diffViewer=monaco)
+export {
+  MonacoGitDiffViewer,
+  type GitDiffViewerProps as MonacoGitDiffViewerProps,
 } from "./monaco/monaco-git-diff-viewer";
 
-export { MonacoGitDiffViewerWithSidebar as GitDiffViewerWithSidebar } from "./monaco/monaco-git-diff-viewer-with-sidebar";
+export { MonacoGitDiffViewerWithSidebar } from "./monaco/monaco-git-diff-viewer-with-sidebar";
 
 export {
   GitDiffViewerWithHeatmap,

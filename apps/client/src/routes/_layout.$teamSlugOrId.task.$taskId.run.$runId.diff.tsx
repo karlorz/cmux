@@ -6,6 +6,7 @@ import type {
   StreamFileState,
   StreamFileStatus,
 } from "@/components/heatmap-diff-viewer";
+import { GitDiffViewerWithSidebar } from "@/components/git-diff-view";
 import { MonacoGitDiffViewerWithSidebar } from "@/components/monaco/monaco-git-diff-viewer-with-sidebar";
 import { RunScreenshotGallery } from "@/components/RunScreenshotGallery";
 import { TaskDetailHeader } from "@/components/task-detail-header";
@@ -364,6 +365,13 @@ function RunDiffPage() {
   const [isAiReviewActive, setIsAiReviewActive] = useState(false);
   const [hasVisitedAiReview, setHasVisitedAiReview] = useState(false);
   const { socket } = useSocket();
+
+  // Feature flag: use ?diffViewer=monaco to fallback to Monaco viewer
+  const useMonacoViewer = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    const params = new URLSearchParams(window.location.search);
+    return params.get("diffViewer") === "monaco";
+  }, []);
   // Use React Query-wrapped Convex queries to avoid real-time subscriptions
   // that cause excessive re-renders. The data is prefetched in the loader.
   const taskQuery = useRQ({
@@ -1242,8 +1250,16 @@ function RunDiffPage() {
                       isHeatmapActive={isAiReviewActive}
                       onToggleHeatmap={handleToggleAiReview}
                     />
-                  ) : (
+                  ) : useMonacoViewer ? (
                     <MonacoGitDiffViewerWithSidebar
+                      diffs={diffQuery.data ?? []}
+                      isLoading={diffQuery.isLoading}
+                      onControlsChange={setDiffControls}
+                      isHeatmapActive={isAiReviewActive}
+                      onToggleHeatmap={handleToggleAiReview}
+                    />
+                  ) : (
+                    <GitDiffViewerWithSidebar
                       diffs={diffQuery.data ?? []}
                       isLoading={diffQuery.isLoading}
                       onControlsChange={setDiffControls}
