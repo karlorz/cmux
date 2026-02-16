@@ -1,4 +1,5 @@
 import { FloatingPane } from "@/components/floating-pane";
+import { GitDiffViewerWithSidebar as NewGitDiffViewerWithSidebar } from "@/components/git-diff-viewer";
 import { MessageSquareText } from "lucide-react";
 import { RunDiffHeatmapReviewSection } from "@/components/RunDiffHeatmapReviewSection";
 import type {
@@ -47,6 +48,8 @@ import {
 import type { HeatmapColorSettings } from "@/components/heatmap-diff-viewer/heatmap-gradient";
 import { useCombinedWorkflowData, WorkflowRunsSection } from "@/components/WorkflowRunsSection";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
+
+const EMPTY_DIFFS: ReplaceDiffEntry[] = [];
 
 const DIFF_HEADER_PREFIXES = [
   "diff --git ",
@@ -360,6 +363,8 @@ export const Route = createFileRoute(
 
 function RunDiffPage() {
   const { taskId, teamSlugOrId, runId } = Route.useParams();
+  const search = Route.useSearch() as { diffViewer?: string };
+  const useMonacoDiffViewer = search.diffViewer === "monaco";
   const [diffControls, setDiffControls] = useState<DiffControls | null>(null);
   const [isAiReviewActive, setIsAiReviewActive] = useState(false);
   const [hasVisitedAiReview, setHasVisitedAiReview] = useState(false);
@@ -1243,13 +1248,23 @@ function RunDiffPage() {
                       onToggleHeatmap={handleToggleAiReview}
                     />
                   ) : (
-                    <MonacoGitDiffViewerWithSidebar
-                      diffs={diffQuery.data ?? []}
-                      isLoading={diffQuery.isLoading}
-                      onControlsChange={setDiffControls}
-                      isHeatmapActive={isAiReviewActive}
-                      onToggleHeatmap={handleToggleAiReview}
-                    />
+                    useMonacoDiffViewer ? (
+                      <MonacoGitDiffViewerWithSidebar
+                        diffs={diffQuery.data ?? EMPTY_DIFFS}
+                        isLoading={diffQuery.isLoading}
+                        onControlsChange={setDiffControls}
+                        isHeatmapActive={isAiReviewActive}
+                        onToggleHeatmap={handleToggleAiReview}
+                      />
+                    ) : (
+                      <NewGitDiffViewerWithSidebar
+                        diffs={diffQuery.data ?? EMPTY_DIFFS}
+                        isLoading={diffQuery.isLoading}
+                        onControlsChange={setDiffControls}
+                        isHeatmapActive={isAiReviewActive}
+                        onToggleHeatmap={handleToggleAiReview}
+                      />
+                    )
                   )
                 ) : (
                   <div className="flex h-full flex-col items-center justify-center p-6 text-sm text-neutral-600 dark:text-neutral-300 gap-4">
