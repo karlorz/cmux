@@ -872,7 +872,7 @@ impl LxcSandboxEntry {
             index: self.index,
             name: self.name.clone(),
             created_at: self.created_at,
-            workspace: "/workspace".to_string(), // Standard workspace path in container
+            workspace: "/root/workspace".to_string(), // PVE-LXC uses root user
             status: self.status.clone(),
             network: SandboxNetwork {
                 host_interface: config.bridge.clone(),
