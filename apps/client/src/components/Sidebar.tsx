@@ -1,6 +1,11 @@
 import { env } from "@/client-env";
 import { TaskTree } from "@/components/TaskTree";
 import { TaskTreeSkeleton } from "@/components/TaskTreeSkeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useExpandTasks } from "@/contexts/expand-tasks/ExpandTasksContext";
 import { useWarmLocalWorkspaces } from "@/hooks/useWarmLocalWorkspaces";
 import {
@@ -13,20 +18,27 @@ import { api } from "@cmux/convex/api";
 import { useQuery } from "convex/react";
 import type { LinkProps } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
-import { Bell, Home, Plus, Server, Settings } from "lucide-react";
+import { Bell, Home, PanelLeftClose, Plus, Server, Settings } from "lucide-react";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ComponentType,
   type CSSProperties,
 } from "react";
 import CmuxLogoMark from "./logo/cmux-logo-mark";
+import { SidebarCollapsedBar } from "./sidebar/SidebarCollapsedBar";
+import { SidebarFilterMenu } from "./sidebar/SidebarFilterMenu";
+import { SidebarGroupedList } from "./sidebar/SidebarGroupedList";
 import { SidebarNavLink } from "./sidebar/SidebarNavLink";
 import { SidebarPullRequestList } from "./sidebar/SidebarPullRequestList";
 import { SidebarSectionLink } from "./sidebar/SidebarSectionLink";
 import { SidebarWorkspacesSection } from "./sidebar/SidebarWorkspacesSection";
+import type { SortBy } from "./sidebar/sidebar-types";
+import { filterRelevant } from "./sidebar/sidebar-utils";
+import { useSidebarPreferences } from "./sidebar/useSidebarPreferences";
 
 // Tasks with hasUnread indicator from the query
 type TaskWithUnread = Doc<"tasks"> & { hasUnread: boolean };
@@ -109,6 +121,15 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
 
   const { expandTaskIds } = useExpandTasks();
 
+  // Sidebar preferences (organize, sort, filter)
+  const {
+    preferences,
+    setOrganizeMode,
+    setSortBy,
+    setShowFilter,
+    toggleGroupExpanded,
+  } = useSidebarPreferences();
+
   // Fetch pinned items (exclude local workspaces in web mode)
   const excludeLocalWorkspaces = env.NEXT_PUBLIC_WEB_MODE || undefined;
   const pinnedData = useQuery(api.tasks.getPinned, { teamSlugOrId, excludeLocalWorkspaces });
@@ -133,7 +154,7 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
     localStorage.setItem("sidebarHidden", String(isHidden));
   }, [isHidden]);
 
-  // Keyboard shortcut to toggle sidebar (Ctrl+Shift+S)
+  // Keyboard shortcut to toggle sidebar (Cmd+B on Mac, Ctrl+B on Windows/Linux)
   useEffect(() => {
     if (isElectron && window.cmux?.on) {
       const off = window.cmux.on("shortcut:sidebar-toggle", () => {
@@ -145,12 +166,16 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Detect platform
+      const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+      const modKey = isMac ? e.metaKey : e.ctrlKey;
+
       if (
-        e.ctrlKey &&
-        e.shiftKey &&
+        modKey &&
+        !e.shiftKey &&
         !e.altKey &&
-        !e.metaKey &&
-        (e.code === "KeyS" || e.key.toLowerCase() === "s")
+        (isMac ? !e.ctrlKey : !e.metaKey) &&
+        (e.code === "KeyB" || e.key.toLowerCase() === "b")
       ) {
         e.preventDefault();
         e.stopPropagation();
@@ -232,6 +257,50 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
 
   const resetWidth = useCallback(() => setWidth(DEFAULT_WIDTH), []);
 
+  const toggleSidebar = useCallback(() => {
+    setIsHidden((prev) => !prev);
+  }, []);
+
+  // Filter tasks based on show filter setting
+  const filteredTasks = useMemo(() => {
+    if (!tasks) return undefined;
+
+    return filterRelevant(
+      tasks.filter((task) => !task.pinned && !task.isArchived),
+      preferences.showFilter,
+      (task) => ({
+        hasUnread: task.hasUnread,
+        lastActivityTime: task._creationTime,
+      })
+    );
+  }, [tasks, preferences.showFilter]);
+
+  // Task grouping helpers
+  const getTaskGroupKey = useCallback((task: TaskWithUnread) => {
+    return task.projectFullName ?? undefined;
+  }, []);
+
+  const getTaskSortValue = useCallback((task: TaskWithUnread, sortBy: SortBy) => {
+    if (sortBy === "updated") {
+      return task._creationTime;
+    }
+    return task._creationTime;
+  }, []);
+
+  const getTaskKey = useCallback((task: TaskWithUnread) => {
+    return task._id;
+  }, []);
+
+  // Render collapsed sidebar if hidden
+  if (isHidden) {
+    return (
+      <SidebarCollapsedBar
+        teamSlugOrId={teamSlugOrId}
+        onToggle={toggleSidebar}
+      />
+    );
+  }
+
   return (
     <div
       ref={containerRef}
@@ -239,7 +308,6 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
       className="relative bg-neutral-50 dark:bg-black flex flex-col shrink-0 h-dvh grow pr-1 w-[75vw] snap-start snap-always md:w-auto md:snap-align-none"
       style={
         {
-          display: isHidden ? "none" : "flex",
           width: undefined,
           minWidth: undefined,
           maxWidth: undefined,
@@ -253,6 +321,26 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
         style={{ WebkitAppRegion: "drag" } as CSSProperties}
       >
         {isElectron && <div className="w-[80px]"></div>}
+
+        {/* Toggle button */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={toggleSidebar}
+              className="w-[25px] h-[25px] flex items-center justify-center rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-colors mr-1"
+              style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
+            >
+              <PanelLeftClose
+                className="w-4 h-4 text-neutral-700 dark:text-neutral-300"
+                aria-hidden="true"
+              />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" sideOffset={4}>
+            Hide sidebar
+          </TooltipContent>
+        </Tooltip>
+
         <Link
           to="/$teamSlugOrId/dashboard"
           params={{ teamSlugOrId }}
@@ -267,11 +355,22 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
           </span>
         </Link>
         <div className="grow"></div>
+
+        {/* Filter menu */}
+        <SidebarFilterMenu
+          organizeMode={preferences.organizeMode}
+          sortBy={preferences.sortBy}
+          showFilter={preferences.showFilter}
+          onOrganizeModeChange={setOrganizeMode}
+          onSortByChange={setSortBy}
+          onShowFilterChange={setShowFilter}
+        />
+
         <Link
           to="/$teamSlugOrId/dashboard"
           params={{ teamSlugOrId }}
           activeOptions={{ exact: true }}
-          className="w-[25px] h-[25px] border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-900 rounded-lg flex items-center justify-center transition-colors cursor-default"
+          className="w-[25px] h-[25px] border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-900 rounded-lg flex items-center justify-center transition-colors cursor-default ml-1"
           title="New task"
           style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
         >
@@ -314,7 +413,14 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
                 Pull requests
               </SidebarSectionLink>
               <div className="ml-2 pt-px">
-                <SidebarPullRequestList teamSlugOrId={teamSlugOrId} />
+                <SidebarPullRequestList
+                  teamSlugOrId={teamSlugOrId}
+                  organizeMode={preferences.organizeMode}
+                  sortBy={preferences.sortBy}
+                  showFilter={preferences.showFilter}
+                  expandedGroups={preferences.expandedGroups}
+                  onToggleGroupExpanded={toggleGroupExpanded}
+                />
               </div>
             </div>
           )}
@@ -347,16 +453,18 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
                       <hr className="mx-2 border-t border-neutral-200 dark:border-neutral-800" />
                     </>
                   )}
-                  {/* Regular (non-pinned) tasks */}
-                  {tasks
-                    .filter((task) => {
-                      // Filter out pinned tasks (shown separately above) and archived tasks
-                      // (defensive filter in case query returns stale data)
-                      return !task.pinned && !task.isArchived;
-                    })
-                    .map((task) => (
+                  {/* Regular (non-pinned) tasks with grouping support */}
+                  <SidebarGroupedList
+                    items={filteredTasks ?? []}
+                    groupByKey={getTaskGroupKey}
+                    getSortValue={getTaskSortValue}
+                    getItemKey={getTaskKey}
+                    organizeMode={preferences.organizeMode}
+                    sortBy={preferences.sortBy}
+                    expandedGroups={preferences.expandedGroups}
+                    onToggleGroupExpanded={toggleGroupExpanded}
+                    renderItem={(task) => (
                       <TaskTree
-                        key={task._id}
                         task={task}
                         defaultExpanded={
                           expandTaskIds?.includes(task._id) ?? false
@@ -364,7 +472,9 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
                         teamSlugOrId={teamSlugOrId}
                         hasUnreadNotification={task.hasUnread}
                       />
-                    ))}
+                    )}
+                    emptyMessage="No recent tasks"
+                  />
                 </>
               ) : (
                 <p className="pl-2 pr-3 py-1.5 text-xs text-neutral-500 dark:text-neutral-400 select-none">

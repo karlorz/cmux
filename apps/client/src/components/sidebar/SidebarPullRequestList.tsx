@@ -8,19 +8,32 @@ import {
   GitPullRequestClosed,
   GitPullRequestDraft,
 } from "lucide-react";
-import { useMemo, useState, type MouseEvent } from "react";
+import { useCallback, useMemo, useState, type MouseEvent } from "react";
+import { SidebarGroupedList } from "./SidebarGroupedList";
 import { SidebarListItem } from "./SidebarListItem";
 import { SIDEBAR_PRS_DEFAULT_LIMIT } from "./const";
+import type { OrganizeMode, ShowFilter, SortBy } from "./sidebar-types";
+import { filterRelevant } from "./sidebar-utils";
 import type { Doc } from "@cmux/convex/dataModel";
 
 type Props = {
   teamSlugOrId: string;
   limit?: number;
+  organizeMode: OrganizeMode;
+  sortBy: SortBy;
+  showFilter: ShowFilter;
+  expandedGroups: Record<string, boolean>;
+  onToggleGroupExpanded: (groupKey: string) => void;
 };
 
 export function SidebarPullRequestList({
   teamSlugOrId,
   limit = SIDEBAR_PRS_DEFAULT_LIMIT,
+  organizeMode,
+  sortBy,
+  showFilter,
+  expandedGroups,
+  onToggleGroupExpanded,
 }: Props) {
   const prs = useConvexQuery(api.github_prs.listPullRequests, {
     teamSlugOrId,
@@ -30,7 +43,34 @@ export function SidebarPullRequestList({
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  const list = useMemo(() => prs ?? [], [prs]);
+  // Filter PRs based on show filter setting
+  const filteredPrs = useMemo(() => {
+    if (!prs) return undefined;
+
+    return filterRelevant(prs, showFilter, (pr) => ({
+      hasUnread: false, // PRs don't have unread state currently
+      lastActivityTime: pr._creationTime,
+    }));
+  }, [prs, showFilter]);
+
+  // Grouping helpers
+  const getPrGroupKey = useCallback((pr: Doc<"pullRequests">) => {
+    return pr.repoFullName ?? undefined;
+  }, []);
+
+  const getPrSortValue = useCallback(
+    (pr: Doc<"pullRequests">, sortBy: SortBy) => {
+      if (sortBy === "updated") {
+        return pr._creationTime;
+      }
+      return pr._creationTime;
+    },
+    []
+  );
+
+  const getPrKey = useCallback((pr: Doc<"pullRequests">) => {
+    return `${pr.repoFullName}#${pr.number}`;
+  }, []);
 
   if (prs === undefined) {
     return (
@@ -44,7 +84,7 @@ export function SidebarPullRequestList({
     );
   }
 
-  if (list.length === 0) {
+  if (filteredPrs && filteredPrs.length === 0) {
     return (
       <p className="mt-1 pl-2 pr-3 py-2 text-xs text-neutral-500 dark:text-neutral-400 select-none">
         No pull requests
@@ -53,17 +93,25 @@ export function SidebarPullRequestList({
   }
 
   return (
-    <ul className="flex flex-col gap-px">
-      {list.map((pr) => (
+    <SidebarGroupedList
+      items={filteredPrs ?? []}
+      groupByKey={getPrGroupKey}
+      getSortValue={getPrSortValue}
+      getItemKey={getPrKey}
+      organizeMode={organizeMode}
+      sortBy={sortBy}
+      expandedGroups={expandedGroups}
+      onToggleGroupExpanded={onToggleGroupExpanded}
+      renderItem={(pr) => (
         <PullRequestListItem
-          key={`${pr.repoFullName}#${pr.number}`}
           pr={pr}
           teamSlugOrId={teamSlugOrId}
           expanded={expanded}
           setExpanded={setExpanded}
         />
-      ))}
-    </ul>
+      )}
+      emptyMessage="No pull requests"
+    />
   );
 }
 
@@ -74,7 +122,12 @@ type PullRequestListItemProps = {
   setExpanded: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
 };
 
-function PullRequestListItem({ pr, teamSlugOrId, expanded, setExpanded }: PullRequestListItemProps) {
+function PullRequestListItem({
+  pr,
+  teamSlugOrId,
+  expanded,
+  setExpanded,
+}: PullRequestListItemProps) {
   const [owner = "", repo = ""] = pr.repoFullName?.split("/", 2) ?? ["", ""];
   const key = `${pr.repoFullName}#${pr.number}`;
   const isExpanded = expanded[key] ?? false;
@@ -87,7 +140,7 @@ function PullRequestListItem({ pr, teamSlugOrId, expanded, setExpanded }: PullRe
   ]
     .filter(Boolean)
     .map(String);
-  const secondary = secondaryParts.join(" • ");
+  const secondary = secondaryParts.join(" - ");
   const leadingIcon = pr.merged ? (
     <GitMerge className="w-3 h-3 text-purple-500" />
   ) : pr.state === "closed" ? (
@@ -108,7 +161,7 @@ function PullRequestListItem({ pr, teamSlugOrId, expanded, setExpanded }: PullRe
   };
 
   return (
-    <li key={key} className="rounded-md select-none">
+    <div className="rounded-md select-none">
       <Link
         to="/$teamSlugOrId/prs-only/$owner/$repo/$number"
         params={{
@@ -166,7 +219,7 @@ function PullRequestListItem({ pr, teamSlugOrId, expanded, setExpanded }: PullRe
           </a>
         </div>
       ) : null}
-    </li>
+    </div>
   );
 }
 
