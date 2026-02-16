@@ -1,3 +1,4 @@
+import type { Doc } from "@cmux/convex/dataModel";
 import { GitHubIcon } from "@/components/icons/github";
 import { api } from "@cmux/convex/api";
 import { Link } from "@tanstack/react-router";
@@ -8,18 +9,29 @@ import {
   GitPullRequestClosed,
   GitPullRequestDraft,
 } from "lucide-react";
-import { useMemo, useState, type MouseEvent } from "react";
+import {
+  useMemo,
+  useState,
+  type Dispatch,
+  type MouseEvent,
+  type SetStateAction,
+} from "react";
+import { SidebarGroupedList } from "./SidebarGroupedList";
 import { SidebarListItem } from "./SidebarListItem";
 import { SIDEBAR_PRS_DEFAULT_LIMIT } from "./const";
-import type { Doc } from "@cmux/convex/dataModel";
+import type { SidebarPreferences } from "./sidebar-types";
 
 type Props = {
   teamSlugOrId: string;
+  preferences: SidebarPreferences;
+  onToggleGroupExpand: (groupKey: string) => void;
   limit?: number;
 };
 
 export function SidebarPullRequestList({
   teamSlugOrId,
+  preferences,
+  onToggleGroupExpand,
   limit = SIDEBAR_PRS_DEFAULT_LIMIT,
 }: Props) {
   const prs = useConvexQuery(api.github_prs.listPullRequests, {
@@ -29,7 +41,6 @@ export function SidebarPullRequestList({
   });
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-
   const list = useMemo(() => prs ?? [], [prs]);
 
   if (prs === undefined) {
@@ -44,26 +55,34 @@ export function SidebarPullRequestList({
     );
   }
 
-  if (list.length === 0) {
-    return (
-      <p className="mt-1 pl-2 pr-3 py-2 text-xs text-neutral-500 dark:text-neutral-400 select-none">
-        No pull requests
-      </p>
-    );
-  }
-
   return (
-    <ul className="flex flex-col gap-px">
-      {list.map((pr) => (
+    <SidebarGroupedList
+      items={list}
+      organizeMode={preferences.organizeMode}
+      sortBy={preferences.sortBy}
+      showFilter={preferences.showFilter}
+      getItemKey={(pr) => `${pr.repoFullName}#${pr.number}`}
+      groupByKey={(pr) => pr.repoFullName}
+      getCreatedAt={(pr) => pr.createdAt ?? pr.updatedAt}
+      getUpdatedAt={(pr) => pr.updatedAt ?? pr.createdAt}
+      renderItem={(pr) => (
         <PullRequestListItem
-          key={`${pr.repoFullName}#${pr.number}`}
           pr={pr}
           teamSlugOrId={teamSlugOrId}
           expanded={expanded}
           setExpanded={setExpanded}
         />
-      ))}
-    </ul>
+      )}
+      expandedGroups={preferences.expandedGroups}
+      onToggleGroupExpand={onToggleGroupExpand}
+      groupKeyPrefix="prs"
+      emptyText={
+        preferences.showFilter === "relevant"
+          ? "No relevant pull requests"
+          : "No pull requests"
+      }
+      className="space-y-px"
+    />
   );
 }
 
@@ -71,23 +90,25 @@ type PullRequestListItemProps = {
   pr: Doc<"pullRequests">;
   teamSlugOrId: string;
   expanded: Record<string, boolean>;
-  setExpanded: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  setExpanded: Dispatch<SetStateAction<Record<string, boolean>>>;
 };
 
-function PullRequestListItem({ pr, teamSlugOrId, expanded, setExpanded }: PullRequestListItemProps) {
+function PullRequestListItem({
+  pr,
+  teamSlugOrId,
+  expanded,
+  setExpanded,
+}: PullRequestListItemProps) {
   const [owner = "", repo = ""] = pr.repoFullName?.split("/", 2) ?? ["", ""];
   const key = `${pr.repoFullName}#${pr.number}`;
   const isExpanded = expanded[key] ?? false;
   const branchLabel = pr.headRef;
 
-  const secondaryParts = [
-    branchLabel,
-    `${pr.repoFullName}#${pr.number}`,
-    pr.authorLogin,
-  ]
+  const secondaryParts = [branchLabel, `${pr.repoFullName}#${pr.number}`, pr.authorLogin]
     .filter(Boolean)
     .map(String);
   const secondary = secondaryParts.join(" • ");
+
   const leadingIcon = pr.merged ? (
     <GitMerge className="w-3 h-3 text-purple-500" />
   ) : pr.state === "closed" ? (
@@ -98,9 +119,7 @@ function PullRequestListItem({ pr, teamSlugOrId, expanded, setExpanded }: PullRe
     <GitPullRequest className="w-3 h-3 text-[#1f883d] dark:text-[#238636]" />
   );
 
-  const handleToggle = (
-    _event?: MouseEvent<HTMLButtonElement | HTMLAnchorElement>
-  ) => {
+  const handleToggle = (_event?: MouseEvent<HTMLButtonElement | HTMLAnchorElement>) => {
     setExpanded((prev) => ({
       ...prev,
       [key]: !isExpanded,
@@ -108,7 +127,7 @@ function PullRequestListItem({ pr, teamSlugOrId, expanded, setExpanded }: PullRe
   };
 
   return (
-    <li key={key} className="rounded-md select-none">
+    <div className="rounded-md select-none">
       <Link
         to="/$teamSlugOrId/prs-only/$owner/$repo/$number"
         params={{
@@ -144,6 +163,7 @@ function PullRequestListItem({ pr, teamSlugOrId, expanded, setExpanded }: PullRe
           meta={leadingIcon}
         />
       </Link>
+
       {isExpanded && pr.htmlUrl ? (
         <div className="mt-px flex flex-col" role="group">
           <a
@@ -160,13 +180,11 @@ function PullRequestListItem({ pr, teamSlugOrId, expanded, setExpanded }: PullRe
               className="mr-2 h-3 w-3 text-neutral-400 grayscale opacity-60"
               aria-hidden
             />
-            <span className="text-neutral-600 dark:text-neutral-400">
-              GitHub
-            </span>
+            <span className="text-neutral-600 dark:text-neutral-400">GitHub</span>
           </a>
         </div>
       ) : null}
-    </li>
+    </div>
   );
 }
 

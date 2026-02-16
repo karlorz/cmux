@@ -13,20 +13,26 @@ import { api } from "@cmux/convex/api";
 import { useQuery } from "convex/react";
 import type { LinkProps } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
-import { Bell, Home, Plus, Server, Settings } from "lucide-react";
+import { Bell, Home, PanelLeftClose, Plus, Server, Settings } from "lucide-react";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ComponentType,
   type CSSProperties,
 } from "react";
 import CmuxLogoMark from "./logo/cmux-logo-mark";
+import { SidebarCollapsedBar } from "./sidebar/SidebarCollapsedBar";
+import { SidebarFilterMenu } from "./sidebar/SidebarFilterMenu";
+import { SidebarGroupedList } from "./sidebar/SidebarGroupedList";
 import { SidebarNavLink } from "./sidebar/SidebarNavLink";
 import { SidebarPullRequestList } from "./sidebar/SidebarPullRequestList";
 import { SidebarSectionLink } from "./sidebar/SidebarSectionLink";
 import { SidebarWorkspacesSection } from "./sidebar/SidebarWorkspacesSection";
+import { filterRelevant } from "./sidebar/sidebar-utils";
+import { useSidebarPreferences } from "./sidebar/useSidebarPreferences";
 
 // Tasks with hasUnread indicator from the query
 type TaskWithUnread = Doc<"tasks"> & { hasUnread: boolean };
@@ -124,6 +130,32 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
   const unreadCount = useQuery(api.taskNotifications.getUnreadCount, {
     teamSlugOrId,
   });
+  const {
+    preferences,
+    setOrganizeMode,
+    setSortBy,
+    setShowFilter,
+    toggleGroupExpanded,
+  } = useSidebarPreferences();
+
+  const visiblePinnedTasks = useMemo(() => {
+    const activePinned = (pinnedData ?? []).filter((task) => !task.isArchived);
+    return filterRelevant(activePinned, preferences.showFilter, {
+      getCreatedAt: (task) => task.createdAt,
+      getUpdatedAt: (task) => task.updatedAt,
+      getHasUnread: (task) => Boolean(task.hasUnread),
+    });
+  }, [pinnedData, preferences.showFilter]);
+
+  const regularTasks = useMemo(
+    () =>
+      (tasks ?? []).filter(
+        (task) =>
+          // Keep pinned tasks in the dedicated section and avoid archived items.
+          !task.pinned && !task.isArchived
+      ),
+    [tasks]
+  );
 
   useEffect(() => {
     localStorage.setItem("sidebarWidth", String(width));
@@ -133,7 +165,7 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
     localStorage.setItem("sidebarHidden", String(isHidden));
   }, [isHidden]);
 
-  // Keyboard shortcut to toggle sidebar (Ctrl+Shift+S)
+  // Keyboard shortcut to toggle sidebar (Cmd+B on macOS, Ctrl+B elsewhere)
   useEffect(() => {
     if (isElectron && window.cmux?.on) {
       const off = window.cmux.on("shortcut:sidebar-toggle", () => {
@@ -145,12 +177,16 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      const isMacPlatform = navigator.platform.toUpperCase().includes("MAC");
+      const hasPrimaryModifier = isMacPlatform
+        ? e.metaKey && !e.ctrlKey
+        : e.ctrlKey && !e.metaKey;
+
       if (
-        e.ctrlKey &&
-        e.shiftKey &&
+        hasPrimaryModifier &&
+        !e.shiftKey &&
         !e.altKey &&
-        !e.metaKey &&
-        (e.code === "KeyS" || e.key.toLowerCase() === "s")
+        e.key.toLowerCase() === "b"
       ) {
         e.preventDefault();
         e.stopPropagation();
@@ -232,6 +268,15 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
 
   const resetWidth = useCallback(() => setWidth(DEFAULT_WIDTH), []);
 
+  if (isHidden) {
+    return (
+      <SidebarCollapsedBar
+        teamSlugOrId={teamSlugOrId}
+        onToggle={() => setIsHidden(false)}
+      />
+    );
+  }
+
   return (
     <div
       ref={containerRef}
@@ -239,7 +284,6 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
       className="relative bg-neutral-50 dark:bg-black flex flex-col shrink-0 h-dvh grow pr-1 w-[75vw] snap-start snap-always md:w-auto md:snap-align-none"
       style={
         {
-          display: isHidden ? "none" : "flex",
           width: undefined,
           minWidth: undefined,
           maxWidth: undefined,
@@ -266,6 +310,28 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
             cmux-next
           </span>
         </Link>
+        <div
+          className="ml-2 flex items-center gap-1"
+          style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
+        >
+          <button
+            type="button"
+            className="w-[25px] h-[25px] border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-900 rounded-lg flex items-center justify-center transition-colors cursor-default"
+            title="Hide sidebar"
+            onClick={() => setIsHidden(true)}
+          >
+            <PanelLeftClose
+              className="w-3.5 h-3.5 text-neutral-700 dark:text-neutral-300"
+              aria-hidden="true"
+            />
+          </button>
+          <SidebarFilterMenu
+            preferences={preferences}
+            onOrganizeModeChange={setOrganizeMode}
+            onSortByChange={setSortBy}
+            onShowFilterChange={setShowFilter}
+          />
+        </div>
         <div className="grow"></div>
         <Link
           to="/$teamSlugOrId/dashboard"
@@ -314,7 +380,11 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
                 Pull requests
               </SidebarSectionLink>
               <div className="ml-2 pt-px">
-                <SidebarPullRequestList teamSlugOrId={teamSlugOrId} />
+                <SidebarPullRequestList
+                  teamSlugOrId={teamSlugOrId}
+                  preferences={preferences}
+                  onToggleGroupExpand={toggleGroupExpanded}
+                />
               </div>
             </div>
           )}
@@ -329,10 +399,10 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
                 <TaskTreeSkeleton count={5} />
               ) : tasks && tasks.length > 0 ? (
                 <>
-                  {/* Pinned items at the top */}
-                  {pinnedData && pinnedData.filter(t => !t.isArchived).length > 0 && (
+                  {/* Pinned items stay at the top, but still respect "Relevant". */}
+                  {visiblePinnedTasks.length > 0 && (
                     <>
-                      {pinnedData.filter(t => !t.isArchived).map((task) => (
+                      {visiblePinnedTasks.map((task) => (
                         <TaskTree
                           key={task._id}
                           task={task}
@@ -343,28 +413,46 @@ export function Sidebar({ tasks, teamSlugOrId }: SidebarProps) {
                           hasUnreadNotification={task.hasUnread}
                         />
                       ))}
-                      {/* Horizontal divider after pinned items */}
                       <hr className="mx-2 border-t border-neutral-200 dark:border-neutral-800" />
                     </>
                   )}
-                  {/* Regular (non-pinned) tasks */}
-                  {tasks
-                    .filter((task) => {
-                      // Filter out pinned tasks (shown separately above) and archived tasks
-                      // (defensive filter in case query returns stale data)
-                      return !task.pinned && !task.isArchived;
-                    })
-                    .map((task) => (
-                      <TaskTree
-                        key={task._id}
-                        task={task}
-                        defaultExpanded={
-                          expandTaskIds?.includes(task._id) ?? false
-                        }
-                        teamSlugOrId={teamSlugOrId}
-                        hasUnreadNotification={task.hasUnread}
-                      />
-                    ))}
+                  {regularTasks.length > 0 ? (
+                    <SidebarGroupedList
+                      items={regularTasks}
+                      organizeMode={preferences.organizeMode}
+                      sortBy={preferences.sortBy}
+                      showFilter={preferences.showFilter}
+                      getItemKey={(task) => task._id}
+                      groupByKey={(task) => task.projectFullName}
+                      getCreatedAt={(task) => task.createdAt}
+                      getUpdatedAt={(task) => task.updatedAt}
+                      getHasUnread={(task) => Boolean(task.hasUnread)}
+                      renderItem={(task) => (
+                        <TaskTree
+                          task={task}
+                          defaultExpanded={
+                            expandTaskIds?.includes(task._id) ?? false
+                          }
+                          teamSlugOrId={teamSlugOrId}
+                          hasUnreadNotification={task.hasUnread}
+                        />
+                      )}
+                      expandedGroups={preferences.expandedGroups}
+                      onToggleGroupExpand={toggleGroupExpanded}
+                      groupKeyPrefix="tasks"
+                      emptyText={
+                        preferences.showFilter === "relevant"
+                          ? "No relevant tasks"
+                          : "No recent tasks"
+                      }
+                    />
+                  ) : visiblePinnedTasks.length === 0 ? (
+                    <p className="pl-2 pr-3 py-1.5 text-xs text-neutral-500 dark:text-neutral-400 select-none">
+                      {preferences.showFilter === "relevant"
+                        ? "No relevant tasks"
+                        : "No recent tasks"}
+                    </p>
+                  ) : null}
                 </>
               ) : (
                 <p className="pl-2 pr-3 py-1.5 text-xs text-neutral-500 dark:text-neutral-400 select-none">
