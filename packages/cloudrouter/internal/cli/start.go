@@ -82,13 +82,13 @@ func isGitURL(s string) bool {
 		strings.HasSuffix(s, ".git")
 }
 
-// detectWorkspacePath detects the default workspace path by checking which path exists on the sandbox.
+// detectWorkspacePath detects the default workspace path by checking user identity on the sandbox.
 // Returns /root/workspace for root user, /home/user/workspace for regular user.
 // Creates the workspace directory if it doesn't exist.
+// Important: We check whoami FIRST to avoid permission issues (e.g., /root/workspace exists but user is non-root).
 func detectWorkspacePath(client *api.Client, teamSlug, sandboxID string) string {
-	// Try to detect which workspace path exists, create if needed
-	// Priority: /root/workspace (root user) > /home/user/workspace (regular user)
-	detectCmd := `if [ -d /root/workspace ]; then echo /root/workspace; elif [ -d /home/user/workspace ]; then echo /home/user/workspace; elif [ "$(whoami)" = "root" ]; then mkdir -p /root/workspace && echo /root/workspace; else mkdir -p /home/user/workspace && echo /home/user/workspace; fi`
+	// Detect based on user identity first (not directory existence) to avoid permission issues
+	detectCmd := `if [ "$(whoami)" = "root" ]; then mkdir -p /root/workspace && echo /root/workspace; else mkdir -p /home/user/workspace && echo /home/user/workspace; fi`
 
 	resp, err := client.Exec(teamSlug, sandboxID, detectCmd, 10)
 	if err == nil && resp.ExitCode == 0 && resp.Stdout != "" {
