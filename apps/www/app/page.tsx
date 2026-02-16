@@ -212,7 +212,7 @@ export default async function LandingPage() {
               <div className="flex flex-col gap-3 sm:flex-row">
                 <a
                   className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/20 bg-white px-4 py-3 text-sm font-semibold text-black shadow-xl transition hover:bg-neutral-100"
-                  href="https://cmux.sh"
+                  href="https://manaflow.com"
                   rel="noopener noreferrer"
                   target="_blank"
                 >

@@ -57,7 +57,7 @@ export const createForTask = authMutation({
   },
 });
 
-// Creates a system-authored comment on a task with userId "cmux"
+// Creates a system-authored comment on a task with userId "manaflow"
 export const createSystemForTask = authMutation({
   args: {
     teamSlugOrId: v.string(),
@@ -78,7 +78,7 @@ export const createSystemForTask = authMutation({
     return await ctx.db.insert("taskComments", {
       taskId: args.taskId,
       content: args.content,
-      userId: "cmux",
+      userId: "manaflow",
       teamId,
       createdAt: now,
       updatedAt: now,

@@ -191,7 +191,7 @@ function CommentReplies({
       {replies.map((reply) => (
         <div key={reply._id} className="flex items-start gap-2">
           <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center text-white text-xs font-medium flex-shrink-0">
-            {reply.userId === "cmux" ? "C" : "U"}
+            {reply.userId === "manaflow" ? "M" : "U"}
           </div>
           <div className="flex-1">
             <p className="text-sm text-neutral-200 break-words">
@@ -670,7 +670,7 @@ export function CmuxComments({ teamSlugOrId }: { teamSlugOrId: string }) {
 
   const user = useUser({ or: "redirect" });
   const userId = user.id;
-  const profileImageUrl = user.profileImageUrl || "https://cmux.dev/rick.png";
+  const profileImageUrl = user.profileImageUrl || "https://manaflow.com/rick.png";
 
   const handleSubmitComment = async () => {
     if (!pendingCommentData || !commentDraft.trim()) return;

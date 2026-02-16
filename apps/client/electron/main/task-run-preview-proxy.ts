@@ -75,6 +75,7 @@ const CMUX_DOMAINS = [
   "cmux.app",
   "cmux.sh",
   "cmux.dev",
+  "manaflow.com",
   "cmux.local",
   "cmux.localhost",
   "autobuild.app",

@@ -26,7 +26,7 @@ export default function HeatmapPage() {
     <div className="flex min-h-screen flex-col items-center bg-white p-4 pb-16 text-black sm:p-8 sm:pb-24">
       <div className="mx-auto mb-0 mt-8 max-w-3xl sm:mt-[70px]">
         <Link
-          href="https://cmux.dev"
+          href="https://manaflow.com"
           className="mb-6 inline-block text-sm text-neutral-600 hover:text-black sm:mb-8"
         >
           ← Back to <span className="bg-sky-100 px-1">Manaflow</span>

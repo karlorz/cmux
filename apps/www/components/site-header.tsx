@@ -153,7 +153,7 @@ export function SiteHeader({
           ) : null}
           <a
             className="hidden md:inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold text-black shadow-sm transition hover:bg-neutral-100"
-            href="https://cmux.sh"
+            href="https://manaflow.com"
             rel="noopener noreferrer"
             target="_blank"
           >

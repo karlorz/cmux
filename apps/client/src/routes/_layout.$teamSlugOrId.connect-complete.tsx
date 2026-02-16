@@ -42,7 +42,7 @@ function ConnectComplete() {
     }
 
     // For non-popup (Electron flow), try deep link
-    const href = `cmux://github-connect-complete?team=${encodeURIComponent(
+    const href = `manaflow://github-connect-complete?team=${encodeURIComponent(
       teamSlugOrId
     )}`;
     try {

@@ -51,7 +51,7 @@ function GitHubInstallCompleteContent() {
     const teamParam = searchParams.get("team");
     if (teamParam) {
       try {
-        const deepLink = `cmux://github-connect-complete?team=${encodeURIComponent(
+        const deepLink = `manaflow://github-connect-complete?team=${encodeURIComponent(
           teamParam,
         )}`;
         window.location.href = deepLink;

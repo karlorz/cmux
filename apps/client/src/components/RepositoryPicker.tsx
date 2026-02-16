@@ -572,7 +572,7 @@ function RepositoryConnectionsSection({
     if (!installNewUrl) return;
     try {
       // In web mode, pass a returnUrl so github_setup redirects back to the web
-      // instead of using the cmux:// deep link (which opens Electron)
+      // instead of using the manaflow:// deep link (which opens Electron)
       const returnUrl = !isElectron
         ? new URL(`/${teamSlugOrId}/connect-complete?popup=true`, window.location.origin).toString()
         : undefined;

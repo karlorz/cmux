@@ -28,11 +28,11 @@ export default function ManaflowPage() {
           <div>
             <div className="flex items-center gap-2">
               <a
-                href="https://cmux.dev"
+                href="https://manaflow.com"
                 target="_blank"
                 className="text-black underline hover:text-neutral-600"
               >
-                cmux.dev
+                manaflow.com
               </a>
               <a
                 href="https://github.com/manaflow-ai/manaflow"

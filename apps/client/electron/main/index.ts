@@ -534,7 +534,7 @@ function registerAppIpcHandlers(): void {
   ipcMain.handle("cmux:app:get-protocol-status", async () => {
     try {
       const call = computeSetAsDefaultProtocolClientCall({
-        scheme: "cmux",
+        scheme: "manaflow",
         defaultApp: process.defaultApp,
         execPath: process.execPath,
         argv: process.argv,
@@ -949,11 +949,11 @@ app.whenReady().then(async () => {
     },
   });
 
-  // Ensure macOS menu and About panel use "cmux" instead of package.json name
+  // Ensure macOS menu and About panel use "Manaflow" instead of package.json name
   if (process.platform === "darwin") {
     try {
-      app.setName("cmux");
-      app.setAboutPanelOptions({ applicationName: "cmux" });
+      app.setName("Manaflow");
+      app.setAboutPanelOptions({ applicationName: "Manaflow" });
     } catch (error) {
       console.error("Failed to set app name and about panel options", error);
     }
@@ -975,7 +975,7 @@ app.whenReady().then(async () => {
   // helps on Windows/Linux when packaged.
   try {
     const call = computeSetAsDefaultProtocolClientCall({
-      scheme: "cmux",
+      scheme: "manaflow",
       defaultApp: process.defaultApp,
       execPath: process.execPath,
       argv: process.argv,
