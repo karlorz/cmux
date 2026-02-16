@@ -8,6 +8,7 @@ import { isElectron } from "@/lib/electron";
 import { Link, useParams } from "@tanstack/react-router";
 import { ChevronRight, Plus } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
+import CmuxLogoMark from "./logo/cmux-logo-mark";
 
 export function TitleBar({
   title,
@@ -29,14 +30,24 @@ export function TitleBar({
       {/* Left side: toggle icons when sidebar hidden - same X position as sidebar header icons */}
       {showSidebarToggle && (
         <div
-          className={`absolute left-0 inset-y-0 flex items-center ${isElectron ? "" : "pl-3"}`}
-          style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
+          className={`absolute inset-y-0 flex items-center ${isElectron ? "" : "pl-3"}`}
+          style={{
+            WebkitAppRegion: "no-drag",
+            // Offset by FloatingPane's px-[5.8px] padding plus fine-tuning to align with sidebar header
+            left: "-6.8px",
+          } as CSSProperties}
         >
-          {/* Match sidebar layout: [80px traffic] [logo ~16px] [gap 6px] [title ~60px] [ml-2 8px] = 170px electron, 90px web */}
+          {/* Match sidebar layout exactly by replicating the invisible logo+text structure */}
           {isElectron && <div className="w-[80px]" />}
-          <div className="w-[89px]" /> {/* Space for logo + gap + "cmux-next" + ml-2 */}
+          {/* Invisible placeholder matching sidebar's logo + text + gap for pixel-perfect alignment */}
+          <div className="flex items-center gap-1.5 invisible" aria-hidden="true">
+            <CmuxLogoMark height={20} />
+            <span className="text-xs font-semibold tracking-wide whitespace-nowrap">
+              cmux-next
+            </span>
+          </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 ml-2">
             <Tooltip delayDuration={0}>
               <TooltipTrigger asChild>
                 <button
