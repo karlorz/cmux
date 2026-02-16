@@ -4548,7 +4548,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--boosted-disk-size",
         type=int,
-        default=32768,
+        default=40960,
         help="Disk size (MiB) for the boosted preset",
     )
     parser.add_argument(
