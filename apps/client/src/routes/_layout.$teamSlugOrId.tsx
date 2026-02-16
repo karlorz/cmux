@@ -1,17 +1,27 @@
 import { CmuxComments } from "@/components/cmux-comments";
 import { CommandBar } from "@/components/CommandBar";
 import { Sidebar } from "@/components/Sidebar";
+import {
+  SettingsSidebar,
+  type SettingsSection,
+} from "@/components/settings/SettingsSidebar";
 import { SIDEBAR_PRS_DEFAULT_LIMIT } from "@/components/sidebar/const";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { ExpandTasksProvider } from "@/contexts/expand-tasks/ExpandTasksProvider";
+import { SettingsContextProvider } from "@/contexts/settings/SettingsContextProvider";
 import { cachedGetUser } from "@/lib/cachedGetUser";
 import { setLastTeamSlugOrId } from "@/lib/lastTeam";
 import { stackClientApp } from "@/lib/stack";
 import { api } from "@cmux/convex/api";
-import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Outlet,
+  redirect,
+  useLocation,
+} from "@tanstack/react-router";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery as useRQ } from "@tanstack/react-query";
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { env } from "@/client-env";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId")({
@@ -78,6 +88,13 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId")({
 
 function LayoutComponent() {
   const { teamSlugOrId } = Route.useParams();
+  const location = useLocation();
+  const isSettingsPage = location.pathname.endsWith("/settings");
+
+  // Settings section state for sidebar navigation
+  const [settingsSection, setSettingsSection] =
+    useState<SettingsSection>("general");
+
   // In web mode, exclude local workspaces
   const excludeLocalWorkspaces = env.NEXT_PUBLIC_WEB_MODE || undefined;
   // Use React Query-wrapped Convex queries to avoid real-time subscriptions
@@ -94,46 +111,59 @@ function LayoutComponent() {
 
   return (
     <ExpandTasksProvider>
-      <CommandBar teamSlugOrId={teamSlugOrId} />
-
-      <div className="flex flex-row grow min-h-0 h-dvh bg-white dark:bg-black overflow-x-auto snap-x snap-mandatory md:overflow-x-visible md:snap-none">
-        <Sidebar tasks={displayTasks} teamSlugOrId={teamSlugOrId} />
-
-        <div className="min-w-full md:min-w-0 grow snap-start snap-always flex flex-col">
-          <Suspense fallback={<div>Loading...</div>}>
-            <Outlet />
-          </Suspense>
-        </div>
-      </div>
-
-      <button
-        onClick={() => {
-          const msg = window.prompt("Enter debug note");
-          if (msg) {
-            // Prefix allows us to easily grep in the console.
-
-            console.log(`[USER NOTE] ${msg}`);
-          }
-        }}
-        className="hidden"
-        style={{
-          position: "fixed",
-          bottom: "16px",
-          right: "16px",
-          zIndex: "var(--z-overlay)",
-          background: "#ffbf00",
-          color: "#000",
-          border: "none",
-          borderRadius: "4px",
-          padding: "8px 12px",
-          cursor: "default",
-          fontSize: "12px",
-          fontWeight: 600,
-          boxShadow: "0 2px 4px rgba(0,0,0,0.15)",
-        }}
+      <SettingsContextProvider
+        activeSection={settingsSection}
+        setActiveSection={setSettingsSection}
       >
-        Add Debug Note
-      </button>
+        <CommandBar teamSlugOrId={teamSlugOrId} />
+
+        <div className="flex flex-row grow min-h-0 h-dvh bg-white dark:bg-black overflow-x-auto snap-x snap-mandatory md:overflow-x-visible md:snap-none">
+          {isSettingsPage ? (
+            <SettingsSidebar
+              teamSlugOrId={teamSlugOrId}
+              activeSection={settingsSection}
+              onSectionChange={setSettingsSection}
+            />
+          ) : (
+            <Sidebar tasks={displayTasks} teamSlugOrId={teamSlugOrId} />
+          )}
+
+          <div className="min-w-full md:min-w-0 grow snap-start snap-always flex flex-col">
+            <Suspense fallback={<div>Loading...</div>}>
+              <Outlet />
+            </Suspense>
+          </div>
+        </div>
+
+        <button
+          onClick={() => {
+            const msg = window.prompt("Enter debug note");
+            if (msg) {
+              // Prefix allows us to easily grep in the console.
+
+              console.log(`[USER NOTE] ${msg}`);
+            }
+          }}
+          className="hidden"
+          style={{
+            position: "fixed",
+            bottom: "16px",
+            right: "16px",
+            zIndex: "var(--z-overlay)",
+            background: "#ffbf00",
+            color: "#000",
+            border: "none",
+            borderRadius: "4px",
+            padding: "8px 12px",
+            cursor: "default",
+            fontSize: "12px",
+            fontWeight: 600,
+            boxShadow: "0 2px 4px rgba(0,0,0,0.15)",
+          }}
+        >
+          Add Debug Note
+        </button>
+      </SettingsContextProvider>
     </ExpandTasksProvider>
   );
 }
