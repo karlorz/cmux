@@ -33,6 +33,7 @@ import type { PostApiIntegrationsGithubPrsCloseData, PostApiIntegrationsGithubPr
 import { useCombinedWorkflowData, WorkflowRunsBadge, WorkflowRunsSection } from "@/components/WorkflowRunsSection";
 import z from "zod";
 
+const EMPTY_DIFFS: ReplaceDiffEntry[] = [];
 const RUN_PENDING_STATUSES = new Set(["in_progress", "queued", "waiting", "pending"]);
 const RUN_PASSING_CONCLUSIONS = new Set(["success", "neutral", "skipped"]);
 const PR_SYNC_GRACE_MS = 1500;
@@ -1037,7 +1038,7 @@ export function PullRequestDetailView({
                     />
                   ) : (
                     <NewGitDiffViewer
-                      diffs={diffQuery.data ?? []}
+                      diffs={diffQuery.data ?? EMPTY_DIFFS}
                       onControlsChange={handleDiffControlsChange}
                     />
                   )

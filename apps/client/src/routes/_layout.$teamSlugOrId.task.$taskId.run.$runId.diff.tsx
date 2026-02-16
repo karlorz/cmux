@@ -49,6 +49,8 @@ import type { HeatmapColorSettings } from "@/components/heatmap-diff-viewer/heat
 import { useCombinedWorkflowData, WorkflowRunsSection } from "@/components/WorkflowRunsSection";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 
+const EMPTY_DIFFS: ReplaceDiffEntry[] = [];
+
 const DIFF_HEADER_PREFIXES = [
   "diff --git ",
   "index ",
@@ -1248,7 +1250,7 @@ function RunDiffPage() {
                   ) : (
                     useMonacoDiffViewer ? (
                       <MonacoGitDiffViewerWithSidebar
-                        diffs={diffQuery.data ?? []}
+                        diffs={diffQuery.data ?? EMPTY_DIFFS}
                         isLoading={diffQuery.isLoading}
                         onControlsChange={setDiffControls}
                         isHeatmapActive={isAiReviewActive}
@@ -1256,7 +1258,7 @@ function RunDiffPage() {
                       />
                     ) : (
                       <NewGitDiffViewerWithSidebar
-                        diffs={diffQuery.data ?? []}
+                        diffs={diffQuery.data ?? EMPTY_DIFFS}
                         isLoading={diffQuery.isLoading}
                         onControlsChange={setDiffControls}
                         isHeatmapActive={isAiReviewActive}

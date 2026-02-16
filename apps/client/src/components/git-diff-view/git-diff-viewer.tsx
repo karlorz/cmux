@@ -53,6 +53,14 @@ export const NewGitDiffViewer = memo(function NewGitDiffViewer({
       }
 
       initializedPathsRef.current = currentPaths;
+
+      // Avoid unnecessary re-renders when the set content hasn't changed
+      if (
+        next.size === previous.size &&
+        [...next].every((path) => previous.has(path))
+      ) {
+        return previous;
+      }
       return next;
     });
   }, [preparedFiles]);

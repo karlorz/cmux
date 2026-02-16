@@ -71,6 +71,14 @@ export const NewGitDiffViewerWithSidebar = memo(function NewGitDiffViewerWithSid
       }
 
       initializedPathsRef.current = currentPaths;
+
+      // Avoid unnecessary re-renders when the set content hasn't changed
+      if (
+        next.size === previous.size &&
+        [...next].every((path) => previous.has(path))
+      ) {
+        return previous;
+      }
       return next;
     });
   }, [preparedFiles]);
@@ -129,7 +137,12 @@ export const NewGitDiffViewerWithSidebar = memo(function NewGitDiffViewerWithSid
         return;
       }
 
-      if (event.key === "f" || event.key === "F") {
+      if (
+        (event.key === "f" || event.key === "F") &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey
+      ) {
         event.preventDefault();
         setIsSidebarCollapsed((previous) => !previous);
       }
