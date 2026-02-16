@@ -1388,7 +1388,11 @@ environmentsRouter.openapi(
             const message =
               error instanceof Error ? error.message : String(error);
             // Treat already-deleted templates as non-fatal
-            if (message.includes("404") || message.includes("Not found")) {
+            if (
+              message.includes("404") ||
+              message.includes("Not found") ||
+              message.includes("does not exist")
+            ) {
               console.warn(
                 `[environments.delete] PVE template ${vmid} already deleted`
               );

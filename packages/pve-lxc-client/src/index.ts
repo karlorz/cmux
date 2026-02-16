@@ -1309,11 +1309,24 @@ export class PveLxcClient {
     }
 
     const node = await this.getNode();
-    const upid = await this.apiRequest<string>(
-      "DELETE",
-      `/api2/json/nodes/${node}/lxc/${vmid}`
-    );
-    await this.waitForTaskNormalized(upid, `delete container ${vmid}`);
+    try {
+      const upid = await this.apiRequest<string>(
+        "DELETE",
+        `/api2/json/nodes/${node}/lxc/${vmid}`
+      );
+      await this.waitForTaskNormalized(upid, `delete container ${vmid}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Container config already removed — treat as success
+      if (msg.includes("does not exist") || msg.includes("not found")) {
+        console.warn(
+          `[PveLxcClient.deleteContainer] Container ${vmid} already deleted:`,
+          msg
+        );
+      } else {
+        throw err;
+      }
+    }
 
     // Clean up in-memory service URLs
     // Note: Convex sandboxInstanceActivity is updated separately via recordStopInternal
