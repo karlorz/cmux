@@ -772,7 +772,7 @@ function SettingsComponent() {
   return (
     <FloatingPane header={<TitleBar title="Settings" />}>
       <div className="relative flex grow flex-col overflow-auto select-none">
-        <div className="max-w-4xl p-6">
+        <div className="w-full max-w-4xl mx-auto p-6">
           {activeSection === "general" ? (
             <GeneralSection
               teamSlugOrId={teamSlugOrId}
@@ -856,22 +856,24 @@ function SettingsComponent() {
         </div>
       </div>
 
-      <div
-        className="sticky bottom-0 border-t border-neutral-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 supports-[backdrop-filter]:dark:bg-neutral-900/60"
-      >
-        <div className="max-w-3xl mx-auto px-6 py-3 flex items-center justify-end gap-3">
-          <button
-            onClick={saveApiKeys}
-            disabled={!hasChanges() || isSaving}
-            className={`px-4 py-2 text-sm font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-neutral-900 transition-all ${!hasChanges() || isSaving
-                ? "bg-neutral-200 dark:bg-neutral-800 text-neutral-400 dark:text-neutral-500 cursor-not-allowed opacity-50"
-                : "bg-blue-600 dark:bg-blue-500 text-white hover:bg-blue-700 dark:hover:bg-blue-600"
-              }`}
-          >
-            {isSaving ? "Saving..." : "Save Changes"}
-          </button>
+      {activeSection === "ai-providers" && (
+        <div
+          className="sticky bottom-0 border-t border-neutral-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 supports-[backdrop-filter]:dark:bg-neutral-900/60"
+        >
+          <div className="max-w-3xl mx-auto px-6 py-3 flex items-center justify-end gap-3">
+            <button
+              onClick={saveApiKeys}
+              disabled={!hasChanges() || isSaving}
+              className={`px-4 py-2 text-sm font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-neutral-900 transition-all ${!hasChanges() || isSaving
+                  ? "bg-neutral-200 dark:bg-neutral-800 text-neutral-400 dark:text-neutral-500 cursor-not-allowed opacity-50"
+                  : "bg-blue-600 dark:bg-blue-500 text-white hover:bg-blue-700 dark:hover:bg-blue-600"
+                }`}
+            >
+              {isSaving ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </FloatingPane>
   );
 }
