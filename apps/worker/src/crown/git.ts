@@ -639,7 +639,8 @@ export async function pushWithEphemeralToken(
   const remoteUrl = `https://x-access-token:${token}@github.com/${repoFullName}.git`;
 
   try {
-    await execFileAsync("git", ["push", "-u", remoteUrl, branchName], {
+    // Avoid -u flag: it would persist the tokenized URL in .git/config as branch.<name>.remote
+    await execFileAsync("git", ["push", remoteUrl, `HEAD:refs/heads/${branchName}`], {
       cwd: repoPath,
       maxBuffer: 10 * 1024 * 1024,
       env: {

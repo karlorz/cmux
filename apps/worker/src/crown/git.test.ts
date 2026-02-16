@@ -106,9 +106,10 @@ describe("crown git auth retry", () => {
     });
 
     expect(pushCalls).toHaveLength(2);
-    expect((pushCalls[1]?.[1] as string[])[2]).toContain(
-      "x-access-token:fresh-token@github.com/owner/repo.git",
-    );
+    // Verify retry push uses tokenized URL (arg index 1) and refspec (arg index 2)
+    const retryArgs = pushCalls[1]?.[1] as string[];
+    expect(retryArgs[1]).toContain("x-access-token:fresh-token@github.com/owner/repo.git");
+    expect(retryArgs[2]).toBe("HEAD:refs/heads/feature/test");
   });
 
   it("does not retry when no token supplier is provided", async () => {
