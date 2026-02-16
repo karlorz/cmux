@@ -77,7 +77,7 @@ from snapshot import (
 # ---------------------------------------------------------------------------
 
 VSCODE_HTTP_PORT = 39378
-WORKER_HTTP_PORT = 39377
+WORKER_HTTP_PORT = 39376  # Node.js worker (PVE-LXC only); Go worker uses 39377
 PROXY_HTTP_PORT = 39379
 VNC_HTTP_PORT = 39380
 CDP_HTTP_PORT = 39381
@@ -3277,25 +3277,13 @@ async def task_install_systemd_units(ctx: PveTaskContext) -> None:
         f"""
         set -euo pipefail
 
-        # Clean up Go worker-daemon services from pve-lxc-setup.sh base template
-        # These conflict with the Node.js worker we're installing
-        # /etc/systemd/system/ takes precedence over /usr/lib/systemd/system/
-        systemctl stop cmux-worker.service 2>/dev/null || true
-        systemctl stop cmux-token-generator.service 2>/dev/null || true
-        systemctl disable cmux-worker.service 2>/dev/null || true
-        systemctl disable cmux-token-generator.service 2>/dev/null || true
-        rm -f /etc/systemd/system/cmux-worker.service
-        rm -f /etc/systemd/system/cmux-token-generator.service
-        rm -f /etc/systemd/system/multi-user.target.wants/cmux-worker.service
-        rm -f /etc/systemd/system/multi-user.target.wants/cmux-token-generator.service
-        rm -f /usr/local/bin/worker-daemon
-        rm -f /usr/local/bin/cmux-token-init
-
         install -d /usr/local/lib/cmux
         install -d /etc/cmux
         install -Dm0644 {repo}/configs/systemd/cmux.target /usr/lib/systemd/system/cmux.target
         install -Dm0644 {repo}/configs/systemd/{ide_service} /usr/lib/systemd/system/cmux-ide.service
         install -Dm0644 {repo}/configs/systemd/cmux-worker.service /usr/lib/systemd/system/cmux-worker.service
+        # Override Node.js worker port to 39376 for PVE-LXC (Go worker uses 39377)
+        sed -i 's/WORKER_PORT=39377/WORKER_PORT=39376/' /usr/lib/systemd/system/cmux-worker.service
         install -Dm0644 {repo}/configs/systemd/cmux-proxy.service /usr/lib/systemd/system/cmux-proxy.service
         install -Dm0644 {repo}/configs/systemd/cmux-dockerd.service /usr/lib/systemd/system/cmux-dockerd.service
         install -Dm0644 {repo}/configs/systemd/cmux-devtools.service /usr/lib/systemd/system/cmux-devtools.service
