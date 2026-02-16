@@ -34,7 +34,7 @@ export function TitleBar({
         >
           {/* Match sidebar layout: [80px traffic] [logo ~16px] [gap 6px] [title ~60px] [ml-2 8px] = 170px electron, 90px web */}
           {isElectron && <div className="w-[80px]" />}
-          <div className="w-[90px]" /> {/* Space for logo + gap + "cmux-next" + ml-2 */}
+          <div className="w-[89px]" /> {/* Space for logo + gap + "cmux-next" + ml-2 */}
 
           <div className="flex items-center gap-1">
             <Tooltip delayDuration={0}>
