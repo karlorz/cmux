@@ -271,7 +271,7 @@ export function Sidebar({ tasks, teamSlugOrId, onToggleHidden }: SidebarProps) {
     <div
       ref={containerRef}
       data-onboarding="sidebar"
-      className="relative bg-neutral-50 dark:bg-black flex flex-col shrink-0 h-dvh grow pr-1 w-[75vw] snap-start snap-always md:w-auto md:snap-align-none"
+      className="relative bg-neutral-50 dark:bg-black flex flex-col shrink-0 h-dvh grow pr-1 pt-1.5 w-[75vw] snap-start snap-always md:w-auto md:snap-align-none"
       style={
         {
           width: undefined,
