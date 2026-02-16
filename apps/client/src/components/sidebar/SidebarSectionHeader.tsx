@@ -1,7 +1,7 @@
 import { Dropdown } from "@/components/ui/dropdown";
 import { Link, type LinkProps } from "@tanstack/react-router";
 import clsx from "clsx";
-import { ListFilter, Rows3 } from "lucide-react";
+import { ListFilter } from "lucide-react";
 import type { ReactNode } from "react";
 import { SidebarFilterMenu } from "./SidebarFilterMenu";
 import type {
@@ -76,24 +76,7 @@ export function SidebarSectionHeader({
           <Dropdown.Portal>
             <Dropdown.Positioner sideOffset={4} side="bottom" align="end">
               <SidebarFilterMenu
-                mode="show-only"
-                preferences={preferences}
-                onOrganizeModeChange={onPreferencesChange.setOrganizeMode}
-                onSortByChange={onPreferencesChange.setSortBy}
-                onShowFilterChange={onPreferencesChange.setShowFilter}
-              />
-            </Dropdown.Positioner>
-          </Dropdown.Portal>
-        </Dropdown.Root>
-
-        <Dropdown.Root>
-          <IconTrigger title={`Organize ${title.toLowerCase()}`}>
-            <Rows3 className="h-3.5 w-3.5" aria-hidden="true" />
-          </IconTrigger>
-          <Dropdown.Portal>
-            <Dropdown.Positioner sideOffset={4} side="bottom" align="end">
-              <SidebarFilterMenu
-                mode="organize-only"
+                mode="full"
                 preferences={preferences}
                 onOrganizeModeChange={onPreferencesChange.setOrganizeMode}
                 onSortByChange={onPreferencesChange.setSortBy}

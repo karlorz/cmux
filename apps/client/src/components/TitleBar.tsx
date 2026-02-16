@@ -10,6 +10,8 @@ import { ChevronRight, Plus } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import CmuxLogoMark from "./logo/cmux-logo-mark";
 
+const HIDDEN_SIDEBAR_TOGGLE_LEFT_OFFSET = "calc(-1px - 0.375rem)";
+
 export function TitleBar({
   title,
   actions,
@@ -30,11 +32,11 @@ export function TitleBar({
       {/* Left side: toggle icons when sidebar hidden - same X position as sidebar header icons */}
       {showSidebarToggle && (
         <div
-          className={`absolute inset-y-0 flex items-center ${isElectron ? "" : "pl-3"}`}
+          className={`absolute inset-y-0 flex items-center -translate-y-px ${isElectron ? "" : "pl-3"}`}
           style={{
             WebkitAppRegion: "no-drag",
-            // Offset by FloatingPane's px-[5.8px] padding plus fine-tuning to align with sidebar header
-            left: "-6.8px",
+            // Offset FloatingPane's left gutter: 1px border + 0.375rem (6px) pane padding.
+            left: HIDDEN_SIDEBAR_TOGGLE_LEFT_OFFSET,
           } as CSSProperties}
         >
           {/* Match sidebar layout exactly by replicating the invisible logo+text structure */}
