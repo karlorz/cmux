@@ -2204,6 +2204,18 @@ async def task_install_nvm(ctx: PveTaskContext) -> None:
     description="Install Bun runtime (background download to avoid Cloudflare timeout)",
 )
 async def task_install_bun(ctx: PveTaskContext) -> None:
+    # Check if bun is already installed (base template may have it)
+    check_result = await ctx.client.aexec_in_container(
+        ctx.vmid,
+        "command -v bun && bun --version",
+        timeout=15,
+        check=False,
+    )
+    if check_result.returncode == 0 and "bun" in check_result.stdout.lower():
+        version = check_result.stdout.strip().split("\n")[-1]
+        ctx.console.info(f"[install-bun] Bun already installed: {version}")
+        return
+
     # Step 1: Detect architecture and start bun download in background
     # The background download avoids Cloudflare Tunnel's ~100s timeout
     cmd = textwrap.dedent(
@@ -2661,8 +2673,20 @@ async def task_package_vscode_extension(ctx: PveTaskContext) -> None:
         set -euo pipefail
         export PATH="/usr/local/bin:$PATH"
         cd {repo}/packages/vscode-extension
-        # Run package command, allowing warnings but checking for actual vsix output
-        bun run package || true
+        # Compile the extension first (bun:prepublish runs compile-bun)
+        bun run compile
+        # Use local vsce binary from node_modules instead of bunx
+        # This avoids bunx auto-install issues through proxy
+        vsce_bin="{repo}/node_modules/.bin/vsce"
+        if [ ! -x "$vsce_bin" ]; then
+          echo "[package-vscode-extension] vsce not found in node_modules, trying bun install..."
+          bun install
+          if [ ! -x "$vsce_bin" ]; then
+            echo "[package-vscode-extension] ERROR: vsce still not found after bun install" >&2
+            exit 1
+          fi
+        fi
+        "$vsce_bin" package --allow-missing-repository --no-dependencies --allow-star-activation || true
         echo "[package-vscode-extension] Looking for vsix file..."
         ls -la *.vsix 2>/dev/null || true
         latest_vsix="$(ls -1t cmux-vscode-extension-*.vsix 2>/dev/null | head -n 1)"
