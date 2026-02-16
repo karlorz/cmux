@@ -56,7 +56,7 @@ export function FloatingPane({
                     event.stopPropagation();
                     sidebar?.setIsHidden(false);
                   }}
-                  className="w-[25px] h-[25px] border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-900 rounded-lg flex items-center justify-center transition-colors cursor-default bg-white/80 dark:bg-neutral-900/80 backdrop-blur"
+                  className="w-[25px] h-[25px] border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-900 rounded-lg flex items-center justify-center transition-opacity cursor-default bg-white/80 dark:bg-neutral-900/80 backdrop-blur opacity-60 hover:opacity-100 focus-visible:opacity-100"
                   aria-label="Show sidebar"
                   style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
                 >
