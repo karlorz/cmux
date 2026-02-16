@@ -50,6 +50,8 @@ import {
 // Tasks with hasUnread indicator from the query
 type TaskWithUnread = Doc<"tasks"> & { hasUnread: boolean };
 const RELEVANT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const CHRONOLOGICAL_LIST_KEY = "__cmux_chronological_list__";
+const CHRONOLOGICAL_INITIAL_DISPLAY_COUNT = 5;
 
 interface SidebarProps {
   tasks: TaskWithUnread[] | undefined;
@@ -208,6 +210,19 @@ export function Sidebar({ tasks, teamSlugOrId, onToggleHidden }: SidebarProps) {
         groupItemsByProject(visibleWorkspaceTasks, (task) => task.projectFullName).entries()
       ),
     [visibleWorkspaceTasks]
+  );
+
+  const isWorkspaceChronologicalExpanded =
+    workspacePreferences.expandedGroups[CHRONOLOGICAL_LIST_KEY] ?? false;
+  const hasWorkspaceChronologicalOverflow =
+    visibleWorkspaceTasks.length > CHRONOLOGICAL_INITIAL_DISPLAY_COUNT;
+  const visibleChronologicalWorkspaceTasks =
+    hasWorkspaceChronologicalOverflow && !isWorkspaceChronologicalExpanded
+      ? visibleWorkspaceTasks.slice(0, CHRONOLOGICAL_INITIAL_DISPLAY_COUNT)
+      : visibleWorkspaceTasks;
+  const workspaceChronologicalRemainingCount = Math.max(
+    0,
+    visibleWorkspaceTasks.length - visibleChronologicalWorkspaceTasks.length
   );
 
   const onMouseMove = useCallback((e: MouseEvent) => {
@@ -412,17 +427,35 @@ export function Sidebar({ tasks, teamSlugOrId, onToggleHidden }: SidebarProps) {
                   ) : null}
 
                   {workspacePreferences.organizeMode === "chronological" ? (
-                    visibleWorkspaceTasks.map((task) => (
-                      <TaskTree
-                        key={task._id}
-                        task={task}
-                        defaultExpanded={
-                          expandTaskIds?.includes(task._id) ?? false
-                        }
-                        teamSlugOrId={teamSlugOrId}
-                        hasUnreadNotification={task.hasUnread}
-                      />
-                    ))
+                    <>
+                      {visibleChronologicalWorkspaceTasks.map((task) => (
+                        <TaskTree
+                          key={task._id}
+                          task={task}
+                          defaultExpanded={
+                            expandTaskIds?.includes(task._id) ?? false
+                          }
+                          teamSlugOrId={teamSlugOrId}
+                          hasUnreadNotification={task.hasUnread}
+                        />
+                      ))}
+
+                      {hasWorkspaceChronologicalOverflow ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            workspacePreferenceHandlers.toggleGroupExpanded(
+                              CHRONOLOGICAL_LIST_KEY
+                            )
+                          }
+                          className="ml-2 w-[calc(100%-8px)] rounded-sm px-2 py-0.5 text-left text-[11px] text-neutral-500 hover:bg-neutral-200/45 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800/45 dark:hover:text-neutral-200"
+                        >
+                          {isWorkspaceChronologicalExpanded
+                            ? "Show less"
+                            : `Show more (${workspaceChronologicalRemainingCount})`}
+                        </button>
+                      ) : null}
+                    </>
                   ) : (
                     <>
                       {workspaceGroups.map(([groupKey, groupItems]) => (

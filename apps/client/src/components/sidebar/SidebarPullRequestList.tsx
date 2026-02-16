@@ -31,6 +31,8 @@ import {
 import type { Doc } from "@cmux/convex/dataModel";
 
 const RELEVANT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const CHRONOLOGICAL_LIST_KEY = "__cmux_chronological_list__";
+const CHRONOLOGICAL_INITIAL_DISPLAY_COUNT = 5;
 
 type Props = {
   teamSlugOrId: string;
@@ -74,6 +76,18 @@ export function SidebarPullRequestList({
     [filteredAndSorted]
   );
   const groupedEntries = useMemo(() => Array.from(grouped.entries()), [grouped]);
+  const isChronologicalExpanded =
+    preferences.expandedGroups[CHRONOLOGICAL_LIST_KEY] ?? false;
+  const hasChronologicalOverflow =
+    filteredAndSorted.length > CHRONOLOGICAL_INITIAL_DISPLAY_COUNT;
+  const visibleChronologicalItems =
+    hasChronologicalOverflow && !isChronologicalExpanded
+      ? filteredAndSorted.slice(0, CHRONOLOGICAL_INITIAL_DISPLAY_COUNT)
+      : filteredAndSorted;
+  const chronologicalRemainingCount = Math.max(
+    0,
+    filteredAndSorted.length - visibleChronologicalItems.length
+  );
 
   if (prs === undefined) {
     return (
@@ -100,7 +114,7 @@ export function SidebarPullRequestList({
   if (preferences.organizeMode === "chronological") {
     return (
       <div className="space-y-px">
-        {filteredAndSorted.map((pr) => (
+        {visibleChronologicalItems.map((pr) => (
           <PullRequestListItem
             key={`${pr.repoFullName}#${pr.number}`}
             pr={pr}
@@ -109,6 +123,20 @@ export function SidebarPullRequestList({
             setExpanded={setExpanded}
           />
         ))}
+
+        {hasChronologicalOverflow ? (
+          <button
+            type="button"
+            onClick={() =>
+              onPreferencesChange.toggleGroupExpanded(CHRONOLOGICAL_LIST_KEY)
+            }
+            className="w-full rounded-sm px-2 py-0.5 text-left text-[11px] text-neutral-500 hover:bg-neutral-200/45 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800/45 dark:hover:text-neutral-200"
+          >
+            {isChronologicalExpanded
+              ? "Show less"
+              : `Show more (${chronologicalRemainingCount})`}
+          </button>
+        ) : null}
       </div>
     );
   }
