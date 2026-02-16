@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { useQuery } from "convex/react";
-import { MonacoGitDiffViewer } from "./monaco/monaco-git-diff-viewer";
+import { NewGitDiffViewer } from "./git-diff-view/git-diff-viewer";
 import { RunScreenshotGallery } from "./RunScreenshotGallery";
 import { gitDiffQueryOptions } from "@/queries/git-diff";
 import { normalizeGitRef } from "@/lib/refWithOrigin";
@@ -173,7 +173,7 @@ export function TaskRunGitDiffPanel({ task, taskRuns, selectedRun, teamSlugOrId,
           screenshotConfig={screenshotConfig}
         />
       )}
-      <MonacoGitDiffViewer diffs={allDiffs} />
+      <NewGitDiffViewer diffs={allDiffs} />
     </div>
   );
 }
