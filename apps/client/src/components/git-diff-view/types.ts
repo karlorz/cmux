@@ -35,6 +35,6 @@ export interface GitDiffViewerWithSidebarProps extends GitDiffViewerProps {
   onToggleHeatmap?: () => void;
 }
 
-export const AUTO_COLLAPSE_THRESHOLD = 200;
-export const LARGE_DIFF_THRESHOLD = 2000;
+export const AUTO_COLLAPSE_THRESHOLD = Infinity;
+export const LARGE_DIFF_THRESHOLD = 100;
 export const MAX_LINES_FOR_SYNTAX = 5000;

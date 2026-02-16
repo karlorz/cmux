@@ -1,5 +1,5 @@
 import { RunDiffHeatmapReviewSection } from "@/components/RunDiffHeatmapReviewSection";
-import { MonacoGitDiffViewer } from "@/components/monaco/monaco-git-diff-viewer";
+import { NewGitDiffViewer } from "@/components/git-diff-view/git-diff-viewer";
 import type { DiffViewerControls, StreamFileState, StreamFileStatus } from "@/components/heatmap-diff-viewer";
 import type { HeatmapColorSettings } from "@/components/heatmap-diff-viewer/heatmap-gradient";
 import { Dropdown } from "@/components/ui/dropdown";
@@ -1036,7 +1036,7 @@ export function PullRequestDetailView({
                       onHeatmapColorsChange={handleHeatmapColorsChange}
                     />
                   ) : (
-                    <MonacoGitDiffViewer
+                    <NewGitDiffViewer
                       diffs={diffQuery.data ?? []}
                       onControlsChange={handleDiffControlsChange}
                     />
