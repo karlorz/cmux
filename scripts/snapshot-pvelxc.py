@@ -3277,6 +3277,20 @@ async def task_install_systemd_units(ctx: PveTaskContext) -> None:
         f"""
         set -euo pipefail
 
+        # Clean up Go worker-daemon services from pve-lxc-setup.sh base template
+        # These conflict with the Node.js worker we're installing
+        # /etc/systemd/system/ takes precedence over /usr/lib/systemd/system/
+        systemctl stop cmux-worker.service 2>/dev/null || true
+        systemctl stop cmux-token-generator.service 2>/dev/null || true
+        systemctl disable cmux-worker.service 2>/dev/null || true
+        systemctl disable cmux-token-generator.service 2>/dev/null || true
+        rm -f /etc/systemd/system/cmux-worker.service
+        rm -f /etc/systemd/system/cmux-token-generator.service
+        rm -f /etc/systemd/system/multi-user.target.wants/cmux-worker.service
+        rm -f /etc/systemd/system/multi-user.target.wants/cmux-token-generator.service
+        rm -f /usr/local/bin/worker-daemon
+        rm -f /usr/local/bin/cmux-token-init
+
         install -d /usr/local/lib/cmux
         install -d /etc/cmux
         install -Dm0644 {repo}/configs/systemd/cmux.target /usr/lib/systemd/system/cmux.target
