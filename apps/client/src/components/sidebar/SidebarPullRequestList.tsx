@@ -64,7 +64,7 @@ export function SidebarPullRequestList({
       return activityAt >= relevanceCutoff;
     });
 
-    return sortItems(filtered, preferences.sortBy, (pr) =>
+    return sortItems(filtered, (pr) =>
       preferences.sortBy === "updated"
         ? (pr.updatedAt ?? pr.createdAt ?? 0)
         : (pr.createdAt ?? pr.updatedAt ?? 0)

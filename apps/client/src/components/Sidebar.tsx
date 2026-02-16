@@ -181,7 +181,7 @@ export function Sidebar({ tasks, teamSlugOrId, onToggleHidden }: SidebarProps) {
       return activityAt >= relevanceCutoff;
     });
 
-    return sortItems(filtered, workspacePreferences.sortBy, (task) =>
+    return sortItems(filtered, (task) =>
       workspacePreferences.sortBy === "updated"
         ? (task.lastActivityAt ?? task.updatedAt ?? task.createdAt ?? 0)
         : (task.createdAt ?? task.updatedAt ?? task.lastActivityAt ?? 0)
@@ -197,7 +197,7 @@ export function Sidebar({ tasks, teamSlugOrId, onToggleHidden }: SidebarProps) {
       return activityAt >= relevanceCutoff;
     });
 
-    return sortItems(filtered, workspacePreferences.sortBy, (task) =>
+    return sortItems(filtered, (task) =>
       workspacePreferences.sortBy === "updated"
         ? (task.lastActivityAt ?? task.updatedAt ?? task.createdAt ?? 0)
         : (task.createdAt ?? task.updatedAt ?? task.lastActivityAt ?? 0)

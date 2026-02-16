@@ -1,3 +1,4 @@
+import { useSidebar } from "@/contexts/sidebar/SidebarContext";
 import {
   disableDragPointerEvents,
   restoreDragPointerEvents,
@@ -62,57 +63,11 @@ export function SettingsSidebar({
     return Math.min(Math.max(parsed, MIN_WIDTH), MAX_WIDTH);
   });
   const [isResizing, setIsResizing] = useState(false);
-  const [isHidden, setIsHidden] = useState(() => {
-    const stored = localStorage.getItem("sidebarHidden");
-    return stored === "true";
-  });
+  const { isHidden } = useSidebar();
 
   useEffect(() => {
     localStorage.setItem("sidebarWidth", String(width));
   }, [width]);
-
-  useEffect(() => {
-    localStorage.setItem("sidebarHidden", String(isHidden));
-  }, [isHidden]);
-
-  useEffect(() => {
-    if (isElectron && window.cmux?.on) {
-      const off = window.cmux.on("shortcut:sidebar-toggle", () => {
-        setIsHidden((prev) => !prev);
-      });
-      return () => {
-        if (typeof off === "function") off();
-      };
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.ctrlKey &&
-        event.shiftKey &&
-        !event.altKey &&
-        !event.metaKey &&
-        (event.code === "KeyS" || event.key.toLowerCase() === "s")
-      ) {
-        event.preventDefault();
-        event.stopPropagation();
-        setIsHidden((prev) => !prev);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, []);
-
-  useEffect(() => {
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === "sidebarHidden" && event.newValue !== null) {
-        setIsHidden(event.newValue === "true");
-      }
-    };
-
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, []);
 
   const onMouseMove = useCallback((event: MouseEvent) => {
     if (rafIdRef.current != null) return;

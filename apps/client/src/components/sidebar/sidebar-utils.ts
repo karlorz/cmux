@@ -1,4 +1,4 @@
-import type { ShowFilter, SortBy } from "./sidebar-types";
+import type { ShowFilter } from "./sidebar-types";
 
 export const OTHER_GROUP_KEY = "__other__";
 
@@ -33,22 +33,10 @@ export function groupItemsByProject<T>(
 
 export function sortItems<T>(
   items: T[],
-  sortBy: SortBy,
   getSortValue: (item: T) => number
 ): T[] {
   return [...items].sort((a, b) => {
-    const aValue = getSortValue(a);
-    const bValue = getSortValue(b);
-    const diff = bValue - aValue;
-    if (diff !== 0) {
-      return diff;
-    }
-
-    // Keep stable ordering on equal timestamps regardless of selected sort mode.
-    if (sortBy === "updated") {
-      return 0;
-    }
-    return 0;
+    return getSortValue(b) - getSortValue(a);
   });
 }
 

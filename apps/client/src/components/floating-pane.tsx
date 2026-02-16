@@ -21,7 +21,8 @@ export function FloatingPane({
 }) {
   const sidebar = useSidebarOptional();
   const params = useParams({ strict: false });
-  const teamSlugOrId = params.teamSlugOrId as string | undefined;
+  const teamSlugOrId =
+    typeof params.teamSlugOrId === "string" ? params.teamSlugOrId : undefined;
   const showFloatingSidebarToggle =
     !header && Boolean(sidebar?.isHidden) && Boolean(teamSlugOrId);
 

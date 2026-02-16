@@ -21,7 +21,8 @@ export function TitleBar({
 }) {
   const sidebar = useSidebarOptional();
   const params = useParams({ strict: false });
-  const teamSlugOrId = params.teamSlugOrId as string | undefined;
+  const teamSlugOrId =
+    typeof params.teamSlugOrId === "string" ? params.teamSlugOrId : undefined;
   const showSidebarToggle = sidebar?.isHidden && teamSlugOrId;
 
   return (

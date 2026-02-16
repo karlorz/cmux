@@ -135,8 +135,6 @@ function LayoutComponent() {
   }, []);
 
   useEffect(() => {
-    if (isSettingsRoute) return;
-
     if (isElectron && window.cmux?.on) {
       const off = window.cmux.on("shortcut:sidebar-toggle", () => {
         setIsSidebarHidden((prev) => !prev);
@@ -162,7 +160,7 @@ function LayoutComponent() {
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [isSettingsRoute]);
+  }, []);
 
   const handleSettingsSectionChange = useCallback(
     (section: SettingsSection) => {
