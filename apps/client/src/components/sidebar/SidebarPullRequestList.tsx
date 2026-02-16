@@ -8,18 +8,41 @@ import {
   GitPullRequestClosed,
   GitPullRequestDraft,
 } from "lucide-react";
-import { useMemo, useState, type MouseEvent } from "react";
+import {
+  useMemo,
+  useState,
+  type Dispatch,
+  type MouseEvent,
+  type SetStateAction,
+} from "react";
 import { SidebarListItem } from "./SidebarListItem";
+import { SidebarProjectGroup } from "./SidebarProjectGroup";
 import { SIDEBAR_PRS_DEFAULT_LIMIT } from "./const";
+import type {
+  SectionPreferences,
+  SidebarPreferenceHandlers,
+} from "./sidebar-types";
+import {
+  filterRelevant,
+  getGroupDisplayName,
+  groupItemsByProject,
+  sortItems,
+} from "./sidebar-utils";
 import type { Doc } from "@cmux/convex/dataModel";
+
+const RELEVANT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 type Props = {
   teamSlugOrId: string;
+  preferences: SectionPreferences;
+  onPreferencesChange: SidebarPreferenceHandlers;
   limit?: number;
 };
 
 export function SidebarPullRequestList({
   teamSlugOrId,
+  preferences,
+  onPreferencesChange,
   limit = SIDEBAR_PRS_DEFAULT_LIMIT,
 }: Props) {
   const prs = useConvexQuery(api.github_prs.listPullRequests, {
@@ -31,6 +54,26 @@ export function SidebarPullRequestList({
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const list = useMemo(() => prs ?? [], [prs]);
+
+  const filteredAndSorted = useMemo(() => {
+    const relevanceCutoff = Date.now() - RELEVANT_WINDOW_MS;
+    const filtered = filterRelevant(list, preferences.showFilter, (pr) => {
+      const activityAt = pr.updatedAt ?? pr.createdAt ?? 0;
+      return activityAt >= relevanceCutoff;
+    });
+
+    return sortItems(filtered, preferences.sortBy, (pr) =>
+      preferences.sortBy === "updated"
+        ? (pr.updatedAt ?? pr.createdAt ?? 0)
+        : (pr.createdAt ?? pr.updatedAt ?? 0)
+    );
+  }, [list, preferences.showFilter, preferences.sortBy]);
+
+  const grouped = useMemo(
+    () => groupItemsByProject(filteredAndSorted, (pr) => pr.repoFullName),
+    [filteredAndSorted]
+  );
+  const groupedEntries = useMemo(() => Array.from(grouped.entries()), [grouped]);
 
   if (prs === undefined) {
     return (
@@ -44,26 +87,56 @@ export function SidebarPullRequestList({
     );
   }
 
-  if (list.length === 0) {
+  if (filteredAndSorted.length === 0) {
     return (
       <p className="mt-1 pl-2 pr-3 py-2 text-xs text-neutral-500 dark:text-neutral-400 select-none">
-        No pull requests
+        {preferences.showFilter === "relevant"
+          ? "No relevant pull requests"
+          : "No pull requests"}
       </p>
     );
   }
 
+  if (preferences.organizeMode === "chronological") {
+    return (
+      <div className="space-y-px">
+        {filteredAndSorted.map((pr) => (
+          <PullRequestListItem
+            key={`${pr.repoFullName}#${pr.number}`}
+            pr={pr}
+            teamSlugOrId={teamSlugOrId}
+            expanded={expanded}
+            setExpanded={setExpanded}
+          />
+        ))}
+      </div>
+    );
+  }
+
   return (
-    <ul className="flex flex-col gap-px">
-      {list.map((pr) => (
-        <PullRequestListItem
-          key={`${pr.repoFullName}#${pr.number}`}
-          pr={pr}
-          teamSlugOrId={teamSlugOrId}
-          expanded={expanded}
-          setExpanded={setExpanded}
+    <div className="space-y-px">
+      {groupedEntries.map(([groupKey, groupItems]) => (
+        <SidebarProjectGroup
+          key={groupKey}
+          groupKey={groupKey}
+          displayName={getGroupDisplayName(groupKey)}
+          items={groupItems}
+          isCollapsed={preferences.collapsedGroups[groupKey] ?? false}
+          onToggleCollapse={() => onPreferencesChange.toggleGroupCollapsed(groupKey)}
+          isExpanded={preferences.expandedGroups[groupKey] ?? false}
+          onToggleExpand={() => onPreferencesChange.toggleGroupExpanded(groupKey)}
+          getItemKey={(pr) => `${pr.repoFullName}#${pr.number}`}
+          renderItem={(pr) => (
+            <PullRequestListItem
+              pr={pr}
+              teamSlugOrId={teamSlugOrId}
+              expanded={expanded}
+              setExpanded={setExpanded}
+            />
+          )}
         />
       ))}
-    </ul>
+    </div>
   );
 }
 
@@ -71,13 +144,13 @@ type PullRequestListItemProps = {
   pr: Doc<"pullRequests">;
   teamSlugOrId: string;
   expanded: Record<string, boolean>;
-  setExpanded: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  setExpanded: Dispatch<SetStateAction<Record<string, boolean>>>;
 };
 
 function PullRequestListItem({ pr, teamSlugOrId, expanded, setExpanded }: PullRequestListItemProps) {
   const [owner = "", repo = ""] = pr.repoFullName?.split("/", 2) ?? ["", ""];
-  const key = `${pr.repoFullName}#${pr.number}`;
-  const isExpanded = expanded[key] ?? false;
+  const itemKey = `${pr.repoFullName}#${pr.number}`;
+  const isExpanded = expanded[itemKey] ?? false;
   const branchLabel = pr.headRef;
 
   const secondaryParts = [
@@ -103,12 +176,12 @@ function PullRequestListItem({ pr, teamSlugOrId, expanded, setExpanded }: PullRe
   ) => {
     setExpanded((prev) => ({
       ...prev,
-      [key]: !isExpanded,
+      [itemKey]: !isExpanded,
     }));
   };
 
   return (
-    <li key={key} className="rounded-md select-none">
+    <div className="rounded-md select-none">
       <Link
         to="/$teamSlugOrId/prs-only/$owner/$repo/$number"
         params={{
@@ -166,7 +239,7 @@ function PullRequestListItem({ pr, teamSlugOrId, expanded, setExpanded }: PullRe
           </a>
         </div>
       ) : null}
-    </li>
+    </div>
   );
 }
 

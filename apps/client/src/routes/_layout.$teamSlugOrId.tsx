@@ -1,5 +1,6 @@
 import { CmuxComments } from "@/components/cmux-comments";
 import { CommandBar } from "@/components/CommandBar";
+import { MainContentHeader } from "@/components/MainContentHeader";
 import { Sidebar } from "@/components/Sidebar";
 import {
   SettingsSidebar,
@@ -9,6 +10,7 @@ import { SIDEBAR_PRS_DEFAULT_LIMIT } from "@/components/sidebar/const";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { ExpandTasksProvider } from "@/contexts/expand-tasks/ExpandTasksProvider";
 import { cachedGetUser } from "@/lib/cachedGetUser";
+import { isElectron } from "@/lib/electron";
 import { setLastTeamSlugOrId } from "@/lib/lastTeam";
 import { stackClientApp } from "@/lib/stack";
 import { api } from "@cmux/convex/api";
@@ -21,7 +23,7 @@ import {
 } from "@tanstack/react-router";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery as useRQ } from "@tanstack/react-query";
-import { Suspense, useCallback, useEffect } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { env } from "@/client-env";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId")({
@@ -90,6 +92,9 @@ function LayoutComponent() {
   const { teamSlugOrId } = Route.useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const [isSidebarHidden, setIsSidebarHidden] = useState(
+    () => localStorage.getItem("sidebarHidden") === "true"
+  );
   // In web mode, exclude local workspaces
   const excludeLocalWorkspaces = env.NEXT_PUBLIC_WEB_MODE || undefined;
   // Use React Query-wrapped Convex queries to avoid real-time subscriptions
@@ -109,6 +114,55 @@ function LayoutComponent() {
   const sectionFromSearch = (location.search as { section?: unknown })?.section;
   const activeSettingsSection: SettingsSection =
     sectionFromSearch === "ai-providers" ? "ai-providers" : "general";
+
+  useEffect(() => {
+    localStorage.setItem("sidebarHidden", String(isSidebarHidden));
+  }, [isSidebarHidden]);
+
+  useEffect(() => {
+    setIsSidebarHidden(localStorage.getItem("sidebarHidden") === "true");
+  }, [isSettingsRoute]);
+
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === "sidebarHidden" && event.newValue !== null) {
+        setIsSidebarHidden(event.newValue === "true");
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
+  useEffect(() => {
+    if (isSettingsRoute) return;
+
+    if (isElectron && window.cmux?.on) {
+      const off = window.cmux.on("shortcut:sidebar-toggle", () => {
+        setIsSidebarHidden((prev) => !prev);
+      });
+      return () => {
+        if (typeof off === "function") off();
+      };
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.ctrlKey &&
+        event.shiftKey &&
+        !event.altKey &&
+        !event.metaKey &&
+        (event.code === "KeyS" || event.key.toLowerCase() === "s")
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        setIsSidebarHidden((prev) => !prev);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [isSettingsRoute]);
 
   const handleSettingsSectionChange = useCallback(
     (section: SettingsSection) => {
@@ -136,11 +190,21 @@ function LayoutComponent() {
             activeSection={activeSettingsSection}
             onSectionChange={handleSettingsSectionChange}
           />
-        ) : (
-          <Sidebar tasks={displayTasks} teamSlugOrId={teamSlugOrId} />
+        ) : isSidebarHidden ? null : (
+          <Sidebar
+            tasks={displayTasks}
+            teamSlugOrId={teamSlugOrId}
+            onToggleHidden={() => setIsSidebarHidden(true)}
+          />
         )}
 
-        <div className="min-w-full md:min-w-0 grow snap-start snap-always flex flex-col">
+        <div className="relative min-w-full md:min-w-0 grow snap-start snap-always flex flex-col">
+          {isSidebarHidden ? (
+            <MainContentHeader
+              onToggleSidebar={() => setIsSidebarHidden(false)}
+              teamSlugOrId={teamSlugOrId}
+            />
+          ) : null}
           <Suspense fallback={<div>Loading...</div>}>
             <Outlet />
           </Suspense>
