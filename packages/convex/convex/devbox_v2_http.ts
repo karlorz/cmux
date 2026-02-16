@@ -113,6 +113,7 @@ const modalInstancesApi = (internal as any).modalInstances as {
   recordStopInternal: FunctionReference<"mutation", "internal">;
 };
 
+
 /**
  * Record activity for a provider instance
  */
@@ -200,17 +201,36 @@ export const createInstance = httpAction(async (ctx, req) => {
 
   const provider: SandboxProvider = body.provider ?? "e2b";
 
+  // Check concurrency limit before creating a new instance
+  const concurrency = await ctx.runQuery(
+    internal.cloudRouterSubscription.checkConcurrencyLimit,
+    { userId: identity!.subject },
+  );
+
+  if (!concurrency.allowed) {
+    return jsonResponse(
+      {
+        code: 429,
+        message: `Concurrency limit reached (${concurrency.current}/${concurrency.limit} running sandboxes). Stop unused sandboxes or contact founders@manaflow.ai to increase your limit.`,
+      },
+      429,
+    );
+  }
+
   try {
     if (provider === "modal") {
-      // Gate expensive GPUs
+      // Gate expensive GPUs — check if user's tier unlocks it
       if (body.gpu && isModalGpuGated(body.gpu)) {
-        return jsonResponse(
-          {
-            code: 403,
-            message: `GPU type "${body.gpu}" requires approval. Please contact the Manaflow team at founders@manaflow.com for inquiry.`,
-          },
-          403,
-        );
+        const baseGpu = body.gpu.split(":")[0]?.toUpperCase() ?? "";
+        if (!concurrency.ungatedGpus.includes(baseGpu)) {
+          return jsonResponse(
+            {
+              code: 403,
+              message: `GPU type "${body.gpu}" requires approval. Please contact founders@manaflow.ai to get this GPU enabled for your account.`,
+            },
+            403,
+          );
+        }
       }
 
       const templateId = body.templateId ?? DEFAULT_MODAL_TEMPLATE_ID;
@@ -220,7 +240,7 @@ export const createInstance = httpAction(async (ctx, req) => {
         gpu: body.gpu,
         cpu: body.cpu,
         memoryMiB: body.memoryMiB,
-        ttlSeconds: body.ttlSeconds ?? 60 * 60,
+        ttlSeconds: body.ttlSeconds ?? 600,
         metadata: {
           app: "cmux-devbox-v2",
           userId: identity!.subject,
@@ -268,11 +288,16 @@ export const createInstance = httpAction(async (ctx, req) => {
     }
 
     // Default: E2B provider
-    const templateId = body.templateId ?? DEFAULT_E2B_TEMPLATE_ID;
+    // Resolve preset ID (e.g. "cmux-devbox-docker") to actual E2B template ID
+    const requestedTemplate = body.templateId ?? DEFAULT_E2B_TEMPLATE_ID;
+    const resolvedPreset = E2B_TEMPLATE_PRESETS.find(
+      (p) => p.templateId === requestedTemplate,
+    );
+    const templateId = resolvedPreset?.id ?? requestedTemplate;
 
     const result = (await ctx.runAction(e2bActionsApi.startInstance, {
       templateId,
-      ttlSeconds: body.ttlSeconds ?? 60 * 60,
+      ttlSeconds: body.ttlSeconds ?? 600,
       metadata: {
         app: "cmux-devbox-v2",
         userId: identity!.subject,
@@ -282,6 +307,7 @@ export const createInstance = httpAction(async (ctx, req) => {
     })) as {
       instanceId: string;
       status: string;
+      jupyterUrl?: string;
       vscodeUrl?: string;
       workerUrl?: string;
       vncUrl?: string;
@@ -304,6 +330,7 @@ export const createInstance = httpAction(async (ctx, req) => {
       provider: "e2b",
       status: result.status,
       templateId,
+      jupyterUrl: result.jupyterUrl,
       vscodeUrl: result.vscodeUrl,
       workerUrl: result.workerUrl,
       vncUrl: result.vncUrl,
@@ -351,13 +378,22 @@ export const listInstances = httpAction(async (ctx, req) => {
       updatedAt: number;
     }>;
 
-    const instances = rawInstances.map((inst) => ({
-      id: inst.devboxId,
-      status: inst.status,
-      name: inst.name,
-      createdAt: inst.createdAt,
-      updatedAt: inst.updatedAt,
-    }));
+    // Enrich each instance with provider info
+    const instances = await Promise.all(
+      rawInstances.map(async (inst) => {
+        const info = (await ctx.runQuery(devboxInternalApi.getInfo, {
+          devboxId: inst.devboxId,
+        })) as { provider: string; providerInstanceId: string } | null;
+        return {
+          id: inst.devboxId,
+          status: inst.status,
+          name: inst.name,
+          provider: info?.provider,
+          createdAt: inst.createdAt,
+          updatedAt: inst.updatedAt,
+        };
+      }),
+    );
 
     return jsonResponse({ instances });
   } catch (error) {
@@ -412,7 +448,15 @@ async function handleGetInstance(
       vncUrl?: string | null;
     };
 
-    const status = providerResult.status as "running" | "stopped";
+    const providerStatus = providerResult.status as "running" | "stopped";
+
+    // If the user explicitly paused and the provider still reports "running"
+    // (e.g. E2B has no native pause), preserve the local "paused" status.
+    // Only sync from provider when it reports a terminal state like "stopped".
+    const status =
+      instance.status === "paused" && providerStatus === "running"
+        ? "paused"
+        : providerStatus;
 
     if (status !== instance.status) {
       await ctx.runMutation(devboxApi.updateStatus, {
@@ -516,10 +560,15 @@ async function handlePauseInstance(
 
     // Neither E2B nor Modal has native pause
     if (provider === "e2b") {
-      await ctx.runAction(e2bActionsApi.extendTimeout, {
-        instanceId: providerInstanceId,
-        timeoutMs: 60 * 60 * 1000,
-      });
+      try {
+        await ctx.runAction(e2bActionsApi.extendTimeout, {
+          instanceId: providerInstanceId,
+          timeoutMs: 60 * 60 * 1000,
+        });
+      } catch (error) {
+        // E2B sandbox may have already expired — still update our status
+        console.error("[devbox_v2.pause] E2B extendTimeout failed (sandbox may have expired):", error);
+      }
     }
 
     await ctx.runMutation(devboxApi.updateStatus, {
@@ -563,6 +612,23 @@ async function handleResumeInstance(
 
     if (!instance) {
       return jsonResponse({ code: 404, message: "Instance not found" }, 404);
+    }
+
+    // Check concurrency limit before resuming (resuming makes it running)
+    const resumeIdentity = await ctx.auth.getUserIdentity();
+    const concurrency = await ctx.runQuery(
+      internal.cloudRouterSubscription.checkConcurrencyLimit,
+      { userId: resumeIdentity!.subject },
+    );
+
+    if (!concurrency.allowed) {
+      return jsonResponse(
+        {
+          code: 429,
+          message: `Concurrency limit reached (${concurrency.current}/${concurrency.limit} running sandboxes). Stop unused sandboxes or contact founders@manaflow.ai to increase your limit.`,
+        },
+        429,
+      );
     }
 
     const providerInfo = await getProviderInfo(ctx, id);
@@ -627,9 +693,14 @@ async function handleStopInstance(
     const actionsApi =
       provider === "modal" ? modalActionsApi : e2bActionsApi;
 
-    await ctx.runAction(actionsApi.stopInstance, {
-      instanceId: providerInstanceId,
-    });
+    try {
+      await ctx.runAction(actionsApi.stopInstance, {
+        instanceId: providerInstanceId,
+      });
+    } catch (error) {
+      // Provider instance may already be stopped/expired — still update our status
+      console.error("[devbox_v2.stop] Provider stop failed (may already be gone):", error);
+    }
 
     await ctx.runMutation(devboxApi.updateStatus, {
       teamSlugOrId,
@@ -647,13 +718,12 @@ async function handleStopInstance(
 }
 
 // ============================================================================
-// POST /api/v2/devbox/instances/{id}/env - Push environment variables
+// POST /api/v2/devbox/instances/{id}/delete - Delete instance (stop + remove)
 // ============================================================================
-async function handlePushEnv(
+async function handleDeleteInstance(
   ctx: ActionCtx,
   id: string,
-  teamSlugOrId: string,
-  envVarsContent: string
+  teamSlugOrId: string
 ): Promise<Response> {
   try {
     const instance = await ctx.runQuery(devboxApi.getById, {
@@ -672,71 +742,39 @@ async function handlePushEnv(
         404
       );
     }
-    const { providerInstanceId } = providerInfo;
 
-    // Get the worker URL from the E2B instance
-    const e2bResult = (await ctx.runAction(e2bActionsApi.getInstance, {
-      instanceId: providerInstanceId,
-    })) as {
-      instanceId: string;
-      status: string;
-      workerUrl?: string | null;
-    };
+    const { provider, providerInstanceId } = providerInfo;
+    const actionsApi =
+      provider === "modal" ? modalActionsApi : e2bActionsApi;
 
-    if (!e2bResult.workerUrl) {
-      return jsonResponse(
-        { code: 503, message: "Worker not available on sandbox" },
-        503
-      );
+    // Terminate the sandbox at the provider level
+    try {
+      await ctx.runAction(actionsApi.stopInstance, {
+        instanceId: providerInstanceId,
+      });
+    } catch (error) {
+      // If the provider instance is already gone, continue with cleanup
+      console.error("[devbox_v2.delete] Provider stop failed (may already be gone):", error);
     }
 
-    // Get the worker auth token
-    const tokenResult = (await ctx.runAction(e2bActionsApi.execCommand, {
-      instanceId: providerInstanceId,
-      command: "cat /home/user/.worker-auth-token 2>/dev/null || echo ''",
-    })) as { stdout?: string; stderr?: string; exit_code?: number };
+    await recordProviderActivity(ctx, provider, providerInstanceId, "stop");
 
-    const workerToken = tokenResult.stdout?.trim() || "";
-    if (!workerToken) {
-      return jsonResponse(
-        { code: 503, message: "Worker auth token not yet available" },
-        503
-      );
-    }
-
-    // POST to worker /env endpoint with base64-encoded content.
-    // This uses the same code path as the CLI (worker handles file writing,
-    // permissions, .bashrc/.profile sourcing, and envctl integration).
-    const encoded = btoa(envVarsContent);
-    const workerResp = await fetch(`${e2bResult.workerUrl}/env`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${workerToken}`,
-      },
-      body: JSON.stringify({ content: encoded, encoding: "base64" }),
+    // Remove the devbox instance and info records
+    await ctx.runMutation(devboxApi.remove, {
+      teamSlugOrId,
+      id,
     });
 
-    if (!workerResp.ok) {
-      const errBody = await workerResp.text();
-      console.error(
-        `[devbox_v2.env] Worker /env failed: status=${workerResp.status} body=${errBody.slice(0, 200)}`
-      );
-      return jsonResponse(
-        { code: 500, message: "Failed to apply environment variables" },
-        500
-      );
-    }
-
-    return jsonResponse({ applied: true, provider: "e2b" });
+    return jsonResponse({ deleted: true, provider });
   } catch (error) {
-    console.error("[devbox_v2.env] Error:", error);
+    console.error("[devbox_v2.delete] Error:", error);
     return jsonResponse(
-      { code: 500, message: "Failed to apply environment variables" },
+      { code: 500, message: "Failed to delete instance" },
       500
     );
   }
 }
+
 
 // ============================================================================
 // POST /api/v2/devbox/instances/{id}/ttl - Update TTL
@@ -950,7 +988,6 @@ export const instanceActionRouter = httpAction(async (ctx, req) => {
     command?: string | string[];
     timeout?: number;
     ttlSeconds?: number;
-    envVarsContent?: string;
   };
 
   try {
@@ -994,6 +1031,9 @@ export const instanceActionRouter = httpAction(async (ctx, req) => {
     case "token":
       return handleGetAuthToken(ctx, id, body.teamSlugOrId);
 
+    case "delete":
+      return handleDeleteInstance(ctx, id, body.teamSlugOrId);
+
     case "extend":
       return handleUpdateTtl(
         ctx,
@@ -1001,15 +1041,6 @@ export const instanceActionRouter = httpAction(async (ctx, req) => {
         body.teamSlugOrId,
         body.ttlSeconds ?? 3600
       );
-
-    case "env":
-      if (!body.envVarsContent) {
-        return jsonResponse(
-          { code: 400, message: "envVarsContent is required" },
-          400
-        );
-      }
-      return handlePushEnv(ctx, id, body.teamSlugOrId, body.envVarsContent);
 
     default:
       return jsonResponse({ code: 404, message: "Not found" }, 404);
@@ -1056,14 +1087,14 @@ export const listTemplates = httpAction(async (ctx, req) => {
     !providerFilter || providerFilter === "e2b"
       ? E2B_TEMPLATE_PRESETS.map((preset) => ({
           provider: "e2b" as const,
-          presetId: preset.id,
-          templateId: preset.templateId,
+          presetId: preset.templateId,
+          templateId: preset.id,
           name: preset.label,
           description: preset.description,
           cpu: preset.cpu,
           memory: preset.memory,
           disk: preset.disk,
-          supportsDocker: preset.templateId.includes("docker"),
+          supportsDocker: true,
         }))
       : [];
 
