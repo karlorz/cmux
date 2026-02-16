@@ -5,8 +5,8 @@ import {
 } from "@/components/ui/tooltip";
 import { useSidebarOptional } from "@/contexts/sidebar/SidebarContext";
 import { isElectron } from "@/lib/electron";
-import { useParams } from "@tanstack/react-router";
-import { ChevronRight } from "lucide-react";
+import { Link, useParams } from "@tanstack/react-router";
+import { ChevronRight, Plus } from "lucide-react";
 import type { CSSProperties } from "react";
 import CmuxLogoMark from "./logo/cmux-logo-mark";
 
@@ -45,7 +45,7 @@ export function FloatingPane({
           </div>
 
           <div
-            className="ml-2 pointer-events-auto"
+            className="ml-2 flex items-center gap-1 pointer-events-auto"
             style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
           >
             <Tooltip delayDuration={0}>
@@ -69,6 +69,21 @@ export function FloatingPane({
               </TooltipTrigger>
               <TooltipContent side="right">Show sidebar Ctrl+Shift+S</TooltipContent>
             </Tooltip>
+
+            <Link
+              to="/$teamSlugOrId/dashboard"
+              params={{ teamSlugOrId: teamSlugOrId! }}
+              activeOptions={{ exact: true }}
+              className="w-[25px] h-[25px] border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-900 rounded-lg flex items-center justify-center transition-opacity cursor-default bg-white/80 dark:bg-neutral-900/80 backdrop-blur opacity-60 hover:opacity-100 focus-visible:opacity-100"
+              style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
+              aria-label="New task"
+              title="New task"
+            >
+              <Plus
+                className="w-4 h-4 text-neutral-700 dark:text-neutral-300"
+                aria-hidden="true"
+              />
+            </Link>
           </div>
         </div>
       ) : null}

@@ -398,7 +398,10 @@ export function TaskDetailHeader({
               cmux-next
             </span>
           </div>
-          <div className="ml-2 w-[25px] h-[25px]" />
+          <div className="ml-2 flex items-center gap-1">
+            <div className="w-[25px] h-[25px]" />
+            <div className="w-[25px] h-[25px]" />
+          </div>
         </div>
       ) : null}
 
