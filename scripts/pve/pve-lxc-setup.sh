@@ -571,7 +571,10 @@ fi
 # Step 9.5: worker-daemon (SSH + worker HTTP API)
 if step_done "09.5-worker-daemon"; then
     echo "[9.5/10] Worker daemon... SKIP (already done)"
-elif [[ -f /usr/local/bin/worker-daemon ]]; then
+elif [[ -f /usr/local/bin/worker-daemon ]] \
+  && [[ -f /usr/local/bin/cmux-token-init ]] \
+  && [[ -f /etc/systemd/system/cmux-token-generator.service ]] \
+  && [[ -f /etc/systemd/system/cmux-worker.service ]]; then
     echo "[9.5/10] Worker daemon... SKIP (already installed)"
     mark_done "09.5-worker-daemon"
 else
