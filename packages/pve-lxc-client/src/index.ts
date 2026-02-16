@@ -1303,22 +1303,9 @@ export class PveLxcClient {
   // Use stopContainer/startContainer instead for production use.
   // See: https://pve.proxmox.com/wiki/Linux_Container
 
-  /**
-   * Remove a lock from a container config (equivalent to `pct unlock`).
-   * Note: PVE API doesn't support skiplock on PUT config, so this only works
-   * for containers that aren't currently locked. For locked containers,
-   * manual intervention via `pct unlock <vmid>` on the PVE host is required.
-   */
-  private async unlockContainer(vmid: number): Promise<void> {
-    const node = await this.getNode();
-    // Setting "delete" on the lock field removes it
-    await this.apiRequest<unknown>(
-      "PUT",
-      `/api2/json/nodes/${node}/lxc/${vmid}/config`,
-      { delete: "lock" }
-    );
-    console.log(`[PveLxcClient] Removed lock from container ${vmid}`);
-  }
+  // Note: unlockContainer method removed - PVE API doesn't support skiplock
+  // on PUT config, so it only worked for already-unlocked containers.
+  // For locked containers, use `pct unlock <vmid>` on the PVE host directly.
 
   /**
    * Delete a container
