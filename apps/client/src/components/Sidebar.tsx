@@ -300,37 +300,40 @@ export function Sidebar({ tasks, teamSlugOrId, onToggleHidden }: SidebarProps) {
             cmux-next
           </span>
         </Link>
-        <div className="grow"></div>
-        <Link
-          to="/$teamSlugOrId/dashboard"
-          params={{ teamSlugOrId }}
-          activeOptions={{ exact: true }}
-          className="w-[25px] h-[25px] border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-900 rounded-lg flex items-center justify-center transition-colors cursor-default"
-          title="New task"
+        {/* Icons immediately after title - fixed X position */}
+        <div
+          className="flex items-center gap-1 ml-2"
           style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
         >
-          <Plus
-            className="w-4 h-4 text-neutral-700 dark:text-neutral-300"
-            aria-hidden="true"
-          />
-        </Link>
-        <Tooltip delayDuration={0}>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={onToggleHidden}
-              className="ml-1 w-[25px] h-[25px] border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-900 rounded-lg flex items-center justify-center transition-colors cursor-default"
-              aria-label="Toggle sidebar"
-              style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
-            >
-              <ChevronLeft
-                className="w-4 h-4 text-neutral-700 dark:text-neutral-300"
-                aria-hidden="true"
-              />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Toggle sidebar Ctrl+Shift+S</TooltipContent>
-        </Tooltip>
+          <Tooltip delayDuration={0}>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={onToggleHidden}
+                className="w-[25px] h-[25px] border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-900 rounded-lg flex items-center justify-center transition-colors cursor-default"
+                aria-label="Toggle sidebar"
+              >
+                <ChevronLeft
+                  className="w-4 h-4 text-neutral-700 dark:text-neutral-300"
+                  aria-hidden="true"
+                />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Toggle sidebar Ctrl+Shift+S</TooltipContent>
+          </Tooltip>
+          <Link
+            to="/$teamSlugOrId/dashboard"
+            params={{ teamSlugOrId }}
+            activeOptions={{ exact: true }}
+            className="w-[25px] h-[25px] border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-900 rounded-lg flex items-center justify-center transition-colors cursor-default"
+            title="New task"
+          >
+            <Plus
+              className="w-4 h-4 text-neutral-700 dark:text-neutral-300"
+              aria-hidden="true"
+            />
+          </Link>
+        </div>
       </div>
       <nav className="grow flex flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto pb-8">

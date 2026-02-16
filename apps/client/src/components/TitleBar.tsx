@@ -26,14 +26,16 @@ export function TitleBar({
       className="h-[38px] border-b border-neutral-200/70 dark:border-neutral-800/50 flex items-center justify-center relative select-none"
       style={{ WebkitAppRegion: "drag" } as CSSProperties}
     >
-      {/* Left side: toggle icons when sidebar hidden, or traffic light spacer */}
-      <div
-        className={`absolute left-0 inset-y-0 flex items-center ${isElectron ? "" : "pl-3"}`}
-        style={{ WebkitAppRegion: showSidebarToggle ? "no-drag" : "drag" } as CSSProperties}
-      >
-        {isElectron && <div className="w-[80px]" />}
+      {/* Left side: toggle icons when sidebar hidden - same X position as sidebar header icons */}
+      {showSidebarToggle && (
+        <div
+          className={`absolute left-0 inset-y-0 flex items-center ${isElectron ? "" : "pl-3"}`}
+          style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
+        >
+          {/* Match sidebar layout: [80px traffic] [logo ~16px] [gap 6px] [title ~60px] [ml-2 8px] = 170px electron, 90px web */}
+          {isElectron && <div className="w-[80px]" />}
+          <div className="w-[90px]" /> {/* Space for logo + gap + "cmux-next" + ml-2 */}
 
-        {showSidebarToggle && (
           <div className="flex items-center gap-1">
             <Tooltip delayDuration={0}>
               <TooltipTrigger asChild>
@@ -67,8 +69,8 @@ export function TitleBar({
               />
             </Link>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Title - centered */}
       <div className="flex items-center text-xs font-medium text-neutral-900 dark:text-neutral-100">
