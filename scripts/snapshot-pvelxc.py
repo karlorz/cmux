@@ -3305,6 +3305,10 @@ async def task_install_systemd_units(ctx: PveTaskContext) -> None:
         install -d /etc/cmux
         install -Dm0644 {repo}/configs/systemd/cmux.target /usr/lib/systemd/system/cmux.target
         install -Dm0644 {repo}/configs/systemd/{ide_service} /usr/lib/systemd/system/cmux-ide.service
+        # Remove old Go worker service from base template (conflicts with Node.js worker)
+        # The Go worker now uses cmux-worker-daemon.service instead
+        rm -f /etc/systemd/system/cmux-worker.service
+        rm -f /etc/systemd/system/cmux.target.wants/cmux-worker.service
         install -Dm0644 {repo}/configs/systemd/cmux-worker.service /usr/lib/systemd/system/cmux-worker.service
         # Override Node.js worker port to 39376 for PVE-LXC (Go worker uses 39377)
         sed -i 's/WORKER_PORT=39377/WORKER_PORT=39376/' /usr/lib/systemd/system/cmux-worker.service

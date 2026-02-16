@@ -655,7 +655,10 @@ ExecStart=/usr/local/bin/cmux-token-init
 WantedBy=multi-user.target
 SERVICE
 
-    cat > /etc/systemd/system/cmux-worker.service << 'SERVICE'
+    # Use cmux-worker-daemon.service to avoid conflict with Node.js worker service
+    # Node.js worker uses cmux-worker.service on port 39376
+    # Go worker-daemon uses cmux-worker-daemon.service on port 39377
+    cat > /etc/systemd/system/cmux-worker-daemon.service << 'SERVICE'
 [Unit]
 Description=CMUX Worker Daemon (SSH:10000, HTTP:39377)
 After=network-online.target cmux-token-generator.service
@@ -667,8 +670,8 @@ Type=simple
 ExecStart=/usr/local/bin/worker-daemon
 Restart=on-failure
 RestartSec=2
-StandardOutput=append:/var/log/cmux/cmux-worker.log
-StandardError=append:/var/log/cmux/cmux-worker.log
+StandardOutput=append:/var/log/cmux/cmux-worker-daemon.log
+StandardError=append:/var/log/cmux/cmux-worker-daemon.log
 
 [Install]
 WantedBy=multi-user.target
@@ -677,9 +680,9 @@ SERVICE
     mkdir -p /var/log/cmux
     systemctl daemon-reload
     systemctl enable cmux-token-generator.service
-    systemctl enable cmux-worker.service
+    systemctl enable cmux-worker-daemon.service
     systemctl start cmux-token-generator.service
-    systemctl start cmux-worker.service
+    systemctl start cmux-worker-daemon.service
 
     cd /
     rm -rf "$WORKER_BUILD_DIR"
