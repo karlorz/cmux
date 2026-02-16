@@ -195,7 +195,7 @@ export function SettingsSidebar({
         <Link
           to="/$teamSlugOrId/dashboard"
           params={{ teamSlugOrId }}
-          className="pointer-default cursor-default group mb-1 ml-2 flex w-[calc(100%-16px)] items-center gap-2 rounded-sm pl-2 pr-2 py-1 text-left text-[13px] text-neutral-700 select-none hover:bg-neutral-200/45 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800/45 dark:hover:text-neutral-100"
+          className="pointer-default cursor-default group mb-1 ml-2 flex w-[calc(100%-8px)] items-center gap-2 rounded-sm pl-2 pr-2 py-1 text-left text-[13px] text-neutral-700 select-none hover:bg-neutral-200/45 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800/45 dark:hover:text-neutral-100"
           style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
         >
           <ArrowLeft
@@ -216,7 +216,7 @@ export function SettingsSidebar({
                   data-active={isActive ? "true" : undefined}
                   onClick={() => onSectionChange(item.section)}
                   className={clsx(
-                    "pointer-default cursor-default group ml-2 flex w-[calc(100%-16px)] items-center gap-2 rounded-sm pl-2 pr-2 py-1 text-left text-[13px] text-neutral-900 select-none hover:bg-neutral-200/45 dark:text-neutral-100 dark:hover:bg-neutral-800/45",
+                    "pointer-default cursor-default group ml-2 flex w-[calc(100%-8px)] items-center gap-2 rounded-sm pl-2 pr-2 py-1 text-left text-[13px] text-neutral-900 select-none hover:bg-neutral-200/45 dark:text-neutral-100 dark:hover:bg-neutral-800/45",
                     isActive &&
                       "bg-neutral-200/75 text-black dark:bg-neutral-800/65 dark:text-white"
                   )}
