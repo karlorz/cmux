@@ -320,7 +320,7 @@ export function Sidebar({ tasks, teamSlugOrId, onToggleHidden }: SidebarProps) {
           className="flex items-center gap-1 ml-2"
           style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
         >
-          <Tooltip delayDuration={0}>
+          <Tooltip delayDuration={200}>
             <TooltipTrigger asChild>
               <button
                 type="button"
@@ -334,20 +334,38 @@ export function Sidebar({ tasks, teamSlugOrId, onToggleHidden }: SidebarProps) {
                 />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="bottom">Toggle sidebar Ctrl+Shift+S</TooltipContent>
+            <TooltipContent
+              side="bottom"
+              showArrow={false}
+              className="bg-neutral-200 text-neutral-700 border border-neutral-300 shadow-sm px-2 py-1 dark:bg-neutral-700 dark:text-neutral-100 dark:border-neutral-600"
+            >
+              Toggle sidebar Ctrl+Shift+S
+            </TooltipContent>
           </Tooltip>
-          <Link
-            to="/$teamSlugOrId/dashboard"
-            params={{ teamSlugOrId }}
-            activeOptions={{ exact: true }}
-            className="w-[25px] h-[25px] border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-900 rounded-lg flex items-center justify-center transition-colors cursor-default"
-            title="New task"
-          >
-            <Plus
-              className="w-4 h-4 text-neutral-700 dark:text-neutral-300"
-              aria-hidden="true"
-            />
-          </Link>
+
+          <Tooltip delayDuration={200}>
+            <TooltipTrigger asChild>
+              <Link
+                to="/$teamSlugOrId/dashboard"
+                params={{ teamSlugOrId }}
+                activeOptions={{ exact: true }}
+                className="w-[25px] h-[25px] border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-900 rounded-lg flex items-center justify-center transition-colors cursor-default"
+                aria-label="New task"
+              >
+                <Plus
+                  className="w-4 h-4 text-neutral-700 dark:text-neutral-300"
+                  aria-hidden="true"
+                />
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent
+              side="bottom"
+              showArrow={false}
+              className="bg-neutral-200 text-neutral-700 border border-neutral-300 shadow-sm px-2 py-1 dark:bg-neutral-700 dark:text-neutral-100 dark:border-neutral-600"
+            >
+              New task
+            </TooltipContent>
+          </Tooltip>
         </div>
       </div>
       <nav className="grow flex flex-col overflow-hidden">

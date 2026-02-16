@@ -48,7 +48,7 @@ export function FloatingPane({
             className="ml-2 flex items-center gap-1 pointer-events-auto"
             style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
           >
-            <Tooltip delayDuration={0}>
+            <Tooltip delayDuration={200}>
               <TooltipTrigger asChild>
                 <button
                   type="button"
@@ -67,23 +67,39 @@ export function FloatingPane({
                   />
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="right">Show sidebar Ctrl+Shift+S</TooltipContent>
+              <TooltipContent
+                side="right"
+                showArrow={false}
+                className="bg-neutral-200 text-neutral-700 border border-neutral-300 shadow-sm px-2 py-1 dark:bg-neutral-700 dark:text-neutral-100 dark:border-neutral-600"
+              >
+                Show sidebar Ctrl+Shift+S
+              </TooltipContent>
             </Tooltip>
 
-            <Link
-              to="/$teamSlugOrId/dashboard"
-              params={{ teamSlugOrId: teamSlugOrId! }}
-              activeOptions={{ exact: true }}
-              className="w-[25px] h-[25px] border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-900 rounded-lg flex items-center justify-center transition-opacity cursor-default bg-white/80 dark:bg-neutral-900/80 backdrop-blur opacity-60 hover:opacity-100 focus-visible:opacity-100"
-              style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
-              aria-label="New task"
-              title="New task"
-            >
-              <Plus
-                className="w-4 h-4 text-neutral-700 dark:text-neutral-300"
-                aria-hidden="true"
-              />
-            </Link>
+            <Tooltip delayDuration={200}>
+              <TooltipTrigger asChild>
+                <Link
+                  to="/$teamSlugOrId/dashboard"
+                  params={{ teamSlugOrId: teamSlugOrId! }}
+                  activeOptions={{ exact: true }}
+                  className="w-[25px] h-[25px] border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-900 rounded-lg flex items-center justify-center transition-opacity cursor-default bg-white/80 dark:bg-neutral-900/80 backdrop-blur opacity-60 hover:opacity-100 focus-visible:opacity-100"
+                  style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
+                  aria-label="New task"
+                >
+                  <Plus
+                    className="w-4 h-4 text-neutral-700 dark:text-neutral-300"
+                    aria-hidden="true"
+                  />
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent
+                side="right"
+                showArrow={false}
+                className="bg-neutral-200 text-neutral-700 border border-neutral-300 shadow-sm px-2 py-1 dark:bg-neutral-700 dark:text-neutral-100 dark:border-neutral-600"
+              >
+                New task
+              </TooltipContent>
+            </Tooltip>
           </div>
         </div>
       ) : null}
