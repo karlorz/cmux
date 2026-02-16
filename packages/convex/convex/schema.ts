@@ -186,6 +186,7 @@ const convexSchema = defineSchema({
     .index("by_team_user_created", ["teamId", "userId", "createdAt"])
     .index("by_team_user_merge_updated", ["teamId", "userId", "mergeStatus", "updatedAt"])
     .index("by_team_user_activity", ["teamId", "userId", "lastActivityAt"])
+    .index("by_team_user_active", ["teamId", "userId", "isArchived", "isPreview", "lastActivityAt"])
     .index("by_pinned", ["pinned", "teamId", "userId"])
     .index("by_team_user_preview", ["teamId", "userId", "isPreview"])
     .index("by_team_preview", ["teamId", "isPreview"])

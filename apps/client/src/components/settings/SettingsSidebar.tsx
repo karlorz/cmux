@@ -6,7 +6,7 @@ import {
 import { isElectron } from "@/lib/electron";
 import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
-import { ArrowLeft, KeyRound, Settings } from "lucide-react";
+import { Archive, ArrowLeft, KeyRound, Settings } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -17,7 +17,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
-export type SettingsSection = "general" | "ai-providers";
+export type SettingsSection = "general" | "ai-providers" | "archived";
 
 interface SettingsSidebarProps {
   teamSlugOrId: string;
@@ -41,6 +41,11 @@ const navItems: SettingsSidebarNavItem[] = [
     label: "AI Providers",
     section: "ai-providers",
     icon: KeyRound,
+  },
+  {
+    label: "Archived Tasks",
+    section: "archived",
+    icon: Archive,
   },
 ];
 

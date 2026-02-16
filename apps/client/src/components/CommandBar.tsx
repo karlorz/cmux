@@ -674,9 +674,10 @@ export function CommandBar({
     : "Sign in to view teams.";
 
   // Lazy-load tasks only when command bar is open to reduce initial page load
+  // Uses limited query (50 tasks) instead of full table fetch
   const allTasks = useQuery(
-    api.tasks.getTasksWithTaskRuns,
-    open ? { teamSlugOrId, archived: false } : "skip"
+    api.tasks.getTasksWithTaskRunsLimited,
+    open ? { teamSlugOrId, limit: 50 } : "skip"
   );
   const reserveLocalWorkspace = useMutation(api.localWorkspaces.reserve);
   const createTask = useMutation(api.tasks.create);

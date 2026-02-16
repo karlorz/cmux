@@ -21,11 +21,9 @@ import {
   useLocation,
   useNavigate,
 } from "@tanstack/react-router";
-import { usePaginatedQuery } from "convex/react";
+import { useQuery } from "convex/react";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { env } from "@/client-env";
-
-const SIDEBAR_TASKS_PAGE_SIZE = 10;
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId")({
   component: LayoutComponentWrapper,
@@ -93,26 +91,19 @@ function LayoutComponent() {
   );
   // In web mode, exclude local workspaces
   const excludeLocalWorkspaces = env.NEXT_PUBLIC_WEB_MODE || undefined;
-  // Use paginated query to reduce initial load (20 tasks per page instead of all 200+)
-  // Uses getWithNotificationOrderPaginated which sorts by lastActivityAt desc
-  const {
-    results: tasks,
-    status: tasksStatus,
-    loadMore: loadMoreTasks,
-  } = usePaginatedQuery(
-    api.tasks.getWithNotificationOrderPaginated,
-    { teamSlugOrId, excludeLocalWorkspaces },
-    { initialNumItems: SIDEBAR_TASKS_PAGE_SIZE }
+  // Fetch all tasks - now efficient with by_team_user_active index
+  // Sorted by lastActivityAt desc
+  const tasks = useQuery(
+    api.tasks.getWithNotificationOrder,
+    { teamSlugOrId, excludeLocalWorkspaces }
   );
-
-  // Tasks are already sorted by the query (by lastActivityAt desc)
-  const displayTasks = tasks;
   const settingsPath = `/${teamSlugOrId}/settings`;
   const isSettingsRoute =
     location.pathname === settingsPath || location.pathname === `${settingsPath}/`;
   const sectionFromSearch = (location.search as { section?: unknown })?.section;
   const activeSettingsSection: SettingsSection =
-    sectionFromSearch === "ai-providers" ? "ai-providers" : "general";
+    sectionFromSearch === "ai-providers" ? "ai-providers" :
+    sectionFromSearch === "archived" ? "archived" : "general";
 
   useEffect(() => {
     localStorage.setItem("sidebarHidden", String(isSidebarHidden));
@@ -199,11 +190,9 @@ function LayoutComponent() {
             />
           ) : isSidebarHidden ? null : (
             <Sidebar
-              tasks={displayTasks}
+              tasks={tasks}
               teamSlugOrId={teamSlugOrId}
               onToggleHidden={() => setIsSidebarHidden(true)}
-              loadMoreTasks={() => loadMoreTasks(SIDEBAR_TASKS_PAGE_SIZE)}
-              canLoadMoreTasks={tasksStatus === "CanLoadMore"}
             />
           )}
 

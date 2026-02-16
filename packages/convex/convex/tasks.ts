@@ -106,23 +106,30 @@ export const get = authQuery({
     const userId = ctx.identity.subject;
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
 
-    // Use the by_team_user index and filter for archived status
-    // This handles tasks where isArchived may be undefined (not yet migrated)
-    let q = ctx.db
-      .query("tasks")
-      .withIndex("by_team_user", (idx) =>
-        idx.eq("teamId", teamId).eq("userId", userId),
-      );
-
+    // Use efficient indexes based on archived status
+    // by_team_user_active: for non-archived, non-preview tasks (most common case)
+    // by_team_user_archived: for archived tasks
+    let q;
     if (args.archived === true) {
-      q = q.filter((qq) => qq.eq(qq.field("isArchived"), true));
+      q = ctx.db
+        .query("tasks")
+        .withIndex("by_team_user_archived", (idx) =>
+          idx.eq("teamId", teamId).eq("userId", userId).eq("isArchived", true),
+        )
+        .filter((qq) => qq.neq(qq.field("isPreview"), true));
     } else {
-      // Include tasks where isArchived is false OR undefined (not yet set)
-      q = q.filter((qq) => qq.neq(qq.field("isArchived"), true));
+      q = ctx.db
+        .query("tasks")
+        .withIndex("by_team_user_active", (idx) =>
+          idx
+            .eq("teamId", teamId)
+            .eq("userId", userId)
+            .eq("isArchived", false)
+            .eq("isPreview", false),
+        );
     }
 
     const tasks = await q
-      .filter((qq) => qq.neq(qq.field("isPreview"), true))
       .filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined))
       .filter((qq) =>
         args.excludeLocalWorkspaces
@@ -162,7 +169,7 @@ export const get = authQuery({
 });
 
 // Lightweight query to check if user has any real tasks (for onboarding)
-// Returns early after finding first match - much cheaper than fetching all tasks
+// Returns early after finding first match - uses by_team_user_active index for efficiency
 export const hasRealTasks = authQuery({
   args: {
     teamSlugOrId: v.string(),
@@ -171,14 +178,17 @@ export const hasRealTasks = authQuery({
     const userId = ctx.identity.subject;
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
 
-    // Check active tasks first
+    // Check active tasks using the efficient by_team_user_active index
+    // Only scans tasks where isArchived=false AND isPreview=false
     const activeTask = await ctx.db
       .query("tasks")
-      .withIndex("by_team_user", (idx) =>
-        idx.eq("teamId", teamId).eq("userId", userId),
+      .withIndex("by_team_user_active", (idx) =>
+        idx
+          .eq("teamId", teamId)
+          .eq("userId", userId)
+          .eq("isArchived", false)
+          .eq("isPreview", false),
       )
-      .filter((qq) => qq.neq(qq.field("isArchived"), true))
-      .filter((qq) => qq.neq(qq.field("isPreview"), true))
       .filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined))
       // Exclude workspaces - we want "real" tasks
       .filter((qq) => qq.neq(qq.field("isCloudWorkspace"), true))
@@ -189,7 +199,7 @@ export const hasRealTasks = authQuery({
       return { hasRealTasks: true, hasCompletedRealTasks: activeTask.isCompleted === true };
     }
 
-    // Check archived tasks
+    // Check archived tasks using by_team_user_archived index
     const archivedTask = await ctx.db
       .query("tasks")
       .withIndex("by_team_user_archived", (idx) =>
@@ -279,23 +289,28 @@ export const getWithNotificationOrder = authQuery({
     const userId = ctx.identity.subject;
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
 
-    // Use the by_team_user index and filter for archived status
-    // This handles tasks where isArchived may be undefined (not yet migrated)
-    let q = ctx.db
-      .query("tasks")
-      .withIndex("by_team_user", (idx) =>
-        idx.eq("teamId", teamId).eq("userId", userId),
-      );
-
+    // Use efficient indexes based on archived status
+    let q;
     if (args.archived === true) {
-      q = q.filter((qq) => qq.eq(qq.field("isArchived"), true));
+      q = ctx.db
+        .query("tasks")
+        .withIndex("by_team_user_archived", (idx) =>
+          idx.eq("teamId", teamId).eq("userId", userId).eq("isArchived", true),
+        )
+        .filter((qq) => qq.neq(qq.field("isPreview"), true));
     } else {
-      // Include tasks where isArchived is false OR undefined (not yet set)
-      q = q.filter((qq) => qq.neq(qq.field("isArchived"), true));
+      q = ctx.db
+        .query("tasks")
+        .withIndex("by_team_user_active", (idx) =>
+          idx
+            .eq("teamId", teamId)
+            .eq("userId", userId)
+            .eq("isArchived", false)
+            .eq("isPreview", false),
+        );
     }
 
     const tasks = await q
-      .filter((qq) => qq.neq(qq.field("isPreview"), true))
       .filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined))
       .filter((qq) =>
         args.excludeLocalWorkspaces
@@ -352,20 +367,28 @@ export const getPaginated = authQuery({
     const userId = ctx.identity.subject;
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
 
-    // Use by_team_user_activity index for server-side sorting
-    let q = ctx.db
-      .query("tasks")
-      .withIndex("by_team_user_activity", (idx) =>
-        idx.eq("teamId", teamId).eq("userId", userId),
-      );
-
+    // Use efficient indexes based on archived status
+    // by_team_user_active includes lastActivityAt for sorting
+    let q;
     if (args.archived === true) {
-      q = q.filter((qq) => qq.eq(qq.field("isArchived"), true));
+      q = ctx.db
+        .query("tasks")
+        .withIndex("by_team_user_archived", (idx) =>
+          idx.eq("teamId", teamId).eq("userId", userId).eq("isArchived", true),
+        )
+        .filter((qq) => qq.neq(qq.field("isPreview"), true));
     } else {
-      q = q.filter((qq) => qq.neq(qq.field("isArchived"), true));
+      q = ctx.db
+        .query("tasks")
+        .withIndex("by_team_user_active", (idx) =>
+          idx
+            .eq("teamId", teamId)
+            .eq("userId", userId)
+            .eq("isArchived", false)
+            .eq("isPreview", false),
+        );
     }
 
-    q = q.filter((qq) => qq.neq(qq.field("isPreview"), true));
     q = q.filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined));
 
     if (args.excludeLocalWorkspaces) {
@@ -406,7 +429,7 @@ export const getPaginated = authQuery({
 });
 
 // Paginated version of getWithNotificationOrder() for infinite scroll
-// Uses by_team_user_activity index for efficient server-side sorting by lastActivityAt
+// Uses by_team_user_active index for efficient server-side sorting by lastActivityAt
 export const getWithNotificationOrderPaginated = authQuery({
   args: {
     teamSlugOrId: v.string(),
@@ -419,20 +442,28 @@ export const getWithNotificationOrderPaginated = authQuery({
     const userId = ctx.identity.subject;
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
 
-    // Use by_team_user_activity index for server-side sorting by lastActivityAt
-    let q = ctx.db
-      .query("tasks")
-      .withIndex("by_team_user_activity", (idx) =>
-        idx.eq("teamId", teamId).eq("userId", userId),
-      );
-
+    // Use efficient indexes based on archived status
+    // by_team_user_active includes lastActivityAt for sorting
+    let q;
     if (args.archived === true) {
-      q = q.filter((qq) => qq.eq(qq.field("isArchived"), true));
+      q = ctx.db
+        .query("tasks")
+        .withIndex("by_team_user_archived", (idx) =>
+          idx.eq("teamId", teamId).eq("userId", userId).eq("isArchived", true),
+        )
+        .filter((qq) => qq.neq(qq.field("isPreview"), true));
     } else {
-      q = q.filter((qq) => qq.neq(qq.field("isArchived"), true));
+      q = ctx.db
+        .query("tasks")
+        .withIndex("by_team_user_active", (idx) =>
+          idx
+            .eq("teamId", teamId)
+            .eq("userId", userId)
+            .eq("isArchived", false)
+            .eq("isPreview", false),
+        );
     }
 
-    q = q.filter((qq) => qq.neq(qq.field("isPreview"), true));
     q = q.filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined));
 
     if (args.excludeLocalWorkspaces) {
@@ -562,23 +593,28 @@ export const getTasksWithTaskRuns = authQuery({
     const userId = ctx.identity.subject;
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
 
-    // Use the by_team_user index and filter for archived status
-    // This handles tasks where isArchived may be undefined (not yet migrated)
-    let q = ctx.db
-      .query("tasks")
-      .withIndex("by_team_user", (idx) =>
-        idx.eq("teamId", teamId).eq("userId", userId),
-      );
-
+    // Use efficient indexes based on archived status
+    let q;
     if (args.archived === true) {
-      q = q.filter((qq) => qq.eq(qq.field("isArchived"), true));
+      q = ctx.db
+        .query("tasks")
+        .withIndex("by_team_user_archived", (idx) =>
+          idx.eq("teamId", teamId).eq("userId", userId).eq("isArchived", true),
+        )
+        .filter((qq) => qq.neq(qq.field("isPreview"), true));
     } else {
-      // Include tasks where isArchived is false OR undefined (not yet set)
-      q = q.filter((qq) => qq.neq(qq.field("isArchived"), true));
+      q = ctx.db
+        .query("tasks")
+        .withIndex("by_team_user_active", (idx) =>
+          idx
+            .eq("teamId", teamId)
+            .eq("userId", userId)
+            .eq("isArchived", false)
+            .eq("isPreview", false),
+        );
     }
 
     const tasks = await q
-      .filter((qq) => qq.neq(qq.field("isPreview"), true))
       .filter((qq) =>
         args.projectFullName
           ? qq.eq(qq.field("projectFullName"), args.projectFullName)
@@ -606,6 +642,62 @@ export const getTasksWithTaskRuns = authQuery({
 
     // Map projected tasks with their projected selected runs (saves ~10-20 KB per doc)
     return sortedTasks.map((task) => ({
+      ...projectTaskForList(task),
+      selectedTaskRun: projectTaskRunForList(
+        task.selectedTaskRunId ? runMap.get(task.selectedTaskRunId) : null
+      ),
+    }));
+  },
+});
+
+/**
+ * Lightweight version of getTasksWithTaskRuns for CommandBar.
+ * Uses by_team_user_active index for tasks with explicit isArchived/isPreview=false values.
+ * After data migration, this will efficiently fetch only ~limit documents.
+ *
+ * Note: Pre-migration tasks with undefined isArchived/isPreview won't be included.
+ * Run the normalizeBooleanFields migration to fix this.
+ */
+export const getTasksWithTaskRunsLimited = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const limit = args.limit ?? 50;
+
+    // Use by_team_user_active compound index: [teamId, userId, isArchived, isPreview, lastActivityAt]
+    // This efficiently fetches only active tasks without full table scan.
+    // Requires tasks to have isArchived=false and isPreview=false explicitly set (not undefined).
+    const tasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_team_user_active", (idx) =>
+        idx
+          .eq("teamId", teamId)
+          .eq("userId", userId)
+          .eq("isArchived", false)
+          .eq("isPreview", false),
+      )
+      .order("desc")
+      .take(limit);
+
+    // Collect unique selectedTaskRunIds (filter out undefined)
+    const runIds = tasks
+      .map((t) => t.selectedTaskRunId)
+      .filter((id): id is Id<"taskRuns"> => id !== undefined);
+
+    // Batch fetch all selected runs
+    const runs = await Promise.all(runIds.map((id) => ctx.db.get(id)));
+    const runMap = new Map(
+      runs
+        .filter((r): r is NonNullable<typeof r> => r !== null)
+        .map((r) => [r._id, r]),
+    );
+
+    // Map projected tasks with their projected selected runs
+    return tasks.map((task) => ({
       ...projectTaskForList(task),
       selectedTaskRun: projectTaskRunForList(
         task.selectedTaskRunId ? runMap.get(task.selectedTaskRunId) : null
@@ -653,6 +745,8 @@ export const create = authMutation({
       baseBranch: args.baseBranch,
       worktreePath: args.worktreePath,
       isCompleted: false,
+      isArchived: false,
+      isPreview: false,
       createdAt: now,
       updatedAt: now,
       lastActivityAt: now,
@@ -1500,6 +1594,7 @@ export const createForPreview = internalMutation({
       baseBranch: args.baseBranch,
       worktreePath: undefined,
       isCompleted: false,
+      isArchived: false,
       isPreview: true,
       createdAt: now,
       updatedAt: now,
@@ -1534,6 +1629,7 @@ export const createTestTask = internalMutation({
       baseBranch: undefined,
       worktreePath: undefined,
       isCompleted: false,
+      isArchived: false,
       isPreview: true,
       createdAt: now,
       updatedAt: now,

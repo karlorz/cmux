@@ -385,6 +385,32 @@ export const backfillTaskRunPullRequestsContinue = internalMutation({
   },
 });
 
+// Normalize isArchived and isPreview fields on tasks to enable efficient index queries.
+// Sets undefined values to false so the by_team_user_active index can be used.
+// Run with: bunx convex run migrations:run '{fn: "migrations:normalizeTaskBooleanFields"}'
+export const normalizeTaskBooleanFields = migrations.define({
+  table: "tasks",
+  migrateOne: (_ctx, doc) => {
+    const updates: Partial<typeof doc> = {};
+
+    // Normalize isArchived: undefined -> false
+    if (doc.isArchived === undefined) {
+      updates.isArchived = false;
+    }
+
+    // Normalize isPreview: undefined -> false
+    if (doc.isPreview === undefined) {
+      updates.isPreview = false;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return;
+    }
+
+    return updates;
+  },
+});
+
 // Backfill selectedTaskRunId for existing tasks.
 // Sets it to the crowned run if one exists, otherwise the latest non-archived run.
 // Run with: bunx convex run migrations:run '{fn: "migrations:backfillTasksSelectedTaskRunId"}'

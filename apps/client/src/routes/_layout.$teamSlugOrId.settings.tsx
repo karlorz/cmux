@@ -6,6 +6,7 @@ import {
   type ConnectionTestResult,
   type ProviderInfo,
 } from "@/components/settings/sections/AIProvidersSection";
+import { ArchivedTasksSection } from "@/components/settings/sections/ArchivedTasksSection";
 import { useTheme } from "@/components/theme/use-theme";
 import { TitleBar } from "@/components/TitleBar";
 import { api } from "@cmux/convex/api";
@@ -31,7 +32,7 @@ import { z } from "zod";
 export const Route = createFileRoute("/_layout/$teamSlugOrId/settings")({
   component: SettingsComponent,
   validateSearch: z.object({
-    section: z.enum(["general", "ai-providers"]).default("general"),
+    section: z.enum(["general", "ai-providers", "archived"]).default("general"),
   }),
 });
 
@@ -817,6 +818,8 @@ function SettingsComponent() {
               onWorktreePathChange={setWorktreePath}
               onContainerSettingsChange={handleContainerSettingsChange}
             />
+          ) : activeSection === "archived" ? (
+            <ArchivedTasksSection teamSlugOrId={teamSlugOrId} />
           ) : (
             <AIProvidersSection
               apiKeys={apiKeys}

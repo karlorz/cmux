@@ -100,6 +100,8 @@ export const reserve = authMutation({
       projectFullName: projectFullName ?? undefined,
       worktreePath: undefined,
       isCompleted: false,
+      isArchived: false,
+      isPreview: false,
       isLocalWorkspace: true,
       linkedFromCloudTaskRunId: args.linkedFromCloudTaskRunId,
       createdAt: now,

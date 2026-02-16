@@ -221,7 +221,6 @@ const createCollapsedPreviewCategoryState = (
   completed: defaultValue,
 });
 
-const ARCHIVED_PAGE_SIZE = 20;
 const PREVIEW_PAGE_SIZE = 20;
 const TASKS_PAGE_SIZE = 10;
 const CATEGORY_INITIAL_DISPLAY_COUNT = 5;
@@ -244,15 +243,6 @@ export const TaskList = memo(function TaskList({
     { teamSlugOrId, excludeLocalWorkspaces },
     { initialNumItems: TASKS_PAGE_SIZE },
   );
-  const {
-    results: archivedTasks,
-    status: archivedStatus,
-    loadMore: loadMoreArchived,
-  } = usePaginatedQuery(
-    api.tasks.getArchivedPaginated,
-    { teamSlugOrId, excludeLocalWorkspaces },
-    { initialNumItems: ARCHIVED_PAGE_SIZE },
-  );
   const pinnedData = useQuery(api.tasks.getPinned, { teamSlugOrId, excludeLocalWorkspaces });
   const {
     results: previewRuns,
@@ -263,38 +253,11 @@ export const TaskList = memo(function TaskList({
     { teamSlugOrId },
     { initialNumItems: PREVIEW_PAGE_SIZE },
   );
-  const [tab, setTab] = useState<"all" | "archived" | "previews">("all");
+  const [tab, setTab] = useState<"all" | "previews">("all");
 
-  // Infinite scroll for archived tasks
-  const archivedScrollRef = useRef<HTMLDivElement>(null);
-  const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
   // Infinite scroll for preview runs
   const previewScrollRef = useRef<HTMLDivElement>(null);
   const previewLoadMoreTriggerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (tab !== "archived" || archivedStatus !== "CanLoadMore") return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          loadMoreArchived(ARCHIVED_PAGE_SIZE);
-        }
-      },
-      { threshold: 0.1 },
-    );
-
-    const trigger = loadMoreTriggerRef.current;
-    if (trigger) {
-      observer.observe(trigger);
-    }
-
-    return () => {
-      if (trigger) {
-        observer.unobserve(trigger);
-      }
-    };
-  }, [tab, archivedStatus, loadMoreArchived]);
 
   useEffect(() => {
     if (tab !== "previews" || previewRunsStatus !== "CanLoadMore") return;
@@ -477,54 +440,10 @@ export const TaskList = memo(function TaskList({
           >
             Previews
           </button>
-          <button
-            className={
-              "text-sm font-medium transition-colors " +
-              (tab === "archived"
-                ? "text-neutral-900 dark:text-neutral-100"
-                : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200")
-            }
-            onMouseDown={() => setTab("archived")}
-            onClick={() => setTab("archived")}
-          >
-            Archived
-          </button>
         </div>
       </div>
       <div className="flex flex-col gap-1 w-full">
-        {tab === "archived" ? (
-          archivedStatus === "LoadingFirstPage" ? (
-            <div className="text-sm text-neutral-500 dark:text-neutral-400 py-2 pl-4 select-none">
-              Loading...
-            </div>
-          ) : archivedTasks.length === 0 ? (
-            <div className="text-sm text-neutral-500 dark:text-neutral-400 py-2 pl-4 select-none">
-              No archived tasks
-            </div>
-          ) : (
-            <div ref={archivedScrollRef} className="flex flex-col w-full">
-              {archivedTasks.map((task) => (
-                <TaskItem
-                  key={task._id}
-                  task={task}
-                  teamSlugOrId={teamSlugOrId}
-                />
-              ))}
-              {/* Infinite scroll trigger */}
-              <div ref={loadMoreTriggerRef} className="w-full py-2">
-                {archivedStatus === "LoadingMore" && (
-                  <div className="flex items-center justify-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Loading more...</span>
-                  </div>
-                )}
-                {archivedStatus === "CanLoadMore" && (
-                  <div className="h-1" />
-                )}
-              </div>
-            </div>
-          )
-        ) : tab === "previews" ? (
+        {tab === "previews" ? (
           previewRunsStatus === "LoadingFirstPage" ? (
             <div className="text-sm text-neutral-500 dark:text-neutral-400 py-2 pl-4 select-none">
               Loading...
