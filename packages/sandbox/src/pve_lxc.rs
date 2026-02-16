@@ -1124,9 +1124,8 @@ impl SandboxService for PveLxcService {
 
         // Convert the axum Body stream to a reqwest Body
         let stream = archive.into_data_stream();
-        let body_stream = stream.map(|result| {
-            result.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
-        });
+        let body_stream =
+            stream.map(|result| result.map_err(|e| std::io::Error::other(e.to_string())));
         let reqwest_body = reqwest::Body::wrap_stream(body_stream);
 
         // Send the archive to the container's /files endpoint
