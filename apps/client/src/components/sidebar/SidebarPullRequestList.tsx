@@ -10,17 +10,36 @@ import {
 } from "lucide-react";
 import { useMemo, useState, type MouseEvent } from "react";
 import { SidebarListItem } from "./SidebarListItem";
+import { SidebarProjectGroup } from "./SidebarProjectGroup";
 import { SIDEBAR_PRS_DEFAULT_LIMIT } from "./const";
 import type { Doc } from "@cmux/convex/dataModel";
+import type { SectionPreferences, SortBy } from "./sidebar-types";
+import {
+  filterRelevant,
+  getGroupDisplayName,
+  groupItemsByProject,
+  isItemRelevant,
+  sortItems,
+} from "./sidebar-utils";
 
 type Props = {
   teamSlugOrId: string;
   limit?: number;
+  preferences?: SectionPreferences;
+  isGroupCollapsed?: (groupKey: string) => boolean;
+  toggleGroupCollapsed?: (groupKey: string) => void;
+  isGroupExpanded?: (groupKey: string) => boolean;
+  toggleGroupExpanded?: (groupKey: string) => void;
 };
 
 export function SidebarPullRequestList({
   teamSlugOrId,
   limit = SIDEBAR_PRS_DEFAULT_LIMIT,
+  preferences,
+  isGroupCollapsed,
+  toggleGroupCollapsed,
+  isGroupExpanded,
+  toggleGroupExpanded,
 }: Props) {
   const prs = useConvexQuery(api.github_prs.listPullRequests, {
     teamSlugOrId,
@@ -30,7 +49,37 @@ export function SidebarPullRequestList({
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  const list = useMemo(() => prs ?? [], [prs]);
+  // Process PRs with grouping/filtering/sorting if preferences are provided
+  const processedPRs = useMemo(() => {
+    if (!prs) return { groups: new Map<string, Doc<"pullRequests">[]>(), flat: [] };
+
+    let prList = [...prs];
+
+    if (preferences) {
+      // Apply show filter
+      prList = filterRelevant(
+        prList,
+        preferences.showFilter,
+        (pr) => isItemRelevant(pr._creationTime, false)
+      );
+
+      // Apply sort
+      prList = sortItems(prList, preferences.sortBy, (pr, sortBy: SortBy) => {
+        if (sortBy === "updated") {
+          return pr.updatedAt ?? pr._creationTime;
+        }
+        return pr._creationTime;
+      });
+
+      // Group by repo if in "by-project" mode
+      if (preferences.organizeMode === "by-project") {
+        const groups = groupItemsByProject(prList, (pr) => pr.repoFullName ?? undefined);
+        return { groups, flat: [] };
+      }
+    }
+
+    return { groups: new Map<string, Doc<"pullRequests">[]>(), flat: prList };
+  }, [prs, preferences]);
 
   if (prs === undefined) {
     return (
@@ -44,7 +93,9 @@ export function SidebarPullRequestList({
     );
   }
 
-  if (list.length === 0) {
+  const hasNoPRs = processedPRs.groups.size === 0 && processedPRs.flat.length === 0;
+
+  if (hasNoPRs) {
     return (
       <p className="mt-1 pl-2 pr-3 py-2 text-xs text-neutral-500 dark:text-neutral-400 select-none">
         No pull requests
@@ -52,17 +103,42 @@ export function SidebarPullRequestList({
     );
   }
 
+  const renderPR = (pr: Doc<"pullRequests">) => (
+    <PullRequestListItem
+      key={`${pr.repoFullName}#${pr.number}`}
+      pr={pr}
+      teamSlugOrId={teamSlugOrId}
+      expanded={expanded}
+      setExpanded={setExpanded}
+    />
+  );
+
+  // Grouped view
+  if (preferences?.organizeMode === "by-project" && processedPRs.groups.size > 0 && isGroupCollapsed && toggleGroupCollapsed && isGroupExpanded && toggleGroupExpanded) {
+    return (
+      <div className="flex flex-col gap-px">
+        {Array.from(processedPRs.groups.entries()).map(([groupKey, groupPRs]) => (
+          <SidebarProjectGroup
+            key={groupKey}
+            groupKey={groupKey}
+            displayName={getGroupDisplayName(groupKey)}
+            items={groupPRs}
+            isCollapsed={isGroupCollapsed(groupKey)}
+            onToggleCollapse={() => toggleGroupCollapsed(groupKey)}
+            isExpanded={isGroupExpanded(groupKey)}
+            onToggleExpand={() => toggleGroupExpanded(groupKey)}
+            renderItem={renderPR}
+            initialDisplayCount={5}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  // Flat list view
   return (
     <ul className="flex flex-col gap-px">
-      {list.map((pr) => (
-        <PullRequestListItem
-          key={`${pr.repoFullName}#${pr.number}`}
-          pr={pr}
-          teamSlugOrId={teamSlugOrId}
-          expanded={expanded}
-          setExpanded={setExpanded}
-        />
-      ))}
+      {processedPRs.flat.map(renderPR)}
     </ul>
   );
 }
@@ -87,7 +163,7 @@ function PullRequestListItem({ pr, teamSlugOrId, expanded, setExpanded }: PullRe
   ]
     .filter(Boolean)
     .map(String);
-  const secondary = secondaryParts.join(" • ");
+  const secondary = secondaryParts.join(" - ");
   const leadingIcon = pr.merged ? (
     <GitMerge className="w-3 h-3 text-purple-500" />
   ) : pr.state === "closed" ? (

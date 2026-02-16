@@ -1,11 +1,13 @@
 import { CmuxComments } from "@/components/cmux-comments";
 import { CommandBar } from "@/components/CommandBar";
+import { MainContentHeader } from "@/components/MainContentHeader";
 import { Sidebar } from "@/components/Sidebar";
 import {
   SettingsSidebar,
   type SettingsSection,
 } from "@/components/settings/SettingsSidebar";
 import { SIDEBAR_PRS_DEFAULT_LIMIT } from "@/components/sidebar/const";
+import { useSidebarVisibility } from "@/components/sidebar/useSidebarVisibility";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { ExpandTasksProvider } from "@/contexts/expand-tasks/ExpandTasksProvider";
 import { cachedGetUser } from "@/lib/cachedGetUser";
@@ -90,6 +92,10 @@ function LayoutComponent() {
   const { teamSlugOrId } = Route.useParams();
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Sidebar visibility state (persisted, synced, keyboard shortcut enabled)
+  const { isHidden: isSidebarHidden, toggleSidebar } = useSidebarVisibility();
+
   // In web mode, exclude local workspaces
   const excludeLocalWorkspaces = env.NEXT_PUBLIC_WEB_MODE || undefined;
   // Use React Query-wrapped Convex queries to avoid real-time subscriptions
@@ -137,10 +143,22 @@ function LayoutComponent() {
             onSectionChange={handleSettingsSectionChange}
           />
         ) : (
-          <Sidebar tasks={displayTasks} teamSlugOrId={teamSlugOrId} />
+          <Sidebar
+            tasks={displayTasks}
+            teamSlugOrId={teamSlugOrId}
+            isHidden={isSidebarHidden}
+            onToggleSidebar={toggleSidebar}
+          />
         )}
 
-        <div className="min-w-full md:min-w-0 grow snap-start snap-always flex flex-col">
+        <div className="relative min-w-full md:min-w-0 grow snap-start snap-always flex flex-col">
+          {/* Show floating header when sidebar is hidden (only on non-settings routes) */}
+          {isSidebarHidden && !isSettingsRoute && (
+            <MainContentHeader
+              onToggleSidebar={toggleSidebar}
+              teamSlugOrId={teamSlugOrId}
+            />
+          )}
           <Suspense fallback={<div>Loading...</div>}>
             <Outlet />
           </Suspense>
