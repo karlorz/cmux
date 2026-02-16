@@ -1,7 +1,7 @@
 import { CmuxComments } from "@/components/cmux-comments";
 import { CommandBar } from "@/components/CommandBar";
-import { MainContentHeader } from "@/components/MainContentHeader";
 import { Sidebar } from "@/components/Sidebar";
+import { SidebarContext } from "@/contexts/sidebar/SidebarContext";
 import {
   SettingsSidebar,
   type SettingsSection,
@@ -23,7 +23,7 @@ import {
 } from "@tanstack/react-router";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery as useRQ } from "@tanstack/react-query";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { env } from "@/client-env";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId")({
@@ -179,66 +179,70 @@ function LayoutComponent() {
     [activeSettingsSection, isSettingsRoute, navigate, teamSlugOrId]
   );
 
+  const sidebarContextValue = useMemo(
+    () => ({
+      isHidden: isSidebarHidden,
+      setIsHidden: setIsSidebarHidden,
+      toggle: () => setIsSidebarHidden((prev) => !prev),
+    }),
+    [isSidebarHidden]
+  );
+
   return (
     <ExpandTasksProvider>
-      <CommandBar teamSlugOrId={teamSlugOrId} />
+      <SidebarContext.Provider value={sidebarContextValue}>
+        <CommandBar teamSlugOrId={teamSlugOrId} />
 
-      <div className="flex flex-row grow min-h-0 h-dvh bg-white dark:bg-black overflow-x-auto snap-x snap-mandatory md:overflow-x-visible md:snap-none">
-        {isSettingsRoute ? (
-          <SettingsSidebar
-            teamSlugOrId={teamSlugOrId}
-            activeSection={activeSettingsSection}
-            onSectionChange={handleSettingsSectionChange}
-          />
-        ) : isSidebarHidden ? null : (
-          <Sidebar
-            tasks={displayTasks}
-            teamSlugOrId={teamSlugOrId}
-            onToggleHidden={() => setIsSidebarHidden(true)}
-          />
-        )}
-
-        <div className="relative min-w-full md:min-w-0 grow snap-start snap-always flex flex-col">
-          {isSidebarHidden ? (
-            <MainContentHeader
-              onToggleSidebar={() => setIsSidebarHidden(false)}
+        <div className="flex flex-row grow min-h-0 h-dvh bg-white dark:bg-black overflow-x-auto snap-x snap-mandatory md:overflow-x-visible md:snap-none">
+          {isSettingsRoute ? (
+            <SettingsSidebar
               teamSlugOrId={teamSlugOrId}
+              activeSection={activeSettingsSection}
+              onSectionChange={handleSettingsSectionChange}
             />
-          ) : null}
-          <Suspense fallback={<div>Loading...</div>}>
-            <Outlet />
-          </Suspense>
+          ) : isSidebarHidden ? null : (
+            <Sidebar
+              tasks={displayTasks}
+              teamSlugOrId={teamSlugOrId}
+              onToggleHidden={() => setIsSidebarHidden(true)}
+            />
+          )}
+
+          <div className="min-w-full md:min-w-0 grow snap-start snap-always flex flex-col">
+            <Suspense fallback={<div>Loading...</div>}>
+              <Outlet />
+            </Suspense>
+          </div>
         </div>
-      </div>
 
-      <button
-        onClick={() => {
-          const msg = window.prompt("Enter debug note");
-          if (msg) {
-            // Prefix allows us to easily grep in the console.
-
-            console.log(`[USER NOTE] ${msg}`);
-          }
-        }}
-        className="hidden"
-        style={{
-          position: "fixed",
-          bottom: "16px",
-          right: "16px",
-          zIndex: "var(--z-overlay)",
-          background: "#ffbf00",
-          color: "#000",
-          border: "none",
-          borderRadius: "4px",
-          padding: "8px 12px",
-          cursor: "default",
-          fontSize: "12px",
-          fontWeight: 600,
-          boxShadow: "0 2px 4px rgba(0,0,0,0.15)",
-        }}
-      >
-        Add Debug Note
-      </button>
+        <button
+          onClick={() => {
+            const msg = window.prompt("Enter debug note");
+            if (msg) {
+              // Prefix allows us to easily grep in the console.
+              console.log(`[USER NOTE] ${msg}`);
+            }
+          }}
+          className="hidden"
+          style={{
+            position: "fixed",
+            bottom: "16px",
+            right: "16px",
+            zIndex: "var(--z-overlay)",
+            background: "#ffbf00",
+            color: "#000",
+            border: "none",
+            borderRadius: "4px",
+            padding: "8px 12px",
+            cursor: "default",
+            fontSize: "12px",
+            fontWeight: 600,
+            boxShadow: "0 2px 4px rgba(0,0,0,0.15)",
+          }}
+        >
+          Add Debug Note
+        </button>
+      </SidebarContext.Provider>
     </ExpandTasksProvider>
   );
 }

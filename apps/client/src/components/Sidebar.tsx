@@ -283,7 +283,7 @@ export function Sidebar({ tasks, teamSlugOrId, onToggleHidden }: SidebarProps) {
       }
     >
       <div
-        className={`h-[38px] flex items-center pr-0.5 shrink-0 ${isElectron ? "" : "pl-3"}`}
+        className={`h-[38px] border-b border-neutral-200/70 dark:border-neutral-800/50 flex items-center pr-0.5 shrink-0 ${isElectron ? "" : "pl-3"}`}
         style={{ WebkitAppRegion: "drag" } as CSSProperties}
       >
         {isElectron && <div className="w-[80px]"></div>}
