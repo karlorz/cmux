@@ -587,10 +587,7 @@ else
         https://github.com/karlorz/cmux.git cmux-repo
     cd cmux-repo
     git sparse-checkout init --cone
-    git sparse-checkout set \
-        packages/cloudrouter/cmd/worker \
-        packages/cloudrouter/go.mod \
-        packages/cloudrouter/go.sum
+    git sparse-checkout set packages/cloudrouter
 
     cd packages/cloudrouter
     export PATH="/usr/local/go/bin:$PATH"

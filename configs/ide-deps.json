@@ -23,7 +23,7 @@
     {
       "publisher": "ms-python",
       "name": "debugpy",
-      "version": "2025.19.2026012701"
+      "version": "2025.19.2026021601"
     }
   ],
   "packages": {
@@ -33,6 +33,6 @@
     "opencode-ai": "1.2.5",
     "codebuff": "1.0.619",
     "@devcontainers/cli": "0.83.0",
-    "@sourcegraph/amp": "0.0.1771226944-gd5b17a"
+    "@sourcegraph/amp": "0.0.1771235292-g4fef47"
   }
 }
