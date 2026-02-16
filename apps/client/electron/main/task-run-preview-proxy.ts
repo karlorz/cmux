@@ -36,6 +36,14 @@ const HOP_BY_HOP_HEADERS = new Set([
   "transfer-encoding",
   "upgrade",
 ]);
+const FRAME_BLOCKING_HEADERS = [
+  "x-frame-options",
+  "content-security-policy",
+  "content-security-policy-report-only",
+  "cross-origin-embedder-policy",
+  "cross-origin-opener-policy",
+  "cross-origin-resource-policy",
+] as const;
 
 const TASK_RUN_PREVIEW_PREFIX = "task-run-preview:";
 
@@ -1314,6 +1322,7 @@ function forwardHttpRequestViaHttp1(
         isHtmlResponse(proxyRes.headers) &&
         !isCompressedResponse(proxyRes.headers);
       const responseHeaders = { ...proxyRes.headers };
+      stripFrameBlockingHeaders(responseHeaders);
       if (shouldInjectWsOverride) {
         deleteHeaderCaseInsensitive(responseHeaders, "content-length");
       }
@@ -1432,6 +1441,7 @@ async function forwardHttpRequestViaHttp2(
           responseHeaders[name] = String(value);
         }
       }
+      stripFrameBlockingHeaders(responseHeaders);
       const shouldInjectWsOverride =
         Boolean(context.wsOverrideScript) &&
         isHtmlResponse(upstreamHeaders) &&
@@ -1563,6 +1573,14 @@ function deleteHeaderCaseInsensitive(
     if (key.toLowerCase() === lower) {
       delete headers[key];
     }
+  }
+}
+
+function stripFrameBlockingHeaders(
+  headers: Record<string, string | string[] | undefined>
+): void {
+  for (const header of FRAME_BLOCKING_HEADERS) {
+    deleteHeaderCaseInsensitive(headers, header);
   }
 }
 

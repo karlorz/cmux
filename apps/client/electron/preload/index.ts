@@ -1,6 +1,9 @@
 import * as Sentry from "@sentry/electron/renderer";
+import { SENTRY_ELECTRON_DSN } from "../../src/sentry-config";
 
-Sentry.init();
+if (SENTRY_ELECTRON_DSN) {
+  Sentry.init();
+}
 
 import { electronAPI } from "@electron-toolkit/preload";
 import { contextBridge, ipcRenderer } from "electron";
