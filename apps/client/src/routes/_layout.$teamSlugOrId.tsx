@@ -1,6 +1,10 @@
 import { CmuxComments } from "@/components/cmux-comments";
 import { CommandBar } from "@/components/CommandBar";
 import { Sidebar } from "@/components/Sidebar";
+import {
+  SettingsSidebar,
+  type SettingsSection,
+} from "@/components/settings/SettingsSidebar";
 import { SIDEBAR_PRS_DEFAULT_LIMIT } from "@/components/sidebar/const";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { ExpandTasksProvider } from "@/contexts/expand-tasks/ExpandTasksProvider";
@@ -8,10 +12,16 @@ import { cachedGetUser } from "@/lib/cachedGetUser";
 import { setLastTeamSlugOrId } from "@/lib/lastTeam";
 import { stackClientApp } from "@/lib/stack";
 import { api } from "@cmux/convex/api";
-import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Outlet,
+  redirect,
+  useLocation,
+  useNavigate,
+} from "@tanstack/react-router";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery as useRQ } from "@tanstack/react-query";
-import { Suspense, useEffect } from "react";
+import { Suspense, useCallback, useEffect } from "react";
 import { env } from "@/client-env";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId")({
@@ -78,6 +88,8 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId")({
 
 function LayoutComponent() {
   const { teamSlugOrId } = Route.useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   // In web mode, exclude local workspaces
   const excludeLocalWorkspaces = env.NEXT_PUBLIC_WEB_MODE || undefined;
   // Use React Query-wrapped Convex queries to avoid real-time subscriptions
@@ -91,13 +103,42 @@ function LayoutComponent() {
 
   // Tasks are already sorted by the query (unread notifications first, then by createdAt)
   const displayTasks = tasks;
+  const settingsPath = `/${teamSlugOrId}/settings`;
+  const isSettingsRoute =
+    location.pathname === settingsPath || location.pathname === `${settingsPath}/`;
+  const sectionFromSearch = (location.search as { section?: unknown })?.section;
+  const activeSettingsSection: SettingsSection =
+    sectionFromSearch === "ai-providers" ? "ai-providers" : "general";
+
+  const handleSettingsSectionChange = useCallback(
+    (section: SettingsSection) => {
+      if (isSettingsRoute && section === activeSettingsSection) return;
+      void navigate({
+        to: "/$teamSlugOrId/settings",
+        params: { teamSlugOrId },
+        search: {
+          section: section === "general" ? undefined : section,
+        },
+        replace: true,
+      });
+    },
+    [activeSettingsSection, isSettingsRoute, navigate, teamSlugOrId]
+  );
 
   return (
     <ExpandTasksProvider>
       <CommandBar teamSlugOrId={teamSlugOrId} />
 
       <div className="flex flex-row grow min-h-0 h-dvh bg-white dark:bg-black overflow-x-auto snap-x snap-mandatory md:overflow-x-visible md:snap-none">
-        <Sidebar tasks={displayTasks} teamSlugOrId={teamSlugOrId} />
+        {isSettingsRoute ? (
+          <SettingsSidebar
+            teamSlugOrId={teamSlugOrId}
+            activeSection={activeSettingsSection}
+            onSectionChange={handleSettingsSectionChange}
+          />
+        ) : (
+          <Sidebar tasks={displayTasks} teamSlugOrId={teamSlugOrId} />
+        )}
 
         <div className="min-w-full md:min-w-0 grow snap-start snap-always flex flex-col">
           <Suspense fallback={<div>Loading...</div>}>
