@@ -40,6 +40,7 @@ func shellQuote(s string) string {
 }
 
 // runSSHCommand runs a command inside the sandbox via SSH over WebSocket tunnel.
+// It prefers curl-based ProxyCommand and falls back to a local Go bridge.
 // Returns stdout, stderr, and exit code.
 func runSSHCommand(workerURL, token, command string) (string, string, int, error) {
 	// Build WebSocket URL
