@@ -27,6 +27,22 @@ type GitHubPrBasic = {
 type GitHubPrDetail = GitHubPrBasic & {
   merged_at: string | null;
   node_id: string;
+  title?: string;
+  head_ref?: string;
+  body?: string;
+};
+
+type PullRequestCommitInfo = {
+  count: number;
+  firstCommit?: {
+    title: string;
+    message: string;
+  };
+};
+
+type MergeCommitInfo = {
+  commitTitle: string;
+  commitMessage: string | undefined;
 };
 
 type ConvexClient = ReturnType<typeof getConvex>;
@@ -527,11 +543,6 @@ githubPrsOpenRouter.openapi(
       );
     }
 
-    const title = task.pullRequestTitle || task.text || "cmux changes";
-    const truncatedTitle =
-      title.length > 72 ? `${title.slice(0, 69)}...` : title;
-    const commitMessage = `Merged by cmux for task ${String(task._id)}.`;
-
     const existingByRepo = new Map(
       (run.pullRequests ?? []).map(
         (record) => [record.repoFullName, record] as const,
@@ -598,14 +609,34 @@ githubPrsOpenRouter.openapi(
             });
           }
 
+          // Fetch commits for squash merge to determine single vs multiple commit behavior
+          const commitInfo = await fetchPullRequestCommits({
+            octokit,
+            owner,
+            repo,
+            number: detail.number,
+          });
+
+          // Build commit info matching GitHub's web UI defaults
+          const prTitle = detail.title || task.pullRequestTitle || task.text || "cmux changes";
+          const { commitTitle, commitMessage } = buildMergeCommitInfo({
+            method,
+            number: detail.number,
+            prTitle,
+            prBody: detail.body,
+            headRef: detail.head_ref,
+            owner,
+            commitInfo,
+          });
+
           await mergePullRequest({
             octokit,
             owner,
             repo,
             number: detail.number,
             method,
-            commitTitle: truncatedTitle,
-            commitMessage,
+            commitTitle,
+            commitMessage: commitMessage ?? "",
           });
 
           const mergedDetail = await fetchPullRequestDetail({
@@ -923,14 +954,40 @@ githubPrsOpenRouter.openapi(
     const octokit = createOctokit(githubAccessToken);
 
     try {
+      // Fetch PR details and commits to build proper commit info
+      const prDetail = await fetchPullRequestDetail({
+        octokit,
+        owner,
+        repo,
+        number,
+      });
+
+      const commitInfo = await fetchPullRequestCommits({
+        octokit,
+        owner,
+        repo,
+        number,
+      });
+
+      const prTitle = prDetail.title || existingPR.title || "cmux changes";
+      const { commitTitle, commitMessage } = buildMergeCommitInfo({
+        method,
+        number,
+        prTitle,
+        prBody: prDetail.body,
+        headRef: prDetail.head_ref || existingPR.headRef,
+        owner,
+        commitInfo,
+      });
+
       await mergePullRequest({
         octokit,
         owner,
         repo,
         number,
         method,
-        commitTitle: `Merge pull request #${number}`,
-        commitMessage: `Merged via cmux`,
+        commitTitle,
+        commitMessage: commitMessage ?? "",
       });
 
       const mergedPR = await fetchPullRequestDetail({
@@ -1141,7 +1198,106 @@ async function fetchPullRequestDetail({
     draft: data.draft ?? undefined,
     merged_at: data.merged_at,
     node_id: data.node_id,
+    title: data.title,
+    head_ref: data.head?.ref,
+    body: data.body ?? undefined,
   };
+}
+
+async function fetchPullRequestCommits({
+  octokit,
+  owner,
+  repo,
+  number,
+}: {
+  octokit: Octokit;
+  owner: string;
+  repo: string;
+  number: number;
+}): Promise<PullRequestCommitInfo> {
+  const { data } = await octokit.rest.pulls.listCommits({
+    owner,
+    repo,
+    pull_number: number,
+    per_page: 2, // Only need to check if there's 1 or more than 1
+  });
+
+  if (!Array.isArray(data) || data.length === 0) {
+    return { count: 0 };
+  }
+
+  const firstCommit = data[0];
+  const commitMessage = firstCommit.commit.message || "";
+  // Split commit message into title and body (first line is title)
+  const [title, ...bodyLines] = commitMessage.split("\n");
+
+  return {
+    count: data.length,
+    firstCommit: {
+      title: title || "",
+      message: bodyLines.join("\n").trim(),
+    },
+  };
+}
+
+/**
+ * Build commit title and message based on merge method and PR details.
+ * Matches GitHub's web UI default behavior.
+ *
+ * GitHub Defaults:
+ * - Merge: "Merge pull request #N from owner/branch" with PR body
+ * - Squash (1 commit): "Commit title (#N)" with commit body
+ * - Squash (2+ commits): "PR title (#N)" with no message (GitHub lists commits)
+ * - Rebase: keeps original commits (API ignores custom values)
+ */
+function buildMergeCommitInfo({
+  method,
+  number,
+  prTitle,
+  prBody,
+  headRef,
+  owner,
+  commitInfo,
+}: {
+  method: "squash" | "rebase" | "merge";
+  number: number;
+  prTitle: string;
+  prBody?: string;
+  headRef?: string;
+  owner: string;
+  commitInfo: PullRequestCommitInfo;
+}): MergeCommitInfo {
+  switch (method) {
+    case "merge":
+      // GitHub default: "Merge pull request #N from owner/branch"
+      return {
+        commitTitle: `Merge pull request #${number} from ${owner}/${headRef || "unknown"}`,
+        commitMessage: prBody || undefined,
+      };
+
+    case "squash":
+      // GitHub default depends on commit count
+      if (commitInfo.count === 1 && commitInfo.firstCommit) {
+        // Single commit: use commit title
+        return {
+          commitTitle: `${commitInfo.firstCommit.title} (#${number})`,
+          commitMessage: commitInfo.firstCommit.message || undefined,
+        };
+      }
+      // Multiple commits: use PR title
+      return {
+        commitTitle: `${prTitle} (#${number})`,
+        commitMessage: undefined,
+      };
+
+    case "rebase":
+      // Rebase preserves original commits; GitHub API ignores these values
+      // but we still need to provide something
+      return {
+        commitTitle: prTitle,
+        commitMessage: undefined,
+      };
+  }
 }
 
 async function createReadyPullRequest({
