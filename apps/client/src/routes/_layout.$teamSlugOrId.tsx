@@ -103,6 +103,7 @@ function LayoutComponent() {
   const sectionFromSearch = (location.search as { section?: unknown })?.section;
   const activeSettingsSection: SettingsSection =
     sectionFromSearch === "ai-providers" ? "ai-providers" :
+    sectionFromSearch === "git" ? "git" :
     sectionFromSearch === "archived" ? "archived" : "general";
 
   useEffect(() => {

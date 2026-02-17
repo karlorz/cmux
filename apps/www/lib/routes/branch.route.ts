@@ -1,5 +1,6 @@
 import { getAccessTokenFromRequest } from "@/lib/utils/auth";
 import {
+  DEFAULT_BRANCH_PREFIX,
   generateBranchNamesFromBase,
   generateNewBranchName,
   generateUniqueBranchNames,
@@ -85,16 +86,26 @@ branchRouter.openapi(
     const convex = getConvex({ accessToken });
 
     try {
-      const teamApiKeys = await convex.query(api.apiKeys.getAllForAgents, {
-        teamSlugOrId: body.teamSlugOrId,
-      });
+      const [teamApiKeys, workspaceSettings] = await Promise.all([
+        convex.query(api.apiKeys.getAllForAgents, {
+          teamSlugOrId: body.teamSlugOrId,
+        }),
+        convex.query(api.workspaceSettings.get, {
+          teamSlugOrId: body.teamSlugOrId,
+        }),
+      ]);
       const apiKeys = mergeApiKeysWithEnv(teamApiKeys ?? {});
+      // Use configured prefix, or default if not set (undefined/null)
+      // Empty string is valid and means no prefix
+      const branchPrefix = workspaceSettings?.branchPrefix !== undefined
+        ? workspaceSettings.branchPrefix
+        : DEFAULT_BRANCH_PREFIX;
 
       const count = body.count ?? 1;
 
       if (!body.taskDescription && body.prTitle) {
         const kebabTitle = toKebabCase(body.prTitle);
-        const baseBranchName = `cmux/${kebabTitle}`;
+        const baseBranchName = `${branchPrefix}${kebabTitle}`;
         const branchNames = generateBranchNamesFromBase(
           baseBranchName,
           count,
@@ -121,6 +132,7 @@ branchRouter.openapi(
           body.taskDescription!,
           apiKeys,
           body.uniqueId,
+          branchPrefix,
         );
         return c.json({
           branchNames: [branchName],
@@ -142,6 +154,7 @@ branchRouter.openapi(
         count,
         apiKeys,
         body.uniqueId,
+        branchPrefix,
       );
 
       return c.json({
