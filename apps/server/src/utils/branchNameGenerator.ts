@@ -194,7 +194,8 @@ function generateRandomId(): string {
   return result;
 }
 
-export const DEFAULT_BRANCH_PREFIX = "cmux/";
+import { DEFAULT_BRANCH_PREFIX as _DEFAULT_BRANCH_PREFIX } from "@cmux/shared";
+export const DEFAULT_BRANCH_PREFIX = _DEFAULT_BRANCH_PREFIX;
 
 /**
  * Generate branch names instantly from the task description (no API call).

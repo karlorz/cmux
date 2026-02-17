@@ -95,7 +95,11 @@ branchRouter.openapi(
         }),
       ]);
       const apiKeys = mergeApiKeysWithEnv(teamApiKeys ?? {});
-      const branchPrefix = workspaceSettings?.branchPrefix ?? DEFAULT_BRANCH_PREFIX;
+      // Use configured prefix, or default if not set (undefined/null)
+      // Empty string is valid and means no prefix
+      const branchPrefix = workspaceSettings?.branchPrefix !== undefined
+        ? workspaceSettings.branchPrefix
+        : DEFAULT_BRANCH_PREFIX;
 
       const count = body.count ?? 1;
 

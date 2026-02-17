@@ -34,7 +34,8 @@ export function generateRandomId(): string {
   return result;
 }
 
-export const DEFAULT_BRANCH_PREFIX = "cmux/";
+import { DEFAULT_BRANCH_PREFIX as _DEFAULT_BRANCH_PREFIX } from "@cmux/shared";
+export const DEFAULT_BRANCH_PREFIX = _DEFAULT_BRANCH_PREFIX;
 
 export function generateBranchName(prTitle: string, branchPrefix: string = DEFAULT_BRANCH_PREFIX): string {
   const kebabTitle = toKebabCase(prTitle);

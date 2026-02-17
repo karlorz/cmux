@@ -29,6 +29,7 @@ import { stackClientApp } from "@/lib/stack";
 import { WWW_ORIGIN } from "@/lib/wwwOrigin";
 import { toast } from "sonner";
 import { z } from "zod";
+import { DEFAULT_BRANCH_PREFIX } from "@cmux/shared";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/settings")({
   component: SettingsComponent,
@@ -126,8 +127,9 @@ function SettingsComponent() {
   const [autoPrEnabled, setAutoPrEnabled] = useState<boolean>(false);
   const [originalAutoPrEnabled, setOriginalAutoPrEnabled] =
     useState<boolean>(false);
-  const [branchPrefix, setBranchPrefix] = useState<string>("cmux/");
-  const [originalBranchPrefix, setOriginalBranchPrefix] = useState<string>("cmux/");
+  // Default to shared constant for new users, empty string means no prefix
+  const [branchPrefix, setBranchPrefix] = useState<string>(DEFAULT_BRANCH_PREFIX);
+  const [originalBranchPrefix, setOriginalBranchPrefix] = useState<string>(DEFAULT_BRANCH_PREFIX);
   const [alwaysForcePush, setAlwaysForcePush] = useState<boolean>(false);
   const [originalAlwaysForcePush, setOriginalAlwaysForcePush] = useState<boolean>(false);
   const usedListRefs = useRef<Record<string, HTMLSpanElement | null>>({});
@@ -302,7 +304,10 @@ function SettingsComponent() {
       prev === nextBypassAnthropicProxy ? prev : nextBypassAnthropicProxy
     );
 
-    const nextBranchPrefix = workspaceSettings?.branchPrefix ?? "cmux/";
+    // Default to shared constant for new users, but respect explicit empty string (no prefix)
+    const nextBranchPrefix = workspaceSettings?.branchPrefix !== undefined
+      ? workspaceSettings.branchPrefix
+      : DEFAULT_BRANCH_PREFIX;
     setBranchPrefix((prev) =>
       prev === nextBranchPrefix ? prev : nextBranchPrefix
     );
@@ -627,7 +632,7 @@ function SettingsComponent() {
           worktreePath: worktreePath || undefined,
           autoPrEnabled,
           bypassAnthropicProxy,
-          branchPrefix: branchPrefix || undefined,
+          branchPrefix,
           alwaysForcePush,
           heatmapModel,
           heatmapThreshold,
