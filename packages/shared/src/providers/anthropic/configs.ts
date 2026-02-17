@@ -13,7 +13,9 @@ import {
  * Priority:
  * 1. OAuth token (user-provided) - uses user's Claude subscription
  * 2. Anthropic API key (user-provided) - uses user's API key
- * 3. Platform proxy endpoint (fallback) - server handles auth via Cloudflare AI Gateway
+ *    - If user explicitly provides the placeholder key 'sk_placeholder_cmux_anthropic_api_key',
+ *      the request will be routed to platform Bedrock proxy
+ * 3. No fallback - users must provide credentials to use Claude agents
  */
 function createApplyClaudeApiKeys(): NonNullable<AgentConfig["applyApiKeys"]> {
   return async (keys): Promise<Partial<EnvironmentResult>> => {
@@ -37,7 +39,7 @@ function createApplyClaudeApiKeys(): NonNullable<AgentConfig["applyApiKeys"]> {
       };
     }
 
-    // Priority 2: User-provided Anthropic API key
+    // Priority 2: User-provided Anthropic API key (includes explicit placeholder key for platform credits)
     if (anthropicKey && anthropicKey.trim().length > 0) {
       return {
         env: {
@@ -47,12 +49,9 @@ function createApplyClaudeApiKeys(): NonNullable<AgentConfig["applyApiKeys"]> {
       };
     }
 
-    // Priority 3: Platform proxy endpoint (fallback)
-    // Sandbox calls server endpoint which adds API key and forwards to Cloudflare AI Gateway
+    // No credentials provided - return empty env (will fail requirements check)
     return {
-      env: {
-        ANTHROPIC_API_KEY: "sk_placeholder_cmux_anthropic_api_key",
-      },
+      env: {},
       unsetEnv,
     };
   };
@@ -71,7 +70,7 @@ export const CLAUDE_OPUS_4_6_CONFIG: AgentConfig = {
   ],
   environment: getClaudeEnvironment,
   checkRequirements: checkClaudeRequirements,
-  // User-configurable: OAuth token (preferred) or API key; falls back to platform proxy
+  // User-configurable: OAuth token (preferred) or API key (no auto-fallback to platform proxy)
   apiKeys: [CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY],
   applyApiKeys: createApplyClaudeApiKeys(),
   completionDetector: startClaudeCompletionDetector,
@@ -90,7 +89,7 @@ export const CLAUDE_OPUS_4_5_CONFIG: AgentConfig = {
   ],
   environment: getClaudeEnvironment,
   checkRequirements: checkClaudeRequirements,
-  // User-configurable: OAuth token (preferred) or API key; falls back to platform proxy
+  // User-configurable: OAuth token (preferred) or API key (no auto-fallback to platform proxy)
   apiKeys: [CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY],
   applyApiKeys: createApplyClaudeApiKeys(),
   completionDetector: startClaudeCompletionDetector,
@@ -109,7 +108,7 @@ export const CLAUDE_SONNET_4_5_CONFIG: AgentConfig = {
   ],
   environment: getClaudeEnvironment,
   checkRequirements: checkClaudeRequirements,
-  // User-configurable: OAuth token (preferred) or API key; falls back to platform proxy
+  // User-configurable: OAuth token (preferred) or API key (no auto-fallback to platform proxy)
   apiKeys: [CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY],
   applyApiKeys: createApplyClaudeApiKeys(),
   completionDetector: startClaudeCompletionDetector,
@@ -128,7 +127,7 @@ export const CLAUDE_HAIKU_4_5_CONFIG: AgentConfig = {
   ],
   environment: getClaudeEnvironment,
   checkRequirements: checkClaudeRequirements,
-  // User-configurable: OAuth token (preferred) or API key; falls back to platform proxy
+  // User-configurable: OAuth token (preferred) or API key (no auto-fallback to platform proxy)
   apiKeys: [CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY],
   applyApiKeys: createApplyClaudeApiKeys(),
   completionDetector: startClaudeCompletionDetector,

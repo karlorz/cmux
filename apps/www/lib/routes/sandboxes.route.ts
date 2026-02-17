@@ -28,6 +28,7 @@ import {
   tryGetInstanceById,
   getInstanceTeamId,
 } from "./sandboxes/provider-dispatch";
+import { getActiveSandboxProvider } from "@/lib/utils/sandbox-provider";
 import { loadEnvironmentEnvVars } from "./sandboxes/environment";
 import {
   configureGithubAccess,
@@ -1144,6 +1145,14 @@ sandboxesRouter.openapi(
     const { accessToken } = await user.getAuthJson();
     if (!accessToken) {
       return c.text("Unauthorized", 401);
+    }
+
+    // Check sandbox provider - prewarming is only supported for Morph
+    const providerConfig = getActiveSandboxProvider();
+    if (providerConfig.provider !== "morph") {
+      // Return a no-op response for non-Morph providers
+      // The client will just start a fresh sandbox when needed
+      return c.json({ id: "", alreadyExists: true });
     }
 
     const body = c.req.valid("json");

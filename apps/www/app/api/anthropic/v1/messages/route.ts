@@ -126,22 +126,23 @@ export async function POST(request: NextRequest) {
     const isOAuthToken = getIsOAuthToken(
       xApiKeyHeader || authorizationHeader || ""
     );
-    const useOriginalApiKey =
-      !isOAuthToken &&
-      xApiKeyHeader !== hardCodedApiKey &&
-      authorizationHeader !== hardCodedApiKey;
+    // User has their own key if they provided any non-placeholder key
+    const hasUserKey =
+      (xApiKeyHeader && xApiKeyHeader !== hardCodedApiKey) ||
+      (authorizationHeader && authorizationHeader !== hardCodedApiKey);
     const body = await request.json();
     sanitizeCacheControl(body);
 
     // Build headers
-    // When using Convex endpoint with platform credits, send the placeholder key
-    // so Convex routes to Bedrock instead of Cloudflare/Anthropic
+    // Forward the user's actual API key to Convex so it can properly route:
+    // - User key (any non-placeholder) -> Anthropic/Cloudflare
+    // - Placeholder key -> Bedrock (platform credits)
     const apiKeyForRequest = USE_CLOUDFLARE_AI_GATEWAY
       ? (env.ANTHROPIC_API_KEY ?? "")
-      : hardCodedApiKey;
+      : (xApiKeyHeader ?? hardCodedApiKey);
 
     const headers: Record<string, string> =
-      useOriginalApiKey && !TEMPORARY_DISABLE_AUTH
+      hasUserKey && !TEMPORARY_DISABLE_AUTH
         ? (() => {
             const filtered = new Headers(request.headers);
             return Object.fromEntries(filtered);
@@ -165,7 +166,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Add beta header if beta param is present
-    if (!useOriginalApiKey) {
+    if (!hasUserKey) {
       if (beta === "true") {
         headers["anthropic-beta"] = "messages-2023-12-15";
       }
