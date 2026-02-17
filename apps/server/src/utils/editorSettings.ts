@@ -29,8 +29,13 @@ interface EditorExport {
   settings?: FileExport;
   keybindings?: FileExport;
   snippets: FileExport[];
-  extensions?: string[];
+  extensions?: ExtensionSpec[];
   settingsMtimeMs?: number;
+}
+
+export interface ExtensionSpec {
+  id: string;
+  version?: string;
 }
 
 export interface EditorSettingsUpload {
@@ -45,7 +50,7 @@ export interface UserUploadedEditorSettings {
   settingsJson?: string;
   keybindingsJson?: string;
   snippets?: Array<{ name: string; content: string }>;
-  extensions?: string; // newline-separated extension IDs
+  extensions?: string; // newline-separated extension IDs or id@version specs
 }
 
 export interface LocalVSCodeSettingsSnapshot {
@@ -204,7 +209,7 @@ async function listJsonFiles(dir: string): Promise<string[]> {
 
 async function runCliListExtensions(
   cliCandidates: string[]
-): Promise<string[] | undefined> {
+): Promise<ExtensionSpec[] | undefined> {
   for (const cli of cliCandidates) {
     try {
       if (!cli) continue;
@@ -223,10 +228,10 @@ async function runCliListExtensions(
       const lines = stdout
         .split(/\r?\n/)
         .map((line) => line.trim())
-        .filter(Boolean)
-        .map((line) => line.split("@")[0]);
-      if (lines.length > 0) {
-        return Array.from(new Set(lines)).sort();
+        .filter(Boolean);
+      const specs = normalizeExtensionSpecs(lines);
+      if (specs.length > 0) {
+        return specs;
       }
     } catch {
       // Ignore CLI errors and try the next candidate
@@ -237,7 +242,7 @@ async function runCliListExtensions(
 
 async function listExtensionsFromDirs(
   dirs: string[]
-): Promise<string[] | undefined> {
+): Promise<ExtensionSpec[] | undefined> {
   const identifiers = new Set<string>();
   for (const dir of dirs) {
     if (!(await pathExists(dir))) continue;
@@ -265,7 +270,9 @@ async function listExtensionsFromDirs(
   if (identifiers.size === 0) {
     return undefined;
   }
-  return Array.from(identifiers).sort();
+  return Array.from(identifiers)
+    .sort()
+    .map((id) => ({ id }));
 }
 
 async function exportEditor(def: EditorDef): Promise<EditorExport | null> {
@@ -348,6 +355,74 @@ function encode(content: string): string {
   return Buffer.from(content).toString("base64");
 }
 
+function parseExtensionSpec(raw: string): ExtensionSpec | null {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  let id = trimmed;
+  let version: string | undefined;
+
+  const versionSeparatorIndex = trimmed.lastIndexOf("@");
+  if (versionSeparatorIndex > 0 && versionSeparatorIndex < trimmed.length - 1) {
+    id = trimmed.slice(0, versionSeparatorIndex).trim();
+    version = trimmed.slice(versionSeparatorIndex + 1).trim();
+  }
+
+  if (!id.includes(".") || /\s|@/.test(id)) {
+    return null;
+  }
+
+  if (!version) {
+    return { id };
+  }
+
+  if (/\s/.test(version)) {
+    return null;
+  }
+
+  return { id, version };
+}
+
+function dedupeExtensionSpecs(specs: ExtensionSpec[]): ExtensionSpec[] {
+  const deduped: ExtensionSpec[] = [];
+  const indexById = new Map<string, number>();
+
+  for (const spec of specs) {
+    const existingIndex = indexById.get(spec.id);
+    if (existingIndex === undefined) {
+      indexById.set(spec.id, deduped.length);
+      deduped.push(spec);
+      continue;
+    }
+
+    const existing = deduped[existingIndex];
+    // Keep the first versioned entry for a given ID.
+    if (existing.version) {
+      continue;
+    }
+
+    // Prefer versioned entries over earlier unversioned entries.
+    if (spec.version) {
+      deduped[existingIndex] = spec;
+    }
+  }
+
+  return deduped;
+}
+
+export function normalizeExtensionSpecs(lines: string[]): ExtensionSpec[] {
+  const specs = lines
+    .map((line) => parseExtensionSpec(line))
+    .filter((spec): spec is ExtensionSpec => spec !== null);
+  return dedupeExtensionSpecs(specs);
+}
+
+function formatExtensionSpec(spec: ExtensionSpec): string {
+  return spec.version ? `${spec.id}@${spec.version}` : spec.id;
+}
+
 function buildExtensionInstallCommand(listPath: string): string {
   // Build a script that auto-detects IDE provider from /etc/cmux/ide.env
   const scriptBody = [
@@ -401,35 +476,55 @@ function buildExtensionInstallCommand(listPath: string): string {
     "  exit 0",
     "fi",
     "",
+    "get_installed_version() {",
+    '  local ext_id="$1"',
+    '  "$CLI_PATH" --list-extensions --show-versions --extensions-dir "$EXT_DIR" --user-data-dir "$USER_DIR" 2>>"$LOG_FILE" | awk -F\'@\' -v id="$ext_id" \'$1 == id { print $2; exit }\'',
+    "}",
+    "",
     'echo "Installing extensions with $CLI_PATH (provider: $IDE_PROVIDER)" >>"$LOG_FILE"',
     'chmod +x "$CLI_PATH" || true',
     'mkdir -p "$EXT_DIR" "$USER_DIR"',
-    'ext=""',
     'installed_any=0',
-    'pids=()',
     'had_failure=0',
-    'while IFS= read -r ext; do',
+    'while IFS= read -r ext || [ -n "$ext" ]; do',
+    '  ext="$(printf "%s" "$ext" | tr -d \'\\r\')"',
     '  [ -z "$ext" ] && continue',
     '  installed_any=1',
-    '  echo "-> Installing $ext" >>"$LOG_FILE"',
-    '  (',
-    '    if "$CLI_PATH" --install-extension "$ext" --force --extensions-dir "$EXT_DIR" --user-data-dir "$USER_DIR" >>"$LOG_FILE" 2>&1; then',
-    '      echo "✓ Installed $ext" >>"$LOG_FILE"',
+    '  ext_id="$ext"',
+    '  ext_version=""',
+    '  if [ "${ext#*@}" != "$ext" ]; then',
+    '    ext_id="${ext%@*}"',
+    '    ext_version="${ext##*@}"',
+    "  fi",
+    "",
+    '  if [ -n "$ext_version" ]; then',
+    '    echo "PIN $ext_id@$ext_version" >>"$LOG_FILE"',
+    '    if "$CLI_PATH" --install-extension "$ext_id@$ext_version" --force --extensions-dir "$EXT_DIR" --user-data-dir "$USER_DIR" >>"$LOG_FILE" 2>&1; then',
+    '      echo "PIN_OK $ext_id@$ext_version" >>"$LOG_FILE"',
     "    else",
-    '      echo "Failed to install $ext" >>"$LOG_FILE"',
-    "      exit 1",
+    '      echo "Failed to pin $ext_id@$ext_version" >>"$LOG_FILE"',
+    "      had_failure=1",
     "    fi",
-    '  ) &',
-    '  pids+=("$!")',
+    "    continue",
+    "  fi",
+    "",
+    '  current_version="$(get_installed_version "$ext_id" || true)"',
+    '  if [ -n "$current_version" ]; then',
+    '    echo "SKIP installed $ext_id@$current_version" >>"$LOG_FILE"',
+    "    continue",
+    "  fi",
+    "",
+    '  echo "INSTALL $ext_id (missing)" >>"$LOG_FILE"',
+    '  if "$CLI_PATH" --install-extension "$ext_id" --extensions-dir "$EXT_DIR" --user-data-dir "$USER_DIR" >>"$LOG_FILE" 2>&1; then',
+    '    echo "INSTALL_OK $ext_id" >>"$LOG_FILE"',
+    "  else",
+    '    echo "Failed to install $ext_id" >>"$LOG_FILE"',
+    "    had_failure=1",
+    "  fi",
     'done < "$EXT_LIST"',
     'if [ "$installed_any" -eq 0 ]; then',
     '  echo "No valid extension identifiers found" >>"$LOG_FILE"',
     "fi",
-    'for pid in "${pids[@]}"; do',
-    '  if ! wait "$pid"; then',
-    '    had_failure=1',
-    "  fi",
-    "done",
     'if [ "$had_failure" -ne 0 ]; then',
     '  echo "One or more extensions failed to install" >>"$LOG_FILE"',
     "fi",
@@ -534,14 +629,12 @@ function buildUploadFromUserSettings(
   }
 
   if (userSettings.extensions) {
-    const extensionList = userSettings.extensions
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
+    const extensionList = normalizeExtensionSpecs(
+      userSettings.extensions.split(/\r?\n/)
+    );
 
     if (extensionList.length > 0) {
-      const uniqueExtensions = Array.from(new Set(extensionList)).sort();
-      const extensionContent = `${uniqueExtensions.join("\n")}\n`;
+      const extensionContent = `${extensionList.map(formatExtensionSpec).join("\n")}\n`;
       authFiles.push({
         destinationPath: EXTENSION_LIST_PATH,
         contentBase64: encode(extensionContent),
@@ -692,8 +785,8 @@ function buildUpload(editor: EditorExport): EditorSettingsUpload | null {
   }
 
   if (editor.extensions && editor.extensions.length > 0) {
-    const uniqueExtensions = Array.from(new Set(editor.extensions)).sort();
-    const extensionContent = `${uniqueExtensions.join("\n")}\n`;
+    const extensionList = dedupeExtensionSpecs(editor.extensions);
+    const extensionContent = `${extensionList.map(formatExtensionSpec).join("\n")}\n`;
     authFiles.push({
       destinationPath: EXTENSION_LIST_PATH,
       contentBase64: encode(extensionContent),
