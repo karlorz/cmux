@@ -25,8 +25,26 @@ type GitHubPrBasic = {
 };
 
 type GitHubPrDetail = GitHubPrBasic & {
+  title: string;
+  head_ref: string;
+  body: string | null;
   merged_at: string | null;
   node_id: string;
+};
+
+type PullRequestCommitInfo = {
+  title: string;
+  message: string;
+};
+
+type PullRequestCommitsSummary = {
+  count: number;
+  firstCommit?: PullRequestCommitInfo;
+};
+
+type MergeCommitInfo = {
+  commitTitle?: string;
+  commitMessage?: string;
 };
 
 type ConvexClient = ReturnType<typeof getConvex>;
@@ -527,11 +545,6 @@ githubPrsOpenRouter.openapi(
       );
     }
 
-    const title = task.pullRequestTitle || task.text || "cmux changes";
-    const truncatedTitle =
-      title.length > 72 ? `${title.slice(0, 69)}...` : title;
-    const commitMessage = `Merged by cmux for task ${String(task._id)}.`;
-
     const existingByRepo = new Map(
       (run.pullRequests ?? []).map(
         (record) => [record.repoFullName, record] as const,
@@ -598,14 +611,33 @@ githubPrsOpenRouter.openapi(
             });
           }
 
+          const commits =
+            method === "squash"
+              ? await fetchPullRequestCommits({
+                  octokit,
+                  owner,
+                  repo,
+                  number: detail.number,
+                })
+              : undefined;
+          const commitInfo = buildMergeCommitInfo({
+            method,
+            number: detail.number,
+            owner,
+            headRef: detail.head_ref,
+            prTitle: detail.title,
+            prBody: detail.body,
+            commitCount: commits?.count,
+            firstCommit: commits?.firstCommit,
+          });
+
           await mergePullRequest({
             octokit,
             owner,
             repo,
             number: detail.number,
             method,
-            commitTitle: truncatedTitle,
-            commitMessage,
+            ...commitInfo,
           });
 
           const mergedDetail = await fetchPullRequestDetail({
@@ -923,21 +955,46 @@ githubPrsOpenRouter.openapi(
     const octokit = createOctokit(githubAccessToken);
 
     try {
-      await mergePullRequest({
+      const detail = await fetchPullRequestDetail({
         octokit,
         owner,
         repo,
         number,
+      });
+      const commits =
+        method === "squash"
+          ? await fetchPullRequestCommits({
+              octokit,
+              owner,
+              repo,
+              number: detail.number,
+            })
+          : undefined;
+      const commitInfo = buildMergeCommitInfo({
         method,
-        commitTitle: `Merge pull request #${number}`,
-        commitMessage: `Merged via cmux`,
+        number: detail.number,
+        owner,
+        headRef: detail.head_ref,
+        prTitle: detail.title,
+        prBody: detail.body,
+        commitCount: commits?.count,
+        firstCommit: commits?.firstCommit,
+      });
+
+      await mergePullRequest({
+        octokit,
+        owner,
+        repo,
+        number: detail.number,
+        method,
+        ...commitInfo,
       });
 
       const mergedPR = await fetchPullRequestDetail({
         octokit,
         owner,
         repo,
-        number,
+        number: detail.number,
       });
 
       await convex.mutation(api.github_prs.upsertFromServer, {
@@ -1139,9 +1196,93 @@ async function fetchPullRequestDetail({
     html_url: data.html_url,
     state: data.state,
     draft: data.draft ?? undefined,
+    title: data.title,
+    head_ref: data.head.ref,
+    body: data.body,
     merged_at: data.merged_at,
     node_id: data.node_id,
   };
+}
+
+async function fetchPullRequestCommits({
+  octokit,
+  owner,
+  repo,
+  number,
+}: {
+  octokit: Octokit;
+  owner: string;
+  repo: string;
+  number: number;
+}): Promise<PullRequestCommitsSummary> {
+  const { data } = await octokit.rest.pulls.listCommits({
+    owner,
+    repo,
+    pull_number: number,
+    per_page: 2,
+  });
+
+  if (!Array.isArray(data) || data.length === 0) {
+    return { count: 0 };
+  }
+
+  if (data.length > 1) {
+    return { count: data.length };
+  }
+
+  const firstCommitMessage = data[0]?.commit?.message ?? "";
+  const [firstLine = "", ...remainingLines] = firstCommitMessage.split("\n");
+  const firstCommitTitle = firstLine.trim();
+
+  return {
+    count: 1,
+    firstCommit: {
+      title: firstCommitTitle,
+      message: remainingLines.join("\n").trim(),
+    },
+  };
+}
+
+function buildMergeCommitInfo({
+  method,
+  number,
+  owner,
+  headRef,
+  prTitle,
+  prBody,
+  commitCount,
+  firstCommit,
+}: {
+  method: "squash" | "rebase" | "merge";
+  number: number;
+  owner: string;
+  headRef: string;
+  prTitle: string;
+  prBody: string | null;
+  commitCount?: number;
+  firstCommit?: PullRequestCommitInfo;
+}): MergeCommitInfo {
+  if (method === "merge") {
+    return {
+      commitTitle: `Merge pull request #${number} from ${owner}/${headRef}`,
+      commitMessage: prBody?.trim() || undefined,
+    };
+  }
+
+  if (method === "squash") {
+    if (commitCount === 1 && firstCommit) {
+      return {
+        commitTitle: `${firstCommit.title || prTitle} (#${number})`,
+        commitMessage: firstCommit.message || undefined,
+      };
+    }
+
+    return {
+      commitTitle: `${prTitle} (#${number})`,
+    };
+  }
+
+  return {};
 }
 
 async function createReadyPullRequest({
@@ -1250,16 +1391,18 @@ async function mergePullRequest({
   repo: string;
   number: number;
   method: "squash" | "rebase" | "merge";
-  commitTitle: string;
-  commitMessage: string;
+  commitTitle?: string;
+  commitMessage?: string;
 }): Promise<void> {
   await octokit.rest.pulls.merge({
     owner,
     repo,
     pull_number: number,
     merge_method: method,
-    commit_title: commitTitle,
-    commit_message: commitMessage,
+    ...(typeof commitTitle === "string" ? { commit_title: commitTitle } : {}),
+    ...(typeof commitMessage === "string"
+      ? { commit_message: commitMessage }
+      : {}),
   });
 }
 
