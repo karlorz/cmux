@@ -1624,7 +1624,7 @@ async def task_install_global_cli(ctx: TaskContext) -> None:
 @registry.task(
     name="setup-claude-oauth-wrappers",
     deps=("install-global-cli",),
-    description="Create wrapper scripts for claude/npx/bunx to support OAuth token injection",
+    description="Create wrapper scripts for claude/npx to support OAuth token injection",
 )
 async def task_setup_claude_oauth_wrappers(ctx: TaskContext) -> None:
     """

@@ -2911,12 +2911,12 @@ async def task_install_global_cli(ctx: PveTaskContext) -> None:
 @registry.task(
     name="setup-claude-oauth-wrappers",
     deps=("install-global-cli",),
-    description="Create wrapper scripts for claude/npx/bunx to support OAuth token injection",
+    description="Create wrapper scripts for claude/npx to support OAuth token injection",
 )
 @update_registry.task(
     name="setup-claude-oauth-wrappers",
     deps=(),  # No deps - global-cli already installed
-    description="Create wrapper scripts for claude/npx/bunx to support OAuth token injection",
+    description="Create wrapper scripts for claude/npx to support OAuth token injection",
 )
 async def task_setup_claude_oauth_wrappers(ctx: PveTaskContext) -> None:
     script_path = Path(__file__).parent.parent / "configs" / "setup-claude-oauth-wrappers.sh"
