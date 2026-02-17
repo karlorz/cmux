@@ -1,7 +1,7 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
-import { generateObject, type LanguageModel } from "ai";
+import { generateObject, generateText, type LanguageModel } from "ai";
 import {
   CLOUDFLARE_ANTHROPIC_BASE_URL,
   CLOUDFLARE_GEMINI_BASE_URL,
@@ -59,6 +59,7 @@ export const prGenerationSchema = z.object({
 
 export type PRGeneration = z.infer<typeof prGenerationSchema>;
 
+// ApiKeys type kept for backward compatibility with function signatures
 type ApiKeys = Record<string, string>;
 
 interface PRInfoResult extends PRGeneration {
@@ -101,46 +102,77 @@ function getFallbackInfo(taskDescription: string): PRInfoResult {
   };
 }
 
-function getModelAndProvider(
-  apiKeys: ApiKeys
-): { model: LanguageModel; providerName: string } | null {
+/**
+ * Check if the given base URL is a Bedrock-backed proxy.
+ * These proxies don't support tool_choice.disable_parallel_tool_use.
+ * We detect cmux proxy URLs which route to AWS Bedrock.
+ */
+function isBedrockBackedProxy(baseUrl: string): boolean {
+  // cmux proxy URLs (production and local dev) route to Bedrock
+  if (baseUrl.includes("cmux.dev/api/anthropic")) return true;
+  if (baseUrl.includes("localhost") && baseUrl.includes("/api/anthropic")) return true;
+  // Convex HTTP endpoints also route to Bedrock
+  if (baseUrl.includes(".convex.site")) return true;
+  return false;
+}
+
+type ModelConfig = {
+  model: LanguageModel;
+  providerName: string;
+  useTextMode: boolean; // Use generateText instead of generateObject for Bedrock compatibility
+};
+
+/**
+ * Get model and provider using PLATFORM credentials only.
+ * This is for internal platform AI services (branch names, PR titles, etc.)
+ * and should NOT use user/team API keys.
+ */
+function getModelAndProvider(): ModelConfig | null {
+  // Use platform credentials from environment variables only
   // Note: AIGATEWAY_* accessed via process.env to support custom AI gateway configurations
-  if (apiKeys.GEMINI_API_KEY) {
+  const geminiKey = env.GEMINI_API_KEY;
+  if (geminiKey) {
     const google = createGoogleGenerativeAI({
-      apiKey: apiKeys.GEMINI_API_KEY,
+      apiKey: geminiKey,
       baseURL:
         process.env.AIGATEWAY_GEMINI_BASE_URL || CLOUDFLARE_GEMINI_BASE_URL,
     });
     return {
       model: google("gemini-2.5-flash"),
       providerName: "Gemini",
+      useTextMode: false,
     };
   }
 
-  if (apiKeys.OPENAI_API_KEY) {
+  const openaiKey = env.OPENAI_API_KEY;
+  if (openaiKey) {
     const openai = createOpenAI({
-      apiKey: apiKeys.OPENAI_API_KEY,
+      apiKey: openaiKey,
       baseURL:
         process.env.AIGATEWAY_OPENAI_BASE_URL || CLOUDFLARE_OPENAI_BASE_URL,
     });
     return {
       model: openai("gpt-5-nano"),
       providerName: "OpenAI",
+      useTextMode: false,
     };
   }
 
-  if (apiKeys.ANTHROPIC_API_KEY) {
+  const anthropicKey = env.ANTHROPIC_API_KEY;
+  if (anthropicKey) {
     const rawAnthropicBaseUrl =
-      apiKeys.ANTHROPIC_BASE_URL?.trim() ||
       process.env.AIGATEWAY_ANTHROPIC_BASE_URL ||
       CLOUDFLARE_ANTHROPIC_BASE_URL;
     const anthropic = createAnthropic({
-      apiKey: apiKeys.ANTHROPIC_API_KEY,
+      apiKey: anthropicKey,
       baseURL: normalizeAnthropicBaseUrl(rawAnthropicBaseUrl).forAiSdk,
     });
+    // Use text mode for Bedrock-backed proxies to avoid tool_choice.disable_parallel_tool_use
+    const useTextMode = isBedrockBackedProxy(rawAnthropicBaseUrl);
     return {
-      model: anthropic("claude-3-5-haiku-20241022"),
+      model: anthropic("claude-haiku-4-5-20251001"),
       providerName: "Anthropic",
+      useTextMode,
     };
   }
 
@@ -163,38 +195,84 @@ export function mergeApiKeysWithEnv(apiKeys: Record<string, string>): ApiKeys {
   return merged;
 }
 
+const PR_GENERATION_SYSTEM_PROMPT =
+  "You are a helpful assistant that generates git branch names and PR titles. Generate a VERY SHORT branch name (2-4 words maximum, lowercase, hyphenated) and a concise PR title (5-10 words) that summarize the task. The branch name should be extremely concise and focus on the core action (e.g., 'fix-auth', 'add-logging', 'update-deps', 'refactor-api').";
+
+const PR_GENERATION_TEXT_MODE_SYSTEM_PROMPT = `${PR_GENERATION_SYSTEM_PROMPT}
+
+You MUST respond with ONLY a JSON object (no markdown, no explanation) containing exactly these fields:
+- branchName: A SHORT lowercase hyphenated branch name (2-4 words max)
+- prTitle: A human-readable PR title (5-10 words)
+
+Example response: {"branchName": "add-ci-workflow", "prTitle": "Add GitHub CI workflow for automated testing"}`;
+
+/**
+ * Extract JSON from text response, handling potential markdown code blocks.
+ */
+function extractJsonFromText(text: string): unknown {
+  // Try to find JSON object in response
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error("No JSON object found in response");
+  }
+  return JSON.parse(jsonMatch[0]);
+}
+
 export async function generatePRInfo(
   taskDescription: string,
-  apiKeys: ApiKeys
+  _apiKeys?: ApiKeys
 ): Promise<PRInfoResult> {
   const fallbackInfo = getFallbackInfo(taskDescription);
-  const modelConfig = getModelAndProvider(apiKeys);
+  // Use platform credentials only - not user/team API keys
+  const modelConfig = getModelAndProvider();
 
   if (!modelConfig) {
     console.warn(
-      "[BranchNameGenerator] No API keys available, using environment fallback"
+      "[BranchNameGenerator] No platform API keys available, using fallback"
     );
     return fallbackInfo;
   }
 
-  const { model, providerName } = modelConfig;
+  const { model, providerName, useTextMode } = modelConfig;
 
   try {
-    const { object } = await generateObjectImpl({
-      model,
-      schema: prGenerationSchema,
-      system:
-        "You are a helpful assistant that generates git branch names and PR titles. Generate a VERY SHORT branch name (2-4 words maximum, lowercase, hyphenated) and a concise PR title (5-10 words) that summarize the task. The branch name should be extremely concise and focus on the core action (e.g., 'fix-auth', 'add-logging', 'update-deps', 'refactor-api').",
-      prompt: `Task: ${taskDescription}`,
-      maxRetries: 2,
-      ...(providerName === "OpenAI" ? {} : { temperature: 0.3 }),
-    });
+    let object: PRGeneration;
+
+    if (useTextMode) {
+      // Use generateText with plain text mode for Bedrock-backed proxies
+      // This avoids tool_choice.disable_parallel_tool_use which Bedrock rejects
+      console.info(
+        `[BranchNameGenerator] Using text mode for Bedrock-compatible generation`
+      );
+      const result = await generateText({
+        model,
+        system: PR_GENERATION_TEXT_MODE_SYSTEM_PROMPT,
+        prompt: `Task: ${taskDescription}`,
+        maxRetries: 2,
+        ...(providerName === "OpenAI" ? {} : { temperature: 0.3 }),
+      });
+
+      const parsed = extractJsonFromText(result.text);
+      const validated = prGenerationSchema.parse(parsed);
+      object = validated;
+    } else {
+      // Use generateObject for providers that support tool_choice properly
+      const result = await generateObjectImpl({
+        model,
+        schema: prGenerationSchema,
+        system: PR_GENERATION_SYSTEM_PROMPT,
+        prompt: `Task: ${taskDescription}`,
+        maxRetries: 2,
+        ...(providerName === "OpenAI" ? {} : { temperature: 0.3 }),
+      });
+      object = result.object;
+    }
 
     const sanitizedBranch = sanitizeBranchComponent(object.branchName);
     const sanitizedTitle = sanitizePrTitle(object.prTitle);
 
     console.info(
-      `[BranchNameGenerator] Generated via ${providerName}: branch="${sanitizedBranch}", title="${sanitizedTitle}"`
+      `[BranchNameGenerator] Generated via ${providerName}${useTextMode ? " (text mode)" : ""}: branch="${sanitizedBranch}", title="${sanitizedTitle}"`
     );
 
     return {

@@ -342,18 +342,13 @@ function getIsOAuthToken(token: string | null): boolean {
 }
 
 /**
- * Check if the key is a valid Anthropic API key format.
- * Anthropic keys start with "sk-ant-" (regular) or "sk-ant-oat" (OAuth).
- */
-function isAnthropicApiKey(key: string | null): boolean {
-  return key !== null && key.startsWith("sk-ant-");
-}
-
-/**
- * Check if user provided their own valid Anthropic API key (not the placeholder).
+ * Check if user provided their own API key (not the placeholder).
+ * This includes both valid Anthropic keys and invalid keys - we forward
+ * invalid keys to Anthropic so the user gets a proper error message
+ * instead of silently falling back to platform credits.
  */
 function hasUserApiKey(key: string | null): boolean {
-  return key !== null && key !== hardCodedApiKey && isAnthropicApiKey(key);
+  return key !== null && key.trim() !== "" && key !== hardCodedApiKey;
 }
 
 const TEMPORARY_DISABLE_AUTH = true;
@@ -437,12 +432,11 @@ export const anthropicProxy = httpAction(async (ctx, req) => {
     const payloadSummary = summarizeAnthropicPayload(body);
 
     if (useUserPath) {
-      // User key path: custom URL (if present), otherwise AI gateway/cloudflare.
-      // If user configured a custom URL, accept provider-specific key formats.
+      // User key path: custom URL (if present), otherwise direct to Cloudflare/Anthropic.
+      // IMPORTANT: Do NOT use AIGATEWAY here - it may override user's key with platform key.
+      // AI Gateway is only for platform credits path.
       const rawBaseUrl = normalizeAnthropicBaseUrl(
-        userCustomBaseUrl ||
-          process.env.AIGATEWAY_ANTHROPIC_BASE_URL ||
-          CLOUDFLARE_ANTHROPIC_BASE_URL,
+        userCustomBaseUrl || CLOUDFLARE_ANTHROPIC_BASE_URL,
       ).forRawFetch;
 
       const headers: Record<string, string> = {};

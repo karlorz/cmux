@@ -501,7 +501,6 @@ export function CommandBar({
 
   const stackUser = useUser({ or: "return-null" });
   const stackTeams = stackUser?.useTeams() ?? EMPTY_TEAM_LIST;
-  const selectedTeamId = stackUser?.selectedTeam?.id ?? null;
   const teamMemberships = useQuery(api.teams.listTeamMemberships, {});
   const reposByOrg = useQuery(api.github.getReposByOrg, { teamSlugOrId });
   const environments = useQuery(api.environments.list, { teamSlugOrId });
@@ -636,12 +635,19 @@ export function CommandBar({
 
       const teamSlugOrIdTarget = slug ?? team.id;
 
+      // Determine if this team is current by comparing against URL's teamSlugOrId
+      // The teamSlugOrId from URL can match either the team's slug or its ID
+      const isCurrent =
+        teamSlugOrId === teamSlugOrIdTarget ||
+        teamSlugOrId === team.id ||
+        teamSlugOrId === slug;
+
       items.push({
         id: team.id,
         label,
         slug,
         teamSlugOrId: teamSlugOrIdTarget,
-        isCurrent: selectedTeamId === team.id,
+        isCurrent,
         keywords: compactStrings([label, slug]),
       });
     }
@@ -653,7 +659,7 @@ export function CommandBar({
     });
 
     return items;
-  }, [stackTeams, teamMemberships, selectedTeamId, getClientSlug]);
+  }, [stackTeams, teamMemberships, teamSlugOrId, getClientSlug]);
 
   const teamCommandEntries = useMemo(
     () =>

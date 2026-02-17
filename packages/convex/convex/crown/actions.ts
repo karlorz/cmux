@@ -159,24 +159,15 @@ const CrownEvaluationCandidateValidator = v.object({
   index: v.optional(v.number()),
 });
 
-async function getUserAnthropicBaseUrl(
-  ctx: ActionCtx,
-  teamId: string,
-  userId: string,
-): Promise<string | undefined> {
-  const userBaseUrl = await ctx.runQuery(internal.apiKeys.getByEnvVarInternal, {
-    teamId,
-    userId,
-    envVar: "ANTHROPIC_BASE_URL",
-  });
-  const trimmed = userBaseUrl?.value?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : undefined;
-}
-
-function resolveCrownModel(options?: { anthropicBaseUrl?: string }): {
+/**
+ * Resolve crown model using PLATFORM credentials only.
+ * Crown evaluation is a platform service and should NOT use user/team API keys.
+ */
+function resolveCrownModel(): {
   provider: CrownProvider;
   model: LanguageModel;
 } {
+  // Use platform credentials from environment variables only
   // Note: AIGATEWAY_* accessed via process.env to avoid Convex static analysis
   const geminiKey = process.env.GEMINI_API_KEY;
   if (geminiKey) {
@@ -199,7 +190,6 @@ function resolveCrownModel(options?: { anthropicBaseUrl?: string }): {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (anthropicKey) {
     const rawAnthropicBaseUrl =
-      options?.anthropicBaseUrl ||
       process.env.AIGATEWAY_ANTHROPIC_BASE_URL ||
       CLOUDFLARE_ANTHROPIC_BASE_URL;
     const anthropic = createAnthropic({
@@ -213,16 +203,15 @@ function resolveCrownModel(options?: { anthropicBaseUrl?: string }): {
   }
 
   throw new ConvexError(
-    "Crown evaluation is not configured (missing Gemini, OpenAI, or Anthropic API key)"
+    "Crown evaluation is not configured (missing platform Gemini, OpenAI, or Anthropic API key)"
   );
 }
 
 export async function performCrownEvaluation(
   prompt: string,
   candidates: CrownEvaluationCandidate[],
-  options?: { anthropicBaseUrl?: string },
 ): Promise<CrownEvaluationResponse> {
-  const { model, provider } = resolveCrownModel(options);
+  const { model, provider } = resolveCrownModel();
 
   const normalizedCandidates = candidates.map((candidate, idx) => {
     const resolvedIndex = candidate.index ?? idx;
@@ -353,9 +342,8 @@ IMPORTANT: Respond ONLY with the JSON object, no other text.`;
 export async function performCrownSummarization(
   prompt: string,
   gitDiff: string,
-  options?: { anthropicBaseUrl?: string },
 ): Promise<CrownSummarizationResponse> {
-  const { model, provider } = resolveCrownModel(options);
+  const { model, provider } = resolveCrownModel();
 
   const summarizationPrompt = `You are an expert reviewer summarizing a pull request.
 
@@ -447,14 +435,9 @@ export const evaluate = action({
     teamId: v.optional(v.string()),
     userId: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    const anthropicBaseUrl =
-      args.teamId && args.userId
-        ? await getUserAnthropicBaseUrl(ctx, args.teamId, args.userId)
-        : undefined;
-    return performCrownEvaluation(args.prompt, args.candidates, {
-      anthropicBaseUrl,
-    });
+  handler: async (_ctx, args) => {
+    // Uses platform credentials only - not user/team API keys
+    return performCrownEvaluation(args.prompt, args.candidates);
   },
 });
 
@@ -466,14 +449,9 @@ export const summarize = action({
     teamId: v.optional(v.string()),
     userId: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    const anthropicBaseUrl =
-      args.teamId && args.userId
-        ? await getUserAnthropicBaseUrl(ctx, args.teamId, args.userId)
-        : undefined;
-    return performCrownSummarization(args.prompt, args.gitDiff, {
-      anthropicBaseUrl,
-    });
+  handler: async (_ctx, args) => {
+    // Uses platform credentials only - not user/team API keys
+    return performCrownSummarization(args.prompt, args.gitDiff);
   },
 });
 
@@ -560,12 +538,6 @@ export const retryEvaluation = internalAction({
       clearError: true,
     });
 
-    const anthropicBaseUrl = await getUserAnthropicBaseUrl(
-      ctx,
-      retryData.teamId,
-      retryData.userId
-    );
-
     // Prepare candidates for evaluation
     const evaluationCandidates: CrownEvaluationCandidate[] = parsedData.candidates.map(
       (candidate, idx) => ({
@@ -581,11 +553,10 @@ export const retryEvaluation = internalAction({
     console.log(`[Crown] Retrying evaluation with ${evaluationCandidates.length} candidates`);
 
     try {
-      // Perform the evaluation
+      // Perform the evaluation (uses platform credentials only)
       const evaluationResponse = await performCrownEvaluation(
         parsedData.prompt,
-        evaluationCandidates,
-        { anthropicBaseUrl }
+        evaluationCandidates
       );
 
       console.log(`[Crown] Retry evaluation result:`, {
@@ -627,8 +598,7 @@ export const retryEvaluation = internalAction({
         const summaryResponse = await performCrownSummarization(
           parsedData.prompt,
           winnerCandidate.gitDiff,
-          { anthropicBaseUrl }
-        );
+                  );
         summary = summaryResponse?.summary?.slice(0, 8000);
       } catch (summaryError) {
         const message =
@@ -831,12 +801,6 @@ export const retryEvaluationFresh = internalAction({
       return { success: false, reason: "Task not found" };
     }
 
-    const anthropicBaseUrl = await getUserAnthropicBaseUrl(
-      ctx,
-      args.teamId,
-      args.userId
-    );
-
     // For single run: auto-crown since no comparison needed
     if (validRuns.length === 1) {
       const singleRun: Doc<"taskRuns"> = validRuns[0];
@@ -894,8 +858,7 @@ export const retryEvaluationFresh = internalAction({
           const summaryResponse = await performCrownSummarization(
             task.text || "Task completion",
             gitDiff,
-            { anthropicBaseUrl }
-          );
+                      );
           summary = summaryResponse?.summary?.slice(0, 8000);
         } catch (summaryError) {
           // Match multi-run behavior: if summary fails, fail the whole operation
@@ -1116,8 +1079,7 @@ export const retryEvaluationFresh = internalAction({
         const result = await performCrownEvaluation(
           task.text || "Task completion",
           candidates,
-          { anthropicBaseUrl }
-        );
+                  );
 
         // winner is just an index number (0-based), not an object
         if (result.winner === null || result.winner === undefined) {
@@ -1134,8 +1096,7 @@ export const retryEvaluationFresh = internalAction({
           const summaryResponse = await performCrownSummarization(
             task.text || "Task completion",
             winnerCandidate.gitDiff,
-            { anthropicBaseUrl }
-          );
+                      );
           summary = summaryResponse?.summary?.slice(0, 8000);
         } catch (summaryError) {
           const summaryMessage =

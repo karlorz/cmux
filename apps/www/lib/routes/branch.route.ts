@@ -4,7 +4,6 @@ import {
   generateBranchNamesFromBase,
   generateNewBranchName,
   generateUniqueBranchNames,
-  mergeApiKeysWithEnv,
   toKebabCase,
 } from "@/lib/utils/branch-name-generator";
 import { getConvex } from "@/lib/utils/get-convex";
@@ -86,15 +85,11 @@ branchRouter.openapi(
     const convex = getConvex({ accessToken });
 
     try {
-      const [teamApiKeys, workspaceSettings] = await Promise.all([
-        convex.query(api.apiKeys.getAllForAgents, {
-          teamSlugOrId: body.teamSlugOrId,
-        }),
-        convex.query(api.workspaceSettings.get, {
-          teamSlugOrId: body.teamSlugOrId,
-        }),
-      ]);
-      const apiKeys = mergeApiKeysWithEnv(teamApiKeys ?? {});
+      // Only fetch workspace settings for branch prefix - API keys are not needed
+      // (branch generation uses platform credentials only)
+      const workspaceSettings = await convex.query(api.workspaceSettings.get, {
+        teamSlugOrId: body.teamSlugOrId,
+      });
       // Use configured prefix, or default if not set (undefined/null)
       // Empty string is valid and means no prefix
       const branchPrefix = workspaceSettings?.branchPrefix !== undefined
@@ -130,7 +125,7 @@ branchRouter.openapi(
           providerName,
         } = await generateNewBranchName(
           body.taskDescription!,
-          apiKeys,
+          {}, // API keys no longer needed - uses platform credentials
           body.uniqueId,
           branchPrefix,
         );
@@ -152,7 +147,7 @@ branchRouter.openapi(
       } = await generateUniqueBranchNames(
         body.taskDescription!,
         count,
-        apiKeys,
+        {}, // API keys no longer needed - uses platform credentials
         body.uniqueId,
         branchPrefix,
       );

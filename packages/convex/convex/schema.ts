@@ -625,6 +625,7 @@ const convexSchema = defineSchema({
     autoSyncEnabled: v.optional(v.boolean()), // Auto-sync local workspace to cloud (default: true)
     bypassAnthropicProxy: v.optional(v.boolean()), // When true, Claude connects directly to custom Anthropic base URL
     nextLocalWorkspaceSequence: v.optional(v.number()), // Counter for local workspace naming
+    alwaysForcePush: v.optional(v.boolean()), // Legacy field - kept for schema compatibility
     // Git settings
     branchPrefix: v.optional(v.string()), // Prefix for generated branch names (default: "dev/")
     // Heatmap review settings
