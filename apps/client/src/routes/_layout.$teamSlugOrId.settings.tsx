@@ -130,8 +130,6 @@ function SettingsComponent() {
   // Default to shared constant for new users, empty string means no prefix
   const [branchPrefix, setBranchPrefix] = useState<string>(DEFAULT_BRANCH_PREFIX);
   const [originalBranchPrefix, setOriginalBranchPrefix] = useState<string>(DEFAULT_BRANCH_PREFIX);
-  const [alwaysForcePush, setAlwaysForcePush] = useState<boolean>(false);
-  const [originalAlwaysForcePush, setOriginalAlwaysForcePush] = useState<boolean>(false);
   const usedListRefs = useRef<Record<string, HTMLSpanElement | null>>({});
   const [expandedUsedList, setExpandedUsedList] = useState<
     Record<string, boolean>
@@ -313,14 +311,6 @@ function SettingsComponent() {
     );
     setOriginalBranchPrefix((prev) =>
       prev === nextBranchPrefix ? prev : nextBranchPrefix
-    );
-
-    const nextAlwaysForcePush = workspaceSettings?.alwaysForcePush ?? false;
-    setAlwaysForcePush((prev) =>
-      prev === nextAlwaysForcePush ? prev : nextAlwaysForcePush
-    );
-    setOriginalAlwaysForcePush((prev) =>
-      prev === nextAlwaysForcePush ? prev : nextAlwaysForcePush
     );
 
     if (workspaceSettings?.heatmapModel) {
@@ -580,7 +570,6 @@ function SettingsComponent() {
 
     // Git settings changes
     const branchPrefixChanged = branchPrefix !== originalBranchPrefix;
-    const alwaysForcePushChanged = alwaysForcePush !== originalAlwaysForcePush;
 
     // Heatmap settings changes
     const heatmapModelChanged = heatmapModel !== originalHeatmapModel;
@@ -594,7 +583,6 @@ function SettingsComponent() {
       autoPrChanged ||
       bypassAnthropicProxyChanged ||
       branchPrefixChanged ||
-      alwaysForcePushChanged ||
       apiKeysChanged ||
       baseUrlsChanged ||
       containerSettingsChanged ||
@@ -620,7 +608,6 @@ function SettingsComponent() {
         autoPrEnabled !== originalAutoPrEnabled ||
         bypassAnthropicProxy !== originalBypassAnthropicProxy ||
         branchPrefix !== originalBranchPrefix ||
-        alwaysForcePush !== originalAlwaysForcePush ||
         heatmapModel !== originalHeatmapModel ||
         heatmapThreshold !== originalHeatmapThreshold ||
         heatmapTooltipLanguage !== originalHeatmapTooltipLanguage ||
@@ -633,7 +620,6 @@ function SettingsComponent() {
           autoPrEnabled,
           bypassAnthropicProxy,
           branchPrefix,
-          alwaysForcePush,
           heatmapModel,
           heatmapThreshold,
           heatmapTooltipLanguage,
@@ -643,7 +629,6 @@ function SettingsComponent() {
         setOriginalAutoPrEnabled(autoPrEnabled);
         setOriginalBypassAnthropicProxy(bypassAnthropicProxy);
         setOriginalBranchPrefix(branchPrefix);
-        setOriginalAlwaysForcePush(alwaysForcePush);
         setOriginalHeatmapModel(heatmapModel);
         setOriginalHeatmapThreshold(heatmapThreshold);
         setOriginalHeatmapTooltipLanguage(heatmapTooltipLanguage);
@@ -860,8 +845,6 @@ function SettingsComponent() {
             <GitSection
               branchPrefix={branchPrefix}
               onBranchPrefixChange={setBranchPrefix}
-              alwaysForcePush={alwaysForcePush}
-              onAlwaysForcePushChange={setAlwaysForcePush}
             />
           ) : activeSection === "archived" ? (
             <ArchivedTasksSection teamSlugOrId={teamSlugOrId} />

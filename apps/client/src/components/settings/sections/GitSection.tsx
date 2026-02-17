@@ -1,25 +1,21 @@
 import { SettingRow } from "@/components/settings/SettingRow";
 import { SettingSection } from "@/components/settings/SettingSection";
-import { SettingSwitch } from "@/components/settings/SettingSwitch";
 
 interface GitSectionProps {
   branchPrefix: string;
   onBranchPrefixChange: (value: string) => void;
-  alwaysForcePush: boolean;
-  onAlwaysForcePushChange: (value: boolean) => void;
 }
 
 export function GitSection({
   branchPrefix,
   onBranchPrefixChange,
-  alwaysForcePush,
-  onAlwaysForcePushChange,
 }: GitSectionProps) {
   return (
     <SettingSection title="Git">
       <SettingRow
         label="Branch prefix"
         description="Prefix used when creating new branches. Leave empty for no prefix."
+        noBorder
       >
         <div className="w-full sm:w-[16rem]">
           <input
@@ -33,15 +29,6 @@ export function GitSection({
           />
         </div>
       </SettingRow>
-
-      <SettingSwitch
-        label="Always force push"
-        description="Force push when pushing branches. Use with caution."
-        ariaLabel="Always force push"
-        isSelected={alwaysForcePush}
-        onValueChange={onAlwaysForcePushChange}
-        noBorder
-      />
     </SettingSection>
   );
 }

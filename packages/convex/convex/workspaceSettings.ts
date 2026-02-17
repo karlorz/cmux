@@ -3,6 +3,20 @@ import { resolveTeamIdLoose } from "../_shared/team";
 import { internalQuery } from "./_generated/server";
 import { authMutation, authQuery } from "./users/utils";
 
+/**
+ * Sanitize branch prefix to prevent shell injection.
+ * Only allows safe git-ref characters: alphanumeric, forward slash, hyphen, underscore, dot.
+ * Strips any other characters and limits length.
+ */
+function sanitizeBranchPrefix(prefix: string): string {
+  // Remove any characters that aren't safe for git refs and shell interpolation
+  // Allowed: a-z, A-Z, 0-9, /, -, _, .
+  const sanitized = prefix
+    .replace(/[^a-zA-Z0-9/_.-]/g, "")
+    .substring(0, 50); // Limit length
+  return sanitized;
+}
+
 export const get = authQuery({
   args: { teamSlugOrId: v.string() },
   handler: async (ctx, args) => {
@@ -26,7 +40,6 @@ export const update = authMutation({
     autoSyncEnabled: v.optional(v.boolean()),
     bypassAnthropicProxy: v.optional(v.boolean()),
     branchPrefix: v.optional(v.string()),
-    alwaysForcePush: v.optional(v.boolean()),
     heatmapModel: v.optional(v.string()),
     heatmapThreshold: v.optional(v.number()),
     heatmapTooltipLanguage: v.optional(v.string()),
@@ -55,7 +68,6 @@ export const update = authMutation({
         autoSyncEnabled?: boolean;
         bypassAnthropicProxy?: boolean;
         branchPrefix?: string;
-        alwaysForcePush?: boolean;
         heatmapModel?: string;
         heatmapThreshold?: number;
         heatmapTooltipLanguage?: string;
@@ -79,10 +91,7 @@ export const update = authMutation({
         updates.bypassAnthropicProxy = args.bypassAnthropicProxy;
       }
       if (args.branchPrefix !== undefined) {
-        updates.branchPrefix = args.branchPrefix;
-      }
-      if (args.alwaysForcePush !== undefined) {
-        updates.alwaysForcePush = args.alwaysForcePush;
+        updates.branchPrefix = sanitizeBranchPrefix(args.branchPrefix);
       }
       if (args.heatmapModel !== undefined) {
         updates.heatmapModel = args.heatmapModel;
@@ -104,8 +113,7 @@ export const update = authMutation({
         autoPrEnabled: args.autoPrEnabled,
         autoSyncEnabled: args.autoSyncEnabled,
         bypassAnthropicProxy: args.bypassAnthropicProxy,
-        branchPrefix: args.branchPrefix,
-        alwaysForcePush: args.alwaysForcePush,
+        branchPrefix: args.branchPrefix !== undefined ? sanitizeBranchPrefix(args.branchPrefix) : undefined,
         heatmapModel: args.heatmapModel,
         heatmapThreshold: args.heatmapThreshold,
         heatmapTooltipLanguage: args.heatmapTooltipLanguage,
