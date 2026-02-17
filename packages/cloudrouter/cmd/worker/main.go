@@ -38,20 +38,14 @@ const (
 )
 
 var (
-	homeDirCandidates       = []string{"/home/user", "/root"}
-	workspaceDirCandidates  = []string{"/home/user/workspace", "/root/workspace"}
-	authTokenPathCandidates = []string{
-		"/home/user/.worker-auth-token",
-		"/root/.worker-auth-token",
-	}
-	vscodeTokenPathCandidates = []string{
-		"/home/user/.vscode-token",
-		"/root/.vscode-token",
-	}
-	bootIDPathCandidates = []string{
-		"/home/user/.token-boot-id",
-		"/root/.token-boot-id",
-	}
+	homeDirCandidates         = detectHomeDirCandidates()
+	workspaceDirCandidates    = detectWorkspaceDirCandidates(homeDirCandidates)
+	authTokenPathCandidates   = buildHomeFileCandidates(homeDirCandidates, ".worker-auth-token")
+	vscodeTokenPathCandidates = buildHomeFileCandidates(
+		homeDirCandidates,
+		".vscode-token",
+	)
+	bootIDPathCandidates = buildHomeFileCandidates(homeDirCandidates, ".token-boot-id")
 
 	homeDir         = resolvePreferredDir(homeDirCandidates...)
 	workspaceDir    = resolveWorkspaceDir(homeDir)
@@ -1122,6 +1116,42 @@ func generateSessionID() string {
 func userExists() bool {
 	_, err := exec.Command("id", "user").Output()
 	return err == nil
+}
+
+func detectHomeDirCandidates() []string {
+	candidates := make([]string, 0, 3)
+	if envHome := strings.TrimSpace(os.Getenv("HOME")); envHome != "" {
+		candidates = append(candidates, envHome)
+	}
+	if userExists() {
+		candidates = append(candidates, "/home/user", "/root")
+	} else {
+		candidates = append(candidates, "/root", "/home/user")
+	}
+	return uniquePaths(candidates...)
+}
+
+func detectWorkspaceDirCandidates(homeCandidates []string) []string {
+	candidates := make([]string, 0, len(homeCandidates)+2)
+	for _, home := range homeCandidates {
+		candidates = append(candidates, filepath.Join(home, "workspace"))
+	}
+	candidates = append(candidates, "/root/workspace", "/home/user/workspace")
+	return uniquePaths(candidates...)
+}
+
+func buildHomeFileCandidates(homeCandidates []string, filename string) []string {
+	candidates := make([]string, 0, len(homeCandidates)+2)
+	for _, home := range homeCandidates {
+		candidates = append(candidates, filepath.Join(home, filename))
+	}
+	// Keep explicit defaults for compatibility with older snapshots.
+	candidates = append(
+		candidates,
+		filepath.Join("/home/user", filename),
+		filepath.Join("/root", filename),
+	)
+	return uniquePaths(candidates...)
 }
 
 func ensureRuntimePaths() {
