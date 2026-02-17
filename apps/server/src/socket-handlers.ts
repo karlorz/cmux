@@ -50,6 +50,7 @@ import { RepositoryManager } from "./repositoryManager";
 import type { GitRepoInfo } from "./server";
 import { localCloudSyncManager } from "./localCloudSync";
 import {
+  DEFAULT_BRANCH_PREFIX,
   generateBranchNamesFromDescription,
   generatePRInfoAndBranchNames,
 } from "./utils/branchNameGenerator";
@@ -979,11 +980,24 @@ export function setupSocketHandlers(
             // Determine number of agents to spawn
             const agentCount = taskData.selectedAgents?.length || 1;
 
+            // Fetch workspace settings for branchPrefix
+            const workspaceSettings = await getConvex().query(
+              api.workspaceSettings.get,
+              { teamSlugOrId: safeTeam }
+            );
+            // Use configured prefix, or default if not set (undefined/null)
+            // Empty string is valid and means no prefix
+            const branchPrefix =
+              workspaceSettings?.branchPrefix !== undefined
+                ? workspaceSettings.branchPrefix
+                : DEFAULT_BRANCH_PREFIX;
+
             // Generate branch names INSTANTLY (~0ms) from task description
             // instead of waiting ~20s for AI-generated names
             const branchNames = generateBranchNamesFromDescription(
               taskData.taskDescription,
-              agentCount
+              agentCount,
+              branchPrefix
             );
             serverLogger.info(
               `[Server] Generated ${branchNames.length} deterministic branch names instantly`

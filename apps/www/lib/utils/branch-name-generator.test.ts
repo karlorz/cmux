@@ -1,6 +1,7 @@
 import { type GenerateObjectResult } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  DEFAULT_BRANCH_PREFIX,
   generateBranchName,
   generateBranchNamesFromBase,
   generateNewBranchName,
@@ -74,9 +75,10 @@ describe("generateRandomId", () => {
 });
 
 describe("generateBranchName", () => {
-  it("prefixes with cmux and appends random id", () => {
+  it("prefixes with default prefix and appends random id", () => {
     const name = generateBranchName("Fix auth bug");
-    expect(name).toMatch(/^cmux\/fix-auth-bug-[a-z0-9]{5}$/);
+    const escapedPrefix = DEFAULT_BRANCH_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    expect(name).toMatch(new RegExp(`^${escapedPrefix}fix-auth-bug-[a-z0-9]{5}$`));
   });
 });
 
@@ -129,7 +131,7 @@ describe("generateBranchNames", () => {
       "Add auditing to auth",
       OPENAI_KEYS
     );
-    expect(baseBranchName).toBe("cmux/add-auth-logging");
+    expect(baseBranchName).toBe(`${DEFAULT_BRANCH_PREFIX}add-auth-logging`);
   });
 
   it("respects provided unique id for single branch", async () => {
@@ -138,7 +140,7 @@ describe("generateBranchNames", () => {
       {},
       "abcde"
     );
-    expect(branchName).toBe("cmux/fix-bug-abcde");
+    expect(branchName).toBe(`${DEFAULT_BRANCH_PREFIX}fix-bug-abcde`);
   });
 
   it("generates the requested number of unique branches", async () => {
@@ -159,15 +161,17 @@ describe("generateBranchNames", () => {
       {},
       "abcde"
     );
-    expect(branchNames[0]).toBe("cmux/improve-logging-abcde");
-    expect(branchNames[1]).toMatch(/^cmux\/improve-logging-[a-z0-9]{5}$/);
+    const escapedPrefix = DEFAULT_BRANCH_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    expect(branchNames[0]).toBe(`${DEFAULT_BRANCH_PREFIX}improve-logging-abcde`);
+    expect(branchNames[1]).toMatch(new RegExp(`^${escapedPrefix}improve-logging-[a-z0-9]{5}$`));
   });
 
   it("builds multiple branches from existing title", () => {
     const names = generateUniqueBranchNamesFromTitle("Fix Bug", 2);
     expect(names).toHaveLength(2);
+    const escapedPrefix = DEFAULT_BRANCH_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     names.forEach((name) =>
-      expect(name).toMatch(/^cmux\/fix-bug-[a-z0-9]{5}$/)
+      expect(name).toMatch(new RegExp(`^${escapedPrefix}fix-bug-[a-z0-9]{5}$`))
     );
   });
 });

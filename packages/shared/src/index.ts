@@ -33,6 +33,7 @@ export * from "./sandbox-presets";
 export * from "./e2b-templates";
 export * from "./screenshots/types";
 export * from "./config/host-config";
+export * from "./git-constants";
 // Note: useNetwork hook is NOT exported here to avoid SSR issues.
 // Import directly from "@cmux/shared/hooks/use-network" in client components.
 // Note: Environment component utilities are NOT exported here.
