@@ -37,7 +37,7 @@ fi
 # Run codex with unbuffer to capture TTY output (script doesn't work without real TTY)
 unbuffer codex \
   --dangerously-bypass-approvals-and-sandbox \
-  --model gpt-5.2-codex \
+  --model gpt-5.3-codex \
   -c model_reasoning_effort="high" \
   review --base main "Review compared to main, including staged, unstaged, and untracked changes.
 
