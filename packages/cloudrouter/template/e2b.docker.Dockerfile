@@ -55,7 +55,7 @@ RUN mkdir -p /var/run/sshd \
 # Install Node.js 22 (latest LTS)
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs \
-    && npm install -g npm@latest
+    && npm install -g npm@latest agent-browser
 
 # Install Bun globally (accessible to all users, not just root)
 RUN curl -fsSL https://bun.sh/install | bash \
@@ -70,6 +70,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | RUSTUP_HOME=/usr
     && echo 'export CARGO_HOME=/usr/local/cargo' >> /etc/profile.d/rust.sh
 ENV RUSTUP_HOME=/usr/local/rustup
 ENV CARGO_HOME=/usr/local/cargo
+ENV PATH="/usr/local/cargo/bin:${PATH}"
 
 # Install GitHub CLI
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
@@ -174,11 +175,20 @@ RUN cd /tmp/worker-build && \
     go build -ldflags="-s -w" -o /usr/local/bin/worker-daemon ./cmd/worker && \
     rm -rf /tmp/worker-build
 
-# Keep Node.js VNC auth proxy (simple enough to stay in JS)
-COPY worker/vnc-auth-proxy.js /usr/local/bin/vnc-auth-proxy.js
-# Keep browser-agent-runner for browser automation (uses puppeteer)
-COPY worker/browser-agent-runner.js /usr/local/bin/browser-agent-runner.js
-RUN cd /usr/local/bin && npm install ws puppeteer-core
+# Install JupyterLab + basic data science packages
+RUN pip3 install --no-cache-dir \
+    jupyterlab \
+    numpy \
+    pandas \
+    matplotlib \
+    requests \
+    httpx \
+    ipywidgets \
+    tqdm \
+    openai \
+    anthropic
+
+# VNC auth proxy and browser agent are now built into the Go worker daemon
 
 # Make sure user can run services - add to sudoers
 RUN echo "user ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
@@ -192,7 +202,7 @@ ENV HOME=/home/user
 
 # Expose ports (E2B handles exposure, no nginx needed)
 # Note: 5901 (VNC) and 9222 (Chrome CDP) bind to localhost only for security
-EXPOSE 39377 39378 39380 10000
+EXPOSE 8888 39377 39378 39380 10000
 
 # Default command
 CMD ["/usr/local/bin/start-services.sh"]

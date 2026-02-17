@@ -27,21 +27,41 @@ var rootCmd = &cobra.Command{
 Quick start:
   cloudrouter login                      # Authenticate
   cloudrouter start                      # Create a sandbox
-  cloudrouter start --gpu T4             # Create a sandbox with GPU
-  cloudrouter start --docker             # Create a sandbox with Docker
+  cloudrouter start --size small         # Create a smaller sandbox (2 vCPU, 8 GB)
+  cloudrouter start --gpu B200           # Create a sandbox with GPU
   cloudrouter start ./my-project         # Create sandbox + upload directory
   cloudrouter code <id>                  # Open VS Code
+  cloudrouter jupyter <id>               # Open Jupyter Lab
+  cloudrouter vnc <id>                   # Open VNC desktop
   cloudrouter pty <id>                   # Open terminal session
-  cloudrouter stop <id>                  # Stop sandbox
+  cloudrouter ssh <id> "ls -la"          # Run a command via SSH
+  cloudrouter upload <id> ./my-dir       # Upload files to sandbox
+  cloudrouter download <id> ./output     # Download files from sandbox
+  cloudrouter browser snapshot <id>      # Get browser accessibility tree
+  cloudrouter browser open <id> <url>    # Navigate browser to URL
+  cloudrouter stop <id>                  # Pause sandbox
+  cloudrouter resume <id>                # Resume paused sandbox
+  cloudrouter delete <id>                # Delete sandbox permanently
   cloudrouter ls                         # List all sandboxes
 
-GPU options (--gpu):
+Size presets (--size):
+  small       2 vCPU,  8 GB RAM,  20 GB disk
+  medium      4 vCPU, 16 GB RAM,  40 GB disk
+  large       8 vCPU, 32 GB RAM,  80 GB disk   (default)
+  xlarge     16 vCPU, 64 GB RAM, 160 GB disk
+
+GPU options (--gpu, auto-selects Modal provider):
   T4          16GB VRAM  - inference, fine-tuning small models
   L4          24GB VRAM  - inference, image generation
   A10G        24GB VRAM  - training medium models
 
-  The following require approval (contact founders@manaflow.com):
-  L40S, A100, A100-80GB, H100, H200, B200`,
+  The following GPUs require approval (contact founders@manaflow.ai):
+  L40S        48GB VRAM  - inference, video generation
+  A100        40GB VRAM  - training large models (7B-70B)
+  A100-80GB   80GB VRAM  - very large models
+  H100        80GB VRAM  - fast training, research
+  H200        141GB VRAM - maximum memory capacity
+  B200        192GB VRAM - latest gen, frontier models`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
@@ -110,22 +130,19 @@ func init() {
 	rootCmd.AddCommand(pauseCmd)
 	rootCmd.AddCommand(resumeCmd)
 
-	// Exec command
+	// SSH command (run commands in sandbox via SSH)
 	rootCmd.AddCommand(execCmd)
 
 	// File transfer commands
 	rootCmd.AddCommand(uploadCmd)
 	rootCmd.AddCommand(downloadCmd)
 
-	// Environment variable management
-	rootCmd.AddCommand(envCmd)
-
 	// PTY commands (terminal session)
 	rootCmd.AddCommand(ptyCmd)
 	rootCmd.AddCommand(ptyListCmd)
 
-	// Computer commands (browser automation)
-	rootCmd.AddCommand(computerCmd)
+	// Browser commands (browser automation)
+	rootCmd.AddCommand(browserCmd)
 
 	// Templates
 	rootCmd.AddCommand(templatesCmd)
