@@ -17,7 +17,7 @@ import {
   CLOUDFLARE_GEMINI_BASE_URL,
   normalizeAnthropicBaseUrl,
 } from "@cmux/shared/convex-safe";
-import { action, internalAction, type ActionCtx } from "../_generated/server";
+import { action, internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import {
