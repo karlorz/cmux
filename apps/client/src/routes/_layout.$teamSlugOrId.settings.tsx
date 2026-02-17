@@ -7,6 +7,7 @@ import {
   type ProviderInfo,
 } from "@/components/settings/sections/AIProvidersSection";
 import { ArchivedTasksSection } from "@/components/settings/sections/ArchivedTasksSection";
+import { GitSection } from "@/components/settings/sections/GitSection";
 import { useTheme } from "@/components/theme/use-theme";
 import { TitleBar } from "@/components/TitleBar";
 import { api } from "@cmux/convex/api";
@@ -32,7 +33,7 @@ import { z } from "zod";
 export const Route = createFileRoute("/_layout/$teamSlugOrId/settings")({
   component: SettingsComponent,
   validateSearch: z.object({
-    section: z.enum(["general", "ai-providers", "archived"]).default("general"),
+    section: z.enum(["general", "ai-providers", "git", "archived"]).default("general"),
   }),
 });
 
@@ -125,6 +126,10 @@ function SettingsComponent() {
   const [autoPrEnabled, setAutoPrEnabled] = useState<boolean>(false);
   const [originalAutoPrEnabled, setOriginalAutoPrEnabled] =
     useState<boolean>(false);
+  const [branchPrefix, setBranchPrefix] = useState<string>("cmux/");
+  const [originalBranchPrefix, setOriginalBranchPrefix] = useState<string>("cmux/");
+  const [alwaysForcePush, setAlwaysForcePush] = useState<boolean>(false);
+  const [originalAlwaysForcePush, setOriginalAlwaysForcePush] = useState<boolean>(false);
   const usedListRefs = useRef<Record<string, HTMLSpanElement | null>>({});
   const [expandedUsedList, setExpandedUsedList] = useState<
     Record<string, boolean>
@@ -295,6 +300,22 @@ function SettingsComponent() {
     );
     setOriginalBypassAnthropicProxy((prev) =>
       prev === nextBypassAnthropicProxy ? prev : nextBypassAnthropicProxy
+    );
+
+    const nextBranchPrefix = workspaceSettings?.branchPrefix ?? "cmux/";
+    setBranchPrefix((prev) =>
+      prev === nextBranchPrefix ? prev : nextBranchPrefix
+    );
+    setOriginalBranchPrefix((prev) =>
+      prev === nextBranchPrefix ? prev : nextBranchPrefix
+    );
+
+    const nextAlwaysForcePush = workspaceSettings?.alwaysForcePush ?? false;
+    setAlwaysForcePush((prev) =>
+      prev === nextAlwaysForcePush ? prev : nextAlwaysForcePush
+    );
+    setOriginalAlwaysForcePush((prev) =>
+      prev === nextAlwaysForcePush ? prev : nextAlwaysForcePush
     );
 
     if (workspaceSettings?.heatmapModel) {
@@ -552,6 +573,10 @@ function SettingsComponent() {
     const bypassAnthropicProxyChanged =
       bypassAnthropicProxy !== originalBypassAnthropicProxy;
 
+    // Git settings changes
+    const branchPrefixChanged = branchPrefix !== originalBranchPrefix;
+    const alwaysForcePushChanged = alwaysForcePush !== originalAlwaysForcePush;
+
     // Heatmap settings changes
     const heatmapModelChanged = heatmapModel !== originalHeatmapModel;
     const heatmapThresholdChanged = heatmapThreshold !== originalHeatmapThreshold;
@@ -563,6 +588,8 @@ function SettingsComponent() {
       worktreePathChanged ||
       autoPrChanged ||
       bypassAnthropicProxyChanged ||
+      branchPrefixChanged ||
+      alwaysForcePushChanged ||
       apiKeysChanged ||
       baseUrlsChanged ||
       containerSettingsChanged ||
@@ -582,11 +609,13 @@ function SettingsComponent() {
       let savedWorkspaceSettings = false;
       let savedContainerSettings = false;
 
-      // Save worktree path / auto PR / heatmap settings if changed
+      // Save worktree path / auto PR / git / heatmap settings if changed
       const workspaceSettingsChanged =
         worktreePath !== originalWorktreePath ||
         autoPrEnabled !== originalAutoPrEnabled ||
         bypassAnthropicProxy !== originalBypassAnthropicProxy ||
+        branchPrefix !== originalBranchPrefix ||
+        alwaysForcePush !== originalAlwaysForcePush ||
         heatmapModel !== originalHeatmapModel ||
         heatmapThreshold !== originalHeatmapThreshold ||
         heatmapTooltipLanguage !== originalHeatmapTooltipLanguage ||
@@ -598,6 +627,8 @@ function SettingsComponent() {
           worktreePath: worktreePath || undefined,
           autoPrEnabled,
           bypassAnthropicProxy,
+          branchPrefix: branchPrefix || undefined,
+          alwaysForcePush,
           heatmapModel,
           heatmapThreshold,
           heatmapTooltipLanguage,
@@ -606,6 +637,8 @@ function SettingsComponent() {
         setOriginalWorktreePath(worktreePath);
         setOriginalAutoPrEnabled(autoPrEnabled);
         setOriginalBypassAnthropicProxy(bypassAnthropicProxy);
+        setOriginalBranchPrefix(branchPrefix);
+        setOriginalAlwaysForcePush(alwaysForcePush);
         setOriginalHeatmapModel(heatmapModel);
         setOriginalHeatmapThreshold(heatmapThreshold);
         setOriginalHeatmapTooltipLanguage(heatmapTooltipLanguage);
@@ -818,6 +851,13 @@ function SettingsComponent() {
               onWorktreePathChange={setWorktreePath}
               onContainerSettingsChange={handleContainerSettingsChange}
             />
+          ) : activeSection === "git" ? (
+            <GitSection
+              branchPrefix={branchPrefix}
+              onBranchPrefixChange={setBranchPrefix}
+              alwaysForcePush={alwaysForcePush}
+              onAlwaysForcePushChange={setAlwaysForcePush}
+            />
           ) : activeSection === "archived" ? (
             <ArchivedTasksSection teamSlugOrId={teamSlugOrId} />
           ) : (
@@ -856,7 +896,7 @@ function SettingsComponent() {
         </div>
       </div>
 
-      {activeSection === "ai-providers" && (
+      {(activeSection === "ai-providers" || activeSection === "git") && (
         <div
           className="sticky bottom-0 border-t border-neutral-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 supports-[backdrop-filter]:dark:bg-neutral-900/60"
         >

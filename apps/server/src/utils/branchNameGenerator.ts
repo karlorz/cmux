@@ -194,16 +194,19 @@ function generateRandomId(): string {
   return result;
 }
 
+export const DEFAULT_BRANCH_PREFIX = "cmux/";
+
 /**
  * Generate branch names instantly from the task description (no API call).
  * Used to skip the ~20s AI branch name generation on the critical path.
  */
 export function generateBranchNamesFromDescription(
   taskDescription: string,
-  count: number
+  count: number,
+  branchPrefix: string = DEFAULT_BRANCH_PREFIX
 ): string[] {
   const kebab = toKebabCase(taskDescription);
-  const base = `cmux/${kebab || "feature-update"}`;
+  const base = `${branchPrefix}${kebab || "feature-update"}`;
   const separator = base.endsWith("-") ? "" : "-";
 
   const ids = new Set<string>();

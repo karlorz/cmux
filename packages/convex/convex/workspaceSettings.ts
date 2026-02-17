@@ -25,6 +25,8 @@ export const update = authMutation({
     autoPrEnabled: v.optional(v.boolean()),
     autoSyncEnabled: v.optional(v.boolean()),
     bypassAnthropicProxy: v.optional(v.boolean()),
+    branchPrefix: v.optional(v.string()),
+    alwaysForcePush: v.optional(v.boolean()),
     heatmapModel: v.optional(v.string()),
     heatmapThreshold: v.optional(v.number()),
     heatmapTooltipLanguage: v.optional(v.string()),
@@ -52,6 +54,8 @@ export const update = authMutation({
         autoPrEnabled?: boolean;
         autoSyncEnabled?: boolean;
         bypassAnthropicProxy?: boolean;
+        branchPrefix?: string;
+        alwaysForcePush?: boolean;
         heatmapModel?: string;
         heatmapThreshold?: number;
         heatmapTooltipLanguage?: string;
@@ -74,6 +78,12 @@ export const update = authMutation({
       if (args.bypassAnthropicProxy !== undefined) {
         updates.bypassAnthropicProxy = args.bypassAnthropicProxy;
       }
+      if (args.branchPrefix !== undefined) {
+        updates.branchPrefix = args.branchPrefix;
+      }
+      if (args.alwaysForcePush !== undefined) {
+        updates.alwaysForcePush = args.alwaysForcePush;
+      }
       if (args.heatmapModel !== undefined) {
         updates.heatmapModel = args.heatmapModel;
       }
@@ -94,6 +104,8 @@ export const update = authMutation({
         autoPrEnabled: args.autoPrEnabled,
         autoSyncEnabled: args.autoSyncEnabled,
         bypassAnthropicProxy: args.bypassAnthropicProxy,
+        branchPrefix: args.branchPrefix,
+        alwaysForcePush: args.alwaysForcePush,
         heatmapModel: args.heatmapModel,
         heatmapThreshold: args.heatmapThreshold,
         heatmapTooltipLanguage: args.heatmapTooltipLanguage,

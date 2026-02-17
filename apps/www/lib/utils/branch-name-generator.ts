@@ -34,11 +34,13 @@ export function generateRandomId(): string {
   return result;
 }
 
-export function generateBranchName(prTitle: string): string {
+export const DEFAULT_BRANCH_PREFIX = "cmux/";
+
+export function generateBranchName(prTitle: string, branchPrefix: string = DEFAULT_BRANCH_PREFIX): string {
   const kebabTitle = toKebabCase(prTitle);
   const randomId = generateRandomId();
   const separator = kebabTitle.endsWith("-") ? "" : "-";
-  return `cmux/${kebabTitle}${separator}${randomId}`;
+  return `${branchPrefix}${kebabTitle}${separator}${randomId}`;
 }
 
 export const prGenerationSchema = z.object({
@@ -220,7 +222,8 @@ export async function generatePRTitle(
 
 export async function generateBranchBaseName(
   taskDescription: string,
-  apiKeys: ApiKeys
+  apiKeys: ApiKeys,
+  branchPrefix: string = DEFAULT_BRANCH_PREFIX
 ): Promise<{
   baseBranchName: string;
   prTitle: string;
@@ -228,7 +231,7 @@ export async function generateBranchBaseName(
   providerName: string | null;
 }> {
   const info = await generatePRInfo(taskDescription, apiKeys);
-  const baseBranchName = `cmux/${info.branchName}`;
+  const baseBranchName = `${branchPrefix}${info.branchName}`;
   return {
     baseBranchName,
     prTitle: info.prTitle,
@@ -262,17 +265,19 @@ export function generateBranchNamesFromBase(
 
 export function generateUniqueBranchNamesFromTitle(
   prTitle: string,
-  count: number
+  count: number,
+  branchPrefix: string = DEFAULT_BRANCH_PREFIX
 ): string[] {
   const kebabTitle = toKebabCase(prTitle);
-  const baseBranchName = `cmux/${kebabTitle}`;
+  const baseBranchName = `${branchPrefix}${kebabTitle}`;
   return generateBranchNamesFromBase(baseBranchName, count);
 }
 
 export async function generateNewBranchName(
   taskDescription: string,
   apiKeys: ApiKeys,
-  uniqueId?: string
+  uniqueId?: string,
+  branchPrefix: string = DEFAULT_BRANCH_PREFIX
 ): Promise<{
   branchName: string;
   baseBranchName: string;
@@ -281,7 +286,7 @@ export async function generateNewBranchName(
   providerName: string | null;
 }> {
   const { baseBranchName, prTitle, usedFallback, providerName } =
-    await generateBranchBaseName(taskDescription, apiKeys);
+    await generateBranchBaseName(taskDescription, apiKeys, branchPrefix);
   const [branchName] = generateBranchNamesFromBase(
     baseBranchName,
     1,
@@ -294,7 +299,8 @@ export async function generateUniqueBranchNames(
   taskDescription: string,
   count: number,
   apiKeys: ApiKeys,
-  firstId?: string
+  firstId?: string,
+  branchPrefix: string = DEFAULT_BRANCH_PREFIX
 ): Promise<{
   branchNames: string[];
   baseBranchName: string;
@@ -303,7 +309,7 @@ export async function generateUniqueBranchNames(
   providerName: string | null;
 }> {
   const { baseBranchName, prTitle, usedFallback, providerName } =
-    await generateBranchBaseName(taskDescription, apiKeys);
+    await generateBranchBaseName(taskDescription, apiKeys, branchPrefix);
   return {
     branchNames: generateBranchNamesFromBase(
       baseBranchName,

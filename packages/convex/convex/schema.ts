@@ -625,6 +625,9 @@ const convexSchema = defineSchema({
     autoSyncEnabled: v.optional(v.boolean()), // Auto-sync local workspace to cloud (default: true)
     bypassAnthropicProxy: v.optional(v.boolean()), // When true, Claude connects directly to custom Anthropic base URL
     nextLocalWorkspaceSequence: v.optional(v.number()), // Counter for local workspace naming
+    // Git settings
+    branchPrefix: v.optional(v.string()), // Prefix for generated branch names (default: "cmux/")
+    alwaysForcePush: v.optional(v.boolean()), // Always force push when pushing branches (default: false)
     // Heatmap review settings
     heatmapModel: v.optional(v.string()), // Model to use for heatmap review (e.g., "anthropic-opus-4-5", "cmux-heatmap-2")
     heatmapThreshold: v.optional(v.number()), // Score threshold for filtering (0-1, default: 0)
