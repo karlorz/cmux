@@ -40,30 +40,21 @@ func shellQuote(s string) string {
 }
 
 // runSSHCommand runs a command inside the sandbox via SSH over WebSocket tunnel.
-// It prefers curl-based ProxyCommand and falls back to a local Go bridge.
-// Returns stdout, stderr, and exit code.
+// It prefers websocat (bidirectional), then Go WebSocket bridge.
 func runSSHCommand(workerURL, token, command string) (string, string, int, error) {
-	// Build WebSocket URL
 	wsURL := strings.Replace(workerURL, "https://", "wss://", 1)
 	wsURL = strings.Replace(wsURL, "http://", "ws://", 1)
 	wsURL = wsURL + "/ssh?token=" + url.QueryEscape(token)
 
-	// Try curl-based SSH first (preferred - simpler, no Go bridge needed)
-	curlPath := getCurlWithWebSocket()
-	if curlPath != "" {
-		return runSSHCommandWithCurl(curlPath, wsURL, command)
+	wsToolPath := getCurlWithWebSocket()
+	if strings.HasPrefix(wsToolPath, "websocat:") {
+		return runSSHCommandWithWebsocat(strings.TrimPrefix(wsToolPath, "websocat:"), wsURL, command)
 	}
 
-	// Fall back to Go WebSocket bridge
 	return runSSHCommandWithBridge(wsURL, token, command)
 }
 
-// runSSHCommandWithCurl runs a command via SSH using curl as ProxyCommand.
-// The token is extracted from the wsURL query parameter and used as the SSH username.
-// Uses sshpass or SSH_ASKPASS for empty password authentication (worker accepts any password when username=token).
-func runSSHCommandWithCurl(curlPath, wsURL, command string) (string, string, int, error) {
-	// Extract token from WebSocket URL for SSH username authentication
-	// The worker SSH server authenticates by checking conn.User() == token
+func runSSHCommandWithWebsocat(websocatPath, wsURL, command string) (string, string, int, error) {
 	parsedURL, err := url.Parse(wsURL)
 	if err != nil {
 		return "", "", -1, fmt.Errorf("invalid WebSocket URL: %w", err)
@@ -73,7 +64,12 @@ func runSSHCommandWithCurl(curlPath, wsURL, command string) (string, string, int
 		return "", "", -1, fmt.Errorf("token not found in WebSocket URL")
 	}
 
-	proxyCmd := fmt.Sprintf("%s --no-progress-meter -N --http1.1 -T . '%s'", curlPath, wsURL)
+	proxyCmd := fmt.Sprintf("%s --binary -B 65536 '%s'", websocatPath, wsURL)
+
+	if flagVerbose {
+		fmt.Fprintf(os.Stderr, "[debug] Using websocat: %s\n", websocatPath)
+		fmt.Fprintf(os.Stderr, "[debug] WebSocket URL: %s\n", wsURL)
+	}
 
 	sshArgs := []string{
 		"-o", "StrictHostKeyChecking=no",
@@ -93,6 +89,10 @@ func runSSHCommandWithCurl(curlPath, wsURL, command string) (string, string, int
 		defer cleanup()
 	}
 
+	if flagVerbose {
+		fmt.Fprintf(os.Stderr, "[debug] SSH command: %v\n", cmd.Args)
+	}
+
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -107,7 +107,77 @@ func runSSHCommandWithCurl(curlPath, wsURL, command string) (string, string, int
 		}
 	}
 
-	// Filter out SSH warnings from stderr
+	if flagVerbose {
+		fmt.Fprintf(os.Stderr, "[debug] SSH stdout: %q\n", stdout.String())
+		fmt.Fprintf(os.Stderr, "[debug] SSH stderr: %q\n", stderr.String())
+	}
+
+	stderrStr := filterSSHWarnings(stderr.String())
+	return stdout.String(), stderrStr, exitCode, nil
+}
+
+// runSSHCommandWithCurl runs a command via SSH using curl as ProxyCommand.
+// The token is extracted from the wsURL query parameter and used as the SSH username.
+// Uses sshpass or SSH_ASKPASS for empty password authentication (worker accepts any password when username=token).
+func runSSHCommandWithCurl(curlPath, wsURL, command string) (string, string, int, error) {
+	parsedURL, err := url.Parse(wsURL)
+	if err != nil {
+		return "", "", -1, fmt.Errorf("invalid WebSocket URL: %w", err)
+	}
+	token := parsedURL.Query().Get("token")
+	if token == "" {
+		return "", "", -1, fmt.Errorf("token not found in WebSocket URL")
+	}
+
+	proxyCmd := fmt.Sprintf("%s --no-progress-meter -N --http1.1 -T . '%s'", curlPath, wsURL)
+
+	if flagVerbose {
+		fmt.Fprintf(os.Stderr, "[debug] Curl path: %s\n", curlPath)
+		fmt.Fprintf(os.Stderr, "[debug] WebSocket URL: %s\n", wsURL)
+		fmt.Fprintf(os.Stderr, "[debug] ProxyCommand: %s\n", proxyCmd)
+	}
+
+	sshArgs := []string{
+		"-o", "StrictHostKeyChecking=no",
+		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "LogLevel=ERROR",
+		"-o", "PubkeyAuthentication=no",
+		"-o", fmt.Sprintf("ProxyCommand=%s", proxyCmd),
+		fmt.Sprintf("%s@e2b-sandbox", token),
+		command,
+	}
+
+	cmd, cleanup, buildErr := buildSSHCmd(sshArgs)
+	if buildErr != nil {
+		return "", "", -1, buildErr
+	}
+	if cleanup != nil {
+		defer cleanup()
+	}
+
+	if flagVerbose {
+		fmt.Fprintf(os.Stderr, "[debug] SSH command: %v\n", cmd.Args)
+	}
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err = cmd.Run()
+	exitCode := 0
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			exitCode = ee.ExitCode()
+		} else {
+			return "", "", -1, fmt.Errorf("ssh failed: %w", err)
+		}
+	}
+
+	if flagVerbose {
+		fmt.Fprintf(os.Stderr, "[debug] SSH stdout: %q\n", stdout.String())
+		fmt.Fprintf(os.Stderr, "[debug] SSH stderr (raw): %q\n", stderr.String())
+	}
+
 	stderrStr := stderr.String()
 	stderrStr = filterSSHWarnings(stderrStr)
 
@@ -160,6 +230,11 @@ func runSSHCommandWithBridge(wsURL, token, command string) (string, string, int,
 
 	localPort := listener.Addr().(*net.TCPAddr).Port
 
+	if flagVerbose {
+		fmt.Fprintf(os.Stderr, "[debug] Bridge mode: listening on 127.0.0.1:%d\n", localPort)
+		fmt.Fprintf(os.Stderr, "[debug] WebSocket URL: %s\n", wsURL)
+	}
+
 	connCh := make(chan net.Conn, 1)
 	errCh := make(chan error, 1)
 	go func() {
@@ -193,6 +268,10 @@ func runSSHCommandWithBridge(wsURL, token, command string) (string, string, int,
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
+	if flagVerbose {
+		fmt.Fprintf(os.Stderr, "[debug] Starting SSH: %v\n", cmd.Args)
+	}
+
 	if err := cmd.Start(); err != nil {
 		return "", "", -1, fmt.Errorf("failed to start ssh: %w", err)
 	}
@@ -201,6 +280,9 @@ func runSSHCommandWithBridge(wsURL, token, command string) (string, string, int,
 	var conn net.Conn
 	select {
 	case conn = <-connCh:
+		if flagVerbose {
+			fmt.Fprintf(os.Stderr, "[debug] SSH connected to bridge\n")
+		}
 	case err := <-errCh:
 		cmd.Process.Kill()
 		return "", "", -1, fmt.Errorf("failed to accept connection: %w", err)
@@ -213,12 +295,24 @@ func runSSHCommandWithBridge(wsURL, token, command string) (string, string, int,
 	// Bridge to WebSocket
 	proxyDone := make(chan error, 1)
 	go func() {
-		proxyDone <- bridgeToWebSocket(conn, wsURL)
+		bridgeErr := bridgeToWebSocket(conn, wsURL)
+		if flagVerbose && bridgeErr != nil {
+			fmt.Fprintf(os.Stderr, "[debug] Bridge error: %v\n", bridgeErr)
+		}
+		proxyDone <- bridgeErr
 	}()
 
 	sshErr := cmd.Wait()
 	conn.Close()
-	<-proxyDone
+	bridgeErr := <-proxyDone
+
+	if flagVerbose {
+		fmt.Fprintf(os.Stderr, "[debug] SSH stdout: %q\n", stdout.String())
+		fmt.Fprintf(os.Stderr, "[debug] SSH stderr: %q\n", stderr.String())
+		if bridgeErr != nil {
+			fmt.Fprintf(os.Stderr, "[debug] Bridge final error: %v\n", bridgeErr)
+		}
+	}
 
 	exitCode := 0
 	if sshErr != nil {

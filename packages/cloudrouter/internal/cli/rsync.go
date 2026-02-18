@@ -96,7 +96,7 @@ exec ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAu
 // buildCurlSSHCommand builds an SSH command string for use with curl ProxyCommand
 // Uses sshpass for empty password auth to match the bridge path behavior
 // Note: We use "sshpass -e" which reads from SSHPASS env var, avoiding empty argument
-// issues with macOS openrsync which fails to parse "sshpass -p ''" correctly.
+// issues with macOS openrsync which fails to parse "sshpass -p ”" correctly.
 func buildCurlSSHCommand(proxyCmd string) string {
 	// Check if sshpass is available
 	if _, err := exec.LookPath("sshpass"); err == nil {
@@ -112,9 +112,13 @@ func buildCurlSSHCommand(proxyCmd string) string {
 // getCurlWithWebSocket returns the path to curl with WebSocket support, or empty string if not found
 // We need curl built with WebSocket protocol support (shows "ws" or "wss" in protocols)
 func getCurlWithWebSocket() string {
+	// Prefer websocat for bidirectional WebSocket (curl WebSocket is upload-only with -T)
+	if path, err := exec.LookPath("websocat"); err == nil {
+		return "websocat:" + path
+	}
+
 	var curlPaths []string
 	if runtime.GOOS == "darwin" {
-		// Prefer Homebrew curl which typically has WebSocket support
 		curlPaths = []string{
 			"/opt/homebrew/opt/curl/bin/curl",
 			"/usr/local/opt/curl/bin/curl",
@@ -128,12 +132,10 @@ func getCurlWithWebSocket() string {
 		if _, err := os.Stat(path); err != nil {
 			continue
 		}
-		// Check if this curl supports WebSocket protocol
 		out, err := exec.Command(path, "--version").Output()
 		if err != nil {
 			continue
 		}
-		// Look for "ws" or "wss" in the Protocols line
 		if strings.Contains(string(out), " ws ") || strings.Contains(string(out), " wss ") {
 			return path
 		}
@@ -601,8 +603,8 @@ func buildRsyncArgsSingleFile(localFile, remotePath string) []string {
 	rsyncArgs := []string{
 		"-az",
 		"--stats",
-		"--no-owner",  // Don't preserve owner (use remote user)
-		"--no-group",  // Don't preserve group (use remote group)
+		"--no-owner", // Don't preserve owner (use remote user)
+		"--no-group", // Don't preserve group (use remote group)
 	}
 
 	if rsyncFlagDryRun {
@@ -718,8 +720,8 @@ var defaultExcludes = []string{
 	".eggs",
 
 	// === Secrets and credentials (security) ===
-	".npmrc",     // May contain auth tokens
-	".yarnrc",    // May contain auth tokens
+	".npmrc",  // May contain auth tokens
+	".yarnrc", // May contain auth tokens
 	".yarnrc.yml",
 	"auth.json",
 	".netrc",
@@ -738,13 +740,13 @@ var defaultExcludes = []string{
 	"desktop.ini",
 	".Spotlight-V100",
 	".Trashes",
-	".idea",        // JetBrains
-	"*.swp",        // Vim
-	"*.swo",        // Vim
-	"*~",           // Backup files
-	".project",     // Eclipse
-	".classpath",   // Eclipse
-	".settings",    // Eclipse
+	".idea",      // JetBrains
+	"*.swp",      // Vim
+	"*.swo",      // Vim
+	"*~",         // Backup files
+	".project",   // Eclipse
+	".classpath", // Eclipse
+	".settings",  // Eclipse
 	"*.sublime-*",
 
 	// === Logs and temp files ===
@@ -952,8 +954,8 @@ func buildRsyncArgs(localPath, remotePath string, items []string) []string {
 	rsyncArgs := []string{
 		"-az",
 		"--stats",
-		"--no-owner",  // Don't preserve owner (use remote user)
-		"--no-group",  // Don't preserve group (use remote group)
+		"--no-owner", // Don't preserve owner (use remote user)
+		"--no-group", // Don't preserve group (use remote group)
 	}
 
 	if rsyncFlagDelete {
@@ -1142,4 +1144,3 @@ func parseRsyncStats(output string) *rsyncStats {
 
 	return stats
 }
-
