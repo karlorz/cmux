@@ -171,16 +171,6 @@ func runSSHCommandWithBridge(wsURL, token, command string) (string, string, int,
 		connCh <- conn
 	}()
 
-	// Build SSH command using sshpass or SSH_ASKPASS
-	sshScript, scriptPath, err := buildSSHCommand(localPort)
-	if err != nil {
-		return "", "", -1, err
-	}
-	if scriptPath != "" {
-		defer os.Remove(scriptPath)
-	}
-
-	// Run SSH command
 	sshArgs := []string{
 		"-o", "StrictHostKeyChecking=no",
 		"-o", "UserKnownHostsFile=/dev/null",
@@ -191,15 +181,12 @@ func runSSHCommandWithBridge(wsURL, token, command string) (string, string, int,
 		command,
 	}
 
-	// Use the wrapper script if sshpass is available, otherwise bare ssh
-	var cmd *exec.Cmd
-	if strings.Contains(sshScript, "sshpass") {
-		cmd = exec.Command(sshScript, "dummy") // sshpass wrapper handles ssh invocation
-		// Actually, the wrapper script from buildSSHCommand is meant for rsync -e,
-		// so we need to construct the SSH call differently for command execution.
-		cmd = exec.Command("ssh", sshArgs...)
-	} else {
-		cmd = exec.Command("ssh", sshArgs...)
+	cmd, cleanup, buildErr := buildSSHCmd(sshArgs)
+	if buildErr != nil {
+		return "", "", -1, buildErr
+	}
+	if cleanup != nil {
+		defer cleanup()
 	}
 
 	var stdout, stderr bytes.Buffer
