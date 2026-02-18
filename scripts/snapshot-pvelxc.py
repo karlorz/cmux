@@ -3115,6 +3115,36 @@ async def task_build_execd(ctx: PveTaskContext) -> None:
 
 
 @registry.task(
+    name="build-worker-daemon",
+    deps=("install-service-scripts", "install-go-toolchain"),
+    description="Build Go worker-daemon for SSH/PTY proxy (port 39377)",
+)
+@update_registry.task(
+    name="build-worker-daemon",
+    deps=("install-service-scripts",),  # Go toolchain already installed
+    description="Build Go worker-daemon for SSH/PTY proxy (port 39377)",
+)
+async def task_build_worker_daemon(ctx: PveTaskContext) -> None:
+    repo = shlex.quote(ctx.remote_repo_root)
+    cmd = textwrap.dedent(
+        f"""
+        set -euo pipefail
+        export PATH="/usr/local/go/bin:${{PATH}}"
+        install -d /usr/local/bin
+        cd {repo}/packages/cloudrouter
+        # Force rebuild by touching source files (git apply doesn't always update timestamps)
+        touch cmd/worker/main.go
+        CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /usr/local/bin/worker-daemon ./cmd/worker
+        if [ ! -x /usr/local/bin/worker-daemon ]; then
+          echo "Failed to build worker-daemon" >&2
+          exit 1
+        fi
+        """
+    )
+    await ctx.run("build-worker-daemon", cmd)
+
+
+@registry.task(
     name="restart-execd-early",
     deps=("build-execd",),
     description="Restart execd service to use newly-built binary for long-running tasks",
@@ -3261,6 +3291,7 @@ async def task_link_rust_binaries(ctx: PveTaskContext) -> None:
         "install-ide-extensions",
         "install-service-scripts",
         "build-worker",
+        "build-worker-daemon",
         "build-cdp-proxy",
         "build-execd",
         "link-rust-binaries",
@@ -3274,6 +3305,7 @@ async def task_link_rust_binaries(ctx: PveTaskContext) -> None:
         "install-ide-extensions",
         "install-service-scripts",
         "build-worker",
+        "build-worker-daemon",
         "build-cdp-proxy",
         "build-execd",
         "link-rust-binaries",
@@ -3322,6 +3354,12 @@ async def task_install_systemd_units(ctx: PveTaskContext) -> None:
         install -Dm0644 {repo}/configs/systemd/cmux-cdp-proxy.service /usr/lib/systemd/system/cmux-cdp-proxy.service
         install -Dm0644 {repo}/configs/systemd/cmux-pty.service /usr/lib/systemd/system/cmux-pty.service
         install -Dm0644 {repo}/configs/systemd/cmux-execd.service /usr/lib/systemd/system/cmux-execd.service
+        install -Dm0644 {repo}/configs/systemd/cmux-token-generator.service /usr/lib/systemd/system/cmux-token-generator.service
+        install -Dm0755 {repo}/configs/systemd/bin/cmux-token-init /usr/local/bin/cmux-token-init
+        rm -f /etc/systemd/system/cmux-worker-daemon.service
+        rm -f /etc/systemd/system/cmux.target.wants/cmux-worker-daemon.service
+        rm -f /etc/systemd/system/multi-user.target.wants/cmux-worker-daemon.service
+        install -Dm0644 {repo}/configs/systemd/cmux-worker-daemon.service /usr/lib/systemd/system/cmux-worker-daemon.service
         install -Dm0644 {repo}/configs/systemd/cmux-memory-setup.service /usr/lib/systemd/system/cmux-memory-setup.service
         install -Dm0755 {repo}/configs/systemd/bin/{ide_configure_script} /usr/local/lib/cmux/{ide_configure_script}
         install -Dm0644 {repo}/configs/systemd/{ide_env_file} /etc/cmux/ide.env
@@ -3344,6 +3382,8 @@ async def task_install_systemd_units(ctx: PveTaskContext) -> None:
         ln -sf /usr/lib/systemd/system/cmux-cdp-proxy.service /etc/systemd/system/cmux.target.wants/cmux-cdp-proxy.service
         ln -sf /usr/lib/systemd/system/cmux-pty.service /etc/systemd/system/cmux.target.wants/cmux-pty.service
         ln -sf /usr/lib/systemd/system/cmux-execd.service /etc/systemd/system/cmux.target.wants/cmux-execd.service
+        ln -sf /usr/lib/systemd/system/cmux-token-generator.service /etc/systemd/system/multi-user.target.wants/cmux-token-generator.service
+        ln -sf /usr/lib/systemd/system/cmux-worker-daemon.service /etc/systemd/system/cmux.target.wants/cmux-worker-daemon.service
         ln -sf /usr/lib/systemd/system/cmux-memory-setup.service /etc/systemd/system/multi-user.target.wants/cmux-memory-setup.service
         ln -sf /usr/lib/systemd/system/cmux-memory-setup.service /etc/systemd/system/swap.target.wants/cmux-memory-setup.service
         {{ systemctl daemon-reload || true; }}
@@ -3656,7 +3696,7 @@ async def task_check_systemd_services(ctx: PveTaskContext) -> None:
         echo "Checking cmux.target..."
         systemctl list-unit-files cmux.target
         echo "Checking installed services..."
-        for svc in cmux-ide cmux-worker cmux-proxy cmux-pty cmux-execd; do
+        for svc in cmux-ide cmux-worker cmux-worker-daemon cmux-token-generator cmux-proxy cmux-pty cmux-execd; do
           if [ -f "/usr/lib/systemd/system/${svc}.service" ]; then
             echo "  ${svc}.service: installed"
           else
@@ -4103,6 +4143,8 @@ async def _verify_template_artifacts(
         ("/usr/local/go/bin/go", "Go toolchain"),
         ("/root/.bun/bin/bun", "Bun runtime"),
         ("/builtins/build/index.js", "cmux-worker service"),
+        ("/usr/local/bin/worker-daemon", "Go worker-daemon (SSH/PTY proxy)"),
+        ("/usr/local/bin/cmux-token-init", "Auth token generator script"),
     ])
 
     # Verify artifacts exist
