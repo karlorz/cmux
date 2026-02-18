@@ -97,9 +97,9 @@ export function SiteHeader({
           isScrolled ? "py-3" : "py-4"
         )}
       >
-        <Link aria-label="cmux" href="/">
+        <Link aria-label="Manaflow" href="/">
           <div className="flex items-center gap-3">
-            <CmuxLogo height={36} label="cmux" showWordmark />
+            <CmuxLogo height={36} label="Manaflow" showWordmark />
           </div>
         </Link>
         <nav className="hidden items-center gap-8 text-sm font-medium md:flex">
@@ -153,7 +153,7 @@ export function SiteHeader({
           ) : null}
           <a
             className="hidden md:inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold text-black shadow-sm transition hover:bg-neutral-100"
-            href="https://cmux.sh"
+            href="https://manaflow.com"
             rel="noopener noreferrer"
             target="_blank"
           >
