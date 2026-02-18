@@ -38,3 +38,6 @@ export interface GitDiffViewerWithSidebarProps extends GitDiffViewerProps {
 export const AUTO_COLLAPSE_THRESHOLD = Infinity;
 export const LARGE_DIFF_THRESHOLD = 100;
 export const MAX_LINES_FOR_SYNTAX = 5000;
+
+/** Pre-load margin for lazy rendering diff content (GitHub-style) */
+export const VIEWPORT_RENDER_MARGIN = "200px";

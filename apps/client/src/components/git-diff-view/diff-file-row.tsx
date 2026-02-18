@@ -1,6 +1,6 @@
 import { DiffModeEnum, DiffView } from "@git-diff-view/react";
 import type { DiffFileHighlighter } from "@git-diff-view/core";
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -9,6 +9,7 @@ import { FileDiffHeaderWithViewed } from "../file-diff-header-with-viewed";
 import { LargeDiffPlaceholder } from "./large-diff-placeholder";
 import {
   LARGE_DIFF_THRESHOLD,
+  VIEWPORT_RENDER_MARGIN,
   type FileDiffRowClassNames,
   type PreparedDiffFile,
 } from "./types";
@@ -42,14 +43,40 @@ function DiffFileRow({
   const isVeryLarge = preparedFile.totalLines > LARGE_DIFF_THRESHOLD;
   const [loadLargeDiff, setLoadLargeDiff] = useState(false);
 
+  // Lazy loading: only render diff content when scrolled into viewport
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [isInViewport, setIsInViewport] = useState(false);
+
+  useEffect(() => {
+    const element = rowRef.current;
+    if (!element) return;
+
+    const observer = new IntersectionObserver(
+      ([intersectionEntry]) => {
+        if (intersectionEntry?.isIntersecting) {
+          setIsInViewport(true);
+          // Once in viewport, no need to keep observing
+          observer.disconnect();
+        }
+      },
+      { rootMargin: VIEWPORT_RENDER_MARGIN }
+    );
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
   useEffect(() => {
     setLoadLargeDiff(false);
   }, [entry.filePath, preparedFile.totalLines]);
 
   const canRenderDiff = Boolean(preparedFile.diffFile);
+  // Only render expensive diff content when in viewport AND expanded
+  const shouldRenderDiff = isExpanded && isInViewport;
 
   return (
     <div
+      ref={rowRef}
       id={anchorId}
       className={cn("bg-white dark:bg-neutral-900", classNames?.container)}
     >
@@ -112,6 +139,11 @@ function DiffFileRow({
             deletions={entry.deletions}
             onLoadAnyway={() => setLoadLargeDiff(true)}
           />
+        ) : !shouldRenderDiff ? (
+          // Lazy loading placeholder - shown when expanded but not yet in viewport
+          <div className="grid grow place-content-center bg-neutral-50 px-3 py-6 text-center text-xs text-neutral-500 dark:bg-neutral-900/50 dark:text-neutral-400">
+            Loading diff...
+          </div>
         ) : canRenderDiff && preparedFile.diffFile ? (
           <div className="cmux-git-diff-view w-full overflow-x-auto border-t border-neutral-200/80 dark:border-neutral-800/70">
             <DiffView
