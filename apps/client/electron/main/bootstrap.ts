@@ -23,7 +23,7 @@ const APP_NAME = "cmux-next";
 const require = createRequire(import.meta.url);
 (globalThis as typeof globalThis & { require?: typeof require }).require = require;
 
-const PARTITION = "persist:manaflow";
+const PARTITION = "persist:cmux";
 
 try {
   const appDataDir = app.getPath("appData");

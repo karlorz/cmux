@@ -733,7 +733,7 @@ export function CmuxComments({ teamSlugOrId }: { teamSlugOrId: string }) {
     const hostname = window.location.hostname;
     const port = window.location.port;
     const isLocalhost5173 = hostname === "localhost" && port === "5173";
-    const isElectronApp = hostname === "manaflow.local";
+    const isElectronApp = hostname === "cmux.local" || hostname === "manaflow.local";
     if (forceShow) {
       return true;
     }
