@@ -42,20 +42,21 @@ function DiffFileRow({
   const entry = preparedFile.entry;
   const isVeryLarge = preparedFile.totalLines > LARGE_DIFF_THRESHOLD;
   const [loadLargeDiff, setLoadLargeDiff] = useState(false);
-  const [isInViewport, setIsInViewport] = useState(false);
+  const [hasEnteredViewport, setHasEnteredViewport] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setLoadLargeDiff(false);
   }, [entry.filePath, preparedFile.totalLines]);
 
+  // Once content enters viewport, keep it rendered (GitHub-style sticky loading)
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
 
     if (typeof IntersectionObserver !== "function") {
-      setIsInViewport(true);
+      setHasEnteredViewport(true);
       return;
     }
 
@@ -65,19 +66,23 @@ function DiffFileRow({
     }
 
     const observer = new IntersectionObserver(
-      ([entry]) => setIsInViewport(entry?.isIntersecting ?? false),
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          setHasEnteredViewport(true);
+          observer.disconnect(); // Stop observing once loaded
+        }
+      },
       { rootMargin: VIEWPORT_RENDER_MARGIN, threshold: 0 }
     );
     observer.observe(element);
 
     return () => {
-      observer.unobserve(element);
       observer.disconnect();
     };
   }, []);
 
   const canRenderDiff = Boolean(preparedFile.diffFile);
-  const shouldRenderDiff = isExpanded && isInViewport;
+  const shouldRenderDiff = isExpanded && hasEnteredViewport;
 
   return (
     <div
