@@ -71,21 +71,28 @@ export const register = authMutation({
       .first();
 
     if (existing) {
-      // Update existing entry
-      const updates: {
-        lastUsedAt: number;
-        taskRunIds?: Id<"taskRuns">[];
-      } = { lastUsedAt: now };
+      // Only update if the existing entry belongs to this team/user
+      if (existing.teamId === teamId && existing.userId === userId) {
+        const updates: {
+          lastUsedAt: number;
+          taskRunIds?: Id<"taskRuns">[];
+        } = { lastUsedAt: now };
 
-      if (args.taskRunId) {
-        const existingTaskRunIds = existing.taskRunIds || [];
-        if (!existingTaskRunIds.includes(args.taskRunId)) {
-          updates.taskRunIds = [...existingTaskRunIds, args.taskRunId];
+        if (args.taskRunId) {
+          const existingTaskRunIds = existing.taskRunIds || [];
+          if (!existingTaskRunIds.includes(args.taskRunId)) {
+            updates.taskRunIds = [...existingTaskRunIds, args.taskRunId];
+          }
         }
-      }
 
-      await ctx.db.patch(existing._id, updates);
-      return existing._id;
+        await ctx.db.patch(existing._id, updates);
+        return existing._id;
+      }
+      // If path exists but belongs to different user/team, throw error
+      // (worktree paths should be unique per user)
+      throw new Error(
+        `Worktree path ${args.worktreePath} is already registered by another user`
+      );
     }
 
     // Create new entry
@@ -189,20 +196,27 @@ export const registerInternal = internalMutation({
       .first();
 
     if (existing) {
-      const updates: {
-        lastUsedAt: number;
-        taskRunIds?: Id<"taskRuns">[];
-      } = { lastUsedAt: now };
+      // Only update if the existing entry belongs to this team/user
+      if (existing.teamId === args.teamId && existing.userId === args.userId) {
+        const updates: {
+          lastUsedAt: number;
+          taskRunIds?: Id<"taskRuns">[];
+        } = { lastUsedAt: now };
 
-      if (args.taskRunId) {
-        const existingTaskRunIds = existing.taskRunIds || [];
-        if (!existingTaskRunIds.includes(args.taskRunId)) {
-          updates.taskRunIds = [...existingTaskRunIds, args.taskRunId];
+        if (args.taskRunId) {
+          const existingTaskRunIds = existing.taskRunIds || [];
+          if (!existingTaskRunIds.includes(args.taskRunId)) {
+            updates.taskRunIds = [...existingTaskRunIds, args.taskRunId];
+          }
         }
-      }
 
-      await ctx.db.patch(existing._id, updates);
-      return existing._id;
+        await ctx.db.patch(existing._id, updates);
+        return existing._id;
+      }
+      // If path exists but belongs to different user/team, throw error
+      throw new Error(
+        `Worktree path ${args.worktreePath} is already registered by another user`
+      );
     }
 
     return await ctx.db.insert("worktreeRegistry", {

@@ -459,9 +459,6 @@ async function setupCodexStyleWorkspace(
       };
     }
 
-    // Create the worktrees directory
-    await fs.mkdir(worktreeInfo.worktreesPath, { recursive: true });
-
     // Fetch latest from origin to ensure we have up-to-date refs
     try {
       const fetchSource = args.authenticatedRepoUrl
@@ -497,6 +494,9 @@ async function setupCodexStyleWorkspace(
       );
       return { success: true, worktreePath: worktreeInfo.worktreePath };
     }
+
+    // Create the worktrees directory (only if we're going to create a new worktree)
+    await fs.mkdir(worktreeInfo.worktreesPath, { recursive: true });
 
     // Create the worktree from local repo
     const actualPath = await repoManager.createWorktreeFromLocalRepo(

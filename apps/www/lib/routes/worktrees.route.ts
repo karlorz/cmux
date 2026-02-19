@@ -1,4 +1,6 @@
-import { getUserFromRequest } from "@/lib/utils/auth";
+import { getAccessTokenFromRequest, getUserFromRequest } from "@/lib/utils/auth";
+import { getConvex } from "@/lib/utils/get-convex";
+import { api } from "@cmux/convex/api";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 
 export const worktreesRouter = new OpenAPIHono();
@@ -67,14 +69,29 @@ worktreesRouter.openapi(
       );
     }
 
-    const { worktreePath } = c.req.valid("json");
+    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+    if (!accessToken) {
+      return c.json(
+        {
+          success: false,
+          message: "Missing access token",
+        },
+        401
+      );
+    }
 
-    // Note: Actual removal is done via Convex mutations in the frontend.
-    // This endpoint provides the API structure for potential future CLI integration.
-    // For now, return success as the frontend handles the actual mutation.
+    const { teamSlugOrId, worktreePath } = c.req.valid("json");
+
+    // Call Convex mutation to remove the worktree from the registry
+    const convex = getConvex({ accessToken });
+    await convex.mutation(api.worktreeRegistry.remove, {
+      teamSlugOrId,
+      worktreePath,
+    });
+
     return c.json({
       success: true,
-      message: `Worktree removal for ${worktreePath} should be handled via Convex mutation`,
+      message: `Worktree ${worktreePath} removed from registry`,
     });
   }
 );

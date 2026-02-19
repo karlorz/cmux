@@ -652,7 +652,7 @@ function SettingsComponent() {
           bypassAnthropicProxy,
           branchPrefix,
           worktreeMode,
-          codexWorktreePathPattern: codexWorktreePathPattern || undefined,
+          codexWorktreePathPattern,
           heatmapModel,
           heatmapThreshold,
           heatmapTooltipLanguage,
