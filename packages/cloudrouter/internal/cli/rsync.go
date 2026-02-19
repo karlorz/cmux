@@ -292,13 +292,15 @@ func runRsyncSingleFile(workerURL, token, localFile, remotePath string) error {
 
 	startTime := time.Now()
 
-	// Check if curl with WebSocket support is available
-	curlPath := getCurlWithWebSocket()
+	wsToolPath := getCurlWithWebSocket()
 	var stats *rsyncStats
 	var err error
 
-	if curlPath != "" {
-		stats, err = runRsyncSingleFileWithCurl(curlPath, wsURL, token, localFile, remotePath)
+	if strings.HasPrefix(wsToolPath, "websocat:") {
+		websocatPath := strings.TrimPrefix(wsToolPath, "websocat:")
+		stats, err = runRsyncSingleFileWithWebsocat(websocatPath, wsURL, token, localFile, remotePath)
+	} else if wsToolPath != "" {
+		stats, err = runRsyncSingleFileWithCurl(wsToolPath, wsURL, token, localFile, remotePath)
 	} else {
 		stats, err = runRsyncSingleFileWithBridge(wsURL, token, localFile, remotePath)
 	}
@@ -319,7 +321,25 @@ func runRsyncSingleFile(workerURL, token, localFile, remotePath string) error {
 	return nil
 }
 
-// runRsyncSingleFileWithCurl uses curl as SSH ProxyCommand for single file transfer
+func runRsyncSingleFileWithWebsocat(websocatPath, wsURL, token, localFile, remotePath string) (*rsyncStats, error) {
+	rsyncArgs := buildRsyncArgsSingleFile(localFile, remotePath)
+
+	proxyCmd := fmt.Sprintf("%s --binary -B 65536 '%s'", websocatPath, wsURL)
+	sshCmd := buildWebsocatSSHCommand(proxyCmd)
+	rsyncArgs = append(rsyncArgs, "-e", sshCmd)
+	remoteSpec := fmt.Sprintf("%s@e2b-sandbox:%s", token, remotePath)
+	rsyncArgs = append(rsyncArgs, remoteSpec)
+
+	return execRsync(rsyncArgs)
+}
+
+func buildWebsocatSSHCommand(proxyCmd string) string {
+	if _, err := exec.LookPath("sshpass"); err == nil {
+		return fmt.Sprintf("sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -o ProxyCommand=%q", proxyCmd)
+	}
+	return fmt.Sprintf("ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -o BatchMode=yes -o ProxyCommand=%q", proxyCmd)
+}
+
 func runRsyncSingleFileWithCurl(curlPath, wsURL, token, localFile, remotePath string) (*rsyncStats, error) {
 	rsyncArgs := buildRsyncArgsSingleFile(localFile, remotePath)
 
