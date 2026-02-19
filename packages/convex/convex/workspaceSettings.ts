@@ -36,6 +36,10 @@ export const update = authMutation({
   args: {
     teamSlugOrId: v.string(),
     worktreePath: v.optional(v.string()),
+    worktreeMode: v.optional(
+      v.union(v.literal("legacy"), v.literal("codex-style"))
+    ),
+    codexWorktreePathPattern: v.optional(v.string()),
     autoPrEnabled: v.optional(v.boolean()),
     autoSyncEnabled: v.optional(v.boolean()),
     bypassAnthropicProxy: v.optional(v.boolean()),
@@ -64,6 +68,8 @@ export const update = authMutation({
     if (existing) {
       const updates: {
         worktreePath?: string;
+        worktreeMode?: "legacy" | "codex-style";
+        codexWorktreePathPattern?: string;
         autoPrEnabled?: boolean;
         autoSyncEnabled?: boolean;
         bypassAnthropicProxy?: boolean;
@@ -80,6 +86,12 @@ export const update = authMutation({
 
       if (args.worktreePath !== undefined) {
         updates.worktreePath = args.worktreePath;
+      }
+      if (args.worktreeMode !== undefined) {
+        updates.worktreeMode = args.worktreeMode;
+      }
+      if (args.codexWorktreePathPattern !== undefined) {
+        updates.codexWorktreePathPattern = args.codexWorktreePathPattern;
       }
       if (args.autoPrEnabled !== undefined) {
         updates.autoPrEnabled = args.autoPrEnabled;
@@ -110,6 +122,8 @@ export const update = authMutation({
     } else {
       await ctx.db.insert("workspaceSettings", {
         worktreePath: args.worktreePath,
+        worktreeMode: args.worktreeMode,
+        codexWorktreePathPattern: args.codexWorktreePathPattern,
         autoPrEnabled: args.autoPrEnabled,
         autoSyncEnabled: args.autoSyncEnabled,
         bypassAnthropicProxy: args.bypassAnthropicProxy,

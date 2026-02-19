@@ -57,6 +57,16 @@ interface QueuedOperation {
   reject: (error: unknown) => void;
 }
 
+export interface WorktreeListEntry {
+  path: string;
+  branch?: string;
+  head?: string;
+  detached: boolean;
+  bare: boolean;
+  locked?: string;
+  prunable?: string;
+}
+
 export class RepositoryManager {
   private static instance: RepositoryManager;
   private operations = new Map<string, RepositoryOperation>();
@@ -994,36 +1004,86 @@ export class RepositoryManager {
     });
   }
 
-  async worktreeExists(
-    originPath: string,
-    worktreePath: string
-  ): Promise<boolean> {
+  async listWorktrees(originPath: string): Promise<WorktreeListEntry[]> {
     try {
       const { stdout } = await this.executeGitCommand(
         `git worktree list --porcelain`,
         { cwd: originPath }
       );
-      // Parse worktree list properly to avoid false positives from partial path matching
-      // e.g., "/path/to/foo" should not match "/path/to/foobar"
-      // Git reports canonical paths (e.g., macOS /tmp -> /private/tmp), while
-      // path.resolve() does not resolve symlinks. Use realpath() when possible
-      // to ensure consistent comparisons across platforms.
-      const normalizedTargetPath = await fs
-        .realpath(worktreePath)
-        .catch(() => path.resolve(worktreePath));
-      const lines = stdout.split("\n");
-      for (const line of lines) {
+      const entries: WorktreeListEntry[] = [];
+      let current: WorktreeListEntry | null = null;
+
+      const flush = () => {
+        if (!current) return;
+        entries.push(current);
+        current = null;
+      };
+
+      for (const line of stdout.split("\n")) {
+        if (!line.trim()) {
+          flush();
+          continue;
+        }
+
         if (line.startsWith("worktree ")) {
-          const registeredPath = path.resolve(line.substring(9)); // Remove 'worktree ' prefix
-          if (registeredPath === normalizedTargetPath) {
-            return true;
-          }
+          flush();
+          current = {
+            path: path.resolve(line.substring(9).trim()),
+            detached: false,
+            bare: false,
+          };
+          continue;
+        }
+
+        if (!current) {
+          continue;
+        }
+
+        if (line.startsWith("HEAD ")) {
+          current.head = line.substring(5).trim();
+        } else if (line.startsWith("branch refs/heads/")) {
+          current.branch = line.substring("branch refs/heads/".length).trim();
+        } else if (line.startsWith("branch ")) {
+          current.branch = line.substring("branch ".length).trim();
+        } else if (line === "detached") {
+          current.detached = true;
+        } else if (line === "bare") {
+          current.bare = true;
+        } else if (line.startsWith("locked")) {
+          const reason = line.substring("locked".length).trim();
+          current.locked = reason || undefined;
+        } else if (line.startsWith("prunable")) {
+          const reason = line.substring("prunable".length).trim();
+          current.prunable = reason || undefined;
         }
       }
-      return false;
+
+      flush();
+      return entries;
     } catch {
-      return false;
+      return [];
     }
+  }
+
+  async worktreeExists(
+    originPath: string,
+    worktreePath: string
+  ): Promise<boolean> {
+    const normalizedTargetPath = await fs
+      .realpath(worktreePath)
+      .catch(() => path.resolve(worktreePath));
+    const entries = await this.listWorktrees(originPath);
+
+    for (const entry of entries) {
+      const normalizedEntryPath = await fs
+        .realpath(entry.path)
+        .catch(() => path.resolve(entry.path));
+      if (normalizedEntryPath === normalizedTargetPath) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   async removeWorktree(
@@ -1045,35 +1105,63 @@ export class RepositoryManager {
     originPath: string,
     branchName: string
   ): Promise<string | null> {
-    try {
-      const { stdout } = await this.executeGitCommand(
-        `git worktree list --porcelain`,
-        { cwd: originPath }
-      );
-
-      // Parse worktree list to find which worktree uses this branch
-      const lines = stdout.split("\n");
-      let currentWorktreePath: string | null = null;
-
-      for (const line of lines) {
-        if (line.startsWith("worktree ")) {
-          // Normalize the path to resolve symlinks and ensure consistent comparison
-          currentWorktreePath = path.resolve(line.substring(9)); // Remove 'worktree ' prefix
-        } else if (
-          line.startsWith("branch refs/heads/") &&
-          currentWorktreePath
-        ) {
-          const branch = line.substring(18); // Remove 'branch refs/heads/' prefix
-          if (branch === branchName) {
-            return currentWorktreePath;
-          }
-        }
+    const entries = await this.listWorktrees(originPath);
+    for (const entry of entries) {
+      if (entry.branch === branchName) {
+        return entry.path;
       }
-
-      return null;
-    } catch {
-      return null;
     }
+    return null;
+  }
+
+  async createWorktreeFromLocalRepo(
+    sourceRepoPath: string,
+    worktreePath: string,
+    branchName: string,
+    baseBranch: string = "main",
+    authenticatedUrl?: string
+  ): Promise<string> {
+    const repoExists = await this.checkIfRepoExists(sourceRepoPath);
+    if (!repoExists) {
+      throw new Error(
+        `Source repository not found or invalid git repo: ${sourceRepoPath}`
+      );
+    }
+
+    await this.configureGitPullStrategy(sourceRepoPath);
+
+    const fetchSource = await this.getFetchSource(
+      sourceRepoPath,
+      authenticatedUrl
+    );
+    try {
+      await this.removeStaleGitLock(sourceRepoPath, "shallow.lock", 15_000);
+      await this.executeGitCommand(`git fetch --prune ${fetchSource}`, {
+        cwd: sourceRepoPath,
+      });
+    } catch (error) {
+      serverLogger.warn(
+        `Failed to fetch latest refs before creating local worktree (${branchName}):`,
+        error
+      );
+    }
+
+    try {
+      await this.executeGitCommand(
+        `git fetch --depth ${this.config.fetchDepth} ${fetchSource} +refs/heads/${baseBranch}:refs/remotes/origin/${baseBranch}`,
+        { cwd: sourceRepoPath, suppressErrorLogging: true }
+      );
+    } catch {
+      // Best effort only; createWorktree will surface base branch errors if needed.
+    }
+
+    return this.createWorktree(
+      sourceRepoPath,
+      worktreePath,
+      branchName,
+      baseBranch,
+      authenticatedUrl
+    );
   }
 
   async createWorktree(
@@ -1158,6 +1246,9 @@ export class RepositoryManager {
       };
 
       const remoteBranchAvailable = await fetchRemoteBranchRef();
+      const normalizedOriginPath = await fs
+        .realpath(originPath)
+        .catch(() => path.resolve(originPath));
       // If the branch is already attached to a worktree, reuse that path to avoid duplicates
       const preexistingPath = await this.findWorktreeUsingBranch(
         originPath,
@@ -1165,6 +1256,16 @@ export class RepositoryManager {
       );
       if (preexistingPath) {
         if (preexistingPath !== worktreePath) {
+          const normalizedPreexistingPath = await fs
+            .realpath(preexistingPath)
+            .catch(() => path.resolve(preexistingPath));
+          if (normalizedPreexistingPath === normalizedOriginPath) {
+            serverLogger.info(
+              `Branch ${branchName} is already checked out at the source repository path ${preexistingPath}; reusing it`
+            );
+            await this.ensureWorktreeConfigured(preexistingPath, branchName);
+            return preexistingPath;
+          }
           serverLogger.info(
             `Branch ${branchName} is attached to ${preexistingPath}; moving to ${worktreePath}`
           );
@@ -1196,6 +1297,16 @@ export class RepositoryManager {
         branchName
       );
       if (existingWorktreePath && existingWorktreePath !== worktreePath) {
+        const normalizedExistingWorktreePath = await fs
+          .realpath(existingWorktreePath)
+          .catch(() => path.resolve(existingWorktreePath));
+        if (normalizedExistingWorktreePath === normalizedOriginPath) {
+          serverLogger.info(
+            `Branch ${branchName} is currently checked out at source path ${existingWorktreePath}; reusing it`
+          );
+          await this.ensureWorktreeConfigured(existingWorktreePath, branchName);
+          return existingWorktreePath;
+        }
         // Another process may have just created it while we were waiting on lock
         // Align with requested path by removing the other worktree and creating ours
         serverLogger.info(

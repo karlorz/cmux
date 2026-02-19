@@ -591,6 +591,7 @@ export async function spawnAgent(
         // If not provided, setupProjectWorkspace detects default from origin
         branch: options.branch,
         worktreeInfo,
+        teamSlugOrId,
       });
 
       if (!workspaceResult.success || !workspaceResult.worktreePath) {

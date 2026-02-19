@@ -104,6 +104,7 @@ export async function ensureRunWorktreeAndBranch(
         branch: baseBranch || undefined,
         worktreeInfo,
         authenticatedRepoUrl,
+        teamSlugOrId,
       });
       if (!res.success || !res.worktreePath) {
         throw new Error(res.error || "Failed to set up worktree");

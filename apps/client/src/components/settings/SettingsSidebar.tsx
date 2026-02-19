@@ -6,7 +6,14 @@ import {
 import { isElectron } from "@/lib/electron";
 import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
-import { Archive, ArrowLeft, GitBranch, KeyRound, Settings } from "lucide-react";
+import {
+  Archive,
+  ArrowLeft,
+  FolderGit2,
+  GitBranch,
+  KeyRound,
+  Settings,
+} from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -17,7 +24,12 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
-export type SettingsSection = "general" | "ai-providers" | "git" | "archived";
+export type SettingsSection =
+  | "general"
+  | "ai-providers"
+  | "git"
+  | "worktrees"
+  | "archived";
 
 interface SettingsSidebarProps {
   teamSlugOrId: string;
@@ -46,6 +58,11 @@ const navItems: SettingsSidebarNavItem[] = [
     label: "Git",
     section: "git",
     icon: GitBranch,
+  },
+  {
+    label: "Worktrees",
+    section: "worktrees",
+    icon: FolderGit2,
   },
   {
     label: "Archived Tasks",

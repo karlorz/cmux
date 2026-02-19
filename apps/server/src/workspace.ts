@@ -1,4 +1,5 @@
 import { api } from "@cmux/convex/api";
+import { createHash } from "node:crypto";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
@@ -12,6 +13,8 @@ interface WorkspaceResult {
   error?: string;
 }
 
+type WorktreeMode = "legacy" | "codex-style";
+
 interface WorktreeInfo {
   appDataPath: string;
   projectsPath: string;
@@ -21,7 +24,14 @@ interface WorktreeInfo {
   worktreePath: string;
   repoName: string;
   branch: string;
+  mode: WorktreeMode;
+  shortId?: string;
+  sourceRepoPath?: string;
+  projectFullName?: string;
 }
+
+const DEFAULT_CODEX_WORKTREE_PATTERN =
+  "~/.cmux/worktrees/{short-id}/{repo-name}";
 
 async function getAppDataPath(): Promise<string> {
   const appName = "manaflow3";
@@ -46,6 +56,201 @@ function extractRepoName(repoUrl: string): string {
   return parts[parts.length - 1] || "unknown-repo";
 }
 
+function extractProjectFullName(repoUrl: string): string | null {
+  try {
+    const parsed = new URL(repoUrl);
+    const cleanedPath = parsed.pathname.replace(/^\/+/, "").replace(/\.git$/, "");
+    const parts = cleanedPath.split("/").filter(Boolean);
+    if (parts.length >= 2) {
+      return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+    }
+  } catch {
+    // Continue with SCP-like parsing.
+  }
+
+  const scpLikeMatch = repoUrl.match(
+    /^[^@]+@[^:]+:([^/]+\/[^/]+?)(?:\.git)?$/
+  );
+  if (scpLikeMatch) {
+    return scpLikeMatch[1];
+  }
+
+  const slashMatch = repoUrl.match(/([^/]+\/[^/]+?)(?:\.git)?$/);
+  if (slashMatch) {
+    return slashMatch[1];
+  }
+
+  return null;
+}
+
+function expandHomePath(inputPath: string): string {
+  return inputPath.replace(/^~(?=$|[\\/])/, os.homedir());
+}
+
+function resolveLegacyProjectsPath(
+  settings: { worktreePath?: string } | null
+): string {
+  if (settings?.worktreePath) {
+    return path.resolve(expandHomePath(settings.worktreePath));
+  }
+  return path.join(os.homedir(), "cmux");
+}
+
+function deriveShortId(seed: string): string {
+  return createHash("sha256").update(seed).digest("hex").slice(0, 8);
+}
+
+function renderCodexWorktreePath(args: {
+  pattern: string;
+  shortId: string;
+  repoName: string;
+  branch: string;
+}): string {
+  const withTokens = args.pattern
+    .replaceAll("{short-id}", args.shortId)
+    .replaceAll("{repo-name}", args.repoName)
+    .replaceAll("{branch}", args.branch);
+  return path.resolve(expandHomePath(withTokens));
+}
+
+function buildLegacyWorktreeInfo(args: {
+  repoUrl: string;
+  branch: string;
+  projectsPath: string;
+}): WorktreeInfo {
+  const repoName = extractRepoName(args.repoUrl);
+  const projectPath = path.join(args.projectsPath, repoName);
+  const originPath = path.join(projectPath, "origin");
+  const worktreesPath = path.join(projectPath, "worktrees");
+  const worktreePath = path.join(worktreesPath, args.branch);
+  const projectFullName = extractProjectFullName(args.repoUrl) ?? undefined;
+
+  return {
+    appDataPath: "",
+    projectsPath: args.projectsPath,
+    projectPath,
+    originPath,
+    worktreesPath,
+    worktreePath,
+    repoName,
+    branch: args.branch,
+    mode: "legacy",
+    projectFullName,
+  };
+}
+
+async function getWorktreePathCodexStyle(
+  args: { repoUrl: string; branch: string },
+  teamSlugOrId: string,
+  settings: { codexWorktreePathPattern?: string } | null
+): Promise<WorktreeInfo | null> {
+  const projectFullName = extractProjectFullName(args.repoUrl);
+  if (!projectFullName) {
+    return null;
+  }
+
+  const mapping = await getConvex().query(api.sourceRepoMappings.getByProject, {
+    teamSlugOrId,
+    projectFullName,
+  });
+  if (!mapping?.localRepoPath) {
+    return null;
+  }
+
+  const repoName = extractRepoName(args.repoUrl);
+  const shortId = deriveShortId(`${projectFullName}:${args.branch}`);
+  const pattern =
+    settings?.codexWorktreePathPattern?.trim() ||
+    DEFAULT_CODEX_WORKTREE_PATTERN;
+  const worktreePath = renderCodexWorktreePath({
+    pattern,
+    shortId,
+    repoName,
+    branch: args.branch,
+  });
+  const worktreesPath = path.dirname(worktreePath);
+  const projectPath = worktreesPath;
+  const projectsPath = path.dirname(worktreesPath);
+
+  return {
+    appDataPath: "",
+    projectsPath,
+    projectPath,
+    originPath: expandHomePath(mapping.localRepoPath),
+    worktreesPath,
+    worktreePath,
+    repoName,
+    branch: args.branch,
+    mode: "codex-style",
+    shortId,
+    sourceRepoPath: expandHomePath(mapping.localRepoPath),
+    projectFullName,
+  };
+}
+
+async function registerWorktreeIfPossible(args: {
+  teamSlugOrId?: string;
+  worktreeInfo: WorktreeInfo;
+}): Promise<void> {
+  if (!args.teamSlugOrId) {
+    return;
+  }
+
+  const sourceRepoPath = args.worktreeInfo.sourceRepoPath ?? args.worktreeInfo.originPath;
+  const resolvedWorktreePath = path.resolve(args.worktreeInfo.worktreePath);
+  const resolvedSourceRepoPath = path.resolve(sourceRepoPath);
+  const shortId =
+    args.worktreeInfo.shortId ??
+    deriveShortId(`${args.worktreeInfo.repoName}:${args.worktreeInfo.branch}`);
+  const projectFullName =
+    args.worktreeInfo.projectFullName ?? args.worktreeInfo.repoName;
+
+  try {
+    await getConvex().mutation(api.worktreeRegistry.register, {
+      teamSlugOrId: args.teamSlugOrId,
+      worktreePath: resolvedWorktreePath,
+      sourceRepoPath: resolvedSourceRepoPath,
+      projectFullName,
+      branchName: args.worktreeInfo.branch,
+      shortId,
+      mode: args.worktreeInfo.mode,
+    });
+  } catch (error) {
+    serverLogger.warn(
+      `Failed to register worktree at ${args.worktreeInfo.worktreePath}:`,
+      error
+    );
+  }
+}
+
+async function markSourceRepoVerifiedIfPossible(args: {
+  teamSlugOrId?: string;
+  worktreeInfo: WorktreeInfo;
+}): Promise<void> {
+  if (
+    !args.teamSlugOrId ||
+    args.worktreeInfo.mode !== "codex-style" ||
+    !args.worktreeInfo.projectFullName ||
+    !args.worktreeInfo.sourceRepoPath
+  ) {
+    return;
+  }
+
+  try {
+    await getConvex().mutation(api.sourceRepoMappings.upsert, {
+      teamSlugOrId: args.teamSlugOrId,
+      projectFullName: args.worktreeInfo.projectFullName,
+      localRepoPath: path.resolve(args.worktreeInfo.sourceRepoPath),
+      lastVerifiedAt: Date.now(),
+    });
+  } catch (error) {
+    serverLogger.warn(
+      `Failed to update source repo verification for ${args.worktreeInfo.projectFullName}:`,
+      error
+    );
+  }
+}
+
 export async function getWorktreePath(
   args: {
     repoUrl: string;
@@ -53,42 +258,35 @@ export async function getWorktreePath(
   },
   teamSlugOrId: string
 ): Promise<WorktreeInfo> {
-  // Check for custom worktree path setting
   const settings = await getConvex().query(api.workspaceSettings.get, {
     teamSlugOrId,
   });
 
-  let projectsPath: string;
+  const configuredMode: WorktreeMode = settings?.worktreeMode ?? "legacy";
 
-  if (settings?.worktreePath) {
-    // Use custom path, expand ~ to home directory
-    const expandedPath = settings.worktreePath.replace(/^~/, os.homedir());
-    projectsPath = expandedPath;
-  } else {
-    // Use default path: ~/cmux
-    projectsPath = path.join(os.homedir(), "cmux");
+  let info: WorktreeInfo | null = null;
+  if (configuredMode === "codex-style") {
+    info = await getWorktreePathCodexStyle(args, teamSlugOrId, settings);
+    if (!info) {
+      serverLogger.warn(
+        `Codex-style mode enabled but no source mapping found for ${args.repoUrl}; falling back to legacy mode`
+      );
+    }
   }
 
-  const repoName = extractRepoName(args.repoUrl);
-  const projectPath = path.join(projectsPath, repoName);
-  const originPath = path.join(projectPath, "origin");
-  const worktreesPath = path.join(projectPath, "worktrees");
-
-  const worktreePath = path.join(worktreesPath, args.branch);
-
-  // For consistency, still return appDataPath even if not used for custom paths
   const appDataPath = await getAppDataPath();
+  if (info) {
+    info.appDataPath = appDataPath;
+    return info;
+  }
 
-  return {
-    appDataPath,
-    projectsPath,
-    projectPath,
-    originPath,
-    worktreesPath,
-    worktreePath,
-    repoName,
+  const legacyInfo = buildLegacyWorktreeInfo({
+    repoUrl: args.repoUrl,
     branch: args.branch,
-  };
+    projectsPath: resolveLegacyProjectsPath(settings),
+  });
+  legacyInfo.appDataPath = appDataPath;
+  return legacyInfo;
 }
 
 export async function getProjectPaths(
@@ -106,13 +304,7 @@ export async function getProjectPaths(
     teamSlugOrId,
   });
 
-  let projectsPath: string;
-  if (settings?.worktreePath) {
-    const expandedPath = settings.worktreePath.replace(/^~/, os.homedir());
-    projectsPath = expandedPath;
-  } else {
-    projectsPath = path.join(os.homedir(), "cmux");
-  }
+  const projectsPath = resolveLegacyProjectsPath(settings);
 
   const repoName = extractRepoName(repoUrl);
   const projectPath = path.join(projectsPath, repoName);
@@ -136,10 +328,59 @@ export async function setupProjectWorkspace(args: {
   worktreeInfo: WorktreeInfo;
   /** Optional authenticated URL for git operations (with embedded token). repoUrl is stored as remote. */
   authenticatedRepoUrl?: string;
+  teamSlugOrId?: string;
 }): Promise<WorkspaceResult> {
   try {
     const { worktreeInfo } = args;
     const repoManager = RepositoryManager.getInstance();
+
+    if (worktreeInfo.mode === "codex-style") {
+      if (!worktreeInfo.sourceRepoPath) {
+        throw new Error("Codex-style worktree requires sourceRepoPath");
+      }
+
+      await fs.mkdir(path.dirname(worktreeInfo.worktreePath), { recursive: true });
+
+      const baseBranch =
+        args.branch ||
+        (await repoManager.getDefaultBranch(worktreeInfo.sourceRepoPath));
+
+      try {
+        await repoManager.prewarmCommitHistory(
+          worktreeInfo.sourceRepoPath,
+          baseBranch,
+          undefined,
+          args.authenticatedRepoUrl
+        );
+      } catch (e) {
+        serverLogger.warn("Prewarm commit history failed:", e);
+      }
+
+      const actualPath = await repoManager.createWorktreeFromLocalRepo(
+        worktreeInfo.sourceRepoPath,
+        worktreeInfo.worktreePath,
+        worktreeInfo.branch,
+        baseBranch,
+        args.authenticatedRepoUrl
+      );
+      if (actualPath && actualPath !== worktreeInfo.worktreePath) {
+        serverLogger.info(
+          `Worktree path resolved to ${actualPath} for branch ${worktreeInfo.branch}`
+        );
+        worktreeInfo.worktreePath = actualPath;
+      }
+
+      await markSourceRepoVerifiedIfPossible({
+        teamSlugOrId: args.teamSlugOrId,
+        worktreeInfo,
+      });
+      await registerWorktreeIfPossible({
+        teamSlugOrId: args.teamSlugOrId,
+        worktreeInfo,
+      });
+      return { success: true, worktreePath: worktreeInfo.worktreePath };
+    }
+
     // Normalize worktree path to avoid accidental extra folders like "cmux/<branch>"
     const normalizedWorktreePath = path.join(
       worktreeInfo.worktreesPath,
@@ -173,7 +414,9 @@ export async function setupProjectWorkspace(args: {
     try {
       await repoManager.prewarmCommitHistory(
         worktreeInfo.originPath,
-        baseBranch
+        baseBranch,
+        undefined,
+        args.authenticatedRepoUrl
       );
     } catch (e) {
       serverLogger.warn("Prewarm commit history failed:", e);
@@ -298,6 +541,10 @@ export async function setupProjectWorkspace(args: {
       }
     }
 
+    await registerWorktreeIfPossible({
+      teamSlugOrId: args.teamSlugOrId,
+      worktreeInfo,
+    });
     return { success: true, worktreePath: worktreeInfo.worktreePath };
   } catch (error) {
     serverLogger.error("Failed to setup workspace:", error);

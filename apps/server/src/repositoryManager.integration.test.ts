@@ -167,6 +167,55 @@ describe("RepositoryManager - Integration Tests", () => {
     expect(exists).toBe(false);
   });
 
+  it("should create a worktree from an existing local source repo", async () => {
+    const worktreePath = path.join(testDir, "worktree-local-source");
+    const branchName = "feature-local-source";
+
+    await repoManager.createWorktreeFromLocalRepo(
+      testRepoPath,
+      worktreePath,
+      branchName,
+      "main"
+    );
+
+    const exists = await fs
+      .access(worktreePath)
+      .then(() => true)
+      .catch(() => false);
+    expect(exists).toBe(true);
+
+    const { stdout } = await execAsync("git branch --show-current", {
+      cwd: worktreePath,
+    });
+    expect(stdout.trim()).toBe(branchName);
+
+    await execAsync(`git worktree remove "${worktreePath}" --force`, {
+      cwd: testRepoPath,
+    }).catch(() => {});
+  });
+
+  it("should list worktrees in porcelain format", async () => {
+    const worktreePath = path.join(testDir, "worktree-list-check");
+    const branchName = "feature-list-check";
+
+    await execAsync(
+      `git worktree add -b ${branchName} "${worktreePath}" main`,
+      { cwd: testRepoPath }
+    );
+
+    const listed = await repoManager.listWorktrees(testRepoPath);
+    const found = listed.some(
+      (entry) =>
+        path.resolve(entry.path) === path.resolve(worktreePath) &&
+        entry.branch === branchName
+    );
+    expect(found).toBe(true);
+
+    await execAsync(`git worktree remove "${worktreePath}" --force`, {
+      cwd: testRepoPath,
+    }).catch(() => {});
+  });
+
   it("should get current branch", async () => {
     const worktreePath = path.join(testDir, "worktree-5");
     const branchName = "feature-test-5";

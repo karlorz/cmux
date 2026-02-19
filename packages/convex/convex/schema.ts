@@ -621,6 +621,10 @@ const convexSchema = defineSchema({
     .index("by_team_user", ["teamId", "userId"]),
   workspaceSettings: defineTable({
     worktreePath: v.optional(v.string()), // Custom path for git worktrees
+    worktreeMode: v.optional(
+      v.union(v.literal("legacy"), v.literal("codex-style"))
+    ), // Worktree storage mode
+    codexWorktreePathPattern: v.optional(v.string()), // Path pattern for codex-style worktrees
     autoPrEnabled: v.optional(v.boolean()), // Auto-create PR for crown winner (default: false)
     autoSyncEnabled: v.optional(v.boolean()), // Auto-sync local workspace to cloud (default: true)
     bypassAnthropicProxy: v.optional(v.boolean()), // When true, Claude connects directly to custom Anthropic base URL
@@ -643,6 +647,32 @@ const convexSchema = defineSchema({
     userId: v.string(),
     teamId: v.string(),
   }).index("by_team_user", ["teamId", "userId"]),
+  sourceRepoMappings: defineTable({
+    projectFullName: v.string(),
+    localRepoPath: v.string(),
+    lastVerifiedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    userId: v.string(),
+    teamId: v.string(),
+  })
+    .index("by_team_user_project", ["teamId", "userId", "projectFullName"])
+    .index("by_team_user", ["teamId", "userId"]),
+  worktreeRegistry: defineTable({
+    worktreePath: v.string(),
+    sourceRepoPath: v.string(),
+    projectFullName: v.string(),
+    branchName: v.string(),
+    shortId: v.string(),
+    mode: v.union(v.literal("legacy"), v.literal("codex-style")),
+    taskRunIds: v.optional(v.array(v.id("taskRuns"))),
+    lastUsedAt: v.number(),
+    createdAt: v.number(),
+    userId: v.string(),
+    teamId: v.string(),
+  })
+    .index("by_team_user", ["teamId", "userId"])
+    .index("by_worktree_path", ["worktreePath"]),
   workspaceConfigs: defineTable({
     projectFullName: v.string(),
     maintenanceScript: v.optional(v.string()),
