@@ -19,6 +19,10 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useConvex } from "convex/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isElectron } from "@/lib/electron";
+import {
+  DEFAULT_HEATMAP_MODEL,
+  normalizeHeatmapModel,
+} from "@/lib/heatmap-settings";
 import { WWW_ORIGIN } from "@/lib/wwwOrigin";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -302,9 +306,9 @@ function SettingsComponent() {
 
   // Heatmap settings state
   const [heatmapModel, setHeatmapModel] =
-    useState<string>("anthropic-opus-4-5");
+    useState<string>(DEFAULT_HEATMAP_MODEL);
   const [originalHeatmapModel, setOriginalHeatmapModel] =
-    useState<string>("anthropic-opus-4-5");
+    useState<string>(DEFAULT_HEATMAP_MODEL);
   const [heatmapThreshold, setHeatmapThreshold] = useState<number>(0);
   const [originalHeatmapThreshold, setOriginalHeatmapThreshold] =
     useState<number>(0);
@@ -320,8 +324,7 @@ function SettingsComponent() {
 
   // Heatmap model options from model-config.ts
   const HEATMAP_MODEL_OPTIONS = [
-    { value: "anthropic-opus-4-5", label: "Claude Opus 4.5" },
-    { value: "anthropic", label: "Claude Opus 4.1" },
+    { value: "anthropic-haiku-4-5", label: "Claude Haiku 4.5" },
     { value: "cmux-heatmap-2", label: "cmux-heatmap-2" },
     { value: "cmux-heatmap-1", label: "cmux-heatmap-1" },
   ];
@@ -439,13 +442,9 @@ function SettingsComponent() {
       prev === nextAutoPrEnabled ? prev : nextAutoPrEnabled
     );
 
-    if (workspaceSettings?.heatmapModel) {
-      const nextModel = workspaceSettings.heatmapModel;
-      setHeatmapModel((prev) => (prev === nextModel ? prev : nextModel));
-      setOriginalHeatmapModel((prev) =>
-        prev === nextModel ? prev : nextModel
-      );
-    }
+    const nextModel = normalizeHeatmapModel(workspaceSettings?.heatmapModel ?? null);
+    setHeatmapModel((prev) => (prev === nextModel ? prev : nextModel));
+    setOriginalHeatmapModel((prev) => (prev === nextModel ? prev : nextModel));
     if (workspaceSettings?.heatmapThreshold !== undefined) {
       const nextThreshold = workspaceSettings.heatmapThreshold;
       setHeatmapThreshold((prev) =>
