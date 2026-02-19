@@ -39,3 +39,8 @@ export const AUTO_COLLAPSE_THRESHOLD = Infinity;
 export const LARGE_DIFF_THRESHOLD = 100;
 export const MAX_LINES_FOR_SYNTAX = 5000;
 export const VIEWPORT_RENDER_MARGIN = "200px";
+
+// Line-level lazy loading constants
+export const INITIAL_VISIBLE_LINES = 100;
+export const CHUNK_SIZE = 100;
+export const LINE_HEIGHT_ESTIMATE = 24; // px - includes line content + padding

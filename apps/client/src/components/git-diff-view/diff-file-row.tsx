@@ -4,10 +4,12 @@ import { memo, useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { MemoChunkedDiffView } from "./chunked-diff-view";
 import { FileDiffHeader } from "../file-diff-header";
 import { FileDiffHeaderWithViewed } from "../file-diff-header-with-viewed";
 import { LargeDiffPlaceholder } from "./large-diff-placeholder";
 import {
+  INITIAL_VISIBLE_LINES,
   LARGE_DIFF_THRESHOLD,
   VIEWPORT_RENDER_MARGIN,
   type FileDiffRowClassNames,
@@ -40,7 +42,12 @@ function DiffFileRow({
   anchorId,
 }: DiffFileRowProps) {
   const entry = preparedFile.entry;
-  const isVeryLarge = preparedFile.totalLines > LARGE_DIFF_THRESHOLD;
+  // Use max of totalLines and additions+deletions to determine if file is large
+  const effectiveLineCount = Math.max(
+    preparedFile.totalLines,
+    entry.additions + entry.deletions
+  );
+  const isVeryLarge = effectiveLineCount > LARGE_DIFF_THRESHOLD;
   const [loadLargeDiff, setLoadLargeDiff] = useState(false);
   const [hasEnteredViewport, setHasEnteredViewport] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
@@ -144,23 +151,38 @@ function DiffFileRow({
           </div>
         ) : isVeryLarge && !loadLargeDiff ? (
           <LargeDiffPlaceholder
-            totalLines={preparedFile.totalLines}
+            totalLines={effectiveLineCount}
             additions={entry.additions}
             deletions={entry.deletions}
             onLoadAnyway={() => setLoadLargeDiff(true)}
           />
+        ) : loadLargeDiff && !hasEnteredViewport ? (
+          <div className="grid grow place-content-center bg-neutral-50 px-3 py-6 text-center text-xs text-neutral-500 dark:bg-neutral-900/50 dark:text-neutral-400">
+            Scroll to load diff
+          </div>
         ) : shouldRenderDiff && canRenderDiff && preparedFile.diffFile ? (
-          <div className="cmux-git-diff-view w-full overflow-x-auto border-t border-neutral-200/80 dark:border-neutral-800/70">
-            <DiffView
+          // Use chunked view for large diffs that were explicitly loaded
+          isVeryLarge && effectiveLineCount > INITIAL_VISIBLE_LINES ? (
+            <MemoChunkedDiffView
               diffFile={preparedFile.diffFile}
-              diffViewMode={mode}
-              diffViewTheme={theme}
-              diffViewWrap={true}
-              diffViewFontSize={13}
-              diffViewHighlight={Boolean(registerHighlighter)}
+              totalLines={effectiveLineCount}
+              mode={mode}
+              theme={theme}
               registerHighlighter={registerHighlighter}
             />
-          </div>
+          ) : (
+            <div className="cmux-git-diff-view w-full overflow-x-auto border-t border-neutral-200/80 dark:border-neutral-800/70">
+              <DiffView
+                diffFile={preparedFile.diffFile}
+                diffViewMode={mode}
+                diffViewTheme={theme}
+                diffViewWrap={true}
+                diffViewFontSize={13}
+                diffViewHighlight={Boolean(registerHighlighter)}
+                registerHighlighter={registerHighlighter}
+              />
+            </div>
+          )
         ) : canRenderDiff && preparedFile.diffFile ? null : (
           <div className="grid grow place-content-center bg-neutral-50 px-3 py-6 text-center text-xs text-neutral-500 dark:bg-neutral-900/50 dark:text-neutral-400">
             Unable to render diff
