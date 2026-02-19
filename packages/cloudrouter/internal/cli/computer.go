@@ -40,7 +40,7 @@ func shellQuote(s string) string {
 }
 
 // runSSHCommand runs a command inside the sandbox via SSH over WebSocket tunnel.
-// It prefers websocat (bidirectional), then Go WebSocket bridge.
+// It prefers websocat (bidirectional), then curl with WebSocket, then Go WebSocket bridge.
 func runSSHCommand(workerURL, token, command string) (string, string, int, error) {
 	wsURL := strings.Replace(workerURL, "https://", "wss://", 1)
 	wsURL = strings.Replace(wsURL, "http://", "ws://", 1)
@@ -49,6 +49,8 @@ func runSSHCommand(workerURL, token, command string) (string, string, int, error
 	wsToolPath := getCurlWithWebSocket()
 	if strings.HasPrefix(wsToolPath, "websocat:") {
 		return runSSHCommandWithWebsocat(strings.TrimPrefix(wsToolPath, "websocat:"), wsURL, command)
+	} else if wsToolPath != "" {
+		return runSSHCommandWithCurl(wsToolPath, wsURL, command)
 	}
 
 	return runSSHCommandWithBridge(wsURL, token, command)
