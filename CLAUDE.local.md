@@ -152,3 +152,15 @@ MORPH_API_KEY=morph_...
 ## Full Reference
 
 For complete environment variable documentation by deployment target, see:
+
+# Edge Router
+
+There are two edge routers:
+
+- `apps/edge-router/` - Main edge router for Morph sandboxes, deploys to `cmux.sh` (manaflow's domain)
+- `apps/edge-router-pvelxc/` - Fork for PVE-LXC sandboxes, deploys to `*.alphasolves.com` (karlorz's domain)
+
+When working on PVE-LXC sandbox features, use `apps/edge-router-pvelxc/`. Deploy with:
+```bash
+cd apps/edge-router-pvelxc && bun run deploy
+```

@@ -96,7 +96,7 @@ exec ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAu
 // buildCurlSSHCommand builds an SSH command string for use with curl ProxyCommand
 // Uses sshpass for empty password auth to match the bridge path behavior
 // Note: We use "sshpass -e" which reads from SSHPASS env var, avoiding empty argument
-// issues with macOS openrsync which fails to parse "sshpass -p ''" correctly.
+// issues with macOS openrsync which fails to parse "sshpass -p ”" correctly.
 func buildCurlSSHCommand(proxyCmd string) string {
 	// Check if sshpass is available
 	if _, err := exec.LookPath("sshpass"); err == nil {
@@ -112,9 +112,13 @@ func buildCurlSSHCommand(proxyCmd string) string {
 // getCurlWithWebSocket returns the path to curl with WebSocket support, or empty string if not found
 // We need curl built with WebSocket protocol support (shows "ws" or "wss" in protocols)
 func getCurlWithWebSocket() string {
+	// Prefer websocat for bidirectional WebSocket (curl WebSocket is upload-only with -T)
+	if path, err := exec.LookPath("websocat"); err == nil {
+		return "websocat:" + path
+	}
+
 	var curlPaths []string
 	if runtime.GOOS == "darwin" {
-		// Prefer Homebrew curl which typically has WebSocket support
 		curlPaths = []string{
 			"/opt/homebrew/opt/curl/bin/curl",
 			"/usr/local/opt/curl/bin/curl",
@@ -128,12 +132,10 @@ func getCurlWithWebSocket() string {
 		if _, err := os.Stat(path); err != nil {
 			continue
 		}
-		// Check if this curl supports WebSocket protocol
 		out, err := exec.Command(path, "--version").Output()
 		if err != nil {
 			continue
 		}
-		// Look for "ws" or "wss" in the Protocols line
 		if strings.Contains(string(out), " ws ") || strings.Contains(string(out), " wss ") {
 			return path
 		}
@@ -290,13 +292,15 @@ func runRsyncSingleFile(workerURL, token, localFile, remotePath string) error {
 
 	startTime := time.Now()
 
-	// Check if curl with WebSocket support is available
-	curlPath := getCurlWithWebSocket()
+	wsToolPath := getCurlWithWebSocket()
 	var stats *rsyncStats
 	var err error
 
-	if curlPath != "" {
-		stats, err = runRsyncSingleFileWithCurl(curlPath, wsURL, token, localFile, remotePath)
+	if strings.HasPrefix(wsToolPath, "websocat:") {
+		websocatPath := strings.TrimPrefix(wsToolPath, "websocat:")
+		stats, err = runRsyncSingleFileWithWebsocat(websocatPath, wsURL, token, localFile, remotePath)
+	} else if wsToolPath != "" {
+		stats, err = runRsyncSingleFileWithCurl(wsToolPath, wsURL, token, localFile, remotePath)
 	} else {
 		stats, err = runRsyncSingleFileWithBridge(wsURL, token, localFile, remotePath)
 	}
@@ -317,7 +321,25 @@ func runRsyncSingleFile(workerURL, token, localFile, remotePath string) error {
 	return nil
 }
 
-// runRsyncSingleFileWithCurl uses curl as SSH ProxyCommand for single file transfer
+func runRsyncSingleFileWithWebsocat(websocatPath, wsURL, token, localFile, remotePath string) (*rsyncStats, error) {
+	rsyncArgs := buildRsyncArgsSingleFile(localFile, remotePath)
+
+	proxyCmd := fmt.Sprintf("%s --binary -B 65536 '%s'", websocatPath, wsURL)
+	sshCmd := buildWebsocatSSHCommand(proxyCmd)
+	rsyncArgs = append(rsyncArgs, "-e", sshCmd)
+	remoteSpec := fmt.Sprintf("%s@e2b-sandbox:%s", token, remotePath)
+	rsyncArgs = append(rsyncArgs, remoteSpec)
+
+	return execRsync(rsyncArgs)
+}
+
+func buildWebsocatSSHCommand(proxyCmd string) string {
+	if _, err := exec.LookPath("sshpass"); err == nil {
+		return fmt.Sprintf("sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -o ProxyCommand=%q", proxyCmd)
+	}
+	return fmt.Sprintf("ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -o BatchMode=yes -o ProxyCommand=%q", proxyCmd)
+}
+
 func runRsyncSingleFileWithCurl(curlPath, wsURL, token, localFile, remotePath string) (*rsyncStats, error) {
 	rsyncArgs := buildRsyncArgsSingleFile(localFile, remotePath)
 
@@ -443,12 +465,15 @@ func runRsyncDownload(workerURL, token, remotePath, localPath string) error {
 
 	startTime := time.Now()
 
-	curlPath := getCurlWithWebSocket()
+	wsToolPath := getCurlWithWebSocket()
 	var stats *rsyncStats
 	var err error
 
-	if curlPath != "" {
-		stats, err = runRsyncDownloadWithCurl(curlPath, wsURL, token, remotePath, localPath)
+	if strings.HasPrefix(wsToolPath, "websocat:") {
+		websocatPath := strings.TrimPrefix(wsToolPath, "websocat:")
+		stats, err = runRsyncDownloadWithWebsocat(websocatPath, wsURL, token, remotePath, localPath)
+	} else if wsToolPath != "" {
+		stats, err = runRsyncDownloadWithCurl(wsToolPath, wsURL, token, remotePath, localPath)
 	} else {
 		stats, err = runRsyncDownloadWithBridge(wsURL, token, remotePath, localPath)
 	}
@@ -476,6 +501,26 @@ func runRsyncDownloadWithCurl(curlPath, wsURL, token, remotePath, localPath stri
 	// Build SSH command with sshpass for empty password auth
 	proxyCmd := fmt.Sprintf("%s --no-progress-meter -N --http1.1 -T . '%s'", curlPath, wsURL)
 	sshCmd := buildCurlSSHCommand(proxyCmd)
+	rsyncArgs = append(rsyncArgs, "-e", sshCmd)
+
+	// Remote as source - token as username (worker SSH server authenticates by conn.User() == token)
+	remoteSpec := fmt.Sprintf("%s@e2b-sandbox:%s/", token, remotePath)
+	localDest := localPath
+	if !strings.HasSuffix(localDest, "/") {
+		localDest += "/"
+	}
+	rsyncArgs = append(rsyncArgs, remoteSpec, localDest)
+
+	return execRsync(rsyncArgs)
+}
+
+// runRsyncDownloadWithWebsocat uses websocat as SSH ProxyCommand for download (remote -> local)
+func runRsyncDownloadWithWebsocat(websocatPath, wsURL, token, remotePath, localPath string) (*rsyncStats, error) {
+	rsyncArgs := buildRsyncDownloadArgs()
+
+	// Build SSH command with websocat as ProxyCommand
+	proxyCmd := fmt.Sprintf("%s --binary -B 65536 '%s'", websocatPath, wsURL)
+	sshCmd := buildWebsocatSSHCommand(proxyCmd)
 	rsyncArgs = append(rsyncArgs, "-e", sshCmd)
 
 	// Remote as source - token as username (worker SSH server authenticates by conn.User() == token)
@@ -601,8 +646,8 @@ func buildRsyncArgsSingleFile(localFile, remotePath string) []string {
 	rsyncArgs := []string{
 		"-az",
 		"--stats",
-		"--no-owner",  // Don't preserve owner (use remote user)
-		"--no-group",  // Don't preserve group (use remote group)
+		"--no-owner", // Don't preserve owner (use remote user)
+		"--no-group", // Don't preserve group (use remote group)
 	}
 
 	if rsyncFlagDryRun {
@@ -718,8 +763,8 @@ var defaultExcludes = []string{
 	".eggs",
 
 	// === Secrets and credentials (security) ===
-	".npmrc",     // May contain auth tokens
-	".yarnrc",    // May contain auth tokens
+	".npmrc",  // May contain auth tokens
+	".yarnrc", // May contain auth tokens
 	".yarnrc.yml",
 	"auth.json",
 	".netrc",
@@ -738,13 +783,13 @@ var defaultExcludes = []string{
 	"desktop.ini",
 	".Spotlight-V100",
 	".Trashes",
-	".idea",        // JetBrains
-	"*.swp",        // Vim
-	"*.swo",        // Vim
-	"*~",           // Backup files
-	".project",     // Eclipse
-	".classpath",   // Eclipse
-	".settings",    // Eclipse
+	".idea",      // JetBrains
+	"*.swp",      // Vim
+	"*.swo",      // Vim
+	"*~",         // Backup files
+	".project",   // Eclipse
+	".classpath", // Eclipse
+	".settings",  // Eclipse
 	"*.sublime-*",
 
 	// === Logs and temp files ===
@@ -810,21 +855,41 @@ func splitEntries(entries []string, n int) [][]string {
 }
 
 // runSingleRsync runs a single rsync process, optionally for specific items only
-// Tries curl with WebSocket support first, falls back to Go WebSocket bridge
+// Tries websocat first, then curl with WebSocket support, falls back to Go WebSocket bridge
 func runSingleRsync(workerURL, token, localPath, remotePath string, items []string) (*rsyncStats, error) {
 	// Convert HTTP URL to WebSocket URL
 	wsURL := strings.Replace(workerURL, "https://", "wss://", 1)
 	wsURL = strings.Replace(wsURL, "http://", "ws://", 1)
 	wsURL = wsURL + "/ssh?token=" + url.QueryEscape(token)
 
-	// Check if curl with WebSocket support is available
-	curlPath := getCurlWithWebSocket()
-	if curlPath != "" {
-		return runRsyncWithCurl(curlPath, wsURL, token, localPath, remotePath, items)
+	// Check if websocat or curl with WebSocket support is available
+	wsToolPath := getCurlWithWebSocket()
+	if strings.HasPrefix(wsToolPath, "websocat:") {
+		websocatPath := strings.TrimPrefix(wsToolPath, "websocat:")
+		return runRsyncWithWebsocat(websocatPath, wsURL, token, localPath, remotePath, items)
+	} else if wsToolPath != "" {
+		return runRsyncWithCurl(wsToolPath, wsURL, token, localPath, remotePath, items)
 	}
 
 	// Fall back to Go WebSocket bridge
 	return runRsyncWithBridge(wsURL, token, localPath, remotePath, items)
+}
+
+// runRsyncWithWebsocat uses websocat as SSH ProxyCommand for WebSocket tunneling
+func runRsyncWithWebsocat(websocatPath, wsURL, token, localPath, remotePath string, items []string) (*rsyncStats, error) {
+	rsyncArgs := buildRsyncArgs(localPath, remotePath, items)
+
+	// SSH command using websocat as ProxyCommand for WebSocket tunneling
+	proxyCmd := fmt.Sprintf("%s --binary -B 65536 '%s'", websocatPath, wsURL)
+	sshCmd := buildWebsocatSSHCommand(proxyCmd)
+	rsyncArgs = append(rsyncArgs, "-e", sshCmd)
+
+	// Remote destination - token as username (worker SSH server authenticates by conn.User() == token)
+	// Hostname doesn't matter since ProxyCommand handles the connection
+	remoteSpec := fmt.Sprintf("%s@e2b-sandbox:%s/", token, remotePath)
+	rsyncArgs = append(rsyncArgs, remoteSpec)
+
+	return execRsync(rsyncArgs)
 }
 
 // runRsyncWithCurl uses curl as SSH ProxyCommand for WebSocket tunneling
@@ -952,8 +1017,8 @@ func buildRsyncArgs(localPath, remotePath string, items []string) []string {
 	rsyncArgs := []string{
 		"-az",
 		"--stats",
-		"--no-owner",  // Don't preserve owner (use remote user)
-		"--no-group",  // Don't preserve group (use remote group)
+		"--no-owner", // Don't preserve owner (use remote user)
+		"--no-group", // Don't preserve group (use remote group)
 	}
 
 	if rsyncFlagDelete {
@@ -1142,4 +1207,3 @@ func parseRsyncStats(output string) *rsyncStats {
 
 	return stats
 }
-

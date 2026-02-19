@@ -73,7 +73,7 @@ self.addEventListener('fetch', (event) => {
 // Function to rewrite JavaScript code
 function rewriteJavaScript(
   code: string,
-  isExternalFile: boolean = false
+  isExternalFile: boolean = false,
 ): string {
   // Skip if it's our injected code
   if (code.includes("__CMUX_NO_REWRITE__")) {
@@ -118,7 +118,7 @@ function rewriteJavaScript(
       const before = modified.substring(Math.max(0, offset - 20), offset);
       const after = modified.substring(
         offset + match.length,
-        Math.min(modified.length, offset + match.length + 10)
+        Math.min(modified.length, offset + match.length + 10),
       );
 
       if (/\b(const|let|var)\s+$/.test(before)) return match;
@@ -168,7 +168,7 @@ function addPermissiveCORS(headers: Headers): Headers {
   headers.set("access-control-allow-origin", "*");
   headers.set(
     "access-control-allow-methods",
-    "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD"
+    "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD",
   );
   headers.set("access-control-allow-headers", "*");
   headers.set("access-control-expose-headers", "*");
@@ -533,7 +533,7 @@ function startMutationObserver() {
 
 startMutationObserver();
 </script>`,
-      { html: true }
+      { html: true },
     );
 
     // Service worker registration script (conditional)
@@ -545,7 +545,7 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/proxy-sw.js', { scope: '/' }).catch(console.error);
 }
 </script>`,
-        { html: true }
+        { html: true },
       );
     }
   }
@@ -573,7 +573,7 @@ function isLoopbackHostnameValue(hostname: string | null | undefined): boolean {
 
 function rewriteLoopbackRedirect(
   response: Response,
-  buildProxyHost: (port: string) => string | null
+  buildProxyHost: (port: string) => string | null,
 ): Response {
   const location = response.headers.get("location");
   if (!location) {
@@ -624,7 +624,7 @@ export default {
     // Only process PVE-LXC preview URLs
     // Pattern: port-{PORT}-pvelxc-{INSTANCE}.alphasolves.com
     const pvelxcMatch = host.match(
-      /^port-(\d+)-pvelxc-([^.]+)\.alphasolves\.com$/
+      /^port-(\d+)-pvelxc-([^.]+)\.alphasolves\.com$/,
     );
 
     if (!pvelxcMatch) {
@@ -645,8 +645,8 @@ export default {
       });
     }
 
-    // Handle OPTIONS preflight for VS Code port (39378)
-    if (port === "39378" && request.method === "OPTIONS") {
+    // Handle OPTIONS preflight for all ports (CORS requires this)
+    if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
         headers: addPermissiveCORS(new Headers()),
@@ -725,7 +725,7 @@ export default {
         // Forward negotiated subprotocol if present
         const responseHeaders = new Headers();
         const subprotocol = upstreamResponse.headers.get(
-          "Sec-WebSocket-Protocol"
+          "Sec-WebSocket-Protocol",
         );
         if (subprotocol) {
           responseHeaders.set("Sec-WebSocket-Protocol", subprotocol);
@@ -772,7 +772,7 @@ export default {
           status: response.status,
           statusText: response.statusText,
           headers: responseHeaders,
-        })
+        }),
       );
     }
 

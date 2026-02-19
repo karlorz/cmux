@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "updatedAt": "2026-02-17T22:45:15Z",
+  "updatedAt": "2026-02-19T00:40:00Z",
   "presets": [
     {
       "presetId": "4vcpu_8gb_32gb",
@@ -69,6 +69,12 @@
           "snapshotId": "snapshot_a1955ed2",
           "templateVmid": 9034,
           "capturedAt": "2026-02-17T22:44:44Z"
+        },
+        {
+          "version": 53,
+          "snapshotId": "snapshot_359974c7",
+          "templateVmid": 9030,
+          "capturedAt": "2026-02-19T00:40:00Z"
         }
       ]
     },

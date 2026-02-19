@@ -1013,11 +1013,22 @@ func runSSHExec(channel cryptossh.Channel, cmdStr string) int {
 		return 1
 	}
 
-	go io.Copy(stdin, channel)
-	go io.Copy(channel, stdout)
-	go io.Copy(channel.Stderr(), stderr)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		io.Copy(stdin, channel)
+	}()
+	go func() {
+		defer wg.Done()
+		io.Copy(channel, stdout)
+	}()
+	go func() {
+		defer wg.Done()
+		io.Copy(channel.Stderr(), stderr)
+	}()
 
 	c.Wait()
+	wg.Wait()
 	if c.ProcessState != nil {
 		return c.ProcessState.ExitCode()
 	}
