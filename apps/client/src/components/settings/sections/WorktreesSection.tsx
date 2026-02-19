@@ -7,7 +7,8 @@ import type { Doc } from "@cmux/convex/dataModel";
 import { convexQuery } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useConvex } from "convex/react";
-import { FolderGit2, Trash2 } from "lucide-react";
+import { FolderGit2, Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 type WorktreeMode = "legacy" | "codex-style";
@@ -28,6 +29,9 @@ export function WorktreesSection({
   onCodexWorktreePathPatternChange,
 }: WorktreesSectionProps) {
   const convex = useConvex();
+  const [showAddMappingForm, setShowAddMappingForm] = useState(false);
+  const [newProjectFullName, setNewProjectFullName] = useState("");
+  const [newLocalRepoPath, setNewLocalRepoPath] = useState("");
 
   // Query source repo mappings
   const { data: sourceRepoMappings, refetch: refetchMappings } = useQuery(
@@ -38,6 +42,34 @@ export function WorktreesSection({
   const { data: worktreeRegistry, refetch: refetchRegistry } = useQuery(
     convexQuery(api.worktreeRegistry.list, { teamSlugOrId })
   );
+
+  // Mutation to add source repo mapping
+  const addSourceRepoMutation = useMutation({
+    mutationFn: async ({
+      projectFullName,
+      localRepoPath,
+    }: {
+      projectFullName: string;
+      localRepoPath: string;
+    }) => {
+      await convex.mutation(api.sourceRepoMappings.upsert, {
+        teamSlugOrId,
+        projectFullName,
+        localRepoPath,
+      });
+    },
+    onSuccess: () => {
+      void refetchMappings();
+      toast.success("Source repo mapping added");
+      setShowAddMappingForm(false);
+      setNewProjectFullName("");
+      setNewLocalRepoPath("");
+    },
+    onError: (error) => {
+      console.error("Failed to add source repo mapping:", error);
+      toast.error("Failed to add source repo mapping");
+    },
+  });
 
   // Mutation to remove source repo mapping
   const removeSourceRepoMutation = useMutation({
@@ -56,6 +88,29 @@ export function WorktreesSection({
       toast.error("Failed to remove source repo mapping");
     },
   });
+
+  const handleAddMapping = () => {
+    const trimmedProject = newProjectFullName.trim();
+    const trimmedPath = newLocalRepoPath.trim();
+
+    if (!trimmedProject) {
+      toast.error("Please enter a repository name (e.g., owner/repo)");
+      return;
+    }
+    if (!trimmedPath) {
+      toast.error("Please enter a local path");
+      return;
+    }
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(trimmedProject)) {
+      toast.error("Invalid repository format. Use owner/repo format.");
+      return;
+    }
+
+    addSourceRepoMutation.mutate({
+      projectFullName: trimmedProject,
+      localRepoPath: trimmedPath,
+    });
+  };
 
   // Mutation to remove worktree from registry
   const removeWorktreeMutation = useMutation({
@@ -121,6 +176,81 @@ export function WorktreesSection({
           title="Source Repo Mappings"
           description="Map GitHub repositories to local filesystem paths. When you start a task, cmux will use this local repo instead of cloning."
         >
+          {/* Add mapping form */}
+          {showAddMappingForm ? (
+            <div className="border-b border-neutral-200 px-4 py-4 dark:border-neutral-800">
+              <div className="space-y-3">
+                <div>
+                  <label
+                    htmlFor="projectFullName"
+                    className="mb-1 block text-xs font-medium text-neutral-700 dark:text-neutral-300"
+                  >
+                    Repository (owner/repo)
+                  </label>
+                  <input
+                    id="projectFullName"
+                    type="text"
+                    value={newProjectFullName}
+                    onChange={(e) => setNewProjectFullName(e.target.value)}
+                    className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-500"
+                    placeholder="karlorz/testing-repo-1"
+                    autoComplete="off"
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="localRepoPath"
+                    className="mb-1 block text-xs font-medium text-neutral-700 dark:text-neutral-300"
+                  >
+                    Local path
+                  </label>
+                  <input
+                    id="localRepoPath"
+                    type="text"
+                    value={newLocalRepoPath}
+                    onChange={(e) => setNewLocalRepoPath(e.target.value)}
+                    className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-500"
+                    placeholder="/Users/karlchow/code/testing-repo-1"
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={handleAddMapping}
+                    disabled={addSourceRepoMutation.isPending}
+                  >
+                    {addSourceRepoMutation.isPending ? "Adding..." : "Add Mapping"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setShowAddMappingForm(false);
+                      setNewProjectFullName("");
+                      setNewLocalRepoPath("");
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowAddMappingForm(true)}
+                className="gap-1.5"
+              >
+                <Plus className="h-4 w-4" />
+                Add Mapping
+              </Button>
+            </div>
+          )}
+
+          {/* Existing mappings list */}
           {sourceRepoMappings && sourceRepoMappings.length > 0 ? (
             <div className="divide-y divide-neutral-200 dark:divide-neutral-800">
               {sourceRepoMappings.map((mapping: Doc<"sourceRepoMappings">) => (
@@ -151,16 +281,17 @@ export function WorktreesSection({
               ))}
             </div>
           ) : (
-            <div className="px-4 py-8 text-center">
-              <FolderGit2 className="mx-auto h-8 w-8 text-neutral-400" />
-              <p className="mt-2 text-sm text-neutral-500 dark:text-neutral-400">
-                No source repo mappings yet
-              </p>
-              <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">
-                Mappings will be created automatically when you start a task from
-                a local workspace
-              </p>
-            </div>
+            !showAddMappingForm && (
+              <div className="px-4 py-8 text-center">
+                <FolderGit2 className="mx-auto h-8 w-8 text-neutral-400" />
+                <p className="mt-2 text-sm text-neutral-500 dark:text-neutral-400">
+                  No source repo mappings yet
+                </p>
+                <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">
+                  Click "Add Mapping" to map a GitHub repository to a local path
+                </p>
+              </div>
+            )
           )}
         </SettingSection>
       )}

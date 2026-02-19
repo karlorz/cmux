@@ -426,7 +426,7 @@ export async function setupProjectWorkspace(args: {
  * Setup workspace using Codex-style approach.
  * Uses existing local repository as source, creates worktree without cloning.
  */
-async function setupCodexStyleWorkspace(
+export async function setupCodexStyleWorkspace(
   args: {
     repoUrl: string;
     branch?: string;

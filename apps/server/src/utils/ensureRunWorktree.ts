@@ -7,7 +7,11 @@ import { getConvex } from "../utils/convexClient";
 import { retryOnOptimisticConcurrency } from "../utils/convexRetry";
 import { serverLogger } from "../utils/fileLogger";
 import { getGitHubOAuthToken } from "../utils/getGitHubToken";
-import { getWorktreePath, setupProjectWorkspace } from "../workspace";
+import {
+  getWorktreePath,
+  setupCodexStyleWorkspace,
+  setupProjectWorkspace,
+} from "../workspace";
 
 export type EnsureWorktreeResult = {
   run: Doc<"taskRuns">;
@@ -91,20 +95,67 @@ export async function ensureRunWorktreeAndBranch(
         );
       }
 
+      // Check for source repo mapping to enable codex-style worktrees
+      let localRepoPath: string | undefined;
+      try {
+        const sourceMapping = await getConvex().query(
+          api.sourceRepoMappings.getByProject,
+          {
+            teamSlugOrId,
+            projectFullName: task.projectFullName,
+          }
+        );
+        if (sourceMapping?.localRepoPath) {
+          // Verify the local repo path exists
+          try {
+            await fs.access(sourceMapping.localRepoPath);
+            await fs.access(path.join(sourceMapping.localRepoPath, ".git"));
+            localRepoPath = sourceMapping.localRepoPath;
+            serverLogger.info(
+              `[ensureRunWorktree] Using codex-style worktree from ${localRepoPath}`
+            );
+          } catch {
+            serverLogger.warn(
+              `[ensureRunWorktree] Source repo mapping path ${sourceMapping.localRepoPath} doesn't exist or is not a git repo, falling back to legacy mode`
+            );
+          }
+        }
+      } catch (error) {
+        serverLogger.warn(
+          `[ensureRunWorktree] Failed to check source repo mapping: ${String(error)}`
+        );
+      }
+
       const worktreeInfo = await getWorktreePath(
         {
           repoUrl,
           branch: branchName,
+          localRepoPath,
         },
         teamSlugOrId
       );
 
-      const res = await setupProjectWorkspace({
-        repoUrl,
-        branch: baseBranch || undefined,
-        worktreeInfo,
-        authenticatedRepoUrl,
-      });
+      // Use appropriate setup function based on mode
+      const repoMgr = RepositoryManager.getInstance();
+      let res: { success: boolean; worktreePath?: string; error?: string };
+      if (worktreeInfo.mode === "codex-style" && worktreeInfo.sourceRepoPath) {
+        res = await setupCodexStyleWorkspace(
+          {
+            repoUrl,
+            branch: baseBranch || undefined,
+            worktreeInfo,
+            authenticatedRepoUrl,
+          },
+          repoMgr
+        );
+      } else {
+        res = await setupProjectWorkspace({
+          repoUrl,
+          branch: baseBranch || undefined,
+          worktreeInfo,
+          authenticatedRepoUrl,
+        });
+      }
       if (!res.success || !res.worktreePath) {
         throw new Error(res.error || "Failed to set up worktree");
       }
