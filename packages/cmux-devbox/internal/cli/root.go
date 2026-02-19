@@ -51,7 +51,7 @@ func init() {
 	// Global flags available to all commands
 	rootCmd.PersistentFlags().BoolVar(&flagJSON, "json", false, "Output as JSON")
 	rootCmd.PersistentFlags().BoolVarP(&flagVerbose, "verbose", "v", false, "Verbose output")
-	rootCmd.PersistentFlags().StringVarP(&flagProvider, "provider", "p", "", "Sandbox provider: morph (default), pve-lxc")
+	rootCmd.PersistentFlags().StringVarP(&flagProvider, "provider", "p", "", "Sandbox provider: morph, pve-lxc (auto-detected from PVE_API_URL/PVE_API_TOKEN env vars)")
 
 	// Config override flags (override env vars and build-time values)
 	rootCmd.PersistentFlags().StringVar(&flagAPIURL, "api-url", "", "Override API URL (default: https://manaflow.com)")

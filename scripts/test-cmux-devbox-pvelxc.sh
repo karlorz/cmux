@@ -15,6 +15,9 @@ fi
 echo "Building cmux-devbox..."
 make install-cmux-devbox-dev
 
+# Ensure ~/.local/bin is on PATH (where install-cmux-devbox-dev installs the binary)
+export PATH="$HOME/.local/bin:$PATH"
+
 ID=""
 cleanup() {
   if [[ -n "${ID}" ]]; then

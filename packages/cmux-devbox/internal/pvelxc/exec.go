@@ -81,6 +81,10 @@ func (c *Client) tryHTTPExec(ctx context.Context, host string, command string, t
 
 	resp, err := c.execHTTP.Do(req)
 	if err != nil {
+		// Propagate context errors immediately (don't retry on cancellation/timeout)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, nil
 	}
 	defer resp.Body.Close()
@@ -180,13 +184,29 @@ func (c *Client) ExecCommand(ctx context.Context, instanceID string, command str
 
 	for _, host := range candidates {
 		for attempt := 1; attempt <= maxRetries; attempt++ {
+			// Check context before each attempt
+			if ctx.Err() != nil {
+				return "", "", -1, ctx.Err()
+			}
+
 			result, err := c.tryHTTPExec(ctx, host, command, 0)
+			if err != nil {
+				// Propagate context errors immediately
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					return "", "", -1, err
+				}
+			}
 			if err == nil && result != nil {
 				return result.Stdout, result.Stderr, result.ExitCode, nil
 			}
 
 			if attempt < maxRetries {
-				time.Sleep(time.Duration(attempt) * baseDelay)
+				// Use select to respect context cancellation during sleep
+				select {
+				case <-ctx.Done():
+					return "", "", -1, ctx.Err()
+				case <-time.After(time.Duration(attempt) * baseDelay):
+				}
 			}
 		}
 	}
