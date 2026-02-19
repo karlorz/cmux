@@ -28,7 +28,7 @@ LDFLAGS := -s -w \
            -X '$(AUTH_PKG).CmuxURL=$(CMUX_API_URL)' \
            -X '$(AUTH_PKG).ConvexSiteURL=$(CONVEX_SITE_URL)'
 
-.PHONY: build clean test install fmt lint run deps build-all build-npm npm-publish
+.PHONY: build clean test install install-dev fmt lint run deps build-all build-npm npm-publish
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o bin/cmux-devbox ./cmd/cmux-devbox
@@ -131,6 +131,19 @@ build-dev:
 	go build -ldflags "-X main.Version=$(VERSION) -X main.Commit=$(COMMIT) -X main.BuildTime=$(BUILD_TIME) -X main.Mode=dev" \
 		-o bin/cmux-devbox ./cmd/cmux-devbox
 	@echo "Dev build complete: bin/cmux-devbox"
+
+# Install dev build to user directory (matches install-cloudrouter-dev pattern)
+install-dev: build-dev
+	@mkdir -p ~/.local/bin
+	@cp bin/cmux-devbox ~/.local/bin/cmux-devbox
+	@echo "Installed to ~/.local/bin/cmux-devbox"
+	@if ! echo "$$PATH" | grep -q "$$HOME/.local/bin"; then \
+		echo ""; \
+		echo "Add to your shell profile (~/.zshrc or ~/.bashrc):"; \
+		echo '  export PATH="$$HOME/.local/bin:$$PATH"'; \
+	else \
+		echo "Run 'cmux-devbox --version' to verify."; \
+	fi
 
 # Staging build - bakes in staging config
 # REQUIRED: STAGING_CONVEX_URL must be explicitly set to prevent fallback to prod

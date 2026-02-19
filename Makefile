@@ -11,7 +11,7 @@ ENV_FILE_PROD ?= .env.production
 # Cloudrouter dev version (distinct from prod npm version)
 CLOUDROUTER_DEV_VERSION ?= 0.1.0-dev
 
-.PHONY: convex-up convex-down convex-restart convex-clean convex-init convex-init-prod convex-clear convex-clear-prod convex-reset convex-reset-prod convex-fresh dev dev-electron install-cloudrouter-dev sync-upstream-tags chrome-debug
+.PHONY: convex-up convex-down convex-restart convex-clean convex-init convex-init-prod convex-clear convex-clear-prod convex-reset convex-reset-prod convex-fresh dev dev-electron install-cloudrouter-dev install-cmux-devbox-dev sync-upstream-tags chrome-debug
 .PHONY: clone-proxy-linux-amd64 clone-proxy-linux-arm64 screenshot-collector-upload screenshot-collector-upload-prod
 .PHONY: cloudrouter-npm-republish-prod cloudrouter-npm-republish-prod-dry
 
@@ -134,6 +134,16 @@ install-cloudrouter-dev:
 		echo "  1. Add CLOUDROUTER_REFRESH_TOKEN to .env (recommended for dev)"; \
 		echo "  2. Or run 'cloudrouter login' (requires dev server: make dev)"; \
 	fi
+
+# Build and install cmux-devbox CLI (dev mode) to ~/.local/bin
+install-cmux-devbox-dev:
+	@echo "Building and installing cmux-devbox (dev mode)..."
+	$(MAKE) -C packages/cmux-devbox install-dev
+	@echo ""
+	@echo "Verifying installation..."
+	@cmux-devbox --version || ~/.local/bin/cmux-devbox --version
+	@echo ""
+	@echo "cmux-devbox ready! Run: cmux-devbox --help"
 
 # Start Chrome with remote debugging on port 9222 (for CDP/MCP)
 chrome-debug:

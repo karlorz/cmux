@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/cmux-cli/cmux-devbox/internal/auth"
+	"github.com/cmux-cli/cmux-devbox/internal/provider"
+	"github.com/cmux-cli/cmux-devbox/internal/pvelxc"
 	"github.com/cmux-cli/cmux-devbox/internal/vm"
 	"github.com/spf13/cobra"
 )
@@ -52,40 +54,64 @@ Examples:
 
 		instanceID := args[0]
 
-		teamSlug, err := auth.GetTeamSlug()
-		if err != nil {
-			return fmt.Errorf("failed to get team: %w", err)
-		}
-
-		client, err := vm.NewClient()
-		if err != nil {
-			return fmt.Errorf("failed to create client: %w", err)
-		}
-		client.SetTeamSlug(teamSlug)
-
-		instance, err := client.GetInstance(ctx, instanceID)
-		if err != nil {
-			return fmt.Errorf("failed to get instance: %w", err)
-		}
-
-		if instance.WorkerURL == "" {
-			return fmt.Errorf("worker URL not available")
-		}
-
-		// Generate one-time auth token
-		token, err := getAuthToken(ctx, client, instanceID)
+		selected, err := resolveProviderForInstance(instanceID)
 		if err != nil {
 			return err
 		}
 
-		// Build auth URL that sets session cookie and redirects to VS Code
-		authURL, err := buildAuthURL(instance.WorkerURL, "/code/?folder=/home/cmux/workspace", token)
-		if err != nil {
-			return err
-		}
+		switch selected {
+		case provider.PveLxc:
+			client, err := pvelxc.NewClientFromEnv()
+			if err != nil {
+				return fmt.Errorf("failed to create PVE LXC client: %w\nSet PVE_API_URL and PVE_API_TOKEN", err)
+			}
+			instance, err := client.GetInstance(ctx, instanceID)
+			if err != nil {
+				return fmt.Errorf("failed to get instance: %w", err)
+			}
+			if instance.VSCodeURL == "" {
+				return fmt.Errorf("VS Code URL not available")
+			}
+			fmt.Printf("Opening VS Code...\n")
+			return openBrowser(instance.VSCodeURL)
+		case provider.Morph:
+			teamSlug, err := auth.GetTeamSlug()
+			if err != nil {
+				return fmt.Errorf("failed to get team: %w", err)
+			}
 
-		fmt.Printf("Opening VS Code...\n")
-		return openBrowser(authURL)
+			client, err := vm.NewClient()
+			if err != nil {
+				return fmt.Errorf("failed to create client: %w", err)
+			}
+			client.SetTeamSlug(teamSlug)
+
+			instance, err := client.GetInstance(ctx, instanceID)
+			if err != nil {
+				return fmt.Errorf("failed to get instance: %w", err)
+			}
+
+			if instance.WorkerURL == "" {
+				return fmt.Errorf("worker URL not available")
+			}
+
+			// Generate one-time auth token
+			token, err := getAuthToken(ctx, client, instanceID)
+			if err != nil {
+				return err
+			}
+
+			// Build auth URL that sets session cookie and redirects to VS Code
+			authURL, err := buildAuthURL(instance.WorkerURL, "/code/?folder=/home/cmux/workspace", token)
+			if err != nil {
+				return err
+			}
+
+			fmt.Printf("Opening VS Code...\n")
+			return openBrowser(authURL)
+		default:
+			return fmt.Errorf("unsupported provider: %s", selected)
+		}
 	},
 }
 
@@ -103,40 +129,64 @@ Examples:
 
 		instanceID := args[0]
 
-		teamSlug, err := auth.GetTeamSlug()
-		if err != nil {
-			return fmt.Errorf("failed to get team: %w", err)
-		}
-
-		client, err := vm.NewClient()
-		if err != nil {
-			return fmt.Errorf("failed to create client: %w", err)
-		}
-		client.SetTeamSlug(teamSlug)
-
-		instance, err := client.GetInstance(ctx, instanceID)
-		if err != nil {
-			return fmt.Errorf("failed to get instance: %w", err)
-		}
-
-		if instance.WorkerURL == "" {
-			return fmt.Errorf("worker URL not available")
-		}
-
-		// Generate one-time auth token
-		token, err := getAuthToken(ctx, client, instanceID)
+		selected, err := resolveProviderForInstance(instanceID)
 		if err != nil {
 			return err
 		}
 
-		// Build auth URL that sets session cookie and redirects to VNC
-		authURL, err := buildAuthURL(instance.WorkerURL, "/vnc/vnc.html?path=vnc/websockify&resize=scale&quality=9&compression=0", token)
-		if err != nil {
-			return err
-		}
+		switch selected {
+		case provider.PveLxc:
+			client, err := pvelxc.NewClientFromEnv()
+			if err != nil {
+				return fmt.Errorf("failed to create PVE LXC client: %w\nSet PVE_API_URL and PVE_API_TOKEN", err)
+			}
+			instance, err := client.GetInstance(ctx, instanceID)
+			if err != nil {
+				return fmt.Errorf("failed to get instance: %w", err)
+			}
+			if instance.VNCURL == "" {
+				return fmt.Errorf("VNC URL not available")
+			}
+			fmt.Printf("Opening VNC...\n")
+			return openBrowser(instance.VNCURL)
+		case provider.Morph:
+			teamSlug, err := auth.GetTeamSlug()
+			if err != nil {
+				return fmt.Errorf("failed to get team: %w", err)
+			}
 
-		fmt.Printf("Opening VNC...\n")
-		return openBrowser(authURL)
+			client, err := vm.NewClient()
+			if err != nil {
+				return fmt.Errorf("failed to create client: %w", err)
+			}
+			client.SetTeamSlug(teamSlug)
+
+			instance, err := client.GetInstance(ctx, instanceID)
+			if err != nil {
+				return fmt.Errorf("failed to get instance: %w", err)
+			}
+
+			if instance.WorkerURL == "" {
+				return fmt.Errorf("worker URL not available")
+			}
+
+			// Generate one-time auth token
+			token, err := getAuthToken(ctx, client, instanceID)
+			if err != nil {
+				return err
+			}
+
+			// Build auth URL that sets session cookie and redirects to VNC
+			authURL, err := buildAuthURL(instance.WorkerURL, "/vnc/vnc.html?path=vnc/websockify&resize=scale&quality=9&compression=0", token)
+			if err != nil {
+				return err
+			}
+
+			fmt.Printf("Opening VNC...\n")
+			return openBrowser(authURL)
+		default:
+			return fmt.Errorf("unsupported provider: %s", selected)
+		}
 	},
 }
 
@@ -154,40 +204,52 @@ Examples:
 
 		instanceID := args[0]
 
-		teamSlug, err := auth.GetTeamSlug()
+		selected, err := resolveProviderForInstance(instanceID)
 		if err != nil {
-			return fmt.Errorf("failed to get team: %w", err)
+			return err
 		}
 
-		client, err := vm.NewClient()
-		if err != nil {
-			return fmt.Errorf("failed to create client: %w", err)
+		switch selected {
+		case provider.PveLxc:
+			return fmt.Errorf("ssh is not supported for pve-lxc instances (use 'cmux status %s' for service URLs)", instanceID)
+		case provider.Morph:
+			teamSlug, err := auth.GetTeamSlug()
+			if err != nil {
+				return fmt.Errorf("failed to get team: %w", err)
+			}
+
+			client, err := vm.NewClient()
+			if err != nil {
+				return fmt.Errorf("failed to create client: %w", err)
+			}
+			client.SetTeamSlug(teamSlug)
+
+			sshCommand, err := client.GetSSHCredentials(ctx, instanceID)
+			if err != nil {
+				return fmt.Errorf("failed to get SSH credentials: %w", err)
+			}
+
+			fmt.Printf("Connecting: %s\n", sshCommand)
+
+			// Parse SSH command: "ssh token@ssh.cloud.morph.so"
+			parts := strings.Fields(sshCommand)
+			if len(parts) < 2 {
+				return fmt.Errorf("invalid SSH command format")
+			}
+
+			sshExec := exec.Command("ssh",
+				"-o", "StrictHostKeyChecking=no",
+				"-o", "UserKnownHostsFile=/dev/null",
+				parts[1],
+			)
+			sshExec.Stdin = os.Stdin
+			sshExec.Stdout = os.Stdout
+			sshExec.Stderr = os.Stderr
+
+			return sshExec.Run()
+		default:
+			return fmt.Errorf("unsupported provider: %s", selected)
 		}
-		client.SetTeamSlug(teamSlug)
-
-		sshCommand, err := client.GetSSHCredentials(ctx, instanceID)
-		if err != nil {
-			return fmt.Errorf("failed to get SSH credentials: %w", err)
-		}
-
-		fmt.Printf("Connecting: %s\n", sshCommand)
-
-		// Parse SSH command: "ssh token@ssh.cloud.morph.so"
-		parts := strings.Fields(sshCommand)
-		if len(parts) < 2 {
-			return fmt.Errorf("invalid SSH command format")
-		}
-
-		sshExec := exec.Command("ssh",
-			"-o", "StrictHostKeyChecking=no",
-			"-o", "UserKnownHostsFile=/dev/null",
-			parts[1],
-		)
-		sshExec.Stdin = os.Stdin
-		sshExec.Stdout = os.Stdout
-		sshExec.Stderr = os.Stderr
-
-		return sshExec.Run()
 	},
 }
 
@@ -205,52 +267,83 @@ Examples:
 
 		instanceID := args[0]
 
-		teamSlug, err := auth.GetTeamSlug()
+		selected, err := resolveProviderForInstance(instanceID)
 		if err != nil {
-			return fmt.Errorf("failed to get team: %w", err)
+			return err
 		}
 
-		client, err := vm.NewClient()
-		if err != nil {
-			return fmt.Errorf("failed to create client: %w", err)
-		}
-		client.SetTeamSlug(teamSlug)
-
-		instance, err := client.GetInstance(ctx, instanceID)
-		if err != nil {
-			return fmt.Errorf("failed to get instance: %w", err)
-		}
-
-		fmt.Printf("ID:       %s\n", instance.ID)
-		fmt.Printf("Status:   %s\n", instance.Status)
-
-		// Generate authenticated URLs if the instance is running
-		if instance.WorkerURL != "" && instance.Status == "running" {
-			token, err := getAuthToken(ctx, client, instanceID)
+		switch selected {
+		case provider.PveLxc:
+			client, err := pvelxc.NewClientFromEnv()
 			if err != nil {
-				// Fall back to raw URLs
-				if instance.VSCodeURL != "" {
-					fmt.Printf("VS Code:  %s\n", instance.VSCodeURL)
-				}
-				if instance.VNCURL != "" {
-					fmt.Printf("VNC:      %s\n", instance.VNCURL)
-				}
-			} else {
-				codeAuthURL, _ := buildAuthURL(instance.WorkerURL, "/code/?folder=/home/cmux/workspace", token)
-				vncAuthURL, _ := buildAuthURL(instance.WorkerURL, "/vnc/vnc.html?path=vnc/websockify&resize=scale&quality=9&compression=0", token)
-				fmt.Printf("VS Code:  %s\n", codeAuthURL)
-				fmt.Printf("VNC:      %s\n", vncAuthURL)
+				return fmt.Errorf("failed to create PVE LXC client: %w\nSet PVE_API_URL and PVE_API_TOKEN", err)
 			}
-		} else {
+			instance, err := client.GetInstance(ctx, instanceID)
+			if err != nil {
+				return fmt.Errorf("failed to get instance: %w", err)
+			}
+
+			fmt.Printf("ID:       %s\n", instance.ID)
+			fmt.Printf("Status:   %s\n", instance.Status)
 			if instance.VSCodeURL != "" {
 				fmt.Printf("VS Code:  %s\n", instance.VSCodeURL)
 			}
 			if instance.VNCURL != "" {
 				fmt.Printf("VNC:      %s\n", instance.VNCURL)
 			}
-		}
+			if instance.XTermURL != "" {
+				fmt.Printf("XTerm:    %s\n", instance.XTermURL)
+			}
+			return nil
+		case provider.Morph:
+			teamSlug, err := auth.GetTeamSlug()
+			if err != nil {
+				return fmt.Errorf("failed to get team: %w", err)
+			}
 
-		return nil
+			client, err := vm.NewClient()
+			if err != nil {
+				return fmt.Errorf("failed to create client: %w", err)
+			}
+			client.SetTeamSlug(teamSlug)
+
+			instance, err := client.GetInstance(ctx, instanceID)
+			if err != nil {
+				return fmt.Errorf("failed to get instance: %w", err)
+			}
+
+			fmt.Printf("ID:       %s\n", instance.ID)
+			fmt.Printf("Status:   %s\n", instance.Status)
+
+			// Generate authenticated URLs if the instance is running
+			if instance.WorkerURL != "" && instance.Status == "running" {
+				token, err := getAuthToken(ctx, client, instanceID)
+				if err != nil {
+					// Fall back to raw URLs
+					if instance.VSCodeURL != "" {
+						fmt.Printf("VS Code:  %s\n", instance.VSCodeURL)
+					}
+					if instance.VNCURL != "" {
+						fmt.Printf("VNC:      %s\n", instance.VNCURL)
+					}
+				} else {
+					codeAuthURL, _ := buildAuthURL(instance.WorkerURL, "/code/?folder=/home/cmux/workspace", token)
+					vncAuthURL, _ := buildAuthURL(instance.WorkerURL, "/vnc/vnc.html?path=vnc/websockify&resize=scale&quality=9&compression=0", token)
+					fmt.Printf("VS Code:  %s\n", codeAuthURL)
+					fmt.Printf("VNC:      %s\n", vncAuthURL)
+				}
+			} else {
+				if instance.VSCodeURL != "" {
+					fmt.Printf("VS Code:  %s\n", instance.VSCodeURL)
+				}
+				if instance.VNCURL != "" {
+					fmt.Printf("VNC:      %s\n", instance.VNCURL)
+				}
+			}
+			return nil
+		default:
+			return fmt.Errorf("unsupported provider: %s", selected)
+		}
 	},
 }
 

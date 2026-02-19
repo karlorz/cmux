@@ -10,6 +10,12 @@ make build
 ./bin/cmux-devbox --help
 ```
 
+Dev install (repo root):
+
+```bash
+make install-cmux-devbox-dev
+```
+
 ## Quick Start
 
 ```bash
@@ -19,6 +25,11 @@ cmux auth login
 # 2. Create a VM
 cmux start                     # Creates VM, returns ID (e.g., cmux_abc123)
 cmux start ./my-project        # Creates VM and syncs directory
+
+# PVE LXC (self-hosted)
+export PVE_API_URL=https://pve.example.com:8006
+export PVE_API_TOKEN=root@pam!token=secret
+cmux start -p pve-lxc          # Creates a container, returns ID (e.g., pvelxc-abc123)
 
 # 3. Access the VM
 cmux code cmux_abc123           # Open VS Code in browser
@@ -117,6 +128,7 @@ cmux ls                        # List all your VMs
 | `-h, --help` | Show help for a command |
 | `--json` | Output as JSON |
 | `-v, --verbose` | Verbose output |
+| `-p, --provider` | Provider (`morph` default, `pve-lxc`) |
 
 ## Command Details
 
@@ -129,6 +141,38 @@ cmux auth login
 cmux auth logout
 cmux auth status
 cmux auth whoami
+```
+
+## PVE LXC Provider
+
+Provider selection:
+
+```bash
+cmux start -p pve-lxc
+cmux start -p morph
+```
+
+Auto-detection: if `PVE_API_URL` and `PVE_API_TOKEN` are set, `cmux start` defaults to `pve-lxc`.
+
+Required environment variables:
+
+```bash
+PVE_API_URL=https://pve.example.com:8006
+PVE_API_TOKEN=root@pam!token=secret
+```
+
+Optional environment variables:
+
+```bash
+PVE_PUBLIC_DOMAIN=example.com   # Enables https://port-<port>-<id>.<domain> URLs
+PVE_NODE=pve-node-1             # Avoid auto-detecting node
+PVE_VERIFY_TLS=1                # Verify PVE API TLS certs (default is off)
+```
+
+E2E test script:
+
+```bash
+./scripts/test-cmux-devbox-pvelxc.sh
 ```
 
 ### `cmux code <id>`

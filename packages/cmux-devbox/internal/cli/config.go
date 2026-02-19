@@ -35,12 +35,12 @@ func init() {
 }
 
 type configOutput struct {
-	ProjectID      string `json:"project_id"`
-	CmuxURL        string `json:"cmux_url"`
-	ConvexSiteURL  string `json:"convex_site_url"`
-	StackAuthURL   string `json:"stack_auth_url"`
-	IsDev          bool   `json:"is_dev"`
-	BuildMode      string `json:"build_mode"`
+	ProjectID     string `json:"project_id"`
+	CmuxURL       string `json:"cmux_url"`
+	ConvexSiteURL string `json:"convex_site_url"`
+	StackAuthURL  string `json:"stack_auth_url"`
+	IsDev         bool   `json:"is_dev"`
+	BuildMode     string `json:"build_mode"`
 }
 
 func runConfig(cmd *cobra.Command, args []string) error {
