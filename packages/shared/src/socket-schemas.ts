@@ -665,6 +665,11 @@ export interface ClientToServerEvents {
   ) => void;
 }
 
+export interface LocalRepoNotFound {
+  repoFullName: string;
+  message: string;
+}
+
 export interface ServerToClientEvents {
   "git-status-response": (data: GitStatusResponse) => void;
   "git-file-changed": (data: GitFileChanged) => void;
@@ -676,6 +681,7 @@ export interface ServerToClientEvents {
   "task-started": (data: TaskStarted) => void;
   "task-failed": (data: TaskError) => void;
   "docker-pull-progress": (data: DockerPullProgress) => void;
+  "local-repo-not-found": (data: LocalRepoNotFound) => void;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
