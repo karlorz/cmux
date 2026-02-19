@@ -37,6 +37,13 @@ ENV CARGO_TERM_COLOR=never \
   CARGO_PROFILE_RELEASE_STRIP=symbols \
   CARGO_TARGET_DIR=/workspace/target
 
+# Install libcap-dev required for codex-linux-sandbox (bubblewrap compilation)
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+  apt-get update && apt-get install -y --no-install-recommends \
+  libcap-dev \
+  && rm -rf /var/lib/apt/lists/*
+
 RUN git clone https://github.com/agentclientprotocol/agent-client-protocol .tmp_acp_repos/agent-client-protocol && \
     git clone https://github.com/zed-industries/codex-acp .tmp_acp_repos/codex-acp && \
     cd .tmp_acp_repos/codex-acp && \
