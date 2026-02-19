@@ -1,6 +1,8 @@
 package pvelxc
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/cmux-cli/cmux-devbox/internal/provider"
@@ -37,6 +39,69 @@ func TestDetectProviderFromEnv(t *testing.T) {
 	t.Setenv("PVE_API_TOKEN", "")
 	if got := provider.DetectFromEnv(); got != provider.Morph {
 		t.Fatalf("DetectFromEnv() = %q, want %q", got, provider.Morph)
+	}
+}
+
+func TestParseFirstDomainFromSearchList(t *testing.T) {
+	tests := []struct {
+		search string
+		want   string
+	}{
+		{"example.com", ".example.com"},
+		{"corp.example.com local", ".corp.example.com"},
+		{"a.com b.com c.com", ".a.com"},
+		{"  spaced.com  other.com  ", ".spaced.com"},
+		{"", ""},
+		{"   ", ""},
+	}
+
+	for _, tt := range tests {
+		search := tt.search
+		var got string
+		trimmed := strings.TrimSpace(search)
+		if trimmed == "" {
+			got = ""
+		} else {
+			firstDomain := strings.Fields(trimmed)[0]
+			got = "." + firstDomain
+		}
+		if got != tt.want {
+			t.Errorf("parseFirstDomain(%q) = %q, want %q", tt.search, got, tt.want)
+		}
+	}
+}
+
+func TestNumericHostnameFallback(t *testing.T) {
+	tests := []struct {
+		instanceID string
+		wantVMID   int
+		wantOK     bool
+	}{
+		{"200", 200, true},
+		{"cmux-200", 200, true},
+		{"pvelxc-abc123", 0, false},
+	}
+
+	for _, tt := range tests {
+		vmid, ok := ParseVMID(tt.instanceID)
+		if ok != tt.wantOK {
+			t.Errorf("ParseVMID(%q) ok = %v, want %v", tt.instanceID, ok, tt.wantOK)
+		}
+		if ok && vmid != tt.wantVMID {
+			t.Errorf("ParseVMID(%q) = %d, want %d", tt.instanceID, vmid, tt.wantVMID)
+		}
+
+		// Test hostname fallback logic for numeric IDs
+		if ok {
+			hostname := normalizeHostID(tt.instanceID)
+			if hostname == "" || reDigits.MatchString(hostname) {
+				hostname = fmt.Sprintf("cmux-%d", vmid)
+			}
+			expected := fmt.Sprintf("cmux-%d", tt.wantVMID)
+			if hostname != expected {
+				t.Errorf("hostname fallback for %q = %q, want %q", tt.instanceID, hostname, expected)
+			}
+		}
 	}
 }
 

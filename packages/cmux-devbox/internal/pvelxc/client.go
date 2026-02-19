@@ -312,7 +312,9 @@ func (c *Client) getDomainSuffix(ctx context.Context) (string, error) {
 	if search == "" {
 		c.domainSuffix = ""
 	} else {
-		c.domainSuffix = "." + search
+		// Use only the first search domain (PVE may return space-separated list)
+		firstDomain := strings.Fields(search)[0]
+		c.domainSuffix = "." + firstDomain
 	}
 	c.domainFetched = true
 	return c.domainSuffix, nil
@@ -381,9 +383,19 @@ func (c *Client) waitForTask(ctx context.Context, upid string, timeout time.Dura
 
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		status, err := apiRequest[pveTaskStatus](ctx, c, http.MethodGet, fmt.Sprintf("/api2/json/nodes/%s/tasks/%s/status", node, url.PathEscape(upid)), nil)
 		if err != nil {
-			time.Sleep(2 * time.Second)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(2 * time.Second):
+			}
 			continue
 		}
 		if status.Status == "stopped" {
@@ -392,7 +404,12 @@ func (c *Client) waitForTask(ctx context.Context, upid string, timeout time.Dura
 			}
 			return nil
 		}
-		time.Sleep(2 * time.Second)
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
 	}
 
 	return errors.New("task timeout")
@@ -654,7 +671,9 @@ func (c *Client) GetInstance(ctx context.Context, instanceID string) (*Instance,
 	if ok {
 		if h, err := c.getContainerHostname(ctx, vmid); err == nil && h != "" {
 			hostname = normalizeHostID(h)
-		} else if hostname == "" {
+		}
+		// Always fallback to cmux-<vmid> for numeric-only hostnames
+		if hostname == "" || reDigits.MatchString(hostname) {
 			hostname = fmt.Sprintf("cmux-%d", vmid)
 		}
 	} else {

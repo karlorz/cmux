@@ -145,7 +145,9 @@ func (c *Client) ExecCommand(ctx context.Context, instanceID string, command str
 	if ok {
 		if h, err := c.getContainerHostname(ctx, vmid); err == nil && h != "" {
 			hostname = normalizeHostID(h)
-		} else if hostname == "" {
+		}
+		// Always fallback to cmux-<vmid> for numeric-only hostnames
+		if hostname == "" || reDigits.MatchString(hostname) {
 			hostname = fmt.Sprintf("cmux-%d", vmid)
 		}
 	} else {
