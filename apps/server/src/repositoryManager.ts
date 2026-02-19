@@ -876,6 +876,29 @@ export class RepositoryManager {
     }
   }
 
+  /**
+   * Fetch latest changes from remote for an existing local repository.
+   * Used for codex-style mode where we use existing local repos instead of cloning.
+   */
+  async fetchLatest(repoPath: string, branch?: string): Promise<void> {
+    serverLogger.info(`[fetchLatest] Fetching latest for ${repoPath}`);
+    try {
+      // Get the branch to fetch (use provided or detect default)
+      const targetBranch = branch || (await this.getDefaultBranch(repoPath));
+
+      // Fetch from origin
+      const fetchCmd = `git fetch origin ${targetBranch}`;
+      await this.executeGitCommand(fetchCmd, { cwd: repoPath });
+
+      serverLogger.info(
+        `[fetchLatest] Successfully fetched ${targetBranch} for ${repoPath}`
+      );
+    } catch (error) {
+      serverLogger.warn(`[fetchLatest] Failed to fetch: ${error}`);
+      // Don't throw - fetching is best-effort for existing repos
+    }
+  }
+
   private async pullLatestChanges(
     repoPath: string,
     branch: string,

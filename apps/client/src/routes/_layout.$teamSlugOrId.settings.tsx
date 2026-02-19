@@ -132,8 +132,8 @@ function SettingsComponent() {
   const [branchPrefix, setBranchPrefix] = useState<string>(DEFAULT_BRANCH_PREFIX);
   const [originalBranchPrefix, setOriginalBranchPrefix] = useState<string>(DEFAULT_BRANCH_PREFIX);
   // Worktree mode settings
-  const [worktreeMode, setWorktreeMode] = useState<"legacy" | "codex-style">("legacy");
-  const [originalWorktreeMode, setOriginalWorktreeMode] = useState<"legacy" | "codex-style">("legacy");
+  const [worktreeMode, setWorktreeMode] = useState<"legacy" | "codex-style">("codex-style");
+  const [originalWorktreeMode, setOriginalWorktreeMode] = useState<"legacy" | "codex-style">("codex-style");
   const [codexWorktreePathPattern, setCodexWorktreePathPattern] = useState<string>("");
   const [originalCodexWorktreePathPattern, setOriginalCodexWorktreePathPattern] = useState<string>("");
   const usedListRefs = useRef<Record<string, HTMLSpanElement | null>>({});
@@ -320,7 +320,7 @@ function SettingsComponent() {
     );
 
     // Worktree mode settings
-    const nextWorktreeMode = workspaceSettings?.worktreeMode ?? "legacy";
+    const nextWorktreeMode = workspaceSettings?.worktreeMode ?? "codex-style";
     setWorktreeMode((prev) =>
       prev === nextWorktreeMode ? prev : nextWorktreeMode
     );
@@ -884,8 +884,6 @@ function SettingsComponent() {
           ) : activeSection === "worktrees" ? (
             <WorktreesSection
               teamSlugOrId={teamSlugOrId}
-              worktreeMode={worktreeMode}
-              onWorktreeModeChange={setWorktreeMode}
               codexWorktreePathPattern={codexWorktreePathPattern}
               onCodexWorktreePathPatternChange={setCodexWorktreePathPattern}
             />

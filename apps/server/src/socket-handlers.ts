@@ -2578,30 +2578,41 @@ export function setupSocketHandlers(
           branchOverride?: string;
         }): Promise<FileInfo[]> => {
           // Use unauthenticated URL for path derivation (consistent folder names)
-          const projectPaths = await getProjectPaths(targetRepoUrl, safeTeam);
+          // Pass projectFullName for auto-detection of local repos
+          const projectPaths = await getProjectPaths(
+            targetRepoUrl,
+            safeTeam,
+            undefined,
+            repoFullName
+          );
 
-          await fs.mkdir(projectPaths.projectPath, { recursive: true });
-          await fs.mkdir(projectPaths.worktreesPath, { recursive: true });
-
-          // Inject GitHub OAuth token for private repo access
-          // Use authenticated URL for git operations, but store clean URL as remote
-          let authenticatedRepoUrl = targetRepoUrl;
-          const githubToken = await getGitHubOAuthToken();
-          if (githubToken && targetRepoUrl.startsWith("https://github.com/")) {
-            authenticatedRepoUrl = targetRepoUrl.replace(
-              "https://github.com/",
-              `https://x-access-token:${githubToken}@github.com/`
+          // Codex-style mode requires an existing local repo
+          // If no local repo found (mode is "legacy" as fallback), notify frontend and return empty
+          if (projectPaths.mode === "legacy") {
+            const repoDisplayName = repoFullName || targetRepoUrl;
+            serverLogger.warn(
+              `[create-local-workspace] No local repository found for ${repoDisplayName}. ` +
+                `Please add a source repo mapping in Settings > Worktrees, or clone the repository locally first.`
             );
+            // Emit event to frontend so it can show a notification/toast
+            socket.emit("local-repo-not-found", {
+              repoFullName: repoDisplayName,
+              message: `No local repository found for "${repoDisplayName}". Please clone the repository locally first, then add a source repo mapping in Settings > Worktrees.`,
+            });
+            return [];
           }
 
-          // Pass clean URL as remoteUrl to avoid persisting OAuth token in .git/config
-          // If branchOverride is undefined, ensureRepository auto-detects and fetches default branch
-          await repoManager.ensureRepository(
-            authenticatedRepoUrl,
-            projectPaths.originPath,
-            branchOverride,
-            targetRepoUrl // clean URL for remote storage
+          // Codex-style: originPath points to existing local repo, just fetch latest
+          serverLogger.info(
+            `[create-local-workspace] Using existing local repo at ${projectPaths.originPath}`
           );
+          try {
+            await repoManager.fetchLatest(projectPaths.originPath, branchOverride);
+          } catch (fetchErr) {
+            serverLogger.warn(
+              `[create-local-workspace] Failed to fetch latest: ${fetchErr}`
+            );
+          }
 
           // Get the branch name for worktree path (either override or detected default)
           const baseBranch =

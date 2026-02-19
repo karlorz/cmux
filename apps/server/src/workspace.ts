@@ -7,6 +7,98 @@ import { RepositoryManager } from "./repositoryManager";
 import { getConvex } from "./utils/convexClient";
 import { serverLogger } from "./utils/fileLogger";
 
+/**
+ * Auto-detect local repository path for a given repo name.
+ * Checks legacy cmux clone first, then common directories.
+ */
+async function autoDetectLocalRepoPath(
+  repoName: string,
+  projectFullName?: string
+): Promise<string | undefined> {
+  const homeDir = os.homedir();
+  const repoMgr = RepositoryManager.getInstance();
+
+  // First, check for existing legacy cmux clone - enables seamless migration
+  const legacyOriginPath = path.join(homeDir, "cmux", repoName, "origin");
+  try {
+    await fs.access(legacyOriginPath);
+    await fs.access(path.join(legacyOriginPath, ".git"));
+    serverLogger.info(
+      `[autoDetectLocalRepoPath] Found legacy cmux clone at ${legacyOriginPath}, migrating to codex-style`
+    );
+    return legacyOriginPath;
+  } catch {
+    // No legacy clone, continue with other paths
+  }
+
+  const commonPaths = [
+    // Common code directories
+    path.join(homeDir, "code", repoName),
+    path.join(homeDir, "Code", repoName),
+    path.join(homeDir, "projects", repoName),
+    path.join(homeDir, "Projects", repoName),
+    path.join(homeDir, "dev", repoName),
+    path.join(homeDir, "Dev", repoName),
+    path.join(homeDir, "src", repoName),
+    path.join(homeDir, "workspace", repoName),
+    path.join(homeDir, "Workspace", repoName),
+    path.join(homeDir, "repos", repoName),
+    path.join(homeDir, "Repos", repoName),
+    path.join(homeDir, "git", repoName),
+    path.join(homeDir, "GitHub", repoName),
+    path.join(homeDir, "github", repoName),
+    // Desktop subdirectories
+    path.join(homeDir, "Desktop", "code", repoName),
+    path.join(homeDir, "Desktop", "Code", repoName),
+    path.join(homeDir, "Desktop", "projects", repoName),
+    path.join(homeDir, "Desktop", repoName),
+    // Documents subdirectories
+    path.join(homeDir, "Documents", "code", repoName),
+    path.join(homeDir, "Documents", "Code", repoName),
+    path.join(homeDir, "Documents", "projects", repoName),
+    // Direct in home
+    path.join(homeDir, repoName),
+  ];
+
+  for (const candidatePath of commonPaths) {
+    try {
+      await fs.access(candidatePath);
+      await fs.access(path.join(candidatePath, ".git"));
+      // Verify the remote matches if we have projectFullName
+      if (projectFullName) {
+        try {
+          const { stdout } = await repoMgr.executeGitCommand(
+            "git remote get-url origin",
+            { cwd: candidatePath }
+          );
+          const remoteUrl = stdout.trim();
+          if (
+            remoteUrl.includes(projectFullName) ||
+            remoteUrl.includes(projectFullName.replace("/", ":"))
+          ) {
+            serverLogger.info(
+              `[autoDetectLocalRepoPath] Found local repo for ${projectFullName} at ${candidatePath}`
+            );
+            return candidatePath;
+          }
+        } catch {
+          // Remote check failed, skip
+        }
+      } else {
+        // No projectFullName to verify, just use it
+        serverLogger.info(
+          `[autoDetectLocalRepoPath] Found local repo at ${candidatePath}`
+        );
+        return candidatePath;
+      }
+    } catch {
+      // Path doesn't exist, skip
+    }
+  }
+
+  return undefined;
+}
+
 interface WorkspaceResult {
   success: boolean;
   worktreePath?: string;
@@ -77,6 +169,8 @@ export async function getWorktreePath(
     branch: string;
     /** Optional local repo path for Codex-style mode */
     localRepoPath?: string;
+    /** Optional project full name (owner/repo) for better auto-detection */
+    projectFullName?: string;
   },
   teamSlugOrId: string
 ): Promise<WorktreeInfo> {
@@ -85,12 +179,31 @@ export async function getWorktreePath(
     teamSlugOrId,
   });
 
-  const mode: WorktreeMode = settings?.worktreeMode ?? "legacy";
+  const mode: WorktreeMode = settings?.worktreeMode ?? "codex-style";
   const repoName = extractRepoName(args.repoUrl);
   const appDataPath = await getAppDataPath();
 
-  // Codex-style mode: use existing local repo as source
-  if (mode === "codex-style" && args.localRepoPath) {
+  // Try to find a local repo path for codex-style mode
+  let localRepoPath = args.localRepoPath;
+
+  // Auto-detect if not provided and mode is codex-style
+  if (mode === "codex-style" && !localRepoPath) {
+    serverLogger.info(
+      `[getWorktreePath] Auto-detecting local repo for ${repoName}`
+    );
+    localRepoPath = await autoDetectLocalRepoPath(
+      repoName,
+      args.projectFullName
+    );
+    if (localRepoPath) {
+      serverLogger.info(
+        `[getWorktreePath] Auto-detected local repo at ${localRepoPath}`
+      );
+    }
+  }
+
+  // Codex-style mode: requires an existing local repo
+  if (mode === "codex-style" && localRepoPath) {
     const shortId = generateShortId();
     const worktreeBasePath = getCodexWorktreeBasePath(
       settings?.codexWorktreePathPattern
@@ -102,18 +215,29 @@ export async function getWorktreePath(
       appDataPath,
       projectsPath: worktreeBasePath,
       projectPath: worktreesPath,
-      originPath: args.localRepoPath, // Key difference: use existing local repo
+      originPath: localRepoPath, // Use existing local repo
       worktreesPath,
       worktreePath,
       repoName,
       branch: args.branch,
       mode: "codex-style",
       shortId,
-      sourceRepoPath: args.localRepoPath,
+      sourceRepoPath: localRepoPath,
     };
   }
 
-  // Legacy mode: clone to ~/cmux/<repo>/origin/
+  // No local repo found for codex-style mode - throw error
+  // User must add a source repo mapping in Settings > Worktrees
+  if (mode === "codex-style" && !localRepoPath) {
+    const errorMsg =
+      `No local repository found for "${repoName}". ` +
+      `Please clone the repository locally first, or add a source repo mapping in Settings > Worktrees.`;
+    serverLogger.error(`[getWorktreePath] ${errorMsg}`);
+    throw new Error(errorMsg);
+  }
+
+  // Legacy mode (only reached if settings.worktreeMode is explicitly "legacy")
+  // This path is kept for backward compatibility but not used by default
   let projectsPath: string;
 
   if (settings?.worktreePath) {
@@ -179,7 +303,8 @@ export async function getWorktreePathCodexStyle(args: {
 export async function getProjectPaths(
   repoUrl: string,
   teamSlugOrId: string,
-  localRepoPath?: string
+  localRepoPath?: string,
+  projectFullName?: string
 ): Promise<{
   appDataPath: string;
   projectsPath: string;
@@ -193,47 +318,58 @@ export async function getProjectPaths(
     teamSlugOrId,
   });
 
-  const mode: WorktreeMode = settings?.worktreeMode ?? "legacy";
+  const mode: WorktreeMode = settings?.worktreeMode ?? "codex-style";
   const repoName = extractRepoName(repoUrl);
   const appDataPath = await getAppDataPath();
 
-  // Codex-style mode
-  if (mode === "codex-style" && localRepoPath) {
+  // Try to find a local repo path for codex-style mode
+  let effectiveLocalRepoPath = localRepoPath;
+
+  // Auto-detect if not provided and mode is codex-style
+  if (mode === "codex-style" && !effectiveLocalRepoPath) {
+    serverLogger.info(
+      `[getProjectPaths] Auto-detecting local repo for ${repoName}`
+    );
+    effectiveLocalRepoPath = await autoDetectLocalRepoPath(
+      repoName,
+      projectFullName
+    );
+    if (effectiveLocalRepoPath) {
+      serverLogger.info(
+        `[getProjectPaths] Auto-detected local repo at ${effectiveLocalRepoPath}`
+      );
+    }
+  }
+
+  // Codex-style mode: requires an existing local repo
+  if (mode === "codex-style" && effectiveLocalRepoPath) {
     const worktreeBasePath = getCodexWorktreeBasePath(
       settings?.codexWorktreePathPattern
     );
     return {
       appDataPath,
       projectsPath: worktreeBasePath,
-      projectPath: localRepoPath, // Use local repo as project path
-      originPath: localRepoPath,
+      projectPath: effectiveLocalRepoPath,
+      originPath: effectiveLocalRepoPath,
       worktreesPath: worktreeBasePath,
       repoName,
       mode: "codex-style",
     };
   }
 
-  // Legacy mode
-  let projectsPath: string;
-  if (settings?.worktreePath) {
-    const expandedPath = settings.worktreePath.replace(/^~/, os.homedir());
-    projectsPath = expandedPath;
-  } else {
-    projectsPath = path.join(os.homedir(), "cmux");
-  }
-
-  const projectPath = path.join(projectsPath, repoName);
-  const originPath = path.join(projectPath, "origin");
-  const worktreesPath = path.join(projectPath, "worktrees");
-
+  // No local repo found - return "legacy" mode flag so caller can handle
+  // (e.g., show warning to user to add source repo mapping)
+  serverLogger.warn(
+    `[getProjectPaths] No local repo found for ${repoName}. User should add a source repo mapping in Settings > Worktrees.`
+  );
   return {
     appDataPath,
-    projectsPath,
-    projectPath,
-    originPath,
-    worktreesPath,
+    projectsPath: "",
+    projectPath: "",
+    originPath: "",
+    worktreesPath: "",
     repoName,
-    mode: "legacy",
+    mode: "legacy", // Indicates no local repo found
   };
 }
 

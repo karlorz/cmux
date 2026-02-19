@@ -1,6 +1,5 @@
 import { SettingRow } from "@/components/settings/SettingRow";
 import { SettingSection } from "@/components/settings/SettingSection";
-import { SettingSegmented } from "@/components/settings/SettingSegmented";
 import { Button } from "@/components/ui/button";
 import { api } from "@cmux/convex/api";
 import type { Doc } from "@cmux/convex/dataModel";
@@ -11,20 +10,14 @@ import { FolderGit2, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-type WorktreeMode = "legacy" | "codex-style";
-
 interface WorktreesSectionProps {
   teamSlugOrId: string;
-  worktreeMode: WorktreeMode;
-  onWorktreeModeChange: (mode: WorktreeMode) => void;
   codexWorktreePathPattern: string;
   onCodexWorktreePathPatternChange: (value: string) => void;
 }
 
 export function WorktreesSection({
   teamSlugOrId,
-  worktreeMode,
-  onWorktreeModeChange,
   codexWorktreePathPattern,
   onCodexWorktreePathPatternChange,
 }: WorktreesSectionProps) {
@@ -133,168 +126,149 @@ export function WorktreesSection({
   return (
     <div className="space-y-6">
       <SettingSection
-        title="Worktree Mode"
-        description="Choose how cmux creates worktrees for your tasks"
+        title="Worktree Settings"
+        description="cmux uses your existing local repos to create worktrees at ~/.cmux/worktrees/{id}/{repo}/. Local repos are auto-detected from common locations."
       >
-        <SettingSegmented
-          label="Mode"
-          description={
-            worktreeMode === "legacy"
-              ? "Legacy: Creates a separate clone at ~/cmux/<repo>/origin/ for each project"
-              : "Codex-style: Uses your existing local repos as the source, creating worktrees at ~/.cmux/worktrees/{id}/{repo}/"
-          }
-          value={worktreeMode}
-          options={[
-            { value: "legacy", label: "Legacy" },
-            { value: "codex-style", label: "Codex-style" },
-          ]}
-          onValueChange={(value) => onWorktreeModeChange(value as WorktreeMode)}
-        />
-
-        {worktreeMode === "codex-style" && (
-          <SettingRow
-            label="Worktree path pattern"
-            description="Custom path for Codex-style worktrees. Use ~ for home directory."
-            noBorder
-          >
-            <div className="w-full sm:w-[20rem]">
-              <input
-                type="text"
-                value={codexWorktreePathPattern}
-                onChange={(e) => onCodexWorktreePathPatternChange(e.target.value)}
-                className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-                placeholder="~/.cmux/worktrees/"
-                autoComplete="off"
-              />
-            </div>
-          </SettingRow>
-        )}
+        <SettingRow
+          label="Worktree path pattern"
+          description="Custom path for worktrees. Use ~ for home directory."
+          noBorder
+        >
+          <div className="w-full sm:w-[20rem]">
+            <input
+              type="text"
+              value={codexWorktreePathPattern}
+              onChange={(e) => onCodexWorktreePathPatternChange(e.target.value)}
+              className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+              placeholder="~/.cmux/worktrees/"
+              autoComplete="off"
+            />
+          </div>
+        </SettingRow>
       </SettingSection>
 
-      {worktreeMode === "codex-style" && (
-        <SettingSection
-          title="Source Repo Mappings"
-          description="Map GitHub repositories to local filesystem paths. When you start a task, cmux will use this local repo instead of cloning."
-        >
-          {/* Add mapping form */}
-          {showAddMappingForm ? (
-            <div className="border-b border-neutral-200 px-4 py-4 dark:border-neutral-800">
-              <div className="space-y-3">
-                <div>
-                  <label
-                    htmlFor="projectFullName"
-                    className="mb-1 block text-xs font-medium text-neutral-700 dark:text-neutral-300"
-                  >
-                    Repository (owner/repo)
-                  </label>
-                  <input
-                    id="projectFullName"
-                    type="text"
-                    value={newProjectFullName}
-                    onChange={(e) => setNewProjectFullName(e.target.value)}
-                    className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-500"
-                    placeholder="karlorz/testing-repo-1"
-                    autoComplete="off"
-                  />
-                </div>
-                <div>
-                  <label
-                    htmlFor="localRepoPath"
-                    className="mb-1 block text-xs font-medium text-neutral-700 dark:text-neutral-300"
-                  >
-                    Local path
-                  </label>
-                  <input
-                    id="localRepoPath"
-                    type="text"
-                    value={newLocalRepoPath}
-                    onChange={(e) => setNewLocalRepoPath(e.target.value)}
-                    className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-500"
-                    placeholder="/Users/karlchow/code/testing-repo-1"
-                    autoComplete="off"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    onClick={handleAddMapping}
-                    disabled={addSourceRepoMutation.isPending}
-                  >
-                    {addSourceRepoMutation.isPending ? "Adding..." : "Add Mapping"}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setShowAddMappingForm(false);
-                      setNewProjectFullName("");
-                      setNewLocalRepoPath("");
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowAddMappingForm(true)}
-                className="gap-1.5"
-              >
-                <Plus className="h-4 w-4" />
-                Add Mapping
-              </Button>
-            </div>
-          )}
-
-          {/* Existing mappings list */}
-          {sourceRepoMappings && sourceRepoMappings.length > 0 ? (
-            <div className="divide-y divide-neutral-200 dark:divide-neutral-800">
-              {sourceRepoMappings.map((mapping: Doc<"sourceRepoMappings">) => (
-                <div
-                  key={mapping._id}
-                  className="flex items-center justify-between px-4 py-3"
+      <SettingSection
+        title="Source Repo Mappings"
+        description="Map GitHub repositories to local filesystem paths. Mappings are auto-detected from common locations (~/code, ~/Desktop/code, etc.) but you can add custom mappings here."
+      >
+        {/* Add mapping form */}
+        {showAddMappingForm ? (
+          <div className="border-b border-neutral-200 px-4 py-4 dark:border-neutral-800">
+            <div className="space-y-3">
+              <div>
+                <label
+                  htmlFor="projectFullName"
+                  className="mb-1 block text-xs font-medium text-neutral-700 dark:text-neutral-300"
                 >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                      {mapping.projectFullName}
-                    </p>
-                    <p className="mt-0.5 truncate text-xs text-neutral-500 dark:text-neutral-400">
-                      {mapping.localRepoPath}
-                    </p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() =>
-                      removeSourceRepoMutation.mutate(mapping.projectFullName)
-                    }
-                    disabled={removeSourceRepoMutation.isPending}
-                    className="ml-2 text-neutral-500 hover:text-red-600 dark:text-neutral-400 dark:hover:text-red-400"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            !showAddMappingForm && (
-              <div className="px-4 py-8 text-center">
-                <FolderGit2 className="mx-auto h-8 w-8 text-neutral-400" />
-                <p className="mt-2 text-sm text-neutral-500 dark:text-neutral-400">
-                  No source repo mappings yet
-                </p>
-                <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">
-                  Click "Add Mapping" to map a GitHub repository to a local path
-                </p>
+                  Repository (owner/repo)
+                </label>
+                <input
+                  id="projectFullName"
+                  type="text"
+                  value={newProjectFullName}
+                  onChange={(e) => setNewProjectFullName(e.target.value)}
+                  className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-500"
+                  placeholder="karlorz/testing-repo-1"
+                  autoComplete="off"
+                />
               </div>
-            )
-          )}
-        </SettingSection>
-      )}
+              <div>
+                <label
+                  htmlFor="localRepoPath"
+                  className="mb-1 block text-xs font-medium text-neutral-700 dark:text-neutral-300"
+                >
+                  Local path
+                </label>
+                <input
+                  id="localRepoPath"
+                  type="text"
+                  value={newLocalRepoPath}
+                  onChange={(e) => setNewLocalRepoPath(e.target.value)}
+                  className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-500"
+                  placeholder="/Users/karlchow/code/testing-repo-1"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={handleAddMapping}
+                  disabled={addSourceRepoMutation.isPending}
+                >
+                  {addSourceRepoMutation.isPending ? "Adding..." : "Add Mapping"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShowAddMappingForm(false);
+                    setNewProjectFullName("");
+                    setNewLocalRepoPath("");
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowAddMappingForm(true)}
+              className="gap-1.5"
+            >
+              <Plus className="h-4 w-4" />
+              Add Mapping
+            </Button>
+          </div>
+        )}
+
+        {/* Existing mappings list */}
+        {sourceRepoMappings && sourceRepoMappings.length > 0 ? (
+          <div className="divide-y divide-neutral-200 dark:divide-neutral-800">
+            {sourceRepoMappings.map((mapping: Doc<"sourceRepoMappings">) => (
+              <div
+                key={mapping._id}
+                className="flex items-center justify-between px-4 py-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                    {mapping.projectFullName}
+                  </p>
+                  <p className="mt-0.5 truncate text-xs text-neutral-500 dark:text-neutral-400">
+                    {mapping.localRepoPath}
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    removeSourceRepoMutation.mutate(mapping.projectFullName)
+                  }
+                  disabled={removeSourceRepoMutation.isPending}
+                  className="ml-2 text-neutral-500 hover:text-red-600 dark:text-neutral-400 dark:hover:text-red-400"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          !showAddMappingForm && (
+            <div className="px-4 py-8 text-center">
+              <FolderGit2 className="mx-auto h-8 w-8 text-neutral-400" />
+              <p className="mt-2 text-sm text-neutral-500 dark:text-neutral-400">
+                No source repo mappings yet
+              </p>
+              <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">
+                Mappings are auto-detected when you start tasks. Add custom mappings here if needed.
+              </p>
+            </div>
+          )
+        )}
+      </SettingSection>
 
       <SettingSection
         title="Active Worktrees"
@@ -312,15 +286,11 @@ export function WorktreesSection({
                     <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
                       {worktree.branchName}
                     </p>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs ${
-                        worktree.mode === "codex-style"
-                          ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                          : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
-                      }`}
-                    >
-                      {worktree.mode === "codex-style" ? "codex" : "legacy"}
-                    </span>
+                    {worktree.mode === "legacy" && (
+                      <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
+                        legacy
+                      </span>
+                    )}
                   </div>
                   <p className="mt-0.5 truncate text-xs text-neutral-500 dark:text-neutral-400">
                     {worktree.worktreePath}
