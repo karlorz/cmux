@@ -627,3 +627,69 @@ func (c *Client) ListPtySessions(ctx context.Context, instanceID string) ([]PtyS
 
 	return result.Sessions, nil
 }
+
+// Team represents a team the user is a member of
+type Team struct {
+	TeamID      string `json:"teamId"`
+	Slug        string `json:"slug"`
+	DisplayName string `json:"displayName"`
+	Role        string `json:"role"`
+	Selected    bool   `json:"selected"`
+}
+
+// ListTeamsResult represents the result of listing teams
+type ListTeamsResult struct {
+	Teams          []Team `json:"teams"`
+	SelectedTeamID string `json:"selectedTeamId"`
+}
+
+// SwitchTeamResult represents the result of switching teams
+type SwitchTeamResult struct {
+	TeamID          string `json:"teamId"`
+	TeamSlug        string `json:"teamSlug"`
+	TeamDisplayName string `json:"teamDisplayName"`
+}
+
+// ListTeams lists all teams the user is a member of
+func (c *Client) ListTeams(ctx context.Context) (*ListTeamsResult, error) {
+	resp, err := c.doRequest(ctx, "GET", "/api/v1/cmux/me/teams", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result ListTeamsResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// SwitchTeam switches the user's selected team
+func (c *Client) SwitchTeam(ctx context.Context, teamSlugOrId string) (*SwitchTeamResult, error) {
+	body := map[string]string{
+		"teamSlugOrId": teamSlugOrId,
+	}
+
+	resp, err := c.doRequest(ctx, "POST", "/api/v1/cmux/me/team", body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result SwitchTeamResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}

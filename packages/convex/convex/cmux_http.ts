@@ -1354,6 +1354,124 @@ export const getMe = httpAction(async (ctx) => {
 });
 
 // ============================================================================
+// GET /api/v1/cmux/me/teams - List all teams the user is a member of
+// ============================================================================
+export const listMyTeams = httpAction(async (ctx) => {
+  const { identity, error } = await getAuthenticatedUser(ctx);
+  if (error) return error;
+
+  try {
+    const userId = identity!.subject;
+
+    // Get user's selected team
+    const user = await ctx.runQuery(internal.users.getByUserIdInternal, {
+      userId,
+    });
+
+    // Get all team memberships
+    const memberships = await ctx.runQuery(internal.teams.getMembershipsByUserIdInternal, {
+      userId,
+    });
+
+    // Fetch team details for each membership
+    const teams = await Promise.all(
+      memberships.map(async (m) => {
+        const team = await ctx.runQuery(internal.teams.getByTeamIdInternal, {
+          teamId: m.teamId,
+        });
+        return {
+          teamId: m.teamId,
+          slug: team?.slug ?? m.teamId,
+          displayName: team?.displayName ?? team?.name ?? null,
+          role: m.role,
+          selected: m.teamId === user?.selectedTeamId,
+        };
+      })
+    );
+
+    return jsonResponse({
+      teams,
+      selectedTeamId: user?.selectedTeamId ?? null,
+    });
+  } catch (err) {
+    console.error("[cmux.listMyTeams] Error:", err);
+    return jsonResponse(
+      { code: 500, message: "Failed to list teams" },
+      500
+    );
+  }
+});
+
+// ============================================================================
+// POST /api/v1/cmux/me/team - Switch current user's selected team
+// ============================================================================
+export const switchTeam = httpAction(async (ctx, req) => {
+  const contentTypeError = verifyContentType(req);
+  if (contentTypeError) return contentTypeError;
+
+  const { identity, error } = await getAuthenticatedUser(ctx);
+  if (error) return error;
+
+  try {
+    const userId = identity!.subject;
+    const body = await req.json() as { teamSlugOrId: string };
+
+    if (!body.teamSlugOrId) {
+      return jsonResponse(
+        { code: 400, message: "teamSlugOrId is required" },
+        400
+      );
+    }
+
+    // Resolve team slug/id to canonical teamId
+    const team = await ctx.runQuery(internal.teams.getBySlugOrIdInternal, {
+      slugOrId: body.teamSlugOrId,
+    });
+
+    if (!team) {
+      return jsonResponse(
+        { code: 404, message: `Team not found: ${body.teamSlugOrId}` },
+        404
+      );
+    }
+
+    // Check user has membership in this team
+    const memberships = await ctx.runQuery(internal.teams.getMembershipsByUserIdInternal, {
+      userId,
+    });
+
+    const hasMembership = memberships.some(m => m.teamId === team.teamId);
+    if (!hasMembership) {
+      return jsonResponse(
+        { code: 403, message: `You are not a member of team: ${body.teamSlugOrId}` },
+        403
+      );
+    }
+
+    // Update user's selected team in Convex
+    await ctx.runMutation(internal.users.updateSelectedTeamInternal, {
+      userId,
+      selectedTeamId: team.teamId,
+      selectedTeamDisplayName: team.displayName ?? team.name ?? undefined,
+      selectedTeamProfileImageUrl: team.profileImageUrl ?? undefined,
+    });
+
+    return jsonResponse({
+      success: true,
+      teamId: team.teamId,
+      teamSlug: team.slug ?? team.teamId,
+      teamDisplayName: team.displayName ?? team.name ?? null,
+    });
+  } catch (err) {
+    console.error("[cmux.switchTeam] Error:", err);
+    return jsonResponse(
+      { code: 500, message: "Failed to switch team" },
+      500
+    );
+  }
+});
+
+// ============================================================================
 // Route handler for instance-specific POST actions
 // ============================================================================
 export const instanceActionRouter = httpAction(async (ctx, req) => {

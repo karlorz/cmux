@@ -63,6 +63,9 @@ func init() {
 	// Auth commands
 	rootCmd.AddCommand(authCmd)
 
+	// Team commands
+	rootCmd.AddCommand(teamCmd)
+
 	// Root-level shorthand commands for auth (convenience aliases)
 	rootCmd.AddCommand(loginCmd)
 	rootCmd.AddCommand(logoutCmd)

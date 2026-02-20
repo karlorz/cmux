@@ -912,6 +912,11 @@ func ClearCachedUserProfile() error {
 	return nil
 }
 
+// ClearUserProfileCache is an alias for ClearCachedUserProfile
+func ClearUserProfileCache() error {
+	return ClearCachedUserProfile()
+}
+
 // FetchUserProfile fetches the user profile from the server and caches it
 func FetchUserProfile() (*UserProfile, error) {
 	accessToken, err := GetAccessToken()
@@ -967,8 +972,14 @@ func GetUserProfile() (*UserProfile, error) {
 	return FetchUserProfile()
 }
 
-// GetTeamSlug returns the user's team slug/ID, fetching if necessary
+// GetTeamSlug returns the team slug for API calls.
+// Priority: DEVBOX_TEAM env var > user profile team slug > team ID
 func GetTeamSlug() (string, error) {
+	// Check for team override from environment (dev mode / CI)
+	if teamOverride := os.Getenv("DEVBOX_TEAM"); teamOverride != "" {
+		return teamOverride, nil
+	}
+
 	profile, err := GetUserProfile()
 	if err != nil {
 		return "", err

@@ -46,6 +46,8 @@ import {
   getSnapshot as cmuxGetSnapshot,
   getConfig as cmuxGetConfig,
   getMe as cmuxGetMe,
+  listMyTeams as cmuxListMyTeams,
+  switchTeam as cmuxSwitchTeam,
   instanceActionRouter as cmuxInstanceActionRouter,
   instanceGetRouter as cmuxInstanceGetRouter,
   instanceDeleteRouter as cmuxInstanceDeleteRouter,
@@ -282,6 +284,18 @@ http.route({
   path: "/api/v1/cmux/me",
   method: "GET",
   handler: cmuxGetMe,
+});
+
+http.route({
+  path: "/api/v1/cmux/me/teams",
+  method: "GET",
+  handler: cmuxListMyTeams,
+});
+
+http.route({
+  path: "/api/v1/cmux/me/team",
+  method: "POST",
+  handler: cmuxSwitchTeam,
 });
 
 // Instance-specific routes use pathPrefix to capture the instance ID
