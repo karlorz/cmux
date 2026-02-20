@@ -4,6 +4,7 @@
 package auth
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +16,76 @@ import (
 	"strings"
 	"time"
 )
+
+// envLoaded tracks whether we've already loaded .env file
+var envLoaded bool
+
+// loadEnvFile loads environment variables from a .env file if it exists.
+// Only loads in dev mode and only once per process.
+// Walks up from current directory to find .env file.
+func loadEnvFile() {
+	if envLoaded {
+		return
+	}
+	envLoaded = true
+
+	// Find .env file by walking up directories
+	dir, err := os.Getwd()
+	if err != nil {
+		return
+	}
+
+	var envPath string
+	for {
+		candidate := filepath.Join(dir, ".env")
+		if _, err := os.Stat(candidate); err == nil {
+			envPath = candidate
+			break
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	if envPath == "" {
+		return
+	}
+
+	file, err := os.Open(envPath)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// Parse KEY=value
+		idx := strings.Index(line, "=")
+		if idx <= 0 {
+			continue
+		}
+		key := strings.TrimSpace(line[:idx])
+		value := strings.TrimSpace(line[idx+1:])
+		// Remove surrounding quotes if present
+		if len(value) >= 2 {
+			if (value[0] == '"' && value[len(value)-1] == '"') ||
+				(value[0] == '\'' && value[len(value)-1] == '\'') {
+				value = value[1 : len(value)-1]
+			}
+		}
+		// Only set if not already set in environment
+		if os.Getenv(key) == "" {
+			os.Setenv(key, value)
+		}
+	}
+}
 
 // Shared constants - must match cmux Rust CLI for credential sharing
 const (
@@ -131,20 +202,28 @@ func (c Config) Validate() error {
 
 // GetConfig returns auth configuration using the following priority (highest to lowest):
 // 1. CLI flags (set via SetConfigOverrides)
-// 2. Environment variables
+// 2. Environment variables (including .env file loaded in dev mode)
 // 3. Build-time values (set via -ldflags)
 // 4. Mode-specific defaults (dev defaults for Mode=dev, prod defaults for Mode=prod)
 func GetConfig() Config {
+	// In dev mode, load .env file to populate environment variables
+	if buildMode == "dev" {
+		loadEnvFile()
+	}
+
 	// Get mode-specific defaults
 	defaultProjectID, defaultPublishableKey, defaultCmuxURL, defaultConvexSiteURL := getDefaultsForMode()
 
 	// Helper to resolve value with priority: CLI > env > build-time > default
-	resolve := func(cliVal, envKey, buildVal, defaultVal string) string {
+	// Supports multiple env key names (first match wins)
+	resolve := func(cliVal string, envKeys []string, buildVal, defaultVal string) string {
 		if cliVal != "" {
 			return cliVal
 		}
-		if envVal := os.Getenv(envKey); envVal != "" {
-			return envVal
+		for _, envKey := range envKeys {
+			if envVal := os.Getenv(envKey); envVal != "" {
+				return envVal
+			}
 		}
 		if buildVal != "" {
 			return buildVal
@@ -152,10 +231,11 @@ func GetConfig() Config {
 		return defaultVal
 	}
 
-	projectID := resolve(cliProjectID, "STACK_PROJECT_ID", ProjectID, defaultProjectID)
-	publishableKey := resolve(cliPublishableKey, "STACK_PUBLISHABLE_CLIENT_KEY", PublishableKey, defaultPublishableKey)
-	cmuxURL := resolve(cliCmuxURL, "CMUX_API_URL", CmuxURL, defaultCmuxURL)
-	convexSiteURL := resolve(cliConvexSiteURL, "CONVEX_SITE_URL", ConvexSiteURL, defaultConvexSiteURL)
+	// Support both STACK_* and NEXT_PUBLIC_STACK_* env var names
+	projectID := resolve(cliProjectID, []string{"STACK_PROJECT_ID", "NEXT_PUBLIC_STACK_PROJECT_ID"}, ProjectID, defaultProjectID)
+	publishableKey := resolve(cliPublishableKey, []string{"STACK_PUBLISHABLE_CLIENT_KEY", "NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY"}, PublishableKey, defaultPublishableKey)
+	cmuxURL := resolve(cliCmuxURL, []string{"CMUX_API_URL"}, CmuxURL, defaultCmuxURL)
+	convexSiteURL := resolve(cliConvexSiteURL, []string{"CONVEX_SITE_URL"}, ConvexSiteURL, defaultConvexSiteURL)
 
 	// Stack Auth URL only has env override and hardcoded default
 	stackAuthURL := os.Getenv("AUTH_API_URL")
