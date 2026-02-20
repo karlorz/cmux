@@ -10,6 +10,7 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Id } from "@cmux/convex/dataModel";
+import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { spawnAllAgents } from "./agentSpawner";
 import { generateBranchNamesFromDescription } from "./utils/branchNameGenerator";
 import { serverLogger } from "./utils/fileLogger";
@@ -222,6 +223,18 @@ export function handleHttpRequest(
   // Route: GET /api/health
   if (method === "GET" && path === "/api/health") {
     jsonResponse(res, 200, { status: "ok", service: "apps-server" });
+    return true;
+  }
+
+  // Route: GET /api/agents - List available agents
+  if (method === "GET" && path === "/api/agents") {
+    const agents = AGENT_CONFIGS.filter((config) => !config.disabled).map(
+      (config) => ({
+        name: config.name,
+        command: config.command,
+      })
+    );
+    jsonResponse(res, 200, { agents });
     return true;
   }
 

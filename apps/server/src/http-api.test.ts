@@ -9,24 +9,64 @@
  * Note: These tests require the dev server to be running (make dev)
  * and proper authentication setup. They are designed to verify the
  * HTTP API matches the socket.io behavior.
+ *
+ * IMPORTANT: These are integration tests that require the apps/server
+ * to be running. In CI, these tests will be skipped if the server
+ * is not available.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 
 const SERVER_URL = process.env.CMUX_SERVER_URL ?? "http://localhost:9776";
 
+// Check if server is available before running tests
+let serverAvailable = false;
+
+// Helper to safely fetch with connection error handling
+async function safeFetch(
+  url: string,
+  options?: RequestInit
+): Promise<Response | null> {
+  try {
+    return await fetch(url, options);
+  } catch (error) {
+    // Connection refused or other network error
+    if (
+      error instanceof Error &&
+      (error.message.includes("ECONNREFUSED") ||
+        error.message.includes("fetch failed"))
+    ) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 describe("HTTP API - apps/server", () => {
+  beforeAll(async () => {
+    // Check if server is running
+    const response = await safeFetch(`${SERVER_URL}/api/health`);
+    serverAvailable = response !== null && response.ok;
+    if (!serverAvailable) {
+      console.log(
+        "[http-api.test] Server not available at",
+        SERVER_URL,
+        "- skipping integration tests"
+      );
+    }
+  });
+
   describe("Health Check", () => {
     it("GET /api/health returns ok status", async () => {
-      const response = await fetch(`${SERVER_URL}/api/health`);
-
-      // May fail if server not running - that's expected in CI
-      if (!response.ok) {
-        console.log("Server not running - skipping health check test");
+      if (!serverAvailable) {
+        console.log("Server not running - skipping test");
         return;
       }
 
-      const data = await response.json();
+      const response = await safeFetch(`${SERVER_URL}/api/health`);
+      expect(response).not.toBeNull();
+
+      const data = await response!.json();
       expect(data.status).toBe("ok");
       expect(data.service).toBe("apps-server");
     });
@@ -34,7 +74,12 @@ describe("HTTP API - apps/server", () => {
 
   describe("Authentication", () => {
     it("POST /api/start-task rejects missing auth", async () => {
-      const response = await fetch(`${SERVER_URL}/api/start-task`, {
+      if (!serverAvailable) {
+        console.log("Server not running - skipping test");
+        return;
+      }
+
+      const response = await safeFetch(`${SERVER_URL}/api/start-task`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -47,44 +92,44 @@ describe("HTTP API - apps/server", () => {
         }),
       });
 
-      // Server may not be running
-      if (response.status === 0) {
-        console.log("Server not running - skipping auth test");
-        return;
-      }
-
-      expect(response.status).toBe(401);
-      const data = await response.json();
+      expect(response).not.toBeNull();
+      expect(response!.status).toBe(401);
+      const data = await response!.json();
       expect(data.error).toContain("Unauthorized");
     });
   });
 
   describe("Request Validation", () => {
     it("POST /api/start-task rejects invalid JSON", async () => {
-      const response = await fetch(`${SERVER_URL}/api/start-task`, {
+      if (!serverAvailable) {
+        console.log("Server not running - skipping test");
+        return;
+      }
+
+      const response = await safeFetch(`${SERVER_URL}/api/start-task`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": "Bearer fake_token",
+          Authorization: "Bearer fake_token",
         },
         body: "not json",
       });
 
-      // Server may not be running
-      if (response.status === 0) {
-        console.log("Server not running - skipping validation test");
-        return;
-      }
-
-      expect(response.status).toBe(400);
+      expect(response).not.toBeNull();
+      expect(response!.status).toBe(400);
     });
 
     it("POST /api/start-task rejects missing required fields", async () => {
-      const response = await fetch(`${SERVER_URL}/api/start-task`, {
+      if (!serverAvailable) {
+        console.log("Server not running - skipping test");
+        return;
+      }
+
+      const response = await safeFetch(`${SERVER_URL}/api/start-task`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": "Bearer fake_token",
+          Authorization: "Bearer fake_token",
         },
         body: JSON.stringify({
           // Missing taskId, taskDescription, projectFullName
@@ -92,23 +137,23 @@ describe("HTTP API - apps/server", () => {
         }),
       });
 
-      // Server may not be running
-      if (response.status === 0) {
-        console.log("Server not running - skipping validation test");
-        return;
-      }
-
-      expect(response.status).toBe(400);
-      const data = await response.json();
+      expect(response).not.toBeNull();
+      expect(response!.status).toBe(400);
+      const data = await response!.json();
       expect(data.error).toContain("Missing required fields");
     });
 
     it("POST /api/start-task rejects missing teamSlugOrId", async () => {
-      const response = await fetch(`${SERVER_URL}/api/start-task`, {
+      if (!serverAvailable) {
+        console.log("Server not running - skipping test");
+        return;
+      }
+
+      const response = await safeFetch(`${SERVER_URL}/api/start-task`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": "Bearer fake_token",
+          Authorization: "Bearer fake_token",
         },
         body: JSON.stringify({
           taskId: "test_task_123",
@@ -118,34 +163,33 @@ describe("HTTP API - apps/server", () => {
         }),
       });
 
-      // Server may not be running
-      if (response.status === 0) {
-        console.log("Server not running - skipping validation test");
-        return;
-      }
-
-      expect(response.status).toBe(400);
-      const data = await response.json();
+      expect(response).not.toBeNull();
+      expect(response!.status).toBe(400);
+      const data = await response!.json();
       expect(data.error).toContain("teamSlugOrId");
     });
   });
 
   describe("CORS", () => {
     it("OPTIONS /api/start-task returns CORS headers", async () => {
-      const response = await fetch(`${SERVER_URL}/api/start-task`, {
-        method: "OPTIONS",
-      });
-
-      // Server may not be running
-      if (response.status === 0) {
-        console.log("Server not running - skipping CORS test");
+      if (!serverAvailable) {
+        console.log("Server not running - skipping test");
         return;
       }
 
-      expect(response.status).toBe(204);
-      expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
-      expect(response.headers.get("Access-Control-Allow-Methods")).toContain("POST");
-      expect(response.headers.get("Access-Control-Allow-Headers")).toContain("Authorization");
+      const response = await safeFetch(`${SERVER_URL}/api/start-task`, {
+        method: "OPTIONS",
+      });
+
+      expect(response).not.toBeNull();
+      expect(response!.status).toBe(204);
+      expect(response!.headers.get("Access-Control-Allow-Origin")).toBe("*");
+      expect(
+        response!.headers.get("Access-Control-Allow-Methods")
+      ).toContain("POST");
+      expect(
+        response!.headers.get("Access-Control-Allow-Headers")
+      ).toContain("Authorization");
     });
   });
 });
