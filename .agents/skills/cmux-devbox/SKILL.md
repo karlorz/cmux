@@ -69,6 +69,15 @@ cmux-devbox start .                 # Auto-selects pve-lxc when PVE env vars are
 - `cmux-devbox sync <id> <path>` - Sync files to VM
 - `cmux-devbox sync <id> <path> --pull` - Pull files from VM
 
+### Task Management
+Tasks are the same as in the web app dashboard. CLI and web sync through Convex.
+
+- `cmux-devbox task list` - List active tasks
+- `cmux-devbox task list --archived` - List archived tasks
+- `cmux-devbox task create --repo owner/repo --agent claude-code "prompt"` - Create task
+- `cmux-devbox task status <task-id>` - Get task details
+- `cmux-devbox task stop <task-id>` - Stop/archive task
+
 ### Browser Automation
 - `cmux-devbox computer snapshot <id>` - Get accessibility tree
 - `cmux-devbox computer open <id> <url>` - Navigate browser

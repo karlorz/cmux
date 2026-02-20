@@ -51,6 +51,10 @@ import {
   instanceActionRouter as cmuxInstanceActionRouter,
   instanceGetRouter as cmuxInstanceGetRouter,
   instanceDeleteRouter as cmuxInstanceDeleteRouter,
+  listTasks as cmuxListTasks,
+  createTask as cmuxCreateTask,
+  taskGetRouter as cmuxTaskGetRouter,
+  taskActionRouter as cmuxTaskActionRouter,
 } from "./cmux_http";
 import {
   createInstance as devboxV2CreateInstance,
@@ -315,6 +319,32 @@ http.route({
   pathPrefix: "/api/v1/cmux/instances/",
   method: "DELETE",
   handler: cmuxInstanceDeleteRouter,
+});
+
+// Task management routes
+http.route({
+  path: "/api/v1/cmux/tasks",
+  method: "GET",
+  handler: cmuxListTasks,
+});
+
+http.route({
+  path: "/api/v1/cmux/tasks",
+  method: "POST",
+  handler: cmuxCreateTask,
+});
+
+// Task-specific routes use pathPrefix to capture the task ID
+http.route({
+  pathPrefix: "/api/v1/cmux/tasks/",
+  method: "GET",
+  handler: cmuxTaskGetRouter,
+});
+
+http.route({
+  pathPrefix: "/api/v1/cmux/tasks/",
+  method: "POST",
+  handler: cmuxTaskActionRouter,
 });
 
 // =============================================================================

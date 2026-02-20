@@ -82,6 +82,20 @@ cmux sync <id> <path> --pull     # Pull files from VM to local
 
 **Excluded by default:** `.git`, `node_modules`, `.next`, `dist`, `build`, `__pycache__`, `.venv`, `venv`, `target`
 
+### Task Management
+
+Tasks are synced between CLI and web app through Convex as the source of truth.
+
+```bash
+cmux task list                   # List all active tasks
+cmux task list --archived        # List archived tasks
+cmux task create "Add tests"     # Create task with prompt only
+cmux task create --repo owner/repo --agent claude-code "Fix bug"
+cmux task create --repo owner/repo --agent claude-code --agent opencode/gpt-4o "Compare solutions"
+cmux task status <task-id>       # Get task details and runs
+cmux task stop <task-id>         # Stop/archive task
+```
+
 ### Browser Automation (cmux computer)
 
 Control Chrome browser via CDP in the VM's VNC desktop.

@@ -693,3 +693,174 @@ func (c *Client) SwitchTeam(ctx context.Context, teamSlugOrId string) (*SwitchTe
 
 	return &result, nil
 }
+
+// Task represents a task from the web app
+type Task struct {
+	ID          string `json:"id"`
+	Prompt      string `json:"prompt"`
+	Repository  string `json:"repository"`
+	BaseBranch  string `json:"baseBranch"`
+	Status      string `json:"status"`
+	Agent       string `json:"agent"`
+	VSCodeURL   string `json:"vscodeUrl"`
+	IsCompleted bool   `json:"isCompleted"`
+	IsArchived  bool   `json:"isArchived"`
+	CreatedAt   int64  `json:"createdAt"`
+	UpdatedAt   int64  `json:"updatedAt"`
+	TaskRunID   string `json:"taskRunId"`
+}
+
+// TaskRun represents a run within a task
+type TaskRun struct {
+	ID             string `json:"id"`
+	Agent          string `json:"agent"`
+	Status         string `json:"status"`
+	VSCodeURL      string `json:"vscodeUrl"`
+	PullRequestURL string `json:"pullRequestUrl"`
+	CreatedAt      int64  `json:"createdAt"`
+	CompletedAt    int64  `json:"completedAt"`
+}
+
+// TaskDetail represents a task with full details including runs
+type TaskDetail struct {
+	ID          string    `json:"id"`
+	Prompt      string    `json:"prompt"`
+	Repository  string    `json:"repository"`
+	BaseBranch  string    `json:"baseBranch"`
+	IsCompleted bool      `json:"isCompleted"`
+	IsArchived  bool      `json:"isArchived"`
+	CreatedAt   int64     `json:"createdAt"`
+	UpdatedAt   int64     `json:"updatedAt"`
+	TaskRuns    []TaskRun `json:"taskRuns"`
+}
+
+// ListTasksResult represents the result of listing tasks
+type ListTasksResult struct {
+	Tasks []Task `json:"tasks"`
+}
+
+// CreateTaskOptions represents options for creating a task
+type CreateTaskOptions struct {
+	Prompt     string
+	Repository string
+	BaseBranch string
+	Agents     []string
+}
+
+// CreateTaskResult represents the result of creating a task
+type CreateTaskResult struct {
+	TaskID     string   `json:"taskId"`
+	TaskRunIDs []string `json:"taskRunIds"`
+	Status     string   `json:"status"`
+}
+
+// ListTasks lists all tasks for the team
+func (c *Client) ListTasks(ctx context.Context, archived bool) (*ListTasksResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	path := fmt.Sprintf("/api/v1/cmux/tasks?teamSlugOrId=%s&archived=%t", c.teamSlug, archived)
+	resp, err := c.doRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result ListTasksResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// CreateTask creates a new task with optional task runs
+func (c *Client) CreateTask(ctx context.Context, opts CreateTaskOptions) (*CreateTaskResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+		"prompt":       opts.Prompt,
+	}
+	if opts.Repository != "" {
+		body["repository"] = opts.Repository
+	}
+	if opts.BaseBranch != "" {
+		body["baseBranch"] = opts.BaseBranch
+	}
+	if len(opts.Agents) > 0 {
+		body["agents"] = opts.Agents
+	}
+
+	resp, err := c.doRequest(ctx, "POST", "/api/v1/cmux/tasks", body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result CreateTaskResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// GetTask gets the details of a specific task
+func (c *Client) GetTask(ctx context.Context, taskID string) (*TaskDetail, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	path := fmt.Sprintf("/api/v1/cmux/tasks/%s?teamSlugOrId=%s", taskID, c.teamSlug)
+	resp, err := c.doRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result TaskDetail
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// StopTask stops/archives a task
+func (c *Client) StopTask(ctx context.Context, taskID string) error {
+	if c.teamSlug == "" {
+		return fmt.Errorf("team slug not set")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+	}
+
+	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/api/v1/cmux/tasks/%s/stop", taskID), body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	return nil
+}
