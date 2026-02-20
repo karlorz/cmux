@@ -1426,10 +1426,34 @@ export function setupSocketHandlers(
           // This integrates with VSCode's Source Control view
           const effectiveRepoUrl =
             repoUrl ?? (projectFullName ? `https://github.com/${projectFullName}.git` : "");
+
+          // Look up custom source repo mapping from settings (P1 fix)
+          let mappedLocalRepoPath: string | undefined;
+          if (projectFullName) {
+            try {
+              const mapping = await convex.query(api.sourceRepoMappings.getByProject, {
+                teamSlugOrId,
+                projectFullName,
+              });
+              if (mapping?.localRepoPath) {
+                mappedLocalRepoPath = mapping.localRepoPath;
+                serverLogger.info(
+                  `[create-local-workspace] Using mapped local repo path: ${mappedLocalRepoPath}`
+                );
+              }
+            } catch (mappingError) {
+              serverLogger.warn(
+                "[create-local-workspace] Failed to lookup source repo mapping:",
+                mappingError
+              );
+            }
+          }
+
           const worktreeInfo = await getWorktreePath(
             {
               repoUrl: effectiveRepoUrl,
               branch: branch || "main",
+              localRepoPath: mappedLocalRepoPath,
               projectFullName: projectFullName ?? undefined,
             },
             teamSlugOrId
@@ -2812,9 +2836,32 @@ export function setupSocketHandlers(
           path.join(homeDir, "cmux"),
         ];
 
+        // P2 fix: Include custom worktree path pattern from settings if configured
+        try {
+          const settings = await getConvex().query(api.workspaceSettings.get, {
+            teamSlugOrId: resolvedTeamId,
+          });
+          if (settings?.codexWorktreePathPattern) {
+            // Resolve the pattern (replace {short-id} and {repo-name} placeholders with wildcards)
+            // The pattern is a directory template, so we take the base directory
+            const customPattern = settings.codexWorktreePathPattern
+              .replace(/\{short-id\}/g, "")
+              .replace(/\{repo-name\}/g, "")
+              .replace(/\/+$/, ""); // Remove trailing slashes
+            const resolvedCustomPath = path.resolve(customPattern.replace(/^~/, homeDir));
+            if (resolvedCustomPath && !allowedPrefixes.includes(resolvedCustomPath)) {
+              allowedPrefixes.push(resolvedCustomPath);
+            }
+          }
+        } catch (settingsError) {
+          serverLogger.warn("[delete-worktree] Failed to fetch workspace settings for custom path:", settingsError);
+        }
+
         const normalizedPath = path.resolve(worktreePath);
+        // P1 fix: Proper path boundary check to prevent overmatch
+        // e.g., /home/user/cmuxFoo should NOT match /home/user/cmux prefix
         const isAllowed = allowedPrefixes.some((prefix) =>
-          normalizedPath.startsWith(prefix)
+          normalizedPath === prefix || normalizedPath.startsWith(prefix + path.sep)
         );
 
         if (!isAllowed) {
