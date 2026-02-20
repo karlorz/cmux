@@ -79,8 +79,14 @@ Examples:
 			status := task.Status
 			if task.IsArchived {
 				status = "archived"
+			} else if status == "failed" {
+				// Keep "failed" status - don't override with "completed"
 			} else if task.IsCompleted {
 				status = "completed"
+			}
+			// Append exit code to status if available
+			if task.ExitCode != nil {
+				status = fmt.Sprintf("%s (exit %d)", status, *task.ExitCode)
 			}
 
 			fmt.Printf("%-30s %-12s %-15s %s\n", task.ID, status, agent, prompt)

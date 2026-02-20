@@ -739,6 +739,7 @@ type Task struct {
 	CreatedAt   int64  `json:"createdAt"`
 	UpdatedAt   int64  `json:"updatedAt"`
 	TaskRunID   string `json:"taskRunId"`
+	ExitCode    *int   `json:"exitCode,omitempty"`
 }
 
 // TaskRun represents a run within a task
@@ -750,6 +751,7 @@ type TaskRun struct {
 	PullRequestURL string `json:"pullRequestUrl"`
 	CreatedAt      int64  `json:"createdAt"`
 	CompletedAt    int64  `json:"completedAt"`
+	ExitCode       *int   `json:"exitCode,omitempty"`
 }
 
 // TaskDetail represents a task with full details including runs

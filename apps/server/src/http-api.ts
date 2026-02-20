@@ -14,7 +14,7 @@ import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { spawnAllAgents } from "./agentSpawner";
 import { generateBranchNamesFromDescription } from "./utils/branchNameGenerator";
 import { serverLogger } from "./utils/fileLogger";
-import { runWithAuthToken } from "./utils/requestContext";
+import { runWithAuth } from "./utils/requestContext";
 
 interface StartTaskRequest {
   // Required fields
@@ -91,6 +91,10 @@ async function handleStartTask(
     return;
   }
 
+  // Construct authHeaderJson from token (same format as Stack Auth x-stack-auth header)
+  // This is needed for getWwwClient() to make authenticated requests to www API
+  const authHeaderJson = JSON.stringify({ accessToken: authToken });
+
   // Parse request body
   const body = await readJsonBody<StartTaskRequest & { teamSlugOrId: string }>(req);
   if (!body) {
@@ -132,8 +136,8 @@ async function handleStartTask(
   });
 
   try {
-    // Run with auth context from token
-    const results = await runWithAuthToken(authToken, async () => {
+    // Run with auth context (both token and authHeaderJson needed for www API calls)
+    const results = await runWithAuth(authToken, authHeaderJson, async () => {
       // Determine which agents to spawn
       const agentsToSpawn = selectedAgents || ["claude-code"];
 

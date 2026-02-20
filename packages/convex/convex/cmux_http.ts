@@ -1854,6 +1854,7 @@ export const listTasks = httpAction(async (ctx, req) => {
           createdAt: task.createdAt,
           updatedAt: task.updatedAt,
           taskRunId: selectedRun?._id,
+          exitCode: selectedRun?.exitCode,
         };
       })
     );
@@ -2014,6 +2015,7 @@ async function handleGetTask(
         pullRequestUrl: run.pullRequestUrl,
         createdAt: run.createdAt,
         completedAt: run.completedAt,
+        exitCode: run.exitCode,
       };
     });
 
