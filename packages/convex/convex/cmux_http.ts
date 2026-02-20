@@ -1917,19 +1917,38 @@ export const createTask = httpAction(async (ctx, req) => {
       );
     }
 
-    // Create task with optional task runs
-    const result = await ctx.runMutation(internal.tasks.createInternal, {
+    // Create task first
+    const taskResult = await ctx.runMutation(internal.tasks.createInternal, {
       teamId,
       userId,
       text: body.prompt,
       projectFullName: body.repository,
       baseBranch: body.baseBranch ?? "main",
-      selectedAgents: body.agents,
-    }) as { taskId: string; taskRunIds?: string[] };
+    }) as { taskId: Id<"tasks"> };
+
+    // Create task runs for each agent (with JWTs for sandbox auth)
+    const taskRuns: Array<{ taskRunId: string; jwt: string; agentName: string }> = [];
+    if (body.agents && body.agents.length > 0) {
+      for (const agentName of body.agents) {
+        const runResult = await ctx.runMutation(internal.taskRuns.createInternal, {
+          teamId,
+          userId,
+          taskId: taskResult.taskId,
+          prompt: body.prompt,
+          agentName,
+        }) as { taskRunId: Id<"taskRuns">; jwt: string };
+
+        taskRuns.push({
+          taskRunId: runResult.taskRunId,
+          jwt: runResult.jwt,
+          agentName,
+        });
+      }
+    }
 
     return jsonResponse({
-      taskId: result.taskId,
-      taskRunIds: result.taskRunIds,
+      taskId: taskResult.taskId,
+      taskRuns,
       status: "pending",
     });
   } catch (err) {

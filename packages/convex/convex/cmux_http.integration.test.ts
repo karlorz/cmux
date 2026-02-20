@@ -693,7 +693,7 @@ describe(
 
         const result = await cmuxApiFetch<{
           taskId: string;
-          taskRunIds?: string[];
+          taskRuns?: Array<{ taskRunId: string; jwt: string; agentName: string }>;
           status: string;
         }>("/api/v1/cmux/tasks", {
           method: "POST",
@@ -793,7 +793,7 @@ describe(
 
         const result = await cmuxApiFetch<{
           taskId: string;
-          taskRunIds?: string[];
+          taskRuns: Array<{ taskRunId: string; jwt: string; agentName: string }>;
           status: string;
         }>("/api/v1/cmux/tasks", {
           method: "POST",
@@ -806,8 +806,14 @@ describe(
 
         expect(result.ok).toBe(true);
         expect(result.data?.taskId).toBeDefined();
-        expect(result.data?.taskRunIds).toBeDefined();
-        expect(result.data!.taskRunIds!.length).toBe(2);
+        expect(result.data?.taskRuns).toBeDefined();
+        expect(result.data!.taskRuns.length).toBe(2);
+        // Verify JWTs are returned for sandbox auth
+        for (const run of result.data!.taskRuns) {
+          expect(run.taskRunId).toBeDefined();
+          expect(run.jwt).toBeDefined();
+          expect(run.agentName).toBeDefined();
+        }
 
         // Clean up
         if (result.data?.taskId) {

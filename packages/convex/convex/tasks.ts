@@ -1746,8 +1746,13 @@ export const listInternal = internalQuery({
 });
 
 /**
- * Internal mutation to create a task with task runs.
+ * Internal mutation to create a task (without task runs).
+ * Task runs are created separately via taskRuns.createInternal to get JWTs.
  * Used by CLI HTTP API for task create endpoint.
+ *
+ * Note: isCloudWorkspace is NOT set here so tasks appear in "In progress"
+ * category (same as web app). Setting isCloudWorkspace: true would cause
+ * tasks to appear in "Workspaces" category instead.
  */
 export const createInternal = internalMutation({
   args: {
@@ -1757,7 +1762,6 @@ export const createInternal = internalMutation({
     description: v.optional(v.string()),
     projectFullName: v.optional(v.string()),
     baseBranch: v.optional(v.string()),
-    selectedAgents: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -1774,30 +1778,11 @@ export const createInternal = internalMutation({
       lastActivityAt: now,
       userId: args.userId,
       teamId: args.teamId,
-      isCloudWorkspace: true,
+      // Note: isCloudWorkspace is NOT set so tasks appear in "In progress"
+      // category in the UI (same as normal web app tasks)
     });
 
-    // If selectedAgents provided, create task runs atomically
-    let taskRunIds: Id<"taskRuns">[] | undefined;
-    if (args.selectedAgents && args.selectedAgents.length > 0) {
-      taskRunIds = await Promise.all(
-        args.selectedAgents.map(async (agentName) => {
-          return ctx.db.insert("taskRuns", {
-            taskId,
-            prompt: args.text,
-            agentName,
-            status: "pending",
-            createdAt: now,
-            updatedAt: now,
-            userId: args.userId,
-            teamId: args.teamId,
-            isCloudWorkspace: true,
-          });
-        }),
-      );
-    }
-
-    return { taskId, taskRunIds };
+    return { taskId };
   },
 });
 

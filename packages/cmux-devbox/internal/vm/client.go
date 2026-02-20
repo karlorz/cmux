@@ -61,7 +61,7 @@ func (c *Client) SetTeamSlug(teamSlug string) {
 	c.teamSlug = teamSlug
 }
 
-// doRequest makes an authenticated request to the API
+// doRequest makes an authenticated request to the Convex HTTP API
 func (c *Client) doRequest(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
 	accessToken, err := auth.GetAccessToken()
 	if err != nil {
@@ -78,6 +78,37 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 	}
 
 	url := c.baseURL + path
+	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	return c.httpClient.Do(req)
+}
+
+// doWwwRequest makes an authenticated request to the www API (for sandbox operations)
+func (c *Client) doWwwRequest(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
+	accessToken, err := auth.GetAccessToken()
+	if err != nil {
+		return nil, fmt.Errorf("not authenticated: %w", err)
+	}
+
+	var bodyReader io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		bodyReader = bytes.NewReader(data)
+	}
+
+	// www API is at CmuxURL (not ConvexSiteURL)
+	cfg := auth.GetConfig()
+	url := cfg.CmuxURL + path
 	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
 	if err != nil {
 		return nil, err
@@ -747,11 +778,40 @@ type CreateTaskOptions struct {
 	Agents     []string
 }
 
+// TaskRunWithJWT represents a task run with its JWT for sandbox auth
+type TaskRunWithJWT struct {
+	TaskRunID string `json:"taskRunId"`
+	JWT       string `json:"jwt"`
+	AgentName string `json:"agentName"`
+}
+
 // CreateTaskResult represents the result of creating a task
 type CreateTaskResult struct {
-	TaskID     string   `json:"taskId"`
-	TaskRunIDs []string `json:"taskRunIds"`
-	Status     string   `json:"status"`
+	TaskID   string           `json:"taskId"`
+	TaskRuns []TaskRunWithJWT `json:"taskRuns"`
+	Status   string           `json:"status"`
+}
+
+// StartSandboxOptions represents options for starting a sandbox
+type StartSandboxOptions struct {
+	TaskRunID       string
+	TaskRunJWT      string
+	AgentName       string
+	Prompt          string
+	ProjectFullName string
+	RepoURL         string
+	Branch          string
+	TTLSeconds      int
+}
+
+// StartSandboxResult represents the result of starting a sandbox
+type StartSandboxResult struct {
+	InstanceID string `json:"instanceId"`
+	Provider   string `json:"provider"`
+	VSCodeURL  string `json:"vscodeUrl"`
+	VncURL     string `json:"vncUrl"`
+	XtermURL   string `json:"xtermUrl"`
+	WorkerURL  string `json:"workerUrl"`
 }
 
 // ListTasks lists all tasks for the team
@@ -810,6 +870,57 @@ func (c *Client) CreateTask(ctx context.Context, opts CreateTaskOptions) (*Creat
 	}
 
 	var result CreateTaskResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// StartSandbox starts a sandbox for a task run via the www API
+func (c *Client) StartSandbox(ctx context.Context, opts StartSandboxOptions) (*StartSandboxResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+		"taskRunId":    opts.TaskRunID,
+		"taskRunJwt":   opts.TaskRunJWT,
+	}
+	if opts.AgentName != "" {
+		body["agentName"] = opts.AgentName
+	}
+	if opts.Prompt != "" {
+		body["prompt"] = opts.Prompt
+	}
+	if opts.ProjectFullName != "" {
+		body["projectFullName"] = opts.ProjectFullName
+	}
+	if opts.RepoURL != "" {
+		body["repoUrl"] = opts.RepoURL
+	}
+	if opts.Branch != "" {
+		body["branch"] = opts.Branch
+	}
+	if opts.TTLSeconds > 0 {
+		body["ttlSeconds"] = opts.TTLSeconds
+	} else {
+		body["ttlSeconds"] = 3600 // Default 1 hour
+	}
+
+	// Call the www API /api/sandboxes/start endpoint
+	resp, err := c.doWwwRequest(ctx, "POST", "/api/sandboxes/start", body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("sandbox start failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result StartSandboxResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
