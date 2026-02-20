@@ -121,14 +121,34 @@ npm-publish-dry: build-npm
 # Environment-specific builds
 # =============================================================================
 
-# Dev build - sets Mode=dev which causes auth package to use dev defaults:
-#   - CMUX_API_URL -> http://localhost:9779
-#   - CONVEX_SITE_URL -> https://famous-camel-162.convex.site (dev deployment)
-# Runtime override still works: CMUX_API_URL=http://custom:port cmux ...
+# Path to .env file (searches up from current dir, defaults to repo root)
+ENV_FILE := $(shell for d in . .. ../.. ../../..; do [ -f "$$d/.env" ] && echo "$$d/.env" && break; done)
+
+# Dev build - reads config from .env file and bakes values into binary
+# Values from .env take priority over hardcoded defaults
+# Runtime env vars can still override baked-in values
 build-dev:
 	@echo "Building for development (Mode=dev)..."
-	@echo "  Dev defaults: localhost:9779, famous-camel-162.convex.site"
-	go build -ldflags "-X main.Version=$(VERSION) -X main.Commit=$(COMMIT) -X main.BuildTime=$(BUILD_TIME) -X main.Mode=dev" \
+	@# Extract values from .env file if it exists
+	$(eval DEV_CONVEX_SITE_URL := $(shell [ -f "$(ENV_FILE)" ] && grep -E '^CONVEX_SITE_URL=' "$(ENV_FILE)" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"'"'" || echo ""))
+	$(eval DEV_CMUX_URL := $(shell [ -f "$(ENV_FILE)" ] && grep -E '^CMUX_API_URL=' "$(ENV_FILE)" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"'"'" || echo ""))
+	$(eval DEV_SERVER_URL := $(shell [ -f "$(ENV_FILE)" ] && grep -E '^CMUX_SERVER_URL=' "$(ENV_FILE)" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"'"'" || echo ""))
+	$(eval DEV_PROJECT_ID := $(shell [ -f "$(ENV_FILE)" ] && grep -E '^(STACK_PROJECT_ID|NEXT_PUBLIC_STACK_PROJECT_ID)=' "$(ENV_FILE)" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"'"'" || echo ""))
+	$(eval DEV_PUBLISHABLE_KEY := $(shell [ -f "$(ENV_FILE)" ] && grep -E '^(STACK_PUBLISHABLE_CLIENT_KEY|NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY)=' "$(ENV_FILE)" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"'"'" || echo ""))
+	@if [ -n "$(ENV_FILE)" ]; then \
+		echo "  Loading config from: $(ENV_FILE)"; \
+	else \
+		echo "  No .env file found, using hardcoded defaults"; \
+	fi
+	@if [ -n "$(DEV_CONVEX_SITE_URL)" ]; then echo "    CONVEX_SITE_URL: $(DEV_CONVEX_SITE_URL)"; fi
+	@if [ -n "$(DEV_CMUX_URL)" ]; then echo "    CMUX_API_URL: $(DEV_CMUX_URL)"; fi
+	@if [ -n "$(DEV_SERVER_URL)" ]; then echo "    CMUX_SERVER_URL: $(DEV_SERVER_URL)"; fi
+	go build -ldflags "-X main.Version=$(VERSION) -X main.Commit=$(COMMIT) -X main.BuildTime=$(BUILD_TIME) -X main.Mode=dev \
+		-X '$(AUTH_PKG).ProjectID=$(DEV_PROJECT_ID)' \
+		-X '$(AUTH_PKG).PublishableKey=$(DEV_PUBLISHABLE_KEY)' \
+		-X '$(AUTH_PKG).CmuxURL=$(DEV_CMUX_URL)' \
+		-X '$(AUTH_PKG).ConvexSiteURL=$(DEV_CONVEX_SITE_URL)' \
+		-X '$(AUTH_PKG).ServerURL=$(DEV_SERVER_URL)'" \
 		-o bin/cmux-devbox ./cmd/cmux-devbox
 	@echo "Dev build complete: bin/cmux-devbox"
 

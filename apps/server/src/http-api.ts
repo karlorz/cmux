@@ -16,6 +16,7 @@ import { spawnAllAgents } from "./agentSpawner";
 import {
   DEFAULT_BRANCH_PREFIX,
   generateBranchNamesFromDescription,
+  generatePRInfoAndBranchNames,
 } from "./utils/branchNameGenerator";
 import { getConvex } from "./utils/convexClient";
 import { serverLogger } from "./utils/fileLogger";
@@ -34,6 +35,21 @@ interface StartTaskRequest {
   isCloudMode?: boolean;
   environmentId?: string;
   theme?: "dark" | "light" | "system";
+  prTitle?: string;
+  images?: Array<
+    | {
+        // Inline image data (same shape as StartTaskSchema over socket.io)
+        src: string;
+        fileName?: string;
+        altText: string;
+      }
+    | {
+        // Storage-backed image reference (Convex _storage ID)
+        imageId: string;
+        fileName?: string;
+        altText?: string;
+      }
+  >;
 }
 
 interface StartTaskResponse {
@@ -119,6 +135,8 @@ async function handleStartTask(
     environmentId,
     theme,
     teamSlugOrId,
+    prTitle,
+    images,
   } = body;
 
   if (!taskId || !taskDescription || !projectFullName) {
@@ -145,6 +163,7 @@ async function handleStartTask(
     const results = await runWithAuth(authToken, authHeaderJson, async () => {
       // Determine which agents to spawn
       const agentsToSpawn = selectedAgents || ["claude-code"];
+      const agentCount = agentsToSpawn.length;
 
       // Fetch workspace settings for branchPrefix (same as socket.io handler)
       const workspaceSettings = await getConvex().query(
@@ -168,6 +187,102 @@ async function handleStartTask(
         );
       }
 
+      // Save PR title when provided (so auto-PR uses it later)
+      if (prTitle && prTitle.trim().length > 0) {
+        await getConvex().mutation(api.tasks.setPullRequestTitle, {
+          teamSlugOrId,
+          id: taskId as Id<"tasks">,
+          pullRequestTitle: prTitle,
+        });
+      }
+
+      // Fire-and-forget: generate AI PR title asynchronously (non-blocking)
+      // Mirrors the socket.io "start-task" handler behavior.
+      if (!prTitle || prTitle.trim().length === 0) {
+        void (async () => {
+          try {
+            const prInfo = await generatePRInfoAndBranchNames(
+              taskDescription,
+              agentCount,
+              teamSlugOrId
+            );
+            await getConvex().mutation(api.tasks.setPullRequestTitle, {
+              teamSlugOrId,
+              id: taskId as Id<"tasks">,
+              pullRequestTitle: prInfo.prTitle,
+            });
+            serverLogger.info(
+              `[http-api] AI-generated PR title saved: "${prInfo.prTitle}"`
+            );
+          } catch (e) {
+            serverLogger.error(
+              "[http-api] Failed generating PR title (non-blocking):",
+              e
+            );
+          }
+        })();
+      }
+
+      // Normalize images: accept either inline base64 (src) or storage IDs (imageId)
+      let imagesForSpawner:
+        | Array<{ src: string; fileName?: string; altText: string }>
+        | undefined;
+      if (images && images.length > 0) {
+        const inline = images.filter(
+          (img): img is { src: string; fileName?: string; altText: string } =>
+            "src" in img && typeof img.src === "string"
+        );
+        const refs = images.filter(
+          (
+            img
+          ): img is { imageId: string; fileName?: string; altText?: string } =>
+            "imageId" in img && typeof img.imageId === "string"
+        );
+
+        if (refs.length > 0) {
+          const storageIds = refs.map((img) => img.imageId as Id<"_storage">);
+          const urls = await getConvex().query(api.storage.getUrls, {
+            teamSlugOrId,
+            storageIds,
+          });
+          const downloaded = await Promise.all(
+            refs.map(async (img, index) => {
+              const url = urls.find((u) => u.storageId === img.imageId);
+              if (!url) {
+                return null;
+              }
+              const response = await fetch(url.url);
+              const buffer = await response.arrayBuffer();
+              const base64 = Buffer.from(buffer).toString("base64");
+              const mime =
+                response.headers.get("content-type") ?? "image/png";
+              const fileName = img.fileName;
+              const altText =
+                img.altText?.trim().length
+                  ? img.altText
+                  : fileName || `image_${index + 1}`;
+              const base = {
+                src: `data:${mime};base64,${base64}`,
+                altText,
+              };
+              return fileName ? { ...base, fileName } : base;
+            })
+          );
+
+          imagesForSpawner = downloaded.filter(
+            (img): img is { src: string; fileName?: string; altText: string } =>
+              img !== null
+          );
+        }
+
+        if (inline.length > 0) {
+          imagesForSpawner = [
+            ...(imagesForSpawner ?? []),
+            ...inline,
+          ];
+        }
+      }
+
       // Spawn all agents using the same code path as socket.io handler
       const agentResults = await spawnAllAgents(
         taskId as Id<"tasks">,
@@ -175,11 +290,13 @@ async function handleStartTask(
           repoUrl,
           branch,
           taskDescription,
+          prTitle,
           branchNames,
           selectedAgents: agentsToSpawn,
           taskRunIds: taskRunIds as Id<"taskRuns">[] | undefined,
           isCloudMode,
           environmentId: environmentId as Id<"environments"> | undefined,
+          images: imagesForSpawner,
           theme,
         },
         teamSlugOrId
