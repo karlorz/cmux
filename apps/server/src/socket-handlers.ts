@@ -1792,6 +1792,28 @@ export function setupSocketHandlers(
             worktreePath: resolvedWorkspacePath,
           });
 
+          // Register the worktree in the registry for settings page display
+          try {
+            await convex.mutation(api.worktreeRegistry.register, {
+              teamSlugOrId,
+              worktreePath: resolvedWorkspacePath,
+              sourceRepoPath: repoUrl || projectFullName || "local",
+              projectFullName: projectFullName || "local",
+              branchName: branch || "main",
+              shortId: workspaceName || "local",
+              mode: "codex-style" as const,
+              taskRunId,
+            });
+            serverLogger.info(
+              `[create-local-workspace] Registered worktree in registry: ${resolvedWorkspacePath}`
+            );
+          } catch (regError) {
+            serverLogger.warn(
+              `[create-local-workspace] Failed to register worktree in registry:`,
+              regError
+            );
+          }
+
           await convex.mutation(api.taskRuns.updateStatusPublic, {
             teamSlugOrId,
             id: taskRunId,
@@ -2399,7 +2421,197 @@ export function setupSocketHandlers(
     // Continue with all other handlers...
     // (I'll include the rest of the handlers in the next message due to length)
 
-    socket.on("open-in-editor", async (data, callback) => {
+    // Scan filesystem for existing worktrees and register them
+    socket.on(
+      "scan-worktrees",
+      async (
+        data: { teamSlugOrId: string },
+        callback: (response: {
+          success: boolean;
+          found: number;
+          registered: number;
+          error?: string;
+        }) => void
+      ) => {
+        // Guard callback in case client didn't provide one
+        const safeCallback =
+          typeof callback === "function"
+            ? callback
+            : (response: { success: boolean; found: number; registered: number; error?: string }) => {
+                serverLogger.info("[scan-worktrees] No callback provided, result:", response);
+              };
+
+        const teamSlugOrId = data.teamSlugOrId || safeTeam;
+        const convex = getConvex();
+
+        try {
+          // Check for custom worktree path setting
+          const settings = await convex.query(api.workspaceSettings.get, {
+            teamSlugOrId,
+          });
+          const customPattern = settings?.codexWorktreePathPattern;
+
+          // Determine base path - use custom pattern or default
+          let worktreeBasePath: string;
+          if (customPattern) {
+            worktreeBasePath = customPattern.replace(/^~/, os.homedir());
+          } else {
+            worktreeBasePath = path.join(os.homedir(), ".cmux", "worktrees");
+          }
+
+          // Check if the worktrees directory exists
+          try {
+            await fs.access(worktreeBasePath);
+          } catch {
+            safeCallback({ success: true, found: 0, registered: 0 });
+            return;
+          }
+
+          // Read all directories in worktree base path (these are shortId dirs)
+          const shortIdEntries = await fs.readdir(worktreeBasePath, {
+            withFileTypes: true,
+          });
+          const shortIdDirs = shortIdEntries.filter((e) => e.isDirectory());
+
+          let found = 0;
+          let registered = 0;
+
+          // Helper to sanitize git URLs (strip credentials)
+          const sanitizeGitUrl = (url: string): string => {
+            try {
+              // Handle SSH URLs (git@github.com:owner/repo.git)
+              if (url.startsWith("git@")) {
+                return url;
+              }
+              // Handle HTTPS URLs that may have credentials
+              const parsed = new URL(url);
+              parsed.username = "";
+              parsed.password = "";
+              return parsed.toString().replace(/\/$/, "");
+            } catch {
+              return url; // Return as-is if parsing fails
+            }
+          };
+
+          // Codex-style worktrees are at ~/.cmux/worktrees/<shortId>/<repoName>/
+          // So we need to iterate into each shortId directory
+          for (const shortIdDir of shortIdDirs) {
+            const shortIdPath = path.join(worktreeBasePath, shortIdDir.name);
+
+            // Check if shortIdPath itself is a git worktree (legacy or direct)
+            const directGitPath = path.join(shortIdPath, ".git");
+            try {
+              await fs.access(directGitPath);
+              // This shortId dir is itself a worktree
+              found++;
+              await registerWorktree(shortIdPath, shortIdDir.name, shortIdDir.name);
+              continue;
+            } catch {
+              // Not a direct worktree, check subdirectories
+            }
+
+            // Read subdirectories (repo name dirs)
+            let repoEntries;
+            try {
+              repoEntries = await fs.readdir(shortIdPath, { withFileTypes: true });
+            } catch {
+              continue;
+            }
+
+            for (const repoEntry of repoEntries) {
+              if (!repoEntry.isDirectory()) continue;
+
+              const worktreePath = path.join(shortIdPath, repoEntry.name);
+              const gitPath = path.join(worktreePath, ".git");
+
+              try {
+                await fs.access(gitPath);
+              } catch {
+                continue; // Not a git repo, skip
+              }
+
+              found++;
+              await registerWorktree(worktreePath, shortIdDir.name, repoEntry.name);
+            }
+          }
+
+          async function registerWorktree(
+            worktreePath: string,
+            shortId: string,
+            repoName: string
+          ) {
+            // Try to get branch name
+            let branchName = "unknown";
+            try {
+              const { stdout } = await execFileAsync(
+                "git",
+                ["branch", "--show-current"],
+                { cwd: worktreePath }
+              );
+              branchName = stdout.trim() || "unknown";
+            } catch {
+              // Ignore errors getting branch name
+            }
+
+            // Try to get remote URL for source repo path (sanitized)
+            let sourceRepoPath = worktreePath;
+            let projectFullName = repoName;
+            try {
+              const { stdout } = await execFileAsync(
+                "git",
+                ["config", "--get", "remote.origin.url"],
+                { cwd: worktreePath }
+              );
+              const rawUrl = stdout.trim();
+              sourceRepoPath = sanitizeGitUrl(rawUrl);
+              // Extract owner/repo from URL (fixed regex to handle dots in repo names)
+              const match = rawUrl.match(
+                /(?:github\.com[:/])([^/]+\/[^/]+?)(?:\.git)?$/
+              );
+              if (match) {
+                projectFullName = match[1].replace(/\.git$/, "");
+              }
+            } catch {
+              // Ignore errors getting remote URL
+            }
+
+            // Register the worktree
+            try {
+              await convex.mutation(api.worktreeRegistry.register, {
+                teamSlugOrId,
+                worktreePath,
+                sourceRepoPath,
+                projectFullName,
+                branchName,
+                shortId,
+                mode: "codex-style" as const,
+              });
+              registered++;
+              serverLogger.info(
+                `[scan-worktrees] Registered existing worktree: ${worktreePath}`
+              );
+            } catch (regError) {
+              serverLogger.warn(
+                `[scan-worktrees] Failed to register worktree ${worktreePath}:`,
+                regError
+              );
+            }
+          }
+
+          safeCallback({ success: true, found, registered });
+        } catch (error) {
+          serverLogger.error("[scan-worktrees] Error scanning worktrees:", error);
+          safeCallback({
+            success: false,
+            found: 0,
+            registered: 0,
+            error: error instanceof Error ? error.message : "Unknown error",
+          });
+        }
+      }
+    );
+
+    socket.on("open-in-editor", (data, callback) => {
       // In web mode, opening local editors is not supported
       if (env.NEXT_PUBLIC_WEB_MODE) {
         callback?.({ success: false, error: "Opening local editors is not available in the web version." });
@@ -2447,39 +2659,38 @@ export function setupSocketHandlers(
             throw new Error(`Unknown editor: ${editor}`);
         }
 
-        console.log("command", command);
+        serverLogger.info(`Opening ${path} in ${editor} with command:`, command);
 
-        const childProcess = spawn(command[0], command.slice(1));
-
-        childProcess.on("close", (code) => {
-          if (code === 0) {
-            serverLogger.info(`Successfully opened ${path} in ${editor}`);
-            // Send success callback
-            if (callback) {
-              callback({ success: true });
-            }
-          } else {
-            serverLogger.error(
-              `Error opening ${editor}: process exited with code ${code}`
-            );
-            const error = `Failed to open ${editor}: process exited with code ${code}`;
-            socket.emit("open-in-editor-error", { error });
-            // Send error callback
-            if (callback) {
-              callback({ success: false, error });
-            }
-          }
+        const childProcess = spawn(command[0], command.slice(1), {
+          detached: true,
+          stdio: "ignore",
         });
 
+        // Track if we've already responded (to avoid double callback)
+        let responded = false;
+
         childProcess.on("error", (error) => {
-          serverLogger.error(`Error opening ${editor}:`, error);
+          serverLogger.error(`Error spawning ${editor}:`, error);
           const errorMessage = `Failed to open ${editor}: ${error.message}`;
           socket.emit("open-in-editor-error", { error: errorMessage });
-          // Send error callback
-          if (callback) {
+          if (!responded && callback) {
+            responded = true;
             callback({ success: false, error: errorMessage });
           }
         });
+
+        // Unref so the parent process can exit independently
+        childProcess.unref();
+
+        // Respond immediately after spawn - editors like VS Code detach and run independently
+        // Use a short delay to catch immediate spawn errors
+        setTimeout(() => {
+          if (!responded && callback) {
+            responded = true;
+            serverLogger.info(`Successfully spawned ${editor} for ${path}`);
+            callback({ success: true });
+          }
+        }, 200);
       } catch (error) {
         serverLogger.error("Error opening editor:", error);
         const errorMessage =

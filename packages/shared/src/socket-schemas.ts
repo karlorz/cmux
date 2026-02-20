@@ -663,6 +663,16 @@ export interface ClientToServerEvents {
     data: TriggerLocalCloudSync,
     callback: (response: TriggerLocalCloudSyncResponse) => void
   ) => void;
+  // Scan filesystem for existing worktrees and register them
+  "scan-worktrees": (
+    data: { teamSlugOrId: string },
+    callback: (response: {
+      success: boolean;
+      found: number;
+      registered: number;
+      error?: string;
+    }) => void
+  ) => void;
 }
 
 export interface LocalRepoNotFound {

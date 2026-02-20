@@ -79,6 +79,11 @@ interface TaskDetailHeaderProps {
   onToggleAutoSync?: () => void;
   autoSyncEnabled?: boolean;
   teamSlugOrId: string;
+  /** Linked local workspace for cloud tasks - use its worktreePath for "Open with VS Code" */
+  linkedLocalWorkspace?: {
+    task?: { worktreePath?: string | null } | null;
+    taskRun?: { worktreePath?: string | null } | null;
+  } | null;
 }
 
 const ENABLE_MERGE_BUTTON = false;
@@ -265,6 +270,7 @@ export function TaskDetailHeader({
   onToggleAutoSync,
   autoSyncEnabled = true,
   teamSlugOrId,
+  linkedLocalWorkspace,
 }: TaskDetailHeaderProps) {
   const sidebar = useSidebarOptional();
   const navigate = useNavigate();
@@ -282,9 +288,21 @@ export function TaskDetailHeader({
       clipboard.copy(selectedRun.newBranch);
     }
   };
+  // Prefer linked local workspace path for "Open with VS Code" when viewing a cloud task
+  // This allows opening the local worktree instead of the cloud sandbox path (/root/workspace)
   const worktreePath = useMemo(
-    () => selectedRun?.worktreePath || task?.worktreePath || null,
-    [selectedRun?.worktreePath, task?.worktreePath],
+    () =>
+      linkedLocalWorkspace?.taskRun?.worktreePath ||
+      linkedLocalWorkspace?.task?.worktreePath ||
+      selectedRun?.worktreePath ||
+      task?.worktreePath ||
+      null,
+    [
+      linkedLocalWorkspace?.taskRun?.worktreePath,
+      linkedLocalWorkspace?.task?.worktreePath,
+      selectedRun?.worktreePath,
+      task?.worktreePath,
+    ],
   );
 
   // Find parent run if this is a child run (for comparing against parent's branch)

@@ -1,12 +1,13 @@
 import { SettingRow } from "@/components/settings/SettingRow";
 import { SettingSection } from "@/components/settings/SettingSection";
 import { Button } from "@/components/ui/button";
+import { useSocket } from "@/contexts/socket/use-socket";
 import { api } from "@cmux/convex/api";
 import type { Doc } from "@cmux/convex/dataModel";
 import { convexQuery } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useConvex } from "convex/react";
-import { FolderGit2, Plus, Trash2 } from "lucide-react";
+import { FolderGit2, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -22,9 +23,11 @@ export function WorktreesSection({
   onCodexWorktreePathPatternChange,
 }: WorktreesSectionProps) {
   const convex = useConvex();
+  const { socket } = useSocket();
   const [showAddMappingForm, setShowAddMappingForm] = useState(false);
   const [newProjectFullName, setNewProjectFullName] = useState("");
   const [newLocalRepoPath, setNewLocalRepoPath] = useState("");
+  const [isScanning, setIsScanning] = useState(false);
 
   // Query source repo mappings
   const { data: sourceRepoMappings, refetch: refetchMappings } = useQuery(
@@ -122,6 +125,32 @@ export function WorktreesSection({
       toast.error("Failed to remove worktree");
     },
   });
+
+  // Scan for worktrees on filesystem
+  const handleScanWorktrees = () => {
+    if (!socket) {
+      toast.error("Not connected to local server");
+      return;
+    }
+    setIsScanning(true);
+    socket.emit("scan-worktrees", { teamSlugOrId }, (response) => {
+      setIsScanning(false);
+      if (response.success) {
+        if (response.registered > 0) {
+          toast.success(
+            `Found ${response.found} worktrees, registered ${response.registered} new`
+          );
+          void refetchRegistry();
+        } else if (response.found > 0) {
+          toast.info(`Found ${response.found} worktrees, all already registered`);
+        } else {
+          toast.info("No worktrees found in ~/.cmux/worktrees/");
+        }
+      } else {
+        toast.error(response.error || "Failed to scan worktrees");
+      }
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -271,46 +300,81 @@ export function WorktreesSection({
       </SettingSection>
 
       <SettingSection
-        title="Active Worktrees"
-        description="Worktrees created by cmux for your tasks"
+        title="Worktrees"
+        description="Active worktrees created by cmux"
+        headerAction={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleScanWorktrees}
+            disabled={isScanning || !socket}
+            className="gap-1.5"
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${isScanning ? "animate-spin" : ""}`}
+            />
+            {isScanning ? "Scanning..." : "Scan"}
+          </Button>
+        }
       >
         {worktreeRegistry && worktreeRegistry.length > 0 ? (
-          <div className="divide-y divide-neutral-200 dark:divide-neutral-800">
-            {worktreeRegistry.map((worktree: Doc<"worktreeRegistry">) => (
-              <div
-                key={worktree._id}
-                className="flex items-center justify-between px-4 py-3"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                      {worktree.branchName}
-                    </p>
-                    {worktree.mode === "legacy" && (
-                      <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
-                        legacy
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-0.5 truncate text-xs text-neutral-500 dark:text-neutral-400">
-                    {worktree.worktreePath}
-                  </p>
-                  <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">
-                    {worktree.projectFullName} &middot; Last used{" "}
-                    {new Date(worktree.lastUsedAt).toLocaleDateString()}
-                  </p>
+          <div className="space-y-6 px-4 py-4">
+            {/* Group worktrees by source repo */}
+            {Object.entries(
+              worktreeRegistry.reduce(
+                (acc, worktree) => {
+                  const source = worktree.sourceRepoPath || "Unknown";
+                  if (!acc[source]) acc[source] = [];
+                  acc[source].push(worktree);
+                  return acc;
+                },
+                {} as Record<string, Doc<"worktreeRegistry">[]>
+              )
+            ).map(([sourceRepo, worktrees]) => (
+              <div key={sourceRepo}>
+                <p className="mb-3 font-mono text-sm text-neutral-700 dark:text-neutral-300">
+                  {sourceRepo}
+                </p>
+                <div className="space-y-3">
+                  {worktrees.map((worktree) => (
+                    <div
+                      key={worktree._id}
+                      className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                            Worktree
+                          </p>
+                          <p className="mt-0.5 font-mono text-xs text-neutral-500 dark:text-neutral-400">
+                            {worktree.worktreePath}
+                          </p>
+                          {worktree.taskRunIds && worktree.taskRunIds.length > 0 && (
+                            <div className="mt-3">
+                              <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                                Tasks
+                              </p>
+                              <p className="mt-1 text-sm text-neutral-700 dark:text-neutral-300">
+                                {worktree.branchName || worktree.projectFullName}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            removeWorktreeMutation.mutate(worktree.worktreePath)
+                          }
+                          disabled={removeWorktreeMutation.isPending}
+                          className="ml-4 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    removeWorktreeMutation.mutate(worktree.worktreePath)
-                  }
-                  disabled={removeWorktreeMutation.isPending}
-                  className="ml-2 text-neutral-500 hover:text-red-600 dark:text-neutral-400 dark:hover:text-red-400"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
               </div>
             ))}
           </div>
@@ -321,7 +385,7 @@ export function WorktreesSection({
               No active worktrees
             </p>
             <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">
-              Worktrees will appear here when you start tasks
+              Worktrees will appear here when you start local tasks
             </p>
           </div>
         )}
