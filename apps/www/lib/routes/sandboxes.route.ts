@@ -47,6 +47,7 @@ import {
   encodeEnvContentForEnvctl,
   envctlLoadCommand,
 } from "./utils/ensure-env-vars";
+import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 
 /**
  * Create a MorphCloudClient instance.
@@ -326,6 +327,9 @@ const StartSandboxBody = z
     branch: z.string().optional(),
     newBranch: z.string().optional(),
     depth: z.number().optional().default(1),
+    // Agent parameters for CLI task creation - triggers agent startup after sandbox is ready
+    agentName: z.string().optional(),
+    prompt: z.string().optional(),
   })
   .openapi("StartSandboxBody");
 
@@ -385,7 +389,8 @@ sandboxesRouter.openapi(
     },
   }),
   async (c) => {
-    const user = await stackServerAppJs.getUser({ tokenStore: c.req.raw });
+    // Support both cookie-based (web) and Bearer token (CLI) authentication
+    const user = await getUserFromRequest(c.req.raw);
     if (!user) {
       return c.text("Unauthorized", 401);
     }
@@ -1063,6 +1068,166 @@ sandboxesRouter.openapi(
       }
 
       await configureGitIdentityTask;
+
+      // If agent name and prompt are provided, start the agent in the sandbox
+      // This is used by CLI task creation to spawn agents without the desktop app
+      if (body.agentName && body.prompt) {
+        const agentConfig = AGENT_CONFIGS.find(
+          (a) => a.name === body.agentName
+        );
+        if (agentConfig) {
+          console.log(
+            `[sandboxes.start] Starting agent ${body.agentName} with prompt`
+          );
+
+          // Get agent environment setup (files, env vars, startup commands)
+          if (agentConfig.environment) {
+            try {
+              const callbackUrl = env.NEXT_PUBLIC_CONVEX_URL || "http://localhost:9779";
+              const envResult = await agentConfig.environment({
+                taskRunId: body.taskRunId || "",
+                taskRunJwt: body.taskRunJwt || "",
+                prompt: body.prompt,
+                apiKeys: {}, // API keys are configured via envctl/environment
+                callbackUrl,
+              });
+
+              // Write files to sandbox
+              if (envResult.files && envResult.files.length > 0) {
+                for (const file of envResult.files) {
+                  const destPath = file.destinationPath.replace(
+                    "$HOME",
+                    "/root"
+                  );
+                  // Decode base64 content and write to sandbox
+                  const content = Buffer.from(
+                    file.contentBase64,
+                    "base64"
+                  ).toString("utf-8");
+                  const escapedContent = content
+                    .replace(/\\/g, "\\\\")
+                    .replace(/'/g, "'\\''");
+                  const dirPath = destPath.substring(
+                    0,
+                    destPath.lastIndexOf("/")
+                  );
+                  await instance.exec(`mkdir -p '${dirPath}'`);
+                  await instance.exec(
+                    `printf '%s' '${escapedContent}' > '${destPath}'`
+                  );
+                  if (file.mode) {
+                    await instance.exec(`chmod ${file.mode} '${destPath}'`);
+                  }
+                  console.log(
+                    `[sandboxes.start] Wrote agent file: ${destPath}`
+                  );
+                }
+              }
+
+              // Apply environment variables
+              if (envResult.env && Object.keys(envResult.env).length > 0) {
+                const envContent = Object.entries(envResult.env)
+                  .map(([k, v]) => `${k}="${v}"`)
+                  .join("\n");
+                const encodedEnv = encodeEnvContentForEnvctl(envContent);
+                await instance.exec(envctlLoadCommand(encodedEnv));
+                console.log(
+                  `[sandboxes.start] Applied ${Object.keys(envResult.env).length} agent env vars`
+                );
+              }
+
+              // Run startup commands (these set up directories, etc.)
+              if (
+                envResult.startupCommands &&
+                envResult.startupCommands.length > 0
+              ) {
+                for (const cmd of envResult.startupCommands) {
+                  console.log(
+                    `[sandboxes.start] Running startup command: ${cmd.substring(0, 100)}...`
+                  );
+                  await instance.exec(cmd);
+                }
+              }
+            } catch (envError) {
+              console.error(
+                `[sandboxes.start] Failed to set up agent environment:`,
+                envError
+              );
+              // Continue anyway - the agent might still work
+            }
+          }
+
+          // Start the agent via worker HTTP API for proper PTY/terminal integration
+          const agentCmd = [agentConfig.command, ...agentConfig.args].join(" ");
+          const terminalId = `agent-${body.taskRunId || "cli"}`;
+
+          try {
+            // Call worker HTTP API to create terminal
+            const createTerminalResponse = await fetch(
+              `${workerService.url}/api/create-terminal`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  terminalId,
+                  taskRunId: body.taskRunId,
+                  taskRunJwt: body.taskRunJwt,
+                  agentName: agentConfig.name,
+                  prompt: body.prompt,
+                  ptyCommand: agentCmd,
+                  cwd: "/root/workspace",
+                  env: {},
+                  startupCommands: [],
+                  postStartCommands: [],
+                  convexUrl: env.NEXT_PUBLIC_CONVEX_URL,
+                }),
+                signal: AbortSignal.timeout(30000),
+              }
+            );
+
+            if (createTerminalResponse.ok) {
+              const result = await createTerminalResponse.json();
+              console.log(
+                `[sandboxes.start] Started agent terminal via worker API: ${terminalId}`,
+                result
+              );
+            } else {
+              const errorText = await createTerminalResponse.text();
+              console.error(
+                `[sandboxes.start] Failed to create agent terminal: ${createTerminalResponse.status} ${errorText}`
+              );
+              // Fall back to tmux if worker API fails
+              const fallbackCmd = `tmux new-session -d -s '${terminalId}' -c /root/workspace 'source /etc/profile 2>/dev/null || true; ${agentCmd}'`;
+              await instance.exec(fallbackCmd);
+              console.log(
+                `[sandboxes.start] Fell back to tmux for agent: ${terminalId}`
+              );
+            }
+          } catch (startError) {
+            console.error(
+              `[sandboxes.start] Failed to start agent via worker API:`,
+              startError
+            );
+            // Fall back to tmux
+            try {
+              const fallbackCmd = `tmux new-session -d -s '${terminalId}' -c /root/workspace 'source /etc/profile 2>/dev/null || true; ${agentCmd}'`;
+              await instance.exec(fallbackCmd);
+              console.log(
+                `[sandboxes.start] Fell back to tmux for agent: ${terminalId}`
+              );
+            } catch (fallbackError) {
+              console.error(
+                `[sandboxes.start] Tmux fallback also failed:`,
+                fallbackError
+              );
+            }
+          }
+        } else {
+          console.warn(
+            `[sandboxes.start] Unknown agent: ${body.agentName}, skipping agent startup`
+          );
+        }
+      }
 
       return c.json({
         instanceId: instance.id,

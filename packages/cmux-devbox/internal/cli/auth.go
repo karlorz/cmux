@@ -4,6 +4,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -98,7 +99,18 @@ var authStatusCmd = &cobra.Command{
 			return nil
 		}
 
+		// Check for team override from DEVBOX_TEAM env var
+		teamOverride := os.Getenv("DEVBOX_TEAM")
+
 		if flagJSON {
+			teamOutput := map[string]interface{}{
+				"id":           profile.TeamID,
+				"slug":         profile.TeamSlug,
+				"display_name": profile.TeamDisplayName,
+			}
+			if teamOverride != "" {
+				teamOutput["override"] = teamOverride
+			}
 			output := map[string]interface{}{
 				"logged_in": true,
 				"user": map[string]interface{}{
@@ -106,11 +118,7 @@ var authStatusCmd = &cobra.Command{
 					"email": profile.Email,
 					"name":  profile.Name,
 				},
-				"team": map[string]interface{}{
-					"id":           profile.TeamID,
-					"slug":         profile.TeamSlug,
-					"display_name": profile.TeamDisplayName,
-				},
+				"team": teamOutput,
 			}
 			data, _ := json.MarshalIndent(output, "", "  ")
 			fmt.Println(string(data))
@@ -122,7 +130,10 @@ var authStatusCmd = &cobra.Command{
 			if profile.Name != "" {
 				fmt.Printf("  Name: %s\n", profile.Name)
 			}
-			if profile.TeamDisplayName != "" {
+			// Show team override if set, otherwise show profile team
+			if teamOverride != "" {
+				fmt.Printf("  Team: %s (override)\n", teamOverride)
+			} else if profile.TeamDisplayName != "" {
 				fmt.Printf("  Team: %s\n", profile.TeamDisplayName)
 			} else if profile.TeamSlug != "" {
 				fmt.Printf("  Team: %s\n", profile.TeamSlug)

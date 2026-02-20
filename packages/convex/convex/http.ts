@@ -46,9 +46,15 @@ import {
   getSnapshot as cmuxGetSnapshot,
   getConfig as cmuxGetConfig,
   getMe as cmuxGetMe,
+  listMyTeams as cmuxListMyTeams,
+  switchTeam as cmuxSwitchTeam,
   instanceActionRouter as cmuxInstanceActionRouter,
   instanceGetRouter as cmuxInstanceGetRouter,
   instanceDeleteRouter as cmuxInstanceDeleteRouter,
+  listTasks as cmuxListTasks,
+  createTask as cmuxCreateTask,
+  taskGetRouter as cmuxTaskGetRouter,
+  taskActionRouter as cmuxTaskActionRouter,
 } from "./cmux_http";
 import {
   createInstance as devboxV2CreateInstance,
@@ -284,6 +290,18 @@ http.route({
   handler: cmuxGetMe,
 });
 
+http.route({
+  path: "/api/v1/cmux/me/teams",
+  method: "GET",
+  handler: cmuxListMyTeams,
+});
+
+http.route({
+  path: "/api/v1/cmux/me/team",
+  method: "POST",
+  handler: cmuxSwitchTeam,
+});
+
 // Instance-specific routes use pathPrefix to capture the instance ID
 http.route({
   pathPrefix: "/api/v1/cmux/instances/",
@@ -301,6 +319,32 @@ http.route({
   pathPrefix: "/api/v1/cmux/instances/",
   method: "DELETE",
   handler: cmuxInstanceDeleteRouter,
+});
+
+// Task management routes
+http.route({
+  path: "/api/v1/cmux/tasks",
+  method: "GET",
+  handler: cmuxListTasks,
+});
+
+http.route({
+  path: "/api/v1/cmux/tasks",
+  method: "POST",
+  handler: cmuxCreateTask,
+});
+
+// Task-specific routes use pathPrefix to capture the task ID
+http.route({
+  pathPrefix: "/api/v1/cmux/tasks/",
+  method: "GET",
+  handler: cmuxTaskGetRouter,
+});
+
+http.route({
+  pathPrefix: "/api/v1/cmux/tasks/",
+  method: "POST",
+  handler: cmuxTaskActionRouter,
 });
 
 // =============================================================================

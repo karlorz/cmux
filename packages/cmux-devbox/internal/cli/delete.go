@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/cmux-cli/cmux-devbox/internal/auth"
+	"github.com/cmux-cli/cmux-devbox/internal/provider"
+	"github.com/cmux-cli/cmux-devbox/internal/pvelxc"
 	"github.com/cmux-cli/cmux-devbox/internal/vm"
 	"github.com/spf13/cobra"
 )
@@ -22,26 +24,47 @@ Examples:
   cmux delete cmux_abc123`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
 		instanceID := args[0]
 
-		// Get team slug
-		teamSlug, err := auth.GetTeamSlug()
-		if err != nil {
-			return fmt.Errorf("failed to get team: %w", err)
-		}
-
-		client, err := vm.NewClient()
-		if err != nil {
-			return fmt.Errorf("failed to create client: %w", err)
-		}
-		client.SetTeamSlug(teamSlug)
-
 		fmt.Printf("Deleting VM %s...\n", instanceID)
-		if err := client.StopInstance(ctx, instanceID); err != nil {
-			return fmt.Errorf("failed to delete VM: %w", err)
+		selected, err := resolveProviderForInstance(instanceID)
+		if err != nil {
+			return err
+		}
+
+		timeout := 30 * time.Second
+		if selected == provider.PveLxc {
+			timeout = 5 * time.Minute
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
+		switch selected {
+		case provider.PveLxc:
+			client, err := pvelxc.NewClientFromEnv()
+			if err != nil {
+				return fmt.Errorf("failed to create PVE LXC client: %w\nSet PVE_API_URL and PVE_API_TOKEN", err)
+			}
+			if err := client.StopInstance(ctx, instanceID); err != nil {
+				return fmt.Errorf("failed to delete VM: %w", err)
+			}
+		case provider.Morph:
+			teamSlug, err := auth.GetTeamSlug()
+			if err != nil {
+				return fmt.Errorf("failed to get team: %w", err)
+			}
+
+			client, err := vm.NewClient()
+			if err != nil {
+				return fmt.Errorf("failed to create client: %w", err)
+			}
+			client.SetTeamSlug(teamSlug)
+
+			if err := client.StopInstance(ctx, instanceID); err != nil {
+				return fmt.Errorf("failed to delete VM: %w", err)
+			}
+		default:
+			return fmt.Errorf("unsupported provider: %s", selected)
 		}
 
 		fmt.Println("✓ VM deleted")

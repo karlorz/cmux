@@ -61,7 +61,7 @@ func (c *Client) SetTeamSlug(teamSlug string) {
 	c.teamSlug = teamSlug
 }
 
-// doRequest makes an authenticated request to the API
+// doRequest makes an authenticated request to the Convex HTTP API
 func (c *Client) doRequest(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
 	accessToken, err := auth.GetAccessToken()
 	if err != nil {
@@ -78,6 +78,37 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 	}
 
 	url := c.baseURL + path
+	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	return c.httpClient.Do(req)
+}
+
+// doWwwRequest makes an authenticated request to the www API (for sandbox operations)
+func (c *Client) doWwwRequest(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
+	accessToken, err := auth.GetAccessToken()
+	if err != nil {
+		return nil, fmt.Errorf("not authenticated: %w", err)
+	}
+
+	var bodyReader io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		bodyReader = bytes.NewReader(data)
+	}
+
+	// www API is at CmuxURL (not ConvexSiteURL)
+	cfg := auth.GetConfig()
+	url := cfg.CmuxURL + path
 	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
 	if err != nil {
 		return nil, err
@@ -626,4 +657,434 @@ func (c *Client) ListPtySessions(ctx context.Context, instanceID string) ([]PtyS
 	}
 
 	return result.Sessions, nil
+}
+
+// Team represents a team the user is a member of
+type Team struct {
+	TeamID      string `json:"teamId"`
+	Slug        string `json:"slug"`
+	DisplayName string `json:"displayName"`
+	Role        string `json:"role"`
+	Selected    bool   `json:"selected"`
+}
+
+// ListTeamsResult represents the result of listing teams
+type ListTeamsResult struct {
+	Teams          []Team `json:"teams"`
+	SelectedTeamID string `json:"selectedTeamId"`
+}
+
+// SwitchTeamResult represents the result of switching teams
+type SwitchTeamResult struct {
+	TeamID          string `json:"teamId"`
+	TeamSlug        string `json:"teamSlug"`
+	TeamDisplayName string `json:"teamDisplayName"`
+}
+
+// ListTeams lists all teams the user is a member of
+func (c *Client) ListTeams(ctx context.Context) (*ListTeamsResult, error) {
+	resp, err := c.doRequest(ctx, "GET", "/api/v1/cmux/me/teams", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result ListTeamsResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// SwitchTeam switches the user's selected team
+func (c *Client) SwitchTeam(ctx context.Context, teamSlugOrId string) (*SwitchTeamResult, error) {
+	body := map[string]string{
+		"teamSlugOrId": teamSlugOrId,
+	}
+
+	resp, err := c.doRequest(ctx, "POST", "/api/v1/cmux/me/team", body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result SwitchTeamResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// Task represents a task from the web app
+type Task struct {
+	ID          string `json:"id"`
+	Prompt      string `json:"prompt"`
+	Repository  string `json:"repository"`
+	BaseBranch  string `json:"baseBranch"`
+	Status      string `json:"status"`
+	Agent       string `json:"agent"`
+	VSCodeURL   string `json:"vscodeUrl"`
+	IsCompleted bool   `json:"isCompleted"`
+	IsArchived  bool   `json:"isArchived"`
+	CreatedAt   int64  `json:"createdAt"`
+	UpdatedAt   int64  `json:"updatedAt"`
+	TaskRunID   string `json:"taskRunId"`
+	ExitCode    *int   `json:"exitCode,omitempty"`
+}
+
+// TaskRun represents a run within a task
+type TaskRun struct {
+	ID             string `json:"id"`
+	Agent          string `json:"agent"`
+	Status         string `json:"status"`
+	VSCodeURL      string `json:"vscodeUrl"`
+	PullRequestURL string `json:"pullRequestUrl"`
+	CreatedAt      int64  `json:"createdAt"`
+	CompletedAt    int64  `json:"completedAt"`
+	ExitCode       *int   `json:"exitCode,omitempty"`
+}
+
+// TaskDetail represents a task with full details including runs
+type TaskDetail struct {
+	ID          string    `json:"id"`
+	Prompt      string    `json:"prompt"`
+	Repository  string    `json:"repository"`
+	BaseBranch  string    `json:"baseBranch"`
+	IsCompleted bool      `json:"isCompleted"`
+	IsArchived  bool      `json:"isArchived"`
+	CreatedAt   int64     `json:"createdAt"`
+	UpdatedAt   int64     `json:"updatedAt"`
+	TaskRuns    []TaskRun `json:"taskRuns"`
+}
+
+// ListTasksResult represents the result of listing tasks
+type ListTasksResult struct {
+	Tasks []Task `json:"tasks"`
+}
+
+// CreateTaskOptions represents options for creating a task
+type CreateTaskOptions struct {
+	Prompt     string
+	Repository string
+	BaseBranch string
+	Agents     []string
+}
+
+// TaskRunWithJWT represents a task run with its JWT for sandbox auth
+type TaskRunWithJWT struct {
+	TaskRunID string `json:"taskRunId"`
+	JWT       string `json:"jwt"`
+	AgentName string `json:"agentName"`
+}
+
+// CreateTaskResult represents the result of creating a task
+type CreateTaskResult struct {
+	TaskID   string           `json:"taskId"`
+	TaskRuns []TaskRunWithJWT `json:"taskRuns"`
+	Status   string           `json:"status"`
+}
+
+// StartSandboxOptions represents options for starting a sandbox
+type StartSandboxOptions struct {
+	TaskRunID       string
+	TaskRunJWT      string
+	AgentName       string
+	Prompt          string
+	ProjectFullName string
+	RepoURL         string
+	Branch          string
+	TTLSeconds      int
+}
+
+// StartSandboxResult represents the result of starting a sandbox
+type StartSandboxResult struct {
+	InstanceID string `json:"instanceId"`
+	Provider   string `json:"provider"`
+	VSCodeURL  string `json:"vscodeUrl"`
+	VncURL     string `json:"vncUrl"`
+	XtermURL   string `json:"xtermUrl"`
+	WorkerURL  string `json:"workerUrl"`
+}
+
+// ListTasks lists all tasks for the team
+func (c *Client) ListTasks(ctx context.Context, archived bool) (*ListTasksResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	path := fmt.Sprintf("/api/v1/cmux/tasks?teamSlugOrId=%s&archived=%t", c.teamSlug, archived)
+	resp, err := c.doRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result ListTasksResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// CreateTask creates a new task with optional task runs
+func (c *Client) CreateTask(ctx context.Context, opts CreateTaskOptions) (*CreateTaskResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+		"prompt":       opts.Prompt,
+	}
+	if opts.Repository != "" {
+		body["repository"] = opts.Repository
+	}
+	if opts.BaseBranch != "" {
+		body["baseBranch"] = opts.BaseBranch
+	}
+	if len(opts.Agents) > 0 {
+		body["agents"] = opts.Agents
+	}
+
+	resp, err := c.doRequest(ctx, "POST", "/api/v1/cmux/tasks", body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result CreateTaskResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// StartSandbox starts a sandbox for a task run via the www API
+func (c *Client) StartSandbox(ctx context.Context, opts StartSandboxOptions) (*StartSandboxResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+		"taskRunId":    opts.TaskRunID,
+		"taskRunJwt":   opts.TaskRunJWT,
+	}
+	if opts.AgentName != "" {
+		body["agentName"] = opts.AgentName
+	}
+	if opts.Prompt != "" {
+		body["prompt"] = opts.Prompt
+	}
+	if opts.ProjectFullName != "" {
+		body["projectFullName"] = opts.ProjectFullName
+	}
+	if opts.RepoURL != "" {
+		body["repoUrl"] = opts.RepoURL
+	}
+	if opts.Branch != "" {
+		body["branch"] = opts.Branch
+	}
+	if opts.TTLSeconds > 0 {
+		body["ttlSeconds"] = opts.TTLSeconds
+	} else {
+		body["ttlSeconds"] = 3600 // Default 1 hour
+	}
+
+	// Call the www API /api/sandboxes/start endpoint
+	resp, err := c.doWwwRequest(ctx, "POST", "/api/sandboxes/start", body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("sandbox start failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result StartSandboxResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// GetTask gets the details of a specific task
+func (c *Client) GetTask(ctx context.Context, taskID string) (*TaskDetail, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	path := fmt.Sprintf("/api/v1/cmux/tasks/%s?teamSlugOrId=%s", taskID, c.teamSlug)
+	resp, err := c.doRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result TaskDetail
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// StopTask stops/archives a task
+func (c *Client) StopTask(ctx context.Context, taskID string) error {
+	if c.teamSlug == "" {
+		return fmt.Errorf("team slug not set")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+	}
+
+	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/api/v1/cmux/tasks/%s/stop", taskID), body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	return nil
+}
+
+// StartTaskAgentsOptions represents options for starting agents via apps/server HTTP API
+type StartTaskAgentsOptions struct {
+	TaskID          string
+	TaskDescription string
+	ProjectFullName string
+	RepoURL         string
+	Branch          string
+	TaskRunIDs      []string
+	SelectedAgents  []string
+	IsCloudMode     bool
+	EnvironmentID   string
+	Theme           string
+}
+
+// StartTaskAgentsResult represents the result of starting task agents
+type StartTaskAgentsResult struct {
+	TaskID  string                    `json:"taskId"`
+	Results []StartTaskAgentResult    `json:"results"`
+}
+
+// StartTaskAgentResult represents a single agent spawn result
+type StartTaskAgentResult struct {
+	AgentName string `json:"agentName"`
+	TaskRunID string `json:"taskRunId"`
+	VSCodeURL string `json:"vscodeUrl,omitempty"`
+	Success   bool   `json:"success"`
+	Error     string `json:"error,omitempty"`
+}
+
+// doServerRequest makes an authenticated request to the apps/server HTTP API
+func (c *Client) doServerRequest(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
+	accessToken, err := auth.GetAccessToken()
+	if err != nil {
+		return nil, fmt.Errorf("not authenticated: %w", err)
+	}
+
+	var bodyReader io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		bodyReader = bytes.NewReader(data)
+	}
+
+	// apps/server API is at ServerURL (socket.io server)
+	cfg := auth.GetConfig()
+	url := cfg.ServerURL + path
+	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	return c.httpClient.Do(req)
+}
+
+// StartTaskAgents starts agents for a task using the same flow as web app
+// This calls apps/server HTTP API which uses the same agentSpawner as socket.io
+func (c *Client) StartTaskAgents(ctx context.Context, opts StartTaskAgentsOptions) (*StartTaskAgentsResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId":    c.teamSlug,
+		"taskId":          opts.TaskID,
+		"taskDescription": opts.TaskDescription,
+		"projectFullName": opts.ProjectFullName,
+		"isCloudMode":     opts.IsCloudMode,
+	}
+	if opts.RepoURL != "" {
+		body["repoUrl"] = opts.RepoURL
+	}
+	if opts.Branch != "" {
+		body["branch"] = opts.Branch
+	}
+	if len(opts.TaskRunIDs) > 0 {
+		body["taskRunIds"] = opts.TaskRunIDs
+	}
+	if len(opts.SelectedAgents) > 0 {
+		body["selectedAgents"] = opts.SelectedAgents
+	}
+	if opts.EnvironmentID != "" {
+		body["environmentId"] = opts.EnvironmentID
+	}
+	if opts.Theme != "" {
+		body["theme"] = opts.Theme
+	}
+
+	resp, err := c.doServerRequest(ctx, "POST", "/api/start-task", body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("start-task failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result StartTaskAgentsResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
 }

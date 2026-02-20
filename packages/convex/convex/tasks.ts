@@ -1701,6 +1701,126 @@ export const setProjectAndBranchInternal = internalMutation({
 });
 
 /**
+ * Internal query to list tasks for a user in a team.
+ * Used by CLI HTTP API for task list endpoint.
+ */
+export const listInternal = internalQuery({
+  args: {
+    teamId: v.string(),
+    userId: v.string(),
+    archived: v.optional(v.boolean()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.min(Math.max(args.limit ?? 100, 1), 500);
+
+    // Use efficient indexes based on archived status
+    let q;
+    if (args.archived === true) {
+      q = ctx.db
+        .query("tasks")
+        .withIndex("by_team_user_archived", (idx) =>
+          idx.eq("teamId", args.teamId).eq("userId", args.userId).eq("isArchived", true),
+        )
+        .filter((qq) => qq.neq(qq.field("isPreview"), true));
+    } else {
+      q = ctx.db
+        .query("tasks")
+        .withIndex("by_team_user_active", (idx) =>
+          idx
+            .eq("teamId", args.teamId)
+            .eq("userId", args.userId)
+            .eq("isArchived", false)
+            .eq("isPreview", false),
+        );
+    }
+
+    const tasks = await q
+      .filter((qq) => qq.eq(qq.field("linkedFromCloudTaskRunId"), undefined))
+      .filter((qq) => qq.neq(qq.field("isLocalWorkspace"), true))
+      .order("desc")
+      .take(limit);
+
+    return tasks;
+  },
+});
+
+/**
+ * Internal mutation to create a task (without task runs).
+ * Task runs are created separately via taskRuns.createInternal to get JWTs.
+ * Used by CLI HTTP API for task create endpoint.
+ *
+ * Note: isCloudWorkspace is NOT set here so tasks appear in "In progress"
+ * category (same as web app). Setting isCloudWorkspace: true would cause
+ * tasks to appear in "Workspaces" category instead.
+ */
+export const createInternal = internalMutation({
+  args: {
+    teamId: v.string(),
+    userId: v.string(),
+    text: v.string(),
+    description: v.optional(v.string()),
+    projectFullName: v.optional(v.string()),
+    baseBranch: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const taskId = await ctx.db.insert("tasks", {
+      text: args.text,
+      description: args.description,
+      projectFullName: args.projectFullName,
+      baseBranch: args.baseBranch,
+      isCompleted: false,
+      isArchived: false,
+      isPreview: false,
+      createdAt: now,
+      updatedAt: now,
+      lastActivityAt: now,
+      userId: args.userId,
+      teamId: args.teamId,
+      // Note: isCloudWorkspace is NOT set so tasks appear in "In progress"
+      // category in the UI (same as normal web app tasks)
+    });
+
+    return { taskId };
+  },
+});
+
+/**
+ * Internal mutation to archive a task (stop).
+ * Used by CLI HTTP API for task stop endpoint.
+ */
+export const archiveInternal = internalMutation({
+  args: {
+    taskId: v.id("tasks"),
+    teamId: v.string(),
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.taskId);
+    if (!task || task.teamId !== args.teamId || task.userId !== args.userId) {
+      throw new Error("Task not found or unauthorized");
+    }
+    const now = Date.now();
+    await ctx.db.patch(args.taskId, { isArchived: true, updatedAt: now });
+
+    // Also archive all task runs for this task
+    const taskRuns = await ctx.db
+      .query("taskRuns")
+      .withIndex("by_task", (q) => q.eq("taskId", args.taskId))
+      .filter((q) => q.neq(q.field("isArchived"), true))
+      .collect();
+    await Promise.all(
+      taskRuns.map((run) =>
+        ctx.db.patch(run._id, { isArchived: true, updatedAt: now })
+      )
+    );
+
+    return { archived: true };
+  },
+});
+
+/**
  * Get local workspace task linked from a cloud task run.
  * Used to show linked local VS Code entry in the sidebar under cloud task runs.
  */

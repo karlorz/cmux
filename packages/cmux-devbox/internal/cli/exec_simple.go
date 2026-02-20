@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/cmux-cli/cmux-devbox/internal/auth"
+	"github.com/cmux-cli/cmux-devbox/internal/provider"
+	"github.com/cmux-cli/cmux-devbox/internal/pvelxc"
 	"github.com/cmux-cli/cmux-devbox/internal/vm"
 	"github.com/spf13/cobra"
 )
@@ -29,20 +31,43 @@ Examples:
 		instanceID := args[0]
 		command := strings.Join(args[1:], " ")
 
-		teamSlug, err := auth.GetTeamSlug()
+		selected, err := resolveProviderForInstance(instanceID)
 		if err != nil {
-			return fmt.Errorf("failed to get team: %w", err)
+			return err
 		}
 
-		client, err := vm.NewClient()
-		if err != nil {
-			return fmt.Errorf("failed to create client: %w", err)
-		}
-		client.SetTeamSlug(teamSlug)
+		var stdout, stderr string
+		var exitCode int
 
-		stdout, stderr, exitCode, err := client.ExecCommand(ctx, instanceID, command)
-		if err != nil {
-			return fmt.Errorf("failed to execute command: %w", err)
+		switch selected {
+		case provider.PveLxc:
+			client, err := pvelxc.NewClientFromEnv()
+			if err != nil {
+				return fmt.Errorf("failed to create PVE LXC client: %w\nSet PVE_API_URL and PVE_API_TOKEN", err)
+			}
+
+			stdout, stderr, exitCode, err = client.ExecCommand(ctx, instanceID, command)
+			if err != nil {
+				return fmt.Errorf("failed to execute command: %w", err)
+			}
+		case provider.Morph:
+			teamSlug, err := auth.GetTeamSlug()
+			if err != nil {
+				return fmt.Errorf("failed to get team: %w", err)
+			}
+
+			client, err := vm.NewClient()
+			if err != nil {
+				return fmt.Errorf("failed to create client: %w", err)
+			}
+			client.SetTeamSlug(teamSlug)
+
+			stdout, stderr, exitCode, err = client.ExecCommand(ctx, instanceID, command)
+			if err != nil {
+				return fmt.Errorf("failed to execute command: %w", err)
+			}
+		default:
+			return fmt.Errorf("unsupported provider: %s", selected)
 		}
 
 		if stdout != "" {

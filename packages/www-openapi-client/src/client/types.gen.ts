@@ -653,6 +653,8 @@ export type StartSandboxBody = {
     branch?: string;
     newBranch?: string;
     depth?: number;
+    agentName?: string;
+    prompt?: string;
 };
 
 export type PrewarmSandboxResponse = {

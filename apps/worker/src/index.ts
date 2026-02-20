@@ -418,6 +418,78 @@ app.post("/api/run-task-screenshots", async (req, res) => {
   }
 });
 
+// HTTP endpoint for creating terminals (used by CLI task creation)
+// This allows the www API to spawn agent terminals without needing socket.io
+app.post("/api/create-terminal", async (req, res) => {
+  const logPrefix = "[/api/create-terminal]";
+  try {
+    const data = req.body;
+
+    log("INFO", `${logPrefix} Received request`, {
+      workerId: WORKER_ID,
+      hasToken: Boolean(data?.taskRunJwt),
+      terminalId: data?.terminalId,
+      agentName: data?.agentName,
+    });
+
+    // Validate required fields
+    if (!data?.taskRunJwt) {
+      return res.status(400).json({ error: "Missing required field: taskRunJwt" });
+    }
+    if (!data?.terminalId) {
+      return res.status(400).json({ error: "Missing required field: terminalId" });
+    }
+    if (!data?.ptyCommand) {
+      return res.status(400).json({ error: "Missing required field: ptyCommand" });
+    }
+
+    // Verify JWT token
+    const secret = await getEnvFromEnvd("CMUX_TASK_RUN_JWT_SECRET");
+    if (!secret) {
+      log("ERROR", `${logPrefix} CMUX_TASK_RUN_JWT_SECRET not configured`);
+      return res.status(500).json({ error: "Server not configured for terminal creation" });
+    }
+
+    try {
+      await verifyTaskRunToken(data.taskRunJwt, secret);
+    } catch (jwtError) {
+      log("ERROR", `${logPrefix} JWT verification failed`, jwtError);
+      return res.status(401).json({ error: "Invalid task run token" });
+    }
+
+    // Create terminal using existing createTerminal function
+    await createTerminal(data.terminalId, {
+      cols: data.cols || 120,
+      rows: data.rows || 40,
+      cwd: data.cwd || "/root/workspace",
+      env: data.env || {},
+      taskRunId: data.taskRunId,
+      agentModel: data.agentName,
+      startupCommands: data.startupCommands || [],
+      postStartCommands: data.postStartCommands || [],
+      taskRunContext: {
+        taskRunToken: data.taskRunJwt,
+        prompt: data.prompt || "",
+        convexUrl: data.convexUrl || process.env.NEXT_PUBLIC_CONVEX_URL || "",
+      },
+      backend: "cmux-pty",
+      ptyCommand: data.ptyCommand,
+    });
+
+    log("INFO", `${logPrefix} Terminal created successfully: ${data.terminalId}`);
+    res.json({
+      success: true,
+      terminalId: data.terminalId,
+      workerId: WORKER_ID,
+    });
+  } catch (error) {
+    log("ERROR", `${logPrefix} Failed to create terminal`, error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Failed to create terminal",
+    });
+  }
+});
+
 // Create HTTP server with Express app
 const httpServer = createServer(app);
 

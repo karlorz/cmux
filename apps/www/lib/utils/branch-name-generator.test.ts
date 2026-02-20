@@ -22,7 +22,7 @@ import {
 const EMPTY_KEYS = {};
 
 function createMockResult<RESULT>(
-  object: RESULT
+  object: RESULT,
 ): GenerateObjectResult<RESULT> {
   return {
     object,
@@ -32,7 +32,11 @@ function createMockResult<RESULT>(
       inputTokens: 1,
       outputTokens: 1,
       totalTokens: 2,
-      inputTokenDetails: { noCacheTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      inputTokenDetails: {
+        noCacheTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
       outputTokenDetails: { textTokens: 0, reasoningTokens: 0 },
     },
     warnings: undefined,
@@ -80,8 +84,13 @@ describe("generateRandomId", () => {
 describe("generateBranchName", () => {
   it("prefixes with default prefix and appends random id", () => {
     const name = generateBranchName("Fix auth bug");
-    const escapedPrefix = DEFAULT_BRANCH_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    expect(name).toMatch(new RegExp(`^${escapedPrefix}fix-auth-bug-[a-z0-9]{5}$`));
+    const escapedPrefix = DEFAULT_BRANCH_PREFIX.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      "\\$&",
+    );
+    expect(name).toMatch(
+      new RegExp(`^${escapedPrefix}fix-auth-bug-[a-z0-9]{5}$`),
+    );
   });
 });
 
@@ -138,17 +147,13 @@ describe("generateBranchNames", () => {
 
     const { baseBranchName } = await generateNewBranchName(
       "Add auditing to auth",
-      EMPTY_KEYS
+      EMPTY_KEYS,
     );
     expect(baseBranchName).toBe(`${DEFAULT_BRANCH_PREFIX}add-auth-logging`);
   });
 
   it("respects provided unique id for single branch", async () => {
-    const { branchName } = await generateNewBranchName(
-      "Fix bug",
-      {},
-      "abcde"
-    );
+    const { branchName } = await generateNewBranchName("Fix bug", {}, "abcde");
     expect(branchName).toBe(`${DEFAULT_BRANCH_PREFIX}fix-bug-abcde`);
   });
 
@@ -156,7 +161,7 @@ describe("generateBranchNames", () => {
     const { branchNames } = await generateUniqueBranchNames(
       "Improve docs",
       3,
-      {}
+      {},
     );
     expect(branchNames).toHaveLength(3);
     const unique = new Set(branchNames);
@@ -164,23 +169,41 @@ describe("generateBranchNames", () => {
   });
 
   it("uses supplied unique id for the first branch when generating multiples", async () => {
+    setGenerateObjectImplementation(async (_options) => {
+      const parsed = prGenerationSchema.parse({
+        branchName: "improve-logging",
+        prTitle: "Improve logging",
+      });
+      return createMockResult(parsed);
+    });
+
     const { branchNames } = await generateUniqueBranchNames(
       "Improve logging",
       2,
       {},
-      "abcde"
+      "abcde",
     );
-    const escapedPrefix = DEFAULT_BRANCH_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    expect(branchNames[0]).toBe(`${DEFAULT_BRANCH_PREFIX}improve-logging-abcde`);
-    expect(branchNames[1]).toMatch(new RegExp(`^${escapedPrefix}improve-logging-[a-z0-9]{5}$`));
+    const escapedPrefix = DEFAULT_BRANCH_PREFIX.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      "\\$&",
+    );
+    expect(branchNames[0]).toBe(
+      `${DEFAULT_BRANCH_PREFIX}improve-logging-abcde`,
+    );
+    expect(branchNames[1]).toMatch(
+      new RegExp(`^${escapedPrefix}improve-logging-[a-z0-9]{5}$`),
+    );
   });
 
   it("builds multiple branches from existing title", () => {
     const names = generateUniqueBranchNamesFromTitle("Fix Bug", 2);
     expect(names).toHaveLength(2);
-    const escapedPrefix = DEFAULT_BRANCH_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const escapedPrefix = DEFAULT_BRANCH_PREFIX.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      "\\$&",
+    );
     names.forEach((name) =>
-      expect(name).toMatch(new RegExp(`^${escapedPrefix}fix-bug-[a-z0-9]{5}$`))
+      expect(name).toMatch(new RegExp(`^${escapedPrefix}fix-bug-[a-z0-9]{5}$`)),
     );
   });
 });
@@ -204,7 +227,7 @@ describe("getPRTitleFromTaskDescription", () => {
 
     const { title, providerName } = await getPRTitleFromTaskDescription(
       "Refactor auth module",
-      EMPTY_KEYS
+      EMPTY_KEYS,
     );
     // Provider name depends on which platform env var is set (GEMINI, OPENAI, or ANTHROPIC)
     expect(providerName).not.toBeNull();

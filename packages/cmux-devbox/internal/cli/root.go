@@ -13,6 +13,9 @@ var (
 	flagJSON    bool
 	flagVerbose bool
 
+	// Provider selection (optional)
+	flagProvider string
+
 	// Config override flags
 	flagAPIURL        string
 	flagConvexSiteURL string
@@ -48,6 +51,7 @@ func init() {
 	// Global flags available to all commands
 	rootCmd.PersistentFlags().BoolVar(&flagJSON, "json", false, "Output as JSON")
 	rootCmd.PersistentFlags().BoolVarP(&flagVerbose, "verbose", "v", false, "Verbose output")
+	rootCmd.PersistentFlags().StringVarP(&flagProvider, "provider", "p", "", "Sandbox provider: morph, pve-lxc (auto-detected from PVE_API_URL/PVE_API_TOKEN env vars)")
 
 	// Config override flags (override env vars and build-time values)
 	rootCmd.PersistentFlags().StringVar(&flagAPIURL, "api-url", "", "Override API URL (default: https://manaflow.com)")
@@ -59,6 +63,9 @@ func init() {
 	// Auth commands
 	rootCmd.AddCommand(authCmd)
 
+	// Team commands
+	rootCmd.AddCommand(teamCmd)
+
 	// Root-level shorthand commands for auth (convenience aliases)
 	rootCmd.AddCommand(loginCmd)
 	rootCmd.AddCommand(logoutCmd)
@@ -67,6 +74,10 @@ func init() {
 
 // Execute runs the root command
 func Execute() error {
+	// Enable Cobra's built-in --version flag (prints short version).
+	// Keep the `cmux version` command for detailed build info.
+	rootCmd.Version = GetVersion()
+	rootCmd.SetVersionTemplate("cmux devbox version {{.Version}}\n")
 	return rootCmd.Execute()
 }
 

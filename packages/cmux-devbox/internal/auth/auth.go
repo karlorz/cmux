@@ -4,6 +4,7 @@
 package auth
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +16,76 @@ import (
 	"strings"
 	"time"
 )
+
+// envLoaded tracks whether we've already loaded .env file
+var envLoaded bool
+
+// loadEnvFile loads environment variables from a .env file if it exists.
+// Only loads in dev mode and only once per process.
+// Walks up from current directory to find .env file.
+func loadEnvFile() {
+	if envLoaded {
+		return
+	}
+	envLoaded = true
+
+	// Find .env file by walking up directories
+	dir, err := os.Getwd()
+	if err != nil {
+		return
+	}
+
+	var envPath string
+	for {
+		candidate := filepath.Join(dir, ".env")
+		if _, err := os.Stat(candidate); err == nil {
+			envPath = candidate
+			break
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	if envPath == "" {
+		return
+	}
+
+	file, err := os.Open(envPath)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// Parse KEY=value
+		idx := strings.Index(line, "=")
+		if idx <= 0 {
+			continue
+		}
+		key := strings.TrimSpace(line[:idx])
+		value := strings.TrimSpace(line[idx+1:])
+		// Remove surrounding quotes if present
+		if len(value) >= 2 {
+			if (value[0] == '"' && value[len(value)-1] == '"') ||
+				(value[0] == '\'' && value[len(value)-1] == '\'') {
+				value = value[1 : len(value)-1]
+			}
+		}
+		// Only set if not already set in environment
+		if os.Getenv(key) == "" {
+			os.Setenv(key, value)
+		}
+	}
+}
 
 // Shared constants - must match cmux Rust CLI for credential sharing
 const (
@@ -42,6 +113,7 @@ const (
 	DevPublishableKey = "pck_pt4nwry6sdskews2pxk4g2fbe861ak2zvaf3mqendspa0" // Dev publishable key
 	DevCmuxURL        = "http://localhost:9779"                         // Local dev server
 	DevConvexSiteURL  = "https://famous-camel-162.convex.site"          // Dev Convex deployment
+	DevServerURL      = "http://localhost:9776"                         // Local apps/server socket.io & HTTP API
 )
 
 // Build-time configuration variables
@@ -51,6 +123,7 @@ var (
 	PublishableKey = "" // Stack Auth publishable client key
 	CmuxURL        = "" // cmux web app URL (e.g., https://manaflow.com)
 	ConvexSiteURL  = "" // Convex HTTP site URL
+	ServerURL      = "" // apps/server HTTP API URL
 )
 
 // buildMode determines which defaults to use ("dev" or "prod")
@@ -77,6 +150,7 @@ var (
 	cliPublishableKey string
 	cliCmuxURL        string
 	cliConvexSiteURL  string
+	cliServerURL      string
 )
 
 // SetConfigOverrides sets CLI flag overrides for configuration values.
@@ -89,12 +163,19 @@ func SetConfigOverrides(projectID, publishableKey, cmuxURL, convexSiteURL string
 	cliConvexSiteURL = convexSiteURL
 }
 
+// SetServerURLOverride sets the CLI flag override for server URL.
+// Kept separate from SetConfigOverrides for backward compatibility.
+func SetServerURLOverride(serverURL string) {
+	cliServerURL = serverURL
+}
+
 // getDefaultsForMode returns the appropriate default values based on build mode
-func getDefaultsForMode() (projectID, publishableKey, cmuxURL, convexSiteURL string) {
+func getDefaultsForMode() (projectID, publishableKey, cmuxURL, convexSiteURL, serverURL string) {
 	if buildMode == "dev" {
-		return DevProjectID, DevPublishableKey, DevCmuxURL, DevConvexSiteURL
+		return DevProjectID, DevPublishableKey, DevCmuxURL, DevConvexSiteURL, DevServerURL
 	}
-	return ProdProjectID, ProdPublishableKey, ProdCmuxURL, ProdConvexSiteURL
+	// Production server URL - empty means must be set via ldflags or env
+	return ProdProjectID, ProdPublishableKey, ProdCmuxURL, ProdConvexSiteURL, ""
 }
 
 // Config holds auth configuration
@@ -103,6 +184,7 @@ type Config struct {
 	PublishableKey string
 	CmuxURL        string
 	ConvexSiteURL  string
+	ServerURL      string // apps/server HTTP API URL for agent spawning
 	StackAuthURL   string
 	IsDev          bool
 }
@@ -123,6 +205,8 @@ func (c Config) Validate() error {
 	if c.ConvexSiteURL == "" {
 		missing = append(missing, "CONVEX_SITE_URL")
 	}
+	// ServerURL is optional - only required for agent spawning via CLI
+	// If not set, CLI task create will fail with a clear error message
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required configuration: %v. For production builds, these must be set via -ldflags or environment variables", missing)
 	}
@@ -131,20 +215,28 @@ func (c Config) Validate() error {
 
 // GetConfig returns auth configuration using the following priority (highest to lowest):
 // 1. CLI flags (set via SetConfigOverrides)
-// 2. Environment variables
+// 2. Environment variables (including .env file loaded in dev mode)
 // 3. Build-time values (set via -ldflags)
 // 4. Mode-specific defaults (dev defaults for Mode=dev, prod defaults for Mode=prod)
 func GetConfig() Config {
+	// In dev mode, load .env file to populate environment variables
+	if buildMode == "dev" {
+		loadEnvFile()
+	}
+
 	// Get mode-specific defaults
-	defaultProjectID, defaultPublishableKey, defaultCmuxURL, defaultConvexSiteURL := getDefaultsForMode()
+	defaultProjectID, defaultPublishableKey, defaultCmuxURL, defaultConvexSiteURL, defaultServerURL := getDefaultsForMode()
 
 	// Helper to resolve value with priority: CLI > env > build-time > default
-	resolve := func(cliVal, envKey, buildVal, defaultVal string) string {
+	// Supports multiple env key names (first match wins)
+	resolve := func(cliVal string, envKeys []string, buildVal, defaultVal string) string {
 		if cliVal != "" {
 			return cliVal
 		}
-		if envVal := os.Getenv(envKey); envVal != "" {
-			return envVal
+		for _, envKey := range envKeys {
+			if envVal := os.Getenv(envKey); envVal != "" {
+				return envVal
+			}
 		}
 		if buildVal != "" {
 			return buildVal
@@ -152,10 +244,12 @@ func GetConfig() Config {
 		return defaultVal
 	}
 
-	projectID := resolve(cliProjectID, "STACK_PROJECT_ID", ProjectID, defaultProjectID)
-	publishableKey := resolve(cliPublishableKey, "STACK_PUBLISHABLE_CLIENT_KEY", PublishableKey, defaultPublishableKey)
-	cmuxURL := resolve(cliCmuxURL, "CMUX_API_URL", CmuxURL, defaultCmuxURL)
-	convexSiteURL := resolve(cliConvexSiteURL, "CONVEX_SITE_URL", ConvexSiteURL, defaultConvexSiteURL)
+	// Support both STACK_* and NEXT_PUBLIC_STACK_* env var names
+	projectID := resolve(cliProjectID, []string{"STACK_PROJECT_ID", "NEXT_PUBLIC_STACK_PROJECT_ID"}, ProjectID, defaultProjectID)
+	publishableKey := resolve(cliPublishableKey, []string{"STACK_PUBLISHABLE_CLIENT_KEY", "NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY"}, PublishableKey, defaultPublishableKey)
+	cmuxURL := resolve(cliCmuxURL, []string{"CMUX_API_URL"}, CmuxURL, defaultCmuxURL)
+	convexSiteURL := resolve(cliConvexSiteURL, []string{"CONVEX_SITE_URL"}, ConvexSiteURL, defaultConvexSiteURL)
+	serverURL := resolve(cliServerURL, []string{"CMUX_SERVER_URL"}, ServerURL, defaultServerURL)
 
 	// Stack Auth URL only has env override and hardcoded default
 	stackAuthURL := os.Getenv("AUTH_API_URL")
@@ -171,6 +265,7 @@ func GetConfig() Config {
 		PublishableKey: publishableKey,
 		CmuxURL:        cmuxURL,
 		ConvexSiteURL:  convexSiteURL,
+		ServerURL:      serverURL,
 		StackAuthURL:   stackAuthURL,
 		IsDev:          isDev,
 	}
@@ -224,8 +319,15 @@ func StoreRefreshToken(token string) error {
 	return storeInFile(token)
 }
 
-// GetRefreshToken retrieves the Stack Auth refresh token
+// GetRefreshToken retrieves the Stack Auth refresh token.
+// In dev mode, it first checks for DEVBOX_REFRESH_TOKEN environment variable
+// to allow bypassing the browser-based auth flow.
 func GetRefreshToken() (string, error) {
+	// Dev mode bypass: check environment variable first
+	if devToken := os.Getenv("DEVBOX_REFRESH_TOKEN"); devToken != "" {
+		return devToken, nil
+	}
+
 	if runtime.GOOS == "darwin" {
 		return getFromKeychain()
 	}
@@ -825,6 +927,11 @@ func ClearCachedUserProfile() error {
 	return nil
 }
 
+// ClearUserProfileCache is an alias for ClearCachedUserProfile
+func ClearUserProfileCache() error {
+	return ClearCachedUserProfile()
+}
+
 // FetchUserProfile fetches the user profile from the server and caches it
 func FetchUserProfile() (*UserProfile, error) {
 	accessToken, err := GetAccessToken()
@@ -880,8 +987,14 @@ func GetUserProfile() (*UserProfile, error) {
 	return FetchUserProfile()
 }
 
-// GetTeamSlug returns the user's team slug/ID, fetching if necessary
+// GetTeamSlug returns the team slug for API calls.
+// Priority: DEVBOX_TEAM env var > user profile team slug > team ID
 func GetTeamSlug() (string, error) {
+	// Check for team override from environment (dev mode / CI)
+	if teamOverride := os.Getenv("DEVBOX_TEAM"); teamOverride != "" {
+		return teamOverride, nil
+	}
+
 	profile, err := GetUserProfile()
 	if err != nil {
 		return "", err
