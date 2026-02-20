@@ -136,6 +136,8 @@ build-dev:
 install-dev: build-dev
 	@mkdir -p ~/.local/bin
 	@cp bin/cmux-devbox ~/.local/bin/cmux-devbox
+	@# Clear macOS extended attributes (com.apple.provenance can cause hangs)
+	@xattr -c ~/.local/bin/cmux-devbox 2>/dev/null || true
 	@echo "Installed to ~/.local/bin/cmux-devbox"
 	@if ! echo "$$PATH" | grep -q "$$HOME/.local/bin"; then \
 		echo ""; \

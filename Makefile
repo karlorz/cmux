@@ -140,9 +140,6 @@ install-cmux-devbox-dev:
 	@echo "Building and installing cmux-devbox (dev mode)..."
 	$(MAKE) -C packages/cmux-devbox install-dev
 	@echo ""
-	@echo "Verifying installation..."
-	@cmux-devbox --version || ~/.local/bin/cmux-devbox --version
-	@echo ""
 	@echo "cmux-devbox ready! Run: cmux-devbox --help"
 
 # Start Chrome with remote debugging on port 9222 (for CDP/MCP)

@@ -224,8 +224,15 @@ func StoreRefreshToken(token string) error {
 	return storeInFile(token)
 }
 
-// GetRefreshToken retrieves the Stack Auth refresh token
+// GetRefreshToken retrieves the Stack Auth refresh token.
+// In dev mode, it first checks for DEVBOX_REFRESH_TOKEN environment variable
+// to allow bypassing the browser-based auth flow.
 func GetRefreshToken() (string, error) {
+	// Dev mode bypass: check environment variable first
+	if devToken := os.Getenv("DEVBOX_REFRESH_TOKEN"); devToken != "" {
+		return devToken, nil
+	}
+
 	if runtime.GOOS == "darwin" {
 		return getFromKeychain()
 	}
