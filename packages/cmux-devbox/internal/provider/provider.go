@@ -15,7 +15,7 @@ const (
 var (
 	reDigits   = regexp.MustCompile(`^\d+$`)
 	reCmuxVmid = regexp.MustCompile(`^cmux-\d+$`)
-	reMorphID  = regexp.MustCompile(`^cmux_[a-z0-9]+$`)
+	reMorphID  = regexp.MustCompile(`^(cmux|manaflow)_[a-z0-9]+$`)
 )
 
 func HasPveEnv() bool {

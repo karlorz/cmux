@@ -636,7 +636,7 @@ async function handleGetInstanceMorph(
 
   return jsonResponse({
     id,
-    status,
+    status: morphData.status,
     name: instance.name,
     vscodeUrl: proxyUrls.vscodeUrl,
     workerUrl,
