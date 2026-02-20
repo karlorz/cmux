@@ -824,7 +824,8 @@ function SettingsComponent() {
     }
   };
 
-  const activeSection = section;
+  // In web mode, worktrees section is not available - fall back to general
+  const activeSection = (env.NEXT_PUBLIC_WEB_MODE && section === "worktrees") ? "general" : section;
   const selectedTheme = resolvedTheme;
 
   return (
@@ -872,8 +873,8 @@ function SettingsComponent() {
               tooltipLanguageOptions={TOOLTIP_LANGUAGE_OPTIONS}
               heatmapColors={heatmapColors}
               onHeatmapColorsChange={setHeatmapColors}
-              worktreePath={worktreePath}
-              onWorktreePathChange={setWorktreePath}
+              worktreePath={codexWorktreePathPattern}
+              onWorktreePathChange={setCodexWorktreePathPattern}
               onContainerSettingsChange={handleContainerSettingsChange}
             />
           ) : activeSection === "git" ? (

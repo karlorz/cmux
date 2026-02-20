@@ -2842,12 +2842,9 @@ export function setupSocketHandlers(
             teamSlugOrId: resolvedTeamId,
           });
           if (settings?.codexWorktreePathPattern) {
-            // Resolve the pattern (replace {short-id} and {repo-name} placeholders with wildcards)
-            // The pattern is a directory template, so we take the base directory
-            const customPattern = settings.codexWorktreePathPattern
-              .replace(/\{short-id\}/g, "")
-              .replace(/\{repo-name\}/g, "")
-              .replace(/\/+$/, ""); // Remove trailing slashes
+            // codexWorktreePathPattern is a base path (not a template with placeholders)
+            // ShortId and repoName are appended automatically during worktree creation
+            const customPattern = settings.codexWorktreePathPattern.replace(/\/+$/, ""); // Remove trailing slashes
             const resolvedCustomPath = path.resolve(customPattern.replace(/^~/, homeDir));
             if (resolvedCustomPath && !allowedPrefixes.includes(resolvedCustomPath)) {
               allowedPrefixes.push(resolvedCustomPath);

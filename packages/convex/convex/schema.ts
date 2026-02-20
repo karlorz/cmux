@@ -632,7 +632,7 @@ const convexSchema = defineSchema({
     worktreeMode: v.optional(
       v.union(v.literal("legacy"), v.literal("codex-style"))
     ), // "legacy" = ~/cmux/<repo>/origin/, "codex-style" = use existing local repos
-    codexWorktreePathPattern: v.optional(v.string()), // Default: ~/.cmux/worktrees/{short-id}/{repo-name}/
+    codexWorktreePathPattern: v.optional(v.string()), // Base path for codex-style worktrees (default: ~/.cmux/worktrees/). ShortId and repoName are appended automatically.
     // Heatmap review settings
     heatmapModel: v.optional(v.string()), // Model to use for heatmap review (e.g., "anthropic-opus-4-5", "cmux-heatmap-2")
     heatmapThreshold: v.optional(v.number()), // Score threshold for filtering (0-1, default: 0)

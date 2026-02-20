@@ -1,3 +1,4 @@
+import { env } from "@/client-env";
 import { useSidebar } from "@/contexts/sidebar/SidebarContext";
 import {
   disableDragPointerEvents,
@@ -10,6 +11,7 @@ import { Archive, ArrowLeft, FolderGit2, GitBranch, KeyRound, Settings } from "l
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ComponentType,
@@ -29,9 +31,11 @@ interface SettingsSidebarNavItem {
   label: string;
   section: SettingsSection;
   icon: ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  /** If true, this item is only shown in local/desktop mode (not web mode) */
+  localOnly?: boolean;
 }
 
-const navItems: SettingsSidebarNavItem[] = [
+const allNavItems: SettingsSidebarNavItem[] = [
   {
     label: "General",
     section: "general",
@@ -51,6 +55,8 @@ const navItems: SettingsSidebarNavItem[] = [
     label: "Worktrees",
     section: "worktrees",
     icon: FolderGit2,
+    // Hidden in web mode - worktrees are local-only
+    localOnly: true,
   },
   {
     label: "Archived Tasks",
@@ -79,6 +85,14 @@ export function SettingsSidebar({
   });
   const [isResizing, setIsResizing] = useState(false);
   const { isHidden } = useSidebar();
+
+  // Filter nav items based on web mode - worktrees are local-only
+  const navItems = useMemo(() => {
+    if (env.NEXT_PUBLIC_WEB_MODE) {
+      return allNavItems.filter((item) => !item.localOnly);
+    }
+    return allNavItems;
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("sidebarWidth", String(width));
