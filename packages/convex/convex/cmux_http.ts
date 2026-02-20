@@ -7,6 +7,52 @@
 import { httpAction, type ActionCtx } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { env } from "../_shared/convex-env";
+import type { DevboxProvider } from "@cmux/shared/provider-types";
+import type { FunctionReference } from "convex/server";
+import type { Id } from "./_generated/dataModel";
+
+type SandboxProvider = DevboxProvider;
+
+// Provider action APIs - cast from internal to access provider-specific actions
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const e2bActionsApi = (internal as any).e2b_actions as {
+  getInstance: FunctionReference<"action", "internal">;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const modalActionsApi = (internal as any).modal_actions as {
+  getInstance: FunctionReference<"action", "internal">;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const pveLxcActionsApi = (internal as any).pve_lxc_actions as {
+  getInstance: FunctionReference<"action", "internal">;
+};
+
+function getActionsApiForProvider(provider: SandboxProvider) {
+  switch (provider) {
+    case "modal":
+      return modalActionsApi;
+    case "pve-lxc":
+      return pveLxcActionsApi;
+    default:
+      return e2bActionsApi;
+  }
+}
+
+async function getProviderInfo(
+  ctx: ActionCtx,
+  devboxId: string
+): Promise<{ provider: SandboxProvider; providerInstanceId: string } | null> {
+  const info = (await ctx.runQuery(internal.devboxInstances.getInfo, {
+    devboxId,
+  })) as { provider: string; providerInstanceId: string } | null;
+  if (!info) return null;
+  return {
+    provider: info.provider as SandboxProvider,
+    providerInstanceId: info.providerInstanceId,
+  };
+}
 
 const MORPH_API_BASE_URL = "https://cloud.morph.so/api";
 
@@ -18,8 +64,10 @@ const JSON_HEADERS = {
 };
 
 // Security: Validate instance ID format to prevent injection attacks
-// IDs should be manaflow_ or cmux_ followed by 8+ alphanumeric characters
-const INSTANCE_ID_REGEX = /^(?:manaflow|cmux)_[a-zA-Z0-9]{8,}$/;
+// IDs should be manaflow_, cmux_, or cr_ followed by 8+ alphanumeric characters
+// - manaflow_/cmux_: Morph provider instances
+// - cr_: PVE-LXC provider instances (cloudrouter)
+const INSTANCE_ID_REGEX = /^(?:manaflow|cmux|cr)_[a-zA-Z0-9]{8,}$/;
 
 function isValidInstanceId(id: string): boolean {
   return INSTANCE_ID_REGEX.test(id);
@@ -489,56 +537,32 @@ async function handleGetInstance(
       return jsonResponse({ code: 404, message: "Instance not found" }, 404);
     }
 
-    // Get provider instance ID from mapping
-    const providerInstanceId = await getProviderInstanceId(ctx, id);
-    if (!providerInstanceId) {
+    // Get provider info from devboxInfo table
+    const providerInfo = await getProviderInfo(ctx, id);
+    if (!providerInfo) {
       return jsonResponse({ id, status: instance.status, name: instance.name });
     }
 
-    // Get fresh status and URLs from Morph
-    const morphResponse = await morphFetch(`/instance/${providerInstanceId}`);
+    const { provider, providerInstanceId } = providerInfo;
 
-    if (!morphResponse.ok) {
-      // Instance may have been deleted
-      if (morphResponse.status === 404) {
-        await ctx.runMutation(api.devboxInstances.updateStatus, {
-          teamSlugOrId,
-          id,
-          status: "stopped",
-        });
-        return jsonResponse({
-          id,
-          status: "stopped",
-          name: instance.name,
-        });
-      }
-      // Return basic data on other errors
-      return jsonResponse({ id, status: instance.status, name: instance.name });
+    // For Morph provider, use direct Morph API
+    if (provider === "morph" || provider === "e2b") {
+      return handleGetInstanceMorph(ctx, id, providerInstanceId, instance, teamSlugOrId);
     }
 
-    const morphData = (await morphResponse.json()) as {
-      id: string;
+    // For other providers (pve-lxc, modal), use the provider actions API
+    const actionsApi = getActionsApiForProvider(provider);
+    const providerResult = (await ctx.runAction(actionsApi.getInstance, {
+      instanceId: providerInstanceId,
+    })) as {
+      instanceId: string;
       status: string;
-      networking?: {
-        http_services?: Array<{ port: number; url: string; name?: string }> | Record<string, string>;
-      };
-      spec?: {
-        vcpus?: number;
-        memory?: number;
-        disk_size?: number;
-      };
+      vscodeUrl?: string | null;
+      workerUrl?: string | null;
+      vncUrl?: string | null;
     };
 
-    // Map Morph status to our status
-    // Note: Morph uses "ready" for a running instance, not "running"
-    const status =
-      morphData.status === "running" || morphData.status === "ready"
-        ? "running"
-        : morphData.status === "paused"
-          ? "paused"
-          : morphData.status === "stopped"
-            ? "stopped"
-            : "unknown";
+    const status = providerResult.status as "running" | "stopped" | "paused";
 
     // Update status in Convex if changed
     if (status !== instance.status) {
@@ -549,24 +573,76 @@ async function handleGetInstance(
       });
     }
 
-    // Get URLs directly from Morph (not cached)
-    const httpServices = morphData.networking?.http_services ?? [];
-    const { workerUrl } = extractNetworkingUrls(httpServices);
-    const proxyUrls = buildDbaProxyUrls(workerUrl);
-
     return jsonResponse({
       id,
       status,
       name: instance.name,
-      vscodeUrl: proxyUrls.vscodeUrl,
-      workerUrl,
-      vncUrl: proxyUrls.vncUrl,
-      spec: morphData.spec,
+      vscodeUrl: providerResult.vscodeUrl ?? undefined,
+      workerUrl: providerResult.workerUrl ?? undefined,
+      vncUrl: providerResult.vncUrl ?? undefined,
     });
   } catch (error) {
     console.error("[cmux.get] Error:", error);
     return jsonResponse({ code: 500, message: "Failed to get instance" }, 500);
   }
+}
+
+// Helper for Morph/E2B provider (legacy direct API call)
+async function handleGetInstanceMorph(
+  ctx: ActionCtx,
+  id: string,
+  providerInstanceId: string,
+  instance: { id: string; status: string; name?: string },
+  teamSlugOrId: string
+): Promise<Response> {
+  // Get fresh status and URLs from Morph
+  const morphResponse = await morphFetch(`/instance/${providerInstanceId}`);
+
+  if (!morphResponse.ok) {
+    // Instance may have been deleted
+    if (morphResponse.status === 404) {
+      await ctx.runMutation(api.devboxInstances.updateStatus, {
+        teamSlugOrId,
+        id,
+        status: "stopped",
+      });
+      return jsonResponse({
+        id,
+        status: "stopped",
+        name: instance.name,
+      });
+    }
+    // Return basic data on other errors
+    return jsonResponse({ id, status: instance.status, name: instance.name });
+  }
+
+  const morphData = (await morphResponse.json()) as {
+    id: string;
+    status: string;
+    networking?: {
+      http_services?: Array<{ port: number; url: string; name?: string }> | Record<string, string>;
+    };
+    spec?: {
+      vcpus?: number;
+      memory?: number;
+      disk_size?: number;
+    };
+  };
+
+  // Get URLs directly from Morph (not cached)
+  const httpServices = morphData.networking?.http_services ?? [];
+  const { workerUrl } = extractNetworkingUrls(httpServices);
+  const proxyUrls = buildDbaProxyUrls(workerUrl);
+
+  return jsonResponse({
+    id,
+    status: morphData.status,
+    name: instance.name,
+    vscodeUrl: proxyUrls.vscodeUrl,
+    workerUrl,
+    vncUrl: proxyUrls.vncUrl,
+    spec: morphData.spec,
+  });
 }
 
 // ============================================================================
@@ -1354,6 +1430,124 @@ export const getMe = httpAction(async (ctx) => {
 });
 
 // ============================================================================
+// GET /api/v1/cmux/me/teams - List all teams the user is a member of
+// ============================================================================
+export const listMyTeams = httpAction(async (ctx) => {
+  const { identity, error } = await getAuthenticatedUser(ctx);
+  if (error) return error;
+
+  try {
+    const userId = identity!.subject;
+
+    // Get user's selected team
+    const user = await ctx.runQuery(internal.users.getByUserIdInternal, {
+      userId,
+    });
+
+    // Get all team memberships
+    const memberships = await ctx.runQuery(internal.teams.getMembershipsByUserIdInternal, {
+      userId,
+    });
+
+    // Fetch team details for each membership
+    const teams = await Promise.all(
+      memberships.map(async (m) => {
+        const team = await ctx.runQuery(internal.teams.getByTeamIdInternal, {
+          teamId: m.teamId,
+        });
+        return {
+          teamId: m.teamId,
+          slug: team?.slug ?? m.teamId,
+          displayName: team?.displayName ?? team?.name ?? null,
+          role: m.role,
+          selected: m.teamId === user?.selectedTeamId,
+        };
+      })
+    );
+
+    return jsonResponse({
+      teams,
+      selectedTeamId: user?.selectedTeamId ?? null,
+    });
+  } catch (err) {
+    console.error("[cmux.listMyTeams] Error:", err);
+    return jsonResponse(
+      { code: 500, message: "Failed to list teams" },
+      500
+    );
+  }
+});
+
+// ============================================================================
+// POST /api/v1/cmux/me/team - Switch current user's selected team
+// ============================================================================
+export const switchTeam = httpAction(async (ctx, req) => {
+  const contentTypeError = verifyContentType(req);
+  if (contentTypeError) return contentTypeError;
+
+  const { identity, error } = await getAuthenticatedUser(ctx);
+  if (error) return error;
+
+  try {
+    const userId = identity!.subject;
+    const body = await req.json() as { teamSlugOrId: string };
+
+    if (!body.teamSlugOrId) {
+      return jsonResponse(
+        { code: 400, message: "teamSlugOrId is required" },
+        400
+      );
+    }
+
+    // Resolve team slug/id to canonical teamId
+    const team = await ctx.runQuery(internal.teams.getBySlugOrIdInternal, {
+      slugOrId: body.teamSlugOrId,
+    });
+
+    if (!team) {
+      return jsonResponse(
+        { code: 404, message: `Team not found: ${body.teamSlugOrId}` },
+        404
+      );
+    }
+
+    // Check user has membership in this team
+    const memberships = await ctx.runQuery(internal.teams.getMembershipsByUserIdInternal, {
+      userId,
+    });
+
+    const hasMembership = memberships.some(m => m.teamId === team.teamId);
+    if (!hasMembership) {
+      return jsonResponse(
+        { code: 403, message: `You are not a member of team: ${body.teamSlugOrId}` },
+        403
+      );
+    }
+
+    // Update user's selected team in Convex
+    await ctx.runMutation(internal.users.updateSelectedTeamInternal, {
+      userId,
+      selectedTeamId: team.teamId,
+      selectedTeamDisplayName: team.displayName ?? team.name ?? undefined,
+      selectedTeamProfileImageUrl: team.profileImageUrl ?? undefined,
+    });
+
+    return jsonResponse({
+      success: true,
+      teamId: team.teamId,
+      teamSlug: team.slug ?? team.teamId,
+      teamDisplayName: team.displayName ?? team.name ?? null,
+    });
+  } catch (err) {
+    console.error("[cmux.switchTeam] Error:", err);
+    return jsonResponse(
+      { code: 500, message: "Failed to switch team" },
+      500
+    );
+  }
+});
+
+// ============================================================================
 // Route handler for instance-specific POST actions
 // ============================================================================
 export const instanceActionRouter = httpAction(async (ctx, req) => {
@@ -1557,4 +1751,400 @@ export const instanceDeleteRouter = httpAction(async (ctx, req) => {
   }
 
   return jsonResponse({ code: 404, message: "Not found" }, 404);
+});
+
+// ============================================================================
+// TASK ENDPOINTS - CLI/Web App sync for task management
+// ============================================================================
+
+/**
+ * Resolve team ID from slug or ID (for internal use in httpActions).
+ */
+async function resolveTeamIdForHttp(
+  ctx: ActionCtx,
+  slugOrId: string
+): Promise<string | null> {
+  const team = await ctx.runQuery(internal.teams.getBySlugOrIdInternal, {
+    slugOrId,
+  }) as { teamId: string } | null;
+  return team?.teamId ?? null;
+}
+
+// ============================================================================
+// GET /api/v1/cmux/tasks - List tasks
+// ============================================================================
+export const listTasks = httpAction(async (ctx, req) => {
+  const { identity, error } = await getAuthenticatedUser(ctx);
+  if (error) return error;
+
+  const url = new URL(req.url);
+  const teamSlugOrId = url.searchParams.get("teamSlugOrId");
+  const archived = url.searchParams.get("archived") === "true";
+  const limitParam = url.searchParams.get("limit");
+  const limit = limitParam ? parseInt(limitParam, 10) : undefined;
+
+  if (!teamSlugOrId) {
+    return jsonResponse(
+      { code: 400, message: "teamSlugOrId query parameter is required" },
+      400
+    );
+  }
+
+  try {
+    const userId = identity!.subject;
+    const teamId = await resolveTeamIdForHttp(ctx, teamSlugOrId);
+
+    if (!teamId) {
+      return jsonResponse(
+        { code: 404, message: `Team not found: ${teamSlugOrId}` },
+        404
+      );
+    }
+
+    // Get tasks
+    const tasks = await ctx.runQuery(internal.tasks.listInternal, {
+      teamId,
+      userId,
+      archived,
+      limit,
+    });
+
+    // For each task, get the selected run info to show status
+    const tasksWithRuns = await Promise.all(
+      tasks.map(async (task) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let selectedRun: any = null;
+
+        if (task.selectedTaskRunId) {
+          selectedRun = await ctx.runQuery(internal.taskRuns.getById, {
+            id: task.selectedTaskRunId as Id<"taskRuns">,
+          });
+        }
+
+        // If no selected run, get the first run for this task
+        if (!selectedRun) {
+          const runs = await ctx.runQuery(internal.taskRuns.listByTaskAndTeamInternal, {
+            taskId: task._id as Id<"tasks">,
+            teamId,
+            userId,
+          });
+          selectedRun = runs[0] ?? null;
+        }
+
+        // Extract vscode URL from vscode object or networking array
+        let vscodeUrl: string | undefined;
+        if (selectedRun?.vscode?.workspaceUrl) {
+          vscodeUrl = selectedRun.vscode.workspaceUrl;
+        } else if (selectedRun?.networking) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const vscodeSvc = selectedRun.networking.find((n: any) => n.port === 39378);
+          vscodeUrl = vscodeSvc?.url;
+        }
+
+        return {
+          id: task._id,
+          prompt: task.text,
+          repository: task.projectFullName,
+          baseBranch: task.baseBranch,
+          status: selectedRun?.status ?? "pending",
+          agent: selectedRun?.agentName,
+          vscodeUrl,
+          isCompleted: task.isCompleted,
+          isArchived: task.isArchived,
+          createdAt: task.createdAt,
+          updatedAt: task.updatedAt,
+          taskRunId: selectedRun?._id,
+          exitCode: selectedRun?.exitCode,
+        };
+      })
+    );
+
+    return jsonResponse({ tasks: tasksWithRuns });
+  } catch (err) {
+    console.error("[cmux.tasks.list] Error:", err);
+    return jsonResponse(
+      { code: 500, message: "Failed to list tasks" },
+      500
+    );
+  }
+});
+
+// ============================================================================
+// POST /api/v1/cmux/tasks - Create task with prompt
+// ============================================================================
+export const createTask = httpAction(async (ctx, req) => {
+  const contentTypeError = verifyContentType(req);
+  if (contentTypeError) return contentTypeError;
+
+  const { identity, error } = await getAuthenticatedUser(ctx);
+  if (error) return error;
+
+  let body: {
+    teamSlugOrId: string;
+    prompt: string;
+    repository?: string;
+    baseBranch?: string;
+    agents?: string[];
+  };
+
+  try {
+    body = await req.json();
+  } catch {
+    return jsonResponse({ code: 400, message: "Invalid JSON body" }, 400);
+  }
+
+  if (!body.teamSlugOrId) {
+    return jsonResponse(
+      { code: 400, message: "teamSlugOrId is required" },
+      400
+    );
+  }
+
+  if (!body.prompt) {
+    return jsonResponse(
+      { code: 400, message: "prompt is required" },
+      400
+    );
+  }
+
+  try {
+    const userId = identity!.subject;
+    const teamId = await resolveTeamIdForHttp(ctx, body.teamSlugOrId);
+
+    if (!teamId) {
+      return jsonResponse(
+        { code: 404, message: `Team not found: ${body.teamSlugOrId}` },
+        404
+      );
+    }
+
+    // Create task first
+    const taskResult = await ctx.runMutation(internal.tasks.createInternal, {
+      teamId,
+      userId,
+      text: body.prompt,
+      projectFullName: body.repository,
+      baseBranch: body.baseBranch ?? "main",
+    }) as { taskId: Id<"tasks"> };
+
+    // Create task runs for each agent (with JWTs for sandbox auth)
+    const taskRuns: Array<{ taskRunId: string; jwt: string; agentName: string }> = [];
+    if (body.agents && body.agents.length > 0) {
+      for (const agentName of body.agents) {
+        const runResult = await ctx.runMutation(internal.taskRuns.createInternal, {
+          teamId,
+          userId,
+          taskId: taskResult.taskId,
+          prompt: body.prompt,
+          agentName,
+        }) as { taskRunId: Id<"taskRuns">; jwt: string };
+
+        taskRuns.push({
+          taskRunId: runResult.taskRunId,
+          jwt: runResult.jwt,
+          agentName,
+        });
+      }
+    }
+
+    return jsonResponse({
+      taskId: taskResult.taskId,
+      taskRuns,
+      status: "pending",
+    });
+  } catch (err) {
+    console.error("[cmux.tasks.create] Error:", err);
+    return jsonResponse(
+      { code: 500, message: "Failed to create task" },
+      500
+    );
+  }
+});
+
+// ============================================================================
+// GET /api/v1/cmux/tasks/{id} - Get task details
+// ============================================================================
+async function handleGetTask(
+  ctx: ActionCtx,
+  taskId: string,
+  teamSlugOrId: string,
+  userId: string
+): Promise<Response> {
+  try {
+    const teamId = await resolveTeamIdForHttp(ctx, teamSlugOrId);
+
+    if (!teamId) {
+      return jsonResponse(
+        { code: 404, message: `Team not found: ${teamSlugOrId}` },
+        404
+      );
+    }
+
+    // Get task
+    const task = await ctx.runQuery(internal.tasks.getByIdInternal, {
+      id: taskId as Id<"tasks">,
+    });
+
+    if (!task || task.teamId !== teamId || task.userId !== userId) {
+      return jsonResponse({ code: 404, message: "Task not found" }, 404);
+    }
+
+    // Get all runs for this task
+    const runs = await ctx.runQuery(internal.taskRuns.listByTaskAndTeamInternal, {
+      taskId: task._id,
+      teamId,
+      userId,
+    });
+
+    // Format runs
+    const taskRuns = runs.map(run => {
+      // Extract vscode URL
+      let vscodeUrl: string | undefined;
+      if (run.vscode?.workspaceUrl) {
+        vscodeUrl = run.vscode.workspaceUrl;
+      } else if (run.networking) {
+        const vscodeSvc = run.networking.find(n => n.port === 39378);
+        vscodeUrl = vscodeSvc?.url;
+      }
+
+      return {
+        id: run._id,
+        agent: run.agentName,
+        status: run.status,
+        vscodeUrl,
+        pullRequestUrl: run.pullRequestUrl,
+        createdAt: run.createdAt,
+        completedAt: run.completedAt,
+        exitCode: run.exitCode,
+      };
+    });
+
+    return jsonResponse({
+      id: task._id,
+      prompt: task.text,
+      repository: task.projectFullName,
+      baseBranch: task.baseBranch,
+      isCompleted: task.isCompleted,
+      isArchived: task.isArchived,
+      createdAt: task.createdAt,
+      updatedAt: task.updatedAt,
+      taskRuns,
+    });
+  } catch (err) {
+    console.error("[cmux.tasks.get] Error:", err);
+    return jsonResponse({ code: 500, message: "Failed to get task" }, 500);
+  }
+}
+
+// ============================================================================
+// POST /api/v1/cmux/tasks/{id}/stop - Stop/archive task
+// ============================================================================
+async function handleStopTask(
+  ctx: ActionCtx,
+  taskId: string,
+  teamSlugOrId: string,
+  userId: string
+): Promise<Response> {
+  try {
+    const teamId = await resolveTeamIdForHttp(ctx, teamSlugOrId);
+
+    if (!teamId) {
+      return jsonResponse(
+        { code: 404, message: `Team not found: ${teamSlugOrId}` },
+        404
+      );
+    }
+
+    // Archive the task
+    await ctx.runMutation(internal.tasks.archiveInternal, {
+      taskId: taskId as Id<"tasks">,
+      teamId,
+      userId,
+    });
+
+    return jsonResponse({ stopped: true });
+  } catch (err) {
+    console.error("[cmux.tasks.stop] Error:", err);
+    const message = err instanceof Error ? err.message : "Failed to stop task";
+    if (message.includes("not found") || message.includes("unauthorized")) {
+      return jsonResponse({ code: 404, message: "Task not found" }, 404);
+    }
+    return jsonResponse({ code: 500, message }, 500);
+  }
+}
+
+// ============================================================================
+// Route handler for task GET requests
+// ============================================================================
+export const taskGetRouter = httpAction(async (ctx, req) => {
+  const { identity, error } = await getAuthenticatedUser(ctx);
+  if (error) return error;
+
+  const url = new URL(req.url);
+  const path = url.pathname;
+  const teamSlugOrId = url.searchParams.get("teamSlugOrId");
+
+  if (!teamSlugOrId) {
+    return jsonResponse(
+      { code: 400, message: "teamSlugOrId query parameter is required" },
+      400
+    );
+  }
+
+  // Parse path: /api/v1/cmux/tasks/{id}
+  const pathParts = path.split("/").filter(Boolean);
+  // pathParts: ["api", "v1", "cmux", "tasks", "{id}"]
+  const taskId = pathParts[4];
+
+  if (!taskId) {
+    return jsonResponse({ code: 400, message: "Task ID is required" }, 400);
+  }
+
+  return handleGetTask(ctx, taskId, teamSlugOrId, identity!.subject);
+});
+
+// ============================================================================
+// Route handler for task POST actions
+// ============================================================================
+export const taskActionRouter = httpAction(async (ctx, req) => {
+  const contentTypeError = verifyContentType(req);
+  if (contentTypeError) return contentTypeError;
+
+  const { identity, error } = await getAuthenticatedUser(ctx);
+  if (error) return error;
+
+  const url = new URL(req.url);
+  const path = url.pathname;
+
+  // Parse path: /api/v1/cmux/tasks/{id}/{action}
+  const pathParts = path.split("/").filter(Boolean);
+  const taskId = pathParts[4];
+  const action = pathParts[5];
+
+  if (!taskId) {
+    return jsonResponse({ code: 400, message: "Task ID is required" }, 400);
+  }
+
+  let body: { teamSlugOrId: string };
+  try {
+    body = await req.json();
+  } catch {
+    return jsonResponse({ code: 400, message: "Invalid JSON body" }, 400);
+  }
+
+  if (!body.teamSlugOrId) {
+    return jsonResponse(
+      { code: 400, message: "teamSlugOrId is required" },
+      400
+    );
+  }
+
+  const userId = identity!.subject;
+
+  switch (action) {
+    case "stop":
+      return handleStopTask(ctx, taskId, body.teamSlugOrId, userId);
+    default:
+      return jsonResponse({ code: 404, message: "Not found" }, 404);
+  }
 });

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/cmux-cli/cmux-devbox/internal/auth"
+	"github.com/cmux-cli/cmux-devbox/internal/provider"
+	"github.com/cmux-cli/cmux-devbox/internal/pvelxc"
 	"github.com/cmux-cli/cmux-devbox/internal/vm"
 	"github.com/spf13/cobra"
 )
@@ -24,20 +26,60 @@ Examples:
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		teamSlug, err := auth.GetTeamSlug()
+		selected, err := resolveProviderForCommand()
 		if err != nil {
-			return fmt.Errorf("failed to get team: %w", err)
+			return err
 		}
 
-		client, err := vm.NewClient()
-		if err != nil {
-			return fmt.Errorf("failed to create client: %w", err)
-		}
-		client.SetTeamSlug(teamSlug)
+		var instances []vm.Instance
 
-		instances, err := client.ListInstances(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to list instances: %w", err)
+		switch selected {
+		case provider.PveLxc:
+			client, err := pvelxc.NewClientFromEnv()
+			if err != nil {
+				return fmt.Errorf("failed to create PVE LXC client: %w\nSet PVE_API_URL and PVE_API_TOKEN", err)
+			}
+			pveInstances, err := client.ListInstances(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to list instances: %w", err)
+			}
+			for _, inst := range pveInstances {
+				instances = append(instances, vm.Instance{
+					ID:        inst.ID,
+					Status:    inst.Status,
+					VSCodeURL: inst.VSCodeURL,
+				})
+			}
+		case provider.Morph:
+			teamSlug, err := auth.GetTeamSlug()
+			if err != nil {
+				return fmt.Errorf("failed to get team: %w", err)
+			}
+
+			client, err := vm.NewClient()
+			if err != nil {
+				return fmt.Errorf("failed to create client: %w", err)
+			}
+			client.SetTeamSlug(teamSlug)
+
+			basicInstances, err := client.ListInstances(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to list instances: %w", err)
+			}
+
+			// Fetch full details for each instance to get URLs
+			// (list endpoint returns basic info only)
+			for _, basic := range basicInstances {
+				full, err := client.GetInstance(ctx, basic.ID)
+				if err != nil {
+					// Fall back to basic info if fetch fails
+					instances = append(instances, basic)
+				} else {
+					instances = append(instances, *full)
+				}
+			}
+		default:
+			return fmt.Errorf("unsupported provider: %s", selected)
 		}
 
 		if len(instances) == 0 {

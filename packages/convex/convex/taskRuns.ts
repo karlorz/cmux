@@ -383,6 +383,83 @@ async function fetchTaskRunsForTask(
   return rootRuns;
 }
 
+/**
+ * Internal mutation to create a task run with JWT.
+ * Used by CLI HTTP API for task creation with sandbox provisioning.
+ */
+export const createInternal = internalMutation({
+  args: {
+    teamId: v.string(),
+    userId: v.string(),
+    taskId: v.id("tasks"),
+    prompt: v.string(),
+    agentName: v.optional(v.string()),
+    newBranch: v.optional(v.string()),
+    environmentId: v.optional(v.id("environments")),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const task = await ctx.db.get(args.taskId);
+    if (!task || task.teamId !== args.teamId || task.userId !== args.userId) {
+      throw new Error("Task not found or unauthorized");
+    }
+    if (args.environmentId) {
+      const environment = await ctx.db.get(args.environmentId);
+      if (!environment || environment.teamId !== args.teamId) {
+        throw new Error("Environment not found");
+      }
+    }
+    const taskRunId = await ctx.db.insert("taskRuns", {
+      taskId: args.taskId,
+      prompt: args.prompt,
+      agentName: args.agentName,
+      newBranch: args.newBranch,
+      status: "pending",
+      createdAt: now,
+      updatedAt: now,
+      userId: args.userId,
+      teamId: args.teamId,
+      environmentId: args.environmentId,
+      isLocalWorkspace: task.isLocalWorkspace,
+      isCloudWorkspace: task.isCloudWorkspace,
+    });
+
+    // Update task's lastActivityAt and selectedTaskRunId
+    const hasCrownedRun = await ctx.db
+      .query("taskRuns")
+      .withIndex("by_task", (q) => q.eq("taskId", args.taskId))
+      .filter((q) => q.eq(q.field("isCrowned"), true))
+      .filter((q) => q.neq(q.field("isArchived"), true))
+      .first();
+
+    const taskPatch: {
+      lastActivityAt: number;
+      selectedTaskRunId?: Id<"taskRuns">;
+    } = {
+      lastActivityAt: now,
+    };
+
+    if (!hasCrownedRun) {
+      taskPatch.selectedTaskRunId = taskRunId;
+    }
+
+    await ctx.db.patch(args.taskId, taskPatch);
+
+    // Generate JWT for sandbox authentication
+    const jwt = await new SignJWT({
+      taskRunId,
+      teamId: args.teamId,
+      userId: args.userId,
+    })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt()
+      .setExpirationTime("12h")
+      .sign(new TextEncoder().encode(env.CMUX_TASK_RUN_JWT_SECRET));
+
+    return { taskRunId, jwt };
+  },
+});
+
 // Create a new task run
 export const create = authMutation({
   args: {

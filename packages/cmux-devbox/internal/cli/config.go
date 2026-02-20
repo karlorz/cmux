@@ -16,8 +16,8 @@ var configCmd = &cobra.Command{
 	Long: `Show current configuration values and their sources.
 
 Configuration priority (highest to lowest):
-  1. CLI flags (--api-url, --convex-url)
-  2. Environment variables (CMUX_API_URL, CONVEX_SITE_URL, etc.)
+  1. CLI flags (--api-url, --convex-url, --server-url)
+  2. Environment variables (CMUX_API_URL, CONVEX_SITE_URL, CMUX_SERVER_URL, etc.)
   3. Build-time values (compiled into binary)
   4. Hardcoded defaults
 
@@ -26,6 +26,7 @@ Environment variables:
   STACK_PUBLISHABLE_CLIENT_KEY  Stack Auth publishable client key
   CMUX_API_URL                  cmux web app URL
   CONVEX_SITE_URL               Convex HTTP site URL
+  CMUX_SERVER_URL               apps/server HTTP API URL (for agent spawning)
   AUTH_API_URL                  Stack Auth API URL`,
 	RunE: runConfig,
 }
@@ -35,12 +36,13 @@ func init() {
 }
 
 type configOutput struct {
-	ProjectID      string `json:"project_id"`
-	CmuxURL        string `json:"cmux_url"`
-	ConvexSiteURL  string `json:"convex_site_url"`
-	StackAuthURL   string `json:"stack_auth_url"`
-	IsDev          bool   `json:"is_dev"`
-	BuildMode      string `json:"build_mode"`
+	ProjectID     string `json:"project_id"`
+	CmuxURL       string `json:"cmux_url"`
+	ConvexSiteURL string `json:"convex_site_url"`
+	ServerURL     string `json:"server_url"`
+	StackAuthURL  string `json:"stack_auth_url"`
+	IsDev         bool   `json:"is_dev"`
+	BuildMode     string `json:"build_mode"`
 }
 
 func runConfig(cmd *cobra.Command, args []string) error {
@@ -51,6 +53,7 @@ func runConfig(cmd *cobra.Command, args []string) error {
 			ProjectID:     cfg.ProjectID,
 			CmuxURL:       cfg.CmuxURL,
 			ConvexSiteURL: cfg.ConvexSiteURL,
+			ServerURL:     cfg.ServerURL,
 			StackAuthURL:  cfg.StackAuthURL,
 			IsDev:         cfg.IsDev,
 			BuildMode:     buildMode,
@@ -68,11 +71,13 @@ func runConfig(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Project ID:      %s\n", maskMiddle(cfg.ProjectID))
 	fmt.Printf("  cmux URL:        %s\n", cfg.CmuxURL)
 	fmt.Printf("  Convex site URL: %s\n", cfg.ConvexSiteURL)
+	fmt.Printf("  Server URL:      %s\n", cfg.ServerURL)
 	fmt.Printf("  Stack Auth URL:  %s\n", cfg.StackAuthURL)
 	fmt.Println()
 	fmt.Println("To override, use CLI flags or environment variables:")
 	fmt.Println("  --api-url=URL     or  CMUX_API_URL=URL")
 	fmt.Println("  --convex-url=URL  or  CONVEX_SITE_URL=URL")
+	fmt.Println("  --server-url=URL  or  CMUX_SERVER_URL=URL")
 
 	return nil
 }

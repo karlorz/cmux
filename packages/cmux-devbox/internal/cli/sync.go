@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cmux-cli/cmux-devbox/internal/auth"
+	"github.com/cmux-cli/cmux-devbox/internal/provider"
 	"github.com/cmux-cli/cmux-devbox/internal/vm"
 	"github.com/spf13/cobra"
 )
@@ -31,6 +32,14 @@ Examples:
 
 		instanceID := args[0]
 		localPath := args[1]
+
+		selected, err := resolveProviderForInstance(instanceID)
+		if err != nil {
+			return err
+		}
+		if selected == provider.PveLxc {
+			return fmt.Errorf("sync is not supported for pve-lxc instances yet")
+		}
 
 		pull, _ := cmd.Flags().GetBool("pull")
 
