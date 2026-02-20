@@ -4,12 +4,13 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useSocket } from "@/contexts/socket/use-socket";
 import { api } from "@cmux/convex/api";
-import type { Doc } from "@cmux/convex/dataModel";
+import type { Doc, Id } from "@cmux/convex/dataModel";
 import { convexQuery } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useConvex } from "convex/react";
 import { FolderGit2, Plus, RefreshCw, Trash2 } from "lucide-react";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 
 interface WorktreesSectionProps {
@@ -42,10 +43,41 @@ export function WorktreesSection({
     convexQuery(api.worktreeRegistry.list, { teamSlugOrId })
   );
 
-  // Query local workspaces (tasks with worktreePath)
+  // Query local workspaces (tasks with worktreePath) - used to enrich worktree data
   const { data: localWorkspaces, refetch: refetchLocalWorkspaces } = useQuery(
     convexQuery(api.worktreeRegistry.listLocalWorkspaces, { teamSlugOrId })
   );
+
+  // Merge worktree registry with task data for unified display
+  type EnrichedWorktree = Doc<"worktreeRegistry"> & {
+    tasks: Array<{
+      taskId: Id<"tasks">;
+      text?: string;
+      status?: string;
+      linkedFromCloud?: boolean;
+    }>;
+  };
+
+  const enrichedWorktrees = useMemo((): EnrichedWorktree[] => {
+    if (!worktreeRegistry) return [];
+
+    return worktreeRegistry.map((worktree) => {
+      // Find tasks that match this worktree path
+      const matchingTasks = (localWorkspaces || [])
+        .filter((ws) => ws.worktreePath === worktree.worktreePath)
+        .map((ws) => ({
+          taskId: ws.taskId,
+          text: ws.text || ws.description,
+          status: ws.status,
+          linkedFromCloud: !!ws.linkedFromCloudTaskRunId,
+        }));
+
+      return {
+        ...worktree,
+        tasks: matchingTasks,
+      };
+    });
+  }, [worktreeRegistry, localWorkspaces]);
 
   // Auto-validate and clean up stale local workspaces when data loads
   const validateAndCleanupStaleWorkspaces = useCallback(() => {
@@ -437,18 +469,18 @@ export function WorktreesSection({
           </Button>
         }
       >
-        {worktreeRegistry && worktreeRegistry.length > 0 ? (
+        {enrichedWorktrees.length > 0 ? (
           <div className="space-y-6 px-4 py-4">
             {/* Group worktrees by source repo */}
             {Object.entries(
-              worktreeRegistry.reduce(
+              enrichedWorktrees.reduce(
                 (acc, worktree) => {
                   const source = worktree.sourceRepoPath || "Unknown";
                   if (!acc[source]) acc[source] = [];
                   acc[source].push(worktree);
                   return acc;
                 },
-                {} as Record<string, Doc<"worktreeRegistry">[]>
+                {} as Record<string, EnrichedWorktree[]>
               )
             ).map(([sourceRepo, worktrees]) => (
               <div key={sourceRepo}>
@@ -463,20 +495,50 @@ export function WorktreesSection({
                     >
                       <div className="flex items-start justify-between">
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                            Worktree
-                          </p>
-                          <p className="mt-0.5 font-mono text-xs text-neutral-500 dark:text-neutral-400">
+                          <p className="font-mono text-sm text-neutral-900 dark:text-neutral-100">
                             {worktree.worktreePath}
                           </p>
                           {worktree.branchName && worktree.branchName !== "unknown" && (
                             <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                              Branch: {worktree.branchName}
+                              Branch: <span className="font-medium">{worktree.branchName}</span>
                             </p>
                           )}
-                          {worktree.taskRunIds && worktree.taskRunIds.length > 0 && (
-                            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                              {worktree.taskRunIds.length} task{worktree.taskRunIds.length !== 1 ? "s" : ""}
+                          {/* Show linked tasks */}
+                          {worktree.tasks.length > 0 ? (
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              {worktree.tasks.map((task) => (
+                                <Link
+                                  key={task.taskId}
+                                  to="/$teamSlugOrId/task/$taskId"
+                                  params={{ teamSlugOrId, taskId: task.taskId }}
+                                  search={{ runId: undefined }}
+                                  className="inline-flex items-center gap-1.5 rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                                >
+                                  <span className="max-w-[200px] truncate">
+                                    {task.text || "Task"}
+                                  </span>
+                                  {task.status && (
+                                    <span
+                                      className={`inline-block h-2 w-2 rounded-full ${
+                                        task.status === "running"
+                                          ? "bg-green-500"
+                                          : task.status === "completed"
+                                            ? "bg-blue-500"
+                                            : task.status === "failed"
+                                              ? "bg-red-500"
+                                              : "bg-neutral-400"
+                                      }`}
+                                    />
+                                  )}
+                                  {task.linkedFromCloud && (
+                                    <span className="text-purple-500">*</span>
+                                  )}
+                                </Link>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">
+                              No linked tasks
                             </p>
                           )}
                         </div>
@@ -507,61 +569,6 @@ export function WorktreesSection({
           </div>
         )}
       </SettingSection>
-
-      {/* Local Workspaces Section */}
-      {localWorkspaces && localWorkspaces.length > 0 && (
-        <SettingSection
-          title="Linked Local Workspaces"
-          description="Tasks with linked local worktree paths"
-        >
-          <div className="divide-y divide-neutral-200 dark:divide-neutral-800">
-            {localWorkspaces.map((workspace) => (
-              <div
-                key={workspace.taskId}
-                className="flex items-center justify-between px-4 py-3"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                    {workspace.text || workspace.description || "Local Workspace"}
-                  </p>
-                  {workspace.projectFullName && (
-                    <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
-                      {workspace.projectFullName}
-                    </p>
-                  )}
-                  {workspace.worktreePath && (
-                    <p className="mt-0.5 font-mono text-xs text-neutral-500 dark:text-neutral-400">
-                      {workspace.worktreePath}
-                    </p>
-                  )}
-                  <div className="mt-1 flex items-center gap-2">
-                    {workspace.status && (
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                          workspace.status === "running"
-                            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                            : workspace.status === "completed"
-                              ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                              : workspace.status === "failed"
-                                ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                                : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
-                        }`}
-                      >
-                        {workspace.status}
-                      </span>
-                    )}
-                    {workspace.linkedFromCloudTaskRunId && (
-                      <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
-                        linked from cloud
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </SettingSection>
-      )}
     </div>
   );
 }

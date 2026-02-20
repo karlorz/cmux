@@ -1483,6 +1483,60 @@ export function setupSocketHandlers(
                 serverLogger.info(
                   `[create-local-workspace] Wrote env vars to ${envFile}`
                 );
+
+                // Add .env to .git/info/exclude so it doesn't show in git status
+                // This works even if repo doesn't have .env in .gitignore
+                try {
+                  const gitExcludeFile = path.join(
+                    resolvedWorkspacePath,
+                    ".git",
+                    "info",
+                    "exclude"
+                  );
+                  // For worktrees, .git is a file pointing to the main repo's .git dir
+                  // Check if .git is a file (worktree) or directory (regular repo)
+                  const gitPath = path.join(resolvedWorkspacePath, ".git");
+                  const gitStat = await fs.stat(gitPath);
+
+                  let excludePath: string;
+                  if (gitStat.isFile()) {
+                    // Worktree: .git is a file containing "gitdir: /path/to/.git/worktrees/name"
+                    const gitContent = await fs.readFile(gitPath, "utf8");
+                    const gitdirMatch = gitContent.match(/^gitdir:\s*(.+)$/m);
+                    if (gitdirMatch) {
+                      excludePath = path.join(gitdirMatch[1].trim(), "info", "exclude");
+                    } else {
+                      excludePath = gitExcludeFile;
+                    }
+                  } else {
+                    excludePath = gitExcludeFile;
+                  }
+
+                  // Ensure info directory exists
+                  await fs.mkdir(path.dirname(excludePath), { recursive: true });
+
+                  // Read existing exclude file or create empty
+                  let existingExclude = "";
+                  try {
+                    existingExclude = await fs.readFile(excludePath, "utf8");
+                  } catch {
+                    // File doesn't exist, that's fine
+                  }
+
+                  // Add .env if not already excluded
+                  if (!existingExclude.includes(".env")) {
+                    const newExclude = existingExclude.trimEnd() + "\n.env\n";
+                    await fs.writeFile(excludePath, newExclude, "utf8");
+                    serverLogger.info(
+                      `[create-local-workspace] Added .env to git exclude: ${excludePath}`
+                    );
+                  }
+                } catch (excludeError) {
+                  serverLogger.warn(
+                    "[create-local-workspace] Failed to add .env to git exclude",
+                    { error: excludeError }
+                  );
+                }
               } catch (error) {
                 serverLogger.warn(
                   "[create-local-workspace] Failed to write saved env vars to disk",
@@ -1736,27 +1790,55 @@ export function setupSocketHandlers(
             );
 
             try {
-              // First, try to create a new branch from origin
-              const worktreeBranchName = `local/${worktreeInfo.shortId || "workspace"}`;
-              await execFileAsync(
-                "git",
-                ["worktree", "add", "-b", worktreeBranchName, resolvedWorkspacePath, `origin/${worktreeBranch}`],
-                { cwd: sourceRepo }
-              );
-              serverLogger.info(
-                `[create-local-workspace] Created worktree with new branch ${worktreeBranchName}`
-              );
+              // Create worktree tracking the same branch as the cloud task (like Codex does)
+              // First, check if a local branch with this name already exists
+              let branchExists = false;
+              try {
+                await execFileAsync(
+                  "git",
+                  ["rev-parse", "--verify", worktreeBranch],
+                  { cwd: sourceRepo }
+                );
+                branchExists = true;
+              } catch {
+                // Branch doesn't exist locally, that's fine
+              }
+
+              if (branchExists) {
+                // Branch exists locally, create worktree using existing branch
+                await execFileAsync(
+                  "git",
+                  ["worktree", "add", resolvedWorkspacePath, worktreeBranch],
+                  { cwd: sourceRepo }
+                );
+                serverLogger.info(
+                  `[create-local-workspace] Created worktree using existing branch ${worktreeBranch}`
+                );
+              } else {
+                // Branch doesn't exist locally, create it tracking the remote
+                await execFileAsync(
+                  "git",
+                  ["worktree", "add", "-b", worktreeBranch, resolvedWorkspacePath, `origin/${worktreeBranch}`],
+                  { cwd: sourceRepo }
+                );
+                serverLogger.info(
+                  `[create-local-workspace] Created worktree with new branch ${worktreeBranch} tracking origin/${worktreeBranch}`
+                );
+              }
             } catch (error) {
-              // If that fails, try without creating a new branch (detached HEAD or existing branch)
+              // If that fails, try detached HEAD as fallback
               const execErr = isExecError(error) ? error : null;
               serverLogger.warn(
-                `[create-local-workspace] Failed to create worktree with new branch, trying detached: ${execErr?.stderr || error}`
+                `[create-local-workspace] Failed to create worktree with branch, trying detached: ${execErr?.stderr || error}`
               );
               try {
                 await execFileAsync(
                   "git",
                   ["worktree", "add", "--detach", resolvedWorkspacePath, `origin/${worktreeBranch}`],
                   { cwd: sourceRepo }
+                );
+                serverLogger.info(
+                  `[create-local-workspace] Created worktree in detached HEAD state at origin/${worktreeBranch}`
                 );
               } catch (detachErr) {
                 if (cleanupWorkspace) {
@@ -4122,6 +4204,48 @@ Please address the issue mentioned in the comment above.`;
               // Continue anyway - lazy sync will handle it when worker becomes available
             }
           }
+        }
+
+        // Wait for the worktree directory to exist (handles race condition when
+        // create-local-workspace is still in progress)
+        const maxWaitMs = 30000;
+        const pollIntervalMs = 500;
+        let waited = 0;
+        let dirExists = false;
+
+        while (waited < maxWaitMs) {
+          try {
+            await fs.access(normalizedPath);
+            dirExists = true;
+            break;
+          } catch {
+            // Directory doesn't exist yet, wait and retry
+            if (waited === 0) {
+              serverLogger.info(
+                `[trigger-local-cloud-sync] Waiting for directory to exist: ${normalizedPath}`
+              );
+            }
+            await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+            waited += pollIntervalMs;
+          }
+        }
+
+        if (!dirExists) {
+          serverLogger.warn(
+            `[trigger-local-cloud-sync] Directory still doesn't exist after ${maxWaitMs}ms: ${normalizedPath}`
+          );
+          const response: TriggerLocalCloudSyncResponse = {
+            success: false,
+            error: "Workspace directory not ready. Please try again.",
+          };
+          callback(response);
+          return;
+        }
+
+        if (waited > 0) {
+          serverLogger.info(
+            `[trigger-local-cloud-sync] Directory exists after ${waited}ms: ${normalizedPath}`
+          );
         }
 
         if (!status.found) {
