@@ -46,6 +46,7 @@ import {
   getApiPreviewTestCheckAccess,
   getApiPreviewConfigs,
 } from "@cmux/www-openapi-client";
+import { env } from "@/lib/utils/www-env";
 
 type TeamOption = {
   slugOrId: string;
@@ -152,10 +153,10 @@ function PreviewTestDashboardInner({
 
   // Client app base URL for workspace/browser links
   // In development, the client app runs on port 5173
-  // In production, workspace/browser are on www.manaflow.com (not preview.new)
+  // In production, prefer NEXT_PUBLIC_BASE_APP_URL and fallback for compatibility.
   const clientBaseUrl = typeof window !== "undefined" && window.location.hostname === "localhost"
     ? "http://localhost:5173"
-    : "https://www.manaflow.com";
+    : (env.NEXT_PUBLIC_BASE_APP_URL ?? "https://www.manaflow.com").replace(/\/$/, "");
 
   // Fetch preview configs for this team
   const { data: configsData, isLoading: isLoadingConfigs } = useQuery({
