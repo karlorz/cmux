@@ -1,4 +1,3 @@
-import { SettingRow } from "@/components/settings/SettingRow";
 import { SettingSection } from "@/components/settings/SettingSection";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -15,14 +14,10 @@ import { toast } from "sonner";
 
 interface WorktreesSectionProps {
   teamSlugOrId: string;
-  codexWorktreePathPattern: string;
-  onCodexWorktreePathPatternChange: (value: string) => void;
 }
 
 export function WorktreesSection({
   teamSlugOrId,
-  codexWorktreePathPattern,
-  onCodexWorktreePathPatternChange,
 }: WorktreesSectionProps) {
   const convex = useConvex();
   const { socket } = useSocket();
@@ -53,8 +48,6 @@ export function WorktreesSection({
     tasks: Array<{
       taskId: Id<"tasks">;
       text?: string;
-      status?: string;
-      linkedFromCloud?: boolean;
     }>;
   };
 
@@ -67,9 +60,7 @@ export function WorktreesSection({
         .filter((ws) => ws.worktreePath === worktree.worktreePath)
         .map((ws) => ({
           taskId: ws.taskId,
-          text: ws.text || ws.description,
-          status: ws.status,
-          linkedFromCloud: !!ws.linkedFromCloudTaskRunId,
+          text: ws.displayTitle,
         }));
 
       return {
@@ -307,28 +298,6 @@ export function WorktreesSection({
       />
 
       <SettingSection
-        title="Worktree Settings"
-        description="cmux uses your existing local repos to create worktrees at ~/.cmux/worktrees/{id}/{repo}/. Local repos are auto-detected from common locations."
-      >
-        <SettingRow
-          label="Worktree path pattern"
-          description="Custom path for worktrees. Use ~ for home directory."
-          noBorder
-        >
-          <div className="w-full sm:w-[20rem]">
-            <input
-              type="text"
-              value={codexWorktreePathPattern}
-              onChange={(e) => onCodexWorktreePathPatternChange(e.target.value)}
-              className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-              placeholder="~/.cmux/worktrees/"
-              autoComplete="off"
-            />
-          </div>
-        </SettingRow>
-      </SettingSection>
-
-      <SettingSection
         title="Source Repo Mappings"
         description="Map GitHub repositories to local filesystem paths. Mappings are auto-detected from common locations (~/code, ~/Desktop/code, etc.) but you can add custom mappings here."
       >
@@ -503,54 +472,36 @@ export function WorktreesSection({
                               Branch: <span className="font-medium">{worktree.branchName}</span>
                             </p>
                           )}
-                          {/* Show linked tasks */}
-                          {worktree.tasks.length > 0 ? (
-                            <div className="mt-2 flex flex-wrap items-center gap-2">
-                              {worktree.tasks.map((task) => (
-                                <Link
-                                  key={task.taskId}
-                                  to="/$teamSlugOrId/task/$taskId"
-                                  params={{ teamSlugOrId, taskId: task.taskId }}
-                                  search={{ runId: undefined }}
-                                  className="inline-flex items-center gap-1.5 rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
-                                >
-                                  <span className="max-w-[200px] truncate">
-                                    {task.text || "Task"}
-                                  </span>
-                                  {task.status && (
-                                    <span
-                                      className={`inline-block h-2 w-2 rounded-full ${
-                                        task.status === "running"
-                                          ? "bg-green-500"
-                                          : task.status === "completed"
-                                            ? "bg-blue-500"
-                                            : task.status === "failed"
-                                              ? "bg-red-500"
-                                              : "bg-neutral-400"
-                                      }`}
-                                    />
-                                  )}
-                                  {task.linkedFromCloud && (
-                                    <span className="text-purple-500">*</span>
-                                  )}
-                                </Link>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">
-                              No linked tasks
-                            </p>
-                          )}
                         </div>
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => handleDeleteWorktree(worktree)}
-                          className="ml-4 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
+                          className="ml-4 flex-shrink-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
                         >
                           Delete
                         </Button>
                       </div>
+                      {/* Show linked tasks - full width below header */}
+                      {worktree.tasks.length > 0 ? (
+                        <div className="mt-3 space-y-1">
+                          {worktree.tasks.map((task) => (
+                            <Link
+                              key={task.taskId}
+                              to="/$teamSlugOrId/task/$taskId"
+                              params={{ teamSlugOrId, taskId: task.taskId }}
+                              search={{ runId: undefined }}
+                              className="block w-full truncate rounded-md bg-neutral-100 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                            >
+                              {task.text || "Task"}
+                            </Link>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">
+                          No linked tasks
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>

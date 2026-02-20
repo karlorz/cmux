@@ -882,11 +882,7 @@ function SettingsComponent() {
               onBranchPrefixChange={setBranchPrefix}
             />
           ) : activeSection === "worktrees" ? (
-            <WorktreesSection
-              teamSlugOrId={teamSlugOrId}
-              codexWorktreePathPattern={codexWorktreePathPattern}
-              onCodexWorktreePathPatternChange={setCodexWorktreePathPattern}
-            />
+            <WorktreesSection teamSlugOrId={teamSlugOrId} />
           ) : activeSection === "archived" ? (
             <ArchivedTasksSection teamSlugOrId={teamSlugOrId} />
           ) : (
