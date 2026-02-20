@@ -20,21 +20,23 @@ import {
   type ProviderBaseUrlKey,
 } from "@cmux/shared";
 import { API_KEY_MODELS_BY_ENV } from "@cmux/shared/model-usage";
-	import { convexQuery } from "@convex-dev/react-query";
-	import { useMutation, useQuery } from "@tanstack/react-query";
-	import { createFileRoute } from "@tanstack/react-router";
-	import { useConvex } from "convex/react";
-	import { useCallback, useEffect, useRef, useState } from "react";
-	import { cachedGetUser } from "@/lib/cachedGetUser";
-	import {
-	  DEFAULT_HEATMAP_MODEL,
-	  normalizeHeatmapModel,
-	} from "@/lib/heatmap-settings";
-	import { stackClientApp } from "@/lib/stack";
-	import { WWW_ORIGIN } from "@/lib/wwwOrigin";
-	import { toast } from "sonner";
-	import { z } from "zod";
-	import { DEFAULT_BRANCH_PREFIX } from "@cmux/shared";
+import { convexQuery } from "@convex-dev/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
+import { useConvex } from "convex/react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { cachedGetUser } from "@/lib/cachedGetUser";
+import {
+  DEFAULT_HEATMAP_MODEL,
+  HEATMAP_MODEL_OPTIONS,
+  normalizeHeatmapModel,
+  TOOLTIP_LANGUAGE_OPTIONS,
+} from "@/lib/heatmap-settings";
+import { stackClientApp } from "@/lib/stack";
+import { WWW_ORIGIN } from "@/lib/wwwOrigin";
+import { toast } from "sonner";
+import { z } from "zod";
+import { DEFAULT_BRANCH_PREFIX } from "@cmux/shared";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/settings")({
   component: SettingsComponent,
@@ -175,29 +177,7 @@ function SettingsComponent() {
   const [originalHeatmapColors, setOriginalHeatmapColors] =
     useState<HeatmapColors>(createDefaultHeatmapColors);
 
-  // Heatmap model options from model-config.ts
-  const HEATMAP_MODEL_OPTIONS = [
-    { value: "anthropic-haiku-4-5", label: "Claude Haiku 4.5" },
-    { value: "cmux-heatmap-2", label: "cmux-heatmap-2" },
-    { value: "cmux-heatmap-1", label: "cmux-heatmap-1" },
-  ];
-
-  // Tooltip language options
-  const TOOLTIP_LANGUAGE_OPTIONS = [
-    { value: "en", label: "English" },
-    { value: "zh-Hant", label: "繁體中文" },
-    { value: "zh-Hans", label: "简体中文" },
-    { value: "ja", label: "日本語" },
-    { value: "ko", label: "한국어" },
-    { value: "es", label: "Español" },
-    { value: "fr", label: "Français" },
-    { value: "de", label: "Deutsch" },
-    { value: "pt", label: "Português" },
-    { value: "ru", label: "Русский" },
-    { value: "vi", label: "Tiếng Việt" },
-    { value: "th", label: "ไทย" },
-    { value: "id", label: "Bahasa Indonesia" },
-  ];
+  // Heatmap model and tooltip language options are imported from @/lib/heatmap-settings
 
   // Get all required API keys from agent configs
   const apiKeys = Array.from(
@@ -298,14 +278,14 @@ function SettingsComponent() {
     setAutoPrEnabled((prev) =>
       prev === nextAutoPrEnabled ? prev : nextAutoPrEnabled
     );
-	    setOriginalAutoPrEnabled((prev) =>
-	      prev === nextAutoPrEnabled ? prev : nextAutoPrEnabled
-	    );
+    setOriginalAutoPrEnabled((prev) =>
+      prev === nextAutoPrEnabled ? prev : nextAutoPrEnabled
+    );
 
-	    const nextBypassAnthropicProxy =
-	      workspaceSettings?.bypassAnthropicProxy ?? false;
-	    setBypassAnthropicProxy((prev) =>
-	      prev === nextBypassAnthropicProxy ? prev : nextBypassAnthropicProxy
+    const nextBypassAnthropicProxy =
+      workspaceSettings?.bypassAnthropicProxy ?? false;
+    setBypassAnthropicProxy((prev) =>
+      prev === nextBypassAnthropicProxy ? prev : nextBypassAnthropicProxy
     );
     setOriginalBypassAnthropicProxy((prev) =>
       prev === nextBypassAnthropicProxy ? prev : nextBypassAnthropicProxy
@@ -335,19 +315,19 @@ function SettingsComponent() {
     setCodexWorktreePathPattern((prev) =>
       prev === nextCodexPattern ? prev : nextCodexPattern
     );
-	    setOriginalCodexWorktreePathPattern((prev) =>
-	      prev === nextCodexPattern ? prev : nextCodexPattern
-	    );
+    setOriginalCodexWorktreePathPattern((prev) =>
+      prev === nextCodexPattern ? prev : nextCodexPattern
+    );
 
-	    const nextModel = normalizeHeatmapModel(
-	      workspaceSettings?.heatmapModel ?? null
-	    );
-	    setHeatmapModel((prev) => (prev === nextModel ? prev : nextModel));
-	    setOriginalHeatmapModel((prev) => (prev === nextModel ? prev : nextModel));
-	    if (workspaceSettings?.heatmapThreshold !== undefined) {
-	      const nextThreshold = workspaceSettings.heatmapThreshold;
-	      setHeatmapThreshold((prev) =>
-	        prev === nextThreshold ? prev : nextThreshold
+    const nextModel = normalizeHeatmapModel(
+      workspaceSettings?.heatmapModel ?? null
+    );
+    setHeatmapModel((prev) => (prev === nextModel ? prev : nextModel));
+    setOriginalHeatmapModel((prev) => (prev === nextModel ? prev : nextModel));
+    if (workspaceSettings?.heatmapThreshold !== undefined) {
+      const nextThreshold = workspaceSettings.heatmapThreshold;
+      setHeatmapThreshold((prev) =>
+        prev === nextThreshold ? prev : nextThreshold
       );
       setOriginalHeatmapThreshold((prev) =>
         prev === nextThreshold ? prev : nextThreshold
@@ -866,12 +846,12 @@ function SettingsComponent() {
               onAutoPrEnabledChange={setAutoPrEnabled}
               heatmapModel={heatmapModel}
               onHeatmapModelChange={setHeatmapModel}
-              heatmapModelOptions={HEATMAP_MODEL_OPTIONS}
+              heatmapModelOptions={[...HEATMAP_MODEL_OPTIONS]}
               heatmapThreshold={heatmapThreshold}
               onHeatmapThresholdChange={setHeatmapThreshold}
               heatmapTooltipLanguage={heatmapTooltipLanguage}
               onHeatmapTooltipLanguageChange={setHeatmapTooltipLanguage}
-              tooltipLanguageOptions={TOOLTIP_LANGUAGE_OPTIONS}
+              tooltipLanguageOptions={[...TOOLTIP_LANGUAGE_OPTIONS]}
               heatmapColors={heatmapColors}
               onHeatmapColorsChange={setHeatmapColors}
               worktreePath={codexWorktreePathPattern}
