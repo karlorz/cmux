@@ -19,7 +19,6 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { env } from "../_shared/convex-env";
 import { StackAdminApp } from "@stackframe/js";
 
 // Test configuration - use environment variable for Convex URL
@@ -44,10 +43,10 @@ let stackAdminApp: StackAdminApp | null = null;
 
 function getStackAdmin(): StackAdminApp {
   if (!stackAdminApp) {
-    const projectId = env.NEXT_PUBLIC_STACK_PROJECT_ID;
-    const publishableKey = env.NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY;
-    const secretKey = env.STACK_SECRET_SERVER_KEY;
-    const adminKey = env.STACK_SUPER_SECRET_ADMIN_KEY;
+    const projectId = process.env.NEXT_PUBLIC_STACK_PROJECT_ID;
+    const publishableKey = process.env.NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY;
+    const secretKey = process.env.STACK_SECRET_SERVER_KEY;
+    const adminKey = process.env.STACK_SUPER_SECRET_ADMIN_KEY;
 
     if (!projectId || !publishableKey || !secretKey || !adminKey) {
       throw new Error("Stack Auth credentials not configured for testing");
@@ -301,7 +300,7 @@ describe(
     // Instance Lifecycle Tests (Skip if no provider configured)
     // ========================================================================
     describe("Instance Lifecycle", () => {
-      const hasMorphKey = !!env.MORPH_API_KEY;
+      const hasMorphKey = !!process.env.MORPH_API_KEY;
       const hasPveConfig = !!process.env.PVE_API_URL && !!process.env.PVE_API_TOKEN;
 
       beforeAll(async () => {

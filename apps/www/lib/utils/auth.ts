@@ -34,6 +34,26 @@ export async function getAccessTokenFromRequest(
     }
   }
 
+  // Fallback: Check for x-stack-auth header (for apps/server internal calls)
+  // This is used when apps/server calls www API endpoints on behalf of CLI users
+  const stackAuthHeader = req.headers.get("x-stack-auth");
+  if (stackAuthHeader) {
+    try {
+      const parsed = JSON.parse(stackAuthHeader) as { accessToken?: string; refreshToken?: string };
+      if (parsed.accessToken) {
+        // Validate token by having Stack Auth SDK verify it
+        const user = await stackServerAppJs.getUser({
+          tokenStore: { accessToken: parsed.accessToken, refreshToken: parsed.refreshToken || parsed.accessToken },
+        });
+        if (user) {
+          return parsed.accessToken;
+        }
+      }
+    } catch (_e) {
+      // x-stack-auth parsing or validation failed
+    }
+  }
+
   return null;
 }
 
@@ -70,6 +90,26 @@ export async function getUserFromRequest(req: Request) {
       }
     } catch (_e) {
       // Bearer token auth failed
+    }
+  }
+
+  // Fallback: Check for x-stack-auth header (for apps/server internal calls)
+  // This is used when apps/server calls www API endpoints on behalf of CLI users
+  const stackAuthHeader = req.headers.get("x-stack-auth");
+  if (stackAuthHeader) {
+    try {
+      const parsed = JSON.parse(stackAuthHeader) as { accessToken?: string; refreshToken?: string };
+      if (parsed.accessToken) {
+        // Validate token by having Stack Auth SDK verify it
+        const user = await stackServerAppJs.getUser({
+          tokenStore: { accessToken: parsed.accessToken, refreshToken: parsed.refreshToken || parsed.accessToken },
+        });
+        if (user) {
+          return user;
+        }
+      }
+    } catch (_e) {
+      // x-stack-auth parsing or validation failed
     }
   }
 

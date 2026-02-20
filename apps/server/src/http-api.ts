@@ -9,10 +9,15 @@
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { spawnAllAgents } from "./agentSpawner";
-import { generateBranchNamesFromDescription } from "./utils/branchNameGenerator";
+import {
+  DEFAULT_BRANCH_PREFIX,
+  generateBranchNamesFromDescription,
+} from "./utils/branchNameGenerator";
+import { getConvex } from "./utils/convexClient";
 import { serverLogger } from "./utils/fileLogger";
 import { runWithAuth } from "./utils/requestContext";
 
@@ -141,13 +146,25 @@ async function handleStartTask(
       // Determine which agents to spawn
       const agentsToSpawn = selectedAgents || ["claude-code"];
 
+      // Fetch workspace settings for branchPrefix (same as socket.io handler)
+      const workspaceSettings = await getConvex().query(
+        api.workspaceSettings.get,
+        { teamSlugOrId }
+      );
+      // Use configured prefix, or default if not set (undefined/null)
+      // Empty string is valid and means no prefix
+      const branchPrefix =
+        workspaceSettings?.branchPrefix !== undefined
+          ? workspaceSettings.branchPrefix
+          : DEFAULT_BRANCH_PREFIX;
+
       // Generate branch names for agents
       let branchNames: string[] | undefined;
       if (agentsToSpawn.length > 0) {
         branchNames = generateBranchNamesFromDescription(
           taskDescription,
           agentsToSpawn.length,
-          teamSlugOrId
+          branchPrefix
         );
       }
 
