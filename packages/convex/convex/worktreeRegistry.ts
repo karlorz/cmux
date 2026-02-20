@@ -170,9 +170,12 @@ export const remove = authMutation({
       if (existing.taskRunIds && existing.taskRunIds.length > 0) {
         for (const taskRunId of existing.taskRunIds) {
           const taskRun = await ctx.db.get(taskRunId);
-          if (taskRun && taskRun.worktreePath === args.worktreePath) {
-            await ctx.db.patch(taskRunId, { worktreePath: undefined });
-            // Also archive the parent task if it's a local workspace
+          if (taskRun) {
+            // Clear worktreePath if it matches
+            if (taskRun.worktreePath === args.worktreePath) {
+              await ctx.db.patch(taskRunId, { worktreePath: undefined });
+            }
+            // Always archive the parent task if it's a local workspace (it's linked to this worktree)
             const task = await ctx.db.get(taskRun.taskId);
             if (task && !processedTaskIds.has(task._id)) {
               processedTaskIds.add(task._id);
