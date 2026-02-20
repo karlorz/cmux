@@ -754,6 +754,13 @@ type TaskRun struct {
 	ExitCode       *int   `json:"exitCode,omitempty"`
 }
 
+// TaskImage represents a task image stored in Convex.
+type TaskImage struct {
+	StorageID string `json:"storageId"`
+	AltText   string `json:"altText"`
+	FileName  string `json:"fileName,omitempty"`
+}
+
 // TaskDetail represents a task with full details including runs
 type TaskDetail struct {
 	ID          string    `json:"id"`
@@ -762,9 +769,15 @@ type TaskDetail struct {
 	BaseBranch  string    `json:"baseBranch"`
 	IsCompleted bool      `json:"isCompleted"`
 	IsArchived  bool      `json:"isArchived"`
+	Pinned      bool      `json:"pinned,omitempty"`
+	MergeStatus string    `json:"mergeStatus,omitempty"`
+	PRTitle     string    `json:"pullRequestTitle,omitempty"`
+	CrownStatus string    `json:"crownEvaluationStatus,omitempty"`
+	CrownError  string    `json:"crownEvaluationError,omitempty"`
 	CreatedAt   int64     `json:"createdAt"`
 	UpdatedAt   int64     `json:"updatedAt"`
 	TaskRuns    []TaskRun `json:"taskRuns"`
+	Images      []TaskImage `json:"images,omitempty"`
 }
 
 // ListTasksResult represents the result of listing tasks
@@ -778,6 +791,8 @@ type CreateTaskOptions struct {
 	Repository string
 	BaseBranch string
 	Agents     []string
+	Images     []TaskImage
+	PRTitle    string
 }
 
 // TaskRunWithJWT represents a task run with its JWT for sandbox auth
@@ -860,6 +875,12 @@ func (c *Client) CreateTask(ctx context.Context, opts CreateTaskOptions) (*Creat
 	if len(opts.Agents) > 0 {
 		body["agents"] = opts.Agents
 	}
+	if len(opts.Images) > 0 {
+		body["images"] = opts.Images
+	}
+	if opts.PRTitle != "" {
+		body["prTitle"] = opts.PRTitle
+	}
 
 	resp, err := c.doRequest(ctx, "POST", "/api/v1/cmux/tasks", body)
 	if err != nil {
@@ -877,6 +898,82 @@ func (c *Client) CreateTask(ctx context.Context, opts CreateTaskOptions) (*Creat
 	}
 
 	return &result, nil
+}
+
+// CreateStorageUploadURL returns a one-time Convex upload URL for storing a file.
+func (c *Client) CreateStorageUploadURL(ctx context.Context) (string, error) {
+	if c.teamSlug == "" {
+		return "", fmt.Errorf("team slug not set")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+	}
+
+	resp, err := c.doRequest(ctx, "POST", "/api/v1/cmux/storage/upload-url", body)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result struct {
+		UploadURL string `json:"uploadUrl"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+	if result.UploadURL == "" {
+		return "", fmt.Errorf("missing uploadUrl in response")
+	}
+
+	return result.UploadURL, nil
+}
+
+// UploadFileToStorage uploads a local file to Convex storage and returns its storage ID.
+func (c *Client) UploadFileToStorage(ctx context.Context, filePath string) (string, error) {
+	uploadURL, err := c.CreateStorageUploadURL(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to create upload URL: %w", err)
+	}
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read file: %w", err)
+	}
+
+	contentType := http.DetectContentType(data)
+	req, err := http.NewRequestWithContext(ctx, "POST", uploadURL, bytes.NewReader(data))
+	if err != nil {
+		return "", fmt.Errorf("failed to create upload request: %w", err)
+	}
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("upload failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("upload failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result struct {
+		StorageID string `json:"storageId"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode upload response: %w", err)
+	}
+	if result.StorageID == "" {
+		return "", fmt.Errorf("missing storageId in upload response")
+	}
+
+	return result.StorageID, nil
 }
 
 // StartSandbox starts a sandbox for a task run via the www API
@@ -978,6 +1075,82 @@ func (c *Client) StopTask(ctx context.Context, taskID string) error {
 	return nil
 }
 
+// ToggleTaskPin toggles a task's pinned state and returns the new state.
+func (c *Client) ToggleTaskPin(ctx context.Context, taskID string) (bool, error) {
+	if c.teamSlug == "" {
+		return false, fmt.Errorf("team slug not set")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+	}
+
+	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/api/v1/cmux/tasks/%s/pin", taskID), body)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result struct {
+		Pinned bool `json:"pinned"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return false, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result.Pinned, nil
+}
+
+// ArchiveTask archives a task and all of its runs.
+func (c *Client) ArchiveTask(ctx context.Context, taskID string) error {
+	if c.teamSlug == "" {
+		return fmt.Errorf("team slug not set")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+	}
+
+	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/api/v1/cmux/tasks/%s/archive", taskID), body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	return nil
+}
+
+// UnarchiveTask unarchives a task and all of its runs.
+func (c *Client) UnarchiveTask(ctx context.Context, taskID string) error {
+	if c.teamSlug == "" {
+		return fmt.Errorf("team slug not set")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+	}
+
+	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/api/v1/cmux/tasks/%s/unarchive", taskID), body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	return nil
+}
+
 // StartTaskAgentsOptions represents options for starting agents via apps/server HTTP API
 type StartTaskAgentsOptions struct {
 	TaskID          string
@@ -990,6 +1163,7 @@ type StartTaskAgentsOptions struct {
 	IsCloudMode     bool
 	EnvironmentID   string
 	Theme           string
+	PRTitle         string
 }
 
 // StartTaskAgentsResult represents the result of starting task agents
@@ -1069,6 +1243,9 @@ func (c *Client) StartTaskAgents(ctx context.Context, opts StartTaskAgentsOption
 	}
 	if opts.Theme != "" {
 		body["theme"] = opts.Theme
+	}
+	if opts.PRTitle != "" {
+		body["prTitle"] = opts.PRTitle
 	}
 
 	resp, err := c.doServerRequest(ctx, "POST", "/api/start-task", body)

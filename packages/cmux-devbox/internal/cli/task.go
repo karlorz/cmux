@@ -18,6 +18,10 @@ Examples:
   cmux task list --archived           # List archived tasks
   cmux task create --repo owner/repo --agent claude-code "Add tests"
   cmux task status <task-id>          # Get task details
+  cmux task show <task-id>            # Show task details (enhanced)
+  cmux task runs <task-id>            # List runs with exit codes
+  cmux task pin <task-id>             # Pin/unpin a task
+  cmux task archive <task-id>         # Archive a task
   cmux task stop <task-id>            # Stop/archive a task`,
 }
 

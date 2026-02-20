@@ -1771,6 +1771,44 @@ async function resolveTeamIdForHttp(
 }
 
 // ============================================================================
+// POST /api/v1/cmux/storage/upload-url - Generate a one-time upload URL
+// ============================================================================
+export const createStorageUploadUrl = httpAction(async (ctx, req) => {
+  const contentTypeError = verifyContentType(req);
+  if (contentTypeError) return contentTypeError;
+
+  const { error } = await getAuthenticatedUser(ctx);
+  if (error) return error;
+
+  let body: { teamSlugOrId: string };
+  try {
+    body = await req.json();
+  } catch {
+    return jsonResponse({ code: 400, message: "Invalid JSON body" }, 400);
+  }
+
+  if (!body.teamSlugOrId) {
+    return jsonResponse(
+      { code: 400, message: "teamSlugOrId is required" },
+      400
+    );
+  }
+
+  try {
+    const uploadUrl = await ctx.runMutation(api.storage.generateUploadUrl, {
+      teamSlugOrId: body.teamSlugOrId,
+    });
+    return jsonResponse({ uploadUrl });
+  } catch (err) {
+    console.error("[cmux.storage.upload-url] Error:", err);
+    return jsonResponse(
+      { code: 500, message: "Failed to create upload URL" },
+      500
+    );
+  }
+});
+
+// ============================================================================
 // GET /api/v1/cmux/tasks - List tasks
 // ============================================================================
 export const listTasks = httpAction(async (ctx, req) => {
@@ -1885,6 +1923,12 @@ export const createTask = httpAction(async (ctx, req) => {
     repository?: string;
     baseBranch?: string;
     agents?: string[];
+    prTitle?: string;
+    images?: Array<{
+      storageId: string;
+      fileName?: string;
+      altText: string;
+    }>;
   };
 
   try {
@@ -1919,13 +1963,28 @@ export const createTask = httpAction(async (ctx, req) => {
     }
 
     // Create task first
-    const taskResult = await ctx.runMutation(internal.tasks.createInternal, {
-      teamId,
-      userId,
+    const taskResult = await ctx.runMutation(api.tasks.create, {
+      teamSlugOrId: body.teamSlugOrId,
       text: body.prompt,
       projectFullName: body.repository,
       baseBranch: body.baseBranch ?? "main",
-    }) as { taskId: Id<"tasks"> };
+      images: body.images as
+        | Array<{
+            storageId: Id<"_storage">;
+            fileName?: string;
+            altText: string;
+          }>
+        | undefined,
+    });
+
+    // Save PR title when provided (helps auto-PR later)
+    if (body.prTitle && body.prTitle.trim().length > 0) {
+      await ctx.runMutation(api.tasks.setPullRequestTitle, {
+        teamSlugOrId: body.teamSlugOrId,
+        id: taskResult.taskId,
+        pullRequestTitle: body.prTitle,
+      });
+    }
 
     // Create task runs for each agent (with JWTs for sandbox auth)
     const taskRuns: Array<{ taskRunId: string; jwt: string; agentName: string }> = [];
@@ -2026,13 +2085,145 @@ async function handleGetTask(
       baseBranch: task.baseBranch,
       isCompleted: task.isCompleted,
       isArchived: task.isArchived,
+      pinned: task.pinned ?? false,
+      mergeStatus: task.mergeStatus ?? "none",
+      pullRequestTitle: task.pullRequestTitle,
+      crownEvaluationStatus: task.crownEvaluationStatus,
+      crownEvaluationError: task.crownEvaluationError,
       createdAt: task.createdAt,
       updatedAt: task.updatedAt,
       taskRuns,
+      images: task.images,
     });
   } catch (err) {
     console.error("[cmux.tasks.get] Error:", err);
     return jsonResponse({ code: 500, message: "Failed to get task" }, 500);
+  }
+}
+
+// ============================================================================
+// POST /api/v1/cmux/tasks/{id}/pin - Toggle pinned state
+// ============================================================================
+async function handleTogglePinTask(
+  ctx: ActionCtx,
+  taskId: string,
+  teamSlugOrId: string,
+  userId: string
+): Promise<Response> {
+  try {
+    const teamId = await resolveTeamIdForHttp(ctx, teamSlugOrId);
+
+    if (!teamId) {
+      return jsonResponse(
+        { code: 404, message: `Team not found: ${teamSlugOrId}` },
+        404
+      );
+    }
+
+    const task = await ctx.runQuery(internal.tasks.getByIdInternal, {
+      id: taskId as Id<"tasks">,
+    });
+
+    if (!task || task.teamId !== teamId || task.userId !== userId) {
+      return jsonResponse({ code: 404, message: "Task not found" }, 404);
+    }
+
+    const currentlyPinned = task.pinned === true;
+    if (currentlyPinned) {
+      await ctx.runMutation(api.tasks.unpin, {
+        teamSlugOrId,
+        id: taskId as Id<"tasks">,
+      });
+    } else {
+      await ctx.runMutation(api.tasks.pin, {
+        teamSlugOrId,
+        id: taskId as Id<"tasks">,
+      });
+    }
+
+    return jsonResponse({ pinned: !currentlyPinned });
+  } catch (err) {
+    console.error("[cmux.tasks.pin] Error:", err);
+    return jsonResponse({ code: 500, message: "Failed to toggle pin" }, 500);
+  }
+}
+
+// ============================================================================
+// POST /api/v1/cmux/tasks/{id}/archive - Archive task
+// ============================================================================
+async function handleArchiveTask(
+  ctx: ActionCtx,
+  taskId: string,
+  teamSlugOrId: string,
+  userId: string
+): Promise<Response> {
+  try {
+    const teamId = await resolveTeamIdForHttp(ctx, teamSlugOrId);
+
+    if (!teamId) {
+      return jsonResponse(
+        { code: 404, message: `Team not found: ${teamSlugOrId}` },
+        404
+      );
+    }
+
+    const task = await ctx.runQuery(internal.tasks.getByIdInternal, {
+      id: taskId as Id<"tasks">,
+    });
+    if (!task || task.teamId !== teamId || task.userId !== userId) {
+      return jsonResponse({ code: 404, message: "Task not found" }, 404);
+    }
+
+    await ctx.runMutation(api.tasks.archive, {
+      teamSlugOrId,
+      id: taskId as Id<"tasks">,
+    });
+
+    return jsonResponse({ archived: true });
+  } catch (err) {
+    console.error("[cmux.tasks.archive] Error:", err);
+    return jsonResponse({ code: 500, message: "Failed to archive task" }, 500);
+  }
+}
+
+// ============================================================================
+// POST /api/v1/cmux/tasks/{id}/unarchive - Unarchive task
+// ============================================================================
+async function handleUnarchiveTask(
+  ctx: ActionCtx,
+  taskId: string,
+  teamSlugOrId: string,
+  userId: string
+): Promise<Response> {
+  try {
+    const teamId = await resolveTeamIdForHttp(ctx, teamSlugOrId);
+
+    if (!teamId) {
+      return jsonResponse(
+        { code: 404, message: `Team not found: ${teamSlugOrId}` },
+        404
+      );
+    }
+
+    const task = await ctx.runQuery(internal.tasks.getByIdInternal, {
+      id: taskId as Id<"tasks">,
+    });
+    if (!task || task.teamId !== teamId || task.userId !== userId) {
+      return jsonResponse({ code: 404, message: "Task not found" }, 404);
+    }
+
+    await ctx.runMutation(api.tasks.unarchive, {
+      teamSlugOrId,
+      id: taskId as Id<"tasks">,
+    });
+
+    return jsonResponse({ archived: false });
+  } catch (err) {
+    console.error("[cmux.tasks.unarchive] Error:", err);
+    return jsonResponse(
+      { code: 500, message: "Failed to unarchive task" },
+      500
+    );
   }
 }
 
@@ -2144,6 +2335,12 @@ export const taskActionRouter = httpAction(async (ctx, req) => {
   switch (action) {
     case "stop":
       return handleStopTask(ctx, taskId, body.teamSlugOrId, userId);
+    case "pin":
+      return handleTogglePinTask(ctx, taskId, body.teamSlugOrId, userId);
+    case "archive":
+      return handleArchiveTask(ctx, taskId, body.teamSlugOrId, userId);
+    case "unarchive":
+      return handleUnarchiveTask(ctx, taskId, body.teamSlugOrId, userId);
     default:
       return jsonResponse({ code: 404, message: "Not found" }, 404);
   }

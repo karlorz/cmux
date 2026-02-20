@@ -51,6 +51,7 @@ import {
   instanceActionRouter as cmuxInstanceActionRouter,
   instanceGetRouter as cmuxInstanceGetRouter,
   instanceDeleteRouter as cmuxInstanceDeleteRouter,
+  createStorageUploadUrl as cmuxCreateStorageUploadUrl,
   listTasks as cmuxListTasks,
   createTask as cmuxCreateTask,
   taskGetRouter as cmuxTaskGetRouter,
@@ -319,6 +320,12 @@ http.route({
   pathPrefix: "/api/v1/cmux/instances/",
   method: "DELETE",
   handler: cmuxInstanceDeleteRouter,
+});
+
+http.route({
+  path: "/api/v1/cmux/storage/upload-url",
+  method: "POST",
+  handler: cmuxCreateStorageUploadUrl,
 });
 
 // Task management routes

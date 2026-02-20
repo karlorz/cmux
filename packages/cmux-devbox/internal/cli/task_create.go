@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,6 +22,8 @@ var (
 	taskCreateNoSandbox bool
 	taskCreateRealtime  bool
 	taskCreateLocal     bool
+	taskCreateImages    []string
+	taskCreatePRTitle   string
 )
 
 var taskCreateCmd = &cobra.Command{
@@ -39,6 +42,7 @@ Examples:
   cmux task create --repo owner/repo "Implement dark mode"
   cmux task create --repo owner/repo --agent claude-code "Fix the login bug"
   cmux task create --repo owner/repo --agent claude-code --agent opencode/gpt-4o "Add tests"
+  cmux task create --repo owner/repo --agent claude-code --image ./screenshot.png "Fix the UI bug shown in the image"
   cmux task create --repo owner/repo --agent claude-code --no-sandbox "Just create task"
   cmux task create --repo owner/repo --agent claude-code --realtime "With real-time updates"
   cmux task create --repo owner/repo --agent claude-code --local "Local worktree mode"`,
@@ -55,6 +59,9 @@ Examples:
 		if len(taskCreateAgents) > 0 && !taskCreateNoSandbox {
 			timeout = 5 * time.Minute // Sandbox provisioning can take a while
 		}
+		if len(taskCreateImages) > 0 && timeout < 2*time.Minute {
+			timeout = 2 * time.Minute // Uploading images can take a bit
+		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
@@ -70,11 +77,49 @@ Examples:
 		}
 		client.SetTeamSlug(teamSlug)
 
+		// Upload images (if any) to Convex storage and attach to the task.
+		var uploadedImages []vm.TaskImage
+		if len(taskCreateImages) > 0 {
+			for _, imagePath := range taskCreateImages {
+				if strings.TrimSpace(imagePath) == "" {
+					continue
+				}
+				fileName := filepath.Base(imagePath)
+				storageID, err := client.UploadFileToStorage(ctx, imagePath)
+				if err != nil {
+					return fmt.Errorf("failed to upload image %q: %w", imagePath, err)
+				}
+				uploadedImages = append(uploadedImages, vm.TaskImage{
+					StorageID: storageID,
+					FileName:  fileName,
+					AltText:   fileName,
+				})
+			}
+
+			if len(uploadedImages) > 0 {
+				// Ensure prompt includes image references so the backend can replace
+				// them with the sanitized file paths in /root/prompt/*.
+				var b strings.Builder
+				b.WriteString(prompt)
+				b.WriteString("\n\nImages:\n")
+				for _, img := range uploadedImages {
+					if img.FileName != "" {
+						b.WriteString("- ")
+						b.WriteString(img.FileName)
+						b.WriteString("\n")
+					}
+				}
+				prompt = strings.TrimSpace(b.String())
+			}
+		}
+
 		opts := vm.CreateTaskOptions{
 			Prompt:     prompt,
 			Repository: taskCreateRepo,
 			BaseBranch: taskCreateBranch,
 			Agents:     taskCreateAgents,
+			Images:     uploadedImages,
+			PRTitle:    taskCreatePRTitle,
 		}
 
 		// Create task and task runs (with JWTs)
@@ -145,6 +190,7 @@ Examples:
 					TaskRunIDs:      taskRunIDs,
 					SelectedAgents:  selectedAgents,
 					IsCloudMode:     !taskCreateLocal,
+					PRTitle:         taskCreatePRTitle,
 				})
 
 				if err != nil {
@@ -297,8 +343,10 @@ func init() {
 	taskCreateCmd.Flags().StringVar(&taskCreateRepo, "repo", "", "Repository (owner/name)")
 	taskCreateCmd.Flags().StringVar(&taskCreateBranch, "branch", "main", "Base branch")
 	taskCreateCmd.Flags().StringArrayVar(&taskCreateAgents, "agent", nil, "Agent(s) to run (can specify multiple)")
+	taskCreateCmd.Flags().StringArrayVar(&taskCreateImages, "image", nil, "Image file path(s) to attach (can specify multiple)")
 	taskCreateCmd.Flags().BoolVar(&taskCreateNoSandbox, "no-sandbox", false, "Create task without starting sandboxes")
 	taskCreateCmd.Flags().BoolVar(&taskCreateRealtime, "realtime", false, "Use socket.io for real-time feedback")
 	taskCreateCmd.Flags().BoolVar(&taskCreateLocal, "local", false, "Use local workspace mode (codex-style worktrees)")
+	taskCreateCmd.Flags().StringVar(&taskCreatePRTitle, "pr-title", "", "Optional pull request title to save on the task")
 	taskCmd.AddCommand(taskCreateCmd)
 }
