@@ -1,6 +1,7 @@
 import { SettingRow } from "@/components/settings/SettingRow";
 import { SettingSection } from "@/components/settings/SettingSection";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useSocket } from "@/contexts/socket/use-socket";
 import { api } from "@cmux/convex/api";
 import type { Doc } from "@cmux/convex/dataModel";
@@ -28,6 +29,8 @@ export function WorktreesSection({
   const [newProjectFullName, setNewProjectFullName] = useState("");
   const [newLocalRepoPath, setNewLocalRepoPath] = useState("");
   const [isScanning, setIsScanning] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteConfirmWorktree, setDeleteConfirmWorktree] = useState<Doc<"worktreeRegistry"> | null>(null);
 
   // Query source repo mappings
   const { data: sourceRepoMappings, refetch: refetchMappings } = useQuery(
@@ -37,6 +40,11 @@ export function WorktreesSection({
   // Query worktree registry
   const { data: worktreeRegistry, refetch: refetchRegistry } = useQuery(
     convexQuery(api.worktreeRegistry.list, { teamSlugOrId })
+  );
+
+  // Query local workspaces (tasks with worktreePath)
+  const { data: localWorkspaces, refetch: refetchLocalWorkspaces } = useQuery(
+    convexQuery(api.worktreeRegistry.listLocalWorkspaces, { teamSlugOrId })
   );
 
   // Mutation to add source repo mapping
@@ -108,24 +116,6 @@ export function WorktreesSection({
     });
   };
 
-  // Mutation to remove worktree from registry
-  const removeWorktreeMutation = useMutation({
-    mutationFn: async (worktreePath: string) => {
-      await convex.mutation(api.worktreeRegistry.remove, {
-        teamSlugOrId,
-        worktreePath,
-      });
-    },
-    onSuccess: () => {
-      void refetchRegistry();
-      toast.success("Worktree removed from registry");
-    },
-    onError: (error) => {
-      console.error("Failed to remove worktree:", error);
-      toast.error("Failed to remove worktree");
-    },
-  });
-
   // Scan for worktrees on filesystem
   const handleScanWorktrees = () => {
     if (!socket) {
@@ -152,8 +142,55 @@ export function WorktreesSection({
     });
   };
 
+  // Delete worktree from filesystem and registry
+  const handleDeleteWorktree = (worktree: Doc<"worktreeRegistry">) => {
+    setDeleteConfirmWorktree(worktree);
+  };
+
+  const confirmDeleteWorktree = () => {
+    if (!deleteConfirmWorktree) return;
+
+    if (!socket) {
+      toast.error("Not connected to local server");
+      setDeleteConfirmWorktree(null);
+      return;
+    }
+
+    setIsDeleting(true);
+    socket.emit(
+      "delete-worktree",
+      { teamSlugOrId, worktreePath: deleteConfirmWorktree.worktreePath },
+      (response) => {
+        setIsDeleting(false);
+        setDeleteConfirmWorktree(null);
+        if (response.success) {
+          toast.success("Worktree deleted");
+          void refetchRegistry();
+          void refetchLocalWorkspaces();
+        } else {
+          toast.error(response.error || "Failed to delete worktree");
+        }
+      }
+    );
+  };
+
   return (
     <div className="space-y-6">
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={deleteConfirmWorktree !== null}
+        onOpenChange={(open: boolean) => !open && setDeleteConfirmWorktree(null)}
+        title="Delete Worktree"
+        description={
+          deleteConfirmWorktree
+            ? `Are you sure you want to delete this worktree? This will permanently remove the folder from your filesystem.\n\n${deleteConfirmWorktree.worktreePath}`
+            : "Are you sure you want to delete this worktree?"
+        }
+        confirmLabel={isDeleting ? "Deleting..." : "Delete"}
+        cancelLabel="Cancel"
+        onConfirm={confirmDeleteWorktree}
+      />
+
       <SettingSection
         title="Worktree Settings"
         description="cmux uses your existing local repos to create worktrees at ~/.cmux/worktrees/{id}/{repo}/. Local repos are auto-detected from common locations."
@@ -349,24 +386,21 @@ export function WorktreesSection({
                           <p className="mt-0.5 font-mono text-xs text-neutral-500 dark:text-neutral-400">
                             {worktree.worktreePath}
                           </p>
+                          {worktree.branchName && worktree.branchName !== "unknown" && (
+                            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                              Branch: {worktree.branchName}
+                            </p>
+                          )}
                           {worktree.taskRunIds && worktree.taskRunIds.length > 0 && (
-                            <div className="mt-3">
-                              <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                                Tasks
-                              </p>
-                              <p className="mt-1 text-sm text-neutral-700 dark:text-neutral-300">
-                                {worktree.branchName || worktree.projectFullName}
-                              </p>
-                            </div>
+                            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                              {worktree.taskRunIds.length} task{worktree.taskRunIds.length !== 1 ? "s" : ""}
+                            </p>
                           )}
                         </div>
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() =>
-                            removeWorktreeMutation.mutate(worktree.worktreePath)
-                          }
-                          disabled={removeWorktreeMutation.isPending}
+                          onClick={() => handleDeleteWorktree(worktree)}
                           className="ml-4 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
                         >
                           Delete
@@ -390,6 +424,61 @@ export function WorktreesSection({
           </div>
         )}
       </SettingSection>
+
+      {/* Local Workspaces Section */}
+      {localWorkspaces && localWorkspaces.length > 0 && (
+        <SettingSection
+          title="Linked Local Workspaces"
+          description="Tasks with linked local worktree paths"
+        >
+          <div className="divide-y divide-neutral-200 dark:divide-neutral-800">
+            {localWorkspaces.map((workspace) => (
+              <div
+                key={workspace.taskId}
+                className="flex items-center justify-between px-4 py-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                    {workspace.text || workspace.description || "Local Workspace"}
+                  </p>
+                  {workspace.projectFullName && (
+                    <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                      {workspace.projectFullName}
+                    </p>
+                  )}
+                  {workspace.worktreePath && (
+                    <p className="mt-0.5 font-mono text-xs text-neutral-500 dark:text-neutral-400">
+                      {workspace.worktreePath}
+                    </p>
+                  )}
+                  <div className="mt-1 flex items-center gap-2">
+                    {workspace.status && (
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                          workspace.status === "running"
+                            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                            : workspace.status === "completed"
+                              ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                              : workspace.status === "failed"
+                                ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                                : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
+                        }`}
+                      >
+                        {workspace.status}
+                      </span>
+                    )}
+                    {workspace.linkedFromCloudTaskRunId && (
+                      <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                        linked from cloud
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </SettingSection>
+      )}
     </div>
   );
 }

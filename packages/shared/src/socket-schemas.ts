@@ -673,6 +673,14 @@ export interface ClientToServerEvents {
       error?: string;
     }) => void
   ) => void;
+  // Delete a worktree from filesystem and registry
+  "delete-worktree": (
+    data: { teamSlugOrId: string; worktreePath: string },
+    callback: (response: {
+      success: boolean;
+      error?: string;
+    }) => void
+  ) => void;
 }
 
 export interface LocalRepoNotFound {

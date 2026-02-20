@@ -2611,6 +2611,139 @@ export function setupSocketHandlers(
       }
     );
 
+    // Delete a worktree from filesystem and registry
+    socket.on(
+      "delete-worktree",
+      async (
+        data: { teamSlugOrId: string; worktreePath: string },
+        callback: (response: { success: boolean; error?: string }) => void
+      ) => {
+        // Guard callback in case client didn't provide one
+        const safeCallback =
+          typeof callback === "function"
+            ? callback
+            : (response: { success: boolean; error?: string }) => {
+                serverLogger.info("[delete-worktree] No callback provided, result:", response);
+              };
+
+        const { teamSlugOrId: teamId, worktreePath } = data;
+        const resolvedTeamId = teamId || safeTeam;
+
+        if (!worktreePath) {
+          safeCallback({ success: false, error: "Worktree path is required" });
+          return;
+        }
+
+        // Security: Ensure the path is within allowed worktree directories
+        const homeDir = os.homedir();
+        const allowedPrefixes = [
+          path.join(homeDir, ".cmux", "worktrees"),
+          path.join(homeDir, "cmux"),
+        ];
+
+        const normalizedPath = path.resolve(worktreePath);
+        const isAllowed = allowedPrefixes.some((prefix) =>
+          normalizedPath.startsWith(prefix)
+        );
+
+        if (!isAllowed) {
+          serverLogger.warn(
+            `[delete-worktree] Rejected deletion of path outside allowed directories: ${worktreePath}`
+          );
+          safeCallback({
+            success: false,
+            error: "Cannot delete worktrees outside of cmux directories",
+          });
+          return;
+        }
+
+        try {
+          // Check if the worktree path exists
+          try {
+            await fs.access(normalizedPath);
+          } catch {
+            // Path doesn't exist, just remove from registry
+            serverLogger.info(
+              `[delete-worktree] Path doesn't exist, removing from registry only: ${worktreePath}`
+            );
+            await getConvex().mutation(api.worktreeRegistry.remove, {
+              teamSlugOrId: resolvedTeamId,
+              worktreePath,
+            });
+            safeCallback({ success: true });
+            return;
+          }
+
+          // Check if it's a git worktree and try to remove it properly
+          const gitPath = path.join(normalizedPath, ".git");
+          try {
+            const gitContent = await fs.readFile(gitPath, "utf-8");
+            // If .git is a file (worktree), it contains "gitdir: /path/to/main/.git/worktrees/name"
+            if (gitContent.startsWith("gitdir:")) {
+              const gitdirMatch = gitContent.match(/gitdir:\s*(.+)/);
+              if (gitdirMatch) {
+                // This is a proper git worktree, try to remove it via git
+                const parentGitDir = gitdirMatch[1].trim().replace(/\/worktrees\/[^/]+$/, "");
+                const parentRepoPath = path.dirname(parentGitDir);
+
+                try {
+                  await execFileAsync("git", ["worktree", "remove", "--force", normalizedPath], {
+                    cwd: parentRepoPath,
+                  });
+                  serverLogger.info(
+                    `[delete-worktree] Removed git worktree via git command: ${worktreePath}`
+                  );
+                } catch (gitError) {
+                  serverLogger.warn(
+                    `[delete-worktree] git worktree remove failed, falling back to rm: ${gitError}`
+                  );
+                  // Fall back to manual deletion
+                  await fs.rm(normalizedPath, { recursive: true, force: true });
+                }
+              }
+            }
+          } catch {
+            // .git is a directory (regular clone) or doesn't exist, just delete the folder
+            await fs.rm(normalizedPath, { recursive: true, force: true });
+            serverLogger.info(
+              `[delete-worktree] Deleted worktree folder: ${worktreePath}`
+            );
+          }
+
+          // Also check if parent shortId directory is now empty and remove it
+          const parentDir = path.dirname(normalizedPath);
+          if (allowedPrefixes.some((prefix) => parentDir.startsWith(prefix) && parentDir !== prefix)) {
+            try {
+              const remaining = await fs.readdir(parentDir);
+              if (remaining.length === 0) {
+                await fs.rmdir(parentDir);
+                serverLogger.info(
+                  `[delete-worktree] Removed empty parent directory: ${parentDir}`
+                );
+              }
+            } catch {
+              // Ignore errors cleaning up parent
+            }
+          }
+
+          // Remove from registry
+          await getConvex().mutation(api.worktreeRegistry.remove, {
+            teamSlugOrId: resolvedTeamId,
+            worktreePath,
+          });
+
+          serverLogger.info(`[delete-worktree] Successfully deleted worktree: ${worktreePath}`);
+          safeCallback({ success: true });
+        } catch (error) {
+          serverLogger.error("[delete-worktree] Error deleting worktree:", error);
+          safeCallback({
+            success: false,
+            error: error instanceof Error ? error.message : "Unknown error",
+          });
+        }
+      }
+    );
+
     socket.on("open-in-editor", (data, callback) => {
       // In web mode, opening local editors is not supported
       if (env.NEXT_PUBLIC_WEB_MODE) {

@@ -23,6 +23,58 @@ export const list = authQuery({
   },
 });
 
+/**
+ * List local workspace tasks (with worktreePath) for display in settings.
+ * These are tasks created as local workspaces that have active worktrees.
+ */
+export const listLocalWorkspaces = authQuery({
+  args: { teamSlugOrId: v.string() },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    // Get tasks that are local workspaces with a worktreePath
+    const localWorkspaceTasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_team_user", (q) =>
+        q.eq("teamId", teamId).eq("userId", userId)
+      )
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("isLocalWorkspace"), true),
+          q.neq(q.field("worktreePath"), undefined)
+        )
+      )
+      .collect();
+
+    // Get the latest taskRun for each task to show status
+    const results = await Promise.all(
+      localWorkspaceTasks.map(async (task) => {
+        const latestRun = await ctx.db
+          .query("taskRuns")
+          .withIndex("by_task", (q) => q.eq("taskId", task._id))
+          .order("desc")
+          .first();
+
+        return {
+          taskId: task._id,
+          taskRunId: latestRun?._id,
+          text: task.text,
+          description: task.description,
+          projectFullName: task.projectFullName,
+          worktreePath: task.worktreePath,
+          createdAt: task.createdAt,
+          lastActivityAt: task.lastActivityAt,
+          status: latestRun?.status,
+          linkedFromCloudTaskRunId: task.linkedFromCloudTaskRunId,
+        };
+      })
+    );
+
+    return results;
+  },
+});
+
 export const getByPath = authQuery({
   args: {
     teamSlugOrId: v.string(),
@@ -130,6 +182,35 @@ export const remove = authMutation({
 
     // Only delete if belongs to this team/user
     if (existing && existing.teamId === teamId && existing.userId === userId) {
+      // Clear worktreePath on related taskRuns
+      if (existing.taskRunIds && existing.taskRunIds.length > 0) {
+        for (const taskRunId of existing.taskRunIds) {
+          const taskRun = await ctx.db.get(taskRunId);
+          if (taskRun && taskRun.worktreePath === args.worktreePath) {
+            await ctx.db.patch(taskRunId, { worktreePath: undefined });
+            // Also clear the worktreePath on the parent task
+            const task = await ctx.db.get(taskRun.taskId);
+            if (task && task.worktreePath === args.worktreePath) {
+              await ctx.db.patch(taskRun.taskId, { worktreePath: undefined });
+            }
+          }
+        }
+      }
+
+      // Also find any other tasks/taskRuns with this worktreePath (in case not in registry)
+      const tasksWithPath = await ctx.db
+        .query("tasks")
+        .withIndex("by_team_user", (q) =>
+          q.eq("teamId", teamId).eq("userId", userId)
+        )
+        .filter((q) => q.eq(q.field("worktreePath"), args.worktreePath))
+        .collect();
+
+      for (const task of tasksWithPath) {
+        await ctx.db.patch(task._id, { worktreePath: undefined });
+      }
+
+      // Delete the registry entry
       await ctx.db.delete(existing._id);
     }
   },
