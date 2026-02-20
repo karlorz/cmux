@@ -113,6 +113,7 @@ const (
 	DevPublishableKey = "pck_pt4nwry6sdskews2pxk4g2fbe861ak2zvaf3mqendspa0" // Dev publishable key
 	DevCmuxURL        = "http://localhost:9779"                         // Local dev server
 	DevConvexSiteURL  = "https://famous-camel-162.convex.site"          // Dev Convex deployment
+	DevServerURL      = "http://localhost:9776"                         // Local apps/server socket.io & HTTP API
 )
 
 // Build-time configuration variables
@@ -122,6 +123,7 @@ var (
 	PublishableKey = "" // Stack Auth publishable client key
 	CmuxURL        = "" // cmux web app URL (e.g., https://manaflow.com)
 	ConvexSiteURL  = "" // Convex HTTP site URL
+	ServerURL      = "" // apps/server HTTP API URL
 )
 
 // buildMode determines which defaults to use ("dev" or "prod")
@@ -148,6 +150,7 @@ var (
 	cliPublishableKey string
 	cliCmuxURL        string
 	cliConvexSiteURL  string
+	cliServerURL      string
 )
 
 // SetConfigOverrides sets CLI flag overrides for configuration values.
@@ -160,12 +163,19 @@ func SetConfigOverrides(projectID, publishableKey, cmuxURL, convexSiteURL string
 	cliConvexSiteURL = convexSiteURL
 }
 
+// SetServerURLOverride sets the CLI flag override for server URL.
+// Kept separate from SetConfigOverrides for backward compatibility.
+func SetServerURLOverride(serverURL string) {
+	cliServerURL = serverURL
+}
+
 // getDefaultsForMode returns the appropriate default values based on build mode
-func getDefaultsForMode() (projectID, publishableKey, cmuxURL, convexSiteURL string) {
+func getDefaultsForMode() (projectID, publishableKey, cmuxURL, convexSiteURL, serverURL string) {
 	if buildMode == "dev" {
-		return DevProjectID, DevPublishableKey, DevCmuxURL, DevConvexSiteURL
+		return DevProjectID, DevPublishableKey, DevCmuxURL, DevConvexSiteURL, DevServerURL
 	}
-	return ProdProjectID, ProdPublishableKey, ProdCmuxURL, ProdConvexSiteURL
+	// Production server URL - empty means must be set via ldflags or env
+	return ProdProjectID, ProdPublishableKey, ProdCmuxURL, ProdConvexSiteURL, ""
 }
 
 // Config holds auth configuration
@@ -174,6 +184,7 @@ type Config struct {
 	PublishableKey string
 	CmuxURL        string
 	ConvexSiteURL  string
+	ServerURL      string // apps/server HTTP API URL for agent spawning
 	StackAuthURL   string
 	IsDev          bool
 }
@@ -194,6 +205,8 @@ func (c Config) Validate() error {
 	if c.ConvexSiteURL == "" {
 		missing = append(missing, "CONVEX_SITE_URL")
 	}
+	// ServerURL is optional - only required for agent spawning via CLI
+	// If not set, CLI task create will fail with a clear error message
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required configuration: %v. For production builds, these must be set via -ldflags or environment variables", missing)
 	}
@@ -212,7 +225,7 @@ func GetConfig() Config {
 	}
 
 	// Get mode-specific defaults
-	defaultProjectID, defaultPublishableKey, defaultCmuxURL, defaultConvexSiteURL := getDefaultsForMode()
+	defaultProjectID, defaultPublishableKey, defaultCmuxURL, defaultConvexSiteURL, defaultServerURL := getDefaultsForMode()
 
 	// Helper to resolve value with priority: CLI > env > build-time > default
 	// Supports multiple env key names (first match wins)
@@ -236,6 +249,7 @@ func GetConfig() Config {
 	publishableKey := resolve(cliPublishableKey, []string{"STACK_PUBLISHABLE_CLIENT_KEY", "NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY"}, PublishableKey, defaultPublishableKey)
 	cmuxURL := resolve(cliCmuxURL, []string{"CMUX_API_URL"}, CmuxURL, defaultCmuxURL)
 	convexSiteURL := resolve(cliConvexSiteURL, []string{"CONVEX_SITE_URL"}, ConvexSiteURL, defaultConvexSiteURL)
+	serverURL := resolve(cliServerURL, []string{"CMUX_SERVER_URL"}, ServerURL, defaultServerURL)
 
 	// Stack Auth URL only has env override and hardcoded default
 	stackAuthURL := os.Getenv("AUTH_API_URL")
@@ -251,6 +265,7 @@ func GetConfig() Config {
 		PublishableKey: publishableKey,
 		CmuxURL:        cmuxURL,
 		ConvexSiteURL:  convexSiteURL,
+		ServerURL:      serverURL,
 		StackAuthURL:   stackAuthURL,
 		IsDev:          isDev,
 	}

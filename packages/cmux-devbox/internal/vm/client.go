@@ -975,3 +975,114 @@ func (c *Client) StopTask(ctx context.Context, taskID string) error {
 
 	return nil
 }
+
+// StartTaskAgentsOptions represents options for starting agents via apps/server HTTP API
+type StartTaskAgentsOptions struct {
+	TaskID          string
+	TaskDescription string
+	ProjectFullName string
+	RepoURL         string
+	Branch          string
+	TaskRunIDs      []string
+	SelectedAgents  []string
+	IsCloudMode     bool
+	EnvironmentID   string
+	Theme           string
+}
+
+// StartTaskAgentsResult represents the result of starting task agents
+type StartTaskAgentsResult struct {
+	TaskID  string                    `json:"taskId"`
+	Results []StartTaskAgentResult    `json:"results"`
+}
+
+// StartTaskAgentResult represents a single agent spawn result
+type StartTaskAgentResult struct {
+	AgentName string `json:"agentName"`
+	TaskRunID string `json:"taskRunId"`
+	VSCodeURL string `json:"vscodeUrl,omitempty"`
+	Success   bool   `json:"success"`
+	Error     string `json:"error,omitempty"`
+}
+
+// doServerRequest makes an authenticated request to the apps/server HTTP API
+func (c *Client) doServerRequest(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
+	accessToken, err := auth.GetAccessToken()
+	if err != nil {
+		return nil, fmt.Errorf("not authenticated: %w", err)
+	}
+
+	var bodyReader io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		bodyReader = bytes.NewReader(data)
+	}
+
+	// apps/server API is at ServerURL (socket.io server)
+	cfg := auth.GetConfig()
+	url := cfg.ServerURL + path
+	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	return c.httpClient.Do(req)
+}
+
+// StartTaskAgents starts agents for a task using the same flow as web app
+// This calls apps/server HTTP API which uses the same agentSpawner as socket.io
+func (c *Client) StartTaskAgents(ctx context.Context, opts StartTaskAgentsOptions) (*StartTaskAgentsResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId":    c.teamSlug,
+		"taskId":          opts.TaskID,
+		"taskDescription": opts.TaskDescription,
+		"projectFullName": opts.ProjectFullName,
+		"isCloudMode":     opts.IsCloudMode,
+	}
+	if opts.RepoURL != "" {
+		body["repoUrl"] = opts.RepoURL
+	}
+	if opts.Branch != "" {
+		body["branch"] = opts.Branch
+	}
+	if len(opts.TaskRunIDs) > 0 {
+		body["taskRunIds"] = opts.TaskRunIDs
+	}
+	if len(opts.SelectedAgents) > 0 {
+		body["selectedAgents"] = opts.SelectedAgents
+	}
+	if opts.EnvironmentID != "" {
+		body["environmentId"] = opts.EnvironmentID
+	}
+	if opts.Theme != "" {
+		body["theme"] = opts.Theme
+	}
+
+	resp, err := c.doServerRequest(ctx, "POST", "/api/start-task", body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("start-task failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result StartTaskAgentsResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}

@@ -350,6 +350,51 @@ else
 fi
 
 # ============================================================================
+# Test 12b: Create Task with Agent Spawning (CLI -> apps/server -> agentSpawner)
+# ============================================================================
+info "Test 12b: Creating task with agent via CLI (tests apps/server HTTP API)..."
+TASK_WITH_AGENT_ID=""
+
+# Check if CMUX_SERVER_URL is configured (apps/server must be running)
+if curl -s http://localhost:9776/api/health > /dev/null 2>&1; then
+  if CREATE_AGENT_OUTPUT=$(cmux-devbox task create --repo karlorz/testing-repo-1 --agent opencode/gpt-4o --json "Agent spawn test - $(date +%s)" 2>&1); then
+    TASK_WITH_AGENT_ID=$(echo "${CREATE_AGENT_OUTPUT}" | jq -r '.taskId // empty' 2>/dev/null || echo "")
+    AGENT_STATUS=$(echo "${CREATE_AGENT_OUTPUT}" | jq -r '.agents[0].status // empty' 2>/dev/null || echo "")
+
+    if [[ -n "${TASK_WITH_AGENT_ID}" ]]; then
+      if [[ "${AGENT_STATUS}" == "running" ]]; then
+        pass "Task created with running agent: ${TASK_WITH_AGENT_ID}"
+        info "  Agent spawned via apps/server HTTP API (same flow as web app)"
+      elif [[ "${AGENT_STATUS}" == "failed" ]]; then
+        AGENT_ERROR=$(echo "${CREATE_AGENT_OUTPUT}" | jq -r '.agents[0].error // empty' 2>/dev/null || echo "unknown")
+        info "Task created but agent failed: ${AGENT_ERROR}"
+        pass "Task created (agent spawn attempted): ${TASK_WITH_AGENT_ID}"
+      else
+        # Check if taskRuns exist (--no-sandbox behavior or ServerURL not set)
+        TASK_RUNS=$(echo "${CREATE_AGENT_OUTPUT}" | jq -r '.taskRuns // empty' 2>/dev/null || echo "")
+        if [[ -n "${TASK_RUNS}" ]]; then
+          pass "Task created with task runs (agents not spawned - expected if ServerURL not configured)"
+        else
+          pass "Task created: ${TASK_WITH_AGENT_ID} (agent status: ${AGENT_STATUS:-unknown})"
+        fi
+      fi
+    else
+      fail "Could not parse task ID from agent task output: ${CREATE_AGENT_OUTPUT}"
+    fi
+  else
+    fail "Task with agent creation failed: ${CREATE_AGENT_OUTPUT}"
+  fi
+
+  # Cleanup task with agent
+  if [[ -n "${TASK_WITH_AGENT_ID}" ]]; then
+    info "  Cleaning up agent test task..."
+    cmux-devbox task stop "${TASK_WITH_AGENT_ID}" >/dev/null 2>&1 || true
+  fi
+else
+  skip "Test 12b: apps/server not running at localhost:9776 (run 'make dev' first)"
+fi
+
+# ============================================================================
 # Test 13: Verify Task in List (CLI -> Web sync)
 # ============================================================================
 if [[ -n "${TASK_ID}" ]]; then

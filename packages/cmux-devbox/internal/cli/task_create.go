@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cmux-cli/cmux-devbox/internal/auth"
+	"github.com/cmux-cli/cmux-devbox/internal/socketio"
 	"github.com/cmux-cli/cmux-devbox/internal/vm"
 	"github.com/spf13/cobra"
 )
@@ -18,6 +19,7 @@ var (
 	taskCreateBranch    string
 	taskCreateAgents    []string
 	taskCreateNoSandbox bool
+	taskCreateRealtime  bool
 )
 
 var taskCreateCmd = &cobra.Command{
@@ -28,13 +30,15 @@ This is equivalent to creating a task in the web app dashboard.
 
 By default, if agents are specified, sandboxes will be provisioned and agents started.
 Use --no-sandbox to create the task without starting sandboxes.
+Use --realtime to use socket.io for real-time feedback (same as web app flow).
 
 Examples:
   cmux task create "Add unit tests for auth module"
   cmux task create --repo owner/repo "Implement dark mode"
   cmux task create --repo owner/repo --agent claude-code "Fix the login bug"
   cmux task create --repo owner/repo --agent claude-code --agent opencode/gpt-4o "Add tests"
-  cmux task create --repo owner/repo --agent claude-code --no-sandbox "Just create task"`,
+  cmux task create --repo owner/repo --agent claude-code --no-sandbox "Just create task"
+  cmux task create --repo owner/repo --agent claude-code --realtime "With real-time updates"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		prompt := args[0]
@@ -82,64 +86,101 @@ Examples:
 			repoURL = fmt.Sprintf("https://github.com/%s", taskCreateRepo)
 		}
 
-		// Start sandboxes for each task run if agents specified and not --no-sandbox
-		type sandboxInfo struct {
-			TaskRunID  string `json:"taskRunId"`
-			AgentName  string `json:"agentName"`
-			InstanceID string `json:"instanceId,omitempty"`
-			VSCodeURL  string `json:"vscodeUrl,omitempty"`
-			Status     string `json:"status"`
-			Error      string `json:"error,omitempty"`
-		}
-		var sandboxes []sandboxInfo
+		// Agent spawn results
+		var agents []agentInfo
 
 		if len(result.TaskRuns) > 0 && !taskCreateNoSandbox {
-			if !flagJSON {
-				fmt.Printf("Task created: %s\n", result.TaskID)
-				fmt.Printf("Starting %d sandbox(es)...\n", len(result.TaskRuns))
+			// Check if ServerURL is configured
+			cfg := auth.GetConfig()
+			if cfg.ServerURL == "" {
+				return fmt.Errorf("CMUX_SERVER_URL not configured. Set via environment variable or use --no-sandbox")
 			}
 
+			if !flagJSON {
+				fmt.Printf("Task created: %s\n", result.TaskID)
+				if taskCreateRealtime {
+					fmt.Printf("Starting %d agent(s) via socket.io (realtime)...\n", len(result.TaskRuns))
+				} else {
+					fmt.Printf("Starting %d agent(s) via apps/server...\n", len(result.TaskRuns))
+				}
+			}
+
+			// Collect task run IDs for batch agent spawning
+			taskRunIDs := make([]string, 0, len(result.TaskRuns))
+			selectedAgents := make([]string, 0, len(result.TaskRuns))
 			for _, run := range result.TaskRuns {
-				info := sandboxInfo{
-					TaskRunID: run.TaskRunID,
-					AgentName: run.AgentName,
-					Status:    "starting",
-				}
+				taskRunIDs = append(taskRunIDs, run.TaskRunID)
+				selectedAgents = append(selectedAgents, run.AgentName)
+			}
 
-				if !flagJSON {
-					fmt.Printf("  Starting sandbox for %s...\n", run.AgentName)
-				}
-
-				sandboxResult, err := client.StartSandbox(ctx, vm.StartSandboxOptions{
-					TaskRunID:       run.TaskRunID,
-					TaskRunJWT:      run.JWT,
-					AgentName:       run.AgentName,
-					Prompt:          prompt,
+			if taskCreateRealtime {
+				// Use socket.io client for real-time feedback (identical to web app flow)
+				agents, err = startTaskViaSocketIO(ctx, cfg.ServerURL, socketio.StartTaskData{
+					TaskID:          result.TaskID,
+					TaskDescription: prompt,
 					ProjectFullName: taskCreateRepo,
 					RepoURL:         repoURL,
 					Branch:          taskCreateBranch,
-					TTLSeconds:      3600,
+					TaskRunIDs:      taskRunIDs,
+					SelectedAgents:  selectedAgents,
+					IsCloudMode:     true,
+				}, result.TaskRuns)
+				if err != nil && !flagJSON {
+					fmt.Printf("  Socket.io error: %s\n", err)
+				}
+			} else {
+				// Use StartTaskAgents to spawn agents via apps/server HTTP API
+				// This uses the same code path as web app's socket.io "start-task"
+				agentResult, err := client.StartTaskAgents(ctx, vm.StartTaskAgentsOptions{
+					TaskID:          result.TaskID,
+					TaskDescription: prompt,
+					ProjectFullName: taskCreateRepo,
+					RepoURL:         repoURL,
+					Branch:          taskCreateBranch,
+					TaskRunIDs:      taskRunIDs,
+					SelectedAgents:  selectedAgents,
+					IsCloudMode:     true,
 				})
 
 				if err != nil {
-					info.Status = "failed"
-					info.Error = err.Error()
+					// If StartTaskAgents fails entirely, mark all as failed
 					if !flagJSON {
-						fmt.Printf("    Failed: %s\n", err)
+						fmt.Printf("  Failed to start agents: %s\n", err)
+					}
+					for _, run := range result.TaskRuns {
+						agents = append(agents, agentInfo{
+							TaskRunID: run.TaskRunID,
+							AgentName: run.AgentName,
+							Status:    "failed",
+							Error:     err.Error(),
+						})
 					}
 				} else {
-					info.Status = "running"
-					info.InstanceID = sandboxResult.InstanceID
-					info.VSCodeURL = sandboxResult.VSCodeURL
-					if !flagJSON {
-						fmt.Printf("    Started: %s\n", sandboxResult.InstanceID)
-						if sandboxResult.VSCodeURL != "" {
-							fmt.Printf("    VSCode: %s\n", sandboxResult.VSCodeURL)
+					// Process individual agent results
+					for _, r := range agentResult.Results {
+						info := agentInfo{
+							TaskRunID: r.TaskRunID,
+							AgentName: r.AgentName,
+							VSCodeURL: r.VSCodeURL,
 						}
+						if r.Success {
+							info.Status = "running"
+							if !flagJSON {
+								fmt.Printf("  Started: %s\n", r.AgentName)
+								if r.VSCodeURL != "" {
+									fmt.Printf("    VSCode: %s\n", r.VSCodeURL)
+								}
+							}
+						} else {
+							info.Status = "failed"
+							info.Error = r.Error
+							if !flagJSON {
+								fmt.Printf("  Failed: %s - %s\n", r.AgentName, r.Error)
+							}
+						}
+						agents = append(agents, info)
 					}
 				}
-
-				sandboxes = append(sandboxes, info)
 			}
 		}
 
@@ -148,10 +189,10 @@ Examples:
 				"taskId": result.TaskID,
 				"status": result.Status,
 			}
-			if len(sandboxes) > 0 {
-				output["sandboxes"] = sandboxes
+			if len(agents) > 0 {
+				output["agents"] = agents
 			} else if len(result.TaskRuns) > 0 {
-				// No sandboxes started (--no-sandbox mode)
+				// No agents started (--no-sandbox mode)
 				output["taskRuns"] = result.TaskRuns
 			}
 			data, _ := json.MarshalIndent(output, "", "  ")
@@ -159,7 +200,7 @@ Examples:
 			return nil
 		}
 
-		if len(sandboxes) == 0 {
+		if len(agents) == 0 {
 			fmt.Println("Task created successfully")
 			fmt.Printf("  Task ID: %s\n", result.TaskID)
 			if len(result.TaskRuns) > 0 {
@@ -167,10 +208,10 @@ Examples:
 				for _, run := range result.TaskRuns {
 					fmt.Printf("    - %s (%s)\n", run.TaskRunID, run.AgentName)
 				}
-				fmt.Println("  Note: Use web app to start sandboxes, or re-run without --no-sandbox")
+				fmt.Println("  Note: Use web app to start agents, or re-run without --no-sandbox")
 			}
 		} else {
-			fmt.Println("\nTask created and sandboxes started")
+			fmt.Println("\nTask created and agents started")
 			fmt.Printf("  Task ID: %s\n", result.TaskID)
 		}
 
@@ -178,10 +219,80 @@ Examples:
 	},
 }
 
+// startTaskViaSocketIO uses socket.io to start task with real-time feedback
+func startTaskViaSocketIO(ctx context.Context, serverURL string, data socketio.StartTaskData, taskRuns []vm.TaskRunWithJWT) ([]agentInfo, error) {
+	var agents []agentInfo
+
+	client, err := socketio.NewClient(serverURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create socket.io client: %w", err)
+	}
+	defer client.Close()
+
+	if err := client.Connect(ctx); err != nil {
+		return nil, fmt.Errorf("failed to connect: %w", err)
+	}
+
+	if err := client.Authenticate(ctx); err != nil {
+		return nil, fmt.Errorf("failed to authenticate: %w", err)
+	}
+
+	result, err := client.EmitStartTask(ctx, data)
+	if err != nil {
+		// Mark all as failed
+		for _, run := range taskRuns {
+			agents = append(agents, agentInfo{
+				TaskRunID: run.TaskRunID,
+				AgentName: run.AgentName,
+				Status:    "failed",
+				Error:     err.Error(),
+			})
+		}
+		return agents, err
+	}
+
+	// Process result - socket.io returns single TaskStartedResult
+	// For multi-agent, we may need to handle differently
+	if result.Error != "" {
+		for _, run := range taskRuns {
+			agents = append(agents, agentInfo{
+				TaskRunID: run.TaskRunID,
+				AgentName: run.AgentName,
+				Status:    "failed",
+				Error:     result.Error,
+			})
+		}
+	} else {
+		// Mark as running (socket.io flow handles spawning)
+		for _, run := range taskRuns {
+			agents = append(agents, agentInfo{
+				TaskRunID: run.TaskRunID,
+				AgentName: run.AgentName,
+				Status:    "running",
+			})
+			if !flagJSON {
+				fmt.Printf("  Started: %s\n", run.AgentName)
+			}
+		}
+	}
+
+	return agents, nil
+}
+
+// agentInfo type for task create results (defined here for startTaskViaSocketIO)
+type agentInfo struct {
+	TaskRunID string `json:"taskRunId"`
+	AgentName string `json:"agentName"`
+	VSCodeURL string `json:"vscodeUrl,omitempty"`
+	Status    string `json:"status"`
+	Error     string `json:"error,omitempty"`
+}
+
 func init() {
 	taskCreateCmd.Flags().StringVar(&taskCreateRepo, "repo", "", "Repository (owner/name)")
 	taskCreateCmd.Flags().StringVar(&taskCreateBranch, "branch", "main", "Base branch")
 	taskCreateCmd.Flags().StringArrayVar(&taskCreateAgents, "agent", nil, "Agent(s) to run (can specify multiple)")
 	taskCreateCmd.Flags().BoolVar(&taskCreateNoSandbox, "no-sandbox", false, "Create task without starting sandboxes")
+	taskCreateCmd.Flags().BoolVar(&taskCreateRealtime, "realtime", false, "Use socket.io for real-time feedback")
 	taskCmd.AddCommand(taskCreateCmd)
 }
