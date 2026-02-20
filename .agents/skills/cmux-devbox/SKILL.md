@@ -49,7 +49,11 @@ cmux-devbox start .                 # Auto-selects pve-lxc when PVE env vars are
 ### Authentication
 - `cmux-devbox auth login` - Login via browser
 - `cmux-devbox auth logout` - Clear credentials
+- `cmux-devbox auth status` - Show authentication status
 - `cmux-devbox auth whoami` - Show current user
+- `cmux-devbox login` - Shorthand for `auth login`
+- `cmux-devbox logout` - Shorthand for `auth logout`
+- `cmux-devbox whoami` - Shorthand for `auth whoami`
 
 ### VM Lifecycle
 - `cmux-devbox start [path]` - Create VM, optionally sync directory
@@ -58,6 +62,7 @@ cmux-devbox start .                 # Auto-selects pve-lxc when PVE env vars are
 - `cmux-devbox resume <id>` - Resume VM
 - `cmux-devbox delete <id>` - Delete VM
 - `cmux-devbox ls` - List VMs
+- `cmux-devbox status <id>` - Show VM status and URLs
 
 ### Access VM
 - `cmux-devbox code <id>` - Open VS Code in browser
@@ -77,6 +82,13 @@ Tasks are the same as in the web app dashboard. CLI and web sync through Convex.
 - `cmux-devbox task create --repo owner/repo --agent claude-code "prompt"` - Create task
 - `cmux-devbox task status <task-id>` - Get task details
 - `cmux-devbox task stop <task-id>` - Stop/archive task
+
+### Team Management
+- `cmux-devbox team list` - List your teams
+- `cmux-devbox team switch <team-slug>` - Switch to a different team
+
+### Agent Management
+- `cmux-devbox agent list` - List available coding agents
 
 ### Browser Automation
 - `cmux-devbox computer snapshot <id>` - Get accessibility tree

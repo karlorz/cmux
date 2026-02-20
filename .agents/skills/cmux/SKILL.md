@@ -96,6 +96,19 @@ cmux task status <task-id>       # Get task details and runs
 cmux task stop <task-id>         # Stop/archive task
 ```
 
+### Team Management
+
+```bash
+cmux team list                   # List your teams
+cmux team switch <team-slug>     # Switch to a different team
+```
+
+### Agent Management
+
+```bash
+cmux agent list                  # List available coding agents
+```
+
 ### Browser Automation (cmux computer)
 
 Control Chrome browser via CDP in the VM's VNC desktop.
@@ -212,6 +225,15 @@ cmux delete cmux_abc123    # Delete permanently
 | `-h, --help` | Show help for a command |
 | `--json` | Output as JSON |
 | `-v, --verbose` | Verbose output |
+| `-p, --provider` | Sandbox provider: `morph`, `pve-lxc` (auto-detected from env) |
+
+## Shorthand Commands
+
+```bash
+cmux login              # Shorthand for cmux auth login
+cmux logout             # Shorthand for cmux auth logout
+cmux whoami             # Shorthand for cmux auth whoami
+```
 
 ## Security: Dev Server URLs
 
@@ -238,3 +260,7 @@ When a dev server runs in the VM (e.g., Vite on port 5173), the provider may cre
 | Variable | Description |
 |----------|-------------|
 | `CMUX_DEVBOX_DEV=1` | Use development environment |
+| `PVE_API_URL` | Proxmox VE API URL (enables pve-lxc provider) |
+| `PVE_API_TOKEN` | Proxmox VE API token |
+| `PVE_PUBLIC_DOMAIN` | Public domain for Cloudflare Tunnel |
+| `MORPH_API_KEY` | Morph Cloud API key |
