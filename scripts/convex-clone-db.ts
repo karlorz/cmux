@@ -29,14 +29,28 @@ import * as os from "node:os";
 import * as path from "node:path";
 import readline from "node:readline/promises";
 
+// Check if URL is self-hosted (not Convex Cloud)
+function isSelfHostedUrl(url: string): boolean {
+  return !url.includes(".convex.cloud");
+}
+
 // Extract deployment name from Convex URL
 // e.g., https://famous-camel-162.convex.cloud -> famous-camel-162
+// e.g., https://api-kos4cos88kgkg4g0k0ww48c0.karldigi.dev -> api-kos4cos88kgkg4g0k0ww48c0 (self-hosted)
 function extractDeploymentName(url: string): string {
-  const match = url.match(/https?:\/\/([^.]+)\.convex\.cloud/);
-  if (!match) {
-    throw new Error(`Invalid Convex URL: ${url}`);
+  // Try Convex Cloud format first
+  const cloudMatch = url.match(/https?:\/\/([^.]+)\.convex\.cloud/);
+  if (cloudMatch) {
+    return cloudMatch[1];
   }
-  return match[1];
+
+  // Try self-hosted format (api-xxx.domain.tld)
+  const selfHostedMatch = url.match(/https?:\/\/([^.]+)\.[^/]+/);
+  if (selfHostedMatch) {
+    return selfHostedMatch[1];
+  }
+
+  throw new Error(`Invalid Convex URL: ${url}`);
 }
 
 // Generate timestamped backup filename
@@ -81,12 +95,15 @@ function runConvexCommand(
   args: string[],
   options?: { cwd?: string; env?: Record<string, string> },
 ): { success: boolean; stdout: string; stderr: string } {
+  // Merge provided env vars with process.env, with provided vars taking precedence
+  const mergedEnv = { ...process.env, ...options?.env };
+
   const result = spawnSync("bunx", ["convex", ...args], {
     encoding: "utf-8",
     cwd: options?.cwd ?? path.join(process.cwd(), "packages/convex"),
     stdio: ["pipe", "pipe", "pipe"],
     maxBuffer: 500 * 1024 * 1024, // 500MB buffer for large exports
-    env: { ...process.env, ...options?.env },
+    env: mergedEnv,
   });
 
   return {
@@ -137,12 +154,14 @@ async function exportDatabase(options: ExportOptions): Promise<string> {
 interface ImportOptions {
   convexUrl: string;
   deployKey: string;
+  siteUrl?: string;
   backupPath: string;
   skipConfirmation: boolean;
 }
 
 async function importDatabase(options: ImportOptions): Promise<void> {
   const deploymentName = extractDeploymentName(options.convexUrl);
+  const selfHosted = isSelfHostedUrl(options.convexUrl);
 
   // Verify backup file exists
   try {
@@ -154,6 +173,9 @@ async function importDatabase(options: ImportOptions): Promise<void> {
   if (!options.skipConfirmation) {
     console.log(`\nWARNING: This will replace ALL data in deployment: ${deploymentName}`);
     console.log(`Backup file: ${options.backupPath}`);
+    if (selfHosted) {
+      console.log(`Target: Self-hosted (${options.convexUrl})`);
+    }
 
     const rl = readline.createInterface({
       input: process.stdin,
@@ -172,15 +194,32 @@ async function importDatabase(options: ImportOptions): Promise<void> {
   }
 
   console.log(`\nImporting to ${deploymentName} from ${options.backupPath}...`);
+  if (selfHosted) {
+    console.log(`(Self-hosted: ${options.convexUrl})`);
+  }
 
   const args = ["import", "--replace-all", options.backupPath];
   if (options.skipConfirmation) {
     args.push("--yes");
   }
 
-  const result = runConvexCommand(args, {
-    env: { CONVEX_DEPLOY_KEY: options.deployKey },
-  });
+  // Set environment variables for convex CLI
+  // For self-hosted, map BACKUP_* vars to CONVEX_SELF_HOSTED_* vars required by CLI
+  // For cloud, use CONVEX_DEPLOY_KEY
+  const envVars: Record<string, string> = selfHosted
+    ? {
+        CONVEX_SELF_HOSTED_URL: options.convexUrl,
+        CONVEX_SELF_HOSTED_ADMIN_KEY: options.deployKey,
+      }
+    : {
+        CONVEX_DEPLOY_KEY: options.deployKey,
+        NEXT_PUBLIC_CONVEX_URL: options.convexUrl,
+      };
+  if (options.siteUrl) {
+    envVars.CONVEX_SITE_URL = options.siteUrl;
+  }
+
+  const result = runConvexCommand(args, { env: envVars });
 
   if (!result.success) {
     console.error("Import failed:");
@@ -197,6 +236,7 @@ interface Config {
   sourceDeployKey: string;
   targetUrl?: string;
   targetDeployKey?: string;
+  targetSiteUrl?: string;
   backupDir: string;
 }
 
@@ -242,6 +282,7 @@ async function loadConfig(envFilePath?: string): Promise<Config> {
     sourceDeployKey,
     targetUrl: getVar("BACKUP_NEXT_PUBLIC_CONVEX_URL"),
     targetDeployKey: getVar("BACKUP_CONVEX_DEPLOY_KEY"),
+    targetSiteUrl: getVar("BACKUP_CONVEX_SITE_URL"),
     backupDir,
   };
 }
@@ -296,6 +337,7 @@ program
       await importDatabase({
         convexUrl: config.targetUrl,
         deployKey: config.targetDeployKey,
+        siteUrl: config.targetSiteUrl,
         backupPath: options.backupPath,
         skipConfirmation: options.yes ?? false,
       });
@@ -349,6 +391,7 @@ program
       await importDatabase({
         convexUrl: config.targetUrl,
         deployKey: config.targetDeployKey,
+        siteUrl: config.targetSiteUrl,
         backupPath,
         skipConfirmation: options.yes ?? false,
       });
