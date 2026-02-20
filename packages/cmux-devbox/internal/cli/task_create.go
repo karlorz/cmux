@@ -20,6 +20,7 @@ var (
 	taskCreateAgents    []string
 	taskCreateNoSandbox bool
 	taskCreateRealtime  bool
+	taskCreateLocal     bool
 )
 
 var taskCreateCmd = &cobra.Command{
@@ -31,6 +32,7 @@ This is equivalent to creating a task in the web app dashboard.
 By default, if agents are specified, sandboxes will be provisioned and agents started.
 Use --no-sandbox to create the task without starting sandboxes.
 Use --realtime to use socket.io for real-time feedback (same as web app flow).
+Use --local to create a local workspace with codex-style worktrees (requires local server).
 
 Examples:
   cmux task create "Add unit tests for auth module"
@@ -38,7 +40,8 @@ Examples:
   cmux task create --repo owner/repo --agent claude-code "Fix the login bug"
   cmux task create --repo owner/repo --agent claude-code --agent opencode/gpt-4o "Add tests"
   cmux task create --repo owner/repo --agent claude-code --no-sandbox "Just create task"
-  cmux task create --repo owner/repo --agent claude-code --realtime "With real-time updates"`,
+  cmux task create --repo owner/repo --agent claude-code --realtime "With real-time updates"
+  cmux task create --repo owner/repo --agent claude-code --local "Local worktree mode"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		prompt := args[0]
@@ -100,6 +103,8 @@ Examples:
 				fmt.Printf("Task created: %s\n", result.TaskID)
 				if taskCreateRealtime {
 					fmt.Printf("Starting %d agent(s) via socket.io (realtime)...\n", len(result.TaskRuns))
+				} else if taskCreateLocal {
+					fmt.Printf("Starting %d agent(s) in local mode (worktree)...\n", len(result.TaskRuns))
 				} else {
 					fmt.Printf("Starting %d agent(s) via apps/server...\n", len(result.TaskRuns))
 				}
@@ -123,7 +128,7 @@ Examples:
 					Branch:          taskCreateBranch,
 					TaskRunIDs:      taskRunIDs,
 					SelectedAgents:  selectedAgents,
-					IsCloudMode:     true,
+					IsCloudMode:     !taskCreateLocal,
 				}, result.TaskRuns)
 				if err != nil && !flagJSON {
 					fmt.Printf("  Socket.io error: %s\n", err)
@@ -139,7 +144,7 @@ Examples:
 					Branch:          taskCreateBranch,
 					TaskRunIDs:      taskRunIDs,
 					SelectedAgents:  selectedAgents,
-					IsCloudMode:     true,
+					IsCloudMode:     !taskCreateLocal,
 				})
 
 				if err != nil {
@@ -294,5 +299,6 @@ func init() {
 	taskCreateCmd.Flags().StringArrayVar(&taskCreateAgents, "agent", nil, "Agent(s) to run (can specify multiple)")
 	taskCreateCmd.Flags().BoolVar(&taskCreateNoSandbox, "no-sandbox", false, "Create task without starting sandboxes")
 	taskCreateCmd.Flags().BoolVar(&taskCreateRealtime, "realtime", false, "Use socket.io for real-time feedback")
+	taskCreateCmd.Flags().BoolVar(&taskCreateLocal, "local", false, "Use local workspace mode (codex-style worktrees)")
 	taskCmd.AddCommand(taskCreateCmd)
 }
