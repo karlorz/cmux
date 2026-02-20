@@ -7,6 +7,51 @@
 import { httpAction, type ActionCtx } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { env } from "../_shared/convex-env";
+import type { DevboxProvider } from "@cmux/shared/provider-types";
+import type { FunctionReference } from "convex/server";
+
+type SandboxProvider = DevboxProvider;
+
+// Provider action APIs - cast from internal to access provider-specific actions
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const e2bActionsApi = (internal as any).e2b_actions as {
+  getInstance: FunctionReference<"action", "internal">;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const modalActionsApi = (internal as any).modal_actions as {
+  getInstance: FunctionReference<"action", "internal">;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const pveLxcActionsApi = (internal as any).pve_lxc_actions as {
+  getInstance: FunctionReference<"action", "internal">;
+};
+
+function getActionsApiForProvider(provider: SandboxProvider) {
+  switch (provider) {
+    case "modal":
+      return modalActionsApi;
+    case "pve-lxc":
+      return pveLxcActionsApi;
+    default:
+      return e2bActionsApi;
+  }
+}
+
+async function getProviderInfo(
+  ctx: ActionCtx,
+  devboxId: string
+): Promise<{ provider: SandboxProvider; providerInstanceId: string } | null> {
+  const info = (await ctx.runQuery(internal.devboxInstances.getInfo, {
+    devboxId,
+  })) as { provider: string; providerInstanceId: string } | null;
+  if (!info) return null;
+  return {
+    provider: info.provider as SandboxProvider,
+    providerInstanceId: info.providerInstanceId,
+  };
+}
 
 const MORPH_API_BASE_URL = "https://cloud.morph.so/api";
 
@@ -489,56 +534,32 @@ async function handleGetInstance(
       return jsonResponse({ code: 404, message: "Instance not found" }, 404);
     }
 
-    // Get provider instance ID from mapping
-    const providerInstanceId = await getProviderInstanceId(ctx, id);
-    if (!providerInstanceId) {
+    // Get provider info from devboxInfo table
+    const providerInfo = await getProviderInfo(ctx, id);
+    if (!providerInfo) {
       return jsonResponse({ id, status: instance.status, name: instance.name });
     }
 
-    // Get fresh status and URLs from Morph
-    const morphResponse = await morphFetch(`/instance/${providerInstanceId}`);
+    const { provider, providerInstanceId } = providerInfo;
 
-    if (!morphResponse.ok) {
-      // Instance may have been deleted
-      if (morphResponse.status === 404) {
-        await ctx.runMutation(api.devboxInstances.updateStatus, {
-          teamSlugOrId,
-          id,
-          status: "stopped",
-        });
-        return jsonResponse({
-          id,
-          status: "stopped",
-          name: instance.name,
-        });
-      }
-      // Return basic data on other errors
-      return jsonResponse({ id, status: instance.status, name: instance.name });
+    // For Morph provider, use direct Morph API
+    if (provider === "morph" || provider === "e2b") {
+      return handleGetInstanceMorph(ctx, id, providerInstanceId, instance, teamSlugOrId);
     }
 
-    const morphData = (await morphResponse.json()) as {
-      id: string;
+    // For other providers (pve-lxc, modal), use the provider actions API
+    const actionsApi = getActionsApiForProvider(provider);
+    const providerResult = (await ctx.runAction(actionsApi.getInstance, {
+      instanceId: providerInstanceId,
+    })) as {
+      instanceId: string;
       status: string;
-      networking?: {
-        http_services?: Array<{ port: number; url: string; name?: string }> | Record<string, string>;
-      };
-      spec?: {
-        vcpus?: number;
-        memory?: number;
-        disk_size?: number;
-      };
+      vscodeUrl?: string | null;
+      workerUrl?: string | null;
+      vncUrl?: string | null;
     };
 
-    // Map Morph status to our status
-    // Note: Morph uses "ready" for a running instance, not "running"
-    const status =
-      morphData.status === "running" || morphData.status === "ready"
-        ? "running"
-        : morphData.status === "paused"
-          ? "paused"
-          : morphData.status === "stopped"
-            ? "stopped"
-            : "unknown";
+    const status = providerResult.status as "running" | "stopped" | "paused";
 
     // Update status in Convex if changed
     if (status !== instance.status) {
@@ -549,24 +570,76 @@ async function handleGetInstance(
       });
     }
 
-    // Get URLs directly from Morph (not cached)
-    const httpServices = morphData.networking?.http_services ?? [];
-    const { workerUrl } = extractNetworkingUrls(httpServices);
-    const proxyUrls = buildDbaProxyUrls(workerUrl);
-
     return jsonResponse({
       id,
       status,
       name: instance.name,
-      vscodeUrl: proxyUrls.vscodeUrl,
-      workerUrl,
-      vncUrl: proxyUrls.vncUrl,
-      spec: morphData.spec,
+      vscodeUrl: providerResult.vscodeUrl ?? undefined,
+      workerUrl: providerResult.workerUrl ?? undefined,
+      vncUrl: providerResult.vncUrl ?? undefined,
     });
   } catch (error) {
     console.error("[cmux.get] Error:", error);
     return jsonResponse({ code: 500, message: "Failed to get instance" }, 500);
   }
+}
+
+// Helper for Morph/E2B provider (legacy direct API call)
+async function handleGetInstanceMorph(
+  ctx: ActionCtx,
+  id: string,
+  providerInstanceId: string,
+  instance: { id: string; status: string; name?: string },
+  teamSlugOrId: string
+): Promise<Response> {
+  // Get fresh status and URLs from Morph
+  const morphResponse = await morphFetch(`/instance/${providerInstanceId}`);
+
+  if (!morphResponse.ok) {
+    // Instance may have been deleted
+    if (morphResponse.status === 404) {
+      await ctx.runMutation(api.devboxInstances.updateStatus, {
+        teamSlugOrId,
+        id,
+        status: "stopped",
+      });
+      return jsonResponse({
+        id,
+        status: "stopped",
+        name: instance.name,
+      });
+    }
+    // Return basic data on other errors
+    return jsonResponse({ id, status: instance.status, name: instance.name });
+  }
+
+  const morphData = (await morphResponse.json()) as {
+    id: string;
+    status: string;
+    networking?: {
+      http_services?: Array<{ port: number; url: string; name?: string }> | Record<string, string>;
+    };
+    spec?: {
+      vcpus?: number;
+      memory?: number;
+      disk_size?: number;
+    };
+  };
+
+  // Get URLs directly from Morph (not cached)
+  const httpServices = morphData.networking?.http_services ?? [];
+  const { workerUrl } = extractNetworkingUrls(httpServices);
+  const proxyUrls = buildDbaProxyUrls(workerUrl);
+
+  return jsonResponse({
+    id,
+    status,
+    name: instance.name,
+    vscodeUrl: proxyUrls.vscodeUrl,
+    workerUrl,
+    vncUrl: proxyUrls.vncUrl,
+    spec: morphData.spec,
+  });
 }
 
 // ============================================================================

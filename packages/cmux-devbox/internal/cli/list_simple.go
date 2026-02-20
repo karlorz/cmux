@@ -62,9 +62,21 @@ Examples:
 			}
 			client.SetTeamSlug(teamSlug)
 
-			instances, err = client.ListInstances(ctx)
+			basicInstances, err := client.ListInstances(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to list instances: %w", err)
+			}
+
+			// Fetch full details for each instance to get URLs
+			// (list endpoint returns basic info only)
+			for _, basic := range basicInstances {
+				full, err := client.GetInstance(ctx, basic.ID)
+				if err != nil {
+					// Fall back to basic info if fetch fails
+					instances = append(instances, basic)
+				} else {
+					instances = append(instances, *full)
+				}
 			}
 		default:
 			return fmt.Errorf("unsupported provider: %s", selected)
