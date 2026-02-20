@@ -79,7 +79,7 @@ import {
   getLastVSCodeDetectionResult,
   refreshVSCodeDetection,
 } from "./vscode/serveWeb";
-import { getProjectPaths } from "./workspace";
+import { getProjectPaths, getWorktreePath } from "./workspace";
 import {
   collectRepoFullNamesForRun,
   EMPTY_AGGREGATE,
@@ -1422,20 +1422,31 @@ export function setupSocketHandlers(
                 : descriptorBase;
           }
 
-          const workspaceRoot = process.env.CMUX_WORKSPACE_DIR
-            ? path.resolve(process.env.CMUX_WORKSPACE_DIR)
-            : path.join(os.homedir(), "cmux", "local-workspaces");
-          const resolvedWorkspacePath = path.join(
-            workspaceRoot,
-            workspaceName
+          // Use Codex-style worktree path: ~/.cmux/worktrees/{shortId}/{repoName}/
+          // This integrates with VSCode's Source Control view
+          const effectiveRepoUrl =
+            repoUrl ?? (projectFullName ? `https://github.com/${projectFullName}.git` : "");
+          const worktreeInfo = await getWorktreePath(
+            {
+              repoUrl: effectiveRepoUrl,
+              branch: branch || "main",
+              projectFullName: projectFullName ?? undefined,
+            },
+            teamSlugOrId
           );
+
+          const resolvedWorkspacePath = worktreeInfo.worktreePath;
           workspacePath = resolvedWorkspacePath;
 
-          await fs.mkdir(workspaceRoot, { recursive: true });
+          // Create the worktree directory structure
+          const worktreeParentDir = path.dirname(resolvedWorkspacePath);
+          await fs.mkdir(worktreeParentDir, { recursive: true });
           cleanupWorkspace = async () => {
             await fs
               .rm(resolvedWorkspacePath, { recursive: true, force: true })
               .catch(() => undefined);
+            // Also try to clean up the parent shortId directory if empty
+            await fs.rmdir(worktreeParentDir).catch(() => undefined);
           };
 
           const writeEnvVariablesIfPresent = async (): Promise<
@@ -1696,7 +1707,85 @@ export function setupSocketHandlers(
           });
           responded = true;
 
-          if (repoUrl) {
+          // Codex-style: Create worktree from existing local repo
+          if (worktreeInfo.mode === "codex-style" && worktreeInfo.sourceRepoPath) {
+            const repoMgr = RepositoryManager.getInstance();
+            const sourceRepo = worktreeInfo.sourceRepoPath;
+
+            // Fetch latest from origin
+            try {
+              serverLogger.info(
+                `[create-local-workspace] Fetching latest from origin in ${sourceRepo}`
+              );
+              await repoMgr.fetchLatest(sourceRepo, branch);
+            } catch (fetchErr) {
+              serverLogger.warn(
+                `[create-local-workspace] Failed to fetch latest: ${fetchErr}`
+              );
+            }
+
+            // Determine branch for worktree
+            let worktreeBranch = branch;
+            if (!worktreeBranch) {
+              worktreeBranch = await repoMgr.getDefaultBranch(sourceRepo);
+            }
+
+            // Create worktree from local repo
+            serverLogger.info(
+              `[create-local-workspace] Creating worktree at ${resolvedWorkspacePath} from ${sourceRepo} on branch ${worktreeBranch}`
+            );
+
+            try {
+              // First, try to create a new branch from origin
+              const worktreeBranchName = `local/${worktreeInfo.shortId || "workspace"}`;
+              await execFileAsync(
+                "git",
+                ["worktree", "add", "-b", worktreeBranchName, resolvedWorkspacePath, `origin/${worktreeBranch}`],
+                { cwd: sourceRepo }
+              );
+              serverLogger.info(
+                `[create-local-workspace] Created worktree with new branch ${worktreeBranchName}`
+              );
+            } catch (error) {
+              // If that fails, try without creating a new branch (detached HEAD or existing branch)
+              const execErr = isExecError(error) ? error : null;
+              serverLogger.warn(
+                `[create-local-workspace] Failed to create worktree with new branch, trying detached: ${execErr?.stderr || error}`
+              );
+              try {
+                await execFileAsync(
+                  "git",
+                  ["worktree", "add", "--detach", resolvedWorkspacePath, `origin/${worktreeBranch}`],
+                  { cwd: sourceRepo }
+                );
+              } catch (detachErr) {
+                if (cleanupWorkspace) {
+                  await cleanupWorkspace();
+                }
+                const detachExecErr = isExecError(detachErr) ? detachErr : null;
+                throw new Error(
+                  `Failed to create worktree: ${detachExecErr?.stderr || detachErr}`
+                );
+              }
+            }
+
+            // Verify worktree was created
+            try {
+              await execFileAsync(
+                "git",
+                ["rev-parse", "--verify", "HEAD"],
+                { cwd: resolvedWorkspacePath }
+              );
+            } catch (verifyErr) {
+              if (cleanupWorkspace) {
+                await cleanupWorkspace();
+              }
+              throw new Error(
+                `Worktree creation failed: ${verifyErr instanceof Error ? verifyErr.message : "Unknown error"}`
+              );
+            }
+          } else if (repoUrl) {
+            // Legacy: Clone when no local source repo
             if (cleanupWorkspace) {
               await cleanupWorkspace();
             }
@@ -1706,7 +1795,7 @@ export function setupSocketHandlers(
             }
             cloneArgs.push(repoUrl, resolvedWorkspacePath);
             try {
-              await execFileAsync("git", cloneArgs, { cwd: workspaceRoot });
+              await execFileAsync("git", cloneArgs, { cwd: worktreeParentDir });
             } catch (error) {
               if (cleanupWorkspace) {
                 await cleanupWorkspace();
@@ -1797,11 +1886,11 @@ export function setupSocketHandlers(
             await convex.mutation(api.worktreeRegistry.register, {
               teamSlugOrId,
               worktreePath: resolvedWorkspacePath,
-              sourceRepoPath: repoUrl || projectFullName || "local",
+              sourceRepoPath: worktreeInfo.sourceRepoPath || repoUrl || projectFullName || "local",
               projectFullName: projectFullName || "local",
               branchName: branch || "main",
-              shortId: workspaceName || "local",
-              mode: "codex-style" as const,
+              shortId: worktreeInfo.shortId || workspaceName || "local",
+              mode: worktreeInfo.mode,
               taskRunId,
             });
             serverLogger.info(
@@ -2736,6 +2825,83 @@ export function setupSocketHandlers(
           safeCallback({ success: true });
         } catch (error) {
           serverLogger.error("[delete-worktree] Error deleting worktree:", error);
+          safeCallback({
+            success: false,
+            error: error instanceof Error ? error.message : "Unknown error",
+          });
+        }
+      }
+    );
+
+    // Validate worktree paths exist on filesystem
+    socket.on(
+      "validate-worktrees",
+      async (
+        data: { teamSlugOrId: string; worktreePaths: string[] },
+        callback: (response: {
+          success: boolean;
+          validPaths: string[];
+          invalidPaths: string[];
+          error?: string;
+        }) => void
+      ) => {
+        const safeCallback =
+          typeof callback === "function"
+            ? callback
+            : () => {};
+
+        const { worktreePaths } = data;
+        const validPaths: string[] = [];
+        const invalidPaths: string[] = [];
+
+        for (const worktreePath of worktreePaths) {
+          try {
+            await fs.access(worktreePath);
+            validPaths.push(worktreePath);
+          } catch {
+            invalidPaths.push(worktreePath);
+          }
+        }
+
+        safeCallback({
+          success: true,
+          validPaths,
+          invalidPaths,
+        });
+      }
+    );
+
+    // Clean up a task's worktreePath if it doesn't exist on filesystem
+    socket.on(
+      "cleanup-stale-workspace",
+      async (
+        data: { teamSlugOrId: string; taskId: string },
+        callback: (response: { success: boolean; error?: string }) => void
+      ) => {
+        const safeCallback =
+          typeof callback === "function"
+            ? callback
+            : () => {};
+
+        const { teamSlugOrId: teamId, taskId } = data;
+        const resolvedTeamId = teamId || safeTeam;
+
+        if (!taskId) {
+          safeCallback({ success: false, error: "Task ID is required" });
+          return;
+        }
+
+        try {
+          // Clear the worktreePath on the task
+          await getConvex().mutation(api.tasks.updateWorktreePath, {
+            teamSlugOrId: resolvedTeamId,
+            id: taskId as Id<"tasks">,
+            worktreePath: undefined,
+          });
+          serverLogger.info(`[cleanup-stale-workspace] Cleared worktreePath for task ${taskId}`);
+          safeCallback({ success: true });
+        } catch (error) {
+          serverLogger.error("[cleanup-stale-workspace] Error:", error);
           safeCallback({
             success: false,
             error: error instanceof Error ? error.message : "Unknown error",

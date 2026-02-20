@@ -852,7 +852,7 @@ export const updateWorktreePath = authMutation({
   args: {
     teamSlugOrId: v.string(),
     id: v.id("tasks"),
-    worktreePath: v.string(),
+    worktreePath: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;

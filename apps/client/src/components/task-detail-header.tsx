@@ -288,22 +288,34 @@ export function TaskDetailHeader({
       clipboard.copy(selectedRun.newBranch);
     }
   };
-  // Prefer linked local workspace path for "Open with VS Code" when viewing a cloud task
-  // This allows opening the local worktree instead of the cloud sandbox path (/root/workspace)
-  const worktreePath = useMemo(
-    () =>
-      linkedLocalWorkspace?.taskRun?.worktreePath ||
-      linkedLocalWorkspace?.task?.worktreePath ||
-      selectedRun?.worktreePath ||
-      task?.worktreePath ||
-      null,
-    [
-      linkedLocalWorkspace?.taskRun?.worktreePath,
-      linkedLocalWorkspace?.task?.worktreePath,
-      selectedRun?.worktreePath,
-      task?.worktreePath,
-    ],
-  );
+  // Compute worktreePath for "Open with VS Code" button
+  // IMPORTANT: Cloud task paths like /root/workspace are NOT accessible locally
+  // Only return a path for:
+  // 1. Linked local workspaces (preferred - opens local worktree for cloud task)
+  // 2. Local workspace tasks (isLocalWorkspace=true, path is on local filesystem)
+  const worktreePath = useMemo(() => {
+    // Priority 1: If there's a linked local workspace, use its path
+    // This allows opening local worktree when viewing a cloud task
+    if (linkedLocalWorkspace) {
+      return (
+        linkedLocalWorkspace.taskRun?.worktreePath ||
+        linkedLocalWorkspace.task?.worktreePath ||
+        null
+      );
+    }
+    // Priority 2: For local workspace tasks, the path is on local filesystem
+    if (task?.isLocalWorkspace) {
+      return selectedRun?.worktreePath || task?.worktreePath || null;
+    }
+    // For cloud tasks without linked local workspace, return null
+    // The /root/workspace path is inside the cloud sandbox, not accessible locally
+    return null;
+  }, [
+    linkedLocalWorkspace,
+    task?.isLocalWorkspace,
+    selectedRun?.worktreePath,
+    task?.worktreePath,
+  ]);
 
   // Find parent run if this is a child run (for comparing against parent's branch)
   const parentRun = useMemo(() => {

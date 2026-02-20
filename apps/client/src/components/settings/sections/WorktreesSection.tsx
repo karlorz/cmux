@@ -9,7 +9,7 @@ import { convexQuery } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useConvex } from "convex/react";
 import { FolderGit2, Plus, RefreshCw, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 
 interface WorktreesSectionProps {
@@ -46,6 +46,89 @@ export function WorktreesSection({
   const { data: localWorkspaces, refetch: refetchLocalWorkspaces } = useQuery(
     convexQuery(api.worktreeRegistry.listLocalWorkspaces, { teamSlugOrId })
   );
+
+  // Auto-validate and clean up stale local workspaces when data loads
+  const validateAndCleanupStaleWorkspaces = useCallback(() => {
+    if (!socket || !localWorkspaces || localWorkspaces.length === 0) return;
+
+    // Collect all worktree paths to validate
+    const pathsToValidate = localWorkspaces
+      .filter((ws) => ws.worktreePath)
+      .map((ws) => ws.worktreePath as string);
+
+    if (pathsToValidate.length === 0) return;
+
+    socket.emit(
+      "validate-worktrees",
+      { teamSlugOrId, worktreePaths: pathsToValidate },
+      async (response) => {
+        if (response.success && response.invalidPaths.length > 0) {
+          // Auto-cleanup stale entries
+          const staleWorkspaces = localWorkspaces.filter(
+            (ws) => ws.worktreePath && response.invalidPaths.includes(ws.worktreePath)
+          );
+
+          for (const ws of staleWorkspaces) {
+            socket.emit(
+              "cleanup-stale-workspace",
+              { teamSlugOrId, taskId: ws.taskId },
+              () => {
+                // Silent cleanup
+              }
+            );
+          }
+
+          // Refetch after cleanup
+          if (staleWorkspaces.length > 0) {
+            setTimeout(() => {
+              void refetchLocalWorkspaces();
+            }, 500);
+          }
+        }
+      }
+    );
+  }, [socket, localWorkspaces, teamSlugOrId, refetchLocalWorkspaces]);
+
+  // Run validation when local workspaces data changes
+  useEffect(() => {
+    validateAndCleanupStaleWorkspaces();
+  }, [validateAndCleanupStaleWorkspaces]);
+
+  // Auto-validate and clean up stale worktree registry entries
+  const validateAndCleanupStaleRegistry = useCallback(() => {
+    if (!socket || !worktreeRegistry || worktreeRegistry.length === 0) return;
+
+    const pathsToValidate = worktreeRegistry.map((wt) => wt.worktreePath);
+
+    socket.emit(
+      "validate-worktrees",
+      { teamSlugOrId, worktreePaths: pathsToValidate },
+      (response) => {
+        if (response.success && response.invalidPaths.length > 0) {
+          // Auto-cleanup stale registry entries
+          for (const invalidPath of response.invalidPaths) {
+            socket.emit(
+              "delete-worktree",
+              { teamSlugOrId, worktreePath: invalidPath },
+              () => {
+                // Silent cleanup - delete-worktree removes from registry even if path doesn't exist
+              }
+            );
+          }
+
+          // Refetch after cleanup
+          setTimeout(() => {
+            void refetchRegistry();
+          }, 500);
+        }
+      }
+    );
+  }, [socket, worktreeRegistry, teamSlugOrId, refetchRegistry]);
+
+  // Run registry validation when data changes
+  useEffect(() => {
+    validateAndCleanupStaleRegistry();
+  }, [validateAndCleanupStaleRegistry]);
 
   // Mutation to add source repo mapping
   const addSourceRepoMutation = useMutation({

@@ -681,6 +681,24 @@ export interface ClientToServerEvents {
       error?: string;
     }) => void
   ) => void;
+  // Validate worktree paths and clean up stale entries
+  "validate-worktrees": (
+    data: { teamSlugOrId: string; worktreePaths: string[] },
+    callback: (response: {
+      success: boolean;
+      validPaths: string[];
+      invalidPaths: string[];
+      error?: string;
+    }) => void
+  ) => void;
+  // Clean up a task's worktreePath if it doesn't exist
+  "cleanup-stale-workspace": (
+    data: { teamSlugOrId: string; taskId: string },
+    callback: (response: {
+      success: boolean;
+      error?: string;
+    }) => void
+  ) => void;
 }
 
 export interface LocalRepoNotFound {
