@@ -30,6 +30,7 @@ import {
   healthRouter,
   modelsRouter,
   morphRouter,
+  providersRouter,
   pveLxcRouter,
   sandboxesRouter,
   teamsRouter,
@@ -183,6 +184,7 @@ app.route("/", editorSettingsRouter);
 app.route("/", settingsRouter);
 app.route("/", worktreesRouter);
 app.route("/", modelsRouter);
+app.route("/", providersRouter);
 
 // OpenAPI documentation
 app.doc("/doc", {

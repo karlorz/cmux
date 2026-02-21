@@ -1382,6 +1382,38 @@ const convexSchema = defineSchema({
     .index("by_instanceId", ["instanceId"])
     .index("by_team_status", ["teamId", "status", "createdAt"]),
 
+  // Provider override configurations for custom proxies and endpoints
+  // Enables teams to customize base URLs, API formats, and fallback chains
+  providerOverrides: defineTable({
+    teamId: v.string(),
+    providerId: v.string(), // e.g., "anthropic", "openai", "custom-proxy"
+    baseUrl: v.optional(v.string()),
+    apiFormat: v.optional(
+      v.union(
+        v.literal("anthropic"),
+        v.literal("openai"),
+        v.literal("bedrock"),
+        v.literal("vertex"),
+        v.literal("passthrough")
+      )
+    ),
+    apiKeyEnvVar: v.optional(v.string()),
+    customHeaders: v.optional(v.record(v.string(), v.string())),
+    fallbacks: v.optional(
+      v.array(
+        v.object({
+          modelName: v.string(),
+          priority: v.number(),
+        })
+      )
+    ),
+    enabled: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_team_provider", ["teamId", "providerId"])
+    .index("by_team", ["teamId"]),
+
   // Global model catalog for dynamic discovery and admin management
   // Stores both curated models (from AGENT_CATALOG) and discovered models (from provider APIs)
   models: defineTable({

@@ -1035,6 +1035,55 @@ export type DiscoveryResultResponse = {
     error?: string;
 };
 
+export type ApiFormat = 'anthropic' | 'openai' | 'bedrock' | 'vertex' | 'passthrough';
+
+export type Fallback = {
+    modelName: string;
+    priority: number;
+};
+
+export type ProviderOverride = {
+    _id: string;
+    teamId: string;
+    providerId: string;
+    baseUrl?: string;
+    apiFormat?: ApiFormat;
+    apiKeyEnvVar?: string;
+    customHeaders?: {
+        [key: string]: string;
+    };
+    fallbacks?: Array<Fallback>;
+    enabled: boolean;
+    createdAt: number;
+    updatedAt: number;
+};
+
+export type ProviderListResponse = {
+    providers: Array<ProviderOverride>;
+};
+
+export type UpsertResponse = {
+    id: string;
+    action: 'created' | 'updated';
+};
+
+export type UpsertProviderBody = {
+    baseUrl?: string;
+    apiFormat?: ApiFormat;
+    apiKeyEnvVar?: string;
+    customHeaders?: {
+        [key: string]: string;
+    };
+    fallbacks?: Array<Fallback>;
+    enabled: boolean;
+};
+
+export type TestResponse = {
+    success: boolean;
+    latencyMs?: number;
+    error?: string;
+};
+
 export type GetApiHealthData = {
     body?: never;
     path?: never;
@@ -4237,6 +4286,191 @@ export type PostApiModelsSeedResponses = {
 };
 
 export type PostApiModelsSeedResponse = PostApiModelsSeedResponses[keyof PostApiModelsSeedResponses];
+
+export type GetApiProvidersData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/providers';
+};
+
+export type GetApiProvidersErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiProvidersResponses = {
+    /**
+     * List of provider overrides
+     */
+    200: ProviderListResponse;
+};
+
+export type GetApiProvidersResponse = GetApiProvidersResponses[keyof GetApiProvidersResponses];
+
+export type DeleteApiProvidersByIdData = {
+    body?: never;
+    path: {
+        /**
+         * Provider ID (e.g., anthropic, openai)
+         */
+        id: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/providers/{id}';
+};
+
+export type DeleteApiProvidersByIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Provider override not found
+     */
+    404: unknown;
+};
+
+export type DeleteApiProvidersByIdResponses = {
+    /**
+     * Success
+     */
+    200: SuccessResponse;
+};
+
+export type DeleteApiProvidersByIdResponse = DeleteApiProvidersByIdResponses[keyof DeleteApiProvidersByIdResponses];
+
+export type GetApiProvidersByIdData = {
+    body?: never;
+    path: {
+        /**
+         * Provider ID (e.g., anthropic, openai)
+         */
+        id: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/providers/{id}';
+};
+
+export type GetApiProvidersByIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiProvidersByIdResponses = {
+    /**
+     * Provider override
+     */
+    200: ProviderOverride & unknown;
+};
+
+export type GetApiProvidersByIdResponse = GetApiProvidersByIdResponses[keyof GetApiProvidersByIdResponses];
+
+export type PutApiProvidersByIdData = {
+    body: UpsertProviderBody;
+    path: {
+        /**
+         * Provider ID (e.g., anthropic, openai)
+         */
+        id: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/providers/{id}';
+};
+
+export type PutApiProvidersByIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PutApiProvidersByIdResponses = {
+    /**
+     * Success
+     */
+    200: UpsertResponse;
+};
+
+export type PutApiProvidersByIdResponse = PutApiProvidersByIdResponses[keyof PutApiProvidersByIdResponses];
+
+export type PostApiProvidersByIdTestData = {
+    body?: never;
+    path: {
+        /**
+         * Provider ID (e.g., anthropic, openai)
+         */
+        id: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/providers/{id}/test';
+};
+
+export type PostApiProvidersByIdTestErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiProvidersByIdTestResponses = {
+    /**
+     * Test result
+     */
+    200: TestResponse;
+};
+
+export type PostApiProvidersByIdTestResponse = PostApiProvidersByIdTestResponses[keyof PostApiProvidersByIdTestResponses];
+
+export type PatchApiProvidersByIdEnabledData = {
+    body: {
+        enabled: boolean;
+    };
+    path: {
+        /**
+         * Provider ID
+         */
+        id: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/providers/{id}/enabled';
+};
+
+export type PatchApiProvidersByIdEnabledErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Provider override not found
+     */
+    404: unknown;
+};
+
+export type PatchApiProvidersByIdEnabledResponses = {
+    /**
+     * Success
+     */
+    200: SuccessResponse;
+};
+
+export type PatchApiProvidersByIdEnabledResponse = PatchApiProvidersByIdEnabledResponses[keyof PatchApiProvidersByIdEnabledResponses];
 
 export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
