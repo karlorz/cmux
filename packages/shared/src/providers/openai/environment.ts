@@ -97,7 +97,7 @@ function stripModelMigrations(toml: string): string {
 }
 
 export async function getOpenAIEnvironment(
-  _ctx: EnvironmentContext
+  ctx: EnvironmentContext
 ): Promise<EnvironmentResult> {
   // These must be lazy since configs are imported into the browser
   const { readFile } = await import("node:fs/promises");
@@ -155,6 +155,11 @@ touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
       // File doesn't exist or can't be read, skip it
       console.warn(`Failed to read .codex/${file.name}:`, error);
     }
+  }
+
+  // Apply provider override if present (custom proxy like AnyRouter)
+  if (ctx.providerConfig?.isOverridden && ctx.providerConfig.baseUrl) {
+    env.OPENAI_BASE_URL = ctx.providerConfig.baseUrl;
   }
 
   // Ensure config.toml exists and contains notify hook + model migrations

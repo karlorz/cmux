@@ -234,9 +234,29 @@ exit 0`;
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: 1,
       CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: 1,
       ...(() => {
+        // Priority order for base URL routing:
+        // 1. OAuth token -> direct to Anthropic (no proxy)
+        // 2. Provider override with baseUrl -> direct to override URL + custom headers
+        // 3. bypassProxy && userCustomBaseUrl -> legacy bypass
+        // 4. Default -> cmux proxy
+
         if (hasOAuthToken) {
           // OAuth users always connect directly to Anthropic.
           return {};
+        }
+
+        // Provider override takes precedence over legacy bypass
+        if (ctx.providerConfig?.isOverridden && ctx.providerConfig.baseUrl) {
+          const result: Record<string, string | number> = {
+            ANTHROPIC_BASE_URL: normalizeAnthropicBaseUrl(ctx.providerConfig.baseUrl)
+              .forRawFetch,
+          };
+          if (ctx.providerConfig.customHeaders) {
+            result.ANTHROPIC_CUSTOM_HEADERS = Object.entries(ctx.providerConfig.customHeaders)
+              .map(([k, v]) => `${k}:${v}`)
+              .join("\n");
+          }
+          return result;
         }
 
         if (bypassProxy && userCustomBaseUrl) {

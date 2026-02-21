@@ -7,7 +7,7 @@ import type {
 // We previously supported the Qwen OAuth device flow, but cmux now uses
 // API keys via DashScope or OpenRouter configured in Settings.
 async function makeQwenEnvironment(
-  _ctx: EnvironmentContext,
+  ctx: EnvironmentContext,
   defaultBaseUrl: string | null,
   defaultModel: string | null
 ): Promise<EnvironmentResult> {
@@ -69,6 +69,11 @@ async function makeQwenEnvironment(
   // Set sensible default base URL for the OpenAI-compatible API if none provided via settings
   if (defaultBaseUrl) env.OPENAI_BASE_URL = defaultBaseUrl;
   if (defaultModel) env.OPENAI_MODEL = defaultModel;
+
+  // Provider override takes precedence over default base URL
+  if (ctx.providerConfig?.isOverridden && ctx.providerConfig.baseUrl) {
+    env.OPENAI_BASE_URL = ctx.providerConfig.baseUrl;
+  }
 
   return { files, env, startupCommands };
 }

@@ -63,6 +63,7 @@ import type * as morphInstances from "../morphInstances.js";
 import type * as notifications_http from "../notifications_http.js";
 import type * as previewConfigs from "../previewConfigs.js";
 import type * as previewRuns from "../previewRuns.js";
+import type * as providerOverrides from "../providerOverrides.js";
 import type * as previewScreenshots from "../previewScreenshots.js";
 import type * as previewTestJobs from "../previewTestJobs.js";
 import type * as preview_jobs from "../preview_jobs.js";
@@ -161,6 +162,7 @@ declare const fullApi: ApiFromModules<{
   previewConfigs: typeof previewConfigs;
   previewRuns: typeof previewRuns;
   previewScreenshots: typeof previewScreenshots;
+  providerOverrides: typeof providerOverrides;
   previewTestJobs: typeof previewTestJobs;
   preview_jobs: typeof preview_jobs;
   preview_jobs_http: typeof preview_jobs_http;

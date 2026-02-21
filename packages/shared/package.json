@@ -149,6 +149,10 @@
     "./pve-lxc-snapshots": {
       "import": "./src/pve-lxc-snapshots.ts",
       "types": "./src/pve-lxc-snapshots.ts"
+    },
+    "./provider-registry": {
+      "import": "./src/provider-registry.ts",
+      "types": "./src/provider-registry.ts"
     }
   },
   "peerDependencies": {
