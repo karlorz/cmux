@@ -11,6 +11,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
+import { AGENT_CATALOG } from "@cmux/shared/agent-catalog";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { spawnAllAgents } from "./agentSpawner";
 import {
@@ -374,6 +375,22 @@ export function handleHttpRequest(
       })
     );
     jsonResponse(res, 200, { agents });
+    return true;
+  }
+
+  // Route: GET /api/models - List all models with full catalog info
+  if (method === "GET" && path === "/api/models") {
+    const models = AGENT_CATALOG.map((entry) => ({
+      name: entry.name,
+      displayName: entry.displayName,
+      vendor: entry.vendor,
+      requiredApiKeys: entry.requiredApiKeys,
+      tier: entry.tier,
+      disabled: entry.disabled ?? false,
+      disabledReason: entry.disabledReason ?? null,
+      tags: entry.tags ?? [],
+    }));
+    jsonResponse(res, 200, { models });
     return true;
   }
 

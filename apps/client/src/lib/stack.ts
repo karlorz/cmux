@@ -164,3 +164,64 @@ wwwOpenAPIClient.setConfig({
   baseUrl: WWW_ORIGIN,
   fetch: fetchWithAuth,
 });
+
+class WwwOpenApiHttpError extends Error {
+  status: number;
+  statusText: string;
+  url: string;
+  body: unknown;
+
+  constructor(args: {
+    message: string;
+    status: number;
+    statusText: string;
+    url: string;
+    body: unknown;
+  }) {
+    super(args.message);
+    this.name = "WwwOpenApiHttpError";
+    this.status = args.status;
+    this.statusText = args.statusText;
+    this.url = args.url;
+    this.body = args.body;
+  }
+}
+
+function stringifyOpenApiErrorBody(body: unknown): string | null {
+  if (typeof body === "string") return body;
+  if (!body || typeof body !== "object") return null;
+  if ("message" in body && typeof (body as { message?: unknown }).message === "string") {
+    return (body as { message: string }).message;
+  }
+  if ("error" in body && typeof (body as { error?: unknown }).error === "string") {
+    return (body as { error: string }).error;
+  }
+  try {
+    return JSON.stringify(body);
+  } catch {
+    return null;
+  }
+}
+
+function attachWwwOpenApiErrorInterceptor() {
+  if (typeof window === "undefined") return;
+  const w = window as Window & { __cmuxWwwOpenApiErrInterceptorAttached?: boolean };
+  if (w.__cmuxWwwOpenApiErrInterceptorAttached) return;
+
+  wwwOpenAPIClient.interceptors.error.use((body, response) => {
+    const message =
+      stringifyOpenApiErrorBody(body) ??
+      `Request failed: ${response.status} ${response.statusText}`.trim();
+    return new WwwOpenApiHttpError({
+      message,
+      status: response.status,
+      statusText: response.statusText,
+      url: response.url,
+      body,
+    });
+  });
+
+  w.__cmuxWwwOpenApiErrInterceptorAttached = true;
+}
+
+attachWwwOpenApiErrorInterceptor();
