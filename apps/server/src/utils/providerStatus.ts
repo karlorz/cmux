@@ -5,8 +5,48 @@ import {
   type ProviderRequirementsContext,
   type ProviderStatus as SharedProviderStatus,
 } from "@cmux/shared";
+import { AGENT_CATALOG } from "@cmux/shared/agent-catalog";
 import { checkDockerStatus } from "@cmux/shared/providers/common/check-docker";
 import { getConvex } from "./convexClient.js";
+
+export interface AggregatedProviderStatus {
+  /** Vendor name: "anthropic", "openai", "google", etc. */
+  name: string;
+  /** True if ANY agent under this vendor is available */
+  isAvailable: boolean;
+  /** Per-agent availability within this vendor */
+  agents: Array<{ name: string; isAvailable: boolean }>;
+}
+
+/**
+ * Groups per-agent provider statuses into per-vendor aggregated statuses.
+ * Uses AGENT_CATALOG to look up each agent's vendor.
+ */
+export function aggregateByVendor(
+  agentStatuses: SharedProviderStatus[]
+): AggregatedProviderStatus[] {
+  const vendorMap = new Map<string, AggregatedProviderStatus>();
+
+  for (const status of agentStatuses) {
+    const catalogEntry = AGENT_CATALOG.find((e) => e.name === status.name);
+    const vendor = catalogEntry?.vendor ?? "unknown";
+
+    let entry = vendorMap.get(vendor);
+    if (!entry) {
+      entry = { name: vendor, isAvailable: false, agents: [] };
+      vendorMap.set(vendor, entry);
+    }
+    entry.agents.push({
+      name: status.name,
+      isAvailable: status.isAvailable,
+    });
+    if (status.isAvailable) {
+      entry.isAvailable = true;
+    }
+  }
+
+  return Array.from(vendorMap.values());
+}
 
 type CheckAllProvidersStatusOptions = {
   teamSlugOrId?: string;

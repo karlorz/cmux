@@ -2,55 +2,154 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/cmux-cli/cmux-devbox/internal/credentials"
 	"github.com/spf13/cobra"
 )
+
+var providersLocal bool
 
 var providersCmd = &cobra.Command{
 	Use:   "providers",
 	Short: "List AI provider connection status",
 	Long: `Show which AI providers are configured and ready to use.
 
-Checks for credentials from:
-  - Environment variables (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)
-  - CLI tool configurations (~/.claude.json, ~/.codex/auth.json, etc.)
-  - System keychains (macOS)
-  - OpenCode CLI (if installed)
+By default, checks server-side credentials (API keys stored in cmux settings).
+Use --local to check local credentials instead (env vars, config files, keychains).
 
 Examples:
-  cmux providers            # Show provider status
+  cmux providers            # Show server-side provider status
+  cmux providers --local    # Show local credential status
   cmux providers --json     # JSON output`,
 	RunE: runProviders,
 }
 
 func init() {
+	providersCmd.Flags().BoolVar(&providersLocal, "local", false, "Check local credentials instead of server-side")
 	rootCmd.AddCommand(providersCmd)
 }
 
 // ProviderOutput represents a provider for JSON output
 type ProviderOutput struct {
-	Name      string `json:"name"`
-	Status    string `json:"status"`
-	Source    string `json:"source,omitempty"`
-	Available bool   `json:"available"`
+	Name      string   `json:"name"`
+	Status    string   `json:"status"`
+	Source    string   `json:"source,omitempty"`
+	Available bool     `json:"available"`
+	Agents    []string `json:"agents,omitempty"`
 }
 
 func runProviders(cmd *cobra.Command, args []string) error {
-	status := credentials.CheckAllProviders()
-
-	if flagJSON {
-		return printProvidersJSON(status)
+	if providersLocal {
+		// Local credential checks (existing behavior)
+		status := credentials.CheckAllProviders()
+		if flagJSON {
+			return printLocalProvidersJSON(status)
+		}
+		return printLocalProvidersTable(status)
 	}
 
-	return printProvidersTable(status)
+	// Default: server-side checks from Convex-stored API keys
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	serverStatus, err := fetchServerProviderStatus(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not fetch server provider status (%v), falling back to local checks\n", err)
+		status := credentials.CheckAllProviders()
+		if flagJSON {
+			return printLocalProvidersJSON(status)
+		}
+		return printLocalProvidersTable(status)
+	}
+
+	if flagJSON {
+		return printServerProvidersJSON(serverStatus)
+	}
+	return printServerProvidersTable(serverStatus)
 }
 
-func printProvidersJSON(status credentials.AllProviderStatus) error {
+// --- Server-side display functions ---
+
+func printServerProvidersTable(status *ServerProvidersResponse) error {
+	fmt.Println("AI Providers Status (Remote)")
+	fmt.Println("============================")
+	fmt.Println()
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "PROVIDER\tSTATUS\tAGENTS")
+	fmt.Fprintln(w, "--------\t------\t------")
+
+	for _, p := range status.Providers {
+		statusStr := "Not configured"
+		if p.IsAvailable {
+			statusStr = "Connected"
+		}
+
+		// Collect agent names
+		var agentNames []string
+		for _, a := range p.Agents {
+			agentNames = append(agentNames, a.Name)
+		}
+		agentSummary := "-"
+		if len(agentNames) > 0 {
+			if len(agentNames) <= 3 {
+				agentSummary = strings.Join(agentNames, ", ")
+			} else {
+				agentSummary = fmt.Sprintf("%s, ... (%d total)", strings.Join(agentNames[:3], ", "), len(agentNames))
+			}
+		}
+
+		fmt.Fprintf(w, "%s\t%s\t%s\n", p.Name, statusStr, agentSummary)
+	}
+
+	w.Flush()
+	return nil
+}
+
+func printServerProvidersJSON(status *ServerProvidersResponse) error {
+	var providers []ProviderOutput
+
+	for _, p := range status.Providers {
+		statusStr := "Not configured"
+		if p.IsAvailable {
+			statusStr = "Connected"
+		}
+
+		var agentNames []string
+		for _, a := range p.Agents {
+			agentNames = append(agentNames, a.Name)
+		}
+
+		providers = append(providers, ProviderOutput{
+			Name:      p.Name,
+			Status:    statusStr,
+			Source:    "server",
+			Available: p.IsAvailable,
+			Agents:    agentNames,
+		})
+	}
+
+	data, err := json.MarshalIndent(map[string]interface{}{
+		"source":    "server",
+		"providers": providers,
+	}, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
+	return nil
+}
+
+// --- Local display functions (existing behavior) ---
+
+func printLocalProvidersJSON(status credentials.AllProviderStatus) error {
 	var providers []ProviderOutput
 
 	for _, name := range credentials.ProviderOrder {
@@ -68,6 +167,7 @@ func printProvidersJSON(status credentials.AllProviderStatus) error {
 	}
 
 	data, err := json.MarshalIndent(map[string]interface{}{
+		"source":    "local",
 		"providers": providers,
 	}, "", "  ")
 	if err != nil {
@@ -77,9 +177,9 @@ func printProvidersJSON(status credentials.AllProviderStatus) error {
 	return nil
 }
 
-func printProvidersTable(status credentials.AllProviderStatus) error {
-	fmt.Println("AI Providers Status")
-	fmt.Println("===================")
+func printLocalProvidersTable(status credentials.AllProviderStatus) error {
+	fmt.Println("AI Providers Status (Local)")
+	fmt.Println("===========================")
 	fmt.Println()
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)

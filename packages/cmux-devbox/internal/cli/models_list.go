@@ -51,12 +51,13 @@ var modelsCmd = &cobra.Command{
 	Short: "List available AI models",
 	Long: `List AI models. By default, only shows models with configured credentials.
 
-Checks local credentials to filter models that can actually be used.
-Use --all to show all models regardless of credential availability.
+Checks server-side credentials (API keys stored in cmux settings) to filter models.
+Use --local to check local credentials instead, or --all to show all models.
 
 Examples:
   cmux models                         # List model names (one per line)
   cmux models --all                   # List ALL models (ignore credentials)
+  cmux models --local                 # Use local credentials for filtering
   cmux models --verbose               # Show table with details
   cmux models --json                  # JSON output
   cmux models claude                  # Filter by name
@@ -69,12 +70,13 @@ var modelsListCmd = &cobra.Command{
 	Short: "List available AI models",
 	Long: `List AI models. By default, only shows models with configured credentials.
 
-Checks local credentials to filter models that can actually be used.
-Use --all to show all models regardless of credential availability.
+Checks server-side credentials (API keys stored in cmux settings) to filter models.
+Use --local to check local credentials instead, or --all to show all models.
 
 Examples:
   cmux models list                    # List model names (one per line)
   cmux models list --all              # List ALL models (ignore credentials)
+  cmux models list --local            # Use local credentials for filtering
   cmux models list --verbose          # Show table with details
   cmux models list --json             # JSON output
   cmux models list claude             # Filter by name
@@ -88,12 +90,14 @@ func init() {
 	modelsCmd.Flags().Bool("enabled-only", false, "Only show enabled models")
 	modelsCmd.Flags().Bool("refresh", false, "Refresh cached model list from server")
 	modelsCmd.Flags().Bool("all", false, "Show all models (including unavailable)")
+	modelsCmd.Flags().Bool("local", false, "Use local credentials for filtering (default: server-side)")
 
 	// Also add to modelsListCmd for backwards compatibility
 	modelsListCmd.Flags().String("provider", "", "Filter by provider (anthropic, openai, opencode, etc.)")
 	modelsListCmd.Flags().Bool("enabled-only", false, "Only show enabled models")
 	modelsListCmd.Flags().Bool("refresh", false, "Refresh cached model list from server")
 	modelsListCmd.Flags().Bool("all", false, "Show all models (including unavailable)")
+	modelsListCmd.Flags().Bool("local", false, "Use local credentials for filtering (default: server-side)")
 
 	modelsCmd.AddCommand(modelsListCmd)
 	rootCmd.AddCommand(modelsCmd)
@@ -128,11 +132,25 @@ func runModelsList(cmd *cobra.Command, args []string) error {
 	// Apply filters
 	filtered := filterModels(models, provider, enabledOnly, filter)
 
-	// Check local credentials and filter by availability (unless --all)
-	var providerStatus credentials.AllProviderStatus
+	// Filter by availability (unless --all)
 	if !showAll {
-		providerStatus = credentials.CheckAllProviders()
-		filtered = filterByAvailability(filtered, providerStatus)
+		useLocal, _ := cmd.Flags().GetBool("local")
+
+		if useLocal {
+			// Explicit local credential checks
+			providerStatus := credentials.CheckAllProviders()
+			filtered = filterByAvailability(filtered, providerStatus)
+		} else {
+			// Try server-side first, fall back to local
+			serverStatus, err := fetchServerProviderStatus(ctx)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not fetch server provider status (%v), falling back to local checks\n", err)
+				providerStatus := credentials.CheckAllProviders()
+				filtered = filterByAvailability(filtered, providerStatus)
+			} else {
+				filtered = filterByServerAvailability(filtered, serverStatus)
+			}
+		}
 	}
 
 	// JSON output
@@ -220,11 +238,31 @@ func filterModels(models []ModelInfo, provider string, enabledOnly bool, filter 
 	return result
 }
 
-// filterByAvailability filters models to only include those with available credentials
+// filterByAvailability filters models to only include those with available local credentials
 func filterByAvailability(models []ModelInfo, status credentials.AllProviderStatus) []ModelInfo {
 	var result []ModelInfo
 	for _, m := range models {
 		if status.IsProviderAvailable(strings.ToLower(m.Vendor)) {
+			result = append(result, m)
+		}
+	}
+	return result
+}
+
+// filterByServerAvailability filters models based on server-side provider status (Convex API keys)
+func filterByServerAvailability(models []ModelInfo, serverStatus *ServerProvidersResponse) []ModelInfo {
+	// Build a set of available vendors from server response
+	availableVendors := make(map[string]bool)
+	for _, p := range serverStatus.Providers {
+		if p.IsAvailable {
+			availableVendors[p.Name] = true
+		}
+	}
+
+	var result []ModelInfo
+	for _, m := range models {
+		vendor := strings.ToLower(m.Vendor)
+		if availableVendors[vendor] {
 			result = append(result, m)
 		}
 	}

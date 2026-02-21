@@ -24,7 +24,11 @@ import {
 } from "./utils/branchNameGenerator";
 import { getConvex } from "./utils/convexClient";
 import { serverLogger } from "./utils/fileLogger";
-import { runWithAuth } from "./utils/requestContext";
+import {
+  aggregateByVendor,
+  checkAllProvidersStatusWebMode,
+} from "./utils/providerStatus";
+import { runWithAuth, runWithAuthToken } from "./utils/requestContext";
 
 interface StartTaskRequest {
   // Required fields
@@ -333,6 +337,45 @@ async function handleStartTask(
 }
 
 /**
+ * Handle GET /api/providers
+ *
+ * Returns provider availability based on Convex-stored API keys.
+ * Aggregated by vendor so the CLI can display per-provider status.
+ */
+async function handleGetProviders(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+  const authToken = parseAuthHeader(req);
+  if (!authToken) {
+    jsonResponse(res, 401, { error: "Unauthorized: Missing Bearer token" });
+    return;
+  }
+
+  const url = new URL(req.url || "/", `http://${req.headers.host}`);
+  const teamSlugOrId = url.searchParams.get("teamSlugOrId");
+  if (!teamSlugOrId) {
+    jsonResponse(res, 400, {
+      error: "Missing required query parameter: teamSlugOrId",
+    });
+    return;
+  }
+
+  try {
+    const result = await runWithAuthToken(authToken, async () => {
+      return await checkAllProvidersStatusWebMode({ teamSlugOrId });
+    });
+
+    const providers = aggregateByVendor(result.providers);
+    jsonResponse(res, 200, { success: true, providers });
+  } catch (error) {
+    serverLogger.error("[http-api] GET /api/providers failed", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    jsonResponse(res, 500, { error: message });
+  }
+}
+
+/**
  * HTTP request handler for apps/server
  *
  * Integrates with the existing HTTP server to add API endpoints.
@@ -366,6 +409,12 @@ export function handleHttpRequest(
   // Route: GET /api/health
   if (method === "GET" && path === "/api/health") {
     jsonResponse(res, 200, { status: "ok", service: "apps-server" });
+    return true;
+  }
+
+  // Route: GET /api/providers - Get provider status (authenticated)
+  if (method === "GET" && path === "/api/providers") {
+    void handleGetProviders(req, res);
     return true;
   }
 
