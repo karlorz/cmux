@@ -35,7 +35,7 @@ import type {
   TaskError,
   TaskStarted,
 } from "@cmux/shared";
-import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
+import { AGENT_CATALOG } from "@cmux/shared/agent-catalog";
 import type { GithubBranchesResponse } from "@cmux/www-openapi-client";
 import { convexQuery } from "@convex-dev/react-query";
 import {
@@ -105,9 +105,9 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/dashboard")({
 
 // Default agents (not persisted to localStorage)
 const DEFAULT_AGENTS = ["claude/opus-4.6", "codex/gpt-5.3-codex-xhigh"];
-const KNOWN_AGENT_NAMES = new Set(AGENT_CONFIGS.map((agent) => agent.name));
+const KNOWN_AGENT_NAMES = new Set(AGENT_CATALOG.map((entry) => entry.name));
 const DISABLED_AGENT_NAMES = new Set(
-  AGENT_CONFIGS.filter((agent) => agent.disabled).map((agent) => agent.name)
+  AGENT_CATALOG.filter((entry) => entry.disabled).map((entry) => entry.name)
 );
 const DEFAULT_AGENT_SELECTION = DEFAULT_AGENTS.filter(
   (agent) => KNOWN_AGENT_NAMES.has(agent) && !DISABLED_AGENT_NAMES.has(agent)

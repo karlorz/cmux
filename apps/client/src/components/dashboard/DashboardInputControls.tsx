@@ -20,7 +20,7 @@ import {
 import { WWW_ORIGIN } from "@/lib/wwwOrigin";
 import { api } from "@cmux/convex/api";
 import type { ProviderStatus, ProviderStatusResponse } from "@cmux/shared";
-import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
+import { AGENT_CATALOG, type AgentVendor } from "@cmux/shared/agent-catalog";
 import { parseGithubRepoUrl } from "@cmux/shared";
 import { useUser } from "@stackframe/react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -175,28 +175,13 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     });
   }, [router, teamSlugOrId]);
   const agentOptions = useMemo<AgentOption[]>(() => {
-    const vendorKey = (name: string): string => {
-      const lower = name.toLowerCase();
-      if (lower.startsWith("codex/")) return "openai";
-      if (lower.startsWith("claude/")) return "claude";
-      if (lower.startsWith("gemini/")) return "gemini";
-      if (lower.startsWith("opencode/")) return "opencode";
-      if (lower.startsWith("qwen/")) return "qwen";
-      if (lower.startsWith("cursor/")) return "cursor";
-      if (lower.startsWith("amp")) return "amp";
-      return "other";
-    };
-    const shortName = (label: string): string => {
-      const slashIndex = label.indexOf("/");
-      return slashIndex >= 0 ? label.slice(slashIndex + 1) : label;
-    };
-    const options = AGENT_CONFIGS.map((agent) => {
-      const status = providerStatusMap.get(agent.name);
+    const options = AGENT_CATALOG.map((entry) => {
+      const status = providerStatusMap.get(entry.name);
       const missingRequirements = status?.missingRequirements ?? [];
       const isAvailable = status?.isAvailable ?? true;
 
-      // Check if agent is disabled at config level (e.g., not available on Bedrock)
-      const isDisabledByConfig = agent.disabled === true;
+      // Check if agent is disabled at catalog level (e.g., not available on Bedrock)
+      const isDisabledByConfig = entry.disabled === true;
       const isUnavailable = !isAvailable || isDisabledByConfig;
 
       // Determine warning tooltip content
@@ -209,7 +194,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
                 Not available
               </p>
               <p className="text-xs text-neutral-300">
-                {agent.disabledReason ?? "This agent is currently disabled."}
+                {entry.disabledReason ?? "This agent is currently disabled."}
               </p>
             </div>
           ),
@@ -243,25 +228,27 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       }
 
       return {
-        label: agent.name,
-        displayLabel: shortName(agent.name),
-        value: agent.name,
-        icon: <AgentLogo agentName={agent.name} className="w-4 h-4" />,
-        iconKey: vendorKey(agent.name),
+        label: entry.name,
+        displayLabel: entry.displayName,
+        value: entry.name,
+        icon: <AgentLogo agentName={entry.name} vendor={entry.vendor} className="w-4 h-4" />,
+        iconKey: entry.vendor,
         isUnavailable,
         isDisabled: isDisabledByConfig,
         warning: warningConfig,
       } satisfies AgentOption;
     });
 
-    const vendorHeadingLabel: Record<string, string> = {
+    const vendorHeadingLabel: Record<AgentVendor | "other", string> = {
       openai: "OpenAI / Codex",
-      claude: "Claude",
-      gemini: "Gemini",
+      anthropic: "Claude",
+      google: "Gemini",
       opencode: "OpenCode",
       qwen: "Qwen",
       cursor: "Cursor",
       amp: "Amp",
+      xai: "xAI",
+      openrouter: "OpenRouter",
       other: "Other",
     };
 

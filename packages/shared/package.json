@@ -42,6 +42,10 @@
       "import": "./src/agentConfig.ts",
       "types": "./src/agentConfig.ts"
     },
+    "./agent-catalog": {
+      "import": "./src/agent-catalog.ts",
+      "types": "./src/agent-catalog.ts"
+    },
     "./terminal-config": {
       "import": "./src/terminal-config.ts",
       "types": "./src/terminal-config.ts"

@@ -126,3 +126,20 @@ export const ALL_BASE_URL_KEYS: ProviderBaseUrlKey[] = [
   XAI_BASE_URL_KEY,
   MODEL_STUDIO_BASE_URL_KEY,
 ];
+
+/**
+ * All unique API keys used by agents (deduplicated by envVar).
+ * Used by the settings page to render API key input fields.
+ */
+export const ALL_API_KEYS: AgentConfigApiKey[] = [
+  CLAUDE_CODE_OAUTH_TOKEN,
+  ANTHROPIC_API_KEY,
+  OPENAI_API_KEY,
+  CODEX_AUTH_JSON,
+  OPENROUTER_API_KEY,
+  GEMINI_API_KEY,
+  MODEL_STUDIO_API_KEY,
+  AMP_API_KEY,
+  CURSOR_API_KEY,
+  XAI_API_KEY,
+];

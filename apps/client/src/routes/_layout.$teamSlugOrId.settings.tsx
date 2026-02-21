@@ -13,8 +13,8 @@ import { useTheme } from "@/components/theme/use-theme";
 import { TitleBar } from "@/components/TitleBar";
 import { api } from "@cmux/convex/api";
 import type { Doc } from "@cmux/convex/dataModel";
-import { AGENT_CONFIGS, type AgentConfig } from "@cmux/shared/agentConfig";
 import {
+  ALL_API_KEYS,
   ALL_BASE_URL_KEYS,
   ANTHROPIC_BASE_URL_KEY,
   type ProviderBaseUrlKey,
@@ -179,14 +179,8 @@ function SettingsComponent() {
 
   // Heatmap model and tooltip language options are imported from @/lib/heatmap-settings
 
-  // Get all required API keys from agent configs
-  const apiKeys = Array.from(
-    new Map(
-      AGENT_CONFIGS.flatMap((config: AgentConfig) => config.apiKeys || []).map(
-        (key) => [key.envVar, key]
-      )
-    ).values()
-  );
+  // Get all required API keys from the shared API keys definitions
+  const apiKeys = ALL_API_KEYS;
 
   // Global mapping of envVar -> models (from shared)
   const apiKeyModelsByEnv = API_KEY_MODELS_BY_ENV;
