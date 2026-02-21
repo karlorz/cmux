@@ -204,7 +204,7 @@ touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
 
   // Add agent memory protocol support
   startupCommands.push(getMemoryStartupCommand());
-  files.push(...getMemorySeedFiles(ctx.taskRunId));
+  files.push(...getMemorySeedFiles(ctx.taskRunId, ctx.previousKnowledge));
 
   return { files, env, startupCommands };
 }

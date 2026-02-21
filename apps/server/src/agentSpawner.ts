@@ -418,12 +418,32 @@ export async function spawnAgent(
 
     // Fetch API keys from Convex BEFORE calling agent.environment()
     // so agents can access them in their environment configuration
-    const userApiKeys = await getConvex().query(api.apiKeys.getAllForAgents, {
-      teamSlugOrId,
-    });
-    const workspaceSettings = await getConvex().query(api.workspaceSettings.get, {
-      teamSlugOrId,
-    });
+    const [userApiKeys, workspaceSettings, previousKnowledge] = await Promise.all([
+      getConvex().query(api.apiKeys.getAllForAgents, {
+        teamSlugOrId,
+      }),
+      getConvex().query(api.workspaceSettings.get, {
+        teamSlugOrId,
+      }),
+      // Query previous knowledge for cross-run memory seeding (S5b)
+      getConvex()
+        .query(api.agentMemoryQueries.getLatestTeamKnowledge, {
+          teamSlugOrId,
+        })
+        .catch((error) => {
+          serverLogger.warn(
+            "[AgentSpawner] Failed to fetch previous knowledge for memory seeding",
+            error
+          );
+          return null;
+        }),
+    ]);
+
+    if (previousKnowledge) {
+      serverLogger.info(
+        `[AgentSpawner] Found previous knowledge (${previousKnowledge.length} chars) for cross-run seeding`
+      );
+    }
 
     const apiKeys: Record<string, string> = {
       ...userApiKeys,
@@ -440,6 +460,7 @@ export async function spawnAgent(
         workspaceSettings: {
           bypassAnthropicProxy: workspaceSettings?.bypassAnthropicProxy ?? false,
         },
+        previousKnowledge: previousKnowledge ?? undefined,
       });
       envVars = {
         ...envVars,

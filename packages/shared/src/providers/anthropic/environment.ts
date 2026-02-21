@@ -55,7 +55,13 @@ export async function getClaudeEnvironment(
           allowedTools: [],
           history: [],
           mcpContextUris: [],
-          mcpServers: {},
+          mcpServers: {
+            // Memory MCP server for programmatic access to agent memory (S6)
+            "cmux-memory": {
+              command: "node",
+              args: [`${claudeLifecycleDir}/memory/mcp-server.js`],
+            },
+          },
           enabledMcpjsonServers: [],
           disabledMcpjsonServers: [],
           hasTrustDialogAccepted: true,
@@ -294,7 +300,7 @@ echo ${apiKeyToOutput}`;
 
   // Add agent memory protocol support
   startupCommands.push(getMemoryStartupCommand());
-  files.push(...getMemorySeedFiles(ctx.taskRunId));
+  files.push(...getMemorySeedFiles(ctx.taskRunId, ctx.previousKnowledge));
 
   // Add CLAUDE.md with memory protocol instructions for the project
   const claudeMdContent = `# cmux Project Instructions
