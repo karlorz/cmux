@@ -33,7 +33,8 @@ export const MEMORY_KNOWLEDGE_DIR = `${MEMORY_PROTOCOL_DIR}/knowledge`;
  * Get today's date string in YYYY-MM-DD format for daily log files.
  */
 export function getTodayDateString(): string {
-  return new Date().toISOString().split("T")[0];
+  const iso = new Date().toISOString();
+  return iso.slice(0, iso.indexOf("T"));
 }
 
 /**
