@@ -29,31 +29,42 @@ function ToasterWithTheme() {
 }
 
 /**
- * Checks if an error indicates an authentication/authorization failure.
- * Detects 401 status codes and common auth-related error messages.
+ * Checks if an error indicates a definitive session expiry that requires sign-in.
+ * Only matches errors that clearly indicate the user needs to re-authenticate,
+ * not transient network errors or API errors that happen to contain "Unauthorized".
+ *
+ * This is intentionally conservative to avoid redirect loops when:
+ * - Token refresh is in progress
+ * - Network temporarily fails
+ * - A single API call returns 401 but auth is still valid
  */
 function isAuthError(error: unknown): boolean {
   if (!error) return false;
 
-  // Check for status code
   const errorObj = error as Record<string, unknown>;
-  if (errorObj.status === 401 || errorObj.statusCode === 401) {
+  const message =
+    typeof errorObj.message === "string"
+      ? errorObj.message.toLowerCase()
+      : error instanceof Error
+        ? error.message.toLowerCase()
+        : "";
+
+  // Only redirect for "User not found" - this is thrown by fetchWithAuth
+  // when Stack Auth cannot get a user, meaning the session is definitely gone
+  if (message === "user not found") {
     return true;
   }
 
-  // Check error message for auth-related patterns
-  const message =
-    errorObj.message ||
-    (typeof errorObj.toString === "function" ? errorObj.toString() : "");
-  if (typeof message === "string") {
-    const lowerMessage = message.toLowerCase();
-    return (
-      lowerMessage.includes("unauthorized") ||
-      lowerMessage.includes("not authenticated") ||
-      lowerMessage.includes("token expired") ||
-      lowerMessage.includes("jwt expired") ||
-      lowerMessage.includes("user not found")
-    );
+  // For 401 errors, only redirect if they have specific token expiry indicators
+  // that our retry logic couldn't recover from
+  const is401 = errorObj.status === 401 || errorObj.statusCode === 401;
+  if (is401) {
+    const hasTokenExpiry =
+      message.includes("token expired") ||
+      message.includes("jwt expired") ||
+      message.includes("invalid auth header expired") ||
+      message.includes("token has expired");
+    return hasTokenExpiry;
   }
 
   return false;
