@@ -649,6 +649,17 @@ const convexSchema = defineSchema({
     teamId: v.string(),
   }).index("by_team_user", ["teamId", "userId"]),
 
+  // Per-team model enable/disable preferences
+  // Uses blacklist pattern: disabledModels array lists agent names to hide
+  // Default behavior: all models enabled (empty disabledModels array)
+  modelPreferences: defineTable({
+    disabledModels: v.array(v.string()), // Array of agent names to hide, e.g. ["claude/haiku-4.5"]
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    userId: v.string(),
+    teamId: v.string(),
+  }).index("by_team_user", ["teamId", "userId"]),
+
   // Source repo mappings for Codex-style worktrees
   // Maps projects to local repo paths per user
   sourceRepoMappings: defineTable({

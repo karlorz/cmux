@@ -534,6 +534,17 @@ function DashboardComponent() {
     [reposByOrgQuery.data]
   );
 
+  // Fetch model preferences (user-disabled models) for filtering agent picker
+  const modelPreferencesQuery = useQuery(
+    convexQuery(api.modelPreferences.get, { teamSlugOrId })
+  );
+  const disabledByUserModels = useMemo(() => {
+    const disabledModels = modelPreferencesQuery.data?.disabledModels;
+    return disabledModels && disabledModels.length > 0
+      ? new Set(disabledModels)
+      : undefined;
+  }, [modelPreferencesQuery.data?.disabledModels]);
+
   // Socket-based functions to fetch data from GitHub
   // Removed unused fetchRepos function - functionality is handled by Convex queries
 
@@ -1383,6 +1394,7 @@ function DashboardComponent() {
               cloudToggleDisabled={isEnvSelected}
               branchDisabled={isEnvSelected || !selectedProject[0]}
               providerStatus={providerStatus}
+              disabledByUserModels={disabledByUserModels}
               canSubmit={canSubmit}
               onStartTask={handleStartTask}
               isStartingTask={isStartingTask}
@@ -1471,6 +1483,7 @@ type DashboardMainCardProps = {
   cloudToggleDisabled: boolean;
   branchDisabled: boolean;
   providerStatus: ProviderStatusResponse | null;
+  disabledByUserModels?: Set<string>;
   canSubmit: boolean;
   onStartTask: () => void;
   isStartingTask: boolean;
@@ -1505,6 +1518,7 @@ function DashboardMainCard({
   cloudToggleDisabled,
   branchDisabled,
   providerStatus,
+  disabledByUserModels,
   canSubmit,
   onStartTask,
   isStartingTask,
@@ -1551,6 +1565,7 @@ function DashboardMainCard({
           cloudToggleDisabled={cloudToggleDisabled}
           branchDisabled={branchDisabled}
           providerStatus={providerStatus}
+          disabledByUserModels={disabledByUserModels}
         />
         <DashboardStartTaskButton
           canSubmit={canSubmit}

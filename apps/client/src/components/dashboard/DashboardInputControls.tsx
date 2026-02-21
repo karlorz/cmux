@@ -55,6 +55,8 @@ interface DashboardInputControlsProps {
   cloudToggleDisabled?: boolean;
   branchDisabled?: boolean;
   providerStatus?: ProviderStatusResponse | null;
+  /** Set of agent names disabled by user in Settings > Models */
+  disabledByUserModels?: Set<string>;
 }
 
 type AgentOption = SelectOptionObject & { displayLabel: string; isDisabled?: boolean };
@@ -154,6 +156,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
   cloudToggleDisabled = false,
   branchDisabled = false,
   providerStatus = null,
+  disabledByUserModels,
 }: DashboardInputControlsProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -175,7 +178,12 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     });
   }, [router, teamSlugOrId]);
   const agentOptions = useMemo<AgentOption[]>(() => {
-    const options = AGENT_CATALOG.map((entry) => {
+    // Filter out agents disabled by user in Settings > Models
+    const enabledCatalog = disabledByUserModels
+      ? AGENT_CATALOG.filter((entry) => !disabledByUserModels.has(entry.name))
+      : AGENT_CATALOG;
+
+    const options = enabledCatalog.map((entry) => {
       const status = providerStatusMap.get(entry.name);
       const missingRequirements = status?.missingRequirements ?? [];
       const isAvailable = status?.isAvailable ?? true;
@@ -271,7 +279,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     }
 
     return grouped;
-  }, [handleOpenSettings, providerStatusMap]);
+  }, [disabledByUserModels, handleOpenSettings, providerStatusMap]);
 
   const agentOptionsByValue = useMemo(() => {
     const map = new Map<string, AgentOption>();

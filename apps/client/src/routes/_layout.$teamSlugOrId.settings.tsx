@@ -8,6 +8,7 @@ import {
 } from "@/components/settings/sections/AIProvidersSection";
 import { ArchivedTasksSection } from "@/components/settings/sections/ArchivedTasksSection";
 import { GitSection } from "@/components/settings/sections/GitSection";
+import { ModelManagementSection } from "@/components/settings/sections/ModelManagementSection";
 import { WorktreesSection } from "@/components/settings/sections/WorktreesSection";
 import { useTheme } from "@/components/theme/use-theme";
 import { TitleBar } from "@/components/TitleBar";
@@ -41,7 +42,7 @@ import { DEFAULT_BRANCH_PREFIX } from "@cmux/shared";
 export const Route = createFileRoute("/_layout/$teamSlugOrId/settings")({
   component: SettingsComponent,
   validateSearch: z.object({
-    section: z.enum(["general", "ai-providers", "git", "worktrees", "archived"]).default("general"),
+    section: z.enum(["general", "ai-providers", "models", "git", "worktrees", "archived"]).default("general"),
   }),
 });
 
@@ -852,6 +853,8 @@ function SettingsComponent() {
               onWorktreePathChange={setCodexWorktreePathPattern}
               onContainerSettingsChange={handleContainerSettingsChange}
             />
+          ) : activeSection === "models" ? (
+            <ModelManagementSection teamSlugOrId={teamSlugOrId} />
           ) : activeSection === "git" ? (
             <GitSection
               branchPrefix={branchPrefix}
