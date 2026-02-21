@@ -174,6 +174,133 @@ export function getMemoryStartupCommand(): string {
 }
 
 /**
+ * Generate the memory sync bash script that reads memory files and POSTs them to Convex.
+ * This script is called by provider stop hooks before crown/complete.
+ *
+ * Features:
+ * - Best-effort sync (|| true for all commands)
+ * - Client-side truncation with head -c 500000
+ * - Uses jq for safe JSON construction
+ * - Logs to /root/lifecycle/memory-sync.log
+ */
+export function getMemorySyncScript(): string {
+  return `#!/bin/bash
+# Memory sync script - syncs agent memory files to Convex
+# Called by stop hooks before crown/complete
+
+set -euo pipefail
+
+LOG_FILE="/root/lifecycle/memory-sync.log"
+MEMORY_DIR="${MEMORY_PROTOCOL_DIR}"
+MAX_SIZE=500000
+
+log() {
+  echo "[$(date -Iseconds)] $*" >> "$LOG_FILE"
+}
+
+# Best-effort wrapper - never fail the stop hook
+sync_memory() {
+  log "Starting memory sync"
+
+  # Check required env vars
+  if [ -z "\${CMUX_CALLBACK_URL:-}" ] || [ -z "\${CMUX_TASK_RUN_JWT:-}" ]; then
+    log "Missing required env vars (CMUX_CALLBACK_URL or CMUX_TASK_RUN_JWT), skipping sync"
+    return 0
+  fi
+
+  # Check if jq is available
+  if ! command -v jq >/dev/null 2>&1; then
+    log "jq not found, skipping sync"
+    return 0
+  fi
+
+  # Build JSON array of files
+  files_json="[]"
+
+  # Sync knowledge/MEMORY.md
+  if [ -f "$MEMORY_DIR/knowledge/MEMORY.md" ]; then
+    content=$(head -c $MAX_SIZE "$MEMORY_DIR/knowledge/MEMORY.md" | jq -Rs .)
+    files_json=$(echo "$files_json" | jq --argjson c "$content" '. + [{"memoryType": "knowledge", "content": ($c), "fileName": "knowledge/MEMORY.md"}]')
+    log "Added knowledge/MEMORY.md"
+  fi
+
+  # Sync daily logs (find all .md files in daily/)
+  if [ -d "$MEMORY_DIR/daily" ]; then
+    for daily_file in "$MEMORY_DIR/daily"/*.md; do
+      if [ -f "$daily_file" ]; then
+        filename=$(basename "$daily_file")
+        date_str="\${filename%.md}"
+        content=$(head -c $MAX_SIZE "$daily_file" | jq -Rs .)
+        files_json=$(echo "$files_json" | jq --argjson c "$content" --arg d "$date_str" --arg f "daily/$filename" '. + [{"memoryType": "daily", "content": ($c), "fileName": ($f), "date": ($d)}]')
+        log "Added daily/$filename"
+      fi
+    done
+  fi
+
+  # Sync TASKS.json
+  if [ -f "$MEMORY_DIR/TASKS.json" ]; then
+    content=$(head -c $MAX_SIZE "$MEMORY_DIR/TASKS.json" | jq -Rs .)
+    files_json=$(echo "$files_json" | jq --argjson c "$content" '. + [{"memoryType": "tasks", "content": ($c), "fileName": "TASKS.json"}]')
+    log "Added TASKS.json"
+  fi
+
+  # Sync MAILBOX.json
+  if [ -f "$MEMORY_DIR/MAILBOX.json" ]; then
+    content=$(head -c $MAX_SIZE "$MEMORY_DIR/MAILBOX.json" | jq -Rs .)
+    files_json=$(echo "$files_json" | jq --argjson c "$content" '. + [{"memoryType": "mailbox", "content": ($c), "fileName": "MAILBOX.json"}]')
+    log "Added MAILBOX.json"
+  fi
+
+  # Check if we have any files to sync
+  file_count=$(echo "$files_json" | jq 'length')
+  if [ "$file_count" -eq 0 ]; then
+    log "No memory files found to sync"
+    return 0
+  fi
+
+  # Build final payload
+  payload=$(jq -n --argjson files "$files_json" '{"files": $files}')
+  log "Syncing $file_count files to Convex"
+
+  # POST to Convex
+  response=$(curl -s -w "\\n%{http_code}" -X POST "\${CMUX_CALLBACK_URL}/api/memory/sync" \\
+    -H "Content-Type: application/json" \\
+    -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
+    -d "$payload" 2>>"$LOG_FILE")
+
+  http_code=$(echo "$response" | tail -n1)
+  body=$(echo "$response" | sed '$d')
+
+  if [ "$http_code" = "200" ]; then
+    log "Memory sync successful: $body"
+  else
+    log "Memory sync failed with HTTP $http_code: $body"
+  fi
+}
+
+# Run sync with best-effort error handling
+sync_memory 2>>"$LOG_FILE" || {
+  echo "[$(date -Iseconds)] Memory sync failed but continuing" >> "$LOG_FILE"
+}
+
+exit 0
+`;
+}
+
+/**
+ * Get the AuthFile for the memory sync script.
+ * This is deployed to /root/lifecycle/memory/sync.sh with execute permissions.
+ */
+export function getMemorySyncScriptFile(): AuthFile {
+  const Buffer = globalThis.Buffer;
+  return {
+    destinationPath: `${MEMORY_PROTOCOL_DIR}/sync.sh`,
+    contentBase64: Buffer.from(getMemorySyncScript()).toString("base64"),
+    mode: "755",
+  };
+}
+
+/**
  * Get auth files for memory protocol seed content.
  * These files are written to the sandbox at startup.
  * Files are placed at /root/lifecycle/memory/ (outside git workspace).
@@ -182,6 +309,7 @@ export function getMemoryStartupCommand(): string {
  * - TASKS.json, MAILBOX.json at root
  * - knowledge/MEMORY.md for permanent insights
  * - daily/{date}.md for session-specific notes
+ * - sync.sh for memory sync to Convex
  *
  * @param sandboxId - The sandbox/task run ID for metadata
  */
@@ -214,5 +342,7 @@ export function getMemorySeedFiles(sandboxId: string): AuthFile[] {
       contentBase64: Buffer.from(getMailboxSeedContent()).toString("base64"),
       mode: "644",
     },
+    // Include sync script for memory sync to Convex
+    getMemorySyncScriptFile(),
   ];
 }

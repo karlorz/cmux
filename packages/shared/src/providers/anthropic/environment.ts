@@ -148,6 +148,10 @@ echo "[CMUX Stop Hook] CMUX_CALLBACK_URL=\${CMUX_CALLBACK_URL}" >> "$LOG_FILE"
 
 if [ -n "\${CMUX_TASK_RUN_JWT}" ] && [ -n "\${CMUX_TASK_RUN_ID}" ] && [ -n "\${CMUX_CALLBACK_URL}" ]; then
   (
+    # Sync memory files to Convex (best-effort, before completion callbacks)
+    echo "[CMUX Stop Hook] Syncing memory files..." >> "$LOG_FILE"
+    /root/lifecycle/memory/sync.sh >> "$LOG_FILE" 2>&1 || true
+
     # Call crown/complete for status updates
     echo "[CMUX Stop Hook] Calling crown/complete..." >> "$LOG_FILE"
     curl -s -X POST "\${CMUX_CALLBACK_URL}/api/crown/complete" \\

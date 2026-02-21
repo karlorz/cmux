@@ -52,6 +52,7 @@ async function buildOpencodeEnvironment(
   // Install OpenCode lifecycle completion hook script
   // Note: crown/complete is called by the worker after the completion detector resolves,
   // NOT here. This hook only writes marker files for the filesystem watcher.
+  // Memory sync runs before marker creation to ensure data is synced before completion.
   const completionHook = `#!/bin/bash
 set -euo pipefail
 
@@ -62,6 +63,10 @@ GENERIC_MARKER="\${MARKER_DIR}/done.txt"
 LOG_FILE="/root/lifecycle/opencode-hook.log"
 
 mkdir -p "\${MARKER_DIR}"
+
+# Sync memory files to Convex (best-effort, before completion marker)
+echo "[CMUX] Syncing memory files..." >> "\${LOG_FILE}"
+/root/lifecycle/memory/sync.sh >> "\${LOG_FILE}" 2>&1 || true
 
 if command -v date >/dev/null 2>&1; then
   date +%s > "\${MARKER_FILE}"

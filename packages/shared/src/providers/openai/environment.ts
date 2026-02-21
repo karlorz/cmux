@@ -126,9 +126,12 @@ export async function getOpenAIEnvironment(
   // Add a small notify handler script that appends the payload to JSONL and marks completion
   // Note: crown/complete is called by the worker after the completion detector resolves,
   // NOT here. The notify hook fires on every turn, not just task completion.
+  // Memory sync runs on every turn (idempotent upsert captures intermediate progress).
   const notifyScript = `#!/usr/bin/env sh
 set -eu
 echo "$1" >> /root/lifecycle/codex-turns.jsonl
+# Sync memory files to Convex (best-effort, idempotent upsert)
+/root/lifecycle/memory/sync.sh >> /root/lifecycle/memory-sync.log 2>&1 || true
 touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
 `;
   files.push({

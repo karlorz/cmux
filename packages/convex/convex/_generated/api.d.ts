@@ -9,6 +9,7 @@
  */
 
 import type * as admin from "../admin.js";
+import type * as agentMemory_http from "../agentMemory_http.js";
 import type * as analytics from "../analytics.js";
 import type * as anthropic_http from "../anthropic_http.js";
 import type * as apiKeys from "../apiKeys.js";
@@ -103,6 +104,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   admin: typeof admin;
+  agentMemory_http: typeof agentMemory_http;
   analytics: typeof analytics;
   anthropic_http: typeof anthropic_http;
   apiKeys: typeof apiKeys;
