@@ -200,7 +200,7 @@ export const seedCuratedModels = internalAction({
  */
 export const triggerDiscovery = action({
   args: { teamSlugOrId: v.string() },
-  handler: async (ctx, args): Promise<{
+  handler: async (ctx, _args): Promise<{
     success: boolean;
     message: string;
   }> => {
@@ -229,7 +229,7 @@ export const triggerDiscovery = action({
  */
 export const triggerSeed = action({
   args: { teamSlugOrId: v.string() },
-  handler: async (ctx, args): Promise<{
+  handler: async (ctx, _args): Promise<{
     success: boolean;
     seededCount: number;
   }> => {
@@ -258,7 +258,7 @@ export const triggerSeed = action({
  */
 export const triggerRefresh = action({
   args: { teamSlugOrId: v.string() },
-  handler: async (ctx, args): Promise<{
+  handler: async (ctx, _args): Promise<{
     success: boolean;
     curated: number;
     discovered: number;

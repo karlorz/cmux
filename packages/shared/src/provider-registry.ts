@@ -8,7 +8,6 @@
 import type { AgentConfigApiKey } from "./agentConfig";
 import {
   BASE_PROVIDERS,
-  BASE_PROVIDER_MAP,
   getBaseProvider,
   getProviderIdFromAgentName,
   type ApiFormat,

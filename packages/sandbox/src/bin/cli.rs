@@ -6,8 +6,8 @@ use cmux_sandbox::models::{
 use cmux_sandbox::{
     build_default_env_vars, cache_access_token, clear_cached_access_token, clear_default_team,
     delete_stack_refresh_token, extract_api_key_from_output, get_cached_access_token,
-    get_default_team, get_stack_refresh_token,
-    set_default_team, store_claude_token, store_stack_refresh_token,
+    get_default_team, get_stack_refresh_token, set_default_team, store_claude_token,
+    store_stack_refresh_token,
     sync_files::{
         prebuild_sync_files_tar, upload_prebuilt_sync_files, upload_sync_files, SYNC_FILES,
     },
