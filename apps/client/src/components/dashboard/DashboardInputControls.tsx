@@ -24,7 +24,7 @@ import { AGENT_CATALOG, type AgentVendor } from "@cmux/shared/agent-catalog";
 import { parseGithubRepoUrl } from "@cmux/shared";
 import { useUser } from "@stackframe/react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link, useRouter } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
 import { useAction, useMutation } from "convex/react";
 import { Check, GitBranch, Image, Link2, Mic, Server, X } from "lucide-react";
@@ -158,7 +158,6 @@ export const DashboardInputControls = memo(function DashboardInputControls({
   providerStatus = null,
   disabledByUserModels,
 }: DashboardInputControlsProps) {
-  const router = useRouter();
   const queryClient = useQueryClient();
   const user = useUser({ or: "return-null" });
   const agentSelectRef = useRef<SearchableSelectHandle | null>(null);
@@ -171,79 +170,34 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     });
     return map;
   }, [providerStatus?.providers]);
-  const handleOpenSettings = useCallback(() => {
-    void router.navigate({
-      to: "/$teamSlugOrId/settings",
-      params: { teamSlugOrId },
-    });
-  }, [router, teamSlugOrId]);
   const agentOptions = useMemo<AgentOption[]>(() => {
     // Filter out agents disabled by user in Settings > Models
     const enabledCatalog = disabledByUserModels
       ? AGENT_CATALOG.filter((entry) => !disabledByUserModels.has(entry.name))
       : AGENT_CATALOG;
 
-    const options = enabledCatalog.map((entry) => {
-      const status = providerStatusMap.get(entry.name);
-      const missingRequirements = status?.missingRequirements ?? [];
-      const isAvailable = status?.isAvailable ?? true;
-
-      // Check if agent is disabled at catalog level (e.g., not available on Bedrock)
-      const isDisabledByConfig = entry.disabled === true;
-      const isUnavailable = !isAvailable || isDisabledByConfig;
-
-      // Determine warning tooltip content
-      let warningConfig: AgentOption["warning"] = undefined;
-      if (isDisabledByConfig) {
-        warningConfig = {
-          tooltip: (
-            <div className="space-y-1">
-              <p className="text-xs font-semibold text-amber-500">
-                Not available
-              </p>
-              <p className="text-xs text-neutral-300">
-                {entry.disabledReason ?? "This agent is currently disabled."}
-              </p>
-            </div>
-          ),
-        };
-      } else if (!isAvailable) {
-        warningConfig = {
-          tooltip: (
-            <div className="space-y-1">
-              <p className="text-xs font-semibold text-red-500">
-                Setup required
-              </p>
-              <p className="text-xs text-neutral-300">
-                {env.NEXT_PUBLIC_WEB_MODE
-                  ? "Add your API key for this agent in Settings."
-                  : "Add credentials for this agent in Settings."}
-              </p>
-              {missingRequirements.length > 0 ? (
-                <ul className="list-disc pl-4 text-xs text-neutral-400">
-                  {missingRequirements.map((req) => (
-                    <li key={req}>{req}</li>
-                  ))}
-                </ul>
-              ) : null}
-              <p className="text-[10px] tracking-wide text-neutral-500 pt-1 border-t border-neutral-700">
-                Click to open settings
-              </p>
-            </div>
-          ),
-          onClick: handleOpenSettings,
-        };
+    // Filter to only show available models (like OpenCode does)
+    // Hide models that are disabled or missing required credentials
+    const availableCatalog = enabledCatalog.filter((entry) => {
+      // Check if agent is disabled at catalog level
+      if (entry.disabled === true) {
+        return false;
       }
+      // Check provider status - only show available agents
+      const status = providerStatusMap.get(entry.name);
+      const isAvailable = status?.isAvailable ?? true;
+      return isAvailable;
+    });
 
+    const options = availableCatalog.map((entry) => {
       return {
         label: entry.name,
         displayLabel: entry.displayName,
         value: entry.name,
         icon: <AgentLogo agentName={entry.name} vendor={entry.vendor} className="w-4 h-4" />,
         iconKey: entry.vendor,
-        isUnavailable,
-        isDisabled: isDisabledByConfig,
-        warning: warningConfig,
+        isUnavailable: false,
+        isDisabled: false,
       } satisfies AgentOption;
     });
 
@@ -279,7 +233,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     }
 
     return grouped;
-  }, [disabledByUserModels, handleOpenSettings, providerStatusMap]);
+  }, [disabledByUserModels, providerStatusMap]);
 
   const agentOptionsByValue = useMemo(() => {
     const map = new Map<string, AgentOption>();
