@@ -1,6 +1,6 @@
-import { getUserFromRequest } from "@/lib/utils/auth";
-import { getConvex } from "@/lib/utils/convex";
-import { api, internal } from "@cmux/convex/api";
+import { getAccessTokenFromRequest, getUserFromRequest } from "@/lib/utils/auth";
+import { getConvex } from "@/lib/utils/get-convex";
+import { api } from "@cmux/convex/api";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 
 export const modelsRouter = new OpenAPIHono();
@@ -68,6 +68,7 @@ const DiscoveryResultResponse = z
     discovered: z.number().optional(),
     free: z.number().optional(),
     paid: z.number().optional(),
+    error: z.string().optional(),
   })
   .openapi("DiscoveryResultResponse");
 
@@ -104,8 +105,13 @@ modelsRouter.openapi(
       return c.json({ error: "Unauthorized" }, 401);
     }
 
+    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+    if (!accessToken) {
+      return c.json({ error: "Missing access token" }, 401);
+    }
+
     const { teamSlugOrId } = c.req.valid("query");
-    const convex = getConvex();
+    const convex = getConvex({ accessToken });
 
     const models = await convex.query(api.models.listAll, { teamSlugOrId });
 
@@ -157,13 +163,18 @@ modelsRouter.openapi(
       return c.json({ error: "Unauthorized" }, 401);
     }
 
+    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+    if (!accessToken) {
+      return c.json({ error: "Missing access token" }, 401);
+    }
+
     const { name } = c.req.valid("param");
     const { teamSlugOrId } = c.req.valid("query");
     const { enabled } = c.req.valid("json");
 
     // Decode URL-encoded model name (e.g., "claude%2Fopus-4.6" -> "claude/opus-4.6")
     const modelName = decodeURIComponent(name);
-    const convex = getConvex();
+    const convex = getConvex({ accessToken });
 
     try {
       await convex.mutation(api.models.setEnabled, {
@@ -222,9 +233,14 @@ modelsRouter.openapi(
       return c.json({ error: "Unauthorized" }, 401);
     }
 
+    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+    if (!accessToken) {
+      return c.json({ error: "Missing access token" }, 401);
+    }
+
     const { teamSlugOrId } = c.req.valid("query");
     const { modelNames } = c.req.valid("json");
-    const convex = getConvex();
+    const convex = getConvex({ accessToken });
 
     await convex.mutation(api.models.reorder, {
       teamSlugOrId,
@@ -268,32 +284,27 @@ modelsRouter.openapi(
       return c.json({ error: "Unauthorized" }, 401);
     }
 
-    // Note: We don't actually need teamSlugOrId for discovery since it's global,
-    // but we validate the user has access to the team for authorization
-    const convex = getConvex();
+    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+    if (!accessToken) {
+      return c.json({ error: "Missing access token" }, 401);
+    }
 
-    // Run full discovery action
-    // Note: This uses internal action which requires action context
-    // For now, we'll call the individual actions that are exposed
+    const { teamSlugOrId } = c.req.valid("query");
+    const convex = getConvex({ accessToken });
+
+    // Run full refresh (seed + discover)
     try {
-      // First seed curated models
-      const seedResult = await convex.action(
-        internal.modelDiscovery.seedCuratedModels,
-        {}
-      );
-
-      // Then discover from OpenCode
-      const discoverResult = await convex.action(
-        internal.modelDiscovery.discoverOpencodeModels,
-        {}
+      const result = await convex.action(
+        api.modelDiscovery.triggerRefresh,
+        { teamSlugOrId }
       );
 
       return c.json({
-        success: true,
-        curated: seedResult.seededCount,
-        discovered: discoverResult.discovered,
-        free: discoverResult.free,
-        paid: discoverResult.paid,
+        success: result.success,
+        curated: result.curated,
+        discovered: result.discovered,
+        free: result.free,
+        paid: result.paid,
       });
     } catch (error) {
       console.error("[models.route] Discovery failed:", error);
@@ -327,6 +338,7 @@ modelsRouter.openapi(
             schema: z.object({
               success: z.boolean(),
               seededCount: z.number(),
+              error: z.string().optional(),
             }),
           },
         },
@@ -340,16 +352,22 @@ modelsRouter.openapi(
       return c.json({ error: "Unauthorized" }, 401);
     }
 
-    const convex = getConvex();
+    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+    if (!accessToken) {
+      return c.json({ error: "Missing access token" }, 401);
+    }
+
+    const { teamSlugOrId } = c.req.valid("query");
+    const convex = getConvex({ accessToken });
 
     try {
       const result = await convex.action(
-        internal.modelDiscovery.seedCuratedModels,
-        {}
+        api.modelDiscovery.triggerSeed,
+        { teamSlugOrId }
       );
 
       return c.json({
-        success: true,
+        success: result.success,
         seededCount: result.seededCount,
       });
     } catch (error) {

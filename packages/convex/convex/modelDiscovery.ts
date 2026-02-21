@@ -1,7 +1,8 @@
 "use node";
 
+import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { internalAction } from "./_generated/server";
+import { action, internalAction } from "./_generated/server";
 import {
   AGENT_CATALOG,
   getVariantsForVendor,
@@ -73,7 +74,11 @@ async function probeModelFree(
  */
 export const discoverOpencodeModels = internalAction({
   args: {},
-  handler: async (ctx) => {
+  handler: async (ctx): Promise<{
+    discovered: number;
+    free: number;
+    paid: number;
+  }> => {
     console.log("[modelDiscovery] Starting OpenCode model discovery...");
 
     const modelIds = await fetchOpencodeModelIds();
@@ -153,7 +158,7 @@ export const discoverOpencodeModels = internalAction({
  */
 export const seedCuratedModels = internalAction({
   args: {},
-  handler: async (ctx) => {
+  handler: async (ctx): Promise<{ seededCount: number }> => {
     console.log("[modelDiscovery] Seeding curated models from AGENT_CATALOG...");
 
     const modelsToUpsert = AGENT_CATALOG.map((entry, index) => {
@@ -189,3 +194,101 @@ export const seedCuratedModels = internalAction({
   },
 });
 
+/**
+ * Public action to trigger discovery from www routes.
+ * Requires authentication.
+ */
+export const triggerDiscovery = action({
+  args: { teamSlugOrId: v.string() },
+  handler: async (ctx, args): Promise<{
+    success: boolean;
+    message: string;
+  }> => {
+    // Manual auth check for actions
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Authentication required");
+    }
+
+    // Run internal discovery action
+    const discoverResult = await ctx.runAction(
+      internal.modelDiscovery.discoverOpencodeModels,
+      {}
+    );
+
+    return {
+      success: true,
+      message: `Discovered ${discoverResult.discovered} models (${discoverResult.free} free, ${discoverResult.paid} paid)`,
+    };
+  },
+});
+
+/**
+ * Public action to seed curated models from www routes.
+ * Requires authentication.
+ */
+export const triggerSeed = action({
+  args: { teamSlugOrId: v.string() },
+  handler: async (ctx, args): Promise<{
+    success: boolean;
+    seededCount: number;
+  }> => {
+    // Manual auth check for actions
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Authentication required");
+    }
+
+    // Run internal seed action
+    const result = await ctx.runAction(
+      internal.modelDiscovery.seedCuratedModels,
+      {}
+    );
+
+    return {
+      success: true,
+      seededCount: result.seededCount,
+    };
+  },
+});
+
+/**
+ * Public action to run full refresh (seed + discover).
+ * Requires authentication.
+ */
+export const triggerRefresh = action({
+  args: { teamSlugOrId: v.string() },
+  handler: async (ctx, args): Promise<{
+    success: boolean;
+    curated: number;
+    discovered: number;
+    free: number;
+    paid: number;
+  }> => {
+    // Manual auth check for actions
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Authentication required");
+    }
+
+    // First seed curated models
+    const seedResult = await ctx.runAction(
+      internal.modelDiscovery.seedCuratedModels,
+      {}
+    );
+
+    // Then discover from OpenCode
+    const discoverResult = await ctx.runAction(
+      internal.modelDiscovery.discoverOpencodeModels,
+      {}
+    );
+
+    return {
+      success: true,
+      curated: seedResult.seededCount,
+      discovered: discoverResult.discovered,
+      free: discoverResult.free,
+      paid: discoverResult.paid,
+    };
+  },
+});

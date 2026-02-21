@@ -985,6 +985,56 @@ export type RemoveWorktreeBody = {
     worktreePath: string;
 };
 
+export type Model = {
+    _id: string;
+    name: string;
+    displayName: string;
+    vendor: string;
+    source: 'curated' | 'discovered';
+    discoveredFrom?: string;
+    discoveredAt?: number;
+    requiredApiKeys: Array<string>;
+    tier: 'free' | 'paid';
+    tags: Array<string>;
+    enabled: boolean;
+    sortOrder: number;
+    disabled?: boolean;
+    disabledReason?: string;
+    variants?: Array<{
+        id: string;
+        displayName: string;
+        description?: string;
+    }>;
+    defaultVariant?: string;
+    createdAt: number;
+    updatedAt: number;
+};
+
+export type ModelListResponse = {
+    models: Array<Model>;
+};
+
+export type SuccessResponse = {
+    success: boolean;
+};
+
+export type SetEnabledBody = {
+    enabled: boolean;
+};
+
+export type ReorderBody = {
+    modelNames: Array<string>;
+};
+
+export type DiscoveryResultResponse = {
+    success: boolean;
+    curated?: number;
+    discovered?: number;
+    free?: number;
+    paid?: number;
+    error?: string;
+};
+
 export type GetApiHealthData = {
     body?: never;
     path?: never;
@@ -4049,6 +4099,144 @@ export type PostApiWorktreesRemoveResponses = {
 };
 
 export type PostApiWorktreesRemoveResponse = PostApiWorktreesRemoveResponses[keyof PostApiWorktreesRemoveResponses];
+
+export type GetApiModelsData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/models';
+};
+
+export type GetApiModelsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiModelsResponses = {
+    /**
+     * List of all models
+     */
+    200: ModelListResponse;
+};
+
+export type GetApiModelsResponse = GetApiModelsResponses[keyof GetApiModelsResponses];
+
+export type PatchApiModelsByNameEnabledData = {
+    body: SetEnabledBody;
+    path: {
+        /**
+         * Model name (URL-encoded)
+         */
+        name: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/models/{name}/enabled';
+};
+
+export type PatchApiModelsByNameEnabledErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Model not found
+     */
+    404: unknown;
+};
+
+export type PatchApiModelsByNameEnabledResponses = {
+    /**
+     * Success
+     */
+    200: SuccessResponse;
+};
+
+export type PatchApiModelsByNameEnabledResponse = PatchApiModelsByNameEnabledResponses[keyof PatchApiModelsByNameEnabledResponses];
+
+export type PostApiModelsReorderData = {
+    body: ReorderBody;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/models/reorder';
+};
+
+export type PostApiModelsReorderErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiModelsReorderResponses = {
+    /**
+     * Success
+     */
+    200: SuccessResponse;
+};
+
+export type PostApiModelsReorderResponse = PostApiModelsReorderResponses[keyof PostApiModelsReorderResponses];
+
+export type PostApiModelsRefreshData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/models/refresh';
+};
+
+export type PostApiModelsRefreshErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiModelsRefreshResponses = {
+    /**
+     * Discovery result
+     */
+    200: DiscoveryResultResponse;
+};
+
+export type PostApiModelsRefreshResponse = PostApiModelsRefreshResponses[keyof PostApiModelsRefreshResponses];
+
+export type PostApiModelsSeedData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/models/seed';
+};
+
+export type PostApiModelsSeedErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiModelsSeedResponses = {
+    /**
+     * Seed result
+     */
+    200: {
+        success: boolean;
+        seededCount: number;
+        error?: string;
+    };
+};
+
+export type PostApiModelsSeedResponse = PostApiModelsSeedResponses[keyof PostApiModelsSeedResponses];
 
 export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
