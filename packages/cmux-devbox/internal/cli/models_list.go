@@ -46,9 +46,20 @@ type ModelsListResponse struct {
 var cachedModels []ModelInfo
 
 var modelsCmd = &cobra.Command{
-	Use:   "models",
-	Short: "Manage AI models",
-	Long:  `Commands for listing and managing AI models.`,
+	Use:   "models [filter]",
+	Short: "List available AI models",
+	Long: `List all available AI models with their display names, vendors, and tiers.
+
+Fetches the current model list from the server.
+
+Examples:
+  cmux models                         # List all models
+  cmux models --json                  # JSON output
+  cmux models claude                  # Filter by name
+  cmux models --provider openai       # Filter by vendor
+  cmux models --enabled-only          # Only show enabled models
+  cmux models --verbose               # Show API keys required`,
+	RunE: runModelsList,
 }
 
 var modelsListCmd = &cobra.Command{
@@ -69,6 +80,12 @@ Examples:
 }
 
 func init() {
+	// Add flags to modelsCmd (default command)
+	modelsCmd.Flags().String("provider", "", "Filter by provider (anthropic, openai, opencode, etc.)")
+	modelsCmd.Flags().Bool("enabled-only", false, "Only show enabled models")
+	modelsCmd.Flags().Bool("refresh", false, "Refresh cached model list from server")
+
+	// Also add to modelsListCmd for backwards compatibility
 	modelsListCmd.Flags().String("provider", "", "Filter by provider (anthropic, openai, opencode, etc.)")
 	modelsListCmd.Flags().Bool("enabled-only", false, "Only show enabled models")
 	modelsListCmd.Flags().Bool("refresh", false, "Refresh cached model list from server")
