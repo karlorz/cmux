@@ -57,85 +57,38 @@ function createApplyClaudeApiKeys(): NonNullable<AgentConfig["applyApiKeys"]> {
   };
 }
 
-export const CLAUDE_OPUS_4_6_CONFIG: AgentConfig = {
-  name: "claude/opus-4.6",
-  command: "claude",
-  args: [
-    "--allow-dangerously-skip-permissions",
-    "--dangerously-skip-permissions",
-    "--model",
-    "claude-opus-4-6",
-    "--ide",
-    "$PROMPT",
-  ],
-  environment: getClaudeEnvironment,
-  checkRequirements: checkClaudeRequirements,
-  // User-configurable: OAuth token (preferred) or API key (no auto-fallback to platform proxy)
-  apiKeys: [CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY],
-  applyApiKeys: createApplyClaudeApiKeys(),
-  completionDetector: startClaudeCompletionDetector,
-};
+// Factory types and implementation
+interface ClaudeModelSpec {
+  nameSuffix: string;
+  modelApiId: string;
+}
 
-export const CLAUDE_OPUS_4_5_CONFIG: AgentConfig = {
-  name: "claude/opus-4.5",
-  command: "claude",
-  args: [
-    "--allow-dangerously-skip-permissions",
-    "--dangerously-skip-permissions",
-    "--model",
-    "claude-opus-4-5-20251101",
-    "--ide",
-    "$PROMPT",
-  ],
-  environment: getClaudeEnvironment,
-  checkRequirements: checkClaudeRequirements,
-  // User-configurable: OAuth token (preferred) or API key (no auto-fallback to platform proxy)
-  apiKeys: [CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY],
-  applyApiKeys: createApplyClaudeApiKeys(),
-  completionDetector: startClaudeCompletionDetector,
-};
+function createClaudeConfig(spec: ClaudeModelSpec): AgentConfig {
+  return {
+    name: `claude/${spec.nameSuffix}`,
+    command: "claude",
+    args: [
+      "--allow-dangerously-skip-permissions",
+      "--dangerously-skip-permissions",
+      "--model",
+      spec.modelApiId,
+      "--ide",
+      "$PROMPT",
+    ],
+    environment: getClaudeEnvironment,
+    checkRequirements: checkClaudeRequirements,
+    apiKeys: [CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY],
+    applyApiKeys: createApplyClaudeApiKeys(),
+    completionDetector: startClaudeCompletionDetector,
+  };
+}
 
-export const CLAUDE_SONNET_4_5_CONFIG: AgentConfig = {
-  name: "claude/sonnet-4.5",
-  command: "claude",
-  args: [
-    "--allow-dangerously-skip-permissions",
-    "--dangerously-skip-permissions",
-    "--model",
-    "claude-sonnet-4-5-20250929",
-    "--ide",
-    "$PROMPT",
-  ],
-  environment: getClaudeEnvironment,
-  checkRequirements: checkClaudeRequirements,
-  // User-configurable: OAuth token (preferred) or API key (no auto-fallback to platform proxy)
-  apiKeys: [CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY],
-  applyApiKeys: createApplyClaudeApiKeys(),
-  completionDetector: startClaudeCompletionDetector,
-};
-
-export const CLAUDE_HAIKU_4_5_CONFIG: AgentConfig = {
-  name: "claude/haiku-4.5",
-  command: "claude",
-  args: [
-    "--allow-dangerously-skip-permissions",
-    "--dangerously-skip-permissions",
-    "--model",
-    "claude-haiku-4-5-20251001",
-    "--ide",
-    "$PROMPT",
-  ],
-  environment: getClaudeEnvironment,
-  checkRequirements: checkClaudeRequirements,
-  // User-configurable: OAuth token (preferred) or API key (no auto-fallback to platform proxy)
-  apiKeys: [CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY],
-  applyApiKeys: createApplyClaudeApiKeys(),
-  completionDetector: startClaudeCompletionDetector,
-};
-
-export const CLAUDE_AGENT_CONFIGS: AgentConfig[] = [
-  CLAUDE_OPUS_4_6_CONFIG,
-  CLAUDE_OPUS_4_5_CONFIG,
-  CLAUDE_SONNET_4_5_CONFIG,
-  CLAUDE_HAIKU_4_5_CONFIG,
+const CLAUDE_MODEL_SPECS: ClaudeModelSpec[] = [
+  { nameSuffix: "opus-4.6", modelApiId: "claude-opus-4-6" },
+  { nameSuffix: "opus-4.5", modelApiId: "claude-opus-4-5-20251101" },
+  { nameSuffix: "sonnet-4.5", modelApiId: "claude-sonnet-4-5-20250929" },
+  { nameSuffix: "haiku-4.5", modelApiId: "claude-haiku-4-5-20251001" },
 ];
+
+export const CLAUDE_AGENT_CONFIGS: AgentConfig[] =
+  CLAUDE_MODEL_SPECS.map(createClaudeConfig);

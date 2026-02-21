@@ -5,71 +5,40 @@ import { startGeminiCompletionDetector } from "./completion-detector";
 import { GEMINI_TELEMETRY_OUTFILE_TEMPLATE } from "./telemetry";
 import { getGeminiEnvironment } from "./environment";
 
-export const GEMINI_3_PRO_PREVIEW_CONFIG: AgentConfig = {
-  name: "gemini/3-pro-preview",
-  command: "gemini",
-  args: [
-    "--model",
-    "gemini-3-pro-preview",
-    "--yolo",
-    "--telemetry",
-    "--telemetry-target=local",
-    "--telemetry-otlp-endpoint=",
-    `--telemetry-outfile=${GEMINI_TELEMETRY_OUTFILE_TEMPLATE}`,
-    "--telemetry-log-prompts",
-    "--prompt-interactive",
-    "$PROMPT",
-  ],
-  environment: getGeminiEnvironment,
-  apiKeys: [GEMINI_API_KEY],
-  checkRequirements: checkGeminiRequirements,
-  completionDetector: startGeminiCompletionDetector,
-};
+// Factory types and implementation
+interface GeminiModelSpec {
+  nameSuffix: string;
+  modelApiName: string;
+}
 
-export const GEMINI_FLASH_CONFIG: AgentConfig = {
-  name: "gemini/2.5-flash",
-  command: "gemini",
-  args: [
-    "--model",
-    "gemini-2.5-flash",
-    "--yolo",
-    "--telemetry",
-    "--telemetry-target=local",
-    "--telemetry-otlp-endpoint=",
-    `--telemetry-outfile=${GEMINI_TELEMETRY_OUTFILE_TEMPLATE}`,
-    "--telemetry-log-prompts",
-    "--prompt-interactive",
-    "$PROMPT",
-  ],
-  environment: getGeminiEnvironment,
-  apiKeys: [GEMINI_API_KEY],
-  checkRequirements: checkGeminiRequirements,
-  completionDetector: startGeminiCompletionDetector,
-};
+function createGeminiConfig(spec: GeminiModelSpec): AgentConfig {
+  return {
+    name: `gemini/${spec.nameSuffix}`,
+    command: "gemini",
+    args: [
+      "--model",
+      spec.modelApiName,
+      "--yolo",
+      "--telemetry",
+      "--telemetry-target=local",
+      "--telemetry-otlp-endpoint=",
+      `--telemetry-outfile=${GEMINI_TELEMETRY_OUTFILE_TEMPLATE}`,
+      "--telemetry-log-prompts",
+      "--prompt-interactive",
+      "$PROMPT",
+    ],
+    environment: getGeminiEnvironment,
+    apiKeys: [GEMINI_API_KEY],
+    checkRequirements: checkGeminiRequirements,
+    completionDetector: startGeminiCompletionDetector,
+  };
+}
 
-export const GEMINI_PRO_CONFIG: AgentConfig = {
-  name: "gemini/2.5-pro",
-  command: "gemini",
-  args: [
-    "--model",
-    "gemini-2.5-pro",
-    "--yolo",
-    "--telemetry",
-    "--telemetry-target=local",
-    "--telemetry-otlp-endpoint=",
-    `--telemetry-outfile=${GEMINI_TELEMETRY_OUTFILE_TEMPLATE}`,
-    "--telemetry-log-prompts",
-    "--prompt-interactive",
-    "$PROMPT",
-  ],
-  environment: getGeminiEnvironment,
-  apiKeys: [GEMINI_API_KEY],
-  checkRequirements: checkGeminiRequirements,
-  completionDetector: startGeminiCompletionDetector,
-};
-
-export const GEMINI_AGENT_CONFIGS: AgentConfig[] = [
-  GEMINI_3_PRO_PREVIEW_CONFIG,
-  GEMINI_FLASH_CONFIG,
-  GEMINI_PRO_CONFIG,
+const GEMINI_MODEL_SPECS: GeminiModelSpec[] = [
+  { nameSuffix: "3-pro-preview", modelApiName: "gemini-3-pro-preview" },
+  { nameSuffix: "2.5-flash", modelApiName: "gemini-2.5-flash" },
+  { nameSuffix: "2.5-pro", modelApiName: "gemini-2.5-pro" },
 ];
+
+export const GEMINI_AGENT_CONFIGS: AgentConfig[] =
+  GEMINI_MODEL_SPECS.map(createGeminiConfig);

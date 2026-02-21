@@ -1,4 +1,4 @@
-import type { AgentConfig } from "../../agentConfig";
+import type { AgentConfig, AgentConfigApiKeys } from "../../agentConfig";
 import {
   ANTHROPIC_API_KEY,
   OPENAI_API_KEY,
@@ -28,6 +28,7 @@ const OPENCODE_BASE_ARGS = [
   String(OPENCODE_HTTP_PORT),
 ];
 
+// Free model configs (unchanged - already using factory pattern)
 const OPENCODE_FREE_MODEL_CONFIGS: AgentConfig[] = OPENCODE_FREE_MODEL_IDS.map(
   (modelId) => ({
     name: `opencode/${modelId}`,
@@ -44,166 +45,150 @@ const OPENCODE_FREE_MODEL_CONFIGS: AgentConfig[] = OPENCODE_FREE_MODEL_IDS.map(
 
 export { OPENCODE_FREE_MODEL_CONFIGS };
 
-export const OPENCODE_SONNET_CONFIG: AgentConfig = {
-  name: "opencode/sonnet-4",
-  command: "opencode",
-  args: [...OPENCODE_BASE_ARGS, "--model", "anthropic/claude-sonnet-4-20250514"],
-  environment: getOpencodeEnvironment,
-  checkRequirements: checkOpencodeRequirements,
-  apiKeys: [ANTHROPIC_API_KEY],
-  completionDetector: startOpenCodeCompletionDetector,
-};
+// Factory types for paid models
+interface OpencodePaidModelSpec {
+  nameSuffix: string;
+  modelPath: string;
+  environment: AgentConfig["environment"];
+  apiKeys: AgentConfigApiKeys;
+}
 
-export const OPENCODE_OPUS_CONFIG: AgentConfig = {
-  name: "opencode/opus-4",
-  command: "opencode",
-  args: [...OPENCODE_BASE_ARGS, "--model", "anthropic/claude-opus-4-20250514"],
-  environment: getOpencodeEnvironment,
-  checkRequirements: checkOpencodeRequirements,
-  apiKeys: [ANTHROPIC_API_KEY],
-  completionDetector: startOpenCodeCompletionDetector,
-};
+function createOpencodePaidConfig(spec: OpencodePaidModelSpec): AgentConfig {
+  return {
+    name: `opencode/${spec.nameSuffix}`,
+    command: "opencode",
+    args: [...OPENCODE_BASE_ARGS, "--model", spec.modelPath],
+    environment: spec.environment,
+    checkRequirements: checkOpencodeRequirements,
+    apiKeys: spec.apiKeys,
+    completionDetector: startOpenCodeCompletionDetector,
+  };
+}
 
-export const OPENCODE_KIMI_K2_CONFIG: AgentConfig = {
-  name: "opencode/kimi-k2",
-  command: "opencode",
-  args: [...OPENCODE_BASE_ARGS, "--model", "openrouter/moonshotai/kimi-k2"],
-  environment: getOpencodeEnvironment,
-  checkRequirements: checkOpencodeRequirements,
-  apiKeys: [OPENROUTER_API_KEY],
-  completionDetector: startOpenCodeCompletionDetector,
-};
+// Paid model specs grouped by provider
+const OPENCODE_PAID_MODEL_SPECS: OpencodePaidModelSpec[] = [
+  // xAI/Grok models
+  {
+    nameSuffix: "grok-4-1-fast",
+    modelPath: "xai/grok-4-1-fast",
+    environment: getOpencodeEnvironmentWithXai,
+    apiKeys: [XAI_API_KEY],
+  },
+  {
+    nameSuffix: "grok-4-1-fast-non-reasoning",
+    modelPath: "xai/grok-4-1-fast-non-reasoning",
+    environment: getOpencodeEnvironmentWithXai,
+    apiKeys: [XAI_API_KEY],
+  },
+  // Anthropic models
+  {
+    nameSuffix: "sonnet-4",
+    modelPath: "anthropic/claude-sonnet-4-20250514",
+    environment: getOpencodeEnvironment,
+    apiKeys: [ANTHROPIC_API_KEY],
+  },
+  {
+    nameSuffix: "opus-4",
+    modelPath: "anthropic/claude-opus-4-20250514",
+    environment: getOpencodeEnvironment,
+    apiKeys: [ANTHROPIC_API_KEY],
+  },
+  {
+    nameSuffix: "opus-4.1-20250805",
+    modelPath: "anthropic/claude-opus-4-1-20250805",
+    environment: getOpencodeEnvironment,
+    apiKeys: [ANTHROPIC_API_KEY],
+  },
+  // OpenRouter models
+  {
+    nameSuffix: "kimi-k2",
+    modelPath: "openrouter/moonshotai/kimi-k2",
+    environment: getOpencodeEnvironment,
+    apiKeys: [OPENROUTER_API_KEY],
+  },
+  {
+    nameSuffix: "qwen3-coder",
+    modelPath: "openrouter/qwen/qwen3-coder",
+    environment: getOpencodeEnvironment,
+    apiKeys: [ANTHROPIC_API_KEY],
+  },
+  {
+    nameSuffix: "glm-4.5",
+    modelPath: "openrouter/z-ai/glm-4.5",
+    environment: getOpencodeEnvironment,
+    apiKeys: [OPENROUTER_API_KEY],
+  },
+  {
+    nameSuffix: "gpt-oss-120b",
+    modelPath: "openrouter/openai/gpt-oss-120b",
+    environment: getOpencodeEnvironment,
+    apiKeys: [OPENROUTER_API_KEY],
+  },
+  {
+    nameSuffix: "gpt-oss-20b",
+    modelPath: "openrouter/openai/gpt-oss-20b",
+    environment: getOpencodeEnvironment,
+    apiKeys: [OPENROUTER_API_KEY],
+  },
+  // OpenAI models
+  {
+    nameSuffix: "o3-pro",
+    modelPath: "openai/o3-pro",
+    environment: getOpencodeEnvironment,
+    apiKeys: [OPENAI_API_KEY],
+  },
+  {
+    nameSuffix: "gpt-5",
+    modelPath: "openai/gpt-5",
+    environment: getOpencodeEnvironment,
+    apiKeys: [OPENAI_API_KEY],
+  },
+  {
+    nameSuffix: "gpt-5-mini",
+    modelPath: "openai/gpt-5-mini",
+    environment: getOpencodeEnvironment,
+    apiKeys: [OPENAI_API_KEY],
+  },
+  {
+    nameSuffix: "gpt-5-nano",
+    modelPath: "openai/gpt-5-nano",
+    environment: getOpencodeEnvironment,
+    apiKeys: [OPENAI_API_KEY],
+  },
+];
 
-export const OPENCODE_QWEN3_CODER_CONFIG: AgentConfig = {
-  name: "opencode/qwen3-coder",
-  command: "opencode",
-  args: [...OPENCODE_BASE_ARGS, "--model", "openrouter/qwen/qwen3-coder"],
-  environment: getOpencodeEnvironment,
-  checkRequirements: checkOpencodeRequirements,
-  apiKeys: [ANTHROPIC_API_KEY],
-  completionDetector: startOpenCodeCompletionDetector,
-};
+const OPENCODE_PAID_MODEL_CONFIGS: AgentConfig[] =
+  OPENCODE_PAID_MODEL_SPECS.map(createOpencodePaidConfig);
 
-export const OPENCODE_GLM_Z1_32B_FREE_CONFIG: AgentConfig = {
-  name: "opencode/glm-4.5",
-  command: "opencode",
-  args: [...OPENCODE_BASE_ARGS, "--model", "openrouter/z-ai/glm-4.5"],
-  environment: getOpencodeEnvironment,
-  checkRequirements: checkOpencodeRequirements,
-  apiKeys: [OPENROUTER_API_KEY],
-  completionDetector: startOpenCodeCompletionDetector,
-};
-
-export const OPENCODE_O3_PRO_CONFIG: AgentConfig = {
-  name: "opencode/o3-pro",
-  command: "opencode",
-  args: [...OPENCODE_BASE_ARGS, "--model", "openai/o3-pro"],
-  environment: getOpencodeEnvironment,
-  checkRequirements: checkOpencodeRequirements,
-  apiKeys: [OPENAI_API_KEY],
-  completionDetector: startOpenCodeCompletionDetector,
-};
-
-export const OPENCODE_GPT_5_CONFIG: AgentConfig = {
-  name: "opencode/gpt-5",
-  command: "opencode",
-  args: [...OPENCODE_BASE_ARGS, "--model", "openai/gpt-5"],
-  environment: getOpencodeEnvironment,
-  checkRequirements: checkOpencodeRequirements,
-  apiKeys: [OPENAI_API_KEY],
-  completionDetector: startOpenCodeCompletionDetector,
-};
-
-export const OPENCODE_GPT_5_MINI_CONFIG: AgentConfig = {
-  name: "opencode/gpt-5-mini",
-  command: "opencode",
-  args: [...OPENCODE_BASE_ARGS, "--model", "openai/gpt-5-mini"],
-  environment: getOpencodeEnvironment,
-  checkRequirements: checkOpencodeRequirements,
-  apiKeys: [OPENAI_API_KEY],
-  completionDetector: startOpenCodeCompletionDetector,
-};
-
-export const OPENCODE_GPT_5_NANO_CONFIG: AgentConfig = {
-  name: "opencode/gpt-5-nano",
-  command: "opencode",
-  args: [...OPENCODE_BASE_ARGS, "--model", "openai/gpt-5-nano"],
-  environment: getOpencodeEnvironment,
-  checkRequirements: checkOpencodeRequirements,
-  apiKeys: [OPENAI_API_KEY],
-  completionDetector: startOpenCodeCompletionDetector,
-};
-
-export const OPENCODE_GPT_OSS_120B_CONFIG: AgentConfig = {
-  name: "opencode/gpt-oss-120b",
-  command: "opencode",
-  args: [...OPENCODE_BASE_ARGS, "--model", "openrouter/openai/gpt-oss-120b"],
-  environment: getOpencodeEnvironment,
-  checkRequirements: checkOpencodeRequirements,
-  apiKeys: [OPENROUTER_API_KEY],
-  completionDetector: startOpenCodeCompletionDetector,
-};
-
-export const OPENCODE_GPT_OSS_20B_CONFIG: AgentConfig = {
-  name: "opencode/gpt-oss-20b",
-  command: "opencode",
-  args: [...OPENCODE_BASE_ARGS, "--model", "openrouter/openai/gpt-oss-20b"],
-  environment: getOpencodeEnvironment,
-  checkRequirements: checkOpencodeRequirements,
-  apiKeys: [OPENROUTER_API_KEY],
-  completionDetector: startOpenCodeCompletionDetector,
-};
-
-export const OPENCODE_OPUS_4_1_20250805_CONFIG: AgentConfig = {
-  name: "opencode/opus-4.1-20250805",
-  command: "opencode",
-  args: [...OPENCODE_BASE_ARGS, "--model", "anthropic/claude-opus-4-1-20250805"],
-  environment: getOpencodeEnvironment,
-  checkRequirements: checkOpencodeRequirements,
-  apiKeys: [ANTHROPIC_API_KEY],
-  completionDetector: startOpenCodeCompletionDetector,
-};
-
-export const OPENCODE_GROK_4_1_FAST_CONFIG: AgentConfig = {
-  name: "opencode/grok-4-1-fast",
-  command: "opencode",
-  args: [...OPENCODE_BASE_ARGS, "--model", "xai/grok-4-1-fast"],
-  environment: getOpencodeEnvironmentWithXai,
-  checkRequirements: checkOpencodeRequirements,
-  apiKeys: [XAI_API_KEY],
-  completionDetector: startOpenCodeCompletionDetector,
-};
-
-export const OPENCODE_GROK_4_1_FAST_NON_REASONING_CONFIG: AgentConfig = {
-  name: "opencode/grok-4-1-fast-non-reasoning",
-  command: "opencode",
-  args: [...OPENCODE_BASE_ARGS, "--model", "xai/grok-4-1-fast-non-reasoning"],
-  environment: getOpencodeEnvironmentWithXai,
-  checkRequirements: checkOpencodeRequirements,
-  apiKeys: [XAI_API_KEY],
-  completionDetector: startOpenCodeCompletionDetector,
-};
-
+// Helper set for conditional inclusion check
 const OPENCODE_FREE_MODEL_NAME_SET = new Set(
   OPENCODE_FREE_MODEL_CONFIGS.map((config) => config.name)
 );
 
+// Final export preserving original order:
+// 1. Free models
+// 2. Grok models
+// 3. Anthropic (sonnet, opus, opus-4.1-20250805)
+// 4. OpenRouter (kimi-k2, qwen3-coder, glm-4.5)
+// 5. OpenAI (o3-pro, gpt-5, gpt-5-mini, gpt-5-nano conditional, gpt-oss-*)
 export const OPENCODE_AGENT_CONFIGS: AgentConfig[] = [
   ...OPENCODE_FREE_MODEL_CONFIGS,
-  OPENCODE_GROK_4_1_FAST_CONFIG,
-  OPENCODE_GROK_4_1_FAST_NON_REASONING_CONFIG,
-  OPENCODE_SONNET_CONFIG,
-  OPENCODE_OPUS_CONFIG,
-  OPENCODE_OPUS_4_1_20250805_CONFIG,
-  OPENCODE_KIMI_K2_CONFIG,
-  OPENCODE_QWEN3_CODER_CONFIG,
-  OPENCODE_GLM_Z1_32B_FREE_CONFIG,
-  OPENCODE_O3_PRO_CONFIG,
-  OPENCODE_GPT_5_CONFIG,
-  OPENCODE_GPT_5_MINI_CONFIG,
+  // Paid models in original order
+  ...OPENCODE_PAID_MODEL_CONFIGS.filter((c) => c.name === "opencode/grok-4-1-fast"),
+  ...OPENCODE_PAID_MODEL_CONFIGS.filter((c) => c.name === "opencode/grok-4-1-fast-non-reasoning"),
+  ...OPENCODE_PAID_MODEL_CONFIGS.filter((c) => c.name === "opencode/sonnet-4"),
+  ...OPENCODE_PAID_MODEL_CONFIGS.filter((c) => c.name === "opencode/opus-4"),
+  ...OPENCODE_PAID_MODEL_CONFIGS.filter((c) => c.name === "opencode/opus-4.1-20250805"),
+  ...OPENCODE_PAID_MODEL_CONFIGS.filter((c) => c.name === "opencode/kimi-k2"),
+  ...OPENCODE_PAID_MODEL_CONFIGS.filter((c) => c.name === "opencode/qwen3-coder"),
+  ...OPENCODE_PAID_MODEL_CONFIGS.filter((c) => c.name === "opencode/glm-4.5"),
+  ...OPENCODE_PAID_MODEL_CONFIGS.filter((c) => c.name === "opencode/o3-pro"),
+  ...OPENCODE_PAID_MODEL_CONFIGS.filter((c) => c.name === "opencode/gpt-5"),
+  ...OPENCODE_PAID_MODEL_CONFIGS.filter((c) => c.name === "opencode/gpt-5-mini"),
+  // Conditional gpt-5-nano (only if not in free models)
   ...(OPENCODE_FREE_MODEL_NAME_SET.has("opencode/gpt-5-nano")
     ? []
-    : [OPENCODE_GPT_5_NANO_CONFIG]),
-  OPENCODE_GPT_OSS_120B_CONFIG,
-  OPENCODE_GPT_OSS_20B_CONFIG,
+    : OPENCODE_PAID_MODEL_CONFIGS.filter((c) => c.name === "opencode/gpt-5-nano")),
+  ...OPENCODE_PAID_MODEL_CONFIGS.filter((c) => c.name === "opencode/gpt-oss-120b"),
+  ...OPENCODE_PAID_MODEL_CONFIGS.filter((c) => c.name === "opencode/gpt-oss-20b"),
 ];
