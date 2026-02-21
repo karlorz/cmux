@@ -203,7 +203,7 @@ export async function getGeminiEnvironment(
 
   // Add agent memory protocol support
   startupCommands.push(getMemoryStartupCommand());
-  files.push(...getMemorySeedFiles(ctx.taskRunId));
+  files.push(...getMemorySeedFiles(ctx.taskRunId, ctx.previousKnowledge));
 
   // Add GEMINI.md with memory protocol instructions for the project
   const geminiMdContent = `# cmux Project Instructions

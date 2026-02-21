@@ -29,7 +29,7 @@ const MemoryFileSchema = z.object({
 
 const SyncMemoryRequestSchema = z.object({
   taskRunId: typedZid("taskRuns").optional(),
-  files: z.array(MemoryFileSchema).max(20, "Maximum 20 files per request"),
+  files: z.array(MemoryFileSchema).max(50, "Maximum 50 files per request"),
 });
 
 // Maximum content size before truncation (500KB leaves headroom under Convex 1MB limit)
@@ -200,9 +200,9 @@ export const syncMemory = httpAction(async (ctx, req) => {
     );
   }
 
-  // Use taskRunId from body if provided, otherwise from JWT
-  const taskRunId = (validation.data.taskRunId ??
-    auth.payload.taskRunId) as Id<"taskRuns">;
+  // Security: Always use taskRunId from JWT - ignore body taskRunId to prevent
+  // workers from attaching memory to other task runs they don't own
+  const taskRunId = auth.payload.taskRunId as Id<"taskRuns">;
 
   // Verify the task run exists
   const taskRun = await ctx.runQuery(internal.taskRuns.getById, {

@@ -85,17 +85,7 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
     return snapshotsByType[selectedType][0] ?? null;
   }, [snapshotsByType, selectedType, selectedDate, dailyDates]);
 
-  // Loading state
-  if (snapshots === undefined) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 text-neutral-500 dark:text-neutral-400">
-        <div className="size-5 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-600 dark:border-neutral-600 dark:border-t-neutral-300" />
-        <span className="text-sm">Loading memory...</span>
-      </div>
-    );
-  }
-
-  // Empty state - no task run selected
+  // Empty state - no task run selected (check before loading to avoid spinner when skipped)
   if (!taskRunId) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-neutral-500 dark:text-neutral-400">
@@ -104,6 +94,16 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
           No run selected
         </div>
         <p className="text-xs">Select a task run to view its memory</p>
+      </div>
+    );
+  }
+
+  // Loading state (only shown when taskRunId exists but data is loading)
+  if (snapshots === undefined) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 text-neutral-500 dark:text-neutral-400">
+        <div className="size-5 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-600 dark:border-neutral-600 dark:border-t-neutral-300" />
+        <span className="text-sm">Loading memory...</span>
       </div>
     );
   }
