@@ -10,8 +10,9 @@ export async function getAccessTokenFromRequest(
       const { accessToken } = await user.getAuthJson();
       if (accessToken) return accessToken;
     }
-  } catch (_e) {
+  } catch (e) {
     // Fall through to try Bearer token
+    console.error("[auth] cookie-based auth failed:", e);
   }
 
   // Fallback: Check for Bearer token in Authorization header (for CLI clients)
@@ -48,9 +49,11 @@ export async function getAccessTokenFromRequest(
         if (user) {
           return parsed.accessToken;
         }
+        console.error("[auth] x-stack-auth: getUser returned null");
       }
-    } catch (_e) {
+    } catch (e) {
       // x-stack-auth parsing or validation failed
+      console.error("[auth] x-stack-auth validation failed:", e);
     }
   }
 
