@@ -66,4 +66,11 @@ crons.daily(
   internal.warmPoolMaintenance.cleanupWarmPool
 );
 
+// Discover new models from OpenCode Zen API weekly (Saturday 6:00 UTC)
+crons.weekly(
+  "discover opencode models",
+  { dayOfWeek: "saturday", hourUTC: 6, minuteUTC: 0 },
+  internal.modelDiscovery.discoverOpencodeModels
+);
+
 export default crons;

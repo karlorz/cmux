@@ -431,21 +431,65 @@ export function handleHttpRequest(
   }
 
   // Route: GET /api/models - List all models with full catalog info
+  // Queries Convex models table, falls back to static catalog if empty
   if (method === "GET" && path === "/api/models") {
-    const models = AGENT_CATALOG.map((entry) => ({
-      name: entry.name,
-      displayName: entry.displayName,
-      vendor: entry.vendor,
-      requiredApiKeys: entry.requiredApiKeys,
-      tier: entry.tier,
-      disabled: entry.disabled ?? false,
-      disabledReason: entry.disabledReason ?? null,
-      tags: entry.tags ?? [],
-      // OpenCode-style variants (thinking modes)
-      variants: entry.variants ?? getVariantsForVendor(entry.vendor),
-      defaultVariant: entry.defaultVariant ?? "default",
-    }));
-    jsonResponse(res, 200, { models });
+    void (async () => {
+      try {
+        // Try to get models from Convex first
+        const convexModels = await getConvex().query(api.models.list, {});
+
+        if (convexModels && convexModels.length > 0) {
+          // Use Convex models
+          const models = convexModels.map((entry) => ({
+            name: entry.name,
+            displayName: entry.displayName,
+            vendor: entry.vendor,
+            requiredApiKeys: entry.requiredApiKeys,
+            tier: entry.tier,
+            disabled: entry.disabled ?? false,
+            disabledReason: entry.disabledReason ?? null,
+            tags: entry.tags ?? [],
+            variants: entry.variants ?? getVariantsForVendor(entry.vendor as Parameters<typeof getVariantsForVendor>[0]),
+            defaultVariant: entry.defaultVariant ?? "default",
+            source: entry.source,
+          }));
+          jsonResponse(res, 200, { models, source: "convex" });
+        } else {
+          // Fallback to static catalog
+          const models = AGENT_CATALOG.map((entry) => ({
+            name: entry.name,
+            displayName: entry.displayName,
+            vendor: entry.vendor,
+            requiredApiKeys: entry.requiredApiKeys,
+            tier: entry.tier,
+            disabled: entry.disabled ?? false,
+            disabledReason: entry.disabledReason ?? null,
+            tags: entry.tags ?? [],
+            variants: entry.variants ?? getVariantsForVendor(entry.vendor),
+            defaultVariant: entry.defaultVariant ?? "default",
+            source: "curated",
+          }));
+          jsonResponse(res, 200, { models, source: "static" });
+        }
+      } catch (error) {
+        serverLogger.error("[http-api] GET /api/models failed, using static fallback", error);
+        // Fallback to static catalog on error
+        const models = AGENT_CATALOG.map((entry) => ({
+          name: entry.name,
+          displayName: entry.displayName,
+          vendor: entry.vendor,
+          requiredApiKeys: entry.requiredApiKeys,
+          tier: entry.tier,
+          disabled: entry.disabled ?? false,
+          disabledReason: entry.disabledReason ?? null,
+          tags: entry.tags ?? [],
+          variants: entry.variants ?? getVariantsForVendor(entry.vendor),
+          defaultVariant: entry.defaultVariant ?? "default",
+          source: "curated",
+        }));
+        jsonResponse(res, 200, { models, source: "static" });
+      }
+    })();
     return true;
   }
 

@@ -29,3 +29,4 @@ export { workspaceConfigsRouter } from "./workspace-configs.route";
 export { previewRouter } from "./preview.route";
 export { settingsRouter } from "./settings.route";
 export { worktreesRouter } from "./worktrees.route";
+export { modelsRouter } from "./models.route";

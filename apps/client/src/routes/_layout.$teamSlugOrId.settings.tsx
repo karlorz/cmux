@@ -8,6 +8,7 @@ import {
 } from "@/components/settings/sections/AIProvidersSection";
 import { ArchivedTasksSection } from "@/components/settings/sections/ArchivedTasksSection";
 import { GitSection } from "@/components/settings/sections/GitSection";
+import { ModelCatalogSection } from "@/components/settings/sections/ModelCatalogSection";
 import { ModelManagementSection } from "@/components/settings/sections/ModelManagementSection";
 import { WorktreesSection } from "@/components/settings/sections/WorktreesSection";
 import { useTheme } from "@/components/theme/use-theme";
@@ -42,7 +43,7 @@ import { DEFAULT_BRANCH_PREFIX } from "@cmux/shared";
 export const Route = createFileRoute("/_layout/$teamSlugOrId/settings")({
   component: SettingsComponent,
   validateSearch: z.object({
-    section: z.enum(["general", "ai-providers", "models", "git", "worktrees", "archived"]).default("general"),
+    section: z.enum(["general", "ai-providers", "models", "model-catalog", "git", "worktrees", "archived"]).default("general"),
   }),
 });
 
@@ -855,6 +856,8 @@ function SettingsComponent() {
             />
           ) : activeSection === "models" ? (
             <ModelManagementSection teamSlugOrId={teamSlugOrId} />
+          ) : activeSection === "model-catalog" ? (
+            <ModelCatalogSection teamSlugOrId={teamSlugOrId} />
           ) : activeSection === "git" ? (
             <GitSection
               branchPrefix={branchPrefix}
