@@ -42,3 +42,10 @@ export const CURSOR_SONNET_4_THINKING_CONFIG: AgentConfig = {
   apiKeys: [CURSOR_API_KEY],
   waitForString: "Ready",
 };
+
+export const CURSOR_AGENT_CONFIGS: AgentConfig[] = [
+  CURSOR_OPUS_4_1_CONFIG,
+  CURSOR_GPT_5_CONFIG,
+  CURSOR_SONNET_4_CONFIG,
+  CURSOR_SONNET_4_THINKING_CONFIG,
+];

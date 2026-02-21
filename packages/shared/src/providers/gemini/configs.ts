@@ -67,3 +67,9 @@ export const GEMINI_PRO_CONFIG: AgentConfig = {
   checkRequirements: checkGeminiRequirements,
   completionDetector: startGeminiCompletionDetector,
 };
+
+export const GEMINI_AGENT_CONFIGS: AgentConfig[] = [
+  GEMINI_3_PRO_PREVIEW_CONFIG,
+  GEMINI_FLASH_CONFIG,
+  GEMINI_PRO_CONFIG,
+];

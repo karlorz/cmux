@@ -132,3 +132,10 @@ export const CLAUDE_HAIKU_4_5_CONFIG: AgentConfig = {
   applyApiKeys: createApplyClaudeApiKeys(),
   completionDetector: startClaudeCompletionDetector,
 };
+
+export const CLAUDE_AGENT_CONFIGS: AgentConfig[] = [
+  CLAUDE_OPUS_4_6_CONFIG,
+  CLAUDE_OPUS_4_5_CONFIG,
+  CLAUDE_SONNET_4_5_CONFIG,
+  CLAUDE_HAIKU_4_5_CONFIG,
+];

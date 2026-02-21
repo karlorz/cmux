@@ -65,3 +65,8 @@ export const QWEN_MODEL_STUDIO_CODER_PLUS_CONFIG: AgentConfig = {
   checkRequirements: checkQwenModelStudioRequirements,
   completionDetector: startQwenCompletionDetector,
 };
+
+export const QWEN_AGENT_CONFIGS: AgentConfig[] = [
+  QWEN_OPENROUTER_CODER_FREE_CONFIG,
+  QWEN_MODEL_STUDIO_CODER_PLUS_CONFIG,
+];

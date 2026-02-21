@@ -190,7 +190,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       const slashIndex = label.indexOf("/");
       return slashIndex >= 0 ? label.slice(slashIndex + 1) : label;
     };
-    return AGENT_CONFIGS.map((agent) => {
+    const options = AGENT_CONFIGS.map((agent) => {
       const status = providerStatusMap.get(agent.name);
       const missingRequirements = status?.missingRequirements ?? [];
       const isAvailable = status?.isAvailable ?? true;
@@ -253,6 +253,37 @@ export const DashboardInputControls = memo(function DashboardInputControls({
         warning: warningConfig,
       } satisfies AgentOption;
     });
+
+    const vendorHeadingLabel: Record<string, string> = {
+      openai: "OpenAI / Codex",
+      claude: "Claude",
+      gemini: "Gemini",
+      opencode: "OpenCode",
+      qwen: "Qwen",
+      cursor: "Cursor",
+      amp: "Amp",
+      other: "Other",
+    };
+
+    const grouped: AgentOption[] = [];
+    let lastVendor: string | null = null;
+    for (const option of options) {
+      const vendor = option.iconKey ?? "other";
+      if (vendor !== lastVendor) {
+        lastVendor = vendor;
+        const headingLabel = vendorHeadingLabel[vendor] ?? vendor;
+        grouped.push({
+          label: headingLabel,
+          displayLabel: headingLabel,
+          value: `heading:${vendor}`,
+          heading: true,
+          iconKey: vendor,
+        });
+      }
+      grouped.push(option);
+    }
+
+    return grouped;
   }, [handleOpenSettings, providerStatusMap]);
 
   const agentOptionsByValue = useMemo(() => {
