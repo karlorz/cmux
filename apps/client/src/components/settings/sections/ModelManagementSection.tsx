@@ -190,6 +190,16 @@ export function ModelManagementSection({
                           <div className="flex items-center gap-3 flex-shrink-0">
                             {/* Tags */}
                             <div className="hidden sm:flex items-center gap-1">
+                              {entry.tags?.includes("latest") && (
+                                <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                  Latest
+                                </span>
+                              )}
+                              {entry.tags?.includes("recommended") && (
+                                <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                                  Recommended
+                                </span>
+                              )}
                               {entry.tier === "free" && (
                                 <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
                                   Free

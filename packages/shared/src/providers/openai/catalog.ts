@@ -8,7 +8,7 @@ export const CODEX_CATALOG: AgentCatalogEntry[] = [
     vendor: "openai",
     requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
     tier: "paid",
-    tags: ["reasoning"],
+    tags: ["latest", "reasoning"],
   },
   {
     name: "codex/gpt-5.3-codex-high",

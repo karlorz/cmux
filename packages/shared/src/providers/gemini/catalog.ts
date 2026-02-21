@@ -7,6 +7,7 @@ export const GEMINI_CATALOG: AgentCatalogEntry[] = [
     vendor: "google",
     requiredApiKeys: ["GEMINI_API_KEY"],
     tier: "paid",
+    tags: ["latest", "recommended"],
   },
   {
     name: "gemini/2.5-flash",

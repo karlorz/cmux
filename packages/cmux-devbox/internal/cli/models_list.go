@@ -16,16 +16,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// ModelVariant describes a thinking/reasoning mode variant
+type ModelVariant struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"displayName"`
+	Description string `json:"description,omitempty"`
+}
+
 // ModelInfo describes an available AI model (from server API)
 type ModelInfo struct {
-	Name            string   `json:"name"`
-	DisplayName     string   `json:"displayName"`
-	Vendor          string   `json:"vendor"`
-	RequiredApiKeys []string `json:"requiredApiKeys"`
-	Tier            string   `json:"tier"`
-	Disabled        bool     `json:"disabled"`
-	DisabledReason  *string  `json:"disabledReason"`
-	Tags            []string `json:"tags"`
+	Name            string         `json:"name"`
+	DisplayName     string         `json:"displayName"`
+	Vendor          string         `json:"vendor"`
+	RequiredApiKeys []string       `json:"requiredApiKeys"`
+	Tier            string         `json:"tier"`
+	Disabled        bool           `json:"disabled"`
+	DisabledReason  *string        `json:"disabledReason"`
+	Tags            []string       `json:"tags"`
+	Variants        []ModelVariant `json:"variants"`
+	DefaultVariant  string         `json:"defaultVariant"`
 }
 
 // ModelsListResponse from /api/models
@@ -62,6 +71,7 @@ Examples:
 func init() {
 	modelsListCmd.Flags().String("provider", "", "Filter by provider (anthropic, openai, opencode, etc.)")
 	modelsListCmd.Flags().Bool("enabled-only", false, "Only show enabled models")
+	modelsListCmd.Flags().Bool("refresh", false, "Refresh cached model list from server")
 
 	modelsCmd.AddCommand(modelsListCmd)
 	rootCmd.AddCommand(modelsCmd)
@@ -70,6 +80,12 @@ func init() {
 func runModelsList(cmd *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	// Check --refresh flag
+	refresh, _ := cmd.Flags().GetBool("refresh")
+	if refresh {
+		cachedModels = nil
+	}
 
 	models, err := FetchModels(ctx)
 	if err != nil {
@@ -173,30 +189,46 @@ func printModelsTable(models []ModelInfo, verbose bool) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
 	if verbose {
-		fmt.Fprintf(w, "NAME\tDISPLAY\tVENDOR\tTIER\tREQUIRES\n")
-		fmt.Fprintf(w, "----\t-------\t------\t----\t--------\n")
+		fmt.Fprintf(w, "NAME\tDISPLAY\tVENDOR\tTIER\tTAGS\tVARIANTS\tREQUIRES\n")
+		fmt.Fprintf(w, "----\t-------\t------\t----\t----\t--------\t--------\n")
 		for _, m := range models {
 			keys := "(none)"
 			if len(m.RequiredApiKeys) > 0 {
 				keys = strings.Join(m.RequiredApiKeys, ", ")
+			}
+			tags := ""
+			if len(m.Tags) > 0 {
+				tags = strings.Join(m.Tags, ", ")
+			}
+			variants := ""
+			if len(m.Variants) > 0 {
+				varNames := make([]string, len(m.Variants))
+				for i, v := range m.Variants {
+					varNames[i] = v.ID
+				}
+				variants = strings.Join(varNames, ", ")
+			}
+			disabled := ""
+			if m.Disabled {
+				disabled = " (disabled)"
+			}
+			fmt.Fprintf(w, "%s%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				m.Name, disabled, m.DisplayName, m.Vendor, m.Tier, tags, variants, keys)
+		}
+	} else {
+		fmt.Fprintf(w, "NAME\tDISPLAY\tVENDOR\tTIER\tTAGS\n")
+		fmt.Fprintf(w, "----\t-------\t------\t----\t----\n")
+		for _, m := range models {
+			tags := ""
+			if len(m.Tags) > 0 {
+				tags = strings.Join(m.Tags, ", ")
 			}
 			disabled := ""
 			if m.Disabled {
 				disabled = " (disabled)"
 			}
 			fmt.Fprintf(w, "%s%s\t%s\t%s\t%s\t%s\n",
-				m.Name, disabled, m.DisplayName, m.Vendor, m.Tier, keys)
-		}
-	} else {
-		fmt.Fprintf(w, "NAME\tDISPLAY\tVENDOR\tTIER\n")
-		fmt.Fprintf(w, "----\t-------\t------\t----\n")
-		for _, m := range models {
-			disabled := ""
-			if m.Disabled {
-				disabled = " (disabled)"
-			}
-			fmt.Fprintf(w, "%s%s\t%s\t%s\t%s\n",
-				m.Name, disabled, m.DisplayName, m.Vendor, m.Tier)
+				m.Name, disabled, m.DisplayName, m.Vendor, m.Tier, tags)
 		}
 	}
 

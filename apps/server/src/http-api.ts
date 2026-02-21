@@ -11,7 +11,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
-import { AGENT_CATALOG } from "@cmux/shared/agent-catalog";
+import {
+  AGENT_CATALOG,
+  getVariantsForVendor,
+} from "@cmux/shared/agent-catalog";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { spawnAllAgents } from "./agentSpawner";
 import {
@@ -389,6 +392,9 @@ export function handleHttpRequest(
       disabled: entry.disabled ?? false,
       disabledReason: entry.disabledReason ?? null,
       tags: entry.tags ?? [],
+      // OpenCode-style variants (thinking modes)
+      variants: entry.variants ?? getVariantsForVendor(entry.vendor),
+      defaultVariant: entry.defaultVariant ?? "default",
     }));
     jsonResponse(res, 200, { models });
     return true;

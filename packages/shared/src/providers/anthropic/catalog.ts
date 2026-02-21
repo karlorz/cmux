@@ -7,6 +7,7 @@ export const CLAUDE_CATALOG: AgentCatalogEntry[] = [
     vendor: "anthropic",
     requiredApiKeys: ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
     tier: "paid",
+    tags: ["latest", "recommended", "reasoning"],
   },
   {
     name: "claude/opus-4.5",
@@ -14,6 +15,7 @@ export const CLAUDE_CATALOG: AgentCatalogEntry[] = [
     vendor: "anthropic",
     requiredApiKeys: ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
     tier: "paid",
+    tags: ["reasoning"],
   },
   {
     name: "claude/sonnet-4.5",
@@ -21,6 +23,7 @@ export const CLAUDE_CATALOG: AgentCatalogEntry[] = [
     vendor: "anthropic",
     requiredApiKeys: ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
     tier: "paid",
+    tags: ["reasoning"],
   },
   {
     name: "claude/haiku-4.5",
@@ -28,5 +31,6 @@ export const CLAUDE_CATALOG: AgentCatalogEntry[] = [
     vendor: "anthropic",
     requiredApiKeys: ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
     tier: "paid",
+    tags: ["fast"],
   },
 ];

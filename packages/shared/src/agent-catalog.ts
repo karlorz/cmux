@@ -21,6 +21,56 @@ export type AgentVendor =
 
 export type ModelTier = "free" | "paid";
 
+/**
+ * Model variant for thinking/reasoning modes (inspired by OpenCode)
+ */
+export interface ModelVariant {
+  /** Variant ID, e.g. "default", "high", "max" */
+  id: string;
+  /** Human-readable label, e.g. "High Thinking" */
+  displayName: string;
+  /** Optional description */
+  description?: string;
+}
+
+/**
+ * Default variants per vendor (OpenCode-style)
+ * - Anthropic: Default/High/Max thinking budget
+ * - OpenAI: None to XHigh reasoning effort
+ * - Google: Low/High budget
+ */
+export const DEFAULT_VARIANTS: Record<AgentVendor, ModelVariant[]> = {
+  anthropic: [
+    { id: "default", displayName: "Default" },
+    { id: "high", displayName: "High Thinking", description: "Higher thinking budget" },
+    { id: "max", displayName: "Max Thinking", description: "Maximum thinking budget" },
+  ],
+  openai: [
+    { id: "none", displayName: "No Reasoning" },
+    { id: "low", displayName: "Low", description: "Low reasoning effort" },
+    { id: "medium", displayName: "Medium", description: "Medium reasoning effort" },
+    { id: "high", displayName: "High", description: "High reasoning effort" },
+  ],
+  google: [
+    { id: "default", displayName: "Default" },
+    { id: "low", displayName: "Low Budget", description: "Lower token budget" },
+    { id: "high", displayName: "High Budget", description: "Higher token budget" },
+  ],
+  opencode: [{ id: "default", displayName: "Default" }],
+  qwen: [{ id: "default", displayName: "Default" }],
+  cursor: [{ id: "default", displayName: "Default" }],
+  amp: [{ id: "default", displayName: "Default" }],
+  xai: [{ id: "default", displayName: "Default" }],
+  openrouter: [{ id: "default", displayName: "Default" }],
+};
+
+/**
+ * Get variants for a vendor (with fallback to default)
+ */
+export function getVariantsForVendor(vendor: AgentVendor): ModelVariant[] {
+  return DEFAULT_VARIANTS[vendor] ?? [{ id: "default", displayName: "Default" }];
+}
+
 export interface AgentCatalogEntry {
   /** Stable ID matching AgentConfig.name, e.g. "claude/opus-4.6" */
   name: string;
@@ -36,8 +86,12 @@ export interface AgentCatalogEntry {
   disabled?: boolean;
   /** Reason shown in tooltip when disabled */
   disabledReason?: string;
-  /** Optional tags for filtering, e.g. ["reasoning", "free"] */
+  /** Optional tags for filtering, e.g. ["reasoning", "free", "latest", "recommended"] */
   tags?: string[];
+  /** Custom variants for this model (overrides vendor defaults) */
+  variants?: ModelVariant[];
+  /** Default variant ID to use */
+  defaultVariant?: string;
 }
 
 // Import per-provider catalogs
