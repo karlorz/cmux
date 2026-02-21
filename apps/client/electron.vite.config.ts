@@ -62,6 +62,10 @@ const SentryVitePlugin = process.env.SENTRY_AUTH_TOKEN ? sentryVitePlugin({
   telemetry: false
 }) : undefined;
 
+// Determine if this is a production build based on command-line args
+// electron-vite build = production, electron-vite dev = development
+const isProduction = process.argv.includes("build");
+
 export default defineConfig({
   main: {
     plugins: [
@@ -124,6 +128,13 @@ export default defineConfig({
     root: ".",
     envDir: repoRoot,
     base: "/",
+    define: {
+      "process.env": {},
+      "process.env.NODE_ENV": JSON.stringify(
+        isProduction ? "production" : "development"
+      ),
+      global: "globalThis",
+    },
     build: {
       rollupOptions: {
         input: {
