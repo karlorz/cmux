@@ -1417,10 +1417,13 @@ export function CommandBar({
         try {
           if (stackUser) {
             await stackUser.signOut({
-              redirectUrl: stackClientApp.urls.afterSignOut,
+              redirectUrl: "/sign-in?force=true",
             });
           } else {
-            await stackClientApp.redirectToSignOut({ replace: true });
+            await navigate({
+              to: "/sign-in",
+              search: { force: true },
+            });
           }
         } catch (error) {
           console.error("Sign out failed", error);
