@@ -1,11 +1,17 @@
 /**
- * Agent Memory Protocol - Spike S1
+ * Agent Memory Protocol - Spike S2b
  *
- * Seeds memory directory with TASKS.json, MEMORY.md, and MAILBOX.json
- * on every sandbox creation. Agents read these on start and update them during work.
+ * Two-tier memory architecture with priority tiering:
+ * - Layer 1 (daily/): Ephemeral daily logs - auto-dated, session-specific
+ * - Layer 2 (knowledge/): Curated long-term memory with P0/P1/P2 priority tiers
+ *   - P0 Core: Never expires - project fundamentals, safety rules, invariants
+ *   - P1 Active: 90-day TTL - ongoing work, current strategies, recent decisions
+ *   - P2 Reference: 30-day TTL - debug notes, one-time findings, temporary context
  *
- * This is a file-based approach to validate agent memory before investing in
- * Convex sync, MCP servers, or Rust harness changes.
+ * Seeds memory directory with:
+ * - TASKS.json, MAILBOX.json at root
+ * - knowledge/MEMORY.md for permanent insights (P0/P1/P2 sections)
+ * - daily/{date}.md for session-specific notes
  *
  * IMPORTANT: Memory is stored at /root/lifecycle/memory/ (OUTSIDE the git workspace)
  * to avoid polluting the user's repository with untracked files. This follows the
@@ -18,6 +24,17 @@ import type { AuthFile } from "./worker-schemas";
 // Using /root/lifecycle/ to match existing patterns (Claude hooks, Codex, OpenCode)
 // This prevents git pollution - memory files won't appear in `git status`
 export const MEMORY_PROTOCOL_DIR = "/root/lifecycle/memory";
+
+// Subdirectories for two-tier memory architecture
+export const MEMORY_DAILY_DIR = `${MEMORY_PROTOCOL_DIR}/daily`;
+export const MEMORY_KNOWLEDGE_DIR = `${MEMORY_PROTOCOL_DIR}/knowledge`;
+
+/**
+ * Get today's date string in YYYY-MM-DD format for daily log files.
+ */
+export function getTodayDateString(): string {
+  return new Date().toISOString().split("T")[0];
+}
 
 /**
  * Seed content for TASKS.json
@@ -35,12 +52,39 @@ export function getTasksSeedContent(sandboxId: string): string {
 }
 
 /**
- * Seed content for MEMORY.md
+ * Seed content for knowledge/MEMORY.md (Layer 2 - permanent insights with priority tiers)
  */
-export function getMemorySeedContent(): string {
-  return `# Project Memory
+export function getKnowledgeSeedContent(): string {
+  return `# Project Knowledge
 
-> This file is maintained by agents. Read on start, append on finish.
+> Curated insights organized by priority. Add date tags for TTL tracking.
+
+## P0 - Core (Never Expires)
+<!-- Fundamental project facts, configuration, invariants -->
+<!-- Examples: "Uses bun, not npm", "Port 3001 for auth service" -->
+
+## P1 - Active (90-day TTL)
+<!-- Ongoing work context, current strategies, recent decisions -->
+<!-- Review entries older than 90 days: promote to P0 or remove -->
+
+## P2 - Reference (30-day TTL)
+<!-- Temporary findings, debug notes, one-off context -->
+<!-- Review entries older than 30 days: promote to P1 or remove -->
+
+---
+*Priority guide: P0 = permanent truth, P1 = active context, P2 = temporary reference*
+*Format: - [YYYY-MM-DD] Your insight here*
+`;
+}
+
+/**
+ * Seed content for daily/{date}.md (Layer 1 - ephemeral logs)
+ * @param date - Date string in YYYY-MM-DD format
+ */
+export function getDailyLogSeedContent(date: string): string {
+  return `# Daily Log: ${date}
+
+> Session-specific observations. Temporary notes go here.
 
 ---
 `;
@@ -72,17 +116,44 @@ You have access to persistent memory at \`${MEMORY_PROTOCOL_DIR}/\`:
 
 > Note: Memory is stored outside the git workspace to avoid polluting your repository.
 
+### Memory Structure
+
+- \`${MEMORY_KNOWLEDGE_DIR}/MEMORY.md\` - Long-term insights (curated)
+- \`${MEMORY_DAILY_DIR}/{date}.md\` - Daily logs (ephemeral)
+- \`${MEMORY_PROTOCOL_DIR}/TASKS.json\` - Task registry
+- \`${MEMORY_PROTOCOL_DIR}/MAILBOX.json\` - Inter-agent messages
+
 ### On Start
-1. Read \`${MEMORY_PROTOCOL_DIR}/TASKS.json\` to see existing tasks and their statuses
-2. Read \`${MEMORY_PROTOCOL_DIR}/MEMORY.md\` to see what previous agents have learned
+1. Read \`knowledge/MEMORY.md\` for permanent project insights
+2. Read \`TASKS.json\` to see existing tasks and their statuses
+3. Optionally scan recent \`daily/\` logs for recent context
 
 ### During Work
-- Update task statuses in TASKS.json (pending -> in_progress -> completed)
-- Create new tasks if you discover additional work needed
+- Append observations to \`daily/{today}.md\` (create if doesn't exist)
+- Update task statuses in TASKS.json
 
 ### On Completion
-- Append a dated section to MEMORY.md with what you accomplished and learned
+- **Daily log**: Append what you did today to \`daily/{today}.md\`
+- **Knowledge**: Promote KEY learnings to \`knowledge/MEMORY.md\` (only permanent insights)
 - Update TASKS.json with final statuses
+
+### What Goes Where?
+
+| Type | Location | Priority | Example |
+|------|----------|----------|---------|
+| Project fundamentals | \`knowledge/MEMORY.md\` | P0 | "This project uses bun, not npm" |
+| Current work context | \`knowledge/MEMORY.md\` | P1 | "Auth refactor in progress" |
+| Temporary findings | \`knowledge/MEMORY.md\` | P2 | "Sandbox morphvm_abc for testing" |
+| Today's work | \`daily/{date}.md\` | - | "Fixed bug in auth.ts line 42" |
+| Debug notes | \`daily/{date}.md\` | - | "Tested endpoint with curl" |
+
+### Priority Guidelines
+
+- **Date-tag format**: \`- [YYYY-MM-DD] Your insight here\`
+- **P0 Core**: Rare, highly stable truths. Never expires. Examples: tooling choices, critical ports, invariants.
+- **P1 Active**: Current focus areas. Review after 90 days - promote to P0 if still relevant, or remove.
+- **P2 Reference**: One-off findings. Review after 30 days - promote to P1 if still useful, or remove.
+- **Daily logs**: Raw session notes. Do not promote everything - only curate what's worth keeping.
 
 ### Inter-Agent Messaging
 - Your agent name: ${agentNameEnvVar}
@@ -95,11 +166,11 @@ You have access to persistent memory at \`${MEMORY_PROTOCOL_DIR}/\`:
 }
 
 /**
- * Get the startup command to create the memory directory.
- * Uses absolute path since MEMORY_PROTOCOL_DIR is now absolute.
+ * Get the startup command to create the memory directory structure.
+ * Creates both daily/ and knowledge/ subdirectories for two-tier architecture.
  */
 export function getMemoryStartupCommand(): string {
-  return `mkdir -p ${MEMORY_PROTOCOL_DIR}`;
+  return `mkdir -p ${MEMORY_DAILY_DIR} ${MEMORY_KNOWLEDGE_DIR}`;
 }
 
 /**
@@ -107,10 +178,16 @@ export function getMemoryStartupCommand(): string {
  * These files are written to the sandbox at startup.
  * Files are placed at /root/lifecycle/memory/ (outside git workspace).
  *
+ * Two-tier structure:
+ * - TASKS.json, MAILBOX.json at root
+ * - knowledge/MEMORY.md for permanent insights
+ * - daily/{date}.md for session-specific notes
+ *
  * @param sandboxId - The sandbox/task run ID for metadata
  */
 export function getMemorySeedFiles(sandboxId: string): AuthFile[] {
   const Buffer = globalThis.Buffer;
+  const today = getTodayDateString();
 
   return [
     {
@@ -121,8 +198,15 @@ export function getMemorySeedFiles(sandboxId: string): AuthFile[] {
       mode: "644",
     },
     {
-      destinationPath: `${MEMORY_PROTOCOL_DIR}/MEMORY.md`,
-      contentBase64: Buffer.from(getMemorySeedContent()).toString("base64"),
+      destinationPath: `${MEMORY_KNOWLEDGE_DIR}/MEMORY.md`,
+      contentBase64: Buffer.from(getKnowledgeSeedContent()).toString("base64"),
+      mode: "644",
+    },
+    {
+      destinationPath: `${MEMORY_DAILY_DIR}/${today}.md`,
+      contentBase64: Buffer.from(getDailyLogSeedContent(today)).toString(
+        "base64"
+      ),
       mode: "644",
     },
     {
