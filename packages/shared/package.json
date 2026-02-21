@@ -42,6 +42,10 @@
       "import": "./src/agentConfig.ts",
       "types": "./src/agentConfig.ts"
     },
+    "./agent-memory-protocol": {
+      "import": "./src/agent-memory-protocol.ts",
+      "types": "./src/agent-memory-protocol.ts"
+    },
     "./terminal-config": {
       "import": "./src/terminal-config.ts",
       "types": "./src/terminal-config.ts"

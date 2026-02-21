@@ -2,6 +2,7 @@ import type {
   EnvironmentContext,
   EnvironmentResult,
 } from "../common/environment-result";
+import { appendMemoryProtocolInstructions } from "../../agent-memory-protocol";
 import {
   DEFAULT_AMP_PROXY_PORT,
   DEFAULT_AMP_PROXY_URL,
@@ -68,6 +69,23 @@ export async function getAmpEnvironment(
   } catch (error) {
     console.warn("Failed to read amp secrets.json:", error);
   }
+
+  let existingAmpInstructions = "";
+  try {
+    existingAmpInstructions = await readFile(
+      `${homedir()}/.config/amp/AGENTS.md`,
+      "utf-8"
+    );
+  } catch {
+    // Host AGENTS.md missing; create one with memory protocol only.
+  }
+  files.push({
+    destinationPath: "$HOME/.config/amp/AGENTS.md",
+    contentBase64: Buffer.from(
+      appendMemoryProtocolInstructions(existingAmpInstructions, "$CMUX_AGENT_NAME")
+    ).toString("base64"),
+    mode: "644",
+  });
 
   // The local proxy that Amp CLI should talk to
   env.AMP_PROXY_PORT = String(DEFAULT_AMP_PROXY_PORT);

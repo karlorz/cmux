@@ -5,6 +5,10 @@ import {
   type AgentConfig,
   type EnvironmentResult,
 } from "@cmux/shared/agentConfig";
+import {
+  getMemoryAuthFiles,
+  getMemoryStartupCommands,
+} from "@cmux/shared/agent-memory-protocol";
 import type {
   WorkerCreateTerminal,
   WorkerSyncFiles,
@@ -345,6 +349,7 @@ export async function spawnAgent(
       CMUX_TASK_RUN_ID: taskRunId,
       CMUX_TASK_RUN_JWT: taskRunJwt,
       CMUX_CALLBACK_URL: callbackUrl,
+      CMUX_AGENT_NAME: agent.name,
       PROMPT: processedTaskDescription,
     };
     let envVars: Record<string, string> = { ...systemEnvVars };
@@ -767,6 +772,14 @@ export async function spawnAgent(
         `[AgentSpawner] Skipping updateVSCodeInstance - already persisted by www`
       );
     }
+
+    for (const command of getMemoryStartupCommands()) {
+      if (!startupCommands.includes(command)) {
+        startupCommands.unshift(command);
+      }
+    }
+
+    authFiles = [...authFiles, ...getMemoryAuthFiles(vscodeInstance.getName())];
 
     // Use runId as terminal ID for compatibility
     const terminalId = runId;

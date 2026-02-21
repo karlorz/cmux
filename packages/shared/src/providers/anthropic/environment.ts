@@ -6,6 +6,10 @@ import {
   CMUX_ANTHROPIC_PROXY_PLACEHOLDER_API_KEY,
   normalizeAnthropicBaseUrl,
 } from "../../utils/anthropic";
+import {
+  appendMemoryProtocolInstructions,
+  getMemoryStartupCommands,
+} from "../../agent-memory-protocol";
 
 export const CLAUDE_KEY_ENV_VARS_TO_UNSET = [
   "ANTHROPIC_API_KEY",
@@ -123,6 +127,7 @@ export async function getClaudeEnvironment(
   startupCommands.unshift("mkdir -p ~/.claude");
   startupCommands.push(`mkdir -p ${claudeLifecycleDir}`);
   startupCommands.push(`mkdir -p ${claudeSecretsDir}`);
+  startupCommands.push(...getMemoryStartupCommands());
 
   // Clean up any previous Claude completion markers
   // This should run before the agent starts to ensure clean state
@@ -273,6 +278,27 @@ echo ${apiKeyToOutput}`;
     destinationPath: claudeApiKeyHelperPath,
     contentBase64: Buffer.from(helperScript).toString("base64"),
     mode: "700",
+  });
+
+  let existingClaudeInstructions = "";
+  try {
+    existingClaudeInstructions = await readFile(
+      `${homedir()}/.claude/CLAUDE.md`,
+      "utf-8",
+    );
+  } catch {
+    // File does not exist on host; create one with memory protocol only.
+  }
+
+  files.push({
+    destinationPath: "$HOME/.claude/CLAUDE.md",
+    contentBase64: Buffer.from(
+      appendMemoryProtocolInstructions(
+        existingClaudeInstructions,
+        "$CMUX_AGENT_NAME",
+      ),
+    ).toString("base64"),
+    mode: "644",
   });
 
   // Log the files for debugging

@@ -2,6 +2,7 @@ import type {
   EnvironmentContext,
   EnvironmentResult,
 } from "../common/environment-result";
+import { appendMemoryProtocolInstructions } from "../../agent-memory-protocol";
 
 export async function getCursorEnvironment(
   _ctx: EnvironmentContext
@@ -104,6 +105,26 @@ export async function getCursorEnvironment(
   // Ensure directories exist
   startupCommands.push("mkdir -p ~/.cursor");
   startupCommands.push("mkdir -p ~/.config/cursor");
+
+  let existingCursorInstructions = "";
+  try {
+    existingCursorInstructions = await readFile(
+      join(homeDir, ".cursor", "AGENTS.md"),
+      "utf-8"
+    );
+  } catch {
+    // Host AGENTS.md missing; create one with memory protocol only.
+  }
+  files.push({
+    destinationPath: "/root/.cursor/AGENTS.md",
+    contentBase64: Buffer.from(
+      appendMemoryProtocolInstructions(
+        existingCursorInstructions,
+        "$CMUX_AGENT_NAME"
+      )
+    ).toString("base64"),
+    mode: "644",
+  });
 
   return { files, env, startupCommands };
 }

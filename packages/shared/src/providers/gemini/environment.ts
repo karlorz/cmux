@@ -2,6 +2,7 @@ import type {
   EnvironmentContext,
   EnvironmentResult,
 } from "../common/environment-result";
+import { appendMemoryProtocolInstructions } from "../../agent-memory-protocol";
 import { getGeminiTelemetryPath } from "./telemetry";
 
 type GeminiModelSettings = {
@@ -195,6 +196,26 @@ export async function getGeminiEnvironment(
   } catch {
     // Commands directory doesn't exist
   }
+
+  let existingGeminiInstructions = "";
+  try {
+    existingGeminiInstructions = await readFile(
+      join(geminiDir, "GEMINI.md"),
+      "utf-8"
+    );
+  } catch {
+    // Host GEMINI.md missing; create one with memory protocol only.
+  }
+  files.push({
+    destinationPath: "$HOME/.gemini/GEMINI.md",
+    contentBase64: Buffer.from(
+      appendMemoryProtocolInstructions(
+        existingGeminiInstructions,
+        "$CMUX_AGENT_NAME"
+      )
+    ).toString("base64"),
+    mode: "644",
+  });
 
   return { files, env, startupCommands };
 }

@@ -2,6 +2,7 @@ import type {
   EnvironmentContext,
   EnvironmentResult,
 } from "../common/environment-result";
+import { appendMemoryProtocolInstructions } from "../../agent-memory-protocol";
 
 /**
  * Apply API keys for OpenAI Codex.
@@ -136,7 +137,6 @@ touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
   // Note: We handle config.toml specially below to ensure required keys (e.g. notify) are present
   const codexFiles = [
     { name: "auth.json", mode: "600" },
-    { name: "instructions.md", mode: "644" },
   ];
 
   // Try to copy each file
@@ -156,6 +156,23 @@ touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
       console.warn(`Failed to read .codex/${file.name}:`, error);
     }
   }
+
+  let existingInstructions = "";
+  try {
+    existingInstructions = await readFile(
+      `${homeDir}/.codex/instructions.md`,
+      "utf-8"
+    );
+  } catch {
+    // Host instructions.md missing; we will create one with memory protocol text.
+  }
+  files.push({
+    destinationPath: "$HOME/.codex/instructions.md",
+    contentBase64: Buffer.from(
+      appendMemoryProtocolInstructions(existingInstructions, "$CMUX_AGENT_NAME")
+    ).toString("base64"),
+    mode: "644",
+  });
 
   // Ensure config.toml exists and contains notify hook + model migrations
   try {

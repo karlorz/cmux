@@ -2,6 +2,7 @@ import type {
   EnvironmentContext,
   EnvironmentResult,
 } from "../common/environment-result";
+import { appendMemoryProtocolInstructions } from "../../agent-memory-protocol";
 
 // Opencode HTTP API configuration
 export const OPENCODE_HTTP_HOST = "127.0.0.1";
@@ -44,6 +45,27 @@ async function buildOpencodeEnvironment(
       console.warn("Failed to read opencode auth.json:", error);
     }
   }
+
+  let existingOpenCodeInstructions = "";
+  try {
+    existingOpenCodeInstructions = await readFile(
+      `${homedir()}/.config/opencode/AGENTS.md`,
+      "utf-8"
+    );
+  } catch {
+    // Host AGENTS.md missing; create one with memory protocol only.
+  }
+  files.push({
+    destinationPath: "$HOME/.config/opencode/AGENTS.md",
+    contentBase64: Buffer.from(
+      appendMemoryProtocolInstructions(
+        existingOpenCodeInstructions,
+        "$CMUX_AGENT_NAME"
+      )
+    ).toString("base64"),
+    mode: "644",
+  });
+
   // Install OpenCode lifecycle completion hook script
   // Note: crown/complete is called by the worker after the completion detector resolves,
   // NOT here. This hook only writes marker files for the filesystem watcher.
