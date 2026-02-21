@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/cmux-cli/cmux-devbox/internal/auth"
+	"github.com/cmux-cli/cmux-devbox/internal/credentials"
 	"github.com/spf13/cobra"
 )
 
@@ -48,34 +49,36 @@ var cachedModels []ModelInfo
 var modelsCmd = &cobra.Command{
 	Use:   "models [filter]",
 	Short: "List available AI models",
-	Long: `List all available AI models with their display names, vendors, and tiers.
+	Long: `List AI models. By default, only shows models with configured credentials.
 
-Fetches the current model list from the server.
+Checks local credentials to filter models that can actually be used.
+Use --all to show all models regardless of credential availability.
 
 Examples:
-  cmux models                         # List all models
+  cmux models                         # List model names (one per line)
+  cmux models --all                   # List ALL models (ignore credentials)
+  cmux models --verbose               # Show table with details
   cmux models --json                  # JSON output
   cmux models claude                  # Filter by name
-  cmux models --provider openai       # Filter by vendor
-  cmux models --enabled-only          # Only show enabled models
-  cmux models --verbose               # Show API keys required`,
+  cmux models --provider openai       # Filter by vendor`,
 	RunE: runModelsList,
 }
 
 var modelsListCmd = &cobra.Command{
 	Use:   "list [filter]",
 	Short: "List available AI models",
-	Long: `List all available AI models with their display names, vendors, and tiers.
+	Long: `List AI models. By default, only shows models with configured credentials.
 
-Fetches the current model list from the server.
+Checks local credentials to filter models that can actually be used.
+Use --all to show all models regardless of credential availability.
 
 Examples:
-  cmux models list                    # List all models
+  cmux models list                    # List model names (one per line)
+  cmux models list --all              # List ALL models (ignore credentials)
+  cmux models list --verbose          # Show table with details
   cmux models list --json             # JSON output
   cmux models list claude             # Filter by name
-  cmux models list --provider openai  # Filter by vendor
-  cmux models list --enabled-only     # Only show enabled models
-  cmux models list --verbose          # Show API keys required`,
+  cmux models list --provider openai  # Filter by vendor`,
 	RunE: runModelsList,
 }
 
@@ -84,11 +87,13 @@ func init() {
 	modelsCmd.Flags().String("provider", "", "Filter by provider (anthropic, openai, opencode, etc.)")
 	modelsCmd.Flags().Bool("enabled-only", false, "Only show enabled models")
 	modelsCmd.Flags().Bool("refresh", false, "Refresh cached model list from server")
+	modelsCmd.Flags().Bool("all", false, "Show all models (including unavailable)")
 
 	// Also add to modelsListCmd for backwards compatibility
 	modelsListCmd.Flags().String("provider", "", "Filter by provider (anthropic, openai, opencode, etc.)")
 	modelsListCmd.Flags().Bool("enabled-only", false, "Only show enabled models")
 	modelsListCmd.Flags().Bool("refresh", false, "Refresh cached model list from server")
+	modelsListCmd.Flags().Bool("all", false, "Show all models (including unavailable)")
 
 	modelsCmd.AddCommand(modelsListCmd)
 	rootCmd.AddCommand(modelsCmd)
@@ -112,6 +117,7 @@ func runModelsList(cmd *cobra.Command, args []string) error {
 	// Get filter flags
 	provider, _ := cmd.Flags().GetString("provider")
 	enabledOnly, _ := cmd.Flags().GetBool("enabled-only")
+	showAll, _ := cmd.Flags().GetBool("all")
 
 	// Filter text from args
 	filter := ""
@@ -121,6 +127,13 @@ func runModelsList(cmd *cobra.Command, args []string) error {
 
 	// Apply filters
 	filtered := filterModels(models, provider, enabledOnly, filter)
+
+	// Check local credentials and filter by availability (unless --all)
+	var providerStatus credentials.AllProviderStatus
+	if !showAll {
+		providerStatus = credentials.CheckAllProviders()
+		filtered = filterByAvailability(filtered, providerStatus)
+	}
 
 	// JSON output
 	if flagJSON {
@@ -132,12 +145,17 @@ func runModelsList(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Table output
-	fmt.Printf("Available Models (%d)\n", len(filtered))
-	fmt.Println("====================")
-	fmt.Println()
+	// Verbose table output
+	if flagVerbose {
+		return printModelsTable(filtered, true)
+	}
 
-	return printModelsTable(filtered, flagVerbose)
+	// Default: simple output (one model name per line, like opencode)
+	for _, m := range filtered {
+		fmt.Println(m.Name)
+	}
+
+	return nil
 }
 
 // FetchModels retrieves model list from server API
@@ -202,37 +220,21 @@ func filterModels(models []ModelInfo, provider string, enabledOnly bool, filter 
 	return result
 }
 
+// filterByAvailability filters models to only include those with available credentials
+func filterByAvailability(models []ModelInfo, status credentials.AllProviderStatus) []ModelInfo {
+	var result []ModelInfo
+	for _, m := range models {
+		if status.IsProviderAvailable(strings.ToLower(m.Vendor)) {
+			result = append(result, m)
+		}
+	}
+	return result
+}
+
 func printModelsTable(models []ModelInfo, verbose bool) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
 	if verbose {
-		fmt.Fprintf(w, "NAME\tDISPLAY\tVENDOR\tTIER\tTAGS\tVARIANTS\tREQUIRES\n")
-		fmt.Fprintf(w, "----\t-------\t------\t----\t----\t--------\t--------\n")
-		for _, m := range models {
-			keys := "(none)"
-			if len(m.RequiredApiKeys) > 0 {
-				keys = strings.Join(m.RequiredApiKeys, ", ")
-			}
-			tags := ""
-			if len(m.Tags) > 0 {
-				tags = strings.Join(m.Tags, ", ")
-			}
-			variants := ""
-			if len(m.Variants) > 0 {
-				varNames := make([]string, len(m.Variants))
-				for i, v := range m.Variants {
-					varNames[i] = v.ID
-				}
-				variants = strings.Join(varNames, ", ")
-			}
-			disabled := ""
-			if m.Disabled {
-				disabled = " (disabled)"
-			}
-			fmt.Fprintf(w, "%s%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-				m.Name, disabled, m.DisplayName, m.Vendor, m.Tier, tags, variants, keys)
-		}
-	} else {
 		fmt.Fprintf(w, "NAME\tDISPLAY\tVENDOR\tTIER\tTAGS\n")
 		fmt.Fprintf(w, "----\t-------\t------\t----\t----\n")
 		for _, m := range models {
@@ -247,12 +249,13 @@ func printModelsTable(models []ModelInfo, verbose bool) error {
 			fmt.Fprintf(w, "%s%s\t%s\t%s\t%s\t%s\n",
 				m.Name, disabled, m.DisplayName, m.Vendor, m.Tier, tags)
 		}
+	} else {
+		// Simple list (one per line)
+		for _, m := range models {
+			fmt.Fprintln(w, m.Name)
+		}
 	}
 
 	w.Flush()
-
-	fmt.Println()
-	fmt.Println("Usage: cmux task create --agent <name> --repo owner/repo \"prompt\"")
-
 	return nil
 }

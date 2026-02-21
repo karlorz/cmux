@@ -2,6 +2,8 @@ package cli
 
 import (
 	"testing"
+
+	"github.com/cmux-cli/cmux-devbox/internal/credentials"
 )
 
 func TestFilterModels(t *testing.T) {
@@ -92,5 +94,88 @@ func TestFilterModelsDisabledWithReason(t *testing.T) {
 	}
 	if result[0].Name != "model-b" {
 		t.Errorf("enabled-only should return model-b, got %s", result[0].Name)
+	}
+}
+
+func TestFilterByAvailability(t *testing.T) {
+	models := []ModelInfo{
+		{Name: "claude/opus-4.6", DisplayName: "Opus 4.6", Vendor: "anthropic", Tier: "paid"},
+		{Name: "gpt-4o", DisplayName: "GPT-4o", Vendor: "openai", Tier: "paid"},
+		{Name: "gemini-pro", DisplayName: "Gemini Pro", Vendor: "google", Tier: "free"},
+		{Name: "qwen-max", DisplayName: "Qwen Max", Vendor: "qwen", Tier: "paid"},
+	}
+
+	status := credentials.AllProviderStatus{
+		Providers: map[string]credentials.ProviderStatus{
+			"anthropic": {Available: true, Source: "env:ANTHROPIC_API_KEY"},
+			"openai":    {Available: true, Source: "env:OPENAI_API_KEY"},
+			"google":    {Available: false, Source: ""},
+			"qwen":      {Available: false, Source: ""},
+		},
+	}
+
+	result := filterByAvailability(models, status)
+
+	if len(result) != 2 {
+		t.Errorf("filterByAvailability() got %d models, want 2", len(result))
+	}
+
+	// Check that only anthropic and openai models are returned
+	vendors := make(map[string]bool)
+	for _, m := range result {
+		vendors[m.Vendor] = true
+	}
+
+	if !vendors["anthropic"] {
+		t.Error("filterByAvailability() should include anthropic models")
+	}
+	if !vendors["openai"] {
+		t.Error("filterByAvailability() should include openai models")
+	}
+	if vendors["google"] {
+		t.Error("filterByAvailability() should not include google models (no credentials)")
+	}
+	if vendors["qwen"] {
+		t.Error("filterByAvailability() should not include qwen models (no credentials)")
+	}
+}
+
+func TestFilterByAvailabilityEmpty(t *testing.T) {
+	models := []ModelInfo{
+		{Name: "claude/opus-4.6", DisplayName: "Opus 4.6", Vendor: "anthropic", Tier: "paid"},
+	}
+
+	// No providers available
+	status := credentials.AllProviderStatus{
+		Providers: map[string]credentials.ProviderStatus{},
+	}
+
+	result := filterByAvailability(models, status)
+
+	if len(result) != 0 {
+		t.Errorf("filterByAvailability() got %d models with no providers, want 0", len(result))
+	}
+}
+
+func TestFilterByAvailabilityWithVendorMapping(t *testing.T) {
+	models := []ModelInfo{
+		{Name: "claude/opus", DisplayName: "Opus", Vendor: "claude", Tier: "paid"},   // "claude" maps to "anthropic"
+		{Name: "gemini-pro", DisplayName: "Gemini Pro", Vendor: "gemini", Tier: "paid"}, // "gemini" maps to "google"
+	}
+
+	status := credentials.AllProviderStatus{
+		Providers: map[string]credentials.ProviderStatus{
+			"anthropic": {Available: true, Source: "test"},
+			"google":    {Available: false, Source: ""},
+		},
+	}
+
+	result := filterByAvailability(models, status)
+
+	if len(result) != 1 {
+		t.Errorf("filterByAvailability() got %d models, want 1 (only claude/anthropic available)", len(result))
+	}
+	if len(result) > 0 && result[0].Vendor != "claude" {
+		t.Errorf("filterByAvailability() should return claude model, got %s", result[0].Vendor)
 	}
 }
