@@ -16,6 +16,7 @@
  */
 
 import { describe, it, expect, beforeAll } from "vitest";
+import { AGENT_CATALOG } from "@cmux/shared/agent-catalog";
 
 const SERVER_URL = process.env.CMUX_SERVER_URL ?? "http://localhost:9776";
 
@@ -25,7 +26,7 @@ let serverAvailable = false;
 // Helper to safely fetch with connection error handling
 async function safeFetch(
   url: string,
-  options?: RequestInit
+  options?: RequestInit,
 ): Promise<Response | null> {
   try {
     return await fetch(url, options);
@@ -51,7 +52,7 @@ describe("HTTP API - apps/server", () => {
       console.log(
         "[http-api.test] Server not available at",
         SERVER_URL,
-        "- skipping integration tests"
+        "- skipping integration tests",
       );
     }
   });
@@ -184,12 +185,71 @@ describe("HTTP API - apps/server", () => {
       expect(response).not.toBeNull();
       expect(response!.status).toBe(204);
       expect(response!.headers.get("Access-Control-Allow-Origin")).toBe("*");
-      expect(
-        response!.headers.get("Access-Control-Allow-Methods")
-      ).toContain("POST");
-      expect(
-        response!.headers.get("Access-Control-Allow-Headers")
-      ).toContain("Authorization");
+      expect(response!.headers.get("Access-Control-Allow-Methods")).toContain(
+        "POST",
+      );
+      expect(response!.headers.get("Access-Control-Allow-Headers")).toContain(
+        "Authorization",
+      );
+    });
+  });
+
+  describe("Models API", () => {
+    it("GET /api/models returns model catalog", async () => {
+      if (!serverAvailable) {
+        console.log("Server not running - skipping test");
+        return;
+      }
+      const response = await safeFetch(`${SERVER_URL}/api/models`);
+      expect(response).not.toBeNull();
+      expect(response!.status).toBe(200);
+
+      const data = await response!.json();
+      expect(data).toHaveProperty("models");
+      expect(Array.isArray(data.models)).toBe(true);
+      expect(data.models.length).toBeGreaterThan(0);
+
+      // Verify model structure
+      const model = data.models[0];
+      expect(model).toHaveProperty("name");
+      expect(model).toHaveProperty("displayName");
+      expect(model).toHaveProperty("vendor");
+      expect(model).toHaveProperty("tier");
+      expect(model).toHaveProperty("disabled");
+      expect(model).toHaveProperty("requiredApiKeys");
+    });
+  });
+
+  describe("Models API - Data Integrity", () => {
+    it("returns same count as AGENT_CATALOG", async () => {
+      if (!serverAvailable) {
+        console.log("Server not running - skipping test");
+        return;
+      }
+
+      const response = await safeFetch(`${SERVER_URL}/api/models`);
+      expect(response).not.toBeNull();
+      const data = await response!.json();
+
+      expect(data.models.length).toBe(AGENT_CATALOG.length);
+    });
+
+    it("model names match catalog entries", async () => {
+      if (!serverAvailable) {
+        console.log("Server not running - skipping test");
+        return;
+      }
+
+      const response = await safeFetch(`${SERVER_URL}/api/models`);
+      expect(response).not.toBeNull();
+      const data = await response!.json();
+
+      const apiNames = new Set(
+        data.models.map((m: { name: string }) => m.name),
+      );
+      const catalogNames = new Set(AGENT_CATALOG.map((e) => e.name));
+
+      expect(apiNames).toEqual(catalogNames);
     });
   });
 });
