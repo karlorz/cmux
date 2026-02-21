@@ -2,6 +2,11 @@ import type {
   EnvironmentContext,
   EnvironmentResult,
 } from "../common/environment-result";
+import {
+  getMemoryStartupCommand,
+  getMemorySeedFiles,
+  getMemoryProtocolInstructions,
+} from "../../agent-memory-protocol";
 
 /**
  * Apply API keys for OpenAI Codex.
@@ -97,7 +102,7 @@ function stripModelMigrations(toml: string): string {
 }
 
 export async function getOpenAIEnvironment(
-  _ctx: EnvironmentContext
+  ctx: EnvironmentContext
 ): Promise<EnvironmentResult> {
   // These must be lazy since configs are imported into the browser
   const { readFile } = await import("node:fs/promises");
@@ -132,30 +137,40 @@ touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
     mode: "755",
   });
 
-  // List of files to copy from .codex directory
-  // Note: We handle config.toml specially below to ensure required keys (e.g. notify) are present
-  const codexFiles = [
-    { name: "auth.json", mode: "600" },
-    { name: "instructions.md", mode: "644" },
-  ];
-
-  // Try to copy each file
-  for (const file of codexFiles) {
-    try {
-      const content = await readFile(
-        `${homeDir}/.codex/${file.name}`,
-        "utf-8"
-      );
-      files.push({
-        destinationPath: `$HOME/.codex/${file.name}`,
-        contentBase64: Buffer.from(content).toString("base64"),
-        mode: file.mode,
-      });
-    } catch (error) {
-      // File doesn't exist or can't be read, skip it
-      console.warn(`Failed to read .codex/${file.name}:`, error);
-    }
+  // Copy auth.json from .codex directory
+  try {
+    const authContent = await readFile(`${homeDir}/.codex/auth.json`, "utf-8");
+    files.push({
+      destinationPath: "$HOME/.codex/auth.json",
+      contentBase64: Buffer.from(authContent).toString("base64"),
+      mode: "600",
+    });
+  } catch (error) {
+    console.warn("Failed to read .codex/auth.json:", error);
   }
+
+  // Copy instructions.md and append memory protocol instructions
+  let instructionsContent = "";
+  try {
+    instructionsContent = await readFile(
+      `${homeDir}/.codex/instructions.md`,
+      "utf-8"
+    );
+  } catch (error) {
+    // File doesn't exist, start with empty content
+    console.warn("Failed to read .codex/instructions.md:", error);
+  }
+
+  // Append memory protocol instructions
+  const fullInstructions =
+    instructionsContent +
+    (instructionsContent ? "\n\n" : "") +
+    getMemoryProtocolInstructions();
+  files.push({
+    destinationPath: "$HOME/.codex/instructions.md",
+    contentBase64: Buffer.from(fullInstructions).toString("base64"),
+    mode: "644",
+  });
 
   // Ensure config.toml exists and contains notify hook + model migrations
   try {
@@ -183,6 +198,10 @@ touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
       mode: "644",
     });
   }
+
+  // Add agent memory protocol support
+  startupCommands.push(getMemoryStartupCommand());
+  files.push(...getMemorySeedFiles(ctx.taskRunId));
 
   return { files, env, startupCommands };
 }

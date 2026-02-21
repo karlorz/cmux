@@ -345,6 +345,7 @@ export async function spawnAgent(
       CMUX_TASK_RUN_ID: taskRunId,
       CMUX_TASK_RUN_JWT: taskRunJwt,
       CMUX_CALLBACK_URL: callbackUrl,
+      CMUX_AGENT_NAME: agent.name,
       PROMPT: processedTaskDescription,
     };
     let envVars: Record<string, string> = { ...systemEnvVars };

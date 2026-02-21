@@ -6,6 +6,11 @@ import {
   CMUX_ANTHROPIC_PROXY_PLACEHOLDER_API_KEY,
   normalizeAnthropicBaseUrl,
 } from "../../utils/anthropic";
+import {
+  getMemoryStartupCommand,
+  getMemorySeedFiles,
+  getMemoryProtocolInstructions,
+} from "../../agent-memory-protocol";
 
 export const CLAUDE_KEY_ENV_VARS_TO_UNSET = [
   "ANTHROPIC_API_KEY",
@@ -282,6 +287,21 @@ echo ${apiKeyToOutput}`;
   startupCommands.push(
     "echo '[CMUX] Settings directory in ~/.claude:' && ls -la /root/.claude/",
   );
+
+  // Add agent memory protocol support
+  startupCommands.push(getMemoryStartupCommand());
+  files.push(...getMemorySeedFiles(ctx.taskRunId));
+
+  // Add CLAUDE.md with memory protocol instructions for the project
+  const claudeMdContent = `# cmux Project Instructions
+
+${getMemoryProtocolInstructions()}
+`;
+  files.push({
+    destinationPath: "/root/workspace/CLAUDE.local.md",
+    contentBase64: Buffer.from(claudeMdContent).toString("base64"),
+    mode: "644",
+  });
 
   return {
     files,

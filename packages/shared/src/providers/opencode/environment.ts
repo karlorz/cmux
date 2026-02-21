@@ -2,6 +2,11 @@ import type {
   EnvironmentContext,
   EnvironmentResult,
 } from "../common/environment-result";
+import {
+  getMemoryStartupCommand,
+  getMemorySeedFiles,
+  getMemoryProtocolInstructions,
+} from "../../agent-memory-protocol";
 
 // Opencode HTTP API configuration
 export const OPENCODE_HTTP_HOST = "127.0.0.1";
@@ -411,6 +416,21 @@ log "Post-start script end"
   startupCommands.push(
     "nohup /root/lifecycle/opencode/post-start.sh >/root/lifecycle/opencode-post-start.log 2>&1 &"
   );
+
+  // Add agent memory protocol support
+  startupCommands.push(getMemoryStartupCommand());
+  files.push(...getMemorySeedFiles(ctx.taskRunId));
+
+  // Add OPENCODE.md with memory protocol instructions for the project
+  const opencodeMdContent = `# cmux Project Instructions
+
+${getMemoryProtocolInstructions()}
+`;
+  files.push({
+    destinationPath: "/root/workspace/OPENCODE.md",
+    contentBase64: Buffer.from(opencodeMdContent).toString("base64"),
+    mode: "644",
+  });
 
   return { files, env, startupCommands, postStartCommands: [] };
 }
