@@ -624,6 +624,15 @@ else
 fi
 
 # We need to start convex dev even if we're skipping convex
+# Handle conflicting .env.local in packages/convex (CONVEX_DEPLOYMENT conflicts with self-hosted settings)
+CONVEX_ENV_LOCAL="$APP_DIR/packages/convex/.env.local"
+if [ -f "$CONVEX_ENV_LOCAL" ]; then
+    if [ -n "${CONVEX_SELF_HOSTED_URL:-}" ] || [ -n "${CONVEX_SELF_HOSTED_ADMIN_KEY:-}" ]; then
+        echo -e "${YELLOW}Detected self-hosted Convex config. Removing $CONVEX_ENV_LOCAL to avoid conflicts...${NC}"
+        rm -f "$CONVEX_ENV_LOCAL"
+    fi
+fi
+
 # Start convex dev (works the same in both environments)
 if [ "$CONVEX_AGENT_MODE" = "true" ]; then
     echo -e "${GREEN}Starting convex dev in agent mode...${NC}"
