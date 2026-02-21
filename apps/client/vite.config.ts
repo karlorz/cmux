@@ -41,7 +41,7 @@ logger.warn = (msg, options) => {
 };
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   customLogger: logger,
   plugins: [
     tsconfigPaths({
@@ -75,7 +75,7 @@ export default defineConfig({
   define: {
     "process.env": {},
     "process.env.NODE_ENV": JSON.stringify(
-      process.env.NODE_ENV || "development"
+      command === "build" ? "production" : "development"
     ),
     "process.env.NEXT_PUBLIC_RELATED_WWW_ORIGIN_PREVIEW": JSON.stringify(
       NEXT_PUBLIC_RELATED_WWW_ORIGIN_PREVIEW
@@ -87,4 +87,4 @@ export default defineConfig({
   server: {
     allowedHosts: true,
   },
-});
+}));
