@@ -2345,3 +2345,102 @@ export const taskActionRouter = httpAction(async (ctx, req) => {
       return jsonResponse({ code: 404, message: "Not found" }, 404);
   }
 });
+
+// ============================================================================
+// GET /api/v1/cmux/task-runs/{taskRunId}/memory - Get memory for a task run
+// ============================================================================
+export const getTaskRunMemory = httpAction(async (ctx, req) => {
+  const { identity, error } = await getAuthenticatedUser(ctx);
+  if (error) return error;
+
+  const url = new URL(req.url);
+  const teamSlugOrId = url.searchParams.get("teamSlugOrId");
+  const memoryType = url.searchParams.get("type") as
+    | "knowledge"
+    | "daily"
+    | "tasks"
+    | "mailbox"
+    | null;
+
+  if (!teamSlugOrId) {
+    return jsonResponse(
+      { code: 400, message: "teamSlugOrId query parameter is required" },
+      400
+    );
+  }
+
+  // Parse path: /api/v1/cmux/task-runs/{taskRunId}/memory
+  const pathParts = url.pathname.split("/").filter(Boolean);
+  // pathParts: ["api", "v1", "cmux", "task-runs", "{taskRunId}", "memory"]
+  const taskRunId = pathParts[4];
+
+  if (!taskRunId) {
+    return jsonResponse({ code: 400, message: "Task run ID is required" }, 400);
+  }
+
+  try {
+    const userId = identity!.subject;
+    const teamId = await resolveTeamIdForHttp(ctx, teamSlugOrId);
+
+    if (!teamId) {
+      return jsonResponse(
+        { code: 404, message: `Team not found: ${teamSlugOrId}` },
+        404
+      );
+    }
+
+    // Verify the task run belongs to this user/team
+    const taskRun = await ctx.runQuery(internal.taskRuns.getById, {
+      id: taskRunId as Id<"taskRuns">,
+    });
+
+    if (!taskRun || taskRun.teamId !== teamId || taskRun.userId !== userId) {
+      return jsonResponse({ code: 404, message: "Task run not found" }, 404);
+    }
+
+    // Query memory snapshots for this task run
+    const snapshots = await ctx.runQuery(api.agentMemoryQueries.getByTaskRun, {
+      teamSlugOrId,
+      taskRunId: taskRunId as Id<"taskRuns">,
+    });
+
+    // Filter by type if specified
+    let filteredSnapshots = snapshots;
+    if (memoryType) {
+      filteredSnapshots = snapshots.filter(
+        (s: { memoryType: string }) => s.memoryType === memoryType
+      );
+    }
+
+    // Format response
+    const memory = filteredSnapshots.map(
+      (s: {
+        _id: string;
+        memoryType: string;
+        content: string;
+        fileName?: string;
+        date?: string;
+        truncated?: boolean;
+        agentName?: string;
+        createdAt?: number;
+      }) => ({
+        id: s._id,
+        memoryType: s.memoryType,
+        content: s.content,
+        fileName: s.fileName,
+        date: s.date,
+        truncated: s.truncated ?? false,
+        agentName: s.agentName,
+        createdAt: s.createdAt,
+      })
+    );
+
+    return jsonResponse({ memory });
+  } catch (err) {
+    console.error("[cmux.taskRunMemory] Error:", err);
+    return jsonResponse(
+      { code: 500, message: "Failed to get task run memory" },
+      500
+    );
+  }
+});
