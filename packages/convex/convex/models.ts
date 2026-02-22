@@ -34,6 +34,54 @@ export const listAll = authQuery({
 });
 
 /**
+ * List available models filtered by team's configured API keys.
+ * Returns only models the team can actually use (has required keys or free tier).
+ * Requires authentication.
+ */
+export const listAvailable = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    showAll: v.optional(v.boolean()), // If true, returns all models ignoring credentials
+  },
+  handler: async (ctx, args) => {
+    // Verify user has access to the team and get teamId
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    // Get enabled models from database
+    const models = await ctx.db
+      .query("models")
+      .withIndex("by_enabled", (q) => q.eq("enabled", true))
+      .collect();
+
+    // If showAll is true, return all enabled models without filtering
+    if (args.showAll) {
+      return models.sort((a, b) => a.sortOrder - b.sortOrder);
+    }
+
+    // Get team's configured API keys
+    const apiKeys = await ctx.db
+      .query("apiKeys")
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
+      .collect();
+
+    const configuredKeyEnvVars = new Set(apiKeys.map((k) => k.envVar));
+
+    // Filter models by availability
+    const availableModels = models.filter((model) => {
+      // Free tier models are always available
+      if (model.tier === "free") return true;
+      // Models with no required keys are available
+      if (!model.requiredApiKeys || model.requiredApiKeys.length === 0)
+        return true;
+      // Check if any required key is configured
+      return model.requiredApiKeys.some((key) => configuredKeyEnvVars.has(key));
+    });
+
+    return availableModels.sort((a, b) => a.sortOrder - b.sortOrder);
+  },
+});
+
+/**
  * Admin mutation: toggle the global enabled state of a model.
  */
 export const setEnabled = authMutation({
@@ -289,5 +337,58 @@ export const bulkUpsert = internalMutation({
     }
 
     return { upsertedCount: results.length };
+  },
+});
+
+/**
+ * Internal mutation: delete a model by name.
+ * Used to clean up stale models that are no longer in the catalog.
+ */
+export const deleteByName = internalMutation({
+  args: {
+    name: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const model = await ctx.db
+      .query("models")
+      .withIndex("by_name", (q) => q.eq("name", args.name))
+      .first();
+
+    if (model) {
+      await ctx.db.delete(model._id);
+      return { deleted: true, name: args.name };
+    }
+    return { deleted: false, name: args.name };
+  },
+});
+
+/**
+ * Internal mutation: delete stale curated models that are no longer in the catalog.
+ * Takes a list of current valid model names and deletes any curated models not in that list.
+ */
+export const deleteStale = internalMutation({
+  args: {
+    validNames: v.array(v.string()),
+    source: v.union(v.literal("curated"), v.literal("discovered")),
+  },
+  handler: async (ctx, args) => {
+    const validNameSet = new Set(args.validNames);
+
+    // Get all models of the specified source
+    const allModels = await ctx.db.query("models").collect();
+    const modelsToDelete = allModels.filter(
+      (m) => m.source === args.source && !validNameSet.has(m.name)
+    );
+
+    // Delete stale models
+    for (const model of modelsToDelete) {
+      console.log(`[models.deleteStale] Deleting stale ${args.source} model: ${model.name}`);
+      await ctx.db.delete(model._id);
+    }
+
+    return {
+      deletedCount: modelsToDelete.length,
+      deletedNames: modelsToDelete.map((m) => m.name),
+    };
   },
 });

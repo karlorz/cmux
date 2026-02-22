@@ -430,17 +430,61 @@ export function handleHttpRequest(
     return true;
   }
 
-  // Route: GET /api/models - List all models with full catalog info
-  // Queries Convex models table, falls back to static catalog if empty
+  // Route: GET /api/models - List models with optional credential-based filtering
+  // Query params:
+  //   - teamSlugOrId: Team identifier for credential-based filtering
+  //   - all: If "true", returns all models ignoring credentials
+  //   - vendor: Filter by vendor (e.g., "claude", "opencode")
+  // When teamSlugOrId is provided with valid auth, uses listAvailable query
+  // Otherwise falls back to public list (all enabled models)
   if (method === "GET" && path === "/api/models") {
     void (async () => {
+      const teamSlugOrId = url.searchParams.get("teamSlugOrId");
+      const showAll = url.searchParams.get("all") === "true";
+      const vendorFilter = url.searchParams.get("vendor");
+      const authToken = parseAuthHeader(req);
+
       try {
-        // Try to get models from Convex first
-        const convexModels = await getConvex().query(api.models.list, {});
+        let convexModels: Array<{
+          name: string;
+          displayName: string;
+          vendor: string;
+          requiredApiKeys: string[];
+          tier: string;
+          disabled?: boolean;
+          disabledReason?: string;
+          tags?: string[];
+          variants?: Array<{ id: string; displayName: string; description?: string }>;
+          defaultVariant?: string;
+          source: string;
+        }> = [];
+
+        // If authenticated with team, use credential-filtered query from Convex
+        if (authToken && teamSlugOrId) {
+          try {
+            convexModels = await runWithAuthToken(authToken, async () => {
+              return getConvex().query(api.models.listAvailable, {
+                teamSlugOrId,
+                showAll,
+              });
+            });
+          } catch (authError) {
+            serverLogger.warn("[http-api] GET /api/models auth failed, using static fallback", authError);
+            // Fall through to static catalog below
+            convexModels = [];
+          }
+        }
+        // Unauthenticated or auth failed: use static catalog (handled below)
 
         if (convexModels && convexModels.length > 0) {
+          // Apply vendor filter if provided
+          let filteredModels = convexModels;
+          if (vendorFilter) {
+            filteredModels = convexModels.filter((m) => m.vendor === vendorFilter);
+          }
+
           // Use Convex models
-          const models = convexModels.map((entry) => ({
+          const models = filteredModels.map((entry) => ({
             name: entry.name,
             displayName: entry.displayName,
             vendor: entry.vendor,
@@ -453,10 +497,19 @@ export function handleHttpRequest(
             defaultVariant: entry.defaultVariant ?? "default",
             source: entry.source,
           }));
-          jsonResponse(res, 200, { models, source: "convex" });
+          jsonResponse(res, 200, {
+            models,
+            source: "convex",
+            filtered: !!teamSlugOrId && !!authToken && !showAll,
+          });
         } else {
           // Fallback to static catalog
-          const models = AGENT_CATALOG.map((entry) => ({
+          let staticModels = AGENT_CATALOG;
+          if (vendorFilter) {
+            staticModels = AGENT_CATALOG.filter((m) => m.vendor === vendorFilter);
+          }
+
+          const models = staticModels.map((entry) => ({
             name: entry.name,
             displayName: entry.displayName,
             vendor: entry.vendor,
@@ -469,12 +522,17 @@ export function handleHttpRequest(
             defaultVariant: entry.defaultVariant ?? "default",
             source: "curated",
           }));
-          jsonResponse(res, 200, { models, source: "static" });
+          jsonResponse(res, 200, { models, source: "static", filtered: false });
         }
       } catch (error) {
         serverLogger.error("[http-api] GET /api/models failed, using static fallback", error);
         // Fallback to static catalog on error
-        const models = AGENT_CATALOG.map((entry) => ({
+        let staticModels = AGENT_CATALOG;
+        if (vendorFilter) {
+          staticModels = AGENT_CATALOG.filter((m) => m.vendor === vendorFilter);
+        }
+
+        const models = staticModels.map((entry) => ({
           name: entry.name,
           displayName: entry.displayName,
           vendor: entry.vendor,
@@ -487,7 +545,7 @@ export function handleHttpRequest(
           defaultVariant: entry.defaultVariant ?? "default",
           source: "curated",
         }));
-        jsonResponse(res, 200, { models, source: "static" });
+        jsonResponse(res, 200, { models, source: "static", filtered: false });
       }
     })();
     return true;

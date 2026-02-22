@@ -66,6 +66,13 @@ crons.daily(
   internal.warmPoolMaintenance.cleanupWarmPool
 );
 
+// Seed curated models daily at 5:30 UTC (ensures models table is populated)
+crons.daily(
+  "seed curated models",
+  { hourUTC: 5, minuteUTC: 30 },
+  internal.modelDiscovery.seedCuratedModels
+);
+
 // Discover new models from OpenCode Zen API weekly (Saturday 6:00 UTC)
 crons.weekly(
   "discover opencode models",

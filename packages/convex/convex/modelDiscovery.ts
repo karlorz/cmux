@@ -120,7 +120,8 @@ export const discoverOpencodeModels = internalAction({
       });
     }
 
-    // Prepare paid models (we record them but don't know their API key requirements)
+    // Prepare paid models - all OpenCode paid models require OPENCODE_API_KEY
+    // (OpenCode is a unified proxy, so all non-free models use the same key)
     for (const modelId of paidModels) {
       modelsToUpsert.push({
         name: `opencode/${modelId}`,
@@ -129,7 +130,7 @@ export const discoverOpencodeModels = internalAction({
         source: "discovered" as const,
         discoveredFrom: "opencode-zen",
         discoveredAt: now,
-        requiredApiKeys: [] as string[], // Unknown for discovered paid models
+        requiredApiKeys: ["OPENCODE_API_KEY"],
         tier: "paid" as const,
         tags: ["discovered"],
       });
@@ -236,10 +237,11 @@ export const discoverOpenRouterModels = internalAction({
 /**
  * Seed the models table from the static AGENT_CATALOG.
  * This imports curated models that are defined in code.
+ * Also cleans up stale curated models that are no longer in the catalog.
  */
 export const seedCuratedModels = internalAction({
   args: {},
-  handler: async (ctx): Promise<{ seededCount: number }> => {
+  handler: async (ctx): Promise<{ seededCount: number; deletedCount: number }> => {
     console.log("[modelDiscovery] Seeding curated models from AGENT_CATALOG...");
 
     const modelsToUpsert = AGENT_CATALOG.map((entry, index) => {
@@ -263,15 +265,32 @@ export const seedCuratedModels = internalAction({
       };
     });
 
+    // Upsert all curated models
     const result = await ctx.runMutation(internal.models.bulkUpsert, {
       models: modelsToUpsert,
     });
 
+    // Clean up stale curated models no longer in catalog
+    const validNames = AGENT_CATALOG.map((e) => e.name);
+    const deleteResult = await ctx.runMutation(internal.models.deleteStale, {
+      validNames,
+      source: "curated",
+    });
+
+    if (deleteResult.deletedCount > 0) {
+      console.log(
+        `[modelDiscovery] Deleted ${deleteResult.deletedCount} stale curated models: ${deleteResult.deletedNames.join(", ")}`
+      );
+    }
+
     console.log(
-      `[modelDiscovery] Seeded ${result.upsertedCount} curated models`
+      `[modelDiscovery] Seeded ${result.upsertedCount} curated models, deleted ${deleteResult.deletedCount} stale`
     );
 
-    return { seededCount: result.upsertedCount };
+    return {
+      seededCount: result.upsertedCount,
+      deletedCount: deleteResult.deletedCount,
+    };
   },
 });
 
@@ -313,6 +332,7 @@ export const triggerSeed = action({
   handler: async (ctx, _args): Promise<{
     success: boolean;
     seededCount: number;
+    deletedCount: number;
   }> => {
     // Manual auth check for actions
     const identity = await ctx.auth.getUserIdentity();
@@ -329,6 +349,7 @@ export const triggerSeed = action({
     return {
       success: true,
       seededCount: result.seededCount,
+      deletedCount: result.deletedCount,
     };
   },
 });

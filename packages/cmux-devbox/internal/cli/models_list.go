@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"text/tabwriter"
@@ -116,15 +117,11 @@ func runModelsList(cmd *cobra.Command, args []string) error {
 		cachedModels = nil
 	}
 
-	models, err := FetchModels(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to fetch models: %w", err)
-	}
-
 	// Get filter flags
 	provider, _ := cmd.Flags().GetString("provider")
 	enabledOnly, _ := cmd.Flags().GetBool("enabled-only")
 	showAll, _ := cmd.Flags().GetBool("all")
+	useLocal, _ := cmd.Flags().GetBool("local")
 
 	// Filter text from args
 	filter := ""
@@ -132,29 +129,40 @@ func runModelsList(cmd *cobra.Command, args []string) error {
 		filter = strings.ToLower(args[0])
 	}
 
-	// Apply filters
-	filtered := filterModels(models, provider, enabledOnly, filter)
+	var models []ModelInfo
+	var err error
 
-	// Filter by availability (unless --all)
-	if !showAll {
-		useLocal, _ := cmd.Flags().GetBool("local")
-
-		if useLocal {
-			// Explicit local credential checks
+	// Decide filtering approach
+	if useLocal {
+		// Local credential filtering: fetch all models, then filter client-side
+		models, err = FetchModelsFiltered(ctx, true, provider)
+		if err != nil {
+			return fmt.Errorf("failed to fetch models: %w", err)
+		}
+		if !showAll {
+			// Apply local credential filtering
 			providerStatus := credentials.CheckAllProviders()
-			filtered = filterByAvailability(filtered, providerStatus)
-		} else {
-			// Try server-side first, fall back to local
-			serverStatus, err := fetchServerProviderStatus(ctx)
+			models = filterByAvailability(models, providerStatus)
+		}
+	} else {
+		// Server-side credential filtering (default): let the API filter by credentials
+		models, err = FetchModelsFiltered(ctx, showAll, provider)
+		if err != nil {
+			// Fall back to all models + local filtering on error
+			fmt.Fprintf(os.Stderr, "Warning: server-side filtering failed (%v), falling back to local checks\n", err)
+			models, err = FetchModelsFiltered(ctx, true, provider)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not fetch server provider status (%v), falling back to local checks\n", err)
+				return fmt.Errorf("failed to fetch models: %w", err)
+			}
+			if !showAll {
 				providerStatus := credentials.CheckAllProviders()
-				filtered = filterByAvailability(filtered, providerStatus)
-			} else {
-				filtered = filterByServerAvailability(filtered, serverStatus)
+				models = filterByAvailability(models, providerStatus)
 			}
 		}
 	}
+
+	// Apply additional client-side filters (enabled-only, text filter)
+	filtered := filterModels(models, "", enabledOnly, filter) // provider already applied server-side
 
 	// JSON output
 	if flagJSON {
@@ -181,7 +189,15 @@ func runModelsList(cmd *cobra.Command, args []string) error {
 
 // FetchModels retrieves model list from server API
 func FetchModels(ctx context.Context) ([]ModelInfo, error) {
-	if len(cachedModels) > 0 {
+	return FetchModelsFiltered(ctx, false, "")
+}
+
+// FetchModelsFiltered retrieves model list from server API with optional filtering
+// If showAll is false and auth is available, server-side credential filtering is applied
+// vendorFilter optionally filters by vendor (e.g., "anthropic", "opencode")
+func FetchModelsFiltered(ctx context.Context, showAll bool, vendorFilter string) ([]ModelInfo, error) {
+	// Use cache only for unfiltered requests
+	if len(cachedModels) > 0 && showAll && vendorFilter == "" {
 		return cachedModels, nil
 	}
 
@@ -190,10 +206,37 @@ func FetchModels(ctx context.Context) ([]ModelInfo, error) {
 		return nil, fmt.Errorf("CMUX_SERVER_URL not configured")
 	}
 
+	// Build URL with query params
+	endpoint := cfg.ServerURL + "/api/models"
+	params := url.Values{}
+
+	// Try to get auth token for server-side credential filtering
+	accessToken, _ := auth.GetAccessToken()
+	teamSlug, _ := auth.GetTeamSlug()
+
+	if accessToken != "" && teamSlug != "" {
+		params.Set("teamSlugOrId", teamSlug)
+		if showAll {
+			params.Set("all", "true")
+		}
+	}
+	if vendorFilter != "" {
+		params.Set("vendor", vendorFilter)
+	}
+
+	if len(params) > 0 {
+		endpoint += "?" + params.Encode()
+	}
+
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, "GET", cfg.ServerURL+"/api/models", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
 	if err != nil {
 		return nil, err
+	}
+
+	// Add auth header if available
+	if accessToken != "" {
+		req.Header.Set("Authorization", "Bearer "+accessToken)
 	}
 
 	resp, err := client.Do(req)
@@ -212,8 +255,12 @@ func FetchModels(ctx context.Context) ([]ModelInfo, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	cachedModels = result.Models
-	return cachedModels, nil
+	// Cache unfiltered results only
+	if showAll && vendorFilter == "" {
+		cachedModels = result.Models
+	}
+
+	return result.Models, nil
 }
 
 func filterModels(models []ModelInfo, provider string, enabledOnly bool, filter string) []ModelInfo {

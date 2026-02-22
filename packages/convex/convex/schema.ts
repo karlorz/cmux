@@ -618,7 +618,8 @@ const convexSchema = defineSchema({
     teamId: v.string(),
   })
     .index("by_envVar", ["envVar"])
-    .index("by_team_user", ["teamId", "userId"]),
+    .index("by_team_user", ["teamId", "userId"])
+    .index("by_team", ["teamId"]),
   workspaceSettings: defineTable({
     worktreePath: v.optional(v.string()), // Custom path for git worktrees
     autoPrEnabled: v.optional(v.boolean()), // Auto-create PR for crown winner (default: false)
