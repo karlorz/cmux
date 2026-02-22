@@ -31,6 +31,8 @@ import {
   modelsRouter,
   morphRouter,
   providersRouter,
+  providersStatusRouter,
+  apiKeysRouter,
   pveLxcRouter,
   sandboxesRouter,
   teamsRouter,
@@ -185,6 +187,8 @@ app.route("/", settingsRouter);
 app.route("/", worktreesRouter);
 app.route("/", modelsRouter);
 app.route("/", providersRouter);
+app.route("/", providersStatusRouter);
+app.route("/", apiKeysRouter);
 
 // OpenAPI documentation
 app.doc("/doc", {

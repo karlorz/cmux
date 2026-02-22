@@ -1089,6 +1089,39 @@ export type TestResponse = {
     error?: string;
 };
 
+export type ProviderStatus = {
+    id: string;
+    name: string;
+    isAvailable: boolean;
+    source: 'apiKeys' | 'oauth' | 'free';
+    configuredKeys: Array<string>;
+    requiredKeys: Array<string>;
+};
+
+export type ProviderStatusListResponse = {
+    providers: Array<ProviderStatus>;
+};
+
+export type ApiKey = {
+    envVar: string;
+    displayName: string;
+    description?: string;
+    hasValue: boolean;
+    maskedValue?: string;
+    updatedAt?: number;
+};
+
+export type ApiKeyListResponse = {
+    apiKeys: Array<ApiKey>;
+};
+
+export type UpsertApiKeyBody = {
+    envVar: string;
+    value: string;
+    displayName: string;
+    description?: string;
+};
+
 export type GetApiHealthData = {
     body?: never;
     path?: never;
@@ -4476,6 +4509,111 @@ export type PatchApiProvidersByIdEnabledResponses = {
 };
 
 export type PatchApiProvidersByIdEnabledResponse = PatchApiProvidersByIdEnabledResponses[keyof PatchApiProvidersByIdEnabledResponses];
+
+export type GetApiProvidersStatusData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/providers/status';
+};
+
+export type GetApiProvidersStatusErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiProvidersStatusResponses = {
+    /**
+     * Provider status list
+     */
+    200: ProviderStatusListResponse;
+};
+
+export type GetApiProvidersStatusResponse = GetApiProvidersStatusResponses[keyof GetApiProvidersStatusResponses];
+
+export type GetApiApiKeysData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/api-keys';
+};
+
+export type GetApiApiKeysErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiApiKeysResponses = {
+    /**
+     * List of API keys
+     */
+    200: ApiKeyListResponse;
+};
+
+export type GetApiApiKeysResponse = GetApiApiKeysResponses[keyof GetApiApiKeysResponses];
+
+export type PutApiApiKeysData = {
+    body: UpsertApiKeyBody;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/api-keys';
+};
+
+export type PutApiApiKeysErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PutApiApiKeysResponses = {
+    /**
+     * Success
+     */
+    200: SuccessResponse;
+};
+
+export type PutApiApiKeysResponse = PutApiApiKeysResponses[keyof PutApiApiKeysResponses];
+
+export type DeleteApiApiKeysByEnvVarData = {
+    body?: never;
+    path: {
+        /**
+         * Environment variable name
+         */
+        envVar: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/api-keys/{envVar}';
+};
+
+export type DeleteApiApiKeysByEnvVarErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type DeleteApiApiKeysByEnvVarResponses = {
+    /**
+     * Success
+     */
+    200: SuccessResponse;
+};
+
+export type DeleteApiApiKeysByEnvVarResponse = DeleteApiApiKeysByEnvVarResponses[keyof DeleteApiApiKeysByEnvVarResponses];
 
 export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
