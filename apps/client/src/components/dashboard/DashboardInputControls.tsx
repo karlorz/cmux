@@ -181,18 +181,20 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       (entry) => entry.disabled !== true
     );
 
-    // Map all models, marking unavailable ones as disabled (grayed out)
-    const options = activeCatalog.map((entry) => {
+    // Filter out unavailable models (no API key configured)
+    const availableCatalog = activeCatalog.filter((entry) => {
       const status = providerStatusMap.get(entry.name);
-      const isAvailable = status?.isAvailable ?? true;
+      // If no status info, assume available (free models, etc.)
+      return status?.isAvailable ?? true;
+    });
+
+    const options = availableCatalog.map((entry) => {
       return {
         label: entry.name,
         displayLabel: entry.displayName,
         value: entry.name,
         icon: <AgentLogo agentName={entry.name} vendor={entry.vendor} className="w-4 h-4" />,
         iconKey: entry.vendor,
-        isUnavailable: !isAvailable,
-        isDisabled: !isAvailable,
       } satisfies AgentOption;
     });
 
