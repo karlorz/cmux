@@ -71,6 +71,32 @@ export function ModelCatalogSection({
     convexQuery(api.models.listAll, { teamSlugOrId })
   );
 
+  // Query API keys to determine model availability
+  const { data: apiKeys } = useQuery(
+    convexQuery(api.apiKeys.getAll, { teamSlugOrId })
+  );
+
+  // Build a Set of configured API key env vars for efficient lookup
+  const configuredApiKeys = useMemo(() => {
+    if (!apiKeys) return new Set<string>();
+    return new Set(apiKeys.map((k) => k.envVar));
+  }, [apiKeys]);
+
+  // Check if a model is available (required API key is configured)
+  const isModelAvailable = useCallback(
+    (model: Model) => {
+      // Free models are always available
+      if (model.tier === "free") return true;
+      // If no API keys required, it's available
+      if (model.requiredApiKeys.length === 0) return true;
+      // Check if at least ONE of the required API keys is configured
+      return model.requiredApiKeys.some((requiredKey) =>
+        configuredApiKeys.has(requiredKey)
+      );
+    },
+    [configuredApiKeys]
+  );
+
   // Mutation to toggle model enabled state
   const toggleEnabledMutation = useMutation({
     mutationFn: async ({
@@ -262,6 +288,11 @@ export function ModelCatalogSection({
     const searchLower = searchQuery.toLowerCase();
 
     const filtered = models.filter((entry) => {
+      // Filter out unavailable models (no API key configured)
+      if (!isModelAvailable(entry)) {
+        return false;
+      }
+
       // Apply search filter
       if (searchQuery) {
         const matchesSearch =
@@ -296,7 +327,7 @@ export function ModelCatalogSection({
     }
 
     return grouped;
-  }, [models, searchQuery, sourceFilter, showDisabledOnly]);
+  }, [models, searchQuery, sourceFilter, showDisabledOnly, isModelAvailable]);
 
   const enabledCount = models?.filter((m) => m.enabled).length ?? 0;
   const totalCount = models?.length ?? 0;
@@ -428,7 +459,6 @@ export function ModelCatalogSection({
                         toggleEnabledMutation.variables?.modelName === entry.name;
                       const isDragging = draggedModel === entry.name;
                       const isDragOver = dragOverModel === entry.name;
-
                       return (
                         <div
                           key={entry.name}

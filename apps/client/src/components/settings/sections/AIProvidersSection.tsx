@@ -283,10 +283,12 @@ export function AIProvidersSection({
                           <input
                             type={showKeys[key.envVar] ? "text" : "password"}
                             id={key.envVar}
+                            name={`api-key-${key.envVar}`}
                             value={apiKeyValues[key.envVar] || ""}
                             onChange={(event) =>
                               onApiKeyChange(key.envVar, event.target.value)
                             }
+                            autoComplete="new-password"
                             className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 pr-10 font-mono text-xs text-neutral-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
                             placeholder={getApiKeyPlaceholder(key)}
                           />

@@ -2,6 +2,7 @@
 
 export * from "./agentConfig";
 export * from "./apiKeys";
+export * from "./model-usage";
 export * from "./convex-ready";
 export * from "./crown";
 export * from "./diff-types";

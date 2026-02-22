@@ -42,9 +42,35 @@ export function ModelManagementSection({
     convexQuery(api.modelPreferences.get, { teamSlugOrId })
   );
 
+  // Query API keys to determine model availability
+  const { data: apiKeys } = useQuery(
+    convexQuery(api.apiKeys.getAll, { teamSlugOrId })
+  );
+
   const disabledModels = useMemo(
     () => new Set(modelPreferences?.disabledModels ?? []),
     [modelPreferences?.disabledModels]
+  );
+
+  // Build a Set of configured API key env vars for efficient lookup
+  const configuredApiKeys = useMemo(() => {
+    if (!apiKeys) return new Set<string>();
+    return new Set(apiKeys.map((k) => k.envVar));
+  }, [apiKeys]);
+
+  // Check if a model is available (required API key is configured)
+  const isModelAvailable = useCallback(
+    (entry: AgentCatalogEntry) => {
+      // Free models are always available
+      if (entry.tier === "free") return true;
+      // If no API keys required, it's available
+      if (!entry.requiredApiKeys || entry.requiredApiKeys.length === 0) return true;
+      // Check if at least ONE of the required API keys is configured
+      return entry.requiredApiKeys.some((requiredKey) =>
+        configuredApiKeys.has(requiredKey)
+      );
+    },
+    [configuredApiKeys]
   );
 
   // Mutation to toggle model
@@ -83,6 +109,11 @@ export function ModelManagementSection({
     const searchLower = searchQuery.toLowerCase();
 
     const filtered = AGENT_CATALOG.filter((entry) => {
+      // Filter out unavailable models (no API key configured)
+      if (!isModelAvailable(entry)) {
+        return false;
+      }
+
       // Apply search filter
       if (searchQuery) {
         const matchesSearch =
@@ -112,7 +143,7 @@ export function ModelManagementSection({
     }
 
     return grouped;
-  }, [searchQuery, showDisabledOnly, disabledModels]);
+  }, [searchQuery, showDisabledOnly, disabledModels, isModelAvailable]);
 
   const enabledCount = AGENT_CATALOG.length - disabledModels.size;
   const totalCount = AGENT_CATALOG.length;

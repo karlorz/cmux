@@ -4,20 +4,23 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Settings, Cpu } from "lucide-react";
+import { ArrowLeft, Settings, Key, Cpu } from "lucide-react";
 
-const tabs = [
+const navItems = [
   {
-    name: "Providers",
-    href: "/settings/providers",
+    name: "General",
+    href: "/settings/general",
     icon: Settings,
-    description: "Configure API keys and provider connections",
+  },
+  {
+    name: "AI Providers",
+    href: "/settings/providers",
+    icon: Key,
   },
   {
     name: "Models",
     href: "/settings/models",
     icon: Cpu,
-    description: "Manage available models and preferences",
   },
 ];
 
@@ -25,48 +28,58 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   return (
-    <div className="min-h-dvh bg-background">
-      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-semibold text-white">Settings</h1>
-          <p className="mt-1 text-sm text-neutral-400">
-            Configure providers and models for your workspace
-          </p>
+    <div className="flex min-h-dvh bg-neutral-50 dark:bg-neutral-950">
+      {/* Left Sidebar */}
+      <aside className="w-60 border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex flex-col">
+        <div className="p-4">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-900 dark:hover:text-white transition"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to app
+          </Link>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="mb-6 border-b border-neutral-800">
-          <nav className="-mb-px flex gap-6" aria-label="Settings tabs">
-            {tabs.map((tab) => {
-              const isActive = pathname === tab.href;
-              return (
-                <Link
-                  key={tab.name}
-                  href={tab.href}
-                  className={cn(
-                    "group flex items-center gap-2 border-b-2 pb-3 text-sm font-medium transition-colors",
-                    isActive
-                      ? "border-white text-white"
-                      : "border-transparent text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
-                  )}
-                >
-                  <tab.icon
-                    className={cn(
-                      "h-4 w-4",
-                      isActive ? "text-white" : "text-neutral-500 group-hover:text-neutral-300"
-                    )}
-                  />
-                  {tab.name}
-                </Link>
-              );
-            })}
-          </nav>
-        </div>
+        <nav className="flex-1 px-3 py-2">
+          {navItems.map((item) => {
+            const isActive = pathname === item.href ||
+              (item.href === "/settings/providers" && pathname === "/settings");
+            return (
+              <Link
+                key={item.name}
+                href={item.href}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition mb-1",
+                  isActive
+                    ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white"
+                    : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 hover:text-neutral-900 dark:hover:text-white"
+                )}
+              >
+                <item.icon className="h-4 w-4" />
+                {item.name}
+              </Link>
+            );
+          })}
+        </nav>
+      </aside>
 
-        {/* Content */}
-        <main>{children}</main>
-      </div>
+      {/* Main Content */}
+      <main className="flex-1 overflow-auto">
+        <div className="max-w-4xl mx-auto">
+          {/* Header */}
+          <div className="border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-8 py-4">
+            <h1 className="text-lg font-medium text-neutral-900 dark:text-white text-center">
+              Settings
+            </h1>
+          </div>
+
+          {/* Content */}
+          <div className="p-8">
+            {children}
+          </div>
+        </div>
+      </main>
     </div>
   );
 }

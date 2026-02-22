@@ -2,12 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useUser } from "@stackframe/stack";
-import {
-  Search,
-  Loader2,
-  RefreshCw,
-  Filter,
-} from "lucide-react";
+import { Search, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Model = {
@@ -26,50 +21,44 @@ type Model = {
   disabledReason?: string;
 };
 
-type ProviderStatus = {
-  id: string;
-  name: string;
-  isAvailable: boolean;
-  source: "apiKeys" | "oauth" | "free" | null;
-  configuredKeys: string[];
-  requiredKeys: string[];
+type ApiKeyInfo = {
+  envVar: string;
+  displayName: string;
+  description?: string;
+  hasValue: boolean;
+  maskedValue?: string;
+  updatedAt?: number;
 };
 
 const VENDOR_DISPLAY_NAMES: Record<string, string> = {
-  anthropic: "Anthropic",
-  openai: "OpenAI",
-  google: "Google",
-  openrouter: "OpenRouter",
-  xai: "xAI",
-  modelstudio: "Alibaba",
-  opencode: "OpenCode",
+  anthropic: "CLAUDE",
+  openai: "OPENAI / CODEX",
+  google: "GEMINI",
+  openrouter: "OPENROUTER",
+  xai: "XAI",
+  modelstudio: "ALIBABA",
+  opencode: "OPENCODE",
 };
 
-const FILTER_OPTIONS = {
-  source: [
-    { value: "all", label: "All Sources" },
-    { value: "curated", label: "Curated" },
-    { value: "discovered", label: "Discovered" },
-  ],
-  tier: [
-    { value: "all", label: "All Tiers" },
-    { value: "free", label: "Free" },
-    { value: "paid", label: "Paid" },
-  ],
+// Provider icons (simple colored dots for now)
+const VENDOR_COLORS: Record<string, string> = {
+  anthropic: "bg-orange-500",
+  openai: "bg-emerald-500",
+  google: "bg-blue-500",
+  openrouter: "bg-purple-500",
+  xai: "bg-neutral-500",
+  modelstudio: "bg-amber-500",
+  opencode: "bg-cyan-500",
 };
 
 export function ModelsClient() {
   const user = useUser();
   const [models, setModels] = useState<Model[]>([]);
-  const [providers, setProviders] = useState<ProviderStatus[]>([]);
+  const [apiKeys, setApiKeys] = useState<ApiKeyInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [sourceFilter, setSourceFilter] = useState<"all" | "curated" | "discovered">("all");
-  const [tierFilter, setTierFilter] = useState<"all" | "free" | "paid">("all");
-  const [vendorFilter, setVendorFilter] = useState<string>("all");
-  const [showFilters, setShowFilters] = useState(false);
+  const [showDisabledOnly, setShowDisabledOnly] = useState(false);
   const [teamSlugOrId, setTeamSlugOrId] = useState<string | null>(null);
   const [togglingModel, setTogglingModel] = useState<string | null>(null);
 
@@ -90,7 +79,7 @@ export function ModelsClient() {
     void fetchTeam();
   }, [user]);
 
-  // Fetch models and provider status
+  // Fetch models and API keys
   const fetchData = useCallback(async () => {
     if (!teamSlugOrId) return;
 
@@ -98,23 +87,23 @@ export function ModelsClient() {
     setError(null);
 
     try {
-      const [modelsRes, providersRes] = await Promise.all([
+      const [modelsRes, apiKeysRes] = await Promise.all([
         fetch(`/api/models?teamSlugOrId=${encodeURIComponent(teamSlugOrId)}`),
-        fetch(`/api/providers/status?teamSlugOrId=${encodeURIComponent(teamSlugOrId)}`),
+        fetch(`/api/api-keys?teamSlugOrId=${encodeURIComponent(teamSlugOrId)}`),
       ]);
 
       if (!modelsRes.ok) {
         throw new Error(`Failed to fetch models: ${modelsRes.statusText}`);
       }
-      if (!providersRes.ok) {
-        throw new Error(`Failed to fetch providers: ${providersRes.statusText}`);
+      if (!apiKeysRes.ok) {
+        throw new Error(`Failed to fetch API keys: ${apiKeysRes.statusText}`);
       }
 
       const modelsData = await modelsRes.json() as { models: Model[] };
-      const providersData = await providersRes.json() as { providers: ProviderStatus[] };
+      const apiKeysData = await apiKeysRes.json() as { apiKeys: ApiKeyInfo[] };
 
       setModels(modelsData.models);
-      setProviders(providersData.providers);
+      setApiKeys(apiKeysData.apiKeys);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load data");
       console.error("Failed to fetch models:", err);
@@ -126,30 +115,6 @@ export function ModelsClient() {
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
-
-  // Trigger model refresh (discovery)
-  const handleRefreshModels = async () => {
-    if (!teamSlugOrId || isRefreshing) return;
-
-    setIsRefreshing(true);
-    try {
-      const res = await fetch(
-        `/api/models/refresh?teamSlugOrId=${encodeURIComponent(teamSlugOrId)}`,
-        { method: "POST" }
-      );
-
-      if (!res.ok) {
-        throw new Error("Failed to refresh models");
-      }
-
-      await fetchData();
-    } catch (err) {
-      console.error("Failed to refresh models:", err);
-      setError(err instanceof Error ? err.message : "Failed to refresh");
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
 
   // Toggle model enabled state
   const handleToggleModel = async (modelName: string, enabled: boolean) => {
@@ -183,21 +148,26 @@ export function ModelsClient() {
     }
   };
 
-  // Get unique vendors from models
-  const vendors = useMemo(() => {
-    const vendorSet = new Set(models.map((m) => m.vendor));
-    return ["all", ...Array.from(vendorSet).sort()];
-  }, [models]);
+  // Build a Set of configured API key env vars for efficient lookup
+  const configuredApiKeys = useMemo(() => {
+    return new Set(
+      apiKeys.filter((k) => k.hasValue).map((k) => k.envVar)
+    );
+  }, [apiKeys]);
 
-  // Check if a model is available (provider is connected)
+  // Check if a model is available (required API key is configured)
   const isModelAvailable = useCallback(
     (model: Model) => {
+      // Free models are always available
       if (model.tier === "free") return true;
-      return model.requiredApiKeys.some((key) =>
-        providers.some((p) => p.configuredKeys.includes(key))
+      // If no API keys required, it's available
+      if (model.requiredApiKeys.length === 0) return true;
+      // Check if at least ONE of the required API keys is configured
+      return model.requiredApiKeys.some((requiredKey) =>
+        configuredApiKeys.has(requiredKey)
       );
     },
-    [providers]
+    [configuredApiKeys]
   );
 
   // Filter models
@@ -215,24 +185,14 @@ export function ModelsClient() {
         }
       }
 
-      // Source filter
-      if (sourceFilter !== "all" && model.source !== sourceFilter) {
-        return false;
-      }
-
-      // Tier filter
-      if (tierFilter !== "all" && model.tier !== tierFilter) {
-        return false;
-      }
-
-      // Vendor filter
-      if (vendorFilter !== "all" && model.vendor !== vendorFilter) {
+      // Disabled only filter
+      if (showDisabledOnly && model.enabled) {
         return false;
       }
 
       return true;
     });
-  }, [models, searchQuery, sourceFilter, tierFilter, vendorFilter]);
+  }, [models, searchQuery, showDisabledOnly]);
 
   // Group models by vendor for display
   const groupedModels = useMemo(() => {
@@ -246,10 +206,13 @@ export function ModelsClient() {
     return groups;
   }, [filteredModels]);
 
+  // Count enabled models
+  const enabledCount = models.filter((m) => m.enabled).length;
+
   if (!user) {
     return (
       <div className="flex items-center justify-center py-16">
-        <p className="text-neutral-400">Please sign in to manage models.</p>
+        <p className="text-neutral-500 dark:text-neutral-400">Please sign in to manage models.</p>
       </div>
     );
   }
@@ -264,133 +227,56 @@ export function ModelsClient() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h2 className="text-xl font-semibold text-neutral-900 dark:text-white">
+          Model Management
+        </h2>
+        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+          {enabledCount} of {models.length} models enabled
+        </p>
+      </div>
+
       {/* Error Message */}
       {error && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+        <div className="rounded-lg border border-red-300 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400">
           {error}
         </div>
       )}
 
-      {/* Search and Actions */}
+      {/* Search and Filters */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
           <input
             type="text"
             placeholder="Search models..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full rounded-lg border border-neutral-800 bg-neutral-900 pl-10 pr-4 py-2 text-sm text-white placeholder:text-neutral-500 focus:border-neutral-700 focus:outline-none focus:ring-1 focus:ring-neutral-700"
+            className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 pl-10 pr-4 py-2.5 text-sm text-neutral-900 dark:text-white placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowFilters(!showFilters)}
-            className={cn(
-              "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition",
-              showFilters
-                ? "border-white bg-white text-neutral-900"
-                : "border-neutral-700 bg-neutral-800/50 text-neutral-300 hover:bg-neutral-800"
-            )}
-          >
-            <Filter className="h-4 w-4" />
-            Filters
-          </button>
-
-          <button
-            type="button"
-            onClick={() => void handleRefreshModels()}
-            disabled={isRefreshing}
-            className="inline-flex items-center gap-2 rounded-lg border border-neutral-700 bg-neutral-800/50 px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-800 transition disabled:opacity-50"
-          >
-            <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
-            Discover
-          </button>
-        </div>
-      </div>
-
-      {/* Filters */}
-      {showFilters && (
-        <div className="flex flex-wrap gap-4 rounded-lg border border-neutral-800 bg-neutral-900/50 p-4">
-          {/* Source Filter */}
-          <div className="space-y-1.5">
-            <label className="text-xs text-neutral-500">Source</label>
-            <div className="flex gap-1">
-              {FILTER_OPTIONS.source.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setSourceFilter(opt.value as typeof sourceFilter)}
-                  className={cn(
-                    "rounded-lg px-3 py-1.5 text-xs font-medium transition",
-                    sourceFilter === opt.value
-                      ? "bg-white text-neutral-900"
-                      : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"
-                  )}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Tier Filter */}
-          <div className="space-y-1.5">
-            <label className="text-xs text-neutral-500">Tier</label>
-            <div className="flex gap-1">
-              {FILTER_OPTIONS.tier.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setTierFilter(opt.value as typeof tierFilter)}
-                  className={cn(
-                    "rounded-lg px-3 py-1.5 text-xs font-medium transition",
-                    tierFilter === opt.value
-                      ? "bg-white text-neutral-900"
-                      : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"
-                  )}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Vendor Filter */}
-          <div className="space-y-1.5">
-            <label className="text-xs text-neutral-500">Vendor</label>
-            <select
-              value={vendorFilter}
-              onChange={(e) => setVendorFilter(e.target.value)}
-              className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-xs text-white focus:border-neutral-600 focus:outline-none"
-            >
-              <option value="all">All Vendors</option>
-              {vendors.filter((v) => v !== "all").map((vendor) => (
-                <option key={vendor} value={vendor}>
-                  {VENDOR_DISPLAY_NAMES[vendor] || vendor}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      )}
-
-      {/* Models Count */}
-      <div className="text-sm text-neutral-400">
-        Showing {filteredModels.length} of {models.length} models
+        <label className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={showDisabledOnly}
+            onChange={(e) => setShowDisabledOnly(e.target.checked)}
+            className="rounded border-neutral-300 dark:border-neutral-600 text-blue-600 focus:ring-blue-500"
+          />
+          Show disabled only
+        </label>
       </div>
 
       {/* Models List */}
       <div className="space-y-6">
         {Object.entries(groupedModels).map(([vendor, vendorModels]) => (
           <div key={vendor}>
-            <h3 className="mb-3 text-sm font-medium text-neutral-400">
-              {VENDOR_DISPLAY_NAMES[vendor] || vendor}
+            <h3 className="mb-3 text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+              {VENDOR_DISPLAY_NAMES[vendor] || vendor.toUpperCase()}
             </h3>
-            <div className="divide-y divide-neutral-800 rounded-lg border border-neutral-800 bg-neutral-900/50">
-              {vendorModels.map((model) => {
+            <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 overflow-hidden">
+              {vendorModels.map((model, idx) => {
                 const available = isModelAvailable(model);
                 const isToggling = togglingModel === model.name;
 
@@ -398,47 +284,67 @@ export function ModelsClient() {
                   <div
                     key={model._id}
                     className={cn(
-                      "flex items-center justify-between gap-4 px-4 py-3",
-                      !available && "opacity-60"
+                      "flex items-center gap-4 px-4 py-3",
+                      idx !== vendorModels.length - 1 && "border-b border-neutral-100 dark:border-neutral-800",
+                      !available && "opacity-50"
                     )}
                   >
+                    {/* Provider Icon */}
+                    <div
+                      className={cn(
+                        "h-8 w-8 rounded-lg flex items-center justify-center",
+                        VENDOR_COLORS[vendor] || "bg-neutral-500"
+                      )}
+                    >
+                      <span className="text-white text-xs font-bold">
+                        {vendor.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+
+                    {/* Model Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-white truncate">
+                        <span className="font-medium text-neutral-900 dark:text-white">
                           {model.displayName}
                         </span>
+                        {/* Tags */}
+                        {model.tags.includes("latest") && (
+                          <span className="rounded bg-blue-100 dark:bg-blue-500/20 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:text-blue-400 uppercase">
+                            Latest
+                          </span>
+                        )}
+                        {model.tags.includes("recommended") && (
+                          <span className="rounded bg-emerald-100 dark:bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400 uppercase">
+                            Recommended
+                          </span>
+                        )}
+                        {model.tags.includes("reasoning") && (
+                          <span className="rounded bg-purple-100 dark:bg-purple-500/20 px-1.5 py-0.5 text-[10px] font-medium text-purple-700 dark:text-purple-400 uppercase">
+                            Reasoning
+                          </span>
+                        )}
                         {model.tier === "free" && (
-                          <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
-                            FREE
-                          </span>
-                        )}
-                        {model.source === "discovered" && (
-                          <span className="rounded-full bg-blue-500/20 px-2 py-0.5 text-[10px] font-medium text-blue-400">
-                            DISCOVERED
-                          </span>
-                        )}
-                        {model.disabled && (
-                          <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-medium text-amber-400">
-                            DISABLED
+                          <span className="rounded bg-amber-100 dark:bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400 uppercase">
+                            Free
                           </span>
                         )}
                       </div>
-                      <p className="mt-0.5 text-xs text-neutral-500 truncate">
+                      <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400 truncate">
                         {model.name}
                         {!available && " (provider not connected)"}
-                        {model.disabledReason && ` - ${model.disabledReason}`}
                       </p>
                     </div>
 
+                    {/* Toggle Switch */}
                     <button
                       type="button"
                       onClick={() => void handleToggleModel(model.name, !model.enabled)}
                       disabled={isToggling || model.disabled}
                       className={cn(
-                        "relative h-6 w-11 rounded-full transition-colors",
+                        "relative h-6 w-11 rounded-full transition-colors flex-shrink-0",
                         model.enabled
-                          ? "bg-emerald-500"
-                          : "bg-neutral-700",
+                          ? "bg-blue-600"
+                          : "bg-neutral-300 dark:bg-neutral-600",
                         (isToggling || model.disabled) && "cursor-not-allowed opacity-50"
                       )}
                     >
@@ -462,17 +368,15 @@ export function ModelsClient() {
       </div>
 
       {filteredModels.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-16 text-neutral-400">
-          <p>No models match your filters.</p>
+        <div className="flex flex-col items-center justify-center py-16 text-neutral-500 dark:text-neutral-400">
+          <p>No models match your search.</p>
           <button
             type="button"
             onClick={() => {
               setSearchQuery("");
-              setSourceFilter("all");
-              setTierFilter("all");
-              setVendorFilter("all");
+              setShowDisabledOnly(false);
             }}
-            className="mt-2 text-sm text-white underline hover:no-underline"
+            className="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:underline"
           >
             Clear filters
           </button>
