@@ -7,6 +7,7 @@ import {
   crownWorkerComplete,
 } from "./crown_http";
 import { agentStopped } from "./notifications_http";
+import { syncMemory } from "./agentMemory_http";
 import { createScreenshotUploadUrl, uploadScreenshot } from "./screenshots_http";
 import {
   codeReviewFileCallback,
@@ -56,6 +57,7 @@ import {
   createTask as cmuxCreateTask,
   taskGetRouter as cmuxTaskGetRouter,
   taskActionRouter as cmuxTaskActionRouter,
+  getTaskRunMemory as cmuxGetTaskRunMemory,
 } from "./cmux_http";
 import {
   createInstance as devboxV2CreateInstance,
@@ -115,6 +117,12 @@ http.route({
   path: "/api/notifications/agent-stopped",
   method: "POST",
   handler: agentStopped,
+});
+
+http.route({
+  path: "/api/memory/sync",
+  method: "POST",
+  handler: syncMemory,
 });
 
 http.route({
@@ -352,6 +360,13 @@ http.route({
   pathPrefix: "/api/v1/cmux/tasks/",
   method: "POST",
   handler: cmuxTaskActionRouter,
+});
+
+// Task run memory endpoint
+http.route({
+  pathPrefix: "/api/v1/cmux/task-runs/",
+  method: "GET",
+  handler: cmuxGetTaskRunMemory,
 });
 
 // =============================================================================

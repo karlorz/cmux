@@ -44,4 +44,8 @@ export type EnvironmentContext = {
     apiFormat?: string;
     isOverridden: boolean;
   };
+  /** Previous knowledge content from earlier runs (for cross-run memory seeding) */
+  previousKnowledge?: string;
+  /** Previous mailbox content with unread messages (for cross-run mailbox seeding) */
+  previousMailbox?: string;
 };

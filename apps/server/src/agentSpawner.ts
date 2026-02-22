@@ -272,7 +272,10 @@ export async function spawnAgent(
     }
 
     // Callback URL for stop hooks to call crown/complete (Convex site URL)
-    const callbackUrl = env.NEXT_PUBLIC_CONVEX_URL.replace('.convex.cloud', '.convex.site');
+    // For self-hosted Convex, use CONVEX_SITE_URL directly
+    // For Convex Cloud, transform api URL to site URL
+    const callbackUrl = env.CONVEX_SITE_URL
+      ?? env.NEXT_PUBLIC_CONVEX_URL.replace('.convex.cloud', '.convex.site');
 
     // Start loading workspace config early so it runs in parallel with other setup work.
     const workspaceConfigPromise = (async (): Promise<WorkspaceConfigLayer[]> => {
@@ -349,6 +352,7 @@ export async function spawnAgent(
       CMUX_TASK_RUN_ID: taskRunId,
       CMUX_TASK_RUN_JWT: taskRunJwt,
       CMUX_CALLBACK_URL: callbackUrl,
+      CMUX_AGENT_NAME: agent.name,
       PROMPT: processedTaskDescription,
     };
     let envVars: Record<string, string> = { ...systemEnvVars };
@@ -419,9 +423,9 @@ export async function spawnAgent(
     let postStartCommands: EnvironmentResult["postStartCommands"] = [];
     let unsetEnvVars: string[] = [];
 
-    // Fetch API keys, workspace settings, and provider overrides from Convex
+    // Fetch API keys, workspace settings, provider overrides, and memory for cross-run seeding
     // BEFORE calling agent.environment() so agents can access them in their environment configuration
-    const [userApiKeys, workspaceSettings, providerOverrides] = await Promise.all([
+    const [userApiKeys, workspaceSettings, providerOverrides, previousKnowledge, previousMailbox] = await Promise.all([
       getConvex().query(api.apiKeys.getAllForAgents, { teamSlugOrId }),
       getConvex().query(api.workspaceSettings.get, { teamSlugOrId }),
       getConvex().query(api.providerOverrides.getForTeam, { teamSlugOrId })
@@ -429,7 +433,42 @@ export async function spawnAgent(
           console.error("[AgentSpawner] Failed to fetch provider overrides", err);
           return [];
         }),
+      // Query previous knowledge for cross-run memory seeding (S5b)
+      getConvex()
+        .query(api.agentMemoryQueries.getLatestTeamKnowledge, {
+          teamSlugOrId,
+        })
+        .catch((error) => {
+          serverLogger.warn(
+            "[AgentSpawner] Failed to fetch previous knowledge for memory seeding",
+            error
+          );
+          return null;
+        }),
+      // Query previous mailbox with unread messages for cross-run mailbox seeding (S10)
+      getConvex()
+        .query(api.agentMemoryQueries.getLatestTeamMailbox, {
+          teamSlugOrId,
+        })
+        .catch((error) => {
+          serverLogger.warn(
+            "[AgentSpawner] Failed to fetch previous mailbox for memory seeding",
+            error
+          );
+          return null;
+        }),
     ]);
+
+    if (previousKnowledge) {
+      serverLogger.info(
+        `[AgentSpawner] Found previous knowledge (${previousKnowledge.length} chars) for cross-run seeding`
+      );
+    }
+    if (previousMailbox) {
+      serverLogger.info(
+        `[AgentSpawner] Found previous mailbox (${previousMailbox.length} chars) with unread messages for cross-run seeding`
+      );
+    }
 
     const apiKeys: Record<string, string> = {
       ...userApiKeys,
@@ -470,6 +509,8 @@ export async function spawnAgent(
               isOverridden: true,
             }
           : undefined,
+        previousKnowledge: previousKnowledge ?? undefined,
+        previousMailbox: previousMailbox ?? undefined,
       });
       envVars = {
         ...envVars,

@@ -2,6 +2,11 @@ import type {
   EnvironmentContext,
   EnvironmentResult,
 } from "../common/environment-result";
+import {
+  getMemoryStartupCommand,
+  getMemorySeedFiles,
+  getMemoryProtocolInstructions,
+} from "../../agent-memory-protocol";
 
 /**
  * Apply API keys for OpenAI Codex.
@@ -121,9 +126,12 @@ export async function getOpenAIEnvironment(
   // Add a small notify handler script that appends the payload to JSONL and marks completion
   // Note: crown/complete is called by the worker after the completion detector resolves,
   // NOT here. The notify hook fires on every turn, not just task completion.
+  // Memory sync runs on every turn (idempotent upsert captures intermediate progress).
   const notifyScript = `#!/usr/bin/env sh
 set -eu
 echo "$1" >> /root/lifecycle/codex-turns.jsonl
+# Sync memory files to Convex (best-effort, idempotent upsert)
+/root/lifecycle/memory/sync.sh >> /root/lifecycle/memory-sync.log 2>&1 || true
 touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
 `;
   files.push({
@@ -132,29 +140,16 @@ touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
     mode: "755",
   });
 
-  // List of files to copy from .codex directory
-  // Note: We handle config.toml specially below to ensure required keys (e.g. notify) are present
-  const codexFiles = [
-    { name: "auth.json", mode: "600" },
-    { name: "instructions.md", mode: "644" },
-  ];
-
-  // Try to copy each file
-  for (const file of codexFiles) {
-    try {
-      const content = await readFile(
-        `${homeDir}/.codex/${file.name}`,
-        "utf-8"
-      );
-      files.push({
-        destinationPath: `$HOME/.codex/${file.name}`,
-        contentBase64: Buffer.from(content).toString("base64"),
-        mode: file.mode,
-      });
-    } catch (error) {
-      // File doesn't exist or can't be read, skip it
-      console.warn(`Failed to read .codex/${file.name}:`, error);
-    }
+  // Copy auth.json from .codex directory
+  try {
+    const authContent = await readFile(`${homeDir}/.codex/auth.json`, "utf-8");
+    files.push({
+      destinationPath: "$HOME/.codex/auth.json",
+      contentBase64: Buffer.from(authContent).toString("base64"),
+      mode: "600",
+    });
+  } catch (error) {
+    console.warn("Failed to read .codex/auth.json:", error);
   }
 
   // Apply provider override if present (custom proxy like AnyRouter)
@@ -162,7 +157,38 @@ touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
     env.OPENAI_BASE_URL = ctx.providerConfig.baseUrl;
   }
 
-  // Ensure config.toml exists and contains notify hook + model migrations
+  // Copy instructions.md and append memory protocol instructions
+  let instructionsContent = "";
+  try {
+    instructionsContent = await readFile(
+      `${homeDir}/.codex/instructions.md`,
+      "utf-8"
+    );
+  } catch (error) {
+    // File doesn't exist, start with empty content
+    console.warn("Failed to read .codex/instructions.md:", error);
+  }
+
+  // Append memory protocol instructions
+  const fullInstructions =
+    instructionsContent +
+    (instructionsContent ? "\n\n" : "") +
+    getMemoryProtocolInstructions();
+  files.push({
+    destinationPath: "$HOME/.codex/instructions.md",
+    contentBase64: Buffer.from(fullInstructions).toString("base64"),
+    mode: "644",
+  });
+
+  // Memory MCP server configuration for Codex
+  const memoryMcpServerConfig = `
+[mcp_servers.cmux-memory]
+type = "stdio"
+command = "node"
+args = ["/root/lifecycle/memory/mcp-server.js"]
+`;
+
+  // Ensure config.toml exists and contains notify hook + model migrations + MCP server
   try {
     const rawToml = await readFile(`${homeDir}/.codex/config.toml`, "utf-8");
     // Filter out keys controlled by cmux CLI args (model, model_reasoning_effort)
@@ -173,21 +199,31 @@ touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
       : `notify = ["/root/lifecycle/codex-notify.sh"]\n` + filteredToml;
     // Strip existing model_migrations and append managed ones
     tomlOut = stripModelMigrations(tomlOut) + generateModelMigrations();
+    // Add memory MCP server if not already present
+    if (!tomlOut.includes("[mcp_servers.cmux-memory]")) {
+      tomlOut += memoryMcpServerConfig;
+    }
     files.push({
       destinationPath: `$HOME/.codex/config.toml`,
       contentBase64: Buffer.from(tomlOut).toString("base64"),
       mode: "644",
     });
   } catch (_error) {
-    // No host config.toml; create minimal one with notify + model migrations
+    // No host config.toml; create minimal one with notify + model migrations + MCP server
     const toml =
-      `notify = ["/root/lifecycle/codex-notify.sh"]\n` + generateModelMigrations();
+      `notify = ["/root/lifecycle/codex-notify.sh"]\n` +
+      generateModelMigrations() +
+      memoryMcpServerConfig;
     files.push({
       destinationPath: `$HOME/.codex/config.toml`,
       contentBase64: Buffer.from(toml).toString("base64"),
       mode: "644",
     });
   }
+
+  // Add agent memory protocol support
+  startupCommands.push(getMemoryStartupCommand());
+  files.push(...getMemorySeedFiles(ctx.taskRunId, ctx.previousKnowledge, ctx.previousMailbox));
 
   return { files, env, startupCommands };
 }

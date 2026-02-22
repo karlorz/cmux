@@ -92,9 +92,36 @@ cmux task list --archived        # List archived tasks
 cmux task create "Add tests"     # Create task with prompt only
 cmux task create --repo owner/repo --agent claude-code "Fix bug"
 cmux task create --repo owner/repo --agent claude-code --agent opencode/gpt-4o "Compare solutions"
-cmux task status <task-id>       # Get task details and runs
+cmux task show <task-id>         # Get task details and runs
 cmux task stop <task-id>         # Stop/archive task
+cmux task memory <task-run-id>   # View agent memory for a task run
 ```
+
+### Agent Memory
+
+View agent memory snapshots (knowledge, daily logs, tasks, mailbox) synced from sandboxes.
+
+```bash
+cmux task memory <task-id>                    # View memory (uses latest task run)
+cmux task memory <task-run-id>                # View memory for specific run
+cmux task memory <task-id> --type knowledge   # Filter by memory type
+cmux task memory <task-id> --type daily       # View daily logs only
+cmux task memory <task-id> --type tasks       # View task tracking
+cmux task memory <task-id> --type mailbox     # View mailbox messages
+cmux task memory <task-id> --json             # Output as JSON
+```
+
+You can use either:
+- **Task ID** (e.g., `p17xyz...`) - automatically uses the latest task run
+- **Task run ID** (e.g., `ns7xyz...`) - uses that specific run
+
+Memory types:
+- **knowledge**: Accumulated knowledge and learnings (P0/P1/P2 priority tiers)
+- **daily**: Daily activity logs (ephemeral, session-specific)
+- **tasks**: Task tracking and progress (JSON)
+- **mailbox**: Communication messages between agents (JSON)
+
+Memory is synced when an agent completes. If no memory appears, the task run may still be in progress.
 
 ### Team Management
 

@@ -3,6 +3,17 @@
 # Style
 - Do not use emojis in shell scripts or debug messages
 
+# Testing with cmux-devbox
+Test repos (use for `cmux-devbox task create --repo`):
+- `karlorz/testing-repo-1`
+- `karlorz/testing-repo-2`
+- `karlorz/testing-repo-3`
+
+Test models (use for `--agent`):
+- `claude/haiku-4.5`
+- `codex/gpt-5.1-codex-mini`
+- `opencode/big-pickle`
+
 # Git/PR
 - All PRs should target `karlorz/cmux:main` unless explicitly requested to submit to upstream `manaflow-ai/manaflow`
 - gh repo set-default karlorz/cmux

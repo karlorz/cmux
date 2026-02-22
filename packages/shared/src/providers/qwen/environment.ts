@@ -2,6 +2,11 @@ import type {
   EnvironmentContext,
   EnvironmentResult,
 } from "../common/environment-result";
+import {
+  getMemoryStartupCommand,
+  getMemorySeedFiles,
+  getMemoryProtocolInstructions,
+} from "../../agent-memory-protocol";
 
 // Prepare Qwen CLI environment for OpenAI-compatible API key mode.
 // We previously supported the Qwen OAuth device flow, but cmux now uses
@@ -74,6 +79,21 @@ async function makeQwenEnvironment(
   if (ctx.providerConfig?.isOverridden && ctx.providerConfig.baseUrl) {
     env.OPENAI_BASE_URL = ctx.providerConfig.baseUrl;
   }
+
+  // Add agent memory protocol support
+  startupCommands.push(getMemoryStartupCommand());
+  files.push(...getMemorySeedFiles(ctx.taskRunId, ctx.previousKnowledge, ctx.previousMailbox));
+
+  // Add QWEN.md with memory protocol instructions for the project
+  const qwenMdContent = `# cmux Project Instructions
+
+${getMemoryProtocolInstructions()}
+`;
+  files.push({
+    destinationPath: "/root/workspace/QWEN.md",
+    contentBase64: Buffer.from(qwenMdContent).toString("base64"),
+    mode: "644",
+  });
 
   return { files, env, startupCommands };
 }
