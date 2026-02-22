@@ -2,6 +2,26 @@ import { describe, expect, it } from "vitest";
 import { AGENT_CATALOG, type AgentCatalogEntry } from "./agent-catalog";
 import { AGENT_CONFIGS, type AgentConfig } from "./agentConfig";
 
+/**
+ * Models excluded from static AGENT_CATALOG (discovered at runtime instead):
+ *
+ * OpenCode paid models (opencode/*): These route through opencode.ai which has
+ * its own authentication flow. User API keys (ANTHROPIC_API_KEY, etc.) are for
+ * direct provider access with custom base URLs, not for OpenCode's routing.
+ * These models are discovered at runtime via Convex modelDiscovery.
+ */
+const RUNTIME_DISCOVERED_PREFIXES = ["opencode/"];
+
+// Helper to check if a model is expected to be runtime-discovered
+function isRuntimeDiscovered(name: string): boolean {
+  // OpenCode free models ARE in the catalog (big-pickle, gpt-5-nano)
+  const isOpencodeFree =
+    name === "opencode/big-pickle" || name === "opencode/gpt-5-nano";
+  if (isOpencodeFree) return false;
+
+  return RUNTIME_DISCOVERED_PREFIXES.some((prefix) => name.startsWith(prefix));
+}
+
 describe("agent-catalog", () => {
   describe("catalog/config alignment", () => {
     const catalogByName = new Map<string, AgentCatalogEntry>(
@@ -22,9 +42,12 @@ describe("agent-catalog", () => {
       expect(missingInConfigs).toEqual([]);
     });
 
-    it("every AGENT_CONFIGS entry has a matching AGENT_CATALOG entry", () => {
+    it("non-runtime-discovered AGENT_CONFIGS entries have AGENT_CATALOG entries", () => {
+      // Only check configs that should be in the static catalog
+      // Runtime-discovered models (e.g., OpenCode paid) are intentionally excluded
       const missingInCatalog: string[] = [];
       for (const config of AGENT_CONFIGS) {
+        if (isRuntimeDiscovered(config.name)) continue;
         if (!catalogByName.has(config.name)) {
           missingInCatalog.push(config.name);
         }
@@ -32,8 +55,17 @@ describe("agent-catalog", () => {
       expect(missingInCatalog).toEqual([]);
     });
 
-    it("catalog entries have correct array length matching configs", () => {
-      expect(AGENT_CATALOG.length).toBe(AGENT_CONFIGS.length);
+    it("runtime-discovered models are correctly identified", () => {
+      // Verify our helper correctly identifies OpenCode paid models
+      const runtimeDiscoveredConfigs = AGENT_CONFIGS.filter((c) =>
+        isRuntimeDiscovered(c.name)
+      );
+      // All should be OpenCode paid models (not free)
+      for (const config of runtimeDiscoveredConfigs) {
+        expect(config.name.startsWith("opencode/")).toBe(true);
+        expect(config.name).not.toBe("opencode/big-pickle");
+        expect(config.name).not.toBe("opencode/gpt-5-nano");
+      }
     });
 
     it("requiredApiKeys in catalog match apiKeys[].envVar in configs", () => {
