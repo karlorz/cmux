@@ -176,28 +176,23 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       ? AGENT_CATALOG.filter((entry) => !disabledByUserModels.has(entry.name))
       : AGENT_CATALOG;
 
-    // Filter to only show available models (like OpenCode does)
-    // Hide models that are disabled or missing required credentials
-    const availableCatalog = enabledCatalog.filter((entry) => {
-      // Check if agent is disabled at catalog level
-      if (entry.disabled === true) {
-        return false;
-      }
-      // Check provider status - only show available agents
+    // Filter out agents disabled at catalog level (e.g., deprecated models)
+    const activeCatalog = enabledCatalog.filter(
+      (entry) => entry.disabled !== true
+    );
+
+    // Map all models, marking unavailable ones as disabled (grayed out)
+    const options = activeCatalog.map((entry) => {
       const status = providerStatusMap.get(entry.name);
       const isAvailable = status?.isAvailable ?? true;
-      return isAvailable;
-    });
-
-    const options = availableCatalog.map((entry) => {
       return {
         label: entry.name,
         displayLabel: entry.displayName,
         value: entry.name,
         icon: <AgentLogo agentName={entry.name} vendor={entry.vendor} className="w-4 h-4" />,
         iconKey: entry.vendor,
-        isUnavailable: false,
-        isDisabled: false,
+        isUnavailable: !isAvailable,
+        isDisabled: !isAvailable,
       } satisfies AgentOption;
     });
 
