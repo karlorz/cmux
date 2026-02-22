@@ -291,6 +291,9 @@ export const bulkUpsert = internalMutation({
 
       if (existing) {
         // Update existing
+        // Auto-enable free discovered models that are currently disabled
+        const shouldEnable =
+          model.tier === "free" && model.enabled === true && !existing.enabled;
         await ctx.db.patch(existing._id, {
           displayName: model.displayName,
           vendor: model.vendor,
@@ -304,6 +307,7 @@ export const bulkUpsert = internalMutation({
           ...(model.source === "discovered" && model.discoveredAt
             ? { discoveredAt: model.discoveredAt }
             : {}),
+          ...(shouldEnable ? { enabled: true } : {}),
           updatedAt: now,
         });
         results.push(existing._id);

@@ -10,7 +10,7 @@ import {
   createOpencodeRequirementsChecker,
 } from "./check-requirements";
 import { startOpenCodeCompletionDetector } from "./completion-detector";
-import { OPENCODE_FREE_MODEL_IDS } from "./free-models.generated";
+import { OPENCODE_FREE_MODEL_IDS } from "./free-models";
 
 import {
   getOpencodeEnvironment,

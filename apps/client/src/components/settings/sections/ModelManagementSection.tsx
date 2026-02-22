@@ -1,11 +1,7 @@
 import { AgentLogo } from "@/components/icons/agent-logos";
 import { SettingSection } from "@/components/settings/SettingSection";
 import { api } from "@cmux/convex/api";
-import {
-  AGENT_CATALOG,
-  type AgentCatalogEntry,
-  type AgentVendor,
-} from "@cmux/shared/agent-catalog";
+import type { AgentVendor } from "@cmux/shared/agent-catalog";
 import { Switch } from "@heroui/react";
 import { convexQuery } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -13,6 +9,20 @@ import { useConvex } from "convex/react";
 import { Search } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
+
+// Model entry from Convex database
+interface ModelEntry {
+  _id: string;
+  name: string;
+  displayName: string;
+  vendor: string;
+  tier: "free" | "paid";
+  enabled: boolean;
+  tags?: string[];
+  requiredApiKeys: string[];
+  disabled?: boolean;
+  sortOrder: number;
+}
 
 interface ModelManagementSectionProps {
   teamSlugOrId: string;
@@ -37,19 +47,14 @@ export function ModelManagementSection({
   const [searchQuery, setSearchQuery] = useState("");
   const [showDisabledOnly, setShowDisabledOnly] = useState(false);
 
-  // Query current model preferences
-  const { data: modelPreferences, refetch: refetchPreferences } = useQuery(
-    convexQuery(api.modelPreferences.get, { teamSlugOrId })
+  // Query all models from Convex database (includes discovered models)
+  const { data: convexModels, refetch: refetchModels } = useQuery(
+    convexQuery(api.models.list, {})
   );
 
   // Query API keys to determine model availability
   const { data: apiKeys } = useQuery(
     convexQuery(api.apiKeys.getAll, { teamSlugOrId })
-  );
-
-  const disabledModels = useMemo(
-    () => new Set(modelPreferences?.disabledModels ?? []),
-    [modelPreferences?.disabledModels]
   );
 
   // Build a Set of configured API key env vars for efficient lookup
@@ -60,7 +65,7 @@ export function ModelManagementSection({
 
   // Check if a model is available (required API key is configured)
   const isModelAvailable = useCallback(
-    (entry: AgentCatalogEntry) => {
+    (entry: ModelEntry) => {
       // Free models are always available
       if (entry.tier === "free") return true;
       // If no API keys required, it's available
@@ -73,42 +78,44 @@ export function ModelManagementSection({
     [configuredApiKeys]
   );
 
-  // Mutation to toggle model
+  // Mutation to toggle model enabled state via Convex
   const toggleModelMutation = useMutation({
     mutationFn: async ({
-      agentName,
+      modelName,
       enabled,
     }: {
-      agentName: string;
+      modelName: string;
       enabled: boolean;
     }) => {
-      return await convex.mutation(api.modelPreferences.toggleModel, {
+      return await convex.mutation(api.models.setEnabled, {
         teamSlugOrId,
-        agentName,
+        modelName,
         enabled,
       });
     },
     onSuccess: () => {
-      void refetchPreferences();
+      void refetchModels();
     },
     onError: (error) => {
-      toast.error("Failed to update model preference");
+      toast.error("Failed to update model");
       console.error("Toggle model error:", error);
     },
   });
 
   const handleToggleModel = useCallback(
-    (agentName: string, enabled: boolean) => {
-      toggleModelMutation.mutate({ agentName, enabled });
+    (modelName: string, enabled: boolean) => {
+      toggleModelMutation.mutate({ modelName, enabled });
     },
     [toggleModelMutation]
   );
 
-  // Filter and group agents by vendor
-  const filteredAndGroupedAgents = useMemo(() => {
+  // Filter and group models by vendor
+  const filteredAndGroupedModels = useMemo(() => {
+    if (!convexModels) return new Map<AgentVendor, ModelEntry[]>();
+
     const searchLower = searchQuery.toLowerCase();
 
-    const filtered = AGENT_CATALOG.filter((entry) => {
+    const filtered = convexModels.filter((entry) => {
       // Filter out unavailable models (no API key configured)
       if (!isModelAvailable(entry)) {
         return false;
@@ -123,30 +130,31 @@ export function ModelManagementSection({
         if (!matchesSearch) return false;
       }
 
-      // Apply disabled-only filter
-      if (showDisabledOnly && !disabledModels.has(entry.name)) {
+      // Apply disabled-only filter (enabled in DB means model is active)
+      if (showDisabledOnly && entry.enabled) {
         return false;
       }
 
       return true;
     });
 
-    // Group by vendor preserving catalog order
-    const grouped = new Map<AgentVendor, AgentCatalogEntry[]>();
+    // Group by vendor preserving sortOrder
+    const grouped = new Map<AgentVendor, ModelEntry[]>();
     for (const entry of filtered) {
-      const existing = grouped.get(entry.vendor);
+      const vendor = entry.vendor as AgentVendor;
+      const existing = grouped.get(vendor);
       if (existing) {
         existing.push(entry);
       } else {
-        grouped.set(entry.vendor, [entry]);
+        grouped.set(vendor, [entry]);
       }
     }
 
     return grouped;
-  }, [searchQuery, showDisabledOnly, disabledModels, isModelAvailable]);
+  }, [convexModels, searchQuery, showDisabledOnly, isModelAvailable]);
 
-  const enabledCount = AGENT_CATALOG.length - disabledModels.size;
-  const totalCount = AGENT_CATALOG.length;
+  const enabledCount = convexModels?.filter(m => m.enabled).length ?? 0;
+  const totalCount = convexModels?.length ?? 0;
 
   return (
     <div className="space-y-4">
@@ -181,7 +189,7 @@ export function ModelManagementSection({
 
           {/* Model list grouped by vendor */}
           <div className="space-y-4">
-            {Array.from(filteredAndGroupedAgents.entries()).map(
+            {Array.from(filteredAndGroupedModels.entries()).map(
               ([vendor, entries]) => (
                 <div key={vendor} className="space-y-2">
                   {/* Vendor header */}
@@ -192,20 +200,20 @@ export function ModelManagementSection({
                   {/* Model rows */}
                   <div className="rounded-lg border border-neutral-200 divide-y divide-neutral-200 dark:border-neutral-800 dark:divide-neutral-800">
                     {entries.map((entry) => {
-                      const isEnabled = !disabledModels.has(entry.name);
+                      const isEnabled = entry.enabled;
                       const isToggling =
                         toggleModelMutation.isPending &&
-                        toggleModelMutation.variables?.agentName === entry.name;
+                        toggleModelMutation.variables?.modelName === entry.name;
 
                       return (
                         <div
-                          key={entry.name}
+                          key={entry._id}
                           className="flex items-center justify-between gap-4 px-3 py-2.5"
                         >
                           <div className="flex items-center gap-3 min-w-0">
                             <AgentLogo
                               agentName={entry.name}
-                              vendor={entry.vendor}
+                              vendor={entry.vendor as AgentVendor}
                               className="h-5 w-5 flex-shrink-0"
                             />
                             <div className="min-w-0">
@@ -268,7 +276,7 @@ export function ModelManagementSection({
               )
             )}
 
-            {filteredAndGroupedAgents.size === 0 && (
+            {filteredAndGroupedModels.size === 0 && (
               <div className="rounded-lg border border-dashed border-neutral-300 px-4 py-8 text-center dark:border-neutral-700">
                 <p className="text-sm text-neutral-500 dark:text-neutral-400">
                   {searchQuery || showDisabledOnly

@@ -8,10 +8,9 @@ import {
   getVariantsForVendor,
   type AgentVendor,
 } from "@cmux/shared/agent-catalog";
+import { isOpencodeFreeModel } from "@cmux/shared/providers/opencode/free-models";
 
 const OPENCODE_ZEN_MODELS_URL = "https://opencode.ai/zen/v1/models";
-const OPENCODE_CHAT_COMPLETIONS_URL =
-  "https://opencode.ai/zen/v1/chat/completions";
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
 
 /**
@@ -35,43 +34,10 @@ async function fetchOpencodeModelIds(): Promise<string[]> {
 }
 
 /**
- * Probe a model to check if it responds without authentication (free tier)
- */
-async function probeModelFree(
-  modelId: string
-): Promise<{ modelId: string; free: boolean }> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
-
-  try {
-    const response = await fetch(OPENCODE_CHAT_COMPLETIONS_URL, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        model: modelId,
-        messages: [{ role: "user", content: "ping" }],
-        max_tokens: 1,
-      }),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      return { modelId, free: false };
-    }
-
-    const data = (await response.json()) as { choices?: unknown[] };
-    const isFree = Array.isArray(data?.choices);
-    return { modelId, free: isFree };
-  } catch {
-    return { modelId, free: false };
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-/**
  * Discover models from OpenCode Zen API and upsert them into the models table.
- * Free models (those that respond without auth) are marked as such.
+ * Free models are determined by naming convention heuristics:
+ * - Models ending with `-free` suffix
+ * - Known free models in OPENCODE_KNOWN_FREE (big-pickle, gpt-5-nano)
  */
 export const discoverOpencodeModels = internalAction({
   args: {},
@@ -85,56 +51,32 @@ export const discoverOpencodeModels = internalAction({
     const modelIds = await fetchOpencodeModelIds();
     console.log(`[modelDiscovery] Found ${modelIds.length} models from API`);
 
-    // Probe models sequentially to avoid rate limiting
-    const results: Array<{ modelId: string; free: boolean }> = [];
-    for (const modelId of modelIds) {
-      const result = await probeModelFree(modelId);
+    const now = Date.now();
+    const modelsToUpsert = modelIds.map((modelId) => {
+      const isFree = isOpencodeFreeModel(modelId);
       console.log(
-        `[modelDiscovery] ${result.free ? "FREE" : "PAID"}: ${modelId}`
+        `[modelDiscovery] ${isFree ? "FREE" : "PAID"}: ${modelId}`
       );
-      results.push(result);
-    }
+      return {
+        name: `opencode/${modelId}`,
+        displayName: modelId,
+        vendor: "opencode",
+        source: "discovered" as const,
+        discoveredFrom: "opencode-zen",
+        discoveredAt: now,
+        requiredApiKeys: isFree ? ([] as string[]) : ["OPENCODE_API_KEY"],
+        tier: isFree ? ("free" as const) : ("paid" as const),
+        tags: isFree ? ["free", "discovered"] : ["discovered"],
+        enabled: isFree, // Free models are enabled by default
+      };
+    });
 
-    const freeModels = results.filter((r) => r.free).map((r) => r.modelId);
-    const paidModels = results.filter((r) => !r.free).map((r) => r.modelId);
+    const freeCount = modelsToUpsert.filter((m) => m.tier === "free").length;
+    const paidCount = modelsToUpsert.length - freeCount;
 
     console.log(
-      `[modelDiscovery] Free: ${freeModels.length}, Paid: ${paidModels.length}`
+      `[modelDiscovery] Free: ${freeCount}, Paid: ${paidCount}`
     );
-
-    const now = Date.now();
-    const modelsToUpsert = [];
-
-    // Prepare free models
-    for (const modelId of freeModels) {
-      modelsToUpsert.push({
-        name: `opencode/${modelId}`,
-        displayName: modelId,
-        vendor: "opencode",
-        source: "discovered" as const,
-        discoveredFrom: "opencode-zen",
-        discoveredAt: now,
-        requiredApiKeys: [] as string[],
-        tier: "free" as const,
-        tags: ["free", "discovered"],
-      });
-    }
-
-    // Prepare paid models - all OpenCode paid models require OPENCODE_API_KEY
-    // (OpenCode is a unified proxy, so all non-free models use the same key)
-    for (const modelId of paidModels) {
-      modelsToUpsert.push({
-        name: `opencode/${modelId}`,
-        displayName: modelId,
-        vendor: "opencode",
-        source: "discovered" as const,
-        discoveredFrom: "opencode-zen",
-        discoveredAt: now,
-        requiredApiKeys: ["OPENCODE_API_KEY"],
-        tier: "paid" as const,
-        tags: ["discovered"],
-      });
-    }
 
     // Bulk upsert all discovered models
     if (modelsToUpsert.length > 0) {
@@ -148,8 +90,8 @@ export const discoverOpencodeModels = internalAction({
 
     return {
       discovered: modelIds.length,
-      free: freeModels.length,
-      paid: paidModels.length,
+      free: freeCount,
+      paid: paidCount,
     };
   },
 });

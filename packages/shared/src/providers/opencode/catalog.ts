@@ -1,20 +1,21 @@
 import type { AgentCatalogEntry } from "../../agent-catalog";
-import { OPENCODE_FREE_MODEL_IDS } from "./free-models.generated";
+import { OPENCODE_KNOWN_FREE } from "./free-models";
 
 /**
- * OpenCode catalog - only includes FREE models discovered at build-time.
+ * OpenCode catalog - only includes known FREE models without -free suffix.
  *
  * Design rationale:
- * - Free models: Discovered via probing at build-time (scripts/update-opencode-free-models.mjs)
+ * - Free models with -free suffix: Discovered at RUNTIME via modelDiscovery
+ * - Free models without suffix: Curated here (big-pickle, gpt-5-nano)
  * - Paid models: Discovered at RUNTIME via Convex modelDiscovery.discoverOpencodeModels
  *
- * This avoids hardcoding paid model lists that go stale. The runtime discovery
- * fetches from https://opencode.ai/zen/v1/models and marks non-free models
- * with requiredApiKeys: ["OPENCODE_API_KEY"].
+ * Free model detection uses naming convention heuristics (see free-models.ts):
+ * - Models ending with `-free` suffix are free
+ * - Known exceptions in OPENCODE_KNOWN_FREE are free
  *
  * See: packages/convex/convex/modelDiscovery.ts
  */
-export const OPENCODE_CATALOG: AgentCatalogEntry[] = OPENCODE_FREE_MODEL_IDS.map(
+export const OPENCODE_CATALOG: AgentCatalogEntry[] = OPENCODE_KNOWN_FREE.map(
   (modelId) => ({
     name: `opencode/${modelId}`,
     displayName: modelId,

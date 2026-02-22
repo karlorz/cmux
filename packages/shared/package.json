@@ -153,6 +153,10 @@
     "./provider-registry": {
       "import": "./src/provider-registry.ts",
       "types": "./src/provider-registry.ts"
+    },
+    "./providers/opencode/free-models": {
+      "import": "./src/providers/opencode/free-models.ts",
+      "types": "./src/providers/opencode/free-models.ts"
     }
   },
   "peerDependencies": {
