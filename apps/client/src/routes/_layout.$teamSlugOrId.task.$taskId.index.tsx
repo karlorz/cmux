@@ -1,5 +1,6 @@
 import { TaskRunChatPane } from "@/components/TaskRunChatPane";
 import { TaskRunTerminalPane } from "@/components/TaskRunTerminalPane";
+import { TaskRunMemoryPanel } from "@/components/TaskRunMemoryPanel";
 import { FloatingPane } from "@/components/floating-pane";
 import { TaskDetailHeader } from "@/components/task-detail-header";
 import type { PersistentIframeStatus } from "@/components/persistent-iframe";
@@ -897,6 +898,7 @@ function TaskDetailPage() {
       WorkspaceLoadingIndicator,
       TaskRunTerminalPane,
       TaskRunGitDiffPanel,
+      TaskRunMemoryPanel,
       TASK_RUN_IFRAME_ALLOW,
       TASK_RUN_IFRAME_SANDBOX,
       onClose: handlePanelClose,
