@@ -43,6 +43,7 @@ import {
   AlertTriangle,
   Archive as ArchiveIcon,
   ArchiveRestore as ArchiveRestoreIcon,
+  Brain,
   CheckCircle,
   Circle,
   ChevronRight,
@@ -2287,6 +2288,16 @@ function TaskRunDetails({
           params={{ teamSlugOrId, taskId, runId: run._id }}
           icon={<GitPullRequest className="w-3 h-3 mr-2 text-neutral-400" />}
           label="Pull Request"
+          indentLevel={indentLevel}
+        />
+      ) : null}
+
+      {!isLocalWorkspace ? (
+        <TaskRunDetailLink
+          to="/$teamSlugOrId/task/$taskId/run/$runId/memory"
+          params={{ teamSlugOrId, taskId, runId: run._id }}
+          icon={<Brain className="w-3 h-3 mr-2 text-neutral-400" />}
+          label="Memory"
           indentLevel={indentLevel}
         />
       ) : null}

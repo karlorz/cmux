@@ -832,5 +832,197 @@ describe(
         }
       });
     });
+
+    // ========================================================================
+    // Task Run Memory Tests (S8 Agent Memory Protocol)
+    // ========================================================================
+    describe("Task Run Memory", () => {
+      it("GET /api/v1/cmux/task-runs/{id}/memory requires teamSlugOrId", async () => {
+        const result = await cmuxApiFetch(
+          "/api/v1/cmux/task-runs/fake_task_run_id/memory"
+        );
+
+        expect(result.ok).toBe(false);
+        expect(result.status).toBe(400);
+        expect(result.error?.message).toContain("teamSlugOrId");
+      });
+
+      it("GET /api/v1/cmux/task-runs/{id}/memory returns 404 for non-existent task run", async () => {
+        const teamsResult = await cmuxApiFetch<{
+          teams: Array<{ teamId: string; slug: string }>;
+        }>("/api/v1/cmux/me/teams");
+
+        const teamSlug = teamsResult.data?.teams?.[0]?.slug ?? TEST_TEAM;
+
+        const result = await cmuxApiFetch(
+          "/api/v1/cmux/task-runs/nonexistent_task_run/memory",
+          {
+            query: { teamSlugOrId: teamSlug },
+          }
+        );
+
+        expect(result.ok).toBe(false);
+        expect(result.status).toBe(404);
+      });
+
+      it("GET /api/v1/cmux/task-runs/{id}/memory returns empty memory for task without synced memory", async () => {
+        // Create a task to get a valid task run ID
+        const teamsResult = await cmuxApiFetch<{
+          teams: Array<{ teamId: string; slug: string }>;
+        }>("/api/v1/cmux/me/teams");
+
+        const teamSlug = teamsResult.data?.teams?.[0]?.slug ?? TEST_TEAM;
+
+        // Create a task with an agent to get a task run
+        const taskResult = await cmuxApiFetch<{
+          taskId: string;
+          taskRuns: Array<{ taskRunId: string; jwt: string; agentName: string }>;
+        }>("/api/v1/cmux/tasks", {
+          method: "POST",
+          body: {
+            teamSlugOrId: teamSlug,
+            prompt: "Memory test task - should be cleaned up",
+            agents: ["claude-code"],
+          },
+        });
+
+        if (!taskResult.ok || !taskResult.data?.taskRuns?.length) {
+          console.log("Skipping: could not create task with runs");
+          return;
+        }
+
+        const taskRunId = taskResult.data.taskRuns[0].taskRunId;
+
+        try {
+          // Query memory for this task run (should be empty since no sync happened)
+          const memoryResult = await cmuxApiFetch<{
+            memory: Array<{
+              id: string;
+              memoryType: string;
+              content: string;
+            }>;
+          }>(`/api/v1/cmux/task-runs/${taskRunId}/memory`, {
+            query: { teamSlugOrId: teamSlug },
+          });
+
+          expect(memoryResult.ok).toBe(true);
+          expect(Array.isArray(memoryResult.data?.memory)).toBe(true);
+          // Memory should be empty since no agent has synced yet
+          expect(memoryResult.data?.memory.length).toBe(0);
+        } finally {
+          // Clean up
+          await cmuxApiFetch(`/api/v1/cmux/tasks/${taskResult.data.taskId}/stop`, {
+            method: "POST",
+            body: { teamSlugOrId: teamSlug },
+          });
+        }
+      });
+
+      it("GET /api/v1/cmux/task-runs/{id}/memory supports type filter", async () => {
+        const teamsResult = await cmuxApiFetch<{
+          teams: Array<{ teamId: string; slug: string }>;
+        }>("/api/v1/cmux/me/teams");
+
+        const teamSlug = teamsResult.data?.teams?.[0]?.slug ?? TEST_TEAM;
+
+        // Create a task with an agent
+        const taskResult = await cmuxApiFetch<{
+          taskId: string;
+          taskRuns: Array<{ taskRunId: string }>;
+        }>("/api/v1/cmux/tasks", {
+          method: "POST",
+          body: {
+            teamSlugOrId: teamSlug,
+            prompt: "Memory filter test - should be cleaned up",
+            agents: ["claude-code"],
+          },
+        });
+
+        if (!taskResult.ok || !taskResult.data?.taskRuns?.length) {
+          console.log("Skipping: could not create task with runs");
+          return;
+        }
+
+        const taskRunId = taskResult.data.taskRuns[0].taskRunId;
+
+        try {
+          // Query with different memory type filters
+          for (const memoryType of ["knowledge", "daily", "tasks", "mailbox"]) {
+            const result = await cmuxApiFetch<{
+              memory: Array<{ memoryType: string }>;
+            }>(`/api/v1/cmux/task-runs/${taskRunId}/memory`, {
+              query: { teamSlugOrId: teamSlug, type: memoryType },
+            });
+
+            expect(result.ok).toBe(true);
+            expect(Array.isArray(result.data?.memory)).toBe(true);
+            // All returned items (if any) should match the filter
+            for (const item of result.data?.memory ?? []) {
+              expect(item.memoryType).toBe(memoryType);
+            }
+          }
+        } finally {
+          // Clean up
+          await cmuxApiFetch(`/api/v1/cmux/tasks/${taskResult.data.taskId}/stop`, {
+            method: "POST",
+            body: { teamSlugOrId: teamSlug },
+          });
+        }
+      });
+
+      it("GET /api/v1/cmux/task-runs/{id}/memory enforces team isolation", async () => {
+        const teamsResult = await cmuxApiFetch<{
+          teams: Array<{ teamId: string; slug: string }>;
+        }>("/api/v1/cmux/me/teams");
+
+        const teams = teamsResult.data?.teams ?? [];
+        if (teams.length < 2) {
+          console.log("Skipping team isolation test: only one team available");
+          return;
+        }
+
+        const teamSlug1 = teams[0].slug;
+        const teamSlug2 = teams[1].slug;
+
+        // Create a task in team 1
+        const taskResult = await cmuxApiFetch<{
+          taskId: string;
+          taskRuns: Array<{ taskRunId: string }>;
+        }>("/api/v1/cmux/tasks", {
+          method: "POST",
+          body: {
+            teamSlugOrId: teamSlug1,
+            prompt: "Team isolation test - should be cleaned up",
+            agents: ["claude-code"],
+          },
+        });
+
+        if (!taskResult.ok || !taskResult.data?.taskRuns?.length) {
+          console.log("Skipping: could not create task with runs");
+          return;
+        }
+
+        const taskRunId = taskResult.data.taskRuns[0].taskRunId;
+
+        try {
+          // Try to access from team 2 - should fail
+          const crossTeamResult = await cmuxApiFetch(
+            `/api/v1/cmux/task-runs/${taskRunId}/memory`,
+            {
+              query: { teamSlugOrId: teamSlug2 },
+            }
+          );
+
+          expect(crossTeamResult.ok).toBe(false);
+          expect(crossTeamResult.status).toBe(404);
+        } finally {
+          // Clean up
+          await cmuxApiFetch(`/api/v1/cmux/tasks/${taskResult.data.taskId}/stop`, {
+            method: "POST",
+            body: { teamSlugOrId: teamSlug1 },
+          });
+        }
+      });
+    });
   }
 );

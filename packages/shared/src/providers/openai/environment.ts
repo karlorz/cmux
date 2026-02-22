@@ -175,7 +175,15 @@ touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
     mode: "644",
   });
 
-  // Ensure config.toml exists and contains notify hook + model migrations
+  // Memory MCP server configuration for Codex
+  const memoryMcpServerConfig = `
+[mcp_servers.cmux-memory]
+type = "stdio"
+command = "node"
+args = ["/root/lifecycle/memory/mcp-server.js"]
+`;
+
+  // Ensure config.toml exists and contains notify hook + model migrations + MCP server
   try {
     const rawToml = await readFile(`${homeDir}/.codex/config.toml`, "utf-8");
     // Filter out keys controlled by cmux CLI args (model, model_reasoning_effort)
@@ -186,15 +194,21 @@ touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
       : `notify = ["/root/lifecycle/codex-notify.sh"]\n` + filteredToml;
     // Strip existing model_migrations and append managed ones
     tomlOut = stripModelMigrations(tomlOut) + generateModelMigrations();
+    // Add memory MCP server if not already present
+    if (!tomlOut.includes("[mcp_servers.cmux-memory]")) {
+      tomlOut += memoryMcpServerConfig;
+    }
     files.push({
       destinationPath: `$HOME/.codex/config.toml`,
       contentBase64: Buffer.from(tomlOut).toString("base64"),
       mode: "644",
     });
   } catch (_error) {
-    // No host config.toml; create minimal one with notify + model migrations
+    // No host config.toml; create minimal one with notify + model migrations + MCP server
     const toml =
-      `notify = ["/root/lifecycle/codex-notify.sh"]\n` + generateModelMigrations();
+      `notify = ["/root/lifecycle/codex-notify.sh"]\n` +
+      generateModelMigrations() +
+      memoryMcpServerConfig;
     files.push({
       destinationPath: `$HOME/.codex/config.toml`,
       contentBase64: Buffer.from(toml).toString("base64"),

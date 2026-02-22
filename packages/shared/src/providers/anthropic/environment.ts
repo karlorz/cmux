@@ -48,20 +48,28 @@ export async function getClaudeEnvironment(
       // File doesn't exist or is invalid, start fresh
     }
 
+    // Type assertion for existing config to safely access mcpServers
+    const existingMcpServers =
+      (existingConfig as { mcpServers?: Record<string, unknown> }).mcpServers ||
+      {};
+
     const config = {
       ...existingConfig,
+      // Add cmux-memory to global mcpServers, merged with existing user MCP servers
+      // This ensures the memory MCP server is always available regardless of project context
+      mcpServers: {
+        ...existingMcpServers,
+        "cmux-memory": {
+          command: "node",
+          args: [`${claudeLifecycleDir}/memory/mcp-server.js`],
+        },
+      },
       projects: {
         "/root/workspace": {
           allowedTools: [],
           history: [],
           mcpContextUris: [],
-          mcpServers: {
-            // Memory MCP server for programmatic access to agent memory (S6)
-            "cmux-memory": {
-              command: "node",
-              args: [`${claudeLifecycleDir}/memory/mcp-server.js`],
-            },
-          },
+          mcpServers: {},
           enabledMcpjsonServers: [],
           disabledMcpjsonServers: [],
           hasTrustDialogAccepted: true,
@@ -302,13 +310,17 @@ echo ${apiKeyToOutput}`;
   startupCommands.push(getMemoryStartupCommand());
   files.push(...getMemorySeedFiles(ctx.taskRunId, ctx.previousKnowledge));
 
-  // Add CLAUDE.md with memory protocol instructions for the project
-  const claudeMdContent = `# cmux Project Instructions
+  // Add CLAUDE.md to user-level memory (~/.claude/CLAUDE.md)
+  // This follows Claude Code's native memory hierarchy:
+  // - User memory (~/.claude/CLAUDE.md) applies to all projects
+  // - Stored outside git workspace to avoid pollution
+  // See: https://code.claude.com/docs/en/memory.md
+  const claudeMdContent = `# cmux Agent Instructions
 
 ${getMemoryProtocolInstructions()}
 `;
   files.push({
-    destinationPath: "/root/workspace/CLAUDE.local.md",
+    destinationPath: "$HOME/.claude/CLAUDE.md",
     contentBase64: Buffer.from(claudeMdContent).toString("base64"),
     mode: "644",
   });
