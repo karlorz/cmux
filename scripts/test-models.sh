@@ -24,7 +24,7 @@ run_tests() {
   echo ""
 
   if [[ "$CLI_ONLY" != "true" ]]; then
-    echo "[1/4] Testing /api/models endpoint..."
+    echo "[1/5] Testing /api/models endpoint..."
     if curl -sf "$SERVER_URL/api/models" > /dev/null 2>&1; then
       MODEL_COUNT=$(curl -s "$SERVER_URL/api/models" | jq '.models | length')
       echo "  OK: API returns $MODEL_COUNT models"
@@ -43,7 +43,7 @@ run_tests() {
   fi
 
   if [[ "$API_ONLY" != "true" ]]; then
-    echo "[2/4] Building Go CLI..."
+    echo "[2/5] Building Go CLI..."
     cd "$ROOT_DIR/packages/cmux-devbox"
     if go build ./... 2>&1; then
       echo "  OK: Go build successful"
@@ -53,7 +53,7 @@ run_tests() {
     fi
     echo ""
 
-    echo "[3/4] Running Go unit tests..."
+    echo "[3/5] Running Go unit tests..."
     if go test ./internal/cli/... -v 2>&1 | grep -E '(PASS|FAIL|---)'; then
       echo "  OK: Go tests completed"
     else
@@ -63,7 +63,7 @@ run_tests() {
   fi
 
   if [[ "$API_ONLY" != "true" ]] && [[ "$CLI_ONLY" != "true" ]]; then
-    echo "[4/4] Integration test (CLI -> API)..."
+    echo "[4/5] Integration test (CLI -> API)..."
     if curl -sf "$SERVER_URL/api/health" > /dev/null 2>&1; then
       cd "$ROOT_DIR/packages/cmux-devbox"
 
@@ -82,6 +82,34 @@ run_tests() {
         echo "  FAIL: CLI command failed"
         cat /tmp/models-output.txt
         return 1
+      fi
+    else
+      echo "  SKIP: Server not running"
+    fi
+  fi
+
+  if [[ "$CLI_ONLY" != "true" ]]; then
+    echo ""
+    echo "[5/5] Testing OpenRouter discovery endpoint..."
+    if curl -sf "$SERVER_URL/api/health" > /dev/null 2>&1; then
+      # This endpoint requires authentication via teamSlugOrId
+      TEAM="${CMUX_TEST_TEAM_SLUG:-example-team}"
+      REFRESH_RESULT=$(curl -s "$SERVER_URL/api/models/refresh?teamSlugOrId=$TEAM" -X POST 2>&1)
+
+      # Check if we got a valid response (might be 401 without auth, which is expected)
+      if echo "$REFRESH_RESULT" | jq -e '.success or .error' > /dev/null 2>&1; then
+        echo "  OK: Refresh endpoint responds"
+
+        # If successful, show OpenRouter stats
+        if echo "$REFRESH_RESULT" | jq -e '.openrouter' > /dev/null 2>&1; then
+          OPENROUTER_STATS=$(echo "$REFRESH_RESULT" | jq '.openrouter')
+          echo "  OpenRouter stats: $OPENROUTER_STATS"
+        else
+          echo "  Note: OpenRouter stats not available (auth may be required)"
+        fi
+      else
+        echo "  WARN: Unexpected response from refresh endpoint"
+        echo "  Response: $REFRESH_RESULT"
       fi
     else
       echo "  SKIP: Server not running"

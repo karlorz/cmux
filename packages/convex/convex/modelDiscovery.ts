@@ -12,6 +12,7 @@ import {
 const OPENCODE_ZEN_MODELS_URL = "https://opencode.ai/zen/v1/models";
 const OPENCODE_CHAT_COMPLETIONS_URL =
   "https://opencode.ai/zen/v1/chat/completions";
+const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
 
 /**
  * Fetch model IDs from OpenCode Zen API
@@ -153,6 +154,86 @@ export const discoverOpencodeModels = internalAction({
 });
 
 /**
+ * OpenRouter model type from their API
+ */
+interface OpenRouterModel {
+  id: string;
+  name: string;
+  pricing?: { prompt: string; completion: string };
+  context_length?: number;
+}
+
+/**
+ * Fetch models from OpenRouter API (public, no auth required)
+ */
+async function fetchOpenRouterModels(): Promise<OpenRouterModel[]> {
+  const response = await fetch(OPENROUTER_MODELS_URL);
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch OpenRouter models: HTTP ${response.status} ${response.statusText}`
+    );
+  }
+  const payload = (await response.json()) as { data?: OpenRouterModel[] };
+  return payload.data ?? [];
+}
+
+/**
+ * Discover models from OpenRouter API and upsert them into the models table.
+ * Free models are determined by pricing.prompt === "0".
+ */
+export const discoverOpenRouterModels = internalAction({
+  args: {},
+  handler: async (
+    ctx
+  ): Promise<{ discovered: number; free: number; paid: number }> => {
+    console.log("[modelDiscovery] Starting OpenRouter model discovery...");
+
+    const models = await fetchOpenRouterModels();
+    console.log(
+      `[modelDiscovery] Found ${models.length} models from OpenRouter API`
+    );
+
+    const now = Date.now();
+    const modelsToUpsert = models.map((model) => {
+      // Free if: id ends with ":free" OR prompt price is "0"
+      // Based on OpenClaw's model-scan.ts detection logic
+      const isFree =
+        model.id.endsWith(":free") ||
+        model.pricing?.prompt === "0" ||
+        parseFloat(model.pricing?.prompt ?? "1") === 0;
+
+      return {
+        name: `openrouter/${model.id}`,
+        displayName: model.name || model.id,
+        vendor: "openrouter",
+        source: "discovered" as const,
+        discoveredFrom: "openrouter-api",
+        discoveredAt: now,
+        requiredApiKeys: isFree ? ([] as string[]) : ["OPENROUTER_API_KEY"],
+        tier: isFree ? ("free" as const) : ("paid" as const),
+        tags: isFree ? ["free", "discovered"] : ["discovered"],
+      };
+    });
+
+    if (modelsToUpsert.length > 0) {
+      const result = await ctx.runMutation(internal.models.bulkUpsert, {
+        models: modelsToUpsert,
+      });
+      console.log(
+        `[modelDiscovery] Upserted ${result.upsertedCount} OpenRouter models`
+      );
+    }
+
+    const freeCount = modelsToUpsert.filter((m) => m.tier === "free").length;
+    return {
+      discovered: models.length,
+      free: freeCount,
+      paid: models.length - freeCount,
+    };
+  },
+});
+
+/**
  * Seed the models table from the static AGENT_CATALOG.
  * This imports curated models that are defined in code.
  */
@@ -258,12 +339,16 @@ export const triggerSeed = action({
  */
 export const triggerRefresh = action({
   args: { teamSlugOrId: v.string() },
-  handler: async (ctx, _args): Promise<{
+  handler: async (
+    ctx,
+    _args
+  ): Promise<{
     success: boolean;
     curated: number;
     discovered: number;
     free: number;
     paid: number;
+    openrouter?: { discovered: number; free: number; paid: number };
   }> => {
     // Manual auth check for actions
     const identity = await ctx.auth.getUserIdentity();
@@ -277,18 +362,32 @@ export const triggerRefresh = action({
       {}
     );
 
-    // Then discover from OpenCode
-    const discoverResult = await ctx.runAction(
+    // Discover from OpenCode
+    const opcodeResult = await ctx.runAction(
       internal.modelDiscovery.discoverOpencodeModels,
       {}
     );
 
+    // Discover from OpenRouter
+    let openrouterResult:
+      | { discovered: number; free: number; paid: number }
+      | undefined;
+    try {
+      openrouterResult = await ctx.runAction(
+        internal.modelDiscovery.discoverOpenRouterModels,
+        {}
+      );
+    } catch (error) {
+      console.error("[modelDiscovery] OpenRouter discovery failed:", error);
+    }
+
     return {
       success: true,
       curated: seedResult.seededCount,
-      discovered: discoverResult.discovered,
-      free: discoverResult.free,
-      paid: discoverResult.paid,
+      discovered: opcodeResult.discovered + (openrouterResult?.discovered ?? 0),
+      free: opcodeResult.free + (openrouterResult?.free ?? 0),
+      paid: opcodeResult.paid + (openrouterResult?.paid ?? 0),
+      openrouter: openrouterResult,
     };
   },
 });

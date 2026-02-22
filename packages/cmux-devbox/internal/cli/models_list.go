@@ -31,6 +31,9 @@ type ModelInfo struct {
 	Vendor          string         `json:"vendor"`
 	RequiredApiKeys []string       `json:"requiredApiKeys"`
 	Tier            string         `json:"tier"`
+	Source          string         `json:"source,omitempty"`          // "curated" or "discovered"
+	DiscoveredFrom  string         `json:"discoveredFrom,omitempty"`  // e.g., "openrouter"
+	DiscoveredAt    int64          `json:"discoveredAt,omitempty"`    // Unix timestamp
 	Disabled        bool           `json:"disabled"`
 	DisabledReason  *string        `json:"disabledReason"`
 	Tags            []string       `json:"tags"`
@@ -243,6 +246,59 @@ func filterByAvailability(models []ModelInfo, status credentials.AllProviderStat
 	var result []ModelInfo
 	for _, m := range models {
 		if status.IsProviderAvailable(strings.ToLower(m.Vendor)) {
+			result = append(result, m)
+		}
+	}
+	return result
+}
+
+// filterModelsByTier filters models by their tier (free or paid)
+func filterModelsByTier(models []ModelInfo, tier string) []ModelInfo {
+	if tier == "" {
+		return models
+	}
+	var result []ModelInfo
+	for _, m := range models {
+		if strings.EqualFold(m.Tier, tier) {
+			result = append(result, m)
+		}
+	}
+	return result
+}
+
+// filterModelsOpenRouterFree filters models to only include OpenRouter free models (with :free suffix)
+func filterModelsOpenRouterFree(models []ModelInfo) []ModelInfo {
+	var result []ModelInfo
+	for _, m := range models {
+		if strings.HasSuffix(m.Name, ":free") {
+			result = append(result, m)
+		}
+	}
+	return result
+}
+
+// filterModelsBySource filters models by their source (curated or discovered)
+func filterModelsBySource(models []ModelInfo, source string) []ModelInfo {
+	if source == "" {
+		return models
+	}
+	var result []ModelInfo
+	for _, m := range models {
+		if strings.EqualFold(m.Source, source) {
+			result = append(result, m)
+		}
+	}
+	return result
+}
+
+// filterModelsByDiscoveredFrom filters models by their discovery source (e.g., "openrouter")
+func filterModelsByDiscoveredFrom(models []ModelInfo, discoveredFrom string) []ModelInfo {
+	if discoveredFrom == "" {
+		return models
+	}
+	var result []ModelInfo
+	for _, m := range models {
+		if strings.EqualFold(m.DiscoveredFrom, discoveredFrom) {
 			result = append(result, m)
 		}
 	}

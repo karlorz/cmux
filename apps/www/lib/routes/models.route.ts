@@ -68,6 +68,13 @@ const DiscoveryResultResponse = z
     discovered: z.number().optional(),
     free: z.number().optional(),
     paid: z.number().optional(),
+    openrouter: z
+      .object({
+        discovered: z.number(),
+        free: z.number(),
+        paid: z.number(),
+      })
+      .optional(),
     error: z.string().optional(),
   })
   .openapi("DiscoveryResultResponse");
@@ -305,6 +312,7 @@ modelsRouter.openapi(
         discovered: result.discovered,
         free: result.free,
         paid: result.paid,
+        openrouter: result.openrouter,
       });
     } catch (error) {
       console.error("[models.route] Discovery failed:", error);

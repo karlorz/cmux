@@ -1032,6 +1032,11 @@ export type DiscoveryResultResponse = {
     discovered?: number;
     free?: number;
     paid?: number;
+    openrouter?: {
+        discovered: number;
+        free: number;
+        paid: number;
+    };
     error?: string;
 };
 

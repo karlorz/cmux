@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/cmux-cli/cmux-devbox/internal/credentials"
@@ -177,5 +178,134 @@ func TestFilterByAvailabilityWithVendorMapping(t *testing.T) {
 	}
 	if len(result) > 0 && result[0].Vendor != "claude" {
 		t.Errorf("filterByAvailability() should return claude model, got %s", result[0].Vendor)
+	}
+}
+
+// --- Tier and Source Filtering Tests (OpenRouter Discovery) ---
+
+func TestFilterModelsByTier(t *testing.T) {
+	models := []ModelInfo{
+		{Name: "claude/opus-4.6", DisplayName: "Opus 4.6", Vendor: "anthropic", Tier: "paid"},
+		{Name: "gpt-4o", DisplayName: "GPT-4o", Vendor: "openai", Tier: "paid"},
+		{Name: "gemini-flash", DisplayName: "Gemini Flash", Vendor: "google", Tier: "free"},
+		{Name: "llama-3-8b", DisplayName: "Llama 3 8B", Vendor: "meta", Tier: "free"},
+	}
+
+	// Filter free models
+	freeModels := filterModelsByTier(models, "free")
+	if len(freeModels) != 2 {
+		t.Errorf("filterModelsByTier(free) got %d models, want 2", len(freeModels))
+	}
+	for _, m := range freeModels {
+		if m.Tier != "free" {
+			t.Errorf("filterModelsByTier(free) returned model with tier %q", m.Tier)
+		}
+	}
+
+	// Filter paid models
+	paidModels := filterModelsByTier(models, "paid")
+	if len(paidModels) != 2 {
+		t.Errorf("filterModelsByTier(paid) got %d models, want 2", len(paidModels))
+	}
+	for _, m := range paidModels {
+		if m.Tier != "paid" {
+			t.Errorf("filterModelsByTier(paid) returned model with tier %q", m.Tier)
+		}
+	}
+
+	// Empty tier returns all
+	allModels := filterModelsByTier(models, "")
+	if len(allModels) != 4 {
+		t.Errorf("filterModelsByTier(\"\") got %d models, want 4", len(allModels))
+	}
+}
+
+func TestFilterModelsOpenRouterFree(t *testing.T) {
+	models := []ModelInfo{
+		{Name: "openrouter/meta-llama/llama-3-8b-instruct:free", DisplayName: "Llama 3 8B Free", Vendor: "openrouter", Tier: "free", Source: "discovered", DiscoveredFrom: "openrouter"},
+		{Name: "openrouter/meta-llama/llama-3-8b-instruct", DisplayName: "Llama 3 8B", Vendor: "openrouter", Tier: "paid", Source: "discovered", DiscoveredFrom: "openrouter"},
+		{Name: "openrouter/anthropic/claude-3-opus", DisplayName: "Claude 3 Opus", Vendor: "openrouter", Tier: "paid", Source: "discovered", DiscoveredFrom: "openrouter"},
+		{Name: "openrouter/google/gemma-7b:free", DisplayName: "Gemma 7B Free", Vendor: "openrouter", Tier: "free", Source: "discovered", DiscoveredFrom: "openrouter"},
+	}
+
+	// Filter models with :free suffix (OpenRouter free models)
+	freeOpenRouter := filterModelsOpenRouterFree(models)
+	if len(freeOpenRouter) != 2 {
+		t.Errorf("filterModelsOpenRouterFree() got %d models, want 2", len(freeOpenRouter))
+	}
+
+	// Verify all returned models have :free suffix
+	for _, m := range freeOpenRouter {
+		if !strings.HasSuffix(m.Name, ":free") {
+			t.Errorf("filterModelsOpenRouterFree() returned model without :free suffix: %s", m.Name)
+		}
+	}
+}
+
+func TestFilterModelsDiscoveredSource(t *testing.T) {
+	models := []ModelInfo{
+		{Name: "claude/opus-4.6", DisplayName: "Opus 4.6", Vendor: "anthropic", Tier: "paid", Source: "curated"},
+		{Name: "gpt-4o", DisplayName: "GPT-4o", Vendor: "openai", Tier: "paid", Source: "curated"},
+		{Name: "openrouter/llama-3-8b", DisplayName: "Llama 3 8B", Vendor: "openrouter", Tier: "free", Source: "discovered", DiscoveredFrom: "openrouter"},
+		{Name: "openrouter/mistral-7b", DisplayName: "Mistral 7B", Vendor: "openrouter", Tier: "free", Source: "discovered", DiscoveredFrom: "openrouter"},
+		{Name: "local-model", DisplayName: "Local Model", Vendor: "local", Tier: "free"}, // No source (legacy)
+	}
+
+	// Filter curated models
+	curated := filterModelsBySource(models, "curated")
+	if len(curated) != 2 {
+		t.Errorf("filterModelsBySource(curated) got %d models, want 2", len(curated))
+	}
+	for _, m := range curated {
+		if m.Source != "curated" {
+			t.Errorf("filterModelsBySource(curated) returned model with source %q", m.Source)
+		}
+	}
+
+	// Filter discovered models
+	discovered := filterModelsBySource(models, "discovered")
+	if len(discovered) != 2 {
+		t.Errorf("filterModelsBySource(discovered) got %d models, want 2", len(discovered))
+	}
+	for _, m := range discovered {
+		if m.Source != "discovered" {
+			t.Errorf("filterModelsBySource(discovered) returned model with source %q", m.Source)
+		}
+		if m.DiscoveredFrom == "" {
+			t.Errorf("discovered model %s should have DiscoveredFrom set", m.Name)
+		}
+	}
+
+	// Empty source returns all
+	allModels := filterModelsBySource(models, "")
+	if len(allModels) != 5 {
+		t.Errorf("filterModelsBySource(\"\") got %d models, want 5", len(allModels))
+	}
+}
+
+func TestFilterModelsByDiscoveredFrom(t *testing.T) {
+	models := []ModelInfo{
+		{Name: "openrouter/llama-3-8b", Source: "discovered", DiscoveredFrom: "openrouter"},
+		{Name: "openrouter/mistral-7b", Source: "discovered", DiscoveredFrom: "openrouter"},
+		{Name: "local/custom-model", Source: "discovered", DiscoveredFrom: "local-registry"},
+		{Name: "claude/opus", Source: "curated"},
+	}
+
+	// Filter by OpenRouter source
+	openrouterModels := filterModelsByDiscoveredFrom(models, "openrouter")
+	if len(openrouterModels) != 2 {
+		t.Errorf("filterModelsByDiscoveredFrom(openrouter) got %d models, want 2", len(openrouterModels))
+	}
+
+	// Filter by local-registry
+	localModels := filterModelsByDiscoveredFrom(models, "local-registry")
+	if len(localModels) != 1 {
+		t.Errorf("filterModelsByDiscoveredFrom(local-registry) got %d models, want 1", len(localModels))
+	}
+
+	// Empty discoveredFrom returns all
+	allModels := filterModelsByDiscoveredFrom(models, "")
+	if len(allModels) != 4 {
+		t.Errorf("filterModelsByDiscoveredFrom(\"\") got %d models, want 4", len(allModels))
 	}
 }
