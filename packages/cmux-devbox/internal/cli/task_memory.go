@@ -18,9 +18,13 @@ var (
 )
 
 var taskMemoryCmd = &cobra.Command{
-	Use:   "memory <task-run-id>",
-	Short: "View memory snapshots for a task run",
+	Use:   "memory <task-id-or-run-id>",
+	Short: "View memory snapshots for a task or task run",
 	Long: `View agent memory snapshots (knowledge, daily logs, tasks, mailbox) for a task run.
+
+You can provide either:
+  - A task ID (e.g., p17xxx...) - shows memory from the latest task run
+  - A task run ID (e.g., ns7xxx...) - shows memory from that specific run
 
 Memory files are synced when an agent completes and include:
   - knowledge: Accumulated knowledge and learnings
@@ -29,13 +33,14 @@ Memory files are synced when an agent completes and include:
   - mailbox: Communication messages
 
 Examples:
-  cmux task memory mn7xyz123abc...
-  cmux task memory mn7xyz123abc... --type knowledge
-  cmux task memory mn7xyz123abc... --type daily
-  cmux task memory mn7xyz123abc... --json`,
+  cmux task memory p17xyz123abc...              # Use latest run from task
+  cmux task memory ns7xyz123abc...              # Use specific task run
+  cmux task memory p17xyz123abc... --type knowledge
+  cmux task memory ns7xyz123abc... --type daily
+  cmux task memory p17xyz123abc... --json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		taskRunID := args[0]
+		id := args[0]
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -50,6 +55,23 @@ Examples:
 			return fmt.Errorf("failed to create client: %w", err)
 		}
 		client.SetTeamSlug(teamSlug)
+
+		// Determine if this is a task ID or task run ID
+		// Task IDs start with "p" (from tasks table), task run IDs have other prefixes
+		taskRunID := id
+		if strings.HasPrefix(id, "p") {
+			// This is a task ID - fetch the task and get the latest run
+			task, err := client.GetTask(ctx, id)
+			if err != nil {
+				return fmt.Errorf("failed to get task: %w", err)
+			}
+			if len(task.TaskRuns) == 0 {
+				return fmt.Errorf("task has no runs yet")
+			}
+			// Use the first run (most recent)
+			taskRunID = task.TaskRuns[0].ID
+			fmt.Printf("Using latest run: %s (%s)\n\n", taskRunID, task.TaskRuns[0].Agent)
+		}
 
 		result, err := client.GetTaskRunMemory(ctx, taskRunID, flagMemoryType)
 		if err != nil {
