@@ -467,7 +467,8 @@ test_mcp_server() {
   # Test 4.2: MCP server has valid Node.js shebang
   local shebang
   shebang="$(sandbox_exec "head -n 1 '${MEMORY_DIR}/mcp-server.js'")"
-  if echo "${shebang}" | grep -q "#!/usr/bin/env node"; then
+  # Handle escaped shebang from base64 encoding (#\!/usr/bin/env node)
+  if echo "${shebang}" | grep -qE '#!?\\?!/usr/bin/env node|^#!/usr/bin/env node'; then
     record_pass "MCP server has valid Node.js shebang"
   else
     record_fail "MCP server missing valid shebang"
@@ -512,7 +513,8 @@ test_sync_script() {
   # Test 5.2: Sync script has bash shebang
   local shebang
   shebang="$(sandbox_exec "head -n 1 '${MEMORY_DIR}/sync.sh'")"
-  if echo "${shebang}" | grep -q "#!/bin/bash"; then
+  # Handle escaped shebang from base64 encoding (#\!/bin/bash)
+  if echo "${shebang}" | grep -qE '#!?\\?!/bin/bash|^#!/bin/bash'; then
     record_pass "Sync script has valid bash shebang"
   else
     record_fail "Sync script missing valid shebang"

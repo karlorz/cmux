@@ -129,7 +129,65 @@ When running `./scripts/dev.sh`, service logs are written to `logs/{type}.log`:
 
 Log files are overwritten on each run. Use `tail -f logs/<file>` to follow live output.
 
-## cmux/dmux cli
+## cmux-devbox CLI
 
-The cmux cli is written in Rust.
-If working on the cmux cli (dmux in development mode), first read packages/sandbox/AGENTS.md
+The cmux-devbox CLI manages sandbox lifecycle (create, exec, delete). See `packages/sandbox/` for implementation.
+
+```bash
+# Development build
+make install-cmux-devbox-dev
+
+# Usage
+cmux-devbox start -p pve-lxc          # Create sandbox
+cmux-devbox exec <sandbox-id> "cmd"   # Execute command
+cmux-devbox delete <sandbox-id>       # Delete sandbox
+```
+
+# Agent Memory Protocol
+
+Agents running in cmux sandboxes have access to persistent memory at `/root/lifecycle/memory/`. This is outside the git workspace to avoid polluting repositories.
+
+## Memory Structure
+
+```
+/root/lifecycle/memory/
+├── knowledge/MEMORY.md   # Long-term insights (P0/P1/P2 priority tiers)
+├── daily/{date}.md       # Daily session logs (ephemeral)
+├── TASKS.json            # Task registry
+├── MAILBOX.json          # Inter-agent messages
+├── sync.sh               # Memory sync to Convex
+└── mcp-server.js         # MCP server for programmatic access
+```
+
+## Priority Tiers (knowledge/MEMORY.md)
+
+- **P0 Core**: Never expires - project fundamentals, invariants
+- **P1 Active**: 90-day TTL - ongoing work, current strategies
+- **P2 Reference**: 30-day TTL - temporary findings, debug notes
+
+Format: `- [YYYY-MM-DD] Your insight here`
+
+## Inter-Agent Messaging (MAILBOX.json)
+
+Agents can coordinate via the mailbox using MCP tools or direct file access:
+
+- `send_message(to, message, type)` - Send to agent or "*" for broadcast
+- `get_my_messages()` - Get messages addressed to this agent
+- `mark_read(messageId)` - Mark message as read
+
+Message types: `handoff`, `request`, `status`
+
+## Validation Scripts
+
+```bash
+./scripts/test-memory-protocol.sh       # S1: Memory seeding/read/write
+./scripts/test-two-agent-coordination.sh # S2: Mailbox coordination
+./scripts/test-memory-sync-latency.sh   # S3: Convex sync
+./scripts/test-mcp-server.sh            # S4: MCP server tools
+```
+
+## Related Files
+
+- `packages/shared/src/agent-memory-protocol.ts` - Protocol implementation
+- `packages/convex/convex/agentMemory_http.ts` - Convex sync endpoint
+- `packages/convex/convex/agentMemoryQueries.ts` - Memory queries

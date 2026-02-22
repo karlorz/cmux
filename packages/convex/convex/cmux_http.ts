@@ -2378,6 +2378,12 @@ export const getTaskRunMemory = httpAction(async (ctx, req) => {
     return jsonResponse({ code: 400, message: "Task run ID is required" }, 400);
   }
 
+  // Validate taskRunId format - Convex IDs are alphanumeric without underscores
+  const isValidConvexIdFormat = /^[a-z][a-z0-9]*$/i.test(taskRunId);
+  if (!isValidConvexIdFormat) {
+    return jsonResponse({ code: 404, message: "Task run not found" }, 404);
+  }
+
   try {
     const userId = identity!.subject;
     const teamId = await resolveTeamIdForHttp(ctx, teamSlugOrId);
