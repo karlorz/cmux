@@ -268,7 +268,10 @@ export async function spawnAgent(
     }
 
     // Callback URL for stop hooks to call crown/complete (Convex site URL)
-    const callbackUrl = env.NEXT_PUBLIC_CONVEX_URL.replace('.convex.cloud', '.convex.site');
+    // For self-hosted Convex, use CONVEX_SITE_URL directly
+    // For Convex Cloud, transform api URL to site URL
+    const callbackUrl = env.CONVEX_SITE_URL
+      ?? env.NEXT_PUBLIC_CONVEX_URL.replace('.convex.cloud', '.convex.site');
 
     // Start loading workspace config early so it runs in parallel with other setup work.
     const workspaceConfigPromise = (async (): Promise<WorkspaceConfigLayer[]> => {
@@ -418,7 +421,7 @@ export async function spawnAgent(
 
     // Fetch API keys from Convex BEFORE calling agent.environment()
     // so agents can access them in their environment configuration
-    const [userApiKeys, workspaceSettings, previousKnowledge] = await Promise.all([
+    const [userApiKeys, workspaceSettings, previousKnowledge, previousMailbox] = await Promise.all([
       getConvex().query(api.apiKeys.getAllForAgents, {
         teamSlugOrId,
       }),
@@ -437,11 +440,28 @@ export async function spawnAgent(
           );
           return null;
         }),
+      // Query previous mailbox with unread messages for cross-run mailbox seeding (S10)
+      getConvex()
+        .query(api.agentMemoryQueries.getLatestTeamMailbox, {
+          teamSlugOrId,
+        })
+        .catch((error) => {
+          serverLogger.warn(
+            "[AgentSpawner] Failed to fetch previous mailbox for memory seeding",
+            error
+          );
+          return null;
+        }),
     ]);
 
     if (previousKnowledge) {
       serverLogger.info(
         `[AgentSpawner] Found previous knowledge (${previousKnowledge.length} chars) for cross-run seeding`
+      );
+    }
+    if (previousMailbox) {
+      serverLogger.info(
+        `[AgentSpawner] Found previous mailbox (${previousMailbox.length} chars) with unread messages for cross-run seeding`
       );
     }
 
@@ -461,6 +481,7 @@ export async function spawnAgent(
           bypassAnthropicProxy: workspaceSettings?.bypassAnthropicProxy ?? false,
         },
         previousKnowledge: previousKnowledge ?? undefined,
+        previousMailbox: previousMailbox ?? undefined,
       });
       envVars = {
         ...envVars,

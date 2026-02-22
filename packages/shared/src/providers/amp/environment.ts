@@ -86,7 +86,7 @@ export async function getAmpEnvironment(
 
   // Add agent memory protocol support
   startupCommands.push(getMemoryStartupCommand());
-  files.push(...getMemorySeedFiles(ctx.taskRunId, ctx.previousKnowledge));
+  files.push(...getMemorySeedFiles(ctx.taskRunId, ctx.previousKnowledge, ctx.previousMailbox));
 
   // Add AMP.md with memory protocol instructions for the project
   const ampMdContent = `# cmux Project Instructions

@@ -57,6 +57,7 @@ import {
   createTask as cmuxCreateTask,
   taskGetRouter as cmuxTaskGetRouter,
   taskActionRouter as cmuxTaskActionRouter,
+  getTaskRunMemory as cmuxGetTaskRunMemory,
 } from "./cmux_http";
 import {
   createInstance as devboxV2CreateInstance,
@@ -359,6 +360,13 @@ http.route({
   pathPrefix: "/api/v1/cmux/tasks/",
   method: "POST",
   handler: cmuxTaskActionRouter,
+});
+
+// Task run memory endpoint
+http.route({
+  pathPrefix: "/api/v1/cmux/task-runs/",
+  method: "GET",
+  handler: cmuxGetTaskRunMemory,
 });
 
 // =============================================================================

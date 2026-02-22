@@ -1265,3 +1265,49 @@ func (c *Client) StartTaskAgents(ctx context.Context, opts StartTaskAgentsOption
 
 	return &result, nil
 }
+
+// MemorySnapshot represents a single memory snapshot from a task run
+type MemorySnapshot struct {
+	ID         string `json:"id"`
+	MemoryType string `json:"memoryType"`
+	Content    string `json:"content"`
+	FileName   string `json:"fileName,omitempty"`
+	Date       string `json:"date,omitempty"`
+	Truncated  bool   `json:"truncated"`
+	AgentName  string `json:"agentName,omitempty"`
+	CreatedAt  int64  `json:"createdAt,omitempty"`
+}
+
+// GetTaskRunMemoryResult represents the result of getting task run memory
+type GetTaskRunMemoryResult struct {
+	Memory []MemorySnapshot `json:"memory"`
+}
+
+// GetTaskRunMemory gets memory snapshots for a specific task run
+func (c *Client) GetTaskRunMemory(ctx context.Context, taskRunID string, memoryType string) (*GetTaskRunMemoryResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	path := fmt.Sprintf("/api/v1/cmux/task-runs/%s/memory?teamSlugOrId=%s", taskRunID, c.teamSlug)
+	if memoryType != "" {
+		path += "&type=" + memoryType
+	}
+
+	resp, err := c.doRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result GetTaskRunMemoryResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
