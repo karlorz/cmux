@@ -457,7 +457,7 @@ export function handleHttpRequest(
           variants?: Array<{ id: string; displayName: string; description?: string }>;
           defaultVariant?: string;
           source: string;
-        }> = [];
+        }> | null = null; // null = not attempted, [] = attempted but empty
 
         // If authenticated with team, use credential-filtered query from Convex
         if (authToken && teamSlugOrId) {
@@ -470,13 +470,12 @@ export function handleHttpRequest(
             });
           } catch (authError) {
             serverLogger.warn("[http-api] GET /api/models auth failed, using static fallback", authError);
-            // Fall through to static catalog below
-            convexModels = [];
+            // Fall through to static catalog below (convexModels stays null)
           }
         }
-        // Unauthenticated or auth failed: use static catalog (handled below)
+        // Unauthenticated or auth failed: use static catalog (when convexModels is null)
 
-        if (convexModels && convexModels.length > 0) {
+        if (convexModels !== null) {
           // Apply vendor filter if provided
           let filteredModels = convexModels;
           if (vendorFilter) {

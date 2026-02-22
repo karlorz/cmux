@@ -545,6 +545,23 @@ function DashboardComponent() {
       : undefined;
   }, [modelPreferencesQuery.data?.disabledModels]);
 
+  // Prune selectedAgents when user disables models in Settings
+  useEffect(() => {
+    if (!disabledByUserModels || disabledByUserModels.size === 0) return;
+
+    const currentAgents = selectedAgentsRef.current;
+    if (currentAgents.length === 0) return;
+
+    const filteredAgents = currentAgents.filter(
+      (agent) => !disabledByUserModels.has(agent)
+    );
+
+    if (filteredAgents.length !== currentAgents.length) {
+      setSelectedAgents(filteredAgents);
+      persistAgentSelection(filteredAgents);
+    }
+  }, [disabledByUserModels, setSelectedAgents, persistAgentSelection]);
+
   // Socket-based functions to fetch data from GitHub
   // Removed unused fetchRepos function - functionality is handled by Convex queries
 
