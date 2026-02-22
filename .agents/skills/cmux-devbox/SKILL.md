@@ -1,9 +1,18 @@
 ---
 name: cmux-devbox
-description: Cloud VM CLI for development. Creates, manages, and accesses remote VMs. Auto-builds from source if not installed.
+description: Development build of cmux CLI. Same features as cmux but built from local source for development/testing. Use cmux-devbox when developing the CLI itself.
 ---
 
-# cmux-devbox - Cloud VMs for Development
+# cmux-devbox - Development Build of cmux CLI
+
+> **Note**: `cmux-devbox` is the **development version** of `cmux`. It's built from local source (`packages/cmux-devbox`) and used when developing or testing the CLI itself. For production use, install `cmux` via npm.
+
+| Binary | Purpose | Installation |
+|--------|---------|--------------|
+| `cmux` | Production CLI | `npm install -g cmux` |
+| `cmux-devbox` | Development CLI | `make install-cmux-devbox-dev` |
+
+Both binaries have identical commands - only the binary name differs.
 
 ## Pre-flight Check
 
@@ -80,8 +89,21 @@ Tasks are the same as in the web app dashboard. CLI and web sync through Convex.
 - `cmux-devbox task list` - List active tasks
 - `cmux-devbox task list --archived` - List archived tasks
 - `cmux-devbox task create --repo owner/repo --agent claude-code "prompt"` - Create task
-- `cmux-devbox task status <task-id>` - Get task details
+- `cmux-devbox task show <task-id>` - Get task details and runs
 - `cmux-devbox task stop <task-id>` - Stop/archive task
+- `cmux-devbox task memory <task-run-id>` - View agent memory for a task run
+
+### Agent Memory
+View agent memory snapshots synced from sandboxes when agents complete.
+
+```bash
+cmux-devbox task memory <task-run-id>                # View all memory
+cmux-devbox task memory <task-run-id> -t knowledge   # Filter by type
+cmux-devbox task memory <task-run-id> -t daily       # Daily logs only
+cmux-devbox task memory <task-run-id> --json         # JSON output
+```
+
+Memory types: `knowledge`, `daily`, `tasks`, `mailbox`
 
 ### Team Management
 - `cmux-devbox team list` - List your teams
