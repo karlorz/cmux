@@ -545,6 +545,12 @@ function DashboardComponent() {
       : undefined;
   }, [modelPreferencesQuery.data?.disabledModels]);
 
+  // Fetch available models from Convex (filtered by API keys, includes runtime-discovered models)
+  const convexModelsQuery = useQuery(
+    convexQuery(api.models.listAvailable, { teamSlugOrId })
+  );
+  const convexModels = convexModelsQuery.data ?? null;
+
   // Prune selectedAgents when user disables models in Settings
   useEffect(() => {
     if (!disabledByUserModels || disabledByUserModels.size === 0) return;
@@ -1412,6 +1418,7 @@ function DashboardComponent() {
               branchDisabled={isEnvSelected || !selectedProject[0]}
               providerStatus={providerStatus}
               disabledByUserModels={disabledByUserModels}
+              convexModels={convexModels}
               canSubmit={canSubmit}
               onStartTask={handleStartTask}
               isStartingTask={isStartingTask}
@@ -1501,9 +1508,24 @@ type DashboardMainCardProps = {
   branchDisabled: boolean;
   providerStatus: ProviderStatusResponse | null;
   disabledByUserModels?: Set<string>;
+  convexModels: ConvexModelEntry[] | null;
   canSubmit: boolean;
   onStartTask: () => void;
   isStartingTask: boolean;
+};
+
+// Type for models from Convex listAvailable
+type ConvexModelEntry = {
+  _id: string;
+  name: string;
+  displayName: string;
+  vendor: string;
+  tier: "free" | "paid";
+  enabled: boolean;
+  tags?: string[];
+  requiredApiKeys: string[];
+  disabled?: boolean;
+  sortOrder: number;
 };
 
 function DashboardMainCard({
@@ -1536,6 +1558,7 @@ function DashboardMainCard({
   branchDisabled,
   providerStatus,
   disabledByUserModels,
+  convexModels,
   canSubmit,
   onStartTask,
   isStartingTask,
@@ -1583,6 +1606,7 @@ function DashboardMainCard({
           branchDisabled={branchDisabled}
           providerStatus={providerStatus}
           disabledByUserModels={disabledByUserModels}
+          convexModels={convexModels}
         />
         <DashboardStartTaskButton
           canSubmit={canSubmit}

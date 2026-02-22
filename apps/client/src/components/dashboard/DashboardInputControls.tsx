@@ -19,7 +19,7 @@ import {
 } from "@/lib/github-oauth-flow";
 import { WWW_ORIGIN } from "@/lib/wwwOrigin";
 import { api } from "@cmux/convex/api";
-import type { ProviderStatus, ProviderStatusResponse } from "@cmux/shared";
+import type { ProviderStatusResponse } from "@cmux/shared";
 import { AGENT_CATALOG, type AgentVendor } from "@cmux/shared/agent-catalog";
 import { parseGithubRepoUrl } from "@cmux/shared";
 import { useUser } from "@stackframe/react";
@@ -57,6 +57,22 @@ interface DashboardInputControlsProps {
   providerStatus?: ProviderStatusResponse | null;
   /** Set of agent names disabled by user in Settings > Models */
   disabledByUserModels?: Set<string>;
+  /** Models from Convex (includes runtime-discovered models), filtered by availability */
+  convexModels?: ConvexModelEntry[] | null;
+}
+
+// Type for models from Convex
+interface ConvexModelEntry {
+  _id: string;
+  name: string;
+  displayName: string;
+  vendor: string;
+  tier: "free" | "paid";
+  enabled: boolean;
+  tags?: string[];
+  requiredApiKeys: string[];
+  disabled?: boolean;
+  sortOrder: number;
 }
 
 type AgentOption = SelectOptionObject & { displayLabel: string; isDisabled?: boolean };
@@ -155,48 +171,36 @@ export const DashboardInputControls = memo(function DashboardInputControls({
   teamSlugOrId,
   cloudToggleDisabled = false,
   branchDisabled = false,
-  providerStatus = null,
+  // providerStatus is kept for backward compatibility but no longer used
+  // (availability filtering is now done server-side via Convex)
+  providerStatus: _providerStatus = null,
   disabledByUserModels,
+  convexModels,
 }: DashboardInputControlsProps) {
   const queryClient = useQueryClient();
   const user = useUser({ or: "return-null" });
   const agentSelectRef = useRef<SearchableSelectHandle | null>(null);
   const mintState = useMutation(api.github_app.mintInstallState);
   const addManualRepo = useAction(api.github_http.addManualRepo);
-  const providerStatusMap = useMemo(() => {
-    const map = new Map<string, ProviderStatus>();
-    providerStatus?.providers?.forEach((provider) => {
-      map.set(provider.name, provider);
-    });
-    return map;
-  }, [providerStatus?.providers]);
   const agentOptions = useMemo<AgentOption[]>(() => {
+    // Use Convex models if available, otherwise fall back to static catalog
+    // Convex models are already filtered by availability (API keys) server-side
+    const baseModels: Array<{
+      name: string;
+      displayName: string;
+      vendor: string;
+      disabled?: boolean;
+    }> = convexModels ?? AGENT_CATALOG;
+
     // Filter out agents disabled by user in Settings > Models
-    const enabledCatalog = disabledByUserModels
-      ? AGENT_CATALOG.filter((entry) => !disabledByUserModels.has(entry.name))
-      : AGENT_CATALOG;
+    const enabledModels = disabledByUserModels
+      ? baseModels.filter((entry) => !disabledByUserModels.has(entry.name))
+      : baseModels;
 
     // Filter out agents disabled at catalog level (e.g., deprecated models)
-    const activeCatalog = enabledCatalog.filter(
+    const activeModels = enabledModels.filter(
       (entry) => entry.disabled !== true
     );
-
-    // Filter out unavailable models (no API key configured)
-    const availableCatalog = activeCatalog.filter((entry) => {
-      const status = providerStatusMap.get(entry.name);
-      // If no status info, assume available (free models, etc.)
-      return status?.isAvailable ?? true;
-    });
-
-    const options = availableCatalog.map((entry) => {
-      return {
-        label: entry.name,
-        displayLabel: entry.displayName,
-        value: entry.name,
-        icon: <AgentLogo agentName={entry.name} vendor={entry.vendor} className="w-4 h-4" />,
-        iconKey: entry.vendor,
-      } satisfies AgentOption;
-    });
 
     const vendorHeadingLabel: Record<AgentVendor | "other", string> = {
       openai: "OpenAI / Codex",
@@ -211,13 +215,45 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       other: "Other",
     };
 
+    // Define vendor order for consistent grouping
+    const vendorOrder: Record<string, number> = {
+      anthropic: 0,
+      openai: 1,
+      google: 2,
+      opencode: 3,
+      qwen: 4,
+      cursor: 5,
+      amp: 6,
+      xai: 7,
+      openrouter: 8,
+      other: 99,
+    };
+
+    // Sort models by vendor order, then by displayName within each vendor
+    const sortedModels = [...activeModels].sort((a, b) => {
+      const vendorA = vendorOrder[a.vendor] ?? 99;
+      const vendorB = vendorOrder[b.vendor] ?? 99;
+      if (vendorA !== vendorB) return vendorA - vendorB;
+      return a.displayName.localeCompare(b.displayName);
+    });
+
+    const options = sortedModels.map((entry) => {
+      return {
+        label: entry.name,
+        displayLabel: entry.displayName,
+        value: entry.name,
+        icon: <AgentLogo agentName={entry.name} vendor={entry.vendor as AgentVendor} className="w-4 h-4" />,
+        iconKey: entry.vendor,
+      } satisfies AgentOption;
+    });
+
     const grouped: AgentOption[] = [];
     let lastVendor: string | null = null;
     for (const option of options) {
       const vendor = option.iconKey ?? "other";
       if (vendor !== lastVendor) {
         lastVendor = vendor;
-        const headingLabel = vendorHeadingLabel[vendor] ?? vendor;
+        const headingLabel = vendorHeadingLabel[vendor as keyof typeof vendorHeadingLabel] ?? vendor;
         grouped.push({
           label: headingLabel,
           displayLabel: headingLabel,
@@ -230,7 +266,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     }
 
     return grouped;
-  }, [disabledByUserModels, providerStatusMap]);
+  }, [convexModels, disabledByUserModels]);
 
   const agentOptionsByValue = useMemo(() => {
     const map = new Map<string, AgentOption>();
