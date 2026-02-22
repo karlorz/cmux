@@ -268,7 +268,10 @@ export async function spawnAgent(
     }
 
     // Callback URL for stop hooks to call crown/complete (Convex site URL)
-    const callbackUrl = env.NEXT_PUBLIC_CONVEX_URL.replace('.convex.cloud', '.convex.site');
+    // For self-hosted Convex, use CONVEX_SITE_URL directly
+    // For Convex Cloud, transform api URL to site URL
+    const callbackUrl = env.CONVEX_SITE_URL
+      ?? env.NEXT_PUBLIC_CONVEX_URL.replace('.convex.cloud', '.convex.site');
 
     // Start loading workspace config early so it runs in parallel with other setup work.
     const workspaceConfigPromise = (async (): Promise<WorkspaceConfigLayer[]> => {
