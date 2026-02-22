@@ -102,13 +102,18 @@ cmux task memory <task-run-id>   # View agent memory for a task run
 View agent memory snapshots (knowledge, daily logs, tasks, mailbox) synced from sandboxes.
 
 ```bash
-cmux task memory <task-run-id>                # View all memory for a task run
-cmux task memory <task-run-id> --type knowledge  # Filter by memory type
-cmux task memory <task-run-id> --type daily      # View daily logs only
-cmux task memory <task-run-id> --type tasks      # View task tracking
-cmux task memory <task-run-id> --type mailbox    # View mailbox messages
-cmux task memory <task-run-id> --json            # Output as JSON
+cmux task memory <task-id>                    # View memory (uses latest task run)
+cmux task memory <task-run-id>                # View memory for specific run
+cmux task memory <task-id> --type knowledge   # Filter by memory type
+cmux task memory <task-id> --type daily       # View daily logs only
+cmux task memory <task-id> --type tasks       # View task tracking
+cmux task memory <task-id> --type mailbox     # View mailbox messages
+cmux task memory <task-id> --json             # Output as JSON
 ```
+
+You can use either:
+- **Task ID** (e.g., `p17xyz...`) - automatically uses the latest task run
+- **Task run ID** (e.g., `ns7xyz...`) - uses that specific run
 
 Memory types:
 - **knowledge**: Accumulated knowledge and learnings (P0/P1/P2 priority tiers)

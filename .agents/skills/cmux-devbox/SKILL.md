@@ -97,12 +97,14 @@ Tasks are the same as in the web app dashboard. CLI and web sync through Convex.
 View agent memory snapshots synced from sandboxes when agents complete.
 
 ```bash
-cmux-devbox task memory <task-run-id>                # View all memory
-cmux-devbox task memory <task-run-id> -t knowledge   # Filter by type
-cmux-devbox task memory <task-run-id> -t daily       # Daily logs only
-cmux-devbox task memory <task-run-id> --json         # JSON output
+cmux-devbox task memory <task-id>              # View memory (uses latest run)
+cmux-devbox task memory <task-run-id>          # View specific run's memory
+cmux-devbox task memory <task-id> -t knowledge # Filter by type
+cmux-devbox task memory <task-id> -t daily     # Daily logs only
+cmux-devbox task memory <task-id> --json       # JSON output
 ```
 
+Accepts either task ID (`p17...`) or task run ID (`ns7...`).
 Memory types: `knowledge`, `daily`, `tasks`, `mailbox`
 
 ### Team Management
