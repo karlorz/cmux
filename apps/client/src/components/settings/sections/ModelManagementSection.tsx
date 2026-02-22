@@ -116,6 +116,9 @@ export function ModelManagementSection({
     const searchLower = searchQuery.toLowerCase();
 
     const filtered = convexModels.filter((entry) => {
+      // Hide unavailable models (no API key configured)
+      if (!isModelAvailable(entry)) return false;
+
       // Apply search filter
       if (searchQuery) {
         const matchesSearch =
@@ -146,10 +149,12 @@ export function ModelManagementSection({
     }
 
     return grouped;
-  }, [convexModels, searchQuery, showDisabledOnly]);
+  }, [convexModels, searchQuery, showDisabledOnly, isModelAvailable]);
 
-  const enabledCount = convexModels?.filter(m => m.enabled).length ?? 0;
-  const totalCount = convexModels?.length ?? 0;
+  // Count only available models (with API keys configured)
+  const availableModels = convexModels?.filter(isModelAvailable) ?? [];
+  const enabledCount = availableModels.filter(m => m.enabled).length;
+  const totalCount = availableModels.length;
 
   return (
     <div className="space-y-4">
@@ -196,7 +201,6 @@ export function ModelManagementSection({
                   <div className="rounded-lg border border-neutral-200 divide-y divide-neutral-200 dark:border-neutral-800 dark:divide-neutral-800">
                     {entries.map((entry) => {
                       const isEnabled = entry.enabled;
-                      const isAvailable = isModelAvailable(entry);
                       const isToggling =
                         toggleModelMutation.isPending &&
                         toggleModelMutation.variables?.modelName === entry.name;
@@ -204,9 +208,7 @@ export function ModelManagementSection({
                       return (
                         <div
                           key={entry._id}
-                          className={`flex items-center justify-between gap-4 px-3 py-2.5 ${
-                            !isAvailable ? "opacity-50" : ""
-                          }`}
+                          className="flex items-center justify-between gap-4 px-3 py-2.5"
                         >
                           <div className="flex items-center gap-3 min-w-0">
                             <AgentLogo
@@ -245,11 +247,6 @@ export function ModelManagementSection({
                               {entry.tags?.includes("reasoning") && (
                                 <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
                                   Reasoning
-                                </span>
-                              )}
-                              {!isAvailable && (
-                                <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
-                                  No API Key
                                 </span>
                               )}
                               {entry.disabled && (
