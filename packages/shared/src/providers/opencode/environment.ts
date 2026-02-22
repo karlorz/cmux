@@ -424,7 +424,7 @@ log "Post-start script end"
 
   // Add agent memory protocol support
   startupCommands.push(getMemoryStartupCommand());
-  files.push(...getMemorySeedFiles(ctx.taskRunId, ctx.previousKnowledge));
+  files.push(...getMemorySeedFiles(ctx.taskRunId, ctx.previousKnowledge, ctx.previousMailbox));
 
   // Add OPENCODE.md with memory protocol instructions for the project
   const opencodeMdContent = `# cmux Project Instructions

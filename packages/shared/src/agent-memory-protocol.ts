@@ -156,13 +156,47 @@ You have access to persistent memory at \`${MEMORY_PROTOCOL_DIR}/\`:
 - **P2 Reference**: One-off findings. Review after 30 days - promote to P1 if still useful, or remove.
 - **Daily logs**: Raw session notes. Do not promote everything - only curate what's worth keeping.
 
-### Inter-Agent Messaging
-- Your agent name: ${agentNameEnvVar}
-- Check \`${MEMORY_PROTOCOL_DIR}/MAILBOX.json\` for messages addressed to you
-- To message another agent: append to the messages array with format:
-  \`\`\`json
-  {"from": "your-agent", "to": "target-agent", "message": "...", "timestamp": "ISO-8601"}
-  \`\`\`
+### Inter-Agent Messaging (S10 Coordination)
+
+Your agent name: **${agentNameEnvVar}**
+
+You can coordinate with other agents on the same task using the mailbox MCP tools:
+
+| Tool | Description |
+|------|-------------|
+| \`send_message(to, message, type)\` | Send a message to another agent (or "*" for broadcast) |
+| \`get_my_messages()\` | Get messages addressed to you |
+| \`mark_read(messageId)\` | Mark a message as read |
+
+#### Message Types
+- **handoff**: Transfer work to another agent ("I've completed X, please continue with Y")
+- **request**: Ask another agent to do something specific ("Can you review this file?")
+- **status**: Broadcast progress updates to all agents ("Starting work on auth module")
+
+#### Coordination Patterns
+
+1. **Handoff Pattern**: When you complete a piece of work that another agent should continue:
+   \`\`\`
+   send_message("codex/gpt-5.1-codex", "I've implemented the API endpoints. Please write tests for them.", "handoff")
+   \`\`\`
+
+2. **Request Pattern**: When you need help from a specific agent:
+   \`\`\`
+   send_message("claude/opus-4.5", "Can you review the auth flow in src/auth.ts?", "request")
+   \`\`\`
+
+3. **Status Broadcast**: Keep all agents informed of progress:
+   \`\`\`
+   send_message("*", "Completed database migrations, moving to API layer", "status")
+   \`\`\`
+
+#### On Start
+Check for messages from previous agents:
+\`\`\`
+get_my_messages()  // See if any agent has left instructions for you
+\`\`\`
+
+Messages from previous runs are automatically seeded into your mailbox.
 `;
 }
 
@@ -310,6 +344,9 @@ export function getMemorySyncScriptFile(): AuthFile {
  * - list_daily_logs(): List available daily log dates
  * - read_daily_log(date): Read a specific daily log
  * - search_memory(query): Search across all memory files
+ * - send_message(to, message, type): Send a message to another agent
+ * - get_my_messages(): Get messages addressed to this agent
+ * - mark_read(messageId): Mark a message as read
  */
 export function getMemoryMcpServerScript(): string {
   return `#!/usr/bin/env node
@@ -322,10 +359,15 @@ export function getMemoryMcpServerScript(): string {
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
+const crypto = require('crypto');
 
 const MEMORY_DIR = '${MEMORY_PROTOCOL_DIR}';
 const KNOWLEDGE_DIR = path.join(MEMORY_DIR, 'knowledge');
 const DAILY_DIR = path.join(MEMORY_DIR, 'daily');
+const MAILBOX_PATH = path.join(MEMORY_DIR, 'MAILBOX.json');
+
+// Get agent name from environment (set by cmux)
+const AGENT_NAME = process.env.CMUX_AGENT_NAME || 'unknown';
 
 // Simple JSON-RPC over stdio implementation
 const rl = readline.createInterface({
@@ -356,6 +398,35 @@ function readFile(filePath) {
   } catch (err) {
     return null;
   }
+}
+
+function writeFile(filePath, content) {
+  try {
+    fs.writeFileSync(filePath, content, 'utf-8');
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+function readMailbox() {
+  const content = readFile(MAILBOX_PATH);
+  if (!content) {
+    return { version: 1, messages: [] };
+  }
+  try {
+    return JSON.parse(content);
+  } catch (err) {
+    return { version: 1, messages: [] };
+  }
+}
+
+function writeMailbox(mailbox) {
+  return writeFile(MAILBOX_PATH, JSON.stringify(mailbox, null, 2));
+}
+
+function generateMessageId() {
+  return 'msg_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12);
 }
 
 function listDailyLogs() {
@@ -484,6 +555,56 @@ const tools = [
       },
       required: ['query']
     }
+  },
+  {
+    name: 'send_message',
+    description: 'Send a message to another agent on the same task. Use "*" to broadcast to all agents.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        to: {
+          type: 'string',
+          description: 'Recipient agent name (e.g., "claude/opus-4.5") or "*" for broadcast'
+        },
+        message: {
+          type: 'string',
+          description: 'The message content'
+        },
+        type: {
+          type: 'string',
+          enum: ['handoff', 'request', 'status'],
+          description: 'Message type: handoff (work transfer), request (ask to do something), status (progress update)'
+        }
+      },
+      required: ['to', 'message']
+    }
+  },
+  {
+    name: 'get_my_messages',
+    description: 'Get all messages addressed to this agent (including broadcasts). Returns unread messages first.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        includeRead: {
+          type: 'boolean',
+          description: 'Include messages already marked as read (default: false)'
+        }
+      }
+    }
+  },
+  {
+    name: 'mark_read',
+    description: 'Mark a message as read by its ID.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        messageId: {
+          type: 'string',
+          description: 'The message ID to mark as read'
+        }
+      },
+      required: ['messageId']
+    }
   }
 ];
 
@@ -539,6 +660,59 @@ function handleRequest(request) {
           return sendResponse(id, { content: [{ type: 'text', text: JSON.stringify(results, null, 2) }] });
         }
 
+        case 'send_message': {
+          const mailbox = readMailbox();
+          const newMessage = {
+            id: generateMessageId(),
+            from: AGENT_NAME,
+            to: args.to,
+            type: args.type || 'status',
+            message: args.message,
+            timestamp: new Date().toISOString(),
+            read: false
+          };
+          mailbox.messages.push(newMessage);
+          if (writeMailbox(mailbox)) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Message sent successfully. ID: ' + newMessage.id }] });
+          } else {
+            return sendResponse(id, null, 'Failed to write mailbox');
+          }
+        }
+
+        case 'get_my_messages': {
+          const mailbox = readMailbox();
+          const includeRead = args.includeRead || false;
+          const myMessages = mailbox.messages.filter(msg => {
+            const isForMe = msg.to === AGENT_NAME || msg.to === '*';
+            const isFromMe = msg.from === AGENT_NAME;
+            const shouldInclude = includeRead || !msg.read;
+            return isForMe && !isFromMe && shouldInclude;
+          });
+          // Sort: unread first, then by timestamp
+          myMessages.sort((a, b) => {
+            if (a.read !== b.read) return a.read ? 1 : -1;
+            return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+          });
+          if (myMessages.length === 0) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'No messages for you.' }] });
+          }
+          return sendResponse(id, { content: [{ type: 'text', text: JSON.stringify(myMessages, null, 2) }] });
+        }
+
+        case 'mark_read': {
+          const mailbox = readMailbox();
+          const msgIndex = mailbox.messages.findIndex(msg => msg.id === args.messageId);
+          if (msgIndex === -1) {
+            return sendResponse(id, null, 'Message not found: ' + args.messageId);
+          }
+          mailbox.messages[msgIndex].read = true;
+          if (writeMailbox(mailbox)) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Message marked as read.' }] });
+          } else {
+            return sendResponse(id, null, 'Failed to update mailbox');
+          }
+        }
+
         default:
           return sendResponse(id, null, 'Unknown tool: ' + name);
       }
@@ -589,10 +763,12 @@ export function getMemoryMcpServerFile(): AuthFile {
  *
  * @param sandboxId - The sandbox/task run ID for metadata
  * @param previousKnowledge - Optional previous knowledge content from earlier runs (for cross-run seeding)
+ * @param previousMailbox - Optional previous mailbox content with unread messages (for cross-run seeding)
  */
 export function getMemorySeedFiles(
   sandboxId: string,
-  previousKnowledge?: string
+  previousKnowledge?: string,
+  previousMailbox?: string
 ): AuthFile[] {
   const Buffer = globalThis.Buffer;
   const today = getTodayDateString();
@@ -602,6 +778,12 @@ export function getMemorySeedFiles(
     previousKnowledge && previousKnowledge.trim().length > 0
       ? previousKnowledge
       : getKnowledgeSeedContent();
+
+  // Use previous mailbox if provided (with unread messages), otherwise empty mailbox
+  const mailboxContent =
+    previousMailbox && previousMailbox.trim().length > 0
+      ? previousMailbox
+      : getMailboxSeedContent();
 
   return [
     {
@@ -625,7 +807,7 @@ export function getMemorySeedFiles(
     },
     {
       destinationPath: `${MEMORY_PROTOCOL_DIR}/MAILBOX.json`,
-      contentBase64: Buffer.from(getMailboxSeedContent()).toString("base64"),
+      contentBase64: Buffer.from(mailboxContent).toString("base64"),
       mode: "644",
     },
     // Include sync script for memory sync to Convex

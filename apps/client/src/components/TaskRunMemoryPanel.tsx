@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
-import { Brain, FileText, Calendar, CheckSquare, Mail, AlertCircle, Clock } from "lucide-react";
+import { Brain, FileText, Calendar, CheckSquare, Mail, AlertCircle, Clock, ArrowRight, Megaphone, MessageSquare, CheckCheck } from "lucide-react";
 import clsx from "clsx";
 
 export interface TaskRunMemoryPanelProps {
@@ -194,8 +194,22 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
 
         {/* Content */}
         <div className="flex-1 overflow-auto p-3">
-          {selectedType === "tasks" || selectedType === "mailbox" ? (
-            // JSON content - render as formatted JSON
+          {selectedType === "mailbox" ? (
+            // Mailbox - render messages in friendly format, fallback to JSON
+            (() => {
+              const messages = parseMailboxContent(content);
+              if (messages) {
+                return <MailboxMessageList messages={messages} />;
+              }
+              // Fallback to raw JSON if parsing fails
+              return (
+                <pre className="whitespace-pre-wrap font-mono text-xs text-neutral-700 dark:text-neutral-300">
+                  {formatJsonContent(content)}
+                </pre>
+              );
+            })()
+          ) : selectedType === "tasks" ? (
+            // Tasks - render as formatted JSON
             <pre className="whitespace-pre-wrap font-mono text-xs text-neutral-700 dark:text-neutral-300">
               {formatJsonContent(content)}
             </pre>
@@ -250,4 +264,130 @@ function formatJsonContent(content: string): string {
     // If not valid JSON, return as-is
     return content;
   }
+}
+
+// Message type for mailbox entries
+interface MailboxMessage {
+  id: string;
+  from: string;
+  to: string;
+  type?: "handoff" | "request" | "status";
+  message: string;
+  timestamp: string;
+  read?: boolean;
+}
+
+// Parse mailbox content and extract messages
+function parseMailboxContent(content: string): MailboxMessage[] | null {
+  try {
+    const parsed = JSON.parse(content);
+    if (parsed.messages && Array.isArray(parsed.messages)) {
+      return parsed.messages;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// Get icon for message type
+function getMessageTypeIcon(type?: string) {
+  switch (type) {
+    case "handoff":
+      return ArrowRight;
+    case "request":
+      return MessageSquare;
+    case "status":
+      return Megaphone;
+    default:
+      return Mail;
+  }
+}
+
+// Get color classes for message type
+function getMessageTypeColor(type?: string) {
+  switch (type) {
+    case "handoff":
+      return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400";
+    case "request":
+      return "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400";
+    case "status":
+      return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
+    default:
+      return "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400";
+  }
+}
+
+// Render mailbox messages in a friendly format
+function MailboxMessageList({ messages }: { messages: MailboxMessage[] }) {
+  if (messages.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 py-8 text-neutral-500 dark:text-neutral-400">
+        <Mail className="size-6 text-neutral-400 dark:text-neutral-500" />
+        <span className="text-sm">No messages in mailbox</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {messages.map((msg) => {
+        const Icon = getMessageTypeIcon(msg.type);
+        const typeColor = getMessageTypeColor(msg.type);
+        const timestamp = new Date(msg.timestamp).toLocaleString();
+        const isBroadcast = msg.to === "*";
+
+        return (
+          <div
+            key={msg.id}
+            className={clsx(
+              "rounded-lg border p-3",
+              msg.read
+                ? "border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900/50"
+                : "border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-900"
+            )}
+          >
+            {/* Header row */}
+            <div className="flex items-center gap-2 text-xs">
+              {/* Message type badge */}
+              <span className={clsx("inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium", typeColor)}>
+                <Icon className="size-3" />
+                {msg.type ?? "message"}
+              </span>
+
+              {/* From/To */}
+              <span className="text-neutral-500 dark:text-neutral-400">
+                <span className="font-medium text-neutral-700 dark:text-neutral-300">{msg.from}</span>
+                {" "}
+                <ArrowRight className="inline-block size-3" />
+                {" "}
+                <span className="font-medium text-neutral-700 dark:text-neutral-300">
+                  {isBroadcast ? "all agents" : msg.to}
+                </span>
+              </span>
+
+              {/* Read indicator */}
+              {msg.read && (
+                <span className="ml-auto flex items-center gap-1 text-neutral-400 dark:text-neutral-500">
+                  <CheckCheck className="size-3" />
+                  read
+                </span>
+              )}
+            </div>
+
+            {/* Message content */}
+            <div className="mt-2 text-sm text-neutral-700 dark:text-neutral-300 whitespace-pre-wrap">
+              {msg.message}
+            </div>
+
+            {/* Timestamp */}
+            <div className="mt-2 flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500">
+              <Clock className="size-3" />
+              {timestamp}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }

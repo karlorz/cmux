@@ -77,7 +77,7 @@ async function makeQwenEnvironment(
 
   // Add agent memory protocol support
   startupCommands.push(getMemoryStartupCommand());
-  files.push(...getMemorySeedFiles(ctx.taskRunId, ctx.previousKnowledge));
+  files.push(...getMemorySeedFiles(ctx.taskRunId, ctx.previousKnowledge, ctx.previousMailbox));
 
   // Add QWEN.md with memory protocol instructions for the project
   const qwenMdContent = `# cmux Project Instructions

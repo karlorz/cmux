@@ -218,7 +218,7 @@ args = ["/root/lifecycle/memory/mcp-server.js"]
 
   // Add agent memory protocol support
   startupCommands.push(getMemoryStartupCommand());
-  files.push(...getMemorySeedFiles(ctx.taskRunId, ctx.previousKnowledge));
+  files.push(...getMemorySeedFiles(ctx.taskRunId, ctx.previousKnowledge, ctx.previousMailbox));
 
   return { files, env, startupCommands };
 }

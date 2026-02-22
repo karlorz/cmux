@@ -308,7 +308,7 @@ echo ${apiKeyToOutput}`;
 
   // Add agent memory protocol support
   startupCommands.push(getMemoryStartupCommand());
-  files.push(...getMemorySeedFiles(ctx.taskRunId, ctx.previousKnowledge));
+  files.push(...getMemorySeedFiles(ctx.taskRunId, ctx.previousKnowledge, ctx.previousMailbox));
 
   // Add CLAUDE.md to user-level memory (~/.claude/CLAUDE.md)
   // This follows Claude Code's native memory hierarchy:
