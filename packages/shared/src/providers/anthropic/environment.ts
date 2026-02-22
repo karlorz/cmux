@@ -7,6 +7,7 @@ import {
   normalizeAnthropicBaseUrl,
 } from "../../utils/anthropic";
 import {
+  MEMORY_PROTOCOL_DIR,
   getMemoryStartupCommand,
   getMemorySeedFiles,
   getMemoryProtocolInstructions,
@@ -61,7 +62,7 @@ export async function getClaudeEnvironment(
         ...existingMcpServers,
         "cmux-memory": {
           command: "node",
-          args: [`${claudeLifecycleDir}/memory/mcp-server.js`],
+          args: [`${MEMORY_PROTOCOL_DIR}/mcp-server.js`],
         },
       },
       projects: {
