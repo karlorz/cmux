@@ -21,12 +21,23 @@ export async function GET(request: Request) {
   }
 
   const cookieStore = await cookies();
+  const response = NextResponse.redirect(new URL(returnTo, request.url));
 
+  // Delete all Stack Auth cookies by setting them to expire immediately
+  // We must set the cookies on the response to ensure they're actually cleared
+  // Note: __Host- prefixed cookies require secure: true to be modified
   for (const cookie of cookieStore.getAll()) {
     if (cookie.name.includes("stack-")) {
-      cookieStore.delete(cookie.name);
+      response.cookies.set(cookie.name, "", {
+        expires: new Date(0),
+        path: "/",
+        // Both __Host- and __Secure- prefixed cookies require secure: true
+        secure:
+          cookie.name.startsWith("__Host-") ||
+          cookie.name.startsWith("__Secure-"),
+      });
     }
   }
 
-  return NextResponse.redirect(new URL(returnTo, request.url));
+  return response;
 }

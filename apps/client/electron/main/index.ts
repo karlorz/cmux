@@ -1501,8 +1501,22 @@ async function handleProtocolUrl(url: string): Promise<void> {
       return;
     }
 
-    mainLog("Reloading renderer to apply auth cookies");
-    win.webContents.reload();
+    // Navigate to clean base URL to trigger full page reload.
+    // Stack Auth SDK needs a fresh page load to pick up the new cookies.
+    // Hash navigation alone doesn't cause the SDK to re-initialize.
+    const currentUrlObj = new URL(win.webContents.getURL());
+    const homeUrl = currentUrlObj.origin;
+    mainLog("Navigating to home after auth", { homeUrl });
+
+    // Bring window to front
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+
+    // Load home URL - this triggers a full page reload where Stack Auth
+    // will pick up the cookies and recognize the authenticated user.
+    // The SignInComponent will then hide and the app will show.
+    void win.webContents.loadURL(homeUrl);
     return;
   }
 
