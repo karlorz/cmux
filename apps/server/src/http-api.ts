@@ -11,6 +11,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
+import {
+  AGENT_CATALOG,
+  getVariantsForVendor,
+} from "@cmux/shared/agent-catalog";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { spawnAllAgents } from "./agentSpawner";
 import {
@@ -20,7 +24,11 @@ import {
 } from "./utils/branchNameGenerator";
 import { getConvex } from "./utils/convexClient";
 import { serverLogger } from "./utils/fileLogger";
-import { runWithAuth } from "./utils/requestContext";
+import {
+  aggregateByVendor,
+  checkAllProvidersStatusWebMode,
+} from "./utils/providerStatus";
+import { runWithAuth, runWithAuthToken } from "./utils/requestContext";
 
 interface StartTaskRequest {
   // Required fields
@@ -329,6 +337,45 @@ async function handleStartTask(
 }
 
 /**
+ * Handle GET /api/providers
+ *
+ * Returns provider availability based on Convex-stored API keys.
+ * Aggregated by vendor so the CLI can display per-provider status.
+ */
+async function handleGetProviders(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+  const authToken = parseAuthHeader(req);
+  if (!authToken) {
+    jsonResponse(res, 401, { error: "Unauthorized: Missing Bearer token" });
+    return;
+  }
+
+  const url = new URL(req.url || "/", `http://${req.headers.host}`);
+  const teamSlugOrId = url.searchParams.get("teamSlugOrId");
+  if (!teamSlugOrId) {
+    jsonResponse(res, 400, {
+      error: "Missing required query parameter: teamSlugOrId",
+    });
+    return;
+  }
+
+  try {
+    const result = await runWithAuthToken(authToken, async () => {
+      return await checkAllProvidersStatusWebMode({ teamSlugOrId });
+    });
+
+    const providers = aggregateByVendor(result.providers);
+    jsonResponse(res, 200, { success: true, providers });
+  } catch (error) {
+    serverLogger.error("[http-api] GET /api/providers failed", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    jsonResponse(res, 500, { error: message });
+  }
+}
+
+/**
  * HTTP request handler for apps/server
  *
  * Integrates with the existing HTTP server to add API endpoints.
@@ -365,6 +412,12 @@ export function handleHttpRequest(
     return true;
   }
 
+  // Route: GET /api/providers - Get provider status (authenticated)
+  if (method === "GET" && path === "/api/providers") {
+    void handleGetProviders(req, res);
+    return true;
+  }
+
   // Route: GET /api/agents - List available agents
   if (method === "GET" && path === "/api/agents") {
     const agents = AGENT_CONFIGS.filter((config) => !config.disabled).map(
@@ -374,6 +427,126 @@ export function handleHttpRequest(
       })
     );
     jsonResponse(res, 200, { agents });
+    return true;
+  }
+
+  // Route: GET /api/models - List models with optional credential-based filtering
+  // Query params:
+  //   - teamSlugOrId: Team identifier for credential-based filtering
+  //   - all: If "true", returns all models ignoring credentials
+  //   - vendor: Filter by vendor (e.g., "claude", "opencode")
+  // When teamSlugOrId is provided with valid auth, uses listAvailable query
+  // Otherwise falls back to public list (all enabled models)
+  if (method === "GET" && path === "/api/models") {
+    void (async () => {
+      const teamSlugOrId = url.searchParams.get("teamSlugOrId");
+      const showAll = url.searchParams.get("all") === "true";
+      const vendorFilter = url.searchParams.get("vendor");
+      const authToken = parseAuthHeader(req);
+
+      try {
+        let convexModels: Array<{
+          name: string;
+          displayName: string;
+          vendor: string;
+          requiredApiKeys: string[];
+          tier: string;
+          disabled?: boolean;
+          disabledReason?: string;
+          tags?: string[];
+          variants?: Array<{ id: string; displayName: string; description?: string }>;
+          defaultVariant?: string;
+          source: string;
+        }> | null = null; // null = not attempted, [] = attempted but empty
+
+        // If authenticated with team, use credential-filtered query from Convex
+        if (authToken && teamSlugOrId) {
+          try {
+            convexModels = await runWithAuthToken(authToken, async () => {
+              return getConvex().query(api.models.listAvailable, {
+                teamSlugOrId,
+                showAll,
+              });
+            });
+          } catch (authError) {
+            serverLogger.warn("[http-api] GET /api/models auth failed, using static fallback", authError);
+            // Fall through to static catalog below (convexModels stays null)
+          }
+        }
+        // Unauthenticated or auth failed: use static catalog (when convexModels is null)
+
+        if (convexModels !== null) {
+          // Apply vendor filter if provided
+          let filteredModels = convexModels;
+          if (vendorFilter) {
+            filteredModels = convexModels.filter((m) => m.vendor === vendorFilter);
+          }
+
+          // Use Convex models
+          const models = filteredModels.map((entry) => ({
+            name: entry.name,
+            displayName: entry.displayName,
+            vendor: entry.vendor,
+            requiredApiKeys: entry.requiredApiKeys,
+            tier: entry.tier,
+            disabled: entry.disabled ?? false,
+            disabledReason: entry.disabledReason ?? null,
+            tags: entry.tags ?? [],
+            variants: entry.variants ?? getVariantsForVendor(entry.vendor as Parameters<typeof getVariantsForVendor>[0]),
+            defaultVariant: entry.defaultVariant ?? "default",
+            source: entry.source,
+          }));
+          jsonResponse(res, 200, {
+            models,
+            source: "convex",
+            filtered: !!teamSlugOrId && !!authToken && !showAll,
+          });
+        } else {
+          // Fallback to static catalog
+          let staticModels = AGENT_CATALOG;
+          if (vendorFilter) {
+            staticModels = AGENT_CATALOG.filter((m) => m.vendor === vendorFilter);
+          }
+
+          const models = staticModels.map((entry) => ({
+            name: entry.name,
+            displayName: entry.displayName,
+            vendor: entry.vendor,
+            requiredApiKeys: entry.requiredApiKeys,
+            tier: entry.tier,
+            disabled: entry.disabled ?? false,
+            disabledReason: entry.disabledReason ?? null,
+            tags: entry.tags ?? [],
+            variants: entry.variants ?? getVariantsForVendor(entry.vendor),
+            defaultVariant: entry.defaultVariant ?? "default",
+            source: "curated",
+          }));
+          jsonResponse(res, 200, { models, source: "static", filtered: false });
+        }
+      } catch (error) {
+        serverLogger.error("[http-api] GET /api/models failed, using static fallback", error);
+        // Fallback to static catalog on error
+        let staticModels = AGENT_CATALOG;
+        if (vendorFilter) {
+          staticModels = AGENT_CATALOG.filter((m) => m.vendor === vendorFilter);
+        }
+
+        const models = staticModels.map((entry) => ({
+          name: entry.name,
+          displayName: entry.displayName,
+          vendor: entry.vendor,
+          requiredApiKeys: entry.requiredApiKeys,
+          tier: entry.tier,
+          disabled: entry.disabled ?? false,
+          disabledReason: entry.disabledReason ?? null,
+          tags: entry.tags ?? [],
+          variants: entry.variants ?? getVariantsForVendor(entry.vendor),
+          defaultVariant: entry.defaultVariant ?? "default",
+          source: "curated",
+        }));
+        jsonResponse(res, 200, { models, source: "static", filtered: false });
+      }
+    })();
     return true;
   }
 

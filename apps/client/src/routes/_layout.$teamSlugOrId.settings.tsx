@@ -8,13 +8,15 @@ import {
 } from "@/components/settings/sections/AIProvidersSection";
 import { ArchivedTasksSection } from "@/components/settings/sections/ArchivedTasksSection";
 import { GitSection } from "@/components/settings/sections/GitSection";
+import { ModelCatalogSection } from "@/components/settings/sections/ModelCatalogSection";
+import { ModelManagementSection } from "@/components/settings/sections/ModelManagementSection";
 import { WorktreesSection } from "@/components/settings/sections/WorktreesSection";
 import { useTheme } from "@/components/theme/use-theme";
 import { TitleBar } from "@/components/TitleBar";
 import { api } from "@cmux/convex/api";
 import type { Doc } from "@cmux/convex/dataModel";
-import { AGENT_CONFIGS, type AgentConfig } from "@cmux/shared/agentConfig";
 import {
+  ALL_API_KEYS,
   ALL_BASE_URL_KEYS,
   ANTHROPIC_BASE_URL_KEY,
   type ProviderBaseUrlKey,
@@ -41,7 +43,7 @@ import { DEFAULT_BRANCH_PREFIX } from "@cmux/shared";
 export const Route = createFileRoute("/_layout/$teamSlugOrId/settings")({
   component: SettingsComponent,
   validateSearch: z.object({
-    section: z.enum(["general", "ai-providers", "git", "worktrees", "archived"]).default("general"),
+    section: z.enum(["general", "ai-providers", "models", "model-catalog", "git", "worktrees", "archived"]).default("general"),
   }),
 });
 
@@ -179,14 +181,8 @@ function SettingsComponent() {
 
   // Heatmap model and tooltip language options are imported from @/lib/heatmap-settings
 
-  // Get all required API keys from agent configs
-  const apiKeys = Array.from(
-    new Map(
-      AGENT_CONFIGS.flatMap((config: AgentConfig) => config.apiKeys || []).map(
-        (key) => [key.envVar, key]
-      )
-    ).values()
-  );
+  // Get all required API keys from the shared API keys definitions
+  const apiKeys = ALL_API_KEYS;
 
   // Global mapping of envVar -> models (from shared)
   const apiKeyModelsByEnv = API_KEY_MODELS_BY_ENV;
@@ -858,6 +854,10 @@ function SettingsComponent() {
               onWorktreePathChange={setCodexWorktreePathPattern}
               onContainerSettingsChange={handleContainerSettingsChange}
             />
+          ) : activeSection === "models" ? (
+            <ModelManagementSection teamSlugOrId={teamSlugOrId} />
+          ) : activeSection === "model-catalog" ? (
+            <ModelCatalogSection teamSlugOrId={teamSlugOrId} />
           ) : activeSection === "git" ? (
             <GitSection
               branchPrefix={branchPrefix}

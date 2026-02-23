@@ -28,7 +28,11 @@ import {
   githubInstallStateRouter,
   githubOAuthTokenRouter,
   healthRouter,
+  modelsRouter,
   morphRouter,
+  providersRouter,
+  providersStatusRouter,
+  apiKeysRouter,
   pveLxcRouter,
   sandboxesRouter,
   teamsRouter,
@@ -181,6 +185,10 @@ app.route("/", previewRouter);
 app.route("/", editorSettingsRouter);
 app.route("/", settingsRouter);
 app.route("/", worktreesRouter);
+app.route("/", modelsRouter);
+app.route("/", providersRouter);
+app.route("/", providersStatusRouter);
+app.route("/", apiKeysRouter);
 
 // OpenAPI documentation
 app.doc("/doc", {

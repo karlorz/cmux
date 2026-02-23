@@ -35,7 +35,7 @@ import type {
   TaskError,
   TaskStarted,
 } from "@cmux/shared";
-import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
+import { AGENT_CATALOG } from "@cmux/shared/agent-catalog";
 import type { GithubBranchesResponse } from "@cmux/www-openapi-client";
 import { convexQuery } from "@convex-dev/react-query";
 import {
@@ -105,9 +105,9 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/dashboard")({
 
 // Default agents (not persisted to localStorage)
 const DEFAULT_AGENTS = ["claude/opus-4.6", "codex/gpt-5.3-codex-xhigh"];
-const KNOWN_AGENT_NAMES = new Set(AGENT_CONFIGS.map((agent) => agent.name));
+const KNOWN_AGENT_NAMES = new Set(AGENT_CATALOG.map((entry) => entry.name));
 const DISABLED_AGENT_NAMES = new Set(
-  AGENT_CONFIGS.filter((agent) => agent.disabled).map((agent) => agent.name)
+  AGENT_CATALOG.filter((entry) => entry.disabled).map((entry) => entry.name)
 );
 const DEFAULT_AGENT_SELECTION = DEFAULT_AGENTS.filter(
   (agent) => KNOWN_AGENT_NAMES.has(agent) && !DISABLED_AGENT_NAMES.has(agent)
@@ -533,6 +533,40 @@ function DashboardComponent() {
     () => reposByOrgQuery.data || {},
     [reposByOrgQuery.data]
   );
+
+  // Fetch model preferences (user-disabled models) for filtering agent picker
+  const modelPreferencesQuery = useQuery(
+    convexQuery(api.modelPreferences.get, { teamSlugOrId })
+  );
+  const disabledByUserModels = useMemo(() => {
+    const disabledModels = modelPreferencesQuery.data?.disabledModels;
+    return disabledModels && disabledModels.length > 0
+      ? new Set(disabledModels)
+      : undefined;
+  }, [modelPreferencesQuery.data?.disabledModels]);
+
+  // Fetch available models from Convex (filtered by API keys, includes runtime-discovered models)
+  const convexModelsQuery = useQuery(
+    convexQuery(api.models.listAvailable, { teamSlugOrId })
+  );
+  const convexModels = convexModelsQuery.data ?? null;
+
+  // Prune selectedAgents when user disables models in Settings
+  useEffect(() => {
+    if (!disabledByUserModels || disabledByUserModels.size === 0) return;
+
+    const currentAgents = selectedAgentsRef.current;
+    if (currentAgents.length === 0) return;
+
+    const filteredAgents = currentAgents.filter(
+      (agent) => !disabledByUserModels.has(agent)
+    );
+
+    if (filteredAgents.length !== currentAgents.length) {
+      setSelectedAgents(filteredAgents);
+      persistAgentSelection(filteredAgents);
+    }
+  }, [disabledByUserModels, setSelectedAgents, persistAgentSelection]);
 
   // Socket-based functions to fetch data from GitHub
   // Removed unused fetchRepos function - functionality is handled by Convex queries
@@ -1383,6 +1417,8 @@ function DashboardComponent() {
               cloudToggleDisabled={isEnvSelected}
               branchDisabled={isEnvSelected || !selectedProject[0]}
               providerStatus={providerStatus}
+              disabledByUserModels={disabledByUserModels}
+              convexModels={convexModels}
               canSubmit={canSubmit}
               onStartTask={handleStartTask}
               isStartingTask={isStartingTask}
@@ -1471,9 +1507,25 @@ type DashboardMainCardProps = {
   cloudToggleDisabled: boolean;
   branchDisabled: boolean;
   providerStatus: ProviderStatusResponse | null;
+  disabledByUserModels?: Set<string>;
+  convexModels: ConvexModelEntry[] | null;
   canSubmit: boolean;
   onStartTask: () => void;
   isStartingTask: boolean;
+};
+
+// Type for models from Convex listAvailable
+type ConvexModelEntry = {
+  _id: string;
+  name: string;
+  displayName: string;
+  vendor: string;
+  tier: "free" | "paid";
+  enabled: boolean;
+  tags?: string[];
+  requiredApiKeys: string[];
+  disabled?: boolean;
+  sortOrder: number;
 };
 
 function DashboardMainCard({
@@ -1505,6 +1557,8 @@ function DashboardMainCard({
   cloudToggleDisabled,
   branchDisabled,
   providerStatus,
+  disabledByUserModels,
+  convexModels,
   canSubmit,
   onStartTask,
   isStartingTask,
@@ -1551,6 +1605,8 @@ function DashboardMainCard({
           cloudToggleDisabled={cloudToggleDisabled}
           branchDisabled={branchDisabled}
           providerStatus={providerStatus}
+          disabledByUserModels={disabledByUserModels}
+          convexModels={convexModels}
         />
         <DashboardStartTaskButton
           canSubmit={canSubmit}

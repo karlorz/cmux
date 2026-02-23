@@ -5,6 +5,10 @@ import {
   type AgentConfig,
   type EnvironmentResult,
 } from "@cmux/shared/agentConfig";
+import {
+  getProviderRegistry,
+  type ProviderOverride,
+} from "@cmux/shared/provider-registry";
 import type {
   WorkerCreateTerminal,
   WorkerSyncFiles,
@@ -419,15 +423,16 @@ export async function spawnAgent(
     let postStartCommands: EnvironmentResult["postStartCommands"] = [];
     let unsetEnvVars: string[] = [];
 
-    // Fetch API keys from Convex BEFORE calling agent.environment()
-    // so agents can access them in their environment configuration
-    const [userApiKeys, workspaceSettings, previousKnowledge, previousMailbox] = await Promise.all([
-      getConvex().query(api.apiKeys.getAllForAgents, {
-        teamSlugOrId,
-      }),
-      getConvex().query(api.workspaceSettings.get, {
-        teamSlugOrId,
-      }),
+    // Fetch API keys, workspace settings, provider overrides, and memory for cross-run seeding
+    // BEFORE calling agent.environment() so agents can access them in their environment configuration
+    const [userApiKeys, workspaceSettings, providerOverrides, previousKnowledge, previousMailbox] = await Promise.all([
+      getConvex().query(api.apiKeys.getAllForAgents, { teamSlugOrId }),
+      getConvex().query(api.workspaceSettings.get, { teamSlugOrId }),
+      getConvex().query(api.providerOverrides.getForTeam, { teamSlugOrId })
+        .catch((err) => {
+          console.error("[AgentSpawner] Failed to fetch provider overrides", err);
+          return [];
+        }),
       // Query previous knowledge for cross-run memory seeding (S5b)
       getConvex()
         .query(api.agentMemoryQueries.getLatestTeamKnowledge, {
@@ -469,6 +474,22 @@ export async function spawnAgent(
       ...userApiKeys,
     };
 
+    // Resolve provider configuration for this agent from team overrides
+    const registry = getProviderRegistry();
+    const resolvedProvider = registry.resolveForAgent(
+      agent.name,
+      providerOverrides.map((o): ProviderOverride => ({
+        teamId: String(o.teamId),
+        providerId: o.providerId,
+        baseUrl: o.baseUrl,
+        apiFormat: o.apiFormat,
+        apiKeyEnvVar: o.apiKeyEnvVar,
+        customHeaders: o.customHeaders,
+        fallbacks: o.fallbacks,
+        enabled: o.enabled,
+      }))
+    );
+
     // Use environment property if available
     if (agent.environment) {
       const envResult = await agent.environment({
@@ -480,6 +501,14 @@ export async function spawnAgent(
         workspaceSettings: {
           bypassAnthropicProxy: workspaceSettings?.bypassAnthropicProxy ?? false,
         },
+        providerConfig: resolvedProvider?.isOverridden
+          ? {
+              baseUrl: resolvedProvider.baseUrl,
+              customHeaders: resolvedProvider.customHeaders,
+              apiFormat: resolvedProvider.apiFormat,
+              isOverridden: true,
+            }
+          : undefined,
         previousKnowledge: previousKnowledge ?? undefined,
         previousMailbox: previousMailbox ?? undefined,
       });

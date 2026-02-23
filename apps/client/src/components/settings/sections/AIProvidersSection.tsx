@@ -6,7 +6,7 @@ import {
   type ProviderBaseUrlKey,
 } from "@cmux/shared";
 import { Switch } from "@heroui/react";
-import { ChevronDown, Eye, EyeOff, ExternalLink } from "lucide-react";
+import { CheckCircle2, ChevronDown, Eye, EyeOff, ExternalLink, XCircle } from "lucide-react";
 import type { MutableRefObject } from "react";
 
 export interface ProviderInfo {
@@ -153,6 +153,8 @@ export function AIProvidersSection({
                   ? connectionTestResults[baseUrlKey.envVar]
                   : null;
 
+                const isConnected = !!(apiKeyValues[key.envVar]?.trim());
+
                 return (
                   <div
                     key={key.envVar}
@@ -160,12 +162,26 @@ export function AIProvidersSection({
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <label
-                          htmlFor={key.envVar}
-                          className="block text-sm font-medium text-neutral-700 dark:text-neutral-300"
-                        >
-                          {key.displayName}
-                        </label>
+                        <div className="flex items-center gap-2">
+                          <label
+                            htmlFor={key.envVar}
+                            className="block text-sm font-medium text-neutral-700 dark:text-neutral-300"
+                          >
+                            {key.displayName}
+                          </label>
+                          {/* Connection status badge */}
+                          {isConnected ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                              <CheckCircle2 className="h-3 w-3" />
+                              Connected
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
+                              <XCircle className="h-3 w-3" />
+                              Not configured
+                            </span>
+                          )}
+                        </div>
                         {providerInfo?.helpText ? (
                           <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
                             {providerInfo.helpText}
@@ -267,10 +283,12 @@ export function AIProvidersSection({
                           <input
                             type={showKeys[key.envVar] ? "text" : "password"}
                             id={key.envVar}
+                            name={`api-key-${key.envVar}`}
                             value={apiKeyValues[key.envVar] || ""}
                             onChange={(event) =>
                               onApiKeyChange(key.envVar, event.target.value)
                             }
+                            autoComplete="new-password"
                             className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 pr-10 font-mono text-xs text-neutral-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
                             placeholder={getApiKeyPlaceholder(key)}
                           />

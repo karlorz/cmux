@@ -136,6 +136,17 @@ cmux team switch <team-slug>     # Switch to a different team
 cmux agent list                  # List available coding agents
 ```
 
+### Model Management
+
+```bash
+cmux models list                       # List all available models
+cmux models list --provider anthropic  # Filter by vendor
+cmux models list --verbose             # Show API keys required
+cmux models list --enabled-only        # Only show enabled models
+cmux models list --json                # JSON output for scripting
+cmux models list claude                # Filter by name
+```
+
 ### Browser Automation (cmux computer)
 
 Control Chrome browser via CDP in the VM's VNC desktop.

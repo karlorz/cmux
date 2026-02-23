@@ -42,6 +42,10 @@
       "import": "./src/agentConfig.ts",
       "types": "./src/agentConfig.ts"
     },
+    "./agent-catalog": {
+      "import": "./src/agent-catalog.ts",
+      "types": "./src/agent-catalog.ts"
+    },
     "./terminal-config": {
       "import": "./src/terminal-config.ts",
       "types": "./src/terminal-config.ts"
@@ -145,6 +149,14 @@
     "./pve-lxc-snapshots": {
       "import": "./src/pve-lxc-snapshots.ts",
       "types": "./src/pve-lxc-snapshots.ts"
+    },
+    "./provider-registry": {
+      "import": "./src/provider-registry.ts",
+      "types": "./src/provider-registry.ts"
+    },
+    "./providers/opencode/free-models": {
+      "import": "./src/providers/opencode/free-models.ts",
+      "types": "./src/providers/opencode/free-models.ts"
     }
   },
   "peerDependencies": {

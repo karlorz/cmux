@@ -66,4 +66,26 @@ crons.daily(
   internal.warmPoolMaintenance.cleanupWarmPool
 );
 
+// Seed curated models daily at 5:30 UTC (ensures models table is populated)
+crons.daily(
+  "seed curated models",
+  { hourUTC: 5, minuteUTC: 30 },
+  internal.modelDiscovery.seedCuratedModels
+);
+
+// Discover new models from OpenCode Zen API weekly (Saturday 6:00 UTC)
+crons.weekly(
+  "discover opencode models",
+  { dayOfWeek: "saturday", hourUTC: 6, minuteUTC: 0 },
+  internal.modelDiscovery.discoverOpencodeModels
+);
+
+// Discover new models from OpenRouter API weekly (Saturday 7:00 UTC)
+// Runs after OpenCode discovery
+crons.weekly(
+  "discover openrouter models",
+  { dayOfWeek: "saturday", hourUTC: 7, minuteUTC: 0 },
+  internal.modelDiscovery.discoverOpenRouterModels
+);
+
 export default crons;

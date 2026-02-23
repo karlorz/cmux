@@ -618,7 +618,8 @@ const convexSchema = defineSchema({
     teamId: v.string(),
   })
     .index("by_envVar", ["envVar"])
-    .index("by_team_user", ["teamId", "userId"]),
+    .index("by_team_user", ["teamId", "userId"])
+    .index("by_team", ["teamId"]),
   workspaceSettings: defineTable({
     worktreePath: v.optional(v.string()), // Custom path for git worktrees
     autoPrEnabled: v.optional(v.boolean()), // Auto-create PR for crown winner (default: false)
@@ -643,6 +644,17 @@ const convexSchema = defineSchema({
         token: v.object({ start: v.string(), end: v.string() }), // Token highlight gradient colors
       })
     ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    userId: v.string(),
+    teamId: v.string(),
+  }).index("by_team_user", ["teamId", "userId"]),
+
+  // Per-team model enable/disable preferences
+  // Uses blacklist pattern: disabledModels array lists agent names to hide
+  // Default behavior: all models enabled (empty disabledModels array)
+  modelPreferences: defineTable({
+    disabledModels: v.array(v.string()), // Array of agent names to hide, e.g. ["claude/haiku-4.5"]
     createdAt: v.number(),
     updatedAt: v.number(),
     userId: v.string(),
@@ -1370,6 +1382,72 @@ const convexSchema = defineSchema({
     .index("by_status", ["status", "createdAt"])
     .index("by_instanceId", ["instanceId"])
     .index("by_team_status", ["teamId", "status", "createdAt"]),
+
+  // Provider override configurations for custom proxies and endpoints
+  // Enables teams to customize base URLs, API formats, and fallback chains
+  providerOverrides: defineTable({
+    teamId: v.string(),
+    providerId: v.string(), // e.g., "anthropic", "openai", "custom-proxy"
+    baseUrl: v.optional(v.string()),
+    apiFormat: v.optional(
+      v.union(
+        v.literal("anthropic"),
+        v.literal("openai"),
+        v.literal("bedrock"),
+        v.literal("vertex"),
+        v.literal("passthrough")
+      )
+    ),
+    apiKeyEnvVar: v.optional(v.string()),
+    customHeaders: v.optional(v.record(v.string(), v.string())),
+    fallbacks: v.optional(
+      v.array(
+        v.object({
+          modelName: v.string(),
+          priority: v.number(),
+        })
+      )
+    ),
+    enabled: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_team_provider", ["teamId", "providerId"])
+    .index("by_team", ["teamId"]),
+
+  // Global model catalog for dynamic discovery and admin management
+  // Stores both curated models (from AGENT_CATALOG) and discovered models (from provider APIs)
+  models: defineTable({
+    name: v.string(), // Stable ID, e.g. "claude/opus-4.6", "opencode/gpt-5-nano"
+    displayName: v.string(), // Human-readable label, e.g. "Opus 4.6"
+    vendor: v.string(), // Vendor for grouping, e.g. "anthropic", "openai", "opencode"
+    source: v.union(v.literal("curated"), v.literal("discovered")), // Origin of the model
+    discoveredFrom: v.optional(v.string()), // Discovery source, e.g. "opencode-zen"
+    discoveredAt: v.optional(v.number()), // When the model was discovered
+    requiredApiKeys: v.array(v.string()), // Environment variables required, e.g. ["ANTHROPIC_API_KEY"]
+    tier: v.union(v.literal("free"), v.literal("paid")), // Pricing tier
+    tags: v.array(v.string()), // Tags for filtering, e.g. ["reasoning", "free", "latest"]
+    enabled: v.boolean(), // Global enabled state (admins toggle this)
+    sortOrder: v.number(), // For drag-drop reordering
+    disabled: v.optional(v.boolean()), // Model-level disabled flag (different from enabled)
+    disabledReason: v.optional(v.string()), // Reason shown when disabled
+    variants: v.optional(
+      v.array(
+        v.object({
+          id: v.string(),
+          displayName: v.string(),
+          description: v.optional(v.string()),
+        })
+      )
+    ), // Thinking/reasoning mode variants
+    defaultVariant: v.optional(v.string()), // Default variant ID
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_name", ["name"])
+    .index("by_vendor", ["vendor"])
+    .index("by_enabled", ["enabled", "sortOrder"])
+    .index("by_source", ["source"]),
 
   // Agent memory snapshots - synced from sandbox memory files on agent completion
   // Stores knowledge, daily logs, tasks, and mailbox content for each task run

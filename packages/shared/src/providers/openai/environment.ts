@@ -152,6 +152,11 @@ touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
     console.warn("Failed to read .codex/auth.json:", error);
   }
 
+  // Apply provider override if present (custom proxy like AnyRouter)
+  if (ctx.providerConfig?.isOverridden && ctx.providerConfig.baseUrl) {
+    env.OPENAI_BASE_URL = ctx.providerConfig.baseUrl;
+  }
+
   // Copy instructions.md and append memory protocol instructions
   let instructionsContent = "";
   try {

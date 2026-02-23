@@ -33,6 +33,17 @@ export type EnvironmentContext = {
   workspaceSettings?: {
     bypassAnthropicProxy?: boolean;
   };
+  /**
+   * Provider configuration from team overrides (via ProviderRegistry).
+   * When present with isOverridden=true, agents should use the custom
+   * baseUrl/headers instead of default or proxy routing.
+   */
+  providerConfig?: {
+    baseUrl?: string;
+    customHeaders?: Record<string, string>;
+    apiFormat?: string;
+    isOverridden: boolean;
+  };
   /** Previous knowledge content from earlier runs (for cross-run memory seeding) */
   previousKnowledge?: string;
   /** Previous mailbox content with unread messages (for cross-run mailbox seeding) */

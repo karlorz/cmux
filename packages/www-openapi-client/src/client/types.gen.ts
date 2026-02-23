@@ -985,6 +985,143 @@ export type RemoveWorktreeBody = {
     worktreePath: string;
 };
 
+export type Model = {
+    _id: string;
+    name: string;
+    displayName: string;
+    vendor: string;
+    source: 'curated' | 'discovered';
+    discoveredFrom?: string;
+    discoveredAt?: number;
+    requiredApiKeys: Array<string>;
+    tier: 'free' | 'paid';
+    tags: Array<string>;
+    enabled: boolean;
+    sortOrder: number;
+    disabled?: boolean;
+    disabledReason?: string;
+    variants?: Array<{
+        id: string;
+        displayName: string;
+        description?: string;
+    }>;
+    defaultVariant?: string;
+    createdAt: number;
+    updatedAt: number;
+};
+
+export type ModelListResponse = {
+    models: Array<Model>;
+};
+
+export type SuccessResponse = {
+    success: boolean;
+};
+
+export type SetEnabledBody = {
+    enabled: boolean;
+};
+
+export type ReorderBody = {
+    modelNames: Array<string>;
+};
+
+export type DiscoveryResultResponse = {
+    success: boolean;
+    curated?: number;
+    discovered?: number;
+    free?: number;
+    paid?: number;
+    openrouter?: {
+        discovered: number;
+        free: number;
+        paid: number;
+    };
+    error?: string;
+};
+
+export type ApiFormat = 'anthropic' | 'openai' | 'bedrock' | 'vertex' | 'passthrough';
+
+export type Fallback = {
+    modelName: string;
+    priority: number;
+};
+
+export type ProviderOverride = {
+    _id: string;
+    teamId: string;
+    providerId: string;
+    baseUrl?: string;
+    apiFormat?: ApiFormat;
+    apiKeyEnvVar?: string;
+    customHeaders?: {
+        [key: string]: string;
+    };
+    fallbacks?: Array<Fallback>;
+    enabled: boolean;
+    createdAt: number;
+    updatedAt: number;
+};
+
+export type ProviderListResponse = {
+    providers: Array<ProviderOverride>;
+};
+
+export type UpsertResponse = {
+    id: string;
+    action: 'created' | 'updated';
+};
+
+export type UpsertProviderBody = {
+    baseUrl?: string;
+    apiFormat?: ApiFormat;
+    apiKeyEnvVar?: string;
+    customHeaders?: {
+        [key: string]: string;
+    };
+    fallbacks?: Array<Fallback>;
+    enabled: boolean;
+};
+
+export type TestResponse = {
+    success: boolean;
+    latencyMs?: number;
+    error?: string;
+};
+
+export type ProviderStatus = {
+    id: string;
+    name: string;
+    isAvailable: boolean;
+    source: 'apiKeys' | 'oauth' | 'free';
+    configuredKeys: Array<string>;
+    requiredKeys: Array<string>;
+};
+
+export type ProviderStatusListResponse = {
+    providers: Array<ProviderStatus>;
+};
+
+export type ApiKey = {
+    envVar: string;
+    displayName: string;
+    description?: string;
+    hasValue: boolean;
+    maskedValue?: string;
+    updatedAt?: number;
+};
+
+export type ApiKeyListResponse = {
+    apiKeys: Array<ApiKey>;
+};
+
+export type UpsertApiKeyBody = {
+    envVar: string;
+    value: string;
+    displayName: string;
+    description?: string;
+};
+
 export type GetApiHealthData = {
     body?: never;
     path?: never;
@@ -4049,6 +4186,434 @@ export type PostApiWorktreesRemoveResponses = {
 };
 
 export type PostApiWorktreesRemoveResponse = PostApiWorktreesRemoveResponses[keyof PostApiWorktreesRemoveResponses];
+
+export type GetApiModelsData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/models';
+};
+
+export type GetApiModelsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiModelsResponses = {
+    /**
+     * List of all models
+     */
+    200: ModelListResponse;
+};
+
+export type GetApiModelsResponse = GetApiModelsResponses[keyof GetApiModelsResponses];
+
+export type PatchApiModelsByNameEnabledData = {
+    body: SetEnabledBody;
+    path: {
+        /**
+         * Model name (URL-encoded)
+         */
+        name: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/models/{name}/enabled';
+};
+
+export type PatchApiModelsByNameEnabledErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Model not found
+     */
+    404: unknown;
+};
+
+export type PatchApiModelsByNameEnabledResponses = {
+    /**
+     * Success
+     */
+    200: SuccessResponse;
+};
+
+export type PatchApiModelsByNameEnabledResponse = PatchApiModelsByNameEnabledResponses[keyof PatchApiModelsByNameEnabledResponses];
+
+export type PostApiModelsReorderData = {
+    body: ReorderBody;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/models/reorder';
+};
+
+export type PostApiModelsReorderErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiModelsReorderResponses = {
+    /**
+     * Success
+     */
+    200: SuccessResponse;
+};
+
+export type PostApiModelsReorderResponse = PostApiModelsReorderResponses[keyof PostApiModelsReorderResponses];
+
+export type PostApiModelsRefreshData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/models/refresh';
+};
+
+export type PostApiModelsRefreshErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiModelsRefreshResponses = {
+    /**
+     * Discovery result
+     */
+    200: DiscoveryResultResponse;
+};
+
+export type PostApiModelsRefreshResponse = PostApiModelsRefreshResponses[keyof PostApiModelsRefreshResponses];
+
+export type PostApiModelsSeedData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/models/seed';
+};
+
+export type PostApiModelsSeedErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiModelsSeedResponses = {
+    /**
+     * Seed result
+     */
+    200: {
+        success: boolean;
+        seededCount: number;
+        error?: string;
+    };
+};
+
+export type PostApiModelsSeedResponse = PostApiModelsSeedResponses[keyof PostApiModelsSeedResponses];
+
+export type GetApiProvidersData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/providers';
+};
+
+export type GetApiProvidersErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiProvidersResponses = {
+    /**
+     * List of provider overrides
+     */
+    200: ProviderListResponse;
+};
+
+export type GetApiProvidersResponse = GetApiProvidersResponses[keyof GetApiProvidersResponses];
+
+export type DeleteApiProvidersByIdData = {
+    body?: never;
+    path: {
+        /**
+         * Provider ID (e.g., anthropic, openai)
+         */
+        id: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/providers/{id}';
+};
+
+export type DeleteApiProvidersByIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Provider override not found
+     */
+    404: unknown;
+};
+
+export type DeleteApiProvidersByIdResponses = {
+    /**
+     * Success
+     */
+    200: SuccessResponse;
+};
+
+export type DeleteApiProvidersByIdResponse = DeleteApiProvidersByIdResponses[keyof DeleteApiProvidersByIdResponses];
+
+export type GetApiProvidersByIdData = {
+    body?: never;
+    path: {
+        /**
+         * Provider ID (e.g., anthropic, openai)
+         */
+        id: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/providers/{id}';
+};
+
+export type GetApiProvidersByIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiProvidersByIdResponses = {
+    /**
+     * Provider override
+     */
+    200: ProviderOverride & unknown;
+};
+
+export type GetApiProvidersByIdResponse = GetApiProvidersByIdResponses[keyof GetApiProvidersByIdResponses];
+
+export type PutApiProvidersByIdData = {
+    body: UpsertProviderBody;
+    path: {
+        /**
+         * Provider ID (e.g., anthropic, openai)
+         */
+        id: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/providers/{id}';
+};
+
+export type PutApiProvidersByIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PutApiProvidersByIdResponses = {
+    /**
+     * Success
+     */
+    200: UpsertResponse;
+};
+
+export type PutApiProvidersByIdResponse = PutApiProvidersByIdResponses[keyof PutApiProvidersByIdResponses];
+
+export type PostApiProvidersByIdTestData = {
+    body?: never;
+    path: {
+        /**
+         * Provider ID (e.g., anthropic, openai)
+         */
+        id: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/providers/{id}/test';
+};
+
+export type PostApiProvidersByIdTestErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiProvidersByIdTestResponses = {
+    /**
+     * Test result
+     */
+    200: TestResponse;
+};
+
+export type PostApiProvidersByIdTestResponse = PostApiProvidersByIdTestResponses[keyof PostApiProvidersByIdTestResponses];
+
+export type PatchApiProvidersByIdEnabledData = {
+    body: {
+        enabled: boolean;
+    };
+    path: {
+        /**
+         * Provider ID
+         */
+        id: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/providers/{id}/enabled';
+};
+
+export type PatchApiProvidersByIdEnabledErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Provider override not found
+     */
+    404: unknown;
+};
+
+export type PatchApiProvidersByIdEnabledResponses = {
+    /**
+     * Success
+     */
+    200: SuccessResponse;
+};
+
+export type PatchApiProvidersByIdEnabledResponse = PatchApiProvidersByIdEnabledResponses[keyof PatchApiProvidersByIdEnabledResponses];
+
+export type GetApiProvidersStatusData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/providers/status';
+};
+
+export type GetApiProvidersStatusErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiProvidersStatusResponses = {
+    /**
+     * Provider status list
+     */
+    200: ProviderStatusListResponse;
+};
+
+export type GetApiProvidersStatusResponse = GetApiProvidersStatusResponses[keyof GetApiProvidersStatusResponses];
+
+export type GetApiApiKeysData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/api-keys';
+};
+
+export type GetApiApiKeysErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiApiKeysResponses = {
+    /**
+     * List of API keys
+     */
+    200: ApiKeyListResponse;
+};
+
+export type GetApiApiKeysResponse = GetApiApiKeysResponses[keyof GetApiApiKeysResponses];
+
+export type PutApiApiKeysData = {
+    body: UpsertApiKeyBody;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/api-keys';
+};
+
+export type PutApiApiKeysErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PutApiApiKeysResponses = {
+    /**
+     * Success
+     */
+    200: SuccessResponse;
+};
+
+export type PutApiApiKeysResponse = PutApiApiKeysResponses[keyof PutApiApiKeysResponses];
+
+export type DeleteApiApiKeysByEnvVarData = {
+    body?: never;
+    path: {
+        /**
+         * Environment variable name
+         */
+        envVar: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/api-keys/{envVar}';
+};
+
+export type DeleteApiApiKeysByEnvVarErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type DeleteApiApiKeysByEnvVarResponses = {
+    /**
+     * Success
+     */
+    200: SuccessResponse;
+};
+
+export type DeleteApiApiKeysByEnvVarResponse = DeleteApiApiKeysByEnvVarResponses[keyof DeleteApiApiKeysByEnvVarResponses];
 
 export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});

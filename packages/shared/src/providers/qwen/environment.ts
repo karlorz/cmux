@@ -75,6 +75,11 @@ async function makeQwenEnvironment(
   if (defaultBaseUrl) env.OPENAI_BASE_URL = defaultBaseUrl;
   if (defaultModel) env.OPENAI_MODEL = defaultModel;
 
+  // Provider override takes precedence over default base URL
+  if (ctx.providerConfig?.isOverridden && ctx.providerConfig.baseUrl) {
+    env.OPENAI_BASE_URL = ctx.providerConfig.baseUrl;
+  }
+
   // Add agent memory protocol support
   startupCommands.push(getMemoryStartupCommand());
   files.push(...getMemorySeedFiles(ctx.taskRunId, ctx.previousKnowledge, ctx.previousMailbox));
