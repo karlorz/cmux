@@ -29,6 +29,9 @@ export const MEMORY_PROTOCOL_DIR = "/root/lifecycle/memory";
 export const MEMORY_DAILY_DIR = `${MEMORY_PROTOCOL_DIR}/daily`;
 export const MEMORY_KNOWLEDGE_DIR = `${MEMORY_PROTOCOL_DIR}/knowledge`;
 
+// Orchestration subdirectory for multi-agent coordination
+export const MEMORY_ORCHESTRATION_DIR = `${MEMORY_PROTOCOL_DIR}/orchestration`;
+
 /**
  * Get today's date string in YYYY-MM-DD format for daily log files.
  */
@@ -100,6 +103,174 @@ export function getMailboxSeedContent(): string {
     messages: [],
   };
   return JSON.stringify(seed, null, 2);
+}
+
+/**
+ * Orchestration task status for PLAN.json
+ */
+export type OrchestrationTaskStatus =
+  | "pending"
+  | "assigned"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+/**
+ * Orchestration task in PLAN.json
+ */
+export interface OrchestrationTask {
+  id: string;
+  prompt: string;
+  agentName: string;
+  status: OrchestrationTaskStatus;
+  taskRunId?: string;
+  dependsOn?: string[];
+  priority?: number;
+  result?: string;
+  errorMessage?: string;
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+/**
+ * Orchestration plan structure for PLAN.json
+ */
+export interface OrchestrationPlan {
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  status: "pending" | "running" | "completed" | "failed" | "paused";
+  headAgent: string;
+  orchestrationId: string;
+  description?: string;
+  tasks: OrchestrationTask[];
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Spawned agent record in AGENTS.json
+ */
+export interface SpawnedAgent {
+  taskRunId: string;
+  agentName: string;
+  status: OrchestrationTaskStatus;
+  sandboxId?: string;
+  prompt: string;
+  spawnedAt: string;
+  completedAt?: string;
+  result?: string;
+  errorMessage?: string;
+}
+
+/**
+ * Agents registry structure for AGENTS.json
+ */
+export interface AgentsRegistry {
+  version: number;
+  orchestrationId: string;
+  headAgent: string;
+  agents: SpawnedAgent[];
+}
+
+/**
+ * Orchestration event types for EVENTS.jsonl
+ */
+export type OrchestrationEventType =
+  | "orchestration_started"
+  | "orchestration_completed"
+  | "orchestration_failed"
+  | "orchestration_paused"
+  | "orchestration_resumed"
+  | "agent_spawned"
+  | "agent_started"
+  | "agent_completed"
+  | "agent_failed"
+  | "agent_cancelled"
+  | "message_sent"
+  | "message_received"
+  | "dependency_resolved"
+  | "plan_updated";
+
+/**
+ * Orchestration event for EVENTS.jsonl
+ */
+export interface OrchestrationEvent {
+  timestamp: string;
+  event: OrchestrationEventType;
+  taskRunId?: string;
+  agentName?: string;
+  status?: string;
+  message?: string;
+  from?: string;
+  to?: string;
+  type?: string;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Generate unique orchestration ID
+ */
+export function generateOrchestrationId(): string {
+  const timestamp = Date.now().toString(36);
+  const random = Math.random().toString(36).substring(2, 8);
+  return `orch_${timestamp}${random}`;
+}
+
+/**
+ * Generate unique task ID for orchestration tasks
+ */
+export function generateOrchestrationTaskId(): string {
+  const timestamp = Date.now().toString(36);
+  const random = Math.random().toString(36).substring(2, 6);
+  return `task_${timestamp}${random}`;
+}
+
+/**
+ * Seed content for PLAN.json (orchestration plan)
+ */
+export function getOrchestrationPlanSeedContent(
+  headAgent: string,
+  orchestrationId: string,
+  description?: string
+): string {
+  const plan: OrchestrationPlan = {
+    version: 1,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    status: "pending",
+    headAgent,
+    orchestrationId,
+    description,
+    tasks: [],
+  };
+  return JSON.stringify(plan, null, 2);
+}
+
+/**
+ * Seed content for AGENTS.json (spawned agents registry)
+ */
+export function getAgentsRegistrySeedContent(
+  headAgent: string,
+  orchestrationId: string
+): string {
+  const registry: AgentsRegistry = {
+    version: 1,
+    orchestrationId,
+    headAgent,
+    agents: [],
+  };
+  return JSON.stringify(registry, null, 2);
+}
+
+/**
+ * Format an orchestration event for EVENTS.jsonl
+ */
+export function formatOrchestrationEvent(
+  event: OrchestrationEvent
+): string {
+  return JSON.stringify(event);
 }
 
 /**
@@ -202,10 +373,10 @@ Messages from previous runs are automatically seeded into your mailbox.
 
 /**
  * Get the startup command to create the memory directory structure.
- * Creates both daily/ and knowledge/ subdirectories for two-tier architecture.
+ * Creates daily/, knowledge/, and orchestration/ subdirectories.
  */
 export function getMemoryStartupCommand(): string {
-  return `mkdir -p ${MEMORY_DAILY_DIR} ${MEMORY_KNOWLEDGE_DIR}`;
+  return `mkdir -p ${MEMORY_DAILY_DIR} ${MEMORY_KNOWLEDGE_DIR} ${MEMORY_ORCHESTRATION_DIR}`;
 }
 
 /**
@@ -751,6 +922,65 @@ export function getMemoryMcpServerFile(): AuthFile {
 }
 
 /**
+ * Orchestration seed options for multi-agent coordination
+ */
+export interface OrchestrationSeedOptions {
+  headAgent: string;
+  orchestrationId?: string;
+  description?: string;
+  previousPlan?: string;
+  previousAgents?: string;
+}
+
+/**
+ * Get auth files for orchestration memory content.
+ * These files are written to the orchestration/ subdirectory.
+ *
+ * @param options - Orchestration seed options
+ */
+export function getOrchestrationSeedFiles(
+  options: OrchestrationSeedOptions
+): AuthFile[] {
+  const Buffer = globalThis.Buffer;
+  const orchestrationId = options.orchestrationId ?? generateOrchestrationId();
+
+  // Use previous plan if provided, otherwise create new
+  const planContent =
+    options.previousPlan && options.previousPlan.trim().length > 0
+      ? options.previousPlan
+      : getOrchestrationPlanSeedContent(
+          options.headAgent,
+          orchestrationId,
+          options.description
+        );
+
+  // Use previous agents registry if provided, otherwise create new
+  const agentsContent =
+    options.previousAgents && options.previousAgents.trim().length > 0
+      ? options.previousAgents
+      : getAgentsRegistrySeedContent(options.headAgent, orchestrationId);
+
+  return [
+    {
+      destinationPath: `${MEMORY_ORCHESTRATION_DIR}/PLAN.json`,
+      contentBase64: Buffer.from(planContent).toString("base64"),
+      mode: "644",
+    },
+    {
+      destinationPath: `${MEMORY_ORCHESTRATION_DIR}/AGENTS.json`,
+      contentBase64: Buffer.from(agentsContent).toString("base64"),
+      mode: "644",
+    },
+    // EVENTS.jsonl is created empty - events are appended during execution
+    {
+      destinationPath: `${MEMORY_ORCHESTRATION_DIR}/EVENTS.jsonl`,
+      contentBase64: Buffer.from("").toString("base64"),
+      mode: "644",
+    },
+  ];
+}
+
+/**
  * Get auth files for memory protocol seed content.
  * These files are written to the sandbox at startup.
  * Files are placed at /root/lifecycle/memory/ (outside git workspace).
@@ -764,11 +994,13 @@ export function getMemoryMcpServerFile(): AuthFile {
  * @param sandboxId - The sandbox/task run ID for metadata
  * @param previousKnowledge - Optional previous knowledge content from earlier runs (for cross-run seeding)
  * @param previousMailbox - Optional previous mailbox content with unread messages (for cross-run seeding)
+ * @param orchestrationOptions - Optional orchestration seed options for multi-agent mode
  */
 export function getMemorySeedFiles(
   sandboxId: string,
   previousKnowledge?: string,
-  previousMailbox?: string
+  previousMailbox?: string,
+  orchestrationOptions?: OrchestrationSeedOptions
 ): AuthFile[] {
   const Buffer = globalThis.Buffer;
   const today = getTodayDateString();
@@ -785,7 +1017,7 @@ export function getMemorySeedFiles(
       ? previousMailbox
       : getMailboxSeedContent();
 
-  return [
+  const files: AuthFile[] = [
     {
       destinationPath: `${MEMORY_PROTOCOL_DIR}/TASKS.json`,
       contentBase64: Buffer.from(getTasksSeedContent(sandboxId)).toString(
@@ -815,4 +1047,11 @@ export function getMemorySeedFiles(
     // Include MCP server for programmatic memory access (S6)
     getMemoryMcpServerFile(),
   ];
+
+  // Add orchestration files if options provided
+  if (orchestrationOptions) {
+    files.push(...getOrchestrationSeedFiles(orchestrationOptions));
+  }
+
+  return files;
 }
