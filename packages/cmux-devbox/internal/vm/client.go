@@ -1311,3 +1311,181 @@ func (c *Client) GetTaskRunMemory(ctx context.Context, taskRunID string, memoryT
 
 	return &result, nil
 }
+
+// ============================================================================
+// Orchestration API
+// ============================================================================
+
+// OrchestrationSpawnOptions represents options for spawning with orchestration tracking
+type OrchestrationSpawnOptions struct {
+	Prompt        string
+	Agent         string
+	Repo          string
+	Branch        string
+	PRTitle       string
+	EnvironmentID string
+	IsCloudMode   bool
+}
+
+// OrchestrationSpawnResult represents the result of spawning an agent with orchestration
+type OrchestrationSpawnResult struct {
+	OrchestrationTaskID string `json:"orchestrationTaskId"`
+	TaskID              string `json:"taskId"`
+	TaskRunID           string `json:"taskRunId"`
+	AgentName           string `json:"agentName"`
+	VSCodeURL           string `json:"vscodeUrl,omitempty"`
+	Status              string `json:"status"`
+}
+
+// OrchestrationTask represents an orchestration task from the API
+type OrchestrationTask struct {
+	ID                string  `json:"_id"`
+	TeamID            string  `json:"teamId"`
+	UserID            string  `json:"userId"`
+	Prompt            string  `json:"prompt"`
+	Status            string  `json:"status"`
+	Priority          int     `json:"priority"`
+	AssignedAgentName *string `json:"assignedAgentName,omitempty"`
+	AssignedSandboxID *string `json:"assignedSandboxId,omitempty"`
+	TaskID            *string `json:"taskId,omitempty"`
+	TaskRunID         *string `json:"taskRunId,omitempty"`
+	Result            *string `json:"result,omitempty"`
+	ErrorMessage      *string `json:"errorMessage,omitempty"`
+	CreatedAt         int64   `json:"createdAt"`
+	UpdatedAt         int64   `json:"updatedAt"`
+	AssignedAt        *int64  `json:"assignedAt,omitempty"`
+	StartedAt         *int64  `json:"startedAt,omitempty"`
+	CompletedAt       *int64  `json:"completedAt,omitempty"`
+}
+
+// OrchestrationListResult represents the result of listing orchestration tasks
+type OrchestrationListResult struct {
+	Tasks []OrchestrationTask `json:"tasks"`
+}
+
+// OrchestrationStatusResult represents the status of an orchestration task
+type OrchestrationStatusResult struct {
+	Task    OrchestrationTask `json:"task"`
+	TaskRun *TaskRun          `json:"taskRun,omitempty"`
+}
+
+// OrchestrationSpawn spawns an agent with orchestration tracking
+func (c *Client) OrchestrationSpawn(ctx context.Context, opts OrchestrationSpawnOptions) (*OrchestrationSpawnResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+		"prompt":       opts.Prompt,
+		"agent":        opts.Agent,
+		"isCloudMode":  opts.IsCloudMode,
+	}
+	if opts.Repo != "" {
+		body["repo"] = opts.Repo
+	}
+	if opts.Branch != "" {
+		body["branch"] = opts.Branch
+	}
+	if opts.PRTitle != "" {
+		body["prTitle"] = opts.PRTitle
+	}
+	if opts.EnvironmentID != "" {
+		body["environmentId"] = opts.EnvironmentID
+	}
+
+	resp, err := c.doServerRequest(ctx, "POST", "/api/orchestrate/spawn", body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("orchestration spawn failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result OrchestrationSpawnResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// OrchestrationList lists orchestration tasks for the team
+func (c *Client) OrchestrationList(ctx context.Context, status string) (*OrchestrationListResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	path := fmt.Sprintf("/api/orchestrate/list?teamSlugOrId=%s", c.teamSlug)
+	if status != "" {
+		path += "&status=" + status
+	}
+
+	resp, err := c.doServerRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("orchestration list failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result OrchestrationListResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// OrchestrationStatus gets the status of an orchestration task
+func (c *Client) OrchestrationStatus(ctx context.Context, orchTaskID string) (*OrchestrationStatusResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	path := fmt.Sprintf("/api/orchestrate/status/%s?teamSlugOrId=%s", orchTaskID, c.teamSlug)
+
+	resp, err := c.doServerRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("orchestration status failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result OrchestrationStatusResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// OrchestrationCancel cancels an orchestration task
+func (c *Client) OrchestrationCancel(ctx context.Context, orchTaskID string) error {
+	if c.teamSlug == "" {
+		return fmt.Errorf("team slug not set")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+	}
+
+	resp, err := c.doServerRequest(ctx, "POST", fmt.Sprintf("/api/orchestrate/cancel/%s", orchTaskID), body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("orchestration cancel failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	return nil
+}

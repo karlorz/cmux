@@ -15,6 +15,11 @@ export const env = createEnv({
       .enum(["true", "false"])
       .optional()
       .transform((v) => v === "true"),
+    // When enabled, wraps spawn flow with circuit breaker health monitoring
+    ENABLE_CIRCUIT_BREAKER: z
+      .enum(["true", "false"])
+      .optional()
+      .transform((v) => v === "true"),
   },
   // Handle both Node and Vite/Bun
   runtimeEnv: { ...import.meta.env, ...process.env },

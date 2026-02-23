@@ -9,6 +9,10 @@ import {
   getProviderRegistry,
   type ProviderOverride,
 } from "@cmux/shared/provider-registry";
+import {
+  getProviderHealthMonitor,
+  type ProviderHealthMetrics,
+} from "@cmux/shared/resilience/provider-health";
 import type {
   WorkerCreateTerminal,
   WorkerSyncFiles,
@@ -46,6 +50,31 @@ import { workerExec } from "./utils/workerExec";
 import rawSwitchBranchScript from "./utils/switch-branch.ts?raw";
 
 const SWITCH_BRANCH_BUN_SCRIPT = rawSwitchBranchScript;
+
+/**
+ * Fire-and-forget sync of provider health metrics to Convex.
+ * Non-blocking - will not affect spawn result on failure.
+ */
+async function syncProviderHealthToConvex(providerId: string): Promise<void> {
+  if (!env.ENABLE_CIRCUIT_BREAKER) return;
+
+  try {
+    const metrics = getProviderHealthMonitor().getMetrics(providerId);
+    await getConvex().mutation(api.orchestrationQueries.upsertProviderHealth, {
+      providerId: metrics.providerId,
+      status: metrics.status,
+      circuitState: metrics.circuitState,
+      failureCount: metrics.failureCount,
+      successRate: metrics.successRate,
+      latencyP50: metrics.latencyP50,
+      latencyP99: metrics.latencyP99,
+      totalRequests: metrics.totalRequests,
+      lastError: metrics.lastError,
+    });
+  } catch (error) {
+    console.error("[AgentSpawner] Failed to sync provider health to Convex:", error);
+  }
+}
 
 const {
   getApiEnvironmentsById,
@@ -706,8 +735,33 @@ export async function spawnAgent(
 
     serverLogger.info(`Starting VSCode instance for agent ${agent.name}...`);
 
-    // Start the VSCode instance
-    const vscodeInfo = await vscodeInstance.start();
+    // Determine provider ID for circuit breaker (use resolved provider or default)
+    const providerId = resolvedProvider?.id ?? "default";
+
+    // Pre-spawn circuit check when circuit breaker is enabled
+    if (env.ENABLE_CIRCUIT_BREAKER) {
+      const canAttempt = getProviderHealthMonitor().canAttempt(providerId);
+      if (!canAttempt) {
+        serverLogger.warn(
+          `[AgentSpawner] Circuit breaker open for provider ${providerId}, spawn may fail`
+        );
+        // Log available fallbacks for future model-switching support
+        const allMetrics = getProviderHealthMonitor().getAllMetrics();
+        const healthyProviders = allMetrics
+          .filter((m: ProviderHealthMetrics) => m.circuitState === "closed")
+          .map((m: ProviderHealthMetrics) => m.providerId);
+        if (healthyProviders.length > 0) {
+          serverLogger.info(
+            `[AgentSpawner] Healthy providers available: ${healthyProviders.join(", ")}`
+          );
+        }
+      }
+    }
+
+    // Start the VSCode instance (with optional circuit breaker wrapping)
+    const vscodeInfo = env.ENABLE_CIRCUIT_BREAKER
+      ? await getProviderHealthMonitor().execute(providerId, () => vscodeInstance.start())
+      : await vscodeInstance.start();
     const vscodeUrl = vscodeInfo.workspaceUrl;
 
     serverLogger.info(
@@ -1365,6 +1419,9 @@ exit $EXIT_CODE
       );
     });
 
+    // Fire-and-forget: sync provider health metrics to Convex
+    void syncProviderHealthToConvex(providerId);
+
     return {
       agentName: agent.name,
       terminalId,
@@ -1375,6 +1432,10 @@ exit $EXIT_CODE
     };
   } catch (error) {
     serverLogger.error("Error spawning agent", error);
+
+    // Fire-and-forget: sync provider health metrics to Convex (includes failure)
+    // Note: resolvedProvider may not be defined if error occurred before provider resolution
+    void syncProviderHealthToConvex("default");
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
 

@@ -16,7 +16,7 @@ import {
   getVariantsForVendor,
 } from "@cmux/shared/agent-catalog";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
-import { spawnAllAgents } from "./agentSpawner";
+import { spawnAgent, spawnAllAgents, type AgentSpawnResult } from "./agentSpawner";
 import {
   DEFAULT_BRANCH_PREFIX,
   generateBranchNamesFromDescription,
@@ -336,6 +336,367 @@ async function handleStartTask(
   }
 }
 
+// ============================================================================
+// Orchestration Endpoints
+// ============================================================================
+
+interface OrchestrationSpawnRequest {
+  teamSlugOrId: string;
+  prompt: string;
+  agent: string;
+  repo?: string;
+  branch?: string;
+  prTitle?: string;
+  environmentId?: string;
+  isCloudMode?: boolean;
+}
+
+interface OrchestrationSpawnResponse {
+  orchestrationTaskId: string;
+  taskId: string;
+  taskRunId: string;
+  agentName: string;
+  vscodeUrl?: string;
+  status: string;
+}
+
+/**
+ * Handle POST /api/orchestrate/spawn
+ *
+ * Creates orchestration tracking records and spawns an agent.
+ * This creates a tasks record, taskRuns record, and orchestrationTasks record,
+ * then uses spawnAgent() to start the agent.
+ */
+async function handleOrchestrationSpawn(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+  const authToken = parseAuthHeader(req);
+  if (!authToken) {
+    jsonResponse(res, 401, { error: "Unauthorized: Missing Bearer token" });
+    return;
+  }
+
+  const authHeaderJson = JSON.stringify({ accessToken: authToken });
+
+  const body = await readJsonBody<OrchestrationSpawnRequest>(req);
+  if (!body) {
+    jsonResponse(res, 400, { error: "Invalid JSON body" });
+    return;
+  }
+
+  const { teamSlugOrId, prompt, agent, repo, branch, prTitle, environmentId, isCloudMode = true } = body;
+
+  if (!teamSlugOrId || !prompt || !agent) {
+    jsonResponse(res, 400, { error: "Missing required fields: teamSlugOrId, prompt, agent" });
+    return;
+  }
+
+  serverLogger.info("[http-api] POST /api/orchestrate/spawn", { agent, prompt: prompt.slice(0, 100) });
+
+  try {
+    const result = await runWithAuth(authToken, authHeaderJson, async () => {
+      // Find the agent config
+      const agentConfig = AGENT_CONFIGS.find((a) => a.name === agent);
+      if (!agentConfig) {
+        throw new Error(`Agent not found: ${agent}`);
+      }
+
+      // Get team info via listTeamMemberships
+      const memberships = await getConvex().query(api.teams.listTeamMemberships, {});
+      // Find matching team by slug or teamId
+      const membership = memberships.find(
+        (m) => m.team.teamId === teamSlugOrId || m.team.slug === teamSlugOrId
+      );
+      if (!membership) {
+        throw new Error("Team not found or not a member");
+      }
+      const teamId = membership.team.teamId;
+      const userId = membership.userId;
+
+      // Create task record (uses 'text' field, not 'prompt')
+      const taskResult = await getConvex().mutation(api.tasks.create, {
+        teamSlugOrId,
+        text: prompt,
+        projectFullName: repo ?? "",
+        baseBranch: branch,
+      });
+
+      const taskId = taskResult.taskId;
+
+      // Create task run record
+      const taskRunResult = await getConvex().mutation(api.taskRuns.create, {
+        teamSlugOrId,
+        taskId,
+        prompt,
+        agentName: agent,
+        newBranch: "",
+        environmentId: environmentId as Id<"environments"> | undefined,
+      });
+
+      const taskRunId = taskRunResult.taskRunId;
+
+      // Create orchestration task record
+      const orchestrationTaskId = await getConvex().mutation(api.orchestrationQueries.createTask, {
+        teamId,
+        userId,
+        prompt,
+        taskId,
+        taskRunId,
+        priority: 5,
+      });
+
+      // Spawn the agent using existing infrastructure
+      const spawnResult = await spawnAgent(
+        agentConfig,
+        taskId,
+        {
+          repoUrl: repo,
+          branch,
+          taskDescription: prompt,
+          isCloudMode,
+          environmentId: environmentId as Id<"environments"> | undefined,
+          taskRunId,
+        },
+        teamSlugOrId
+      );
+
+      // Update orchestration task with assignment
+      if (spawnResult.success) {
+        await getConvex().mutation(api.orchestrationQueries.assignTask, {
+          taskId: orchestrationTaskId,
+          agentName: agent,
+        });
+        await getConvex().mutation(api.orchestrationQueries.startTask, {
+          taskId: orchestrationTaskId,
+        });
+      } else {
+        await getConvex().mutation(api.orchestrationQueries.failTask, {
+          taskId: orchestrationTaskId,
+          errorMessage: spawnResult.error ?? "Spawn failed",
+        });
+      }
+
+      return {
+        orchestrationTaskId: String(orchestrationTaskId),
+        taskId: String(taskId),
+        taskRunId: String(taskRunId),
+        agentName: agent,
+        vscodeUrl: spawnResult.vscodeUrl,
+        status: spawnResult.success ? "running" : "failed",
+      };
+    });
+
+    jsonResponse(res, 200, result satisfies OrchestrationSpawnResponse);
+  } catch (error) {
+    serverLogger.error("[http-api] orchestrate/spawn failed", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    jsonResponse(res, 500, { error: message });
+  }
+}
+
+/**
+ * Handle GET /api/orchestrate/list
+ *
+ * Returns orchestration tasks for a team with optional status filter.
+ */
+async function handleOrchestrationList(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+  const authToken = parseAuthHeader(req);
+  if (!authToken) {
+    jsonResponse(res, 401, { error: "Unauthorized: Missing Bearer token" });
+    return;
+  }
+
+  const url = new URL(req.url || "/", `http://${req.headers.host}`);
+  const teamSlugOrId = url.searchParams.get("teamSlugOrId");
+  const status = url.searchParams.get("status") as
+    | "pending"
+    | "assigned"
+    | "running"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | null;
+
+  if (!teamSlugOrId) {
+    jsonResponse(res, 400, { error: "Missing required query parameter: teamSlugOrId" });
+    return;
+  }
+
+  try {
+    const result = await runWithAuthToken(authToken, async () => {
+      // Get team info via listTeamMemberships
+      const memberships = await getConvex().query(api.teams.listTeamMemberships, {});
+      const membership = memberships.find(
+        (m) => m.team.teamId === teamSlugOrId || m.team.slug === teamSlugOrId
+      );
+      if (!membership) {
+        throw new Error("Team not found or not a member");
+      }
+
+      const tasks = await getConvex().query(api.orchestrationQueries.listTasksByTeam, {
+        teamId: membership.team.teamId,
+        status: status ?? undefined,
+        limit: 50,
+      });
+
+      return { tasks };
+    });
+
+    jsonResponse(res, 200, result);
+  } catch (error) {
+    serverLogger.error("[http-api] orchestrate/list failed", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    jsonResponse(res, 500, { error: message });
+  }
+}
+
+/**
+ * Handle GET /api/orchestrate/status/*
+ *
+ * Returns status details for a specific orchestration task.
+ */
+async function handleOrchestrationStatus(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+  const authToken = parseAuthHeader(req);
+  if (!authToken) {
+    jsonResponse(res, 401, { error: "Unauthorized: Missing Bearer token" });
+    return;
+  }
+
+  const url = new URL(req.url || "/", `http://${req.headers.host}`);
+  const teamSlugOrId = url.searchParams.get("teamSlugOrId");
+
+  // Extract orchestration task ID from path: /api/orchestrate/status/<id>
+  const pathParts = url.pathname.split("/");
+  const orchestrationTaskId = pathParts[pathParts.length - 1];
+
+  if (!teamSlugOrId) {
+    jsonResponse(res, 400, { error: "Missing required query parameter: teamSlugOrId" });
+    return;
+  }
+
+  if (!orchestrationTaskId || orchestrationTaskId === "status") {
+    jsonResponse(res, 400, { error: "Missing orchestration task ID in path" });
+    return;
+  }
+
+  try {
+    const result = await runWithAuthToken(authToken, async () => {
+      const task = await getConvex().query(api.orchestrationQueries.getTask, {
+        taskId: orchestrationTaskId as Id<"orchestrationTasks">,
+      });
+
+      if (!task) {
+        throw new Error("Orchestration task not found");
+      }
+
+      // Enrich with taskRun details if available
+      let taskRun = null;
+      if (task.taskRunId) {
+        try {
+          taskRun = await getConvex().query(api.taskRuns.get, {
+            teamSlugOrId,
+            id: task.taskRunId,
+          });
+        } catch {
+          // Task run might not exist, continue without it
+        }
+      }
+
+      return {
+        task,
+        taskRun,
+      };
+    });
+
+    jsonResponse(res, 200, result);
+  } catch (error) {
+    serverLogger.error("[http-api] orchestrate/status failed", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    jsonResponse(res, 500, { error: message });
+  }
+}
+
+/**
+ * Handle POST /api/orchestrate/cancel/*
+ *
+ * Cancels an orchestration task and cascades to the linked taskRun.
+ */
+async function handleOrchestrationCancel(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+  const authToken = parseAuthHeader(req);
+  if (!authToken) {
+    jsonResponse(res, 401, { error: "Unauthorized: Missing Bearer token" });
+    return;
+  }
+
+  const authHeaderJson = JSON.stringify({ accessToken: authToken });
+
+  const url = new URL(req.url || "/", `http://${req.headers.host}`);
+  const body = await readJsonBody<{ teamSlugOrId: string }>(req);
+
+  if (!body?.teamSlugOrId) {
+    jsonResponse(res, 400, { error: "Missing required field: teamSlugOrId" });
+    return;
+  }
+
+  // Extract orchestration task ID from path: /api/orchestrate/cancel/<id>
+  const pathParts = url.pathname.split("/");
+  const orchestrationTaskId = pathParts[pathParts.length - 1];
+
+  if (!orchestrationTaskId || orchestrationTaskId === "cancel") {
+    jsonResponse(res, 400, { error: "Missing orchestration task ID in path" });
+    return;
+  }
+
+  try {
+    await runWithAuth(authToken, authHeaderJson, async () => {
+      // Get the orchestration task first to find linked taskRunId
+      const task = await getConvex().query(api.orchestrationQueries.getTask, {
+        taskId: orchestrationTaskId as Id<"orchestrationTasks">,
+      });
+
+      if (!task) {
+        throw new Error("Orchestration task not found");
+      }
+
+      // Cancel the orchestration task
+      await getConvex().mutation(api.orchestrationQueries.cancelTask, {
+        taskId: orchestrationTaskId as Id<"orchestrationTasks">,
+      });
+
+      // Cascade to taskRun if it exists
+      if (task.taskRunId) {
+        try {
+          await getConvex().mutation(api.taskRuns.fail, {
+            teamSlugOrId: body.teamSlugOrId,
+            id: task.taskRunId,
+            errorMessage: "Cancelled via orchestration",
+            exitCode: 130, // SIGINT exit code
+          });
+        } catch (taskRunError) {
+          // Log but don't fail - orchestration task is already cancelled
+          serverLogger.warn("[http-api] Failed to cascade cancel to taskRun", taskRunError);
+        }
+      }
+    });
+
+    jsonResponse(res, 200, { success: true });
+  } catch (error) {
+    serverLogger.error("[http-api] orchestrate/cancel failed", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    jsonResponse(res, 500, { error: message });
+  }
+}
+
 /**
  * Handle GET /api/providers
  *
@@ -427,6 +788,30 @@ export function handleHttpRequest(
       })
     );
     jsonResponse(res, 200, { agents });
+    return true;
+  }
+
+  // Route: POST /api/orchestrate/spawn - Spawn an agent with orchestration tracking
+  if (method === "POST" && path === "/api/orchestrate/spawn") {
+    void handleOrchestrationSpawn(req, res);
+    return true;
+  }
+
+  // Route: GET /api/orchestrate/list - List orchestration tasks for team
+  if (method === "GET" && path === "/api/orchestrate/list") {
+    void handleOrchestrationList(req, res);
+    return true;
+  }
+
+  // Route: GET /api/orchestrate/status/* - Get orchestration task status
+  if (method === "GET" && path.startsWith("/api/orchestrate/status/")) {
+    void handleOrchestrationStatus(req, res);
+    return true;
+  }
+
+  // Route: POST /api/orchestrate/cancel/* - Cancel an orchestration task
+  if (method === "POST" && path.startsWith("/api/orchestrate/cancel/")) {
+    void handleOrchestrationCancel(req, res);
     return true;
   }
 

@@ -34,6 +34,53 @@ export const listPendingTasks = query({
 });
 
 /**
+ * Get recent tasks for a team, optionally filtered by status.
+ * Returns tasks ordered by updatedAt desc.
+ */
+export const listTasksByTeam = query({
+  args: {
+    teamId: v.string(),
+    status: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("assigned"),
+        v.literal("running"),
+        v.literal("completed"),
+        v.literal("failed"),
+        v.literal("cancelled")
+      )
+    ),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, { teamId, status, limit = 50 }) => {
+    if (status) {
+      // Use the by_team_status index when filtering by status
+      const tasks = await ctx.db
+        .query("orchestrationTasks")
+        .withIndex("by_team_status", (q) =>
+          q.eq("teamId", teamId).eq("status", status)
+        )
+        .collect();
+
+      // Sort by updatedAt desc and take limit
+      return tasks
+        .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+        .slice(0, limit);
+    }
+
+    // Without status filter, query all tasks for team and sort by updatedAt
+    const tasks = await ctx.db
+      .query("orchestrationTasks")
+      .withIndex("by_team_status", (q) => q.eq("teamId", teamId))
+      .collect();
+
+    return tasks
+      .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+      .slice(0, limit);
+  },
+});
+
+/**
  * Get tasks assigned to a specific agent.
  */
 export const listAgentTasks = query({
