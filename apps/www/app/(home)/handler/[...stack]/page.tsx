@@ -1,5 +1,6 @@
 import { stackServerApp } from "@/lib/utils/stack";
 import { StackHandler } from "@stackframe/stack";
+import { cookies } from "next/headers";
 
 export default async function Handler(props: {
   params: Promise<{ stack: string[] }>;
@@ -7,12 +8,14 @@ export default async function Handler(props: {
 }) {
   const searchParams = await props.searchParams;
 
-  // If force=true and user is signed in, sign them out first
+  // If force=true, clear all Stack Auth cookies to force fresh sign-in
   // This is used by the desktop app to show the account picker
   if (searchParams.force === "true") {
-    const user = await stackServerApp.getUser();
-    if (user) {
-      await user.signOut();
+    const cookieStore = await cookies();
+    for (const cookie of cookieStore.getAll()) {
+      if (cookie.name.includes("stack-")) {
+        cookieStore.delete(cookie.name);
+      }
     }
   }
 
