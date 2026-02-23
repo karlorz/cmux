@@ -48,4 +48,12 @@ export type EnvironmentContext = {
   previousKnowledge?: string;
   /** Previous mailbox content with unread messages (for cross-run mailbox seeding) */
   previousMailbox?: string;
+  /** Orchestration seed options for multi-agent coordination (hybrid execution) */
+  orchestrationOptions?: {
+    headAgent: string;
+    orchestrationId?: string;
+    description?: string;
+    previousPlan?: string;    // Raw JSON of PLAN.json
+    previousAgents?: string;  // Raw JSON of AGENTS.json
+  };
 };

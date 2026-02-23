@@ -697,6 +697,207 @@ async function handleOrchestrationCancel(
   }
 }
 
+interface OrchestrationMigrateRequest {
+  teamSlugOrId: string;
+  planJson: string;           // Raw PLAN.json content
+  agentsJson?: string;        // Raw AGENTS.json content (optional)
+  agent?: string;             // Override head agent (defaults to plan.headAgent)
+  repo?: string;
+  branch?: string;
+  environmentId?: string;
+}
+
+interface OrchestrationMigrateResponse {
+  orchestrationTaskId: string;
+  taskId: string;
+  taskRunId: string;
+  agentName: string;
+  orchestrationId: string;
+  vscodeUrl?: string;
+  status: string;
+}
+
+/**
+ * Handle POST /api/orchestrate/migrate
+ *
+ * Migrates local orchestration state (PLAN.json) to a sandbox and spawns
+ * the head agent to continue execution. This enables hybrid execution where
+ * a local head agent can hand off to a sandbox for long-running operations.
+ */
+async function handleOrchestrationMigrate(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+  const authToken = parseAuthHeader(req);
+  if (!authToken) {
+    jsonResponse(res, 401, { error: "Unauthorized: Missing Bearer token" });
+    return;
+  }
+
+  const authHeaderJson = JSON.stringify({ accessToken: authToken });
+
+  const body = await readJsonBody<OrchestrationMigrateRequest>(req);
+  if (!body) {
+    jsonResponse(res, 400, { error: "Invalid JSON body" });
+    return;
+  }
+
+  const { teamSlugOrId, planJson, agentsJson, agent, repo, branch, environmentId } = body;
+
+  if (!teamSlugOrId || !planJson) {
+    jsonResponse(res, 400, { error: "Missing required fields: teamSlugOrId, planJson" });
+    return;
+  }
+
+  // Parse and validate PLAN.json
+  let plan: {
+    headAgent?: string;
+    orchestrationId?: string;
+    description?: string;
+    tasks?: unknown[];
+  };
+  try {
+    plan = JSON.parse(planJson);
+  } catch {
+    jsonResponse(res, 400, { error: "Invalid planJson: not valid JSON" });
+    return;
+  }
+
+  // Extract orchestration metadata from plan
+  const headAgent = agent ?? plan.headAgent;
+  if (!headAgent) {
+    jsonResponse(res, 400, { error: "No headAgent specified in plan or request" });
+    return;
+  }
+
+  const orchestrationId = plan.orchestrationId ?? `orch_${Date.now().toString(36)}`;
+  const description = plan.description ?? "Migrated orchestration";
+
+  serverLogger.info("[http-api] POST /api/orchestrate/migrate", {
+    headAgent,
+    orchestrationId,
+    taskCount: plan.tasks?.length ?? 0,
+  });
+
+  try {
+    const result = await runWithAuth(authToken, authHeaderJson, async () => {
+      // Find the agent config
+      const agentConfig = AGENT_CONFIGS.find((a) => a.name === headAgent);
+      if (!agentConfig) {
+        throw new Error(`Agent not found: ${headAgent}`);
+      }
+
+      // Get team info via listTeamMemberships
+      const memberships = await getConvex().query(api.teams.listTeamMemberships, {});
+      const membership = memberships.find(
+        (m) => m.team.teamId === teamSlugOrId || m.team.slug === teamSlugOrId
+      );
+      if (!membership) {
+        throw new Error("Team not found or not a member");
+      }
+      const teamId = membership.team.teamId;
+      const userId = membership.userId;
+
+      // Generate head agent prompt from plan
+      const taskSummary = plan.tasks?.length
+        ? `You are resuming orchestration with ${plan.tasks.length} task(s).`
+        : "You are resuming orchestration.";
+      const headAgentPrompt = `${taskSummary}
+
+Your orchestration state has been migrated from a local machine.
+Check /root/lifecycle/memory/orchestration/PLAN.json for the current plan.
+Continue executing the orchestration plan from where it was left off.
+
+Description: ${description}
+Orchestration ID: ${orchestrationId}`;
+
+      // Create task record
+      const taskResult = await getConvex().mutation(api.tasks.create, {
+        teamSlugOrId,
+        text: headAgentPrompt,
+        projectFullName: repo ?? "",
+        baseBranch: branch,
+      });
+      const taskId = taskResult.taskId;
+
+      // Create task run record
+      const taskRunResult = await getConvex().mutation(api.taskRuns.create, {
+        teamSlugOrId,
+        taskId,
+        prompt: headAgentPrompt,
+        agentName: headAgent,
+        newBranch: "",
+        environmentId: environmentId as Id<"environments"> | undefined,
+      });
+      const taskRunId = taskRunResult.taskRunId;
+
+      // Create orchestration task record
+      const orchestrationTaskId = await getConvex().mutation(api.orchestrationQueries.createTask, {
+        teamId,
+        userId,
+        prompt: headAgentPrompt,
+        taskId,
+        taskRunId,
+        priority: 5,
+      });
+
+      // Spawn the agent with orchestration options for state seeding
+      const spawnResult = await spawnAgent(
+        agentConfig,
+        taskId,
+        {
+          repoUrl: repo,
+          branch,
+          taskDescription: headAgentPrompt,
+          isCloudMode: true,
+          environmentId: environmentId as Id<"environments"> | undefined,
+          taskRunId,
+          orchestrationOptions: {
+            headAgent,
+            orchestrationId,
+            description,
+            previousPlan: planJson,
+            previousAgents: agentsJson,
+          },
+        },
+        teamSlugOrId
+      );
+
+      // Update orchestration task with assignment
+      if (spawnResult.success) {
+        await getConvex().mutation(api.orchestrationQueries.assignTask, {
+          taskId: orchestrationTaskId,
+          agentName: headAgent,
+        });
+        await getConvex().mutation(api.orchestrationQueries.startTask, {
+          taskId: orchestrationTaskId,
+        });
+      } else {
+        await getConvex().mutation(api.orchestrationQueries.failTask, {
+          taskId: orchestrationTaskId,
+          errorMessage: spawnResult.error ?? "Spawn failed",
+        });
+      }
+
+      return {
+        orchestrationTaskId: String(orchestrationTaskId),
+        taskId: String(taskId),
+        taskRunId: String(taskRunId),
+        agentName: headAgent,
+        orchestrationId,
+        vscodeUrl: spawnResult.vscodeUrl,
+        status: spawnResult.success ? "running" : "failed",
+      };
+    });
+
+    jsonResponse(res, 200, result satisfies OrchestrationMigrateResponse);
+  } catch (error) {
+    serverLogger.error("[http-api] orchestrate/migrate failed", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    jsonResponse(res, 500, { error: message });
+  }
+}
+
 /**
  * Handle GET /api/providers
  *
@@ -812,6 +1013,12 @@ export function handleHttpRequest(
   // Route: POST /api/orchestrate/cancel/* - Cancel an orchestration task
   if (method === "POST" && path.startsWith("/api/orchestrate/cancel/")) {
     void handleOrchestrationCancel(req, res);
+    return true;
+  }
+
+  // Route: POST /api/orchestrate/migrate - Migrate orchestration state to sandbox
+  if (method === "POST" && path === "/api/orchestrate/migrate") {
+    void handleOrchestrationMigrate(req, res);
     return true;
   }
 

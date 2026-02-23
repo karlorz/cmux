@@ -1489,3 +1489,72 @@ func (c *Client) OrchestrationCancel(ctx context.Context, orchTaskID string) err
 
 	return nil
 }
+
+// OrchestrationMigrateOptions represents options for migrating orchestration state
+type OrchestrationMigrateOptions struct {
+	PlanJson      string // Raw PLAN.json content (required)
+	AgentsJson    string // Raw AGENTS.json content (optional)
+	Agent         string // Override head agent (defaults to plan.headAgent)
+	Repo          string
+	Branch        string
+	EnvironmentID string
+}
+
+// OrchestrationMigrateResult represents the result of migrating orchestration state
+type OrchestrationMigrateResult struct {
+	OrchestrationTaskID string `json:"orchestrationTaskId"`
+	TaskID              string `json:"taskId"`
+	TaskRunID           string `json:"taskRunId"`
+	AgentName           string `json:"agentName"`
+	OrchestrationID     string `json:"orchestrationId"`
+	VSCodeURL           string `json:"vscodeUrl,omitempty"`
+	Status              string `json:"status"`
+}
+
+// OrchestrationMigrate migrates local orchestration state to a sandbox
+func (c *Client) OrchestrationMigrate(ctx context.Context, opts OrchestrationMigrateOptions) (*OrchestrationMigrateResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	if opts.PlanJson == "" {
+		return nil, fmt.Errorf("planJson is required")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+		"planJson":     opts.PlanJson,
+	}
+	if opts.AgentsJson != "" {
+		body["agentsJson"] = opts.AgentsJson
+	}
+	if opts.Agent != "" {
+		body["agent"] = opts.Agent
+	}
+	if opts.Repo != "" {
+		body["repo"] = opts.Repo
+	}
+	if opts.Branch != "" {
+		body["branch"] = opts.Branch
+	}
+	if opts.EnvironmentID != "" {
+		body["environmentId"] = opts.EnvironmentID
+	}
+
+	resp, err := c.doServerRequest(ctx, "POST", "/api/orchestrate/migrate", body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("orchestration migrate failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result OrchestrationMigrateResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}

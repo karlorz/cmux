@@ -115,6 +115,14 @@ export async function spawnAgent(
     theme?: "dark" | "light" | "system";
     newBranch?: string; // Optional pre-generated branch name
     taskRunId?: Id<"taskRuns">; // Optional pre-created task run ID
+    /** Orchestration options for multi-agent coordination (hybrid execution) */
+    orchestrationOptions?: {
+      headAgent: string;
+      orchestrationId?: string;
+      description?: string;
+      previousPlan?: string;
+      previousAgents?: string;
+    };
   },
   teamSlugOrId: string
 ): Promise<AgentSpawnResult> {
@@ -540,6 +548,7 @@ export async function spawnAgent(
           : undefined,
         previousKnowledge: previousKnowledge ?? undefined,
         previousMailbox: previousMailbox ?? undefined,
+        orchestrationOptions: options.orchestrationOptions,
       });
       envVars = {
         ...envVars,
