@@ -80,8 +80,7 @@ export function SignInComponent() {
               <button
                 onClick={() => {
                   if (!browserSignInSupported) return;
-                  const signInPath = "/handler/sign-in";
-                  const url = `${WWW_ORIGIN}/api/auth/reset-session?returnTo=${encodeURIComponent(signInPath)}`;
+                  const url = `${WWW_ORIGIN}/handler/sign-in?force=true`;
                   window.open(url, "_blank", "noopener,noreferrer");
                 }}
                 disabled={!browserSignInSupported}
