@@ -6,15 +6,17 @@ export default async function Handler(props: {
   params: Promise<{ stack: string[] }>;
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const params = await props.params;
   const searchParams = await props.searchParams;
 
-  // If force=true, redirect through reset-session to clear cookies first
+  // If force=true, sign out any existing user first, then show sign-in
   // This is used by the desktop app to show the account picker
-  // We can't delete cookies directly in a Server Component, so we use the API route
   if (searchParams.force === "true") {
-    const path = params.stack?.join("/") || "sign-in";
-    redirect(`/api/auth/reset-session?returnTo=/handler/${path}`);
+    const user = await stackServerApp.getUser();
+    if (user) {
+      // User is logged in - redirect to sign-out, which will then redirect to sign-in
+      redirect(`/handler/sign-out?after_sign_out_url=/handler/sign-in`);
+    }
+    // No user - fall through to render sign-in normally
   }
 
   return <StackHandler fullPage app={stackServerApp} routeProps={props} />;
