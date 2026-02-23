@@ -1529,6 +1529,10 @@ const convexSchema = defineSchema({
     assignedAt: v.optional(v.number()),
     startedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
+    // Retry tracking for background worker
+    retryCount: v.optional(v.number()), // Current retry attempt
+    lastRetryAt: v.optional(v.number()), // Timestamp of last retry
+    nextRetryAfter: v.optional(v.number()), // When to retry next (ms since epoch)
   })
     .index("by_team_priority", ["teamId", "priority", "status"])
     .index("by_team_status", ["teamId", "status", "updatedAt"])

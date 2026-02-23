@@ -88,4 +88,12 @@ crons.weekly(
   internal.modelDiscovery.discoverOpenRouterModels
 );
 
+// Poll orchestration tasks every minute for auto-spawning
+// This enables autonomous multi-agent orchestration
+crons.interval(
+  "poll orchestration tasks",
+  { minutes: 1 },
+  internal.orchestrationWorker.pollReadyTasks
+);
+
 export default crons;

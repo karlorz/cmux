@@ -1565,6 +1565,16 @@ export const workerComplete = internalMutation({
     // After marking this run as completed, check if we should update the task status
     await updateTaskStatusFromRuns(ctx, run.taskId, run.teamId, run.userId);
 
+    // Notify orchestration worker of completion (handles orchestration-managed tasks)
+    await ctx.scheduler.runAfter(
+      0,
+      internal.orchestrationWorker.handleTaskCompletion,
+      {
+        taskRunId: args.taskRunId,
+        exitCode: args.exitCode,
+      }
+    );
+
     // Note: Notifications are handled separately via /api/notifications/agent-stopped
     // which is called by the stop hook. This keeps status updates decoupled from notifications.
 

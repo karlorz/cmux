@@ -29,6 +29,7 @@ import {
   checkAllProvidersStatusWebMode,
 } from "./utils/providerStatus";
 import { runWithAuth, runWithAuthToken } from "./utils/requestContext";
+import { env } from "./utils/server-env";
 
 interface StartTaskRequest {
   // Required fields
@@ -898,6 +899,95 @@ Orchestration ID: ${orchestrationId}`;
   }
 }
 
+// ============================================================================
+// Internal Worker Endpoints (for background orchestration worker)
+// ============================================================================
+
+interface InternalSpawnRequest {
+  orchestrationTaskId: string;
+  teamId: string;
+  agentName: string;
+  prompt: string;
+  taskId: string;
+  taskRunId: string;
+}
+
+/**
+ * Handle POST /api/orchestrate/internal/spawn
+ *
+ * Internal endpoint for the background orchestration worker to spawn agents.
+ * Protected by CMUX_INTERNAL_SECRET header validation.
+ */
+async function handleOrchestrationInternalSpawn(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+  // Validate internal secret
+  const internalSecret = req.headers["x-internal-secret"];
+  if (!env.CMUX_INTERNAL_SECRET || internalSecret !== env.CMUX_INTERNAL_SECRET) {
+    jsonResponse(res, 401, { error: "Unauthorized: Invalid internal secret" });
+    return;
+  }
+
+  const body = await readJsonBody<InternalSpawnRequest>(req);
+  if (!body) {
+    jsonResponse(res, 400, { error: "Invalid JSON body" });
+    return;
+  }
+
+  const { orchestrationTaskId, teamId, agentName, prompt, taskId, taskRunId } = body;
+
+  if (!orchestrationTaskId || !teamId || !agentName || !prompt || !taskId || !taskRunId) {
+    jsonResponse(res, 400, {
+      error: "Missing required fields: orchestrationTaskId, teamId, agentName, prompt, taskId, taskRunId",
+    });
+    return;
+  }
+
+  serverLogger.info("[http-api] POST /api/orchestrate/internal/spawn", {
+    orchestrationTaskId,
+    agentName,
+    prompt: prompt.slice(0, 100),
+  });
+
+  try {
+    // Find the agent config
+    const agentConfig = AGENT_CONFIGS.find((a) => a.name === agentName);
+    if (!agentConfig) {
+      throw new Error(`Agent not found: ${agentName}`);
+    }
+
+    // Use the existing taskId and taskRunId from the orchestration task
+    const effectiveTaskId = taskId as Id<"tasks">;
+    const effectiveTaskRunId = taskRunId as Id<"taskRuns">;
+
+    // Spawn the agent using existing infrastructure
+    // Note: This runs without user auth context since it's an internal worker call
+    const spawnResult = await spawnAgent(
+      agentConfig,
+      effectiveTaskId,
+      {
+        taskDescription: prompt,
+        isCloudMode: true,
+        taskRunId: effectiveTaskRunId,
+      },
+      teamId
+    );
+
+    jsonResponse(res, 200, {
+      success: spawnResult.success,
+      taskId: String(effectiveTaskId),
+      taskRunId: spawnResult.taskRunId,
+      vscodeUrl: spawnResult.vscodeUrl,
+      error: spawnResult.error,
+    });
+  } catch (error) {
+    serverLogger.error("[http-api] internal spawn failed", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    jsonResponse(res, 500, { error: message });
+  }
+}
+
 /**
  * Handle GET /api/providers
  *
@@ -1019,6 +1109,12 @@ export function handleHttpRequest(
   // Route: POST /api/orchestrate/migrate - Migrate orchestration state to sandbox
   if (method === "POST" && path === "/api/orchestrate/migrate") {
     void handleOrchestrationMigrate(req, res);
+    return true;
+  }
+
+  // Route: POST /api/orchestrate/internal/spawn - Internal worker spawn endpoint
+  if (method === "POST" && path === "/api/orchestrate/internal/spawn") {
+    void handleOrchestrationInternalSpawn(req, res);
     return true;
   }
 

@@ -8,7 +8,7 @@
  */
 
 import { v } from "convex/values";
-import { query, mutation } from "./_generated/server";
+import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
 
 // ============================================================================
 // Orchestration Task Queries
@@ -475,6 +475,184 @@ export const upsertProviderHealth = mutation({
       lastError: args.lastError,
       lastCheck: now,
       teamId: args.teamId,
+    });
+  },
+});
+
+// ============================================================================
+// Internal Worker Functions (for background orchestration worker)
+// ============================================================================
+
+/**
+ * Atomic claim of a task by the background worker.
+ * Only claims if task is in pending status.
+ */
+export const claimTask = internalMutation({
+  args: {
+    taskId: v.id("orchestrationTasks"),
+    agentName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.taskId);
+    if (!task || task.status !== "pending") {
+      return false;
+    }
+
+    await ctx.db.patch(args.taskId, {
+      status: "assigned",
+      assignedAgentName: args.agentName,
+      assignedAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    return true;
+  },
+});
+
+/**
+ * Release a task back to pending state (on failure before spawn).
+ */
+export const releaseTask = internalMutation({
+  args: {
+    taskId: v.id("orchestrationTasks"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.taskId, {
+      status: "pending",
+      assignedAgentName: undefined,
+      assignedAt: undefined,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+/**
+ * Schedule a retry with exponential backoff.
+ * After max retries, marks task as permanently failed.
+ */
+export const scheduleRetry = internalMutation({
+  args: {
+    taskId: v.id("orchestrationTasks"),
+    errorMessage: v.string(),
+    maxRetries: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.taskId);
+    if (!task) return;
+
+    const maxRetries = args.maxRetries ?? 3;
+    const currentRetry = (task.retryCount ?? 0) + 1;
+
+    if (currentRetry > maxRetries) {
+      // Exceeded max retries - fail permanently
+      await ctx.db.patch(args.taskId, {
+        status: "failed",
+        errorMessage: args.errorMessage,
+        retryCount: currentRetry,
+        completedAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      return;
+    }
+
+    // Exponential backoff: 30s * 2^retryCount, max 5min
+    const backoffMs = Math.min(30000 * Math.pow(2, currentRetry - 1), 300000);
+
+    await ctx.db.patch(args.taskId, {
+      status: "pending",
+      assignedAgentName: undefined,
+      assignedAt: undefined,
+      retryCount: currentRetry,
+      lastRetryAt: Date.now(),
+      nextRetryAfter: Date.now() + backoffMs,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+/**
+ * Count running and assigned tasks for a team.
+ * Used to enforce concurrent spawn limits.
+ */
+export const countRunningTasks = internalQuery({
+  args: {
+    teamId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const running = await ctx.db
+      .query("orchestrationTasks")
+      .withIndex("by_team_status", (q) =>
+        q.eq("teamId", args.teamId).eq("status", "running")
+      )
+      .collect();
+
+    const assigned = await ctx.db
+      .query("orchestrationTasks")
+      .withIndex("by_team_status", (q) =>
+        q.eq("teamId", args.teamId).eq("status", "assigned")
+      )
+      .collect();
+
+    return running.length + assigned.length;
+  },
+});
+
+/**
+ * Get ready tasks for internal worker use.
+ * Includes nextRetryAfter field for backoff filtering.
+ */
+export const getReadyTasksInternal = internalQuery({
+  args: {
+    teamId: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, { teamId, limit = 10 }) => {
+    const pendingTasks = await ctx.db
+      .query("orchestrationTasks")
+      .withIndex("by_team_status", (q) =>
+        q.eq("teamId", teamId).eq("status", "pending")
+      )
+      .order("asc")
+      .take(100);
+
+    // Filter to tasks with no dependencies or all dependencies completed
+    const readyTasks = [];
+    for (const task of pendingTasks) {
+      if (!task.dependencies || task.dependencies.length === 0) {
+        readyTasks.push(task);
+        continue;
+      }
+
+      // Check if all dependencies are completed
+      const deps = await Promise.all(
+        task.dependencies.map((id) => ctx.db.get(id))
+      );
+      const allCompleted = deps.every((dep) => dep?.status === "completed");
+
+      if (allCompleted) {
+        readyTasks.push(task);
+      }
+
+      if (readyTasks.length >= limit) break;
+    }
+
+    return readyTasks;
+  },
+});
+
+/**
+ * Internal version of startTask for worker use.
+ */
+export const startTaskInternal = internalMutation({
+  args: {
+    taskId: v.id("orchestrationTasks"),
+  },
+  handler: async (ctx, { taskId }) => {
+    const now = Date.now();
+    await ctx.db.patch(taskId, {
+      status: "running",
+      startedAt: now,
+      updatedAt: now,
     });
   },
 });
