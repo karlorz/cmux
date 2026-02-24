@@ -491,22 +491,49 @@ function DashboardComponent() {
     [reposByOrgQuery.data]
   );
 
-  // Fetch model preferences (user-disabled models) for filtering agent picker
-  const modelPreferencesQuery = useQuery(
-    convexQuery(api.modelPreferences.get, { teamSlugOrId })
-  );
-  const disabledByUserModels = useMemo(() => {
-    const disabledModels = modelPreferencesQuery.data?.disabledModels;
-    return disabledModels && disabledModels.length > 0
-      ? new Set(disabledModels)
-      : undefined;
-  }, [modelPreferencesQuery.data?.disabledModels]);
+  // Note: modelPreferences was removed as Settings > Models now uses the global
+  // models.enabled field directly. Model filtering is done by:
+  // 1. models.listAvailable - returns only enabled models with required API keys
+  // 2. entry.disabled - catalog-level disabled flag for deprecated models
+  const disabledByUserModels = undefined;
 
   // Fetch available models from Convex (filtered by API keys, includes runtime-discovered models)
   const convexModelsQuery = useQuery(
     convexQuery(api.models.listAvailable, { teamSlugOrId })
   );
   const convexModels = convexModelsQuery.data ?? null;
+
+  // Auto-seed models if none exist (self-healing mechanism)
+  const ensureModelsSeeded = useAction(api.modelDiscovery.ensureModelsSeeded);
+  const hasTriedSeeding = useRef(false);
+  useEffect(() => {
+    // Only try seeding once per component mount
+    if (hasTriedSeeding.current) return;
+    // Wait for query to complete
+    if (convexModelsQuery.isLoading) return;
+    // If we have models, no need to seed
+    if (convexModels && convexModels.length > 0) return;
+
+    // No models found - trigger seeding
+    hasTriedSeeding.current = true;
+    console.log("[Dashboard] No models found, triggering auto-seed...");
+    ensureModelsSeeded({ teamSlugOrId })
+      .then((result) => {
+        if (result.seeded) {
+          console.log(`[Dashboard] Auto-seeded ${result.count} models`);
+          // Refetch models list to update UI after seeding
+          convexModelsQuery.refetch();
+        }
+      })
+      .catch((error) => {
+        console.error("[Dashboard] Auto-seed failed:", error);
+      });
+  }, [
+    convexModels,
+    convexModelsQuery,
+    ensureModelsSeeded,
+    teamSlugOrId,
+  ]);
 
   const availableAgentNames = useMemo(() => {
     if (!convexModels) {
@@ -530,18 +557,13 @@ function DashboardComponent() {
 
   const normalizeAgentSelection = useCallback(
     (agents: string[]): string[] => {
-      const withoutUserDisabled =
-        disabledByUserModels && disabledByUserModels.size > 0
-          ? agents.filter((agent) => !disabledByUserModels.has(agent))
-          : agents;
-
       if (!availableAgentNames) {
-        return withoutUserDisabled;
+        return agents;
       }
 
-      return withoutUserDisabled.filter((agent) => availableAgentNames.has(agent));
+      return agents.filter((agent) => availableAgentNames.has(agent));
     },
-    [availableAgentNames, disabledByUserModels]
+    [availableAgentNames]
   );
 
   const persistAgentSelection = useCallback(
@@ -897,6 +919,12 @@ function DashboardComponent() {
       // Determine which agents to spawn
       const agentsToSpawn =
         selectedAgents.length > 0 ? selectedAgents : defaultAgentSelection;
+
+      // Guard against creating tasks with no agents
+      if (agentsToSpawn.length === 0) {
+        toast.error("No agents available. Configure API keys in Settings.");
+        return;
+      }
 
       // Create task in Convex with storage IDs and task runs atomically
       // Note: isCloudWorkspace is NOT set here - that's only for standalone workspaces without agents.

@@ -190,7 +190,7 @@ export const DashboardInputControls = memo(function DashboardInputControls({
       disabled?: boolean;
     }> = convexModels ?? [];
 
-    // Filter out agents disabled by user in Settings > Models
+    // Filter out agents disabled by user in Settings > Models (legacy - now unused)
     const enabledModels = disabledByUserModels
       ? baseModels.filter((entry) => !disabledByUserModels.has(entry.name))
       : baseModels;
@@ -214,25 +214,30 @@ export const DashboardInputControls = memo(function DashboardInputControls({
     };
 
     // Define vendor order for consistent grouping
+    // This matches the order in AGENT_CATALOG: anthropic, openai, amp, opencode, google, qwen, cursor
     const vendorOrder: Record<string, number> = {
       anthropic: 0,
       openai: 1,
-      google: 2,
+      amp: 2,
       opencode: 3,
-      qwen: 4,
-      cursor: 5,
-      amp: 6,
+      google: 4,
+      qwen: 5,
+      cursor: 6,
       xai: 7,
       openrouter: 8,
       other: 99,
     };
 
-    // Sort models by vendor order, then by displayName within each vendor
+    // Sort models by vendor group first, then by sortOrder within each vendor
+    // This ensures models are grouped by vendor but respects the catalog order within each group
     const sortedModels = [...activeModels].sort((a, b) => {
       const vendorA = vendorOrder[a.vendor] ?? 99;
       const vendorB = vendorOrder[b.vendor] ?? 99;
       if (vendorA !== vendorB) return vendorA - vendorB;
-      return a.displayName.localeCompare(b.displayName);
+      // Within same vendor, sort by sortOrder (from database)
+      const orderA = "sortOrder" in a ? (a as ConvexModelEntry).sortOrder : 999;
+      const orderB = "sortOrder" in b ? (b as ConvexModelEntry).sortOrder : 999;
+      return orderA - orderB;
     });
 
     const options = sortedModels.map((entry) => {

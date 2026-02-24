@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query, internalMutation } from "./_generated/server";
+import { query, internalMutation, internalQuery } from "./_generated/server";
 import { authMutation, authQuery } from "./users/utils";
 import { resolveTeamIdLoose } from "../_shared/team";
 
@@ -46,12 +46,14 @@ export const listAvailable = authQuery({
   handler: async (ctx, args) => {
     // Verify user has access to the team and get teamId
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    console.log(`[listAvailable] teamSlugOrId=${args.teamSlugOrId}, resolved teamId=${teamId}`);
 
     // Get enabled models from database
     const models = await ctx.db
       .query("models")
       .withIndex("by_enabled", (q) => q.eq("enabled", true))
       .collect();
+    console.log(`[listAvailable] Found ${models.length} enabled models`);
 
     // If showAll is true, return all enabled models without filtering
     if (args.showAll) {
@@ -63,6 +65,7 @@ export const listAvailable = authQuery({
       .query("apiKeys")
       .withIndex("by_team", (q) => q.eq("teamId", teamId))
       .collect();
+    console.log(`[listAvailable] Found ${apiKeys.length} API keys for team: ${apiKeys.map(k => k.envVar).join(", ")}`);
 
     const configuredKeyEnvVars = new Set(apiKeys.map((k) => k.envVar));
 
@@ -77,6 +80,13 @@ export const listAvailable = authQuery({
       return model.requiredApiKeys.some((key) => configuredKeyEnvVars.has(key));
     });
 
+    // Log Claude models filtering for debugging
+    const claudeModels = models.filter((m) => m.name.startsWith("claude/"));
+    console.log(`[listAvailable] Claude models in DB: ${claudeModels.map(m => `${m.name}(keys: ${m.requiredApiKeys?.join(",") || "none"})`).join(", ")}`);
+    const claudeAvailable = availableModels.filter((m) => m.name.startsWith("claude/"));
+    console.log(`[listAvailable] Claude models available after filtering: ${claudeAvailable.length}`);
+
+    console.log(`[listAvailable] Returning ${availableModels.length} available models`);
     return availableModels.sort((a, b) => a.sortOrder - b.sortOrder);
   },
 });
@@ -279,21 +289,33 @@ export const bulkUpsert = internalMutation({
     const existingModels = await ctx.db.query("models").collect();
     const existingByName = new Map(existingModels.map((m) => [m.name, m]));
 
+    console.log(`[bulkUpsert] Processing ${args.models.length} models, ${existingModels.length} existing in DB`);
+
     let maxSortOrder = existingModels.reduce(
       (max, m) => Math.max(max, m.sortOrder),
       -1
     );
 
     const results: string[] = [];
+    let insertCount = 0;
+    let updateCount = 0;
 
     for (const model of args.models) {
       const existing = existingByName.get(model.name);
 
       if (existing) {
+        console.log(`[bulkUpsert] UPDATING existing: ${model.name} (existing _id: ${existing._id})`);
         // Update existing
         // Auto-enable free discovered models that are currently disabled
-        const shouldEnable =
+        const shouldEnableFree =
           model.tier === "free" && model.enabled === true && !existing.enabled;
+        // Curated models should enable and take over source from discovered
+        const isCuratedTakeover =
+          model.source === "curated" && existing.source === "discovered";
+        // Only enable curated models during takeover from discovered (not unconditionally)
+        // This preserves user's decision to disable a curated model
+        const shouldEnableCurated =
+          isCuratedTakeover && !model.disabled;
         await ctx.db.patch(existing._id, {
           displayName: model.displayName,
           vendor: model.vendor,
@@ -304,15 +326,19 @@ export const bulkUpsert = internalMutation({
           disabledReason: model.disabledReason,
           variants: model.variants,
           defaultVariant: model.defaultVariant,
+          // Update source when curated takes over from discovered
+          ...(isCuratedTakeover ? { source: "curated" } : {}),
           ...(model.source === "discovered" && model.discoveredAt
             ? { discoveredAt: model.discoveredAt }
             : {}),
-          ...(shouldEnable ? { enabled: true } : {}),
+          ...(shouldEnableFree || shouldEnableCurated ? { enabled: true } : {}),
           updatedAt: now,
         });
         results.push(existing._id);
+        updateCount++;
       } else {
         // Insert new
+        console.log(`[bulkUpsert] INSERTING new model: ${model.name} (source: ${model.source})`);
         maxSortOrder++;
         const sortOrder = model.sortOrder ?? maxSortOrder;
         const enabled = model.enabled ?? (model.source === "curated");
@@ -337,9 +363,11 @@ export const bulkUpsert = internalMutation({
           updatedAt: now,
         });
         results.push(id);
+        insertCount++;
       }
     }
 
+    console.log(`[bulkUpsert] Done: ${insertCount} inserted, ${updateCount} updated`);
     return { upsertedCount: results.length };
   },
 });
@@ -394,5 +422,23 @@ export const deleteStale = internalMutation({
       deletedCount: modelsToDelete.length,
       deletedNames: modelsToDelete.map((m) => m.name),
     };
+  },
+});
+
+/**
+ * Internal query: check if curated models need seeding.
+ * Returns true if there are no curated models in the database.
+ * Used by listAvailable to trigger auto-seeding.
+ */
+export const needsSeeding = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    // Check if any curated models exist
+    const curatedModel = await ctx.db
+      .query("models")
+      .filter((q) => q.eq(q.field("source"), "curated"))
+      .first();
+
+    return curatedModel === null;
   },
 });

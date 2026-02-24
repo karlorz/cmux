@@ -5,9 +5,9 @@ import type { AgentVendor } from "@cmux/shared/agent-catalog";
 import { Switch, Button, Spinner } from "@heroui/react";
 import { convexQuery } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useConvex } from "convex/react";
+import { useAction, useConvex } from "convex/react";
 import { GripVertical, RefreshCw, Search, Database, Zap } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { cachedGetUser } from "@/lib/cachedGetUser";
 import { stackClientApp } from "@/lib/stack";
@@ -70,6 +70,32 @@ export function ModelCatalogSection({
   const { data: models, refetch: refetchModels, isLoading } = useQuery(
     convexQuery(api.models.listAll, { teamSlugOrId })
   );
+
+  // Auto-seed models if none exist (self-healing mechanism)
+  const ensureModelsSeeded = useAction(api.modelDiscovery.ensureModelsSeeded);
+  const hasTriedSeeding = useRef(false);
+  useEffect(() => {
+    // Only try seeding once per component mount
+    if (hasTriedSeeding.current) return;
+    // Wait for query to complete
+    if (isLoading) return;
+    // If we have models, no need to seed
+    if (models && models.length > 0) return;
+
+    // No models found - trigger seeding
+    hasTriedSeeding.current = true;
+    console.log("[ModelCatalogSection] No models found, triggering auto-seed...");
+    ensureModelsSeeded({ teamSlugOrId })
+      .then((result) => {
+        if (result.seeded) {
+          console.log(`[ModelCatalogSection] Auto-seeded ${result.count} models`);
+          void refetchModels();
+        }
+      })
+      .catch((error) => {
+        console.error("[ModelCatalogSection] Auto-seed failed:", error);
+      });
+  }, [models, isLoading, ensureModelsSeeded, teamSlugOrId, refetchModels]);
 
   // Query API keys to determine model availability
   const { data: apiKeys } = useQuery(
