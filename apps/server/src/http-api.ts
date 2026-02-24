@@ -350,6 +350,8 @@ interface OrchestrationSpawnRequest {
   prTitle?: string;
   environmentId?: string;
   isCloudMode?: boolean;
+  dependsOn?: string[];  // Orchestration task IDs this task depends on
+  priority?: number;     // Task priority (1=highest, 10=lowest, default 5)
 }
 
 interface OrchestrationSpawnResponse {
@@ -386,7 +388,7 @@ async function handleOrchestrationSpawn(
     return;
   }
 
-  const { teamSlugOrId, prompt, agent, repo, branch, prTitle, environmentId, isCloudMode = true } = body;
+  const { teamSlugOrId, prompt, agent, repo, branch, prTitle, environmentId, isCloudMode = true, dependsOn, priority } = body;
 
   if (!teamSlugOrId || !prompt || !agent) {
     jsonResponse(res, 400, { error: "Missing required fields: teamSlugOrId, prompt, agent" });
@@ -438,13 +440,19 @@ async function handleOrchestrationSpawn(
       const taskRunId = taskRunResult.taskRunId;
 
       // Create orchestration task record
+      // Convert dependsOn string IDs to Convex IDs if provided
+      const dependencyIds = dependsOn?.length
+        ? dependsOn.map((id) => id as Id<"orchestrationTasks">)
+        : undefined;
+
       const orchestrationTaskId = await getConvex().mutation(api.orchestrationQueries.createTask, {
         teamId,
         userId,
         prompt,
         taskId,
         taskRunId,
-        priority: 5,
+        priority: priority ?? 5,
+        dependencies: dependencyIds,
       });
 
       // Spawn the agent using existing infrastructure

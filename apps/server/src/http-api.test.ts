@@ -252,4 +252,382 @@ describe("HTTP API - apps/server", () => {
       expect(apiNames).toEqual(catalogNames);
     });
   });
+
+  // ==========================================================================
+  // Orchestration API Tests
+  // ==========================================================================
+
+  describe("Orchestration API", () => {
+    describe("POST /api/orchestrate/spawn", () => {
+      it("rejects unauthorized requests", async () => {
+        if (!serverAvailable) {
+          console.log("Server not running - skipping test");
+          return;
+        }
+
+        const response = await safeFetch(`${SERVER_URL}/api/orchestrate/spawn`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            teamSlugOrId: "dev",
+            agent: "claude/haiku-4.5",
+            prompt: "test prompt",
+          }),
+        });
+
+        expect(response).not.toBeNull();
+        expect(response!.status).toBe(401);
+      });
+
+      it("validates required fields", async () => {
+        if (!serverAvailable) {
+          console.log("Server not running - skipping test");
+          return;
+        }
+
+        const response = await safeFetch(`${SERVER_URL}/api/orchestrate/spawn`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer fake_token",
+          },
+          body: JSON.stringify({ teamSlugOrId: "dev" }), // missing agent and prompt
+        });
+
+        expect(response).not.toBeNull();
+        expect(response!.status).toBe(400);
+        const data = await response!.json();
+        expect(data.error).toContain("Missing required fields");
+      });
+
+      it("rejects invalid JSON body", async () => {
+        if (!serverAvailable) {
+          console.log("Server not running - skipping test");
+          return;
+        }
+
+        const response = await safeFetch(`${SERVER_URL}/api/orchestrate/spawn`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer fake_token",
+          },
+          body: "not json",
+        });
+
+        expect(response).not.toBeNull();
+        expect(response!.status).toBe(400);
+      });
+    });
+
+    describe("GET /api/orchestrate/list", () => {
+      it("rejects unauthorized requests", async () => {
+        if (!serverAvailable) {
+          console.log("Server not running - skipping test");
+          return;
+        }
+
+        const response = await safeFetch(
+          `${SERVER_URL}/api/orchestrate/list?teamSlugOrId=dev`,
+        );
+
+        expect(response).not.toBeNull();
+        expect(response!.status).toBe(401);
+      });
+
+      it("requires teamSlugOrId query parameter", async () => {
+        if (!serverAvailable) {
+          console.log("Server not running - skipping test");
+          return;
+        }
+
+        const response = await safeFetch(`${SERVER_URL}/api/orchestrate/list`, {
+          headers: { Authorization: "Bearer fake_token" },
+        });
+
+        expect(response).not.toBeNull();
+        expect(response!.status).toBe(400);
+        const data = await response!.json();
+        expect(data.error).toContain("teamSlugOrId");
+      });
+    });
+
+    describe("GET /api/orchestrate/status/:id", () => {
+      it("rejects unauthorized requests", async () => {
+        if (!serverAvailable) {
+          console.log("Server not running - skipping test");
+          return;
+        }
+
+        const response = await safeFetch(
+          `${SERVER_URL}/api/orchestrate/status/invalid_id_123?teamSlugOrId=dev`,
+        );
+
+        expect(response).not.toBeNull();
+        expect(response!.status).toBe(401);
+      });
+
+      it("returns error for invalid orchestration task ID", async () => {
+        if (!serverAvailable) {
+          console.log("Server not running - skipping test");
+          return;
+        }
+
+        const response = await safeFetch(
+          `${SERVER_URL}/api/orchestrate/status/invalid_id_123?teamSlugOrId=dev`,
+          { headers: { Authorization: "Bearer fake_token" } },
+        );
+
+        expect(response).not.toBeNull();
+        // Expect either 401 (invalid token) or 500 (not found error)
+        expect([401, 500]).toContain(response!.status);
+      });
+
+      it("requires teamSlugOrId query parameter", async () => {
+        if (!serverAvailable) {
+          console.log("Server not running - skipping test");
+          return;
+        }
+
+        const response = await safeFetch(
+          `${SERVER_URL}/api/orchestrate/status/some_id`,
+          { headers: { Authorization: "Bearer fake_token" } },
+        );
+
+        expect(response).not.toBeNull();
+        expect(response!.status).toBe(400);
+        const data = await response!.json();
+        expect(data.error).toContain("teamSlugOrId");
+      });
+    });
+
+    describe("POST /api/orchestrate/cancel/:id", () => {
+      it("rejects unauthorized requests", async () => {
+        if (!serverAvailable) {
+          console.log("Server not running - skipping test");
+          return;
+        }
+
+        const response = await safeFetch(
+          `${SERVER_URL}/api/orchestrate/cancel/invalid_id_123`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ teamSlugOrId: "dev" }),
+          },
+        );
+
+        expect(response).not.toBeNull();
+        expect(response!.status).toBe(401);
+      });
+
+      it("requires teamSlugOrId in body", async () => {
+        if (!serverAvailable) {
+          console.log("Server not running - skipping test");
+          return;
+        }
+
+        const response = await safeFetch(
+          `${SERVER_URL}/api/orchestrate/cancel/some_id`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: "Bearer fake_token",
+            },
+            body: JSON.stringify({}),
+          },
+        );
+
+        expect(response).not.toBeNull();
+        expect(response!.status).toBe(400);
+        const data = await response!.json();
+        expect(data.error).toContain("teamSlugOrId");
+      });
+    });
+
+    describe("POST /api/orchestrate/migrate", () => {
+      it("rejects unauthorized requests", async () => {
+        if (!serverAvailable) {
+          console.log("Server not running - skipping test");
+          return;
+        }
+
+        const response = await safeFetch(
+          `${SERVER_URL}/api/orchestrate/migrate`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              teamSlugOrId: "dev",
+              planJson: JSON.stringify({ headAgent: "claude/haiku-4.5" }),
+            }),
+          },
+        );
+
+        expect(response).not.toBeNull();
+        expect(response!.status).toBe(401);
+      });
+
+      it("validates required fields", async () => {
+        if (!serverAvailable) {
+          console.log("Server not running - skipping test");
+          return;
+        }
+
+        const response = await safeFetch(
+          `${SERVER_URL}/api/orchestrate/migrate`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: "Bearer fake_token",
+            },
+            body: JSON.stringify({ teamSlugOrId: "dev" }), // missing planJson
+          },
+        );
+
+        expect(response).not.toBeNull();
+        expect(response!.status).toBe(400);
+        const data = await response!.json();
+        expect(data.error).toContain("Missing required fields");
+      });
+
+      it("rejects invalid planJson", async () => {
+        if (!serverAvailable) {
+          console.log("Server not running - skipping test");
+          return;
+        }
+
+        const response = await safeFetch(
+          `${SERVER_URL}/api/orchestrate/migrate`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: "Bearer fake_token",
+            },
+            body: JSON.stringify({
+              teamSlugOrId: "dev",
+              planJson: "not valid json",
+            }),
+          },
+        );
+
+        expect(response).not.toBeNull();
+        expect(response!.status).toBe(400);
+        const data = await response!.json();
+        expect(data.error).toContain("planJson");
+      });
+
+      it("requires headAgent in plan or request", async () => {
+        if (!serverAvailable) {
+          console.log("Server not running - skipping test");
+          return;
+        }
+
+        const response = await safeFetch(
+          `${SERVER_URL}/api/orchestrate/migrate`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: "Bearer fake_token",
+            },
+            body: JSON.stringify({
+              teamSlugOrId: "dev",
+              planJson: JSON.stringify({ description: "no head agent" }),
+            }),
+          },
+        );
+
+        expect(response).not.toBeNull();
+        expect(response!.status).toBe(400);
+        const data = await response!.json();
+        expect(data.error).toContain("headAgent");
+      });
+    });
+
+    describe("POST /api/orchestrate/internal/spawn", () => {
+      it("rejects requests without internal secret", async () => {
+        if (!serverAvailable) {
+          console.log("Server not running - skipping test");
+          return;
+        }
+
+        const response = await safeFetch(
+          `${SERVER_URL}/api/orchestrate/internal/spawn`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              orchestrationTaskId: "test",
+              teamId: "test",
+              agentName: "claude/haiku-4.5",
+              prompt: "test",
+              taskId: "test",
+              taskRunId: "test",
+            }),
+          },
+        );
+
+        expect(response).not.toBeNull();
+        expect(response!.status).toBe(401);
+      });
+
+      it("rejects requests with wrong internal secret", async () => {
+        if (!serverAvailable) {
+          console.log("Server not running - skipping test");
+          return;
+        }
+
+        const response = await safeFetch(
+          `${SERVER_URL}/api/orchestrate/internal/spawn`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-internal-secret": "wrong_secret",
+            },
+            body: JSON.stringify({
+              orchestrationTaskId: "test",
+              teamId: "test",
+              agentName: "claude/haiku-4.5",
+              prompt: "test",
+              taskId: "test",
+              taskRunId: "test",
+            }),
+          },
+        );
+
+        expect(response).not.toBeNull();
+        expect(response!.status).toBe(401);
+      });
+
+      it("validates required fields", async () => {
+        if (!serverAvailable) {
+          console.log("Server not running - skipping test");
+          return;
+        }
+
+        // Even with a valid secret, missing fields should return 400
+        // This test documents expected behavior
+        const response = await safeFetch(
+          `${SERVER_URL}/api/orchestrate/internal/spawn`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-internal-secret": "any_secret", // will fail auth first
+            },
+            body: JSON.stringify({}), // missing all required fields
+          },
+        );
+
+        expect(response).not.toBeNull();
+        // Will fail at auth (401) before field validation (400)
+        expect([400, 401]).toContain(response!.status);
+      });
+    });
+  });
 });

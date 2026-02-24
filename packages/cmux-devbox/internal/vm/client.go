@@ -1325,6 +1325,8 @@ type OrchestrationSpawnOptions struct {
 	PRTitle       string
 	EnvironmentID string
 	IsCloudMode   bool
+	DependsOn     []string // Orchestration task IDs this task depends on
+	Priority      int      // Task priority (1=highest, 10=lowest, default 5)
 }
 
 // OrchestrationSpawnResult represents the result of spawning an agent with orchestration
@@ -1392,6 +1394,12 @@ func (c *Client) OrchestrationSpawn(ctx context.Context, opts OrchestrationSpawn
 	}
 	if opts.EnvironmentID != "" {
 		body["environmentId"] = opts.EnvironmentID
+	}
+	if len(opts.DependsOn) > 0 {
+		body["dependsOn"] = opts.DependsOn
+	}
+	if opts.Priority != 0 {
+		body["priority"] = opts.Priority
 	}
 
 	resp, err := c.doServerRequest(ctx, "POST", "/api/orchestrate/spawn", body)

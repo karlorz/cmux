@@ -9,6 +9,7 @@
 
 import { v } from "convex/values";
 import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 
 // ============================================================================
 // Orchestration Task Queries
@@ -279,6 +280,7 @@ export const startTask = mutation({
 
 /**
  * Complete a task successfully.
+ * After completion, schedules immediate triggering of dependent tasks.
  */
 export const completeTask = mutation({
   args: {
@@ -293,6 +295,56 @@ export const completeTask = mutation({
       completedAt: now,
       updatedAt: now,
     });
+
+    // Schedule immediate triggering of dependent tasks (0ms delay = immediate)
+    await ctx.scheduler.runAfter(0, internal.orchestrationQueries.triggerDependentTasks, {
+      completedTaskId: taskId,
+    });
+  },
+});
+
+/**
+ * Internal mutation to trigger dependent tasks after a task completes.
+ * Sets nextRetryAfter = now for immediate pickup by the orchestration worker.
+ */
+export const triggerDependentTasks = internalMutation({
+  args: {
+    completedTaskId: v.id("orchestrationTasks"),
+  },
+  handler: async (ctx, { completedTaskId }) => {
+    const completedTask = await ctx.db.get(completedTaskId);
+    if (!completedTask?.dependents || completedTask.dependents.length === 0) {
+      return;
+    }
+
+    const now = Date.now();
+
+    // Check each dependent task
+    for (const dependentId of completedTask.dependents) {
+      const dependent = await ctx.db.get(dependentId);
+      if (!dependent || dependent.status !== "pending") {
+        continue;
+      }
+
+      // Check if all dependencies are now completed
+      if (dependent.dependencies && dependent.dependencies.length > 0) {
+        const deps = await Promise.all(
+          dependent.dependencies.map((id) => ctx.db.get(id))
+        );
+        const allCompleted = deps.every((dep) => dep?.status === "completed");
+
+        if (!allCompleted) {
+          // Still waiting on other dependencies
+          continue;
+        }
+      }
+
+      // All dependencies are complete - set nextRetryAfter to now for immediate pickup
+      await ctx.db.patch(dependentId, {
+        nextRetryAfter: now,
+        updatedAt: now,
+      });
+    }
   },
 });
 

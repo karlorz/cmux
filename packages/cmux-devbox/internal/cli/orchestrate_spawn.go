@@ -16,6 +16,8 @@ var orchestrateSpawnAgent string
 var orchestrateSpawnRepo string
 var orchestrateSpawnBranch string
 var orchestrateSpawnPRTitle string
+var orchestrateSpawnDependsOn []string
+var orchestrateSpawnPriority int
 
 var orchestrateSpawnCmd = &cobra.Command{
 	Use:   "spawn <prompt>",
@@ -29,7 +31,9 @@ then spawns the agent using the standard spawn flow.
 Examples:
   cmux orchestrate spawn --agent claude/haiku-4.5 --repo owner/repo "Add tests"
   cmux orchestrate spawn --agent codex/gpt-5.1-codex-mini "Fix the bug"
-  cmux orchestrate spawn --agent claude/opus-4.5 --repo owner/repo --pr-title "Fix: auth bug" "Fix auth"`,
+  cmux orchestrate spawn --agent claude/opus-4.5 --repo owner/repo --pr-title "Fix: auth bug" "Fix auth"
+  cmux orchestrate spawn --agent claude/haiku-4.5 --depends-on <task-id> "Task B depends on A"
+  cmux orchestrate spawn --agent claude/haiku-4.5 --priority 1 "High priority task"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		prompt := args[0]
@@ -58,6 +62,8 @@ Examples:
 			Repo:        orchestrateSpawnRepo,
 			Branch:      orchestrateSpawnBranch,
 			PRTitle:     orchestrateSpawnPRTitle,
+			DependsOn:   orchestrateSpawnDependsOn,
+			Priority:    orchestrateSpawnPriority,
 			IsCloudMode: true,
 		})
 		if err != nil {
@@ -90,5 +96,7 @@ func init() {
 	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnRepo, "repo", "", "Repository (owner/repo format)")
 	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnBranch, "branch", "", "Base branch")
 	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnPRTitle, "pr-title", "", "Pull request title")
+	orchestrateSpawnCmd.Flags().StringSliceVar(&orchestrateSpawnDependsOn, "depends-on", nil, "Orchestration task IDs this task depends on (can be specified multiple times)")
+	orchestrateSpawnCmd.Flags().IntVar(&orchestrateSpawnPriority, "priority", 5, "Task priority (1=highest, 10=lowest, default 5)")
 	orchestrateCmd.AddCommand(orchestrateSpawnCmd)
 }
