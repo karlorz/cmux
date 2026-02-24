@@ -105,21 +105,14 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/dashboard")({
 
 // Default agents (not persisted to localStorage)
 const DEFAULT_AGENTS = ["claude/opus-4.6", "codex/gpt-5.3-codex-xhigh"];
-const KNOWN_AGENT_NAMES = new Set(AGENT_CATALOG.map((entry) => entry.name));
-const DISABLED_AGENT_NAMES = new Set(
+
+// Static fallback for initial render before Convex models load
+const STATIC_KNOWN_AGENT_NAMES = new Set(AGENT_CATALOG.map((entry) => entry.name));
+const STATIC_DISABLED_AGENT_NAMES = new Set(
   AGENT_CATALOG.filter((entry) => entry.disabled).map((entry) => entry.name)
-);
-const DEFAULT_AGENT_SELECTION = DEFAULT_AGENTS.filter(
-  (agent) => KNOWN_AGENT_NAMES.has(agent) && !DISABLED_AGENT_NAMES.has(agent)
 );
 
 const AGENT_SELECTION_SCHEMA = z.array(z.string());
-
-// Filter to known agents and exclude disabled ones
-const filterKnownAgents = (agents: string[]): string[] =>
-  agents.filter(
-    (agent) => KNOWN_AGENT_NAMES.has(agent) && !DISABLED_AGENT_NAMES.has(agent)
-  );
 
 const parseStoredAgentSelection = (stored: string | null): string[] => {
   if (!stored) {
@@ -134,7 +127,9 @@ const parseStoredAgentSelection = (stored: string | null): string[] => {
       return [];
     }
 
-    return filterKnownAgents(result.data);
+    // Return raw parsed agents - filtering will happen dynamically in component
+    // when Convex models are available
+    return result.data;
   } catch (error) {
     console.warn("Failed to parse stored agent selection", error);
     return [];
@@ -275,8 +270,13 @@ function DashboardComponent() {
       return storedAgents;
     }
 
-    return DEFAULT_AGENT_SELECTION.length > 0
-      ? [...DEFAULT_AGENT_SELECTION]
+    // Use static fallback for initial default selection
+    const defaultSelection = DEFAULT_AGENTS.filter(
+      (agent) => STATIC_KNOWN_AGENT_NAMES.has(agent) && !STATIC_DISABLED_AGENT_NAMES.has(agent)
+    );
+
+    return defaultSelection.length > 0
+      ? [...defaultSelection]
       : [];
   });
   const selectedAgentsRef = useRef<string[]>(selectedAgents);
@@ -308,25 +308,6 @@ function DashboardComponent() {
 
   // Ref to access editor API
   const editorApiRef = useRef<EditorApi | null>(null);
-
-  const persistAgentSelection = useCallback((agents: string[]) => {
-    try {
-      const isDefaultSelection =
-        DEFAULT_AGENT_SELECTION.length > 0 &&
-        agents.length === DEFAULT_AGENT_SELECTION.length &&
-        agents.every(
-          (agent, index) => agent === DEFAULT_AGENT_SELECTION[index]
-        );
-
-      if (agents.length === 0 || isDefaultSelection) {
-        localStorage.removeItem("selectedAgents");
-      } else {
-        localStorage.setItem("selectedAgents", JSON.stringify(agents));
-      }
-    } catch (error) {
-      console.warn("Failed to persist agent selection", error);
-    }
-  }, []);
 
   // Preselect environment if provided in URL search params
   useEffect(() => {
@@ -513,16 +494,6 @@ function DashboardComponent() {
     setSelectedBranch(newBranches);
   }, []);
 
-  // Callback for agent selection changes
-  const handleAgentChange = useCallback(
-    (newAgents: string[]) => {
-      const normalizedAgents = filterKnownAgents(newAgents);
-      setSelectedAgents(normalizedAgents);
-      persistAgentSelection(normalizedAgents);
-    },
-    [persistAgentSelection, setSelectedAgents]
-  );
-
   // Fetch repos from Convex - use prewarmed cache from route loader
   const reposByOrgQuery = useQuery({
     ...convexQuery(api.github.getReposByOrg, { teamSlugOrId }),
@@ -551,22 +522,78 @@ function DashboardComponent() {
   );
   const convexModels = convexModelsQuery.data ?? null;
 
-  // Prune selectedAgents when user disables models in Settings
-  useEffect(() => {
-    if (!disabledByUserModels || disabledByUserModels.size === 0) return;
+  // Dynamic filter based on Convex models (single source of truth)
+  // Falls back to static AGENT_CATALOG if Convex query hasn't loaded yet
+  const knownAgentNames = useMemo(() => {
+    if (!convexModels) return STATIC_KNOWN_AGENT_NAMES;
+    return new Set(convexModels.map((m) => m.name));
+  }, [convexModels]);
 
+  const disabledAgentNames = useMemo(() => {
+    if (!convexModels) return STATIC_DISABLED_AGENT_NAMES;
+    return new Set(convexModels.filter((m) => m.disabled).map((m) => m.name));
+  }, [convexModels]);
+
+  // Dynamic filter function that uses Convex models as source of truth
+  const filterKnownAgents = useCallback((agents: string[]): string[] =>
+    agents.filter(
+      (agent) => knownAgentNames.has(agent) && !disabledAgentNames.has(agent)
+    ), [knownAgentNames, disabledAgentNames]);
+
+  const persistAgentSelection = useCallback((agents: string[]) => {
+    try {
+      // Check if selection matches defaults (to avoid storing redundant data)
+      const defaultSelection = DEFAULT_AGENTS.filter(
+        (agent) => knownAgentNames.has(agent) && !disabledAgentNames.has(agent)
+      );
+      const isDefaultSelection =
+        defaultSelection.length > 0 &&
+        agents.length === defaultSelection.length &&
+        agents.every(
+          (agent, index) => agent === defaultSelection[index]
+        );
+
+      if (agents.length === 0 || isDefaultSelection) {
+        localStorage.removeItem("selectedAgents");
+      } else {
+        localStorage.setItem("selectedAgents", JSON.stringify(agents));
+      }
+    } catch (error) {
+      console.warn("Failed to persist agent selection", error);
+    }
+  }, [knownAgentNames, disabledAgentNames]);
+
+  // Callback for agent selection changes
+  const handleAgentChange = useCallback(
+    (newAgents: string[]) => {
+      const normalizedAgents = filterKnownAgents(newAgents);
+      setSelectedAgents(normalizedAgents);
+      persistAgentSelection(normalizedAgents);
+    },
+    [filterKnownAgents, persistAgentSelection, setSelectedAgents]
+  );
+
+  // Prune selectedAgents when Convex models load or when user disables models in Settings
+  // This ensures stored selections are validated against the current model list
+  useEffect(() => {
     const currentAgents = selectedAgentsRef.current;
     if (currentAgents.length === 0) return;
 
-    const filteredAgents = currentAgents.filter(
-      (agent) => !disabledByUserModels.has(agent)
-    );
+    // Filter by known models from Convex and exclude disabled ones
+    let filteredAgents = filterKnownAgents(currentAgents);
+
+    // Also filter out models disabled by user in Settings
+    if (disabledByUserModels && disabledByUserModels.size > 0) {
+      filteredAgents = filteredAgents.filter(
+        (agent) => !disabledByUserModels.has(agent)
+      );
+    }
 
     if (filteredAgents.length !== currentAgents.length) {
       setSelectedAgents(filteredAgents);
       persistAgentSelection(filteredAgents);
     }
-  }, [disabledByUserModels, setSelectedAgents, persistAgentSelection]);
+  }, [disabledByUserModels, filterKnownAgents, setSelectedAgents, persistAgentSelection]);
 
   // Socket-based functions to fetch data from GitHub
   // Removed unused fetchRepos function - functionality is handled by Convex queries
@@ -638,7 +665,7 @@ function DashboardComponent() {
         }
       }
     });
-  }, [persistAgentSelection, setDockerReady, setSelectedAgents, socket]);
+  }, [filterKnownAgents, persistAgentSelection, setDockerReady, setSelectedAgents, socket]);
 
   // Mutation to create tasks with optimistic update
   const createTask = useMutation(api.tasks.create).withOptimisticUpdate(
