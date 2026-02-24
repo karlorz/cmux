@@ -20,7 +20,7 @@ import {
 import { WWW_ORIGIN } from "@/lib/wwwOrigin";
 import { api } from "@cmux/convex/api";
 import type { ProviderStatusResponse } from "@cmux/shared";
-import { AGENT_CATALOG, type AgentVendor } from "@cmux/shared/agent-catalog";
+import type { AgentVendor } from "@cmux/shared/agent-catalog";
 import { parseGithubRepoUrl } from "@cmux/shared";
 import { useUser } from "@stackframe/react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -183,14 +183,12 @@ export const DashboardInputControls = memo(function DashboardInputControls({
   const mintState = useMutation(api.github_app.mintInstallState);
   const addManualRepo = useAction(api.github_http.addManualRepo);
   const agentOptions = useMemo<AgentOption[]>(() => {
-    // Use Convex models if available, otherwise fall back to static catalog
-    // Convex models are already filtered by availability (API keys) server-side
     const baseModels: Array<{
       name: string;
       displayName: string;
       vendor: string;
       disabled?: boolean;
-    }> = convexModels ?? AGENT_CATALOG;
+    }> = convexModels ?? [];
 
     // Filter out agents disabled by user in Settings > Models
     const enabledModels = disabledByUserModels
