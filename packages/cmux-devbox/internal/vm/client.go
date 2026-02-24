@@ -1311,3 +1311,25 @@ func (c *Client) GetTaskRunMemory(ctx context.Context, taskRunID string, memoryT
 
 	return &result, nil
 }
+
+// SendOrchestrateMessage sends a message to a running agent via the orchestrate message endpoint
+func (c *Client) SendOrchestrateMessage(ctx context.Context, taskRunID string, message string, messageType string, teamSlugOrId string) error {
+	body := map[string]interface{}{
+		"taskRunId":     taskRunID,
+		"message":       message,
+		"messageType":   messageType,
+		"teamSlugOrId":  teamSlugOrId,
+	}
+
+	resp, err := c.doWwwRequest(ctx, "POST", "/api/orchestrate/message", body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+		return fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	return nil
+}

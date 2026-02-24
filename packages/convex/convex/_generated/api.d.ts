@@ -63,6 +63,7 @@ import type * as models from "../models.js";
 import type * as morphInstanceMaintenance from "../morphInstanceMaintenance.js";
 import type * as morphInstances from "../morphInstances.js";
 import type * as notifications_http from "../notifications_http.js";
+import type * as orchestrate from "../orchestrate.js";
 import type * as previewConfigs from "../previewConfigs.js";
 import type * as previewRuns from "../previewRuns.js";
 import type * as previewScreenshots from "../previewScreenshots.js";
@@ -163,6 +164,7 @@ declare const fullApi: ApiFromModules<{
   morphInstanceMaintenance: typeof morphInstanceMaintenance;
   morphInstances: typeof morphInstances;
   notifications_http: typeof notifications_http;
+  orchestrate: typeof orchestrate;
   previewConfigs: typeof previewConfigs;
   previewRuns: typeof previewRuns;
   previewScreenshots: typeof previewScreenshots;
