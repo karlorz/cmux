@@ -354,3 +354,140 @@ export const triggerRefresh = action({
     };
   },
 });
+
+/**
+ * Internal action: ensure curated models are seeded.
+ * Called automatically when listAvailable detects no curated models.
+ * This is a self-healing mechanism to prevent empty model lists.
+ */
+export const ensureCuratedModelsSeeded = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ seeded: boolean; count: number }> => {
+    // Check if seeding is needed
+    const needsSeeding = await ctx.runQuery(internal.models.needsSeeding, {});
+
+    if (!needsSeeding) {
+      return { seeded: false, count: 0 };
+    }
+
+    console.log(
+      "[modelDiscovery] No curated models found, auto-seeding from AGENT_CATALOG..."
+    );
+
+    // Run the standard seeding
+    const result = await ctx.runAction(
+      internal.modelDiscovery.seedCuratedModels,
+      {}
+    );
+
+    console.log(
+      `[modelDiscovery] Auto-seeded ${result.seededCount} curated models`
+    );
+
+    return { seeded: true, count: result.seededCount };
+  },
+});
+
+/**
+ * Public action: ensure curated models are seeded (for frontend use).
+ * Call this before querying models to ensure the database is populated.
+ * Idempotent - safe to call multiple times.
+ */
+export const ensureModelsSeeded = action({
+  args: { teamSlugOrId: v.string() },
+  handler: async (
+    ctx,
+    _args
+  ): Promise<{
+    seeded: boolean;
+    count: number;
+    discovered: boolean;
+    discoveredCount: number;
+  }> => {
+    // Require authentication
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Authentication required");
+    }
+
+    // Ensure curated models are seeded
+    const seedResult = await ctx.runAction(
+      internal.modelDiscovery.ensureCuratedModelsSeeded,
+      {}
+    );
+
+    // Also ensure discovered models exist (auto-discovery on first deployment)
+    // Wrap in try/catch to prevent discovery failures from breaking the entire seeding flow
+    let discoverResult = { discovered: false, count: 0 };
+    try {
+      discoverResult = await ctx.runAction(
+        internal.modelDiscovery.ensureDiscoveredModels,
+        {}
+      );
+    } catch (error) {
+      console.error("[modelDiscovery] Discovery failed (continuing with curated models):", error);
+    }
+
+    return {
+      seeded: seedResult.seeded || discoverResult.discovered,
+      count: seedResult.count,
+      discovered: discoverResult.discovered,
+      discoveredCount: discoverResult.count,
+    };
+  },
+});
+
+/**
+ * Internal action: ensure discovered models exist.
+ * Called automatically when no discovered models are found.
+ * This handles auto-discovery on first deployment.
+ */
+export const ensureDiscoveredModels = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ discovered: boolean; count: number }> => {
+    // Check if discovery is needed
+    const needsDiscovery = await ctx.runQuery(internal.models.needsDiscovery, {});
+
+    if (!needsDiscovery) {
+      return { discovered: false, count: 0 };
+    }
+
+    console.log(
+      "[modelDiscovery] No discovered models found, auto-discovering from OpenCode..."
+    );
+
+    // Run OpenCode discovery (wrapped in try/catch for resilience)
+    let opcodeResult = { discovered: 0, free: 0, paid: 0 };
+    try {
+      opcodeResult = await ctx.runAction(
+        internal.modelDiscovery.discoverOpencodeModels,
+        {}
+      );
+      console.log(
+        `[modelDiscovery] Auto-discovered ${opcodeResult.discovered} OpenCode models (${opcodeResult.free} free)`
+      );
+    } catch (error) {
+      console.error("[modelDiscovery] OpenCode discovery failed:", error);
+    }
+
+    // Also run OpenRouter discovery
+    let openrouterCount = 0;
+    try {
+      const openrouterResult = await ctx.runAction(
+        internal.modelDiscovery.discoverOpenRouterModels,
+        {}
+      );
+      openrouterCount = openrouterResult.discovered;
+      console.log(
+        `[modelDiscovery] Auto-discovered ${openrouterResult.discovered} OpenRouter models (${openrouterResult.free} free)`
+      );
+    } catch (error) {
+      console.error("[modelDiscovery] OpenRouter discovery failed:", error);
+    }
+
+    return {
+      discovered: true,
+      count: opcodeResult.discovered + openrouterCount,
+    };
+  },
+});

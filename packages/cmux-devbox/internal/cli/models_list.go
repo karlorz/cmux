@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -49,6 +50,34 @@ type ModelsListResponse struct {
 
 // cachedModels stores fetched models to avoid repeated API calls
 var cachedModels []ModelInfo
+
+// vendorOrder defines the display order for vendors (matches AGENT_CATALOG order)
+var vendorOrder = map[string]int{
+	"anthropic":  0,
+	"openai":     1,
+	"amp":        2,
+	"opencode":   3,
+	"google":     4,
+	"qwen":       5,
+	"cursor":     6,
+	"xai":        7,
+	"openrouter": 8,
+}
+
+// sortModelsByVendor sorts models by vendor group, preserving order within each vendor
+func sortModelsByVendor(models []ModelInfo) {
+	sort.SliceStable(models, func(i, j int) bool {
+		orderI, okI := vendorOrder[strings.ToLower(models[i].Vendor)]
+		orderJ, okJ := vendorOrder[strings.ToLower(models[j].Vendor)]
+		if !okI {
+			orderI = 99
+		}
+		if !okJ {
+			orderJ = 99
+		}
+		return orderI < orderJ
+	})
+}
 
 var modelsCmd = &cobra.Command{
 	Use:   "models [filter]",
@@ -163,6 +192,9 @@ func runModelsList(cmd *cobra.Command, args []string) error {
 
 	// Apply additional client-side filters (enabled-only, text filter)
 	filtered := filterModels(models, "", enabledOnly, filter) // provider already applied server-side
+
+	// Sort by vendor to group models together
+	sortModelsByVendor(filtered)
 
 	// JSON output
 	if flagJSON {
