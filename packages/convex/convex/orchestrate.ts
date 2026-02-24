@@ -1,6 +1,5 @@
 import { v } from "convex/values";
 import { mutation } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
 
 /**
  * Send a message to a running agent via the mailbox.
