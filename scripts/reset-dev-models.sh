@@ -66,7 +66,7 @@ echo ""
 log "OpenCode free models:"
 run_convex "models:list" \
   | grep -E '"name": "opencode/' \
-  | sed 's/.*"name": "\([^"]*\)".*/  - \1/'
+  | sed 's/.*"name": "\([^"]*\)".*/  - \1/' || echo "  (none found)"
 
 OPENCODE_COUNT=$(run_convex "models:list" | grep -cE '"name": "opencode/' || echo "0")
 

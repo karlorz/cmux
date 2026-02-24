@@ -451,10 +451,10 @@ export const needsSeeding = internalQuery({
 export const needsDiscovery = internalQuery({
   args: {},
   handler: async (ctx) => {
-    // Check if any discovered models exist
+    // Check if any discovered models exist (using index for efficiency)
     const discoveredModel = await ctx.db
       .query("models")
-      .filter((q) => q.eq(q.field("source"), "discovered"))
+      .withIndex("by_source", (q) => q.eq("source", "discovered"))
       .first();
 
     return discoveredModel === null;

@@ -417,13 +417,19 @@ export const ensureModelsSeeded = action({
     );
 
     // Also ensure discovered models exist (auto-discovery on first deployment)
-    const discoverResult = await ctx.runAction(
-      internal.modelDiscovery.ensureDiscoveredModels,
-      {}
-    );
+    // Wrap in try/catch to prevent discovery failures from breaking the entire seeding flow
+    let discoverResult = { discovered: false, count: 0 };
+    try {
+      discoverResult = await ctx.runAction(
+        internal.modelDiscovery.ensureDiscoveredModels,
+        {}
+      );
+    } catch (error) {
+      console.error("[modelDiscovery] Discovery failed (continuing with curated models):", error);
+    }
 
     return {
-      seeded: seedResult.seeded,
+      seeded: seedResult.seeded || discoverResult.discovered,
       count: seedResult.count,
       discovered: discoverResult.discovered,
       discoveredCount: discoverResult.count,
@@ -450,15 +456,19 @@ export const ensureDiscoveredModels = internalAction({
       "[modelDiscovery] No discovered models found, auto-discovering from OpenCode..."
     );
 
-    // Run OpenCode discovery
-    const opcodeResult = await ctx.runAction(
-      internal.modelDiscovery.discoverOpencodeModels,
-      {}
-    );
-
-    console.log(
-      `[modelDiscovery] Auto-discovered ${opcodeResult.discovered} OpenCode models (${opcodeResult.free} free)`
-    );
+    // Run OpenCode discovery (wrapped in try/catch for resilience)
+    let opcodeResult = { discovered: 0, free: 0, paid: 0 };
+    try {
+      opcodeResult = await ctx.runAction(
+        internal.modelDiscovery.discoverOpencodeModels,
+        {}
+      );
+      console.log(
+        `[modelDiscovery] Auto-discovered ${opcodeResult.discovered} OpenCode models (${opcodeResult.free} free)`
+      );
+    } catch (error) {
+      console.error("[modelDiscovery] OpenCode discovery failed:", error);
+    }
 
     // Also run OpenRouter discovery
     let openrouterCount = 0;
