@@ -384,6 +384,32 @@ export const cancelTask = mutation({
   },
 });
 
+/**
+ * Add dependencies to a task.
+ * The task will not be eligible for assignment until all dependencies are completed.
+ */
+export const addDependencies = mutation({
+  args: {
+    taskId: v.id("orchestrationTasks"),
+    dependencyIds: v.array(v.id("orchestrationTasks")),
+  },
+  handler: async (ctx, { taskId, dependencyIds }) => {
+    const task = await ctx.db.get(taskId);
+    if (!task) {
+      throw new Error("Task not found");
+    }
+
+    // Merge with existing dependencies, avoiding duplicates
+    const existing = task.dependencies ?? [];
+    const merged = [...new Set([...existing, ...dependencyIds])];
+
+    await ctx.db.patch(taskId, {
+      dependencies: merged,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
 // ============================================================================
 // Provider Health Queries
 // ============================================================================

@@ -759,11 +759,19 @@ async function handleOrchestrationMigrate(
   }
 
   // Parse and validate PLAN.json
+  interface PlanTask {
+    id?: string;
+    prompt?: string;
+    status?: string;
+    priority?: number;
+    dependsOn?: string[];
+    agentName?: string;
+  }
   let plan: {
     headAgent?: string;
     orchestrationId?: string;
     description?: string;
-    tasks?: unknown[];
+    tasks?: PlanTask[];
   };
   try {
     plan = JSON.parse(planJson);
@@ -887,6 +895,48 @@ Orchestration ID: ${orchestrationId}`;
           errorMessage: spawnResult.error ?? "Spawn failed",
         });
       }
+
+      // Create orchestration tasks for pending tasks in PLAN.json
+      const createdTaskIds: Record<string, string> = {};
+      const pendingTasks = (plan.tasks ?? []).filter(
+        (t) => t.status === "pending" && t.prompt
+      );
+
+      // First pass: create all tasks
+      for (const planTask of pendingTasks) {
+        if (!planTask.prompt) continue;
+        const newTaskId = await getConvex().mutation(api.orchestrationQueries.createTask, {
+          teamId,
+          userId,
+          prompt: planTask.prompt,
+          priority: planTask.priority ?? 5,
+        });
+        if (planTask.id) {
+          createdTaskIds[planTask.id] = String(newTaskId);
+        }
+      }
+
+      // Second pass: set up dependencies
+      for (const planTask of pendingTasks) {
+        if (!planTask.id || !planTask.dependsOn?.length) continue;
+        const taskId = createdTaskIds[planTask.id];
+        if (!taskId) continue;
+
+        const depIds = planTask.dependsOn
+          .map((depId) => createdTaskIds[depId])
+          .filter((id): id is string => Boolean(id));
+
+        if (depIds.length > 0) {
+          await getConvex().mutation(api.orchestrationQueries.addDependencies, {
+            taskId: taskId as Id<"orchestrationTasks">,
+            dependencyIds: depIds as Id<"orchestrationTasks">[],
+          });
+        }
+      }
+
+      serverLogger.info("[http-api] Created orchestration tasks from PLAN.json", {
+        count: Object.keys(createdTaskIds).length,
+      });
 
       return {
         orchestrationTaskId: String(orchestrationTaskId),
