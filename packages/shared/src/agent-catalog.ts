@@ -102,10 +102,19 @@ import { GEMINI_CATALOG } from "./providers/gemini/catalog";
 import { CODEX_CATALOG } from "./providers/openai/catalog";
 import { OPENCODE_CATALOG } from "./providers/opencode/catalog";
 import { QWEN_CATALOG } from "./providers/qwen/catalog";
+import { getPluginLoader } from "./providers/plugin-loader";
+
+/**
+ * Feature flag for enabling dynamic plugin loading.
+ * When true, getAgentCatalog() uses the PluginLoader.
+ * When false (default), uses the static AGENT_CATALOG array.
+ */
+const USE_DYNAMIC_LOADING = process.env.CMUX_DYNAMIC_PLUGINS === "true";
 
 /**
  * Aggregated catalog of all agent entries.
  * Order matches AGENT_CONFIGS in agentConfig.ts for consistent UI display.
+ * @deprecated Use getAgentCatalog() for new code to support dynamic plugin loading.
  */
 export const AGENT_CATALOG: AgentCatalogEntry[] = [
   ...CLAUDE_CATALOG,
@@ -116,6 +125,28 @@ export const AGENT_CATALOG: AgentCatalogEntry[] = [
   ...QWEN_CATALOG,
   ...CURSOR_CATALOG,
 ];
+
+/**
+ * Get all agent catalog entries.
+ *
+ * Uses dynamic plugin loading when CMUX_DYNAMIC_PLUGINS=true,
+ * otherwise falls back to the static AGENT_CATALOG array.
+ *
+ * @returns Array of agent catalog entries
+ */
+export function getAgentCatalog(): AgentCatalogEntry[] {
+  if (USE_DYNAMIC_LOADING) {
+    const loader = getPluginLoader();
+    if (loader.isLoaded()) {
+      return loader.getAllCatalog();
+    }
+    // Fall back to static if plugins haven't been loaded yet
+    console.warn(
+      "[getAgentCatalog] Dynamic loading enabled but plugins not loaded, using static catalog"
+    );
+  }
+  return AGENT_CATALOG;
+}
 
 // Re-export individual catalogs for granular imports
 export {

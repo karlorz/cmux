@@ -2,6 +2,7 @@ import type {
   EnvironmentContext,
   EnvironmentResult,
 } from "./providers/common/environment-result";
+import { getPluginLoader } from "./providers/plugin-loader";
 
 import { AMP_AGENT_CONFIGS } from "./providers/amp/configs";
 import { CLAUDE_AGENT_CONFIGS } from "./providers/anthropic/configs";
@@ -14,6 +15,13 @@ import { QWEN_AGENT_CONFIGS } from "./providers/qwen/configs";
 export { checkGitStatus } from "./providers/common/check-git";
 
 export { type EnvironmentResult };
+
+/**
+ * Feature flag for enabling dynamic plugin loading.
+ * When true, getAgentConfigs() uses the PluginLoader.
+ * When false (default), uses the static AGENT_CONFIGS array.
+ */
+const USE_DYNAMIC_LOADING = process.env.CMUX_DYNAMIC_PLUGINS === "true";
 
 export type AgentConfigApiKey = {
   envVar: string;
@@ -49,6 +57,10 @@ export interface AgentConfig {
   disabledReason?: string; // Reason shown in tooltip when disabled
 }
 
+/**
+ * Static array of all agent configurations.
+ * @deprecated Use getAgentConfigs() for new code to support dynamic plugin loading.
+ */
 export const AGENT_CONFIGS: AgentConfig[] = [
   ...CLAUDE_AGENT_CONFIGS,
   ...CODEX_AGENT_CONFIGS,
@@ -58,3 +70,25 @@ export const AGENT_CONFIGS: AgentConfig[] = [
   ...QWEN_AGENT_CONFIGS,
   ...CURSOR_AGENT_CONFIGS,
 ];
+
+/**
+ * Get all agent configurations.
+ *
+ * Uses dynamic plugin loading when CMUX_DYNAMIC_PLUGINS=true,
+ * otherwise falls back to the static AGENT_CONFIGS array.
+ *
+ * @returns Array of agent configurations
+ */
+export function getAgentConfigs(): AgentConfig[] {
+  if (USE_DYNAMIC_LOADING) {
+    const loader = getPluginLoader();
+    if (loader.isLoaded()) {
+      return loader.getAllConfigs();
+    }
+    // Fall back to static if plugins haven't been loaded yet
+    console.warn(
+      "[getAgentConfigs] Dynamic loading enabled but plugins not loaded, using static configs"
+    );
+  }
+  return AGENT_CONFIGS;
+}
