@@ -1,40 +1,35 @@
 # shadcn/ui
 
-shadcn/ui is an open-source collection of beautifully designed, accessible, and customizable React components built on top of Radix UI primitives and styled with Tailwind CSS. Unlike traditional component libraries that are installed as npm dependencies, shadcn/ui components are copied directly into your project, giving you full ownership and the ability to customize every aspect of the code. The library provides a CLI tool (`shadcn`) that streamlines initialization, component installation, and project management.
+shadcn/ui is a collection of beautifully designed, accessible React components that you can copy and paste directly into your projects. Unlike traditional component libraries where you install a package from NPM, shadcn/ui gives you the actual component source code, allowing full customization and ownership. Built on top of Radix UI primitives and styled with Tailwind CSS, the components are designed to work with React 19 and Tailwind CSS v4.
 
-The architecture follows a "copy and own" philosophy where components are added to your codebase rather than imported from a package. This approach enables complete customization without fighting against library abstractions, supports multiple styling themes (New York, Default), and integrates seamlessly with React 19, Tailwind CSS v4, and modern frameworks like Next.js, Vite, and TanStack Start. The CLI also includes MCP (Model Context Protocol) support for AI-assisted development workflows.
-
----
+The project follows an "Open Code" philosophy where the top layer of your component code is open for modification. This makes components predictable for both developers and AI models. The CLI tool (`shadcn`) handles installation, configuration, and component management across various frameworks including Next.js, Vite, Remix, Astro, and more. It also supports monorepo setups and custom component registries.
 
 ## CLI Commands
 
 ### Initialize a New Project
 
-The `init` command sets up shadcn/ui in your project by creating a `components.json` configuration file and installing the base styles and dependencies.
+The `init` command sets up your project with the necessary configuration, dependencies, and CSS variables for shadcn/ui components.
 
 ```bash
-# Interactive initialization
+# Initialize a new project
 npx shadcn@latest init
 
-# Initialize with defaults (Next.js template, neutral color)
-npx shadcn@latest init -d
-
 # Initialize with specific options
-npx shadcn@latest init --template next --base-color zinc
+npx shadcn@latest init -t next -b neutral -y
 
-# Initialize with a custom style/theme from a URL
-npx shadcn@latest init "https://ui.shadcn.com/r/styles/new-york"
-
-# Initialize with RTL (right-to-left) support
-npx shadcn@latest init --rtl
-
-# Skip confirmation prompts
-npx shadcn@latest init -y
+# Options:
+#   -t, --template <template>      Template to use (next, next-monorepo)
+#   -b, --base-color <base-color>  Base color (neutral, gray, zinc, stone, slate)
+#   -y, --yes                      Skip confirmation prompt
+#   -f, --force                    Force overwrite existing configuration
+#   -c, --cwd <cwd>                Working directory (defaults to current)
+#   --src-dir                      Use src directory for new project
+#   --css-variables                Use CSS variables for theming (default: true)
 ```
 
-### Add Components to Your Project
+### Add Components
 
-The `add` command installs components and their dependencies into your project. Components can be added from the official registry or custom registries.
+The `add` command installs components and their dependencies into your project. Components are copied as source files, giving you full control.
 
 ```bash
 # Add a single component
@@ -44,144 +39,121 @@ npx shadcn@latest add button
 npx shadcn@latest add button card dialog
 
 # Add all available components
-npx shadcn@latest add --all
+npx shadcn@latest add -a
 
-# Add component with overwrite (replace existing)
-npx shadcn@latest add button --overwrite
-
-# Add component from a custom registry
+# Add from a URL or namespaced registry
+npx shadcn@latest add https://ui.shadcn.com/r/button.json
 npx shadcn@latest add @acme/custom-button
 
-# Add component from a URL
-npx shadcn@latest add "https://my-registry.com/r/button.json"
-
-# Add component to a specific path
-npx shadcn@latest add button --path src/components/ui
-
-# Skip confirmation prompts
-npx shadcn@latest add button -y
+# Options:
+#   -y, --yes           Skip confirmation prompt
+#   -o, --overwrite     Overwrite existing files
+#   -c, --cwd <cwd>     Working directory
+#   -a, --all           Add all available components
+#   -p, --path <path>   Custom path for component installation
+#   -s, --silent        Mute output
 ```
 
-### Create a New Project
+### View Components Before Installing
 
-The `create` command scaffolds a new project with shadcn/ui pre-configured, supporting multiple frameworks and preset configurations.
-
-```bash
-# Interactive project creation
-npx shadcn@latest create
-
-# Create with a specific name and template
-npx shadcn@latest create my-app --template next
-
-# Create with a preset configuration
-npx shadcn@latest create my-app --preset default
-
-# Create with Vite template
-npx shadcn@latest create my-vite-app --template vite
-
-# Create with TanStack Start
-npx shadcn@latest create my-start-app --template start
-
-# Create with RTL support
-npx shadcn@latest create my-rtl-app --template next --rtl
-
-# Create with src directory structure
-npx shadcn@latest create my-app --template next --src-dir
-```
-
-### Check for Component Updates
-
-The `diff` command compares your local components against the registry to identify available updates.
+The `view` command lets you preview component source code before adding them to your project.
 
 ```bash
-# Check all components for updates
-npx shadcn@latest diff
+# View a single component
+npx shadcn@latest view button
 
-# Check a specific component
-npx shadcn@latest diff button
+# View multiple components
+npx shadcn@latest view button card dialog
 
-# Example output showing differences
-# - button.tsx
-# + bg-primary text-primary-foreground hover:bg-primary/90
-# - bg-primary text-primary-foreground shadow hover:bg-primary/80
+# View from namespaced registries
+npx shadcn@latest view @acme/auth @v0/dashboard
 ```
 
 ### Search Registries
 
-The `search` command finds components across configured registries using fuzzy matching.
+The `search` command finds components across configured registries.
 
 ```bash
-# Search in the official shadcn registry
-npx shadcn@latest search @shadcn --query "button"
-
-# Search multiple registries
-npx shadcn@latest search @shadcn @acme --query "dialog"
-
-# List all items in a registry
+# Search in the shadcn registry
 npx shadcn@latest search @shadcn
 
-# Paginated search results
-npx shadcn@latest search @shadcn --query "form" --limit 10 --offset 0
+# Search with a query
+npx shadcn@latest search @shadcn -q "button"
+
+# Search multiple registries
+npx shadcn@latest search @shadcn @v0 @acme
+
+# List all items from a registry (alias for search)
+npx shadcn@latest list @acme
+
+# Options:
+#   -q, --query <query>    Search query string
+#   -l, --limit <number>   Max items to display (default: 100)
+#   -o, --offset <number>  Number of items to skip (default: 0)
+```
+
+### Build Custom Registry
+
+The `build` command generates registry JSON files from your `registry.json` configuration.
+
+```bash
+# Build registry with default output (public/r)
+npx shadcn@latest build
+
+# Build with custom output directory
+npx shadcn@latest build --output ./public/registry
+
+# Build from custom registry.json path
+npx shadcn@latest build ./custom-registry.json
+
+# Options:
+#   -o, --output <path>  Destination directory for JSON files (default: ./public/r)
+#   -c, --cwd <cwd>      Working directory
 ```
 
 ### Run Migrations
 
-The `migrate` command helps upgrade components to new patterns or dependencies.
+The `migrate` command transforms your codebase to support new features or patterns.
 
 ```bash
 # List available migrations
 npx shadcn@latest migrate --list
 
+# Migrate to RTL support
+npx shadcn@latest migrate rtl
+
+# Migrate to unified radix-ui package
+npx shadcn@latest migrate radix
+
 # Migrate icon library
 npx shadcn@latest migrate icons
 
-# Migrate to radix-ui package structure
-npx shadcn@latest migrate radix
-
-# Migrate components for RTL support
-npx shadcn@latest migrate rtl
-
 # Migrate specific files
-npx shadcn@latest migrate rtl "src/components/**/*.tsx"
+npx shadcn@latest migrate rtl src/components/ui/button.tsx
+npx shadcn@latest migrate radix "src/components/ui/**"
 
-# Skip confirmation
-npx shadcn@latest migrate icons -y
+# Options:
+#   -l, --list       List all migrations
+#   -y, --yes        Skip confirmation prompt
+#   -c, --cwd <cwd>  Working directory
 ```
 
-### Build Custom Registry
-
-The `build` command compiles a custom component registry from a `registry.json` file.
-
-```bash
-# Build with default paths
-npx shadcn@latest build
-
-# Build from custom registry file
-npx shadcn@latest build ./my-registry.json
-
-# Build to custom output directory
-npx shadcn@latest build ./registry.json --output ./public/registry
-```
-
----
-
-## Component Examples
+## Component Usage
 
 ### Button Component
 
-The Button component supports multiple variants and sizes with full accessibility support.
+The Button component supports multiple variants and sizes with full accessibility.
 
 ```tsx
 import { Button } from "@/components/ui/button"
 
-// Basic usage
 export function ButtonDemo() {
   return (
     <div className="flex flex-wrap gap-4">
       {/* Default button */}
       <Button>Click me</Button>
 
-      {/* Variant options */}
+      {/* Variants */}
       <Button variant="default">Default</Button>
       <Button variant="destructive">Destructive</Button>
       <Button variant="outline">Outline</Button>
@@ -189,25 +161,26 @@ export function ButtonDemo() {
       <Button variant="ghost">Ghost</Button>
       <Button variant="link">Link</Button>
 
-      {/* Size options */}
-      <Button size="default">Default</Button>
+      {/* Sizes */}
+      <Button size="xs">Extra Small</Button>
       <Button size="sm">Small</Button>
+      <Button size="default">Default</Button>
       <Button size="lg">Large</Button>
-      <Button size="icon"><IconPlus /></Button>
+      <Button size="icon">🔔</Button>
 
       {/* With icon */}
       <Button>
-        <Mail className="mr-2 h-4 w-4" />
-        Login with Email
+        <svg data-icon="inline-start" className="size-4" />
+        With Icon
+      </Button>
+
+      {/* As child (render as different element) */}
+      <Button asChild>
+        <a href="/dashboard">Go to Dashboard</a>
       </Button>
 
       {/* Disabled state */}
       <Button disabled>Disabled</Button>
-
-      {/* As child (composition pattern) */}
-      <Button asChild>
-        <a href="/login">Login</a>
-      </Button>
     </div>
   )
 }
@@ -215,7 +188,7 @@ export function ButtonDemo() {
 
 ### Card Component
 
-Cards provide a flexible container for displaying grouped content with header, content, and footer sections.
+The Card component provides a flexible container for content with header, body, and footer sections.
 
 ```tsx
 import {
@@ -231,37 +204,20 @@ import { Button } from "@/components/ui/button"
 
 export function CardDemo() {
   return (
-    <Card className="w-[380px]">
+    <Card className="w-[350px]">
       <CardHeader>
-        <CardTitle>Create Project</CardTitle>
-        <CardDescription>
-          Deploy your new project in one-click.
-        </CardDescription>
+        <CardTitle>Create project</CardTitle>
+        <CardDescription>Deploy your new project in one-click.</CardDescription>
         <CardAction>
-          <Button variant="ghost" size="icon">
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
+          <Button variant="ghost" size="icon">⋮</Button>
         </CardAction>
       </CardHeader>
       <CardContent>
         <form>
-          <div className="grid w-full gap-4">
+          <div className="grid w-full items-center gap-4">
             <div className="flex flex-col space-y-1.5">
-              <Label htmlFor="name">Name</Label>
-              <Input id="name" placeholder="Name of your project" />
-            </div>
-            <div className="flex flex-col space-y-1.5">
-              <Label htmlFor="framework">Framework</Label>
-              <Select>
-                <SelectTrigger id="framework">
-                  <SelectValue placeholder="Select" />
-                </SelectTrigger>
-                <SelectContent position="popper">
-                  <SelectItem value="next">Next.js</SelectItem>
-                  <SelectItem value="vite">Vite</SelectItem>
-                  <SelectItem value="astro">Astro</SelectItem>
-                </SelectContent>
-              </Select>
+              <label htmlFor="name">Name</label>
+              <input id="name" placeholder="Name of your project" />
             </div>
           </div>
         </form>
@@ -277,7 +233,7 @@ export function CardDemo() {
 
 ### Dialog Component
 
-Dialogs are modal overlays that require user interaction, built on Radix UI Dialog primitives.
+The Dialog component creates accessible modal windows with customizable content.
 
 ```tsx
 import {
@@ -309,23 +265,35 @@ export function DialogDemo() {
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="name" className="text-right">
-              Name
-            </Label>
-            <Input id="name" defaultValue="Pedro Duarte" className="col-span-3" />
+            <Label htmlFor="name" className="text-right">Name</Label>
+            <Input id="name" defaultValue="John Doe" className="col-span-3" />
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="username" className="text-right">
-              Username
-            </Label>
-            <Input id="username" defaultValue="@peduarte" className="col-span-3" />
+            <Label htmlFor="username" className="text-right">Username</Label>
+            <Input id="username" defaultValue="@johndoe" className="col-span-3" />
           </div>
         </div>
         <DialogFooter>
-          <DialogClose asChild>
-            <Button type="button" variant="outline">Cancel</Button>
-          </DialogClose>
           <Button type="submit">Save changes</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// Dialog without close button
+export function DialogNoClose() {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button>Open</Button>
+      </DialogTrigger>
+      <DialogContent showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>Custom Dialog</DialogTitle>
+        </DialogHeader>
+        <DialogFooter showCloseButton>
+          <Button>Confirm</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -335,15 +303,14 @@ export function DialogDemo() {
 
 ### Form with React Hook Form
 
-The Form component integrates with React Hook Form for validation and error handling.
+The Form component integrates with React Hook Form for validation and state management.
 
 ```tsx
 "use client"
 
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
-import { z } from "zod"
-
+import * as z from "zod"
 import { Button } from "@/components/ui/button"
 import {
   Form,
@@ -417,82 +384,26 @@ export function ProfileForm() {
 }
 ```
 
-### Table Component
-
-The Table component provides a styled wrapper for HTML tables with proper semantics.
-
-```tsx
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableFooter,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-
-const invoices = [
-  { invoice: "INV001", status: "Paid", method: "Credit Card", amount: "$250.00" },
-  { invoice: "INV002", status: "Pending", method: "PayPal", amount: "$150.00" },
-  { invoice: "INV003", status: "Unpaid", method: "Bank Transfer", amount: "$350.00" },
-]
-
-export function TableDemo() {
-  return (
-    <Table>
-      <TableCaption>A list of your recent invoices.</TableCaption>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-[100px]">Invoice</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Method</TableHead>
-          <TableHead className="text-right">Amount</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {invoices.map((invoice) => (
-          <TableRow key={invoice.invoice}>
-            <TableCell className="font-medium">{invoice.invoice}</TableCell>
-            <TableCell>{invoice.status}</TableCell>
-            <TableCell>{invoice.method}</TableCell>
-            <TableCell className="text-right">{invoice.amount}</TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-      <TableFooter>
-        <TableRow>
-          <TableCell colSpan={3}>Total</TableCell>
-          <TableCell className="text-right">$750.00</TableCell>
-        </TableRow>
-      </TableFooter>
-    </Table>
-  )
-}
-```
-
----
-
 ## Configuration
 
-### components.json
+### components.json Configuration
 
-The `components.json` file configures shadcn/ui for your project, defining paths, styling options, and custom registries.
+The `components.json` file configures how shadcn/ui works in your project.
 
 ```json
 {
   "$schema": "https://ui.shadcn.com/schema.json",
   "style": "new-york",
+  "rsc": true,
+  "tsx": true,
   "tailwind": {
-    "config": "tailwind.config.js",
-    "css": "src/app/globals.css",
+    "config": "",
+    "css": "app/globals.css",
     "baseColor": "neutral",
     "cssVariables": true,
     "prefix": ""
   },
-  "rsc": true,
-  "tsx": true,
+  "iconLibrary": "lucide",
   "aliases": {
     "components": "@/components",
     "utils": "@/lib/utils",
@@ -500,71 +411,104 @@ The `components.json` file configures shadcn/ui for your project, defining paths
     "lib": "@/lib",
     "hooks": "@/hooks"
   },
-  "iconLibrary": "lucide",
   "registries": {
-    "acme": {
-      "url": "https://acme.com/r"
+    "@v0": "https://v0.dev/chat/b/{name}",
+    "@acme": "https://registry.acme.com/{name}.json",
+    "@private": {
+      "url": "https://api.company.com/registry/{name}.json",
+      "headers": {
+        "Authorization": "Bearer ${REGISTRY_TOKEN}"
+      }
     }
   }
 }
 ```
 
-### Utility Function (cn)
+### Theming with CSS Variables
 
-The `cn` utility combines `clsx` and `tailwind-merge` for conditional class name handling.
+Define custom theme colors using CSS variables in your global stylesheet.
 
-```typescript
-// lib/utils.ts
-import { clsx, type ClassValue } from "clsx"
-import { twMerge } from "tailwind-merge"
+```css
+/* app/globals.css */
+@import "tailwindcss";
 
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
 }
 
-// Usage in components
-import { cn } from "@/lib/utils"
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  /* ... other dark mode variables */
+}
 
-function MyComponent({ className, variant }) {
-  return (
-    <div
-      className={cn(
-        "base-styles here",
-        variant === "primary" && "bg-primary text-white",
-        variant === "secondary" && "bg-secondary",
-        className
-      )}
-    />
-  )
+/* Add custom colors */
+:root {
+  --warning: oklch(0.84 0.16 84);
+  --warning-foreground: oklch(0.28 0.07 46);
+}
+
+@theme inline {
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
 }
 ```
 
----
-
 ## MCP Server Integration
 
-### Configure MCP for AI Coding Assistants
+### Configure MCP for AI Assistants
 
-The shadcn CLI includes an MCP server that enables AI assistants to interact with component registries.
+The shadcn MCP server enables AI assistants to browse, search, and install components using natural language.
 
 ```bash
 # Initialize MCP for Claude Code
 npx shadcn@latest mcp init --client claude
 
-# Initialize MCP for Cursor
+# Initialize for Cursor
 npx shadcn@latest mcp init --client cursor
 
-# Initialize MCP for VS Code
+# Initialize for VS Code
 npx shadcn@latest mcp init --client vscode
 
-# Start the MCP server directly
-npx shadcn@latest mcp
+# Initialize for OpenCode
+npx shadcn@latest mcp init --client opencode
 ```
 
-### MCP Configuration Files
+```json
+// .mcp.json (Claude Code configuration)
+{
+  "mcpServers": {
+    "shadcn": {
+      "command": "npx",
+      "args": ["shadcn@latest", "mcp"]
+    }
+  }
+}
+```
 
 ```json
-// .mcp.json (Claude Code)
+// .cursor/mcp.json (Cursor configuration)
 {
   "mcpServers": {
     "shadcn": {
@@ -573,18 +517,10 @@ npx shadcn@latest mcp
     }
   }
 }
+```
 
-// .cursor/mcp.json (Cursor)
-{
-  "mcpServers": {
-    "shadcn": {
-      "command": "npx",
-      "args": ["shadcn@latest", "mcp"]
-    }
-  }
-}
-
-// .vscode/mcp.json (VS Code)
+```json
+// .vscode/mcp.json (VS Code configuration)
 {
   "servers": {
     "shadcn": {
@@ -595,78 +531,11 @@ npx shadcn@latest mcp
 }
 ```
 
----
-
-## Programmatic API
-
-### Fetch Registry Items
-
-The shadcn package exports functions for programmatic registry access.
-
-```typescript
-import {
-  getRegistry,
-  getRegistryItems,
-  resolveRegistryItems,
-  getShadcnRegistryIndex,
-  getRegistryStyles,
-  getRegistryBaseColors,
-} from "shadcn"
-
-// Get the full registry index
-const index = await getShadcnRegistryIndex()
-// Returns: [{ name: "button", type: "registry:ui", ... }, ...]
-
-// Fetch specific registry items with their content
-const items = await getRegistryItems(["@shadcn/button", "@shadcn/card"], {
-  config: { /* optional config */ },
-  useCache: true,
-})
-
-// Resolve items with all dependencies
-const resolvedItems = await resolveRegistryItems(["@shadcn/dialog"], {
-  config: { /* optional config */ },
-})
-
-// Get available styles
-const styles = await getRegistryStyles()
-// Returns: [{ name: "new-york", label: "New York" }, { name: "default", label: "Default" }]
-
-// Get base color options
-const baseColors = await getRegistryBaseColors()
-// Returns: [{ name: "neutral", label: "Neutral" }, { name: "zinc", label: "Zinc" }, ...]
-
-// Fetch a custom registry
-const customRegistry = await getRegistry("https://my-registry.com/r/registry.json")
-```
-
-### Search Registries Programmatically
-
-```typescript
-import { searchRegistries } from "shadcn/registry"
-
-const results = await searchRegistries(["@shadcn"], {
-  query: "button",
-  limit: 10,
-  offset: 0,
-  config: { /* components.json config */ },
-})
-
-// Results include:
-// {
-//   items: [{ name: "button", type: "registry:ui", description: "..." }],
-//   total: 45,
-//   hasMore: true,
-// }
-```
-
----
-
 ## Custom Registry
 
-### Creating a Custom Component Registry
+### Create and Host Your Own Registry
 
-Build and publish your own component registry for sharing across projects or teams.
+Build a custom component registry to share components across projects or with your team.
 
 ```json
 // registry.json
@@ -676,27 +545,34 @@ Build and publish your own component registry for sharing across projects or tea
   "homepage": "https://acme.com",
   "items": [
     {
-      "name": "fancy-button",
-      "type": "registry:ui",
-      "description": "A fancy button with animations",
-      "dependencies": ["framer-motion"],
+      "name": "hello-world",
+      "type": "registry:block",
+      "title": "Hello World",
+      "description": "A simple hello world component.",
+      "registryDependencies": ["button"],
+      "dependencies": ["motion"],
       "files": [
         {
-          "path": "components/ui/fancy-button.tsx",
-          "type": "registry:ui"
+          "path": "registry/new-york/hello-world/hello-world.tsx",
+          "type": "registry:component"
         }
       ]
     },
     {
-      "name": "data-table",
-      "type": "registry:component",
-      "description": "Advanced data table with sorting and filtering",
-      "registryDependencies": ["table", "button", "input"],
-      "dependencies": ["@tanstack/react-table"],
+      "name": "auth-form",
+      "type": "registry:block",
+      "title": "Authentication Form",
+      "description": "A complete authentication form with validation.",
+      "registryDependencies": ["button", "input", "label", "card"],
+      "dependencies": ["zod", "react-hook-form"],
       "files": [
         {
-          "path": "components/data-table.tsx",
+          "path": "registry/new-york/auth-form/auth-form.tsx",
           "type": "registry:component"
+        },
+        {
+          "path": "registry/new-york/auth-form/use-auth.ts",
+          "type": "registry:hook"
         }
       ]
     }
@@ -704,48 +580,101 @@ Build and publish your own component registry for sharing across projects or tea
 }
 ```
 
-```bash
-# Build the registry
-npx shadcn@latest build ./registry.json --output ./public/r
+```tsx
+// registry/new-york/hello-world/hello-world.tsx
+import { Button } from "@/components/ui/button"
 
-# This creates:
-# ./public/r/registry.json
-# ./public/r/fancy-button.json
-# ./public/r/data-table.json
-```
-
-### Using Custom Registries
-
-```json
-// components.json
-{
-  "registries": {
-    "acme": {
-      "url": "https://acme.com/r"
-    },
-    "internal": {
-      "url": "https://internal.company.com/registry",
-      "headers": {
-        "Authorization": "Bearer ${REGISTRY_TOKEN}"
-      }
-    }
-  }
+export function HelloWorld() {
+  return <Button>Hello World</Button>
 }
 ```
 
 ```bash
-# Add components from custom registries
-npx shadcn@latest add @acme/fancy-button
-npx shadcn@latest add @internal/dashboard-layout
+# Add build script to package.json
+npm pkg set scripts.registry:build="shadcn build"
 
-# Search custom registries
-npx shadcn@latest search @acme --query "button"
+# Build the registry
+npm run registry:build
+
+# Files are generated at public/r/[name].json
+# Install from your registry
+npx shadcn@latest add https://acme.com/r/hello-world.json
 ```
 
----
+## Monorepo Setup
+
+### Configure shadcn/ui for Monorepo Projects
+
+Set up shadcn/ui in a monorepo with shared UI components.
+
+```bash
+# Create a new monorepo project
+npx shadcn@latest init
+# Select: Next.js (Monorepo)
+```
+
+```json
+// apps/web/components.json
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "new-york",
+  "rsc": true,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "../../packages/ui/src/styles/globals.css",
+    "baseColor": "zinc",
+    "cssVariables": true
+  },
+  "aliases": {
+    "components": "@/components",
+    "hooks": "@/hooks",
+    "lib": "@/lib",
+    "utils": "@workspace/ui/lib/utils",
+    "ui": "@workspace/ui/components"
+  }
+}
+```
+
+```json
+// packages/ui/components.json
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "new-york",
+  "rsc": true,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "src/styles/globals.css",
+    "baseColor": "zinc",
+    "cssVariables": true
+  },
+  "aliases": {
+    "components": "@workspace/ui/components",
+    "utils": "@workspace/ui/lib/utils",
+    "hooks": "@workspace/ui/hooks",
+    "lib": "@workspace/ui/lib",
+    "ui": "@workspace/ui/components"
+  }
+}
+```
+
+```tsx
+// apps/web/app/page.tsx
+import { Button } from "@workspace/ui/components/button"
+import { cn } from "@workspace/ui/lib/utils"
+
+export default function Home() {
+  return (
+    <main className={cn("flex min-h-screen items-center justify-center")}>
+      <Button>Click me</Button>
+    </main>
+  )
+}
+```
 
 ## Summary
 
-shadcn/ui provides a flexible foundation for building React applications with a comprehensive set of accessible, customizable UI components. The "copy and own" model ensures developers maintain full control over their component code while benefiting from well-tested, production-ready implementations. The CLI streamlines project setup, component management, and updates, making it easy to maintain consistency across projects.
+shadcn/ui is designed for developers who want full control over their component code. The primary use cases include: building custom design systems where you need to modify component internals, creating consistent UI across multiple projects using custom registries, and integrating with AI-powered development tools through the MCP server. The CLI simplifies setup across Next.js, Vite, Remix, and other frameworks while supporting both standard projects and monorepo architectures.
 
-Integration patterns include direct usage of UI primitives for simple interfaces, composition with React Hook Form and Zod for complex forms, extension through custom registries for team-specific components, and AI-assisted development via MCP server integration. The architecture supports modern React features including Server Components, works seamlessly with Tailwind CSS v4 and CSS variables for theming, and provides first-class TypeScript support throughout the component library.
+Integration patterns typically involve initializing a project with `npx shadcn@latest init`, adding components as needed with `npx shadcn@latest add`, and customizing the generated source code to match your design requirements. For teams, the registry system allows sharing custom components through namespaced registries configured in `components.json`. The CSS variable-based theming system makes it easy to implement dark mode and custom color schemes while maintaining consistency across all components.
