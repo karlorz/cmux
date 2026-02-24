@@ -30,6 +30,7 @@ import {
   healthRouter,
   modelsRouter,
   morphRouter,
+  orchestrateRouter,
   providersRouter,
   providersStatusRouter,
   apiKeysRouter,
@@ -172,6 +173,7 @@ app.route("/", githubInstallStateRouter);
 app.route("/", githubOAuthTokenRouter);
 app.route("/", githubBranchesRouter);
 app.route("/", morphRouter);
+app.route("/", orchestrateRouter);
 app.route("/", pveLxcRouter);
 app.route("/", iframePreflightRouter);
 app.route("/", environmentsRouter);

@@ -463,6 +463,36 @@ export type InstanceInfo = {
 
 export type ListInstancesResponse = Array<InstanceInfo>;
 
+export type OrchestrateMessageResponse = {
+    /**
+     * Whether the message was successfully sent
+     */
+    ok: boolean;
+    /**
+     * Confirmation message
+     */
+    message?: string;
+};
+
+export type OrchestrateMessageRequest = {
+    /**
+     * Task run ID
+     */
+    taskRunId: string;
+    /**
+     * Message content to send to the agent
+     */
+    message: string;
+    /**
+     * Message type: handoff (transfer work), request (ask to do something), or status (progress update)
+     */
+    messageType: 'handoff' | 'request' | 'status';
+    /**
+     * Team slug or ID (for authorization)
+     */
+    teamSlugOrId: string;
+};
+
 export type PveLxcResumeTaskRunResponse = {
     resumed: true;
 };
@@ -2382,6 +2412,41 @@ export type GetApiMorphInstancesResponses = {
 };
 
 export type GetApiMorphInstancesResponse = GetApiMorphInstancesResponses[keyof GetApiMorphInstancesResponses];
+
+export type PostApiOrchestrateMessageData = {
+    body: OrchestrateMessageRequest;
+    path?: never;
+    query?: never;
+    url: '/api/orchestrate/message';
+};
+
+export type PostApiOrchestrateMessageErrors = {
+    /**
+     * Invalid request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Task run not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiOrchestrateMessageResponses = {
+    /**
+     * Message sent successfully
+     */
+    200: OrchestrateMessageResponse;
+};
+
+export type PostApiOrchestrateMessageResponse = PostApiOrchestrateMessageResponses[keyof PostApiOrchestrateMessageResponses];
 
 export type PostApiPveLxcTaskRunsByTaskRunIdResumeData = {
     body: PveLxcResumeTaskRunBody;
