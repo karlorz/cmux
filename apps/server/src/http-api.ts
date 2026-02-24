@@ -16,7 +16,7 @@ import {
   getVariantsForVendor,
 } from "@cmux/shared/agent-catalog";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
-import { spawnAgent, spawnAllAgents, type AgentSpawnResult } from "./agentSpawner";
+import { spawnAgent, spawnAllAgents } from "./agentSpawner";
 import {
   DEFAULT_BRANCH_PREFIX,
   generateBranchNamesFromDescription,
@@ -388,7 +388,7 @@ async function handleOrchestrationSpawn(
     return;
   }
 
-  const { teamSlugOrId, prompt, agent, repo, branch, prTitle, environmentId, isCloudMode = true, dependsOn, priority } = body;
+  const { teamSlugOrId, prompt, agent, repo, branch, prTitle: _prTitle, environmentId, isCloudMode = true, dependsOn, priority } = body;
 
   if (!teamSlugOrId || !prompt || !agent) {
     jsonResponse(res, 400, { error: "Missing required fields: teamSlugOrId, prompt, agent" });
