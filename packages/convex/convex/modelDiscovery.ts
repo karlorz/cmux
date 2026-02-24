@@ -354,3 +354,55 @@ export const triggerRefresh = action({
     };
   },
 });
+
+/**
+ * Internal action: ensure curated models are seeded.
+ * Called automatically when listAvailable detects no curated models.
+ * This is a self-healing mechanism to prevent empty model lists.
+ */
+export const ensureCuratedModelsSeeded = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ seeded: boolean; count: number }> => {
+    // Check if seeding is needed
+    const needsSeeding = await ctx.runQuery(internal.models.needsSeeding, {});
+
+    if (!needsSeeding) {
+      return { seeded: false, count: 0 };
+    }
+
+    console.log(
+      "[modelDiscovery] No curated models found, auto-seeding from AGENT_CATALOG..."
+    );
+
+    // Run the standard seeding
+    const result = await ctx.runAction(
+      internal.modelDiscovery.seedCuratedModels,
+      {}
+    );
+
+    console.log(
+      `[modelDiscovery] Auto-seeded ${result.seededCount} curated models`
+    );
+
+    return { seeded: true, count: result.seededCount };
+  },
+});
+
+/**
+ * Public action: ensure curated models are seeded (for frontend use).
+ * Call this before querying models to ensure the database is populated.
+ * Idempotent - safe to call multiple times.
+ */
+export const ensureModelsSeeded = action({
+  args: { teamSlugOrId: v.string() },
+  handler: async (ctx, _args): Promise<{ seeded: boolean; count: number }> => {
+    // Require authentication
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Authentication required");
+    }
+
+    // Delegate to internal action
+    return ctx.runAction(internal.modelDiscovery.ensureCuratedModelsSeeded, {});
+  },
+});
