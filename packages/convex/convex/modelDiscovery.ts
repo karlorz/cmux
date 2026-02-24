@@ -395,14 +395,89 @@ export const ensureCuratedModelsSeeded = internalAction({
  */
 export const ensureModelsSeeded = action({
   args: { teamSlugOrId: v.string() },
-  handler: async (ctx, _args): Promise<{ seeded: boolean; count: number }> => {
+  handler: async (
+    ctx,
+    _args
+  ): Promise<{
+    seeded: boolean;
+    count: number;
+    discovered: boolean;
+    discoveredCount: number;
+  }> => {
     // Require authentication
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
       throw new Error("Authentication required");
     }
 
-    // Delegate to internal action
-    return ctx.runAction(internal.modelDiscovery.ensureCuratedModelsSeeded, {});
+    // Ensure curated models are seeded
+    const seedResult = await ctx.runAction(
+      internal.modelDiscovery.ensureCuratedModelsSeeded,
+      {}
+    );
+
+    // Also ensure discovered models exist (auto-discovery on first deployment)
+    const discoverResult = await ctx.runAction(
+      internal.modelDiscovery.ensureDiscoveredModels,
+      {}
+    );
+
+    return {
+      seeded: seedResult.seeded,
+      count: seedResult.count,
+      discovered: discoverResult.discovered,
+      discoveredCount: discoverResult.count,
+    };
+  },
+});
+
+/**
+ * Internal action: ensure discovered models exist.
+ * Called automatically when no discovered models are found.
+ * This handles auto-discovery on first deployment.
+ */
+export const ensureDiscoveredModels = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ discovered: boolean; count: number }> => {
+    // Check if discovery is needed
+    const needsDiscovery = await ctx.runQuery(internal.models.needsDiscovery, {});
+
+    if (!needsDiscovery) {
+      return { discovered: false, count: 0 };
+    }
+
+    console.log(
+      "[modelDiscovery] No discovered models found, auto-discovering from OpenCode..."
+    );
+
+    // Run OpenCode discovery
+    const opcodeResult = await ctx.runAction(
+      internal.modelDiscovery.discoverOpencodeModels,
+      {}
+    );
+
+    console.log(
+      `[modelDiscovery] Auto-discovered ${opcodeResult.discovered} OpenCode models (${opcodeResult.free} free)`
+    );
+
+    // Also run OpenRouter discovery
+    let openrouterCount = 0;
+    try {
+      const openrouterResult = await ctx.runAction(
+        internal.modelDiscovery.discoverOpenRouterModels,
+        {}
+      );
+      openrouterCount = openrouterResult.discovered;
+      console.log(
+        `[modelDiscovery] Auto-discovered ${openrouterResult.discovered} OpenRouter models (${openrouterResult.free} free)`
+      );
+    } catch (error) {
+      console.error("[modelDiscovery] OpenRouter discovery failed:", error);
+    }
+
+    return {
+      discovered: true,
+      count: opcodeResult.discovered + openrouterCount,
+    };
   },
 });

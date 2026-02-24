@@ -442,3 +442,37 @@ export const needsSeeding = internalQuery({
     return curatedModel === null;
   },
 });
+
+/**
+ * Internal query: check if discovered models need discovery.
+ * Returns true if there are no discovered models in the database.
+ * Used to trigger auto-discovery on first deployment.
+ */
+export const needsDiscovery = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    // Check if any discovered models exist
+    const discoveredModel = await ctx.db
+      .query("models")
+      .filter((q) => q.eq(q.field("source"), "discovered"))
+      .first();
+
+    return discoveredModel === null;
+  },
+});
+
+/**
+ * Internal mutation: clear all models (for testing auto-discovery flow).
+ * WARNING: This deletes all models from the database. Use only in dev.
+ */
+export const clearAll = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const allModels = await ctx.db.query("models").collect();
+    for (const model of allModels) {
+      await ctx.db.delete(model._id);
+    }
+    console.log(`[models.clearAll] Deleted ${allModels.length} models`);
+    return { deletedCount: allModels.length };
+  },
+});
