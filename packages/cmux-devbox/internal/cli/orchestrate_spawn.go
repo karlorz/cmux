@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/cmux-cli/cmux-devbox/internal/auth"
@@ -18,6 +19,7 @@ var orchestrateSpawnBranch string
 var orchestrateSpawnPRTitle string
 var orchestrateSpawnDependsOn []string
 var orchestrateSpawnPriority int
+var orchestrateSpawnUseEnvJwt bool
 
 var orchestrateSpawnCmd = &cobra.Command{
 	Use:   "spawn <prompt>",
@@ -28,12 +30,18 @@ health monitoring and Convex persistence.
 Creates a tasks record, taskRuns record, and orchestrationTasks record,
 then spawns the agent using the standard spawn flow.
 
+Supports two authentication methods:
+1. Standard CLI auth (default) - Uses your logged-in credentials
+2. JWT auth (--use-env-jwt) - Uses CMUX_TASK_RUN_JWT from environment
+   This allows agents to spawn sub-agents using their task-run JWT.
+
 Examples:
   cmux orchestrate spawn --agent claude/haiku-4.5 --repo owner/repo "Add tests"
   cmux orchestrate spawn --agent codex/gpt-5.1-codex-mini "Fix the bug"
   cmux orchestrate spawn --agent claude/opus-4.5 --repo owner/repo --pr-title "Fix: auth bug" "Fix auth"
   cmux orchestrate spawn --agent claude/haiku-4.5 --depends-on <task-id> "Task B depends on A"
-  cmux orchestrate spawn --agent claude/haiku-4.5 --priority 1 "High priority task"`,
+  cmux orchestrate spawn --agent claude/haiku-4.5 --priority 1 "High priority task"
+  cmux orchestrate spawn --agent claude/haiku-4.5 --use-env-jwt "Sub-task from head agent"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		prompt := args[0]
@@ -56,6 +64,15 @@ Examples:
 		}
 		client.SetTeamSlug(teamSlug)
 
+		// Get JWT from environment if --use-env-jwt flag is set
+		var taskRunJwt string
+		if orchestrateSpawnUseEnvJwt {
+			taskRunJwt = os.Getenv("CMUX_TASK_RUN_JWT")
+			if taskRunJwt == "" {
+				return fmt.Errorf("--use-env-jwt flag set but CMUX_TASK_RUN_JWT environment variable is not set")
+			}
+		}
+
 		result, err := client.OrchestrationSpawn(ctx, vm.OrchestrationSpawnOptions{
 			Prompt:      prompt,
 			Agent:       orchestrateSpawnAgent,
@@ -65,6 +82,7 @@ Examples:
 			DependsOn:   orchestrateSpawnDependsOn,
 			Priority:    orchestrateSpawnPriority,
 			IsCloudMode: true,
+			TaskRunJwt:  taskRunJwt,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to spawn agent: %w", err)
@@ -98,5 +116,6 @@ func init() {
 	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnPRTitle, "pr-title", "", "Pull request title")
 	orchestrateSpawnCmd.Flags().StringSliceVar(&orchestrateSpawnDependsOn, "depends-on", nil, "Orchestration task IDs this task depends on (can be specified multiple times)")
 	orchestrateSpawnCmd.Flags().IntVar(&orchestrateSpawnPriority, "priority", 5, "Task priority (0=highest, 10=lowest, default 5)")
+	orchestrateSpawnCmd.Flags().BoolVar(&orchestrateSpawnUseEnvJwt, "use-env-jwt", false, "Use CMUX_TASK_RUN_JWT from environment for authentication (allows agents to spawn sub-agents)")
 	orchestrateCmd.AddCommand(orchestrateSpawnCmd)
 }

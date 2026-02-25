@@ -66,6 +66,7 @@ import type * as notifications_http from "../notifications_http.js";
 import type * as orchestrate from "../orchestrate.js";
 import type * as orchestrationQueries from "../orchestrationQueries.js";
 import type * as orchestrationWorker from "../orchestrationWorker.js";
+import type * as orchestration_http from "../orchestration_http.js";
 import type * as previewConfigs from "../previewConfigs.js";
 import type * as previewRuns from "../previewRuns.js";
 import type * as previewScreenshots from "../previewScreenshots.js";
@@ -169,6 +170,7 @@ declare const fullApi: ApiFromModules<{
   orchestrate: typeof orchestrate;
   orchestrationQueries: typeof orchestrationQueries;
   orchestrationWorker: typeof orchestrationWorker;
+  orchestration_http: typeof orchestration_http;
   previewConfigs: typeof previewConfigs;
   previewRuns: typeof previewRuns;
   previewScreenshots: typeof previewScreenshots;

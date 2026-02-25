@@ -68,6 +68,11 @@ import {
   instanceActionRouter as devboxV2InstanceActionRouter,
   instanceGetRouter as devboxV2InstanceGetRouter,
 } from "./devbox_v2_http";
+import {
+  createTaskAndRun as orchestrationCreateTaskAndRun,
+  createOrchestrationTask,
+  updateOrchestrationTask,
+} from "./orchestration_http";
 
 const http = httpRouter();
 
@@ -414,6 +419,28 @@ http.route({
   pathPrefix: "/api/v2/devbox/instances/",
   method: "POST",
   handler: devboxV2InstanceActionRouter,
+});
+
+// =============================================================================
+// Orchestration API - JWT-authenticated endpoints for sub-agent spawning
+// =============================================================================
+
+http.route({
+  path: "/api/orchestration/task-and-run",
+  method: "POST",
+  handler: orchestrationCreateTaskAndRun,
+});
+
+http.route({
+  path: "/api/orchestration/tasks",
+  method: "POST",
+  handler: createOrchestrationTask,
+});
+
+http.route({
+  path: "/api/orchestration/tasks/update",
+  method: "POST",
+  handler: updateOrchestrationTask,
 });
 
 export default http;

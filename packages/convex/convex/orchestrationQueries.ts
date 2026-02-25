@@ -13,6 +13,7 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
+import type { Doc, Id } from "./_generated/dataModel";
 import { authMutation, authQuery } from "./users/utils";
 import { getTeamId } from "../_shared/team";
 
@@ -540,6 +541,30 @@ export const failTaskInternal = internalMutation({
 });
 
 /**
+ * Internal mutation to complete task without auth.
+ */
+export const completeTaskInternal = internalMutation({
+  args: {
+    taskId: v.id("orchestrationTasks"),
+    result: v.optional(v.string()),
+  },
+  handler: async (ctx, { taskId, result }) => {
+    const now = Date.now();
+    await ctx.db.patch(taskId, {
+      status: "completed",
+      result,
+      completedAt: now,
+      updatedAt: now,
+    });
+
+    // Schedule immediate triggering of dependent tasks
+    await ctx.scheduler.runAfter(0, internal.orchestrationQueries.triggerDependentTasks, {
+      completedTaskId: taskId,
+    });
+  },
+});
+
+/**
  * Cancel a task.
  * Requires authentication and team membership.
  */
@@ -564,9 +589,50 @@ export const cancelTask = authMutation({
 });
 
 /**
+ * Check for circular dependencies in the task graph.
+ * Returns true if adding the proposed dependencies would create a cycle.
+ */
+async function wouldCreateCircularDependency(
+  ctx: { db: { get: (id: Id<"orchestrationTasks">) => Promise<Doc<"orchestrationTasks"> | null> } },
+  taskId: Id<"orchestrationTasks">,
+  newDepIds: Id<"orchestrationTasks">[]
+): Promise<boolean> {
+  // BFS/DFS to check if any new dependency eventually leads back to taskId
+  const visited = new Set<string>();
+  const queue: Id<"orchestrationTasks">[] = [...newDepIds];
+
+  while (queue.length > 0) {
+    const currentId = queue.shift()!;
+
+    // Found a cycle
+    if (currentId === taskId) {
+      return true;
+    }
+
+    // Skip if already visited
+    if (visited.has(currentId)) {
+      continue;
+    }
+    visited.add(currentId);
+
+    // Get the task and check its dependencies
+    const task = await ctx.db.get(currentId);
+    if (task?.dependencies) {
+      queue.push(...task.dependencies);
+    }
+  }
+
+  return false;
+}
+
+/**
  * Add dependencies to a task.
  * The task will not be eligible for assignment until all dependencies are completed.
  * Requires authentication and team membership.
+ *
+ * Validates:
+ * - Dependencies belong to the same team
+ * - Adding dependencies would not create a circular dependency
  */
 export const addDependencies = authMutation({
   args: {
@@ -581,6 +647,12 @@ export const addDependencies = authMutation({
 
     // Verify user has access to task's team
     await getTeamId(ctx, task.teamId);
+
+    // Check for circular dependencies before adding
+    const wouldCycle = await wouldCreateCircularDependency(ctx, taskId, dependencyIds);
+    if (wouldCycle) {
+      throw new Error("Cannot add dependencies: would create a circular dependency");
+    }
 
     // Merge with existing dependencies, avoiding duplicates
     const existing = task.dependencies ?? [];
@@ -615,6 +687,7 @@ export const addDependencies = authMutation({
 
 /**
  * Internal mutation to add dependencies without auth.
+ * Validates same-team membership and circular dependency prevention.
  */
 export const addDependenciesInternal = internalMutation({
   args: {
@@ -625,6 +698,12 @@ export const addDependenciesInternal = internalMutation({
     const task = await ctx.db.get(taskId);
     if (!task) {
       throw new Error("Task not found");
+    }
+
+    // Check for circular dependencies before adding
+    const wouldCycle = await wouldCreateCircularDependency(ctx, taskId, dependencyIds);
+    if (wouldCycle) {
+      throw new Error("Cannot add dependencies: would create a circular dependency");
     }
 
     const existing = task.dependencies ?? [];

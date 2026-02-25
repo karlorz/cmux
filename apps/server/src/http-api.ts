@@ -25,6 +25,7 @@ import {
 } from "./utils/branchNameGenerator";
 import { getConvex } from "./utils/convexClient";
 import { serverLogger } from "./utils/fileLogger";
+import { extractTaskRunJwt } from "./utils/jwt-helper";
 import {
   aggregateByVendor,
   checkAllProvidersStatusWebMode,
@@ -370,19 +371,16 @@ interface OrchestrationSpawnResponse {
  * Creates orchestration tracking records and spawns an agent.
  * This creates a tasks record, taskRuns record, and orchestrationTasks record,
  * then uses spawnAgent() to start the agent.
+ *
+ * Supports two authentication methods:
+ * 1. Bearer token (Stack Auth) - Standard user authentication
+ * 2. X-Task-Run-JWT - Allows agents to spawn sub-agents using their task-run JWT
  */
 async function handleOrchestrationSpawn(
   req: IncomingMessage,
   res: ServerResponse
 ): Promise<void> {
-  const authToken = parseAuthHeader(req);
-  if (!authToken) {
-    jsonResponse(res, 401, { error: "Unauthorized: Missing Bearer token" });
-    return;
-  }
-
-  const authHeaderJson = JSON.stringify({ accessToken: authToken });
-
+  // Parse request body first (needed to check teamSlugOrId)
   const body = await readJsonBody<OrchestrationSpawnRequest>(req);
   if (!body) {
     jsonResponse(res, 400, { error: "Invalid JSON body" });
@@ -396,9 +394,127 @@ async function handleOrchestrationSpawn(
     return;
   }
 
-  serverLogger.info("[http-api] POST /api/orchestrate/spawn", { agent, prompt: prompt.slice(0, 100) });
+  // Check for JWT auth first (allows agents to spawn sub-agents)
+  const taskRunJwt = extractTaskRunJwt(req.headers as Record<string, string | string[] | undefined>);
+  const authToken = parseAuthHeader(req);
+
+  if (!taskRunJwt && !authToken) {
+    jsonResponse(res, 401, { error: "Unauthorized: Missing Bearer token or X-Task-Run-JWT header" });
+    return;
+  }
+
+  serverLogger.info("[http-api] POST /api/orchestrate/spawn", {
+    agent,
+    prompt: prompt.slice(0, 100),
+    authMethod: taskRunJwt ? "jwt" : "bearer",
+  });
 
   try {
+    // JWT-based auth path (for sub-agent spawning)
+    if (taskRunJwt) {
+      // Find the agent config
+      const agentConfig = AGENT_CONFIGS.find((a) => a.name === agent);
+      if (!agentConfig) {
+        throw new Error(`Agent not found: ${agent}`);
+      }
+
+      // Call Convex HTTP endpoint to create task and run (handles JWT validation internally)
+      const convexSiteUrl = env.CONVEX_SITE_URL ?? env.NEXT_PUBLIC_CONVEX_URL;
+      const taskAndRunResponse = await fetch(`${convexSiteUrl}/api/orchestration/task-and-run`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Task-Run-JWT": taskRunJwt,
+        },
+        body: JSON.stringify({
+          text: prompt,
+          projectFullName: repo ?? "",
+          baseBranch: branch,
+          prompt,
+          agentName: agent,
+          environmentId,
+        }),
+      });
+
+      if (!taskAndRunResponse.ok) {
+        const errorBody = await taskAndRunResponse.json().catch(() => ({ message: "Unknown error" }));
+        throw new Error(`Failed to create task and run: ${errorBody.message || taskAndRunResponse.statusText}`);
+      }
+
+      const { taskId, taskRunId, jwt: newJwt } = await taskAndRunResponse.json() as {
+        taskId: string;
+        taskRunId: string;
+        jwt: string;
+      };
+
+      // Create orchestration task record
+      const orchestrationTaskResponse = await fetch(`${convexSiteUrl}/api/orchestration/tasks`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Task-Run-JWT": taskRunJwt,
+        },
+        body: JSON.stringify({
+          prompt,
+          taskId,
+          taskRunId,
+          priority: priority ?? 5,
+          dependencies: dependsOn,
+        }),
+      });
+
+      if (!orchestrationTaskResponse.ok) {
+        const errorBody = await orchestrationTaskResponse.json().catch(() => ({ message: "Unknown error" }));
+        throw new Error(`Failed to create orchestration task: ${errorBody.message || orchestrationTaskResponse.statusText}`);
+      }
+
+      const { orchestrationTaskId } = await orchestrationTaskResponse.json() as { orchestrationTaskId: string };
+
+      // Spawn the agent (uses the new JWT from taskRunResult for sandbox auth)
+      const spawnResult = await spawnAgent(
+        agentConfig,
+        taskId as Id<"tasks">,
+        {
+          repoUrl: repo,
+          branch,
+          taskDescription: prompt,
+          isCloudMode,
+          environmentId: environmentId as Id<"environments"> | undefined,
+          taskRunId: taskRunId as Id<"taskRuns">,
+        },
+        teamSlugOrId,
+        newJwt
+      );
+
+      // Update orchestration task status (fire and forget - don't block on this)
+      fetch(`${convexSiteUrl}/api/orchestration/tasks/update`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Task-Run-JWT": taskRunJwt,
+        },
+        body: JSON.stringify(spawnResult.success
+          ? { orchestrationTaskId, status: "running", agentName: agent }
+          : { orchestrationTaskId, status: "failed", errorMessage: spawnResult.error ?? "Spawn failed" }
+        ),
+      }).catch((err) => {
+        serverLogger.error("[http-api] Failed to update orchestration task status", err);
+      });
+
+      jsonResponse(res, 200, {
+        orchestrationTaskId,
+        taskId,
+        taskRunId,
+        agentName: agent,
+        vscodeUrl: spawnResult.vscodeUrl,
+        status: spawnResult.success ? "running" : "failed",
+      } satisfies OrchestrationSpawnResponse);
+      return;
+    }
+
+    // Bearer token auth path (standard user authentication)
+    const authHeaderJson = JSON.stringify({ accessToken: authToken });
+
     const result = await runWithAuth(authToken, authHeaderJson, async () => {
       // Find the agent config
       const agentConfig = AGENT_CONFIGS.find((a) => a.name === agent);
@@ -1031,12 +1147,8 @@ interface InternalSpawnRequest {
  * Internal endpoint for the background orchestration worker to spawn agents.
  * Protected by CMUX_INTERNAL_SECRET header validation.
  *
- * NOTE: Background auto-spawning is currently disabled due to auth limitations.
- * The orchestration worker cannot obtain valid Stack Auth JWTs needed for Convex.
- * Spawns must be initiated by authenticated users via the CLI or web UI.
- *
- * For now, this endpoint returns 501 Not Implemented. The orchestration tasks
- * created by /migrate have task/taskRun records that users can spawn manually.
+ * The worker provides the taskRunJwt obtained from Convex internal mutation.
+ * This JWT is used to authenticate with Convex HTTP endpoints.
  */
 async function handleOrchestrationInternalSpawn(
   req: IncomingMessage,
@@ -1055,24 +1167,74 @@ async function handleOrchestrationInternalSpawn(
     return;
   }
 
-  const { orchestrationTaskId, agentName, prompt } = body;
+  const { orchestrationTaskId, agentName, prompt, taskId, taskRunId, taskRunJwt, teamId } = body;
 
-  serverLogger.info("[http-api] POST /api/orchestrate/internal/spawn - disabled (service auth not implemented)", {
+  if (!orchestrationTaskId || !agentName || !prompt || !taskId || !taskRunId) {
+    jsonResponse(res, 400, { error: "Missing required fields" });
+    return;
+  }
+
+  if (!taskRunJwt) {
+    jsonResponse(res, 400, { error: "Missing taskRunJwt - worker must provide JWT for auth" });
+    return;
+  }
+
+  serverLogger.info("[http-api] POST /api/orchestrate/internal/spawn", {
     orchestrationTaskId,
     agentName,
+    taskId,
+    taskRunId,
     prompt: prompt?.slice(0, 100),
   });
 
-  // Return 501 Not Implemented until we implement proper service auth
-  // Options for future implementation:
-  // 1. Service account with Stack Auth (requires Stack Auth configuration)
-  // 2. Admin key-based Convex access (requires Convex deploy key support)
-  // 3. Pre-fetch all needed data in worker and pass to spawn (complex)
-  jsonResponse(res, 501, {
-    error: "Background auto-spawning is disabled. Spawns must be initiated by authenticated users.",
-    orchestrationTaskId,
-    message: "Use 'cmux-devbox orchestrate spawn' or the web UI to spawn agents for pending orchestration tasks.",
-  });
+  try {
+    // Find the agent config
+    const agentConfig = AGENT_CONFIGS.find((a) => a.name === agentName);
+    if (!agentConfig) {
+      throw new Error(`Agent not found: ${agentName}`);
+    }
+
+    // Spawn the agent using the JWT provided by the worker
+    const spawnResult = await spawnAgent(
+      agentConfig,
+      taskId as Id<"tasks">,
+      {
+        taskDescription: prompt,
+        isCloudMode: true,
+        taskRunId: taskRunId as Id<"taskRuns">,
+      },
+      teamId,
+      taskRunJwt
+    );
+
+    // Update orchestration task status via Convex HTTP endpoint
+    const convexSiteUrl = env.CONVEX_SITE_URL ?? env.NEXT_PUBLIC_CONVEX_URL;
+    fetch(`${convexSiteUrl}/api/orchestration/tasks/update`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Task-Run-JWT": taskRunJwt,
+      },
+      body: JSON.stringify(spawnResult.success
+        ? { orchestrationTaskId, status: "running", agentName }
+        : { orchestrationTaskId, status: "failed", errorMessage: spawnResult.error ?? "Spawn failed" }
+      ),
+    }).catch((err) => {
+      serverLogger.error("[http-api] Failed to update orchestration task status", err);
+    });
+
+    jsonResponse(res, 200, {
+      success: spawnResult.success,
+      taskId,
+      taskRunId,
+      vscodeUrl: spawnResult.vscodeUrl,
+      error: spawnResult.error,
+    });
+  } catch (error) {
+    serverLogger.error("[http-api] orchestrate/internal/spawn failed", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    jsonResponse(res, 500, { error: message });
+  }
 }
 
 /**

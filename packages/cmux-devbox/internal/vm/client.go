@@ -1212,6 +1212,33 @@ func (c *Client) doServerRequest(ctx context.Context, method, path string, body 
 	return c.httpClient.Do(req)
 }
 
+// doServerRequestWithJwt makes a request to apps/server using X-Task-Run-JWT auth
+// This allows agents to spawn sub-agents using their task-run JWT
+func (c *Client) doServerRequestWithJwt(ctx context.Context, method, path string, body interface{}, jwt string) (*http.Response, error) {
+	var bodyReader io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		bodyReader = bytes.NewReader(data)
+	}
+
+	// apps/server API is at ServerURL (socket.io server)
+	cfg := auth.GetConfig()
+	url := cfg.ServerURL + path
+	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("X-Task-Run-JWT", jwt)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	return c.httpClient.Do(req)
+}
+
 // StartTaskAgents starts agents for a task using the same flow as web app
 // This calls apps/server HTTP API which uses the same agentSpawner as socket.io
 func (c *Client) StartTaskAgents(ctx context.Context, opts StartTaskAgentsOptions) (*StartTaskAgentsResult, error) {
@@ -1327,6 +1354,7 @@ type OrchestrationSpawnOptions struct {
 	IsCloudMode   bool
 	DependsOn     []string // Orchestration task IDs this task depends on
 	Priority      int      // Task priority (1=highest, 10=lowest, default 5)
+	TaskRunJwt    string   // If set, use X-Task-Run-JWT header instead of Bearer token
 }
 
 // OrchestrationSpawnResult represents the result of spawning an agent with orchestration
@@ -1402,7 +1430,15 @@ func (c *Client) OrchestrationSpawn(ctx context.Context, opts OrchestrationSpawn
 	// Always send priority (0=highest is valid, server defaults to 5 if omitted)
 	body["priority"] = opts.Priority
 
-	resp, err := c.doServerRequest(ctx, "POST", "/api/orchestrate/spawn", body)
+	var resp *http.Response
+	var err error
+
+	// Use JWT auth if TaskRunJwt is provided, otherwise use Bearer token
+	if opts.TaskRunJwt != "" {
+		resp, err = c.doServerRequestWithJwt(ctx, "POST", "/api/orchestrate/spawn", body, opts.TaskRunJwt)
+	} else {
+		resp, err = c.doServerRequest(ctx, "POST", "/api/orchestrate/spawn", body)
+	}
 	if err != nil {
 		return nil, err
 	}

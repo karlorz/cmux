@@ -5,44 +5,30 @@
  * This enables autonomous multi-agent orchestration where tasks are
  * automatically processed without manual intervention.
  *
- * ## Current Status: DISABLED
- *
- * Background auto-spawning is currently disabled because the worker cannot
- * obtain valid Stack Auth JWTs needed for Convex mutations. The worker runs
- * as an internal action without user context.
- *
- * ## How It Would Work (When Enabled)
+ * ## How It Works
  *
  * 1. Cron job calls pollReadyTasks every minute
  * 2. Worker queries for pending orchestration tasks with resolved dependencies
  * 3. For each ready task, worker calls dispatchSpawn
- * 4. dispatchSpawn makes HTTP request to apps/server internal spawn endpoint
- * 5. Server spawns agent using existing infrastructure
+ * 4. dispatchSpawn gets a task-run JWT from Convex internal mutation
+ * 5. dispatchSpawn makes HTTP request to apps/server internal spawn endpoint
+ * 6. Server uses JWT-based auth to create tasks/runs via Convex HTTP endpoints
+ * 7. Server spawns agent using existing infrastructure
  *
- * ## Unblock Conditions
+ * ## Authentication Flow
  *
- * To re-enable background spawning, implement one of:
+ * The worker bypasses Stack Auth by:
+ * 1. Using `taskRuns.getJwtInternal` to get a valid task-run JWT
+ * 2. Passing the JWT to the server's internal spawn endpoint
+ * 3. Server uses JWT to call Convex HTTP endpoints that validate the JWT internally
  *
- * 1. **Service Account Auth**: Create a Stack Auth service account that can
- *    obtain JWTs for internal operations. This requires Stack Auth config
- *    changes and a secure way to store service credentials.
+ * ## Manual Spawning
  *
- * 2. **Admin Key Access**: Add support for Convex admin key-based operations
- *    that bypass user auth for internal workflows. This requires careful
- *    scoping to prevent privilege escalation.
- *
- * 3. **Pre-fetch Strategy**: Have the worker pre-fetch all needed data
- *    (task details, JWT tokens) and pass to the spawn endpoint. Complex
- *    because JWTs have short lifetimes.
- *
- * ## Current Workaround
- *
- * Users must manually spawn orchestration tasks via:
+ * Users can also manually spawn orchestration tasks via:
  * - CLI: `cmux-devbox orchestrate spawn --agent <name> --prompt <prompt>`
+ * - CLI with JWT: `cmux-devbox orchestrate spawn --use-env-jwt --agent <name> <prompt>`
  * - Web UI: Orchestration panel spawn button
- * - API: POST /api/orchestrate/spawn with Bearer token
- *
- * See: apps/server/src/http-api.ts handleOrchestrationInternalSpawn
+ * - API: POST /api/orchestrate/spawn with Bearer token or X-Task-Run-JWT header
  */
 
 import { v } from "convex/values";
@@ -53,28 +39,27 @@ import {
   internalQuery,
 } from "./_generated/server";
 
-// Configuration (used when background spawning is re-enabled)
-// const MAX_CONCURRENT_SPAWNS = 3; // Per-team concurrent spawn limit
+// Configuration
+const MAX_CONCURRENT_SPAWNS = 3; // Per-team concurrent spawn limit
+const TASK_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes - fail tasks running longer than this
 
 /**
  * Poll for ready tasks across all teams.
  * Called by cron job every minute.
  *
- * NOTE: Background auto-spawning is currently DISABLED.
- * The worker cannot obtain valid Stack Auth JWTs needed for Convex operations.
- * Spawns must be initiated by authenticated users via CLI or web UI.
+ * For each team with pending tasks:
+ * 1. Check concurrent spawn limit
+ * 2. Get ready tasks with resolved dependencies
+ * 3. Dispatch spawns for eligible tasks
  *
- * This function is a no-op until service auth is implemented.
- * See http-api.ts handleOrchestrationInternalSpawn for details.
+ * Also runs timeout checks on running tasks.
  */
 export const pollReadyTasks = internalAction({
   args: {},
-  handler: async (_ctx) => {
-    // Background spawning disabled - see handleOrchestrationInternalSpawn
-    // When service auth is implemented, uncomment the code below.
-    return;
+  handler: async (ctx) => {
+    // First, check for timed-out tasks
+    await ctx.runMutation(internal.orchestrationWorker.checkForTimedOutTasks, {});
 
-    /*
     // Get all unique team IDs with pending tasks
     const teams = await ctx.runQuery(
       internal.orchestrationWorker.getTeamsWithPendingTasks
@@ -115,7 +100,6 @@ export const pollReadyTasks = internalAction({
         );
       }
     }
-    */
   },
 });
 
@@ -264,7 +248,38 @@ export const handleTaskCompletion = internalMutation({
       });
     }
 
-    // Note: Dependent tasks will be picked up by next poll cycle
-    // since getReadyTasksInternal() checks dependency completion
+    // Trigger dependent tasks immediately (don't wait for poll cycle)
+    await ctx.scheduler.runAfter(0, internal.orchestrationQueries.triggerDependentTasks, {
+      completedTaskId: orchTask._id,
+    });
+  },
+});
+
+/**
+ * Check for and timeout stale running tasks.
+ * Called by the background worker to fail tasks that have been running too long.
+ */
+export const checkForTimedOutTasks = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const timeoutThreshold = now - TASK_TIMEOUT_MS;
+
+    // Find running tasks that started before the timeout threshold
+    const runningTasks = await ctx.db
+      .query("orchestrationTasks")
+      .filter((q) => q.eq(q.field("status"), "running"))
+      .collect();
+
+    for (const task of runningTasks) {
+      if (task.startedAt && task.startedAt < timeoutThreshold) {
+        await ctx.db.patch(task._id, {
+          status: "failed",
+          errorMessage: `Task timed out after ${TASK_TIMEOUT_MS / 60000} minutes`,
+          completedAt: now,
+          updatedAt: now,
+        });
+      }
+    }
   },
 });

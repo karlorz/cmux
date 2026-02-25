@@ -127,7 +127,9 @@ export async function spawnAgent(
       previousAgents?: string;
     };
   },
-  teamSlugOrId: string
+  teamSlugOrId: string,
+  /** Optional pre-provided JWT (for JWT-based auth when Stack Auth is not available) */
+  preProvidedJwt?: string
 ): Promise<AgentSpawnResult> {
   // Declare taskRunId outside try block so it's accessible in catch for error reporting
   let taskRunId: Id<"taskRuns"> | null = options.taskRunId ?? null;
@@ -148,7 +150,16 @@ export async function spawnAgent(
 
     let taskRunJwt: string;
 
-    if (options.taskRunId) {
+    if (preProvidedJwt && options.taskRunId) {
+      // JWT was pre-provided (JWT-based auth path) - use it directly
+      // Branch update will be skipped since we can't call authMutation without Stack Auth
+      // The caller is responsible for branch management in this case
+      taskRunJwt = preProvidedJwt;
+      taskRunId = options.taskRunId;
+      serverLogger.info(
+        `[AgentSpawner] Using pre-provided JWT for task run ${taskRunId}`
+      );
+    } else if (options.taskRunId) {
       // Task run was pre-created - get JWT and update branch
       const [jwtResult] = await Promise.all([
         getConvex().mutation(api.taskRuns.getJwt, {
