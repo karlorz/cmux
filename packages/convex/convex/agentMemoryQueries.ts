@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { getTeamId } from "../_shared/team";
+import { internalQuery } from "./_generated/server";
 import { authQuery } from "./users/utils";
 
 /**
@@ -151,6 +152,94 @@ export const getLatestTeamMailbox = authQuery({
     });
 
     // Return merged mailbox content
+    const mergedMailbox: MailboxContent = {
+      version: 1,
+      messages: allMessages,
+    };
+
+    return JSON.stringify(mergedMailbox, null, 2);
+  },
+});
+
+/**
+ * Internal query to get the latest team knowledge for JWT-based spawns.
+ * Used by orchestration HTTP endpoints when Stack Auth is not available.
+ */
+export const getLatestTeamKnowledgeInternal = internalQuery({
+  args: { teamId: v.string() },
+  handler: async (ctx, args): Promise<string | null> => {
+    const snapshot = await ctx.db
+      .query("agentMemorySnapshots")
+      .withIndex("by_team_type", (q) =>
+        q.eq("teamId", args.teamId).eq("memoryType", "knowledge")
+      )
+      .order("desc")
+      .first();
+
+    if (!snapshot) {
+      return null;
+    }
+
+    const content = snapshot.content?.trim();
+    if (!content || content.length < 50) {
+      return null;
+    }
+
+    return snapshot.content;
+  },
+});
+
+/**
+ * Internal query to get the latest team mailbox for JWT-based spawns.
+ * Used by orchestration HTTP endpoints when Stack Auth is not available.
+ */
+export const getLatestTeamMailboxInternal = internalQuery({
+  args: { teamId: v.string() },
+  handler: async (ctx, args): Promise<string | null> => {
+    const mailboxSnapshots = await ctx.db
+      .query("agentMemorySnapshots")
+      .withIndex("by_team_type", (q) =>
+        q.eq("teamId", args.teamId).eq("memoryType", "mailbox")
+      )
+      .order("desc")
+      .take(50);
+
+    if (mailboxSnapshots.length === 0) {
+      return null;
+    }
+
+    const allMessages: MailboxMessage[] = [];
+    const seenIds = new Set<string>();
+
+    for (const snapshot of mailboxSnapshots) {
+      try {
+        const content = snapshot.content?.trim();
+        if (!content) continue;
+
+        const mailbox = JSON.parse(content) as MailboxContent;
+        if (!mailbox.messages || !Array.isArray(mailbox.messages)) continue;
+
+        for (const msg of mailbox.messages) {
+          if (!msg.read && msg.id && !seenIds.has(msg.id)) {
+            seenIds.add(msg.id);
+            allMessages.push(msg);
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    if (allMessages.length === 0) {
+      return null;
+    }
+
+    allMessages.sort((a, b) => {
+      const timeA = new Date(a.timestamp).getTime() || 0;
+      const timeB = new Date(b.timestamp).getTime() || 0;
+      return timeA - timeB;
+    });
+
     const mergedMailbox: MailboxContent = {
       version: 1,
       messages: allMessages,

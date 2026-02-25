@@ -7,6 +7,7 @@ import {
 } from "@cmux/shared/agentConfig";
 import {
   getProviderRegistry,
+  type ApiFormat,
   type ProviderOverride,
 } from "@cmux/shared/provider-registry";
 import {
@@ -101,6 +102,28 @@ type WorkspaceConfigLayer = {
   envVarsContent: string | undefined;
 };
 
+/**
+ * Pre-fetched spawn configuration data (from Convex HTTP endpoint).
+ * Used when Stack Auth is not available (JWT-based auth paths).
+ */
+export interface PreFetchedSpawnConfig {
+  apiKeys: Record<string, string>;
+  workspaceSettings: {
+    bypassAnthropicProxy: boolean;
+  } | null;
+  providerOverrides: Array<{
+    providerId: string;
+    baseUrl?: string;
+    apiFormat?: ApiFormat;
+    apiKeyEnvVar?: string;
+    customHeaders?: Record<string, string>;
+    fallbacks?: Array<{ modelName: string; priority: number }>;
+    enabled: boolean;
+  }>;
+  previousKnowledge: string | null;
+  previousMailbox: string | null;
+}
+
 export async function spawnAgent(
   agent: AgentConfig,
   taskId: Id<"tasks">,
@@ -126,6 +149,8 @@ export async function spawnAgent(
       previousPlan?: string;
       previousAgents?: string;
     };
+    /** Pre-fetched spawn config (for JWT auth paths that can't call Convex directly) */
+    preFetchedConfig?: PreFetchedSpawnConfig;
   },
   teamSlugOrId: string,
   /** Optional pre-provided JWT (for JWT-based auth when Stack Auth is not available) */
@@ -476,39 +501,71 @@ export async function spawnAgent(
 
     // Fetch API keys, workspace settings, provider overrides, and memory for cross-run seeding
     // BEFORE calling agent.environment() so agents can access them in their environment configuration
-    const [userApiKeys, workspaceSettings, providerOverrides, previousKnowledge, previousMailbox] = await Promise.all([
-      getConvex().query(api.apiKeys.getAllForAgents, { teamSlugOrId }),
-      getConvex().query(api.workspaceSettings.get, { teamSlugOrId }),
-      getConvex().query(api.providerOverrides.getForTeam, { teamSlugOrId })
-        .catch((err) => {
-          console.error("[AgentSpawner] Failed to fetch provider overrides", err);
-          return [];
-        }),
-      // Query previous knowledge for cross-run memory seeding (S5b)
-      getConvex()
-        .query(api.agentMemoryQueries.getLatestTeamKnowledge, {
-          teamSlugOrId,
-        })
-        .catch((error) => {
-          serverLogger.warn(
-            "[AgentSpawner] Failed to fetch previous knowledge for memory seeding",
-            error
-          );
-          return null;
-        }),
-      // Query previous mailbox with unread messages for cross-run mailbox seeding (S10)
-      getConvex()
-        .query(api.agentMemoryQueries.getLatestTeamMailbox, {
-          teamSlugOrId,
-        })
-        .catch((error) => {
-          serverLogger.warn(
-            "[AgentSpawner] Failed to fetch previous mailbox for memory seeding",
-            error
-          );
-          return null;
-        }),
-    ]);
+    // If pre-fetched config is provided (JWT auth path), use it instead of querying Convex
+    let userApiKeys: Record<string, string>;
+    let workspaceSettings: { bypassAnthropicProxy?: boolean } | null;
+    let providerOverrides: Array<{
+      teamId?: string;
+      providerId: string;
+      baseUrl?: string;
+      apiFormat?: ApiFormat;
+      apiKeyEnvVar?: string;
+      customHeaders?: Record<string, string>;
+      fallbacks?: Array<{ modelName: string; priority: number }>;
+      enabled: boolean;
+    }>;
+    let previousKnowledge: string | null;
+    let previousMailbox: string | null;
+
+    if (options.preFetchedConfig) {
+      // Use pre-fetched config (JWT auth path - Stack Auth not available)
+      serverLogger.info("[AgentSpawner] Using pre-fetched spawn config (JWT auth path)");
+      userApiKeys = options.preFetchedConfig.apiKeys;
+      workspaceSettings = options.preFetchedConfig.workspaceSettings;
+      providerOverrides = options.preFetchedConfig.providerOverrides;
+      previousKnowledge = options.preFetchedConfig.previousKnowledge;
+      previousMailbox = options.preFetchedConfig.previousMailbox;
+    } else {
+      // Fetch from Convex (Stack Auth available)
+      const results = await Promise.all([
+        getConvex().query(api.apiKeys.getAllForAgents, { teamSlugOrId }),
+        getConvex().query(api.workspaceSettings.get, { teamSlugOrId }),
+        getConvex().query(api.providerOverrides.getForTeam, { teamSlugOrId })
+          .catch((err) => {
+            console.error("[AgentSpawner] Failed to fetch provider overrides", err);
+            return [];
+          }),
+        // Query previous knowledge for cross-run memory seeding (S5b)
+        getConvex()
+          .query(api.agentMemoryQueries.getLatestTeamKnowledge, {
+            teamSlugOrId,
+          })
+          .catch((error) => {
+            serverLogger.warn(
+              "[AgentSpawner] Failed to fetch previous knowledge for memory seeding",
+              error
+            );
+            return null;
+          }),
+        // Query previous mailbox with unread messages for cross-run mailbox seeding (S10)
+        getConvex()
+          .query(api.agentMemoryQueries.getLatestTeamMailbox, {
+            teamSlugOrId,
+          })
+          .catch((error) => {
+            serverLogger.warn(
+              "[AgentSpawner] Failed to fetch previous mailbox for memory seeding",
+              error
+            );
+            return null;
+          }),
+      ]);
+      userApiKeys = results[0];
+      workspaceSettings = results[1];
+      providerOverrides = results[2];
+      previousKnowledge = results[3];
+      previousMailbox = results[4];
+    }
 
     if (previousKnowledge) {
       serverLogger.info(

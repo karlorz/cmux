@@ -1762,6 +1762,7 @@ export const createInternal = internalMutation({
     description: v.optional(v.string()),
     projectFullName: v.optional(v.string()),
     baseBranch: v.optional(v.string()),
+    pullRequestTitle: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -1770,6 +1771,7 @@ export const createInternal = internalMutation({
       description: args.description,
       projectFullName: args.projectFullName,
       baseBranch: args.baseBranch,
+      pullRequestTitle: args.pullRequestTitle,
       isCompleted: false,
       isArchived: false,
       isPreview: false,

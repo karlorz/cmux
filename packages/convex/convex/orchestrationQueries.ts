@@ -985,6 +985,19 @@ export const scheduleRetry = internalMutation({
 });
 
 /**
+ * Get a single orchestration task by ID (internal).
+ * Used for authorization checks (verify task belongs to team).
+ */
+export const getTaskInternal = internalQuery({
+  args: {
+    taskId: v.id("orchestrationTasks"),
+  },
+  handler: async (ctx, args) => {
+    return ctx.db.get(args.taskId);
+  },
+});
+
+/**
  * Count running and assigned tasks for a team.
  * Used to enforce concurrent spawn limits.
  */

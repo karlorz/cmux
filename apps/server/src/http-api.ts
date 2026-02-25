@@ -16,7 +16,7 @@ import {
   getVariantsForVendor,
 } from "@cmux/shared/agent-catalog";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
-import { spawnAgent, spawnAllAgents } from "./agentSpawner";
+import { spawnAgent, spawnAllAgents, type PreFetchedSpawnConfig } from "./agentSpawner";
 import { getProviderHealthMonitor } from "@cmux/shared/resilience/provider-health";
 import {
   DEFAULT_BRANCH_PREFIX,
@@ -387,7 +387,7 @@ async function handleOrchestrationSpawn(
     return;
   }
 
-  const { teamSlugOrId, prompt, agent, repo, branch, prTitle: _prTitle, environmentId, isCloudMode = true, dependsOn, priority } = body;
+  const { teamSlugOrId, prompt, agent, repo, branch, prTitle, environmentId, isCloudMode = true, dependsOn, priority } = body;
 
   if (!teamSlugOrId || !prompt || !agent) {
     jsonResponse(res, 400, { error: "Missing required fields: teamSlugOrId, prompt, agent" });
@@ -433,6 +433,7 @@ async function handleOrchestrationSpawn(
           prompt,
           agentName: agent,
           environmentId,
+          pullRequestTitle: prTitle,
         }),
       });
 
@@ -470,7 +471,23 @@ async function handleOrchestrationSpawn(
 
       const { orchestrationTaskId } = await orchestrationTaskResponse.json() as { orchestrationTaskId: string };
 
-      // Spawn the agent (uses the new JWT from taskRunResult for sandbox auth)
+      // Fetch spawn config (API keys, workspace settings, etc.) via JWT-authenticated endpoint
+      // This is needed because spawnAgent needs this data but can't call Convex without Stack Auth
+      const spawnConfigResponse = await fetch(`${convexSiteUrl}/api/orchestration/spawn-config`, {
+        method: "GET",
+        headers: {
+          "X-Task-Run-JWT": taskRunJwt,
+        },
+      });
+
+      if (!spawnConfigResponse.ok) {
+        const errorBody = await spawnConfigResponse.json().catch(() => ({ message: "Unknown error" }));
+        throw new Error(`Failed to fetch spawn config: ${errorBody.message || spawnConfigResponse.statusText}`);
+      }
+
+      const preFetchedConfig = await spawnConfigResponse.json() as PreFetchedSpawnConfig;
+
+      // Spawn the agent (uses pre-fetched config since Stack Auth is not available)
       const spawnResult = await spawnAgent(
         agentConfig,
         taskId as Id<"tasks">,
@@ -481,6 +498,7 @@ async function handleOrchestrationSpawn(
           isCloudMode,
           environmentId: environmentId as Id<"environments"> | undefined,
           taskRunId: taskRunId as Id<"taskRuns">,
+          preFetchedConfig,
         },
         teamSlugOrId,
         newJwt
@@ -1194,7 +1212,23 @@ async function handleOrchestrationInternalSpawn(
       throw new Error(`Agent not found: ${agentName}`);
     }
 
-    // Spawn the agent using the JWT provided by the worker
+    // Fetch spawn config via JWT-authenticated endpoint (needed for spawnAgent)
+    const convexSiteUrl = env.CONVEX_SITE_URL ?? env.NEXT_PUBLIC_CONVEX_URL;
+    const spawnConfigResponse = await fetch(`${convexSiteUrl}/api/orchestration/spawn-config`, {
+      method: "GET",
+      headers: {
+        "X-Task-Run-JWT": taskRunJwt,
+      },
+    });
+
+    if (!spawnConfigResponse.ok) {
+      const errorBody = await spawnConfigResponse.json().catch(() => ({ message: "Unknown error" }));
+      throw new Error(`Failed to fetch spawn config: ${errorBody.message || spawnConfigResponse.statusText}`);
+    }
+
+    const preFetchedConfig = await spawnConfigResponse.json() as PreFetchedSpawnConfig;
+
+    // Spawn the agent using pre-fetched config (Stack Auth not available in worker context)
     const spawnResult = await spawnAgent(
       agentConfig,
       taskId as Id<"tasks">,
@@ -1202,13 +1236,13 @@ async function handleOrchestrationInternalSpawn(
         taskDescription: prompt,
         isCloudMode: true,
         taskRunId: taskRunId as Id<"taskRuns">,
+        preFetchedConfig,
       },
       teamId,
       taskRunJwt
     );
 
     // Update orchestration task status via Convex HTTP endpoint
-    const convexSiteUrl = env.CONVEX_SITE_URL ?? env.NEXT_PUBLIC_CONVEX_URL;
     fetch(`${convexSiteUrl}/api/orchestration/tasks/update`, {
       method: "POST",
       headers: {

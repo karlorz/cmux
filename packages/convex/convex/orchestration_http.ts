@@ -12,6 +12,28 @@ import type { Id } from "./_generated/dataModel";
 import { httpAction } from "./_generated/server";
 import { z } from "zod";
 
+/**
+ * Pre-fetched spawn configuration data type.
+ * This is returned by the getSpawnConfig endpoint and passed to spawnAgent.
+ */
+export interface SpawnConfigData {
+  apiKeys: Record<string, string>;
+  workspaceSettings: {
+    bypassAnthropicProxy: boolean;
+  } | null;
+  providerOverrides: Array<{
+    providerId: string;
+    baseUrl?: string;
+    apiFormat?: string;
+    apiKeyEnvVar?: string;
+    customHeaders?: Record<string, string>;
+    fallbacks?: Array<{ modelName: string; priority: number }>;
+    enabled: boolean;
+  }>;
+  previousKnowledge: string | null;
+  previousMailbox: string | null;
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -41,6 +63,7 @@ const CreateTaskAndRunSchema = z.object({
   agentName: z.string().optional(),
   newBranch: z.string().optional(),
   environmentId: z.string().optional(),
+  pullRequestTitle: z.string().optional(),
 });
 
 type CreateTaskAndRunInput = z.infer<typeof CreateTaskAndRunSchema>;
@@ -120,6 +143,7 @@ export const createTaskAndRun = httpAction(async (ctx, req) => {
       text: payload.text,
       projectFullName: payload.projectFullName ?? "",
       baseBranch: payload.baseBranch,
+      pullRequestTitle: payload.pullRequestTitle,
     });
 
     // Create task run
@@ -294,9 +318,11 @@ export const updateOrchestrationTask = httpAction(async (ctx, req) => {
     return jsonResponse({ code: 400, message: "Invalid JSON" }, 400);
   }
 
-  // Verify JWT (we just need to confirm it's valid, teamId/userId not strictly needed here)
+  // Verify JWT and extract teamId for authorization check
+  let tokenTeamId: string;
   try {
-    await verifyTaskRunToken(token, env.CMUX_TASK_RUN_JWT_SECRET);
+    const tokenPayload = await verifyTaskRunToken(token, env.CMUX_TASK_RUN_JWT_SECRET);
+    tokenTeamId = tokenPayload.teamId;
   } catch {
     return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
   }
@@ -306,6 +332,22 @@ export const updateOrchestrationTask = httpAction(async (ctx, req) => {
   >;
 
   try {
+    // Verify the orchestration task belongs to the same team as the JWT
+    const task = await ctx.runQuery(
+      internal.orchestrationQueries.getTaskInternal,
+      { taskId: orchestrationTaskId }
+    );
+    if (!task) {
+      return jsonResponse({ code: 404, message: "Task not found" }, 404);
+    }
+    if (task.teamId !== tokenTeamId) {
+      console.warn(
+        "[orchestration_http] TeamId mismatch in updateOrchestrationTask",
+        { taskTeamId: task.teamId, tokenTeamId }
+      );
+      return jsonResponse({ code: 403, message: "Forbidden: Team mismatch" }, 403);
+    }
+
     // Handle different status updates
     if (payload.status === "assigned" && payload.agentName) {
       await ctx.runMutation(internal.orchestrationQueries.assignTaskInternal, {
@@ -337,5 +379,85 @@ export const updateOrchestrationTask = httpAction(async (ctx, req) => {
       error
     );
     return jsonResponse({ code: 500, message: "Failed to update task" }, 500);
+  }
+});
+
+/**
+ * HTTP action to get spawn configuration data for JWT-based auth.
+ *
+ * This endpoint fetches all the data that spawnAgent needs from Convex,
+ * allowing JWT-authenticated spawn paths to work without Stack Auth context.
+ *
+ * Authenticates via task-run JWT.
+ * Returns: SpawnConfigData
+ */
+export const getSpawnConfig = httpAction(async (ctx, req) => {
+  const taskRunJwt = req.headers.get("x-task-run-jwt");
+  const authHeader = req.headers.get("authorization");
+  const bearerToken = extractBearerToken(authHeader);
+  const token = taskRunJwt ?? bearerToken;
+
+  if (!token) {
+    return jsonResponse(
+      {
+        code: 401,
+        message: "Unauthorized: Missing X-Task-Run-JWT header or Bearer token",
+      },
+      401
+    );
+  }
+
+  // Verify the JWT
+  let teamId: string;
+  let userId: string;
+
+  try {
+    const tokenPayload = await verifyTaskRunToken(
+      token,
+      env.CMUX_TASK_RUN_JWT_SECRET
+    );
+    teamId = tokenPayload.teamId;
+    userId = tokenPayload.userId;
+  } catch (error) {
+    console.error("[orchestration_http] Failed to verify JWT", error);
+    return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
+  }
+
+  try {
+    // Fetch all spawn configuration data in parallel
+    const [apiKeys, workspaceSettings, providerOverrides, previousKnowledge, previousMailbox] =
+      await Promise.all([
+        ctx.runQuery(internal.apiKeys.getAllForAgentsInternal, { teamId, userId }),
+        ctx.runQuery(internal.workspaceSettings.getByTeamAndUserInternal, { teamId, userId }),
+        ctx.runQuery(internal.providerOverrides.getAllEnabledForTeam, { teamId }),
+        ctx.runQuery(internal.agentMemoryQueries.getLatestTeamKnowledgeInternal, { teamId }),
+        ctx.runQuery(internal.agentMemoryQueries.getLatestTeamMailboxInternal, { teamId }),
+      ]);
+
+    const config: SpawnConfigData = {
+      apiKeys,
+      workspaceSettings: workspaceSettings
+        ? { bypassAnthropicProxy: workspaceSettings.bypassAnthropicProxy ?? false }
+        : null,
+      providerOverrides: providerOverrides.map((o) => ({
+        providerId: o.providerId,
+        baseUrl: o.baseUrl,
+        apiFormat: o.apiFormat,
+        apiKeyEnvVar: o.apiKeyEnvVar,
+        customHeaders: o.customHeaders,
+        fallbacks: o.fallbacks,
+        enabled: o.enabled,
+      })),
+      previousKnowledge,
+      previousMailbox,
+    };
+
+    return jsonResponse(config);
+  } catch (error) {
+    console.error("[orchestration_http] Failed to get spawn config", error);
+    return jsonResponse(
+      { code: 500, message: "Failed to get spawn configuration" },
+      500
+    );
   }
 });

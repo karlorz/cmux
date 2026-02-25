@@ -72,6 +72,7 @@ import {
   createTaskAndRun as orchestrationCreateTaskAndRun,
   createOrchestrationTask,
   updateOrchestrationTask,
+  getSpawnConfig as orchestrationGetSpawnConfig,
 } from "./orchestration_http";
 
 const http = httpRouter();
@@ -441,6 +442,12 @@ http.route({
   path: "/api/orchestration/tasks/update",
   method: "POST",
   handler: updateOrchestrationTask,
+});
+
+http.route({
+  path: "/api/orchestration/spawn-config",
+  method: "GET",
+  handler: orchestrationGetSpawnConfig,
 });
 
 export default http;
