@@ -257,6 +257,10 @@ exit 0`;
       CLAUDE_CODE_ENABLE_TELEMETRY: 0,
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: 1,
       CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: 1,
+      // CMUX system vars for stop hooks (memory sync, crown/complete)
+      CMUX_CALLBACK_URL: ctx.callbackUrl,
+      CMUX_TASK_RUN_ID: ctx.taskRunId,
+      CMUX_TASK_RUN_JWT: ctx.taskRunJwt,
       ...(() => {
         // Priority order for base URL routing:
         // 1. OAuth token -> direct to Anthropic (no proxy)
