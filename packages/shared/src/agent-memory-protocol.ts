@@ -408,6 +408,20 @@ log() {
 sync_memory() {
   log "Starting memory sync"
 
+  # Fallback to reading Convex URL from .env if CMUX_CALLBACK_URL not set
+  if [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
+    if [ -f "/root/workspace/.env" ]; then
+      # Try CONVEX_SITE_URL first (preferred for HTTP actions), then CONVEX_SELF_HOSTED_URL
+      CMUX_CALLBACK_URL=$(grep -E "^CONVEX_SITE_URL=" /root/workspace/.env 2>/dev/null | cut -d= -f2- | tr -d ' ')
+      if [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
+        CMUX_CALLBACK_URL=$(grep -E "^CONVEX_SELF_HOSTED_URL=" /root/workspace/.env 2>/dev/null | cut -d= -f2- | tr -d ' ')
+      fi
+      if [ -n "\${CMUX_CALLBACK_URL:-}" ]; then
+        log "Loaded CMUX_CALLBACK_URL from .env: \${CMUX_CALLBACK_URL}"
+      fi
+    fi
+  fi
+
   # Check required env vars
   if [ -z "\${CMUX_CALLBACK_URL:-}" ] || [ -z "\${CMUX_TASK_RUN_JWT:-}" ]; then
     log "Missing required env vars (CMUX_CALLBACK_URL or CMUX_TASK_RUN_JWT), skipping sync"
@@ -468,9 +482,10 @@ sync_memory() {
   payload=$(jq -n --argjson files "$files_json" '{"files": $files}')
   log "Syncing $file_count files to Convex"
 
-  # POST to Convex
+  # POST to Convex (Convex-Client header required for self-hosted Convex)
   response=$(curl -s -w "\\n%{http_code}" -X POST "\${CMUX_CALLBACK_URL}/api/memory/sync" \\
     -H "Content-Type: application/json" \\
+    -H "Convex-Client: node-1.0.0" \\
     -H "x-cmux-token: \${CMUX_TASK_RUN_JWT}" \\
     -d "$payload" 2>>"$LOG_FILE")
 
