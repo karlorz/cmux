@@ -16,9 +16,9 @@ PASS_COUNT=0
 FAIL_COUNT=0
 SKIP_COUNT=0
 
-pass() { ((PASS_COUNT++)); echo "[PASS] $1"; }
-fail() { ((FAIL_COUNT++)); echo "[FAIL] $1"; }
-skip() { ((SKIP_COUNT++)); echo "[SKIP] $1"; }
+pass() { PASS_COUNT=$((PASS_COUNT + 1)); echo "[PASS] $1"; }
+fail() { FAIL_COUNT=$((FAIL_COUNT + 1)); echo "[FAIL] $1"; }
+skip() { SKIP_COUNT=$((SKIP_COUNT + 1)); echo "[SKIP] $1"; }
 
 # Test 1: Help command
 echo ""

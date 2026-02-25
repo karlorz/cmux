@@ -274,10 +274,14 @@ export const createTask = authMutation({
     });
 
     // Update dependent tasks to track this dependency
+    // Security: validate dependencies belong to the same team
     if (args.dependencies) {
       for (const depId of args.dependencies) {
         const dep = await ctx.db.get(depId);
         if (dep) {
+          if (dep.teamId !== teamId) {
+            throw new Error(`Dependency ${depId} belongs to a different team`);
+          }
           await ctx.db.patch(depId, {
             dependents: [...(dep.dependents ?? []), taskId],
             updatedAt: now,

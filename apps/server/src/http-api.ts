@@ -518,7 +518,17 @@ async function handleOrchestrationList(
 
   const url = new URL(req.url || "/", `http://${req.headers.host}`);
   const teamSlugOrId = url.searchParams.get("teamSlugOrId");
-  const status = url.searchParams.get("status") as
+  const statusParam = url.searchParams.get("status");
+
+  // Validate status parameter if provided
+  const validStatuses = ["pending", "assigned", "running", "completed", "failed", "cancelled"];
+  if (statusParam && !validStatuses.includes(statusParam)) {
+    jsonResponse(res, 400, {
+      error: `Invalid status parameter: ${statusParam}. Must be one of: ${validStatuses.join(", ")}`,
+    });
+    return;
+  }
+  const status = statusParam as
     | "pending"
     | "assigned"
     | "running"
