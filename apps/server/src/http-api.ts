@@ -17,6 +17,7 @@ import {
 } from "@cmux/shared/agent-catalog";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { spawnAgent, spawnAllAgents } from "./agentSpawner";
+import { getProviderHealthMonitor, type ProviderHealthMetrics } from "@cmux/shared/resilience/provider-health";
 import {
   DEFAULT_BRANCH_PREFIX,
   generateBranchNamesFromDescription,
@@ -1075,6 +1076,122 @@ async function handleOrchestrationInternalSpawn(
 }
 
 /**
+ * Orchestration Metrics Response Interface
+ */
+interface OrchestrationMetrics {
+  activeOrchestrations: number;
+  tasksByStatus: Record<string, number>;
+  providerHealth: Record<string, {
+    status: string;
+    circuitState: string;
+    latencyP50: number;
+    latencyP99: number;
+    successRate: number;
+    failureCount: number;
+  }>;
+}
+
+/**
+ * Handle GET /api/orchestrate/metrics
+ *
+ * Returns orchestration metrics including:
+ * - Active orchestration count
+ * - Task count by status
+ * - Provider health with circuit breaker states
+ */
+async function handleOrchestrationMetrics(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+  const authToken = parseAuthHeader(req);
+  if (!authToken) {
+    jsonResponse(res, 401, { error: "Unauthorized: Missing Bearer token" });
+    return;
+  }
+
+  const url = new URL(req.url || "/", `http://${req.headers.host}`);
+  const teamSlugOrId = url.searchParams.get("teamSlugOrId");
+
+  if (!teamSlugOrId) {
+    jsonResponse(res, 400, { error: "Missing required query parameter: teamSlugOrId" });
+    return;
+  }
+
+  try {
+    const metrics = await runWithAuthToken(authToken, async () => {
+      // Verify team membership first
+      const memberships = await getConvex().query(api.teams.listTeamMemberships, {});
+      const membership = memberships.find(
+        (m) => m.team.teamId === teamSlugOrId || m.team.slug === teamSlugOrId
+      );
+      if (!membership) {
+        throw new Error("Team not found or not a member");
+      }
+
+      // Get orchestration tasks by status
+      const statusList = ["pending", "assigned", "running", "completed", "failed", "cancelled"] as const;
+      const tasksByStatus: Record<string, number> = {};
+      let activeOrchestrations = 0;
+
+      for (const status of statusList) {
+        const tasks = await getConvex().query(api.orchestrationQueries.listTasksByTeam, {
+          teamSlugOrId: membership.team.teamId,
+          status,
+          limit: 100,
+        });
+        tasksByStatus[status] = tasks.length;
+        if (status === "running" || status === "assigned") {
+          activeOrchestrations += tasks.length;
+        }
+      }
+
+      // Get provider health metrics
+      const healthMonitor = getProviderHealthMonitor();
+      const allProviderMetrics = healthMonitor.getAllMetrics();
+
+      const providerHealth: OrchestrationMetrics["providerHealth"] = {};
+      for (const metrics of allProviderMetrics) {
+        providerHealth[metrics.providerId] = {
+          status: metrics.status,
+          circuitState: metrics.circuitState,
+          latencyP50: metrics.latencyP50,
+          latencyP99: metrics.latencyP99,
+          successRate: metrics.successRate,
+          failureCount: metrics.failureCount,
+        };
+      }
+
+      // If no providers tracked yet, add common ones with default healthy state
+      const commonProviders = ["claude", "openai", "gemini", "anthropic", "opencode"];
+      for (const provider of commonProviders) {
+        if (!providerHealth[provider]) {
+          providerHealth[provider] = {
+            status: "healthy",
+            circuitState: "closed",
+            latencyP50: 0,
+            latencyP99: 0,
+            successRate: 1.0,
+            failureCount: 0,
+          };
+        }
+      }
+
+      return {
+        activeOrchestrations,
+        tasksByStatus,
+        providerHealth,
+      } satisfies OrchestrationMetrics;
+    });
+
+    jsonResponse(res, 200, metrics);
+  } catch (error) {
+    serverLogger.error("[http-api] orchestrate/metrics failed", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    jsonResponse(res, 500, { error: message });
+  }
+}
+
+/**
  * Handle GET /api/providers
  *
  * Returns provider availability based on Convex-stored API keys.
@@ -1177,6 +1294,12 @@ export function handleHttpRequest(
   // Route: GET /api/orchestrate/list - List orchestration tasks for team
   if (method === "GET" && path === "/api/orchestrate/list") {
     void handleOrchestrationList(req, res);
+    return true;
+  }
+
+  // Route: GET /api/orchestrate/metrics - Get orchestration metrics and provider health
+  if (method === "GET" && path === "/api/orchestrate/metrics") {
+    void handleOrchestrationMetrics(req, res);
     return true;
   }
 

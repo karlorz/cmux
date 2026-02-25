@@ -1341,23 +1341,24 @@ type OrchestrationSpawnResult struct {
 
 // OrchestrationTask represents an orchestration task from the API
 type OrchestrationTask struct {
-	ID                string  `json:"_id"`
-	TeamID            string  `json:"teamId"`
-	UserID            string  `json:"userId"`
-	Prompt            string  `json:"prompt"`
-	Status            string  `json:"status"`
-	Priority          int     `json:"priority"`
-	AssignedAgentName *string `json:"assignedAgentName,omitempty"`
-	AssignedSandboxID *string `json:"assignedSandboxId,omitempty"`
-	TaskID            *string `json:"taskId,omitempty"`
-	TaskRunID         *string `json:"taskRunId,omitempty"`
-	Result            *string `json:"result,omitempty"`
-	ErrorMessage      *string `json:"errorMessage,omitempty"`
-	CreatedAt         int64   `json:"createdAt"`
-	UpdatedAt         int64   `json:"updatedAt"`
-	AssignedAt        *int64  `json:"assignedAt,omitempty"`
-	StartedAt         *int64  `json:"startedAt,omitempty"`
-	CompletedAt       *int64  `json:"completedAt,omitempty"`
+	ID                string   `json:"_id"`
+	TeamID            string   `json:"teamId"`
+	UserID            string   `json:"userId"`
+	Prompt            string   `json:"prompt"`
+	Status            string   `json:"status"`
+	Priority          int      `json:"priority"`
+	Dependencies      []string `json:"dependencies,omitempty"`
+	AssignedAgentName *string  `json:"assignedAgentName,omitempty"`
+	AssignedSandboxID *string  `json:"assignedSandboxId,omitempty"`
+	TaskID            *string  `json:"taskId,omitempty"`
+	TaskRunID         *string  `json:"taskRunId,omitempty"`
+	Result            *string  `json:"result,omitempty"`
+	ErrorMessage      *string  `json:"errorMessage,omitempty"`
+	CreatedAt         int64    `json:"createdAt"`
+	UpdatedAt         int64    `json:"updatedAt"`
+	AssignedAt        *int64   `json:"assignedAt,omitempty"`
+	StartedAt         *int64   `json:"startedAt,omitempty"`
+	CompletedAt       *int64   `json:"completedAt,omitempty"`
 }
 
 // OrchestrationListResult represents the result of listing orchestration tasks
@@ -1582,6 +1583,49 @@ func (c *Client) OrchestrationMigrate(ctx context.Context, opts OrchestrationMig
 	}
 
 	var result OrchestrationMigrateResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// OrchestrationMetricsResult represents metrics for orchestration monitoring
+type OrchestrationMetricsResult struct {
+	ActiveOrchestrations int                                  `json:"activeOrchestrations"`
+	TasksByStatus        map[string]int                       `json:"tasksByStatus"`
+	ProviderHealth       map[string]OrchestrationProviderInfo `json:"providerHealth"`
+}
+
+// OrchestrationProviderInfo represents health info for a provider
+type OrchestrationProviderInfo struct {
+	Status       string  `json:"status"`
+	CircuitState string  `json:"circuitState"`
+	LatencyP50   float64 `json:"latencyP50"`
+	LatencyP99   float64 `json:"latencyP99"`
+	SuccessRate  float64 `json:"successRate"`
+	FailureCount int     `json:"failureCount"`
+}
+
+// OrchestrationMetrics gets orchestration metrics including provider health
+func (c *Client) OrchestrationMetrics(ctx context.Context) (*OrchestrationMetricsResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	path := fmt.Sprintf("/api/orchestrate/metrics?teamSlugOrId=%s", c.teamSlug)
+
+	resp, err := c.doServerRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("orchestration metrics failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result OrchestrationMetricsResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
