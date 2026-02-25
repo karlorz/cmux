@@ -33,7 +33,7 @@ export function OrchestrationTaskPanel({ teamSlugOrId }: OrchestrationTaskPanelP
   const [statusFilter, setStatusFilter] = useState<TaskStatus | "all">("all");
 
   const tasks = useQuery(api.orchestrationQueries.listTasksByTeam, {
-    teamId: teamSlugOrId,
+    teamSlugOrId,
     status: statusFilter === "all" ? undefined : statusFilter,
     limit: 50,
   });

@@ -53,8 +53,8 @@ import {
   internalQuery,
 } from "./_generated/server";
 
-// Configuration
-const MAX_CONCURRENT_SPAWNS = 3; // Per-team concurrent spawn limit
+// Configuration (used when background spawning is re-enabled)
+// const MAX_CONCURRENT_SPAWNS = 3; // Per-team concurrent spawn limit
 
 /**
  * Poll for ready tasks across all teams.

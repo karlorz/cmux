@@ -28,7 +28,7 @@ export const Route = createFileRoute(
     // Prewarm the orchestration tasks query
     convexQueryClient.convexClient.prewarmQuery({
       query: api.orchestrationQueries.listTasksByTeam,
-      args: { teamId: teamSlugOrId, limit: 50 },
+      args: { teamSlugOrId, limit: 50 },
     });
   },
 });

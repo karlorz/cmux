@@ -11,7 +11,7 @@
  */
 
 import { v } from "convex/values";
-import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { authMutation, authQuery } from "./users/utils";
 import { getTeamId } from "../_shared/team";
