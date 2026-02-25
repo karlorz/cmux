@@ -5,25 +5,34 @@
  * - Task queue management (create, assign, complete)
  * - Provider health tracking
  * - Dependency resolution
+ *
+ * Public queries/mutations require authentication and team membership.
+ * Internal functions are used by the orchestration worker.
  */
 
 import { v } from "convex/values";
 import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { authMutation, authQuery } from "./users/utils";
+import { getTeamId } from "../_shared/team";
 
 // ============================================================================
-// Orchestration Task Queries
+// Orchestration Task Queries (Authenticated)
 // ============================================================================
 
 /**
  * Get all pending tasks for a team, sorted by priority.
+ * Requires authentication and team membership.
  */
-export const listPendingTasks = query({
+export const listPendingTasks = authQuery({
   args: {
-    teamId: v.string(),
+    teamSlugOrId: v.string(),
     limit: v.optional(v.number()),
   },
-  handler: async (ctx, { teamId, limit = 50 }) => {
+  handler: async (ctx, { teamSlugOrId, limit = 50 }) => {
+    // Verify team membership and get canonical teamId
+    const teamId = await getTeamId(ctx, teamSlugOrId);
+
     return ctx.db
       .query("orchestrationTasks")
       .withIndex("by_team_status", (q) =>
@@ -37,10 +46,11 @@ export const listPendingTasks = query({
 /**
  * Get recent tasks for a team, optionally filtered by status.
  * Returns tasks ordered by updatedAt desc.
+ * Requires authentication and team membership.
  */
-export const listTasksByTeam = query({
+export const listTasksByTeam = authQuery({
   args: {
-    teamId: v.string(),
+    teamSlugOrId: v.string(),
     status: v.optional(
       v.union(
         v.literal("pending"),
@@ -53,7 +63,10 @@ export const listTasksByTeam = query({
     ),
     limit: v.optional(v.number()),
   },
-  handler: async (ctx, { teamId, status, limit = 50 }) => {
+  handler: async (ctx, { teamSlugOrId, status, limit = 50 }) => {
+    // Verify team membership and get canonical teamId
+    const teamId = await getTeamId(ctx, teamSlugOrId);
+
     if (status) {
       // Use the by_team_status index when filtering by status
       const tasks = await ctx.db
@@ -82,10 +95,12 @@ export const listTasksByTeam = query({
 });
 
 /**
- * Get tasks assigned to a specific agent.
+ * Get tasks assigned to a specific agent within a team.
+ * Requires authentication and team membership.
  */
-export const listAgentTasks = query({
+export const listAgentTasks = authQuery({
   args: {
+    teamSlugOrId: v.string(),
     agentName: v.string(),
     status: v.optional(
       v.union(
@@ -98,10 +113,15 @@ export const listAgentTasks = query({
       )
     ),
   },
-  handler: async (ctx, { agentName, status }) => {
+  handler: async (ctx, { teamSlugOrId, agentName, status }) => {
+    // Verify team membership and get canonical teamId
+    const teamId = await getTeamId(ctx, teamSlugOrId);
+
+    // Query by agent, then filter by team (no composite index available)
     let q = ctx.db
       .query("orchestrationTasks")
-      .withIndex("by_assigned_agent", (q) => q.eq("assignedAgentName", agentName));
+      .withIndex("by_assigned_agent", (q) => q.eq("assignedAgentName", agentName))
+      .filter((q) => q.eq(q.field("teamId"), teamId));
 
     if (status) {
       q = q.filter((q) => q.eq(q.field("status"), status));
@@ -113,26 +133,48 @@ export const listAgentTasks = query({
 
 /**
  * Get a single orchestration task by ID.
+ * Requires authentication and team membership.
  */
-export const getTask = query({
+export const getTask = authQuery({
   args: {
     taskId: v.id("orchestrationTasks"),
+    teamSlugOrId: v.optional(v.string()),
   },
-  handler: async (ctx, { taskId }) => {
-    return ctx.db.get(taskId);
+  handler: async (ctx, { taskId, teamSlugOrId }) => {
+    const task = await ctx.db.get(taskId);
+    if (!task) return null;
+
+    // If teamSlugOrId provided, verify membership
+    if (teamSlugOrId) {
+      const teamId = await getTeamId(ctx, teamSlugOrId);
+      if (task.teamId !== teamId) {
+        throw new Error("Forbidden: Task does not belong to this team");
+      }
+    } else {
+      // Without explicit team, verify user has access to task's team
+      await getTeamId(ctx, task.teamId);
+    }
+
+    return task;
   },
 });
 
 /**
  * Get tasks that are blocked by a specific task.
+ * Requires authentication and team membership.
  */
-export const getDependentTasks = query({
+export const getDependentTasks = authQuery({
   args: {
     taskId: v.id("orchestrationTasks"),
   },
   handler: async (ctx, { taskId }) => {
     const task = await ctx.db.get(taskId);
-    if (!task?.dependents) return [];
+    if (!task) return [];
+
+    // Verify user has access to task's team
+    await getTeamId(ctx, task.teamId);
+
+    if (!task.dependents) return [];
 
     const dependents = await Promise.all(
       task.dependents.map((id) => ctx.db.get(id))
@@ -144,13 +186,17 @@ export const getDependentTasks = query({
 
 /**
  * Get ready-to-execute tasks (no unresolved dependencies).
+ * Requires authentication and team membership.
  */
-export const getReadyTasks = query({
+export const getReadyTasks = authQuery({
   args: {
-    teamId: v.string(),
+    teamSlugOrId: v.string(),
     limit: v.optional(v.number()),
   },
-  handler: async (ctx, { teamId, limit = 10 }) => {
+  handler: async (ctx, { teamSlugOrId, limit = 10 }) => {
+    // Verify team membership and get canonical teamId
+    const teamId = await getTeamId(ctx, teamSlugOrId);
+
     const pendingTasks = await ctx.db
       .query("orchestrationTasks")
       .withIndex("by_team_status", (q) =>
@@ -187,13 +233,67 @@ export const getReadyTasks = query({
 });
 
 // ============================================================================
-// Orchestration Task Mutations
+// Orchestration Task Mutations (Authenticated)
 // ============================================================================
 
 /**
  * Create a new orchestration task.
+ * Requires authentication and team membership.
  */
-export const createTask = mutation({
+export const createTask = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    prompt: v.string(),
+    priority: v.optional(v.number()),
+    dependencies: v.optional(v.array(v.id("orchestrationTasks"))),
+    taskId: v.optional(v.id("tasks")),
+    taskRunId: v.optional(v.id("taskRuns")),
+    parentTaskId: v.optional(v.id("orchestrationTasks")),
+    metadata: v.optional(v.any()),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    // Verify team membership and get canonical teamId
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+
+    const now = Date.now();
+
+    const taskId = await ctx.db.insert("orchestrationTasks", {
+      teamId,
+      userId,
+      prompt: args.prompt,
+      priority: args.priority ?? 5,
+      status: "pending",
+      dependencies: args.dependencies,
+      taskId: args.taskId,
+      taskRunId: args.taskRunId,
+      parentTaskId: args.parentTaskId,
+      metadata: args.metadata,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Update dependent tasks to track this dependency
+    if (args.dependencies) {
+      for (const depId of args.dependencies) {
+        const dep = await ctx.db.get(depId);
+        if (dep) {
+          await ctx.db.patch(depId, {
+            dependents: [...(dep.dependents ?? []), taskId],
+            updatedAt: now,
+          });
+        }
+      }
+    }
+
+    return taskId;
+  },
+});
+
+/**
+ * Internal mutation to create tasks without auth (for background worker).
+ */
+export const createTaskInternal = internalMutation({
   args: {
     teamId: v.string(),
     userId: v.string(),
@@ -242,8 +342,36 @@ export const createTask = mutation({
 
 /**
  * Assign a task to an agent.
+ * Requires authentication and team membership.
  */
-export const assignTask = mutation({
+export const assignTask = authMutation({
+  args: {
+    taskId: v.id("orchestrationTasks"),
+    agentName: v.string(),
+    sandboxId: v.optional(v.string()),
+  },
+  handler: async (ctx, { taskId, agentName, sandboxId }) => {
+    const task = await ctx.db.get(taskId);
+    if (!task) throw new Error("Task not found");
+
+    // Verify user has access to task's team
+    await getTeamId(ctx, task.teamId);
+
+    const now = Date.now();
+    await ctx.db.patch(taskId, {
+      status: "assigned",
+      assignedAgentName: agentName,
+      assignedSandboxId: sandboxId,
+      assignedAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+/**
+ * Internal mutation to assign task without auth.
+ */
+export const assignTaskInternal = internalMutation({
   args: {
     taskId: v.id("orchestrationTasks"),
     agentName: v.string(),
@@ -263,12 +391,19 @@ export const assignTask = mutation({
 
 /**
  * Mark a task as running.
+ * Requires authentication and team membership.
  */
-export const startTask = mutation({
+export const startTask = authMutation({
   args: {
     taskId: v.id("orchestrationTasks"),
   },
   handler: async (ctx, { taskId }) => {
+    const task = await ctx.db.get(taskId);
+    if (!task) throw new Error("Task not found");
+
+    // Verify user has access to task's team
+    await getTeamId(ctx, task.teamId);
+
     const now = Date.now();
     await ctx.db.patch(taskId, {
       status: "running",
@@ -281,13 +416,20 @@ export const startTask = mutation({
 /**
  * Complete a task successfully.
  * After completion, schedules immediate triggering of dependent tasks.
+ * Requires authentication and team membership.
  */
-export const completeTask = mutation({
+export const completeTask = authMutation({
   args: {
     taskId: v.id("orchestrationTasks"),
     result: v.optional(v.string()),
   },
   handler: async (ctx, { taskId, result }) => {
+    const task = await ctx.db.get(taskId);
+    if (!task) throw new Error("Task not found");
+
+    // Verify user has access to task's team
+    await getTeamId(ctx, task.teamId);
+
     const now = Date.now();
     await ctx.db.patch(taskId, {
       status: "completed",
@@ -350,8 +492,34 @@ export const triggerDependentTasks = internalMutation({
 
 /**
  * Mark a task as failed.
+ * Requires authentication and team membership.
  */
-export const failTask = mutation({
+export const failTask = authMutation({
+  args: {
+    taskId: v.id("orchestrationTasks"),
+    errorMessage: v.string(),
+  },
+  handler: async (ctx, { taskId, errorMessage }) => {
+    const task = await ctx.db.get(taskId);
+    if (!task) throw new Error("Task not found");
+
+    // Verify user has access to task's team
+    await getTeamId(ctx, task.teamId);
+
+    const now = Date.now();
+    await ctx.db.patch(taskId, {
+      status: "failed",
+      errorMessage,
+      completedAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+/**
+ * Internal mutation to fail task without auth.
+ */
+export const failTaskInternal = internalMutation({
   args: {
     taskId: v.id("orchestrationTasks"),
     errorMessage: v.string(),
@@ -369,12 +537,19 @@ export const failTask = mutation({
 
 /**
  * Cancel a task.
+ * Requires authentication and team membership.
  */
-export const cancelTask = mutation({
+export const cancelTask = authMutation({
   args: {
     taskId: v.id("orchestrationTasks"),
   },
   handler: async (ctx, { taskId }) => {
+    const task = await ctx.db.get(taskId);
+    if (!task) throw new Error("Task not found");
+
+    // Verify user has access to task's team
+    await getTeamId(ctx, task.teamId);
+
     const now = Date.now();
     await ctx.db.patch(taskId, {
       status: "cancelled",
@@ -387,8 +562,9 @@ export const cancelTask = mutation({
 /**
  * Add dependencies to a task.
  * The task will not be eligible for assignment until all dependencies are completed.
+ * Requires authentication and team membership.
  */
-export const addDependencies = mutation({
+export const addDependencies = authMutation({
   args: {
     taskId: v.id("orchestrationTasks"),
     dependencyIds: v.array(v.id("orchestrationTasks")),
@@ -398,6 +574,9 @@ export const addDependencies = mutation({
     if (!task) {
       throw new Error("Task not found");
     }
+
+    // Verify user has access to task's team
+    await getTeamId(ctx, task.teamId);
 
     // Merge with existing dependencies, avoiding duplicates
     const existing = task.dependencies ?? [];
@@ -410,21 +589,47 @@ export const addDependencies = mutation({
   },
 });
 
+/**
+ * Internal mutation to add dependencies without auth.
+ */
+export const addDependenciesInternal = internalMutation({
+  args: {
+    taskId: v.id("orchestrationTasks"),
+    dependencyIds: v.array(v.id("orchestrationTasks")),
+  },
+  handler: async (ctx, { taskId, dependencyIds }) => {
+    const task = await ctx.db.get(taskId);
+    if (!task) {
+      throw new Error("Task not found");
+    }
+
+    const existing = task.dependencies ?? [];
+    const merged = [...new Set([...existing, ...dependencyIds])];
+
+    await ctx.db.patch(taskId, {
+      dependencies: merged,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
 // ============================================================================
-// Provider Health Queries
+// Provider Health Queries (Authenticated)
 // ============================================================================
 
 /**
  * Get health status for a provider.
+ * Requires authentication. Team membership checked if teamSlugOrId provided.
  */
-export const getProviderHealth = query({
+export const getProviderHealth = authQuery({
   args: {
     providerId: v.string(),
-    teamId: v.optional(v.string()),
+    teamSlugOrId: v.optional(v.string()),
   },
-  handler: async (ctx, { providerId, teamId }) => {
+  handler: async (ctx, { providerId, teamSlugOrId }) => {
     // Try team-specific health first
-    if (teamId) {
+    if (teamSlugOrId) {
+      const teamId = await getTeamId(ctx, teamSlugOrId);
       const teamHealth = await ctx.db
         .query("providerHealth")
         .withIndex("by_team_provider", (q) =>
@@ -445,10 +650,11 @@ export const getProviderHealth = query({
 
 /**
  * List all provider health statuses.
+ * Requires authentication. Team membership checked if teamSlugOrId provided.
  */
-export const listProviderHealth = query({
+export const listProviderHealth = authQuery({
   args: {
-    teamId: v.optional(v.string()),
+    teamSlugOrId: v.optional(v.string()),
     statusFilter: v.optional(
       v.union(
         v.literal("healthy"),
@@ -457,7 +663,7 @@ export const listProviderHealth = query({
       )
     ),
   },
-  handler: async (ctx, { teamId, statusFilter }) => {
+  handler: async (ctx, { teamSlugOrId, statusFilter }) => {
     let results;
 
     if (statusFilter) {
@@ -471,7 +677,8 @@ export const listProviderHealth = query({
     }
 
     // Filter by team if specified
-    if (teamId) {
+    if (teamSlugOrId) {
+      const teamId = await getTeamId(ctx, teamSlugOrId);
       return results.filter(
         (h) => h.teamId === teamId || h.teamId === undefined
       );
@@ -482,13 +689,14 @@ export const listProviderHealth = query({
 });
 
 // ============================================================================
-// Provider Health Mutations
+// Provider Health Mutations (Internal - for worker use)
 // ============================================================================
 
 /**
  * Upsert provider health status.
+ * Internal mutation for background worker/system use only.
  */
-export const upsertProviderHealth = mutation({
+export const upsertProviderHealth = internalMutation({
   args: {
     providerId: v.string(),
     status: v.union(

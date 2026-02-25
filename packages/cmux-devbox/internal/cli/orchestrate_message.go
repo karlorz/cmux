@@ -81,5 +81,5 @@ func init() {
 		"",
 		"Message type: handoff, request, or status (required)",
 	)
-	taskCmd.AddCommand(orchestrateMessageCmd)
+	orchestrateCmd.AddCommand(orchestrateMessageCmd)
 }

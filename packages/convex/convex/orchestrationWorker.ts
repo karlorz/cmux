@@ -20,10 +20,22 @@ const MAX_CONCURRENT_SPAWNS = 3; // Per-team concurrent spawn limit
 /**
  * Poll for ready tasks across all teams.
  * Called by cron job every minute.
+ *
+ * NOTE: Background auto-spawning is currently DISABLED.
+ * The worker cannot obtain valid Stack Auth JWTs needed for Convex operations.
+ * Spawns must be initiated by authenticated users via CLI or web UI.
+ *
+ * This function is a no-op until service auth is implemented.
+ * See http-api.ts handleOrchestrationInternalSpawn for details.
  */
 export const pollReadyTasks = internalAction({
   args: {},
-  handler: async (ctx) => {
+  handler: async (_ctx) => {
+    // Background spawning disabled - see handleOrchestrationInternalSpawn
+    // When service auth is implemented, uncomment the code below.
+    return;
+
+    /*
     // Get all unique team IDs with pending tasks
     const teams = await ctx.runQuery(
       internal.orchestrationWorker.getTeamsWithPendingTasks
@@ -64,6 +76,7 @@ export const pollReadyTasks = internalAction({
         );
       }
     }
+    */
   },
 });
 
@@ -109,6 +122,15 @@ export const dispatchSpawn = internalAction({
     if (!claimed) return; // Another worker claimed it
 
     try {
+      // Get JWT for the task run (needed for spawn to authenticate)
+      if (!task.taskRunId) {
+        throw new Error("Task run not created yet");
+      }
+      const jwtResult = await ctx.runMutation(
+        internal.taskRuns.getJwtInternal,
+        { taskRunId: task.taskRunId }
+      );
+
       // Call server to spawn
       const serverUrl = process.env.CMUX_SERVER_URL ?? "http://localhost:9779";
       const internalSecret = process.env.CMUX_INTERNAL_SECRET ?? "";
@@ -128,6 +150,9 @@ export const dispatchSpawn = internalAction({
             prompt: task.prompt,
             taskId: task.taskId,
             taskRunId: task.taskRunId,
+            // Pass JWT and user info for auth context
+            taskRunJwt: jwtResult.jwt,
+            userId: jwtResult.userId,
           }),
         }
       );

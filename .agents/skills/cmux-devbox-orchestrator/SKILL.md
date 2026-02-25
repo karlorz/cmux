@@ -18,19 +18,19 @@ description: Multi-agent orchestration skill for spawning and coordinating sub-a
 
 ```bash
 # Spawn a sub-agent to work on a specific task
-cmux-devbox orchestrator spawn --agent claude/haiku-4.5 --repo owner/repo "Fix the auth bug in login.ts"
+cmux-devbox orchestrate spawn --agent claude/haiku-4.5 --repo owner/repo "Fix the auth bug in login.ts"
 
 # Check status of spawned agents
-cmux-devbox orchestrator list
+cmux-devbox orchestrate list
 
-# Wait for an agent to complete
-cmux-devbox orchestrator wait <task-run-id>
+# Wait for an orchestration task to complete
+cmux-devbox orchestrate wait <orch-task-id>
 
-# Send a message to a running agent
-cmux-devbox orchestrator message <task-run-id> "Please also update the tests"
+# Send a message to a running agent (uses task-run-id)
+cmux-devbox orchestrate message <task-run-id> "Please also update the tests" --type request
 
-# Cancel a running agent
-cmux-devbox orchestrator cancel <task-run-id>
+# Cancel an orchestration task
+cmux-devbox orchestrate cancel <orch-task-id>
 ```
 
 ## Commands
@@ -40,7 +40,7 @@ cmux-devbox orchestrator cancel <task-run-id>
 Spawn a new sub-agent in a sandbox to work on a task.
 
 ```bash
-cmux-devbox orchestrator spawn [flags] "prompt"
+cmux-devbox orchestrate spawn [flags] "prompt"
 
 # Flags:
 #   --agent <name>     Agent to use (default: claude/haiku-4.5)
@@ -57,16 +57,16 @@ cmux-devbox orchestrator spawn [flags] "prompt"
 
 ```bash
 # Simple spawn
-cmux-devbox orchestrator spawn --agent claude/haiku-4.5 --repo owner/repo "Add input validation to the API"
+cmux-devbox orchestrate spawn --agent claude/haiku-4.5 --repo owner/repo "Add input validation to the API"
 
 # Spawn with dependencies
-cmux-devbox orchestrator spawn \
+cmux-devbox orchestrate spawn \
   --agent codex/gpt-5.1-codex-mini \
   --depends-on ns7abc123 \
   "Write tests for the changes made in the previous task"
 
 # Spawn and wait for completion
-cmux-devbox orchestrator spawn --wait --agent claude/sonnet-4.5 "Review and fix security issues"
+cmux-devbox orchestrate spawn --wait --agent claude/sonnet-4.5 "Review and fix security issues"
 ```
 
 ### List Agents
@@ -74,35 +74,35 @@ cmux-devbox orchestrator spawn --wait --agent claude/sonnet-4.5 "Review and fix 
 List all spawned sub-agents and their status.
 
 ```bash
-cmux-devbox orchestrator list [flags]
+cmux-devbox orchestrate list [flags]
 
 # Flags:
 #   --status <state>   Filter by status (pending, running, completed, failed)
 #   --json             Output as JSON
 ```
 
-### Get Agent Status
+### Get Orchestration Task Status
 
-Get detailed status of a specific agent.
+Get detailed status of a specific orchestration task.
 
 ```bash
-cmux-devbox orchestrator status <task-run-id> [flags]
+cmux-devbox orchestrate status <orch-task-id> [flags]
 
 # Flags:
 #   --logs             Include recent logs
 #   --json             Output as JSON
 ```
 
-### Wait for Agent
+### Wait for Orchestration Task
 
-Wait for an agent to complete (or timeout).
+Wait for an orchestration task to complete (or timeout).
 
 ```bash
-cmux-devbox orchestrator wait <task-run-id> [flags]
+cmux-devbox orchestrate wait <orch-task-id> [flags]
 
 # Flags:
-#   --timeout <ms>     Timeout in milliseconds (default: 300000 = 5 min)
-#   --poll <ms>        Poll interval (default: 5000 = 5 sec)
+#   --timeout <duration>  Timeout duration (default: 5m)
+#   --json                Output as JSON
 ```
 
 ### Send Message
@@ -110,21 +110,18 @@ cmux-devbox orchestrator wait <task-run-id> [flags]
 Send a message to a running agent via the mailbox.
 
 ```bash
-cmux-devbox orchestrator message <task-run-id> "message" [flags]
+cmux-devbox orchestrate message <task-run-id> "message" [flags]
 
 # Flags:
-#   --type <type>      Message type: handoff, request, status (default: request)
+#   --type <type>      Message type: handoff, request, status (required)
 ```
 
-### Cancel Agent
+### Cancel Orchestration Task
 
-Cancel a running agent.
+Cancel an orchestration task.
 
 ```bash
-cmux-devbox orchestrator cancel <task-run-id> [flags]
-
-# Flags:
-#   --force            Force stop without cleanup
+cmux-devbox orchestrate cancel <orch-task-id>
 ```
 
 ## Orchestration Patterns
@@ -135,13 +132,13 @@ Run agents in sequence where each depends on the previous.
 
 ```bash
 # Step 1: Implement feature
-RUN1=$(cmux-devbox orchestrator spawn --json --agent claude/sonnet-4.5 "Implement user authentication" | jq -r '.taskRunId')
+RUN1=$(cmux-devbox orchestrate spawn --json --agent claude/sonnet-4.5 "Implement user authentication" | jq -r '.taskRunId')
 
 # Step 2: Write tests (depends on step 1)
-RUN2=$(cmux-devbox orchestrator spawn --json --depends-on $RUN1 --agent codex/gpt-5.1-codex-mini "Write tests for auth" | jq -r '.taskRunId')
+RUN2=$(cmux-devbox orchestrate spawn --json --depends-on $RUN1 --agent codex/gpt-5.1-codex-mini "Write tests for auth" | jq -r '.taskRunId')
 
 # Step 3: Review (depends on step 2)
-cmux-devbox orchestrator spawn --wait --depends-on $RUN2 --agent claude/opus-4.5 "Review the implementation and tests"
+cmux-devbox orchestrate spawn --wait --depends-on $RUN2 --agent claude/opus-4.5 "Review the implementation and tests"
 ```
 
 ### 2. Parallel Fan-Out
@@ -150,14 +147,14 @@ Spawn multiple agents to work on independent tasks.
 
 ```bash
 # Spawn multiple agents in parallel
-cmux-devbox orchestrator spawn --agent claude/haiku-4.5 "Fix bug in auth.ts" &
-cmux-devbox orchestrator spawn --agent claude/haiku-4.5 "Fix bug in api.ts" &
-cmux-devbox orchestrator spawn --agent claude/haiku-4.5 "Fix bug in db.ts" &
+cmux-devbox orchestrate spawn --agent claude/haiku-4.5 "Fix bug in auth.ts" &
+cmux-devbox orchestrate spawn --agent claude/haiku-4.5 "Fix bug in api.ts" &
+cmux-devbox orchestrate spawn --agent claude/haiku-4.5 "Fix bug in db.ts" &
 wait
 
 # Wait for all to complete
-cmux-devbox orchestrator list --status running --json | jq -r '.[].taskRunId' | while read id; do
-  cmux-devbox orchestrator wait $id
+cmux-devbox orchestrate list --status running --json | jq -r '.[].taskRunId' | while read id; do
+  cmux-devbox orchestrate wait $id
 done
 ```
 
@@ -167,12 +164,12 @@ One agent coordinates, others execute.
 
 ```bash
 # Create a plan as the leader agent
-PLAN=$(cmux-devbox orchestrator spawn --wait --json --agent claude/opus-4.5 \
+PLAN=$(cmux-devbox orchestrate spawn --wait --json --agent claude/opus-4.5 \
   "Analyze the codebase and create a plan for adding user roles. Output a JSON with tasks array." | jq -r '.result')
 
 # Parse plan and spawn workers
 echo $PLAN | jq -r '.tasks[]' | while read task; do
-  cmux-devbox orchestrator spawn --agent claude/haiku-4.5 "$task"
+  cmux-devbox orchestrate spawn --agent claude/haiku-4.5 "$task"
 done
 ```
 
@@ -182,13 +179,13 @@ Implementation and review in parallel.
 
 ```bash
 # Implement
-RUN1=$(cmux-devbox orchestrator spawn --json --agent claude/sonnet-4.5 "Implement feature X" | jq -r '.taskRunId')
+RUN1=$(cmux-devbox orchestrate spawn --json --agent claude/sonnet-4.5 "Implement feature X" | jq -r '.taskRunId')
 
 # Wait for implementation
-cmux-devbox orchestrator wait $RUN1
+cmux-devbox orchestrate wait $RUN1
 
 # Review
-cmux-devbox orchestrator spawn --wait --agent claude/opus-4.5 \
+cmux-devbox orchestrate spawn --wait --agent claude/opus-4.5 \
   "Review the changes from task run $RUN1. Check for bugs, security issues, and code quality."
 ```
 

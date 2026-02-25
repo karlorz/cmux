@@ -1539,6 +1539,31 @@ const convexSchema = defineSchema({
     .index("by_assigned_agent", ["assignedAgentName", "status"])
     .index("by_parent", ["parentTaskId", "createdAt"])
     .index("by_task_run", ["taskRunId"]),
+
+  // Agent orchestration messages for inter-agent communication
+  // Messages sent via orchestrate sendMessage mutation are stored here
+  // and synced to running sandboxes via MAILBOX.json updates
+  agentOrchestrateMessages: defineTable({
+    taskRunId: v.id("taskRuns"),
+    teamId: v.string(),
+    userId: v.string(),
+    messageId: v.string(), // Unique message ID (msg_xxx)
+    messageType: v.union(
+      v.literal("handoff"),
+      v.literal("request"),
+      v.literal("status")
+    ),
+    senderName: v.string(), // Agent name or user identifier
+    recipientName: v.optional(v.string()), // Agent name or "*" for broadcast
+    content: v.string(), // Message content
+    read: v.boolean(),
+    timestamp: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_task_run", ["taskRunId", "createdAt"])
+    .index("by_task_run_unread", ["taskRunId", "read", "createdAt"])
+    .index("by_team", ["teamId", "createdAt"])
+    .index("by_recipient", ["recipientName", "read", "createdAt"]),
 });
 
 export default convexSchema;

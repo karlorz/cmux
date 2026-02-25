@@ -12,8 +12,6 @@ import {
 import {
   getProviderHealthMonitor,
   type ProviderHealthMetrics,
-  executeWithFallback,
-  type FallbackResult,
 } from "@cmux/shared/resilience";
 import type {
   WorkerCreateTerminal,
@@ -56,26 +54,23 @@ const SWITCH_BRANCH_BUN_SCRIPT = rawSwitchBranchScript;
 /**
  * Fire-and-forget sync of provider health metrics to Convex.
  * Non-blocking - will not affect spawn result on failure.
+ *
+ * NOTE: Provider health sync is currently disabled because upsertProviderHealth
+ * is now an internal mutation (not callable from client). This would need a
+ * dedicated HTTP endpoint for health reporting if re-enabled.
  */
 async function syncProviderHealthToConvex(providerId: string): Promise<void> {
   if (!env.ENABLE_CIRCUIT_BREAKER) return;
 
-  try {
-    const metrics = getProviderHealthMonitor().getMetrics(providerId);
-    await getConvex().mutation(api.orchestrationQueries.upsertProviderHealth, {
-      providerId: metrics.providerId,
-      status: metrics.status,
-      circuitState: metrics.circuitState,
-      failureCount: metrics.failureCount,
-      successRate: metrics.successRate,
-      latencyP50: metrics.latencyP50,
-      latencyP99: metrics.latencyP99,
-      totalRequests: metrics.totalRequests,
-      lastError: metrics.lastError,
-    });
-  } catch (error) {
-    console.error("[AgentSpawner] Failed to sync provider health to Convex:", error);
-  }
+  // Disabled: upsertProviderHealth is now internal-only
+  // TODO: Create /api/internal/provider-health endpoint if health sync is needed
+  const metrics = getProviderHealthMonitor().getMetrics(providerId);
+  serverLogger.debug("[AgentSpawner] Provider health metrics (not synced)", {
+    providerId,
+    status: metrics.status,
+    circuitState: metrics.circuitState,
+    failureCount: metrics.failureCount,
+  });
 }
 
 const {
@@ -755,9 +750,6 @@ export async function spawnAgent(
     // Determine provider ID for circuit breaker (use resolved provider or default)
     const providerId = resolvedProvider?.id ?? "default";
 
-    // Track fallback usage for result reporting
-    let fallbackResult: FallbackResult<Awaited<ReturnType<typeof vscodeInstance.start>>> | null = null;
-
     // Pre-spawn circuit check when circuit breaker is enabled
     if (env.ENABLE_CIRCUIT_BREAKER) {
       const canAttempt = getProviderHealthMonitor().canAttempt(providerId);
@@ -778,38 +770,22 @@ export async function spawnAgent(
       }
     }
 
-    // Start the VSCode instance (with optional circuit breaker wrapping and fallbacks)
+    // Start the VSCode instance (with optional circuit breaker wrapping)
     let vscodeInfo: Awaited<ReturnType<typeof vscodeInstance.start>>;
 
-    if (env.ENABLE_CIRCUIT_BREAKER && resolvedProvider?.fallbacks && resolvedProvider.fallbacks.length > 0) {
-      // Use executeWithFallback when fallbacks are available
-      serverLogger.info(
-        `[AgentSpawner] Using fallback executor with ${resolvedProvider.fallbacks.length} fallback(s) for ${providerId}`
+    // NOTE: Fallback provider switching is DISABLED.
+    // The executeWithFallback() was previously used here but it didn't actually
+    // switch providers - it just recorded failures. True provider switching would
+    // require recreating the vscodeInstance with a different provider config.
+    // For now, we only use the circuit breaker for health monitoring on the primary provider.
+    if (resolvedProvider?.fallbacks && resolvedProvider.fallbacks.length > 0) {
+      serverLogger.warn(
+        `[AgentSpawner] Fallback providers configured but switching is not implemented. ` +
+        `Using primary provider ${providerId} only.`
       );
-      fallbackResult = await executeWithFallback(
-        getProviderHealthMonitor(),
-        {
-          primaryProviderId: providerId,
-          fallbacks: resolvedProvider.fallbacks.map((fb, index) => ({
-            modelName: fb.modelName,
-            priority: fb.priority ?? index + 1,
-          })),
-        },
-        async (_currentProviderId: string) => {
-          // Note: For now we just use the same vscodeInstance since provider switching
-          // would require re-creating the instance. This still gives us circuit breaker
-          // protection and retry logic. Full provider switching can be added later.
-          return vscodeInstance.start();
-        }
-      );
-      vscodeInfo = fallbackResult.result;
+    }
 
-      if (fallbackResult.usedFallback) {
-        serverLogger.info(
-          `[AgentSpawner] Used fallback provider ${fallbackResult.providerId} after ${fallbackResult.attempts} attempt(s)`
-        );
-      }
-    } else if (env.ENABLE_CIRCUIT_BREAKER) {
+    if (env.ENABLE_CIRCUIT_BREAKER) {
       // Use circuit breaker without fallbacks
       vscodeInfo = await getProviderHealthMonitor().execute(providerId, () => vscodeInstance.start());
     } else {
@@ -1475,7 +1451,7 @@ exit $EXIT_CODE
     });
 
     // Fire-and-forget: sync provider health metrics to Convex
-    void syncProviderHealthToConvex(fallbackResult?.providerId ?? providerId);
+    void syncProviderHealthToConvex(providerId);
 
     return {
       agentName: agent.name,
@@ -1484,9 +1460,9 @@ exit $EXIT_CODE
       worktreePath,
       vscodeUrl,
       success: true,
-      usedProvider: fallbackResult?.providerId ?? providerId,
-      usedFallback: fallbackResult?.usedFallback ?? false,
-      fallbackAttempts: fallbackResult?.attempts,
+      usedProvider: providerId,
+      usedFallback: false,
+      fallbackAttempts: undefined,
     };
   } catch (error) {
     serverLogger.error("Error spawning agent", error);

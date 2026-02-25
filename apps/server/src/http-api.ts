@@ -446,8 +446,7 @@ async function handleOrchestrationSpawn(
         : undefined;
 
       const orchestrationTaskId = await getConvex().mutation(api.orchestrationQueries.createTask, {
-        teamId,
-        userId,
+        teamSlugOrId,
         prompt,
         taskId,
         taskRunId,
@@ -547,7 +546,7 @@ async function handleOrchestrationList(
       }
 
       const tasks = await getConvex().query(api.orchestrationQueries.listTasksByTeam, {
-        teamId: membership.team.teamId,
+        teamSlugOrId: membership.team.teamId,
         status: status ?? undefined,
         limit: 50,
       });
@@ -597,8 +596,18 @@ async function handleOrchestrationStatus(
 
   try {
     const result = await runWithAuthToken(authToken, async () => {
+      // Verify team membership first
+      const memberships = await getConvex().query(api.teams.listTeamMemberships, {});
+      const membership = memberships.find(
+        (m) => m.team.teamId === teamSlugOrId || m.team.slug === teamSlugOrId
+      );
+      if (!membership) {
+        throw new Error("Team not found or not a member");
+      }
+
       const task = await getConvex().query(api.orchestrationQueries.getTask, {
         taskId: orchestrationTaskId as Id<"orchestrationTasks">,
+        teamSlugOrId: membership.team.teamId,
       });
 
       if (!task) {
@@ -668,9 +677,19 @@ async function handleOrchestrationCancel(
 
   try {
     await runWithAuth(authToken, authHeaderJson, async () => {
+      // Verify team membership first
+      const memberships = await getConvex().query(api.teams.listTeamMemberships, {});
+      const membership = memberships.find(
+        (m) => m.team.teamId === body.teamSlugOrId || m.team.slug === body.teamSlugOrId
+      );
+      if (!membership) {
+        throw new Error("Team not found or not a member");
+      }
+
       // Get the orchestration task first to find linked taskRunId
       const task = await getConvex().query(api.orchestrationQueries.getTask, {
         taskId: orchestrationTaskId as Id<"orchestrationTasks">,
+        teamSlugOrId: membership.team.teamId,
       });
 
       if (!task) {
@@ -850,8 +869,7 @@ Orchestration ID: ${orchestrationId}`;
 
       // Create orchestration task record
       const orchestrationTaskId = await getConvex().mutation(api.orchestrationQueries.createTask, {
-        teamId,
-        userId,
+        teamSlugOrId,
         prompt: headAgentPrompt,
         taskId,
         taskRunId,
@@ -897,30 +915,58 @@ Orchestration ID: ${orchestrationId}`;
       }
 
       // Create orchestration tasks for pending tasks in PLAN.json
+      // Each task needs: task record, taskRun record, orchestration task record
       const createdTaskIds: Record<string, string> = {};
       const pendingTasks = (plan.tasks ?? []).filter(
         (t) => t.status === "pending" && t.prompt
       );
 
-      // First pass: create all tasks
+      // First pass: create all tasks with task/taskRun records
       for (const planTask of pendingTasks) {
         if (!planTask.prompt) continue;
-        const newTaskId = await getConvex().mutation(api.orchestrationQueries.createTask, {
-          teamId,
-          userId,
+
+        // Determine which agent to use for this task
+        const taskAgentName = planTask.agentName ?? headAgent;
+
+        // Create task record
+        const taskResult = await getConvex().mutation(api.tasks.create, {
+          teamSlugOrId,
+          text: planTask.prompt,
+          projectFullName: repo ?? "",
+          baseBranch: branch,
+        });
+        const subTaskId = taskResult.taskId;
+
+        // Create taskRun record (so worker can get JWT)
+        const taskRunResult = await getConvex().mutation(api.taskRuns.create, {
+          teamSlugOrId,
+          taskId: subTaskId,
+          prompt: planTask.prompt,
+          agentName: taskAgentName,
+          newBranch: "",
+          environmentId: environmentId as Id<"environments"> | undefined,
+        });
+        const subTaskRunId = taskRunResult.taskRunId;
+
+        // Create orchestration task record linked to task/taskRun
+        const newOrchTaskId = await getConvex().mutation(api.orchestrationQueries.createTask, {
+          teamSlugOrId,
           prompt: planTask.prompt,
           priority: planTask.priority ?? 5,
+          taskId: subTaskId,
+          taskRunId: subTaskRunId,
         });
+
         if (planTask.id) {
-          createdTaskIds[planTask.id] = String(newTaskId);
+          createdTaskIds[planTask.id] = String(newOrchTaskId);
         }
       }
 
       // Second pass: set up dependencies
       for (const planTask of pendingTasks) {
         if (!planTask.id || !planTask.dependsOn?.length) continue;
-        const taskId = createdTaskIds[planTask.id];
-        if (!taskId) continue;
+        const orchTaskId = createdTaskIds[planTask.id];
+        if (!orchTaskId) continue;
 
         const depIds = planTask.dependsOn
           .map((depId) => createdTaskIds[depId])
@@ -928,7 +974,7 @@ Orchestration ID: ${orchestrationId}`;
 
         if (depIds.length > 0) {
           await getConvex().mutation(api.orchestrationQueries.addDependencies, {
-            taskId: taskId as Id<"orchestrationTasks">,
+            taskId: orchTaskId as Id<"orchestrationTasks">,
             dependencyIds: depIds as Id<"orchestrationTasks">[],
           });
         }
@@ -968,6 +1014,8 @@ interface InternalSpawnRequest {
   prompt: string;
   taskId: string;
   taskRunId: string;
+  taskRunJwt?: string; // JWT for auth context (provided by worker)
+  userId?: string; // User ID for auth context
 }
 
 /**
@@ -975,6 +1023,13 @@ interface InternalSpawnRequest {
  *
  * Internal endpoint for the background orchestration worker to spawn agents.
  * Protected by CMUX_INTERNAL_SECRET header validation.
+ *
+ * NOTE: Background auto-spawning is currently disabled due to auth limitations.
+ * The orchestration worker cannot obtain valid Stack Auth JWTs needed for Convex.
+ * Spawns must be initiated by authenticated users via the CLI or web UI.
+ *
+ * For now, this endpoint returns 501 Not Implemented. The orchestration tasks
+ * created by /migrate have task/taskRun records that users can spawn manually.
  */
 async function handleOrchestrationInternalSpawn(
   req: IncomingMessage,
@@ -993,57 +1048,24 @@ async function handleOrchestrationInternalSpawn(
     return;
   }
 
-  const { orchestrationTaskId, teamId, agentName, prompt, taskId, taskRunId } = body;
+  const { orchestrationTaskId, agentName, prompt } = body;
 
-  if (!orchestrationTaskId || !teamId || !agentName || !prompt || !taskId || !taskRunId) {
-    jsonResponse(res, 400, {
-      error: "Missing required fields: orchestrationTaskId, teamId, agentName, prompt, taskId, taskRunId",
-    });
-    return;
-  }
-
-  serverLogger.info("[http-api] POST /api/orchestrate/internal/spawn", {
+  serverLogger.warn("[http-api] POST /api/orchestrate/internal/spawn - disabled", {
     orchestrationTaskId,
     agentName,
-    prompt: prompt.slice(0, 100),
+    prompt: prompt?.slice(0, 100),
   });
 
-  try {
-    // Find the agent config
-    const agentConfig = AGENT_CONFIGS.find((a) => a.name === agentName);
-    if (!agentConfig) {
-      throw new Error(`Agent not found: ${agentName}`);
-    }
-
-    // Use the existing taskId and taskRunId from the orchestration task
-    const effectiveTaskId = taskId as Id<"tasks">;
-    const effectiveTaskRunId = taskRunId as Id<"taskRuns">;
-
-    // Spawn the agent using existing infrastructure
-    // Note: This runs without user auth context since it's an internal worker call
-    const spawnResult = await spawnAgent(
-      agentConfig,
-      effectiveTaskId,
-      {
-        taskDescription: prompt,
-        isCloudMode: true,
-        taskRunId: effectiveTaskRunId,
-      },
-      teamId
-    );
-
-    jsonResponse(res, 200, {
-      success: spawnResult.success,
-      taskId: String(effectiveTaskId),
-      taskRunId: spawnResult.taskRunId,
-      vscodeUrl: spawnResult.vscodeUrl,
-      error: spawnResult.error,
-    });
-  } catch (error) {
-    serverLogger.error("[http-api] internal spawn failed", error);
-    const message = error instanceof Error ? error.message : "Unknown error";
-    jsonResponse(res, 500, { error: message });
-  }
+  // Return 501 Not Implemented until we implement proper service auth
+  // Options for future implementation:
+  // 1. Service account with Stack Auth (requires Stack Auth configuration)
+  // 2. Admin key-based Convex access (requires Convex deploy key support)
+  // 3. Pre-fetch all needed data in worker and pass to spawn (complex)
+  jsonResponse(res, 501, {
+    error: "Background auto-spawning is disabled. Spawns must be initiated by authenticated users.",
+    orchestrationTaskId,
+    message: "Use 'cmux-devbox orchestrate spawn' or the web UI to spawn agents for pending orchestration tasks.",
+  });
 }
 
 /**

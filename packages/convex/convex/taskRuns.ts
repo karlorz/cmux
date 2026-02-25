@@ -1070,6 +1070,51 @@ export const getJwt = authMutation({
   },
 });
 
+// Internal version of getJwt for background worker orchestration
+// Does not require user authentication - used by internal spawn endpoint
+export const getJwtInternal = internalMutation({
+  args: {
+    taskRunId: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.taskRunId);
+    if (!doc) {
+      throw new Error("Task run not found");
+    }
+
+    const jwt = await new SignJWT({
+      taskRunId: args.taskRunId,
+      teamId: doc.teamId,
+      userId: doc.userId,
+    })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt()
+      .setExpirationTime("12h")
+      .sign(new TextEncoder().encode(env.CMUX_TASK_RUN_JWT_SECRET));
+
+    return { jwt, teamId: doc.teamId, userId: doc.userId };
+  },
+});
+
+// Internal mutation to update branch without auth
+export const updateBranchInternal = internalMutation({
+  args: {
+    id: v.id("taskRuns"),
+    newBranch: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.id);
+    if (!doc) {
+      throw new Error("Task run not found");
+    }
+    await ctx.db.patch(args.id, {
+      newBranch: args.newBranch,
+      updatedAt: Date.now(),
+    });
+    return { ok: true };
+  },
+});
+
 // Internal query to get a task run by ID
 export const getById = internalQuery({
   args: { id: v.id("taskRuns") },

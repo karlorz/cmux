@@ -476,7 +476,7 @@ export type OrchestrateMessageResponse = {
 
 export type OrchestrateMessageRequest = {
     /**
-     * Task run ID
+     * Task run ID (Convex document ID)
      */
     taskRunId: string;
     /**

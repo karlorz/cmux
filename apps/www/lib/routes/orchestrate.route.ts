@@ -10,10 +10,13 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 
 const OrchestrateMessageRequestSchema = z
   .object({
-    taskRunId: z.string().openapi({
-      description: "Task run ID",
-      example: "ns7xyz123abc",
-    }),
+    taskRunId: z
+      .string()
+      .regex(/^[a-z0-9]+$/, "Invalid task run ID format")
+      .openapi({
+        description: "Task run ID (Convex document ID)",
+        example: "ns7xyz123abc",
+      }),
     message: z.string().openapi({
       description: "Message content to send to the agent",
       example: "Fix the login bug",
@@ -105,15 +108,9 @@ orchestrateRouter.openapi(
       return c.text("Unauthorized", 401);
     }
 
-    // Parse and validate request body
-    const body = await c.req.json();
-    const validation = OrchestrateMessageRequestSchema.safeParse(body);
-
-    if (!validation.success) {
-      return c.text("Invalid request", 400);
-    }
-
-    const { taskRunId, message, messageType, teamSlugOrId } = validation.data;
+    // Get validated request body from zod-openapi middleware
+    // This automatically handles JSON parse errors and validation as 400s
+    const { taskRunId, message, messageType, teamSlugOrId } = c.req.valid("json");
 
     // Verify user has access to this team
     await verifyTeamAccess({ req: c.req.raw, teamSlugOrId });

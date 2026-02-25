@@ -510,14 +510,27 @@ export function getMemorySyncScriptFile(): AuthFile {
  * Generate the MCP server script that exposes memory files as tools.
  * This runs as a stdio-based MCP server that Claude can query programmatically.
  *
- * Tools provided:
+ * Read Tools:
  * - read_memory(type): Read memory file content (knowledge, tasks, mailbox)
  * - list_daily_logs(): List available daily log dates
  * - read_daily_log(date): Read a specific daily log
  * - search_memory(query): Search across all memory files
+ *
+ * Messaging Tools:
  * - send_message(to, message, type): Send a message to another agent
  * - get_my_messages(): Get messages addressed to this agent
  * - mark_read(messageId): Mark a message as read
+ *
+ * Write Tools:
+ * - append_daily_log(content): Append content to today's daily log
+ * - update_knowledge(section, content): Update a priority section in MEMORY.md
+ * - add_task(subject, description): Add a new task to TASKS.json
+ * - update_task(taskId, status): Update task status in TASKS.json
+ *
+ * Orchestration Tools:
+ * - read_orchestration(type): Read PLAN.json, AGENTS.json, or EVENTS.jsonl
+ * - append_event(event, message, ...): Append event to EVENTS.jsonl
+ * - update_plan_task(taskId, status, ...): Update task status in PLAN.json
  */
 export function getMemoryMcpServerScript(): string {
   return `#!/usr/bin/env node
@@ -535,7 +548,12 @@ const crypto = require('crypto');
 const MEMORY_DIR = '${MEMORY_PROTOCOL_DIR}';
 const KNOWLEDGE_DIR = path.join(MEMORY_DIR, 'knowledge');
 const DAILY_DIR = path.join(MEMORY_DIR, 'daily');
+const ORCHESTRATION_DIR = path.join(MEMORY_DIR, 'orchestration');
 const MAILBOX_PATH = path.join(MEMORY_DIR, 'MAILBOX.json');
+const TASKS_PATH = path.join(MEMORY_DIR, 'TASKS.json');
+const PLAN_PATH = path.join(ORCHESTRATION_DIR, 'PLAN.json');
+const AGENTS_PATH = path.join(ORCHESTRATION_DIR, 'AGENTS.json');
+const EVENTS_PATH = path.join(ORCHESTRATION_DIR, 'EVENTS.jsonl');
 
 // Get agent name from environment (set by cmux)
 const AGENT_NAME = process.env.CMUX_AGENT_NAME || 'unknown';
@@ -598,6 +616,62 @@ function writeMailbox(mailbox) {
 
 function generateMessageId() {
   return 'msg_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+}
+
+function generateTaskId() {
+  return 'task_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+}
+
+function getTodayDateString() {
+  const iso = new Date().toISOString();
+  return iso.slice(0, iso.indexOf('T'));
+}
+
+function ensureDir(dirPath) {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+}
+
+function readTasks() {
+  const content = readFile(TASKS_PATH);
+  if (!content) return { version: 1, tasks: [] };
+  try {
+    return JSON.parse(content);
+  } catch (err) {
+    return { version: 1, tasks: [] };
+  }
+}
+
+function writeTasks(tasks) {
+  return writeFile(TASKS_PATH, JSON.stringify(tasks, null, 2));
+}
+
+function readPlan() {
+  const content = readFile(PLAN_PATH);
+  if (!content) return null;
+  try {
+    return JSON.parse(content);
+  } catch (err) {
+    return null;
+  }
+}
+
+function writePlan(plan) {
+  ensureDir(ORCHESTRATION_DIR);
+  plan.updatedAt = new Date().toISOString();
+  return writeFile(PLAN_PATH, JSON.stringify(plan, null, 2));
+}
+
+function appendEvent(event) {
+  ensureDir(ORCHESTRATION_DIR);
+  const line = JSON.stringify(event) + '\\n';
+  try {
+    fs.appendFileSync(EVENTS_PATH, line, 'utf-8');
+    return true;
+  } catch (err) {
+    return false;
+  }
 }
 
 function listDailyLogs() {
@@ -776,6 +850,145 @@ const tools = [
       },
       required: ['messageId']
     }
+  },
+  // Write tools
+  {
+    name: 'append_daily_log',
+    description: 'Append content to today\\'s daily log. Creates the file if it doesn\\'t exist.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        content: {
+          type: 'string',
+          description: 'Content to append to the daily log'
+        }
+      },
+      required: ['content']
+    }
+  },
+  {
+    name: 'update_knowledge',
+    description: 'Update a specific priority section in the knowledge file (MEMORY.md). Appends a new entry with today\\'s date.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        section: {
+          type: 'string',
+          enum: ['P0', 'P1', 'P2'],
+          description: 'Priority section to update (P0=Core, P1=Active, P2=Reference)'
+        },
+        content: {
+          type: 'string',
+          description: 'Content to add to the section (will be prefixed with today\\'s date)'
+        }
+      },
+      required: ['section', 'content']
+    }
+  },
+  {
+    name: 'add_task',
+    description: 'Add a new task to the TASKS.json file.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        subject: {
+          type: 'string',
+          description: 'Brief title for the task'
+        },
+        description: {
+          type: 'string',
+          description: 'Detailed description of what needs to be done'
+        }
+      },
+      required: ['subject', 'description']
+    }
+  },
+  {
+    name: 'update_task',
+    description: 'Update the status of an existing task in TASKS.json.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        taskId: {
+          type: 'string',
+          description: 'The ID of the task to update'
+        },
+        status: {
+          type: 'string',
+          enum: ['pending', 'in_progress', 'completed'],
+          description: 'New status for the task'
+        }
+      },
+      required: ['taskId', 'status']
+    }
+  },
+  // Orchestration tools
+  {
+    name: 'read_orchestration',
+    description: 'Read an orchestration file (PLAN.json, AGENTS.json, or EVENTS.jsonl).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: {
+          type: 'string',
+          enum: ['plan', 'agents', 'events'],
+          description: 'Type of orchestration file to read'
+        }
+      },
+      required: ['type']
+    }
+  },
+  {
+    name: 'append_event',
+    description: 'Append an orchestration event to EVENTS.jsonl.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        event: {
+          type: 'string',
+          description: 'Event type (e.g., agent_spawned, agent_completed, message_sent)'
+        },
+        message: {
+          type: 'string',
+          description: 'Human-readable message describing the event'
+        },
+        agentName: {
+          type: 'string',
+          description: 'Agent name associated with the event (optional)'
+        },
+        taskRunId: {
+          type: 'string',
+          description: 'Task run ID associated with the event (optional)'
+        }
+      },
+      required: ['event', 'message']
+    }
+  },
+  {
+    name: 'update_plan_task',
+    description: 'Update the status of a task in the orchestration PLAN.json.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        taskId: {
+          type: 'string',
+          description: 'The ID of the orchestration task to update'
+        },
+        status: {
+          type: 'string',
+          description: 'New status (pending, assigned, running, completed, failed, cancelled)'
+        },
+        result: {
+          type: 'string',
+          description: 'Result message (for completed tasks)'
+        },
+        errorMessage: {
+          type: 'string',
+          description: 'Error message (for failed tasks)'
+        }
+      },
+      required: ['taskId', 'status']
+    }
   }
 ];
 
@@ -882,6 +1095,145 @@ function handleRequest(request) {
           } else {
             return sendResponse(id, null, 'Failed to update mailbox');
           }
+        }
+
+        // Write tool handlers
+        case 'append_daily_log': {
+          const today = getTodayDateString();
+          ensureDir(DAILY_DIR);
+          const logPath = path.join(DAILY_DIR, today + '.md');
+          const existing = readFile(logPath) || '# Daily Log: ' + today + '\\n\\n> Session-specific observations. Temporary notes go here.\\n\\n---\\n';
+          const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+          const newContent = existing + '\\n- [' + timestamp + '] ' + args.content;
+          if (writeFile(logPath, newContent)) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Appended to daily/' + today + '.md' }] });
+          }
+          return sendResponse(id, { content: [{ type: 'text', text: 'Failed to append to daily log' }] });
+        }
+
+        case 'update_knowledge': {
+          ensureDir(KNOWLEDGE_DIR);
+          const knowledgePath = path.join(KNOWLEDGE_DIR, 'MEMORY.md');
+          let existing = readFile(knowledgePath);
+
+          if (!existing) {
+            existing = '# Project Knowledge\\n\\n> Curated insights organized by priority. Add date tags for TTL tracking.\\n\\n## P0 - Core (Never Expires)\\n<!-- Fundamental project facts, configuration, invariants -->\\n\\n## P1 - Active (90-day TTL)\\n<!-- Ongoing work context, current strategies, recent decisions -->\\n\\n## P2 - Reference (30-day TTL)\\n<!-- Temporary findings, debug notes, one-off context -->\\n\\n---\\n*Priority guide: P0 = permanent truth, P1 = active context, P2 = temporary reference*\\n*Format: - [YYYY-MM-DD] Your insight here*\\n';
+          }
+
+          const today = getTodayDateString();
+          const newEntry = '- [' + today + '] ' + args.content;
+
+          const sectionHeaders = {
+            P0: '## P0 - Core (Never Expires)',
+            P1: '## P1 - Active (90-day TTL)',
+            P2: '## P2 - Reference (30-day TTL)'
+          };
+
+          const header = sectionHeaders[args.section];
+          const headerIndex = existing.indexOf(header);
+
+          if (headerIndex === -1) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Section ' + args.section + ' not found in MEMORY.md' }] });
+          }
+
+          const afterHeader = existing.slice(headerIndex + header.length);
+          const commentMatch = afterHeader.match(/<!--[^>]*-->\\n/);
+          let insertPoint = headerIndex + header.length + 1;
+          if (commentMatch && commentMatch.index !== undefined) {
+            insertPoint = headerIndex + header.length + commentMatch.index + commentMatch[0].length;
+          }
+
+          const updated = existing.slice(0, insertPoint) + newEntry + '\\n' + existing.slice(insertPoint);
+
+          if (writeFile(knowledgePath, updated)) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Added entry to ' + args.section + ' section in MEMORY.md' }] });
+          }
+          return sendResponse(id, { content: [{ type: 'text', text: 'Failed to update MEMORY.md' }] });
+        }
+
+        case 'add_task': {
+          const tasks = readTasks();
+          const now = new Date().toISOString();
+          const newTask = {
+            id: generateTaskId(),
+            subject: args.subject,
+            description: args.description,
+            status: 'pending',
+            createdAt: now,
+            updatedAt: now
+          };
+          tasks.tasks.push(newTask);
+          if (writeTasks(tasks)) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Task created with ID: ' + newTask.id }] });
+          }
+          return sendResponse(id, { content: [{ type: 'text', text: 'Failed to create task' }] });
+        }
+
+        case 'update_task': {
+          const tasks = readTasks();
+          const task = tasks.tasks.find(t => t.id === args.taskId);
+          if (!task) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Task ' + args.taskId + ' not found' }] });
+          }
+          task.status = args.status;
+          task.updatedAt = new Date().toISOString();
+          if (writeTasks(tasks)) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Task ' + args.taskId + ' updated to status: ' + args.status }] });
+          }
+          return sendResponse(id, { content: [{ type: 'text', text: 'Failed to update task' }] });
+        }
+
+        // Orchestration tool handlers
+        case 'read_orchestration': {
+          let content = null;
+          if (args.type === 'plan') {
+            content = readFile(PLAN_PATH);
+          } else if (args.type === 'agents') {
+            content = readFile(AGENTS_PATH);
+          } else if (args.type === 'events') {
+            content = readFile(EVENTS_PATH);
+          }
+          return sendResponse(id, { content: [{ type: 'text', text: content || 'No ' + args.type + ' file found in orchestration directory.' }] });
+        }
+
+        case 'append_event': {
+          const eventObj = {
+            timestamp: new Date().toISOString(),
+            event: args.event,
+            message: args.message
+          };
+          if (args.agentName) eventObj.agentName = args.agentName;
+          if (args.taskRunId) eventObj.taskRunId = args.taskRunId;
+
+          if (appendEvent(eventObj)) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Event appended to EVENTS.jsonl' }] });
+          }
+          return sendResponse(id, { content: [{ type: 'text', text: 'Failed to append event' }] });
+        }
+
+        case 'update_plan_task': {
+          const plan = readPlan();
+          if (!plan) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'No PLAN.json found in orchestration directory' }] });
+          }
+          const task = plan.tasks.find(t => t.id === args.taskId);
+          if (!task) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Task ' + args.taskId + ' not found in PLAN.json' }] });
+          }
+          task.status = args.status;
+          if (args.result !== undefined) task.result = args.result;
+          if (args.errorMessage !== undefined) task.errorMessage = args.errorMessage;
+          if (args.status === 'running' && !task.startedAt) {
+            task.startedAt = new Date().toISOString();
+          }
+          if (args.status === 'completed' || args.status === 'failed' || args.status === 'cancelled') {
+            task.completedAt = new Date().toISOString();
+          }
+
+          if (writePlan(plan)) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'Plan task ' + args.taskId + ' updated to status: ' + args.status }] });
+          }
+          return sendResponse(id, { content: [{ type: 'text', text: 'Failed to update plan task' }] });
         }
 
         default:
