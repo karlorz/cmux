@@ -14,7 +14,7 @@
 #   ./scripts/test-memory-e2e.sh --task-id <id>      # Test specific task
 #
 # Required Environment:
-#   - Authenticated cmux-devbox CLI (cmux-devbox auth login)
+#   - Authenticated devsh CLI (devsh auth login)
 #   - CONVEX_SITE_URL or NEXT_PUBLIC_CONVEX_URL (for API tests)
 
 set -euo pipefail
@@ -124,10 +124,10 @@ record_skip() {
 
 # Get CLI binary path
 get_cli_binary() {
-  if command -v cmux-devbox >/dev/null 2>&1; then
-    echo "cmux-devbox"
-  elif [[ -f "$HOME/.local/bin/cmux-devbox" ]]; then
-    echo "$HOME/.local/bin/cmux-devbox"
+  if command -v devsh >/dev/null 2>&1; then
+    echo "devsh"
+  elif [[ -f "$HOME/.local/bin/devsh" ]]; then
+    echo "$HOME/.local/bin/devsh"
   else
     echo ""
   fi
@@ -284,12 +284,12 @@ main() {
   local cli_bin
   cli_bin="$(get_cli_binary)"
   if [[ -z "${cli_bin}" ]]; then
-    info "Building cmux-devbox..."
-    (cd "${PROJECT_DIR}" && make install-cmux-devbox-dev) || {
-      fail "Failed to build cmux-devbox"
+    info "Building devsh..."
+    (cd "${PROJECT_DIR}" && make install-devsh-dev) || {
+      fail "Failed to build devsh"
       exit 1
     }
-    cli_bin="$HOME/.local/bin/cmux-devbox"
+    cli_bin="$HOME/.local/bin/devsh"
     export PATH="$HOME/.local/bin:$PATH"
   fi
 

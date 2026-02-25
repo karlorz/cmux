@@ -25,8 +25,8 @@
  * ## Manual Spawning
  *
  * Users can also manually spawn orchestration tasks via:
- * - CLI: `cmux-devbox orchestrate spawn --agent <name> --prompt <prompt>`
- * - CLI with JWT: `cmux-devbox orchestrate spawn --use-env-jwt --agent <name> <prompt>`
+ * - CLI: `devsh orchestrate spawn --agent <name> --prompt <prompt>`
+ * - CLI with JWT: `devsh orchestrate spawn --use-env-jwt --agent <name> <prompt>`
  * - Web UI: Orchestration panel spawn button
  * - API: POST /api/orchestrate/spawn with Bearer token or X-Task-Run-JWT header
  */

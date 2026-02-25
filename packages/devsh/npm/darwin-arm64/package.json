@@ -1,0 +1,16 @@
+{
+  "name": "devsh-darwin-arm64",
+  "version": "0.3.6",
+  "description": "devsh CLI binary for macOS ARM64 (Apple Silicon)",
+  "os": ["darwin"],
+  "cpu": ["arm64"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/karlorz/cmux.git",
+    "directory": "packages/devsh"
+  },
+  "license": "MIT",
+  "author": "Manaflow",
+  "files": ["bin"],
+  "preferUnplugged": true
+}

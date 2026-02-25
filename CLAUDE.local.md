@@ -3,8 +3,8 @@
 # Style
 - Do not use emojis in shell scripts or debug messages
 
-# Testing with cmux-devbox
-Test repos (use for `cmux-devbox task create --repo`):
+# Testing with devsh
+Test repos (use for `devsh task create --repo`):
 - `karlorz/testing-repo-1`
 - `karlorz/testing-repo-2`
 - `karlorz/testing-repo-3`

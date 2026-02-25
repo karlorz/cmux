@@ -1,7 +1,7 @@
 /**
  * CLI <-> Web App Integration Tests
  *
- * Tests that the cmux-devbox CLI HTTP API endpoints properly synchronize
+ * Tests that the devsh CLI HTTP API endpoints properly synchronize
  * with Convex (the source of truth) and by extension the web app.
  *
  * These tests use the actual Convex HTTP actions, simulating CLI behavior.
