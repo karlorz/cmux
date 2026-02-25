@@ -1399,9 +1399,8 @@ func (c *Client) OrchestrationSpawn(ctx context.Context, opts OrchestrationSpawn
 	if len(opts.DependsOn) > 0 {
 		body["dependsOn"] = opts.DependsOn
 	}
-	if opts.Priority != 0 {
-		body["priority"] = opts.Priority
-	}
+	// Always send priority (0=highest is valid, server defaults to 5 if omitted)
+	body["priority"] = opts.Priority
 
 	resp, err := c.doServerRequest(ctx, "POST", "/api/orchestrate/spawn", body)
 	if err != nil {

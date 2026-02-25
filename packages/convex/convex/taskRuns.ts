@@ -1472,6 +1472,38 @@ export const fail = authMutation({
   },
 });
 
+/**
+ * Fail a task run as a team member (not necessarily the owner).
+ * Used for cascading cancellation from orchestration tasks where any team
+ * member can cancel tasks, not just the original owner.
+ */
+export const failByTeamMember = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    id: v.id("taskRuns"),
+    errorMessage: v.string(),
+    exitCode: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const doc = await ctx.db.get(args.id);
+    // Only check team membership, not ownership
+    if (!doc || doc.teamId !== teamId) {
+      throw new Error("Task run not found or unauthorized");
+    }
+    const now = Date.now();
+    await ctx.db.patch(args.id, {
+      status: "failed",
+      errorMessage: args.errorMessage,
+      exitCode: args.exitCode ?? 1,
+      completedAt: now,
+      updatedAt: now,
+    });
+    // Update task status using the original owner's userId for consistency
+    await updateTaskStatusFromRuns(ctx, doc.taskId, teamId, doc.userId);
+  },
+});
+
 export const addCustomPreview = authMutation({
   args: {
     teamSlugOrId: v.string(),

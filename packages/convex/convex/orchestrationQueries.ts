@@ -584,11 +584,31 @@ export const addDependencies = authMutation({
 
     // Merge with existing dependencies, avoiding duplicates
     const existing = task.dependencies ?? [];
+    const now = Date.now();
+
+    // Validate each dependency belongs to the same team and update dependents
+    for (const depId of dependencyIds) {
+      const dep = await ctx.db.get(depId);
+      if (!dep) {
+        throw new Error(`Dependency ${depId} not found`);
+      }
+      if (dep.teamId !== task.teamId) {
+        throw new Error(`Dependency ${depId} belongs to a different team`);
+      }
+      // Only add to dependents if not already a dependency
+      if (!existing.includes(depId)) {
+        await ctx.db.patch(depId, {
+          dependents: [...(dep.dependents ?? []), taskId],
+          updatedAt: now,
+        });
+      }
+    }
+
     const merged = [...new Set([...existing, ...dependencyIds])];
 
     await ctx.db.patch(taskId, {
       dependencies: merged,
-      updatedAt: Date.now(),
+      updatedAt: now,
     });
   },
 });
@@ -608,11 +628,31 @@ export const addDependenciesInternal = internalMutation({
     }
 
     const existing = task.dependencies ?? [];
+    const now = Date.now();
+
+    // Validate each dependency belongs to the same team and update dependents
+    for (const depId of dependencyIds) {
+      const dep = await ctx.db.get(depId);
+      if (!dep) {
+        throw new Error(`Dependency ${depId} not found`);
+      }
+      if (dep.teamId !== task.teamId) {
+        throw new Error(`Dependency ${depId} belongs to a different team`);
+      }
+      // Only add to dependents if not already a dependency
+      if (!existing.includes(depId)) {
+        await ctx.db.patch(depId, {
+          dependents: [...(dep.dependents ?? []), taskId],
+          updatedAt: now,
+        });
+      }
+    }
+
     const merged = [...new Set([...existing, ...dependencyIds])];
 
     await ctx.db.patch(taskId, {
       dependencies: merged,
-      updatedAt: Date.now(),
+      updatedAt: now,
     });
   },
 });
@@ -949,5 +989,38 @@ export const startTaskInternal = internalMutation({
       startedAt: now,
       updatedAt: now,
     });
+  },
+});
+
+// ============================================================================
+// Metrics Queries
+// ============================================================================
+
+/**
+ * Count tasks by status for a team.
+ * More efficient than listTasksByTeam when only the count is needed.
+ * Collects all matching tasks to get accurate count (no limit).
+ */
+export const countTasksByStatus = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("assigned"),
+      v.literal("running"),
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("cancelled")
+    ),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+    const tasks = await ctx.db
+      .query("orchestrationTasks")
+      .withIndex("by_team_status", (q) =>
+        q.eq("teamId", teamId).eq("status", args.status)
+      )
+      .collect();
+    return tasks.length;
   },
 });

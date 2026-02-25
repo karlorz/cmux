@@ -710,10 +710,10 @@ async function handleOrchestrationCancel(
         taskId: orchestrationTaskId as Id<"orchestrationTasks">,
       });
 
-      // Cascade to taskRun if it exists
+      // Cascade to taskRun if it exists (use team-level auth, not owner-only)
       if (task.taskRunId) {
         try {
-          await getConvex().mutation(api.taskRuns.fail, {
+          await getConvex().mutation(api.taskRuns.failByTeamMember, {
             teamSlugOrId: body.teamSlugOrId,
             id: task.taskRunId,
             errorMessage: "Cancelled via orchestration",
@@ -1128,20 +1128,19 @@ async function handleOrchestrationMetrics(
         throw new Error("Team not found or not a member");
       }
 
-      // Get orchestration tasks by status
+      // Get orchestration tasks by status (using count query for accurate totals)
       const statusList = ["pending", "assigned", "running", "completed", "failed", "cancelled"] as const;
       const tasksByStatus: Record<string, number> = {};
       let activeOrchestrations = 0;
 
       for (const status of statusList) {
-        const tasks = await getConvex().query(api.orchestrationQueries.listTasksByTeam, {
+        const count = await getConvex().query(api.orchestrationQueries.countTasksByStatus, {
           teamSlugOrId: membership.team.teamId,
           status,
-          limit: 100,
         });
-        tasksByStatus[status] = tasks.length;
+        tasksByStatus[status] = count;
         if (status === "running" || status === "assigned") {
-          activeOrchestrations += tasks.length;
+          activeOrchestrations += count;
         }
       }
 

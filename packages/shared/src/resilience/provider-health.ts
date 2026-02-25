@@ -150,8 +150,9 @@ export class ProviderHealthMonitor {
     // Check circuit state first (canAttempt throws if open)
     if (!state.circuitBreaker.canAttempt()) {
       const stats = state.circuitBreaker.getStats();
+      const timeoutMs = this.config.circuitBreakerConfig?.timeoutMs ?? 30000;
       const remainingMs = stats.lastFailureTime
-        ? 30000 - (Date.now() - stats.lastFailureTime)
+        ? timeoutMs - (Date.now() - stats.lastFailureTime)
         : 0;
       const { CircuitOpenError } = await import("./circuit-breaker");
       throw new CircuitOpenError(

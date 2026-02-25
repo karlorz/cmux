@@ -97,6 +97,6 @@ func init() {
 	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnBranch, "branch", "", "Base branch")
 	orchestrateSpawnCmd.Flags().StringVar(&orchestrateSpawnPRTitle, "pr-title", "", "Pull request title")
 	orchestrateSpawnCmd.Flags().StringSliceVar(&orchestrateSpawnDependsOn, "depends-on", nil, "Orchestration task IDs this task depends on (can be specified multiple times)")
-	orchestrateSpawnCmd.Flags().IntVar(&orchestrateSpawnPriority, "priority", 5, "Task priority (1=highest, 10=lowest, default 5)")
+	orchestrateSpawnCmd.Flags().IntVar(&orchestrateSpawnPriority, "priority", 5, "Task priority (0=highest, 10=lowest, default 5)")
 	orchestrateCmd.AddCommand(orchestrateSpawnCmd)
 }
