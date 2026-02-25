@@ -17,7 +17,7 @@ import {
 } from "@cmux/shared/agent-catalog";
 import { AGENT_CONFIGS } from "@cmux/shared/agentConfig";
 import { spawnAgent, spawnAllAgents } from "./agentSpawner";
-import { getProviderHealthMonitor, type ProviderHealthMetrics } from "@cmux/shared/resilience/provider-health";
+import { getProviderHealthMonitor } from "@cmux/shared/resilience/provider-health";
 import {
   DEFAULT_BRANCH_PREFIX,
   generateBranchNamesFromDescription,
