@@ -414,9 +414,6 @@ async function handleOrchestrationSpawn(
       if (!membership) {
         throw new Error("Team not found or not a member");
       }
-      // teamId and userId available from membership if needed
-      // const teamId = membership.team.teamId;
-      // const userId = membership.userId;
 
       // Create task record (uses 'text' field, not 'prompt')
       const taskResult = await getConvex().mutation(api.tasks.create, {
@@ -832,9 +829,6 @@ async function handleOrchestrationMigrate(
       if (!membership) {
         throw new Error("Team not found or not a member");
       }
-      // teamId and userId available from membership if needed
-      // const teamId = membership.team.teamId;
-      // const userId = membership.userId;
 
       // Generate head agent prompt from plan
       const taskSummary = plan.tasks?.length

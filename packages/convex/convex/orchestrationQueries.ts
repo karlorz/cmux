@@ -639,12 +639,14 @@ export const getProviderHealth = authQuery({
       if (teamHealth) return teamHealth;
     }
 
-    // Fall back to global health
-    return ctx.db
+    // Fall back to global health (records where teamId is not set)
+    const globalRecords = await ctx.db
       .query("providerHealth")
       .withIndex("by_provider", (q) => q.eq("providerId", providerId))
-      .filter((q) => q.eq(q.field("teamId"), undefined))
-      .first();
+      .collect();
+
+    // Find the record without a teamId (global record)
+    return globalRecords.find((r) => !r.teamId) ?? null;
   },
 });
 
@@ -728,11 +730,14 @@ export const upsertProviderHealth = internalMutation({
             q.eq("teamId", args.teamId).eq("providerId", args.providerId)
           )
           .first()
-      : await ctx.db
-          .query("providerHealth")
-          .withIndex("by_provider", (q) => q.eq("providerId", args.providerId))
-          .filter((q) => q.eq(q.field("teamId"), undefined))
-          .first();
+      : await (async () => {
+          // Find global record (where teamId is not set)
+          const globalRecords = await ctx.db
+            .query("providerHealth")
+            .withIndex("by_provider", (q) => q.eq("providerId", args.providerId))
+            .collect();
+          return globalRecords.find((r) => !r.teamId) ?? null;
+        })();
 
     if (existing) {
       await ctx.db.patch(existing._id, {

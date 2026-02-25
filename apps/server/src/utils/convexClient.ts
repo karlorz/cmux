@@ -25,21 +25,6 @@ export function getConvex() {
   return client;
 }
 
-// Return a Convex client with a specific auth token (for internal operations)
-export function getConvexWithAuth(authToken: string) {
-  // Try to get from cache first
-  const cachedClient = convexClientCache.get(authToken, env.NEXT_PUBLIC_CONVEX_URL);
-  if (cachedClient) {
-    return cachedClient;
-  }
-
-  // Create new client and cache it
-  const client = new ConvexHttpClient(env.NEXT_PUBLIC_CONVEX_URL);
-  client.setAuth(authToken);
-  convexClientCache.set(authToken, env.NEXT_PUBLIC_CONVEX_URL, client);
-  return client;
-}
-
 // Return a Convex client without auth (for public queries)
 // Caches with a special "public" key
 export function getPublicConvex() {

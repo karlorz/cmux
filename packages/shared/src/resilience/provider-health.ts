@@ -137,21 +137,59 @@ export class ProviderHealthMonitor {
   /**
    * Execute a function with circuit breaker protection.
    * Automatically records latency and success/failure.
+   *
+   * Note: We track latency and health metrics separately from circuit breaker state.
+   * The circuit breaker's execute() handles its own recordSuccess/recordFailure
+   * for state transitions (closed/open/half-open). We track additional metrics
+   * (latency percentiles, team-level success rate) that the circuit breaker doesn't.
    */
   async execute<T>(providerId: string, fn: () => Promise<T>): Promise<T> {
     const state = this.getProviderState(providerId);
     const startTime = Date.now();
 
+    // Check circuit state first (canAttempt throws if open)
+    if (!state.circuitBreaker.canAttempt()) {
+      const stats = state.circuitBreaker.getStats();
+      const remainingMs = stats.lastFailureTime
+        ? 30000 - (Date.now() - stats.lastFailureTime)
+        : 0;
+      const { CircuitOpenError } = await import("./circuit-breaker");
+      throw new CircuitOpenError(
+        `Circuit is open. Retry in ${Math.ceil(remainingMs / 1000)}s`,
+        remainingMs
+      );
+    }
+
     try {
-      const result = await state.circuitBreaker.execute(fn);
+      // Execute the function directly (don't use circuitBreaker.execute to avoid double-recording)
+      const result = await fn();
       const latencyMs = Date.now() - startTime;
-      this.recordSuccess(providerId, latencyMs);
+
+      // Record success on circuit breaker for state transitions
+      state.circuitBreaker.recordSuccess();
+
+      // Track our own metrics (latency, success count) - no double-counting
+      state.successCount++;
+      state.lastCheck = Date.now();
+      state.latencies.push(latencyMs);
+      if (state.latencies.length > this.config.latencyWindowSize) {
+        state.latencies.shift();
+      }
+      state.cachedMetrics = undefined;
+
       return result;
     } catch (error) {
-      this.recordFailure(
-        providerId,
+      // Record failure on circuit breaker for state transitions
+      state.circuitBreaker.recordFailure(
         error instanceof Error ? error : new Error(String(error))
       );
+
+      // Track our own metrics - no double-counting
+      state.failureCount++;
+      state.lastCheck = Date.now();
+      state.lastError = error instanceof Error ? error.message : String(error);
+      state.cachedMetrics = undefined;
+
       throw error;
     }
   }
