@@ -15,6 +15,17 @@ export const env = createEnv({
       .enum(["true", "false"])
       .optional()
       .transform((v) => v === "true"),
+    // When enabled, wraps spawn flow with circuit breaker health monitoring
+    ENABLE_CIRCUIT_BREAKER: z
+      .enum(["true", "false"])
+      .optional()
+      .transform((v) => v === "true"),
+    // Secret for internal worker-to-server authentication (orchestration background worker)
+    CMUX_INTERNAL_SECRET: z.string().optional(),
+    // Server URL for internal worker communication (defaults to localhost:9779)
+    CMUX_SERVER_URL: z.string().optional(),
+    // JWT secret for task-run tokens (used for sub-agent spawning)
+    CMUX_TASK_RUN_JWT_SECRET: z.string().optional(),
   },
   // Handle both Node and Vite/Bun
   runtimeEnv: { ...import.meta.env, ...process.env },

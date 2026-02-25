@@ -157,6 +157,14 @@
     "./providers/opencode/free-models": {
       "import": "./src/providers/opencode/free-models.ts",
       "types": "./src/providers/opencode/free-models.ts"
+    },
+    "./resilience/provider-health": {
+      "import": "./src/resilience/provider-health.ts",
+      "types": "./src/resilience/provider-health.ts"
+    },
+    "./resilience": {
+      "import": "./src/resilience/index.ts",
+      "types": "./src/resilience/index.ts"
     }
   },
   "peerDependencies": {

@@ -8,13 +8,21 @@
 import type { AgentConfigApiKey } from "./agentConfig";
 import {
   BASE_PROVIDERS,
+  BASE_PROVIDER_MAP,
   getBaseProvider,
   getProviderIdFromAgentName,
   type ApiFormat,
   type ProviderSpec,
 } from "./providers/base-providers";
+import { getPluginLoader } from "./providers/plugin-loader";
 
 export { type ApiFormat, type ProviderSpec };
+
+/**
+ * Feature flag for enabling dynamic plugin loading.
+ * When true, ProviderRegistry uses the PluginLoader for provider resolution.
+ */
+const USE_DYNAMIC_LOADING = process.env.CMUX_DYNAMIC_PLUGINS === "true";
 
 /**
  * Provider override configuration stored per-team in Convex.
@@ -57,9 +65,31 @@ export interface ResolvedProvider {
  */
 export class ProviderRegistry {
   private baseProviders: Map<string, ProviderSpec>;
+  private pluginLoader = getPluginLoader();
+  private initialized = false;
 
   constructor() {
     this.baseProviders = new Map(BASE_PROVIDERS.map((p) => [p.id, p]));
+  }
+
+  /**
+   * Initialize the registry with dynamic plugin loading if enabled.
+   * Safe to call multiple times.
+   */
+  async initialize(): Promise<void> {
+    if (this.initialized) {
+      return;
+    }
+
+    if (USE_DYNAMIC_LOADING) {
+      await this.pluginLoader.loadAll();
+      // Merge plugin provider specs into base providers
+      for (const spec of this.pluginLoader.getAllProviderSpecs()) {
+        this.baseProviders.set(spec.id, spec);
+      }
+    }
+
+    this.initialized = true;
   }
 
   /**
@@ -71,9 +101,33 @@ export class ProviderRegistry {
 
   /**
    * Get a base provider spec by ID.
+   * Falls back to static BASE_PROVIDER_MAP if dynamic loading is disabled or plugin not found.
    */
   getBaseProvider(providerId: string): ProviderSpec | undefined {
-    return this.baseProviders.get(providerId);
+    // First check the merged map (includes plugins if initialized)
+    const fromMap = this.baseProviders.get(providerId);
+    if (fromMap) {
+      return fromMap;
+    }
+
+    // If dynamic loading enabled and we have a loaded plugin, use its spec
+    if (USE_DYNAMIC_LOADING && this.pluginLoader.isLoaded()) {
+      const plugin = this.pluginLoader.getPlugin(providerId);
+      if (plugin) {
+        return {
+          id: plugin.manifest.id,
+          name: plugin.manifest.name,
+          defaultBaseUrl: plugin.provider.defaultBaseUrl,
+          apiFormat: plugin.provider.apiFormat,
+          authEnvVars: plugin.provider.authEnvVars,
+          apiKeys: plugin.provider.apiKeys,
+          baseUrlKey: plugin.provider.baseUrlKey,
+        };
+      }
+    }
+
+    // Fallback to static map
+    return BASE_PROVIDER_MAP[providerId];
   }
 
   /**

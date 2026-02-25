@@ -1121,5 +1121,50 @@ describe(
         }
       });
     });
+
+    // ========================================================================
+    // Orchestration API Tests (feat/head-agent-orchestration)
+    // NOTE: These routes are served by apps/server (Hono), NOT Convex HTTP.
+    // The tests use the Convex site URL as base, but /api/orchestrate/* routes
+    // may not be available in all environments (returns 404).
+    // Tests are marked as skipped since the orchestration routes are deployed
+    // separately from the Convex backend.
+    // ========================================================================
+    describe.skip("Orchestration API (apps/server routes - skipped in Convex integration)", () => {
+      it("POST /api/orchestrate/spawn requires authentication", async () => {
+        const response = await fetch(buildCmuxApiUrl("/api/orchestrate/spawn"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            teamSlugOrId: resolvedTeamSlug,
+            prompt: "Test prompt",
+            agent: "claude/haiku-4.5",
+          }),
+        });
+
+        // 404 if route not deployed, 401 if deployed
+        expect([401, 404]).toContain(response.status);
+      });
+
+      it("GET /api/orchestrate/list returns tasks array or 404", async () => {
+        const result = await cmuxApiFetch<{
+          tasks: Array<{
+            _id: string;
+            prompt: string;
+            status: string;
+          }>;
+        }>("/api/orchestrate/list", {
+          query: { teamSlugOrId: resolvedTeamSlug },
+        });
+
+        // 404 if route not deployed, 200 if deployed
+        if (result.status === 404) {
+          expect(result.ok).toBe(false);
+        } else {
+          expect(result.ok).toBe(true);
+          expect(Array.isArray(result.data?.tasks)).toBe(true);
+        }
+      });
+    });
   }
 );

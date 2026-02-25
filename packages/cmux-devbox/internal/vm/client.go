@@ -1212,6 +1212,33 @@ func (c *Client) doServerRequest(ctx context.Context, method, path string, body 
 	return c.httpClient.Do(req)
 }
 
+// doServerRequestWithJwt makes a request to apps/server using X-Task-Run-JWT auth
+// This allows agents to spawn sub-agents using their task-run JWT
+func (c *Client) doServerRequestWithJwt(ctx context.Context, method, path string, body interface{}, jwt string) (*http.Response, error) {
+	var bodyReader io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		bodyReader = bytes.NewReader(data)
+	}
+
+	// apps/server API is at ServerURL (socket.io server)
+	cfg := auth.GetConfig()
+	url := cfg.ServerURL + path
+	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("X-Task-Run-JWT", jwt)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	return c.httpClient.Do(req)
+}
+
 // StartTaskAgents starts agents for a task using the same flow as web app
 // This calls apps/server HTTP API which uses the same agentSpawner as socket.io
 func (c *Client) StartTaskAgents(ctx context.Context, opts StartTaskAgentsOptions) (*StartTaskAgentsResult, error) {
@@ -1305,6 +1332,335 @@ func (c *Client) GetTaskRunMemory(ctx context.Context, taskRunID string, memoryT
 	}
 
 	var result GetTaskRunMemoryResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// ============================================================================
+// Orchestration API
+// ============================================================================
+
+// OrchestrationSpawnOptions represents options for spawning with orchestration tracking
+type OrchestrationSpawnOptions struct {
+	Prompt        string
+	Agent         string
+	Repo          string
+	Branch        string
+	PRTitle       string
+	EnvironmentID string
+	IsCloudMode   bool
+	DependsOn     []string // Orchestration task IDs this task depends on
+	Priority      int      // Task priority (1=highest, 10=lowest, default 5)
+	TaskRunJwt    string   // If set, use X-Task-Run-JWT header instead of Bearer token
+}
+
+// OrchestrationSpawnResult represents the result of spawning an agent with orchestration
+type OrchestrationSpawnResult struct {
+	OrchestrationTaskID string `json:"orchestrationTaskId"`
+	TaskID              string `json:"taskId"`
+	TaskRunID           string `json:"taskRunId"`
+	AgentName           string `json:"agentName"`
+	VSCodeURL           string `json:"vscodeUrl,omitempty"`
+	Status              string `json:"status"`
+}
+
+// OrchestrationTask represents an orchestration task from the API
+type OrchestrationTask struct {
+	ID                string   `json:"_id"`
+	TeamID            string   `json:"teamId"`
+	UserID            string   `json:"userId"`
+	Prompt            string   `json:"prompt"`
+	Status            string   `json:"status"`
+	Priority          int      `json:"priority"`
+	Dependencies      []string `json:"dependencies,omitempty"`
+	AssignedAgentName *string  `json:"assignedAgentName,omitempty"`
+	AssignedSandboxID *string  `json:"assignedSandboxId,omitempty"`
+	TaskID            *string  `json:"taskId,omitempty"`
+	TaskRunID         *string  `json:"taskRunId,omitempty"`
+	Result            *string  `json:"result,omitempty"`
+	ErrorMessage      *string  `json:"errorMessage,omitempty"`
+	CreatedAt         int64    `json:"createdAt"`
+	UpdatedAt         int64    `json:"updatedAt"`
+	AssignedAt        *int64   `json:"assignedAt,omitempty"`
+	StartedAt         *int64   `json:"startedAt,omitempty"`
+	CompletedAt       *int64   `json:"completedAt,omitempty"`
+}
+
+// OrchestrationListResult represents the result of listing orchestration tasks
+type OrchestrationListResult struct {
+	Tasks []OrchestrationTask `json:"tasks"`
+}
+
+// OrchestrationStatusResult represents the status of an orchestration task
+type OrchestrationStatusResult struct {
+	Task    OrchestrationTask `json:"task"`
+	TaskRun *TaskRun          `json:"taskRun,omitempty"`
+}
+
+// OrchestrationSpawn spawns an agent with orchestration tracking
+func (c *Client) OrchestrationSpawn(ctx context.Context, opts OrchestrationSpawnOptions) (*OrchestrationSpawnResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+		"prompt":       opts.Prompt,
+		"agent":        opts.Agent,
+		"isCloudMode":  opts.IsCloudMode,
+	}
+	if opts.Repo != "" {
+		body["repo"] = opts.Repo
+	}
+	if opts.Branch != "" {
+		body["branch"] = opts.Branch
+	}
+	if opts.PRTitle != "" {
+		body["prTitle"] = opts.PRTitle
+	}
+	if opts.EnvironmentID != "" {
+		body["environmentId"] = opts.EnvironmentID
+	}
+	if len(opts.DependsOn) > 0 {
+		body["dependsOn"] = opts.DependsOn
+	}
+	// Always send priority (0=highest is valid, server defaults to 5 if omitted)
+	body["priority"] = opts.Priority
+
+	var resp *http.Response
+	var err error
+
+	// Use JWT auth if TaskRunJwt is provided, otherwise use Bearer token
+	if opts.TaskRunJwt != "" {
+		resp, err = c.doServerRequestWithJwt(ctx, "POST", "/api/orchestrate/spawn", body, opts.TaskRunJwt)
+	} else {
+		resp, err = c.doServerRequest(ctx, "POST", "/api/orchestrate/spawn", body)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("orchestration spawn failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result OrchestrationSpawnResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// OrchestrationList lists orchestration tasks for the team
+func (c *Client) OrchestrationList(ctx context.Context, status string) (*OrchestrationListResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	path := fmt.Sprintf("/api/orchestrate/list?teamSlugOrId=%s", c.teamSlug)
+	if status != "" {
+		path += "&status=" + status
+	}
+
+	resp, err := c.doServerRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("orchestration list failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result OrchestrationListResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// OrchestrationStatus gets the status of an orchestration task
+func (c *Client) OrchestrationStatus(ctx context.Context, orchTaskID string) (*OrchestrationStatusResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	path := fmt.Sprintf("/api/orchestrate/status/%s?teamSlugOrId=%s", orchTaskID, c.teamSlug)
+
+	resp, err := c.doServerRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("orchestration status failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result OrchestrationStatusResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// OrchestrationCancel cancels an orchestration task
+func (c *Client) OrchestrationCancel(ctx context.Context, orchTaskID string) error {
+	if c.teamSlug == "" {
+		return fmt.Errorf("team slug not set")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+	}
+
+	resp, err := c.doServerRequest(ctx, "POST", fmt.Sprintf("/api/orchestrate/cancel/%s", orchTaskID), body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("orchestration cancel failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	return nil
+}
+
+// SendOrchestrateMessage sends a message to a running agent via the orchestrate message endpoint
+func (c *Client) SendOrchestrateMessage(ctx context.Context, taskRunID string, message string, messageType string, teamSlugOrId string) error {
+	body := map[string]interface{}{
+		"taskRunId":    taskRunID,
+		"message":      message,
+		"messageType":  messageType,
+		"teamSlugOrId": teamSlugOrId,
+	}
+
+	resp, err := c.doWwwRequest(ctx, "POST", "/api/orchestrate/message", body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+		return fmt.Errorf("orchestrate message failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	return nil
+}
+
+// OrchestrationMigrateOptions represents options for migrating orchestration state
+type OrchestrationMigrateOptions struct {
+	PlanJson      string // Raw PLAN.json content (required)
+	AgentsJson    string // Raw AGENTS.json content (optional)
+	Agent         string // Override head agent (defaults to plan.headAgent)
+	Repo          string
+	Branch        string
+	EnvironmentID string
+}
+
+// OrchestrationMigrateResult represents the result of migrating orchestration state
+type OrchestrationMigrateResult struct {
+	OrchestrationTaskID string `json:"orchestrationTaskId"`
+	TaskID              string `json:"taskId"`
+	TaskRunID           string `json:"taskRunId"`
+	AgentName           string `json:"agentName"`
+	OrchestrationID     string `json:"orchestrationId"`
+	VSCodeURL           string `json:"vscodeUrl,omitempty"`
+	Status              string `json:"status"`
+}
+
+// OrchestrationMigrate migrates local orchestration state to a sandbox
+func (c *Client) OrchestrationMigrate(ctx context.Context, opts OrchestrationMigrateOptions) (*OrchestrationMigrateResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	if opts.PlanJson == "" {
+		return nil, fmt.Errorf("planJson is required")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+		"planJson":     opts.PlanJson,
+	}
+	if opts.AgentsJson != "" {
+		body["agentsJson"] = opts.AgentsJson
+	}
+	if opts.Agent != "" {
+		body["agent"] = opts.Agent
+	}
+	if opts.Repo != "" {
+		body["repo"] = opts.Repo
+	}
+	if opts.Branch != "" {
+		body["branch"] = opts.Branch
+	}
+	if opts.EnvironmentID != "" {
+		body["environmentId"] = opts.EnvironmentID
+	}
+
+	resp, err := c.doServerRequest(ctx, "POST", "/api/orchestrate/migrate", body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("orchestration migrate failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result OrchestrationMigrateResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// OrchestrationMetricsResult represents metrics for orchestration monitoring
+type OrchestrationMetricsResult struct {
+	ActiveOrchestrations int                                  `json:"activeOrchestrations"`
+	TasksByStatus        map[string]int                       `json:"tasksByStatus"`
+	ProviderHealth       map[string]OrchestrationProviderInfo `json:"providerHealth"`
+}
+
+// OrchestrationProviderInfo represents health info for a provider
+type OrchestrationProviderInfo struct {
+	Status       string  `json:"status"`
+	CircuitState string  `json:"circuitState"`
+	LatencyP50   float64 `json:"latencyP50"`
+	LatencyP99   float64 `json:"latencyP99"`
+	SuccessRate  float64 `json:"successRate"`
+	FailureCount int     `json:"failureCount"`
+}
+
+// OrchestrationMetrics gets orchestration metrics including provider health
+func (c *Client) OrchestrationMetrics(ctx context.Context) (*OrchestrationMetricsResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	path := fmt.Sprintf("/api/orchestrate/metrics?teamSlugOrId=%s", c.teamSlug)
+
+	resp, err := c.doServerRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("orchestration metrics failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result OrchestrationMetricsResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}

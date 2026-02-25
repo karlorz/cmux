@@ -1070,6 +1070,51 @@ export const getJwt = authMutation({
   },
 });
 
+// Internal version of getJwt for background worker orchestration
+// Does not require user authentication - used by internal spawn endpoint
+export const getJwtInternal = internalMutation({
+  args: {
+    taskRunId: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.taskRunId);
+    if (!doc) {
+      throw new Error("Task run not found");
+    }
+
+    const jwt = await new SignJWT({
+      taskRunId: args.taskRunId,
+      teamId: doc.teamId,
+      userId: doc.userId,
+    })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt()
+      .setExpirationTime("12h")
+      .sign(new TextEncoder().encode(env.CMUX_TASK_RUN_JWT_SECRET));
+
+    return { jwt, teamId: doc.teamId, userId: doc.userId };
+  },
+});
+
+// Internal mutation to update branch without auth
+export const updateBranchInternal = internalMutation({
+  args: {
+    id: v.id("taskRuns"),
+    newBranch: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.id);
+    if (!doc) {
+      throw new Error("Task run not found");
+    }
+    await ctx.db.patch(args.id, {
+      newBranch: args.newBranch,
+      updatedAt: Date.now(),
+    });
+    return { ok: true };
+  },
+});
+
 // Internal query to get a task run by ID
 export const getById = internalQuery({
   args: { id: v.id("taskRuns") },
@@ -1427,6 +1472,38 @@ export const fail = authMutation({
   },
 });
 
+/**
+ * Fail a task run as a team member (not necessarily the owner).
+ * Used for cascading cancellation from orchestration tasks where any team
+ * member can cancel tasks, not just the original owner.
+ */
+export const failByTeamMember = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    id: v.id("taskRuns"),
+    errorMessage: v.string(),
+    exitCode: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const doc = await ctx.db.get(args.id);
+    // Only check team membership, not ownership
+    if (!doc || doc.teamId !== teamId) {
+      throw new Error("Task run not found or unauthorized");
+    }
+    const now = Date.now();
+    await ctx.db.patch(args.id, {
+      status: "failed",
+      errorMessage: args.errorMessage,
+      exitCode: args.exitCode ?? 1,
+      completedAt: now,
+      updatedAt: now,
+    });
+    // Update task status using the original owner's userId for consistency
+    await updateTaskStatusFromRuns(ctx, doc.taskId, teamId, doc.userId);
+  },
+});
+
 export const addCustomPreview = authMutation({
   args: {
     teamSlugOrId: v.string(),
@@ -1564,6 +1641,16 @@ export const workerComplete = internalMutation({
 
     // After marking this run as completed, check if we should update the task status
     await updateTaskStatusFromRuns(ctx, run.taskId, run.teamId, run.userId);
+
+    // Notify orchestration worker of completion (handles orchestration-managed tasks)
+    await ctx.scheduler.runAfter(
+      0,
+      internal.orchestrationWorker.handleTaskCompletion,
+      {
+        taskRunId: args.taskRunId,
+        exitCode: args.exitCode,
+      }
+    );
 
     // Note: Notifications are handled separately via /api/notifications/agent-stopped
     // which is called by the stop hook. This keeps status updates decoupled from notifications.

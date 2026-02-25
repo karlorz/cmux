@@ -136,3 +136,29 @@ export const getByEnvVarInternal = internalQuery({
       .first();
   },
 });
+
+/**
+ * Internal query to get all API keys for agents.
+ * Used by background worker for internal spawns.
+ */
+export const getAllForAgentsInternal = internalQuery({
+  args: {
+    teamId: v.string(),
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const apiKeys = await ctx.db
+      .query("apiKeys")
+      .withIndex("by_team_user", (q) =>
+        q.eq("teamId", args.teamId).eq("userId", args.userId)
+      )
+      .collect();
+    const keyMap: Record<string, string> = {};
+
+    for (const key of apiKeys) {
+      keyMap[key.envVar] = key.value;
+    }
+
+    return keyMap;
+  },
+});

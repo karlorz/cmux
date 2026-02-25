@@ -1471,6 +1471,99 @@ const convexSchema = defineSchema({
     .index("by_task_run", ["taskRunId", "memoryType"])
     .index("by_team_type", ["teamId", "memoryType", "createdAt"])
     .index("by_team_created", ["teamId", "createdAt"]),
+
+  // Provider health tracking for circuit breaker and resilience patterns
+  // Tracks latency, success rate, and circuit state per provider
+  providerHealth: defineTable({
+    providerId: v.string(), // Provider ID (e.g., "anthropic", "openai", "openrouter")
+    status: v.union(
+      v.literal("healthy"),
+      v.literal("degraded"),
+      v.literal("unhealthy")
+    ),
+    circuitState: v.union(
+      v.literal("closed"),
+      v.literal("open"),
+      v.literal("half-open")
+    ),
+    failureCount: v.number(),
+    successRate: v.number(), // 0.0 to 1.0
+    latencyP50: v.number(), // Median latency in ms
+    latencyP99: v.number(), // 99th percentile latency in ms
+    totalRequests: v.number(),
+    lastCheck: v.number(), // Timestamp of last health check
+    lastError: v.optional(v.string()), // Most recent error message
+    teamId: v.optional(v.string()), // Optional team scope (null = global)
+  })
+    .index("by_provider", ["providerId"])
+    .index("by_team_provider", ["teamId", "providerId"])
+    .index("by_status", ["status", "lastCheck"]),
+
+  // Task queue for multi-agent orchestration
+  // Enables priority-based task assignment and dependency management
+  orchestrationTasks: defineTable({
+    taskId: v.optional(v.id("tasks")), // Link to main task (optional for standalone orchestration)
+    taskRunId: v.optional(v.id("taskRuns")), // Link to task run (optional)
+    teamId: v.string(),
+    userId: v.string(),
+    priority: v.number(), // 0 = highest priority
+    status: v.union(
+      v.literal("pending"), // Waiting to be assigned
+      v.literal("assigned"), // Assigned to an agent
+      v.literal("running"), // Currently executing
+      v.literal("completed"), // Successfully completed
+      v.literal("failed"), // Failed with error
+      v.literal("cancelled") // Cancelled by user or system
+    ),
+    assignedAgentName: v.optional(v.string()), // Agent assigned to this task
+    assignedSandboxId: v.optional(v.string()), // Sandbox instance running this task
+    dependencies: v.optional(v.array(v.id("orchestrationTasks"))), // Tasks that must complete first
+    dependents: v.optional(v.array(v.id("orchestrationTasks"))), // Tasks waiting on this one
+    prompt: v.string(), // Task description/prompt
+    result: v.optional(v.string()), // Task result (when completed)
+    errorMessage: v.optional(v.string()), // Error message (when failed)
+    parentTaskId: v.optional(v.id("orchestrationTasks")), // For sub-task hierarchy
+    metadata: v.optional(v.record(v.string(), v.any())), // Additional context
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    assignedAt: v.optional(v.number()),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    // Retry tracking for background worker
+    retryCount: v.optional(v.number()), // Current retry attempt
+    lastRetryAt: v.optional(v.number()), // Timestamp of last retry
+    nextRetryAfter: v.optional(v.number()), // When to retry next (ms since epoch)
+  })
+    .index("by_team_priority", ["teamId", "priority", "status"])
+    .index("by_team_status", ["teamId", "status", "updatedAt"])
+    .index("by_assigned_agent", ["assignedAgentName", "status"])
+    .index("by_parent", ["parentTaskId", "createdAt"])
+    .index("by_task_run", ["taskRunId"]),
+
+  // Agent orchestration messages for inter-agent communication
+  // Messages sent via orchestrate sendMessage mutation are stored here
+  // and synced to running sandboxes via MAILBOX.json updates
+  agentOrchestrateMessages: defineTable({
+    taskRunId: v.id("taskRuns"),
+    teamId: v.string(),
+    userId: v.string(),
+    messageId: v.string(), // Unique message ID (msg_xxx)
+    messageType: v.union(
+      v.literal("handoff"),
+      v.literal("request"),
+      v.literal("status")
+    ),
+    senderName: v.string(), // Agent name or user identifier
+    recipientName: v.optional(v.string()), // Agent name or "*" for broadcast
+    content: v.string(), // Message content
+    read: v.boolean(),
+    timestamp: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_task_run", ["taskRunId", "createdAt"])
+    .index("by_task_run_unread", ["taskRunId", "read", "createdAt"])
+    .index("by_team", ["teamId", "createdAt"])
+    .index("by_recipient", ["recipientName", "read", "createdAt"]),
 });
 
 export default convexSchema;

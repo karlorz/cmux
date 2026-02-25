@@ -463,6 +463,137 @@ export type InstanceInfo = {
 
 export type ListInstancesResponse = Array<InstanceInfo>;
 
+export type OrchestrateMessageResponse = {
+    /**
+     * Whether the message was successfully sent
+     */
+    ok: boolean;
+    /**
+     * Confirmation message
+     */
+    message?: string;
+};
+
+export type OrchestrateMessageRequest = {
+    /**
+     * Task run ID (Convex document ID)
+     */
+    taskRunId: string;
+    /**
+     * Message content to send to the agent
+     */
+    message: string;
+    /**
+     * Message type: handoff (transfer work), request (ask to do something), or status (progress update)
+     */
+    messageType: 'handoff' | 'request' | 'status';
+    /**
+     * Team slug or ID (for authorization)
+     */
+    teamSlugOrId: string;
+};
+
+export type TaskStatus = 'pending' | 'assigned' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+export type DependencyInfo = {
+    totalDeps: number;
+    completedDeps: number;
+    pendingDeps: number;
+    blockedBy: Array<{
+        _id: string;
+        status: string;
+        prompt: string;
+    }>;
+};
+
+export type OrchestrationTask = {
+    /**
+     * Task ID (Convex document ID)
+     */
+    _id: string;
+    /**
+     * Task prompt
+     */
+    prompt: string;
+    status: TaskStatus;
+    /**
+     * Task priority (lower = higher priority)
+     */
+    priority: number;
+    /**
+     * Assigned agent name
+     */
+    assignedAgentName?: string;
+    /**
+     * Sandbox ID
+     */
+    assignedSandboxId?: string;
+    /**
+     * Creation timestamp
+     */
+    createdAt: number;
+    /**
+     * Last update timestamp
+     */
+    updatedAt?: number;
+    /**
+     * Start timestamp
+     */
+    startedAt?: number;
+    /**
+     * Completion timestamp
+     */
+    completedAt?: number;
+    /**
+     * Error message if failed
+     */
+    errorMessage?: string;
+    /**
+     * Result if completed
+     */
+    result?: string;
+    /**
+     * Dependency task IDs
+     */
+    dependencies?: Array<string>;
+};
+
+export type OrchestrationTaskWithDeps = OrchestrationTask & {
+    dependencyInfo?: DependencyInfo;
+};
+
+export type OrchestrationSummary = {
+    /**
+     * Total number of tasks
+     */
+    totalTasks: number;
+    /**
+     * Count by status
+     */
+    statusCounts: {
+        [key: string]: number;
+    };
+    /**
+     * Number of active agents
+     */
+    activeAgentCount: number;
+    /**
+     * List of active agent names
+     */
+    activeAgents: Array<string>;
+    /**
+     * Recent completed/failed tasks
+     */
+    recentTasks: Array<{
+        _id: string;
+        prompt: string;
+        status: string;
+        assignedAgentName?: string;
+        completedAt?: number;
+        errorMessage?: string;
+    }>;
+};
+
 export type PveLxcResumeTaskRunResponse = {
     resumed: true;
 };
@@ -2382,6 +2513,202 @@ export type GetApiMorphInstancesResponses = {
 };
 
 export type GetApiMorphInstancesResponse = GetApiMorphInstancesResponses[keyof GetApiMorphInstancesResponses];
+
+export type PostApiOrchestrateMessageData = {
+    body: OrchestrateMessageRequest;
+    path?: never;
+    query?: never;
+    url: '/api/orchestrate/message';
+};
+
+export type PostApiOrchestrateMessageErrors = {
+    /**
+     * Invalid request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Task run not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiOrchestrateMessageResponses = {
+    /**
+     * Message sent successfully
+     */
+    200: OrchestrateMessageResponse;
+};
+
+export type PostApiOrchestrateMessageResponse = PostApiOrchestrateMessageResponses[keyof PostApiOrchestrateMessageResponses];
+
+export type GetApiOrchestrateTasksData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Team slug or ID
+         */
+        teamSlugOrId: string;
+        /**
+         * Filter by status
+         */
+        status?: TaskStatus & unknown;
+        /**
+         * Maximum number of tasks to return
+         */
+        limit?: number | null;
+    };
+    url: '/api/orchestrate/tasks';
+};
+
+export type GetApiOrchestrateTasksErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiOrchestrateTasksResponses = {
+    /**
+     * Tasks retrieved successfully
+     */
+    200: Array<OrchestrationTaskWithDeps>;
+};
+
+export type GetApiOrchestrateTasksResponse = GetApiOrchestrateTasksResponses[keyof GetApiOrchestrateTasksResponses];
+
+export type GetApiOrchestrateTasksByTaskIdData = {
+    body?: never;
+    path: {
+        /**
+         * Orchestration task ID
+         */
+        taskId: string;
+    };
+    query: {
+        /**
+         * Team slug or ID
+         */
+        teamSlugOrId: string;
+    };
+    url: '/api/orchestrate/tasks/{taskId}';
+};
+
+export type GetApiOrchestrateTasksByTaskIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Task not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiOrchestrateTasksByTaskIdResponses = {
+    /**
+     * Task retrieved successfully
+     */
+    200: OrchestrationTask;
+};
+
+export type GetApiOrchestrateTasksByTaskIdResponse = GetApiOrchestrateTasksByTaskIdResponses[keyof GetApiOrchestrateTasksByTaskIdResponses];
+
+export type PostApiOrchestrateTasksByTaskIdCancelData = {
+    body: {
+        /**
+         * Team slug or ID
+         */
+        teamSlugOrId: string;
+        /**
+         * Also cancel dependent tasks
+         */
+        cascade?: boolean;
+    };
+    path: {
+        /**
+         * Orchestration task ID
+         */
+        taskId: string;
+    };
+    query?: never;
+    url: '/api/orchestrate/tasks/{taskId}/cancel';
+};
+
+export type PostApiOrchestrateTasksByTaskIdCancelErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Task not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiOrchestrateTasksByTaskIdCancelResponses = {
+    /**
+     * Task cancelled successfully
+     */
+    200: {
+        ok: boolean;
+        cancelledCount: number;
+    };
+};
+
+export type PostApiOrchestrateTasksByTaskIdCancelResponse = PostApiOrchestrateTasksByTaskIdCancelResponses[keyof PostApiOrchestrateTasksByTaskIdCancelResponses];
+
+export type GetApiOrchestrateMetricsData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Team slug or ID
+         */
+        teamSlugOrId: string;
+    };
+    url: '/api/orchestrate/metrics';
+};
+
+export type GetApiOrchestrateMetricsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiOrchestrateMetricsResponses = {
+    /**
+     * Metrics retrieved successfully
+     */
+    200: OrchestrationSummary;
+};
+
+export type GetApiOrchestrateMetricsResponse = GetApiOrchestrateMetricsResponses[keyof GetApiOrchestrateMetricsResponses];
 
 export type PostApiPveLxcTaskRunsByTaskRunIdResumeData = {
     body: PveLxcResumeTaskRunBody;

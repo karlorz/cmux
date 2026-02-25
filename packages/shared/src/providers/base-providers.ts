@@ -160,6 +160,9 @@ export function getBaseProvider(providerId: string): ProviderSpec | undefined {
  */
 export function getProviderIdFromAgentName(agentName: string): string | undefined {
   const prefix = agentName.split("/")[0];
+  if (!prefix) {
+    return undefined;
+  }
   const prefixToProvider: Record<string, string> = {
     claude: "anthropic",
     codex: "openai",

@@ -88,4 +88,13 @@ crons.weekly(
   internal.modelDiscovery.discoverOpenRouterModels
 );
 
+// Poll orchestration tasks every minute for auto-spawning
+// This enables autonomous multi-agent orchestration
+// The worker uses task-run JWTs for authentication (bypasses Stack Auth)
+crons.interval(
+  "poll orchestration tasks",
+  { minutes: 1 },
+  internal.orchestrationWorker.pollReadyTasks
+);
+
 export default crons;

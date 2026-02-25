@@ -7,8 +7,13 @@ import {
 } from "@cmux/shared/agentConfig";
 import {
   getProviderRegistry,
+  type ApiFormat,
   type ProviderOverride,
 } from "@cmux/shared/provider-registry";
+import {
+  getProviderHealthMonitor,
+  type ProviderHealthMetrics,
+} from "@cmux/shared/resilience";
 import type {
   WorkerCreateTerminal,
   WorkerSyncFiles,
@@ -47,6 +52,28 @@ import rawSwitchBranchScript from "./utils/switch-branch.ts?raw";
 
 const SWITCH_BRANCH_BUN_SCRIPT = rawSwitchBranchScript;
 
+/**
+ * Fire-and-forget sync of provider health metrics to Convex.
+ * Non-blocking - will not affect spawn result on failure.
+ *
+ * NOTE: Provider health sync is currently disabled because upsertProviderHealth
+ * is now an internal mutation (not callable from client). This would need a
+ * dedicated HTTP endpoint for health reporting if re-enabled.
+ */
+async function syncProviderHealthToConvex(providerId: string): Promise<void> {
+  if (!env.ENABLE_CIRCUIT_BREAKER) return;
+
+  // Disabled: upsertProviderHealth is now internal-only
+  // TODO: Create /api/internal/provider-health endpoint if health sync is needed
+  const metrics = getProviderHealthMonitor().getMetrics(providerId);
+  serverLogger.debug("[AgentSpawner] Provider health metrics (not synced)", {
+    providerId,
+    status: metrics.status,
+    circuitState: metrics.circuitState,
+    failureCount: metrics.failureCount,
+  });
+}
+
 const {
   getApiEnvironmentsById,
   getApiEnvironmentsByIdVars,
@@ -61,6 +88,12 @@ export interface AgentSpawnResult {
   vscodeUrl?: string;
   success: boolean;
   error?: string;
+  /** Provider ID that was actually used (may differ from primary if fallback was used) */
+  usedProvider?: string;
+  /** True if a fallback provider was used instead of the primary */
+  usedFallback?: boolean;
+  /** Number of provider attempts before success */
+  fallbackAttempts?: number;
 }
 
 type WorkspaceConfigLayer = {
@@ -68,6 +101,28 @@ type WorkspaceConfigLayer = {
   maintenanceScript: string | undefined;
   envVarsContent: string | undefined;
 };
+
+/**
+ * Pre-fetched spawn configuration data (from Convex HTTP endpoint).
+ * Used when Stack Auth is not available (JWT-based auth paths).
+ */
+export interface PreFetchedSpawnConfig {
+  apiKeys: Record<string, string>;
+  workspaceSettings: {
+    bypassAnthropicProxy: boolean;
+  } | null;
+  providerOverrides: Array<{
+    providerId: string;
+    baseUrl?: string;
+    apiFormat?: ApiFormat;
+    apiKeyEnvVar?: string;
+    customHeaders?: Record<string, string>;
+    fallbacks?: Array<{ modelName: string; priority: number }>;
+    enabled: boolean;
+  }>;
+  previousKnowledge: string | null;
+  previousMailbox: string | null;
+}
 
 export async function spawnAgent(
   agent: AgentConfig,
@@ -86,8 +141,20 @@ export async function spawnAgent(
     theme?: "dark" | "light" | "system";
     newBranch?: string; // Optional pre-generated branch name
     taskRunId?: Id<"taskRuns">; // Optional pre-created task run ID
+    /** Orchestration options for multi-agent coordination (hybrid execution) */
+    orchestrationOptions?: {
+      headAgent: string;
+      orchestrationId?: string;
+      description?: string;
+      previousPlan?: string;
+      previousAgents?: string;
+    };
+    /** Pre-fetched spawn config (for JWT auth paths that can't call Convex directly) */
+    preFetchedConfig?: PreFetchedSpawnConfig;
   },
-  teamSlugOrId: string
+  teamSlugOrId: string,
+  /** Optional pre-provided JWT (for JWT-based auth when Stack Auth is not available) */
+  preProvidedJwt?: string
 ): Promise<AgentSpawnResult> {
   // Declare taskRunId outside try block so it's accessible in catch for error reporting
   let taskRunId: Id<"taskRuns"> | null = options.taskRunId ?? null;
@@ -108,7 +175,16 @@ export async function spawnAgent(
 
     let taskRunJwt: string;
 
-    if (options.taskRunId) {
+    if (preProvidedJwt && options.taskRunId) {
+      // JWT was pre-provided (JWT-based auth path) - use it directly
+      // Branch update will be skipped since we can't call authMutation without Stack Auth
+      // The caller is responsible for branch management in this case
+      taskRunJwt = preProvidedJwt;
+      taskRunId = options.taskRunId;
+      serverLogger.info(
+        `[AgentSpawner] Using pre-provided JWT for task run ${taskRunId}`
+      );
+    } else if (options.taskRunId) {
       // Task run was pre-created - get JWT and update branch
       const [jwtResult] = await Promise.all([
         getConvex().mutation(api.taskRuns.getJwt, {
@@ -425,39 +501,71 @@ export async function spawnAgent(
 
     // Fetch API keys, workspace settings, provider overrides, and memory for cross-run seeding
     // BEFORE calling agent.environment() so agents can access them in their environment configuration
-    const [userApiKeys, workspaceSettings, providerOverrides, previousKnowledge, previousMailbox] = await Promise.all([
-      getConvex().query(api.apiKeys.getAllForAgents, { teamSlugOrId }),
-      getConvex().query(api.workspaceSettings.get, { teamSlugOrId }),
-      getConvex().query(api.providerOverrides.getForTeam, { teamSlugOrId })
-        .catch((err) => {
-          console.error("[AgentSpawner] Failed to fetch provider overrides", err);
-          return [];
-        }),
-      // Query previous knowledge for cross-run memory seeding (S5b)
-      getConvex()
-        .query(api.agentMemoryQueries.getLatestTeamKnowledge, {
-          teamSlugOrId,
-        })
-        .catch((error) => {
-          serverLogger.warn(
-            "[AgentSpawner] Failed to fetch previous knowledge for memory seeding",
-            error
-          );
-          return null;
-        }),
-      // Query previous mailbox with unread messages for cross-run mailbox seeding (S10)
-      getConvex()
-        .query(api.agentMemoryQueries.getLatestTeamMailbox, {
-          teamSlugOrId,
-        })
-        .catch((error) => {
-          serverLogger.warn(
-            "[AgentSpawner] Failed to fetch previous mailbox for memory seeding",
-            error
-          );
-          return null;
-        }),
-    ]);
+    // If pre-fetched config is provided (JWT auth path), use it instead of querying Convex
+    let userApiKeys: Record<string, string>;
+    let workspaceSettings: { bypassAnthropicProxy?: boolean } | null;
+    let providerOverrides: Array<{
+      teamId?: string;
+      providerId: string;
+      baseUrl?: string;
+      apiFormat?: ApiFormat;
+      apiKeyEnvVar?: string;
+      customHeaders?: Record<string, string>;
+      fallbacks?: Array<{ modelName: string; priority: number }>;
+      enabled: boolean;
+    }>;
+    let previousKnowledge: string | null;
+    let previousMailbox: string | null;
+
+    if (options.preFetchedConfig) {
+      // Use pre-fetched config (JWT auth path - Stack Auth not available)
+      serverLogger.info("[AgentSpawner] Using pre-fetched spawn config (JWT auth path)");
+      userApiKeys = options.preFetchedConfig.apiKeys;
+      workspaceSettings = options.preFetchedConfig.workspaceSettings;
+      providerOverrides = options.preFetchedConfig.providerOverrides;
+      previousKnowledge = options.preFetchedConfig.previousKnowledge;
+      previousMailbox = options.preFetchedConfig.previousMailbox;
+    } else {
+      // Fetch from Convex (Stack Auth available)
+      const results = await Promise.all([
+        getConvex().query(api.apiKeys.getAllForAgents, { teamSlugOrId }),
+        getConvex().query(api.workspaceSettings.get, { teamSlugOrId }),
+        getConvex().query(api.providerOverrides.getForTeam, { teamSlugOrId })
+          .catch((err) => {
+            console.error("[AgentSpawner] Failed to fetch provider overrides", err);
+            return [];
+          }),
+        // Query previous knowledge for cross-run memory seeding (S5b)
+        getConvex()
+          .query(api.agentMemoryQueries.getLatestTeamKnowledge, {
+            teamSlugOrId,
+          })
+          .catch((error) => {
+            serverLogger.warn(
+              "[AgentSpawner] Failed to fetch previous knowledge for memory seeding",
+              error
+            );
+            return null;
+          }),
+        // Query previous mailbox with unread messages for cross-run mailbox seeding (S10)
+        getConvex()
+          .query(api.agentMemoryQueries.getLatestTeamMailbox, {
+            teamSlugOrId,
+          })
+          .catch((error) => {
+            serverLogger.warn(
+              "[AgentSpawner] Failed to fetch previous mailbox for memory seeding",
+              error
+            );
+            return null;
+          }),
+      ]);
+      userApiKeys = results[0];
+      workspaceSettings = results[1];
+      providerOverrides = results[2];
+      previousKnowledge = results[3];
+      previousMailbox = results[4];
+    }
 
     if (previousKnowledge) {
       serverLogger.info(
@@ -511,6 +619,7 @@ export async function spawnAgent(
           : undefined,
         previousKnowledge: previousKnowledge ?? undefined,
         previousMailbox: previousMailbox ?? undefined,
+        orchestrationOptions: options.orchestrationOptions,
       });
       envVars = {
         ...envVars,
@@ -706,8 +815,52 @@ export async function spawnAgent(
 
     serverLogger.info(`Starting VSCode instance for agent ${agent.name}...`);
 
-    // Start the VSCode instance
-    const vscodeInfo = await vscodeInstance.start();
+    // Determine provider ID for circuit breaker (use resolved provider or default)
+    const providerId = resolvedProvider?.id ?? "default";
+
+    // Pre-spawn circuit check when circuit breaker is enabled
+    if (env.ENABLE_CIRCUIT_BREAKER) {
+      const canAttempt = getProviderHealthMonitor().canAttempt(providerId);
+      if (!canAttempt) {
+        serverLogger.warn(
+          `[AgentSpawner] Circuit breaker open for provider ${providerId}, spawn may fail`
+        );
+        // Log available fallbacks for future model-switching support
+        const allMetrics = getProviderHealthMonitor().getAllMetrics();
+        const healthyProviders = allMetrics
+          .filter((m: ProviderHealthMetrics) => m.circuitState === "closed")
+          .map((m: ProviderHealthMetrics) => m.providerId);
+        if (healthyProviders.length > 0) {
+          serverLogger.info(
+            `[AgentSpawner] Healthy providers available: ${healthyProviders.join(", ")}`
+          );
+        }
+      }
+    }
+
+    // Start the VSCode instance (with optional circuit breaker wrapping)
+    let vscodeInfo: Awaited<ReturnType<typeof vscodeInstance.start>>;
+
+    // NOTE: Fallback provider switching is DISABLED.
+    // The executeWithFallback() was previously used here but it didn't actually
+    // switch providers - it just recorded failures. True provider switching would
+    // require recreating the vscodeInstance with a different provider config.
+    // For now, we only use the circuit breaker for health monitoring on the primary provider.
+    if (resolvedProvider?.fallbacks && resolvedProvider.fallbacks.length > 0) {
+      serverLogger.warn(
+        `[AgentSpawner] Fallback providers configured but switching is not implemented. ` +
+        `Using primary provider ${providerId} only.`
+      );
+    }
+
+    if (env.ENABLE_CIRCUIT_BREAKER) {
+      // Use circuit breaker without fallbacks
+      vscodeInfo = await getProviderHealthMonitor().execute(providerId, () => vscodeInstance.start());
+    } else {
+      // No circuit breaker
+      vscodeInfo = await vscodeInstance.start();
+    }
+
     const vscodeUrl = vscodeInfo.workspaceUrl;
 
     serverLogger.info(
@@ -1365,6 +1518,9 @@ exit $EXIT_CODE
       );
     });
 
+    // Fire-and-forget: sync provider health metrics to Convex
+    void syncProviderHealthToConvex(providerId);
+
     return {
       agentName: agent.name,
       terminalId,
@@ -1372,9 +1528,16 @@ exit $EXIT_CODE
       worktreePath,
       vscodeUrl,
       success: true,
+      usedProvider: providerId,
+      usedFallback: false,
+      fallbackAttempts: undefined,
     };
   } catch (error) {
     serverLogger.error("Error spawning agent", error);
+
+    // Fire-and-forget: sync provider health metrics to Convex (includes failure)
+    // Note: resolvedProvider may not be defined if error occurred before provider resolution
+    void syncProviderHealthToConvex("default");
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
 
