@@ -88,12 +88,23 @@ crons.weekly(
   internal.modelDiscovery.discoverOpenRouterModels
 );
 
+// TODO: Re-enable when service auth is implemented for background worker
 // Poll orchestration tasks every minute for auto-spawning
 // This enables autonomous multi-agent orchestration
-crons.interval(
-  "poll orchestration tasks",
-  { minutes: 1 },
-  internal.orchestrationWorker.pollReadyTasks
-);
+//
+// DISABLED: Background auto-spawning requires the worker to obtain valid
+// Stack Auth JWTs for Convex operations. Currently, spawns must be initiated
+// by authenticated users via CLI (cmux-devbox orchestrate spawn) or web UI.
+//
+// Unblock conditions:
+// 1. Implement service account auth with Stack Auth, OR
+// 2. Add admin key-based Convex access for internal operations
+// See: packages/convex/convex/orchestrationWorker.ts for details
+//
+// crons.interval(
+//   "poll orchestration tasks",
+//   { minutes: 1 },
+//   internal.orchestrationWorker.pollReadyTasks
+// );
 
 export default crons;

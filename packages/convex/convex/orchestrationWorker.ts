@@ -4,6 +4,45 @@
  * Polls for ready orchestration tasks and auto-spawns agents.
  * This enables autonomous multi-agent orchestration where tasks are
  * automatically processed without manual intervention.
+ *
+ * ## Current Status: DISABLED
+ *
+ * Background auto-spawning is currently disabled because the worker cannot
+ * obtain valid Stack Auth JWTs needed for Convex mutations. The worker runs
+ * as an internal action without user context.
+ *
+ * ## How It Would Work (When Enabled)
+ *
+ * 1. Cron job calls pollReadyTasks every minute
+ * 2. Worker queries for pending orchestration tasks with resolved dependencies
+ * 3. For each ready task, worker calls dispatchSpawn
+ * 4. dispatchSpawn makes HTTP request to apps/server internal spawn endpoint
+ * 5. Server spawns agent using existing infrastructure
+ *
+ * ## Unblock Conditions
+ *
+ * To re-enable background spawning, implement one of:
+ *
+ * 1. **Service Account Auth**: Create a Stack Auth service account that can
+ *    obtain JWTs for internal operations. This requires Stack Auth config
+ *    changes and a secure way to store service credentials.
+ *
+ * 2. **Admin Key Access**: Add support for Convex admin key-based operations
+ *    that bypass user auth for internal workflows. This requires careful
+ *    scoping to prevent privilege escalation.
+ *
+ * 3. **Pre-fetch Strategy**: Have the worker pre-fetch all needed data
+ *    (task details, JWT tokens) and pass to the spawn endpoint. Complex
+ *    because JWTs have short lifetimes.
+ *
+ * ## Current Workaround
+ *
+ * Users must manually spawn orchestration tasks via:
+ * - CLI: `cmux-devbox orchestrate spawn --agent <name> --prompt <prompt>`
+ * - Web UI: Orchestration panel spawn button
+ * - API: POST /api/orchestrate/spawn with Bearer token
+ *
+ * See: apps/server/src/http-api.ts handleOrchestrationInternalSpawn
  */
 
 import { v } from "convex/values";

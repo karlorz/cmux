@@ -1050,7 +1050,7 @@ async function handleOrchestrationInternalSpawn(
 
   const { orchestrationTaskId, agentName, prompt } = body;
 
-  serverLogger.warn("[http-api] POST /api/orchestrate/internal/spawn - disabled", {
+  serverLogger.info("[http-api] POST /api/orchestrate/internal/spawn - disabled (service auth not implemented)", {
     orchestrationTaskId,
     agentName,
     prompt: prompt?.slice(0, 100),

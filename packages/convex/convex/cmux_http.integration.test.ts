@@ -1121,5 +1121,279 @@ describe(
         }
       });
     });
+
+    // ========================================================================
+    // Orchestration API Tests (feat/head-agent-orchestration)
+    // ========================================================================
+    describe("Orchestration API", () => {
+      let createdOrchestrationTaskId: string | null = null;
+
+      afterAll(async () => {
+        // Clean up any created orchestration task
+        if (createdOrchestrationTaskId) {
+          try {
+            // Note: Orchestration tasks are cleaned up via cancel endpoint
+            // but this is a best-effort cleanup
+          } catch (error) {
+            console.error("[cleanup] Failed to clean up orchestration task:", error);
+          }
+        }
+      });
+
+      it("POST /api/orchestrate/spawn requires authentication", async () => {
+        const response = await fetch(buildCmuxApiUrl("/api/orchestrate/spawn"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            teamSlugOrId: resolvedTeamSlug,
+            prompt: "Test prompt",
+            agent: "claude/haiku-4.5",
+          }),
+        });
+
+        expect(response.status).toBe(401);
+      });
+
+      it("POST /api/orchestrate/spawn requires teamSlugOrId", async () => {
+        const result = await cmuxApiFetch("/api/orchestrate/spawn", {
+          method: "POST",
+          body: {
+            prompt: "Test prompt",
+            agent: "claude/haiku-4.5",
+          },
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.status).toBe(400);
+      });
+
+      it("POST /api/orchestrate/spawn requires prompt", async () => {
+        const result = await cmuxApiFetch("/api/orchestrate/spawn", {
+          method: "POST",
+          body: {
+            teamSlugOrId: resolvedTeamSlug,
+            agent: "claude/haiku-4.5",
+          },
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.status).toBe(400);
+      });
+
+      it("POST /api/orchestrate/spawn requires agent", async () => {
+        const result = await cmuxApiFetch("/api/orchestrate/spawn", {
+          method: "POST",
+          body: {
+            teamSlugOrId: resolvedTeamSlug,
+            prompt: "Test prompt",
+          },
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.status).toBe(400);
+      });
+
+      it("POST /api/orchestrate/spawn rejects invalid agent", async () => {
+        const result = await cmuxApiFetch("/api/orchestrate/spawn", {
+          method: "POST",
+          body: {
+            teamSlugOrId: resolvedTeamSlug,
+            prompt: "Test prompt",
+            agent: "nonexistent/invalid-agent",
+          },
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.status).toBe(500); // Agent not found error
+      });
+
+      it("GET /api/orchestrate/list requires authentication", async () => {
+        const response = await fetch(
+          buildCmuxApiUrl(`/api/orchestrate/list?teamSlugOrId=${resolvedTeamSlug}`)
+        );
+
+        expect(response.status).toBe(401);
+      });
+
+      it("GET /api/orchestrate/list requires teamSlugOrId", async () => {
+        const result = await cmuxApiFetch("/api/orchestrate/list");
+
+        expect(result.ok).toBe(false);
+        expect(result.status).toBe(400);
+      });
+
+      it("GET /api/orchestrate/list returns tasks array", async () => {
+        const result = await cmuxApiFetch<{
+          tasks: Array<{
+            _id: string;
+            prompt: string;
+            status: string;
+          }>;
+        }>("/api/orchestrate/list", {
+          query: { teamSlugOrId: resolvedTeamSlug },
+        });
+
+        expect(result.ok).toBe(true);
+        expect(Array.isArray(result.data?.tasks)).toBe(true);
+      });
+
+      it("GET /api/orchestrate/list supports status filter", async () => {
+        // Query with status filter
+        const result = await cmuxApiFetch<{
+          tasks: Array<{
+            status: string;
+          }>;
+        }>("/api/orchestrate/list", {
+          query: {
+            teamSlugOrId: resolvedTeamSlug,
+            status: "pending",
+          },
+        });
+
+        expect(result.ok).toBe(true);
+        // All returned tasks (if any) should have the filtered status
+        for (const task of result.data?.tasks ?? []) {
+          expect(task.status).toBe("pending");
+        }
+      });
+
+      it("GET /api/orchestrate/status/* requires authentication", async () => {
+        const response = await fetch(
+          buildCmuxApiUrl(`/api/orchestrate/status/fake_task_id?teamSlugOrId=${resolvedTeamSlug}`)
+        );
+
+        expect(response.status).toBe(401);
+      });
+
+      it("GET /api/orchestrate/status/* requires teamSlugOrId", async () => {
+        const result = await cmuxApiFetch("/api/orchestrate/status/fake_task_id");
+
+        expect(result.ok).toBe(false);
+        expect(result.status).toBe(400);
+      });
+
+      it("GET /api/orchestrate/status/* returns 500 for invalid task ID", async () => {
+        const result = await cmuxApiFetch("/api/orchestrate/status/invalid_id", {
+          query: { teamSlugOrId: resolvedTeamSlug },
+        });
+
+        // Invalid Convex ID format typically results in 500
+        expect(result.ok).toBe(false);
+        expect([404, 500]).toContain(result.status);
+      });
+
+      it("POST /api/orchestrate/cancel/* requires authentication", async () => {
+        const response = await fetch(
+          buildCmuxApiUrl("/api/orchestrate/cancel/fake_task_id"),
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ teamSlugOrId: resolvedTeamSlug }),
+          }
+        );
+
+        expect(response.status).toBe(401);
+      });
+
+      it("POST /api/orchestrate/cancel/* requires teamSlugOrId", async () => {
+        const result = await cmuxApiFetch("/api/orchestrate/cancel/fake_task_id", {
+          method: "POST",
+          body: {},
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.status).toBe(400);
+      });
+
+      it("POST /api/orchestrate/migrate requires authentication", async () => {
+        const response = await fetch(buildCmuxApiUrl("/api/orchestrate/migrate"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            teamSlugOrId: resolvedTeamSlug,
+            planJson: JSON.stringify({ headAgent: "claude/haiku-4.5" }),
+          }),
+        });
+
+        expect(response.status).toBe(401);
+      });
+
+      it("POST /api/orchestrate/migrate requires teamSlugOrId", async () => {
+        const result = await cmuxApiFetch("/api/orchestrate/migrate", {
+          method: "POST",
+          body: {
+            planJson: JSON.stringify({ headAgent: "claude/haiku-4.5" }),
+          },
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.status).toBe(400);
+      });
+
+      it("POST /api/orchestrate/migrate requires planJson", async () => {
+        const result = await cmuxApiFetch("/api/orchestrate/migrate", {
+          method: "POST",
+          body: {
+            teamSlugOrId: resolvedTeamSlug,
+          },
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.status).toBe(400);
+      });
+
+      it("POST /api/orchestrate/migrate requires valid JSON in planJson", async () => {
+        const result = await cmuxApiFetch("/api/orchestrate/migrate", {
+          method: "POST",
+          body: {
+            teamSlugOrId: resolvedTeamSlug,
+            planJson: "not valid json {{{",
+          },
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.status).toBe(400);
+        expect(result.error?.message).toContain("not valid JSON");
+      });
+
+      it("POST /api/orchestrate/migrate requires headAgent in plan or request", async () => {
+        const result = await cmuxApiFetch("/api/orchestrate/migrate", {
+          method: "POST",
+          body: {
+            teamSlugOrId: resolvedTeamSlug,
+            planJson: JSON.stringify({ tasks: [] }), // No headAgent
+          },
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.status).toBe(400);
+        expect(result.error?.message).toContain("headAgent");
+      });
+
+      it("POST /api/orchestrate/internal/spawn returns 501 (disabled)", async () => {
+        // This endpoint requires internal secret, not Bearer auth
+        const response = await fetch(
+          buildCmuxApiUrl("/api/orchestrate/internal/spawn"),
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Internal-Secret": "wrong-secret",
+            },
+            body: JSON.stringify({
+              orchestrationTaskId: "fake_id",
+              teamId: "fake_team",
+              agentName: "claude/haiku-4.5",
+              prompt: "test",
+              taskId: "fake_task",
+              taskRunId: "fake_run",
+            }),
+          }
+        );
+
+        // Either 401 (wrong secret) or 501 (disabled)
+        expect([401, 501]).toContain(response.status);
+      });
+    });
   }
 );
