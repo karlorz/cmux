@@ -1116,3 +1116,175 @@ export const countTasksByStatus = authQuery({
     return tasks.length;
   },
 });
+
+// ============================================================================
+// Dashboard Summary Queries
+// ============================================================================
+
+/**
+ * Get orchestration summary metrics for a team.
+ * Returns aggregate counts by status, recent tasks, and active agent info.
+ * Used by the orchestration dashboard.
+ */
+export const getOrchestrationSummary = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const teamId = await getTeamId(ctx, args.teamSlugOrId);
+
+    // Get all tasks for this team (we'll count by status)
+    const allTasks = await ctx.db
+      .query("orchestrationTasks")
+      .withIndex("by_team_status", (q) => q.eq("teamId", teamId))
+      .collect();
+
+    // Count by status
+    const statusCounts: Record<string, number> = {
+      pending: 0,
+      assigned: 0,
+      running: 0,
+      completed: 0,
+      failed: 0,
+      cancelled: 0,
+    };
+
+    for (const task of allTasks) {
+      if (task.status in statusCounts) {
+        statusCounts[task.status]++;
+      }
+    }
+
+    // Get unique active agents (running or assigned tasks)
+    const activeAgents = new Set<string>();
+    for (const task of allTasks) {
+      if (
+        (task.status === "running" || task.status === "assigned") &&
+        task.assignedAgentName
+      ) {
+        activeAgents.add(task.assignedAgentName);
+      }
+    }
+
+    // Get recent activity (last 5 completed or failed tasks)
+    const recentTasks = allTasks
+      .filter((t) => t.status === "completed" || t.status === "failed")
+      .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0))
+      .slice(0, 5);
+
+    return {
+      totalTasks: allTasks.length,
+      statusCounts,
+      activeAgentCount: activeAgents.size,
+      activeAgents: Array.from(activeAgents),
+      recentTasks: recentTasks.map((t) => ({
+        _id: t._id,
+        prompt: t.prompt.slice(0, 100) + (t.prompt.length > 100 ? "..." : ""),
+        status: t.status,
+        assignedAgentName: t.assignedAgentName,
+        completedAt: t.completedAt,
+        errorMessage: t.errorMessage,
+      })),
+    };
+  },
+});
+
+/**
+ * List tasks with enriched dependency information.
+ * Returns tasks with resolved dependency status (how many complete, how many pending).
+ * Used by the orchestration dashboard task list.
+ */
+export const listTasksWithDependencyInfo = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    status: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("assigned"),
+        v.literal("running"),
+        v.literal("completed"),
+        v.literal("failed"),
+        v.literal("cancelled")
+      )
+    ),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { teamSlugOrId, status, limit = 50 } = args;
+    const teamId = await getTeamId(ctx, teamSlugOrId);
+
+    // Fetch tasks
+    let tasks: Doc<"orchestrationTasks">[];
+    if (status) {
+      const taskList = await ctx.db
+        .query("orchestrationTasks")
+        .withIndex("by_team_status", (q) =>
+          q.eq("teamId", teamId).eq("status", status)
+        )
+        .collect();
+      tasks = taskList
+        .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+        .slice(0, limit);
+    } else {
+      const taskList = await ctx.db
+        .query("orchestrationTasks")
+        .withIndex("by_team_status", (q) => q.eq("teamId", teamId))
+        .collect();
+      tasks = taskList
+        .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+        .slice(0, limit);
+    }
+
+    // Enrich each task with dependency information
+    const enrichedTasks = await Promise.all(
+      tasks.map(async (task) => {
+        let dependencyInfo:
+          | {
+              totalDeps: number;
+              completedDeps: number;
+              pendingDeps: number;
+              blockedBy: Array<{
+                _id: Id<"orchestrationTasks">;
+                status: string;
+                prompt: string;
+              }>;
+            }
+          | undefined;
+
+        if (task.dependencies && task.dependencies.length > 0) {
+          const deps = await Promise.all(
+            task.dependencies.map((id) => ctx.db.get(id))
+          );
+          const validDeps = deps.filter(Boolean) as Doc<"orchestrationTasks">[];
+
+          const completedDeps = validDeps.filter(
+            (d) => d.status === "completed"
+          ).length;
+          const pendingDeps = validDeps.filter(
+            (d) => d.status !== "completed" && d.status !== "failed"
+          ).length;
+
+          dependencyInfo = {
+            totalDeps: validDeps.length,
+            completedDeps,
+            pendingDeps,
+            blockedBy: validDeps
+              .filter((d) => d.status !== "completed")
+              .map((d) => ({
+                _id: d._id,
+                status: d.status,
+                prompt: d.prompt.slice(0, 50) + (d.prompt.length > 50 ? "..." : ""),
+              })),
+          };
+        }
+
+        return {
+          ...task,
+          dependencyInfo,
+        };
+      })
+    );
+
+    return enrichedTasks;
+  },
+});

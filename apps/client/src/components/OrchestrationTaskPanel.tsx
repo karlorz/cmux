@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useQuery } from "convex/react";
+import { useQuery, useConvex } from "convex/react";
+import { Link } from "@tanstack/react-router";
 import { api } from "@cmux/convex/api";
 import {
   GitBranch,
@@ -11,8 +12,14 @@ import {
   Play,
   Users,
   AlertTriangle,
+  ExternalLink,
+  MessageSquare,
+  XOctagon,
 } from "lucide-react";
 import clsx from "clsx";
+import { toast } from "sonner";
+import { OrchestrationMessageDialog } from "./orchestration/OrchestrationMessageDialog";
+import type { Id } from "@cmux/convex/dataModel";
 
 export interface OrchestrationTaskPanelProps {
   teamSlugOrId: string;
@@ -31,12 +38,32 @@ const STATUS_CONFIG: Record<TaskStatus, { icon: React.ElementType; color: string
 
 export function OrchestrationTaskPanel({ teamSlugOrId }: OrchestrationTaskPanelProps) {
   const [statusFilter, setStatusFilter] = useState<TaskStatus | "all">("all");
+  const [messageDialogOpen, setMessageDialogOpen] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<{
+    taskRunId: Id<"taskRuns">;
+    agentName: string;
+  } | null>(null);
+  const convex = useConvex();
 
   const tasks = useQuery(api.orchestrationQueries.listTasksByTeam, {
     teamSlugOrId,
     status: statusFilter === "all" ? undefined : statusFilter,
     limit: 50,
   });
+
+  const handleCancelTask = async (taskId: Id<"orchestrationTasks">) => {
+    try {
+      await convex.mutation(api.orchestrationQueries.cancelTask, { taskId });
+      toast.success("Task cancelled");
+    } catch (error) {
+      toast.error(`Failed to cancel: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  };
+
+  const handleOpenMessage = (taskRunId: Id<"taskRuns">, agentName: string) => {
+    setSelectedTask({ taskRunId, agentName });
+    setMessageDialogOpen(true);
+  };
 
   // Loading state
   if (tasks === undefined) {
@@ -59,6 +86,14 @@ export function OrchestrationTaskPanel({ teamSlugOrId }: OrchestrationTaskPanelP
         <p className="text-xs">
           Orchestration tasks will appear here when agents spawn sub-agents
         </p>
+        <Link
+          to="/$teamSlugOrId/orchestration"
+          params={{ teamSlugOrId }}
+          className="mt-2 inline-flex items-center gap-1 text-xs text-blue-500 hover:text-blue-600"
+        >
+          Open dashboard
+          <ExternalLink className="size-3" />
+        </Link>
       </div>
     );
   }
@@ -110,6 +145,16 @@ export function OrchestrationTaskPanel({ teamSlugOrId }: OrchestrationTaskPanelP
         </span>
         <span className="text-xs text-neutral-400">({tasks.length})</span>
 
+        {/* Link to dashboard */}
+        <Link
+          to="/$teamSlugOrId/orchestration"
+          params={{ teamSlugOrId }}
+          className="ml-1 rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+          title="Open dashboard"
+        >
+          <ExternalLink className="size-3" />
+        </Link>
+
         {/* Status filter */}
         <select
           value={statusFilter}
@@ -132,6 +177,8 @@ export function OrchestrationTaskPanel({ teamSlugOrId }: OrchestrationTaskPanelP
             const status = task.status as TaskStatus;
             const createdAt = new Date(task.createdAt).toLocaleString();
             const hasError = status === "failed" && task.errorMessage;
+            const canCancel = status === "pending" || status === "assigned";
+            const canMessage = status === "running" && task.taskRunId;
 
             return (
               <div
@@ -141,7 +188,7 @@ export function OrchestrationTaskPanel({ teamSlugOrId }: OrchestrationTaskPanelP
                   status === "running" && "bg-blue-50/50 dark:bg-blue-900/10"
                 )}
               >
-                {/* Top row: status + agent */}
+                {/* Top row: status + agent + actions */}
                 <div className="flex items-center gap-2">
                   {renderStatusBadge(status)}
                   {task.assignedAgentName && (
@@ -149,9 +196,31 @@ export function OrchestrationTaskPanel({ teamSlugOrId }: OrchestrationTaskPanelP
                       {task.assignedAgentName}
                     </span>
                   )}
-                  <span className="ml-auto text-xs text-neutral-400">
+                  <span className="ml-auto flex items-center gap-1 text-xs text-neutral-400">
                     P{task.priority}
                   </span>
+
+                  {/* Action buttons */}
+                  {canMessage && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenMessage(task.taskRunId!, task.assignedAgentName ?? "Agent")}
+                      className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-blue-600 dark:hover:bg-neutral-800 dark:hover:text-blue-400"
+                      title="Send message to agent"
+                    >
+                      <MessageSquare className="size-3" />
+                    </button>
+                  )}
+                  {canCancel && (
+                    <button
+                      type="button"
+                      onClick={() => handleCancelTask(task._id)}
+                      className="rounded p-1 text-neutral-400 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+                      title="Cancel task"
+                    >
+                      <XOctagon className="size-3" />
+                    </button>
+                  )}
                 </div>
 
                 {/* Prompt (truncated) */}
@@ -178,10 +247,17 @@ export function OrchestrationTaskPanel({ teamSlugOrId }: OrchestrationTaskPanelP
                   )}
                 </div>
 
+                {/* Result if completed */}
+                {status === "completed" && task.result && (
+                  <div className="mt-2 rounded bg-green-50 px-2 py-1.5 text-xs text-green-700 line-clamp-2 dark:bg-green-900/20 dark:text-green-400">
+                    {task.result}
+                  </div>
+                )}
+
                 {/* Error message if failed */}
                 {hasError && (
                   <div className="mt-2 flex items-start gap-1.5 rounded bg-red-50 px-2 py-1.5 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-400">
-                    <AlertTriangle className="size-3 mt-0.5 shrink-0" />
+                    <AlertTriangle className="mt-0.5 size-3 shrink-0" />
                     <span className="line-clamp-2">{task.errorMessage}</span>
                   </div>
                 )}
@@ -190,6 +266,17 @@ export function OrchestrationTaskPanel({ teamSlugOrId }: OrchestrationTaskPanelP
           })}
         </div>
       </div>
+
+      {/* Message Dialog */}
+      {selectedTask && (
+        <OrchestrationMessageDialog
+          open={messageDialogOpen}
+          onOpenChange={setMessageDialogOpen}
+          teamSlugOrId={teamSlugOrId}
+          taskRunId={selectedTask.taskRunId}
+          agentName={selectedTask.agentName}
+        />
+      )}
     </div>
   );
 }

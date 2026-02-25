@@ -18,7 +18,7 @@ import { api } from "@cmux/convex/api";
 import { useQuery } from "convex/react";
 import type { LinkProps } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
-import { Bell, ChevronLeft, Home, Plus, Server, Settings } from "lucide-react";
+import { Bell, ChevronLeft, Home, Plus, Server, Settings, Users } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -100,6 +100,12 @@ const navItems: SidebarNavItemWithBadge[] = [
     exact: true,
     icon: Server,
     onboardingKey: "environments-link",
+  },
+  {
+    label: "Orchestration",
+    to: "/$teamSlugOrId/orchestration",
+    exact: true,
+    icon: Users,
   },
   {
     label: "Settings",
