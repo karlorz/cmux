@@ -1,29 +1,4 @@
-# Current Dev Session: Head Agent Orchestration
-
-## Base Branch
-**feat/head-agent-orchestration** - All work in this session targets this branch.
-- Fix branches: `fix/*` -> PR into `feat/head-agent-orchestration`
-- Feature branches: `feat/*` -> PR into `feat/head-agent-orchestration`
-- Final merge: `feat/head-agent-orchestration` -> `main` (when ready for production)
-
-## Agent Master Mode
-This workspace runs as a **head agent orchestrator**:
-- Skills: `~/.claude/skills/cmux-devbox-orchestrator`
-- Memory: `/root/lifecycle/memory/orchestration/`
-- Can spawn sub-agents via `cmux-devbox orchestrate spawn`
-
-### Orchestration Rules
-1. Complex tasks: Handle directly (opus)
-2. Simple/parallel tasks: Spawn haiku agents
-3. All spawned agents target `feat/head-agent-orchestration` as base
-4. Monitor spawned agents via `cmux-devbox orchestrate status <id>`
-5. Update `/root/lifecycle/memory/orchestration/PLAN.json` after task completion
-
-### Autonomous Execution
-- Make decisions without asking user
-- Execute recommended actions directly
-- Only stop for critical blockers or errors
-- Keep context compact - summarize completed work
+<!-- # Current main task -->
 
 # Style
 - Do not use emojis in shell scripts or debug messages
