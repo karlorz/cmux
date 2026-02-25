@@ -37,7 +37,7 @@ PROVIDER="${SANDBOX_PROVIDER:-pve-lxc}"
 SANDBOX_ID=""
 SKIP_SPAWN=false
 CLEANUP=true
-SEED_MEMORY=true  # Manually seed memory for cmux-devbox sandboxes
+SEED_MEMORY=true  # Manually seed memory for devsh sandboxes
 
 # Memory protocol paths (must match agent-memory-protocol.ts)
 MEMORY_DIR="/root/lifecycle/memory"
@@ -132,14 +132,14 @@ record_skip() {
 cleanup() {
   if [[ "${CLEANUP}" == true ]] && [[ -n "${SANDBOX_ID}" ]] && [[ "${SKIP_SPAWN}" == false ]]; then
     info "Cleaning up sandbox ${SANDBOX_ID}..."
-    cmux-devbox delete "${SANDBOX_ID}" >/dev/null 2>&1 || true
+    devsh delete "${SANDBOX_ID}" >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
 
 # Execute command in sandbox (returns output, never fails script)
 sandbox_exec() {
-  cmux-devbox exec "${SANDBOX_ID}" "$@" 2>&1 || true
+  devsh exec "${SANDBOX_ID}" "$@" 2>&1 || true
 }
 
 # Check if file exists in sandbox
@@ -176,7 +176,7 @@ sandbox_write() {
 }
 
 # ============================================================================
-# Memory Seeding (for cmux-devbox sandboxes)
+# Memory Seeding (for devsh sandboxes)
 # ============================================================================
 seed_memory_protocol() {
   info "Seeding memory protocol files..."
@@ -587,11 +587,11 @@ main() {
   info "Log file: ${LOG_FILE}"
   echo ""
 
-  # Build cmux-devbox if needed
-  if ! command -v cmux-devbox >/dev/null 2>&1; then
-    info "Building cmux-devbox..."
-    (cd "${PROJECT_DIR}" && make install-cmux-devbox-dev) || {
-      fail "Failed to build cmux-devbox"
+  # Build devsh if needed
+  if ! command -v devsh >/dev/null 2>&1; then
+    info "Building devsh..."
+    (cd "${PROJECT_DIR}" && make install-devsh-dev) || {
+      fail "Failed to build devsh"
       exit 1
     }
     export PATH="$HOME/.local/bin:$PATH"
@@ -601,7 +601,7 @@ main() {
   if [[ "${SKIP_SPAWN}" == false ]]; then
     info "Spawning new sandbox (provider: ${PROVIDER})..."
     local output
-    output="$(cmux-devbox start -p "${PROVIDER}" 2>&1)" || {
+    output="$(devsh start -p "${PROVIDER}" 2>&1)" || {
       fail "Failed to spawn sandbox"
       echo "${output}"
       exit 1
@@ -622,7 +622,7 @@ main() {
     info "Waiting for sandbox to be ready..."
     sleep 30
 
-    # Seed memory protocol files (cmux-devbox doesn't seed by default)
+    # Seed memory protocol files (devsh doesn't seed by default)
     if [[ "${SEED_MEMORY}" == true ]]; then
       seed_memory_protocol
     fi

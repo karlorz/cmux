@@ -312,7 +312,7 @@ def main(argv: list[str]) -> int:
     template_name = _require_str(cfg, "template_name", path=E2B_CONFIG_PATH)
 
     plan = TemplatePlan(
-        preset_id="cmux-devbox-docker",
+        preset_id="devsh-docker",
         config_path=E2B_CONFIG_PATH,
         label="Standard workspace",
         disk_display="20 GB SSD",

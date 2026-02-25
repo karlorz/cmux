@@ -255,7 +255,7 @@ async function main() {
     console.log(`[build-snapshot] Creating sandbox from ${baseImage}...`);
     const startTime = Date.now();
 
-    const app = await client.apps.fromName("cmux-devbox", {
+    const app = await client.apps.fromName("devsh", {
       createIfMissing: true,
     });
     const image = client.images.fromRegistry(baseImage);

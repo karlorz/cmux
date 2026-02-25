@@ -9,7 +9,7 @@
 #
 # Required:
 #   - CMUX_AUTH_TOKEN: Auth token from cloudrouter
-#   - cmux-devbox CLI installed
+#   - devsh CLI installed
 #
 # Test repos (pre-configured):
 #   - karlorz/testing-repo-1
@@ -53,9 +53,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Check prerequisites
-if ! command -v cmux-devbox &> /dev/null; then
-  echo "[SETUP] cmux-devbox not found, building..."
-  make install-cmux-devbox-dev
+if ! command -v devsh &> /dev/null; then
+  echo "[SETUP] devsh not found, building..."
+  make install-devsh-dev
 fi
 
 if [ -z "${CMUX_AUTH_TOKEN:-}" ]; then
@@ -88,7 +88,7 @@ cleanup() {
     echo "=== Cleanup ==="
     for task_id in "${CREATED_TASKS[@]}"; do
       echo "Cancelling task: $task_id"
-      cmux-devbox orchestrate cancel "$task_id" 2>/dev/null || true
+      devsh orchestrate cancel "$task_id" 2>/dev/null || true
     done
   fi
 }
@@ -102,7 +102,7 @@ echo ""
 echo "=== Scenario 1: Single Spawn ==="
 echo "Spawning agent with simple prompt..."
 
-SPAWN_OUTPUT=$(cmux-devbox orchestrate spawn \
+SPAWN_OUTPUT=$(devsh orchestrate spawn \
   --agent "$AGENT" \
   --repo karlorz/testing-repo-1 \
   "List the files in the current directory and describe the project structure" 2>&1 || true)
@@ -117,7 +117,7 @@ if echo "$SPAWN_OUTPUT" | grep -qiE "orchestrationTaskId"; then
     # Check status
     echo "Checking task status..."
     sleep 2
-    STATUS_OUTPUT=$(cmux-devbox orchestrate status "$TASK_ID" 2>&1 || true)
+    STATUS_OUTPUT=$(devsh orchestrate status "$TASK_ID" 2>&1 || true)
     if echo "$STATUS_OUTPUT" | grep -qiE "status.*running|status.*assigned|status.*pending"; then
       pass "Task status check successful"
     else
@@ -146,7 +146,7 @@ if [ ${#CREATED_TASKS[@]} -gt 0 ]; then
   CANCEL_TASK_ID="${CREATED_TASKS[0]}"
   echo "Cancelling task: $CANCEL_TASK_ID"
 
-  CANCEL_OUTPUT=$(cmux-devbox orchestrate cancel "$CANCEL_TASK_ID" 2>&1 || true)
+  CANCEL_OUTPUT=$(devsh orchestrate cancel "$CANCEL_TASK_ID" 2>&1 || true)
   if echo "$CANCEL_OUTPUT" | grep -qiE "success|cancelled|cancel"; then
     pass "Cancel task succeeded"
     # Remove from cleanup list since already cancelled
@@ -165,7 +165,7 @@ fi
 echo ""
 echo "=== Scenario 3: List Tasks ==="
 
-LIST_OUTPUT=$(cmux-devbox orchestrate list 2>&1 || true)
+LIST_OUTPUT=$(devsh orchestrate list 2>&1 || true)
 if echo "$LIST_OUTPUT" | grep -qiE "task|orchestrationTaskId|\[\]|total"; then
   pass "List tasks returned response"
 else
@@ -182,7 +182,7 @@ if [ "$RUN_ALL" = "true" ]; then
   echo "Creating dependency chain: Task B depends on Task A..."
 
   # First spawn Task A
-  TASK_A_OUTPUT=$(cmux-devbox orchestrate spawn \
+  TASK_A_OUTPUT=$(devsh orchestrate spawn \
     --agent "$AGENT" \
     --repo karlorz/testing-repo-2 \
     "Create a simple README.md file" 2>&1 || true)
@@ -194,7 +194,7 @@ if [ "$RUN_ALL" = "true" ]; then
     pass "Dependency Task A created: $TASK_A_ID"
 
     # Spawn Task B with dependency on Task A
-    TASK_B_OUTPUT=$(cmux-devbox orchestrate spawn \
+    TASK_B_OUTPUT=$(devsh orchestrate spawn \
       --agent "$AGENT" \
       --repo karlorz/testing-repo-2 \
       --depends-on "$TASK_A_ID" \
@@ -230,11 +230,11 @@ if [ "$RUN_ALL" = "true" ]; then
     MSG_TASK_ID="${CREATED_TASKS[0]}"
 
     # Get task details to find taskRunId
-    STATUS_JSON=$(cmux-devbox orchestrate status "$MSG_TASK_ID" --json 2>&1 || true)
+    STATUS_JSON=$(devsh orchestrate status "$MSG_TASK_ID" --json 2>&1 || true)
     TASK_RUN_ID=$(echo "$STATUS_JSON" | grep -oP '"taskRunId":\s*"\K[^"]+' || echo "")
 
     if [ -n "$TASK_RUN_ID" ]; then
-      MSG_OUTPUT=$(cmux-devbox orchestrate message "$TASK_RUN_ID" \
+      MSG_OUTPUT=$(devsh orchestrate message "$TASK_RUN_ID" \
         "Please also add a CHANGELOG.md file" \
         --type request 2>&1 || true)
 

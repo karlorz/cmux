@@ -1,0 +1,16 @@
+{
+  "name": "devsh-linux-x64",
+  "version": "0.3.6",
+  "description": "devsh CLI binary for Linux x64",
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/karlorz/cmux.git",
+    "directory": "packages/devsh"
+  },
+  "license": "MIT",
+  "author": "Manaflow",
+  "files": ["bin"],
+  "preferUnplugged": true
+}

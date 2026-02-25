@@ -52,7 +52,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --prod  Build template in production mode (default)"
             echo "  --dev   Build template in development mode (smaller resources)"
             echo ""
-            echo "This script builds the cmux-devbox-lite E2B template."
+            echo "This script builds the devsh-lite E2B template."
             echo "The lite template does NOT include Docker-in-Docker, making it:"
             echo "  - Faster to boot"
             echo "  - Smaller image size"
@@ -81,8 +81,8 @@ else
     E2B_CMD="e2b"
 fi
 
-# Navigate to cmux-devbox-lite package
-cd "$PROJECT_ROOT/packages/cloudrouter/cmux-devbox-lite"
+# Navigate to devsh-lite package
+cd "$PROJECT_ROOT/packages/cloudrouter/devsh-lite"
 
 log_info "Installing dependencies..."
 bun install
@@ -99,9 +99,9 @@ log_info ""
 
 # Show correct template name based on build mode
 if [ "$BUILD_MODE" = "prod" ]; then
-    TEMPLATE_NAME="cmux-devbox-lite"
+    TEMPLATE_NAME="devsh-lite"
 else
-    TEMPLATE_NAME="cmux-devbox-lite-dev"
+    TEMPLATE_NAME="devsh-lite-dev"
 fi
 
 log_info "Template Details:"
@@ -115,6 +115,6 @@ log_info "  cloudrouter start --template $TEMPLATE_NAME"
 log_info ""
 if [ "$BUILD_MODE" = "dev" ]; then
     log_warn "This is a DEV template (smaller resources)."
-    log_warn "cloudrouter defaults to 'cmux-devbox-lite' (prod)."
+    log_warn "cloudrouter defaults to 'devsh-lite' (prod)."
     log_warn "Use: cloudrouter start --template $TEMPLATE_NAME"
 fi

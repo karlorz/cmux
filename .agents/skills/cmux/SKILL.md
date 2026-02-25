@@ -7,19 +7,19 @@ description: Manage cloud development VMs with cmux. Create, sync, and access re
 
 cmux manages cloud VMs for development. Use these commands to create, manage, and access remote development environments with built-in browser automation.
 
-> **Note**: This skill documents the Go-based cmux CLI from `packages/cmux-devbox`. The npm package `cmux` installs this CLI.
+> **Note**: This skill documents the Go-based devsh CLI from `packages/devsh`. The npm package `devsh` installs this CLI.
 
 ## Installation
 
 ```bash
-npm install -g cmux
+npm install -g devsh
 ```
 
 Or build from source:
 ```bash
-cd packages/cmux-devbox
+cd packages/devsh
 make build
-./bin/cmux-devbox --help
+./bin/devsh --help
 ```
 
 ## Quick Start

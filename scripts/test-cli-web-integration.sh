@@ -2,13 +2,13 @@
 #
 # CLI <-> Web App Integration Test
 #
-# Verifies that cmux-devbox CLI actions properly synchronize with the web app
+# Verifies that devsh CLI actions properly synchronize with the web app
 # dashboard through Convex as the single source of truth.
 #
 # Prerequisites:
 #   - Dev server running (make dev)
-#   - cmux-devbox built (make install-cmux-devbox-dev)
-#   - User authenticated (cmux-devbox auth login)
+#   - devsh built (make install-devsh-dev)
+#   - User authenticated (devsh auth login)
 #
 # Usage:
 #   ./scripts/test-cli-web-integration.sh
@@ -65,7 +65,7 @@ INSTANCE_ID=""
 cleanup() {
   if [[ -n "${INSTANCE_ID}" ]]; then
     info "Cleaning up instance ${INSTANCE_ID}..."
-    cmux-devbox delete "${INSTANCE_ID}" 2>/dev/null || true
+    devsh delete "${INSTANCE_ID}" 2>/dev/null || true
   fi
 }
 trap cleanup EXIT
@@ -73,18 +73,18 @@ trap cleanup EXIT
 echo "=== CLI <-> Web App Integration Test ==="
 echo ""
 
-# Ensure cmux-devbox is available
+# Ensure devsh is available
 export PATH="$HOME/.local/bin:$PATH"
 
 # ============================================================================
 # Test 1: CLI Version Check
 # ============================================================================
 info "Test 1: Checking CLI is available..."
-if cmux-devbox --version >/dev/null 2>&1; then
-  VERSION=$(cmux-devbox --version 2>&1 || echo "unknown")
+if devsh --version >/dev/null 2>&1; then
+  VERSION=$(devsh --version 2>&1 || echo "unknown")
   pass "CLI available: ${VERSION}"
 else
-  fail "CLI not found. Run 'make install-cmux-devbox-dev' first"
+  fail "CLI not found. Run 'make install-devsh-dev' first"
   exit 1
 fi
 
@@ -92,7 +92,7 @@ fi
 # Test 2: Authentication Check
 # ============================================================================
 info "Test 2: Checking authentication..."
-if WHOAMI_OUTPUT=$(cmux-devbox auth whoami 2>&1); then
+if WHOAMI_OUTPUT=$(devsh auth whoami 2>&1); then
   # Extract user info
   USER_EMAIL=$(echo "${WHOAMI_OUTPUT}" | grep -oE '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' | head -n1 || echo "")
   if [[ -n "${USER_EMAIL}" ]]; then
@@ -101,7 +101,7 @@ if WHOAMI_OUTPUT=$(cmux-devbox auth whoami 2>&1); then
     pass "Authenticated (email not shown in output)"
   fi
 else
-  fail "Not authenticated. Run 'cmux-devbox auth login' first"
+  fail "Not authenticated. Run 'devsh auth login' first"
   exit 1
 fi
 
@@ -109,7 +109,7 @@ fi
 # Test 3: Team List
 # ============================================================================
 info "Test 3: Listing teams..."
-if TEAM_LIST_OUTPUT=$(cmux-devbox team list --json 2>&1); then
+if TEAM_LIST_OUTPUT=$(devsh team list --json 2>&1); then
   # Parse JSON to get teams
   TEAM_COUNT=$(echo "${TEAM_LIST_OUTPUT}" | jq -r '.teams | length' 2>/dev/null || echo "0")
   if [[ "${TEAM_COUNT}" -gt 0 ]]; then
@@ -132,8 +132,8 @@ fi
 info "Test 4: Testing team switch (CLI -> Convex)..."
 
 # Get current team and another team to switch to
-ORIGINAL_TEAM=$(cmux-devbox team list --json 2>/dev/null | jq -r '.teams[] | select(.selected == true) | .slug // .teamId' || echo "")
-OTHER_TEAM=$(cmux-devbox team list --json 2>/dev/null | jq -r '.teams[] | select(.selected != true) | .slug // .teamId' | head -n1 || echo "")
+ORIGINAL_TEAM=$(devsh team list --json 2>/dev/null | jq -r '.teams[] | select(.selected == true) | .slug // .teamId' || echo "")
+OTHER_TEAM=$(devsh team list --json 2>/dev/null | jq -r '.teams[] | select(.selected != true) | .slug // .teamId' | head -n1 || echo "")
 
 if [[ -z "${ORIGINAL_TEAM}" ]]; then
   fail "Could not determine current team"
@@ -142,21 +142,21 @@ elif [[ -z "${OTHER_TEAM}" ]]; then
 else
   info "  Switching from '${ORIGINAL_TEAM}' to '${OTHER_TEAM}'..."
 
-  if cmux-devbox team switch "${OTHER_TEAM}" >/dev/null 2>&1; then
+  if devsh team switch "${OTHER_TEAM}" >/dev/null 2>&1; then
     # Verify the switch worked by checking whoami
     sleep 1  # Brief wait for profile cache to clear
-    NEW_SELECTED=$(cmux-devbox team list --json 2>/dev/null | jq -r '.teams[] | select(.selected == true) | .slug // .teamId' || echo "")
+    NEW_SELECTED=$(devsh team list --json 2>/dev/null | jq -r '.teams[] | select(.selected == true) | .slug // .teamId' || echo "")
 
     if [[ "${NEW_SELECTED}" == "${OTHER_TEAM}" ]]; then
       pass "Team switch synced: '${ORIGINAL_TEAM}' -> '${OTHER_TEAM}'"
 
       # Switch back
       info "  Switching back to '${ORIGINAL_TEAM}'..."
-      cmux-devbox team switch "${ORIGINAL_TEAM}" >/dev/null 2>&1 || true
+      devsh team switch "${ORIGINAL_TEAM}" >/dev/null 2>&1 || true
     else
       fail "Team switch not reflected (expected: ${OTHER_TEAM}, got: ${NEW_SELECTED})"
       # Try to switch back anyway
-      cmux-devbox team switch "${ORIGINAL_TEAM}" >/dev/null 2>&1 || true
+      devsh team switch "${ORIGINAL_TEAM}" >/dev/null 2>&1 || true
     fi
   else
     fail "Team switch command failed"
@@ -167,7 +167,7 @@ fi
 # Test 5: Instance List
 # ============================================================================
 info "Test 5: Testing instance list..."
-if LIST_OUTPUT=$(cmux-devbox ls 2>&1); then
+if LIST_OUTPUT=$(devsh ls 2>&1); then
   if [[ "${LIST_OUTPUT}" == *"No VMs found"* ]]; then
     pass "Instance list works (empty - no instances)"
   else
@@ -209,7 +209,7 @@ else
       CREATE_ARGS="-p pve-lxc"
     fi
 
-    if CREATE_OUTPUT=$(cmux-devbox start ${CREATE_ARGS} 2>&1); then
+    if CREATE_OUTPUT=$(devsh start ${CREATE_ARGS} 2>&1); then
       # Extract instance ID from output
       INSTANCE_ID=$(echo "${CREATE_OUTPUT}" | grep -oE '(cr_[a-z0-9]+|cmux_[a-zA-Z0-9]+|manaflow_[a-zA-Z0-9]+|pvelxc-[a-z0-9]+)' | head -n1 || echo "")
 
@@ -224,7 +224,7 @@ else
         # Test 7: Verify Instance in List
         # ============================================================================
         info "Test 7: Verifying instance appears in list..."
-        if LIST_OUTPUT=$(cmux-devbox ls 2>&1); then
+        if LIST_OUTPUT=$(devsh ls 2>&1); then
           if echo "${LIST_OUTPUT}" | grep -q "${INSTANCE_ID}"; then
             pass "Instance ${INSTANCE_ID} appears in list"
           else
@@ -238,12 +238,12 @@ else
         # Test 8: Pause Instance
         # ============================================================================
         info "Test 8: Pausing instance..."
-        if cmux-devbox pause "${INSTANCE_ID}" >/dev/null 2>&1; then
+        if devsh pause "${INSTANCE_ID}" >/dev/null 2>&1; then
           pass "Pause command succeeded"
           sleep 5
 
           # Verify status changed
-          if STATUS_OUTPUT=$(cmux-devbox status "${INSTANCE_ID}" 2>&1); then
+          if STATUS_OUTPUT=$(devsh status "${INSTANCE_ID}" 2>&1); then
             if echo "${STATUS_OUTPUT}" | grep -iq "paused"; then
               pass "Instance status shows paused"
             else
@@ -259,12 +259,12 @@ else
         # Test 9: Resume Instance
         # ============================================================================
         info "Test 9: Resuming instance..."
-        if cmux-devbox resume "${INSTANCE_ID}" >/dev/null 2>&1; then
+        if devsh resume "${INSTANCE_ID}" >/dev/null 2>&1; then
           pass "Resume command succeeded"
           sleep 10
 
           # Verify status changed back to running
-          if STATUS_OUTPUT=$(cmux-devbox status "${INSTANCE_ID}" 2>&1); then
+          if STATUS_OUTPUT=$(devsh status "${INSTANCE_ID}" 2>&1); then
             if echo "${STATUS_OUTPUT}" | grep -iq "running"; then
               pass "Instance status shows running"
             else
@@ -275,7 +275,7 @@ else
 
           # Test exec after resume
           info "  Testing exec after resume..."
-          if EXEC_OUTPUT=$(cmux-devbox exec "${INSTANCE_ID}" "echo integration-test-ok" 2>&1); then
+          if EXEC_OUTPUT=$(devsh exec "${INSTANCE_ID}" "echo integration-test-ok" 2>&1); then
             if echo "${EXEC_OUTPUT}" | grep -q "integration-test-ok"; then
               pass "Exec works after resume"
             else
@@ -292,14 +292,14 @@ else
         # Test 10: Delete Instance
         # ============================================================================
         info "Test 10: Deleting instance..."
-        if cmux-devbox delete "${INSTANCE_ID}" >/dev/null 2>&1; then
+        if devsh delete "${INSTANCE_ID}" >/dev/null 2>&1; then
           pass "Delete command succeeded"
           INSTANCE_ID=""  # Clear so cleanup doesn't try to delete again
 
           sleep 3
 
           # Verify instance no longer in list
-          if LIST_OUTPUT=$(cmux-devbox ls 2>&1); then
+          if LIST_OUTPUT=$(devsh ls 2>&1); then
             if echo "${LIST_OUTPUT}" | grep -q "${INSTANCE_ID:-DELETED}"; then
               fail "Instance still appears in list after delete"
             else
@@ -322,7 +322,7 @@ fi
 # Task Management Tests (CLI <-> Web sync)
 # ============================================================================
 info "Test 11: Testing task list..."
-if TASK_LIST_OUTPUT=$(cmux-devbox task list 2>&1); then
+if TASK_LIST_OUTPUT=$(devsh task list 2>&1); then
   if [[ "${TASK_LIST_OUTPUT}" == *"No active tasks found"* ]]; then
     pass "Task list works (empty - no tasks)"
   else
@@ -338,7 +338,7 @@ fi
 # ============================================================================
 info "Test 12: Creating task via CLI..."
 TASK_ID=""
-if CREATE_TASK_OUTPUT=$(cmux-devbox task create --json "CLI integration test task - should be cleaned up" 2>&1); then
+if CREATE_TASK_OUTPUT=$(devsh task create --json "CLI integration test task - should be cleaned up" 2>&1); then
   TASK_ID=$(echo "${CREATE_TASK_OUTPUT}" | jq -r '.taskId // empty' 2>/dev/null || echo "")
   if [[ -n "${TASK_ID}" ]]; then
     pass "Task created: ${TASK_ID}"
@@ -357,7 +357,7 @@ TASK_WITH_AGENT_ID=""
 
 # Check if CMUX_SERVER_URL is configured (apps/server must be running)
 if curl -s http://localhost:9776/api/health > /dev/null 2>&1; then
-  if CREATE_AGENT_OUTPUT=$(cmux-devbox task create --repo karlorz/testing-repo-1 --agent opencode/gpt-4o --json "Agent spawn test - $(date +%s)" 2>&1); then
+  if CREATE_AGENT_OUTPUT=$(devsh task create --repo karlorz/testing-repo-1 --agent opencode/gpt-4o --json "Agent spawn test - $(date +%s)" 2>&1); then
     TASK_WITH_AGENT_ID=$(echo "${CREATE_AGENT_OUTPUT}" | jq -r '.taskId // empty' 2>/dev/null || echo "")
     AGENT_STATUS=$(echo "${CREATE_AGENT_OUTPUT}" | jq -r '.agents[0].status // empty' 2>/dev/null || echo "")
 
@@ -388,7 +388,7 @@ if curl -s http://localhost:9776/api/health > /dev/null 2>&1; then
   # Cleanup task with agent
   if [[ -n "${TASK_WITH_AGENT_ID}" ]]; then
     info "  Cleaning up agent test task..."
-    cmux-devbox task stop "${TASK_WITH_AGENT_ID}" >/dev/null 2>&1 || true
+    devsh task stop "${TASK_WITH_AGENT_ID}" >/dev/null 2>&1 || true
   fi
 else
   skip "Test 12b: apps/server not running at localhost:9776 (run 'make dev' first)"
@@ -401,7 +401,7 @@ if [[ -n "${TASK_ID}" ]]; then
   info "Test 13: Verifying task appears in list..."
   sleep 2  # Brief wait for sync
 
-  if LIST_OUTPUT=$(cmux-devbox task list 2>&1); then
+  if LIST_OUTPUT=$(devsh task list 2>&1); then
     if echo "${LIST_OUTPUT}" | grep -q "${TASK_ID}"; then
       pass "Task ${TASK_ID} appears in list"
     else
@@ -421,7 +421,7 @@ if [[ -n "${TASK_ID}" ]]; then
   # Test 14: Get Task Status
   # ============================================================================
   info "Test 14: Getting task status..."
-  if STATUS_OUTPUT=$(cmux-devbox task status "${TASK_ID}" 2>&1); then
+  if STATUS_OUTPUT=$(devsh task status "${TASK_ID}" 2>&1); then
     if echo "${STATUS_OUTPUT}" | grep -q "Task Details"; then
       pass "Task status retrieved successfully"
     else
@@ -435,12 +435,12 @@ if [[ -n "${TASK_ID}" ]]; then
   # Test 15: Stop Task (CLI -> Web sync)
   # ============================================================================
   info "Test 15: Stopping task..."
-  if cmux-devbox task stop "${TASK_ID}" >/dev/null 2>&1; then
+  if devsh task stop "${TASK_ID}" >/dev/null 2>&1; then
     pass "Task stopped successfully"
 
     # Verify task is archived
     sleep 2
-    if ARCHIVED_OUTPUT=$(cmux-devbox task list --archived 2>&1); then
+    if ARCHIVED_OUTPUT=$(devsh task list --archived 2>&1); then
       if echo "${ARCHIVED_OUTPUT}" | grep -q "${TASK_ID:0:16}"; then
         pass "Task appears in archived list"
       else

@@ -119,14 +119,14 @@ record_skip() {
 cleanup() {
   if [[ "${CLEANUP}" == true ]] && [[ -n "${SANDBOX_ID}" ]] && [[ "${SKIP_SPAWN}" == false ]]; then
     info "Cleaning up sandbox ${SANDBOX_ID}..."
-    cmux-devbox delete "${SANDBOX_ID}" >/dev/null 2>&1 || true
+    devsh delete "${SANDBOX_ID}" >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
 
 # Execute command in sandbox
 sandbox_exec() {
-  cmux-devbox exec "${SANDBOX_ID}" "$@" 2>&1 || true
+  devsh exec "${SANDBOX_ID}" "$@" 2>&1 || true
 }
 
 # Get file content from sandbox
@@ -412,11 +412,11 @@ main() {
   info "Log file: ${LOG_FILE}"
   echo ""
 
-  # Build cmux-devbox if needed
-  if ! command -v cmux-devbox >/dev/null 2>&1; then
-    info "Building cmux-devbox..."
-    (cd "${PROJECT_DIR}" && make install-cmux-devbox-dev) || {
-      fail "Failed to build cmux-devbox"
+  # Build devsh if needed
+  if ! command -v devsh >/dev/null 2>&1; then
+    info "Building devsh..."
+    (cd "${PROJECT_DIR}" && make install-devsh-dev) || {
+      fail "Failed to build devsh"
       exit 1
     }
     export PATH="$HOME/.local/bin:$PATH"
@@ -426,7 +426,7 @@ main() {
   if [[ "${SKIP_SPAWN}" == false ]]; then
     info "Spawning new sandbox (provider: ${PROVIDER})..."
     local output
-    output="$(cmux-devbox start -p "${PROVIDER}" 2>&1)" || {
+    output="$(devsh start -p "${PROVIDER}" 2>&1)" || {
       fail "Failed to spawn sandbox"
       echo "${output}"
       exit 1
