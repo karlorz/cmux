@@ -11,4 +11,4 @@ Environment=PORT=39377
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
 
 [Install]
-WantedBy=devsh.target
+WantedBy=cmux.target

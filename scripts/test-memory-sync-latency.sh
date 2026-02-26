@@ -463,7 +463,7 @@ main() {
   echo "Started at: $(date -Iseconds)" >> "${LOG_FILE}"
   echo "Provider: ${PROVIDER}" >> "${LOG_FILE}"
 
-  info "=== cmux Memory Sync Latency Tests (S3) ==="
+  info "=== devsh Memory Sync Latency Tests (S3) ==="
   info "Provider: ${PROVIDER}"
   info "Target latency: ${TARGET_LATENCY_MS}ms"
   info "Log file: ${LOG_FILE}"

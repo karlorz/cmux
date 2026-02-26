@@ -257,9 +257,18 @@ func GetConfig() Config {
 		stackAuthURL = StackAuthAPIURL
 	}
 
-	// Dev mode: check DEVSH_DEV first, fall back to legacy CMUX_DEVBOX_DEV for backward compatibility
-	isDev := os.Getenv("DEVSH_DEV") == "1" || os.Getenv("DEVSH_DEV") == "true" ||
-		os.Getenv("CMUX_DEVBOX_DEV") == "1" || os.Getenv("CMUX_DEVBOX_DEV") == "true"
+	// Determine dev mode using same logic as cli.IsDev():
+	// DEVSH_DEV/DEVSH_PROD take precedence, then legacy CMUX_DEVBOX_DEV/CMUX_DEVBOX_PROD, then build mode
+	isDev := buildMode == "dev"
+	if env := os.Getenv("DEVSH_DEV"); env == "1" || env == "true" {
+		isDev = true
+	} else if env := os.Getenv("DEVSH_PROD"); env == "1" || env == "true" {
+		isDev = false
+	} else if env := os.Getenv("CMUX_DEVBOX_DEV"); env == "1" || env == "true" {
+		isDev = true
+	} else if env := os.Getenv("CMUX_DEVBOX_PROD"); env == "1" || env == "true" {
+		isDev = false
+	}
 
 	return Config{
 		ProjectID:      projectID,
@@ -577,7 +586,7 @@ func Login() error {
 
 	// Check if already logged in
 	if IsLoggedIn() {
-		fmt.Println("Already logged in. Run 'cmux auth logout' first to re-authenticate.")
+		fmt.Println("Already logged in. Run 'devsh auth logout' first to re-authenticate.")
 		return nil
 	}
 
@@ -740,7 +749,7 @@ func GetAccessToken() (string, error) {
 	// Need to refresh
 	refreshToken, err := GetRefreshToken()
 	if err != nil {
-		return "", fmt.Errorf("not logged in. Run 'cmux auth login' first")
+		return "", fmt.Errorf("not logged in. Run 'devsh auth login' first")
 	}
 
 	cfg := GetConfig()
@@ -765,7 +774,7 @@ func GetAccessToken() (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to refresh token: status %d. Try 'cmux auth login' to re-authenticate", resp.StatusCode)
+		return "", fmt.Errorf("failed to refresh token: status %d. Try 'devsh auth login' to re-authenticate", resp.StatusCode)
 	}
 
 	var refreshResp RefreshTokenResponse

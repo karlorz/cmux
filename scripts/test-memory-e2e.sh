@@ -4,7 +4,7 @@
 # Tests the complete memory flow:
 # 1. Create a task via CLI
 # 2. Wait for completion (or timeout)
-# 3. Verify memory via CLI (cmux task memory)
+# 3. Verify memory via CLI (devsh task memory)
 # 4. Verify memory via HTTP API
 #
 # Usage:
@@ -185,7 +185,7 @@ test_cli_memory_command() {
   info "=== Testing CLI Memory Command ==="
 
   # Test 1: Basic memory command with task ID
-  info "Test: cmux task memory ${task_id}"
+  info "Test: devsh task memory ${task_id}"
   local output
   if output=$("${cli_bin}" task memory "${task_id}" 2>&1); then
     if [[ -n "${output}" ]]; then
@@ -199,7 +199,7 @@ test_cli_memory_command() {
 
   # Test 2: Memory command with --type filter
   for mem_type in knowledge daily tasks mailbox; do
-    info "Test: cmux task memory ${task_id} --type ${mem_type}"
+    info "Test: devsh task memory ${task_id} --type ${mem_type}"
     if output=$("${cli_bin}" task memory "${task_id}" --type "${mem_type}" 2>&1); then
       record_pass "CLI memory --type ${mem_type} succeeded"
     else
@@ -208,7 +208,7 @@ test_cli_memory_command() {
   done
 
   # Test 3: Memory command with --json output
-  info "Test: cmux task memory ${task_id} --json"
+  info "Test: devsh task memory ${task_id} --json"
   if output=$("${cli_bin}" task memory "${task_id}" --json 2>&1); then
     # Verify it's valid JSON
     if echo "${output}" | jq . >/dev/null 2>&1; then

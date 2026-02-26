@@ -407,7 +407,7 @@ main() {
   echo "Started at: $(date -Iseconds)" >> "${LOG_FILE}"
   echo "Provider: ${PROVIDER}" >> "${LOG_FILE}"
 
-  info "=== cmux Two-Agent Coordination Tests (S2) ==="
+  info "=== devsh Two-Agent Coordination Tests (S2) ==="
   info "Provider: ${PROVIDER}"
   info "Log file: ${LOG_FILE}"
   echo ""

@@ -552,7 +552,7 @@ main() {
   echo "Started at: $(date -Iseconds)" >> "${LOG_FILE}"
   echo "Provider: ${PROVIDER}" >> "${LOG_FILE}"
 
-  info "=== cmux MCP Server Tests (S4) ==="
+  info "=== devsh MCP Server Tests (S4) ==="
   info "Provider: ${PROVIDER}"
   info "Log file: ${LOG_FILE}"
   echo ""

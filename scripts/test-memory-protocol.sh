@@ -242,7 +242,7 @@ exit 0'
 
   # Create MCP server stub
   local mcp_stub='#!/usr/bin/env node
-// cmux Memory MCP Server stub
+// devsh Memory MCP Server stub
 const tools = ["read_memory", "list_daily_logs", "read_daily_log", "search_memory"];
 console.log(JSON.stringify({tools}));'
   local mcp_b64
@@ -582,7 +582,7 @@ main() {
   echo "Started at: $(date -Iseconds)" >> "${LOG_FILE}"
   echo "Provider: ${PROVIDER}" >> "${LOG_FILE}"
 
-  info "=== cmux Agent Memory Protocol Validation Tests (S8) ==="
+  info "=== devsh Agent Memory Protocol Validation Tests (S8) ==="
   info "Provider: ${PROVIDER}"
   info "Log file: ${LOG_FILE}"
   echo ""
