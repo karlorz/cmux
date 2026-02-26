@@ -471,6 +471,13 @@ sync_memory() {
     log "Added MAILBOX.json"
   fi
 
+  # Sync orchestration/EVENTS.jsonl (orchestration event stream)
+  if [ -f "$MEMORY_DIR/orchestration/EVENTS.jsonl" ]; then
+    content=$(head -c $MAX_SIZE "$MEMORY_DIR/orchestration/EVENTS.jsonl" | jq -Rs .)
+    files_json=$(echo "$files_json" | jq --argjson c "$content" '. + [{"memoryType": "events", "content": ($c), "fileName": "orchestration/EVENTS.jsonl"}]')
+    log "Added orchestration/EVENTS.jsonl"
+  fi
+
   # Check if we have any files to sync
   file_count=$(echo "$files_json" | jq 'length')
   if [ "$file_count" -eq 0 ]; then
