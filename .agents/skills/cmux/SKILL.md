@@ -297,7 +297,7 @@ When a dev server runs in the VM (e.g., Vite on port 5173), the provider may cre
 
 | Variable | Description |
 |----------|-------------|
-| `CMUX_DEVBOX_DEV=1` | Use development environment |
+| `DEVSH_DEV=1` | Use development environment |
 | `PVE_API_URL` | Proxmox VE API URL (enables pve-lxc provider) |
 | `PVE_API_TOKEN` | Proxmox VE API token |
 | `PVE_PUBLIC_DOMAIN` | Public domain for Cloudflare Tunnel |

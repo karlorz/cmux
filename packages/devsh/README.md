@@ -614,7 +614,7 @@ devsh completion powershell | Out-String | Invoke-Expression
 
 | Variable | Description |
 |----------|-------------|
-| `CMUX_DEVBOX_DEV=1` | Use development environment |
+| `DEVSH_DEV=1` | Use development environment |
 
 ## Development
 

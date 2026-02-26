@@ -28,8 +28,16 @@ func SetBuildMode(mode string) {
 }
 
 // IsDev returns true if running in dev mode
-// Checks: 1) CMUX_DEVBOX_DEV env var, 2) build mode
+// Checks: 1) DEVSH_DEV env var, 2) legacy CMUX_DEVBOX_DEV, 3) build mode
 func IsDev() bool {
+	// New env var takes precedence
+	if env := os.Getenv("DEVSH_DEV"); env == "1" || env == "true" {
+		return true
+	}
+	if env := os.Getenv("DEVSH_PROD"); env == "1" || env == "true" {
+		return false
+	}
+	// Backward compatibility: check legacy env vars
 	if env := os.Getenv("CMUX_DEVBOX_DEV"); env == "1" || env == "true" {
 		return true
 	}

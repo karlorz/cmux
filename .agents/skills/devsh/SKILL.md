@@ -140,7 +140,7 @@ cp bin/devsh ~/.local/bin/
 | `PVE_NODE` | Proxmox node name (optional, auto-detected) |
 | `PVE_VERIFY_TLS` | Set to `1` to verify PVE TLS certs (optional) |
 | `MORPH_API_KEY` | Morph Cloud API key |
-| `CMUX_DEVBOX_DEV=1` | Use development backend defaults |
+| `DEVSH_DEV=1` | Use development backend defaults |
 
 ## Create Symlinks for Other Agents
 

@@ -24,10 +24,11 @@ func main() {
 	cli.SetBuildMode(Mode)
 	auth.SetBuildMode(Mode)
 
-	// Set CMUX_DEVBOX_DEV for backwards compatibility with IsDev field
-	if os.Getenv("CMUX_DEVBOX_DEV") == "" && os.Getenv("CMUX_DEVBOX_PROD") == "" {
+	// Set DEVSH_DEV for IsDev detection (check new and legacy env vars)
+	if os.Getenv("DEVSH_DEV") == "" && os.Getenv("DEVSH_PROD") == "" &&
+		os.Getenv("CMUX_DEVBOX_DEV") == "" && os.Getenv("CMUX_DEVBOX_PROD") == "" {
 		if Mode == "dev" {
-			os.Setenv("CMUX_DEVBOX_DEV", "1")
+			os.Setenv("DEVSH_DEV", "1")
 		}
 	}
 

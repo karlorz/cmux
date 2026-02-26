@@ -257,8 +257,9 @@ func GetConfig() Config {
 		stackAuthURL = StackAuthAPIURL
 	}
 
-	// Dev mode is determined by CMUX_DEVBOX_DEV env var (set by main.go based on build mode)
-	isDev := os.Getenv("CMUX_DEVBOX_DEV") == "1" || os.Getenv("CMUX_DEVBOX_DEV") == "true"
+	// Dev mode: check DEVSH_DEV first, fall back to legacy CMUX_DEVBOX_DEV for backward compatibility
+	isDev := os.Getenv("DEVSH_DEV") == "1" || os.Getenv("DEVSH_DEV") == "true" ||
+		os.Getenv("CMUX_DEVBOX_DEV") == "1" || os.Getenv("CMUX_DEVBOX_DEV") == "true"
 
 	return Config{
 		ProjectID:      projectID,
