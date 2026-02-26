@@ -1011,6 +1011,20 @@ const tools = [
       },
       required: ['taskId', 'status']
     }
+  },
+  // TTL pruning tool
+  {
+    name: 'check_stale_entries',
+    description: 'Check for stale entries in MEMORY.md based on TTL rules. P1 entries older than 90 days and P2 entries older than 30 days are considered stale. Returns list of stale entries that should be reviewed for promotion or removal.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        autoRemove: {
+          type: 'boolean',
+          description: 'If true, automatically remove stale entries (default: false, just report)'
+        }
+      }
+    }
   }
 ];
 
@@ -1256,6 +1270,74 @@ function handleRequest(request) {
             return sendResponse(id, { content: [{ type: 'text', text: 'Plan task ' + args.taskId + ' updated to status: ' + args.status }] });
           }
           return sendResponse(id, { content: [{ type: 'text', text: 'Failed to update plan task' }] });
+        }
+
+        case 'check_stale_entries': {
+          const knowledgePath = path.join(KNOWLEDGE_DIR, 'MEMORY.md');
+          const content = readFile(knowledgePath);
+          if (!content) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'No MEMORY.md found' }] });
+          }
+
+          const today = new Date();
+          const P1_TTL_DAYS = 90;
+          const P2_TTL_DAYS = 30;
+
+          // Parse date from entry format: - [YYYY-MM-DD] content
+          const datePattern = /^\\s*-\\s*\\[(\\d{4}-\\d{2}-\\d{2})\\]\\s*(.*)$/;
+
+          const lines = content.split('\\n');
+          let currentSection = null;
+          const staleEntries = [];
+          const linesToRemove = [];
+
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+
+            // Track which section we're in
+            if (line.includes('## P0')) currentSection = 'P0';
+            else if (line.includes('## P1')) currentSection = 'P1';
+            else if (line.includes('## P2')) currentSection = 'P2';
+            else if (line.startsWith('## ') || line.startsWith('---')) currentSection = null;
+
+            // Check for dated entries in P1 or P2
+            if ((currentSection === 'P1' || currentSection === 'P2') && line.trim().startsWith('-')) {
+              const match = line.match(datePattern);
+              if (match) {
+                const entryDate = new Date(match[1]);
+                const daysSince = Math.floor((today.getTime() - entryDate.getTime()) / (1000 * 60 * 60 * 24));
+                const ttl = currentSection === 'P1' ? P1_TTL_DAYS : P2_TTL_DAYS;
+
+                if (daysSince > ttl) {
+                  staleEntries.push({
+                    section: currentSection,
+                    line: i + 1,
+                    date: match[1],
+                    content: match[2].substring(0, 100) + (match[2].length > 100 ? '...' : ''),
+                    daysSince,
+                    ttl
+                  });
+                  linesToRemove.push(i);
+                }
+              }
+            }
+          }
+
+          if (staleEntries.length === 0) {
+            return sendResponse(id, { content: [{ type: 'text', text: 'No stale entries found. All P1/P2 entries are within TTL.' }] });
+          }
+
+          // If autoRemove is true, remove the stale lines
+          if (args.autoRemove) {
+            const newLines = lines.filter((_, i) => !linesToRemove.includes(i));
+            if (writeFile(knowledgePath, newLines.join('\\n'))) {
+              return sendResponse(id, { content: [{ type: 'text', text: 'Removed ' + staleEntries.length + ' stale entries:\\n' + JSON.stringify(staleEntries, null, 2) }] });
+            }
+            return sendResponse(id, { content: [{ type: 'text', text: 'Failed to update MEMORY.md' }] });
+          }
+
+          // Just report stale entries
+          return sendResponse(id, { content: [{ type: 'text', text: 'Found ' + staleEntries.length + ' stale entries (use autoRemove: true to remove):\\n' + JSON.stringify(staleEntries, null, 2) }] });
         }
 
         default:
