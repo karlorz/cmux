@@ -18,7 +18,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 
 const MemoryFileSchema = z.object({
-  memoryType: z.enum(["knowledge", "daily", "tasks", "mailbox"]),
+  memoryType: z.enum(["knowledge", "daily", "tasks", "mailbox", "events"]),
   content: z.string(),
   fileName: z.string().optional(),
   date: z
@@ -39,7 +39,8 @@ const memoryTypeValidator = v.union(
   v.literal("knowledge"),
   v.literal("daily"),
   v.literal("tasks"),
-  v.literal("mailbox")
+  v.literal("mailbox"),
+  v.literal("events")
 );
 
 /**

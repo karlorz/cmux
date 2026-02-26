@@ -1460,7 +1460,8 @@ const convexSchema = defineSchema({
       v.literal("knowledge"),
       v.literal("daily"),
       v.literal("tasks"),
-      v.literal("mailbox")
+      v.literal("mailbox"),
+      v.literal("events")
     ),
     content: v.string(),
     fileName: v.optional(v.string()),
