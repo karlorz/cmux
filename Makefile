@@ -155,6 +155,7 @@ install-devsh-prod:
 	STACK_PROJECT_ID="$$NEXT_PUBLIC_STACK_PROJECT_ID"; \
 	STACK_PUBLISHABLE_CLIENT_KEY="$$NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY"; \
 	CMUX_API_URL="$$BASE_APP_URL"; \
+	CMUX_SERVER_URL="$$NEXT_PUBLIC_SERVER_ORIGIN"; \
 	CONVEX_SITE_URL="$$CONVEX_SITE_URL"; \
 	if [ -z "$$CONVEX_SITE_URL" ] && [ -n "$$NEXT_PUBLIC_CONVEX_URL" ]; then \
 		CONVEX_SITE_URL="$$(printf '%s' "$$NEXT_PUBLIC_CONVEX_URL" | sed 's/\.convex\.cloud/.convex.site/g')"; \
@@ -175,13 +176,18 @@ install-devsh-prod:
 		echo "Error: CONVEX_SITE_URL could not be resolved from CONVEX_SITE_URL or NEXT_PUBLIC_CONVEX_URL in $$ENV_FILE"; \
 		exit 1; \
 	fi; \
+	if [ -z "$$CMUX_SERVER_URL" ]; then \
+		echo "Error: NEXT_PUBLIC_SERVER_ORIGIN is required in $$ENV_FILE"; \
+		exit 1; \
+	fi; \
 	echo "Building devsh (production mode)..."; \
 	env -i PATH="$$PATH" HOME="$$HOME" TERM="$$TERM" \
 	$(MAKE) -C packages/devsh install-prod \
 		STACK_PROJECT_ID="$$STACK_PROJECT_ID" \
 		STACK_PUBLISHABLE_CLIENT_KEY="$$STACK_PUBLISHABLE_CLIENT_KEY" \
 		CMUX_API_URL="$$CMUX_API_URL" \
-		CONVEX_SITE_URL="$$CONVEX_SITE_URL"
+		CONVEX_SITE_URL="$$CONVEX_SITE_URL" \
+		CMUX_SERVER_URL="$$CMUX_SERVER_URL"
 
 # Start Chrome with remote debugging on port 9222 (for CDP/MCP)
 chrome-debug:
@@ -330,6 +336,7 @@ devsh-npm-republish-prod-dry:
 	STACK_PROJECT_ID="$$NEXT_PUBLIC_STACK_PROJECT_ID"; \
 	STACK_PUBLISHABLE_CLIENT_KEY="$$NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY"; \
 	CMUX_API_URL="$$BASE_APP_URL"; \
+	CMUX_SERVER_URL="$$NEXT_PUBLIC_SERVER_ORIGIN"; \
 	CONVEX_SITE_URL="$$CONVEX_SITE_URL"; \
 	if [ -z "$$CONVEX_SITE_URL" ] && [ -n "$$NEXT_PUBLIC_CONVEX_URL" ]; then \
 		CONVEX_SITE_URL="$$(printf '%s' "$$NEXT_PUBLIC_CONVEX_URL" | sed 's/\\.convex\\.cloud/.convex.site/g')"; \
@@ -352,6 +359,10 @@ devsh-npm-republish-prod-dry:
 	fi; \
 	if [ -z "$$CONVEX_SITE_URL" ]; then \
 		echo "Error: CONVEX_SITE_URL could not be resolved from CONVEX_SITE_URL or NEXT_PUBLIC_CONVEX_URL in $$ENV_FILE"; \
+		exit 1; \
+	fi; \
+	if [ -z "$$CMUX_SERVER_URL" ]; then \
+		echo "Error: NEXT_PUBLIC_SERVER_ORIGIN is required in $$ENV_FILE"; \
 		exit 1; \
 	fi; \
 	if [ -z "$$VERSION" ]; then \
@@ -365,6 +376,7 @@ devsh-npm-republish-prod-dry:
 		STACK_PUBLISHABLE_CLIENT_KEY="$$STACK_PUBLISHABLE_CLIENT_KEY" \
 		CMUX_API_URL="$$CMUX_API_URL" \
 		CONVEX_SITE_URL="$$CONVEX_SITE_URL" \
+		CMUX_SERVER_URL="$$CMUX_SERVER_URL" \
 		VERSION="$$VERSION"
 
 devsh-npm-republish-prod:
@@ -377,6 +389,7 @@ devsh-npm-republish-prod:
 	STACK_PROJECT_ID="$$NEXT_PUBLIC_STACK_PROJECT_ID"; \
 	STACK_PUBLISHABLE_CLIENT_KEY="$$NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY"; \
 	CMUX_API_URL="$$BASE_APP_URL"; \
+	CMUX_SERVER_URL="$$NEXT_PUBLIC_SERVER_ORIGIN"; \
 	CONVEX_SITE_URL="$$CONVEX_SITE_URL"; \
 	if [ -z "$$CONVEX_SITE_URL" ] && [ -n "$$NEXT_PUBLIC_CONVEX_URL" ]; then \
 		CONVEX_SITE_URL="$$(printf '%s' "$$NEXT_PUBLIC_CONVEX_URL" | sed 's/\\.convex\\.cloud/.convex.site/g')"; \
@@ -401,6 +414,10 @@ devsh-npm-republish-prod:
 		echo "Error: CONVEX_SITE_URL could not be resolved from CONVEX_SITE_URL or NEXT_PUBLIC_CONVEX_URL in $$ENV_FILE"; \
 		exit 1; \
 	fi; \
+	if [ -z "$$CMUX_SERVER_URL" ]; then \
+		echo "Error: NEXT_PUBLIC_SERVER_ORIGIN is required in $$ENV_FILE"; \
+		exit 1; \
+	fi; \
 	if [ -z "$$VERSION" ]; then \
 		echo "Error: unable to resolve VERSION from DEVSH_NPM_VERSION or packages/devsh/npm/devsh/package.json"; \
 		exit 1; \
@@ -412,4 +429,5 @@ devsh-npm-republish-prod:
 		STACK_PUBLISHABLE_CLIENT_KEY="$$STACK_PUBLISHABLE_CLIENT_KEY" \
 		CMUX_API_URL="$$CMUX_API_URL" \
 		CONVEX_SITE_URL="$$CONVEX_SITE_URL" \
+		CMUX_SERVER_URL="$$CMUX_SERVER_URL" \
 		VERSION="$$VERSION"

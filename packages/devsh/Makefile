@@ -12,6 +12,7 @@ STACK_PROJECT_ID ?=
 STACK_PUBLISHABLE_CLIENT_KEY ?=
 CMUX_API_URL ?=
 CONVEX_SITE_URL ?=
+CMUX_SERVER_URL ?=
 
 # Package path for ldflags
 AUTH_PKG := github.com/karlorz/devsh/internal/auth
@@ -26,7 +27,8 @@ LDFLAGS := -s -w \
            -X '$(AUTH_PKG).ProjectID=$(STACK_PROJECT_ID)' \
            -X '$(AUTH_PKG).PublishableKey=$(STACK_PUBLISHABLE_CLIENT_KEY)' \
            -X '$(AUTH_PKG).CmuxURL=$(CMUX_API_URL)' \
-           -X '$(AUTH_PKG).ConvexSiteURL=$(CONVEX_SITE_URL)'
+           -X '$(AUTH_PKG).ConvexSiteURL=$(CONVEX_SITE_URL)' \
+           -X '$(AUTH_PKG).ServerURL=$(CMUX_SERVER_URL)'
 
 .PHONY: build clean test install install-dev install-prod fmt lint run deps build-all build-npm \
         npm-version npm-publish npm-publish-dry npm-publish-devsh npm-publish-devsh-dry
@@ -196,19 +198,21 @@ build-staging:
 
 # Production build - bakes in production config (Mode=prod)
 # All config values MUST be provided via env vars or make arguments
-# Override with: make build-prod STACK_PROJECT_ID=... CMUX_API_URL=...
+# Override with: make build-prod STACK_PROJECT_ID=... CMUX_API_URL=... CMUX_SERVER_URL=...
 build-prod:
 	@echo "Building for production (Mode=prod)..."
 	@if [ -z "$(STACK_PROJECT_ID)" ]; then echo "Error: STACK_PROJECT_ID is required"; exit 1; fi
 	@if [ -z "$(STACK_PUBLISHABLE_CLIENT_KEY)" ]; then echo "Error: STACK_PUBLISHABLE_CLIENT_KEY is required"; exit 1; fi
 	@if [ -z "$(CMUX_API_URL)" ]; then echo "Error: CMUX_API_URL is required"; exit 1; fi
 	@if [ -z "$(CONVEX_SITE_URL)" ]; then echo "Error: CONVEX_SITE_URL is required"; exit 1; fi
+	@if [ -z "$(CMUX_SERVER_URL)" ]; then echo "Error: CMUX_SERVER_URL is required"; exit 1; fi
 	go build -ldflags "-s -w \
 		-X main.Version=$(VERSION) -X main.Commit=$(COMMIT) -X main.BuildTime=$(BUILD_TIME) -X main.Mode=prod \
 		-X '$(AUTH_PKG).ProjectID=$(STACK_PROJECT_ID)' \
 		-X '$(AUTH_PKG).PublishableKey=$(STACK_PUBLISHABLE_CLIENT_KEY)' \
 		-X '$(AUTH_PKG).CmuxURL=$(CMUX_API_URL)' \
-		-X '$(AUTH_PKG).ConvexSiteURL=$(CONVEX_SITE_URL)'" \
+		-X '$(AUTH_PKG).ConvexSiteURL=$(CONVEX_SITE_URL)' \
+		-X '$(AUTH_PKG).ServerURL=$(CMUX_SERVER_URL)'" \
 		-o bin/devsh ./cmd/devsh
 	@echo "Production build complete: bin/devsh"
 
