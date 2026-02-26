@@ -163,6 +163,20 @@ export default async function LandingPage() {
         <div className="absolute inset-x-[10%] bottom-[-20%] h-[32rem] rounded-full bg-gradient-to-tr from-indigo-500/20 via-blue-700/10 to-transparent blur-[200px]" />
       </div>
 
+      <a
+        href="https://cmux.dev/"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="group relative z-10 flex items-center justify-center gap-2.5 bg-sky-950/80 px-4 py-2.5 text-sm transition-colors hover:bg-sky-900/80"
+      >
+        <CmuxIcon className="h-3.5 w-3.5" aria-hidden />
+        <span className="text-sky-100/90">
+          <span className="font-medium text-white">cmux.dev</span>
+          <span className="hidden sm:inline"> — The Open Source Terminal for Coding Agents</span>
+        </span>
+        <ArrowRight className="h-3.5 w-3.5 text-sky-300/60 transition-transform group-hover:translate-x-0.5 group-hover:text-sky-200" aria-hidden />
+      </a>
+
       <SiteHeader
         fallbackUrl={fallbackUrl}
         latestVersion={latestVersion}
