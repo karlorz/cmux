@@ -28,7 +28,7 @@ LDFLAGS := -s -w \
            -X '$(AUTH_PKG).CmuxURL=$(CMUX_API_URL)' \
            -X '$(AUTH_PKG).ConvexSiteURL=$(CONVEX_SITE_URL)'
 
-.PHONY: build clean test install install-dev fmt lint run deps build-all build-npm \
+.PHONY: build clean test install install-dev install-prod fmt lint run deps build-all build-npm \
         npm-version npm-publish npm-publish-dry npm-publish-devsh npm-publish-devsh-dry
 
 build:
@@ -211,6 +211,16 @@ build-prod:
 		-X '$(AUTH_PKG).ConvexSiteURL=$(CONVEX_SITE_URL)'" \
 		-o bin/devsh ./cmd/devsh
 	@echo "Production build complete: bin/devsh"
+
+# Install prod build to user directory (for local head agent use)
+install-prod: build-prod
+	@mkdir -p ~/.local/bin
+	@cp bin/devsh ~/.local/bin/devsh
+	@# Clear macOS extended attributes (com.apple.provenance can cause hangs)
+	@xattr -c ~/.local/bin/devsh 2>/dev/null || true
+	@echo "Installed to ~/.local/bin/devsh (production mode)"
+	@# Show version to confirm prod build
+	@~/.local/bin/devsh --version
 
 # Aliases (for root Makefile delegation)
 npm-publish-devsh: npm-publish

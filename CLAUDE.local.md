@@ -41,6 +41,7 @@ CLOUDROUTER_DEV_MODE=0 cloudrouter start . -p e2b  # uses cmux-devbox-lite (16 G
 ```
 
 # devsh npm publish (fork)
+- `make install-devsh-prod`: Build and install production devsh binary locally (reads .env.production)
 - `make devsh-npm-republish-prod-dry`: Dry-run npm publish
 - `make devsh-npm-republish-prod`: Publish devsh@x.y.z to npm (browser 2FA auth)
 - Version bump: `cd packages/devsh && make npm-version VERSION=x.y.z`

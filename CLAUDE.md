@@ -134,8 +134,11 @@ Log files are overwritten on each run. Use `tail -f logs/<file>` to follow live 
 The devsh CLI manages sandbox lifecycle (create, exec, delete). See `packages/sandbox/` for implementation.
 
 ```bash
-# Development build
+# Development build (local API URLs from .env)
 make install-devsh-dev
+
+# Production build (production API URLs from .env.production)
+make install-devsh-prod
 
 # Usage
 devsh start -p pve-lxc          # Create sandbox

@@ -11,7 +11,7 @@ ENV_FILE_PROD ?= .env.production
 # Cloudrouter dev version (distinct from prod npm version)
 CLOUDROUTER_DEV_VERSION ?= 0.1.0-dev
 
-.PHONY: convex-up convex-down convex-restart convex-clean convex-init convex-init-prod convex-clear convex-clear-prod convex-reset convex-reset-prod convex-fresh dev dev-electron install-cloudrouter-dev install-devsh-dev sync-upstream-tags chrome-debug
+.PHONY: convex-up convex-down convex-restart convex-clean convex-init convex-init-prod convex-clear convex-clear-prod convex-reset convex-reset-prod convex-fresh dev dev-electron install-cloudrouter-dev install-devsh-dev install-devsh-prod sync-upstream-tags chrome-debug
 .PHONY: clone-proxy-linux-amd64 clone-proxy-linux-arm64 screenshot-collector-upload screenshot-collector-upload-prod
 .PHONY: cloudrouter-npm-republish-prod cloudrouter-npm-republish-prod-dry
 .PHONY: devsh-npm-republish-prod devsh-npm-republish-prod-dry
@@ -142,6 +142,46 @@ install-devsh-dev:
 	$(MAKE) -C packages/devsh install-dev
 	@echo ""
 	@echo "devsh ready! Run: devsh --help"
+
+# Build and install devsh CLI (production mode) to ~/.local/bin
+# Reads config from .env.production, bakes production API URLs into binary
+install-devsh-prod:
+	@ENV_FILE="$(ENV_FILE_PROD)"; \
+	if [ ! -f "$$ENV_FILE" ]; then \
+		echo "Error: $$ENV_FILE not found"; \
+		exit 1; \
+	fi; \
+	set -a; . "$$ENV_FILE"; set +a; \
+	STACK_PROJECT_ID="$$NEXT_PUBLIC_STACK_PROJECT_ID"; \
+	STACK_PUBLISHABLE_CLIENT_KEY="$$NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY"; \
+	CMUX_API_URL="$$BASE_APP_URL"; \
+	CONVEX_SITE_URL="$$CONVEX_SITE_URL"; \
+	if [ -z "$$CONVEX_SITE_URL" ] && [ -n "$$NEXT_PUBLIC_CONVEX_URL" ]; then \
+		CONVEX_SITE_URL="$$(printf '%s' "$$NEXT_PUBLIC_CONVEX_URL" | sed 's/\.convex\.cloud/.convex.site/g')"; \
+	fi; \
+	if [ -z "$$STACK_PROJECT_ID" ]; then \
+		echo "Error: NEXT_PUBLIC_STACK_PROJECT_ID is required in $$ENV_FILE"; \
+		exit 1; \
+	fi; \
+	if [ -z "$$STACK_PUBLISHABLE_CLIENT_KEY" ]; then \
+		echo "Error: NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY is required in $$ENV_FILE"; \
+		exit 1; \
+	fi; \
+	if [ -z "$$CMUX_API_URL" ]; then \
+		echo "Error: BASE_APP_URL is required in $$ENV_FILE"; \
+		exit 1; \
+	fi; \
+	if [ -z "$$CONVEX_SITE_URL" ]; then \
+		echo "Error: CONVEX_SITE_URL could not be resolved from CONVEX_SITE_URL or NEXT_PUBLIC_CONVEX_URL in $$ENV_FILE"; \
+		exit 1; \
+	fi; \
+	echo "Building devsh (production mode)..."; \
+	env -i PATH="$$PATH" HOME="$$HOME" TERM="$$TERM" \
+	$(MAKE) -C packages/devsh install-prod \
+		STACK_PROJECT_ID="$$STACK_PROJECT_ID" \
+		STACK_PUBLISHABLE_CLIENT_KEY="$$STACK_PUBLISHABLE_CLIENT_KEY" \
+		CMUX_API_URL="$$CMUX_API_URL" \
+		CONVEX_SITE_URL="$$CONVEX_SITE_URL"
 
 # Start Chrome with remote debugging on port 9222 (for CDP/MCP)
 chrome-debug:
