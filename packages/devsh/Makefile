@@ -14,7 +14,7 @@ CMUX_API_URL ?=
 CONVEX_SITE_URL ?=
 
 # Package path for ldflags
-AUTH_PKG := github.com/cmux-cli/devsh/internal/auth
+AUTH_PKG := github.com/karlorz/devsh/internal/auth
 
 # Strip debug info and disable DWARF for smaller binaries
 # Mode=prod ensures production defaults are used
@@ -175,7 +175,7 @@ install-dev: build-dev
 # Override with: make build-staging STAGING_PROJECT_ID=... STAGING_CMUX_URL=... STAGING_CONVEX_URL=...
 STAGING_PROJECT_ID ?= $(STACK_PROJECT_ID)
 STAGING_PUBLISHABLE_KEY ?= $(STACK_PUBLISHABLE_CLIENT_KEY)
-STAGING_CMUX_URL ?= https://staging.manaflow.com
+STAGING_CMUX_URL ?= https://staging.karldigi.dev
 # No default - must be explicitly set
 STAGING_CONVEX_URL ?=
 

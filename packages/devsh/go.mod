@@ -1,4 +1,4 @@
-module github.com/cmux-cli/devsh
+module github.com/karlorz/devsh
 
 go 1.24.0
 

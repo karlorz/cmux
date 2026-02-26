@@ -4,7 +4,7 @@ package cli
 import (
 	"os"
 
-	"github.com/cmux-cli/devsh/internal/auth"
+	"github.com/karlorz/devsh/internal/auth"
 	"github.com/spf13/cobra"
 )
 
@@ -54,7 +54,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&flagProvider, "provider", "p", "", "Sandbox provider: morph, pve-lxc (auto-detected from PVE_API_URL/PVE_API_TOKEN env vars)")
 
 	// Config override flags (override env vars and build-time values)
-	rootCmd.PersistentFlags().StringVar(&flagAPIURL, "api-url", "", "Override API URL (default: https://manaflow.com)")
+	rootCmd.PersistentFlags().StringVar(&flagAPIURL, "api-url", "", "Override API URL (default: https://cmux-www.karldigi.dev)")
 	rootCmd.PersistentFlags().StringVar(&flagConvexSiteURL, "convex-url", "", "Override Convex site URL")
 
 	// Version command

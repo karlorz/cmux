@@ -12,7 +12,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/cmux-cli/devsh/internal/auth"
+	"github.com/karlorz/devsh/internal/auth"
 	"github.com/spf13/cobra"
 )
 

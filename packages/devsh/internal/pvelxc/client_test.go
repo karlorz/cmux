@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cmux-cli/devsh/internal/provider"
+	"github.com/karlorz/devsh/internal/provider"
 )
 
 func TestIsPveLxcInstanceID(t *testing.T) {

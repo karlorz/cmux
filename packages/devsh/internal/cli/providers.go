@@ -10,7 +10,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/cmux-cli/devsh/internal/credentials"
+	"github.com/karlorz/devsh/internal/credentials"
 	"github.com/spf13/cobra"
 )
 

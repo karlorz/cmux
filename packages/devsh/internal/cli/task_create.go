@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cmux-cli/devsh/internal/auth"
-	"github.com/cmux-cli/devsh/internal/socketio"
-	"github.com/cmux-cli/devsh/internal/vm"
+	"github.com/karlorz/devsh/internal/auth"
+	"github.com/karlorz/devsh/internal/socketio"
+	"github.com/karlorz/devsh/internal/vm"
 	"github.com/spf13/cobra"
 )
 

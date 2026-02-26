@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cmux-cli/devsh/internal/vm"
+	"github.com/karlorz/devsh/internal/vm"
 )
 
 // TestTaskMemoryOutputFormatting tests the memory output formatting logic

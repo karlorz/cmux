@@ -21,7 +21,7 @@ if (isInteractive) {
 │     $ devsh start         # Create a cloud VM           │
 │     $ devsh --help        # See all commands            │
 │                                                         │
-│   Documentation: https://manaflow.com/docs               │
+│   Documentation: https://github.com/karlorz/cmux          │
 │                                                         │
 └─────────────────────────────────────────────────────────┘
 `;

@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cmux-cli/devsh/internal/auth"
-	"github.com/cmux-cli/devsh/internal/provider"
-	"github.com/cmux-cli/devsh/internal/pvelxc"
-	"github.com/cmux-cli/devsh/internal/vm"
+	"github.com/karlorz/devsh/internal/auth"
+	"github.com/karlorz/devsh/internal/provider"
+	"github.com/karlorz/devsh/internal/pvelxc"
+	"github.com/karlorz/devsh/internal/vm"
 	"github.com/spf13/cobra"
 )
 

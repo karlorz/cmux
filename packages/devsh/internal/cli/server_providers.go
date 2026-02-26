@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/cmux-cli/devsh/internal/auth"
+	"github.com/karlorz/devsh/internal/auth"
 )
 
 // ServerAgentStatus represents an individual agent's availability from the server

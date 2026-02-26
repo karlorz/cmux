@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/cmux-cli/devsh/internal/auth"
+	"github.com/karlorz/devsh/internal/auth"
 )
 
 var authCmd = &cobra.Command{

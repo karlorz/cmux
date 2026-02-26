@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cmux-cli/devsh/internal/auth"
+	"github.com/karlorz/devsh/internal/auth"
 )
 
 // readErrorBody reads the response body for error messages, handling read errors gracefully

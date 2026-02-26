@@ -65,6 +65,6 @@ devsh computer screenshot cmux_abc123 test.png
 
 ## Links
 
-- Homepage: https://manaflow.com
-- Documentation: https://manaflow.com/docs
-- GitHub: https://github.com/manaflow-ai/manaflow
+- Homepage: https://github.com/karlorz/cmux
+- Documentation: https://github.com/karlorz/cmux
+- GitHub: https://github.com/karlorz/cmux

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cmux-cli/devsh/internal/credentials"
+	"github.com/karlorz/devsh/internal/credentials"
 )
 
 func TestFilterModels(t *testing.T) {

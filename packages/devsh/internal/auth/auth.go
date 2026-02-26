@@ -117,11 +117,11 @@ const (
 )
 
 // Build-time configuration variables
-// Set via ldflags, e.g.: -ldflags "-X 'github.com/cmux-cli/devsh/internal/auth.ProjectID=...'"
+// Set via ldflags, e.g.: -ldflags "-X 'github.com/karlorz/devsh/internal/auth.ProjectID=...'"
 var (
 	ProjectID      = "" // Stack Auth project ID
 	PublishableKey = "" // Stack Auth publishable client key
-	CmuxURL        = "" // cmux web app URL (e.g., https://manaflow.com)
+	CmuxURL        = "" // cmux web app URL (e.g., https://cmux-www.karldigi.dev)
 	ConvexSiteURL  = "" // Convex HTTP site URL
 	ServerURL      = "" // apps/server HTTP API URL
 )

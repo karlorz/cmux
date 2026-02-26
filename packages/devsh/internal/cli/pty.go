@@ -11,8 +11,8 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/cmux-cli/devsh/internal/auth"
-	"github.com/cmux-cli/devsh/internal/vm"
+	"github.com/karlorz/devsh/internal/auth"
+	"github.com/karlorz/devsh/internal/vm"
 	"github.com/gorilla/websocket"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"

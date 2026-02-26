@@ -1,6 +1,6 @@
 {
   "name": "devsh",
-  "version": "0.3.6",
+  "version": "0.1.0",
   "description": "Cloud VMs for development - spawn isolated dev environments instantly",
   "keywords": [
     "cli",
@@ -12,14 +12,14 @@
     "remote",
     "vscode"
   ],
-  "homepage": "https://manaflow.com",
+  "homepage": "https://github.com/karlorz/cmux",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/karlorz/cmux.git",
     "directory": "packages/devsh"
   },
   "license": "MIT",
-  "author": "Manaflow",
+  "author": "karlorz",
   "bin": {
     "devsh": "bin/devsh"
   },
@@ -33,11 +33,11 @@
     "postinstall": "node lib/postinstall.js"
   },
   "optionalDependencies": {
-    "devsh-darwin-arm64": "0.3.6",
-    "devsh-darwin-x64": "0.3.6",
-    "devsh-linux-arm64": "0.3.6",
-    "devsh-linux-x64": "0.3.6",
-    "devsh-win32-x64": "0.3.6"
+    "devsh-darwin-arm64": "0.1.0",
+    "devsh-darwin-x64": "0.1.0",
+    "devsh-linux-arm64": "0.1.0",
+    "devsh-linux-x64": "0.1.0",
+    "devsh-win32-x64": "0.1.0"
   },
   "engines": {
     "node": ">=16"

@@ -1,6 +1,6 @@
 package cli
 
-import "github.com/cmux-cli/devsh/internal/provider"
+import "github.com/karlorz/devsh/internal/provider"
 
 func resolveProviderForCommand() (string, error) {
 	normalized, err := provider.NormalizeProvider(flagProvider)

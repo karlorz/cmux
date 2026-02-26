@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/cmux-cli/devsh/internal/auth"
-	"github.com/cmux-cli/devsh/internal/cli"
+	"github.com/karlorz/devsh/internal/auth"
+	"github.com/karlorz/devsh/internal/cli"
 )
 
 // These are set by the build process
