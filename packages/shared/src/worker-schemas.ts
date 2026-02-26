@@ -2,11 +2,14 @@ import type { Id } from "@cmux/convex/dataModel";
 import { z } from "zod";
 import { typedZid } from "./utils/typed-zid";
 
+// Valid Unix file permission mode pattern (e.g., "644", "0755", "600")
+const fileModePattern = /^[0-7]{3,4}$/;
+
 // Auth file schema for file uploads and environment setup
 export const AuthFileSchema = z.object({
   destinationPath: z.string(),
   contentBase64: z.string(), // base64 encoded
-  mode: z.string().optional(),
+  mode: z.string().regex(fileModePattern, "Invalid file mode - must be 3-4 octal digits (e.g., '644')").optional(),
 });
 
 // Post-start command schema for commands that run after TUI starts
@@ -173,7 +176,7 @@ export const WorkerUploadFileSchema = z
     destinationPath: z.string(), // Path in container (relative to workspace root)
     action: z.enum(["write", "delete"]).optional(),
     contentBase64: z.string().optional(), // Base64 encoded file content
-    mode: z.string().optional(), // File permissions (e.g., "644")
+    mode: z.string().regex(fileModePattern, "Invalid file mode - must be 3-4 octal digits (e.g., '644')").optional(), // File permissions (e.g., "644")
   })
   .superRefine((value, ctx) => {
     const action = value.action ?? "write";
@@ -360,7 +363,7 @@ export const WorkerSyncFileSchema = z.object({
   relativePath: z.string(), // Path relative to workspace root
   action: z.enum(["write", "delete"]),
   contentBase64: z.string().optional(), // Base64 encoded content (required for write)
-  mode: z.string().optional(), // File permissions (e.g., "644")
+  mode: z.string().regex(fileModePattern, "Invalid file mode - must be 3-4 octal digits (e.g., '644')").optional(), // File permissions (e.g., "644")
 });
 
 export const WorkerSyncFilesSchema = z.object({

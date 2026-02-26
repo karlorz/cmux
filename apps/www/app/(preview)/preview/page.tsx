@@ -140,9 +140,10 @@ export default async function PreviewLandingPage({ searchParams }: PageProps) {
   // Wrap in try-catch to handle any Stack Auth API errors gracefully
   let accessToken: string | null = null;
   let teams: StackTeam[] = [];
-  let githubAccount: Awaited<ReturnType<typeof user.getConnectedAccount>> = null;
-  let gitlabAccount: Awaited<ReturnType<typeof user.getConnectedAccount>> = null;
-  let bitbucketAccount: Awaited<ReturnType<typeof user.getConnectedAccount>> = null;
+  // Only used for truthiness checks, so we can use a simpler type
+  let githubAccount: unknown = null;
+  let gitlabAccount: unknown = null;
+  let bitbucketAccount: unknown = null;
 
   try {
     const [auth, teamsResult, github, gitlab, bitbucket] = await Promise.all([

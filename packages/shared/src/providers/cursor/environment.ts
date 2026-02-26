@@ -101,8 +101,10 @@ export async function getCursorEnvironment(
     env.CURSOR_API_KEY = process.env.CURSOR_API_KEY;
 
     // Add startup command to persist the API key in .bashrc
+    // Use single quotes and proper escaping to prevent shell injection
+    const escapedApiKey = process.env.CURSOR_API_KEY.replace(/'/g, "'\\''");
     startupCommands.push(
-      `grep -q "export CURSOR_API_KEY=" ~/.bashrc || echo 'export CURSOR_API_KEY="${process.env.CURSOR_API_KEY}"' >> ~/.bashrc`
+      `grep -q "export CURSOR_API_KEY=" ~/.bashrc || echo 'export CURSOR_API_KEY='"'"'${escapedApiKey}'"'"'' >> ~/.bashrc`
     );
   }
 

@@ -80,7 +80,7 @@ export function formatClaudeMessage(message: SDKMessage): string {
 🔧 System initialized
    Model: ${message.model}
    Tools: ${message.tools.length} available
-   MCP Servers: ${message.mcp_servers.map((s) => `${s.name}(${s.status})`).join(", ")}
+   MCP Servers: ${message.mcp_servers.map((s: { name: string; status: string }) => `${s.name}(${s.status})`).join(", ")}
    Permission Mode: ${message.permissionMode}`;
         case "compact_boundary":
           return `📦 Compacted (${message.compact_metadata.trigger}, ${message.compact_metadata.pre_tokens} tokens)`;

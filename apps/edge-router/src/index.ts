@@ -447,6 +447,7 @@ try {
     configurable: true
   });
 } catch (e) {
+  // document.location override may fail in some browsers due to security restrictions
 }
 
 // Also set document.__cmuxLocation for compatibility
