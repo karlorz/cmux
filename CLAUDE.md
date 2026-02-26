@@ -129,18 +129,21 @@ When running `./scripts/dev.sh`, service logs are written to `logs/{type}.log`:
 
 Log files are overwritten on each run. Use `tail -f logs/<file>` to follow live output.
 
-## cmux-devbox CLI
+## devsh CLI
 
-The cmux-devbox CLI manages sandbox lifecycle (create, exec, delete). See `packages/sandbox/` for implementation.
+The devsh CLI manages sandbox lifecycle (create, exec, delete). See `packages/sandbox/` for implementation.
 
 ```bash
-# Development build
-make install-cmux-devbox-dev
+# Development build (local API URLs from .env)
+make install-devsh-dev
+
+# Production build (production API URLs from .env.production)
+make install-devsh-prod
 
 # Usage
-cmux-devbox start -p pve-lxc          # Create sandbox
-cmux-devbox exec <sandbox-id> "cmd"   # Execute command
-cmux-devbox delete <sandbox-id>       # Delete sandbox
+devsh start -p pve-lxc          # Create sandbox
+devsh exec <sandbox-id> "cmd"   # Execute command
+devsh delete <sandbox-id>       # Delete sandbox
 ```
 
 # Agent Memory Protocol

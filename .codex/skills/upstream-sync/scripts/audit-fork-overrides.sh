@@ -216,6 +216,30 @@ check_branch_prefix_hardcoded() {
   done
 }
 
+check_devsh_module_path() {
+  local go_mod="packages/devsh/go.mod"
+  local npm_pkg="packages/devsh/npm/devsh/package.json"
+
+  if [ ! -f "$go_mod" ]; then
+    note_info "Missing file: \`$go_mod\` (skipped)"
+  else
+    if ! rg -q "^module github\\.com/karlorz/devsh" "$go_mod"; then
+      note_p2 "\`$go_mod\` does not use fork Go module path \`github.com/karlorz/devsh\`; upstream may have overwritten fork customization"
+    fi
+  fi
+
+  if [ ! -f "$npm_pkg" ]; then
+    note_info "Missing file: \`$npm_pkg\` (skipped)"
+  else
+    if ! rg -q "\"author\":\\s*\"karlorz\"" "$npm_pkg"; then
+      note_p2 "\`$npm_pkg\` author is not \`karlorz\`; upstream may have overwritten fork customization"
+    fi
+    if ! rg -q "\"name\":\\s*\"devsh\"" "$npm_pkg"; then
+      note_p2 "\`$npm_pkg\` package name changed from \`devsh\`; upstream may have renamed back to cmux-devbox"
+    fi
+  fi
+}
+
 check_electron_build_scripts() {
   local local_build="scripts/build-electron-local.sh"
   local prod_build="scripts/build-electron-prod.sh"
@@ -259,6 +283,7 @@ check_electron_host_mismatch
 check_hardcoded_manaflow_scheme
 check_branch_prefix_hardcoded
 check_electron_build_scripts
+check_devsh_module_path
 
 if [ "$findings_p2" -eq 0 ] && [ "$findings_p3" -eq 0 ] && [ "$findings_info" -eq 0 ]; then
   echo "- None."

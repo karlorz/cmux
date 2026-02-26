@@ -1,5 +1,5 @@
 // Package auth provides authentication for the cmux E2B CLI via Stack Auth.
-// Credentials are shared with cmux-devbox CLI (same keychain/config).
+// Credentials are shared with devsh CLI (same keychain/config).
 package auth
 
 import (

@@ -21,6 +21,7 @@ RANGE="origin/main...HEAD"
 | Electron host/partition drift | `apps/client/electron/main/index.ts` `apps/client/electron/main/bootstrap.ts` `apps/client/src/components/cmux-comments.tsx` | `PARTITION` strings match; `APP_HOST` and renderer-side Electron detection are aligned (`cmux.local` vs `manaflow.local`). |
 | Electron build config | `apps/client/electron-builder.fork.json` `apps/client/electron-builder.fork.local.json` `scripts/build-electron-local.sh` `scripts/build-prod-mac-arm64-no-notarize-or-sign.sh` | Fork packaging continues to use fork builder configs for `appId`/`productName`/protocol. Verify build scripts still point at fork configs (or set `ELECTRON_BUILDER_CONFIG=...` when using generic publish scripts). |
 | Branch prefix hardcoding | `apps/server/src/utils/branchNameGenerator.ts` `apps/www/lib/utils/branch-name-generator.ts` `apps/www/lib/routes/branch.route.ts` | Avoid hardcoding `manaflow/` prefix; keep fork prefix behavior (typically via `DEFAULT_BRANCH_PREFIX` or a parameter). |
+| devsh package metadata | `packages/devsh/go.mod` `packages/devsh/npm/*/package.json` `packages/devsh/Makefile` | Go module must stay `github.com/karlorz/devsh`; npm packages `devsh`/`devsh-*` with author `karlorz`; homepage `github.com/karlorz/cmux`. |
 
 ## Audit command
 

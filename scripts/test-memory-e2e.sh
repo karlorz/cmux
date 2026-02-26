@@ -4,7 +4,7 @@
 # Tests the complete memory flow:
 # 1. Create a task via CLI
 # 2. Wait for completion (or timeout)
-# 3. Verify memory via CLI (cmux task memory)
+# 3. Verify memory via CLI (devsh task memory)
 # 4. Verify memory via HTTP API
 #
 # Usage:
@@ -14,7 +14,7 @@
 #   ./scripts/test-memory-e2e.sh --task-id <id>      # Test specific task
 #
 # Required Environment:
-#   - Authenticated cmux-devbox CLI (cmux-devbox auth login)
+#   - Authenticated devsh CLI (devsh auth login)
 #   - CONVEX_SITE_URL or NEXT_PUBLIC_CONVEX_URL (for API tests)
 
 set -euo pipefail
@@ -124,10 +124,10 @@ record_skip() {
 
 # Get CLI binary path
 get_cli_binary() {
-  if command -v cmux-devbox >/dev/null 2>&1; then
-    echo "cmux-devbox"
-  elif [[ -f "$HOME/.local/bin/cmux-devbox" ]]; then
-    echo "$HOME/.local/bin/cmux-devbox"
+  if command -v devsh >/dev/null 2>&1; then
+    echo "devsh"
+  elif [[ -f "$HOME/.local/bin/devsh" ]]; then
+    echo "$HOME/.local/bin/devsh"
   else
     echo ""
   fi
@@ -185,7 +185,7 @@ test_cli_memory_command() {
   info "=== Testing CLI Memory Command ==="
 
   # Test 1: Basic memory command with task ID
-  info "Test: cmux task memory ${task_id}"
+  info "Test: devsh task memory ${task_id}"
   local output
   if output=$("${cli_bin}" task memory "${task_id}" 2>&1); then
     if [[ -n "${output}" ]]; then
@@ -199,7 +199,7 @@ test_cli_memory_command() {
 
   # Test 2: Memory command with --type filter
   for mem_type in knowledge daily tasks mailbox; do
-    info "Test: cmux task memory ${task_id} --type ${mem_type}"
+    info "Test: devsh task memory ${task_id} --type ${mem_type}"
     if output=$("${cli_bin}" task memory "${task_id}" --type "${mem_type}" 2>&1); then
       record_pass "CLI memory --type ${mem_type} succeeded"
     else
@@ -208,7 +208,7 @@ test_cli_memory_command() {
   done
 
   # Test 3: Memory command with --json output
-  info "Test: cmux task memory ${task_id} --json"
+  info "Test: devsh task memory ${task_id} --json"
   if output=$("${cli_bin}" task memory "${task_id}" --json 2>&1); then
     # Verify it's valid JSON
     if echo "${output}" | jq . >/dev/null 2>&1; then
@@ -284,12 +284,12 @@ main() {
   local cli_bin
   cli_bin="$(get_cli_binary)"
   if [[ -z "${cli_bin}" ]]; then
-    info "Building cmux-devbox..."
-    (cd "${PROJECT_DIR}" && make install-cmux-devbox-dev) || {
-      fail "Failed to build cmux-devbox"
+    info "Building devsh..."
+    (cd "${PROJECT_DIR}" && make install-devsh-dev) || {
+      fail "Failed to build devsh"
       exit 1
     }
-    cli_bin="$HOME/.local/bin/cmux-devbox"
+    cli_bin="$HOME/.local/bin/devsh"
     export PATH="$HOME/.local/bin:$PATH"
   fi
 

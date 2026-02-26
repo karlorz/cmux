@@ -11,9 +11,10 @@ ENV_FILE_PROD ?= .env.production
 # Cloudrouter dev version (distinct from prod npm version)
 CLOUDROUTER_DEV_VERSION ?= 0.1.0-dev
 
-.PHONY: convex-up convex-down convex-restart convex-clean convex-init convex-init-prod convex-clear convex-clear-prod convex-reset convex-reset-prod convex-fresh dev dev-electron install-cloudrouter-dev install-cmux-devbox-dev sync-upstream-tags chrome-debug
+.PHONY: convex-up convex-down convex-restart convex-clean convex-init convex-init-prod convex-clear convex-clear-prod convex-reset convex-reset-prod convex-fresh dev dev-electron install-cloudrouter-dev install-devsh-dev install-devsh-prod sync-upstream-tags chrome-debug
 .PHONY: clone-proxy-linux-amd64 clone-proxy-linux-arm64 screenshot-collector-upload screenshot-collector-upload-prod
 .PHONY: cloudrouter-npm-republish-prod cloudrouter-npm-republish-prod-dry
+.PHONY: devsh-npm-republish-prod devsh-npm-republish-prod-dry
 
 convex-up:
 	cd $(DEVCONTAINER_DIR) && COMPOSE_PROJECT_NAME=$(PROJECT_NAME) docker compose -f $(COMPOSE_FILE) up -d
@@ -135,12 +136,65 @@ install-cloudrouter-dev:
 		echo "  2. Or run 'cloudrouter login' (requires dev server: make dev)"; \
 	fi
 
-# Build and install cmux-devbox CLI (dev mode) to ~/.local/bin
-install-cmux-devbox-dev:
-	@echo "Building and installing cmux-devbox (dev mode)..."
-	$(MAKE) -C packages/cmux-devbox install-dev
+# Build and install devsh CLI (dev mode) to ~/.local/bin
+install-devsh-dev:
+	@echo "Building and installing devsh (dev mode)..."
+	$(MAKE) -C packages/devsh install-dev
 	@echo ""
-	@echo "cmux-devbox ready! Run: cmux-devbox --help"
+	@echo "devsh ready! Run: devsh --help"
+
+# Build and install devsh CLI (production mode) to ~/.local/bin
+# Reads config from .env.production, bakes production API URLs into binary
+# Version is read from packages/devsh/npm/devsh/package.json
+install-devsh-prod:
+	@ENV_FILE="$(ENV_FILE_PROD)"; \
+	if [ ! -f "$$ENV_FILE" ]; then \
+		echo "Error: $$ENV_FILE not found"; \
+		exit 1; \
+	fi; \
+	set -a; . "$$ENV_FILE"; set +a; \
+	STACK_PROJECT_ID="$$NEXT_PUBLIC_STACK_PROJECT_ID"; \
+	STACK_PUBLISHABLE_CLIENT_KEY="$$NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY"; \
+	CMUX_API_URL="$$BASE_APP_URL"; \
+	CMUX_SERVER_URL="$$NEXT_PUBLIC_SERVER_ORIGIN"; \
+	CONVEX_SITE_URL="$$CONVEX_SITE_URL"; \
+	if [ -z "$$CONVEX_SITE_URL" ] && [ -n "$$NEXT_PUBLIC_CONVEX_URL" ]; then \
+		CONVEX_SITE_URL="$$(printf '%s' "$$NEXT_PUBLIC_CONVEX_URL" | sed 's/\.convex\.cloud/.convex.site/g')"; \
+	fi; \
+	VERSION="$$(node -pe "require('./packages/devsh/npm/devsh/package.json').version")"; \
+	if [ -z "$$VERSION" ]; then \
+		echo "Error: Failed to read version from packages/devsh/npm/devsh/package.json"; \
+		exit 1; \
+	fi; \
+	if [ -z "$$STACK_PROJECT_ID" ]; then \
+		echo "Error: NEXT_PUBLIC_STACK_PROJECT_ID is required in $$ENV_FILE"; \
+		exit 1; \
+	fi; \
+	if [ -z "$$STACK_PUBLISHABLE_CLIENT_KEY" ]; then \
+		echo "Error: NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY is required in $$ENV_FILE"; \
+		exit 1; \
+	fi; \
+	if [ -z "$$CMUX_API_URL" ]; then \
+		echo "Error: BASE_APP_URL is required in $$ENV_FILE"; \
+		exit 1; \
+	fi; \
+	if [ -z "$$CONVEX_SITE_URL" ]; then \
+		echo "Error: CONVEX_SITE_URL could not be resolved from CONVEX_SITE_URL or NEXT_PUBLIC_CONVEX_URL in $$ENV_FILE"; \
+		exit 1; \
+	fi; \
+	if [ -z "$$CMUX_SERVER_URL" ]; then \
+		echo "Error: NEXT_PUBLIC_SERVER_ORIGIN is required in $$ENV_FILE"; \
+		exit 1; \
+	fi; \
+	echo "Building devsh (production mode, VERSION=$$VERSION)..."; \
+	env -i PATH="$$PATH" HOME="$$HOME" TERM="$$TERM" \
+	$(MAKE) -C packages/devsh install-prod \
+		STACK_PROJECT_ID="$$STACK_PROJECT_ID" \
+		STACK_PUBLISHABLE_CLIENT_KEY="$$STACK_PUBLISHABLE_CLIENT_KEY" \
+		CMUX_API_URL="$$CMUX_API_URL" \
+		CONVEX_SITE_URL="$$CONVEX_SITE_URL" \
+		CMUX_SERVER_URL="$$CMUX_SERVER_URL" \
+		VERSION="$$VERSION"
 
 # Start Chrome with remote debugging on port 9222 (for CDP/MCP)
 chrome-debug:
@@ -276,4 +330,111 @@ cloudrouter-npm-republish-prod:
 		STACK_PUBLISHABLE_CLIENT_KEY="$$STACK_PUBLISHABLE_CLIENT_KEY" \
 		CMUX_API_URL="$$CMUX_API_URL" \
 		CONVEX_SITE_URL="$$CONVEX_SITE_URL" \
+		VERSION="$$VERSION"
+
+# devsh npm republish using production env file
+devsh-npm-republish-prod-dry:
+	@ENV_FILE="$(ENV_FILE_PROD)"; \
+	if [ ! -f "$$ENV_FILE" ]; then \
+		echo "Error: $$ENV_FILE not found"; \
+		exit 1; \
+	fi; \
+	set -a; . "$$ENV_FILE"; set +a; \
+	STACK_PROJECT_ID="$$NEXT_PUBLIC_STACK_PROJECT_ID"; \
+	STACK_PUBLISHABLE_CLIENT_KEY="$$NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY"; \
+	CMUX_API_URL="$$BASE_APP_URL"; \
+	CMUX_SERVER_URL="$$NEXT_PUBLIC_SERVER_ORIGIN"; \
+	CONVEX_SITE_URL="$$CONVEX_SITE_URL"; \
+	if [ -z "$$CONVEX_SITE_URL" ] && [ -n "$$NEXT_PUBLIC_CONVEX_URL" ]; then \
+		CONVEX_SITE_URL="$$(printf '%s' "$$NEXT_PUBLIC_CONVEX_URL" | sed 's/\\.convex\\.cloud/.convex.site/g')"; \
+	fi; \
+	VERSION="$$DEVSH_NPM_VERSION"; \
+	if [ -z "$$VERSION" ]; then \
+		VERSION="$$(node -pe "require('./packages/devsh/npm/devsh/package.json').version")"; \
+	fi; \
+	if [ -z "$$STACK_PROJECT_ID" ]; then \
+		echo "Error: NEXT_PUBLIC_STACK_PROJECT_ID is required in $$ENV_FILE"; \
+		exit 1; \
+	fi; \
+	if [ -z "$$STACK_PUBLISHABLE_CLIENT_KEY" ]; then \
+		echo "Error: NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY is required in $$ENV_FILE"; \
+		exit 1; \
+	fi; \
+	if [ -z "$$CMUX_API_URL" ]; then \
+		echo "Error: BASE_APP_URL is required in $$ENV_FILE"; \
+		exit 1; \
+	fi; \
+	if [ -z "$$CONVEX_SITE_URL" ]; then \
+		echo "Error: CONVEX_SITE_URL could not be resolved from CONVEX_SITE_URL or NEXT_PUBLIC_CONVEX_URL in $$ENV_FILE"; \
+		exit 1; \
+	fi; \
+	if [ -z "$$CMUX_SERVER_URL" ]; then \
+		echo "Error: NEXT_PUBLIC_SERVER_ORIGIN is required in $$ENV_FILE"; \
+		exit 1; \
+	fi; \
+	if [ -z "$$VERSION" ]; then \
+		echo "Error: unable to resolve VERSION from DEVSH_NPM_VERSION or packages/devsh/npm/devsh/package.json"; \
+		exit 1; \
+	fi; \
+	echo "Running devsh npm dry-run publish (VERSION=$$VERSION)"; \
+	env -i PATH="$$PATH" HOME="$$HOME" TERM="$$TERM" \
+	$(MAKE) -C packages/devsh npm-publish-devsh-dry \
+		STACK_PROJECT_ID="$$STACK_PROJECT_ID" \
+		STACK_PUBLISHABLE_CLIENT_KEY="$$STACK_PUBLISHABLE_CLIENT_KEY" \
+		CMUX_API_URL="$$CMUX_API_URL" \
+		CONVEX_SITE_URL="$$CONVEX_SITE_URL" \
+		CMUX_SERVER_URL="$$CMUX_SERVER_URL" \
+		VERSION="$$VERSION"
+
+devsh-npm-republish-prod:
+	@ENV_FILE="$(ENV_FILE_PROD)"; \
+	if [ ! -f "$$ENV_FILE" ]; then \
+		echo "Error: $$ENV_FILE not found"; \
+		exit 1; \
+	fi; \
+	set -a; . "$$ENV_FILE"; set +a; \
+	STACK_PROJECT_ID="$$NEXT_PUBLIC_STACK_PROJECT_ID"; \
+	STACK_PUBLISHABLE_CLIENT_KEY="$$NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY"; \
+	CMUX_API_URL="$$BASE_APP_URL"; \
+	CMUX_SERVER_URL="$$NEXT_PUBLIC_SERVER_ORIGIN"; \
+	CONVEX_SITE_URL="$$CONVEX_SITE_URL"; \
+	if [ -z "$$CONVEX_SITE_URL" ] && [ -n "$$NEXT_PUBLIC_CONVEX_URL" ]; then \
+		CONVEX_SITE_URL="$$(printf '%s' "$$NEXT_PUBLIC_CONVEX_URL" | sed 's/\\.convex\\.cloud/.convex.site/g')"; \
+	fi; \
+	VERSION="$$DEVSH_NPM_VERSION"; \
+	if [ -z "$$VERSION" ]; then \
+		VERSION="$$(node -pe "require('./packages/devsh/npm/devsh/package.json').version")"; \
+	fi; \
+	if [ -z "$$STACK_PROJECT_ID" ]; then \
+		echo "Error: NEXT_PUBLIC_STACK_PROJECT_ID is required in $$ENV_FILE"; \
+		exit 1; \
+	fi; \
+	if [ -z "$$STACK_PUBLISHABLE_CLIENT_KEY" ]; then \
+		echo "Error: NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY is required in $$ENV_FILE"; \
+		exit 1; \
+	fi; \
+	if [ -z "$$CMUX_API_URL" ]; then \
+		echo "Error: BASE_APP_URL is required in $$ENV_FILE"; \
+		exit 1; \
+	fi; \
+	if [ -z "$$CONVEX_SITE_URL" ]; then \
+		echo "Error: CONVEX_SITE_URL could not be resolved from CONVEX_SITE_URL or NEXT_PUBLIC_CONVEX_URL in $$ENV_FILE"; \
+		exit 1; \
+	fi; \
+	if [ -z "$$CMUX_SERVER_URL" ]; then \
+		echo "Error: NEXT_PUBLIC_SERVER_ORIGIN is required in $$ENV_FILE"; \
+		exit 1; \
+	fi; \
+	if [ -z "$$VERSION" ]; then \
+		echo "Error: unable to resolve VERSION from DEVSH_NPM_VERSION or packages/devsh/npm/devsh/package.json"; \
+		exit 1; \
+	fi; \
+	echo "Running devsh npm live publish (VERSION=$$VERSION)"; \
+	env -i PATH="$$PATH" HOME="$$HOME" TERM="$$TERM" \
+	$(MAKE) -C packages/devsh npm-publish-devsh \
+		STACK_PROJECT_ID="$$STACK_PROJECT_ID" \
+		STACK_PUBLISHABLE_CLIENT_KEY="$$STACK_PUBLISHABLE_CLIENT_KEY" \
+		CMUX_API_URL="$$CMUX_API_URL" \
+		CONVEX_SITE_URL="$$CONVEX_SITE_URL" \
+		CMUX_SERVER_URL="$$CMUX_SERVER_URL" \
 		VERSION="$$VERSION"

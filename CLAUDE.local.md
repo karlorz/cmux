@@ -3,8 +3,8 @@
 # Style
 - Do not use emojis in shell scripts or debug messages
 
-# Testing with cmux-devbox
-Test repos (use for `cmux-devbox task create --repo`):
+# Testing with devsh
+Test repos (use for `devsh task create --repo`):
 - `karlorz/testing-repo-1`
 - `karlorz/testing-repo-2`
 - `karlorz/testing-repo-3`
@@ -39,6 +39,13 @@ CLOUDROUTER_DEV_MODE=0 cloudrouter start . -p e2b  # uses cmux-devbox-lite (16 G
 # Set default sandbox provider in Convex env (optional, default: pve-lxc)
 # SANDBOX_PROVIDER=pve-lxc  # or: morph, e2b, modal
 ```
+
+# devsh npm publish (fork)
+- `make install-devsh-prod`: Build and install production devsh binary locally (reads .env.production)
+- `make devsh-npm-republish-prod-dry`: Dry-run npm publish
+- `make devsh-npm-republish-prod`: Publish devsh@x.y.z to npm (browser 2FA auth)
+- Version bump: `cd packages/devsh && make npm-version VERSION=x.y.z`
+- Go module: `github.com/karlorz/devsh` (fork-owned, do not change)
 
 # Config for Host Machine (not Devcontainer)
 - `make convex-fresh`: Fresh Convex setup and start concex service via docker compose, it will delete convex data volume

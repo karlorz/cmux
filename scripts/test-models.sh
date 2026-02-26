@@ -20,7 +20,7 @@ done
 SERVER_URL="${CMUX_SERVER_URL:-http://localhost:9779}"
 
 run_tests() {
-  echo "=== Testing cmux models implementation ==="
+  echo "=== Testing devsh models implementation ==="
   echo ""
 
   if [[ "$CLI_ONLY" != "true" ]]; then
@@ -44,7 +44,7 @@ run_tests() {
 
   if [[ "$API_ONLY" != "true" ]]; then
     echo "[2/5] Building Go CLI..."
-    cd "$ROOT_DIR/packages/cmux-devbox"
+    cd "$ROOT_DIR/packages/devsh"
     if go build ./... 2>&1; then
       echo "  OK: Go build successful"
     else
@@ -65,11 +65,11 @@ run_tests() {
   if [[ "$API_ONLY" != "true" ]] && [[ "$CLI_ONLY" != "true" ]]; then
     echo "[4/5] Integration test (CLI -> API)..."
     if curl -sf "$SERVER_URL/api/health" > /dev/null 2>&1; then
-      cd "$ROOT_DIR/packages/cmux-devbox"
+      cd "$ROOT_DIR/packages/devsh"
 
-      go build -o /tmp/cmux-devbox-test ./cmd/cmux-devbox
+      go build -o /tmp/devsh-test ./cmd/devsh
 
-      if CMUX_SERVER_URL="$SERVER_URL" /tmp/cmux-devbox-test models list > /tmp/models-output.txt 2>&1; then
+      if CMUX_SERVER_URL="$SERVER_URL" /tmp/devsh-test models list > /tmp/models-output.txt 2>&1; then
         if grep -q "Available Models" /tmp/models-output.txt; then
           echo "  OK: CLI models list works"
           head -5 /tmp/models-output.txt
@@ -131,8 +131,8 @@ if [[ "$WATCH" == "true" ]]; then
     echo "Waiting for changes... (Ctrl+C to stop)"
 
     fswatch -1 \
-      "$ROOT_DIR/packages/cmux-devbox/internal/cli/models_list.go" \
-      "$ROOT_DIR/packages/cmux-devbox/internal/cli/models_list_test.go" \
+      "$ROOT_DIR/packages/devsh/internal/cli/models_list.go" \
+      "$ROOT_DIR/packages/devsh/internal/cli/models_list_test.go" \
       "$ROOT_DIR/apps/server/src/http-api.ts" \
       2>/dev/null || sleep 5
 
