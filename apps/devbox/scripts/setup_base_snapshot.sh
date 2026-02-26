@@ -2,7 +2,7 @@
 # scripts/setup_base_snapshot.sh
 # Run this ONCE on a fresh Morph VM to create the reusable base snapshot
 #
-# This script installs all required software for the cmux devbox development environment:
+# This script installs all required software for the devsh development environment:
 # - Chrome with CDP for browser automation
 # - TigerVNC + XFCE for visual desktop
 # - noVNC for web-based VNC access
@@ -43,7 +43,7 @@ log_step() {
 }
 
 echo "=============================================="
-echo "    cmux devbox Base Snapshot Setup Script   "
+echo "      devsh Base Snapshot Setup Script       "
 echo "=============================================="
 echo ""
 echo "Started at: $(date)"
@@ -128,7 +128,7 @@ cd -
 cat > /usr/local/bin/cmux-worker << 'WORKER_EOF'
 #!/usr/bin/env node
 /**
- * cmux devbox Worker Daemon
+ * devsh Worker Daemon
  *
  * HTTP server that wraps agent-browser commands.
  * Runs on port 39377 (exposed via Morph's worker URL).
@@ -1211,7 +1211,7 @@ server.on('upgrade', async (req, socket, head) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`cmux devbox Worker daemon listening on port ${PORT}`);
+  console.log(`devsh Worker daemon listening on port ${PORT}`);
   console.log(`PTY WebSocket endpoint: ws://localhost:${PORT}/_cmux/pty/ws/{sessionId}`);
 });
 
@@ -1237,7 +1237,7 @@ process.on('SIGINT', () => {
 WORKER_EOF
 
 chmod +x /usr/local/bin/cmux-worker
-log_info "Installed cmux devbox worker daemon"
+log_info "Installed devsh worker daemon"
 
 # Create token directory
 mkdir -p /var/run/cmux
@@ -1550,7 +1550,7 @@ log_step "Step 10/13: Creating systemd services"
 # VNC Server service
 cat > /etc/systemd/system/vncserver.service << 'EOF'
 [Unit]
-Description=TigerVNC Server for cmux devbox
+Description=TigerVNC Server for devsh
 After=network.target
 
 [Service]
@@ -1737,7 +1737,7 @@ log_info "Created openvscode.service"
 # cmux-worker service (browser automation API)
 cat > /etc/systemd/system/cmux-worker.service << 'EOF'
 [Unit]
-Description=cmux devbox Worker Daemon (Browser Automation API)
+Description=devsh Worker Daemon (Browser Automation API)
 After=chrome-cdp.service
 Requires=chrome-cdp.service
 
@@ -1767,7 +1767,7 @@ systemctl daemon-reload
 log_step "Step 11/13: Configuring nginx"
 
 cat > /etc/nginx/sites-available/cmux << 'EOF'
-# cmux devbox nginx configuration
+# devsh nginx configuration
 # Routes all services through port 80
 
 upstream code_server {
@@ -1868,7 +1868,7 @@ server {
     # Health check endpoint
     location /health {
         access_log off;
-        return 200 'cmux devbox VM is healthy\n';
+        return 200 'devsh VM is healthy\n';
         add_header Content-Type text/plain;
     }
 
@@ -1908,7 +1908,7 @@ log_info "Configured OpenVSCode settings for cmux user"
 
 # Create a welcome file in workspace
 cat > /home/cmux/workspace/README.md << 'EOF'
-# cmux devbox Workspace
+# devsh Workspace
 
 This is your development workspace in the Morph Cloud VM.
 
@@ -2125,7 +2125,7 @@ if [ $FAILED -eq 0 ]; then
     echo ""
     echo "All services are running. You can now:"
     echo "  1. Save this VM as a snapshot"
-    echo "  2. Use this snapshot as the base for cmux devbox workspaces"
+    echo "  2. Use this snapshot as the base for devsh workspaces"
     echo ""
     echo "Marker file created: /cmux_base_snapshot_valid"
 else
