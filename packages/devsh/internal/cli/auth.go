@@ -70,6 +70,9 @@ var authStatusCmd = &cobra.Command{
 	Short: "Show authentication status",
 	Long:  `Check if you are logged in and show user information.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Ensure .env is loaded in dev mode before checking login status
+		_ = auth.GetConfig()
+
 		if !auth.IsLoggedIn() {
 			if flagJSON {
 				output := map[string]interface{}{
@@ -99,8 +102,11 @@ var authStatusCmd = &cobra.Command{
 			return nil
 		}
 
-		// Check for team override from DEVBOX_TEAM env var
-		teamOverride := os.Getenv("DEVBOX_TEAM")
+		// Check for team override from DEVSH_TEAM env var (legacy: DEVBOX_TEAM)
+		teamOverride := os.Getenv("DEVSH_TEAM")
+		if teamOverride == "" {
+			teamOverride = os.Getenv("DEVBOX_TEAM")
+		}
 
 		if flagJSON {
 			teamOutput := map[string]interface{}{

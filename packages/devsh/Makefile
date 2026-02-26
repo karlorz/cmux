@@ -130,6 +130,7 @@ ENV_FILE := $(shell for d in . .. ../.. ../../..; do [ -f "$$d/.env" ] && echo "
 # Dev build - reads config from .env file and bakes values into binary
 # Values from .env take priority over hardcoded defaults
 # Runtime env vars can still override baked-in values
+# Version includes -dev suffix to distinguish from production builds
 build-dev:
 	@echo "Building for development (Mode=dev)..."
 	@# Extract values from .env file if it exists
@@ -146,7 +147,7 @@ build-dev:
 	@if [ -n "$(DEV_CONVEX_SITE_URL)" ]; then echo "    CONVEX_SITE_URL: $(DEV_CONVEX_SITE_URL)"; fi
 	@if [ -n "$(DEV_CMUX_URL)" ]; then echo "    CMUX_API_URL: $(DEV_CMUX_URL)"; fi
 	@if [ -n "$(DEV_SERVER_URL)" ]; then echo "    CMUX_SERVER_URL: $(DEV_SERVER_URL)"; fi
-	go build -ldflags "-X main.Version=$(VERSION) -X main.Commit=$(COMMIT) -X main.BuildTime=$(BUILD_TIME) -X main.Mode=dev \
+	go build -ldflags "-X main.Version=$(VERSION)-dev -X main.Commit=$(COMMIT) -X main.BuildTime=$(BUILD_TIME) -X main.Mode=dev \
 		-X '$(AUTH_PKG).ProjectID=$(DEV_PROJECT_ID)' \
 		-X '$(AUTH_PKG).PublishableKey=$(DEV_PUBLISHABLE_KEY)' \
 		-X '$(AUTH_PKG).CmuxURL=$(DEV_CMUX_URL)' \

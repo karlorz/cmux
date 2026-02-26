@@ -330,10 +330,14 @@ func StoreRefreshToken(token string) error {
 }
 
 // GetRefreshToken retrieves the Stack Auth refresh token.
-// In dev mode, it first checks for DEVBOX_REFRESH_TOKEN environment variable
+// In dev mode, it first checks for DEVSH_REFRESH_TOKEN environment variable
 // to allow bypassing the browser-based auth flow.
 func GetRefreshToken() (string, error) {
 	// Dev mode bypass: check environment variable first
+	// Support both new (DEVSH_) and legacy (DEVBOX_) env var names
+	if devToken := os.Getenv("DEVSH_REFRESH_TOKEN"); devToken != "" {
+		return devToken, nil
+	}
 	if devToken := os.Getenv("DEVBOX_REFRESH_TOKEN"); devToken != "" {
 		return devToken, nil
 	}
@@ -998,9 +1002,13 @@ func GetUserProfile() (*UserProfile, error) {
 }
 
 // GetTeamSlug returns the team slug for API calls.
-// Priority: DEVBOX_TEAM env var > user profile team slug > team ID
+// Priority: DEVSH_TEAM env var > user profile team slug > team ID
 func GetTeamSlug() (string, error) {
 	// Check for team override from environment (dev mode / CI)
+	// Support both new (DEVSH_) and legacy (DEVBOX_) env var names
+	if teamOverride := os.Getenv("DEVSH_TEAM"); teamOverride != "" {
+		return teamOverride, nil
+	}
 	if teamOverride := os.Getenv("DEVBOX_TEAM"); teamOverride != "" {
 		return teamOverride, nil
 	}

@@ -34,10 +34,14 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		teamSlugOrId := args[0]
 
-		// Check if DEVBOX_TEAM is set - warn user it will override
-		if envTeam := os.Getenv("DEVBOX_TEAM"); envTeam != "" {
-			fmt.Printf("Note: DEVBOX_TEAM=%s is set and will override this selection for CLI commands.\n", envTeam)
-			fmt.Println("Unset DEVBOX_TEAM to use the switched team.")
+		// Check if DEVSH_TEAM is set - warn user it will override
+		envTeam := os.Getenv("DEVSH_TEAM")
+		if envTeam == "" {
+			envTeam = os.Getenv("DEVBOX_TEAM") // legacy
+		}
+		if envTeam != "" {
+			fmt.Printf("Note: DEVSH_TEAM=%s is set and will override this selection for CLI commands.\n", envTeam)
+			fmt.Println("Unset DEVSH_TEAM to use the switched team.")
 			fmt.Println()
 		}
 
