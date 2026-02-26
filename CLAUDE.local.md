@@ -40,6 +40,12 @@ CLOUDROUTER_DEV_MODE=0 cloudrouter start . -p e2b  # uses cmux-devbox-lite (16 G
 # SANDBOX_PROVIDER=pve-lxc  # or: morph, e2b, modal
 ```
 
+# devsh npm publish (fork)
+- `make devsh-npm-republish-prod-dry`: Dry-run npm publish
+- `make devsh-npm-republish-prod`: Publish devsh@x.y.z to npm (browser 2FA auth)
+- Version bump: `cd packages/devsh && make npm-version VERSION=x.y.z`
+- Go module: `github.com/karlorz/devsh` (fork-owned, do not change)
+
 # Config for Host Machine (not Devcontainer)
 - `make convex-fresh`: Fresh Convex setup and start concex service via docker compose, it will delete convex data volume
 - `make convex-init`: Init Convex DB using .env

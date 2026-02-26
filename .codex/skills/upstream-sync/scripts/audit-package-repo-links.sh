@@ -39,6 +39,10 @@ for (const file of files) {
     if (/^https:\/\/github\.com\/karlorz\/cmux(?:\.git)?$/i.test(normalized)) {
       category = "fork-monorepo";
     } else if (
+      /^https:\/\/github\.com\/karlorz\/devsh(?:\.git)?$/i.test(normalized)
+    ) {
+      category = "fork-devsh-package";
+    } else if (
       /^https:\/\/github\.com\/manaflow-ai\/manaflow(?:\.git)?$/i.test(
         normalized,
       )

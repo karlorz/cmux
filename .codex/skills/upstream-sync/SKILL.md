@@ -80,6 +80,7 @@ gh pr create --repo karlorz/cmux --base main --head "$BRANCH" --fill
   - `packages/shared/src/morph-snapshots.json`, `configs/ide-deps.json`, `packages/www-openapi-client/src/client/types.gen.ts` => keep ours.
 - **.gitattributes conflicts**: preserve all existing fork-specific merge rules; append any new upstream entries. Ensure `merge=theirs`/`merge=ours` settings stay intact.
 - **Fork-only features**: when upstream touches forked areas, prefer keeping fork behavior and selectively pull upstream fixes. If unsure, keep fork version and leave a FIXME note for follow-up.
+- **devsh fork customizations**: `packages/devsh/` uses fork Go module path (`github.com/karlorz/devsh`), fork npm package names (`devsh`, `devsh-*`), fork author/homepage. On upstream merge, keep ours for `go.mod`, all `npm/*/package.json`, `llms.txt`, `postinstall.js`, and `AGENTS.md`. If upstream renames back to `cmux-devbox` or changes the Go module path, keep fork version.
 - **Rebrand/fork override hotspots** (review carefully when changed upstream):
   - PR comment update matching: `packages/convex/convex/github_pr_comments.ts` should keep legacy signature matchers to avoid duplicate comments. Prefer making the signature base URL/bot name configurable (forks should not be pinned to cmux.dev or manaflow.com).
   - Proxy hostname parsing: keep `.manaflow.com`-style host parsing working by ensuring `com` is included in the proxy hostname regex in both `packages/shared/src/components/environment/utils.ts` and `apps/www/components/preview/preview-configure-client.tsx`.
