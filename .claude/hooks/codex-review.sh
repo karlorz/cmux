@@ -36,21 +36,11 @@ fi
 TMPFILE=$(mktemp)
 trap 'rm -f "$TMPFILE"' EXIT
 
-# Build review prompt with guidelines from REVIEW.md
-REVIEW_PROMPT="Review all changes compared to main, including staged, unstaged, and untracked changes."
-if [ -f "$CLAUDE_PROJECT_DIR/REVIEW.md" ]; then
-  REVIEW_PROMPT="$REVIEW_PROMPT
-
-Apply these review guidelines:
-
-$(cat "$CLAUDE_PROJECT_DIR/REVIEW.md")"
-fi
-
 unbuffer codex \
   --dangerously-bypass-approvals-and-sandbox \
   --model gpt-5.3-codex \
-  -c model_reasoning_effort="high" \
-  review --base main "$REVIEW_PROMPT" > "$TMPFILE" 2>&1 || true
+  -c model_reasoning_effort="low" \
+  review --base main > "$TMPFILE" 2>&1 || true
 
 # Strip ANSI codes first, then extract final codex response
 CLEAN=$(sed 's/\x1b\[[0-9;]*m//g' "$TMPFILE")

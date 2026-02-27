@@ -13,7 +13,10 @@ User focus (optional): $ARGUMENTS
 ## Auto-collected context
 
 ### Codex review output (mandatory)
-!`cd "$CLAUDE_PROJECT_DIR" && REVIEW_PROMPT="Review all changes compared to main, including staged, unstaged, and untracked changes."; if [ -f "$CLAUDE_PROJECT_DIR/REVIEW.md" ]; then REVIEW_PROMPT="$REVIEW_PROMPT\n\nApply these review guidelines:\n\n$(cat "$CLAUDE_PROJECT_DIR/REVIEW.md")"; fi; unbuffer codex --dangerously-bypass-approvals-and-sandbox --model gpt-5.3-codex -c model_reasoning_effort="high" review --base main "$(echo -e "$REVIEW_PROMPT")" 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | awk '/^codex$/ { found=1; content=""; next } found { content = content $0 "\n" } END { print content }' | sed '/^$/d' | grep -v '^tokens used' | head -80 || true`
+!`cd "$CLAUDE_PROJECT_DIR" && unbuffer codex --dangerously-bypass-approvals-and-sandbox --model gpt-5.3-codex -c model_reasoning_effort="low" review --base main 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | awk '/^codex$/ { found=1; content=""; next } found { content = content $0 "\n" } END { print content }' | sed '/^$/d' | grep -v '^tokens used' | head -80 || true`
+
+### Codex review uncommitted changes (mandatory)
+!`cd "$CLAUDE_PROJECT_DIR" && if [ -n "$(git status --porcelain)" ]; then unbuffer codex --dangerously-bypass-approvals-and-sandbox --model gpt-5.3-codex -c model_reasoning_effort="low" review --uncommitted 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | awk '/^codex$/ { found=1; content=""; next } found { content = content $0 "\n" } END { print content }' | sed '/^$/d' | grep -v '^tokens used' | head -80; else echo "(no uncommitted changes)"; fi || true`
 
 ### Divergence vs upstream/main
 !`cd "$CLAUDE_PROJECT_DIR" && git fetch origin --prune >/dev/null 2>&1 && git fetch upstream --prune >/dev/null 2>&1 && git rev-list --left-right --count main...upstream/main | awk '{print "ahead=" $1 " behind=" $2}'`
