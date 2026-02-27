@@ -389,7 +389,7 @@ pveLxcRouter.openapi(
         return c.text("Instance not found", 404);
       }
       console.error("[pve-lxc.preview.exec] Failed to execute command", error);
-      return c.text(`Failed to execute command: ${errorMessage}`, 500);
+      return c.text("Failed to execute command", 500);
     }
   }
 );
@@ -450,7 +450,7 @@ pveLxcRouter.openapi(
         return c.text("Instance not found", 404);
       }
       console.error("[pve-lxc.preview.stop] Failed to stop instance", error);
-      return c.text(`Failed to stop instance: ${errorMessage}`, 500);
+      return c.text("Failed to stop instance", 500);
     }
   }
 );
@@ -540,7 +540,7 @@ pveLxcRouter.openapi(
         return c.text("Instance not found", 404);
       }
       console.error("[pve-lxc.preview.read-file] Failed to read file", error);
-      return c.text(`Failed to read file: ${errorMessage}`, 500);
+      return c.text("Failed to read file", 500);
     }
   }
 );
