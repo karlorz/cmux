@@ -22,9 +22,6 @@ Test repos (use for `devsh task create --repo`):
 - `karlorz/testing-repo-3`
 
 # Git/PR
-- Current session: PRs target `feat/head-agent-orchestration`
-- After orchestration complete: PRs target `karlorz/cmux:main`
-- Upstream submissions: `manaflow-ai/manaflow` (explicit request only)
 - gh repo set-default karlorz/cmux
 ✓ Set karlorz/cmux as the default repository for the current directory
 
