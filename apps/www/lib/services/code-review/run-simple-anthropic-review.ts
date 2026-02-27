@@ -1,5 +1,6 @@
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import { createOpenAI } from "@ai-sdk/openai";
+import type { LanguageModel } from "ai";
 import { streamText } from "ai";
 
 import {
@@ -410,10 +411,13 @@ export async function runSimpleAnthropicReviewStream(
         const prompt = buildFilePrompt(prLabel, file.filePath, file.diffText, tooltipLanguage);
 
         try {
-          const modelInstance =
+          // Type assertion needed: ai SDK's LanguageModel type lags behind provider packages
+          // that now return LanguageModelV3. The runtime API is compatible.
+          const modelInstance = (
             effectiveModelConfig.provider === "openai"
               ? openai(effectiveModelConfig.model)
-              : bedrock(effectiveModelConfig.model);
+              : bedrock(effectiveModelConfig.model)
+          ) as LanguageModel;
 
           const stream = streamText({
             model: modelInstance,
