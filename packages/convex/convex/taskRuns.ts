@@ -95,29 +95,37 @@ async function syncTaskRunPullRequests(
     }
   }
 
-  // Delete entries that no longer exist
-  for (const entry of existingEntries) {
-    const key = `${entry.repoFullName}:${entry.prNumber}`;
-    if (!newPrs.has(key)) {
-      await ctx.db.delete(entry._id);
-    }
-  }
-
-  // Add new entries
+  // Determine entries to delete and add
   const existingKeys = new Set(
     existingEntries.map((e) => `${e.repoFullName}:${e.prNumber}`),
   );
+
+  const toDelete = existingEntries.filter((entry) => {
+    const key = `${entry.repoFullName}:${entry.prNumber}`;
+    return !newPrs.has(key);
+  });
+
+  const toInsert: Array<{ repoFullName: string; prNumber: number }> = [];
   for (const [key, pr] of newPrs) {
     if (!existingKeys.has(key)) {
-      await ctx.db.insert("taskRunPullRequests", {
+      toInsert.push(pr);
+    }
+  }
+
+  // Batch operations using Promise.all to avoid N+1 queries
+  const now = Date.now();
+  await Promise.all([
+    ...toDelete.map((entry) => ctx.db.delete(entry._id)),
+    ...toInsert.map((pr) =>
+      ctx.db.insert("taskRunPullRequests", {
         taskRunId,
         teamId,
         repoFullName: pr.repoFullName,
         prNumber: pr.prNumber,
-        createdAt: Date.now(),
-      });
-    }
-  }
+        createdAt: now,
+      })
+    ),
+  ]);
 }
 
 function deriveGeneratedBranchName(branch?: string | null): string | undefined {
