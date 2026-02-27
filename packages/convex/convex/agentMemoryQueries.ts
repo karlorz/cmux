@@ -133,8 +133,8 @@ export const getLatestTeamMailbox = authQuery({
             allMessages.push(msg);
           }
         }
-      } catch {
-        // Skip invalid JSON snapshots
+      } catch (error) {
+        console.error("[agentMemory] Failed to parse mailbox snapshot", error);
         continue;
       }
     }
@@ -225,7 +225,8 @@ export const getLatestTeamMailboxInternal = internalQuery({
             allMessages.push(msg);
           }
         }
-      } catch {
+      } catch (error) {
+        console.error("[agentMemory] Failed to parse mailbox snapshot", error);
         continue;
       }
     }
