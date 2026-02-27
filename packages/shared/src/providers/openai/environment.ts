@@ -95,12 +95,6 @@ function generateModelMigrations(): string {
   return `\n[notice.model_migrations]\n${migrations}\n`;
 }
 
-// Strip existing [notice.model_migrations] section from TOML
-// Regex matches from [notice.model_migrations] to next section header or EOF
-function stripModelMigrations(toml: string): string {
-  return toml.replace(/\[notice\.model_migrations\][\s\S]*?(?=\n\[|$)/g, "");
-}
-
 export async function getOpenAIEnvironment(
   ctx: EnvironmentContext
 ): Promise<EnvironmentResult> {
