@@ -100,9 +100,8 @@ approval_mode = "full"`);
 });
 
 describe("getOpenAIEnvironment", () => {
-  it("generates managed model migrations targeting gpt-5.2-codex", async () => {
-    // Note: getOpenAIEnvironment no longer reads from host filesystem
-    // to avoid credential leakage. It generates a clean config.toml.
+  it("generates managed model migrations targeting gpt-5.2-codex (server mode)", async () => {
+    // Server mode (useHostConfig: false) generates a clean config.toml
     const result = await getOpenAIEnvironment({} as never);
     const configFile = result.files?.find(
       (file) => file.destinationPath === "$HOME/.codex/config.toml"
@@ -123,8 +122,8 @@ describe("getOpenAIEnvironment", () => {
     expect(toml).not.toContain('"gpt-5.3-codex" =');
   });
 
-  it("does not read from host filesystem to prevent credential leakage", async () => {
-    // Create files in a temp home directory that should NOT be read
+  it("does not read from host filesystem in server mode (useHostConfig: false)", async () => {
+    // Create files in a temp home directory that should NOT be read in server mode
     const homeDir = await mkdtemp(join(tmpdir(), "cmux-openai-home-"));
     const previousHome = process.env.HOME;
     process.env.HOME = homeDir;
@@ -150,6 +149,7 @@ host_secret = "should-not-leak"
         "utf-8"
       );
 
+      // Server mode: useHostConfig defaults to false
       const result = await getOpenAIEnvironment({} as never);
 
       // Verify config.toml does NOT contain host-specific settings
@@ -179,6 +179,78 @@ host_secret = "should-not-leak"
         (file) => file.destinationPath === "$HOME/.codex/auth.json"
       );
       expect(authFile).toBeUndefined();
+    } finally {
+      process.env.HOME = previousHome;
+      await rm(homeDir, { recursive: true, force: true });
+    }
+  });
+
+  it("reads from host filesystem in desktop mode (useHostConfig: true)", async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), "cmux-openai-home-"));
+    const previousHome = process.env.HOME;
+    process.env.HOME = homeDir;
+
+    try {
+      await mkdir(join(homeDir, ".codex"), { recursive: true });
+      await writeFile(join(homeDir, ".codex/auth.json"), '{"user": "desktop-user"}', "utf-8");
+      await writeFile(join(homeDir, ".codex/instructions.md"), "My custom instructions", "utf-8");
+      await writeFile(
+        join(homeDir, ".codex/config.toml"),
+        `notify = ["/root/lifecycle/codex-notify.sh"]
+approval_mode = "full"
+model = "gpt-5"
+model_reasoning_effort = "high"
+
+[notice.model_migrations]
+"o3" = "gpt-5.3-codex"
+
+[some_section]
+foo = "bar"
+`,
+        "utf-8"
+      );
+
+      // Desktop mode: useHostConfig: true
+      const result = await getOpenAIEnvironment({ useHostConfig: true } as never);
+
+      // Verify auth.json IS copied from host
+      const authFile = result.files?.find(
+        (file) => file.destinationPath === "$HOME/.codex/auth.json"
+      );
+      expect(authFile).toBeDefined();
+      const auth = Buffer.from(authFile!.contentBase64, "base64").toString("utf-8");
+      expect(auth).toContain("desktop-user");
+
+      // Verify instructions.md includes host content
+      const instructionsFile = result.files?.find(
+        (file) => file.destinationPath === "$HOME/.codex/instructions.md"
+      );
+      expect(instructionsFile).toBeDefined();
+      const instructions = Buffer.from(
+        instructionsFile!.contentBase64,
+        "base64"
+      ).toString("utf-8");
+      expect(instructions).toContain("My custom instructions");
+      expect(instructions).toContain("memory"); // Also includes memory protocol
+
+      // Verify config.toml merges host settings (minus filtered keys)
+      const configFile = result.files?.find(
+        (file) => file.destinationPath === "$HOME/.codex/config.toml"
+      );
+      expect(configFile).toBeDefined();
+      const toml = Buffer.from(configFile!.contentBase64, "base64").toString(
+        "utf-8"
+      );
+      expect(toml).toContain('notify = ["/root/lifecycle/codex-notify.sh"]');
+      expect(toml).toContain('approval_mode = "full"');
+      expect(toml).toContain("[some_section]");
+      expect(toml).toContain('foo = "bar"');
+      // Filtered keys should be removed
+      expect(toml).not.toContain('model = "gpt-5"');
+      expect(toml).not.toContain('model_reasoning_effort = "high"');
+      // Model migrations should be replaced with managed ones
+      expect(toml).not.toContain('"o3" = "gpt-5.3-codex"');
+      expect(toml).toContain('"o3" = "gpt-5.2-codex"');
     } finally {
       process.env.HOME = previousHome;
       await rm(homeDir, { recursive: true, force: true });
