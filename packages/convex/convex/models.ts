@@ -65,7 +65,6 @@ export const listAvailable = authQuery({
       .query("apiKeys")
       .withIndex("by_team", (q) => q.eq("teamId", teamId))
       .collect();
-    console.log(`[listAvailable] Found ${apiKeys.length} API keys for team: ${apiKeys.map(k => k.envVar).join(", ")}`);
 
     const configuredKeyEnvVars = new Set(apiKeys.map((k) => k.envVar));
 

@@ -35,8 +35,8 @@ export const sendMessage = authMutation({
       throw new Error("Forbidden: You don't own this task run");
     }
 
-    // Generate unique message ID
-    const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // Generate unique message ID using crypto.randomUUID for collision resistance
+    const messageId = `msg_${crypto.randomUUID()}`;
 
     // Store message in agentOrchestrateMessages table
     await ctx.db.insert("agentOrchestrateMessages", {
