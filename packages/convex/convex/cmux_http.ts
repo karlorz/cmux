@@ -1819,7 +1819,11 @@ export const listTasks = httpAction(async (ctx, req) => {
   const teamSlugOrId = url.searchParams.get("teamSlugOrId");
   const archived = url.searchParams.get("archived") === "true";
   const limitParam = url.searchParams.get("limit");
-  const limit = limitParam ? parseInt(limitParam, 10) : undefined;
+  // Validate limit: must be positive integer, capped at 100 to prevent resource exhaustion
+  const parsedLimit = limitParam ? parseInt(limitParam, 10) : undefined;
+  const limit = parsedLimit !== undefined && !isNaN(parsedLimit) && parsedLimit > 0
+    ? Math.min(parsedLimit, 100)
+    : undefined;
 
   if (!teamSlugOrId) {
     return jsonResponse(

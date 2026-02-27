@@ -673,13 +673,11 @@ async function handleResponse(
       textPreview: decoded.slice(0, 300),
       hexPreview,
     });
+    // Return generic error without upstream response details to prevent info disclosure
     return jsonResponse(
       {
-        error: "Invalid JSON response from upstream",
+        error: "Invalid response from upstream service",
         status: response.status,
-        contentType: response.headers.get("content-type"),
-        bodyPreview: decoded.slice(0, 300),
-        hexPreview,
       },
       response.status || 500
     );
