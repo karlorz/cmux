@@ -3,16 +3,23 @@
 # Style
 - Do not use emojis in shell scripts or debug messages
 
-# Testing with devsh
+# devsh models
+
+Production models (use for `--agent` on feature/fix tasks):
+- `claude/opus-4.5`
+- `codex/gpt-5.3-codex-xhigh`
+- `codex/gpt-5.2-xhigh`
+
+Test models (use for `--agent` only for testing/validation, NOT for real work):
+- `claude/haiku-4.5`
+- `codex/gpt-5.1-codex-mini`
+- `opencode/big-pickle`
+
+## Test repos
 Test repos (use for `devsh task create --repo`):
 - `karlorz/testing-repo-1`
 - `karlorz/testing-repo-2`
 - `karlorz/testing-repo-3`
-
-Test models (use for `--agent`):
-- `claude/haiku-4.5`
-- `codex/gpt-5.1-codex-mini`
-- `opencode/big-pickle`
 
 # Git/PR
 - Current session: PRs target `feat/head-agent-orchestration`
