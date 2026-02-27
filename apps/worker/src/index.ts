@@ -1036,6 +1036,18 @@ managementIO.on("connection", (socket) => {
         await fs.writeFile(credentialStorePath, credentialsContent);
         await fs.chmod(credentialStorePath, 0o600);
         console.log("GitHub credentials stored in .git-credentials");
+
+        // Authenticate gh CLI with the same token so `gh pr create` works
+        try {
+          await execAsync(
+            `printf '%s' "$GH_TOKEN" | gh auth login --with-token 2>&1`,
+            { env: { ...process.env, GH_TOKEN: validated.githubToken } },
+          );
+          await execAsync("gh auth setup-git 2>&1");
+          console.log("GitHub CLI authenticated with token");
+        } catch (ghAuthError) {
+          console.error("Failed to authenticate gh CLI:", ghAuthError);
+        }
       } else {
         const credentialSection = configSections.get("credential");
         if (credentialSection?.get("helper")) {
