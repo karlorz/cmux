@@ -12,11 +12,19 @@ User focus (optional): $ARGUMENTS
 
 ## Auto-collected context
 
-### Codex review output (mandatory)
-!`cd "$CLAUDE_PROJECT_DIR" && T=$(mktemp) && codex --dangerously-bypass-approvals-and-sandbox --model gpt-5.3-codex -c model_reasoning_effort="low" review --base main >"$T" 2>&1; sed 's/\x1b\[[0-9;]*m//g' "$T" | awk '/^codex$/{found=1;c="";next}found{c=c $0 "\n"}END{print c}' | sed '/^$/d' | grep -v '^tokens used' | head -80; rm -f "$T"`
+### Codex review output
 
-### Codex review uncommitted changes (mandatory)
-!`cd "$CLAUDE_PROJECT_DIR" && if [ -n "$(git status --porcelain)" ]; then T=$(mktemp) && codex --dangerously-bypass-approvals-and-sandbox --model gpt-5.3-codex -c model_reasoning_effort="low" review --uncommitted >"$T" 2>&1; sed 's/\x1b\[[0-9;]*m//g' "$T" | awk '/^codex$/{found=1;c="";next}found{c=c $0 "\n"}END{print c}' | sed '/^$/d' | grep -v '^tokens used' | head -80; rm -f "$T"; else echo "(no uncommitted changes)"; fi`
+Run codex review using Bash tool (the `!` backtick expansion times out for long-running commands).
+
+**Committed changes** - run this exact command and include the full output:
+```bash
+T=$(mktemp) && codex --dangerously-bypass-approvals-and-sandbox --model gpt-5.3-codex -c model_reasoning_effort="low" review --base main >"$T" 2>&1; sed 's/\x1b\[[0-9;]*m//g' "$T" | awk '/^codex$/{found=1;c="";next}found{c=c $0 "\n"}END{print c}' | sed '/^$/d' | grep -v '^tokens used' | head -80; rm -f "$T"
+```
+
+**Uncommitted changes** - run this only if `git status --porcelain` is non-empty:
+```bash
+T=$(mktemp) && codex --dangerously-bypass-approvals-and-sandbox --model gpt-5.3-codex -c model_reasoning_effort="low" review --uncommitted >"$T" 2>&1; sed 's/\x1b\[[0-9;]*m//g' "$T" | awk '/^codex$/{found=1;c="";next}found{c=c $0 "\n"}END{print c}' | sed '/^$/d' | grep -v '^tokens used' | head -80; rm -f "$T"
+```
 
 ### Divergence vs upstream/main
 !`cd "$CLAUDE_PROJECT_DIR" && git fetch origin --prune >/dev/null 2>&1 && git fetch upstream --prune >/dev/null 2>&1 && git rev-list --left-right --count main...upstream/main | awk '{print "ahead=" $1 " behind=" $2}'`
