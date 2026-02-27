@@ -92,14 +92,12 @@ function concatConfigBlocks(
  */
 async function waitForVSCodeReady(
   vscodeUrl: string,
-  options: { timeoutMs?: number; intervalMs?: number; maxRetries?: number } = {}
+  options: { timeoutMs?: number; intervalMs?: number } = {}
 ): Promise<boolean> {
-  const { timeoutMs = 15_000, intervalMs = 500, maxRetries = 30 } = options;
+  const { timeoutMs = 15_000, intervalMs = 500 } = options;
   const start = Date.now();
-  let retries = 0;
 
-  while (Date.now() - start < timeoutMs && retries < maxRetries) {
-    retries++;
+  while (Date.now() - start < timeoutMs) {
     try {
       // Use a simple HEAD request to check if the server is responding
       const response = await fetch(vscodeUrl, {
@@ -126,14 +124,12 @@ async function waitForVSCodeReady(
  */
 async function waitForWorkerReady(
   workerUrl: string,
-  options: { timeoutMs?: number; intervalMs?: number; maxRetries?: number } = {}
+  options: { timeoutMs?: number; intervalMs?: number } = {}
 ): Promise<boolean> {
-  const { timeoutMs = 15_000, intervalMs = 500, maxRetries = 30 } = options;
+  const { timeoutMs = 15_000, intervalMs = 500 } = options;
   const start = Date.now();
-  let retries = 0;
 
-  while (Date.now() - start < timeoutMs && retries < maxRetries) {
-    retries++;
+  while (Date.now() - start < timeoutMs) {
     try {
       // Worker service uses socket.io - check if the HTTP endpoint responds
       // Socket.io exposes a polling transport at /socket.io/?EIO=4&transport=polling
