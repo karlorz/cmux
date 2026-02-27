@@ -143,6 +143,23 @@ export const getScreenshotSet = internalQuery({
   },
 });
 
+export const getScreenshotSetsBatch = internalQuery({
+  args: {
+    screenshotSetIds: v.array(v.id("taskRunScreenshotSets")),
+  },
+  handler: async (ctx, args) => {
+    const sets = await Promise.all(
+      args.screenshotSetIds.map((id) => ctx.db.get(id))
+    );
+    // Return as a map for easy lookup
+    const result: Record<string, typeof sets[0]> = {};
+    for (let i = 0; i < args.screenshotSetIds.length; i++) {
+      result[args.screenshotSetIds[i]] = sets[i];
+    }
+    return result;
+  },
+});
+
 export const getScreenshotSetByRun = internalQuery({
   args: {
     previewRunId: v.id("previewRuns"),

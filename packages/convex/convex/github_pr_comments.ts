@@ -1188,22 +1188,30 @@ export const updatePreviewComment = internalAction({
             limit: MAX_PREVIOUS_SCREENSHOT_SETS + 1,
           })) ?? [];
 
+        // Filter runs and collect screenshotSetIds for batch query
+        const filteredRuns = previousRuns
+          .filter((run) => run._id !== previewRunId && run.screenshotSetId)
+          .slice(0, MAX_PREVIOUS_SCREENSHOT_SETS);
+
+        const screenshotSetIds = filteredRuns
+          .map((run) => run.screenshotSetId!)
+          .filter((id): id is typeof id => id !== undefined);
+
+        // Batch fetch all screenshot sets in one query
+        const screenshotSetsMap = screenshotSetIds.length > 0
+          ? await ctx.runQuery(internal.previewScreenshots.getScreenshotSetsBatch, {
+              screenshotSetIds,
+            })
+          : {};
+
         const previousSetEntries: Array<{
           run: PreviewRunDoc;
           set: ScreenshotSetDoc;
         }> = [];
-        for (const run of previousRuns) {
-          if (run._id === previewRunId) continue;
-          if (!run.screenshotSetId) continue;
-          const priorSet = await ctx.runQuery(
-            internal.previewScreenshots.getScreenshotSet,
-            { screenshotSetId: run.screenshotSetId },
-          );
+        for (const run of filteredRuns) {
+          const priorSet = run.screenshotSetId ? screenshotSetsMap[run.screenshotSetId] : null;
           if (!priorSet) continue;
           previousSetEntries.push({ run, set: priorSet });
-          if (previousSetEntries.length >= MAX_PREVIOUS_SCREENSHOT_SETS) {
-            break;
-          }
         }
 
         if (previousSetEntries.length > 0) {
@@ -1403,22 +1411,30 @@ export const postPreviewComment = internalAction({
             limit: MAX_PREVIOUS_SCREENSHOT_SETS + 1,
           })) ?? [];
 
+        // Filter runs and collect screenshotSetIds for batch query
+        const filteredRuns = previousRuns
+          .filter((run) => run._id !== previewRunId && run.screenshotSetId)
+          .slice(0, MAX_PREVIOUS_SCREENSHOT_SETS);
+
+        const screenshotSetIds = filteredRuns
+          .map((run) => run.screenshotSetId!)
+          .filter((id): id is typeof id => id !== undefined);
+
+        // Batch fetch all screenshot sets in one query
+        const screenshotSetsMap = screenshotSetIds.length > 0
+          ? await ctx.runQuery(internal.previewScreenshots.getScreenshotSetsBatch, {
+              screenshotSetIds,
+            })
+          : {};
+
         const previousSetEntries: Array<{
           run: PreviewRunDoc;
           set: ScreenshotSetDoc;
         }> = [];
-        for (const run of previousRuns) {
-          if (run._id === previewRunId) continue;
-          if (!run.screenshotSetId) continue;
-          const priorSet = await ctx.runQuery(
-            internal.previewScreenshots.getScreenshotSet,
-            { screenshotSetId: run.screenshotSetId },
-          );
+        for (const run of filteredRuns) {
+          const priorSet = run.screenshotSetId ? screenshotSetsMap[run.screenshotSetId] : null;
           if (!priorSet) continue;
           previousSetEntries.push({ run, set: priorSet });
-          if (previousSetEntries.length >= MAX_PREVIOUS_SCREENSHOT_SETS) {
-            break;
-          }
         }
 
         if (previousSetEntries.length > 0) {

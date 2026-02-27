@@ -444,8 +444,12 @@ export class DockerVSCodeInstance extends VSCodeInstance {
       const info = await existingContainer.inspect().catch(() => null);
       if (info) {
         dockerLogger.info(`Removing existing container ${this.containerName}`);
-        await existingContainer.stop().catch(() => {});
-        await existingContainer.remove().catch(() => {});
+        await existingContainer.stop().catch((stopError) => {
+          dockerLogger.warn(`Failed to stop container ${this.containerName}:`, stopError);
+        });
+        await existingContainer.remove().catch((removeError) => {
+          dockerLogger.warn(`Failed to remove container ${this.containerName}:`, removeError);
+        });
       }
     } catch (_error) {
       // Container doesn't exist, which is fine

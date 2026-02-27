@@ -698,7 +698,9 @@ sandboxesRouter.openapi(
       const vncService = exposed.find((service) => service.port === 39380);
       const xtermService = exposed.find((service) => service.port === 39383);
       if (!vscodeService || !workerService) {
-        await instance.stop().catch(() => { });
+        await instance.stop().catch((stopError) => {
+          console.error(`[sandboxes.start] Failed to stop instance ${instance.id}:`, stopError);
+        });
         return c.text("VSCode or worker service not found", 500);
       }
 
@@ -956,7 +958,9 @@ sandboxesRouter.openapi(
           });
         } catch (error) {
           console.error(`[sandboxes.start] Hydration failed:`, error);
-          await instance.stop().catch(() => { });
+          await instance.stop().catch((stopError) => {
+            console.error(`[sandboxes.start] Failed to stop instance ${instance.id} after hydration failure:`, stopError);
+          });
           return c.text("Failed to hydrate sandbox", 500);
         }
       }
