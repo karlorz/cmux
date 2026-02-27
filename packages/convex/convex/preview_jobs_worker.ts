@@ -682,8 +682,13 @@ async function startPveLxcInstance(options: {
       if (testResult.exit_code === 0 && testResult.stdout.includes("ready")) {
         return instance;
       }
-    } catch {
-      // Exec not ready yet, continue polling
+    } catch (pollError) {
+      // Exec daemon not ready yet - this is expected during startup, continue polling
+      console.log("[preview-jobs] PVE-LXC exec not ready yet, continuing to poll", {
+        instanceId: instance.instanceId,
+        elapsedMs: Date.now() - start,
+        error: pollError instanceof Error ? pollError.message : String(pollError),
+      });
     }
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
@@ -796,7 +801,13 @@ async function readFileFromPveLxc(options: {
     }
 
     return await response.json() as { base64: string; size: number };
-  } catch {
+  } catch (readError) {
+    // File read failures are expected for non-existent files - return null for graceful handling
+    console.log("[preview-jobs] Failed to read file from PVE-LXC (may not exist)", {
+      instanceId: options.instanceId,
+      filePath: options.filePath,
+      error: readError instanceof Error ? readError.message : String(readError),
+    });
     return null;
   }
 }
@@ -1712,6 +1723,50 @@ fi
   }
 }
 
+/**
+ * Helper to mark task run and parent task as completed when skipping preview execution.
+ * Consolidates the repeated pattern of completing both taskRun and its parent task.
+ */
+async function markTaskRunAsSkipped(
+  ctx: ActionCtx,
+  taskRunId: Id<"taskRuns">,
+  previewRunId: Id<"previewRuns">,
+  skipReason: string,
+): Promise<void> {
+  try {
+    await ctx.runMutation(internal.taskRuns.workerComplete, {
+      taskRunId,
+      exitCode: 0,
+    });
+    console.log("[preview-jobs] Task run marked as completed", {
+      previewRunId,
+      taskRunId,
+      skipReason,
+    });
+    // Also mark the parent task as completed
+    const taskRun = await ctx.runQuery(internal.taskRuns.getById, { id: taskRunId });
+    if (taskRun?.taskId) {
+      await ctx.runMutation(internal.tasks.setCompletedInternal, {
+        taskId: taskRun.taskId,
+        isCompleted: true,
+        crownEvaluationStatus: "succeeded",
+      });
+      console.log("[preview-jobs] Task marked as completed", {
+        previewRunId,
+        taskId: taskRun.taskId,
+        skipReason,
+      });
+    }
+  } catch (completeError) {
+    console.error("[preview-jobs] Failed to mark task run/task as completed", {
+      previewRunId,
+      taskRunId,
+      skipReason,
+      error: completeError instanceof Error ? completeError.message : String(completeError),
+    });
+  }
+}
+
 export async function runPreviewJob(
   ctx: ActionCtx,
   previewRunId: Id<"previewRuns">,
@@ -1767,37 +1822,8 @@ export async function runPreviewJob(
       repoFullName: run.repoFullName,
       prNumber: run.prNumber,
     });
-    // Mark taskRun and task as completed if they exist
     if (taskRunId) {
-      try {
-        await ctx.runMutation(internal.taskRuns.workerComplete, {
-          taskRunId,
-          exitCode: 0,
-        });
-        console.log("[preview-jobs] Task run marked as completed (skipped - no environmentId)", {
-          previewRunId,
-          taskRunId,
-        });
-        // Also mark the parent task as completed
-        const taskRun = await ctx.runQuery(internal.taskRuns.getById, { id: taskRunId });
-        if (taskRun?.taskId) {
-          await ctx.runMutation(internal.tasks.setCompletedInternal, {
-            taskId: taskRun.taskId,
-            isCompleted: true,
-            crownEvaluationStatus: "succeeded",
-          });
-          console.log("[preview-jobs] Task marked as completed (skipped - no environmentId)", {
-            previewRunId,
-            taskId: taskRun.taskId,
-          });
-        }
-      } catch (completeError) {
-        console.error("[preview-jobs] Failed to mark task run/task as completed", {
-          previewRunId,
-          taskRunId,
-          error: completeError instanceof Error ? completeError.message : String(completeError),
-        });
-      }
+      await markTaskRunAsSkipped(ctx, taskRunId, previewRunId, "no environmentId");
     }
     await ctx.runMutation(internal.previewRuns.updateStatus, {
       previewRunId,
@@ -1815,37 +1841,8 @@ export async function runPreviewJob(
       previewRunId,
       environmentId: config.environmentId,
     });
-    // Mark taskRun and task as completed if they exist
     if (taskRunId) {
-      try {
-        await ctx.runMutation(internal.taskRuns.workerComplete, {
-          taskRunId,
-          exitCode: 0,
-        });
-        console.log("[preview-jobs] Task run marked as completed (skipped - environment not found)", {
-          previewRunId,
-          taskRunId,
-        });
-        // Also mark the parent task as completed
-        const taskRun = await ctx.runQuery(internal.taskRuns.getById, { id: taskRunId });
-        if (taskRun?.taskId) {
-          await ctx.runMutation(internal.tasks.setCompletedInternal, {
-            taskId: taskRun.taskId,
-            isCompleted: true,
-            crownEvaluationStatus: "succeeded",
-          });
-          console.log("[preview-jobs] Task marked as completed (skipped - environment not found)", {
-            previewRunId,
-            taskId: taskRun.taskId,
-          });
-        }
-      } catch (completeError) {
-        console.error("[preview-jobs] Failed to mark task run/task as completed", {
-          previewRunId,
-          taskRunId,
-          error: completeError instanceof Error ? completeError.message : String(completeError),
-        });
-      }
+      await markTaskRunAsSkipped(ctx, taskRunId, previewRunId, "environment not found");
     }
     await ctx.runMutation(internal.previewRuns.updateStatus, {
       previewRunId,
@@ -1862,37 +1859,8 @@ export async function runPreviewJob(
       previewRunId,
       environmentId: environment._id,
     });
-    // Mark taskRun and task as completed if they exist
     if (taskRunId) {
-      try {
-        await ctx.runMutation(internal.taskRuns.workerComplete, {
-          taskRunId,
-          exitCode: 0,
-        });
-        console.log("[preview-jobs] Task run marked as completed (skipped - no snapshot)", {
-          previewRunId,
-          taskRunId,
-        });
-        // Also mark the parent task as completed
-        const taskRun = await ctx.runQuery(internal.taskRuns.getById, { id: taskRunId });
-        if (taskRun?.taskId) {
-          await ctx.runMutation(internal.tasks.setCompletedInternal, {
-            taskId: taskRun.taskId,
-            isCompleted: true,
-            crownEvaluationStatus: "succeeded",
-          });
-          console.log("[preview-jobs] Task marked as completed (skipped - no snapshot)", {
-            previewRunId,
-            taskId: taskRun.taskId,
-          });
-        }
-      } catch (completeError) {
-        console.error("[preview-jobs] Failed to mark task run/task as completed", {
-          previewRunId,
-          taskRunId,
-          error: completeError instanceof Error ? completeError.message : String(completeError),
-        });
-      }
+      await markTaskRunAsSkipped(ctx, taskRunId, previewRunId, "no snapshot");
     }
     await ctx.runMutation(internal.previewRuns.updateStatus, {
       previewRunId,
