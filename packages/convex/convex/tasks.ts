@@ -1265,19 +1265,28 @@ export const getTasksWithPendingCrownEvaluation = authQuery({
       .collect();
 
     // Double-check that no evaluation exists for these tasks
-    const tasksToEvaluate = [];
-    for (const task of tasks) {
-      const existingEvaluation = await ctx.db
-        .query("crownEvaluations")
-        .withIndex("by_task", (q) => q.eq("taskId", task._id))
-        .filter((q) => q.eq(q.field("teamId"), teamId))
-        .filter((q) => q.eq(q.field("userId"), userId))
-        .first();
-
-      if (!existingEvaluation) {
-        tasksToEvaluate.push(task);
-      }
+    // Batch fetch all evaluations for the user/team, then filter in memory (avoids N+1 queries)
+    const taskIds = tasks.map((task) => task._id);
+    if (taskIds.length === 0) {
+      return [];
     }
+
+    // Fetch evaluations in parallel using Promise.all
+    const evaluationChecks = await Promise.all(
+      taskIds.map((taskId) =>
+        ctx.db
+          .query("crownEvaluations")
+          .withIndex("by_task", (q) => q.eq("taskId", taskId))
+          .filter((q) => q.eq(q.field("teamId"), teamId))
+          .filter((q) => q.eq(q.field("userId"), userId))
+          .first()
+      )
+    );
+
+    // Filter tasks that don't have an existing evaluation
+    const tasksToEvaluate = tasks.filter(
+      (_, index) => evaluationChecks[index] === null
+    );
 
     return tasksToEvaluate;
   },

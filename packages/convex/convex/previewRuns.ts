@@ -1,14 +1,11 @@
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
+import { normalizeRepoFullName } from "../_shared/git";
 import { getTeamId } from "../_shared/team";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { authMutation, authQuery } from "./users/utils";
 import { internalMutation, internalQuery } from "./_generated/server";
-
-function normalizeRepoFullName(value: string): string {
-  return value.trim().replace(/\.git$/i, "").toLowerCase();
-}
 
 export const enqueueFromWebhook = internalMutation({
   args: {
