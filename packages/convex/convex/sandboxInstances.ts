@@ -312,13 +312,24 @@ export const recordCreate = authMutation({
 
 /**
  * Bulk query activity records by instance IDs (internal, for maintenance).
+ * Uses batched parallel queries to avoid N+1 pattern.
  */
 export const getActivitiesByInstanceIdsInternal = internalQuery({
   args: {
     instanceIds: v.array(v.string()),
   },
   handler: async (ctx, args) => {
-    const results: Map<
+    // Batch fetch all activities in parallel
+    const activities = await Promise.all(
+      args.instanceIds.map((instanceId) =>
+        ctx.db
+          .query("sandboxInstanceActivity")
+          .withIndex("by_instanceId", (q) => q.eq("instanceId", instanceId))
+          .first()
+      )
+    );
+
+    const results: Record<
       string,
       {
         instanceId: string;
@@ -335,16 +346,12 @@ export const getActivitiesByInstanceIdsInternal = internalQuery({
         userId?: string;
         createdAt?: number;
       }
-    > = new Map();
+    > = {};
 
-    for (const instanceId of args.instanceIds) {
-      const activity = await ctx.db
-        .query("sandboxInstanceActivity")
-        .withIndex("by_instanceId", (q) => q.eq("instanceId", instanceId))
-        .first();
-
+    for (let i = 0; i < args.instanceIds.length; i++) {
+      const activity = activities[i];
       if (activity) {
-        results.set(instanceId, {
+        results[args.instanceIds[i]] = {
           instanceId: activity.instanceId,
           provider: activity.provider as SandboxProvider,
           vmid: activity.vmid,
@@ -358,10 +365,10 @@ export const getActivitiesByInstanceIdsInternal = internalQuery({
           teamId: activity.teamId,
           userId: activity.userId,
           createdAt: activity.createdAt,
-        });
+        };
       }
     }
 
-    return Object.fromEntries(results);
+    return results;
   },
 });

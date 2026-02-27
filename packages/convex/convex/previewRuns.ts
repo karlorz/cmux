@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import { normalizeRepoFullName } from "../_shared/git";
 import { getTeamId } from "../_shared/team";
 import { internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { authMutation, authQuery } from "./users/utils";
 import { internalMutation, internalQuery } from "./_generated/server";
 
@@ -638,6 +638,84 @@ export const listByConfig = authQuery({
   },
 });
 
+type PreviewRunDoc = Doc<"previewRuns">;
+
+type EnrichedPreviewRun = PreviewRunDoc & {
+  configRepoFullName?: string;
+  taskId?: Id<"tasks">;
+};
+
+type DbContext = {
+  db: {
+    get: <T extends "previewConfigs" | "taskRuns" | "tasks">(id: Id<T>) => Promise<Doc<T> | null>;
+  };
+};
+
+/**
+ * Batch-enrich preview runs with config repo name and taskId.
+ * Filters out runs whose linked task is archived.
+ * Uses batched lookups to avoid N+1 query patterns.
+ */
+async function enrichPreviewRuns(
+  ctx: DbContext,
+  runs: PreviewRunDoc[],
+  limit?: number
+): Promise<EnrichedPreviewRun[]> {
+  // Batch fetch all configs
+  const configIds = [...new Set(runs.map((r) => r.previewConfigId))];
+  const configs = await Promise.all(configIds.map((id) => ctx.db.get(id)));
+  const configMap = new Map(
+    configIds.map((id, i) => [id, configs[i]])
+  );
+
+  // Batch fetch all taskRuns
+  const taskRunIds = runs.map((r) => r.taskRunId).filter((id): id is Id<"taskRuns"> => id != null);
+  const taskRuns = await Promise.all(taskRunIds.map((id) => ctx.db.get(id)));
+  const taskRunMap = new Map(
+    taskRunIds.map((id, i) => [id, taskRuns[i]])
+  );
+
+  // Batch fetch all tasks (for archive check)
+  const taskIds = [...new Set(
+    taskRuns
+      .filter((tr): tr is Doc<"taskRuns"> => tr != null)
+      .map((tr) => tr.taskId)
+  )];
+  const tasks = await Promise.all(taskIds.map((id) => ctx.db.get(id)));
+  const taskMap = new Map(
+    taskIds.map((id, i) => [id, tasks[i]])
+  );
+
+  const enrichedRuns: EnrichedPreviewRun[] = [];
+
+  for (const run of runs) {
+    if (limit !== undefined && enrichedRuns.length >= limit) break;
+
+    const config = configMap.get(run.previewConfigId);
+    let taskId: Id<"tasks"> | undefined = undefined;
+    let isTaskArchived = false;
+
+    if (run.taskRunId) {
+      const taskRun = taskRunMap.get(run.taskRunId);
+      if (taskRun) {
+        taskId = taskRun.taskId;
+        const task = taskMap.get(taskRun.taskId);
+        isTaskArchived = task?.isArchived === true;
+      }
+    }
+
+    if (isTaskArchived) continue;
+
+    enrichedRuns.push({
+      ...run,
+      configRepoFullName: config?.repoFullName,
+      taskId,
+    });
+  }
+
+  return enrichedRuns;
+}
+
 export const listByTeam = authQuery({
   args: {
     teamSlugOrId: v.string(),
@@ -652,43 +730,7 @@ export const listByTeam = authQuery({
       .order("desc")
       .take(take * 2); // Fetch extra to account for filtered archived tasks
 
-    // Enrich with config repo name and taskId from linked taskRun
-    // Also filter out runs whose linked task is archived
-    const enrichedRuns: Array<
-      (typeof runs)[number] & {
-        configRepoFullName?: string;
-        taskId?: Id<"tasks">;
-      }
-    > = [];
-
-    for (const run of runs) {
-      if (enrichedRuns.length >= take) break;
-
-      const config = await ctx.db.get(run.previewConfigId);
-      let taskId = undefined;
-      let isTaskArchived = false;
-
-      if (run.taskRunId) {
-        const taskRun = await ctx.db.get(run.taskRunId);
-        if (taskRun) {
-          taskId = taskRun.taskId;
-          // Check if the linked task is archived
-          const task = await ctx.db.get(taskRun.taskId);
-          isTaskArchived = task?.isArchived === true;
-        }
-      }
-
-      // Skip runs whose linked task is archived
-      if (isTaskArchived) continue;
-
-      enrichedRuns.push({
-        ...run,
-        configRepoFullName: config?.repoFullName,
-        taskId,
-      });
-    }
-
-    return enrichedRuns;
+    return enrichPreviewRuns(ctx, runs, take);
   },
 });
 
@@ -708,39 +750,7 @@ export const listByTeamPaginated = authQuery({
       .order("desc")
       .paginate(args.paginationOpts);
 
-    // Enrich with config repo name and taskId from linked taskRun
-    // Also filter out runs whose linked task is archived
-    const enrichedPage: Array<
-      (typeof paginatedResult.page)[number] & {
-        configRepoFullName?: string;
-        taskId?: Id<"tasks">;
-      }
-    > = [];
-
-    for (const run of paginatedResult.page) {
-      const config = await ctx.db.get(run.previewConfigId);
-      let taskId = undefined;
-      let isTaskArchived = false;
-
-      if (run.taskRunId) {
-        const taskRun = await ctx.db.get(run.taskRunId);
-        if (taskRun) {
-          taskId = taskRun.taskId;
-          // Check if the linked task is archived
-          const task = await ctx.db.get(taskRun.taskId);
-          isTaskArchived = task?.isArchived === true;
-        }
-      }
-
-      // Skip runs whose linked task is archived
-      if (isTaskArchived) continue;
-
-      enrichedPage.push({
-        ...run,
-        configRepoFullName: config?.repoFullName,
-        taskId,
-      });
-    }
+    const enrichedPage = await enrichPreviewRuns(ctx, paginatedResult.page);
 
     return {
       ...paginatedResult,

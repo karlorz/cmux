@@ -238,6 +238,38 @@ export const getReadyTasks = authQuery({
 // ============================================================================
 
 /**
+ * Update dependents for each dependency task.
+ * Batches lookups with Promise.all to avoid N+1 queries.
+ */
+async function updateDependencyDependents(
+  ctx: { db: { get: (id: Id<"orchestrationTasks">) => Promise<Doc<"orchestrationTasks"> | null>; patch: (id: Id<"orchestrationTasks">, data: Partial<Doc<"orchestrationTasks">>) => Promise<void> } },
+  dependencies: Id<"orchestrationTasks">[],
+  newTaskId: Id<"orchestrationTasks">,
+  teamId: string,
+  now: number,
+  validateTeam: boolean
+): Promise<void> {
+  // Batch fetch all dependencies
+  const deps = await Promise.all(dependencies.map((id) => ctx.db.get(id)));
+
+  // Validate and update each dependency
+  await Promise.all(
+    dependencies.map(async (depId, i) => {
+      const dep = deps[i];
+      if (dep) {
+        if (validateTeam && dep.teamId !== teamId) {
+          throw new Error(`Dependency ${depId} belongs to a different team`);
+        }
+        await ctx.db.patch(depId, {
+          dependents: [...(dep.dependents ?? []), newTaskId],
+          updatedAt: now,
+        });
+      }
+    })
+  );
+}
+
+/**
  * Create a new orchestration task.
  * Requires authentication and team membership.
  */
@@ -275,20 +307,8 @@ export const createTask = authMutation({
     });
 
     // Update dependent tasks to track this dependency
-    // Security: validate dependencies belong to the same team
-    if (args.dependencies) {
-      for (const depId of args.dependencies) {
-        const dep = await ctx.db.get(depId);
-        if (dep) {
-          if (dep.teamId !== teamId) {
-            throw new Error(`Dependency ${depId} belongs to a different team`);
-          }
-          await ctx.db.patch(depId, {
-            dependents: [...(dep.dependents ?? []), taskId],
-            updatedAt: now,
-          });
-        }
-      }
+    if (args.dependencies && args.dependencies.length > 0) {
+      await updateDependencyDependents(ctx, args.dependencies, taskId, teamId, now, true);
     }
 
     return taskId;
@@ -329,16 +349,8 @@ export const createTaskInternal = internalMutation({
     });
 
     // Update dependent tasks to track this dependency
-    if (args.dependencies) {
-      for (const depId of args.dependencies) {
-        const dep = await ctx.db.get(depId);
-        if (dep) {
-          await ctx.db.patch(depId, {
-            dependents: [...(dep.dependents ?? []), taskId],
-            updatedAt: now,
-          });
-        }
-      }
+    if (args.dependencies && args.dependencies.length > 0) {
+      await updateDependencyDependents(ctx, args.dependencies, taskId, args.teamId, now, false);
     }
 
     return taskId;
@@ -626,6 +638,57 @@ async function wouldCreateCircularDependency(
 }
 
 /**
+ * Core logic for adding dependencies to a task.
+ * Validates team membership, checks for circular dependencies, and updates dependents.
+ * Uses batched queries to avoid N+1 patterns.
+ */
+async function addDependenciesCore(
+  ctx: { db: { get: (id: Id<"orchestrationTasks">) => Promise<Doc<"orchestrationTasks"> | null>; patch: (id: Id<"orchestrationTasks">, data: Partial<Doc<"orchestrationTasks">>) => Promise<void> } },
+  task: Doc<"orchestrationTasks">,
+  taskId: Id<"orchestrationTasks">,
+  dependencyIds: Id<"orchestrationTasks">[]
+): Promise<void> {
+  // Check for circular dependencies before adding
+  const wouldCycle = await wouldCreateCircularDependency(ctx, taskId, dependencyIds);
+  if (wouldCycle) {
+    throw new Error("Cannot add dependencies: would create a circular dependency");
+  }
+
+  const existing = task.dependencies ?? [];
+  const now = Date.now();
+
+  // Batch fetch all dependencies
+  const deps = await Promise.all(dependencyIds.map((id) => ctx.db.get(id)));
+
+  // Validate and update each dependency
+  await Promise.all(
+    dependencyIds.map(async (depId, i) => {
+      const dep = deps[i];
+      if (!dep) {
+        throw new Error(`Dependency ${depId} not found`);
+      }
+      if (dep.teamId !== task.teamId) {
+        throw new Error(`Dependency ${depId} belongs to a different team`);
+      }
+      // Only add to dependents if not already a dependency
+      if (!existing.includes(depId)) {
+        await ctx.db.patch(depId, {
+          dependents: [...(dep.dependents ?? []), taskId],
+          updatedAt: now,
+        });
+      }
+    })
+  );
+
+  const merged = [...new Set([...existing, ...dependencyIds])];
+
+  await ctx.db.patch(taskId, {
+    dependencies: merged,
+    updatedAt: now,
+  });
+}
+
+/**
  * Add dependencies to a task.
  * The task will not be eligible for assignment until all dependencies are completed.
  * Requires authentication and team membership.
@@ -648,40 +711,7 @@ export const addDependencies = authMutation({
     // Verify user has access to task's team
     await getTeamId(ctx, task.teamId);
 
-    // Check for circular dependencies before adding
-    const wouldCycle = await wouldCreateCircularDependency(ctx, taskId, dependencyIds);
-    if (wouldCycle) {
-      throw new Error("Cannot add dependencies: would create a circular dependency");
-    }
-
-    // Merge with existing dependencies, avoiding duplicates
-    const existing = task.dependencies ?? [];
-    const now = Date.now();
-
-    // Validate each dependency belongs to the same team and update dependents
-    for (const depId of dependencyIds) {
-      const dep = await ctx.db.get(depId);
-      if (!dep) {
-        throw new Error(`Dependency ${depId} not found`);
-      }
-      if (dep.teamId !== task.teamId) {
-        throw new Error(`Dependency ${depId} belongs to a different team`);
-      }
-      // Only add to dependents if not already a dependency
-      if (!existing.includes(depId)) {
-        await ctx.db.patch(depId, {
-          dependents: [...(dep.dependents ?? []), taskId],
-          updatedAt: now,
-        });
-      }
-    }
-
-    const merged = [...new Set([...existing, ...dependencyIds])];
-
-    await ctx.db.patch(taskId, {
-      dependencies: merged,
-      updatedAt: now,
-    });
+    await addDependenciesCore(ctx, task, taskId, dependencyIds);
   },
 });
 
@@ -700,39 +730,7 @@ export const addDependenciesInternal = internalMutation({
       throw new Error("Task not found");
     }
 
-    // Check for circular dependencies before adding
-    const wouldCycle = await wouldCreateCircularDependency(ctx, taskId, dependencyIds);
-    if (wouldCycle) {
-      throw new Error("Cannot add dependencies: would create a circular dependency");
-    }
-
-    const existing = task.dependencies ?? [];
-    const now = Date.now();
-
-    // Validate each dependency belongs to the same team and update dependents
-    for (const depId of dependencyIds) {
-      const dep = await ctx.db.get(depId);
-      if (!dep) {
-        throw new Error(`Dependency ${depId} not found`);
-      }
-      if (dep.teamId !== task.teamId) {
-        throw new Error(`Dependency ${depId} belongs to a different team`);
-      }
-      // Only add to dependents if not already a dependency
-      if (!existing.includes(depId)) {
-        await ctx.db.patch(depId, {
-          dependents: [...(dep.dependents ?? []), taskId],
-          updatedAt: now,
-        });
-      }
-    }
-
-    const merged = [...new Set([...existing, ...dependencyIds])];
-
-    await ctx.db.patch(taskId, {
-      dependencies: merged,
-      updatedAt: now,
-    });
+    await addDependenciesCore(ctx, task, taskId, dependencyIds);
   },
 });
 
