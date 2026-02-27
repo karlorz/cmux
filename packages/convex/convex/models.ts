@@ -136,21 +136,34 @@ export const reorder = authMutation({
 
     const now = Date.now();
 
-    // Update sortOrder for each model based on position in array
-    for (let i = 0; i < args.modelNames.length; i++) {
-      const modelName = args.modelNames[i];
-      const model = await ctx.db
-        .query("models")
-        .withIndex("by_name", (q) => q.eq("name", modelName))
-        .first();
+    // Batch fetch all models by name using parallel queries
+    const models = await Promise.all(
+      args.modelNames.map((name) =>
+        ctx.db
+          .query("models")
+          .withIndex("by_name", (q) => q.eq("name", name))
+          .first()
+      )
+    );
 
-      if (model) {
-        await ctx.db.patch(model._id, {
-          sortOrder: i,
-          updatedAt: now,
-        });
-      }
-    }
+    // Build name-to-model map for efficient lookup
+    const modelByName = new Map(
+      args.modelNames.map((name, i) => [name, models[i]])
+    );
+
+    // Batch update all models with new sort orders
+    await Promise.all(
+      args.modelNames.map((name, i) => {
+        const model = modelByName.get(name);
+        if (model) {
+          return ctx.db.patch(model._id, {
+            sortOrder: i,
+            updatedAt: now,
+          });
+        }
+        return Promise.resolve();
+      })
+    );
 
     return { success: true };
   },

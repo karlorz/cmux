@@ -137,23 +137,26 @@ export const getInfo = internalQuery({
 
 /**
  * Get provider info for multiple devbox instances.
+ * Uses batched parallel queries to avoid N+1 pattern.
  */
 export const getInfoBatch = internalQuery({
   args: {
     devboxIds: v.array(v.string()),
   },
   handler: async (ctx, args) => {
-    const results: Array<{ devboxId: string; provider: string }> = [];
-    for (const devboxId of args.devboxIds) {
-      const info = await ctx.db
-        .query("devboxInfo")
-        .withIndex("by_devboxId", (q) => q.eq("devboxId", devboxId))
-        .first();
-      if (info) {
-        results.push({ devboxId: info.devboxId, provider: info.provider });
-      }
-    }
-    return results;
+    // Batch fetch all devbox info records in parallel
+    const infos = await Promise.all(
+      args.devboxIds.map((devboxId) =>
+        ctx.db
+          .query("devboxInfo")
+          .withIndex("by_devboxId", (q) => q.eq("devboxId", devboxId))
+          .first()
+      )
+    );
+
+    return infos
+      .filter((info): info is NonNullable<typeof info> => info != null)
+      .map((info) => ({ devboxId: info.devboxId, provider: info.provider }));
   },
 });
 
