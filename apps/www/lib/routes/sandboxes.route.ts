@@ -1568,7 +1568,7 @@ sandboxesRouter.openapi(
       const convex = getConvex({ accessToken });
 
       // Verify team access
-      await verifyTeamAccess({
+      const team = await verifyTeamAccess({
         req: c.req.raw,
         teamSlugOrId: body.teamSlugOrId,
       });
@@ -1582,6 +1582,25 @@ sandboxesRouter.openapi(
       );
       if (!instance) {
         return c.text("Instance not found", 404);
+      }
+
+      // Verify sandbox ownership - check both activity record and instance metadata
+      if (isPveLxcInstanceId(instanceId)) {
+        const activity = await convex.query(api.sandboxInstances.getActivity, {
+          instanceId,
+        });
+        if (!activity || !activity.teamId) {
+          return c.text("Sandbox not found", 404);
+        }
+        if (activity.teamId !== team.uuid) {
+          return c.text("Forbidden", 403);
+        }
+      } else {
+        // For Morph instances, verify team ownership via metadata
+        const metadataTeamId = getInstanceTeamId(instance);
+        if (metadataTeamId && metadataTeamId !== team.uuid) {
+          return c.text("Forbidden", 403);
+        }
       }
 
       const callbackUrl =

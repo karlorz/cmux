@@ -104,12 +104,8 @@ function stripModelMigrations(toml: string): string {
 export async function getOpenAIEnvironment(
   ctx: EnvironmentContext
 ): Promise<EnvironmentResult> {
-  // These must be lazy since configs are imported into the browser
-  const { readFile } = await import("node:fs/promises");
-  const { homedir } = await import("node:os");
+  // Buffer must be lazy since configs are imported into the browser
   const { Buffer } = await import("node:buffer");
-
-  const homeDir = process.env.HOME || process.env.USERPROFILE || homedir();
 
   const files: EnvironmentResult["files"] = [];
   const env: Record<string, string> = {};
@@ -140,40 +136,19 @@ touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
     mode: "755",
   });
 
-  // Copy auth.json from .codex directory
-  try {
-    const authContent = await readFile(`${homeDir}/.codex/auth.json`, "utf-8");
-    files.push({
-      destinationPath: "$HOME/.codex/auth.json",
-      contentBase64: Buffer.from(authContent).toString("base64"),
-      mode: "600",
-    });
-  } catch (error) {
-    console.warn("Failed to read .codex/auth.json:", error);
-  }
+  // Note: auth.json is injected separately via applyCodexApiKeys() using
+  // credentials from the user's data vault (CODEX_AUTH_JSON or OPENAI_API_KEY).
+  // We do NOT read from the server host filesystem to avoid credential leakage.
 
   // Apply provider override if present (custom proxy like AnyRouter)
   if (ctx.providerConfig?.isOverridden && ctx.providerConfig.baseUrl) {
     env.OPENAI_BASE_URL = ctx.providerConfig.baseUrl;
   }
 
-  // Copy instructions.md and append memory protocol instructions
-  let instructionsContent = "";
-  try {
-    instructionsContent = await readFile(
-      `${homeDir}/.codex/instructions.md`,
-      "utf-8"
-    );
-  } catch (error) {
-    // File doesn't exist, start with empty content
-    console.warn("Failed to read .codex/instructions.md:", error);
-  }
-
-  // Append memory protocol instructions
-  const fullInstructions =
-    instructionsContent +
-    (instructionsContent ? "\n\n" : "") +
-    getMemoryProtocolInstructions();
+  // Create instructions.md with memory protocol instructions only.
+  // Note: We do NOT read from the server host filesystem to avoid leaking
+  // host-specific instructions into user sandboxes.
+  const fullInstructions = getMemoryProtocolInstructions();
   files.push({
     destinationPath: "$HOME/.codex/instructions.md",
     contentBase64: Buffer.from(fullInstructions).toString("base64"),
@@ -188,38 +163,18 @@ command = "node"
 args = ["/root/lifecycle/memory/mcp-server.js"]
 `;
 
-  // Ensure config.toml exists and contains notify hook + model migrations + MCP server
-  try {
-    const rawToml = await readFile(`${homeDir}/.codex/config.toml`, "utf-8");
-    // Filter out keys controlled by cmux CLI args (model, model_reasoning_effort)
-    const filteredToml = stripFilteredConfigKeys(rawToml);
-    const hasNotify = /(^|\n)\s*notify\s*=/.test(filteredToml);
-    let tomlOut = hasNotify
-      ? filteredToml
-      : `notify = ["/root/lifecycle/codex-notify.sh"]\n` + filteredToml;
-    // Strip existing model_migrations and append managed ones
-    tomlOut = stripModelMigrations(tomlOut) + generateModelMigrations();
-    // Add memory MCP server if not already present
-    if (!tomlOut.includes("[mcp_servers.cmux-memory]")) {
-      tomlOut += memoryMcpServerConfig;
-    }
-    files.push({
-      destinationPath: `$HOME/.codex/config.toml`,
-      contentBase64: Buffer.from(tomlOut).toString("base64"),
-      mode: "644",
-    });
-  } catch (_error) {
-    // No host config.toml; create minimal one with notify + model migrations + MCP server
-    const toml =
-      `notify = ["/root/lifecycle/codex-notify.sh"]\n` +
-      generateModelMigrations() +
-      memoryMcpServerConfig;
-    files.push({
-      destinationPath: `$HOME/.codex/config.toml`,
-      contentBase64: Buffer.from(toml).toString("base64"),
-      mode: "644",
-    });
-  }
+  // Create config.toml with notify hook + model migrations + MCP server.
+  // Note: We do NOT read from the server host filesystem to avoid leaking
+  // host-specific config into user sandboxes.
+  const toml =
+    `notify = ["/root/lifecycle/codex-notify.sh"]\n` +
+    generateModelMigrations() +
+    memoryMcpServerConfig;
+  files.push({
+    destinationPath: `$HOME/.codex/config.toml`,
+    contentBase64: Buffer.from(toml).toString("base64"),
+    mode: "644",
+  });
 
   // Add agent memory protocol support
   startupCommands.push(getMemoryStartupCommand());

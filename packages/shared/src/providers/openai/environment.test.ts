@@ -101,90 +101,101 @@ approval_mode = "full"`);
 
 describe("getOpenAIEnvironment", () => {
   it("generates managed model migrations targeting gpt-5.2-codex", async () => {
+    // Note: getOpenAIEnvironment no longer reads from host filesystem
+    // to avoid credential leakage. It generates a clean config.toml.
+    const result = await getOpenAIEnvironment({} as never);
+    const configFile = result.files?.find(
+      (file) => file.destinationPath === "$HOME/.codex/config.toml"
+    );
+    expect(configFile).toBeDefined();
+
+    const toml = Buffer.from(configFile!.contentBase64, "base64").toString(
+      "utf-8"
+    );
+    expect(toml).toContain('notify = ["/root/lifecycle/codex-notify.sh"]');
+    expect(toml).toContain("[notice.model_migrations]");
+    expect(toml).toContain('"gpt-5-codex" = "gpt-5.2-codex"');
+    expect(toml).toContain('"gpt-5" = "gpt-5.2-codex"');
+    expect(toml).toContain('"o3" = "gpt-5.2-codex"');
+    expect(toml).toContain('"o4-mini" = "gpt-5.2-codex"');
+    expect(toml).toContain('"gpt-4.1" = "gpt-5.2-codex"');
+    expect(toml).toContain('"gpt-5-codex-mini" = "gpt-5.2-codex"');
+    expect(toml).not.toContain('"gpt-5.3-codex" =');
+  });
+
+  it("does not read from host filesystem to prevent credential leakage", async () => {
+    // Create files in a temp home directory that should NOT be read
     const homeDir = await mkdtemp(join(tmpdir(), "cmux-openai-home-"));
     const previousHome = process.env.HOME;
     process.env.HOME = homeDir;
 
     try {
       await mkdir(join(homeDir, ".codex"), { recursive: true });
-      await writeFile(join(homeDir, ".codex/auth.json"), "{}", "utf-8");
-      await writeFile(join(homeDir, ".codex/instructions.md"), "", "utf-8");
+      // Put credentials and custom config that should NOT leak into sandbox
+      await writeFile(
+        join(homeDir, ".codex/auth.json"),
+        '{"secret": "host-credential"}',
+        "utf-8"
+      );
+      await writeFile(
+        join(homeDir, ".codex/instructions.md"),
+        "SECRET HOST INSTRUCTIONS",
+        "utf-8"
+      );
+      await writeFile(
+        join(homeDir, ".codex/config.toml"),
+        `approval_mode = "full"
+host_secret = "should-not-leak"
+`,
+        "utf-8"
+      );
 
       const result = await getOpenAIEnvironment({} as never);
+
+      // Verify config.toml does NOT contain host-specific settings
       const configFile = result.files?.find(
         (file) => file.destinationPath === "$HOME/.codex/config.toml"
       );
       expect(configFile).toBeDefined();
-
       const toml = Buffer.from(configFile!.contentBase64, "base64").toString(
         "utf-8"
       );
-      expect(toml).toContain('notify = ["/root/lifecycle/codex-notify.sh"]');
-      expect(toml).toContain("[notice.model_migrations]");
-      expect(toml).toContain('"gpt-5-codex" = "gpt-5.2-codex"');
-      expect(toml).toContain('"gpt-5" = "gpt-5.2-codex"');
-      expect(toml).toContain('"o3" = "gpt-5.2-codex"');
-      expect(toml).toContain('"o4-mini" = "gpt-5.2-codex"');
-      expect(toml).toContain('"gpt-4.1" = "gpt-5.2-codex"');
-      expect(toml).toContain('"gpt-5-codex-mini" = "gpt-5.2-codex"');
-      expect(toml).not.toContain('"gpt-5.3-codex" =');
+      expect(toml).not.toContain("host_secret");
+      expect(toml).not.toContain("approval_mode");
+
+      // Verify instructions.md does NOT contain host instructions
+      const instructionsFile = result.files?.find(
+        (file) => file.destinationPath === "$HOME/.codex/instructions.md"
+      );
+      expect(instructionsFile).toBeDefined();
+      const instructions = Buffer.from(
+        instructionsFile!.contentBase64,
+        "base64"
+      ).toString("utf-8");
+      expect(instructions).not.toContain("SECRET HOST INSTRUCTIONS");
+
+      // Verify auth.json is NOT copied from host (it should come from applyCodexApiKeys)
+      const authFile = result.files?.find(
+        (file) => file.destinationPath === "$HOME/.codex/auth.json"
+      );
+      expect(authFile).toBeUndefined();
     } finally {
       process.env.HOME = previousHome;
       await rm(homeDir, { recursive: true, force: true });
     }
   });
 
-  it("replaces existing [notice.model_migrations] with managed mappings", async () => {
-    const homeDir = await mkdtemp(join(tmpdir(), "cmux-openai-home-"));
-    const previousHome = process.env.HOME;
-    process.env.HOME = homeDir;
-
-    try {
-      await mkdir(join(homeDir, ".codex"), { recursive: true });
-      await writeFile(join(homeDir, ".codex/auth.json"), "{}", "utf-8");
-      await writeFile(join(homeDir, ".codex/instructions.md"), "", "utf-8");
-      await writeFile(
-        join(homeDir, ".codex/config.toml"),
-        `notify = ["/root/lifecycle/codex-notify.sh"]
-approval_mode = "full"
-model = "gpt-5"
-model_reasoning_effort = "high"
-
-[notice.model_migrations]
-"o3" = "gpt-5.3-codex"
-
-[some_section]
-foo = "bar"
-`,
-        "utf-8"
-      );
-
-      const result = await getOpenAIEnvironment({} as never);
-      const configFile = result.files?.find(
-        (file) => file.destinationPath === "$HOME/.codex/config.toml"
-      );
-      expect(configFile).toBeDefined();
-
-      const toml = Buffer.from(configFile!.contentBase64, "base64").toString(
-        "utf-8"
-      );
-
-      expect(toml).toContain('notify = ["/root/lifecycle/codex-notify.sh"]');
-      expect(toml).toContain('approval_mode = "full"');
-      expect(toml).toContain("[some_section]");
-      expect(toml).toContain('foo = "bar"');
-
-      expect(toml).not.toContain('model = "gpt-5"');
-      expect(toml).not.toContain('model_reasoning_effort = "high"');
-
-      expect(toml).not.toContain('"o3" = "gpt-5.3-codex"');
-      expect(toml).toContain('"o3" = "gpt-5.2-codex"');
-
-      const noticeSections = toml.match(/\[notice\.model_migrations\]/g) ?? [];
-      expect(noticeSections).toHaveLength(1);
-    } finally {
-      process.env.HOME = previousHome;
-      await rm(homeDir, { recursive: true, force: true });
-    }
+  it("includes memory protocol in instructions.md", async () => {
+    const result = await getOpenAIEnvironment({} as never);
+    const instructionsFile = result.files?.find(
+      (file) => file.destinationPath === "$HOME/.codex/instructions.md"
+    );
+    expect(instructionsFile).toBeDefined();
+    const instructions = Buffer.from(
+      instructionsFile!.contentBase64,
+      "base64"
+    ).toString("utf-8");
+    // Memory protocol should be included
+    expect(instructions).toContain("memory");
   });
 });
