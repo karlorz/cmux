@@ -868,14 +868,15 @@ func (c *Client) ListTasks(ctx context.Context, archived bool) (*ListTasksResult
 	return &result, nil
 }
 
-// ListEnvironments lists all environments for the team
+// ListEnvironments lists all environments for the team.
+// /api/environments is a Hono route on the www app, not a Convex site route.
 func (c *Client) ListEnvironments(ctx context.Context) ([]Environment, error) {
 	if c.teamSlug == "" {
 		return nil, fmt.Errorf("team slug not set")
 	}
 
 	path := fmt.Sprintf("/api/environments?teamSlugOrId=%s", c.teamSlug)
-	resp, err := c.doRequest(ctx, "GET", path, nil)
+	resp, err := c.doWwwRequest(ctx, "GET", path, nil)
 	if err != nil {
 		return nil, err
 	}
