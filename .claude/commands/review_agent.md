@@ -12,11 +12,12 @@ User focus (optional): $ARGUMENTS
 
 ## Auto-collected context
 
-### Codex review: committed changes (mandatory)
-!`bash "$CLAUDE_PROJECT_DIR/.claude/scripts/codex-review-extract.sh" --base main`
+### Codex review (mandatory - run via Bash tool)
 
-### Codex review: uncommitted changes (mandatory)
-!`cd "$CLAUDE_PROJECT_DIR" && if [ -n "$(git status --porcelain)" ]; then bash "$CLAUDE_PROJECT_DIR/.claude/scripts/codex-review-extract.sh" --uncommitted; else echo "(no uncommitted changes)"; fi`
+You MUST run these codex reviews using the Bash tool with timeout=120000. Do NOT skip this step.
+
+Step 1 - Committed changes: run .claude/scripts/codex-review-extract.sh --base main
+Step 2 - Uncommitted changes: first check git status --porcelain. If non-empty, run .claude/scripts/codex-review-extract.sh --uncommitted. If clean, skip.
 
 ### Divergence vs upstream/main
 !`cd "$CLAUDE_PROJECT_DIR" && git fetch origin --prune >/dev/null 2>&1 && git fetch upstream --prune >/dev/null 2>&1 && git rev-list --left-right --count main...upstream/main | awk '{print "ahead=" $1 " behind=" $2}'`
