@@ -65,10 +65,13 @@ if [ "$DELAY_SECONDS" -gt 0 ]; then
   sleep "$DELAY_SECONDS"
 fi
 
-# Block stop - output continuation prompt
-echo "" >&2
+# Block stop - output JSON decision to stdout
 echo "[Autopilot] Turn $TURN_COUNT/$MAX_TURNS - continuing work..." >&2
-echo "" >&2
-echo "Continue from where you left off. Do not ask whether to continue." >&2
-echo "End with: Progress, Commands run, Files changed, Next." >&2
-exit 2
+
+cat << 'EOF'
+{
+  "decision": "block",
+  "reason": "Continue from where you left off. Do not ask whether to continue.\nEnd with: Progress, Commands run, Files changed, Next."
+}
+EOF
+exit 0
