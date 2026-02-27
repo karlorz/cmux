@@ -224,7 +224,8 @@ export const createOrchestrationTask = httpAction(async (ctx, req) => {
       return jsonResponse({ code: 400, message: "Invalid payload" }, 400);
     }
     payload = validation.data;
-  } catch {
+  } catch (error) {
+    console.error("[orchestration_http.createOrchestrationTask] Failed to parse JSON", error);
     return jsonResponse({ code: 400, message: "Invalid JSON" }, 400);
   }
 
@@ -238,7 +239,8 @@ export const createOrchestrationTask = httpAction(async (ctx, req) => {
     );
     teamId = tokenPayload.teamId;
     userId = tokenPayload.userId;
-  } catch {
+  } catch (error) {
+    console.error("[orchestration_http.createOrchestrationTask] Failed to verify JWT", error);
     return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
   }
 

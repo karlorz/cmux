@@ -77,25 +77,30 @@ export const startInstance = internalAction({
     metadata: v.optional(v.record(v.string(), v.string())),
   },
   handler: async (_ctx, args) => {
-    const client = getPveLxcClient();
+    try {
+      const client = getPveLxcClient();
 
-    const instance = await client.instances.start({
-      snapshotId: args.snapshotId ?? DEFAULT_PVE_LXC_SNAPSHOT_ID,
-      templateVmid: args.templateVmid,
-      ttlSeconds: args.ttlSeconds ?? 60 * 60,
-      metadata: args.metadata,
-    });
+      const instance = await client.instances.start({
+        snapshotId: args.snapshotId ?? DEFAULT_PVE_LXC_SNAPSHOT_ID,
+        templateVmid: args.templateVmid,
+        ttlSeconds: args.ttlSeconds ?? 60 * 60,
+        metadata: args.metadata,
+      });
 
-    const { vscodeUrl, workerUrl, vncUrl, xtermUrl } = extractNetworkingUrls(instance);
+      const { vscodeUrl, workerUrl, vncUrl, xtermUrl } = extractNetworkingUrls(instance);
 
-    return {
-      instanceId: instance.id,
-      status: "running",
-      vscodeUrl,
-      workerUrl,
-      vncUrl,
-      xtermUrl,
-    };
+      return {
+        instanceId: instance.id,
+        status: "running",
+        vscodeUrl,
+        workerUrl,
+        vncUrl,
+        xtermUrl,
+      };
+    } catch (error) {
+      console.error("[pve_lxc_actions.startInstance] Failed to start PVE LXC instance:", error);
+      throw error;
+    }
   },
 });
 
@@ -174,11 +179,16 @@ export const pauseInstance = internalAction({
     instanceId: v.string(),
   },
   handler: async (_ctx, args) => {
-    const client = getPveLxcClient();
-    const instance = await client.instances.get({ instanceId: args.instanceId });
-    await instance.pause();
+    try {
+      const client = getPveLxcClient();
+      const instance = await client.instances.get({ instanceId: args.instanceId });
+      await instance.pause();
 
-    return { paused: true };
+      return { paused: true };
+    } catch (error) {
+      console.error("[pve_lxc_actions.pauseInstance] Failed to pause PVE LXC instance:", error);
+      throw error;
+    }
   },
 });
 
@@ -207,11 +217,16 @@ export const stopInstance = internalAction({
     instanceId: v.string(),
   },
   handler: async (_ctx, args) => {
-    const client = getPveLxcClient();
-    const instance = await client.instances.get({ instanceId: args.instanceId });
-    await instance.delete();
+    try {
+      const client = getPveLxcClient();
+      const instance = await client.instances.get({ instanceId: args.instanceId });
+      await instance.delete();
 
-    return { stopped: true };
+      return { stopped: true };
+    } catch (error) {
+      console.error("[pve_lxc_actions.stopInstance] Failed to stop PVE LXC instance:", error);
+      throw error;
+    }
   },
 });
 
@@ -223,21 +238,26 @@ export const resumeInstance = internalAction({
     instanceId: v.string(),
   },
   handler: async (_ctx, args) => {
-    const client = getPveLxcClient();
-    const instance = await client.instances.get({ instanceId: args.instanceId });
-    await instance.resume();
+    try {
+      const client = getPveLxcClient();
+      const instance = await client.instances.get({ instanceId: args.instanceId });
+      await instance.resume();
 
-    const { vscodeUrl, workerUrl, vncUrl, xtermUrl } = extractNetworkingUrls(instance);
+      const { vscodeUrl, workerUrl, vncUrl, xtermUrl } = extractNetworkingUrls(instance);
 
-    return {
-      resumed: true,
-      instanceId: args.instanceId,
-      status: "running",
-      vscodeUrl,
-      workerUrl,
-      vncUrl,
-      xtermUrl,
-    };
+      return {
+        resumed: true,
+        instanceId: args.instanceId,
+        status: "running",
+        vscodeUrl,
+        workerUrl,
+        vncUrl,
+        xtermUrl,
+      };
+    } catch (error) {
+      console.error("[pve_lxc_actions.resumeInstance] Failed to resume PVE LXC instance:", error);
+      throw error;
+    }
   },
 });
 
