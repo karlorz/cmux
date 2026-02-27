@@ -556,9 +556,10 @@ function RepositoryConnectionsSection({
       const win = window.open("about:blank", name, features);
       if (win) {
         try {
+          // Security: prevent reverse tabnabbing by nullifying opener
           (win as Window & { opener: null | Window }).opener = null;
         } catch (_error) {
-          void 0;
+          // Some browsers block setting opener on cross-origin windows - safe to ignore
         }
         try {
           win.location.href = url;

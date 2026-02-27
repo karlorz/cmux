@@ -798,7 +798,7 @@ export function PreviewConfigureClient({
           try {
             el.scrollIntoView({ block: "nearest" });
           } catch (_e) {
-            void 0;
+            // scrollIntoView may not be available in all environments - safe to ignore
           }
         }, 0);
         setPendingFocusIndex(null);
