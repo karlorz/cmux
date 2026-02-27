@@ -188,6 +188,8 @@ export const getDependentTasks = authQuery({
 /**
  * Get ready-to-execute tasks (no unresolved dependencies).
  * Requires authentication and team membership.
+ *
+ * Optimized: Batch fetches all dependencies in a single pass to avoid N+1 queries.
  */
 export const getReadyTasks = authQuery({
   args: {
@@ -206,24 +208,40 @@ export const getReadyTasks = authQuery({
       .order("asc")
       .take(100);
 
+    // Collect all unique dependency IDs across all pending tasks
+    const allDepIds = new Set<Id<"orchestrationTasks">>();
+    for (const task of pendingTasks) {
+      if (task.dependencies) {
+        for (const depId of task.dependencies) {
+          allDepIds.add(depId);
+        }
+      }
+    }
+
+    // Batch fetch all dependencies in one pass
+    const depDocs = await Promise.all(
+      Array.from(allDepIds).map((id) => ctx.db.get(id))
+    );
+    const depStatusMap = new Map<string, string>();
+    for (const dep of depDocs) {
+      if (dep) {
+        depStatusMap.set(dep._id.toString(), dep.status);
+      }
+    }
+
     // Filter to tasks with no dependencies or all dependencies completed
-    const readyTasks = [];
+    const readyTasks: typeof pendingTasks = [];
     for (const task of pendingTasks) {
       if (!task.dependencies || task.dependencies.length === 0) {
         readyTasks.push(task);
-        continue;
-      }
-
-      // Check if all dependencies are completed
-      const deps = await Promise.all(
-        task.dependencies.map((id) => ctx.db.get(id))
-      );
-      const allCompleted = deps.every(
-        (dep) => dep?.status === "completed"
-      );
-
-      if (allCompleted) {
-        readyTasks.push(task);
+      } else {
+        // Check if all dependencies are completed using the pre-fetched map
+        const allCompleted = task.dependencies.every(
+          (depId) => depStatusMap.get(depId.toString()) === "completed"
+        );
+        if (allCompleted) {
+          readyTasks.push(task);
+        }
       }
 
       if (readyTasks.length >= limit) break;
@@ -453,6 +471,8 @@ export const completeTask = authMutation({
 /**
  * Internal mutation to trigger dependent tasks after a task completes.
  * Sets nextRetryAfter = now for immediate pickup by the orchestration worker.
+ *
+ * Optimized: Batch fetches all dependents and their dependencies to avoid N+1 queries.
  */
 export const triggerDependentTasks = internalMutation({
   args: {
@@ -466,32 +486,60 @@ export const triggerDependentTasks = internalMutation({
 
     const now = Date.now();
 
-    // Check each dependent task
-    for (const dependentId of completedTask.dependents) {
-      const dependent = await ctx.db.get(dependentId);
+    // Batch fetch all dependent tasks
+    const dependents = await Promise.all(
+      completedTask.dependents.map((id) => ctx.db.get(id))
+    );
+
+    // Collect all dependency IDs from pending dependents
+    const allDepIds = new Set<Id<"orchestrationTasks">>();
+    for (const dependent of dependents) {
+      if (dependent?.status === "pending" && dependent.dependencies) {
+        for (const depId of dependent.dependencies) {
+          allDepIds.add(depId);
+        }
+      }
+    }
+
+    // Batch fetch all dependencies
+    const depDocs = await Promise.all(
+      Array.from(allDepIds).map((id) => ctx.db.get(id))
+    );
+    const depStatusMap = new Map<string, string>();
+    for (const dep of depDocs) {
+      if (dep) {
+        depStatusMap.set(dep._id.toString(), dep.status);
+      }
+    }
+
+    // Process each dependent task
+    const patchPromises: Promise<void>[] = [];
+    for (const dependent of dependents) {
       if (!dependent || dependent.status !== "pending") {
         continue;
       }
 
       // Check if all dependencies are now completed
       if (dependent.dependencies && dependent.dependencies.length > 0) {
-        const deps = await Promise.all(
-          dependent.dependencies.map((id) => ctx.db.get(id))
+        const allCompleted = dependent.dependencies.every(
+          (depId) => depStatusMap.get(depId.toString()) === "completed"
         );
-        const allCompleted = deps.every((dep) => dep?.status === "completed");
-
         if (!allCompleted) {
-          // Still waiting on other dependencies
           continue;
         }
       }
 
       // All dependencies are complete - set nextRetryAfter to now for immediate pickup
-      await ctx.db.patch(dependentId, {
-        nextRetryAfter: now,
-        updatedAt: now,
-      });
+      patchPromises.push(
+        ctx.db.patch(dependent._id, {
+          nextRetryAfter: now,
+          updatedAt: now,
+        })
+      );
     }
+
+    // Execute all patches in parallel
+    await Promise.all(patchPromises);
   },
 });
 
@@ -658,23 +706,36 @@ export const addDependencies = authMutation({
     const existing = task.dependencies ?? [];
     const now = Date.now();
 
-    // Validate each dependency belongs to the same team and update dependents
-    for (const depId of dependencyIds) {
-      const dep = await ctx.db.get(depId);
+    // Batch fetch all dependencies for validation
+    const deps = await Promise.all(dependencyIds.map((id) => ctx.db.get(id)));
+
+    // Validate all dependencies exist and belong to the same team
+    for (let i = 0; i < dependencyIds.length; i++) {
+      const dep = deps[i];
+      const depId = dependencyIds[i];
       if (!dep) {
         throw new Error(`Dependency ${depId} not found`);
       }
       if (dep.teamId !== task.teamId) {
         throw new Error(`Dependency ${depId} belongs to a different team`);
       }
-      // Only add to dependents if not already a dependency
-      if (!existing.includes(depId)) {
-        await ctx.db.patch(depId, {
-          dependents: [...(dep.dependents ?? []), taskId],
-          updatedAt: now,
-        });
+    }
+
+    // Batch update dependents for new dependencies
+    const patchPromises: Promise<void>[] = [];
+    for (let i = 0; i < dependencyIds.length; i++) {
+      const dep = deps[i];
+      const depId = dependencyIds[i];
+      if (dep && !existing.includes(depId)) {
+        patchPromises.push(
+          ctx.db.patch(depId, {
+            dependents: [...(dep.dependents ?? []), taskId],
+            updatedAt: now,
+          })
+        );
       }
     }
+    await Promise.all(patchPromises);
 
     const merged = [...new Set([...existing, ...dependencyIds])];
 
@@ -709,23 +770,36 @@ export const addDependenciesInternal = internalMutation({
     const existing = task.dependencies ?? [];
     const now = Date.now();
 
-    // Validate each dependency belongs to the same team and update dependents
-    for (const depId of dependencyIds) {
-      const dep = await ctx.db.get(depId);
+    // Batch fetch all dependencies for validation
+    const deps = await Promise.all(dependencyIds.map((id) => ctx.db.get(id)));
+
+    // Validate all dependencies exist and belong to the same team
+    for (let i = 0; i < dependencyIds.length; i++) {
+      const dep = deps[i];
+      const depId = dependencyIds[i];
       if (!dep) {
         throw new Error(`Dependency ${depId} not found`);
       }
       if (dep.teamId !== task.teamId) {
         throw new Error(`Dependency ${depId} belongs to a different team`);
       }
-      // Only add to dependents if not already a dependency
-      if (!existing.includes(depId)) {
-        await ctx.db.patch(depId, {
-          dependents: [...(dep.dependents ?? []), taskId],
-          updatedAt: now,
-        });
+    }
+
+    // Batch update dependents for new dependencies
+    const patchPromises: Promise<void>[] = [];
+    for (let i = 0; i < dependencyIds.length; i++) {
+      const dep = deps[i];
+      const depId = dependencyIds[i];
+      if (dep && !existing.includes(depId)) {
+        patchPromises.push(
+          ctx.db.patch(depId, {
+            dependents: [...(dep.dependents ?? []), taskId],
+            updatedAt: now,
+          })
+        );
       }
     }
+    await Promise.all(patchPromises);
 
     const merged = [...new Set([...existing, ...dependencyIds])];
 
@@ -1027,6 +1101,8 @@ export const countRunningTasks = internalQuery({
 /**
  * Get ready tasks for internal worker use.
  * Includes nextRetryAfter field for backoff filtering.
+ *
+ * Optimized: Batch fetches all dependencies in a single pass to avoid N+1 queries.
  */
 export const getReadyTasksInternal = internalQuery({
   args: {
@@ -1042,22 +1118,40 @@ export const getReadyTasksInternal = internalQuery({
       .order("asc")
       .take(100);
 
+    // Collect all unique dependency IDs across all pending tasks
+    const allDepIds = new Set<Id<"orchestrationTasks">>();
+    for (const task of pendingTasks) {
+      if (task.dependencies) {
+        for (const depId of task.dependencies) {
+          allDepIds.add(depId);
+        }
+      }
+    }
+
+    // Batch fetch all dependencies in one pass
+    const depDocs = await Promise.all(
+      Array.from(allDepIds).map((id) => ctx.db.get(id))
+    );
+    const depStatusMap = new Map<string, string>();
+    for (const dep of depDocs) {
+      if (dep) {
+        depStatusMap.set(dep._id.toString(), dep.status);
+      }
+    }
+
     // Filter to tasks with no dependencies or all dependencies completed
-    const readyTasks = [];
+    const readyTasks: typeof pendingTasks = [];
     for (const task of pendingTasks) {
       if (!task.dependencies || task.dependencies.length === 0) {
         readyTasks.push(task);
-        continue;
-      }
-
-      // Check if all dependencies are completed
-      const deps = await Promise.all(
-        task.dependencies.map((id) => ctx.db.get(id))
-      );
-      const allCompleted = deps.every((dep) => dep?.status === "completed");
-
-      if (allCompleted) {
-        readyTasks.push(task);
+      } else {
+        // Check if all dependencies are completed using the pre-fetched map
+        const allCompleted = task.dependencies.every(
+          (depId) => depStatusMap.get(depId.toString()) === "completed"
+        );
+        if (allCompleted) {
+          readyTasks.push(task);
+        }
       }
 
       if (readyTasks.length >= limit) break;
@@ -1193,6 +1287,8 @@ export const getOrchestrationSummary = authQuery({
  * List tasks with enriched dependency information.
  * Returns tasks with resolved dependency status (how many complete, how many pending).
  * Used by the orchestration dashboard task list.
+ *
+ * Optimized: Batch fetches all dependencies in a single pass to avoid N+1 queries.
  */
 export const listTasksWithDependencyInfo = authQuery({
   args: {
@@ -1235,55 +1331,77 @@ export const listTasksWithDependencyInfo = authQuery({
         .slice(0, limit);
     }
 
-    // Enrich each task with dependency information
-    const enrichedTasks = await Promise.all(
-      tasks.map(async (task) => {
-        let dependencyInfo:
-          | {
-              totalDeps: number;
-              completedDeps: number;
-              pendingDeps: number;
-              blockedBy: Array<{
-                _id: Id<"orchestrationTasks">;
-                status: string;
-                prompt: string;
-              }>;
-            }
-          | undefined;
+    // Collect all unique dependency IDs across all tasks
+    const allDepIds = new Set<Id<"orchestrationTasks">>();
+    for (const task of tasks) {
+      if (task.dependencies) {
+        for (const depId of task.dependencies) {
+          allDepIds.add(depId);
+        }
+      }
+    }
 
-        if (task.dependencies && task.dependencies.length > 0) {
-          const deps = await Promise.all(
-            task.dependencies.map((id) => ctx.db.get(id))
-          );
-          const validDeps = deps.filter(Boolean) as Doc<"orchestrationTasks">[];
+    // Batch fetch all dependencies in one pass
+    const depDocs = await Promise.all(
+      Array.from(allDepIds).map((id) => ctx.db.get(id))
+    );
+    const depMap = new Map<string, Doc<"orchestrationTasks">>();
+    for (const dep of depDocs) {
+      if (dep) {
+        depMap.set(dep._id.toString(), dep);
+      }
+    }
 
-          const completedDeps = validDeps.filter(
-            (d) => d.status === "completed"
-          ).length;
-          const pendingDeps = validDeps.filter(
-            (d) => d.status !== "completed" && d.status !== "failed"
-          ).length;
+    // Enrich each task with dependency information using pre-fetched deps
+    const enrichedTasks = tasks.map((task) => {
+      let dependencyInfo:
+        | {
+            totalDeps: number;
+            completedDeps: number;
+            pendingDeps: number;
+            blockedBy: Array<{
+              _id: Id<"orchestrationTasks">;
+              status: string;
+              prompt: string;
+            }>;
+          }
+        | undefined;
 
-          dependencyInfo = {
-            totalDeps: validDeps.length,
-            completedDeps,
-            pendingDeps,
-            blockedBy: validDeps
-              .filter((d) => d.status !== "completed")
-              .map((d) => ({
-                _id: d._id,
-                status: d.status,
-                prompt: d.prompt.slice(0, 50) + (d.prompt.length > 50 ? "..." : ""),
-              })),
-          };
+      if (task.dependencies && task.dependencies.length > 0) {
+        const validDeps: Doc<"orchestrationTasks">[] = [];
+        for (const depId of task.dependencies) {
+          const dep = depMap.get(depId.toString());
+          if (dep) {
+            validDeps.push(dep);
+          }
         }
 
-        return {
-          ...task,
-          dependencyInfo,
+        const completedDeps = validDeps.filter(
+          (d) => d.status === "completed"
+        ).length;
+        const pendingDeps = validDeps.filter(
+          (d) => d.status !== "completed" && d.status !== "failed"
+        ).length;
+
+        dependencyInfo = {
+          totalDeps: validDeps.length,
+          completedDeps,
+          pendingDeps,
+          blockedBy: validDeps
+            .filter((d) => d.status !== "completed")
+            .map((d) => ({
+              _id: d._id,
+              status: d.status,
+              prompt: d.prompt.slice(0, 50) + (d.prompt.length > 50 ? "..." : ""),
+            })),
         };
-      })
-    );
+      }
+
+      return {
+        ...task,
+        dependencyInfo,
+      };
+    });
 
     return enrichedTasks;
   },
