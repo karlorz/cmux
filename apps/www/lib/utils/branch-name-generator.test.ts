@@ -32,7 +32,7 @@ function createMockResult<RESULT>(
       inputTokens: 1,
       outputTokens: 1,
       totalTokens: 2,
-    },
+    } as GenerateObjectResult<RESULT>["usage"],
     warnings: undefined,
     request: { body: undefined },
     response: {

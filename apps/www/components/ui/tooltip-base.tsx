@@ -8,11 +8,14 @@ const TooltipProvider = BaseTooltip.Provider;
 interface TooltipProps extends React.ComponentProps<typeof BaseTooltip.Root> {
   /** @deprecated Use delay prop instead */
   delayDuration?: number;
+  /** Delay in ms before tooltip appears */
+  delay?: number;
 }
 
 function Tooltip({ delayDuration, delay, ...props }: TooltipProps) {
   // Support both delay and delayDuration for backwards compatibility
-  return <BaseTooltip.Root {...props} delay={delay ?? delayDuration} />;
+  const delayValue = delay ?? delayDuration;
+  return <BaseTooltip.Root {...props} {...(delayValue !== undefined && { delay: delayValue })} />;
 }
 
 interface TooltipTriggerProps extends React.ComponentProps<typeof BaseTooltip.Trigger> {
