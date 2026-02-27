@@ -77,7 +77,8 @@ export const NewGitDiffViewer = memo(function NewGitDiffViewer({
           setRegisterHighlighter(highlighter);
         }
       })
-      .catch(() => {
+      .catch((error) => {
+        console.error("[git-diff-viewer] Failed to load highlighter", error);
         if (!isCancelled) {
           setRegisterHighlighter(undefined);
         }
@@ -102,8 +103,8 @@ export const NewGitDiffViewer = memo(function NewGitDiffViewer({
 
         try {
           onFileToggle?.(filePath, !wasExpanded);
-        } catch {
-          // ignore
+        } catch (error) {
+          console.error("[git-diff-viewer] onFileToggle callback failed", error);
         }
 
         return next;
