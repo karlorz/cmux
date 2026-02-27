@@ -785,14 +785,26 @@ type ListTasksResult struct {
 	Tasks []Task `json:"tasks"`
 }
 
+// Environment represents a sandbox environment configuration
+type Environment struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	SnapshotID     string   `json:"snapshotId"`
+	SelectedRepos  []string `json:"selectedRepos,omitempty"`
+	Description    string   `json:"description,omitempty"`
+	CreatedAt      int64    `json:"createdAt"`
+	UpdatedAt      int64    `json:"updatedAt"`
+}
+
 // CreateTaskOptions represents options for creating a task
 type CreateTaskOptions struct {
-	Prompt     string
-	Repository string
-	BaseBranch string
-	Agents     []string
-	Images     []TaskImage
-	PRTitle    string
+	Prompt        string
+	Repository    string
+	BaseBranch    string
+	Agents        []string
+	Images        []TaskImage
+	PRTitle       string
+	EnvironmentID string
 }
 
 // TaskRunWithJWT represents a task run with its JWT for sandbox auth
@@ -856,6 +868,52 @@ func (c *Client) ListTasks(ctx context.Context, archived bool) (*ListTasksResult
 	return &result, nil
 }
 
+// ListEnvironments lists all environments for the team
+func (c *Client) ListEnvironments(ctx context.Context) ([]Environment, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	path := fmt.Sprintf("/api/environments?teamSlugOrId=%s", c.teamSlug)
+	resp, err := c.doRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result []Environment
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result, nil
+}
+
+// FindEnvironmentForRepo finds the most recent environment that includes the given repository
+// Returns the environment ID or empty string if none found
+func (c *Client) FindEnvironmentForRepo(ctx context.Context, repository string) (string, error) {
+	environments, err := c.ListEnvironments(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	// Environments are returned in descending order by creation time
+	// Find the first one that includes this repository
+	for _, env := range environments {
+		for _, repo := range env.SelectedRepos {
+			if repo == repository {
+				return env.ID, nil
+			}
+		}
+	}
+
+	return "", nil
+}
+
 // CreateTask creates a new task with optional task runs
 func (c *Client) CreateTask(ctx context.Context, opts CreateTaskOptions) (*CreateTaskResult, error) {
 	if c.teamSlug == "" {
@@ -880,6 +938,9 @@ func (c *Client) CreateTask(ctx context.Context, opts CreateTaskOptions) (*Creat
 	}
 	if opts.PRTitle != "" {
 		body["prTitle"] = opts.PRTitle
+	}
+	if opts.EnvironmentID != "" {
+		body["environmentId"] = opts.EnvironmentID
 	}
 
 	resp, err := c.doRequest(ctx, "POST", "/api/v1/cmux/tasks", body)
