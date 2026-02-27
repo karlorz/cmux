@@ -1089,6 +1089,42 @@ func (c *Client) StartSandbox(ctx context.Context, opts StartSandboxOptions) (*S
 	return &result, nil
 }
 
+// SetupProvidersResult represents the result of setting up provider auth
+type SetupProvidersResult struct {
+	Success   bool     `json:"success"`
+	Providers []string `json:"providers"`
+}
+
+// SetupProviders configures Claude + Codex provider auth on an existing sandbox.
+// Calls POST /api/sandboxes/{id}/setup-providers on the www API.
+func (c *Client) SetupProviders(ctx context.Context, instanceID string) (*SetupProvidersResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+	}
+
+	resp, err := c.doWwwRequest(ctx, "POST",
+		fmt.Sprintf("/api/sandboxes/%s/setup-providers", instanceID), body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("setup-providers failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result SetupProvidersResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
 // GetTask gets the details of a specific task
 func (c *Client) GetTask(ctx context.Context, taskID string) (*TaskDetail, error) {
 	if c.teamSlug == "" {
