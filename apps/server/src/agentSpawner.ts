@@ -53,20 +53,16 @@ import rawSwitchBranchScript from "./utils/switch-branch.ts?raw";
 const SWITCH_BRANCH_BUN_SCRIPT = rawSwitchBranchScript;
 
 /**
- * Fire-and-forget sync of provider health metrics to Convex.
- * Non-blocking - will not affect spawn result on failure.
+ * Log provider health metrics for debugging.
  *
- * NOTE: Provider health sync is currently disabled because upsertProviderHealth
- * is now an internal mutation (not callable from client). This would need a
- * dedicated HTTP endpoint for health reporting if re-enabled.
+ * Convex sync is disabled because upsertProviderHealth is an internal mutation.
+ * If sync is re-enabled, create an HTTP endpoint that calls the internal mutation.
  */
-async function syncProviderHealthToConvex(providerId: string): Promise<void> {
+function logProviderHealthMetrics(providerId: string): void {
   if (!env.ENABLE_CIRCUIT_BREAKER) return;
 
-  // Disabled: upsertProviderHealth is now internal-only
-  // TODO: Create /api/internal/provider-health endpoint if health sync is needed
   const metrics = getProviderHealthMonitor().getMetrics(providerId);
-  serverLogger.debug("[AgentSpawner] Provider health metrics (not synced)", {
+  serverLogger.debug("[AgentSpawner] Provider health metrics", {
     providerId,
     status: metrics.status,
     circuitState: metrics.circuitState,
@@ -1518,8 +1514,8 @@ exit $EXIT_CODE
       );
     });
 
-    // Fire-and-forget: sync provider health metrics to Convex
-    void syncProviderHealthToConvex(providerId);
+    // Log provider health metrics for debugging
+    logProviderHealthMetrics(providerId);
 
     return {
       agentName: agent.name,
@@ -1535,9 +1531,9 @@ exit $EXIT_CODE
   } catch (error) {
     serverLogger.error("Error spawning agent", error);
 
-    // Fire-and-forget: sync provider health metrics to Convex (includes failure)
+    // Log provider health metrics for debugging (includes failure)
     // Note: resolvedProvider may not be defined if error occurred before provider resolution
-    void syncProviderHealthToConvex("default");
+    logProviderHealthMetrics("default");
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
 
