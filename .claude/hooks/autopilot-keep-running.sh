@@ -58,6 +58,13 @@ if [ "$TURN_COUNT" -ge "$MAX_TURNS" ]; then
   exit 0
 fi
 
+# Delay between turns (default: 2 seconds, configurable via CLAUDE_AUTOPILOT_DELAY)
+DELAY_SECONDS="${CLAUDE_AUTOPILOT_DELAY:-2}"
+if [ "$DELAY_SECONDS" -gt 0 ]; then
+  echo "[Autopilot] Waiting ${DELAY_SECONDS}s before next turn..." >&2
+  sleep "$DELAY_SECONDS"
+fi
+
 # Block stop - output continuation prompt
 echo "" >&2
 echo "[Autopilot] Turn $TURN_COUNT/$MAX_TURNS - continuing work..." >&2
