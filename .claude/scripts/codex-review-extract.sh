@@ -10,11 +10,11 @@ trap 'rm -f "$T"' EXIT
 codex \
   --dangerously-bypass-approvals-and-sandbox \
   --model gpt-5.3-codex \
-  -c model_reasoning_effort="low" \
+  -c model_reasoning_effort="high" \
   review "$@" >"$T" 2>&1 || true
 
 sed 's/\x1b\[[0-9;]*m//g' "$T" \
   | awk '/^codex$/{found=1;c="";next}found{c=c $0 "\n"}END{print c}' \
   | sed '/^$/d' \
-  | grep -v '^tokens used' \
+  | { grep -v '^tokens used' || true; } \
   | head -80

@@ -5,6 +5,10 @@ This project is called cmux. cmux is a web app that spawns Claude Code, Codex CL
 - Primary upstream for this workspace is `manaflow-ai/manaflow`, with fork target `karlorz/cmux`.
 - Terminal project is separate: upstream `manaflow-ai/cmux`, fork `karl-digi/cmux`, and should be handled in a separate workspace (for example `/Users/karlchow/Desktop/code/cmux-terminal`).
 
+# Code Review
+
+When reviewing code, apply the guidelines in REVIEW.md at the project root.
+
 # Config
 
 Use bun to install dependencies and run the project.

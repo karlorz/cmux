@@ -41,7 +41,7 @@ trap 'rm -f "$TMPFILE"' EXIT
 unbuffer codex \
   --dangerously-bypass-approvals-and-sandbox \
   --model gpt-5.3-codex \
-  -c model_reasoning_effort="low" \
+  -c model_reasoning_effort="high" \
   review --base main > "$TMPFILE" 2>&1 || true
 
 # Strip ANSI codes first, then extract final codex response
