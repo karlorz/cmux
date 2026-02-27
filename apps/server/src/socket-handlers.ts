@@ -190,8 +190,9 @@ function getUserLoginShell(): string {
       if (userShell) {
         return userShell;
       }
-    } catch {
-      // Ignore failures – we'll fall back to other sources.
+    } catch (e) {
+      // Log and fall back to other sources
+      serverLogger.debug("Failed to get user shell from os.userInfo():", e);
     }
 
     const envShell = sanitizeShellPath(process.env.SHELL);
@@ -616,7 +617,8 @@ export function setupSocketHandlers(
           try {
             await execAsync(`command -v ${cmd}`);
             return true;
-          } catch {
+          } catch (e) {
+            serverLogger.debug(`Command "${cmd}" not found:`, e);
             return false;
           }
         };
@@ -626,7 +628,8 @@ export function setupSocketHandlers(
           try {
             await execAsync(`open -Ra "${app}"`);
             return true;
-          } catch {
+          } catch (e) {
+            serverLogger.debug(`App "${app}" not found:`, e);
             return false;
           }
         };
@@ -1539,8 +1542,8 @@ export function setupSocketHandlers(
                   let existingExclude = "";
                   try {
                     existingExclude = await fs.readFile(excludePath, "utf8");
-                  } catch {
-                    // File doesn't exist, that's fine
+                  } catch (e) {
+                    serverLogger.debug(`Git exclude file doesn't exist at ${excludePath}:`, e);
                   }
 
                   // Add .env if not already excluded
@@ -1818,8 +1821,8 @@ export function setupSocketHandlers(
                   { cwd: sourceRepo }
                 );
                 branchExists = true;
-              } catch {
-                // Branch doesn't exist locally, that's fine
+              } catch (e) {
+                serverLogger.debug(`Branch ${worktreeBranch} doesn't exist locally:`, e);
               }
 
               if (branchExists) {
@@ -2650,7 +2653,8 @@ export function setupSocketHandlers(
           // Check if the worktrees directory exists
           try {
             await fs.access(worktreeBasePath);
-          } catch {
+          } catch (e) {
+            serverLogger.debug(`Worktree base path doesn't exist at ${worktreeBasePath}:`, e);
             safeCallback({ success: true, found: 0, registered: 0 });
             return;
           }
@@ -2676,7 +2680,8 @@ export function setupSocketHandlers(
               parsed.username = "";
               parsed.password = "";
               return parsed.toString().replace(/\/$/, "");
-            } catch {
+            } catch (e) {
+              serverLogger.debug(`Failed to parse URL "${url}":`, e);
               return url; // Return as-is if parsing fails
             }
           };
@@ -2694,15 +2699,16 @@ export function setupSocketHandlers(
               found++;
               await registerWorktree(shortIdPath, shortIdDir.name, shortIdDir.name);
               continue;
-            } catch {
-              // Not a direct worktree, check subdirectories
+            } catch (e) {
+              serverLogger.debug(`${shortIdPath} is not a direct worktree:`, e);
             }
 
             // Read subdirectories (repo name dirs)
             let repoEntries;
             try {
               repoEntries = await fs.readdir(shortIdPath, { withFileTypes: true });
-            } catch {
+            } catch (e) {
+              serverLogger.debug(`Failed to read directory ${shortIdPath}:`, e);
               continue;
             }
 
@@ -2714,8 +2720,9 @@ export function setupSocketHandlers(
 
               try {
                 await fs.access(gitPath);
-              } catch {
-                continue; // Not a git repo, skip
+              } catch (e) {
+                serverLogger.debug(`${worktreePath} is not a git repo:`, e);
+                continue;
               }
 
               found++;
@@ -2737,8 +2744,8 @@ export function setupSocketHandlers(
                 { cwd: worktreePath }
               );
               branchName = stdout.trim() || "unknown";
-            } catch {
-              // Ignore errors getting branch name
+            } catch (e) {
+              serverLogger.debug(`Failed to get branch name for ${worktreePath}:`, e);
             }
 
             // Try to get remote URL for source repo path (sanitized)
@@ -2759,8 +2766,8 @@ export function setupSocketHandlers(
               if (match) {
                 projectFullName = match[1].replace(/\.git$/, "");
               }
-            } catch {
-              // Ignore errors getting remote URL
+            } catch (e) {
+              serverLogger.debug(`Failed to get remote URL for ${worktreePath}:`, e);
             }
 
             // Register the worktree
@@ -2869,8 +2876,9 @@ export function setupSocketHandlers(
           // Check if the worktree path exists
           try {
             await fs.access(normalizedPath);
-          } catch {
+          } catch (e) {
             // Path doesn't exist, just remove from registry
+            serverLogger.debug(`[delete-worktree] Path doesn't exist:`, e);
             serverLogger.info(
               `[delete-worktree] Path doesn't exist, removing from registry only: ${worktreePath}`
             );
@@ -2910,8 +2918,9 @@ export function setupSocketHandlers(
                 }
               }
             }
-          } catch {
+          } catch (e) {
             // .git is a directory (regular clone) or doesn't exist, just delete the folder
+            serverLogger.debug(`[delete-worktree] .git is not a file, deleting folder directly:`, e);
             await fs.rm(normalizedPath, { recursive: true, force: true });
             serverLogger.info(
               `[delete-worktree] Deleted worktree folder: ${worktreePath}`
@@ -2929,8 +2938,8 @@ export function setupSocketHandlers(
                   `[delete-worktree] Removed empty parent directory: ${parentDir}`
                 );
               }
-            } catch {
-              // Ignore errors cleaning up parent
+            } catch (e) {
+              serverLogger.debug(`[delete-worktree] Failed to clean up parent directory ${parentDir}:`, e);
             }
           }
 
@@ -2977,7 +2986,8 @@ export function setupSocketHandlers(
           try {
             await fs.access(worktreePath);
             validPaths.push(worktreePath);
-          } catch {
+          } catch (e) {
+            serverLogger.debug(`[validate-worktrees] Path doesn't exist: ${worktreePath}:`, e);
             invalidPaths.push(worktreePath);
           }
         }
@@ -3271,10 +3281,11 @@ export function setupSocketHandlers(
 
           try {
             await fs.access(worktreeInfo.originPath);
-          } catch {
+          } catch (e) {
             serverLogger.error(
               "Origin directory does not exist:",
-              worktreeInfo.originPath
+              worktreeInfo.originPath,
+              e
             );
             return [];
           }
@@ -3838,7 +3849,8 @@ Please address the issue mentioned in the comment above.`;
               });
               callback({ success: true, imageName });
               return;
-            } catch {
+            } catch (e) {
+              serverLogger.debug(`[docker-pull-image] Image not yet available, retrying:`, e);
               await sleep(2_000);
             }
           }
@@ -4267,12 +4279,13 @@ Please address the issue mentioned in the comment above.`;
             await fs.access(normalizedPath);
             dirExists = true;
             break;
-          } catch {
+          } catch (e) {
             // Directory doesn't exist yet, wait and retry
             if (waited === 0) {
               serverLogger.info(
                 `[trigger-local-cloud-sync] Waiting for directory to exist: ${normalizedPath}`
               );
+              serverLogger.debug(`[trigger-local-cloud-sync] Initial access error:`, e);
             }
             await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
             waited += pollIntervalMs;
