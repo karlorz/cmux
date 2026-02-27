@@ -1935,6 +1935,7 @@ export const createTask = httpAction(async (ctx, req) => {
     baseBranch?: string;
     agents?: string[];
     prTitle?: string;
+    environmentId?: string;
     images?: Array<{
       storageId: string;
       fileName?: string;
@@ -1997,6 +1998,30 @@ export const createTask = httpAction(async (ctx, req) => {
       });
     }
 
+    // Validate environmentId if provided
+    let environmentId: Id<"environments"> | undefined;
+    if (body.environmentId) {
+      try {
+        environmentId = body.environmentId as Id<"environments">;
+        // Verify environment exists and belongs to this team
+        const environment = await ctx.runQuery(api.environments.get, {
+          teamSlugOrId: body.teamSlugOrId,
+          id: environmentId,
+        });
+        if (!environment) {
+          return jsonResponse(
+            { code: 404, message: `Environment not found: ${body.environmentId}` },
+            404
+          );
+        }
+      } catch (err) {
+        return jsonResponse(
+          { code: 400, message: `Invalid environment ID: ${body.environmentId}` },
+          400
+        );
+      }
+    }
+
     // Create task runs for each agent (with JWTs for sandbox auth)
     const taskRuns: Array<{ taskRunId: string; jwt: string; agentName: string }> = [];
     if (body.agents && body.agents.length > 0) {
@@ -2007,6 +2032,7 @@ export const createTask = httpAction(async (ctx, req) => {
           taskId: taskResult.taskId,
           prompt: body.prompt,
           agentName,
+          environmentId,
         }) as { taskRunId: Id<"taskRuns">; jwt: string };
 
         taskRuns.push({

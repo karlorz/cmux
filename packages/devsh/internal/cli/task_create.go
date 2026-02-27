@@ -24,6 +24,7 @@ var (
 	taskCreateLocal     bool
 	taskCreateImages    []string
 	taskCreatePRTitle   string
+	taskCreateEnv       string
 )
 
 var taskCreateCmd = &cobra.Command{
@@ -36,6 +37,7 @@ By default, if agents are specified, sandboxes will be provisioned and agents st
 Use --no-sandbox to create the task without starting sandboxes.
 Use --realtime to use socket.io for real-time feedback (same as web app flow).
 Use --local to create a local workspace with codex-style worktrees (requires local server).
+Use --env to specify a custom environment (if omitted, auto-selects latest for repo).
 
 Examples:
   devsh task create "Add unit tests for auth module"
@@ -45,7 +47,8 @@ Examples:
   devsh task create --repo owner/repo --agent claude-code --image ./screenshot.png "Fix the UI bug shown in the image"
   devsh task create --repo owner/repo --agent claude-code --no-sandbox "Just create task"
   devsh task create --repo owner/repo --agent claude-code --realtime "With real-time updates"
-  devsh task create --repo owner/repo --agent claude-code --local "Local worktree mode"`,
+  devsh task create --repo owner/repo --agent claude-code --local "Local worktree mode"
+  devsh task create --repo owner/repo --env env_abc123 --agent claude-code "With custom environment"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		prompt := args[0]
@@ -113,13 +116,32 @@ Examples:
 			}
 		}
 
+		// Resolve environment ID
+		environmentID := taskCreateEnv
+		if environmentID == "" && taskCreateRepo != "" {
+			// Auto-select the latest environment for this repo
+			envID, err := client.FindEnvironmentForRepo(ctx, taskCreateRepo)
+			if err != nil {
+				// Non-fatal: just log and continue without environment
+				if !flagJSON {
+					fmt.Printf("Warning: failed to lookup environments: %s\n", err)
+				}
+			} else if envID != "" {
+				environmentID = envID
+				if !flagJSON {
+					fmt.Printf("Auto-selected environment: %s\n", envID)
+				}
+			}
+		}
+
 		opts := vm.CreateTaskOptions{
-			Prompt:     prompt,
-			Repository: taskCreateRepo,
-			BaseBranch: taskCreateBranch,
-			Agents:     taskCreateAgents,
-			Images:     uploadedImages,
-			PRTitle:    taskCreatePRTitle,
+			Prompt:        prompt,
+			Repository:    taskCreateRepo,
+			BaseBranch:    taskCreateBranch,
+			Agents:        taskCreateAgents,
+			Images:        uploadedImages,
+			PRTitle:       taskCreatePRTitle,
+			EnvironmentID: environmentID,
 		}
 
 		// Create task and task runs (with JWTs)
@@ -342,6 +364,7 @@ type agentInfo struct {
 func init() {
 	taskCreateCmd.Flags().StringVar(&taskCreateRepo, "repo", "", "Repository (owner/name)")
 	taskCreateCmd.Flags().StringVar(&taskCreateBranch, "branch", "main", "Base branch")
+	taskCreateCmd.Flags().StringVar(&taskCreateEnv, "env", "", "Environment ID (if omitted, auto-selects latest for repo)")
 	taskCreateCmd.Flags().StringArrayVar(&taskCreateAgents, "agent", nil, "Agent(s) to run (can specify multiple)")
 	taskCreateCmd.Flags().StringArrayVar(&taskCreateImages, "image", nil, "Image file path(s) to attach (can specify multiple)")
 	taskCreateCmd.Flags().BoolVar(&taskCreateNoSandbox, "no-sandbox", false, "Create task without starting sandboxes")
