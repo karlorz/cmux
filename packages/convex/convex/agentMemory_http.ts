@@ -181,7 +181,8 @@ export const syncMemory = httpAction(async (ctx, req) => {
   let json: unknown;
   try {
     json = await req.json();
-  } catch {
+  } catch (error) {
+    console.error("[convex.agentMemory] Failed to parse JSON body:", error);
     return jsonResponse({ code: 400, message: "Invalid JSON body" }, 400);
   }
 

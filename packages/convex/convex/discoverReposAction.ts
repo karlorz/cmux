@@ -114,8 +114,9 @@ async function execPveLxc(sandboxId: string, cmd: string): Promise<string> {
       if (parsed.type === "stdout" && parsed.data) {
         stdout += parsed.data + "\n";
       }
-    } catch {
-      // Skip malformed lines
+    } catch (error) {
+      // Skip malformed lines - log for debugging but continue processing
+      console.debug("[execPveLxc] Skipped malformed JSON line:", error);
     }
   }
   return stdout;

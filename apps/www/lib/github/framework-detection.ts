@@ -677,7 +677,8 @@ async function repoFileExists(
       path,
     });
     return true;
-  } catch {
+  } catch (error) {
+    console.error("[framework-detection] Failed to detect framework at path:", error);
     return false;
   }
 }

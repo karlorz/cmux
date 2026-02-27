@@ -114,7 +114,8 @@ export function parseCrownEvaluationPrompt(
 
     if (normalized.length === 0) return null;
     return { prompt, candidates: normalized };
-  } catch {
+  } catch (error) {
+    console.error("[parseCrownEvaluationPrompt] Failed to parse evaluation prompt:", error);
     return null;
   }
 }

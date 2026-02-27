@@ -163,8 +163,9 @@ function parseRepoSlug(prIdentifier: string): RepoSlug | null {
       }
       return null;
     }
-  } catch {
-    // Not a URL, fall through to pattern checks.
+  } catch (error) {
+    // Not a URL, fall through to pattern checks
+    console.debug("[run-simple-anthropic-review] Not a URL format, continuing with pattern checks:", error);
   }
 
   const hashMatch = prIdentifier.match(/^([\w.-]+)\/([\w.-]+)#\d+$/i);
