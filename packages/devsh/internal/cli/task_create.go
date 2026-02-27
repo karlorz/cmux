@@ -16,15 +16,16 @@ import (
 )
 
 var (
-	taskCreateRepo      string
-	taskCreateBranch    string
-	taskCreateAgents    []string
-	taskCreateNoSandbox bool
-	taskCreateRealtime  bool
-	taskCreateLocal     bool
-	taskCreateImages    []string
-	taskCreatePRTitle   string
-	taskCreateEnv       string
+	taskCreateRepo           string
+	taskCreateBranch         string
+	taskCreateAgents         []string
+	taskCreateNoSandbox      bool
+	taskCreateRealtime       bool
+	taskCreateLocal          bool
+	taskCreateImages         []string
+	taskCreatePRTitle        string
+	taskCreateEnv            string
+	taskCreateCloudWorkspace bool
 )
 
 var taskCreateCmd = &cobra.Command{
@@ -48,7 +49,8 @@ Examples:
   devsh task create --repo owner/repo --agent claude-code --no-sandbox "Just create task"
   devsh task create --repo owner/repo --agent claude-code --realtime "With real-time updates"
   devsh task create --repo owner/repo --agent claude-code --local "Local worktree mode"
-  devsh task create --repo owner/repo --env env_abc123 --agent claude-code "With custom environment"`,
+  devsh task create --repo owner/repo --env env_abc123 --agent claude-code "With custom environment"
+  devsh task create --repo owner/repo --cloud-workspace --agent claude-code "Create as cloud workspace"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		prompt := args[0]
@@ -135,13 +137,14 @@ Examples:
 		}
 
 		opts := vm.CreateTaskOptions{
-			Prompt:        prompt,
-			Repository:    taskCreateRepo,
-			BaseBranch:    taskCreateBranch,
-			Agents:        taskCreateAgents,
-			Images:        uploadedImages,
-			PRTitle:       taskCreatePRTitle,
-			EnvironmentID: environmentID,
+			Prompt:           prompt,
+			Repository:       taskCreateRepo,
+			BaseBranch:       taskCreateBranch,
+			Agents:           taskCreateAgents,
+			Images:           uploadedImages,
+			PRTitle:          taskCreatePRTitle,
+			EnvironmentID:    environmentID,
+			IsCloudWorkspace: taskCreateCloudWorkspace,
 		}
 
 		// Create task and task runs (with JWTs)
@@ -371,5 +374,6 @@ func init() {
 	taskCreateCmd.Flags().BoolVar(&taskCreateRealtime, "realtime", false, "Use socket.io for real-time feedback")
 	taskCreateCmd.Flags().BoolVar(&taskCreateLocal, "local", false, "Use local workspace mode (codex-style worktrees)")
 	taskCreateCmd.Flags().StringVar(&taskCreatePRTitle, "pr-title", "", "Optional pull request title to save on the task")
+	taskCreateCmd.Flags().BoolVar(&taskCreateCloudWorkspace, "cloud-workspace", false, "Create as a cloud workspace (appears in Workspaces section)")
 	taskCmd.AddCommand(taskCreateCmd)
 }

@@ -798,13 +798,14 @@ type Environment struct {
 
 // CreateTaskOptions represents options for creating a task
 type CreateTaskOptions struct {
-	Prompt        string
-	Repository    string
-	BaseBranch    string
-	Agents        []string
-	Images        []TaskImage
-	PRTitle       string
-	EnvironmentID string
+	Prompt           string
+	Repository       string
+	BaseBranch       string
+	Agents           []string
+	Images           []TaskImage
+	PRTitle          string
+	EnvironmentID    string
+	IsCloudWorkspace bool
 }
 
 // TaskRunWithJWT represents a task run with its JWT for sandbox auth
@@ -942,6 +943,9 @@ func (c *Client) CreateTask(ctx context.Context, opts CreateTaskOptions) (*Creat
 	}
 	if opts.EnvironmentID != "" {
 		body["environmentId"] = opts.EnvironmentID
+	}
+	if opts.IsCloudWorkspace {
+		body["isCloudWorkspace"] = true
 	}
 
 	resp, err := c.doRequest(ctx, "POST", "/api/v1/cmux/tasks", body)

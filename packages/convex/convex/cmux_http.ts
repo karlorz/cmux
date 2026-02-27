@@ -1936,6 +1936,7 @@ export const createTask = httpAction(async (ctx, req) => {
     agents?: string[];
     prTitle?: string;
     environmentId?: string;
+    isCloudWorkspace?: boolean;
     images?: Array<{
       storageId: string;
       fileName?: string;
@@ -1980,6 +1981,7 @@ export const createTask = httpAction(async (ctx, req) => {
       text: body.prompt,
       projectFullName: body.repository,
       baseBranch: body.baseBranch ?? "main",
+      isCloudWorkspace: body.isCloudWorkspace,
       images: body.images as
         | Array<{
             storageId: Id<"_storage">;
