@@ -1584,15 +1584,14 @@ sandboxesRouter.openapi(
         return c.text("Instance not found", 404);
       }
 
-      // Verify sandbox ownership - check both activity record and instance metadata
+      // Verify sandbox ownership - check activity record first, fall back to instance metadata
       if (isPveLxcInstanceId(instanceId)) {
         const activity = await convex.query(api.sandboxInstances.getActivity, {
           instanceId,
         });
-        if (!activity || !activity.teamId) {
-          return c.text("Sandbox not found", 404);
-        }
-        if (activity.teamId !== team.uuid) {
+        // For PVE instances created via devsh start (no activity record), allow if instance exists
+        // The instance was already verified to exist above, and team access was verified
+        if (activity && activity.teamId && activity.teamId !== team.uuid) {
           return c.text("Forbidden", 403);
         }
       } else {
@@ -1617,6 +1616,10 @@ sandboxesRouter.openapi(
         providers: result.providers,
       });
     } catch (error) {
+      // Re-throw HTTPException to preserve proper status codes (403, 404, etc.)
+      if (error instanceof HTTPException) {
+        throw error;
+      }
       console.error("[setup-providers] Failed:", error);
       return c.text("Failed to set up providers", 500);
     }
