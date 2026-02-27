@@ -97,4 +97,11 @@ crons.interval(
   internal.orchestrationWorker.pollReadyTasks
 );
 
+// Refresh Codex OAuth tokens server-side to avoid refresh-token reuse across sandboxes
+crons.interval(
+  "refresh codex oauth tokens",
+  { minutes: 15 },
+  internal.codexTokenRefresh.refreshExpiring
+);
+
 export default crons;

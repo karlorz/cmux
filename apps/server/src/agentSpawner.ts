@@ -14,6 +14,11 @@ import {
   getProviderHealthMonitor,
   type ProviderHealthMetrics,
 } from "@cmux/shared/resilience";
+import {
+  isCodexTokenExpired,
+  isCodexTokenExpiring,
+  parseCodexAuthJson,
+} from "@cmux/shared/providers/openai/codex-token";
 import type {
   WorkerCreateTerminal,
   WorkerSyncFiles,
@@ -561,6 +566,26 @@ export async function spawnAgent(
       providerOverrides = results[2];
       previousKnowledge = results[3];
       previousMailbox = results[4];
+    }
+
+    // Fail fast for expired Codex OAuth tokens to avoid stuck sandboxes due to refresh-token reuse.
+    if (agent.name.startsWith("codex/")) {
+      const rawAuthJson = userApiKeys.CODEX_AUTH_JSON;
+      if (rawAuthJson) {
+        const parsed = parseCodexAuthJson(rawAuthJson);
+        if (parsed) {
+          if (isCodexTokenExpired(parsed)) {
+            throw new Error(
+              "Codex OAuth token has expired. Please run `codex auth` locally and update CODEX_AUTH_JSON in settings."
+            );
+          }
+          if (isCodexTokenExpiring(parsed, 60 * 60 * 1000)) {
+            serverLogger.warn(
+              "[AgentSpawner] Codex OAuth token is expiring within 1 hour; background refresh may not complete in time"
+            );
+          }
+        }
+      }
     }
 
     if (previousKnowledge) {

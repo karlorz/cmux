@@ -134,12 +134,14 @@ export const dispatchSpawn = internalAction({
     );
     if (!task) return;
 
+    const agentName = task.assignedAgentName ?? "claude/haiku-4.5";
+
     // Claim the task (atomic)
     const claimed = await ctx.runMutation(
       internal.orchestrationQueries.claimTask,
       {
         taskId: args.taskId,
-        agentName: task.assignedAgentName ?? "claude/haiku-4.5",
+        agentName,
       }
     );
     if (!claimed) return; // Another worker claimed it
@@ -153,6 +155,19 @@ export const dispatchSpawn = internalAction({
         internal.taskRuns.getJwtInternal,
         { taskRunId: task.taskRunId }
       );
+
+      // Pre-check Codex OAuth token status to avoid wasting spawn attempts.
+      if (agentName.startsWith("codex/")) {
+        const status = await ctx.runQuery(
+          internal.codexTokenRefresh.getTokenStatus,
+          { teamId: args.teamId, userId: jwtResult.userId }
+        );
+        if (status === "expired") {
+          throw new Error(
+            "Codex OAuth token has expired. Please run `codex auth` locally and update CODEX_AUTH_JSON in settings."
+          );
+        }
+      }
 
       // Call server to spawn
       const serverUrl = process.env.CMUX_SERVER_URL ?? "http://localhost:9779";
@@ -169,7 +184,7 @@ export const dispatchSpawn = internalAction({
           body: JSON.stringify({
             orchestrationTaskId: args.taskId,
             teamId: args.teamId,
-            agentName: task.assignedAgentName ?? "claude/haiku-4.5",
+            agentName,
             prompt: task.prompt,
             taskId: task.taskId,
             taskRunId: task.taskRunId,

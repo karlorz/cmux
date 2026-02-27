@@ -158,6 +158,10 @@
       "import": "./src/providers/opencode/free-models.ts",
       "types": "./src/providers/opencode/free-models.ts"
     },
+    "./providers/openai/codex-token": {
+      "import": "./src/providers/openai/codex-token.ts",
+      "types": "./src/providers/openai/codex-token.ts"
+    },
     "./resilience/provider-health": {
       "import": "./src/resilience/provider-health.ts",
       "types": "./src/resilience/provider-health.ts"

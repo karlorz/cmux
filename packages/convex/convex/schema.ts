@@ -612,6 +612,11 @@ const convexSchema = defineSchema({
     value: v.string(), // The actual API key value (encrypted in a real app)
     displayName: v.string(), // e.g. "Gemini API Key"
     description: v.optional(v.string()),
+    // OAuth token tracking (Codex)
+    tokenExpiresAt: v.optional(v.number()), // Epoch ms from parsed expires_at / JWT exp
+    lastRefreshAttemptAt: v.optional(v.number()), // Last refresh attempt timestamp
+    lastRefreshError: v.optional(v.string()), // Error from last failed refresh
+    refreshFailureCount: v.optional(v.number()), // Consecutive failures for backoff
     createdAt: v.number(),
     updatedAt: v.number(),
     userId: v.string(),

@@ -1,4 +1,8 @@
 import { v } from "convex/values";
+import {
+  getCodexTokenExpiresAtMs,
+  parseCodexAuthJson,
+} from "@cmux/shared/providers/openai/codex-token";
 import { resolveTeamIdLoose } from "../_shared/team";
 import { internalQuery } from "./_generated/server";
 import { authMutation, authQuery } from "./users/utils";
@@ -46,6 +50,14 @@ export const upsert = authMutation({
   handler: async (ctx, args) => {
     const userId = ctx.identity.subject;
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    const isCodexAuthJson = args.envVar === "CODEX_AUTH_JSON";
+    const parsedCodex =
+      isCodexAuthJson ? parseCodexAuthJson(args.value) : null;
+    const tokenExpiresAt = parsedCodex
+      ? getCodexTokenExpiresAtMs(parsedCodex) ?? undefined
+      : undefined;
+
     const existing = await ctx.db
       .query("apiKeys")
       .withIndex("by_team_user", (q) =>
@@ -59,6 +71,14 @@ export const upsert = authMutation({
         value: args.value,
         displayName: args.displayName,
         description: args.description,
+        ...(isCodexAuthJson
+          ? {
+              tokenExpiresAt,
+              lastRefreshAttemptAt: undefined,
+              lastRefreshError: undefined,
+              refreshFailureCount: 0,
+            }
+          : {}),
         updatedAt: Date.now(),
       });
       return existing._id;
@@ -68,6 +88,14 @@ export const upsert = authMutation({
         value: args.value,
         displayName: args.displayName,
         description: args.description,
+        ...(isCodexAuthJson
+          ? {
+              tokenExpiresAt,
+              lastRefreshAttemptAt: undefined,
+              lastRefreshError: undefined,
+              refreshFailureCount: 0,
+            }
+          : {}),
         createdAt: Date.now(),
         updatedAt: Date.now(),
         userId,
