@@ -36,6 +36,40 @@ function sanitizeGitUrl(url: string): string {
   }
 }
 
+/**
+ * Git branch name validation regex.
+ * Matches valid git ref names: alphanumeric, hyphens, underscores, periods, slashes.
+ * Disallows: shell metacharacters, spaces, double dots, leading/trailing slashes.
+ */
+const GIT_BRANCH_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._/-]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$/;
+
+/**
+ * Validate a git branch name to prevent shell injection.
+ * Throws if the branch name contains potentially dangerous characters.
+ */
+function validateBranchName(branch: string): void {
+  if (!branch || branch.length === 0) {
+    throw new Error("Branch name cannot be empty");
+  }
+  if (branch.length > 255) {
+    throw new Error("Branch name too long (max 255 characters)");
+  }
+  if (branch.includes("..")) {
+    throw new Error("Branch name cannot contain '..'");
+  }
+  if (branch.startsWith(".") || branch.endsWith(".")) {
+    throw new Error("Branch name cannot start or end with '.'");
+  }
+  if (branch.startsWith("/") || branch.endsWith("/")) {
+    throw new Error("Branch name cannot start or end with '/'");
+  }
+  if (!GIT_BRANCH_PATTERN.test(branch)) {
+    throw new Error(
+      `Invalid branch name '${branch}': must contain only alphanumeric characters, hyphens, underscores, periods, and forward slashes`
+    );
+  }
+}
+
 function log(message: string, level: "info" | "error" | "debug" = "info") {
   const prefix = `[hydrate-repo]`;
   const timestamp = new Date().toISOString();
@@ -224,6 +258,12 @@ function fetchUpdates(workspacePath: string) {
 }
 
 function checkoutBranch(workspacePath: string, baseBranch: string, newBranch?: string) {
+  // Validate branch names to prevent shell injection
+  validateBranchName(baseBranch);
+  if (newBranch) {
+    validateBranchName(newBranch);
+  }
+
   log(`Checking out base branch: ${baseBranch}`);
 
   // Try to checkout the base branch

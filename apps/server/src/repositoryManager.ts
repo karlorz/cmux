@@ -8,7 +8,7 @@ import {
   type GitHooksConfig,
 } from "./gitHooks";
 import { serverLogger } from "./utils/fileLogger";
-import { hasEmbeddedCredentials, sanitizeGitUrl } from "./utils/gitUrl";
+import { hasEmbeddedCredentials, sanitizeGitUrl, validateBranchName } from "./utils/gitUrl";
 import { getGitHubOAuthToken } from "./utils/getGitHubToken";
 
 const execAsync = promisify(exec);
@@ -565,6 +565,11 @@ export class RepositoryManager {
     branch?: string,
     remoteUrl?: string
   ): Promise<void> {
+    // Validate branch name if provided to prevent shell injection
+    if (branch) {
+      validateBranchName(branch);
+    }
+
     this.cleanupStaleOperations();
 
     // Use remoteUrl for storage if provided, otherwise use repoUrl
@@ -881,6 +886,11 @@ export class RepositoryManager {
    * Used for codex-style mode where we use existing local repos instead of cloning.
    */
   async fetchLatest(repoPath: string, branch?: string): Promise<void> {
+    // Validate branch name if provided to prevent shell injection
+    if (branch) {
+      validateBranchName(branch);
+    }
+
     serverLogger.info(`[fetchLatest] Fetching latest for ${repoPath}`);
     try {
       // Get the branch to fetch (use provided or detect default)
@@ -983,6 +993,9 @@ export class RepositoryManager {
     branch: string,
     authenticatedUrl?: string
   ): Promise<void> {
+    // Validate branch name to prevent shell injection
+    validateBranchName(branch);
+
     // Fetch the specific branch and explicitly update the remote-tracking ref
     // even if the clone was created with --single-branch.
     // Force-update the remote-tracking ref to tolerate non-fast-forward updates
@@ -1146,6 +1159,10 @@ export class RepositoryManager {
     baseBranch: string = "main",
     authenticatedUrl?: string
   ): Promise<string> {
+    // Validate branch names to prevent shell injection
+    validateBranchName(branchName);
+    validateBranchName(baseBranch);
+
     serverLogger.info(
       `Creating worktree from local repo ${sourceRepoPath} for branch ${branchName}`
     );
@@ -1339,6 +1356,10 @@ export class RepositoryManager {
     baseBranch: string = "main",
     authenticatedUrl?: string
   ): Promise<string> {
+    // Validate branch names to prevent shell injection
+    validateBranchName(branchName);
+    validateBranchName(baseBranch);
+
     // In-process lock keyed by repo+branch to avoid concurrent add for same branch
     const inProcessLockKey = `${originPath}::${branchName}`;
     const existingLock = this.worktreeLocks.get(inProcessLockKey);
@@ -1582,6 +1603,9 @@ export class RepositoryManager {
     worktreePath: string,
     branchName: string
   ): Promise<void> {
+    // Validate branch name to prevent shell injection
+    validateBranchName(branchName);
+
     try {
       await this.executeGitCommand(
         `git config branch.${branchName}.remote origin`,
