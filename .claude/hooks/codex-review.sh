@@ -36,20 +36,12 @@ fi
 TMPFILE=$(mktemp)
 trap 'rm -f "$TMPFILE"' EXIT
 
-# Build system prompt with REVIEW.md guidelines (--base and [PROMPT] are mutually exclusive,
-# so we pass review guidelines via -c system_prompt instead)
-REVIEW_SYSTEM_PROMPT="When reviewing code, apply these review guidelines:"
-if [ -f "$CLAUDE_PROJECT_DIR/REVIEW.md" ]; then
-  REVIEW_SYSTEM_PROMPT="$REVIEW_SYSTEM_PROMPT
-
-$(cat "$CLAUDE_PROJECT_DIR/REVIEW.md")"
-fi
-
+# REVIEW.md guidelines are loaded via AGENTS.md (codex reads it automatically).
+# --base and [PROMPT] are mutually exclusive, so we cannot pass a custom prompt here.
 unbuffer codex \
   --dangerously-bypass-approvals-and-sandbox \
   --model gpt-5.3-codex \
   -c model_reasoning_effort="low" \
-  -c system_prompt="$REVIEW_SYSTEM_PROMPT" \
   review --base main > "$TMPFILE" 2>&1 || true
 
 # Strip ANSI codes first, then extract final codex response
