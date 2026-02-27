@@ -410,13 +410,14 @@ export async function runSimpleAnthropicReviewStream(
         const prompt = buildFilePrompt(prLabel, file.filePath, file.diffText, tooltipLanguage);
 
         try {
+          // Type assertion needed: @ai-sdk packages return V2|V3 but streamText expects V2
           const modelInstance =
             effectiveModelConfig.provider === "openai"
               ? openai(effectiveModelConfig.model)
               : bedrock(effectiveModelConfig.model);
 
           const stream = streamText({
-            model: modelInstance,
+            model: modelInstance as Parameters<typeof streamText>[0]["model"],
             prompt,
             temperature: 0,
             maxRetries: 2,

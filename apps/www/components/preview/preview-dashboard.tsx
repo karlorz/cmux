@@ -4786,8 +4786,8 @@ function PreviewDashboardInner({
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <Tooltip>
-                          <TooltipTrigger asChild delayDuration={0}>
+                        <Tooltip delayDuration={0}>
+                          <TooltipTrigger asChild>
                             <button
                               type="button"
                               onClick={() => handleOpenConfig(config)}
@@ -4805,8 +4805,8 @@ function PreviewDashboardInner({
                             Edit configuration
                           </TooltipContent>
                         </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild delayDuration={0}>
+                        <Tooltip delayDuration={0}>
+                          <TooltipTrigger asChild>
                             <button
                               type="button"
                               onClick={() => handleRequestDelete(config)}

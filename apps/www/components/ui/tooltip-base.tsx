@@ -5,23 +5,23 @@ import { cn } from "@/lib/utils";
 
 const TooltipProvider = BaseTooltip.Provider;
 
-function Tooltip(props: React.ComponentProps<typeof BaseTooltip.Root>) {
-  return <BaseTooltip.Root {...props} />;
+interface TooltipProps extends React.ComponentProps<typeof BaseTooltip.Root> {
+  /** @deprecated Use delay prop instead */
+  delayDuration?: number;
+}
+
+function Tooltip({ delayDuration, delay, ...props }: TooltipProps) {
+  // Support both delay and delayDuration for backwards compatibility
+  return <BaseTooltip.Root {...props} delay={delay ?? delayDuration} />;
 }
 
 interface TooltipTriggerProps extends React.ComponentProps<typeof BaseTooltip.Trigger> {
   asChild?: boolean;
-  delay?: number;
-  closeDelay?: number;
-  delayDuration?: number;
   children?: React.ReactNode;
 }
 
 function TooltipTrigger({
   asChild,
-  delayDuration,
-  delay = delayDuration ?? 0,
-  closeDelay,
   children,
   ...props
 }: TooltipTriggerProps) {
@@ -30,14 +30,12 @@ function TooltipTrigger({
     return (
       <BaseTooltip.Trigger
         {...props}
-        delay={delay}
-        closeDelay={closeDelay}
         render={children as React.ReactElement<Record<string, unknown>>}
       />
     );
   }
   return (
-    <BaseTooltip.Trigger {...props} delay={delay} closeDelay={closeDelay}>
+    <BaseTooltip.Trigger {...props}>
       {children}
     </BaseTooltip.Trigger>
   );
