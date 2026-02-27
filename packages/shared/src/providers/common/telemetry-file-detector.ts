@@ -43,13 +43,13 @@ export function createTelemetryFileDetector(
         stopped = true;
         try {
           fileWatcher?.close();
-        } catch {
-          // ignore close errors
+        } catch (closeError) {
+          console.error("[telemetry-file-detector] Error closing file watcher:", closeError);
         }
         try {
           dirWatcher?.close();
-        } catch {
-          // ignore close errors
+        } catch (closeError) {
+          console.error("[telemetry-file-detector] Error closing directory watcher:", closeError);
         }
         resolve();
       };

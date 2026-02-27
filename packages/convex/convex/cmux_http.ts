@@ -279,7 +279,14 @@ export const createInstance = httpAction(async (ctx, req) => {
         metadata: {
           app: "cmux-devbox",
           userId: identity!.subject,
-          ...(body.metadata || {}),
+          // Validate metadata: only allow string key-value pairs, filter out non-strings
+          ...(body.metadata
+            ? Object.fromEntries(
+                Object.entries(body.metadata).filter(
+                  ([, v]) => typeof v === "string"
+                )
+              )
+            : {}),
         },
       }),
     });
