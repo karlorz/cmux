@@ -2,6 +2,10 @@ import { v } from "convex/values";
 import { resolveTeamIdLoose } from "../_shared/team";
 import { internalQuery } from "./_generated/server";
 import { authMutation, authQuery } from "./users/utils";
+import {
+  parseCodexAuthJson,
+  getCodexTokenExpiresAtMs,
+} from "@cmux/shared/providers/openai/codex-token";
 
 export const getAll = authQuery({
   args: { teamSlugOrId: v.string() },
@@ -54,12 +58,29 @@ export const upsert = authMutation({
       .filter((q) => q.eq(q.field("envVar"), args.envVar))
       .first();
 
+    // Extract token expiry for Codex OAuth tokens
+    let tokenExpiresAt: number | undefined;
+    if (args.envVar === "CODEX_AUTH_JSON") {
+      const auth = parseCodexAuthJson(args.value);
+      if (auth) {
+        tokenExpiresAt = getCodexTokenExpiresAtMs(auth) ?? undefined;
+      }
+    }
+
     if (existing) {
       await ctx.db.patch(existing._id, {
         value: args.value,
         displayName: args.displayName,
         description: args.description,
         updatedAt: Date.now(),
+        // Update token tracking fields when user manually updates their token
+        ...(args.envVar === "CODEX_AUTH_JSON"
+          ? {
+              tokenExpiresAt,
+              lastRefreshError: undefined,
+              refreshFailureCount: 0,
+            }
+          : {}),
       });
       return existing._id;
     } else {
@@ -72,6 +93,7 @@ export const upsert = authMutation({
         updatedAt: Date.now(),
         userId,
         teamId,
+        ...(args.envVar === "CODEX_AUTH_JSON" ? { tokenExpiresAt } : {}),
       });
     }
   },

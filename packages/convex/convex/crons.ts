@@ -88,6 +88,14 @@ crons.weekly(
   internal.modelDiscovery.discoverOpenRouterModels
 );
 
+// Refresh expiring Codex OAuth tokens every 15 minutes
+// Centralizes token refresh to avoid stale refresh_token issues in sandboxes
+crons.interval(
+  "refresh codex oauth tokens",
+  { minutes: 15 },
+  internal.codexTokenRefresh.refreshExpiring
+);
+
 // Poll orchestration tasks every minute for auto-spawning
 // This enables autonomous multi-agent orchestration
 // The worker uses task-run JWTs for authentication (bypasses Stack Auth)
