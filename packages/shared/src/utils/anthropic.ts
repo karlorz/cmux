@@ -1,16 +1,41 @@
+/**
+ * Utilities for working with Anthropic API configuration.
+ */
+
+/** Cloudflare AI Gateway URL for proxying Anthropic requests */
 export const CLOUDFLARE_ANTHROPIC_BASE_URL =
   "https://gateway.ai.cloudflare.com/v1/0c1675e0def6de1ab3a50a4e17dc5656/cmux-ai-proxy/anthropic";
 
+/** Placeholder API key used when routing through cmux proxy */
 export const CMUX_ANTHROPIC_PROXY_PLACEHOLDER_API_KEY =
   "sk_placeholder_cmux_anthropic_api_key";
 
+/**
+ * Normalized Anthropic base URLs for different SDK contexts.
+ */
 export type NormalizedAnthropicBaseUrl = {
-  // For AI SDK providers (createAnthropic), which expect baseURL to include /v1.
+  /** For AI SDK providers (createAnthropic), which expect baseURL to include /v1 */
   forAiSdk: string;
-  // For raw fetch + Claude Code ANTHROPIC_BASE_URL, where callers append /v1/*.
+  /** For raw fetch + Claude Code ANTHROPIC_BASE_URL, where callers append /v1/* */
   forRawFetch: string;
 };
 
+/**
+ * Normalizes an Anthropic API base URL to consistent formats.
+ * Handles both URLs with and without /v1 suffix.
+ *
+ * @param url - The base URL to normalize
+ * @returns Object with normalized URLs for different SDK contexts
+ *
+ * @example
+ * ```ts
+ * normalizeAnthropicBaseUrl("https://api.anthropic.com")
+ * // { forAiSdk: "https://api.anthropic.com/v1", forRawFetch: "https://api.anthropic.com" }
+ *
+ * normalizeAnthropicBaseUrl("https://api.anthropic.com/v1")
+ * // { forAiSdk: "https://api.anthropic.com/v1", forRawFetch: "https://api.anthropic.com" }
+ * ```
+ */
 export function normalizeAnthropicBaseUrl(
   url: string,
 ): NormalizedAnthropicBaseUrl {
