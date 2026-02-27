@@ -14,6 +14,14 @@ cd "$CLAUDE_PROJECT_DIR"
 INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "default"' 2>/dev/null || echo "default")
 
+# Skip if autopilot blocked this stop (another hook already issued a block decision).
+# This avoids running a slow review on every autopilot turn, but still allows
+# the review to run on the final stop when autopilot permits it through.
+STOP_HOOK_ACTIVE=$(echo "$INPUT" | jq -r '.stop_hook_active // false' 2>/dev/null || echo "false")
+if [ "$STOP_HOOK_ACTIVE" = "true" ]; then
+  exit 0
+fi
+
 # Hard stop after 5 failures to prevent excessive loops (per session)
 FAIL_COUNT_FILE="/tmp/codex-review-fails-${SESSION_ID}"
 FAIL_COUNT=0
@@ -28,20 +36,21 @@ fi
 TMPFILE=$(mktemp)
 trap 'rm -f "$TMPFILE"' EXIT
 
-# Read review guidelines
-REVIEW_GUIDELINES=""
+# Build review prompt with guidelines from REVIEW.md
+REVIEW_PROMPT="Review all changes compared to main, including staged, unstaged, and untracked changes."
 if [ -f "$CLAUDE_PROJECT_DIR/REVIEW.md" ]; then
-  REVIEW_GUIDELINES=$(cat "$CLAUDE_PROJECT_DIR/REVIEW.md")
+  REVIEW_PROMPT="$REVIEW_PROMPT
+
+Apply these review guidelines:
+
+$(cat "$CLAUDE_PROJECT_DIR/REVIEW.md")"
 fi
 
-# Run codex with unbuffer to capture TTY output (script doesn't work without real TTY)
 unbuffer codex \
   --dangerously-bypass-approvals-and-sandbox \
   --model gpt-5.3-codex \
   -c model_reasoning_effort="high" \
-  review --base main "Review compared to main, including staged, unstaged, and untracked changes.
-
-$REVIEW_GUIDELINES" > "$TMPFILE" 2>&1 || true
+  review --base main "$REVIEW_PROMPT" > "$TMPFILE" 2>&1 || true
 
 # Strip ANSI codes first, then extract final codex response
 CLEAN=$(sed 's/\x1b\[[0-9;]*m//g' "$TMPFILE")
