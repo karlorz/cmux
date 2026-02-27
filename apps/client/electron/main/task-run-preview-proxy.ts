@@ -1082,7 +1082,7 @@ function authenticateRequest(
     }
     return context;
   } catch (_err) {
-
+    // Base64 decode failed - invalid auth token format, return null to reject
     return null;
   }
 }
