@@ -1,6 +1,8 @@
 "use node";
 
-// TODO: we don't need a node action for this once stack auth can run in v8 environments
+// NOTE: This action requires the Node.js runtime directive because it imports the Stack
+// server app, which has dependencies that are not compatible with Convex v8 environments.
+// Once Stack Auth adds v8 environment support, the "use node" directive can be removed.
 
 import { v } from "convex/values";
 import { stackServerAppJs } from "../_shared/stackServerAppJs";
