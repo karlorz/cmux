@@ -6,7 +6,7 @@
 # devsh models
 
 Production models (use for `--agent` on feature/fix tasks):
-- `claude/opus-4.5`
+- `claude/opus-4.6`
 - `codex/gpt-5.3-codex-xhigh`
 - `codex/gpt-5.2-xhigh`
 
