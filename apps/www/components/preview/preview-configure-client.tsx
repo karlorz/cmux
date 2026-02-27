@@ -958,7 +958,7 @@ export function PreviewConfigureClient({
         throw new Error(await envResponse.text());
       }
 
-      const envData = await envResponse.json();
+      const envData = (await envResponse.json()) as { id: string };
       const environmentId = envData.id;
 
       const previewResponse = await fetch("/api/preview/configs", {

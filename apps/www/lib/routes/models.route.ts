@@ -191,7 +191,7 @@ modelsRouter.openapi(
       });
       return c.json({ success: true });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
+      const message = error instanceof Error ? error.message : "Failed to update model enabled state";
       if (message.includes("not found")) {
         return c.json({ error: message }, 404);
       }

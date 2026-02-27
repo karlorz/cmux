@@ -594,77 +594,81 @@ export function setupSocketHandlers(
     });
 
     void (async () => {
-      // In web mode, skip detecting local editors entirely
-      if (env.NEXT_PUBLIC_WEB_MODE) {
-        const emptyAvailability: AvailableEditors = {
-          vscode: false,
-          cursor: false,
-          windsurf: false,
-          finder: false,
-          iterm: false,
-          terminal: false,
-          ghostty: false,
-          alacritty: false,
-          xcode: false,
+      try {
+        // In web mode, skip detecting local editors entirely
+        if (env.NEXT_PUBLIC_WEB_MODE) {
+          const emptyAvailability: AvailableEditors = {
+            vscode: false,
+            cursor: false,
+            windsurf: false,
+            finder: false,
+            iterm: false,
+            terminal: false,
+            ghostty: false,
+            alacritty: false,
+            xcode: false,
+          };
+          socket.emit("available-editors", emptyAvailability);
+          return;
+        }
+
+        const commandExists = async (cmd: string) => {
+          try {
+            await execAsync(`command -v ${cmd}`);
+            return true;
+          } catch {
+            return false;
+          }
         };
-        socket.emit("available-editors", emptyAvailability);
-        return;
+
+        const appExists = async (app: string) => {
+          if (process.platform !== "darwin") return false;
+          try {
+            await execAsync(`open -Ra "${app}"`);
+            return true;
+          } catch {
+            return false;
+          }
+        };
+
+        const [
+          vscodeExists,
+          cursorExists,
+          windsurfExists,
+          itermExists,
+          terminalExists,
+          ghosttyCommand,
+          ghosttyApp,
+          alacrittyExists,
+          xcodeExists,
+        ] = await Promise.all([
+          editorExists("vscode"),
+          editorExists("cursor"),
+          editorExists("windsurf"),
+          appExists("iTerm"),
+          appExists("Terminal"),
+          commandExists("ghostty"),
+          appExists("Ghostty"),
+          commandExists("alacritty"),
+          appExists("Xcode"),
+        ]);
+
+        const availability: AvailableEditors = {
+          vscode: vscodeExists,
+          cursor: cursorExists,
+          windsurf: windsurfExists,
+          finder: process.platform === "darwin",
+          iterm: itermExists,
+          terminal: terminalExists,
+          ghostty: ghosttyCommand || ghosttyApp,
+          alacritty: alacrittyExists,
+          xcode: xcodeExists,
+        };
+
+        socket.emit("available-editors", availability);
+      } catch (error) {
+        serverLogger.error("[socket] Failed to detect available editors", error);
       }
-
-      const commandExists = async (cmd: string) => {
-        try {
-          await execAsync(`command -v ${cmd}`);
-          return true;
-        } catch {
-          return false;
-        }
-      };
-
-      const appExists = async (app: string) => {
-        if (process.platform !== "darwin") return false;
-        try {
-          await execAsync(`open -Ra "${app}"`);
-          return true;
-        } catch {
-          return false;
-        }
-      };
-
-      const [
-        vscodeExists,
-        cursorExists,
-        windsurfExists,
-        itermExists,
-        terminalExists,
-        ghosttyCommand,
-        ghosttyApp,
-        alacrittyExists,
-        xcodeExists,
-      ] = await Promise.all([
-        editorExists("vscode"),
-        editorExists("cursor"),
-        editorExists("windsurf"),
-        appExists("iTerm"),
-        appExists("Terminal"),
-        commandExists("ghostty"),
-        appExists("Ghostty"),
-        commandExists("alacritty"),
-        appExists("Xcode"),
-      ]);
-
-      const availability: AvailableEditors = {
-        vscode: vscodeExists,
-        cursor: cursorExists,
-        windsurf: windsurfExists,
-        finder: process.platform === "darwin",
-        iterm: itermExists,
-        terminal: terminalExists,
-        ghostty: ghosttyCommand || ghosttyApp,
-        alacritty: alacrittyExists,
-        xcode: xcodeExists,
-      };
-
-      socket.emit("available-editors", availability);
     })();
 
     socket.on("start-task", async (data, callback) => {
@@ -712,10 +716,6 @@ export function setupSocketHandlers(
                 )
               );
             } catch (error) {
-              console.error(
-                "[start-task] Failed to update VSCode status message",
-                error
-              );
               serverLogger.warn(
                 "[start-task] Failed to update VSCode status message",
                 error
@@ -925,9 +925,8 @@ export function setupSocketHandlers(
                   `Successfully pulled Docker image: ${imageName}`
                 );
               } catch (pullError) {
-                console.error("Error auto-pulling Docker image:", pullError);
                 serverLogger.error(
-                  "Error auto-pulling Docker image:",
+                  "[start-task] Error auto-pulling Docker image:",
                   pullError
                 );
                 rt.emit("docker-pull-progress", {
@@ -955,12 +954,8 @@ export function setupSocketHandlers(
               });
             }
           } catch (e) {
-            console.error(
-              "Failed to verify Docker status before start-task",
-              e
-            );
-            serverLogger.warn(
-              "Failed to verify Docker status before start-task",
+            serverLogger.error(
+              "[start-task] Failed to verify Docker status",
               e
             );
             callback({
@@ -1707,7 +1702,6 @@ export function setupSocketHandlers(
                   `[create-local-workspace] Failed to fetch base branch ${baseBranchName}`,
                   error
                 );
-                console.error(error);
               }
             }
 
@@ -1726,7 +1720,6 @@ export function setupSocketHandlers(
                     `[create-local-workspace] Failed to create local base branch ${baseBranchName}`,
                     error
                   );
-                  console.error(error);
                 }
               }
             }
@@ -1948,7 +1941,6 @@ export function setupSocketHandlers(
                   "[create-local-workspace] Failed to detect default base branch",
                   error
                 );
-                console.error(error);
               }
             }
             if (baseBranchName) {
@@ -3504,7 +3496,7 @@ export function setupSocketHandlers(
           selectedAgents,
           commentId,
         } = SpawnFromCommentSchema.parse(data);
-        console.log("spawn-from-comment data", data);
+        serverLogger.debug("[spawn-from-comment] Received data:", data);
 
         // Format the prompt with comment metadata
         const formattedPrompt = `Fix the issue described in this comment:
@@ -4166,9 +4158,6 @@ Please address the issue mentioned in the comment above.`;
         serverLogger.info(
           `[trigger-local-cloud-sync] Manual sync requested: ${localWorkspacePath} -> ${cloudTaskRunId}`
         );
-        console.log(
-          `[trigger-local-cloud-sync] Manual sync requested: ${localWorkspacePath} -> ${cloudTaskRunId}`
-        );
 
         // Check if sync session exists (use original path for lookup)
         const status = localCloudSyncManager.getStatus(localWorkspacePath);
@@ -4176,7 +4165,7 @@ Please address the issue mentioned in the comment above.`;
         // Always check if we need to reconnect to the cloud workspace
         // This handles server restarts where VSCodeInstance is lost but cloud workspace is still running
         const existingInstance = VSCodeInstance.getInstance(cloudTaskRunId);
-        console.log(
+        serverLogger.debug(
           `[trigger-local-cloud-sync] Reconnect check: existingInstance=${!!existingInstance}, workerConnected=${existingInstance?.isWorkerConnected() ?? "N/A"}`
         );
         if (!existingInstance || !existingInstance.isWorkerConnected()) {

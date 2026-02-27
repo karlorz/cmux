@@ -62,7 +62,9 @@ export type UserList = {
 export type _Error = {
     code: number;
     message: string;
-    details?: unknown;
+    details?: {
+        [key: string]: unknown;
+    };
 };
 
 export type ValidationError = {
