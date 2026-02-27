@@ -62,10 +62,16 @@ function ensureStackAuth(req: Request): Response | void {
   }
 
   try {
-    const parsed = JSON.parse(stackAuthHeader) as { accessToken?: string };
-    if (!parsed.accessToken) {
+    const parsed: unknown = JSON.parse(stackAuthHeader);
+    // Validate structure instead of unsafe type cast
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      !("accessToken" in parsed) ||
+      typeof (parsed as { accessToken?: unknown }).accessToken !== "string"
+    ) {
       console.error(
-        "[convex.crown] Missing access token in x-stack-auth header"
+        "[convex.crown] Missing or invalid access token in x-stack-auth header"
       );
       return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
     }
