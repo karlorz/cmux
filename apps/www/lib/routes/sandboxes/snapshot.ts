@@ -40,7 +40,8 @@ function getDefaultSnapshotId(provider: string): string {
     case "pve-lxc":
       return DEFAULT_PVE_LXC_SNAPSHOT_ID;
     case "pve-vm":
-      // TODO: Add default PVE VM snapshot when implemented
+      // NOTE: PVE VM provider is not yet implemented.
+      // Temporarily falls back to Morph default until PVE VM support is added.
       return DEFAULT_MORPH_SNAPSHOT_ID;
     case "morph":
     default:

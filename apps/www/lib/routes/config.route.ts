@@ -51,7 +51,8 @@ function getPresetsForProvider(providerType: SandboxProviderType): SandboxPreset
         description: preset.description,
       }));
     case "pve-vm":
-      // TODO: Add PVE VM presets when implemented
+      // NOTE: PVE VM provider is not yet implemented. Returns empty presets.
+      // This case exists to support future PVE VM sandbox provider functionality.
       return [];
     case "morph":
     default:
@@ -75,7 +76,8 @@ function getDefaultPresetId(providerType: SandboxProviderType): string {
     case "pve-lxc":
       return DEFAULT_PVE_LXC_SNAPSHOT_ID;
     case "pve-vm":
-      // TODO: Add default when PVE VM is implemented
+      // NOTE: PVE VM provider is not yet implemented. Returns empty string.
+      // Should be populated with DEFAULT_PVE_VM_SNAPSHOT_ID once PVE VM support is added.
       return "";
     case "morph":
     default:
