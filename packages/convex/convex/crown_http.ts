@@ -49,7 +49,8 @@ async function ensureJsonRequest(
   try {
     const json = await req.json();
     return { json };
-  } catch {
+  } catch (parseError) {
+    console.error("[convex.crown] Failed to parse request JSON:", parseError);
     return jsonResponse({ code: 400, message: "Invalid JSON body" }, 400);
   }
 }
