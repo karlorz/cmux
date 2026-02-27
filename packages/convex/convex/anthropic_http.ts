@@ -669,7 +669,7 @@ async function handleResponse(
     console.error("[anthropic-proxy] Failed to parse JSON response", {
       status: response.status,
       contentType: response.headers.get("content-type"),
-      error,
+      error: error instanceof Error ? error.message : String(error),
       textPreview: decoded.slice(0, 300),
       hexPreview,
     });
