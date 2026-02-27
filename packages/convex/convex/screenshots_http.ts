@@ -37,7 +37,7 @@ async function ensureJsonRequest(
 export const uploadScreenshot = httpAction(async (ctx, req) => {
   const auth = await getWorkerAuth(req, { loggerPrefix: "[screenshots]" });
   if (!auth) {
-    throw jsonResponse({ code: 401, message: "Unauthorized" }, 401);
+    return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
   }
 
   const parsed = await ensureJsonRequest(req);
@@ -155,7 +155,7 @@ export const uploadScreenshot = httpAction(async (ctx, req) => {
 export const createScreenshotUploadUrl = httpAction(async (ctx, req) => {
   const auth = await getWorkerAuth(req, { loggerPrefix: "[screenshots]" });
   if (!auth) {
-    throw jsonResponse({ code: 401, message: "Unauthorized" }, 401);
+    return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
   }
 
   const parsed = await ensureJsonRequest(req);

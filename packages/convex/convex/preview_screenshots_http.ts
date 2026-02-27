@@ -39,7 +39,7 @@ export const uploadPreviewScreenshot = httpAction(async (ctx, req) => {
     loggerPrefix: "[preview-screenshots]",
   });
   if (!auth) {
-    throw jsonResponse({ code: 401, message: "Unauthorized" }, 401);
+    return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
   }
 
   const parsed = await ensureJsonRequest(req);
@@ -136,7 +136,7 @@ export const createPreviewScreenshotUploadUrl = httpAction(
       loggerPrefix: "[preview-screenshots]",
     });
     if (!auth) {
-      throw jsonResponse({ code: 401, message: "Unauthorized" }, 401);
+      return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
     }
 
     const parsed = await ensureJsonRequest(req);

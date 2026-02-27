@@ -189,7 +189,7 @@ export const crownEvaluate = httpAction(async (ctx, req) => {
 
   if (!workerAuth) {
     const stackAuthError = ensureStackAuth(req);
-    if (stackAuthError) throw stackAuthError;
+    if (stackAuthError) return stackAuthError;
   }
 
   const parsed = await ensureJsonRequest(req);
@@ -372,7 +372,7 @@ export const crownSummarize = httpAction(async (ctx, req) => {
 
   if (!workerAuth) {
     const stackAuthError = ensureStackAuth(req);
-    if (stackAuthError) throw stackAuthError;
+    if (stackAuthError) return stackAuthError;
   }
 
   const parsed = await ensureJsonRequest(req);
@@ -508,7 +508,7 @@ export const crownWorkerCheck = httpAction(async (ctx, req) => {
     loggerPrefix: "[convex.crown]",
   });
   if (!workerAuth) {
-    throw jsonResponse({ code: 401, message: "Unauthorized" }, 401);
+    return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
   }
 
   const parsed = await ensureJsonRequest(req);
@@ -911,7 +911,7 @@ export const crownWorkerFinalize = httpAction(async (ctx, req) => {
     loggerPrefix: "[convex.crown]",
   });
   if (!workerAuth) {
-    throw jsonResponse({ code: 401, message: "Unauthorized" }, 401);
+    return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
   }
 
   const parsed = await ensureJsonRequest(req);
@@ -1095,7 +1095,7 @@ export const crownWorkerComplete = httpAction(async (ctx, req) => {
   const auth = await getWorkerAuth(req, { loggerPrefix: "[convex.crown]" });
   if (!auth) {
     console.error("[convex.crown] Auth failed for worker complete");
-    throw jsonResponse({ code: 401, message: "Unauthorized" }, 401);
+    return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
   }
 
   const parsed = await ensureJsonRequest(req);
