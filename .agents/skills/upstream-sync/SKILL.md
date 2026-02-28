@@ -1,5 +1,5 @@
 ---
-name: cmux-upstream-sync
+name: upstream-sync
 description: Merge upstream manaflow-ai/manaflow into fork karlorz/cmux using merge commits (no rebases) while preserving fork-only behavior. Use when syncing upstream into branches like codex/sync/upstream-main-YYYYMMDD, resolving conflicts with .gitattributes rules, running bun check, auditing fork config overrides from upstream rebrand changes (protocol/domains/PR comment signature matchers/Electron partition), generating a Morph-to-PVE-LXC parity report, and preparing a PR to karlorz/cmux:main.
 ---
 
