@@ -38,8 +38,10 @@ trap 'rm -f "$TMPFILE"' EXIT
 
 # REVIEW.md guidelines are loaded via AGENTS.md (codex reads it automatically).
 # --base and [PROMPT] are mutually exclusive, so we cannot pass a custom prompt here.
+# --enable use_linux_sandbox_bwrap avoids Landlock restrictions in containerized environments.
 unbuffer codex \
   --dangerously-bypass-approvals-and-sandbox \
+  --enable use_linux_sandbox_bwrap \
   --model gpt-5.3-codex \
   -c model_reasoning_effort="high" \
   review --base main > "$TMPFILE" 2>&1 || true
