@@ -59,8 +59,8 @@ Examples:
 			return nil
 		}
 
-		fmt.Printf("%-30s %-12s %-15s %s\n", "TASK ID", "STATUS", "AGENT", "PROMPT")
-		fmt.Println("------------------------------", "------------", "---------------", "--------------------")
+		fmt.Printf("%-30s %-12s %-15s %-6s %s\n", "TASK ID", "STATUS", "AGENT", "PR", "PROMPT")
+		fmt.Println("------------------------------", "------------", "---------------", "------", "--------------------")
 
 		for _, task := range result.Tasks {
 			prompt := task.Prompt
@@ -89,7 +89,13 @@ Examples:
 				status = fmt.Sprintf("%s (exit %d)", status, *task.ExitCode)
 			}
 
-			fmt.Printf("%-30s %-12s %-15s %s\n", task.ID, status, agent, prompt)
+			// PR status indicator
+			prStatus := "-"
+			if task.PullRequestURL != "" {
+				prStatus = "yes"
+			}
+
+			fmt.Printf("%-30s %-12s %-15s %-6s %s\n", task.ID, status, agent, prStatus, prompt)
 		}
 
 		return nil

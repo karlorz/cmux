@@ -728,19 +728,20 @@ func (c *Client) SwitchTeam(ctx context.Context, teamSlugOrId string) (*SwitchTe
 
 // Task represents a task from the web app
 type Task struct {
-	ID          string `json:"id"`
-	Prompt      string `json:"prompt"`
-	Repository  string `json:"repository"`
-	BaseBranch  string `json:"baseBranch"`
-	Status      string `json:"status"`
-	Agent       string `json:"agent"`
-	VSCodeURL   string `json:"vscodeUrl"`
-	IsCompleted bool   `json:"isCompleted"`
-	IsArchived  bool   `json:"isArchived"`
-	CreatedAt   int64  `json:"createdAt"`
-	UpdatedAt   int64  `json:"updatedAt"`
-	TaskRunID   string `json:"taskRunId"`
-	ExitCode    *int   `json:"exitCode,omitempty"`
+	ID             string `json:"id"`
+	Prompt         string `json:"prompt"`
+	Repository     string `json:"repository"`
+	BaseBranch     string `json:"baseBranch"`
+	Status         string `json:"status"`
+	Agent          string `json:"agent"`
+	VSCodeURL      string `json:"vscodeUrl"`
+	IsCompleted    bool   `json:"isCompleted"`
+	IsArchived     bool   `json:"isArchived"`
+	CreatedAt      int64  `json:"createdAt"`
+	UpdatedAt      int64  `json:"updatedAt"`
+	TaskRunID      string `json:"taskRunId"`
+	ExitCode       *int   `json:"exitCode,omitempty"`
+	PullRequestURL string `json:"pullRequestUrl,omitempty"`
 }
 
 // TaskRun represents a run within a task
