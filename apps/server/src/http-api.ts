@@ -150,7 +150,8 @@ async function handleStartTask(
     images,
   } = body;
 
-  if (!taskId || !taskDescription || !projectFullName) {
+  // taskDescription can be empty for cloud workspaces (interactive TUI session)
+  if (!taskId || taskDescription === undefined || !projectFullName) {
     jsonResponse(res, 400, {
       error: "Missing required fields: taskId, taskDescription, projectFullName",
     });
@@ -336,6 +337,198 @@ async function handleStartTask(
     serverLogger.error("[http-api] start-task failed", error);
     const message = error instanceof Error ? error.message : "Unknown error";
     jsonResponse(res, 500, { error: message });
+  }
+}
+
+// ============================================================================
+// Cloud Workspace Endpoint
+// ============================================================================
+
+interface CreateCloudWorkspaceRequest {
+  teamSlugOrId: string;
+  taskId: string;
+  environmentId?: string;
+  projectFullName?: string;
+  repoUrl?: string;
+  theme?: "dark" | "light" | "system";
+}
+
+interface CreateCloudWorkspaceResponse {
+  success: boolean;
+  taskId: string;
+  taskRunId: string;
+  vscodeUrl?: string;
+  vncUrl?: string;
+  error?: string;
+}
+
+/**
+ * Handle POST /api/create-cloud-workspace
+ *
+ * Creates a cloud workspace without running an agent - just spawns a sandbox
+ * with VSCode access. This matches the web UI's "create-cloud-workspace" socket event.
+ */
+async function handleCreateCloudWorkspace(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+  const authToken = parseAuthHeader(req);
+  if (!authToken) {
+    jsonResponse(res, 401, { error: "Unauthorized: Missing Bearer token" });
+    return;
+  }
+
+  // Construct authHeaderJson from token (same format as Stack Auth x-stack-auth header)
+  const authHeaderJson = JSON.stringify({ accessToken: authToken });
+
+  const body = await readJsonBody<CreateCloudWorkspaceRequest>(req);
+  if (!body) {
+    jsonResponse(res, 400, { error: "Invalid JSON body" });
+    return;
+  }
+
+  const { teamSlugOrId, taskId, environmentId, projectFullName, repoUrl, theme } = body;
+
+  if (!teamSlugOrId || !taskId) {
+    jsonResponse(res, 400, { error: "Missing required fields: teamSlugOrId, taskId" });
+    return;
+  }
+
+  serverLogger.info("[http-api] POST /api/create-cloud-workspace", {
+    taskId,
+    environmentId,
+    projectFullName,
+  });
+
+  try {
+    await runWithAuth(authToken, authHeaderJson, async () => {
+      const convex = getConvex();
+      const now = Date.now();
+
+      // Create a taskRun for the workspace (agentName: "cloud-workspace")
+      const taskRunResult = await convex.mutation(api.taskRuns.create, {
+        teamSlugOrId,
+        taskId: taskId as Id<"tasks">,
+        prompt: "Cloud Workspace",
+        agentName: "cloud-workspace",
+        environmentId: environmentId as Id<"environments"> | undefined,
+      });
+      const taskRunId = taskRunResult.taskRunId;
+      const taskRunJwt = taskRunResult.jwt;
+
+      serverLogger.info(
+        `[create-cloud-workspace] Created taskRun ${taskRunId} for task ${taskId}`
+      );
+
+      // Update initial VSCode status
+      await convex.mutation(api.taskRuns.updateVSCodeInstance, {
+        teamSlugOrId,
+        id: taskRunId,
+        vscode: {
+          provider: "morph",
+          status: "starting",
+          startedAt: now,
+        },
+      });
+
+      await convex.mutation(api.taskRuns.updateStatusPublic, {
+        teamSlugOrId,
+        id: taskRunId,
+        status: "pending",
+      });
+
+      // Spawn sandbox via www API
+      const { getWwwClient } = await import("./utils/wwwClient");
+      const { getWwwOpenApiModule } = await import("./utils/wwwOpenApiModule");
+      const { postApiSandboxesStart } = await getWwwOpenApiModule();
+
+      serverLogger.info(
+        environmentId
+          ? `[create-cloud-workspace] Starting sandbox for environment ${environmentId}`
+          : `[create-cloud-workspace] Starting sandbox for repo ${projectFullName}`
+      );
+
+      const startRes = await postApiSandboxesStart({
+        client: getWwwClient(),
+        body: {
+          teamSlugOrId,
+          ttlSeconds: 60 * 60,
+          metadata: {
+            instance: `cmux-workspace-${taskRunId}`,
+            agentName: "cloud-workspace",
+          },
+          taskRunId,
+          taskRunJwt,
+          isCloudWorkspace: true,
+          ...(environmentId
+            ? { environmentId }
+            : { projectFullName, repoUrl }),
+        },
+      });
+
+      const data = startRes.data;
+      if (!data) {
+        const errorText = startRes.error ? JSON.stringify(startRes.error) : "Unknown sandbox start error";
+        throw new Error(`Failed to start sandbox: ${errorText}`);
+      }
+
+      const sandboxId = data.instanceId;
+      const sandboxProvider = data.provider ?? "morph";
+      const vscodeBaseUrl = data.vscodeUrl;
+      const vncUrl = data.vncUrl;
+      const xtermUrl = data.xtermUrl;
+      const workspaceUrl = `${vscodeBaseUrl}?folder=/root/workspace`;
+
+      serverLogger.info(
+        `[create-cloud-workspace] Sandbox started: ${sandboxId}, VSCode URL: ${workspaceUrl}`
+      );
+
+      // Update taskRun with actual VSCode info
+      await convex.mutation(api.taskRuns.updateVSCodeInstance, {
+        teamSlugOrId,
+        id: taskRunId,
+        vscode: {
+          provider: sandboxProvider,
+          containerName: sandboxId,
+          status: "running",
+          url: vscodeBaseUrl,
+          workspaceUrl,
+          vncUrl,
+          xtermUrl,
+          startedAt: now,
+        },
+      });
+
+      await convex.mutation(api.taskRuns.updateStatusPublic, {
+        teamSlugOrId,
+        id: taskRunId,
+        status: "running",
+      });
+
+      await convex.mutation(api.taskRuns.updateVSCodeStatus, {
+        teamSlugOrId,
+        id: taskRunId,
+        status: "running",
+      });
+
+      serverLogger.info("[http-api] create-cloud-workspace completed", {
+        taskId,
+        taskRunId,
+        sandboxId,
+      });
+
+      jsonResponse(res, 200, {
+        success: true,
+        taskId,
+        taskRunId,
+        vscodeUrl: workspaceUrl,
+        vncUrl,
+      } satisfies CreateCloudWorkspaceResponse);
+    });
+  } catch (error) {
+    serverLogger.error("[http-api] create-cloud-workspace failed", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    jsonResponse(res, 500, { success: false, taskId, taskRunId: "", error: message });
   }
 }
 
@@ -1453,6 +1646,12 @@ export function handleHttpRequest(
   // Route: POST /api/start-task
   if (method === "POST" && path === "/api/start-task") {
     void handleStartTask(req, res);
+    return true;
+  }
+
+  // Route: POST /api/create-cloud-workspace
+  if (method === "POST" && path === "/api/create-cloud-workspace") {
+    void handleCreateCloudWorkspace(req, res);
     return true;
   }
 

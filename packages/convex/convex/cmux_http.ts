@@ -1957,9 +1957,10 @@ export const createTask = httpAction(async (ctx, req) => {
     );
   }
 
-  if (!body.prompt) {
+  // Prompt is required unless isCloudWorkspace is true (allows interactive TUI session)
+  if (!body.prompt && !body.isCloudWorkspace) {
     return jsonResponse(
-      { code: 400, message: "prompt is required" },
+      { code: 400, message: "prompt is required (or use isCloudWorkspace for interactive session)" },
       400
     );
   }
@@ -1975,10 +1976,39 @@ export const createTask = httpAction(async (ctx, req) => {
       );
     }
 
-    // Create task first
+    // Validate environmentId and get environment name if provided
+    let environmentId: Id<"environments"> | undefined;
+    let environmentName: string | undefined;
+    if (body.environmentId) {
+      try {
+        environmentId = body.environmentId as Id<"environments">;
+        // Verify environment exists and belongs to this team
+        const environment = await ctx.runQuery(api.environments.get, {
+          teamSlugOrId: body.teamSlugOrId,
+          id: environmentId,
+        });
+        if (!environment) {
+          return jsonResponse(
+            { code: 404, message: `Environment not found: ${body.environmentId}` },
+            404
+          );
+        }
+        environmentName = environment.name;
+      } catch (err) {
+        return jsonResponse(
+          { code: 400, message: `Invalid environment ID: ${body.environmentId}` },
+          400
+        );
+      }
+    }
+
+    // For cloud workspaces with empty prompt, use environment name as task text
+    const taskText = body.prompt || (body.isCloudWorkspace && environmentName ? environmentName : "");
+
+    // Create task
     const taskResult = await ctx.runMutation(api.tasks.create, {
       teamSlugOrId: body.teamSlugOrId,
-      text: body.prompt,
+      text: taskText,
       projectFullName: body.repository,
       baseBranch: body.baseBranch ?? "main",
       isCloudWorkspace: body.isCloudWorkspace,
@@ -1998,30 +2028,6 @@ export const createTask = httpAction(async (ctx, req) => {
         id: taskResult.taskId,
         pullRequestTitle: body.prTitle,
       });
-    }
-
-    // Validate environmentId if provided
-    let environmentId: Id<"environments"> | undefined;
-    if (body.environmentId) {
-      try {
-        environmentId = body.environmentId as Id<"environments">;
-        // Verify environment exists and belongs to this team
-        const environment = await ctx.runQuery(api.environments.get, {
-          teamSlugOrId: body.teamSlugOrId,
-          id: environmentId,
-        });
-        if (!environment) {
-          return jsonResponse(
-            { code: 404, message: `Environment not found: ${body.environmentId}` },
-            404
-          );
-        }
-      } catch (err) {
-        return jsonResponse(
-          { code: 400, message: `Invalid environment ID: ${body.environmentId}` },
-          400
-        );
-      }
     }
 
     // Create task runs for each agent (with JWTs for sandbox auth)

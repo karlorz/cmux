@@ -29,7 +29,7 @@ var (
 )
 
 var taskCreateCmd = &cobra.Command{
-	Use:   "create <prompt>",
+	Use:   "create [prompt]",
 	Short: "Create a new task and start agents",
 	Long: `Create a new task with a prompt and start sandbox(es) to run the agent(s).
 This is equivalent to creating a task in the web app dashboard.
@@ -39,6 +39,7 @@ Use --no-sandbox to create the task without starting sandboxes.
 Use --realtime to use socket.io for real-time feedback (same as web app flow).
 Use --local to create a local workspace with codex-style worktrees (requires local server).
 Use --env to specify a custom environment (if omitted, auto-selects latest for repo).
+Use --cloud-workspace to create a cloud workspace (prompt is optional, defaults to empty).
 
 Examples:
   devsh task create "Add unit tests for auth module"
@@ -50,19 +51,27 @@ Examples:
   devsh task create --repo owner/repo --agent claude-code --realtime "With real-time updates"
   devsh task create --repo owner/repo --agent claude-code --local "Local worktree mode"
   devsh task create --repo owner/repo --env env_abc123 --agent claude-code "With custom environment"
-  devsh task create --repo owner/repo --cloud-workspace --agent claude-code "Create as cloud workspace"`,
-	Args: cobra.ExactArgs(1),
+  devsh task create --repo owner/repo --cloud-workspace --agent claude-code "Create as cloud workspace"
+  devsh task create --repo owner/repo --cloud-workspace  # No prompt (interactive TUI session)`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		prompt := args[0]
+		var prompt string
+		if len(args) > 0 {
+			prompt = args[0]
+		}
 
-		if strings.TrimSpace(prompt) == "" {
-			return fmt.Errorf("prompt cannot be empty")
+		// Prompt is required unless --cloud-workspace is specified
+		if strings.TrimSpace(prompt) == "" && !taskCreateCloudWorkspace {
+			return fmt.Errorf("prompt is required (or use --cloud-workspace for interactive TUI session)")
 		}
 
 		// Use longer timeout for sandbox provisioning
 		timeout := 60 * time.Second
 		if len(taskCreateAgents) > 0 && !taskCreateNoSandbox {
 			timeout = 5 * time.Minute // Sandbox provisioning can take a while
+		}
+		if taskCreateCloudWorkspace && !taskCreateNoSandbox {
+			timeout = 5 * time.Minute // Cloud workspace creation includes sandbox provisioning
 		}
 		if len(taskCreateImages) > 0 && timeout < 2*time.Minute {
 			timeout = 2 * time.Minute // Uploading images can take a bit
@@ -161,6 +170,57 @@ Examples:
 
 		// Agent spawn results
 		var agents []agentInfo
+
+		// Cloud workspace without agents: use dedicated endpoint to spawn sandbox
+		if taskCreateCloudWorkspace && len(taskCreateAgents) == 0 && !taskCreateNoSandbox {
+			cfg := auth.GetConfig()
+			if cfg.ServerURL == "" {
+				return fmt.Errorf("CMUX_SERVER_URL not configured. Set via environment variable or use --no-sandbox")
+			}
+
+			if !flagJSON {
+				fmt.Printf("Task created: %s\n", result.TaskID)
+				fmt.Println("Creating cloud workspace...")
+			}
+
+			cwResult, err := client.CreateCloudWorkspace(ctx, vm.CreateCloudWorkspaceOptions{
+				TaskID:          result.TaskID,
+				EnvironmentID:   environmentID,
+				ProjectFullName: taskCreateRepo,
+				RepoURL:         repoURL,
+			})
+			if err != nil {
+				if !flagJSON {
+					fmt.Printf("  Failed to create cloud workspace: %s\n", err)
+				}
+				return fmt.Errorf("failed to create cloud workspace: %w", err)
+			}
+
+			if !flagJSON {
+				fmt.Println("Cloud workspace created successfully")
+				fmt.Printf("  Task ID: %s\n", result.TaskID)
+				fmt.Printf("  Task Run ID: %s\n", cwResult.TaskRunID)
+				if cwResult.VSCodeURL != "" {
+					fmt.Printf("  VSCode: %s\n", cwResult.VSCodeURL)
+				}
+				if cwResult.VNCURL != "" {
+					fmt.Printf("  VNC: %s\n", cwResult.VNCURL)
+				}
+			}
+
+			if flagJSON {
+				output := map[string]interface{}{
+					"taskId":    result.TaskID,
+					"taskRunId": cwResult.TaskRunID,
+					"vscodeUrl": cwResult.VSCodeURL,
+					"vncUrl":    cwResult.VNCURL,
+					"status":    "running",
+				}
+				data, _ := json.MarshalIndent(output, "", "  ")
+				fmt.Println(string(data))
+			}
+			return nil
+		}
 
 		if len(result.TaskRuns) > 0 && !taskCreateNoSandbox {
 			// Check if ServerURL is configured

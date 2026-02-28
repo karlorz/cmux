@@ -1395,6 +1395,67 @@ func (c *Client) StartTaskAgents(ctx context.Context, opts StartTaskAgentsOption
 	return &result, nil
 }
 
+// CreateCloudWorkspaceOptions contains options for creating a cloud workspace
+type CreateCloudWorkspaceOptions struct {
+	TaskID          string
+	EnvironmentID   string
+	ProjectFullName string
+	RepoURL         string
+	Theme           string
+}
+
+// CreateCloudWorkspaceResult represents the result of creating a cloud workspace
+type CreateCloudWorkspaceResult struct {
+	Success   bool   `json:"success"`
+	TaskID    string `json:"taskId"`
+	TaskRunID string `json:"taskRunId"`
+	VSCodeURL string `json:"vscodeUrl,omitempty"`
+	VNCURL    string `json:"vncUrl,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+// CreateCloudWorkspace creates a cloud workspace without running an agent
+// This spawns a sandbox with VSCode access, matching the web UI flow
+func (c *Client) CreateCloudWorkspace(ctx context.Context, opts CreateCloudWorkspaceOptions) (*CreateCloudWorkspaceResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+
+	body := map[string]interface{}{
+		"teamSlugOrId": c.teamSlug,
+		"taskId":       opts.TaskID,
+	}
+	if opts.EnvironmentID != "" {
+		body["environmentId"] = opts.EnvironmentID
+	}
+	if opts.ProjectFullName != "" {
+		body["projectFullName"] = opts.ProjectFullName
+	}
+	if opts.RepoURL != "" {
+		body["repoUrl"] = opts.RepoURL
+	}
+	if opts.Theme != "" {
+		body["theme"] = opts.Theme
+	}
+
+	resp, err := c.doServerRequest(ctx, "POST", "/api/create-cloud-workspace", body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("create-cloud-workspace failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result CreateCloudWorkspaceResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
 // MemorySnapshot represents a single memory snapshot from a task run
 type MemorySnapshot struct {
 	ID         string `json:"id"`
