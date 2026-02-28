@@ -1453,7 +1453,7 @@ function handleRequest(request) {
           }
 
           // Read current orchestration ID from PLAN.json if not provided
-          let orchestrationId = args.orchestrationId;
+          let orchestrationId = args?.orchestrationId;
           if (!orchestrationId) {
             const plan = readPlan();
             if (plan && plan.orchestrationId) {
@@ -1472,42 +1472,7 @@ function handleRequest(request) {
           const http = require('http');
           const url = require('url');
 
-          const parsedUrl = url.parse(pullUrl);
-          const protocol = parsedUrl.protocol === 'https:' ? https : http;
-
-          const fetchPromise = new Promise((resolve, reject) => {
-            const req = protocol.request({
-              hostname: parsedUrl.hostname,
-              port: parsedUrl.port,
-              path: parsedUrl.path,
-              method: 'GET',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-Task-Run-JWT': taskRunJwt,
-                'Convex-Client': 'node-1.0.0'
-              }
-            }, (res) => {
-              let data = '';
-              res.on('data', chunk => data += chunk);
-              res.on('end', () => {
-                if (res.statusCode >= 200 && res.statusCode < 300) {
-                  try {
-                    resolve(JSON.parse(data));
-                  } catch (e) {
-                    reject(new Error('Failed to parse response: ' + e.message));
-                  }
-                } else {
-                  reject(new Error('HTTP ' + res.statusCode + ': ' + data));
-                }
-              });
-            });
-            req.on('error', reject);
-            req.end();
-          });
-
-          // Handle async operation synchronously for MCP server
-          // Note: In real implementation, this would use async/await
-          // For now, return instructions to use curl or similar
+          // Return instructions to use curl (MCP tools are synchronous, can't await here)
           return sendResponse(id, { content: [{ type: 'text', text: 'To pull orchestration updates, run:\\ncurl -s -H "X-Task-Run-JWT: $CMUX_TASK_RUN_JWT" "' + pullUrl + '"\\n\\nOr use the sync.sh script which handles this automatically on shutdown.' }] });
         }
 

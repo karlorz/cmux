@@ -395,6 +395,12 @@ async function handleCreateCloudWorkspace(
     return;
   }
 
+  // Require either environmentId or projectFullName to avoid sandbox start failures
+  if (!environmentId && !projectFullName) {
+    jsonResponse(res, 400, { error: "Missing required field: environmentId or projectFullName" });
+    return;
+  }
+
   serverLogger.info("[http-api] POST /api/create-cloud-workspace", {
     taskId,
     environmentId,
@@ -1040,7 +1046,7 @@ async function handleOrchestrationResults(
   try {
     // If using JWT auth, query via Convex HTTP endpoint
     if (taskRunJwt) {
-      const convexSiteUrl = env.CONVEX_SITE_URL;
+      const convexSiteUrl = env.CONVEX_SITE_URL || env.NEXT_PUBLIC_CONVEX_URL;
 
       const convexResponse = await fetch(
         `${convexSiteUrl}/api/orchestration/results?orchestrationId=${encodeURIComponent(orchestrationId)}`,
@@ -1210,7 +1216,7 @@ async function handleOrchestrationEvents(
   const fetchState = async () => {
     try {
       if (taskRunJwt) {
-        const convexSiteUrl = env.CONVEX_SITE_URL;
+        const convexSiteUrl = env.CONVEX_SITE_URL || env.NEXT_PUBLIC_CONVEX_URL;
         const response = await fetch(
           `${convexSiteUrl}/api/orchestration/pull?orchestrationId=${encodeURIComponent(orchestrationId)}`,
           {

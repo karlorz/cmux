@@ -262,9 +262,8 @@ async function writeFilesToSandbox(
   for (const file of files) {
     const destPath = file.destinationPath.replace("$HOME", "/root");
     const content = Buffer.from(file.contentBase64, "base64").toString("utf-8");
-    const escapedContent = content
-      .replace(/\\/g, "\\\\")
-      .replace(/'/g, "'\\''");
+    // Only escape single quotes for shell - backslashes are literal in single-quoted strings
+    const escapedContent = content.replace(/'/g, "'\\''");
     const dirPath = destPath.substring(0, destPath.lastIndexOf("/"));
     await instance.exec(`mkdir -p '${dirPath}'`);
     await instance.exec(`printf '%s' '${escapedContent}' > '${destPath}'`);
