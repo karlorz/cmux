@@ -150,10 +150,11 @@ async function handleStartTask(
     images,
   } = body;
 
-  // taskDescription can be empty for cloud workspaces (interactive TUI session)
-  if (!taskId || taskDescription === undefined || !projectFullName) {
+  // taskDescription can be empty string for cloud workspaces (interactive TUI session)
+  // but must be a string type (not null, undefined, or other types)
+  if (!taskId || typeof taskDescription !== "string" || !projectFullName) {
     jsonResponse(res, 400, {
-      error: "Missing required fields: taskId, taskDescription, projectFullName",
+      error: "Missing required fields: taskId, taskDescription (string), projectFullName",
     });
     return;
   }
@@ -387,7 +388,7 @@ async function handleCreateCloudWorkspace(
     return;
   }
 
-  const { teamSlugOrId, taskId, environmentId, projectFullName, repoUrl, theme } = body;
+  const { teamSlugOrId, taskId, environmentId, projectFullName, repoUrl } = body;
 
   if (!teamSlugOrId || !taskId) {
     jsonResponse(res, 400, { error: "Missing required fields: teamSlugOrId, taskId" });
@@ -399,6 +400,9 @@ async function handleCreateCloudWorkspace(
     environmentId,
     projectFullName,
   });
+
+  // Hoist taskRunId outside runWithAuth to handle failures properly
+  let createdTaskRunId: string | null = null;
 
   try {
     await runWithAuth(authToken, authHeaderJson, async () => {
@@ -414,6 +418,7 @@ async function handleCreateCloudWorkspace(
         environmentId: environmentId as Id<"environments"> | undefined,
       });
       const taskRunId = taskRunResult.taskRunId;
+      createdTaskRunId = taskRunId; // Save for error handling
       const taskRunJwt = taskRunResult.jwt;
 
       serverLogger.info(
@@ -528,7 +533,30 @@ async function handleCreateCloudWorkspace(
   } catch (error) {
     serverLogger.error("[http-api] create-cloud-workspace failed", error);
     const message = error instanceof Error ? error.message : "Unknown error";
-    jsonResponse(res, 500, { success: false, taskId, taskRunId: "", error: message });
+
+    // If taskRun was created, mark it as failed to avoid orphaned state
+    if (createdTaskRunId) {
+      try {
+        await runWithAuth(authToken, authHeaderJson, async () => {
+          await getConvex().mutation(api.taskRuns.failByTeamMember, {
+            teamSlugOrId,
+            id: createdTaskRunId as Id<"taskRuns">,
+            errorMessage: `Cloud workspace creation failed: ${message}`,
+            exitCode: 1,
+          });
+        });
+        serverLogger.info(`[http-api] Marked orphaned taskRun ${createdTaskRunId} as failed`);
+      } catch (cleanupError) {
+        serverLogger.error("[http-api] Failed to mark orphaned taskRun as failed", cleanupError);
+      }
+    }
+
+    jsonResponse(res, 500, {
+      success: false,
+      taskId,
+      taskRunId: createdTaskRunId ?? "",
+      error: message,
+    });
   }
 }
 
@@ -1060,7 +1088,6 @@ async function handleOrchestrationResults(
       const totalTasks = filteredTasks.length;
       const completedTasks = filteredTasks.filter((t) => t.status === "completed").length;
       const failedTasks = filteredTasks.filter((t) => t.status === "failed").length;
-      const runningTasks = filteredTasks.filter((t) => t.status === "running" || t.status === "assigned").length;
 
       // Determine overall status
       let status: "running" | "completed" | "failed" | "partial";

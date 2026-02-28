@@ -498,11 +498,6 @@ export interface OrchestrationStateUpdate {
   runningCount: number;
 }
 
-const PullOrchestrationStateSchema = z.object({
-  orchestrationId: z.string().optional(),
-  taskRunId: z.string().optional(),
-});
-
 /**
  * HTTP action to pull orchestration state updates for head agents.
  *
@@ -511,20 +506,17 @@ const PullOrchestrationStateSchema = z.object({
  * - Unread messages from the mailbox
  * - Aggregated completion counts
  *
- * Authenticates via task-run JWT.
+ * Authenticates via task-run JWT only (X-Task-Run-JWT header).
  * GET /api/orchestration/pull?orchestrationId=...&taskRunId=...
  */
 export const pullOrchestrationState = httpAction(async (ctx, req) => {
   const taskRunJwt = req.headers.get("x-task-run-jwt");
-  const authHeader = req.headers.get("authorization");
-  const bearerToken = extractBearerToken(authHeader);
-  const token = taskRunJwt ?? bearerToken;
 
-  if (!token) {
+  if (!taskRunJwt) {
     return jsonResponse(
       {
         code: 401,
-        message: "Unauthorized: Missing X-Task-Run-JWT header or Bearer token",
+        message: "Unauthorized: Missing X-Task-Run-JWT header",
       },
       401
     );
@@ -541,14 +533,14 @@ export const pullOrchestrationState = httpAction(async (ctx, req) => {
 
   try {
     const tokenPayload = await verifyTaskRunToken(
-      token,
+      taskRunJwt,
       env.CMUX_TASK_RUN_JWT_SECRET
     );
     teamId = tokenPayload.teamId;
     taskRunIdFromToken = tokenPayload.taskRunId;
   } catch (error) {
     console.error("[orchestration_http.pullOrchestrationState] Failed to verify JWT", error);
-    return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
+    return jsonResponse({ code: 401, message: "Unauthorized: Invalid task-run JWT" }, 401);
   }
 
   // Use taskRunId from params or from JWT
@@ -644,19 +636,17 @@ export interface OrchestrationResults {
 /**
  * HTTP action to get aggregated results from all sub-agents.
  *
+ * Authenticates via task-run JWT only (X-Task-Run-JWT header).
  * GET /api/orchestration/results?orchestrationId=...
  */
 export const getOrchestrationResults = httpAction(async (ctx, req) => {
   const taskRunJwt = req.headers.get("x-task-run-jwt");
-  const authHeader = req.headers.get("authorization");
-  const bearerToken = extractBearerToken(authHeader);
-  const token = taskRunJwt ?? bearerToken;
 
-  if (!token) {
+  if (!taskRunJwt) {
     return jsonResponse(
       {
         code: 401,
-        message: "Unauthorized: Missing X-Task-Run-JWT header or Bearer token",
+        message: "Unauthorized: Missing X-Task-Run-JWT header",
       },
       401
     );
@@ -678,13 +668,13 @@ export const getOrchestrationResults = httpAction(async (ctx, req) => {
 
   try {
     const tokenPayload = await verifyTaskRunToken(
-      token,
+      taskRunJwt,
       env.CMUX_TASK_RUN_JWT_SECRET
     );
     teamId = tokenPayload.teamId;
   } catch (error) {
     console.error("[orchestration_http.getOrchestrationResults] Failed to verify JWT", error);
-    return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
+    return jsonResponse({ code: 401, message: "Unauthorized: Invalid task-run JWT" }, 401);
   }
 
   try {
@@ -697,7 +687,6 @@ export const getOrchestrationResults = httpAction(async (ctx, req) => {
     const totalTasks = tasks.length;
     const completedTasks = tasks.filter((t) => t.status === "completed").length;
     const failedTasks = tasks.filter((t) => t.status === "failed").length;
-    const runningTasks = tasks.filter((t) => t.status === "running" || t.status === "assigned").length;
 
     // Determine overall status
     let status: OrchestrationResults["status"];

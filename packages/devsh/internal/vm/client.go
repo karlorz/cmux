@@ -1926,6 +1926,10 @@ func (c *Client) SubscribeOrchestrationEvents(ctx context.Context, orchestration
 		defer resp.Body.Close()
 
 		scanner := bufio.NewScanner(resp.Body)
+		// Set larger buffer to handle large SSE payloads (256KB max line)
+		const maxScanTokenSize = 256 * 1024
+		scanner.Buffer(make([]byte, maxScanTokenSize), maxScanTokenSize)
+
 		var eventType string
 		var data string
 		var id string
@@ -1958,6 +1962,11 @@ func (c *Client) SubscribeOrchestrationEvents(ctx context.Context, orchestration
 			} else if strings.HasPrefix(line, "id:") {
 				id = strings.TrimSpace(strings.TrimPrefix(line, "id:"))
 			}
+		}
+
+		// Log scanner errors if any
+		if err := scanner.Err(); err != nil {
+			fmt.Fprintf(os.Stderr, "[SSE] Scanner error: %v\n", err)
 		}
 	}()
 
