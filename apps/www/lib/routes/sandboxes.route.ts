@@ -1167,6 +1167,8 @@ sandboxesRouter.openapi(
                 // Required for pushing workflow files (.github/workflows/*)
                 // Without this, pushes containing workflow files are rejected
                 workflows: "write",
+                // Required for auto-PR creation via gh pr create
+                pull_requests: "write",
               },
             });
             gitAuthToken = appToken;
@@ -1937,6 +1939,8 @@ sandboxesRouter.openapi(
                 contents: "write",
                 metadata: "read",
                 workflows: "write",
+                // Required for auto-PR creation via gh pr create
+                pull_requests: "write",
               },
             });
             console.log(

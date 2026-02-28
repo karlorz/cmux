@@ -433,6 +433,8 @@ morphRouter.openapi(
                 contents: "write",
                 metadata: "read",
                 workflows: "write",
+                // Required for auto-PR creation via gh pr create
+                pull_requests: "write",
               },
             });
             console.log(
