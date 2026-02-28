@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "updatedAt": "2026-02-28T13:58:47Z",
+  "updatedAt": "2026-02-28T18:31:37Z",
   "presets": [
     {
       "presetId": "4vcpu_8gb_32gb",
@@ -123,6 +123,36 @@
           "snapshotId": "snapshot_4a589c32",
           "templateVmid": 9083,
           "capturedAt": "2026-02-28T13:58:16Z"
+        },
+        {
+          "version": 62,
+          "snapshotId": "snapshot_596aa0db",
+          "templateVmid": 9086,
+          "capturedAt": "2026-02-28T16:47:27Z"
+        },
+        {
+          "version": 63,
+          "snapshotId": "snapshot_1cc34398",
+          "templateVmid": 9090,
+          "capturedAt": "2026-02-28T17:28:17Z"
+        },
+        {
+          "version": 64,
+          "snapshotId": "snapshot_d6f2d054",
+          "templateVmid": 9092,
+          "capturedAt": "2026-02-28T17:48:51Z"
+        },
+        {
+          "version": 65,
+          "snapshotId": "snapshot_c44ef2b8",
+          "templateVmid": 9094,
+          "capturedAt": "2026-02-28T18:17:58Z"
+        },
+        {
+          "version": 66,
+          "snapshotId": "snapshot_641ab7a6",
+          "templateVmid": 9095,
+          "capturedAt": "2026-02-28T18:31:37Z"
         }
       ]
     },
@@ -241,6 +271,24 @@
           "snapshotId": "snapshot_f3c2c6fb",
           "templateVmid": 9084,
           "capturedAt": "2026-02-28T13:58:47Z"
+        },
+        {
+          "version": 49,
+          "snapshotId": "snapshot_1d309aee",
+          "templateVmid": 9089,
+          "capturedAt": "2026-02-28T16:47:56Z"
+        },
+        {
+          "version": 50,
+          "snapshotId": "snapshot_6b0f7d55",
+          "templateVmid": 9091,
+          "capturedAt": "2026-02-28T17:28:47Z"
+        },
+        {
+          "version": 51,
+          "snapshotId": "snapshot_d661826e",
+          "templateVmid": 9093,
+          "capturedAt": "2026-02-28T17:49:21Z"
         }
       ]
     }

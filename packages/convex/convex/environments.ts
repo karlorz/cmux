@@ -286,6 +286,30 @@ export const deleteSnapshotVersionInternal = internalMutation({
   },
 });
 
+/**
+ * Update environment template VMID.
+ * Used for testing/maintenance to point environment to a new template.
+ */
+export const updateTemplateInternal = internalMutation({
+  args: {
+    environmentId: v.id("environments"),
+    templateVmid: v.number(),
+    snapshotId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const env = await ctx.db.get(args.environmentId);
+    if (!env) {
+      throw new Error("Environment not found");
+    }
+    await ctx.db.patch(args.environmentId, {
+      templateVmid: args.templateVmid,
+      ...(args.snapshotId ? { snapshotId: args.snapshotId } : {}),
+      updatedAt: Date.now(),
+    });
+    return args.environmentId;
+  },
+});
+
 export const getByDataVaultKey = authQuery({
   args: {
     dataVaultKey: v.string(),
