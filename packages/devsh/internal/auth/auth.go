@@ -591,6 +591,17 @@ func Login() error {
 
 	// Check if already logged in
 	if IsLoggedIn() {
+		// Provide more specific feedback if logged in via env var
+		if token := os.Getenv("DEVSH_REFRESH_TOKEN"); token != "" {
+			fmt.Println("Already authenticated via DEVSH_REFRESH_TOKEN environment variable.")
+			fmt.Println("To use browser login instead, unset the env var: unset DEVSH_REFRESH_TOKEN")
+			return nil
+		}
+		if token := os.Getenv("DEVBOX_REFRESH_TOKEN"); token != "" {
+			fmt.Println("Already authenticated via DEVBOX_REFRESH_TOKEN environment variable.")
+			fmt.Println("To use browser login instead, unset the env var: unset DEVBOX_REFRESH_TOKEN")
+			return nil
+		}
 		fmt.Println("Already logged in. Run 'devsh auth logout' first to re-authenticate.")
 		return nil
 	}
@@ -741,6 +752,15 @@ func Logout() error {
 		return err
 	}
 	fmt.Println("✓ Logged out successfully")
+
+	// Warn if environment variable will still provide authentication
+	if token := os.Getenv("DEVSH_REFRESH_TOKEN"); token != "" {
+		fmt.Println("  Note: DEVSH_REFRESH_TOKEN env var is set and will still provide authentication.")
+		fmt.Println("  Unset it to fully log out: unset DEVSH_REFRESH_TOKEN")
+	} else if token := os.Getenv("DEVBOX_REFRESH_TOKEN"); token != "" {
+		fmt.Println("  Note: DEVBOX_REFRESH_TOKEN env var is set and will still provide authentication.")
+		fmt.Println("  Unset it to fully log out: unset DEVBOX_REFRESH_TOKEN")
+	}
 	return nil
 }
 
