@@ -59,13 +59,13 @@ Examples:
 			return nil
 		}
 
-		fmt.Printf("%-30s %-12s %-15s %-8s %s\n", "TASK ID", "STATUS", "AGENT", "PR", "PROMPT")
-		fmt.Println("------------------------------", "------------", "---------------", "--------", "--------------------")
+		fmt.Printf("%-30s %-12s %-15s %-8s %-50s %s\n", "TASK ID", "STATUS", "AGENT", "PR", "PR URL", "PROMPT")
+		fmt.Println("------------------------------", "------------", "---------------", "--------", "--------------------------------------------------", "--------------------")
 
 		for _, task := range result.Tasks {
 			prompt := task.Prompt
-			if len(prompt) > 40 {
-				prompt = prompt[:37] + "..."
+			if len(prompt) > 30 {
+				prompt = prompt[:27] + "..."
 			}
 
 			agent := task.Agent
@@ -106,7 +106,16 @@ Examples:
 				prStatus = "closed"
 			}
 
-			fmt.Printf("%-30s %-12s %-15s %-8s %s\n", task.ID, status, agent, prStatus, prompt)
+			// PR URL (truncate if too long)
+			prURL := "-"
+			if task.PullRequestURL != "" {
+				prURL = task.PullRequestURL
+				if len(prURL) > 50 {
+					prURL = prURL[:47] + "..."
+				}
+			}
+
+			fmt.Printf("%-30s %-12s %-15s %-8s %-50s %s\n", task.ID, status, agent, prStatus, prURL, prompt)
 		}
 
 		return nil
