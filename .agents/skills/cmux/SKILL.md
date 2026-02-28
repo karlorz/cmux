@@ -106,6 +106,40 @@ Use `--cloud-workspace` to create tasks that appear in the "Workspaces" section 
 devsh task create --cloud-workspace --repo owner/repo --agent claude-code "Set up dev environment"
 ```
 
+### Task Workflow: Branches and Pull Requests
+
+**Important:** Each task run automatically creates a new branch. Changes are NOT made to your existing branch.
+
+#### Branch Behavior
+- Each task creates a new branch: `{prefix}{task-slug}-{random-id}`
+- The branch prefix defaults to `dev/` and is user-configurable in web UI Settings > Git
+- Example: `devsh task create "Fix login bug"` creates branch `dev/fix-login-bug-x8k3a`
+- Changes are committed and pushed to this new branch automatically
+
+#### Auto-PR (Disabled by Default)
+When all agents complete, the system:
+1. **Crown evaluation**: Compares agent outputs and selects the best diff (winner)
+2. **Push**: Pushes the winning branch to the remote repository
+3. **PR creation**: Only if "Auto-PR" is enabled in Settings > General
+
+**To enable Auto-PR:**
+1. Open web UI (cmux.app or your deployment)
+2. Go to Settings > General
+3. Enable "Auto-create pull request with the best diff"
+
+**To manually create a PR after task completion:**
+```bash
+# View the task to find the winning branch
+devsh task show <task-id>
+
+# Create PR manually with gh CLI
+gh pr create --head dev/your-branch-name --title "Your PR title"
+```
+
+#### Single-Agent vs Multi-Agent Tasks
+- **Single agent**: Auto-crowned immediately when completed
+- **Multi-agent (Crown)**: Evaluates all diffs, crowns the best solution, then pushes
+
 ### Agent Memory
 
 View agent memory snapshots (knowledge, daily logs, tasks, mailbox) synced from sandboxes.

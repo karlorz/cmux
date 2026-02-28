@@ -80,6 +80,8 @@ devsh orchestrate spawn \
 devsh orchestrate spawn --use-env-jwt --agent claude/haiku-4.5 "Sub-task from coordinator"
 ```
 
+**Note:** Each spawned agent works on a new branch (`{prefix}{slug}-{id}`, prefix defaults to `dev/`), not the base branch. After completion, use `gh pr create` or enable Auto-PR in settings to open pull requests. See the `devsh` skill documentation for details on branch and PR behavior.
+
 ### Get Orchestration Task Status
 
 Get detailed status of a specific orchestration task.
