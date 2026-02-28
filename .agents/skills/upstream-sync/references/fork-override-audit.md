@@ -28,7 +28,7 @@ RANGE="origin/main...HEAD"
 Preferred helper (prints report skeleton + greps hotspots):
 
 ```bash
-./.codex/skills/upstream-sync/scripts/audit-fork-overrides.sh origin/main...HEAD
+./.agents/skills/upstream-sync/scripts/audit-fork-overrides.sh origin/main...HEAD
 ```
 
 ## Common fixes (keep fork configurable)

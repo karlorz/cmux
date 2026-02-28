@@ -40,23 +40,23 @@ git commit  # finalize merge
 bun install  # if new deps
 bun check
 # audit repository URLs in all package.json files (fails on upstream monorepo URL)
-./.codex/skills/upstream-sync/scripts/audit-package-repo-links.sh
+./.agents/skills/upstream-sync/scripts/audit-package-repo-links.sh
 ```
 6) Run fork override / rebrand audit (treat P2 findings as merge gates):
-- Read `.codex/skills/upstream-sync/references/fork-override-audit.md`.
+- Read `.agents/skills/upstream-sync/references/fork-override-audit.md`.
 - Generate a report skeleton:
 ```bash
-./.codex/skills/upstream-sync/scripts/audit-fork-overrides.sh origin/main...HEAD
+./.agents/skills/upstream-sync/scripts/audit-fork-overrides.sh origin/main...HEAD
 ```
 7) Run Morph -> PVE-LXC parity audit:
-- Read `.codex/skills/upstream-sync/references/morph-pve-parity.md`.
+- Read `.agents/skills/upstream-sync/references/morph-pve-parity.md`.
 - Generate the report skeleton:
 ```bash
-./.codex/skills/upstream-sync/scripts/print-parity-report.sh
+./.agents/skills/upstream-sync/scripts/print-parity-report.sh
 ```
 - Default range is `main...HEAD`. Pass a custom range when needed, for example:
 ```bash
-./.codex/skills/upstream-sync/scripts/print-parity-report.sh origin/main...HEAD
+./.agents/skills/upstream-sync/scripts/print-parity-report.sh origin/main...HEAD
 ```
 - Produce a short parity report with:
   - Morph hotspot files changed.
@@ -88,7 +88,7 @@ gh pr create --repo karlorz/cmux --base main --head "$BRANCH" --fill
   - Electron consistency: keep `PARTITION`, `APP_HOST`, and protocol/deep-link scheme consistent across `apps/client/electron/main/bootstrap.ts`, `apps/client/electron/main/index.ts`, and renderer-side Electron checks.
   - Electron build configs: fork packaging should continue to use `apps/client/electron-builder.fork.json` / `apps/client/electron-builder.fork.local.json` (not upstream `electron-builder.json`) for `appId`, `productName`, and `protocol`.
 - **`package.json` metadata conflicts**:
-  - Audit all package metadata with `./.codex/skills/upstream-sync/scripts/audit-package-repo-links.sh`.
+  - Audit all package metadata with `./.agents/skills/upstream-sync/scripts/audit-package-repo-links.sh`.
   - For fork-owned packages/apps, keep `repository.url` on `https://github.com/karlorz/cmux.git` when conflicts include `https://github.com/manaflow-ai/manaflow.git`.
   - Take upstream release progression for `version` unless the fork intentionally pins a different version.
   - Do not mass-rewrite external package repository links (for example `packages/cmux*` and `packages/vscode-extension`) when they intentionally point to `manaflow-ai/cmux` or `lawrencecchen/cmux`.
@@ -109,8 +109,8 @@ gh pr create --repo karlorz/cmux --base main --head "$BRANCH" --fill
 - PR target: `karlorz/cmux:main`. Include a short summary of major upstream changes, conflict choices (especially if keeping fork code over upstream), and any follow-up items.
 
 # References
-- `.codex/skills/upstream-sync/references/fork-override-audit.md`
-- `.codex/skills/upstream-sync/references/morph-pve-parity.md`
-- `.codex/skills/upstream-sync/scripts/audit-package-repo-links.sh`
-- `.codex/skills/upstream-sync/scripts/audit-fork-overrides.sh`
-- `.codex/skills/upstream-sync/scripts/print-parity-report.sh`
+- `.agents/skills/upstream-sync/references/fork-override-audit.md`
+- `.agents/skills/upstream-sync/references/morph-pve-parity.md`
+- `.agents/skills/upstream-sync/scripts/audit-package-repo-links.sh`
+- `.agents/skills/upstream-sync/scripts/audit-fork-overrides.sh`
+- `.agents/skills/upstream-sync/scripts/print-parity-report.sh`
