@@ -134,6 +134,8 @@ rm -f "$BODY_FILE"
       cwd: WORKSPACE_ROOT,
       env: {
         ...process.env,
+        // Ensure HOME is set for gh CLI to find its config
+        HOME: process.env.HOME || "/root",
         PR_TITLE: prTitle,
         PR_BASE: baseBranch,
         PR_HEAD: branch,
