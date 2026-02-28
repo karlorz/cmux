@@ -20,6 +20,11 @@ import type {
   WorkerTerminalFailed,
 } from "@cmux/shared/worker-schemas";
 import { parseGithubRepoUrl } from "@cmux/shared/utils/parse-github-repo-url";
+import {
+  parseCodexAuthJson,
+  isCodexTokenExpired,
+  isCodexTokenExpiring,
+} from "@cmux/shared/providers/openai/codex-token";
 import { parse as parseDotenv } from "dotenv";
 import { sanitizeTmuxSessionName } from "./sanitizeTmuxSessionName";
 import {
@@ -577,6 +582,25 @@ export async function spawnAgent(
     const apiKeys: Record<string, string> = {
       ...userApiKeys,
     };
+
+    // Pre-spawn validation: check Codex OAuth token expiry
+    if (agent.name.toLowerCase().includes("codex") && apiKeys.CODEX_AUTH_JSON) {
+      const codexAuth = parseCodexAuthJson(apiKeys.CODEX_AUTH_JSON);
+      if (codexAuth) {
+        if (isCodexTokenExpired(codexAuth)) {
+          throw new Error(
+            "Codex OAuth token has expired. Please run `codex auth` locally " +
+              "and update CODEX_AUTH_JSON in settings."
+          );
+        }
+        if (isCodexTokenExpiring(codexAuth, 60 * 60 * 1000)) {
+          serverLogger.warn(
+            "[AgentSpawner] Codex OAuth token expires within 1 hour. " +
+              "Background refresh should handle this soon."
+          );
+        }
+      }
+    }
 
     // Resolve provider configuration for this agent from team overrides
     const registry = getProviderRegistry();

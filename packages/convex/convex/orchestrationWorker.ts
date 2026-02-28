@@ -145,6 +145,27 @@ export const dispatchSpawn = internalAction({
     if (!claimed) return; // Another worker claimed it
 
     try {
+      // Pre-dispatch auth check: fail fast if Codex token is expired
+      const agentName = task.assignedAgentName ?? "claude/haiku-4.5";
+      if (agentName.toLowerCase().includes("codex")) {
+        const tokenStatus = await ctx.runQuery(
+          internal.codexTokenRefreshQueries.getTokenStatus,
+          { teamId: args.teamId, userId: task.userId }
+        );
+        if (tokenStatus === "expired") {
+          throw new Error(
+            "Codex OAuth token has expired. Please run `codex auth` locally " +
+              "and update CODEX_AUTH_JSON in settings."
+          );
+        }
+        if (tokenStatus === "missing") {
+          throw new Error(
+            "No CODEX_AUTH_JSON found. Please run `codex auth` locally " +
+              "and set CODEX_AUTH_JSON in settings."
+          );
+        }
+      }
+
       // Get JWT for the task run (needed for spawn to authenticate)
       if (!task.taskRunId) {
         throw new Error("Task run not created yet");
