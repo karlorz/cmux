@@ -157,6 +157,49 @@ var authWhoamiCmd = &cobra.Command{
 	RunE:  authStatusCmd.RunE, // Alias for status
 }
 
+var authConfigCmd = &cobra.Command{
+	Use:   "config",
+	Short: "Show auth configuration",
+	Long:  `Display the current auth configuration (URLs, project ID, etc.)`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg := auth.GetConfig()
+
+		if flagJSON {
+			output := map[string]interface{}{
+				"project_id":      cfg.ProjectID,
+				"publishable_key": cfg.PublishableKey,
+				"cmux_url":        cfg.CmuxURL,
+				"convex_site_url": cfg.ConvexSiteURL,
+				"server_url":      cfg.ServerURL,
+				"stack_auth_url":  cfg.StackAuthURL,
+				"is_dev":          cfg.IsDev,
+				"build_mode":      auth.GetBuildMode(),
+			}
+			data, _ := json.MarshalIndent(output, "", "  ")
+			fmt.Println(string(data))
+		} else {
+			fmt.Printf("Build mode:       %s\n", auth.GetBuildMode())
+			fmt.Printf("Is dev:           %v\n", cfg.IsDev)
+			fmt.Printf("Project ID:       %s\n", cfg.ProjectID)
+			fmt.Printf("Publishable key:  %s\n", cfg.PublishableKey)
+			fmt.Printf("cmux URL:         %s\n", cfg.CmuxURL)
+			fmt.Printf("Convex site URL:  %s\n", cfg.ConvexSiteURL)
+			fmt.Printf("Server URL:       %s\n", cfg.ServerURL)
+			fmt.Printf("Stack Auth URL:   %s\n", cfg.StackAuthURL)
+
+			// Show env var status
+			fmt.Println()
+			if token := os.Getenv("DEVSH_REFRESH_TOKEN"); token != "" {
+				fmt.Printf("DEVSH_REFRESH_TOKEN: set (%d chars)\n", len(token))
+			} else {
+				fmt.Println("DEVSH_REFRESH_TOKEN: not set")
+			}
+		}
+
+		return nil
+	},
+}
+
 // Root-level shorthand commands (aliases for auth subcommands)
 var loginCmd = &cobra.Command{
 	Use:   "login",
@@ -194,4 +237,5 @@ func init() {
 	authCmd.AddCommand(authLogoutCmd)
 	authCmd.AddCommand(authStatusCmd)
 	authCmd.AddCommand(authWhoamiCmd)
+	authCmd.AddCommand(authConfigCmd)
 }

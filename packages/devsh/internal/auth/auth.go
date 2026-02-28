@@ -215,10 +215,18 @@ func (c Config) Validate() error {
 }
 
 // GetConfig returns auth configuration using the following priority (highest to lowest):
-// 1. CLI flags (set via SetConfigOverrides)
-// 2. Environment variables (including .env file loaded in dev mode)
-// 3. Build-time values (set via -ldflags)
-// 4. Mode-specific defaults (dev defaults for Mode=dev, prod defaults for Mode=prod)
+//
+// Dev mode (buildMode == "dev"):
+//  1. CLI flags (set via SetConfigOverrides)
+//  2. Environment variables (including .env file loaded automatically)
+//  3. Build-time values (set via -ldflags)
+//  4. Mode-specific defaults
+//
+// Prod mode (buildMode == "prod"):
+//  1. CLI flags (set via SetConfigOverrides)
+//  2. Build-time values (set via -ldflags) - baked into binary
+//  3. Environment variables (only as fallback)
+//  4. Mode-specific defaults
 func GetConfig() Config {
 	// In dev mode, load .env file to populate environment variables
 	if buildMode == "dev" {
@@ -228,19 +236,33 @@ func GetConfig() Config {
 	// Get mode-specific defaults
 	defaultProjectID, defaultPublishableKey, defaultCmuxURL, defaultConvexSiteURL, defaultServerURL := getDefaultsForMode()
 
-	// Helper to resolve value with priority: CLI > env > build-time > default
-	// Supports multiple env key names (first match wins)
+	// Helper to resolve value with appropriate priority based on build mode
+	// Dev mode: CLI > env > build-time > default (env vars override for local dev)
+	// Prod mode: CLI > build-time > env > default (baked values take precedence)
 	resolve := func(cliVal string, envKeys []string, buildVal, defaultVal string) string {
 		if cliVal != "" {
 			return cliVal
 		}
-		for _, envKey := range envKeys {
-			if envVal := os.Getenv(envKey); envVal != "" {
-				return envVal
+		if buildMode == "prod" {
+			// Production: build-time values take precedence over env vars
+			if buildVal != "" {
+				return buildVal
 			}
-		}
-		if buildVal != "" {
-			return buildVal
+			for _, envKey := range envKeys {
+				if envVal := os.Getenv(envKey); envVal != "" {
+					return envVal
+				}
+			}
+		} else {
+			// Dev: env vars take precedence over build-time values
+			for _, envKey := range envKeys {
+				if envVal := os.Getenv(envKey); envVal != "" {
+					return envVal
+				}
+			}
+			if buildVal != "" {
+				return buildVal
+			}
 		}
 		return defaultVal
 	}
@@ -591,6 +613,17 @@ func Login() error {
 
 	// Check if already logged in
 	if IsLoggedIn() {
+		// Provide more specific feedback if logged in via env var
+		if token := os.Getenv("DEVSH_REFRESH_TOKEN"); token != "" {
+			fmt.Println("Already authenticated via DEVSH_REFRESH_TOKEN environment variable.")
+			fmt.Println("To use browser login instead, unset the env var: unset DEVSH_REFRESH_TOKEN")
+			return nil
+		}
+		if token := os.Getenv("DEVBOX_REFRESH_TOKEN"); token != "" {
+			fmt.Println("Already authenticated via DEVBOX_REFRESH_TOKEN environment variable.")
+			fmt.Println("To use browser login instead, unset the env var: unset DEVBOX_REFRESH_TOKEN")
+			return nil
+		}
 		fmt.Println("Already logged in. Run 'devsh auth logout' first to re-authenticate.")
 		return nil
 	}
@@ -741,6 +774,15 @@ func Logout() error {
 		return err
 	}
 	fmt.Println("✓ Logged out successfully")
+
+	// Warn if environment variable will still provide authentication
+	if token := os.Getenv("DEVSH_REFRESH_TOKEN"); token != "" {
+		fmt.Println("  Note: DEVSH_REFRESH_TOKEN env var is set and will still provide authentication.")
+		fmt.Println("  Unset it to fully log out: unset DEVSH_REFRESH_TOKEN")
+	} else if token := os.Getenv("DEVBOX_REFRESH_TOKEN"); token != "" {
+		fmt.Println("  Note: DEVBOX_REFRESH_TOKEN env var is set and will still provide authentication.")
+		fmt.Println("  Unset it to fully log out: unset DEVBOX_REFRESH_TOKEN")
+	}
 	return nil
 }
 
