@@ -1,20 +1,20 @@
 #!/usr/bin/env node
 /**
- * cmux-memory-mcp CLI
+ * devsh-memory-mcp CLI
  *
- * Standalone MCP server for cmux agent memory.
+ * Standalone MCP server for devsh/cmux agent memory.
  *
  * Usage:
- *   cmux-memory-mcp                    # Use default memory directory
- *   cmux-memory-mcp --dir /path/to/memory
- *   cmux-memory-mcp --agent my-agent-name
+ *   devsh-memory-mcp                    # Use default memory directory
+ *   devsh-memory-mcp --dir /path/to/memory
+ *   devsh-memory-mcp --agent my-agent-name
  *
  * Claude Desktop config (claude_desktop_config.json):
  *   {
  *     "mcpServers": {
- *       "cmux-memory": {
+ *       "devsh-memory": {
  *         "command": "npx",
- *         "args": ["@cmux/memory-mcp"]
+ *         "args": ["devsh-memory-mcp"]
  *       }
  *     }
  *   }
@@ -35,10 +35,10 @@ function parseArgs(): { memoryDir?: string; agentName?: string } {
       i++;
     } else if (args[i] === "--help" || args[i] === "-h") {
       console.log(`
-cmux-memory-mcp - MCP server for cmux agent memory
+devsh-memory-mcp - MCP server for devsh/cmux agent memory
 
 Usage:
-  cmux-memory-mcp [options]
+  devsh-memory-mcp [options]
 
 Options:
   --dir <path>      Memory directory (default: /root/lifecycle/memory)
@@ -48,9 +48,9 @@ Options:
 Example Claude Desktop config:
   {
     "mcpServers": {
-      "cmux-memory": {
+      "devsh-memory": {
         "command": "npx",
-        "args": ["@cmux/memory-mcp", "--dir", "/path/to/memory"]
+        "args": ["devsh-memory-mcp", "--dir", "/path/to/memory"]
       }
     }
   }
@@ -66,18 +66,18 @@ async function main() {
   const config = parseArgs();
 
   // Log to stderr so stdout stays clean for MCP protocol
-  console.error(`[cmux-memory-mcp] Starting server...`);
+  console.error(`[devsh-memory-mcp] Starting server...`);
   if (config.memoryDir) {
-    console.error(`[cmux-memory-mcp] Memory directory: ${config.memoryDir}`);
+    console.error(`[devsh-memory-mcp] Memory directory: ${config.memoryDir}`);
   }
   if (config.agentName) {
-    console.error(`[cmux-memory-mcp] Agent name: ${config.agentName}`);
+    console.error(`[devsh-memory-mcp] Agent name: ${config.agentName}`);
   }
 
   await runServer(config);
 }
 
 main().catch((err) => {
-  console.error("[cmux-memory-mcp] Fatal error:", err);
+  console.error("[devsh-memory-mcp] Fatal error:", err);
   process.exit(1);
 });

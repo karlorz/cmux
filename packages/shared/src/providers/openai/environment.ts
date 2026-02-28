@@ -70,10 +70,11 @@ export function stripFilteredConfigKeys(toml: string): string {
 }
 
 // Target model for migrations - change this when a new latest model is released
-const MIGRATION_TARGET_MODEL = "gpt-5.2-codex";
+const MIGRATION_TARGET_MODEL = "gpt-5.3-codex";
 
 // Models to migrate (legacy models and models without model_reasoning_effort support)
 const MODELS_TO_MIGRATE = [
+  "gpt-5.2-codex",
   "gpt-5.1-codex-max",
   "gpt-5.2",
   "gpt-5.1",
@@ -196,11 +197,13 @@ touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
   });
 
   // Memory MCP server configuration for Codex
+  // Uses npm package for latest version without snapshot rebuild
+  // -y auto-confirms install, @latest ensures fresh version
   const memoryMcpServerConfig = `
-[mcp_servers.cmux-memory]
+[mcp_servers.devsh-memory]
 type = "stdio"
-command = "node"
-args = ["/root/lifecycle/memory/mcp-server.js"]
+command = "npx"
+args = ["-y", "devsh-memory-mcp@latest"]
 `;
 
   // Build config.toml - merge with host config in desktop mode, or generate clean in server mode
@@ -217,7 +220,7 @@ args = ["/root/lifecycle/memory/mcp-server.js"]
       // Strip existing model_migrations and append managed ones
       toml = stripModelMigrations(toml) + generateModelMigrations();
       // Add memory MCP server if not already present
-      if (!toml.includes("[mcp_servers.cmux-memory]")) {
+      if (!toml.includes("[mcp_servers.devsh-memory]")) {
         toml += memoryMcpServerConfig;
       }
     } catch (_error) {
