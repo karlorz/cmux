@@ -1904,6 +1904,7 @@ export const listTasks = httpAction(async (ctx, req) => {
           updatedAt: task.updatedAt,
           taskRunId: selectedRun?._id,
           exitCode: selectedRun?.exitCode,
+          pullRequestUrl: selectedRun?.pullRequestUrl,
         };
       })
     );
