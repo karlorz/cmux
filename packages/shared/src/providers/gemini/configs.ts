@@ -35,6 +35,7 @@ function createGeminiConfig(spec: GeminiModelSpec): AgentConfig {
 }
 
 const GEMINI_MODEL_SPECS: GeminiModelSpec[] = [
+  { nameSuffix: "3.1-pro-preview", modelApiName: "gemini-3.1-pro-preview" },
   { nameSuffix: "3-pro-preview", modelApiName: "gemini-3-pro-preview" },
   { nameSuffix: "2.5-flash", modelApiName: "gemini-2.5-flash" },
   { nameSuffix: "2.5-pro", modelApiName: "gemini-2.5-pro" },
