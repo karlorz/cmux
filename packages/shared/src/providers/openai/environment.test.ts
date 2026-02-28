@@ -100,7 +100,7 @@ approval_mode = "full"`);
 });
 
 describe("getOpenAIEnvironment", () => {
-  it("generates managed model migrations targeting gpt-5.2-codex (server mode)", async () => {
+  it("generates managed model migrations targeting gpt-5.3-codex (server mode)", async () => {
     // Server mode (useHostConfig: false) generates a clean config.toml
     const result = await getOpenAIEnvironment({} as never);
     const configFile = result.files?.find(
@@ -113,13 +113,13 @@ describe("getOpenAIEnvironment", () => {
     );
     expect(toml).toContain('notify = ["/root/lifecycle/codex-notify.sh"]');
     expect(toml).toContain("[notice.model_migrations]");
-    expect(toml).toContain('"gpt-5-codex" = "gpt-5.2-codex"');
-    expect(toml).toContain('"gpt-5" = "gpt-5.2-codex"');
-    expect(toml).toContain('"o3" = "gpt-5.2-codex"');
-    expect(toml).toContain('"o4-mini" = "gpt-5.2-codex"');
-    expect(toml).toContain('"gpt-4.1" = "gpt-5.2-codex"');
-    expect(toml).toContain('"gpt-5-codex-mini" = "gpt-5.2-codex"');
-    expect(toml).not.toContain('"gpt-5.3-codex" =');
+    expect(toml).toContain('"gpt-5-codex" = "gpt-5.3-codex"');
+    expect(toml).toContain('"gpt-5" = "gpt-5.3-codex"');
+    expect(toml).toContain('"o3" = "gpt-5.3-codex"');
+    expect(toml).toContain('"o4-mini" = "gpt-5.3-codex"');
+    expect(toml).toContain('"gpt-4.1" = "gpt-5.3-codex"');
+    expect(toml).toContain('"gpt-5-codex-mini" = "gpt-5.3-codex"');
+    expect(toml).toContain('"gpt-5.2-codex" = "gpt-5.3-codex"');
   });
 
   it("does not read from host filesystem in server mode (useHostConfig: false)", async () => {
@@ -249,8 +249,7 @@ foo = "bar"
       expect(toml).not.toContain('model = "gpt-5"');
       expect(toml).not.toContain('model_reasoning_effort = "high"');
       // Model migrations should be replaced with managed ones
-      expect(toml).not.toContain('"o3" = "gpt-5.3-codex"');
-      expect(toml).toContain('"o3" = "gpt-5.2-codex"');
+      expect(toml).toContain('"o3" = "gpt-5.3-codex"');
     } finally {
       process.env.HOME = previousHome;
       await rm(homeDir, { recursive: true, force: true });

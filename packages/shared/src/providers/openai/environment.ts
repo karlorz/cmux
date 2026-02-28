@@ -70,10 +70,11 @@ export function stripFilteredConfigKeys(toml: string): string {
 }
 
 // Target model for migrations - change this when a new latest model is released
-const MIGRATION_TARGET_MODEL = "gpt-5.2-codex";
+const MIGRATION_TARGET_MODEL = "gpt-5.3-codex";
 
 // Models to migrate (legacy models and models without model_reasoning_effort support)
 const MODELS_TO_MIGRATE = [
+  "gpt-5.2-codex",
   "gpt-5.1-codex-max",
   "gpt-5.2",
   "gpt-5.1",
