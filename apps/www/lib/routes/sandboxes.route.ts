@@ -392,6 +392,9 @@ async function setupProviderAuth(
       );
 
       // Run full environment setup (hooks, memory, MCP, settings.json)
+      // If no taskRunJwt, bypass proxy to avoid empty x-cmux-token header failures
+      const shouldBypassProxy =
+        workspaceSettings?.bypassAnthropicProxy ?? !options.taskRunJwt;
       const claudeEnvResult = await getClaudeEnvironment({
         taskRunId: options.taskRunId || "",
         taskRunJwt: options.taskRunJwt || "",
@@ -399,8 +402,7 @@ async function setupProviderAuth(
         apiKeys,
         callbackUrl: options.callbackUrl,
         workspaceSettings: {
-          bypassAnthropicProxy:
-            workspaceSettings?.bypassAnthropicProxy ?? false,
+          bypassAnthropicProxy: shouldBypassProxy,
         },
         providerConfig: resolvedClaude?.isOverridden
           ? {
@@ -1588,9 +1590,12 @@ sandboxesRouter.openapi(
         const activity = await convex.query(api.sandboxInstances.getActivity, {
           instanceId,
         });
-        // For PVE instances created via devsh start (no activity record), allow if instance exists
-        // The instance was already verified to exist above, and team access was verified
-        if (activity && activity.teamId && activity.teamId !== team.uuid) {
+        // Require activity record for PVE instances to prove ownership
+        // This prevents users from targeting arbitrary PVE instance IDs
+        if (!activity) {
+          return c.text("Forbidden: No ownership record for this instance", 403);
+        }
+        if (activity.teamId && activity.teamId !== team.uuid) {
           return c.text("Forbidden", 403);
         }
       } else {
