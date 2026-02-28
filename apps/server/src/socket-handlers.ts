@@ -770,6 +770,10 @@ export function setupSocketHandlers(
                   await updateTaskRunStatusMessage(undefined);
                   break;
                 } catch (error) {
+                  serverLogger.debug(
+                    `[start-task] Docker image ${imageName} not yet available, waiting...`,
+                    error
+                  );
                   const now = Date.now();
                   if (now - lastStatusUpdate > DOCKER_PULL_PROGRESS_THROTTLE_MS) {
                     lastStatusUpdate = now;
@@ -2457,6 +2461,10 @@ export function setupSocketHandlers(
 
               return toPullRequestActionResult(repoFullName, detail);
             } catch (error) {
+              serverLogger.warn(
+                `[sync-pr-state] Failed to fetch PR state for ${repoFullName}:`,
+                error
+              );
               const message =
                 error instanceof Error ? error.message : String(error);
               return {
@@ -2572,6 +2580,7 @@ export function setupSocketHandlers(
 
           callback({ success: true, merged: true, commitSha: mergeRes.sha });
         } catch (e: unknown) {
+          serverLogger.warn("[merge-branch] Failed to merge branch:", e);
           const msg = e instanceof Error ? e.message : String(e);
           callback({
             success: false,
@@ -3732,7 +3741,13 @@ Please address the issue mentioned in the comment above.`;
                     owner,
                     repo,
                     created.number
-                  ).catch(() => null)) ??
+                  ).catch((fetchErr) => {
+                    serverLogger.debug(
+                      `[create-draft-pr] Failed to fetch PR detail after creation for ${repoFullName}:`,
+                      fetchErr
+                    );
+                    return null;
+                  })) ??
                   ({
                     ...created,
                     merged_at: null,
@@ -3741,6 +3756,10 @@ Please address the issue mentioned in the comment above.`;
 
               return toPullRequestActionResult(repoFullName, detail);
             } catch (error) {
+              serverLogger.warn(
+                `[create-draft-pr] Failed to create draft PR for ${repoFullName}:`,
+                error
+              );
               const message =
                 error instanceof Error ? error.message : String(error);
               return {
