@@ -125,7 +125,7 @@ BODY_FILE=$(mktemp /tmp/cmux-pr-XXXXXX.md)
 cat <<'CMUX_EOF' > "$BODY_FILE"
 ${prBody}
 CMUX_EOF
-gh pr create --base "$PR_BASE" --head "$PR_HEAD" --title "$PR_TITLE" --body-file "$BODY_FILE" --json url,number,state,isDraft
+gh pr create --base "$PR_BASE" --head "$PR_HEAD" --title "$PR_TITLE" --body-file "$BODY_FILE"
 rm -f "$BODY_FILE"
 `;
 
@@ -150,20 +150,32 @@ rm -f "$BODY_FILE"
       return null;
     }
 
-    const parsed = parseGhPrCreateResponse(JSON.parse(trimmed));
-    if (!parsed) {
-      log("ERROR", "Failed to parse gh pr create output", {
+    // gh pr create outputs just the PR URL on success (e.g., https://github.com/owner/repo/pull/123)
+    const prUrlMatch = trimmed.match(/https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/(\d+)/);
+    if (!prUrlMatch) {
+      log("ERROR", "Failed to parse PR URL from gh pr create output", {
         stdout: trimmed,
       });
       return null;
     }
 
+    const prUrl = prUrlMatch[0];
+    const prNumberStr = prUrlMatch[1];
+    if (!prNumberStr) {
+      log("ERROR", "Failed to extract PR number from URL", {
+        stdout: trimmed,
+        prUrl,
+      });
+      return null;
+    }
+    const prNumber = parseInt(prNumberStr, 10);
+
     const metadata: PullRequestMetadata = {
       pullRequest: {
-        url: parsed.url,
-        number: parsed.number,
-        state: mapGhState(parsed.state),
-        isDraft: parsed.isDraft,
+        url: prUrl,
+        number: prNumber,
+        state: "open",
+        isDraft: false,
       },
       title: prTitle,
       description: prBody,
@@ -172,7 +184,7 @@ rm -f "$BODY_FILE"
     log("INFO", "Created pull request", {
       taskId: check.taskId,
       runId: winner.runId,
-      url: parsed.url,
+      url: prUrl,
     });
 
     return metadata;
