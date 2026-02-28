@@ -59,8 +59,8 @@ Examples:
 			return nil
 		}
 
-		fmt.Printf("%-30s %-12s %-15s %-6s %s\n", "TASK ID", "STATUS", "AGENT", "PR", "PROMPT")
-		fmt.Println("------------------------------", "------------", "---------------", "------", "--------------------")
+		fmt.Printf("%-30s %-12s %-15s %-8s %s\n", "TASK ID", "STATUS", "AGENT", "PR", "PROMPT")
+		fmt.Println("------------------------------", "------------", "---------------", "--------", "--------------------")
 
 		for _, task := range result.Tasks {
 			prompt := task.Prompt
@@ -89,13 +89,24 @@ Examples:
 				status = fmt.Sprintf("%s (exit %d)", status, *task.ExitCode)
 			}
 
-			// PR status indicator
+			// PR status from mergeStatus field
 			prStatus := "-"
-			if task.PullRequestURL != "" {
-				prStatus = "yes"
+			switch task.MergeStatus {
+			case "pr_draft":
+				prStatus = "draft"
+			case "pr_open":
+				prStatus = "open"
+			case "pr_approved":
+				prStatus = "approved"
+			case "pr_changes_requested":
+				prStatus = "changes"
+			case "pr_merged":
+				prStatus = "merged"
+			case "pr_closed":
+				prStatus = "closed"
 			}
 
-			fmt.Printf("%-30s %-12s %-15s %-6s %s\n", task.ID, status, agent, prStatus, prompt)
+			fmt.Printf("%-30s %-12s %-15s %-8s %s\n", task.ID, status, agent, prStatus, prompt)
 		}
 
 		return nil

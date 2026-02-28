@@ -742,6 +742,7 @@ type Task struct {
 	TaskRunID      string `json:"taskRunId"`
 	ExitCode       *int   `json:"exitCode,omitempty"`
 	PullRequestURL string `json:"pullRequestUrl,omitempty"`
+	MergeStatus    string `json:"mergeStatus,omitempty"`
 }
 
 // TaskRun represents a run within a task

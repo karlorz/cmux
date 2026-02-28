@@ -1906,6 +1906,7 @@ export const listTasks = httpAction(async (ctx, req) => {
           taskRunId: selectedRun?._id,
           exitCode: selectedRun?.exitCode,
           pullRequestUrl: selectedRun?.pullRequestUrl,
+          mergeStatus: task.mergeStatus,
         };
       })
     );
