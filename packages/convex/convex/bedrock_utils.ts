@@ -35,7 +35,7 @@ export const BEDROCK_INFERENCE_PROFILE: "us" | "global" = "us";
 const BASE_MODELS = {
   // Claude 4.6 models
   "opus-4-6": "anthropic.claude-opus-4-6-v1",
-  "sonnet-4-6": "anthropic.claude-sonnet-4-6",
+  "sonnet-4-6": "anthropic.claude-sonnet-4-6-v1",
   // Claude 4.5 models
   "sonnet-4-5": "anthropic.claude-sonnet-4-5-20250929-v1:0",
   "opus-4-5": "anthropic.claude-opus-4-5-20251101-v1:0",
