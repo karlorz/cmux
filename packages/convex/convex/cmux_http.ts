@@ -1870,14 +1870,15 @@ export const listTasks = httpAction(async (ctx, req) => {
           });
         }
 
-        // If no selected run, get the first run for this task
+        // If no selected run, get runs for this task and prefer the crowned one
         if (!selectedRun) {
           const runs = await ctx.runQuery(internal.taskRuns.listByTaskAndTeamInternal, {
             taskId: task._id as Id<"tasks">,
             teamId,
             userId,
           });
-          selectedRun = runs[0] ?? null;
+          // Prefer crowned run (it has the PR), fallback to first run
+          selectedRun = runs.find((r) => r.isCrowned) ?? runs[0] ?? null;
         }
 
         // Extract vscode URL from vscode object or networking array
