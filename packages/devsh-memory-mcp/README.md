@@ -1,13 +1,13 @@
-# @cmux/memory-mcp
+# devsh-memory-mcp
 
-MCP server for cmux agent memory - enables Claude Desktop, Cursor, and other MCP clients to access sandbox agent memory.
+MCP server for devsh/cmux agent memory - enables Claude Desktop, Cursor, and other MCP clients to access sandbox agent memory.
 
 ## Installation
 
 ```bash
-npm install -g @cmux/memory-mcp
+npm install -g devsh-memory-mcp
 # or
-npx @cmux/memory-mcp
+npx devsh-memory-mcp
 ```
 
 ## Usage
@@ -16,13 +16,13 @@ npx @cmux/memory-mcp
 
 ```bash
 # Use default memory directory (/root/lifecycle/memory)
-cmux-memory-mcp
+devsh-memory-mcp
 
 # Specify custom directory
-cmux-memory-mcp --dir /path/to/memory
+devsh-memory-mcp --dir /path/to/memory
 
 # Set agent name for messaging
-cmux-memory-mcp --agent my-agent
+devsh-memory-mcp --agent my-agent
 ```
 
 ### Claude Desktop Configuration
@@ -32,9 +32,9 @@ Add to your `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "cmux-memory": {
+    "devsh-memory": {
       "command": "npx",
-      "args": ["@cmux/memory-mcp"]
+      "args": ["devsh-memory-mcp"]
     }
   }
 }
@@ -45,9 +45,9 @@ With custom options:
 ```json
 {
   "mcpServers": {
-    "cmux-memory": {
+    "devsh-memory": {
       "command": "npx",
-      "args": ["@cmux/memory-mcp", "--dir", "/path/to/memory", "--agent", "claude-desktop"]
+      "args": ["devsh-memory-mcp", "--dir", "/path/to/memory", "--agent", "claude-desktop"]
     }
   }
 }

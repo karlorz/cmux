@@ -197,11 +197,12 @@ touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
   });
 
   // Memory MCP server configuration for Codex
+  // Uses npm package for latest version without snapshot rebuild
   const memoryMcpServerConfig = `
-[mcp_servers.cmux-memory]
+[mcp_servers.devsh-memory]
 type = "stdio"
-command = "node"
-args = ["/root/lifecycle/memory/mcp-server.js"]
+command = "npx"
+args = ["devsh-memory-mcp"]
 `;
 
   // Build config.toml - merge with host config in desktop mode, or generate clean in server mode
@@ -218,7 +219,7 @@ args = ["/root/lifecycle/memory/mcp-server.js"]
       // Strip existing model_migrations and append managed ones
       toml = stripModelMigrations(toml) + generateModelMigrations();
       // Add memory MCP server if not already present
-      if (!toml.includes("[mcp_servers.cmux-memory]")) {
+      if (!toml.includes("[mcp_servers.devsh-memory]")) {
         toml += memoryMcpServerConfig;
       }
     } catch (_error) {

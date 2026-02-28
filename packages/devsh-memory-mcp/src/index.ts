@@ -279,7 +279,7 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
   // Create MCP server
   const server = new Server(
     {
-      name: "cmux-memory",
+      name: "devsh-memory",
       version: "0.1.0",
     },
     {

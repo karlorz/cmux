@@ -56,13 +56,14 @@ export async function getClaudeEnvironment(
 
     const config = {
       ...existingConfig,
-      // Add cmux-memory to global mcpServers, merged with existing user MCP servers
+      // Add devsh-memory to global mcpServers, merged with existing user MCP servers
       // This ensures the memory MCP server is always available regardless of project context
+      // Uses npm package for latest version without snapshot rebuild
       mcpServers: {
         ...existingMcpServers,
-        "cmux-memory": {
-          command: "node",
-          args: [`${MEMORY_PROTOCOL_DIR}/mcp-server.js`],
+        "devsh-memory": {
+          command: "npx",
+          args: ["devsh-memory-mcp"],
         },
       },
       projects: {
