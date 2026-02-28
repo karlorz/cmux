@@ -478,32 +478,64 @@ export const triggerDependentTasks = internalMutation({
 
     const now = Date.now();
 
-    // Check each dependent task
-    for (const dependentId of completedTask.dependents) {
-      const dependent = await ctx.db.get(dependentId);
-      if (!dependent || dependent.status !== "pending") {
+    // Batch fetch all dependent tasks
+    const dependents = await Promise.all(
+      completedTask.dependents.map((id) => ctx.db.get(id))
+    );
+
+    // Filter to pending dependents
+    const pendingDependents = dependents.filter(
+      (dep): dep is NonNullable<typeof dep> =>
+        dep != null && dep.status === "pending"
+    );
+
+    if (pendingDependents.length === 0) {
+      return;
+    }
+
+    // Collect all unique dependency IDs we need to check
+    const allDepIds = new Set<Id<"orchestrationTasks">>();
+    for (const dependent of pendingDependents) {
+      if (dependent.dependencies) {
+        for (const depId of dependent.dependencies) {
+          allDepIds.add(depId);
+        }
+      }
+    }
+
+    // Batch fetch all dependencies at once
+    const depIdArray = Array.from(allDepIds);
+    const allDeps = await Promise.all(depIdArray.map((id) => ctx.db.get(id)));
+    const depStatusMap = new Map(
+      depIdArray.map((id, i) => [id, allDeps[i]?.status])
+    );
+
+    // Determine which dependents are ready and batch update them
+    const readyDependentIds: Id<"orchestrationTasks">[] = [];
+    for (const dependent of pendingDependents) {
+      if (!dependent.dependencies || dependent.dependencies.length === 0) {
+        readyDependentIds.push(dependent._id);
         continue;
       }
 
-      // Check if all dependencies are now completed
-      if (dependent.dependencies && dependent.dependencies.length > 0) {
-        const deps = await Promise.all(
-          dependent.dependencies.map((id) => ctx.db.get(id))
-        );
-        const allCompleted = deps.every((dep) => dep?.status === "completed");
+      const allCompleted = dependent.dependencies.every(
+        (depId) => depStatusMap.get(depId) === "completed"
+      );
 
-        if (!allCompleted) {
-          // Still waiting on other dependencies
-          continue;
-        }
+      if (allCompleted) {
+        readyDependentIds.push(dependent._id);
       }
-
-      // All dependencies are complete - set nextRetryAfter to now for immediate pickup
-      await ctx.db.patch(dependentId, {
-        nextRetryAfter: now,
-        updatedAt: now,
-      });
     }
+
+    // Batch update all ready dependents
+    await Promise.all(
+      readyDependentIds.map((dependentId) =>
+        ctx.db.patch(dependentId, {
+          nextRetryAfter: now,
+          updatedAt: now,
+        })
+      )
+    );
   },
 });
 
