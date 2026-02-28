@@ -59,11 +59,12 @@ export async function getClaudeEnvironment(
       // Add devsh-memory to global mcpServers, merged with existing user MCP servers
       // This ensures the memory MCP server is always available regardless of project context
       // Uses npm package for latest version without snapshot rebuild
+      // -y auto-confirms install, @latest ensures fresh version
       mcpServers: {
         ...existingMcpServers,
         "devsh-memory": {
           command: "npx",
-          args: ["devsh-memory-mcp"],
+          args: ["-y", "devsh-memory-mcp@latest"],
         },
       },
       projects: {

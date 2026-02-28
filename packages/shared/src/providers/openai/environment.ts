@@ -198,11 +198,12 @@ touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
 
   // Memory MCP server configuration for Codex
   // Uses npm package for latest version without snapshot rebuild
+  // -y auto-confirms install, @latest ensures fresh version
   const memoryMcpServerConfig = `
 [mcp_servers.devsh-memory]
 type = "stdio"
 command = "npx"
-args = ["devsh-memory-mcp"]
+args = ["-y", "devsh-memory-mcp@latest"]
 `;
 
   // Build config.toml - merge with host config in desktop mode, or generate clean in server mode
