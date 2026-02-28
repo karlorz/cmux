@@ -147,3 +147,25 @@ export const getTokenStatus = internalQuery({
     return "valid";
   },
 });
+
+/**
+ * Check if OPENAI_API_KEY is set for a team+user.
+ * Used as fallback when CODEX_AUTH_JSON is missing.
+ */
+export const hasOpenAIApiKey = internalQuery({
+  args: {
+    teamId: v.string(),
+    userId: v.string(),
+  },
+  handler: async (ctx, args): Promise<boolean> => {
+    const key = await ctx.db
+      .query("apiKeys")
+      .withIndex("by_team_user", (q) =>
+        q.eq("teamId", args.teamId).eq("userId", args.userId)
+      )
+      .filter((q) => q.eq(q.field("envVar"), "OPENAI_API_KEY"))
+      .first();
+
+    return key !== null && key.value.trim().length > 0;
+  },
+});

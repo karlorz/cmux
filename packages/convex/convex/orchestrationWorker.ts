@@ -159,10 +159,18 @@ export const dispatchSpawn = internalAction({
           );
         }
         if (tokenStatus === "missing") {
-          throw new Error(
-            "No CODEX_AUTH_JSON found. Please run `codex auth` locally " +
-              "and set CODEX_AUTH_JSON in settings."
+          // Check if OPENAI_API_KEY is set as fallback (Codex supports both auth methods)
+          const hasOpenAIKey = await ctx.runQuery(
+            internal.codexTokenRefreshQueries.hasOpenAIApiKey,
+            { teamId: args.teamId, userId: task.userId }
           );
+          if (!hasOpenAIKey) {
+            throw new Error(
+              "No CODEX_AUTH_JSON or OPENAI_API_KEY found. Please run `codex auth` locally " +
+                "and set CODEX_AUTH_JSON in settings, or set OPENAI_API_KEY."
+            );
+          }
+          // Has OPENAI_API_KEY fallback, allow orchestration to proceed
         }
       }
 
