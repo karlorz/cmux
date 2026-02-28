@@ -7,7 +7,6 @@ import {
   normalizeAnthropicBaseUrl,
 } from "../../utils/anthropic";
 import {
-  MEMORY_PROTOCOL_DIR,
   getMemoryStartupCommand,
   getMemorySeedFiles,
   getMemoryProtocolInstructions,
