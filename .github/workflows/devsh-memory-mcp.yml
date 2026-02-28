@@ -66,7 +66,9 @@ jobs:
           echo "Publishing version: $VERSION"
 
       - name: Update package version
-        run: npm version ${{ steps.version.outputs.version }} --no-git-tag-version --allow-same-version
+        run: |
+          # Use node to update version directly (avoids npm workspace: protocol issues)
+          node -e "const p=require('./package.json'); p.version='${{ steps.version.outputs.version }}'; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2)+'\n')"
 
       - name: Build
         run: bun run build
