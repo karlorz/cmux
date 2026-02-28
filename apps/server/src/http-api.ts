@@ -978,6 +978,327 @@ async function handleOrchestrationStatus(
 }
 
 /**
+ * Handle GET /api/orchestrate/results/*
+ *
+ * Returns aggregated results from all sub-agents in an orchestration.
+ * Supports both Bearer token and X-Task-Run-JWT authentication.
+ */
+async function handleOrchestrationResults(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+  // Support both Bearer token and X-Task-Run-JWT
+  const authToken = parseAuthHeader(req);
+  const taskRunJwt = extractTaskRunJwt(req.headers);
+
+  if (!authToken && !taskRunJwt) {
+    jsonResponse(res, 401, { error: "Unauthorized: Missing Bearer token or X-Task-Run-JWT header" });
+    return;
+  }
+
+  const url = new URL(req.url || "/", `http://${req.headers.host}`);
+
+  // Extract orchestration ID from path: /api/orchestrate/results/<id>
+  const pathParts = url.pathname.split("/");
+  const orchestrationId = pathParts[pathParts.length - 1];
+
+  if (!orchestrationId || orchestrationId === "results") {
+    jsonResponse(res, 400, { error: "Missing orchestration ID in path" });
+    return;
+  }
+
+  const teamSlugOrId = url.searchParams.get("teamSlugOrId");
+
+  try {
+    // If using JWT auth, query via Convex HTTP endpoint
+    if (taskRunJwt) {
+      const convexSiteUrl = env.CONVEX_SITE_URL;
+
+      const convexResponse = await fetch(
+        `${convexSiteUrl}/api/orchestration/results?orchestrationId=${encodeURIComponent(orchestrationId)}`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Task-Run-JWT": taskRunJwt,
+          },
+        }
+      );
+
+      if (!convexResponse.ok) {
+        const errorText = await convexResponse.text();
+        jsonResponse(res, convexResponse.status, { error: errorText });
+        return;
+      }
+
+      const results = await convexResponse.json();
+      jsonResponse(res, 200, results);
+      return;
+    }
+
+    // Bearer token auth path
+    if (!teamSlugOrId) {
+      jsonResponse(res, 400, { error: "Missing required query parameter: teamSlugOrId" });
+      return;
+    }
+
+    const authHeaderJson = JSON.stringify({ accessToken: authToken });
+
+    const result = await runWithAuth(authToken!, authHeaderJson, async () => {
+      // Get all orchestration tasks for this orchestrationId (stored in metadata)
+      const tasks = await getConvex().query(api.orchestrationQueries.listTasksByTeam, {
+        teamSlugOrId,
+        limit: 100,
+      });
+
+      // Filter by orchestrationId (stored in metadata)
+      const filteredTasks = tasks.filter((task) => {
+        const metadata = task.metadata as Record<string, unknown> | undefined;
+        return metadata?.orchestrationId === orchestrationId;
+      });
+
+      const totalTasks = filteredTasks.length;
+      const completedTasks = filteredTasks.filter((t) => t.status === "completed").length;
+      const failedTasks = filteredTasks.filter((t) => t.status === "failed").length;
+      const runningTasks = filteredTasks.filter((t) => t.status === "running" || t.status === "assigned").length;
+
+      // Determine overall status
+      let status: "running" | "completed" | "failed" | "partial";
+      if (totalTasks === 0) {
+        status = "completed";
+      } else if (completedTasks === totalTasks) {
+        status = "completed";
+      } else if (failedTasks > 0 && completedTasks + failedTasks === totalTasks) {
+        status = "failed";
+      } else if (completedTasks > 0 || failedTasks > 0) {
+        status = "partial";
+      } else {
+        status = "running";
+      }
+
+      return {
+        orchestrationId,
+        status,
+        totalTasks,
+        completedTasks,
+        results: filteredTasks.map((t) => ({
+          taskId: t._id,
+          agentName: t.assignedAgentName,
+          status: t.status,
+          prompt: t.prompt,
+          result: t.result,
+          errorMessage: t.errorMessage,
+          taskRunId: t.taskRunId,
+        })),
+      };
+    });
+
+    jsonResponse(res, 200, result);
+  } catch (error) {
+    serverLogger.error("[http-api] orchestrate/results failed", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    jsonResponse(res, 500, { error: message });
+  }
+}
+
+/**
+ * Handle GET /api/orchestrate/events/*
+ *
+ * Server-Sent Events stream for orchestration updates.
+ * Provides real-time updates for head agents monitoring sub-agents.
+ *
+ * Events:
+ * - task_status: Task status changed
+ * - task_completed: Task completed (with result)
+ * - message_received: New message in mailbox
+ * - heartbeat: Keep-alive every 30 seconds
+ */
+async function handleOrchestrationEvents(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+  // Support both Bearer token and X-Task-Run-JWT
+  const authToken = parseAuthHeader(req);
+  const taskRunJwt = extractTaskRunJwt(req.headers);
+
+  if (!authToken && !taskRunJwt) {
+    jsonResponse(res, 401, { error: "Unauthorized: Missing Bearer token or X-Task-Run-JWT header" });
+    return;
+  }
+
+  const url = new URL(req.url || "/", `http://${req.headers.host}`);
+
+  // Extract orchestration ID from path: /api/orchestrate/events/<id>
+  const pathParts = url.pathname.split("/");
+  const orchestrationId = pathParts[pathParts.length - 1];
+
+  if (!orchestrationId || orchestrationId === "events") {
+    jsonResponse(res, 400, { error: "Missing orchestration ID in path" });
+    return;
+  }
+
+  const teamSlugOrId = url.searchParams.get("teamSlugOrId");
+  const lastEventId = req.headers["last-event-id"];
+
+  // Validate auth
+  if (!taskRunJwt && !teamSlugOrId) {
+    jsonResponse(res, 400, { error: "Missing required query parameter: teamSlugOrId" });
+    return;
+  }
+
+  // Set up SSE headers
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "Access-Control-Allow-Origin": "*",
+    "X-Accel-Buffering": "no",
+  });
+
+  serverLogger.info("[http-api] SSE connection established", { orchestrationId });
+
+  // Send initial connected event
+  const sendEvent = (event: string, data: unknown, id?: string) => {
+    if (id) {
+      res.write(`id: ${id}\n`);
+    }
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  sendEvent("connected", { orchestrationId, timestamp: Date.now() });
+
+  // Track task statuses for change detection
+  const taskStatuses = new Map<string, string>();
+  let eventId = parseInt(lastEventId as string, 10) || 0;
+  let isConnectionClosed = false;
+
+  // Handle client disconnect
+  req.on("close", () => {
+    isConnectionClosed = true;
+    serverLogger.info("[http-api] SSE connection closed", { orchestrationId });
+  });
+
+  // Helper to fetch current state
+  const fetchState = async () => {
+    try {
+      if (taskRunJwt) {
+        const convexSiteUrl = env.CONVEX_SITE_URL;
+        const response = await fetch(
+          `${convexSiteUrl}/api/orchestration/pull?orchestrationId=${encodeURIComponent(orchestrationId)}`,
+          {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Task-Run-JWT": taskRunJwt,
+            },
+          }
+        );
+        if (response.ok) {
+          return await response.json();
+        }
+        return null;
+      }
+
+      // Bearer auth path
+      if (authToken && teamSlugOrId) {
+        const authHeaderJson = JSON.stringify({ accessToken: authToken });
+        return await runWithAuth(authToken, authHeaderJson, async () => {
+          const tasks = await getConvex().query(api.orchestrationQueries.listTasksByTeam, {
+            teamSlugOrId,
+            limit: 100,
+          });
+          const filtered = tasks.filter((t) => {
+            const metadata = t.metadata as Record<string, unknown> | undefined;
+            return metadata?.orchestrationId === orchestrationId;
+          });
+          return {
+            tasks: filtered,
+            completedCount: filtered.filter((t) => t.status === "completed").length,
+            pendingCount: filtered.filter((t) => t.status === "pending").length,
+            failedCount: filtered.filter((t) => t.status === "failed").length,
+            runningCount: filtered.filter((t) => t.status === "running" || t.status === "assigned").length,
+          };
+        });
+      }
+      return null;
+    } catch (error) {
+      serverLogger.error("[http-api] SSE fetch state error", error);
+      return null;
+    }
+  };
+
+  // Polling loop
+  const pollInterval = 5000; // 5 seconds
+  const heartbeatInterval = 30000; // 30 seconds
+  let lastHeartbeat = Date.now();
+
+  const poll = async () => {
+    if (isConnectionClosed) return;
+
+    try {
+      const state = await fetchState();
+      if (!state || isConnectionClosed) return;
+
+      // Check for status changes
+      for (const task of state.tasks) {
+        const taskId = task._id || task.id;
+        const prevStatus = taskStatuses.get(taskId);
+        const currentStatus = task.status;
+
+        if (prevStatus !== currentStatus) {
+          eventId++;
+          taskStatuses.set(taskId, currentStatus);
+
+          if (currentStatus === "completed") {
+            sendEvent("task_completed", {
+              taskId,
+              status: currentStatus,
+              result: task.result,
+              completedAt: task.completedAt || Date.now(),
+            }, String(eventId));
+          } else if (currentStatus === "failed") {
+            sendEvent("task_status", {
+              taskId,
+              status: currentStatus,
+              errorMessage: task.errorMessage,
+            }, String(eventId));
+          } else {
+            sendEvent("task_status", {
+              taskId,
+              status: currentStatus,
+              assignedAgentName: task.assignedAgentName,
+            }, String(eventId));
+          }
+        }
+      }
+
+      // Send heartbeat if needed
+      if (Date.now() - lastHeartbeat >= heartbeatInterval) {
+        lastHeartbeat = Date.now();
+        sendEvent("heartbeat", {
+          timestamp: lastHeartbeat,
+          completedCount: state.completedCount,
+          pendingCount: state.pendingCount,
+          failedCount: state.failedCount,
+          runningCount: state.runningCount,
+        });
+      }
+    } catch (error) {
+      serverLogger.error("[http-api] SSE poll error", error);
+    }
+
+    // Schedule next poll
+    if (!isConnectionClosed) {
+      setTimeout(poll, pollInterval);
+    }
+  };
+
+  // Start polling
+  void poll();
+}
+
+/**
  * Handle POST /api/orchestrate/cancel/*
  *
  * Cancels an orchestration task and cascades to the linked taskRun.
@@ -1700,6 +2021,18 @@ export function handleHttpRequest(
   // Route: GET /api/orchestrate/status/* - Get orchestration task status
   if (method === "GET" && path.startsWith("/api/orchestrate/status/")) {
     void handleOrchestrationStatus(req, res);
+    return true;
+  }
+
+  // Route: GET /api/orchestrate/results/* - Get aggregated results from sub-agents
+  if (method === "GET" && path.startsWith("/api/orchestrate/results/")) {
+    void handleOrchestrationResults(req, res);
+    return true;
+  }
+
+  // Route: GET /api/orchestrate/events/* - SSE stream for real-time orchestration updates
+  if (method === "GET" && path.startsWith("/api/orchestrate/events/")) {
+    void handleOrchestrationEvents(req, res);
     return true;
   }
 
