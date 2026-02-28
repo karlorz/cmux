@@ -876,7 +876,7 @@ const tools = [
   // Write tools
   {
     name: 'append_daily_log',
-    description: 'Append content to today's daily log. Creates the file if it doesn't exist.',
+    description: 'Append content to today\\'s daily log. Creates the file if it doesn\\'t exist.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -890,7 +890,7 @@ const tools = [
   },
   {
     name: 'update_knowledge',
-    description: 'Update a specific priority section in the knowledge file (MEMORY.md). Appends a new entry with today's date.',
+    description: 'Update a specific priority section in the knowledge file (MEMORY.md). Appends a new entry with today\\'s date.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -901,7 +901,7 @@ const tools = [
         },
         content: {
           type: 'string',
-          description: 'Content to add to the section (will be prefixed with today's date)'
+          description: 'Content to add to the section (will be prefixed with today\\'s date)'
         }
       },
       required: ['section', 'content']
