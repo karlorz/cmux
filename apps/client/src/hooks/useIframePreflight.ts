@@ -276,8 +276,8 @@ export function useIframePreflight({
             ) {
               message = data.error;
             }
-          } catch {
-            // Ignore JSON parse errors; keep fallback message.
+          } catch (error) {
+            console.debug("[useIframePreflight] Failed to parse error response JSON", error);
           }
 
           setResult({

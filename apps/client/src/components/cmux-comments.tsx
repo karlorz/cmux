@@ -239,7 +239,7 @@ function CommentMarker({ comment, onClick, teamSlugOrId }: CommentMarkerProps) {
             try {
               el = document.querySelector(escapedSelector) as HTMLElement;
             } catch (escapedError) {
-              console.warn(
+              console.error(
                 `Could not find element with CSS selector: ${comment.nodeId}`,
                 { selectorError, escapedError }
               );
