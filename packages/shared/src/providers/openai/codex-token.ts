@@ -16,7 +16,21 @@ export const CODEX_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 export const CODEX_OAUTH_SCOPE = "openid profile email";
 
 /**
+ * Zod schema for token fields (can be at top level or nested under "tokens").
+ */
+const CodexTokenFields = z.object({
+  access_token: z.string(),
+  refresh_token: z.string(),
+  id_token: z.string().optional(),
+  account_id: z.string().optional(),
+});
+
+/**
  * Zod schema matching Codex CLI's auth.json structure.
+ *
+ * Supports two formats:
+ * 1. Nested format (real ~/.codex/auth.json): tokens under "tokens" key
+ * 2. Flattened format: tokens at top level (legacy/internal)
  *
  * Fields from CLIProxyAPI CodexTokenStorage:
  * - access_token, refresh_token, id_token: OAuth2 tokens
@@ -36,15 +50,42 @@ export const CodexAuthJsonSchema = z.object({
   type: z.string().optional(),
 });
 
+/**
+ * Schema for the full auth.json envelope (nested tokens format).
+ */
+export const CodexAuthJsonEnvelopeSchema = z.object({
+  auth_mode: z.string().optional(),
+  last_refresh: z.string().optional(),
+  tokens: CodexTokenFields,
+  OPENAI_API_KEY: z.string().nullable().optional(),
+});
+
 export type CodexAuthJson = z.infer<typeof CodexAuthJsonSchema>;
+export type CodexAuthJsonEnvelope = z.infer<typeof CodexAuthJsonEnvelopeSchema>;
 
 /**
  * Parse and validate a raw CODEX_AUTH_JSON string.
+ * Supports both nested format (real auth.json) and flattened format.
  * Returns the typed object on success, null on invalid input.
  */
 export function parseCodexAuthJson(raw: string): CodexAuthJson | null {
   try {
     const parsed = JSON.parse(raw);
+
+    // Try nested format first (real ~/.codex/auth.json)
+    const envelopeResult = CodexAuthJsonEnvelopeSchema.safeParse(parsed);
+    if (envelopeResult.success) {
+      const { tokens } = envelopeResult.data;
+      return {
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        id_token: tokens.id_token,
+        account_id: tokens.account_id,
+        // No expired field in nested format - extract from JWT if needed
+      };
+    }
+
+    // Fallback to flattened format
     const result = CodexAuthJsonSchema.safeParse(parsed);
     return result.success ? result.data : null;
   } catch {

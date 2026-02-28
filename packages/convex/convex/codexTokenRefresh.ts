@@ -19,6 +19,7 @@ import {
   CODEX_OAUTH_TOKEN_ENDPOINT,
   CODEX_OAUTH_CLIENT_ID,
   CODEX_OAUTH_SCOPE,
+  CodexAuthJsonEnvelopeSchema,
 } from "@cmux/shared/providers/openai/codex-token";
 
 const LEAD_TIME_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -103,18 +104,37 @@ export const refreshExpiring = internalAction({
           expires_in: number;
         };
 
-        // Build updated auth JSON, preserving non-token fields
-        const updatedAuth = {
-          ...auth,
-          access_token: tokenResponse.access_token,
-          refresh_token: tokenResponse.refresh_token,
-          id_token: tokenResponse.id_token,
-          expired: Math.floor(Date.now() / 1000) + tokenResponse.expires_in,
-          last_refresh: Math.floor(Date.now() / 1000),
-        };
+        // Build updated auth JSON, preserving original envelope structure
+        const originalParsed = JSON.parse(key.value);
+        const isEnvelopeFormat = CodexAuthJsonEnvelopeSchema.safeParse(originalParsed).success;
+        const newExpiresAt = (Math.floor(Date.now() / 1000) + tokenResponse.expires_in) * 1000;
 
-        const newValue = JSON.stringify(updatedAuth);
-        const newExpiresAt = updatedAuth.expired * 1000;
+        let newValue: string;
+        if (isEnvelopeFormat) {
+          // Preserve envelope structure (real ~/.codex/auth.json format)
+          const updatedEnvelope = {
+            ...originalParsed,
+            last_refresh: new Date().toISOString(),
+            tokens: {
+              ...originalParsed.tokens,
+              access_token: tokenResponse.access_token,
+              refresh_token: tokenResponse.refresh_token,
+              id_token: tokenResponse.id_token,
+            },
+          };
+          newValue = JSON.stringify(updatedEnvelope);
+        } else {
+          // Flattened format (legacy/internal)
+          const updatedAuth = {
+            ...auth,
+            access_token: tokenResponse.access_token,
+            refresh_token: tokenResponse.refresh_token,
+            id_token: tokenResponse.id_token,
+            expired: Math.floor(Date.now() / 1000) + tokenResponse.expires_in,
+            last_refresh: Math.floor(Date.now() / 1000),
+          };
+          newValue = JSON.stringify(updatedAuth);
+        }
 
         await ctx.runMutation(
           internal.codexTokenRefreshQueries.updateRefreshedToken,

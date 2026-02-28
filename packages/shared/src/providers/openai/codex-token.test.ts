@@ -57,6 +57,39 @@ describe("parseCodexAuthJson", () => {
   it("returns null for empty object", () => {
     expect(parseCodexAuthJson("{}")).toBeNull();
   });
+
+  it("parses nested envelope format (real ~/.codex/auth.json)", () => {
+    const envelope = {
+      auth_mode: "chatgpt",
+      last_refresh: "2026-02-27T10:54:24.071540Z",
+      OPENAI_API_KEY: null,
+      tokens: {
+        access_token: "nested-access",
+        refresh_token: "nested-refresh",
+        id_token: "nested-id",
+        account_id: "acc_nested",
+      },
+    };
+    const result = parseCodexAuthJson(JSON.stringify(envelope));
+    expect(result).not.toBeNull();
+    expect(result?.access_token).toBe("nested-access");
+    expect(result?.refresh_token).toBe("nested-refresh");
+    expect(result?.id_token).toBe("nested-id");
+    expect(result?.account_id).toBe("acc_nested");
+  });
+
+  it("parses nested envelope without optional fields", () => {
+    const envelope = {
+      tokens: {
+        access_token: "min-access",
+        refresh_token: "min-refresh",
+      },
+    };
+    const result = parseCodexAuthJson(JSON.stringify(envelope));
+    expect(result).not.toBeNull();
+    expect(result?.access_token).toBe("min-access");
+    expect(result?.refresh_token).toBe("min-refresh");
+  });
 });
 
 describe("isCodexTokenExpired", () => {
