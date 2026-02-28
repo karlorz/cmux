@@ -903,7 +903,7 @@ function SettingsComponent() {
         </div>
       </div>
 
-      {(activeSection === "ai-providers" || activeSection === "git" || activeSection === "worktrees") && (
+      {(activeSection === "general" || activeSection === "ai-providers" || activeSection === "git" || activeSection === "worktrees") && (
         <div
           className="sticky bottom-0 border-t border-neutral-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 supports-[backdrop-filter]:dark:bg-neutral-900/60"
         >

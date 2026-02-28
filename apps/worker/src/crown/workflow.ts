@@ -627,6 +627,25 @@ async function startCrownEvaluation({
       summaryPreview: summary?.slice(0, 120),
     });
 
+    // Create PR for single-run winner if auto-PR is enabled
+    const prMetadata = await createPullRequest({
+      check: crownData,
+      winner: candidate,
+      summary,
+      context: runContext,
+    });
+
+    // Generate PR title/description for manual creation even if auto-PR disabled
+    const pullRequestTitle = buildPullRequestTitle(crownData.task?.text || "");
+    const pullRequestDescription = buildPullRequestBody({
+      summary,
+      prompt: crownData.task?.text || "",
+      agentName: candidate.agentName,
+      branch: candidate.newBranch || "",
+      taskId: crownData.taskId,
+      runId: candidate.runId,
+    });
+
     await convexRequest(
       "/api/crown/finalize",
       runContext.token,
@@ -641,6 +660,9 @@ async function startCrownEvaluation({
         }),
         candidateRunIds: [candidate.runId],
         summary,
+        pullRequest: prMetadata?.pullRequest,
+        pullRequestTitle: prMetadata?.title || pullRequestTitle,
+        pullRequestDescription: prMetadata?.description || pullRequestDescription,
       },
       baseUrlOverride
     );
