@@ -20,23 +20,29 @@ INPUT=$(cat)
 # Parse session_id for session-scoped files
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "default"' 2>/dev/null || echo "default")
 
-# Infinite loop guard: if stop_hook_active is true, a Stop hook already blocked
-# once this cycle, so allow stop to prevent infinite loops
-STOP_HOOK_ACTIVE=$(echo "$INPUT" | jq -r '.stop_hook_active // false' 2>/dev/null || echo "false")
-if [ "$STOP_HOOK_ACTIVE" = "true" ]; then
-  exit 0
-fi
+# Note: we intentionally do NOT check stop_hook_active here. Autopilot is the
+# first hook in the chain, so stop_hook_active=true can only mean Claude Code
+# is signaling from a PREVIOUS stop event. Yielding on that would limit
+# autopilot to ~1 effective block per cycle. MAX_TURNS provides sufficient
+# loop protection instead.
+
+# Helper: clean up the blocked flag so downstream hooks know autopilot is done
+cleanup_blocked_flag() {
+  rm -f "/tmp/claude-autopilot-blocked-${SESSION_ID}"
+}
 
 # Session-scoped stop file
 SESSION_STOP_FILE="/tmp/claude-autopilot-stop-${SESSION_ID}"
 if [ -f "$SESSION_STOP_FILE" ]; then
   rm -f "$SESSION_STOP_FILE"
+  cleanup_blocked_flag
   echo "Autopilot stop file detected for session ${SESSION_ID}" >&2
   exit 0
 fi
 
 # External stop file (for agent-autopilot.sh integration)
 if [ -n "${CLAUDE_AUTOPILOT_STOP_FILE:-}" ] && [ -f "$CLAUDE_AUTOPILOT_STOP_FILE" ]; then
+  cleanup_blocked_flag
   echo "Autopilot external stop file detected: $CLAUDE_AUTOPILOT_STOP_FILE" >&2
   exit 0
 fi
@@ -54,24 +60,44 @@ echo "$TURN_COUNT" > "$TURN_FILE"
 # Check turn limit
 if [ "$TURN_COUNT" -ge "$MAX_TURNS" ]; then
   rm -f "$TURN_FILE"
+  cleanup_blocked_flag
   echo "Autopilot max turns reached ($MAX_TURNS) for session ${SESSION_ID}" >&2
   exit 0
 fi
 
-# Delay between turns (default: 2 seconds, configurable via CLAUDE_AUTOPILOT_DELAY)
-DELAY_SECONDS="${CLAUDE_AUTOPILOT_DELAY:-2}"
+# Smart delay escalation: early turns are fast (active work), later turns slow down
+# (monitoring/polling phase). The hook delay stays within the 10s timeout; for longer
+# waits, we instruct Claude to sleep in a bash command so the wait is visible to the user.
+MONITORING_THRESHOLD="${CLAUDE_AUTOPILOT_MONITORING_THRESHOLD:-10}"
+BASE_DELAY="${CLAUDE_AUTOPILOT_DELAY:-2}"
+
+if [ "$TURN_COUNT" -le "$MONITORING_THRESHOLD" ]; then
+  # Active work phase: short delay, standard continuation
+  DELAY_SECONDS="$BASE_DELAY"
+  WAIT_INSTRUCTION=""
+  PHASE="work"
+elif [ "$TURN_COUNT" -le $(( MONITORING_THRESHOLD + 5 )) ]; then
+  # Monitoring phase 1: medium polling
+  DELAY_SECONDS="$BASE_DELAY"
+  WAIT_INSTRUCTION="Before checking status, run: sleep 30\\n"
+  PHASE="monitoring-30s"
+else
+  # Monitoring phase 2: slow polling for long-running tasks
+  DELAY_SECONDS="$BASE_DELAY"
+  WAIT_INSTRUCTION="Before checking status, run: sleep 60\\n"
+  PHASE="monitoring-60s"
+fi
+
 if [ "$DELAY_SECONDS" -gt 0 ]; then
-  echo "[Autopilot] Waiting ${DELAY_SECONDS}s before next turn..." >&2
   sleep "$DELAY_SECONDS"
 fi
 
-# Block stop - output JSON decision to stdout
-echo "[Autopilot] Turn $TURN_COUNT/$MAX_TURNS - continuing work..." >&2
+# Signal to downstream hooks (codex-review) that autopilot is blocking this stop
+AUTOPILOT_BLOCKED_FILE="/tmp/claude-autopilot-blocked-${SESSION_ID}"
+echo "$TURN_COUNT" > "$AUTOPILOT_BLOCKED_FILE"
 
-cat << 'EOF'
-{
-  "decision": "block",
-  "reason": "Continue from where you left off. Do not ask whether to continue.\nEnd with: Progress, Commands run, Files changed, Next."
-}
-EOF
+# Block stop - output JSON decision to stdout
+echo "[Autopilot] Turn $TURN_COUNT/$MAX_TURNS ($PHASE) - continuing..." >&2
+
+printf '{"decision":"block","reason":"%sContinue from where you left off. Do not ask whether to continue.\\nEnd with: Progress, Commands run, Files changed, Next."}\n' "$WAIT_INSTRUCTION"
 exit 0
