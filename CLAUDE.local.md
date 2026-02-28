@@ -83,11 +83,11 @@ curl -fsSL https://raw.githubusercontent.com/karlorz/cmux/main/scripts/pve/pve-l
 ```
 
 # Rebuild PVE LXC snapshot (from dev machine)
-- `uv run --env-file .env ./scripts/snapshot-pvelxc.py --template-vmid 9000`
+- `IDE_DEPS_CHANNEL=latest uv run --env-file .env ./scripts/snapshot-pvelxc.py --template-vmid 9000`
 - Or with custom options
 ```bash
 # Build snapshots from template (after base template exists on PVE)
-uv run --env-file .env ./scripts/snapshot-pvelxc.py \
+IDE_DEPS_CHANNEL=latest uv run --env-file .env ./scripts/snapshot-pvelxc.py \
 --template-vmid 9000 \
 --standard-vcpus 4 \
 --standard-memory 8192 \
