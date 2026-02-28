@@ -207,11 +207,10 @@ export const getReadyTasks = authQuery({
       .take(100);
 
     // Filter to tasks with no dependencies or all dependencies completed
-    const readyTasks = [];
-    for (const task of pendingTasks) {
+    // Batch fetch all dependencies to avoid N+1 pattern
+    const tasksWithDepsPromises = pendingTasks.map(async (task) => {
       if (!task.dependencies || task.dependencies.length === 0) {
-        readyTasks.push(task);
-        continue;
+        return { task, isReady: true };
       }
 
       // Check if all dependencies are completed
@@ -222,12 +221,14 @@ export const getReadyTasks = authQuery({
         (dep) => dep?.status === "completed"
       );
 
-      if (allCompleted) {
-        readyTasks.push(task);
-      }
+      return { task, isReady: allCompleted };
+    });
 
-      if (readyTasks.length >= limit) break;
-    }
+    const tasksWithReadyStatus = await Promise.all(tasksWithDepsPromises);
+    const readyTasks = tasksWithReadyStatus
+      .filter(({ isReady }) => isReady)
+      .map(({ task }) => task)
+      .slice(0, limit);
 
     return readyTasks;
   },
@@ -478,32 +479,50 @@ export const triggerDependentTasks = internalMutation({
 
     const now = Date.now();
 
-    // Check each dependent task
-    for (const dependentId of completedTask.dependents) {
-      const dependent = await ctx.db.get(dependentId);
-      if (!dependent || dependent.status !== "pending") {
-        continue;
-      }
+    // Batch fetch all dependent tasks to avoid N+1 pattern
+    const dependents = await Promise.all(
+      completedTask.dependents.map((id) => ctx.db.get(id))
+    );
 
-      // Check if all dependencies are now completed
-      if (dependent.dependencies && dependent.dependencies.length > 0) {
-        const deps = await Promise.all(
-          dependent.dependencies.map((id) => ctx.db.get(id))
-        );
-        const allCompleted = deps.every((dep) => dep?.status === "completed");
-
-        if (!allCompleted) {
-          // Still waiting on other dependencies
-          continue;
+    // Batch fetch all dependencies for all dependents (nested batch operation)
+    const dependentUpdates = await Promise.all(
+      dependents.map(async (dependent) => {
+        if (!dependent || dependent.status !== "pending") {
+          return null;
         }
-      }
 
-      // All dependencies are complete - set nextRetryAfter to now for immediate pickup
-      await ctx.db.patch(dependentId, {
-        nextRetryAfter: now,
-        updatedAt: now,
-      });
-    }
+        // Check if all dependencies are now completed
+        if (dependent.dependencies && dependent.dependencies.length > 0) {
+          const deps = await Promise.all(
+            dependent.dependencies.map((id) => ctx.db.get(id))
+          );
+          const allCompleted = deps.every((dep) => dep?.status === "completed");
+
+          if (!allCompleted) {
+            // Still waiting on other dependencies
+            return null;
+          }
+        }
+
+        // All dependencies are complete - this dependent is ready to proceed
+        return {
+          dependentId: dependent._id,
+          now,
+        };
+      })
+    );
+
+    // Batch update all ready dependents
+    await Promise.all(
+      dependentUpdates
+        .filter((update): update is NonNullable<typeof update> => update != null)
+        .map((update) =>
+          ctx.db.patch(update.dependentId, {
+            nextRetryAfter: update.now,
+            updatedAt: update.now,
+          })
+        )
+    );
   },
 });
 
@@ -1041,11 +1060,10 @@ export const getReadyTasksInternal = internalQuery({
       .take(100);
 
     // Filter to tasks with no dependencies or all dependencies completed
-    const readyTasks = [];
-    for (const task of pendingTasks) {
+    // Batch fetch all dependencies to avoid N+1 pattern
+    const tasksWithDepsPromises = pendingTasks.map(async (task) => {
       if (!task.dependencies || task.dependencies.length === 0) {
-        readyTasks.push(task);
-        continue;
+        return { task, isReady: true };
       }
 
       // Check if all dependencies are completed
@@ -1054,12 +1072,14 @@ export const getReadyTasksInternal = internalQuery({
       );
       const allCompleted = deps.every((dep) => dep?.status === "completed");
 
-      if (allCompleted) {
-        readyTasks.push(task);
-      }
+      return { task, isReady: allCompleted };
+    });
 
-      if (readyTasks.length >= limit) break;
-    }
+    const tasksWithReadyStatus = await Promise.all(tasksWithDepsPromises);
+    const readyTasks = tasksWithReadyStatus
+      .filter(({ isReady }) => isReady)
+      .map(({ task }) => task)
+      .slice(0, limit);
 
     return readyTasks;
   },

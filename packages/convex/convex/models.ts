@@ -424,11 +424,13 @@ export const deleteStale = internalMutation({
       (m) => m.source === args.source && !validNameSet.has(m.name)
     );
 
-    // Delete stale models
-    for (const model of modelsToDelete) {
-      console.log(`[models.deleteStale] Deleting stale ${args.source} model: ${model.name}`);
-      await ctx.db.delete(model._id);
-    }
+    // Batch delete stale models using Promise.all to avoid N+1 pattern
+    await Promise.all(
+      modelsToDelete.map((model) => {
+        console.log(`[models.deleteStale] Deleting stale ${args.source} model: ${model.name}`);
+        return ctx.db.delete(model._id);
+      })
+    );
 
     return {
       deletedCount: modelsToDelete.length,
