@@ -29,13 +29,13 @@ Use this map to find where Morph-first upstream changes may need PVE-LXC parity 
 Preferred helper (auto-prints report skeleton):
 
 ```bash
-./.codex/skills/upstream-sync/scripts/print-parity-report.sh
+./.agents/skills/upstream-sync/scripts/print-parity-report.sh
 ```
 
 Default range is `main...HEAD`. Use a custom range if needed:
 
 ```bash
-./.codex/skills/upstream-sync/scripts/print-parity-report.sh origin/main...HEAD
+./.agents/skills/upstream-sync/scripts/print-parity-report.sh origin/main...HEAD
 ```
 
 Manual commands (for deeper investigation):
