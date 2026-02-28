@@ -9,6 +9,7 @@ trap 'rm -f "$T"' EXIT
 
 codex \
   --dangerously-bypass-approvals-and-sandbox \
+  --enable use_linux_sandbox_bwrap \
   --model gpt-5.3-codex \
   -c model_reasoning_effort="high" \
   review "$@" >"$T" 2>&1 || true
