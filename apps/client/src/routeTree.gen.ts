@@ -342,7 +342,7 @@ export interface FileRoutesByFullPath {
   '/$teamSlugOrId/task/$taskId/run/$runId/pr': typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdPrRoute
   '/$teamSlugOrId/task/$taskId/run/$runId/terminals': typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdTerminalsRoute
   '/$teamSlugOrId/task/$taskId/run/$runId/vscode': typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdVscodeRoute
-  '/$teamSlugOrId/task/$taskId/run/$runId/': typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdIndexRoute
+  '/$teamSlugOrId/task/$taskId/run/$runId': typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdIndexRoute
   '/$teamSlugOrId/task/$taskId/run/$runId/preview/$previewId': typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdPreviewPreviewIdRoute
 }
 export interface FileRoutesByTo {
@@ -479,7 +479,7 @@ export interface FileRouteTypes {
     | '/$teamSlugOrId/task/$taskId/run/$runId/pr'
     | '/$teamSlugOrId/task/$taskId/run/$runId/terminals'
     | '/$teamSlugOrId/task/$taskId/run/$runId/vscode'
-    | '/$teamSlugOrId/task/$taskId/run/$runId/'
+    | '/$teamSlugOrId/task/$taskId/run/$runId'
     | '/$teamSlugOrId/task/$taskId/run/$runId/preview/$previewId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -640,7 +640,7 @@ declare module '@tanstack/react-router' {
     '/_layout': {
       id: '/_layout'
       path: ''
-      fullPath: '/'
+      fullPath: ''
       preLoaderRoute: typeof LayoutRouteImport
       parentRoute: typeof rootRouteImport
     }
@@ -836,7 +836,7 @@ declare module '@tanstack/react-router' {
     '/_layout/$teamSlugOrId/task/$taskId/run/$runId/': {
       id: '/_layout/$teamSlugOrId/task/$taskId/run/$runId/'
       path: '/run/$runId'
-      fullPath: '/$teamSlugOrId/task/$taskId/run/$runId/'
+      fullPath: '/$teamSlugOrId/task/$taskId/run/$runId'
       preLoaderRoute: typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdIndexRouteImport
       parentRoute: typeof LayoutTeamSlugOrIdTaskTaskIdRoute
     }
