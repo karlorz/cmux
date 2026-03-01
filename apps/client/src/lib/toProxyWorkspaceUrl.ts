@@ -20,7 +20,8 @@ export function normalizeWorkspaceOrigin(origin: string | null): string | null {
   try {
     const url = new URL(origin);
     return `${url.protocol}//${url.host}`;
-  } catch {
+  } catch (error) {
+    console.debug("[toProxyWorkspaceUrl] Invalid origin URL:", origin, error);
     return null;
   }
 }
@@ -45,7 +46,8 @@ export function rewriteLocalWorkspaceUrlIfNeeded(
     target.hostname = originUrl.hostname;
     target.port = originUrl.port;
     return target.toString();
-  } catch {
+  } catch (error) {
+    console.debug("[toProxyWorkspaceUrl] Failed to rewrite URL:", { url, origin }, error);
     return url;
   }
 }
@@ -58,7 +60,8 @@ function shouldRewriteUrl(url: string): boolean {
       isLoopbackHostname(hostname) ||
       hostname.toLowerCase() === LOCAL_VSCODE_PLACEHOLDER_HOST
     );
-  } catch {
+  } catch (error) {
+    console.debug("[toProxyWorkspaceUrl] Invalid URL for rewrite check:", url, error);
     return false;
   }
 }
@@ -88,7 +91,8 @@ function parseMorphUrl(input: string): MorphUrlComponents | null {
       morphId,
       port,
     };
-  } catch {
+  } catch (error) {
+    console.debug("[toProxyWorkspaceUrl] Failed to parse Morph URL:", input, error);
     return null;
   }
 }
@@ -173,7 +177,8 @@ export function toVncViewerUrl(vncBaseUrl: string): string | null {
     url.hash = "";
 
     return url.toString();
-  } catch {
+  } catch (error) {
+    console.debug("[toProxyWorkspaceUrl] Invalid VNC base URL:", vncBaseUrl, error);
     return null;
   }
 }
@@ -229,7 +234,8 @@ export function toGenericVncUrl(sourceUrl: string): string | null {
     url.hash = "";
 
     return url.toString();
-  } catch {
+  } catch (error) {
+    console.debug("[toProxyWorkspaceUrl] Failed to generate generic VNC URL:", sourceUrl, error);
     return null;
   }
 }
@@ -254,7 +260,8 @@ export function toVncWebsocketUrl(vncBaseUrl: string): string | null {
     url.search = "";
     url.hash = "";
     return url.toString();
-  } catch {
+  } catch (error) {
+    console.debug("[toProxyWorkspaceUrl] Invalid VNC WebSocket URL:", vncBaseUrl, error);
     return null;
   }
 }
@@ -295,7 +302,8 @@ export function toGenericVncWebsocketUrl(sourceUrl: string): string | null {
     url.hash = "";
 
     return url.toString();
-  } catch {
+  } catch (error) {
+    console.debug("[toProxyWorkspaceUrl] Failed to generate generic VNC WebSocket URL:", sourceUrl, error);
     return null;
   }
 }
