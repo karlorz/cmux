@@ -534,10 +534,10 @@ devsh project import ./plan.md --project-id PVT_xxx --installation-id 12345 --dr
 
 **Required flags:**
 - `--project-id`: GitHub Project node ID (e.g., `PVT_kwHOCIJ7ws4BQeq2`). Get it via `gh project list --owner <owner> --format json | jq '.projects[].id'`
-- `--installation-id`: GitHub App installation ID. Find it in the cmux database or via the team's provider connections.
+- `--installation-id`: GitHub App installation ID (required unless using `--dry-run`). Find it in the cmux database or via the team's provider connections.
 
 **Optional flags:**
-- `--dry-run`: Parse and preview items without importing
+- `--dry-run`: Parse and preview items without importing (does not require `--installation-id`)
 
 **GitHub App Permission Requirements:**
 
