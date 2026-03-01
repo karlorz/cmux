@@ -94,6 +94,8 @@ fi
 
 # Check 4: Completed marker (indicates autopilot reached max turns; turn file was deleted before we ran)
 COMPLETED_FILE="/tmp/claude-autopilot-completed-${SESSION_ID}"
+# Install early trap so any exit path after this point cleans up the marker
+trap 'rm -f "$COMPLETED_FILE"' EXIT
 if [ -f "$COMPLETED_FILE" ] && [ "$WORK_DONE" = "0" ]; then
   WORK_DONE="1"
   debug_log "Work detected via autopilot completed marker"
@@ -122,7 +124,7 @@ if [ "$FAIL_COUNT" -ge 5 ]; then
   exit 0  # Hit limit, stop showing issues
 fi
 
-# Create temp file for output; also clean up completed marker on exit
+# Create temp file for output; extend trap to also clean it
 TMPFILE=$(mktemp)
 trap 'rm -f "$TMPFILE" "$COMPLETED_FILE"' EXIT
 
