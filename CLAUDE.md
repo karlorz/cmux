@@ -5,6 +5,23 @@ This project is called cmux. cmux is a web app that spawns Claude Code, Codex CL
 - Primary upstream for this workspace is `manaflow-ai/manaflow`, with fork target `karlorz/cmux`.
 - Terminal project is separate: upstream `manaflow-ai/cmux`, fork `karl-digi/cmux`, and should be handled in a separate workspace (for example `/Users/karlchow/Desktop/code/cmux-terminal`).
 
+# Git Policy (IMPORTANT)
+
+**All agents (Claude, Codex, Gemini, etc.) MUST follow these rules:**
+
+1. **NO direct commits to main/master** - Always create a feature branch first
+2. **NO direct push to main/master** - Push to feature branches only
+3. **NO merging PRs without explicit user approval** - Create PR, wait for user to review and approve
+4. **NO force push to main/master** - This destroys history
+
+**Workflow:**
+1. Create feature branch: `git checkout -b <type>/<description>`
+2. Make changes and commit to feature branch
+3. Push feature branch: `git push -u origin <branch>`
+4. Create PR: `gh pr create --base main`
+5. **STOP and wait for user approval before merging**
+6. Only merge after user explicitly says "merge" or "approve"
+
 # Code Review
 
 When reviewing code, apply the guidelines in REVIEW.md at the project root.
