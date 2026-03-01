@@ -11,7 +11,7 @@ Mode: $ARGUMENTS (default: reset)
 ## Auto-collected context
 
 ### Current session status
-!`bash -c 'SID=$(cat /tmp/claude-current-session-id 2>/dev/null); if [ -z "$SID" ]; then echo "Session ID: (not set - restart session to enable)"; exit 0; fi; echo "Session ID: ${SID}"; MAX=${CLAUDE_AUTOPILOT_MAX_TURNS:-20}; echo "Max turns: $MAX"; TURNS_FILE="/tmp/claude-autopilot-turns-${SID}"; if [ -f "$TURNS_FILE" ]; then TURNS=$(cat "$TURNS_FILE"); echo "Current turn: $TURNS"; else echo "Current turn: 0 (not started)"; fi; FLAGS=""; [ -f "/tmp/claude-autopilot-stop-$SID" ] && FLAGS="STOP "; [ -f "/tmp/claude-autopilot-blocked-$SID" ] && FLAGS="${FLAGS}BLOCKED"; [ -n "$FLAGS" ] && echo "Status: $FLAGS" || echo "Status: ready"; exit 0'`
+!`bash -c 'SID=$(cat /tmp/claude-current-session-id 2>/dev/null); if [ -z "$SID" ]; then echo "Session ID: (not set - restart session to enable)"; exit 0; fi; echo "Session ID: ${SID}"; MAX=${CLAUDE_AUTOPILOT_MAX_TURNS:-20}; echo "Max turns: $MAX"; TURNS_FILE="/tmp/claude-autopilot-turns-${SID}"; if [ -f "$TURNS_FILE" ]; then TURNS=$(cat "$TURNS_FILE"); echo "Current turn: $TURNS"; HAS_RUN=1; else echo "Current turn: 0"; HAS_RUN=0; fi; if [ -f "/tmp/claude-autopilot-stop-$SID" ]; then echo "Status: STOP (will stop on next turn)"; elif [ -f "/tmp/claude-autopilot-blocked-$SID" ]; then echo "Status: BLOCKED (actively running)"; elif [ "$HAS_RUN" = "0" ]; then echo "Status: idle (not started)"; else echo "Status: ready (available)"; fi; exit 0'`
 
 ## Actions
 
