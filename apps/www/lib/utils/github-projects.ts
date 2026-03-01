@@ -294,16 +294,34 @@ function createGitHubAppOctokit(installationId?: number): Octokit {
 }
 
 /**
+ * Create an authenticated Octokit instance using user's OAuth token.
+ * Required for user-owned Projects v2 (GitHub Apps cannot access these).
+ */
+function createUserOctokit(userOAuthToken: string): Octokit {
+  return new Octokit({ auth: userOAuthToken });
+}
+
+/**
  * List projects for a user or organization
+ *
+ * IMPORTANT: For user-owned projects, userOAuthToken with "project" scope is required.
+ * GitHub Apps cannot access user-owned Projects v2 (platform limitation).
+ * Organization projects can use either GitHub App or OAuth token.
  */
 export async function listProjects(
   owner: string,
   ownerType: "user" | "organization",
   installationId: number,
-  options?: { first?: number }
+  options?: { first?: number; userOAuthToken?: string }
 ): Promise<ProjectV2Node[]> {
-  const octokit = createGitHubAppOctokit(installationId);
   const first = options?.first ?? 20;
+
+  // For user-owned projects, prefer OAuth token if available (required for private projects)
+  // GitHub Apps cannot access user-owned Projects v2
+  const octokit =
+    ownerType === "user" && options?.userOAuthToken
+      ? createUserOctokit(options.userOAuthToken)
+      : createGitHubAppOctokit(installationId);
 
   const query =
     ownerType === "organization"

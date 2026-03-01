@@ -153,6 +153,10 @@ export type GitHubProject = {
 
 export type ProjectsResponse = {
     projects: Array<GitHubProject>;
+    /**
+     * True if user needs to re-authorize GitHub with 'project' scope to see all projects
+     */
+    needsReauthorization?: boolean;
 };
 
 export type DraftBatchResult = {

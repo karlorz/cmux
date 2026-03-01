@@ -2,10 +2,16 @@
  * GitHub Projects v2 API routes
  *
  * Provides endpoints for listing and managing GitHub Projects for roadmap/planning.
- * Requires GitHub App with "Organization projects: Read and write" permission.
+ *
+ * IMPORTANT: GitHub Apps CANNOT access user-owned Projects v2 (platform limitation).
+ * For user-owned projects, we must use the user's OAuth token with "project" scope.
+ * Organization projects can use either GitHub App or OAuth token.
+ *
+ * @see https://docs.github.com/en/issues/planning-and-tracking-with-projects/automating-your-project/using-the-api-to-manage-projects
  */
 
 import { getAccessTokenFromRequest } from "@/lib/utils/auth";
+import { stackServerAppJs } from "@/lib/utils/stack";
 import { api } from "@cmux/convex/api";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { getConvex } from "../utils/get-convex";
@@ -55,6 +61,10 @@ const ProjectSchema = z
 const ProjectsResponse = z
   .object({
     projects: z.array(ProjectSchema),
+    needsReauthorization: z.boolean().optional().openapi({
+      description:
+        "True if user needs to re-authorize GitHub with 'project' scope to see all projects",
+    }),
   })
   .openapi("ProjectsResponse");
 
@@ -174,15 +184,62 @@ githubProjectsRouter.openapi(
       return c.json({ projects: [] });
     }
 
+    // For user-owned projects, we need the user's OAuth token with "project" scope.
+    // GitHub Apps cannot access user-owned Projects v2 (platform limitation).
+    let userOAuthToken: string | undefined;
+    let needsReauthorization = false;
+
     try {
-      const projects = await listProjects(owner, ownerType, installationId);
-      return c.json({ projects });
+      if (ownerType === "user") {
+        const user = await stackServerAppJs.getUser({ tokenStore: c.req.raw });
+        if (user) {
+          try {
+            // First try to get account with project scope
+            const githubAccountWithScope = await user.getConnectedAccount("github", {
+              scopes: ["project"],
+            });
+
+            if (githubAccountWithScope) {
+              // User has granted project scope
+              const tokenResult = await githubAccountWithScope.getAccessToken();
+              userOAuthToken = tokenResult.accessToken?.trim() || undefined;
+            } else {
+              // Check if user has GitHub connected at all (without scope requirement)
+              const githubAccountBasic = await user.getConnectedAccount("github");
+              if (githubAccountBasic) {
+                // User has GitHub connected but without project scope
+                // Get token anyway - it may work for public projects
+                const tokenResult = await githubAccountBasic.getAccessToken();
+                userOAuthToken = tokenResult.accessToken?.trim() || undefined;
+                needsReauthorization = true;
+              }
+            }
+          } catch (err) {
+            console.error(
+              "[github.projects] Failed to get user OAuth token:",
+              err instanceof Error ? err.message : err,
+            );
+            // Continue without OAuth token - will fall back to GitHub App (may fail for user projects)
+          }
+        }
+      }
+
+      const projects = await listProjects(owner, ownerType, installationId, {
+        userOAuthToken,
+      });
+      return c.json({
+        projects,
+        needsReauthorization: needsReauthorization && projects.length === 0,
+      });
     } catch (err) {
       console.error(
         `[github.projects] Failed to list projects for ${owner}:`,
         err instanceof Error ? err.message : err,
       );
-      return c.json({ projects: [] });
+      return c.json({
+        projects: [],
+        needsReauthorization: needsReauthorization,
+      });
     }
   },
 );
