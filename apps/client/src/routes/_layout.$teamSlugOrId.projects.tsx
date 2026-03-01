@@ -19,7 +19,10 @@ import { getApiIntegrationsGithubProjects } from "@cmux/www-openapi-client";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { Dropdown } from "@/components/ui/dropdown";
 import {
+  Building2,
+  ChevronDown,
   ExternalLink,
   FileUp,
   FolderKanban,
@@ -27,6 +30,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useState } from "react";
+import { useUser } from "@stackframe/react";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/projects")({
   component: ProjectsPage,
@@ -45,16 +49,33 @@ interface GitHubProject {
 
 function ProjectsPage() {
   const { teamSlugOrId } = Route.useParams();
+  const user = useUser({ or: "return-null" });
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
 
   // Get GitHub connections for this team
   const { data: connections, isLoading: connectionsLoading } = useQuery(
     convexQuery(api.github.listProviderConnections, { teamSlugOrId }),
   );
 
-  const activeConnection = connections?.find((c) => c.isActive);
-  const installationId = activeConnection?.installationId;
-  const owner = activeConnection?.accountLogin;
+  // Get active connections, sorted with user connections first for easy testing
+  // of the OAuth scope grant flow. User projects need 'project' OAuth scope.
+  const activeConnections = (connections?.filter((c) => c.isActive) ?? []).sort(
+    (a, b) => {
+      if (a.accountType === "User" && b.accountType !== "User") return -1;
+      if (a.accountType !== "User" && b.accountType === "User") return 1;
+      return 0;
+    },
+  );
+
+  // Select connection - if selectedConnectionId doesn't match any active connection, fall back to first
+  const connectionFromId = selectedConnectionId
+    ? activeConnections.find((c) => c.id === selectedConnectionId)
+    : undefined;
+  const selectedConnection = connectionFromId ?? activeConnections[0];
+
+  const installationId = selectedConnection?.installationId;
+  const owner = selectedConnection?.accountLogin;
 
   // Fetch projects for the selected owner
   const {
@@ -71,7 +92,7 @@ function ProjectsPage() {
           installationId,
           owner,
           ownerType:
-            activeConnection?.accountType === "Organization"
+            selectedConnection?.accountType === "Organization"
               ? "organization"
               : "user",
         },
@@ -82,6 +103,7 @@ function ProjectsPage() {
   });
 
   const projects = projectsData?.projects ?? [];
+  const needsReauthorization = projectsData?.needsReauthorization === true;
   const isLoading = connectionsLoading || projectsLoading;
 
   return (
@@ -96,6 +118,38 @@ function ProjectsPage() {
             </p>
           </div>
           <div className="flex gap-2">
+            {/* Organization selector - show when multiple org connections available */}
+            {activeConnections.length > 1 && (
+              <Dropdown.Root>
+                <Dropdown.Trigger
+                  className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium rounded-md border border-neutral-200 bg-white px-3 h-8 gap-1 hover:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:hover:bg-neutral-800"
+                >
+                  <Building2 className="h-4 w-4" />
+                  {selectedConnection?.accountLogin ?? "Select account"}
+                  <ChevronDown className="h-4 w-4 ml-1" />
+                </Dropdown.Trigger>
+                <Dropdown.Portal>
+                  <Dropdown.Positioner>
+                    <Dropdown.Popup>
+                      {activeConnections.map((conn) => (
+                        <Dropdown.Item
+                          key={conn.id}
+                          onClick={() => setSelectedConnectionId(conn.id)}
+                        >
+                          <div className="flex items-center gap-2 px-3 py-2">
+                            <Building2 className="h-4 w-4" />
+                            {conn.accountLogin}
+                            {conn.accountType === "User" && (
+                              <span className="text-xs text-neutral-500">(user)</span>
+                            )}
+                          </div>
+                        </Dropdown.Item>
+                      ))}
+                    </Dropdown.Popup>
+                  </Dropdown.Positioner>
+                </Dropdown.Portal>
+              </Dropdown.Root>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -107,7 +161,7 @@ function ProjectsPage() {
               />
               Refresh
             </Button>
-            {activeConnection && (
+            {selectedConnection && (
               <Button
                 variant="outline"
                 size="sm"
@@ -121,7 +175,11 @@ function ProjectsPage() {
             {owner && (
               <Button asChild size="sm">
                 <a
-                  href={`https://github.com/users/${owner}/projects/new`}
+                  href={
+                    selectedConnection?.accountType === "Organization"
+                      ? `https://github.com/orgs/${owner}/projects/new`
+                      : `https://github.com/users/${owner}/projects/new`
+                  }
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -134,14 +192,15 @@ function ProjectsPage() {
         </div>
 
         {/* Connection Status */}
-        {!activeConnection && !connectionsLoading && (
+        {!selectedConnection && !connectionsLoading && (
           <Card className="border-amber-500/50 bg-amber-500/5">
             <CardHeader>
               <CardTitle className="text-amber-600 dark:text-amber-400">
-                GitHub App Not Connected
+                GitHub Not Connected
               </CardTitle>
               <CardDescription>
-                Connect the cmux GitHub App to view and manage projects.
+                Connect the cmux GitHub App to view and manage GitHub Projects
+                v2. Both organization and user projects are supported.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -153,6 +212,36 @@ function ProjectsPage() {
                 >
                   Connect GitHub
                 </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Reauthorization banner for user projects missing 'project' scope */}
+        {needsReauthorization && selectedConnection?.accountType === "User" && (
+          <Card className="border-blue-500/50 bg-blue-500/5">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm text-blue-600 dark:text-blue-400">
+                Additional Permission Required
+              </CardTitle>
+              <CardDescription>
+                Your GitHub OAuth token is missing the &quot;project&quot; scope
+                needed to access personal Projects v2. Grant this permission to
+                see your user projects, or switch to an organization connection.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                size="sm"
+                onClick={() => {
+                  // Triggers OAuth redirect requesting 'project' scope
+                  void user?.getConnectedAccount("github", {
+                    or: "redirect",
+                    scopes: ["project"],
+                  });
+                }}
+              >
+                Grant Project Scope
               </Button>
             </CardContent>
           </Card>
@@ -186,7 +275,11 @@ function ProjectsPage() {
               {owner && (
                 <Button asChild>
                   <a
-                    href={`https://github.com/users/${owner}/projects/new`}
+                    href={
+                      selectedConnection?.accountType === "Organization"
+                        ? `https://github.com/orgs/${owner}/projects/new`
+                        : `https://github.com/users/${owner}/projects/new`
+                    }
                     target="_blank"
                     rel="noopener noreferrer"
                   >

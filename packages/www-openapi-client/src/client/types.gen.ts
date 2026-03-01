@@ -153,6 +153,10 @@ export type GitHubProject = {
 
 export type ProjectsResponse = {
     projects: Array<GitHubProject>;
+    /**
+     * True if user needs to re-authorize GitHub with 'project' scope to see all projects
+     */
+    needsReauthorization?: boolean;
 };
 
 export type DraftBatchResult = {
@@ -1832,9 +1836,9 @@ export type GetApiIntegrationsGithubProjectsData = {
          */
         installationId?: number | null;
         /**
-         * GitHub user or org login
+         * GitHub user or org login (optional, inferred from installation if omitted)
          */
-        owner: string;
+        owner?: string;
         /**
          * Owner type
          */
