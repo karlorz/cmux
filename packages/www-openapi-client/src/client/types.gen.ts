@@ -140,6 +140,86 @@ export type GithubReposResponse = {
     repos: Array<GithubRepo>;
 };
 
+export type GitHubProject = {
+    id: string;
+    title: string;
+    number: number;
+    url: string;
+    shortDescription: string | null;
+    closed: boolean;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type ProjectsResponse = {
+    projects: Array<GitHubProject>;
+};
+
+export type ProjectField = {
+    id: string;
+    name: string;
+    dataType: string;
+    options?: Array<{
+        id: string;
+        name: string;
+    }>;
+};
+
+export type ProjectFieldsResponse = {
+    fields: Array<ProjectField>;
+};
+
+export type ItemResponse = {
+    itemId: string | null;
+};
+
+export type AddItemBody = {
+    /**
+     * GitHub Project node ID
+     */
+    projectId: string;
+    /**
+     * Issue or PR node ID to add
+     */
+    contentId: string;
+};
+
+export type CreateDraftBody = {
+    /**
+     * GitHub Project node ID
+     */
+    projectId: string;
+    /**
+     * Draft issue title
+     */
+    title: string;
+    /**
+     * Draft issue body
+     */
+    body?: string;
+};
+
+export type UpdateFieldBody = {
+    /**
+     * GitHub Project node ID
+     */
+    projectId: string;
+    /**
+     * Project item node ID
+     */
+    itemId: string;
+    /**
+     * Field node ID
+     */
+    fieldId: string;
+    /**
+     * Field value (format depends on field type)
+     */
+    value: {
+        [key: string]: string | number;
+    };
+};
+
 export type FrameworkPreset = 'other' | 'next' | 'vite' | 'remix' | 'nuxt' | 'sveltekit' | 'angular' | 'cra' | 'vue';
 
 export type PackageManager = 'npm' | 'yarn' | 'pnpm' | 'bun';
@@ -1709,6 +1789,171 @@ export type GetApiIntegrationsGithubReposResponses = {
 };
 
 export type GetApiIntegrationsGithubReposResponse = GetApiIntegrationsGithubReposResponses[keyof GetApiIntegrationsGithubReposResponses];
+
+export type GetApiIntegrationsGithubProjectsData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Team slug or UUID
+         */
+        team: string;
+        /**
+         * GitHub App installation ID
+         */
+        installationId?: number | null;
+        /**
+         * GitHub user or org login
+         */
+        owner: string;
+        /**
+         * Owner type
+         */
+        ownerType?: 'user' | 'organization';
+    };
+    url: '/api/integrations/github/projects';
+};
+
+export type GetApiIntegrationsGithubProjectsErrors = {
+    /**
+     * Bad request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiIntegrationsGithubProjectsResponses = {
+    /**
+     * OK
+     */
+    200: ProjectsResponse;
+};
+
+export type GetApiIntegrationsGithubProjectsResponse = GetApiIntegrationsGithubProjectsResponses[keyof GetApiIntegrationsGithubProjectsResponses];
+
+export type GetApiIntegrationsGithubProjectsFieldsData = {
+    body?: never;
+    path?: never;
+    query: {
+        team: string;
+        installationId?: number | null;
+        projectId: string;
+    };
+    url: '/api/integrations/github/projects/fields';
+};
+
+export type GetApiIntegrationsGithubProjectsFieldsErrors = {
+    /**
+     * Bad request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiIntegrationsGithubProjectsFieldsResponses = {
+    /**
+     * OK
+     */
+    200: ProjectFieldsResponse;
+};
+
+export type GetApiIntegrationsGithubProjectsFieldsResponse = GetApiIntegrationsGithubProjectsFieldsResponses[keyof GetApiIntegrationsGithubProjectsFieldsResponses];
+
+export type PostApiIntegrationsGithubProjectsItemsData = {
+    body: AddItemBody;
+    path?: never;
+    query: {
+        team: string;
+        installationId?: number | null;
+    };
+    url: '/api/integrations/github/projects/items';
+};
+
+export type PostApiIntegrationsGithubProjectsItemsErrors = {
+    /**
+     * Bad request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiIntegrationsGithubProjectsItemsResponses = {
+    /**
+     * OK
+     */
+    200: ItemResponse;
+};
+
+export type PostApiIntegrationsGithubProjectsItemsResponse = PostApiIntegrationsGithubProjectsItemsResponses[keyof PostApiIntegrationsGithubProjectsItemsResponses];
+
+export type PostApiIntegrationsGithubProjectsDraftsData = {
+    body: CreateDraftBody;
+    path?: never;
+    query: {
+        team: string;
+        installationId?: number | null;
+    };
+    url: '/api/integrations/github/projects/drafts';
+};
+
+export type PostApiIntegrationsGithubProjectsDraftsErrors = {
+    /**
+     * Bad request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiIntegrationsGithubProjectsDraftsResponses = {
+    /**
+     * OK
+     */
+    200: ItemResponse;
+};
+
+export type PostApiIntegrationsGithubProjectsDraftsResponse = PostApiIntegrationsGithubProjectsDraftsResponses[keyof PostApiIntegrationsGithubProjectsDraftsResponses];
+
+export type PatchApiIntegrationsGithubProjectsItemsFieldData = {
+    body: UpdateFieldBody;
+    path?: never;
+    query: {
+        team: string;
+        installationId?: number | null;
+    };
+    url: '/api/integrations/github/projects/items/field';
+};
+
+export type PatchApiIntegrationsGithubProjectsItemsFieldErrors = {
+    /**
+     * Bad request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PatchApiIntegrationsGithubProjectsItemsFieldResponses = {
+    /**
+     * OK
+     */
+    200: ItemResponse;
+};
+
+export type PatchApiIntegrationsGithubProjectsItemsFieldResponse = PatchApiIntegrationsGithubProjectsItemsFieldResponses[keyof PatchApiIntegrationsGithubProjectsItemsFieldResponses];
 
 export type GetApiIntegrationsGithubFrameworkDetectionData = {
     body?: never;
