@@ -29,6 +29,7 @@ INPUT=$(cat)
 debug_log "INPUT JSON: $INPUT"
 
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "default"' 2>/dev/null || echo "default")
+SESSION_ID="${SESSION_ID:-default}"
 debug_log "SESSION_ID: $SESSION_ID"
 
 # Skip if autopilot specifically blocked this stop. We check the autopilot-specific

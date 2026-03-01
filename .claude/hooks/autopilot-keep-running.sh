@@ -19,6 +19,7 @@ INPUT=$(cat)
 
 # Parse session_id for session-scoped files
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "default"' 2>/dev/null || echo "default")
+SESSION_ID="${SESSION_ID:-default}"
 
 # Note: we intentionally do NOT check stop_hook_active here. Autopilot is the
 # first hook in the chain, so stop_hook_active=true can only mean Claude Code
@@ -30,6 +31,10 @@ SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "default"' 2>/dev/null || ech
 cleanup_blocked_flag() {
   rm -f "/tmp/claude-autopilot-blocked-${SESSION_ID}"
 }
+
+# Clean up any stale completed marker from a previous cycle where codex-review
+# may not have run (e.g. hook disabled, timeout, or process killed).
+rm -f "/tmp/claude-autopilot-completed-${SESSION_ID}"
 
 # Session-scoped stop file (from hook input session_id)
 SESSION_STOP_FILE="/tmp/claude-autopilot-stop-${SESSION_ID}"
