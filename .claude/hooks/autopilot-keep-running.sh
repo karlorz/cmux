@@ -31,13 +31,30 @@ cleanup_blocked_flag() {
   rm -f "/tmp/claude-autopilot-blocked-${SESSION_ID}"
 }
 
-# Session-scoped stop file
+# Session-scoped stop file (from hook input session_id)
 SESSION_STOP_FILE="/tmp/claude-autopilot-stop-${SESSION_ID}"
 if [ -f "$SESSION_STOP_FILE" ]; then
   rm -f "$SESSION_STOP_FILE"
   cleanup_blocked_flag
   echo "Autopilot stop file detected for session ${SESSION_ID}" >&2
   exit 0
+fi
+
+# Also check stop file for current-session-id (fallback for /autopilot_reset skill)
+# This handles mismatch when skill writes stop file using /tmp/claude-current-session-id
+# but hook receives different session_id in stdin JSON
+CURRENT_SID_FILE="/tmp/claude-current-session-id"
+if [ -f "$CURRENT_SID_FILE" ]; then
+  CURRENT_SID=$(tr -d '\n' < "$CURRENT_SID_FILE" 2>/dev/null || echo "")
+  if [ -n "$CURRENT_SID" ] && [ "$CURRENT_SID" != "$SESSION_ID" ]; then
+    CURRENT_STOP_FILE="/tmp/claude-autopilot-stop-${CURRENT_SID}"
+    if [ -f "$CURRENT_STOP_FILE" ]; then
+      rm -f "$CURRENT_STOP_FILE"
+      cleanup_blocked_flag
+      echo "Autopilot stop file detected for current-session ${CURRENT_SID}" >&2
+      exit 0
+    fi
+  fi
 fi
 
 # External stop file (for agent-autopilot.sh integration)
@@ -88,13 +105,15 @@ else
   PHASE="monitoring-60s"
 fi
 
+# Signal to downstream hooks (codex-review) that autopilot is blocking this stop
+# IMPORTANT: Write this BEFORE the sleep to avoid race condition where parallel
+# hooks (codex-review) start before the flag exists.
+AUTOPILOT_BLOCKED_FILE="/tmp/claude-autopilot-blocked-${SESSION_ID}"
+echo "$TURN_COUNT" > "$AUTOPILOT_BLOCKED_FILE"
+
 if [ "$DELAY_SECONDS" -gt 0 ]; then
   sleep "$DELAY_SECONDS"
 fi
-
-# Signal to downstream hooks (codex-review) that autopilot is blocking this stop
-AUTOPILOT_BLOCKED_FILE="/tmp/claude-autopilot-blocked-${SESSION_ID}"
-echo "$TURN_COUNT" > "$AUTOPILOT_BLOCKED_FILE"
 
 # Block stop - output JSON decision to stdout
 echo "[Autopilot] Turn $TURN_COUNT/$MAX_TURNS ($PHASE) - continuing..." >&2

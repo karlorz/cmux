@@ -29,7 +29,16 @@ INPUT=$(cat)
 debug_log "INPUT JSON: $INPUT"
 
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "default"' 2>/dev/null || echo "default")
-debug_log "SESSION_ID: $SESSION_ID"
+STOP_HOOK_ACTIVE=$(echo "$INPUT" | jq -r '.stop_hook_active // false' 2>/dev/null || echo "false")
+debug_log "SESSION_ID: $SESSION_ID, STOP_HOOK_ACTIVE: $STOP_HOOK_ACTIVE"
+
+# Skip if this is a continuation loop (stop_hook_active=true means another hook
+# already blocked Stop and we're in a continuation cycle - not a final stop).
+# This saves the expensive codex review call during active autopilot loops.
+if [ "$STOP_HOOK_ACTIVE" = "true" ]; then
+  debug_log "Exiting: stop_hook_active=true (continuation loop, not final stop)"
+  exit 0
+fi
 
 # Skip if autopilot specifically blocked this stop. We check the autopilot-specific
 # flag file instead of the generic stop_hook_active, because stop_hook_active can
@@ -60,12 +69,33 @@ if [ "$AUTOPILOT_ACTIVE" != "1" ] && [ -f "$AUTOPILOT_BLOCKED_FILE" ]; then
   debug_log "Cleaned up stale autopilot blocked flag"
 fi
 
-# Only run review if autopilot has completed work (turn file exists = work was done)
-# Skip if session never ran autopilot (idle state)
-TURN_FILE="/tmp/claude-autopilot-turns-${SESSION_ID}"
+# Only run review if actual work was done. We check git diff against main
+# instead of relying on turn file (which gets deleted on max-turn stop).
+# This ensures final review runs even when autopilot hits max turns.
+#
+# Git diff exit codes:
+#   0 = no diff (no work done)
+#   1 = has diff (work done)
+#   >1 = error (don't assume work done - fall back to turn file check)
+WORK_DONE="0"
+git diff --quiet main...HEAD 2>/dev/null && GIT_EXIT=0 || GIT_EXIT=$?
+if [ "$GIT_EXIT" -eq 1 ]; then
+  # Exit 1 means there IS a diff = work was done
+  WORK_DONE="1"
+elif [ "$GIT_EXIT" -gt 1 ]; then
+  # Error (e.g., main doesn't exist, not a git repo) - don't assume work done
+  debug_log "git diff returned error ($GIT_EXIT), falling back to turn file check"
+fi
+# Exit 0 means no diff = no work done (WORK_DONE stays "0")
 
-if [ "$AUTOPILOT_ACTIVE" = "1" ] && [ ! -f "$TURN_FILE" ]; then
-  debug_log "Skipping review: autopilot enabled but no work done yet (idle)"
+# Also check turn file as backup (for cases where git diff isn't reliable)
+TURN_FILE="/tmp/claude-autopilot-turns-${SESSION_ID}"
+if [ -f "$TURN_FILE" ]; then
+  WORK_DONE="1"
+fi
+
+if [ "$AUTOPILOT_ACTIVE" = "1" ] && [ "$WORK_DONE" = "0" ]; then
+  debug_log "Skipping review: autopilot enabled but no work done (no git diff, no turn file)"
   exit 0
 fi
 
