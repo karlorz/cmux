@@ -22,6 +22,7 @@ TEMPLATE_VMID=9000                    # Default template for verification
 SOCKS5_PORT=1055                      # SOCKS5 proxy port
 ROUTE_OVERRIDE_SUBNET="${ROUTE_OVERRIDE_SUBNET:-10.10.0.0/23}" # Subnet to keep on local bridge (set empty to skip)
 ROUTE_OVERRIDE_METRIC="${ROUTE_OVERRIDE_METRIC:-5}"            # Metric for the local override
+LAN_DNS_SERVER="${LAN_DNS_SERVER:-}"  # Router/DHCP server for .lan DNS (auto-detected from gateway if not set)
 
 # Colors
 GREEN='\033[0;32m'
@@ -54,6 +55,24 @@ detect_host_ip() {
     fi
 
     echo "$detected_ip"
+}
+
+# ============================================================================
+# Auto-detect LAN DNS server (router/gateway)
+# ============================================================================
+detect_lan_dns() {
+    local detected_gw
+
+    # Get default gateway - typically the router that serves DHCP/DNS for .lan
+    detected_gw=$(ip route show default 2>/dev/null | grep -oP 'via \K[\d.]+' | head -1)
+
+    if [ -z "$detected_gw" ]; then
+        warn "Could not auto-detect LAN DNS server (gateway). .lan resolution may not work."
+        echo ""
+        return
+    fi
+
+    echo "$detected_gw"
 }
 
 # ============================================================================
@@ -324,6 +343,8 @@ OPTIONS:
 ENVIRONMENT VARIABLES:
     PVE_HOST_IP     Override auto-detected IP (same as --ip)
     PVE_BRIDGE      Bridge interface to detect IP from (default: vmbr0)
+    LAN_DNS_SERVER  Router/DHCP server IP for .lan hostname resolution
+                    (auto-detected from default gateway if not set)
 
 EXAMPLES:
     # Full setup with auto-detected IP
@@ -521,6 +542,19 @@ configure_host() {
 interface=$PVE_BRIDGE
 listen-address=$PVE_HOST_IP
 bind-dynamic
+DNSEOF
+
+    # Add .lan DNS forwarding to router if LAN_DNS_SERVER is set
+    if [ -n "$LAN_DNS_SERVER" ]; then
+        log "Forwarding .lan queries to router at $LAN_DNS_SERVER"
+        cat >> /etc/dnsmasq.d/01-tailscale.conf << DNSEOF
+# Forward .lan queries to local router (DHCP server for hostname resolution)
+server=/lan/$LAN_DNS_SERVER
+DNSEOF
+    fi
+
+    cat >> /etc/dnsmasq.d/01-tailscale.conf << DNSEOF
+# Forward all other queries to Tailscale MagicDNS
 server=100.100.100.100
 domain-needed
 bogus-priv
@@ -651,6 +685,14 @@ fi
 
 # Validate IP
 validate_ip "$PVE_HOST_IP"
+
+# Auto-detect LAN DNS server if not provided
+if [ -z "$LAN_DNS_SERVER" ]; then
+    LAN_DNS_SERVER=$(detect_lan_dns)
+    if [ -n "$LAN_DNS_SERVER" ]; then
+        log "Auto-detected LAN DNS server (gateway): $LAN_DNS_SERVER"
+    fi
+fi
 
 # Execute command
 case "${COMMAND:-setup}" in
