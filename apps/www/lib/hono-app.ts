@@ -14,6 +14,7 @@ import { githubPrsFilesRouter } from "@/lib/routes/github.prs.files.route";
 import { githubPrsOpenRouter } from "@/lib/routes/github.prs.open.route";
 import { githubPrsPatchRouter } from "@/lib/routes/github.prs.patch.route";
 import { githubPrsRouter } from "@/lib/routes/github.prs.route";
+import { githubProjectsRouter } from "@/lib/routes/github.projects.route";
 import { githubReposRouter } from "@/lib/routes/github.repos.route";
 import {
   booksRouter,
@@ -159,6 +160,7 @@ app.route("/", usersRouter);
 app.route("/", booksRouter);
 app.route("/", devServerRouter);
 app.route("/", githubReposRouter);
+app.route("/", githubProjectsRouter);
 app.route("/", githubFrameworkDetectionRouter);
 app.route("/", githubPrsRouter);
 app.route("/", githubPrsBackfillRouter);

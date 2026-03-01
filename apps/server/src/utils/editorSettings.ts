@@ -4,11 +4,12 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { type EditorId, macAppBin, pathExists } from "./editorDetection";
 import { serverLogger } from "./fileLogger";
 
 const execFileAsync = promisify(execFile);
 
-type EditorId = "vscode" | "cursor" | "windsurf";
+export type { EditorId };
 
 interface EditorDef {
   id: EditorId;
@@ -140,28 +141,29 @@ export function formatExtensionSpec(spec: ExtensionSpec): string {
  * - If multiple versioned entries exist for same ID, keep first encountered
  */
 export function deduplicateExtensions(entries: string[]): string[] {
-  const seen = new Map<string, ExtensionSpec>();
+  // Store both spec and pre-computed lowercase key to avoid redundant toLowerCase() calls
+  const seen = new Map<string, { spec: ExtensionSpec; lowerKey: string }>();
 
   for (const entry of entries) {
     const spec = parseExtensionSpec(entry);
-    const key = spec.id.toLowerCase();
-    const existing = seen.get(key);
+    const lowerKey = spec.id.toLowerCase();
+    const existing = seen.get(lowerKey);
 
     if (!existing) {
       // First occurrence - keep it
-      seen.set(key, spec);
-    } else if (spec.version && !existing.version) {
+      seen.set(lowerKey, { spec, lowerKey });
+    } else if (spec.version && !existing.spec.version) {
       // New entry has version, existing doesn't - prefer versioned
-      seen.set(key, spec);
+      seen.set(lowerKey, { spec, lowerKey });
     }
     // Otherwise: keep existing (first versioned wins, or first unversioned if no version)
   }
 
-  // Sort by extension ID (case-insensitive) - use pre-computed keys for performance
-  const sortedSpecs = Array.from(seen.values()).sort((a, b) =>
-    a.id.toLowerCase().localeCompare(b.id.toLowerCase())
+  // Sort using pre-computed lowercase keys for performance
+  const sortedEntries = Array.from(seen.values()).sort((a, b) =>
+    a.lowerKey.localeCompare(b.lowerKey)
   );
-  return sortedSpecs.map(formatExtensionSpec);
+  return sortedEntries.map(({ spec }) => formatExtensionSpec(spec));
 }
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -205,16 +207,8 @@ const editors: EditorDef[] = [
   },
 ];
 
-function isMac() {
-  return process.platform === "darwin";
-}
-
-function isWin() {
-  return process.platform === "win32";
-}
-
 function candidateUserDir(appFolderName: string): string {
-  if (isMac()) {
+  if (process.platform === "darwin") {
     return path.join(
       homeDir,
       "Library",
@@ -223,42 +217,13 @@ function candidateUserDir(appFolderName: string): string {
       "User"
     );
   }
-  if (isWin()) {
+  if (process.platform === "win32") {
     const appData = process.env.APPDATA || path.join(homeDir, "AppData", "Roaming");
     return path.join(appData, appFolderName, "User");
   }
   return path.join(homeDir, ".config", appFolderName, "User");
 }
 
-function macAppBin(appName: string, bin: string) {
-  if (!isMac()) {
-    return "";
-  }
-  return path.join(
-    "/Applications",
-    `${appName}.app`,
-    "Contents",
-    "Resources",
-    "app",
-    "bin",
-    bin
-  );
-}
-
-async function pathExists(target: string): Promise<boolean> {
-  if (!target) return false;
-  try {
-    await fs.access(target);
-    return true;
-  } catch (error) {
-    // Expected for non-existent paths - only log unexpected errors
-    const err = error as NodeJS.ErrnoException;
-    if (err.code !== "ENOENT" && err.code !== "EACCES") {
-      serverLogger.debug(`[EditorSettings] Unexpected error checking path ${target}:`, error);
-    }
-    return false;
-  }
-}
 
 async function listJsonFiles(dir: string): Promise<string[]> {
   try {
@@ -269,6 +234,44 @@ async function listJsonFiles(dir: string): Promise<string[]> {
   } catch (error) {
     serverLogger.debug(`[EditorSettings] Failed to list JSON files in ${dir}:`, error);
     return [];
+  }
+}
+
+/**
+ * TOCTOU-safe file reading: directly attempts to read instead of checking existence first.
+ * Returns null if the file doesn't exist or isn't accessible.
+ */
+async function tryReadFileWithStats(
+  filePath: string
+): Promise<{ content: string; mtimeMs: number } | null> {
+  try {
+    const [content, stats] = await Promise.all([
+      fs.readFile(filePath, "utf8"),
+      fs.stat(filePath),
+    ]);
+    return { content, mtimeMs: stats.mtimeMs };
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code !== "ENOENT" && err.code !== "EACCES") {
+      serverLogger.debug(`[EditorSettings] Unexpected error reading ${filePath}:`, error);
+    }
+    return null;
+  }
+}
+
+/**
+ * TOCTOU-safe file reading: directly attempts to read instead of checking existence first.
+ * Returns null if the file doesn't exist or isn't accessible.
+ */
+async function tryReadFile(filePath: string): Promise<string | null> {
+  try {
+    return await fs.readFile(filePath, "utf8");
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code !== "ENOENT" && err.code !== "EACCES") {
+      serverLogger.debug(`[EditorSettings] Unexpected error reading ${filePath}:`, error);
+    }
+    return null;
   }
 }
 
@@ -309,30 +312,42 @@ async function listExtensionsFromDirs(
   dirs: string[]
 ): Promise<string[] | undefined> {
   const identifiers = new Set<string>();
-  for (const dir of dirs) {
-    if (!(await pathExists(dir))) continue;
+
+  // Process all directories in parallel
+  const processDir = async (dir: string): Promise<void> => {
     let entries;
     try {
       entries = await fs.readdir(dir, { withFileTypes: true });
-    } catch (error) {
-      serverLogger.debug(`[EditorSettings] Failed to read extensions dir ${dir}:`, error);
-      continue;
+    } catch {
+      // Directory doesn't exist or isn't readable - skip silently
+      return;
     }
-    for (const entry of entries) {
-      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
-      const packageJsonPath = path.join(dir, entry.name, "package.json");
-      try {
-        const pkg = JSON.parse(
-          await fs.readFile(packageJsonPath, "utf8")
-        ) as { publisher?: string; name?: string };
-        if (pkg.publisher && pkg.name) {
-          identifiers.add(`${pkg.publisher}.${pkg.name}`);
+
+    // Process all package.json files in parallel within each directory
+    const extensionEntries = entries.filter(
+      (entry) => entry.isDirectory() || entry.isSymbolicLink()
+    );
+
+    await Promise.all(
+      extensionEntries.map(async (entry) => {
+        const packageJsonPath = path.join(dir, entry.name, "package.json");
+        const content = await tryReadFile(packageJsonPath);
+        if (content) {
+          try {
+            const pkg = JSON.parse(content) as { publisher?: string; name?: string };
+            if (pkg.publisher && pkg.name) {
+              identifiers.add(`${pkg.publisher}.${pkg.name}`);
+            }
+          } catch {
+            // Invalid JSON - skip silently
+          }
         }
-      } catch (error) {
-        serverLogger.debug(`[EditorSettings] Failed to parse ${packageJsonPath}:`, error);
-      }
-    }
-  }
+      })
+    );
+  };
+
+  await Promise.all(dirs.map(processDir));
+
   if (identifiers.size === 0) {
     return undefined;
   }
@@ -340,17 +355,15 @@ async function listExtensionsFromDirs(
 }
 
 async function exportEditor(def: EditorDef): Promise<EditorExport | null> {
-  let userDir: string | undefined;
-  for (const label of def.labels) {
-    const cand = candidateUserDir(label);
-    if (await pathExists(cand)) {
-      userDir = cand;
-      break;
-    }
-  }
-  if (!userDir) {
+  // Check all candidate user directories in parallel
+  const candidates = def.labels.map((label) => candidateUserDir(label));
+  const existenceResults = await Promise.all(candidates.map(pathExists));
+  const userDirIndex = existenceResults.findIndex((exists) => exists);
+
+  if (userDirIndex < 0) {
     return null;
   }
+  const userDir = candidates[userDirIndex]!;
 
   const result: EditorExport = {
     id: def.id,
@@ -359,40 +372,43 @@ async function exportEditor(def: EditorDef): Promise<EditorExport | null> {
   };
 
   const settingsPath = path.join(userDir, "settings.json");
-  if (await pathExists(settingsPath)) {
-    const [content, stats] = await Promise.all([
-      fs.readFile(settingsPath, "utf8"),
-      fs.stat(settingsPath),
-    ]);
+  const keybindingsPath = path.join(userDir, "keybindings.json");
+  const snippetsDir = path.join(userDir, "snippets");
+
+  // Read settings, keybindings, and list snippets in parallel (TOCTOU-safe)
+  const [settingsResult, keybindingsContent, snippetFiles] = await Promise.all([
+    tryReadFileWithStats(settingsPath),
+    tryReadFile(keybindingsPath),
+    listJsonFiles(snippetsDir),
+  ]);
+
+  if (settingsResult) {
     result.settings = {
       path: settingsPath,
-      content,
-      mtimeMs: stats.mtimeMs,
+      content: settingsResult.content,
+      mtimeMs: settingsResult.mtimeMs,
     };
-    result.settingsMtimeMs = stats.mtimeMs;
+    result.settingsMtimeMs = settingsResult.mtimeMs;
   }
 
-  const keybindingsPath = path.join(userDir, "keybindings.json");
-  if (await pathExists(keybindingsPath)) {
+  if (keybindingsContent) {
     result.keybindings = {
       path: keybindingsPath,
-      content: await fs.readFile(keybindingsPath, "utf8"),
+      content: keybindingsContent,
     };
   }
 
-  const snippetsDir = path.join(userDir, "snippets");
-  if (await pathExists(snippetsDir)) {
-    const snippetFiles = await listJsonFiles(snippetsDir);
-    for (const snippetFile of snippetFiles) {
-      try {
-        result.snippets.push({
-          path: snippetFile,
-          content: await fs.readFile(snippetFile, "utf8"),
-        });
-      } catch (error) {
-        serverLogger.debug(`[EditorSettings] Failed to read snippet ${snippetFile}:`, error);
-      }
-    }
+  // Read all snippet files in parallel
+  if (snippetFiles.length > 0) {
+    const snippetContents = await Promise.all(
+      snippetFiles.map(async (snippetFile) => {
+        const content = await tryReadFile(snippetFile);
+        return content ? { path: snippetFile, content } : null;
+      })
+    );
+    result.snippets = snippetContents.filter(
+      (s): s is FileExport => s !== null
+    );
   }
 
   let extensions = await runCliListExtensions(def.cliCandidates);
@@ -764,7 +780,7 @@ function buildUpload(editor: EditorExport): EditorSettingsUpload | null {
 
   if (editor.snippets.length > 0) {
     for (const snippet of editor.snippets) {
-      const name = path.basename(snippet.path);
+      const name = posix.basename(snippet.path);
       if (!name) continue;
       addSnippetAuthFiles(authFiles, name, snippet.content);
     }
@@ -879,7 +895,7 @@ export async function getLocalVSCodeSettingsSnapshot(): Promise<LocalVSCodeSetti
 
   const snippets = exported.snippets
     .map((snippet) => {
-      const name = path.basename(snippet.path);
+      const name = posix.basename(snippet.path);
       if (!name) {
         return null;
       }

@@ -97,23 +97,29 @@ export const enqueueFromWebhook = internalMutation({
       updatedAt: now,
     });
 
-    // Mark older runs as superseded by this new run
-    for (const oldRun of runsToSupersede) {
-      console.log("[previewRuns] Superseding older preview run", {
-        oldRunId: oldRun._id,
-        oldHeadSha: oldRun.headSha,
-        oldStatus: oldRun.status,
-        newRunId: runId,
-        newHeadSha: args.headSha,
-        prNumber: args.prNumber,
-      });
-      await ctx.db.patch(oldRun._id, {
-        status: "superseded",
-        supersededBy: runId,
-        stateReason: `Superseded by newer commit ${args.headSha.slice(0, 7)}`,
-        completedAt: now,
-        updatedAt: now,
-      });
+    // Mark older runs as superseded by this new run in parallel
+    if (runsToSupersede.length > 0) {
+      for (const oldRun of runsToSupersede) {
+        console.log("[previewRuns] Superseding older preview run", {
+          oldRunId: oldRun._id,
+          oldHeadSha: oldRun.headSha,
+          oldStatus: oldRun.status,
+          newRunId: runId,
+          newHeadSha: args.headSha,
+          prNumber: args.prNumber,
+        });
+      }
+      await Promise.all(
+        runsToSupersede.map((oldRun) =>
+          ctx.db.patch(oldRun._id, {
+            status: "superseded",
+            supersededBy: runId,
+            stateReason: `Superseded by newer commit ${args.headSha.slice(0, 7)}`,
+            completedAt: now,
+            updatedAt: now,
+          })
+        )
+      );
     }
 
     await ctx.db.patch(args.previewConfigId, {
@@ -339,23 +345,29 @@ export const enqueueFromTaskRun = internalMutation({
       updatedAt: now,
     });
 
-    // Mark older runs as superseded by this new run
-    for (const oldRun of runsToSupersede) {
-      console.log("[previewRuns] Superseding older preview run (from taskRun)", {
-        oldRunId: oldRun._id,
-        oldHeadSha: oldRun.headSha,
-        oldStatus: oldRun.status,
-        newRunId: runId,
-        newHeadSha: headSha,
-        prNumber,
-      });
-      await ctx.db.patch(oldRun._id, {
-        status: "superseded",
-        supersededBy: runId,
-        stateReason: `Superseded by newer commit ${headSha.slice(0, 7)}`,
-        completedAt: now,
-        updatedAt: now,
-      });
+    // Mark older runs as superseded by this new run in parallel
+    if (runsToSupersede.length > 0) {
+      for (const oldRun of runsToSupersede) {
+        console.log("[previewRuns] Superseding older preview run (from taskRun)", {
+          oldRunId: oldRun._id,
+          oldHeadSha: oldRun.headSha,
+          oldStatus: oldRun.status,
+          newRunId: runId,
+          newHeadSha: headSha,
+          prNumber,
+        });
+      }
+      await Promise.all(
+        runsToSupersede.map((oldRun) =>
+          ctx.db.patch(oldRun._id, {
+            status: "superseded",
+            supersededBy: runId,
+            stateReason: `Superseded by newer commit ${headSha.slice(0, 7)}`,
+            completedAt: now,
+            updatedAt: now,
+          })
+        )
+      );
     }
 
     await ctx.db.patch(previewConfig._id, {
