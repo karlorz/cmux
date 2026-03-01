@@ -850,8 +850,8 @@ function SettingsComponent() {
               tooltipLanguageOptions={[...TOOLTIP_LANGUAGE_OPTIONS]}
               heatmapColors={heatmapColors}
               onHeatmapColorsChange={setHeatmapColors}
-              worktreePath={codexWorktreePathPattern}
-              onWorktreePathChange={setCodexWorktreePathPattern}
+              worktreePath={worktreePath}
+              onWorktreePathChange={setWorktreePath}
               onContainerSettingsChange={handleContainerSettingsChange}
             />
           ) : activeSection === "models" ? (
