@@ -77,6 +77,15 @@ devsh pause cmux_abc123    # Pause to save costs (can resume later)
 devsh delete cmux_abc123   # Delete permanently
 ```
 
+## Git Policy (IMPORTANT)
+
+**When working in VMs or this repo, ALWAYS follow these rules:**
+
+1. **NO direct commits to main/master** - Create feature branch first
+2. **NO direct push to main/master** - Push to feature branches only
+3. **NO merging PRs without explicit user approval** - Wait for user to say "merge" or "approve"
+4. **NO force push to main/master**
+
 ## Tips
 
 - Run `devsh login` first if not authenticated

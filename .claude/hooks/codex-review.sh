@@ -59,6 +59,43 @@ if [ "$AUTOPILOT_ACTIVE" != "1" ] && [ -f "$AUTOPILOT_BLOCKED_FILE" ]; then
   rm -f "$AUTOPILOT_BLOCKED_FILE"
   debug_log "Cleaned up stale autopilot blocked flag"
 fi
+
+# Only run review if actual work was done. We check multiple sources:
+# 1. git status for uncommitted/staged changes (always checked first)
+# 2. git diff against main for committed changes on branch
+# 3. turn file existence (backup - indicates autopilot ran)
+WORK_DONE="0"
+
+# Check 1: Uncommitted or staged changes (git status)
+if git status --porcelain 2>/dev/null | grep -q .; then
+  WORK_DONE="1"
+  debug_log "Work detected via git status (uncommitted/staged changes)"
+fi
+
+# Check 2: Committed changes vs main (git diff main...HEAD)
+# Only check if no uncommitted work found yet
+if [ "$WORK_DONE" = "0" ]; then
+  git diff --quiet main...HEAD 2>/dev/null && GIT_EXIT=0 || GIT_EXIT=$?
+  if [ "$GIT_EXIT" -eq 1 ]; then
+    WORK_DONE="1"
+    debug_log "Work detected via git diff main...HEAD (committed changes)"
+  elif [ "$GIT_EXIT" -gt 1 ]; then
+    debug_log "git diff main...HEAD failed ($GIT_EXIT), skipping commit diff check"
+  fi
+fi
+
+# Check 3: Turn file as backup (indicates autopilot ran, even if no git changes yet)
+TURN_FILE="/tmp/claude-autopilot-turns-${SESSION_ID}"
+if [ -f "$TURN_FILE" ] && [ "$WORK_DONE" = "0" ]; then
+  WORK_DONE="1"
+  debug_log "Work detected via turn file"
+fi
+
+if [ "$AUTOPILOT_ACTIVE" = "1" ] && [ "$WORK_DONE" = "0" ]; then
+  debug_log "Skipping review: autopilot enabled but no work done (no git diff, no turn file)"
+  exit 0
+fi
+
 debug_log "Proceeding with codex review..."
 
 # Dry-run mode: exit after pre-flight checks (for testing hook logic without codex)

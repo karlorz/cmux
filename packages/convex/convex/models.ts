@@ -424,10 +424,10 @@ export const deleteStale = internalMutation({
       (m) => m.source === args.source && !validNameSet.has(m.name)
     );
 
-    // Delete stale models
-    for (const model of modelsToDelete) {
-      console.log(`[models.deleteStale] Deleting stale ${args.source} model: ${model.name}`);
-      await ctx.db.delete(model._id);
+    // Delete stale models in parallel
+    if (modelsToDelete.length > 0) {
+      console.log(`[models.deleteStale] Deleting ${modelsToDelete.length} stale ${args.source} models: ${modelsToDelete.map(m => m.name).join(", ")}`);
+      await Promise.all(modelsToDelete.map((model) => ctx.db.delete(model._id)));
     }
 
     return {
@@ -481,9 +481,8 @@ export const clearAll = internalMutation({
   args: {},
   handler: async (ctx) => {
     const allModels = await ctx.db.query("models").collect();
-    for (const model of allModels) {
-      await ctx.db.delete(model._id);
-    }
+    // Delete all models in parallel
+    await Promise.all(allModels.map((model) => ctx.db.delete(model._id)));
     console.log(`[models.clearAll] Deleted ${allModels.length} models`);
     return { deletedCount: allModels.length };
   },

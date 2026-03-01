@@ -472,8 +472,8 @@ class PersistentIframeManager {
     // Setting to about:blank stops the iframe's content from making any further requests
     try {
       entry.iframe.src = "about:blank";
-    } catch {
-      // Ignore errors - iframe may already be detached
+    } catch (error) {
+      console.debug(`[PersistentIframeManager] Could not clear iframe src for "${key}" (may be detached):`, error);
     }
 
     if (entry.wrapper.parentElement) {

@@ -66,5 +66,6 @@
 [ ] select multiple tasks on frontend and do bulk actions on them
 [ ] notifications queue
 [ ] if no agents selected, error! dont spawn all at the same time
+[x] GitHub Projects integration: add GraphQL sync to GitHub App, add "Projects" tab to dashboard (PR #398). Templates pending: cmux-dev-roadmap, cmux-feature-board at https://github.com/users/karlorz/projects
 
 SKIP_CONVEX=true SKIP_DOCKER_BUILD=true ./scripts/dev.sh
