@@ -94,10 +94,11 @@ if [ -f "$TURN_FILE" ] && [ "$WORK_DONE" = "0" ]; then
 fi
 
 # Check 4: Completed marker (indicates autopilot reached max turns; turn file was deleted before we ran)
+# Only honor the marker when autopilot is active to avoid false positives from stale markers
 COMPLETED_FILE="/tmp/claude-autopilot-completed-${SESSION_ID}"
 # Install early trap so any exit path after this point cleans up the marker
 trap 'rm -f "$COMPLETED_FILE"' EXIT
-if [ -f "$COMPLETED_FILE" ] && [ "$WORK_DONE" = "0" ]; then
+if [ "$AUTOPILOT_ACTIVE" = "1" ] && [ -f "$COMPLETED_FILE" ] && [ "$WORK_DONE" = "0" ]; then
   WORK_DONE="1"
   debug_log "Work detected via autopilot completed marker"
 fi

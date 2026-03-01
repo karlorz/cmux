@@ -25,7 +25,7 @@ cleanup() {
   rm -f "/tmp/claude-autopilot-completed-default"
   rm -f "/tmp/claude-autopilot-turns-default"
   rm -f "/tmp/claude-autopilot-blocked-default"
-  rm -f "/tmp/codex-review-debug-test.log"
+  rm -f "/tmp/codex-review-debug.log"
 }
 trap cleanup EXIT
 
