@@ -78,6 +78,8 @@ echo "$TURN_COUNT" > "$TURN_FILE"
 
 # Check turn limit
 if [ "$TURN_COUNT" -ge "$MAX_TURNS" ]; then
+  # Write completed marker before deleting turn file so codex-review can detect autopilot ran
+  echo "$TURN_COUNT" > "/tmp/claude-autopilot-completed-${SESSION_ID}"
   rm -f "$TURN_FILE"
   cleanup_blocked_flag
   echo "Autopilot max turns reached ($MAX_TURNS) for session ${SESSION_ID}" >&2
