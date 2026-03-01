@@ -2052,6 +2052,20 @@ async def task_install_base_packages(ctx: PveTaskContext) -> None:
         rm -f chrome.deb
 
         rm -rf /var/lib/apt/lists/*
+
+        # Configure systemd-networkd to send hostname in DHCP requests
+        # This enables router DNS to resolve container hostnames
+        # UseDNS=no prevents overwriting our custom DNS config (PVE host)
+        if [ -f /etc/systemd/network/eth0.network ]; then
+            if ! grep -q 'SendHostname' /etc/systemd/network/eth0.network; then
+                cat >> /etc/systemd/network/eth0.network << 'NETEOF'
+
+[DHCPv4]
+SendHostname = yes
+UseDNS = no
+NETEOF
+            fi
+        fi
         """
     )
     await ctx.run("install-base-packages", cmd)
