@@ -229,7 +229,7 @@ githubProjectsRouter.openapi(
       });
       return c.json({
         projects,
-        needsReauthorization: needsReauthorization && projects.length === 0,
+        needsReauthorization,
       });
     } catch (err) {
       console.error(

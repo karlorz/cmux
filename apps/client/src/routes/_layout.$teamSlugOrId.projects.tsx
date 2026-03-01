@@ -21,7 +21,6 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Dropdown } from "@/components/ui/dropdown";
 import {
-  AlertTriangle,
   Building2,
   ChevronDown,
   ExternalLink,
@@ -29,7 +28,6 @@ import {
   FolderKanban,
   Plus,
   RefreshCw,
-  User,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -59,13 +57,18 @@ function ProjectsPage() {
   );
 
   // Get active connections (filter out inactive ones)
-  const activeConnections = connections?.filter((c) => c.isActive) ?? [];
+  // Only show organization connections - user-owned Projects v2 requires OAuth with 'project' scope
+  // which Stack Auth doesn't currently request. Organization projects work with GitHub App.
+  const activeConnections =
+    connections?.filter(
+      (c) => c.isActive && c.accountType === "Organization",
+    ) ?? [];
 
-  // Select connection - prefer org connections for Projects v2 (GitHub Apps can access org projects)
-  const selectedConnection = selectedConnectionId
+  // Select connection - if selectedConnectionId doesn't match any active connection, fall back to first
+  const connectionFromId = selectedConnectionId
     ? activeConnections.find((c) => c.id === selectedConnectionId)
-    : activeConnections.find((c) => c.accountType === "Organization") ??
-      activeConnections[0];
+    : undefined;
+  const selectedConnection = connectionFromId ?? activeConnections[0];
 
   const installationId = selectedConnection?.installationId;
   const owner = selectedConnection?.accountLogin;
@@ -96,7 +99,6 @@ function ProjectsPage() {
   });
 
   const projects = projectsData?.projects ?? [];
-  const needsReauthorization = projectsData?.needsReauthorization ?? false;
   const isLoading = connectionsLoading || projectsLoading;
 
   return (
@@ -111,17 +113,13 @@ function ProjectsPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            {/* Account selector - show when multiple connections available */}
+            {/* Organization selector - show when multiple org connections available */}
             {activeConnections.length > 1 && (
               <Dropdown.Root>
                 <Dropdown.Trigger>
                   <Button variant="outline" size="sm">
-                    {selectedConnection?.accountType === "Organization" ? (
-                      <Building2 className="h-4 w-4 mr-2" />
-                    ) : (
-                      <User className="h-4 w-4 mr-2" />
-                    )}
-                    {selectedConnection?.accountLogin ?? "Select account"}
+                    <Building2 className="h-4 w-4 mr-2" />
+                    {selectedConnection?.accountLogin ?? "Select organization"}
                     <ChevronDown className="h-4 w-4 ml-2" />
                   </Button>
                 </Dropdown.Trigger>
@@ -134,11 +132,7 @@ function ProjectsPage() {
                           onClick={() => setSelectedConnectionId(conn.id)}
                         >
                           <div className="flex items-center gap-2 px-3 py-2">
-                            {conn.accountType === "Organization" ? (
-                              <Building2 className="h-4 w-4" />
-                            ) : (
-                              <User className="h-4 w-4" />
-                            )}
+                            <Building2 className="h-4 w-4" />
                             {conn.accountLogin}
                           </div>
                         </Dropdown.Item>
@@ -173,11 +167,7 @@ function ProjectsPage() {
             {owner && (
               <Button asChild size="sm">
                 <a
-                  href={
-                    selectedConnection?.accountType === "Organization"
-                      ? `https://github.com/orgs/${owner}/projects/new`
-                      : `https://github.com/users/${owner}/projects/new`
-                  }
+                  href={`https://github.com/orgs/${owner}/projects/new`}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -194,10 +184,12 @@ function ProjectsPage() {
           <Card className="border-amber-500/50 bg-amber-500/5">
             <CardHeader>
               <CardTitle className="text-amber-600 dark:text-amber-400">
-                GitHub App Not Connected
+                GitHub Organization Not Connected
               </CardTitle>
               <CardDescription>
-                Connect the cmux GitHub App to view and manage projects.
+                Connect the cmux GitHub App to a GitHub Organization to view and
+                manage Projects v2. Organization projects are required because
+                GitHub Apps cannot access user-owned projects.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -207,7 +199,7 @@ function ProjectsPage() {
                   params={{ teamSlugOrId }}
                   search={{ section: "git" }}
                 >
-                  Connect GitHub
+                  Connect GitHub Organization
                 </Link>
               </Button>
             </CardContent>
@@ -232,49 +224,24 @@ function ProjectsPage() {
         ) : projects.length === 0 ? (
           <Card className="border-dashed">
             <CardContent className="flex flex-col items-center justify-center py-12">
-              {needsReauthorization ? (
-                <>
-                  <AlertTriangle className="h-12 w-12 text-amber-500 mb-4" />
-                  <h3 className="text-lg font-medium mb-2">
-                    GitHub Authorization Required
-                  </h3>
-                  <p className="text-sm text-neutral-500 dark:text-neutral-400 text-center max-w-md mb-4">
-                    To view your GitHub Projects, you need to re-authorize with
-                    the &quot;project&quot; permission. This is required because
-                    GitHub&apos;s API restricts project access.
-                  </p>
-                  <Button asChild>
-                    <Link
-                      to="/$teamSlugOrId/settings"
-                      params={{ teamSlugOrId }}
-                      search={{ section: "git" }}
-                    >
-                      Re-authorize GitHub
-                    </Link>
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <FolderKanban className="h-12 w-12 text-neutral-400 mb-4" />
-                  <h3 className="text-lg font-medium mb-2">No Projects Found</h3>
-                  <p className="text-sm text-neutral-500 dark:text-neutral-400 text-center max-w-md mb-4">
-                    Create a GitHub Project to track your roadmap and tasks.
-                    Projects provide kanban boards, timeline views, and custom
-                    fields.
-                  </p>
-                  {owner && (
-                    <Button asChild>
-                      <a
-                        href={`https://github.com/users/${owner}/projects/new`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <Plus className="h-4 w-4 mr-2" />
-                        Create Your First Project
-                      </a>
-                    </Button>
-                  )}
-                </>
+              <FolderKanban className="h-12 w-12 text-neutral-400 mb-4" />
+              <h3 className="text-lg font-medium mb-2">No Projects Found</h3>
+              <p className="text-sm text-neutral-500 dark:text-neutral-400 text-center max-w-md mb-4">
+                Create a GitHub Project to track your roadmap and tasks.
+                Projects provide kanban boards, timeline views, and custom
+                fields.
+              </p>
+              {owner && (
+                <Button asChild>
+                  <a
+                    href={`https://github.com/orgs/${owner}/projects/new`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Create Your First Project
+                  </a>
+                </Button>
               )}
             </CardContent>
           </Card>
