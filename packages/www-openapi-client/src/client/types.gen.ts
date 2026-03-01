@@ -155,6 +155,35 @@ export type ProjectsResponse = {
     projects: Array<GitHubProject>;
 };
 
+export type DraftBatchResult = {
+    title: string;
+    itemId: string | null;
+    error?: string;
+};
+
+export type DraftBatchResponse = {
+    results: Array<DraftBatchResult>;
+};
+
+export type BatchDraftItem = {
+    /**
+     * Draft issue title
+     */
+    title: string;
+    /**
+     * Draft issue body
+     */
+    body?: string;
+};
+
+export type CreateDraftBatchBody = {
+    /**
+     * GitHub Project node ID
+     */
+    projectId: string;
+    items: Array<BatchDraftItem>;
+};
+
 export type ProjectField = {
     id: string;
     name: string;
@@ -1833,6 +1862,36 @@ export type GetApiIntegrationsGithubProjectsResponses = {
 };
 
 export type GetApiIntegrationsGithubProjectsResponse = GetApiIntegrationsGithubProjectsResponses[keyof GetApiIntegrationsGithubProjectsResponses];
+
+export type PostApiIntegrationsGithubProjectsDraftsBatchData = {
+    body: CreateDraftBatchBody;
+    path?: never;
+    query: {
+        team: string;
+        installationId?: number | null;
+    };
+    url: '/api/integrations/github/projects/drafts/batch';
+};
+
+export type PostApiIntegrationsGithubProjectsDraftsBatchErrors = {
+    /**
+     * Bad request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiIntegrationsGithubProjectsDraftsBatchResponses = {
+    /**
+     * OK
+     */
+    200: DraftBatchResponse;
+};
+
+export type PostApiIntegrationsGithubProjectsDraftsBatchResponse = PostApiIntegrationsGithubProjectsDraftsBatchResponses[keyof PostApiIntegrationsGithubProjectsDraftsBatchResponses];
 
 export type GetApiIntegrationsGithubProjectsFieldsData = {
     body?: never;

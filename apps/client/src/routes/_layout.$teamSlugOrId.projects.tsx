@@ -2,17 +2,31 @@
  * GitHub Projects page - View and manage GitHub Projects for roadmap/planning
  */
 
+import { PlanImportDialog } from "@/components/projects/PlanImportDialog";
 import { FloatingPane } from "@/components/floating-pane";
 import { TitleBar } from "@/components/TitleBar";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@cmux/convex/api";
 import { getApiIntegrationsGithubProjects } from "@cmux/www-openapi-client";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ExternalLink, FolderKanban, Plus, RefreshCw } from "lucide-react";
+import {
+  ExternalLink,
+  FileUp,
+  FolderKanban,
+  Plus,
+  RefreshCw,
+} from "lucide-react";
+import { useState } from "react";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/projects")({
   component: ProjectsPage,
@@ -31,10 +45,11 @@ interface GitHubProject {
 
 function ProjectsPage() {
   const { teamSlugOrId } = Route.useParams();
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
 
   // Get GitHub connections for this team
   const { data: connections, isLoading: connectionsLoading } = useQuery(
-    convexQuery(api.github.listProviderConnections, { teamSlugOrId })
+    convexQuery(api.github.listProviderConnections, { teamSlugOrId }),
   );
 
   const activeConnection = connections?.find((c) => c.isActive);
@@ -55,7 +70,10 @@ function ProjectsPage() {
           team: teamSlugOrId,
           installationId,
           owner,
-          ownerType: activeConnection?.accountType === "Organization" ? "organization" : "user",
+          ownerType:
+            activeConnection?.accountType === "Organization"
+              ? "organization"
+              : "user",
         },
       });
       return res.data ?? { projects: [] };
@@ -84,9 +102,22 @@ function ProjectsPage() {
               onClick={() => refetchProjects()}
               disabled={isLoading}
             >
-              <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`}
+              />
               Refresh
             </Button>
+            {activeConnection && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setImportDialogOpen(true)}
+                disabled={projects.length === 0}
+              >
+                <FileUp className="h-4 w-4 mr-2" />
+                Import Plan
+              </Button>
+            )}
             {owner && (
               <Button asChild size="sm">
                 <a
@@ -115,7 +146,11 @@ function ProjectsPage() {
             </CardHeader>
             <CardContent>
               <Button asChild>
-                <Link to="/$teamSlugOrId/settings" params={{ teamSlugOrId }} search={{ section: "git" }}>
+                <Link
+                  to="/$teamSlugOrId/settings"
+                  params={{ teamSlugOrId }}
+                  search={{ section: "git" }}
+                >
                   Connect GitHub
                 </Link>
               </Button>
@@ -144,8 +179,9 @@ function ProjectsPage() {
               <FolderKanban className="h-12 w-12 text-neutral-400 mb-4" />
               <h3 className="text-lg font-medium mb-2">No Projects Found</h3>
               <p className="text-sm text-neutral-500 dark:text-neutral-400 text-center max-w-md mb-4">
-                Create a GitHub Project to track your roadmap and tasks. Projects provide kanban
-                boards, timeline views, and custom fields.
+                Create a GitHub Project to track your roadmap and tasks.
+                Projects provide kanban boards, timeline views, and custom
+                fields.
               </p>
               {owner && (
                 <Button asChild>
@@ -176,12 +212,22 @@ function ProjectsPage() {
           </CardHeader>
           <CardContent className="text-sm text-neutral-600 dark:text-neutral-400 space-y-2">
             <p>
-              GitHub Projects v2 provides flexible views for planning and tracking work:
+              GitHub Projects v2 provides flexible views for planning and
+              tracking work:
             </p>
             <ul className="list-disc list-inside space-y-1 ml-2">
-              <li><strong>Table view</strong> - Spreadsheet-like view with custom fields</li>
-              <li><strong>Board view</strong> - Kanban-style columns for workflow stages</li>
-              <li><strong>Roadmap view</strong> - Timeline visualization for planning</li>
+              <li>
+                <strong>Table view</strong> - Spreadsheet-like view with custom
+                fields
+              </li>
+              <li>
+                <strong>Board view</strong> - Kanban-style columns for workflow
+                stages
+              </li>
+              <li>
+                <strong>Roadmap view</strong> - Timeline visualization for
+                planning
+              </li>
             </ul>
             <p className="pt-2">
               <a
@@ -197,6 +243,17 @@ function ProjectsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <PlanImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        teamSlugOrId={teamSlugOrId}
+        installationId={installationId}
+        projects={projects}
+        onImported={() => {
+          void refetchProjects();
+        }}
+      />
     </FloatingPane>
   );
 }
