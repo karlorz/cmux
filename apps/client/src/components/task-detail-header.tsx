@@ -1066,9 +1066,42 @@ function SocketActions({
   };
 
   const handleViewPRs = () => {
-    const existing = pullRequests.filter(
-      (pr) => Boolean(pr.url) || (Boolean(pr.repoFullName) && Boolean(pr.number)),
-    );
+    const existing: Array<{
+      url?: string | null;
+      repoFullName?: string;
+      number?: number;
+    }> = pullRequests
+      .filter(
+        (pr) =>
+          Boolean(pr.url) || (Boolean(pr.repoFullName) && Boolean(pr.number)),
+      )
+      .map((pr) => ({
+        url: pr.url,
+        repoFullName: pr.repoFullName,
+        number: pr.number,
+      }));
+
+    const aggregatedUrl = selectedRun?.pullRequestUrl?.trim();
+    if (
+      aggregatedUrl &&
+      aggregatedUrl !== "pending" &&
+      !existing.some((pr) => (pr.url ?? "").trim() === aggregatedUrl)
+    ) {
+      existing.push({ url: aggregatedUrl });
+    }
+
+    const aggregatedNumber = selectedRun?.pullRequestNumber;
+    if (aggregatedNumber && repoFullNames.length === 1) {
+      const repoFullName = repoFullNames[0];
+      if (
+        repoFullName &&
+        !existing.some(
+          (pr) => pr.repoFullName === repoFullName && pr.number === aggregatedNumber,
+        )
+      ) {
+        existing.push({ repoFullName, number: aggregatedNumber });
+      }
+    }
     if (existing.length > 0) {
       navigateToPrs(existing);
       return;
@@ -1095,9 +1128,14 @@ function SocketActions({
   const isMerging =
     mergePrMutation.isPending || mergeBranchMutation.isPending;
 
-  const hasAnyRemotePr = pullRequests.some(
-    (pr) => Boolean(pr.url) || (Boolean(pr.repoFullName) && Boolean(pr.number)),
-  );
+  const hasAnyRemotePr =
+    pullRequests.some(
+      (pr) =>
+        Boolean(pr.url) || (Boolean(pr.repoFullName) && Boolean(pr.number)),
+    ) ||
+    (Boolean(selectedRun?.pullRequestUrl?.trim()) &&
+      selectedRun?.pullRequestUrl?.trim() !== "pending") ||
+    (Boolean(selectedRun?.pullRequestNumber) && repoFullNames.length === 1);
 
   const renderRepoDropdown = () => (
     <Dropdown.Root>
