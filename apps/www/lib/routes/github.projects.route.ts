@@ -10,6 +10,8 @@
  * @see https://docs.github.com/en/issues/planning-and-tracking-with-projects/automating-your-project/using-the-api-to-manage-projects
  */
 
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { getAccessTokenFromRequest, getUserFromRequest } from "@/lib/utils/auth";
 import { api } from "@cmux/convex/api";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
@@ -24,15 +26,22 @@ import {
 } from "../utils/github-projects";
 
 export const githubProjectsRouter = new OpenAPIHono();
+const execFileAsync = promisify(execFile);
 
-async function getGitHubUserOAuthToken(req: Request): Promise<string | undefined> {
+const GITHUB_PROJECT_SCOPES = ["project"] as const;
+
+async function getGitHubUserOAuthToken(
+  req: Request,
+  options?: { scopes?: string[] },
+): Promise<string | undefined> {
   const user = await getUserFromRequest(req);
   if (!user) return undefined;
 
   try {
-    // Stack Auth v2.8.x may not enforce scopes in this call; scope failures are
-    // detected from GitHub API responses downstream.
-    const githubAccount = await user.getConnectedAccount("github");
+    const githubAccount = await user.getConnectedAccount("github", {
+      or: "return-null",
+      scopes: options?.scopes,
+    });
     if (!githubAccount) return undefined;
 
     const tokenResult = await githubAccount.getAccessToken();
@@ -44,6 +53,184 @@ async function getGitHubUserOAuthToken(req: Request): Promise<string | undefined
       err instanceof Error ? err.message : err,
     );
     return undefined;
+  }
+}
+
+function isGhCliFallbackEnabled(): boolean {
+  return process.env.NODE_ENV !== "production";
+}
+
+function getGhCliEnv(): NodeJS.ProcessEnv {
+  const ghEnv = { ...process.env };
+  delete ghEnv.GH_TOKEN;
+  delete ghEnv.GITHUB_TOKEN;
+  delete ghEnv.GH_ENTERPRISE_TOKEN;
+  delete ghEnv.GITHUB_ENTERPRISE_TOKEN;
+  return ghEnv;
+}
+
+async function runGhGraphql(
+  query: string,
+  variables: Record<string, string | number | boolean | undefined>,
+): Promise<Record<string, unknown>> {
+  const args = ["api", "graphql", "-f", `query=${query}`];
+  for (const [key, value] of Object.entries(variables)) {
+    if (value === undefined) continue;
+    args.push("-F", `${key}=${String(value)}`);
+  }
+
+  const { stdout } = await execFileAsync("gh", args, {
+    env: getGhCliEnv(),
+  });
+
+  const parsed = JSON.parse(stdout) as {
+    data?: Record<string, unknown>;
+    errors?: Array<{ message?: string }>;
+  };
+
+  if (Array.isArray(parsed.errors) && parsed.errors.length > 0) {
+    const msg = parsed.errors
+      .map((err) => err.message)
+      .filter(Boolean)
+      .join("; ");
+    throw new Error(msg || "gh graphql returned errors");
+  }
+
+  return parsed.data ?? {};
+}
+
+async function listProjectsViaGhCli(
+  owner: string,
+  ownerType: "user" | "organization",
+  first = 20,
+): Promise<
+  Array<{
+    id: string;
+    title: string;
+    number: number;
+    url: string;
+    shortDescription: string | null;
+    closed: boolean;
+    createdAt: string;
+    updatedAt: string;
+  }>
+> {
+  if (!isGhCliFallbackEnabled()) return [];
+
+  const ownerNode = ownerType === "organization" ? "organization" : "user";
+  const query = `query($login:String!,$first:Int!){${ownerNode}(login:$login){projectsV2(first:$first){nodes{id title number url shortDescription closed createdAt updatedAt}}}}`;
+
+  try {
+    const data = await runGhGraphql(query, {
+      login: owner,
+      first,
+    });
+
+    const parsed = data as {
+      user?: { projectsV2?: { nodes?: Array<Record<string, unknown> | null> } };
+      organization?: { projectsV2?: { nodes?: Array<Record<string, unknown> | null> } };
+    };
+
+    const nodes =
+      ownerType === "organization"
+        ? parsed.organization?.projectsV2?.nodes
+        : parsed.user?.projectsV2?.nodes;
+
+    if (!Array.isArray(nodes)) return [];
+
+    return nodes
+      .filter((node): node is Record<string, unknown> => Boolean(node))
+      .map((node) => ({
+        id: String(node.id ?? ""),
+        title: String(node.title ?? ""),
+        number: Number(node.number ?? 0),
+        url: String(node.url ?? ""),
+        shortDescription:
+          typeof node.shortDescription === "string"
+            ? node.shortDescription
+            : null,
+        closed: Boolean(node.closed),
+        createdAt: String(node.createdAt ?? ""),
+        updatedAt: String(node.updatedAt ?? ""),
+      }))
+      .filter((node) => node.id && node.title && node.url);
+  } catch (err) {
+    console.warn(
+      "[github.projects] gh CLI fallback failed:",
+      err instanceof Error ? err.message : err,
+    );
+    return [];
+  }
+}
+
+async function getProjectFieldsViaGhCli(
+  projectId: string,
+): Promise<Array<{ id: string; name: string; dataType: string; options?: Array<{ id: string; name: string }> }>> {
+  if (!isGhCliFallbackEnabled()) return [];
+
+  const query = `query($projectId:ID!){node(id:$projectId){... on ProjectV2{fields(first:50){nodes{... on ProjectV2Field{id name dataType} ... on ProjectV2SingleSelectField{id name dataType options{id name}} ... on ProjectV2IterationField{id name dataType}}}}}}`;
+
+  try {
+    const data = await runGhGraphql(query, { projectId });
+    const node = data.node as
+      | { fields?: { nodes?: Array<Record<string, unknown> | null> } }
+      | undefined;
+    const nodes = node?.fields?.nodes;
+    if (!Array.isArray(nodes)) return [];
+
+    return nodes
+      .filter((field): field is Record<string, unknown> => Boolean(field))
+      .map((field) => ({
+        id: String(field.id ?? ""),
+        name: String(field.name ?? ""),
+        dataType: String(field.dataType ?? ""),
+        options: Array.isArray(field.options)
+          ? field.options
+              .filter(
+                (opt): opt is Record<string, unknown> => Boolean(opt),
+              )
+              .map((opt) => ({
+                id: String(opt.id ?? ""),
+                name: String(opt.name ?? ""),
+              }))
+              .filter((opt) => opt.id && opt.name)
+          : undefined,
+      }))
+      .filter((field) => field.id && field.name && field.dataType);
+  } catch (err) {
+    console.warn(
+      `[github.projects] gh CLI fields fallback failed for ${projectId}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return [];
+  }
+}
+
+async function createDraftIssueViaGhCli(
+  projectId: string,
+  title: string,
+  body?: string,
+): Promise<string | null> {
+  if (!isGhCliFallbackEnabled()) return null;
+
+  const mutation = `mutation($projectId:ID!,$title:String!,$body:String){addProjectV2DraftIssue(input:{projectId:$projectId,title:$title,body:$body}){projectItem{id}}}`;
+
+  try {
+    const data = await runGhGraphql(mutation, {
+      projectId,
+      title,
+      body,
+    });
+    const payload = data.addProjectV2DraftIssue as
+      | { projectItem?: { id?: string } | null }
+      | undefined;
+    return payload?.projectItem?.id ?? null;
+  } catch (err) {
+    console.warn(
+      `[github.projects] gh CLI draft fallback failed for ${projectId}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return null;
   }
 }
 
@@ -226,7 +413,22 @@ githubProjectsRouter.openapi(
 
     try {
       if (ownerType === "user") {
-        userOAuthToken = await getGitHubUserOAuthToken(c.req.raw);
+        userOAuthToken = await getGitHubUserOAuthToken(c.req.raw, {
+          scopes: [...GITHUB_PROJECT_SCOPES],
+        });
+        if (!userOAuthToken) {
+          const fallbackProjects = await listProjectsViaGhCli(owner, ownerType);
+          if (fallbackProjects.length > 0) {
+            return c.json({
+              projects: fallbackProjects,
+              needsReauthorization: false,
+            });
+          }
+          return c.json({
+            projects: [],
+            needsReauthorization: true,
+          });
+        }
       }
 
       const projects = await listProjects(owner, ownerType, installationId, {
@@ -238,16 +440,26 @@ githubProjectsRouter.openapi(
       });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      console.error(
-        `[github.projects] Failed to list projects for ${owner}:`,
-        errMsg,
-      );
       // If user projects fail with "Resource not accessible", the OAuth token
       // is missing the 'project' scope. Stack Auth's getConnectedAccount with
       // scopes doesn't actually validate them in v2.8.x.
       if (ownerType === "user" && errMsg.includes("Resource not accessible")) {
+        const fallbackProjects = await listProjectsViaGhCli(owner, ownerType);
+        if (fallbackProjects.length > 0) {
+          console.warn(
+            `[github.projects] Primary user-project API failed for ${owner}, served via gh CLI fallback`,
+          );
+          return c.json({
+            projects: fallbackProjects,
+            needsReauthorization: false,
+          });
+        }
         needsReauthorization = true;
       }
+      console.error(
+        `[github.projects] Failed to list projects for ${owner}:`,
+        errMsg,
+      );
       return c.json({
         projects: [],
         needsReauthorization,
@@ -305,7 +517,9 @@ githubProjectsRouter.openapi(
 
     const userOAuthToken =
       target.accountType === "User"
-        ? await getGitHubUserOAuthToken(c.req.raw)
+        ? await getGitHubUserOAuthToken(c.req.raw, {
+            scopes: [...GITHUB_PROJECT_SCOPES],
+          })
         : undefined;
 
     const results: Array<{
@@ -315,31 +529,50 @@ githubProjectsRouter.openapi(
     }> = [];
 
     for (const item of items) {
+      let itemId: string | null = null;
+      let errorMessage: string | undefined;
+
       try {
-        const itemId = await createDraftIssue(
+        if (target.accountType !== "User" || userOAuthToken) {
+          itemId = await createDraftIssue(
+            projectId,
+            item.title,
+            item.body,
+            installationId,
+            { userOAuthToken },
+          );
+        }
+      } catch (err) {
+        errorMessage = err instanceof Error ? err.message : String(err);
+      }
+
+      // Local dev fallback: if user-project API path fails, use gh CLI token.
+      if (!itemId && target.accountType === "User") {
+        itemId = await createDraftIssueViaGhCli(
           projectId,
           item.title,
           item.body,
-          installationId,
-          { userOAuthToken },
         );
-
-        if (itemId) {
-          results.push({ title: item.title, itemId });
-        } else {
-          results.push({
-            title: item.title,
-            itemId: null,
-            error: "Failed to create draft issue",
-          });
+        if (!itemId && !errorMessage && !userOAuthToken) {
+          errorMessage =
+            "GitHub OAuth token is missing the required 'project' scope. Re-authorize GitHub and retry.";
         }
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        console.error(
-          `[github.projects] Failed to create draft issue in batch (${item.title}):`,
-          errorMessage,
-        );
-        results.push({ title: item.title, itemId: null, error: errorMessage });
+      }
+
+      if (itemId) {
+        results.push({ title: item.title, itemId });
+      } else {
+        if (errorMessage) {
+          console.error(
+            `[github.projects] Failed to create draft issue in batch (${item.title}):`,
+            errorMessage,
+          );
+        }
+        results.push({
+          title: item.title,
+          itemId: null,
+          error: errorMessage ?? "Failed to create draft issue",
+        });
       }
     }
 
@@ -393,16 +626,37 @@ githubProjectsRouter.openapi(
     try {
       const userOAuthToken =
         target.accountType === "User"
-          ? await getGitHubUserOAuthToken(c.req.raw)
+          ? await getGitHubUserOAuthToken(c.req.raw, {
+              scopes: [...GITHUB_PROJECT_SCOPES],
+            })
           : undefined;
+
+      if (target.accountType === "User" && !userOAuthToken) {
+        const fallbackFields = await getProjectFieldsViaGhCli(projectId);
+        if (fallbackFields.length > 0) {
+          return c.json({ fields: fallbackFields });
+        }
+        return c.json({ fields: [] });
+      }
+
       const fields = await getProjectFields(projectId, installationId, {
         userOAuthToken,
       });
       return c.json({ fields });
     } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (target.accountType === "User") {
+        const fallbackFields = await getProjectFieldsViaGhCli(projectId);
+        if (fallbackFields.length > 0) {
+          console.warn(
+            `[github.projects] Primary project-fields API failed for ${projectId}, served via gh CLI fallback`,
+          );
+          return c.json({ fields: fallbackFields });
+        }
+      }
       console.error(
         `[github.projects] Failed to get fields for project ${projectId}:`,
-        err instanceof Error ? err.message : err,
+        errMsg,
       );
       return c.json({ fields: [] });
     }
@@ -459,8 +713,15 @@ githubProjectsRouter.openapi(
     try {
       const userOAuthToken =
         target.accountType === "User"
-          ? await getGitHubUserOAuthToken(c.req.raw)
+          ? await getGitHubUserOAuthToken(c.req.raw, {
+              scopes: [...GITHUB_PROJECT_SCOPES],
+            })
           : undefined;
+
+      if (target.accountType === "User" && !userOAuthToken) {
+        return c.json({ itemId: null });
+      }
+
       const itemId = await addItemToProject(
         projectId,
         contentId,
@@ -528,8 +789,23 @@ githubProjectsRouter.openapi(
     try {
       const userOAuthToken =
         target.accountType === "User"
-          ? await getGitHubUserOAuthToken(c.req.raw)
+          ? await getGitHubUserOAuthToken(c.req.raw, {
+              scopes: [...GITHUB_PROJECT_SCOPES],
+            })
           : undefined;
+
+      if (target.accountType === "User" && !userOAuthToken) {
+        const fallbackItemId = await createDraftIssueViaGhCli(
+          projectId,
+          title,
+          body,
+        );
+        if (fallbackItemId) {
+          return c.json({ itemId: fallbackItemId });
+        }
+        return c.json({ itemId: null });
+      }
+
       const itemId = await createDraftIssue(
         projectId,
         title,
@@ -543,6 +819,16 @@ githubProjectsRouter.openapi(
         `[github.projects] Failed to create draft issue:`,
         err instanceof Error ? err.message : err,
       );
+      if (target.accountType === "User") {
+        const fallbackItemId = await createDraftIssueViaGhCli(
+          projectId,
+          title,
+          body,
+        );
+        if (fallbackItemId) {
+          return c.json({ itemId: fallbackItemId });
+        }
+      }
       return c.json({ itemId: null });
     }
   },
@@ -599,8 +885,15 @@ githubProjectsRouter.openapi(
       const typedValue = value as Record<string, string | number>;
       const userOAuthToken =
         target.accountType === "User"
-          ? await getGitHubUserOAuthToken(c.req.raw)
+          ? await getGitHubUserOAuthToken(c.req.raw, {
+              scopes: [...GITHUB_PROJECT_SCOPES],
+            })
           : undefined;
+
+      if (target.accountType === "User" && !userOAuthToken) {
+        return c.json({ itemId: null });
+      }
+
       const updatedItemId = await updateItemField(
         projectId,
         itemId,
