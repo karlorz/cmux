@@ -29,16 +29,7 @@ INPUT=$(cat)
 debug_log "INPUT JSON: $INPUT"
 
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "default"' 2>/dev/null || echo "default")
-STOP_HOOK_ACTIVE=$(echo "$INPUT" | jq -r '.stop_hook_active // false' 2>/dev/null || echo "false")
-debug_log "SESSION_ID: $SESSION_ID, STOP_HOOK_ACTIVE: $STOP_HOOK_ACTIVE"
-
-# Skip if this is a continuation loop (stop_hook_active=true means another hook
-# already blocked Stop and we're in a continuation cycle - not a final stop).
-# This saves the expensive codex review call during active autopilot loops.
-if [ "$STOP_HOOK_ACTIVE" = "true" ]; then
-  debug_log "Exiting: stop_hook_active=true (continuation loop, not final stop)"
-  exit 0
-fi
+debug_log "SESSION_ID: $SESSION_ID"
 
 # Skip if autopilot specifically blocked this stop. We check the autopilot-specific
 # flag file instead of the generic stop_hook_active, because stop_hook_active can

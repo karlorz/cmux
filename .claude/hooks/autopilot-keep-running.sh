@@ -50,7 +50,9 @@ if [ -f "$CURRENT_SID_FILE" ]; then
     CURRENT_STOP_FILE="/tmp/claude-autopilot-stop-${CURRENT_SID}"
     if [ -f "$CURRENT_STOP_FILE" ]; then
       rm -f "$CURRENT_STOP_FILE"
+      # Clean up blocked flags for BOTH session IDs to avoid stale flags
       cleanup_blocked_flag
+      rm -f "/tmp/claude-autopilot-blocked-${CURRENT_SID}"
       echo "Autopilot stop file detected for current-session ${CURRENT_SID}" >&2
       exit 0
     fi
