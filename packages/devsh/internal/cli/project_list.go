@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -65,6 +66,16 @@ func runProjectList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to list projects: %w", err)
 	}
 
+	// User-owned Projects v2 may require OAuth project scope from a web session.
+	// For CLI users with gh authenticated, fall back to gh project list.
+	if ownerType == "user" && projectListOwner != "" && len(result.Projects) == 0 && result.NeedsReauthorization {
+		fallbackProjects, fallbackErr := listProjectsViaGH(projectListOwner)
+		if fallbackErr == nil && len(fallbackProjects) > 0 {
+			result.Projects = fallbackProjects
+			result.NeedsReauthorization = false
+		}
+	}
+
 	if flagJSON {
 		data, _ := json.MarshalIndent(result, "", "  ")
 		fmt.Println(string(data))
@@ -103,6 +114,27 @@ func runProjectList(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func listProjectsViaGH(owner string) ([]vm.ProjectNode, error) {
+	if _, err := exec.LookPath("gh"); err != nil {
+		return nil, fmt.Errorf("gh CLI not found")
+	}
+
+	cmd := exec.Command("gh", "project", "list", "--owner", owner, "--format", "json")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("gh project list failed: %s", strings.TrimSpace(string(output)))
+	}
+
+	var payload struct {
+		Projects []vm.ProjectNode `json:"projects"`
+	}
+	if err := json.Unmarshal(output, &payload); err != nil {
+		return nil, fmt.Errorf("failed to parse gh output: %w", err)
+	}
+
+	return payload.Projects, nil
 }
 
 func init() {
