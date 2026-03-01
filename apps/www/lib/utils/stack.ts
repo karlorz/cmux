@@ -11,6 +11,11 @@ export const stackServerApp = new StackServerApp({
     afterSignIn: "/handler/after-sign-in",
     afterSignUp: "/handler/after-sign-in",
   },
+  // Request GitHub 'project' scope for user-owned Projects v2 access
+  // GitHub Apps cannot access user Projects v2 - requires OAuth with this scope
+  oauthScopesOnSignIn: {
+    github: ["project"],
+  },
 });
 
 export const stackServerAppJs = new StackServerAppJs({

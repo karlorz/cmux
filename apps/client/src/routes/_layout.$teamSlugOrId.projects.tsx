@@ -57,12 +57,10 @@ function ProjectsPage() {
   );
 
   // Get active connections (filter out inactive ones)
-  // Only show organization connections - user-owned Projects v2 requires OAuth with 'project' scope
-  // which Stack Auth doesn't currently request. Organization projects work with GitHub App.
-  const activeConnections =
-    connections?.filter(
-      (c) => c.isActive && c.accountType === "Organization",
-    ) ?? [];
+  // Both org and user connections are supported:
+  // - Org projects: Work with GitHub App's "Organization projects" permission
+  // - User projects: Work with OAuth token + 'project' scope (configured in Stack Auth)
+  const activeConnections = connections?.filter((c) => c.isActive) ?? [];
 
   // Select connection - if selectedConnectionId doesn't match any active connection, fall back to first
   const connectionFromId = selectedConnectionId
@@ -119,7 +117,7 @@ function ProjectsPage() {
                 <Dropdown.Trigger>
                   <Button variant="outline" size="sm">
                     <Building2 className="h-4 w-4 mr-2" />
-                    {selectedConnection?.accountLogin ?? "Select organization"}
+                    {selectedConnection?.accountLogin ?? "Select account"}
                     <ChevronDown className="h-4 w-4 ml-2" />
                   </Button>
                 </Dropdown.Trigger>
@@ -134,6 +132,9 @@ function ProjectsPage() {
                           <div className="flex items-center gap-2 px-3 py-2">
                             <Building2 className="h-4 w-4" />
                             {conn.accountLogin}
+                            {conn.accountType === "User" && (
+                              <span className="text-xs text-neutral-500">(user)</span>
+                            )}
                           </div>
                         </Dropdown.Item>
                       ))}
@@ -167,7 +168,11 @@ function ProjectsPage() {
             {owner && (
               <Button asChild size="sm">
                 <a
-                  href={`https://github.com/orgs/${owner}/projects/new`}
+                  href={
+                    selectedConnection?.accountType === "Organization"
+                      ? `https://github.com/orgs/${owner}/projects/new`
+                      : `https://github.com/users/${owner}/projects/new`
+                  }
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -184,12 +189,11 @@ function ProjectsPage() {
           <Card className="border-amber-500/50 bg-amber-500/5">
             <CardHeader>
               <CardTitle className="text-amber-600 dark:text-amber-400">
-                GitHub Organization Not Connected
+                GitHub Not Connected
               </CardTitle>
               <CardDescription>
-                Connect the cmux GitHub App to a GitHub Organization to view and
-                manage Projects v2. Organization projects are required because
-                GitHub Apps cannot access user-owned projects.
+                Connect the cmux GitHub App to view and manage GitHub Projects
+                v2. Both organization and user projects are supported.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -199,7 +203,7 @@ function ProjectsPage() {
                   params={{ teamSlugOrId }}
                   search={{ section: "git" }}
                 >
-                  Connect GitHub Organization
+                  Connect GitHub
                 </Link>
               </Button>
             </CardContent>
@@ -234,7 +238,11 @@ function ProjectsPage() {
               {owner && (
                 <Button asChild>
                   <a
-                    href={`https://github.com/orgs/${owner}/projects/new`}
+                    href={
+                      selectedConnection?.accountType === "Organization"
+                        ? `https://github.com/orgs/${owner}/projects/new`
+                        : `https://github.com/users/${owner}/projects/new`
+                    }
                     target="_blank"
                     rel="noopener noreferrer"
                   >
