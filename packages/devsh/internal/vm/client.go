@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -766,20 +767,20 @@ type TaskImage struct {
 
 // TaskDetail represents a task with full details including runs
 type TaskDetail struct {
-	ID          string    `json:"id"`
-	Prompt      string    `json:"prompt"`
-	Repository  string    `json:"repository"`
-	BaseBranch  string    `json:"baseBranch"`
-	IsCompleted bool      `json:"isCompleted"`
-	IsArchived  bool      `json:"isArchived"`
-	Pinned      bool      `json:"pinned,omitempty"`
-	MergeStatus string    `json:"mergeStatus,omitempty"`
-	PRTitle     string    `json:"pullRequestTitle,omitempty"`
-	CrownStatus string    `json:"crownEvaluationStatus,omitempty"`
-	CrownError  string    `json:"crownEvaluationError,omitempty"`
-	CreatedAt   int64     `json:"createdAt"`
-	UpdatedAt   int64     `json:"updatedAt"`
-	TaskRuns    []TaskRun `json:"taskRuns"`
+	ID          string      `json:"id"`
+	Prompt      string      `json:"prompt"`
+	Repository  string      `json:"repository"`
+	BaseBranch  string      `json:"baseBranch"`
+	IsCompleted bool        `json:"isCompleted"`
+	IsArchived  bool        `json:"isArchived"`
+	Pinned      bool        `json:"pinned,omitempty"`
+	MergeStatus string      `json:"mergeStatus,omitempty"`
+	PRTitle     string      `json:"pullRequestTitle,omitempty"`
+	CrownStatus string      `json:"crownEvaluationStatus,omitempty"`
+	CrownError  string      `json:"crownEvaluationError,omitempty"`
+	CreatedAt   int64       `json:"createdAt"`
+	UpdatedAt   int64       `json:"updatedAt"`
+	TaskRuns    []TaskRun   `json:"taskRuns"`
 	Images      []TaskImage `json:"images,omitempty"`
 }
 
@@ -790,13 +791,13 @@ type ListTasksResult struct {
 
 // Environment represents a sandbox environment configuration
 type Environment struct {
-	ID             string   `json:"id"`
-	Name           string   `json:"name"`
-	SnapshotID     string   `json:"snapshotId"`
-	SelectedRepos  []string `json:"selectedRepos,omitempty"`
-	Description    string   `json:"description,omitempty"`
-	CreatedAt      int64    `json:"createdAt"`
-	UpdatedAt      int64    `json:"updatedAt"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	SnapshotID    string   `json:"snapshotId"`
+	SelectedRepos []string `json:"selectedRepos,omitempty"`
+	Description   string   `json:"description,omitempty"`
+	CreatedAt     int64    `json:"createdAt"`
+	UpdatedAt     int64    `json:"updatedAt"`
 }
 
 // CreateTaskOptions represents options for creating a task
@@ -1096,6 +1097,74 @@ func (c *Client) StartSandbox(ctx context.Context, opts StartSandboxOptions) (*S
 	return &result, nil
 }
 
+// ProjectDraftItem represents a draft issue to create in a GitHub Project.
+type ProjectDraftItem struct {
+	Title string `json:"title"`
+	Body  string `json:"body,omitempty"`
+}
+
+// BatchCreateDraftsOptions controls batch draft creation.
+type BatchCreateDraftsOptions struct {
+	ProjectID      string
+	InstallationID int
+	Items          []ProjectDraftItem
+}
+
+// BatchCreateDraftsResultItem is the per-item result from batch draft creation.
+type BatchCreateDraftsResultItem struct {
+	Title  string  `json:"title"`
+	ItemID *string `json:"itemId"`
+	Error  string  `json:"error,omitempty"`
+}
+
+// BatchCreateDraftsResult contains all per-item results.
+type BatchCreateDraftsResult struct {
+	Results []BatchCreateDraftsResultItem `json:"results"`
+}
+
+// BatchCreateDrafts calls POST /api/integrations/github/projects/drafts/batch.
+func (c *Client) BatchCreateDrafts(ctx context.Context, opts BatchCreateDraftsOptions) (*BatchCreateDraftsResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+	if opts.ProjectID == "" {
+		return nil, fmt.Errorf("project ID is required")
+	}
+	if opts.InstallationID <= 0 {
+		return nil, fmt.Errorf("installation ID is required")
+	}
+	if len(opts.Items) == 0 {
+		return nil, fmt.Errorf("at least one draft item is required")
+	}
+
+	query := url.Values{}
+	query.Set("team", c.teamSlug)
+	query.Set("installationId", fmt.Sprintf("%d", opts.InstallationID))
+	path := "/api/integrations/github/projects/drafts/batch?" + query.Encode()
+
+	body := map[string]interface{}{
+		"projectId": opts.ProjectID,
+		"items":     opts.Items,
+	}
+
+	resp, err := c.doWwwRequest(ctx, "POST", path, body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("batch draft creation failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result BatchCreateDraftsResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
 // SetupProvidersResult represents the result of setting up provider auth
 type SetupProvidersResult struct {
 	Success   bool     `json:"success"`
@@ -1273,8 +1342,8 @@ type StartTaskAgentsOptions struct {
 
 // StartTaskAgentsResult represents the result of starting task agents
 type StartTaskAgentsResult struct {
-	TaskID  string                    `json:"taskId"`
-	Results []StartTaskAgentResult    `json:"results"`
+	TaskID  string                 `json:"taskId"`
+	Results []StartTaskAgentResult `json:"results"`
 }
 
 // StartTaskAgentResult represents a single agent spawn result
@@ -1801,11 +1870,11 @@ func (c *Client) OrchestrationMigrate(ctx context.Context, opts OrchestrationMig
 
 // OrchestrationResultsResult represents aggregated results from all sub-agents
 type OrchestrationResultsResult struct {
-	OrchestrationID string                      `json:"orchestrationId"`
-	Status          string                      `json:"status"` // running, completed, failed, partial
-	TotalTasks      int                         `json:"totalTasks"`
-	CompletedTasks  int                         `json:"completedTasks"`
-	Results         []OrchestrationResultEntry  `json:"results"`
+	OrchestrationID string                     `json:"orchestrationId"`
+	Status          string                     `json:"status"` // running, completed, failed, partial
+	TotalTasks      int                        `json:"totalTasks"`
+	CompletedTasks  int                        `json:"completedTasks"`
+	Results         []OrchestrationResultEntry `json:"results"`
 }
 
 // OrchestrationResultEntry represents a single task result
