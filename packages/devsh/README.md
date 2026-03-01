@@ -113,6 +113,12 @@ devsh ls                        # List all your VMs
 | `devsh computer wait <id> <selector>` | Wait for element |
 | `devsh computer hover <id> <selector>` | Hover over element |
 
+### GitHub Projects
+
+| Command | Description |
+|---------|-------------|
+| `devsh project import <file>` | Import markdown plan as draft issues into a GitHub Project |
+
 ### Other
 
 | Command | Description |
@@ -515,6 +521,33 @@ Hover over an element.
 ```bash
 devsh computer hover cmux_abc123 @e5
 devsh computer hover cmux_abc123 ".dropdown-trigger"
+```
+
+### `devsh project import <file>`
+
+Import a markdown plan file into a GitHub Project as draft issues. Each H2 section (`## Section Title`) becomes a separate draft issue.
+
+```bash
+devsh project import ./plan.md --project-id PVT_xxx --installation-id 12345
+devsh project import ./plan.md --project-id PVT_xxx --installation-id 12345 --dry-run
+```
+
+**Required flags:**
+- `--project-id`: GitHub Project node ID (e.g., `PVT_kwHOCIJ7ws4BQeq2`). Get it via `gh project list --owner <owner> --format json | jq '.projects[].id'`
+- `--installation-id`: GitHub App installation ID (required unless using `--dry-run`). Find it in the cmux database or via the team's provider connections.
+
+**Optional flags:**
+- `--dry-run`: Parse and preview items without importing (does not require `--installation-id`)
+
+**GitHub App Permission Requirements:**
+
+The GitHub App must have the "Projects (beta): Read and write" permission to create draft issues in **user-owned projects**. For organization projects, "Organization projects: Read and write" is required.
+
+If you see "Resource not accessible by integration" errors, the GitHub App lacks project permissions. **Workaround:** Use the `gh` CLI directly:
+
+```bash
+# Create draft issues manually with gh CLI
+gh project item-create 3 --owner karlorz --title "My Task" --body "Description"
 ```
 
 ## Examples

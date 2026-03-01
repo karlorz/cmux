@@ -29,6 +29,7 @@ INPUT=$(cat)
 debug_log "INPUT JSON: $INPUT"
 
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "default"' 2>/dev/null || echo "default")
+SESSION_ID="${SESSION_ID:-default}"
 debug_log "SESSION_ID: $SESSION_ID"
 
 # Skip if autopilot specifically blocked this stop. We check the autopilot-specific
@@ -63,7 +64,8 @@ fi
 # Only run review if actual work was done. We check multiple sources:
 # 1. git status for uncommitted/staged changes (always checked first)
 # 2. git diff against main for committed changes on branch
-# 3. turn file existence (backup - indicates autopilot ran)
+# 3. turn file existence (backup - indicates autopilot is mid-session)
+# 4. completed marker (backup - indicates autopilot reached max turns; turn file was deleted)
 WORK_DONE="0"
 
 # Check 1: Uncommitted or staged changes (git status)
@@ -84,15 +86,25 @@ if [ "$WORK_DONE" = "0" ]; then
   fi
 fi
 
-# Check 3: Turn file as backup (indicates autopilot ran, even if no git changes yet)
+# Check 3: Turn file as backup (indicates autopilot is mid-session, even if no git changes yet)
 TURN_FILE="/tmp/claude-autopilot-turns-${SESSION_ID}"
 if [ -f "$TURN_FILE" ] && [ "$WORK_DONE" = "0" ]; then
   WORK_DONE="1"
   debug_log "Work detected via turn file"
 fi
 
+# Check 4: Completed marker (indicates autopilot reached max turns; turn file was deleted before we ran)
+# Only honor the marker when autopilot is active to avoid false positives from stale markers
+COMPLETED_FILE="/tmp/claude-autopilot-completed-${SESSION_ID}"
+# Install early trap so any exit path after this point cleans up the marker
+trap 'rm -f "$COMPLETED_FILE"' EXIT
+if [ "$AUTOPILOT_ACTIVE" = "1" ] && [ -f "$COMPLETED_FILE" ] && [ "$WORK_DONE" = "0" ]; then
+  WORK_DONE="1"
+  debug_log "Work detected via autopilot completed marker"
+fi
+
 if [ "$AUTOPILOT_ACTIVE" = "1" ] && [ "$WORK_DONE" = "0" ]; then
-  debug_log "Skipping review: autopilot enabled but no work done (no git diff, no turn file)"
+  debug_log "Skipping review: autopilot enabled but no work done (no git diff, no turn file, no completed marker)"
   exit 0
 fi
 
@@ -114,9 +126,9 @@ if [ "$FAIL_COUNT" -ge 5 ]; then
   exit 0  # Hit limit, stop showing issues
 fi
 
-# Create temp file for output
+# Create temp file for output; extend trap to also clean it
 TMPFILE=$(mktemp)
-trap 'rm -f "$TMPFILE"' EXIT
+trap 'rm -f "$TMPFILE" "$COMPLETED_FILE"' EXIT
 
 # REVIEW.md guidelines are loaded via AGENTS.md (codex reads it automatically).
 # --base and [PROMPT] are mutually exclusive, so we cannot pass a custom prompt here.
