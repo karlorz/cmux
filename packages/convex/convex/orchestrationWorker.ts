@@ -105,14 +105,18 @@ export const pollReadyTasks = internalAction({
 
 /**
  * Get unique team IDs with pending tasks.
+ * Note: Uses filter since there's no status-only index.
+ * Limits results to avoid excessive memory usage with many pending tasks.
  */
 export const getTeamsWithPendingTasks = internalQuery({
   args: {},
   handler: async (ctx) => {
+    // Limit to 500 pending tasks to avoid memory issues with large backlogs
+    // This still captures teams with pending work without loading entire queue
     const pendingTasks = await ctx.db
       .query("orchestrationTasks")
       .filter((q) => q.eq(q.field("status"), "pending"))
-      .collect();
+      .take(500);
 
     return [...new Set(pendingTasks.map((t) => t.teamId))];
   },
@@ -287,6 +291,7 @@ export const handleTaskCompletion = internalMutation({
 /**
  * Check for and timeout stale running tasks.
  * Called by the background worker to fail tasks that have been running too long.
+ * Limits query to avoid memory issues with many running tasks.
  */
 export const checkForTimedOutTasks = internalMutation({
   args: {},
@@ -294,11 +299,12 @@ export const checkForTimedOutTasks = internalMutation({
     const now = Date.now();
     const timeoutThreshold = now - TASK_TIMEOUT_MS;
 
-    // Find running tasks that started before the timeout threshold
+    // Find running tasks - limit to 100 to avoid excessive memory usage
+    // Note: Uses filter since there's no status-only index
     const runningTasks = await ctx.db
       .query("orchestrationTasks")
       .filter((q) => q.eq(q.field("status"), "running"))
-      .collect();
+      .take(100);
 
     for (const task of runningTasks) {
       if (task.startedAt && task.startedAt < timeoutThreshold) {
