@@ -11,6 +11,7 @@ import {
   useRefreshGitHubAuth,
 } from "@/hooks/useMorphWorkspace";
 import { useResumePveLxcWorkspace } from "@/hooks/usePveLxcWorkspace";
+import { usePublishForwardedPorts } from "@/hooks/usePublishForwardedPorts";
 import { useOpenWithActions } from "@/hooks/useOpenWithActions";
 import { useTaskRename } from "@/hooks/useTaskRename";
 import { isElectron } from "@/lib/electron";
@@ -1593,6 +1594,11 @@ function TaskRunTreeInner({
     provider: run.vscode?.provider,
     teamSlugOrId,
   });
+  const refreshForwardedPorts = usePublishForwardedPorts({
+    taskRunId: run._id,
+    sandboxId: run.vscode?.containerName,
+    teamSlugOrId,
+  });
 
   const handleRefreshGitHubAuth = useCallback(() => {
     if (refreshGitHubAuth.isPending) {
@@ -1601,14 +1607,28 @@ function TaskRunTreeInner({
 
     void refreshGitHubAuth.mutateAsync();
   }, [refreshGitHubAuth]);
+  const handleRefreshForwardedPorts = useCallback(() => {
+    if (refreshForwardedPorts.isPending) {
+      return;
+    }
+
+    void refreshForwardedPorts.mutateAsync();
+  }, [refreshForwardedPorts]);
 
   const supportsGitHubAuthRefresh = ["morph", "pve-lxc"].includes(
+    run.vscode?.provider ?? ""
+  );
+  const supportsForwardedPortRefresh = ["morph", "pve-lxc"].includes(
     run.vscode?.provider ?? ""
   );
   const canRefreshGitHubAuth =
     supportsGitHubAuthRefresh &&
     (run.vscode?.provider !== "pve-lxc" ||
       Boolean(run.vscode?.containerName));
+  const canRefreshForwardedPorts =
+    !isLocalWorkspaceRunEntry &&
+    supportsForwardedPortRefresh &&
+    Boolean(run.vscode?.containerName);
 
   const shouldRenderPullRequestLink = Boolean(
     (run.pullRequestUrl && run.pullRequestUrl !== "pending") ||
@@ -1720,6 +1740,18 @@ function TaskRunTreeInner({
                   {refreshGitHubAuth.isPending
                     ? "Refreshing…"
                     : "Refresh GitHub auth"}
+                </ContextMenu.Item>
+              ) : null}
+              {canRefreshForwardedPorts ? (
+                <ContextMenu.Item
+                  className="flex items-center gap-2 cursor-default py-1.5 pr-8 pl-3 text-[13px] leading-5 outline-none select-none data-[highlighted]:relative data-[highlighted]:z-0 data-[highlighted]:text-white data-[highlighted]:before:absolute data-[highlighted]:before:inset-x-1 data-[highlighted]:before:inset-y-0 data-[highlighted]:before:z-[-1] data-[highlighted]:before:rounded-sm data-[highlighted]:before:bg-neutral-900 dark:data-[highlighted]:before:bg-neutral-700"
+                  onClick={handleRefreshForwardedPorts}
+                  disabled={refreshForwardedPorts.isPending}
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  {refreshForwardedPorts.isPending
+                    ? "Refreshing ports..."
+                    : "Refresh forwarded ports"}
                 </ContextMenu.Item>
               ) : null}
               {hasOpenWithActions ? (

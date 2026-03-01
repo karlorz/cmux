@@ -2243,7 +2243,10 @@ export function setupSocketHandlers(
           responded = true;
 
           // Spawn Morph instance via www API
-          const { postApiSandboxesStart } = await getWwwOpenApiModule();
+          const {
+            postApiSandboxesStart,
+            postApiSandboxesByIdPublishDevcontainer,
+          } = await getWwwOpenApiModule();
 
           serverLogger.info(
             environmentId
@@ -2319,6 +2322,22 @@ export function setupSocketHandlers(
             id: taskRunId,
             status: "running",
           });
+
+          try {
+            await postApiSandboxesByIdPublishDevcontainer({
+              client: getWwwClient(),
+              path: { id: sandboxId },
+              body: { teamSlugOrId, taskRunId },
+            });
+            serverLogger.info(
+              `[create-cloud-workspace] Published forwarded ports for taskRun ${taskRunId}`
+            );
+          } catch (publishError) {
+            serverLogger.warn(
+              `[create-cloud-workspace] Failed to publish forwarded ports for taskRun ${taskRunId} (non-fatal)`,
+              publishError
+            );
+          }
 
           // Emit vscode-spawned event to the client
           rt.emit("vscode-spawned", {
