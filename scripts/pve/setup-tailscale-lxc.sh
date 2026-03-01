@@ -372,66 +372,9 @@ create_hook_script() {
 vmid="\$1"
 phase="\$2"
 PVE_HOST_IP="$PVE_HOST_IP"
-HOSTS_FILE="/etc/hosts"
-
-# Function to register container DNS entry in /etc/hosts
-register_dns() {
-    local vmid="\$1"
-    # Get hostname from container config
-    local hostname=\$(pct config \$vmid | grep -E "^hostname:" | awk '{print \$2}')
-    if [[ -z "\$hostname" ]]; then
-        echo "[\$vmid] Warning: No hostname found in container config"
-        return 1
-    fi
-
-    # Get container IP (wait for DHCP)
-    local ip=""
-    for i in {1..30}; do
-        ip=\$(lxc-attach -n \$vmid -- ip -4 addr show eth0 2>/dev/null | grep -oP 'inet \K[\d.]+')
-        if [[ -n "\$ip" ]]; then
-            break
-        fi
-        sleep 1
-    done
-
-    if [[ -z "\$ip" ]]; then
-        echo "[\$vmid] Warning: Could not get container IP"
-        return 1
-    fi
-
-    # Remove any existing entry for this hostname
-    sed -i "/[[:space:]]\${hostname}\.lan[[:space:]]/d" "\$HOSTS_FILE"
-    sed -i "/[[:space:]]\${hostname}\.lan\$/d" "\$HOSTS_FILE"
-    sed -i "/[[:space:]]\${hostname}[[:space:]]/d" "\$HOSTS_FILE"
-    sed -i "/[[:space:]]\${hostname}\$/d" "\$HOSTS_FILE"
-
-    # Add new entry
-    echo "\$ip \${hostname}.lan \${hostname}" >> "\$HOSTS_FILE"
-    echo "[\$vmid] DNS registered: \$ip -> \${hostname}.lan"
-
-    # Reload dnsmasq to pick up new hosts
-    systemctl reload dnsmasq 2>/dev/null || systemctl restart dnsmasq
-}
-
-# Function to unregister container DNS entry
-unregister_dns() {
-    local vmid="\$1"
-    local hostname=\$(pct config \$vmid | grep -E "^hostname:" | awk '{print \$2}')
-    if [[ -n "\$hostname" ]]; then
-        sed -i "/[[:space:]]\${hostname}\.lan[[:space:]]/d" "\$HOSTS_FILE"
-        sed -i "/[[:space:]]\${hostname}\.lan\$/d" "\$HOSTS_FILE"
-        sed -i "/[[:space:]]\${hostname}[[:space:]]/d" "\$HOSTS_FILE"
-        sed -i "/[[:space:]]\${hostname}\$/d" "\$HOSTS_FILE"
-        echo "[\$vmid] DNS unregistered: \${hostname}.lan"
-        systemctl reload dnsmasq 2>/dev/null || true
-    fi
-}
 
 if [[ "\$phase" == "post-start" ]]; then
     echo "[\$vmid] Tailscale Hook: Configuring routes, DNS, and transparent proxy..."
-
-    # Register DNS entry for this container (for Caddy edge router)
-    register_dns "\$vmid"
 
     # Wait for network to be ready inside LXC
     echo "[\$vmid] Waiting for network..."
@@ -533,11 +476,6 @@ SVCEOF'
     lxc-attach -n \$vmid -- systemctl start redsocks
 
     echo "[\$vmid] Tailscale Hook: Done. All TCP traffic routes through proxy."
-fi
-
-if [[ "\$phase" == "pre-stop" ]]; then
-    echo "[\$vmid] Tailscale Hook: Cleaning up DNS entry..."
-    unregister_dns "\$vmid"
 fi
 HOOKEOF
 
