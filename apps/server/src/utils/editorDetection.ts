@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 
 const execAsync = promisify(exec);
 
-type EditorId = "vscode" | "cursor" | "windsurf";
+export type EditorId = "vscode" | "cursor" | "windsurf";
 
 const EDITOR_CLI_CONFIGS: Record<
   EditorId,
@@ -43,7 +43,7 @@ export function macAppBin(appName: string, bin: string): string {
   );
 }
 
-async function pathExists(target: string): Promise<boolean> {
+export async function pathExists(target: string): Promise<boolean> {
   if (!target) {
     return false;
   }
