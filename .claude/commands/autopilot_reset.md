@@ -1,6 +1,6 @@
 ---
 description: Reset autopilot turn counter to allow session to run fresh
-argument-hint: "[optional: stop|status|all]"
+argument-hint: "[optional: stop|status|status-all|all]"
 allowed-tools: Bash
 ---
 
@@ -10,11 +10,8 @@ Mode: $ARGUMENTS (default: reset)
 
 ## Auto-collected context
 
-### Current autopilot status (all active sessions)
-!`bash -c 'MAX=${CLAUDE_AUTOPILOT_MAX_TURNS:-20}; echo "Max turns: $MAX"; echo ""; echo "Active sessions:"; found=0; for f in /tmp/claude-autopilot-turns-*; do [ -f "$f" ] || continue; found=1; SID="${f#/tmp/claude-autopilot-turns-}"; TURNS=$(cat "$f"); FLAGS=""; [ -f "/tmp/claude-autopilot-stop-$SID" ] && FLAGS="$FLAGS [STOP]"; [ -f "/tmp/claude-autopilot-blocked-$SID" ] && FLAGS="$FLAGS [ACTIVE]"; echo "  ${SID:0:20}...: turn $TURNS$FLAGS"; done; [ $found -eq 0 ] && echo "  (none)"; exit 0'`
-
-### Current session ID
-!`cat /tmp/claude-current-session-id 2>/dev/null || echo "(not set - restart session to enable)"`
+### Current session status
+!`bash -c 'SID=$(cat /tmp/claude-current-session-id 2>/dev/null); if [ -z "$SID" ]; then echo "Session ID: (not set - restart session to enable)"; exit 0; fi; echo "Session ID: ${SID}"; MAX=${CLAUDE_AUTOPILOT_MAX_TURNS:-20}; echo "Max turns: $MAX"; TURNS_FILE="/tmp/claude-autopilot-turns-${SID}"; if [ -f "$TURNS_FILE" ]; then TURNS=$(cat "$TURNS_FILE"); echo "Current turn: $TURNS"; else echo "Current turn: 0 (not started)"; fi; FLAGS=""; [ -f "/tmp/claude-autopilot-stop-$SID" ] && FLAGS="STOP "; [ -f "/tmp/claude-autopilot-blocked-$SID" ] && FLAGS="${FLAGS}BLOCKED"; [ -n "$FLAGS" ] && echo "Status: $FLAGS" || echo "Status: ready"; exit 0'`
 
 ## Actions
 
@@ -27,13 +24,40 @@ Reset the turn counter to 0, allowing another full cycle of autopilot turns.
 Create a stop file to immediately stop autopilot on next turn.
 
 ### status
-Just show the auto-collected status above.
+Show current session ID and status only.
+
+### status-all
+Show all active sessions with their status.
 
 ## Instructions
 
 1. If mode is `status`: Just report the auto-collected context above, no action needed.
 
-2. If mode is `stop`: Run this command via Bash tool (current session only):
+2. If mode is `status-all`: Run this command via Bash tool to show all sessions:
+```bash
+MAX=${CLAUDE_AUTOPILOT_MAX_TURNS:-20}
+CURRENT_SID=$(cat /tmp/claude-current-session-id 2>/dev/null)
+echo "Max turns: $MAX"
+echo "Current session: ${CURRENT_SID:-"(not set)"}"
+echo ""
+echo "All active sessions:"
+found=0
+for f in /tmp/claude-autopilot-turns-*; do
+  [ -f "$f" ] || continue
+  found=1
+  SID="${f#/tmp/claude-autopilot-turns-}"
+  TURNS=$(cat "$f")
+  FLAGS=""
+  [ -f "/tmp/claude-autopilot-stop-$SID" ] && FLAGS="$FLAGS [STOP]"
+  [ -f "/tmp/claude-autopilot-blocked-$SID" ] && FLAGS="$FLAGS [BLOCKED]"
+  [ "$SID" = "$CURRENT_SID" ] && FLAGS="$FLAGS [CURRENT]"
+  echo "  ${SID:0:20}...: turn $TURNS$FLAGS"
+done
+[ $found -eq 0 ] && echo "  (none)"
+exit 0
+```
+
+3. If mode is `stop`: Run this command via Bash tool (current session only):
 ```bash
 SID=$(cat /tmp/claude-current-session-id 2>/dev/null)
 if [ -z "$SID" ]; then
@@ -45,7 +69,7 @@ echo "Stop file created for current session: ${SID:0:20}..."
 echo "Autopilot will stop on next turn."
 ```
 
-3. If mode is `reset` or empty: Run this command via Bash tool (current session only):
+4. If mode is `reset` or empty: Run this command via Bash tool (current session only):
 ```bash
 SID=$(cat /tmp/claude-current-session-id 2>/dev/null)
 MAX_TURNS="${CLAUDE_AUTOPILOT_MAX_TURNS:-20}"
@@ -58,7 +82,7 @@ echo "Reset current session: ${SID:0:20}..."
 echo "Next cycle will start from turn 1/$MAX_TURNS"
 ```
 
-4. If mode is `all`: Run this command via Bash tool (all sessions):
+5. If mode is `all`: Run this command via Bash tool (all sessions):
 ```bash
 COUNT=0
 MAX_TURNS="${CLAUDE_AUTOPILOT_MAX_TURNS:-20}"
