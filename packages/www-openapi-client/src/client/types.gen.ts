@@ -1836,9 +1836,9 @@ export type GetApiIntegrationsGithubProjectsData = {
          */
         installationId?: number | null;
         /**
-         * GitHub user or org login
+         * GitHub user or org login (optional, inferred from installation if omitted)
          */
-        owner: string;
+        owner?: string;
         /**
          * Owner type
          */

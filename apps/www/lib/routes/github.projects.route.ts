@@ -10,8 +10,7 @@
  * @see https://docs.github.com/en/issues/planning-and-tracking-with-projects/automating-your-project/using-the-api-to-manage-projects
  */
 
-import { getAccessTokenFromRequest } from "@/lib/utils/auth";
-import { stackServerAppJs } from "@/lib/utils/stack";
+import { getAccessTokenFromRequest, getUserFromRequest } from "@/lib/utils/auth";
 import { api } from "@cmux/convex/api";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { getConvex } from "../utils/get-convex";
@@ -26,6 +25,28 @@ import {
 
 export const githubProjectsRouter = new OpenAPIHono();
 
+async function getGitHubUserOAuthToken(req: Request): Promise<string | undefined> {
+  const user = await getUserFromRequest(req);
+  if (!user) return undefined;
+
+  try {
+    // Stack Auth v2.8.x may not enforce scopes in this call; scope failures are
+    // detected from GitHub API responses downstream.
+    const githubAccount = await user.getConnectedAccount("github");
+    if (!githubAccount) return undefined;
+
+    const tokenResult = await githubAccount.getAccessToken();
+    const token = tokenResult.accessToken?.trim();
+    return token || undefined;
+  } catch (err) {
+    console.error(
+      "[github.projects] Failed to get user OAuth token:",
+      err instanceof Error ? err.message : err,
+    );
+    return undefined;
+  }
+}
+
 // Schemas
 
 const ListProjectsQuery = z
@@ -37,10 +58,11 @@ const ListProjectsQuery = z
     owner: z
       .string()
       .min(1)
-      .openapi({ description: "GitHub user or org login" }),
+      .optional()
+      .openapi({ description: "GitHub user or org login (optional, inferred from installation if omitted)" }),
     ownerType: z
       .enum(["user", "organization"])
-      .default("user")
+      .optional()
       .openapi({ description: "Owner type" }),
   })
   .openapi("ListProjectsQuery");
@@ -168,7 +190,8 @@ githubProjectsRouter.openapi(
     const accessToken = await getAccessTokenFromRequest(c.req.raw);
     if (!accessToken) return c.text("Unauthorized", 401);
 
-    const { team, installationId, owner, ownerType } = c.req.valid("query");
+    const { team, installationId, owner: ownerInput, ownerType: ownerTypeInput } =
+      c.req.valid("query");
 
     // Verify team membership via Convex
     const convex = getConvex({ accessToken });
@@ -184,6 +207,18 @@ githubProjectsRouter.openapi(
       return c.json({ projects: [] });
     }
 
+    const owner = ownerInput ?? target.accountLogin ?? undefined;
+    if (!owner) {
+      console.warn(
+        `[github.projects] No owner could be determined for installation ${installationId}`,
+      );
+      return c.json({ projects: [] });
+    }
+
+    const ownerType =
+      ownerTypeInput ??
+      (target.accountType === "Organization" ? "organization" : "user");
+
     // For user-owned projects, we need the user's OAuth token with "project" scope.
     // GitHub Apps cannot access user-owned Projects v2 (platform limitation).
     let userOAuthToken: string | undefined;
@@ -191,27 +226,7 @@ githubProjectsRouter.openapi(
 
     try {
       if (ownerType === "user") {
-        const user = await stackServerAppJs.getUser({ tokenStore: c.req.raw });
-        if (user) {
-          try {
-            // Try to get GitHub connected account.
-            // Note: Stack Auth v2.8.x getConnectedAccount with scopes doesn't
-            // actually validate them - it returns the account regardless.
-            // We detect missing scope via the GitHub API error instead.
-            const githubAccount = await user.getConnectedAccount("github");
-
-            if (githubAccount) {
-              const tokenResult = await githubAccount.getAccessToken();
-              userOAuthToken = tokenResult.accessToken?.trim() || undefined;
-            }
-          } catch (err) {
-            console.error(
-              "[github.projects] Failed to get user OAuth token:",
-              err instanceof Error ? err.message : err,
-            );
-            // Continue without OAuth token - will fall back to GitHub App (may fail for user projects)
-          }
-        }
+        userOAuthToken = await getGitHubUserOAuthToken(c.req.raw);
       }
 
       const projects = await listProjects(owner, ownerType, installationId, {
@@ -288,6 +303,11 @@ githubProjectsRouter.openapi(
       return c.text("Installation not found", 400);
     }
 
+    const userOAuthToken =
+      target.accountType === "User"
+        ? await getGitHubUserOAuthToken(c.req.raw)
+        : undefined;
+
     const results: Array<{
       title: string;
       itemId: string | null;
@@ -301,6 +321,7 @@ githubProjectsRouter.openapi(
           item.title,
           item.body,
           installationId,
+          { userOAuthToken },
         );
 
         if (itemId) {
@@ -370,7 +391,13 @@ githubProjectsRouter.openapi(
     }
 
     try {
-      const fields = await getProjectFields(projectId, installationId);
+      const userOAuthToken =
+        target.accountType === "User"
+          ? await getGitHubUserOAuthToken(c.req.raw)
+          : undefined;
+      const fields = await getProjectFields(projectId, installationId, {
+        userOAuthToken,
+      });
       return c.json({ fields });
     } catch (err) {
       console.error(
@@ -430,10 +457,15 @@ githubProjectsRouter.openapi(
     }
 
     try {
+      const userOAuthToken =
+        target.accountType === "User"
+          ? await getGitHubUserOAuthToken(c.req.raw)
+          : undefined;
       const itemId = await addItemToProject(
         projectId,
         contentId,
         installationId,
+        { userOAuthToken },
       );
       return c.json({ itemId });
     } catch (err) {
@@ -494,11 +526,16 @@ githubProjectsRouter.openapi(
     }
 
     try {
+      const userOAuthToken =
+        target.accountType === "User"
+          ? await getGitHubUserOAuthToken(c.req.raw)
+          : undefined;
       const itemId = await createDraftIssue(
         projectId,
         title,
         body,
         installationId,
+        { userOAuthToken },
       );
       return c.json({ itemId });
     } catch (err) {
@@ -560,12 +597,17 @@ githubProjectsRouter.openapi(
 
     try {
       const typedValue = value as Record<string, string | number>;
+      const userOAuthToken =
+        target.accountType === "User"
+          ? await getGitHubUserOAuthToken(c.req.raw)
+          : undefined;
       const updatedItemId = await updateItemField(
         projectId,
         itemId,
         fieldId,
         typedValue,
         installationId,
+        { userOAuthToken },
       );
       return c.json({ itemId: updatedItemId });
     } catch (err) {
