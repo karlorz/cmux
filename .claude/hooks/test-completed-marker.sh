@@ -73,7 +73,7 @@ echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
   bash "$SCRIPT_DIR/autopilot-keep-running.sh" >/dev/null 2>&1 || true
 
 assert "Completed marker exists" test -f "/tmp/claude-autopilot-completed-${TEST_SESSION}"
-assert_not "Turn file deleted" test -f "/tmp/claude-autopilot-turns-${TEST_SESSION}"
+assert_not "Turn file still exists (should be deleted)" test -f "/tmp/claude-autopilot-turns-${TEST_SESSION}"
 assert "Marker contains turn count" grep -q "2" "/tmp/claude-autopilot-completed-${TEST_SESSION}"
 
 # --- Test 2: codex-review detects marker via dry-run ---
