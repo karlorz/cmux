@@ -30,6 +30,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useState } from "react";
+import { useUser } from "@stackframe/react";
 
 export const Route = createFileRoute("/_layout/$teamSlugOrId/projects")({
   component: ProjectsPage,
@@ -48,6 +49,7 @@ interface GitHubProject {
 
 function ProjectsPage() {
   const { teamSlugOrId } = Route.useParams();
+  const user = useUser({ or: "return-null" });
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
 
@@ -56,11 +58,16 @@ function ProjectsPage() {
     convexQuery(api.github.listProviderConnections, { teamSlugOrId }),
   );
 
-  // Get active connections (filter out inactive ones)
-  // Both org and user connections are supported:
-  // - Org projects: Work with GitHub App's "Organization projects" permission
-  // - User projects: Work with OAuth token + 'project' scope (configured in Stack Auth)
-  const activeConnections = connections?.filter((c) => c.isActive) ?? [];
+  // Get active connections, sorted with org connections first.
+  // Org projects work reliably with GitHub App tokens.
+  // User projects require OAuth token with 'project' scope (granted on next sign-in).
+  const activeConnections = (connections?.filter((c) => c.isActive) ?? []).sort(
+    (a, b) => {
+      if (a.accountType === "Organization" && b.accountType !== "Organization") return -1;
+      if (a.accountType !== "Organization" && b.accountType === "Organization") return 1;
+      return 0;
+    },
+  );
 
   // Select connection - if selectedConnectionId doesn't match any active connection, fall back to first
   const connectionFromId = selectedConnectionId
@@ -97,6 +104,7 @@ function ProjectsPage() {
   });
 
   const projects = projectsData?.projects ?? [];
+  const needsReauthorization = projectsData?.needsReauthorization === true;
   const isLoading = connectionsLoading || projectsLoading;
 
   return (
@@ -205,6 +213,36 @@ function ProjectsPage() {
                 >
                   Connect GitHub
                 </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Reauthorization banner for user projects missing 'project' scope */}
+        {needsReauthorization && selectedConnection?.accountType === "User" && (
+          <Card className="border-blue-500/50 bg-blue-500/5">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm text-blue-600 dark:text-blue-400">
+                Additional Permission Required
+              </CardTitle>
+              <CardDescription>
+                Your GitHub OAuth token is missing the &quot;project&quot; scope
+                needed to access personal Projects v2. Grant this permission to
+                see your user projects, or switch to an organization connection.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                size="sm"
+                onClick={() => {
+                  // Triggers OAuth redirect requesting 'project' scope
+                  void user?.getConnectedAccount("github", {
+                    or: "redirect",
+                    scopes: ["project"],
+                  });
+                }}
+              >
+                Grant Project Scope
               </Button>
             </CardContent>
           </Card>
