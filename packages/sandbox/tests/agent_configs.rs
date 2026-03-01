@@ -93,6 +93,11 @@ async fn test_agent_config_files_exist_in_sandbox() {
         "Codex config.toml should contain notify config: {}",
         resp_codex.stdout
     );
+    assert!(
+        resp_codex.stdout.contains("sandbox_mode"),
+        "Codex config.toml should contain sandbox_mode config: {}",
+        resp_codex.stdout
+    );
 
     // Check OpenCode notification.js exists
     let check_opencode = ExecRequest {
