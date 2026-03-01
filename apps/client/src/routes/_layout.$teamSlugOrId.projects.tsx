@@ -58,13 +58,12 @@ function ProjectsPage() {
     convexQuery(api.github.listProviderConnections, { teamSlugOrId }),
   );
 
-  // Get active connections, sorted with org connections first.
-  // Org projects work reliably with GitHub App tokens.
-  // User projects require OAuth token with 'project' scope (granted on next sign-in).
+  // Get active connections, sorted with user connections first for easy testing
+  // of the OAuth scope grant flow. User projects need 'project' OAuth scope.
   const activeConnections = (connections?.filter((c) => c.isActive) ?? []).sort(
     (a, b) => {
-      if (a.accountType === "Organization" && b.accountType !== "Organization") return -1;
-      if (a.accountType !== "Organization" && b.accountType === "Organization") return 1;
+      if (a.accountType === "User" && b.accountType !== "User") return -1;
+      if (a.accountType !== "User" && b.accountType === "User") return 1;
       return 0;
     },
   );
@@ -122,12 +121,12 @@ function ProjectsPage() {
             {/* Organization selector - show when multiple org connections available */}
             {activeConnections.length > 1 && (
               <Dropdown.Root>
-                <Dropdown.Trigger>
-                  <Button variant="outline" size="sm">
-                    <Building2 className="h-4 w-4 mr-2" />
-                    {selectedConnection?.accountLogin ?? "Select account"}
-                    <ChevronDown className="h-4 w-4 ml-2" />
-                  </Button>
+                <Dropdown.Trigger
+                  className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium rounded-md border border-neutral-200 bg-white px-3 h-8 gap-1 hover:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-950 dark:hover:bg-neutral-800"
+                >
+                  <Building2 className="h-4 w-4" />
+                  {selectedConnection?.accountLogin ?? "Select account"}
+                  <ChevronDown className="h-4 w-4 ml-1" />
                 </Dropdown.Trigger>
                 <Dropdown.Portal>
                   <Dropdown.Positioner>

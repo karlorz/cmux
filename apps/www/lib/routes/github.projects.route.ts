@@ -194,25 +194,15 @@ githubProjectsRouter.openapi(
         const user = await stackServerAppJs.getUser({ tokenStore: c.req.raw });
         if (user) {
           try {
-            // First try to get account with project scope
-            const githubAccountWithScope = await user.getConnectedAccount("github", {
-              scopes: ["project"],
-            });
+            // Try to get GitHub connected account.
+            // Note: Stack Auth v2.8.x getConnectedAccount with scopes doesn't
+            // actually validate them - it returns the account regardless.
+            // We detect missing scope via the GitHub API error instead.
+            const githubAccount = await user.getConnectedAccount("github");
 
-            if (githubAccountWithScope) {
-              // User has granted project scope
-              const tokenResult = await githubAccountWithScope.getAccessToken();
+            if (githubAccount) {
+              const tokenResult = await githubAccount.getAccessToken();
               userOAuthToken = tokenResult.accessToken?.trim() || undefined;
-            } else {
-              // Check if user has GitHub connected at all (without scope requirement)
-              const githubAccountBasic = await user.getConnectedAccount("github");
-              if (githubAccountBasic) {
-                // User has GitHub connected but without project scope
-                // Get token anyway - it may work for public projects
-                const tokenResult = await githubAccountBasic.getAccessToken();
-                userOAuthToken = tokenResult.accessToken?.trim() || undefined;
-                needsReauthorization = true;
-              }
             }
           } catch (err) {
             console.error(
@@ -232,13 +222,20 @@ githubProjectsRouter.openapi(
         needsReauthorization,
       });
     } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
       console.error(
         `[github.projects] Failed to list projects for ${owner}:`,
-        err instanceof Error ? err.message : err,
+        errMsg,
       );
+      // If user projects fail with "Resource not accessible", the OAuth token
+      // is missing the 'project' scope. Stack Auth's getConnectedAccount with
+      // scopes doesn't actually validate them in v2.8.x.
+      if (ownerType === "user" && errMsg.includes("Resource not accessible")) {
+        needsReauthorization = true;
+      }
       return c.json({
         projects: [],
-        needsReauthorization: needsReauthorization,
+        needsReauthorization,
       });
     }
   },
