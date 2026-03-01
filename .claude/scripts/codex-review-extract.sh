@@ -11,7 +11,7 @@ codex \
   --dangerously-bypass-approvals-and-sandbox \
   --enable use_linux_sandbox_bwrap \
   --model gpt-5.3-codex \
-  -c model_reasoning_effort="high" \
+  -c model_reasoning_effort="low" \
   review "$@" >"$T" 2>&1 || true
 
 sed 's/\x1b\[[0-9;]*m//g' "$T" \
