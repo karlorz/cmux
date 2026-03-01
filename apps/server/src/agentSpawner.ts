@@ -584,17 +584,17 @@ export async function spawnAgent(
     };
 
     // Pre-spawn validation: check Codex OAuth token expiry
-    if (agent.name.toLowerCase().includes("codex") && apiKeys.CODEX_AUTH_JSON) {
-      const codexAuth = parseCodexAuthJson(apiKeys.CODEX_AUTH_JSON);
-      if (codexAuth) {
-        if (isCodexTokenExpired(codexAuth)) {
-          throw new Error(
-            "Codex OAuth token has expired. Please run `codex auth` locally " +
-              "and update CODEX_AUTH_JSON in settings."
-          );
-        }
-        if (isCodexTokenExpiring(codexAuth, 60 * 60 * 1000)) {
-          serverLogger.warn(
+	    if (agent.name.toLowerCase().includes("codex") && apiKeys.CODEX_AUTH_JSON) {
+	      const codexAuth = parseCodexAuthJson(apiKeys.CODEX_AUTH_JSON);
+	      if (codexAuth) {
+	        if (isCodexTokenExpired(codexAuth)) {
+	          throw new Error(
+	            "Codex OAuth token has expired. Please run `codex login` locally " +
+	              "and update CODEX_AUTH_JSON in settings."
+	          );
+	        }
+	        if (isCodexTokenExpiring(codexAuth, 60 * 60 * 1000)) {
+	          serverLogger.warn(
             "[AgentSpawner] Codex OAuth token expires within 1 hour. " +
               "Background refresh should handle this soon."
           );
