@@ -63,10 +63,20 @@ fi
 # Only run review if autopilot has completed work (turn file exists = work was done)
 # Skip if session never ran autopilot (idle state)
 TURN_FILE="/tmp/claude-autopilot-turns-${SESSION_ID}"
+STOP_FILE="/tmp/claude-autopilot-stop-${SESSION_ID}"
+
 if [ "$AUTOPILOT_ACTIVE" = "1" ] && [ ! -f "$TURN_FILE" ]; then
   debug_log "Skipping review: autopilot enabled but no work done yet (idle)"
   exit 0
 fi
+
+# Skip if a stop file exists - this means we're waiting for user action (e.g., merge approval)
+# The stop file indicates intentional pause, not session end
+if [ -f "$STOP_FILE" ]; then
+  debug_log "Skipping review: stop file exists (waiting for user action)"
+  exit 0
+fi
+
 debug_log "Proceeding with codex review..."
 
 # Dry-run mode: exit after pre-flight checks (for testing hook logic without codex)
