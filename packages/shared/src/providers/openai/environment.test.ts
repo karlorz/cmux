@@ -112,6 +112,7 @@ describe("getOpenAIEnvironment", () => {
       "utf-8"
     );
     expect(toml).toContain('notify = ["/root/lifecycle/codex-notify.sh"]');
+    expect(toml).toContain('sandbox_mode = "danger-full-access"');
     expect(toml).toContain("[notice.model_migrations]");
     expect(toml).toContain('"gpt-5-codex" = "gpt-5.3-codex"');
     expect(toml).toContain('"gpt-5" = "gpt-5.3-codex"');
@@ -162,6 +163,7 @@ host_secret = "should-not-leak"
       );
       expect(toml).not.toContain("host_secret");
       expect(toml).not.toContain("approval_mode");
+      expect(toml).toContain('sandbox_mode = "danger-full-access"');
 
       // Verify instructions.md does NOT contain host instructions
       const instructionsFile = result.files?.find(
@@ -242,6 +244,7 @@ foo = "bar"
         "utf-8"
       );
       expect(toml).toContain('notify = ["/root/lifecycle/codex-notify.sh"]');
+      expect(toml).toContain('sandbox_mode = "danger-full-access"');
       expect(toml).toContain('approval_mode = "full"');
       expect(toml).toContain("[some_section]");
       expect(toml).toContain('foo = "bar"');
