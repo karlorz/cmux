@@ -98,6 +98,20 @@ interface ExecError extends Error {
   stdout?: string;
 }
 
+/**
+ * Extract error message from an unknown error value.
+ * Provides consistent error message extraction across all socket handlers.
+ */
+function getErrorMessage(error: unknown, fallback = "Unknown error"): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  return fallback;
+}
+
 const isWindows = process.platform === "win32";
 
 const DOCKER_PULL_TIMEOUT_MS = 10 * 60 * 1000;
@@ -410,6 +424,7 @@ export function setupSocketHandlers(
             method: fetchMethod,
             redirect: "manual",
           });
+          // Intentionally ignoring errors - body cancellation failures are non-critical
           await response.body?.cancel().catch(() => undefined);
 
           if (response.ok) {
@@ -588,7 +603,7 @@ export function setupSocketHandlers(
         serverLogger.error("Error in git-diff:", error);
         callback?.({
           ok: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: getErrorMessage(error),
           diffs: [],
         });
       }
@@ -1130,7 +1145,7 @@ export function setupSocketHandlers(
             serverLogger.error("Error spawning agents for task:", error);
             rt.emit("task-failed", {
               taskId,
-              error: error instanceof Error ? error.message : "Unknown error",
+              error: getErrorMessage(error),
             });
           }
         })();
@@ -1138,7 +1153,7 @@ export function setupSocketHandlers(
         serverLogger.error("Error in start-task:", error);
         callback({
           taskId,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: getErrorMessage(error),
         });
       }
     });
@@ -1242,7 +1257,7 @@ export function setupSocketHandlers(
             variant: null,
             source: null,
             suggestions: ["An error occurred while checking VS Code availability."],
-            errors: [error instanceof Error ? error.message : "Unknown error"],
+            errors: [getErrorMessage(error)],
           });
         }
       }
@@ -1465,10 +1480,11 @@ export function setupSocketHandlers(
           const worktreeParentDir = path.dirname(resolvedWorkspacePath);
           await fs.mkdir(worktreeParentDir, { recursive: true });
           cleanupWorkspace = async () => {
+            // Intentionally ignoring errors - cleanup is best-effort
             await fs
               .rm(resolvedWorkspacePath, { recursive: true, force: true })
               .catch(() => undefined);
-            // Also try to clean up the parent shortId directory if empty
+            // Also try to clean up the parent shortId directory if empty (ignore if non-empty)
             await fs.rmdir(worktreeParentDir).catch(() => undefined);
           };
 
@@ -1627,7 +1643,7 @@ export function setupSocketHandlers(
                 const baseMessage =
                   stderr ||
                   stdout ||
-                  (error instanceof Error ? error.message : String(error));
+                  (getErrorMessage(error));
 
                 const maintenanceErrorMessage = baseMessage
                   ? `Maintenance script failed: ${baseMessage}`
@@ -2381,10 +2397,15 @@ export function setupSocketHandlers(
           return;
         }
 
-        const task = await getConvex().query(api.tasks.getById, {
-          teamSlugOrId: safeTeam,
-          id: run.taskId,
-        });
+        // Parallelize task fetch and GitHub token retrieval since they're independent
+        const [task, githubToken] = await Promise.all([
+          getConvex().query(api.tasks.getById, {
+            teamSlugOrId: safeTeam,
+            id: run.taskId,
+          }),
+          getGitHubOAuthToken(),
+        ]);
+
         if (!task) {
           callback({
             success: false,
@@ -2395,7 +2416,6 @@ export function setupSocketHandlers(
           return;
         }
 
-        const githubToken = await getGitHubOAuthToken();
         if (!githubToken) {
           callback({
             success: false,
@@ -2458,7 +2478,7 @@ export function setupSocketHandlers(
               return toPullRequestActionResult(repoFullName, detail);
             } catch (error) {
               const message =
-                error instanceof Error ? error.message : String(error);
+                getErrorMessage(error);
               return {
                 repoFullName,
                 url: undefined,
@@ -2495,7 +2515,7 @@ export function setupSocketHandlers(
           success: false,
           results: [],
           aggregate: EMPTY_AGGREGATE,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: getErrorMessage(error),
         });
       }
     });
@@ -2582,7 +2602,7 @@ export function setupSocketHandlers(
         serverLogger.error("Error merging branch:", error);
         callback({
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: getErrorMessage(error),
         });
       }
     });
@@ -2604,7 +2624,7 @@ export function setupSocketHandlers(
         serverLogger.error("Error getting full git diff:", error);
         socket.emit("git-full-diff-response", {
           diff: "",
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: getErrorMessage(error),
         });
       }
     });
@@ -2800,7 +2820,7 @@ export function setupSocketHandlers(
             success: false,
             found: 0,
             registered: 0,
-            error: error instanceof Error ? error.message : "Unknown error",
+            error: getErrorMessage(error),
           });
         }
       }
@@ -2955,7 +2975,7 @@ export function setupSocketHandlers(
           serverLogger.error("[delete-worktree] Error deleting worktree:", error);
           safeCallback({
             success: false,
-            error: error instanceof Error ? error.message : "Unknown error",
+            error: getErrorMessage(error),
           });
         }
       }
@@ -3033,7 +3053,7 @@ export function setupSocketHandlers(
           serverLogger.error("[cleanup-stale-workspace] Error:", error);
           safeCallback({
             success: false,
-            error: error instanceof Error ? error.message : "Unknown error",
+            error: getErrorMessage(error),
           });
         }
       }
@@ -3137,7 +3157,7 @@ export function setupSocketHandlers(
       } catch (error) {
         serverLogger.error("Error opening editor:", error);
         const errorMessage =
-          error instanceof Error ? error.message : "Unknown error";
+          getErrorMessage(error);
         socket.emit("open-in-editor-error", { error: errorMessage });
         // Send error callback
         if (callback) {
@@ -3393,7 +3413,7 @@ export function setupSocketHandlers(
         callback?.({
           ok: false,
           files: [],
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: getErrorMessage(error),
         });
       }
     });
@@ -3437,7 +3457,7 @@ export function setupSocketHandlers(
         });
       } catch (error) {
         callback({
-          error: error instanceof Error ? error.message : String(error),
+          error: getErrorMessage(error),
           processEnv: {
             HOME: process.env.HOME,
             USER: process.env.USER,
@@ -3488,7 +3508,7 @@ export function setupSocketHandlers(
         serverLogger.error("Error fetching repos:", error);
         callback({
           success: false,
-          error: `Failed to fetch GitHub repos: ${error instanceof Error ? error.message : String(error)
+          error: `Failed to fetch GitHub repos: ${getErrorMessage(error)
             }`,
         });
       }
@@ -3605,7 +3625,7 @@ Please address the issue mentioned in the comment above.`;
         serverLogger.error("Error spawning from comment:", error);
         callback({
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: getErrorMessage(error),
         });
       }
     });
@@ -3629,20 +3649,6 @@ Please address the issue mentioned in the comment above.`;
           return;
         }
 
-        const task = await getConvex().query(api.tasks.getById, {
-          teamSlugOrId: safeTeam,
-          id: run.taskId,
-        });
-        if (!task) {
-          callback({
-            success: false,
-            results: [],
-            aggregate: EMPTY_AGGREGATE,
-            error: "Task not found",
-          });
-          return;
-        }
-
         const branchName = run.newBranch?.trim();
         if (!branchName) {
           callback({
@@ -3654,7 +3660,25 @@ Please address the issue mentioned in the comment above.`;
           return;
         }
 
-        const githubToken = await getGitHubOAuthToken();
+        // Parallelize task fetch and GitHub token retrieval since they're independent
+        const [task, githubToken] = await Promise.all([
+          getConvex().query(api.tasks.getById, {
+            teamSlugOrId: safeTeam,
+            id: run.taskId,
+          }),
+          getGitHubOAuthToken(),
+        ]);
+
+        if (!task) {
+          callback({
+            success: false,
+            results: [],
+            aggregate: EMPTY_AGGREGATE,
+            error: "Task not found",
+          });
+          return;
+        }
+
         if (!githubToken) {
           callback({
             success: false,
@@ -3726,6 +3750,7 @@ Please address the issue mentioned in the comment above.`;
                   baseBranch,
                   body
                 );
+                // Fetch PR detail for additional metadata; fall back to created info if fetch fails
                 detail =
                   (await fetchPrDetail(
                     githubToken,
@@ -3742,7 +3767,7 @@ Please address the issue mentioned in the comment above.`;
               return toPullRequestActionResult(repoFullName, detail);
             } catch (error) {
               const message =
-                error instanceof Error ? error.message : String(error);
+                getErrorMessage(error);
               return {
                 repoFullName,
                 url: undefined,
@@ -3779,7 +3804,7 @@ Please address the issue mentioned in the comment above.`;
           success: false,
           results: [],
           aggregate: EMPTY_AGGREGATE,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: getErrorMessage(error),
         });
       }
     });
@@ -3795,7 +3820,7 @@ Please address the issue mentioned in the comment above.`;
         serverLogger.error("Error checking provider status:", error);
         callback({
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: getErrorMessage(error),
         });
       }
     });
@@ -3994,7 +4019,7 @@ Please address the issue mentioned in the comment above.`;
           phase: "error",
         });
         const errorMessage =
-          error instanceof Error ? error.message : "Unknown error";
+          getErrorMessage(error);
 
         // Provide user-friendly error messages
         let userFriendlyError: string;
@@ -4085,7 +4110,7 @@ Please address the issue mentioned in the comment above.`;
         serverLogger.error("Error archiving task:", error);
         callback({
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: getErrorMessage(error),
         });
       }
     });
@@ -4120,7 +4145,7 @@ Please address the issue mentioned in the comment above.`;
         serverLogger.error("Error unarchiving task:", error);
         callback({
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: getErrorMessage(error),
         });
       }
     });
@@ -4344,7 +4369,7 @@ Please address the issue mentioned in the comment above.`;
         console.error("[trigger-local-cloud-sync] Error:", error);
         const response: TriggerLocalCloudSyncResponse = {
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: getErrorMessage(error),
         };
         callback(response);
       }
