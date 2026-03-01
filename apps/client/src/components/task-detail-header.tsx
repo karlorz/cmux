@@ -1066,7 +1066,9 @@ function SocketActions({
   };
 
   const handleViewPRs = () => {
-    const existing = pullRequests.filter((pr) => pr.url);
+    const existing = pullRequests.filter(
+      (pr) => Boolean(pr.url) || (Boolean(pr.repoFullName) && Boolean(pr.number)),
+    );
     if (existing.length > 0) {
       navigateToPrs(existing);
       return;
@@ -1093,7 +1095,9 @@ function SocketActions({
   const isMerging =
     mergePrMutation.isPending || mergeBranchMutation.isPending;
 
-  const hasAnyRemotePr = pullRequests.some((pr) => pr.url);
+  const hasAnyRemotePr = pullRequests.some(
+    (pr) => Boolean(pr.url) || (Boolean(pr.repoFullName) && Boolean(pr.number)),
+  );
 
   const renderRepoDropdown = () => (
     <Dropdown.Root>
@@ -1107,7 +1111,10 @@ function SocketActions({
           "disabled:opacity-60 disabled:cursor-not-allowed",
         )}
         disabled={repoFullNames.every(
-          (repoName) => !pullRequestMap.get(repoName)?.url,
+          (repoName) => {
+            const pr = pullRequestMap.get(repoName);
+            return !(pr?.url || (pr?.repoFullName && pr?.number));
+          },
         )}
       >
         <ChevronDown className="w-3.5 h-3.5" />
@@ -1118,11 +1125,13 @@ function SocketActions({
             <Dropdown.Arrow />
             {repoFullNames.map((repoName) => {
               const pr = pullRequestMap.get(repoName);
-              const hasUrl = Boolean(pr?.url);
+              const hasPrTarget = Boolean(
+                pr?.url || (pr?.repoFullName && pr?.number),
+              );
               return (
                 <Dropdown.Item
                   key={repoName}
-                  disabled={!hasUrl}
+                  disabled={!hasPrTarget}
                   onClick={() => {
                     // Open GitHub URL directly in new tab if available
                     if (pr?.url) {
