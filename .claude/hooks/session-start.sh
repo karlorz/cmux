@@ -4,11 +4,15 @@
 
 set -euo pipefail
 
+# Debug logging is opt-in via SESSION_START_DEBUG=1 to avoid writing
+# raw hook input to world-readable /tmp.
+DEBUG_ENABLED="${SESSION_START_DEBUG:-0}"
 DEBUG_LOG="/tmp/claude-session-start-debug.log"
 
-# Log function
 log_debug() {
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$DEBUG_LOG"
+  if [ "$DEBUG_ENABLED" = "1" ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$DEBUG_LOG"
+  fi
 }
 
 log_debug "=== session-start.sh START ==="
