@@ -108,7 +108,7 @@ function StatusCell({
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: ["getApiIntegrationsGithubProjectsItems"],
+        queryKey: ["github-project-items", teamSlugOrId, installationId, projectId],
       });
     },
     onError: (err) => {

@@ -300,7 +300,7 @@ interface RawProjectV2ItemContent {
 interface RawProjectV2ItemNode {
   id: string;
   content: RawProjectV2ItemContent | null;
-  fieldValues: { nodes: RawProjectV2ItemFieldValue[] };
+  fieldValues: { nodes: (RawProjectV2ItemFieldValue | null)[] };
 }
 
 // Client functions
@@ -414,6 +414,7 @@ export async function getProjectItems(
   const items: ProjectV2Item[] = rawItems.map((raw) => {
     const fieldValues: Record<string, string | number | null> = {};
     for (const fv of raw.fieldValues.nodes) {
+      if (!fv) continue; // GitHub GraphQL nodes arrays can contain nulls
       const fieldName = fv.field?.name;
       if (!fieldName) continue;
       if (fv.text !== undefined) fieldValues[fieldName] = fv.text;
