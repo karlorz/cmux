@@ -24,6 +24,84 @@ import {
 
 const LEAD_TIME_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+type TokenResponse = {
+  access_token: string;
+  refresh_token: string;
+  id_token: string;
+  token_type: string;
+  expires_in: number;
+};
+
+/**
+ * Check if an HTTP status code represents a transient error worth retrying.
+ * Retries: 5xx server errors, 429 rate limit, network errors
+ * No retry: 4xx client errors (invalid_grant, invalid_client, etc.)
+ */
+function isTransientError(status: number): boolean {
+  return status >= 500 || status === 429;
+}
+
+async function refreshTokenWithRetry(
+  refreshToken: string,
+  maxRetries: number = 3
+): Promise<TokenResponse> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const params = new URLSearchParams({
+        client_id: CODEX_OAUTH_CLIENT_ID,
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        scope: CODEX_OAUTH_SCOPE,
+      });
+
+      const response = await fetch(CODEX_OAUTH_TOKEN_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: params.toString(),
+      });
+
+      if (!response.ok) {
+        const status = response.status;
+        const errorText = await response.text();
+
+        // Don't retry permanent OAuth errors (4xx except 429)
+        if (!isTransientError(status)) {
+          throw new Error(
+            `Permanent OAuth error ${status}: ${errorText}`
+          );
+        }
+
+        // Transient error - will be retried
+        throw new Error(
+          `Transient error ${status}: ${errorText}`
+        );
+      }
+
+      return (await response.json()) as TokenResponse;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+
+      // Don't retry permanent errors
+      if (lastError.message.startsWith("Permanent OAuth error")) {
+        throw lastError;
+      }
+
+      console.warn(
+        `[CodexTokenRefresh] Attempt ${attempt}/${maxRetries} failed: ${lastError.message}`
+      );
+
+      if (attempt < maxRetries) {
+        // Linear backoff: 1s, 2s, 3s
+        await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+      }
+    }
+  }
+
+  throw lastError ?? new Error("Refresh failed after retries");
+}
+
 /**
  * Refresh all expiring Codex OAuth tokens.
  * Called by cron job every 15 minutes.
@@ -68,6 +146,7 @@ export const refreshExpiring = internalAction({
               keyId: key._id,
               newValue: key.value,
               tokenExpiresAt: expiresAtMs,
+              isActualRefresh: false, // Bootstrap only - no OAuth refresh performed
             }
           );
         }
@@ -76,33 +155,7 @@ export const refreshExpiring = internalAction({
 
       // Attempt refresh
       try {
-        const params = new URLSearchParams({
-          client_id: CODEX_OAUTH_CLIENT_ID,
-          grant_type: "refresh_token",
-          refresh_token: auth.refresh_token,
-          scope: CODEX_OAUTH_SCOPE,
-        });
-
-        const response = await fetch(CODEX_OAUTH_TOKEN_ENDPOINT, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: params.toString(),
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(
-            `Token refresh failed: ${response.status} - ${errorText}`
-          );
-        }
-
-        const tokenResponse = (await response.json()) as {
-          access_token: string;
-          refresh_token: string;
-          id_token: string;
-          token_type: string;
-          expires_in: number;
-        };
+        const tokenResponse = await refreshTokenWithRetry(auth.refresh_token, 3);
 
         // Build updated auth JSON, preserving original envelope structure
         const originalParsed = JSON.parse(key.value);

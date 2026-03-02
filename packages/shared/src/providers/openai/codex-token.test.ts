@@ -90,6 +90,55 @@ describe("parseCodexAuthJson", () => {
     expect(result?.access_token).toBe("min-access");
     expect(result?.refresh_token).toBe("min-refresh");
   });
+
+  it("extracts expired from JWT exp claim in envelope format", () => {
+    // Create a JWT with exp=1773212377 (Mar 11, 2026)
+    const header = btoa(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+    const payload = btoa(JSON.stringify({ exp: 1773212377, iat: 1772348377 }));
+    const signature = "test-signature";
+    const jwt = `${header}.${payload}.${signature}`;
+
+    const envelope = {
+      auth_mode: "chatgpt",
+      tokens: {
+        access_token: jwt,
+        refresh_token: "rt_test",
+        id_token: "id_test",
+      },
+    };
+    const result = parseCodexAuthJson(JSON.stringify(envelope));
+    expect(result).not.toBeNull();
+    expect(result?.expired).toBe(1773212377);
+    expect(getCodexTokenExpiresAtMs(result!)).toBe(1773212377000);
+  });
+
+  it("handles envelope format with invalid JWT gracefully", () => {
+    const envelope = {
+      tokens: {
+        access_token: "not-a-valid-jwt",
+        refresh_token: "rt_test",
+      },
+    };
+    const result = parseCodexAuthJson(JSON.stringify(envelope));
+    expect(result).not.toBeNull();
+    expect(result?.expired).toBeUndefined();
+  });
+
+  it("handles envelope format with JWT missing exp claim", () => {
+    const header = btoa(JSON.stringify({ alg: "RS256" }));
+    const payload = btoa(JSON.stringify({ iat: 1772348377 })); // no exp
+    const jwt = `${header}.${payload}.sig`;
+
+    const envelope = {
+      tokens: {
+        access_token: jwt,
+        refresh_token: "rt_test",
+      },
+    };
+    const result = parseCodexAuthJson(JSON.stringify(envelope));
+    expect(result).not.toBeNull();
+    expect(result?.expired).toBeUndefined();
+  });
 });
 
 describe("isCodexTokenExpired", () => {

@@ -64,6 +64,24 @@ export type CodexAuthJson = z.infer<typeof CodexAuthJsonSchema>;
 export type CodexAuthJsonEnvelope = z.infer<typeof CodexAuthJsonEnvelopeSchema>;
 
 /**
+ * Extract the exp claim from a JWT access token.
+ * Returns epoch seconds or null if extraction fails.
+ */
+function extractJwtExp(accessToken: string): number | null {
+  try {
+    const parts = accessToken.split(".");
+    if (parts.length !== 3) return null;
+    // Base64url decode the payload (handle URL-safe base64)
+    const payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const decoded = atob(payload);
+    const parsed = JSON.parse(decoded);
+    return typeof parsed.exp === "number" ? parsed.exp : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Parse and validate a raw CODEX_AUTH_JSON string.
  * Supports both nested format (real auth.json) and flattened format.
  * Returns the typed object on success, null on invalid input.
@@ -76,12 +94,14 @@ export function parseCodexAuthJson(raw: string): CodexAuthJson | null {
     const envelopeResult = CodexAuthJsonEnvelopeSchema.safeParse(parsed);
     if (envelopeResult.success) {
       const { tokens } = envelopeResult.data;
+      // Extract expiry from JWT exp claim since envelope format doesn't have expired field
+      const expired = extractJwtExp(tokens.access_token);
       return {
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
         id_token: tokens.id_token,
         account_id: tokens.account_id,
-        // No expired field in nested format - extract from JWT if needed
+        expired: expired ?? undefined,
       };
     }
 

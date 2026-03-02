@@ -621,6 +621,7 @@ const convexSchema = defineSchema({
     teamId: v.string(),
     // Codex OAuth token refresh tracking (only used when envVar === "CODEX_AUTH_JSON")
     tokenExpiresAt: v.optional(v.number()), // Epoch ms from parsed expires_at
+    lastSuccessfulRefreshAt: v.optional(v.number()), // Epoch ms of last successful refresh
     lastRefreshAttemptAt: v.optional(v.number()), // Last refresh attempt timestamp
     lastRefreshError: v.optional(v.string()), // Error from last failed refresh
     refreshFailureCount: v.optional(v.number()), // Consecutive failures for backoff

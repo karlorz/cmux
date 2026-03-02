@@ -37,8 +37,8 @@ function TaskRunMemory() {
   const { runId: taskRunId, teamSlugOrId } = Route.useParams();
 
   return (
-    <div className="flex flex-col grow bg-neutral-50 dark:bg-black">
-      <div className="flex flex-col grow min-h-0 border-l border-neutral-200 dark:border-neutral-800">
+    <div className="flex grow min-h-0 flex-col bg-neutral-50 dark:bg-black">
+      <div className="flex grow min-h-0 flex-col border-l border-neutral-200 dark:border-neutral-800">
         <TaskRunMemoryPanel teamSlugOrId={teamSlugOrId} taskRunId={taskRunId} />
       </div>
     </div>
