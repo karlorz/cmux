@@ -78,23 +78,34 @@ export const getExpiringCodexKeys = internalQuery({
 /**
  * Update the API key with refreshed token data.
  * Resets failure tracking on success.
+ *
+ * @param isActualRefresh - If true, updates lastSuccessfulRefreshAt.
+ *   Set to false for bootstrap paths that only populate tokenExpiresAt
+ *   without performing an actual OAuth refresh.
  */
 export const updateRefreshedToken = internalMutation({
   args: {
     keyId: v.id("apiKeys"),
     newValue: v.string(),
     tokenExpiresAt: v.number(),
+    isActualRefresh: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    await ctx.db.patch(args.keyId, {
+    const patch: Record<string, unknown> = {
       value: args.newValue,
       tokenExpiresAt: args.tokenExpiresAt,
       updatedAt: now,
-      lastSuccessfulRefreshAt: now,
       refreshFailureCount: 0,
       lastRefreshError: undefined,
-    });
+    };
+
+    // Only set lastSuccessfulRefreshAt for actual OAuth refreshes
+    if (args.isActualRefresh !== false) {
+      patch.lastSuccessfulRefreshAt = now;
+    }
+
+    await ctx.db.patch(args.keyId, patch);
   },
 });
 

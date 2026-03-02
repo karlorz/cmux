@@ -32,6 +32,15 @@ type TokenResponse = {
   expires_in: number;
 };
 
+/**
+ * Check if an HTTP status code represents a transient error worth retrying.
+ * Retries: 5xx server errors, 429 rate limit, network errors
+ * No retry: 4xx client errors (invalid_grant, invalid_client, etc.)
+ */
+function isTransientError(status: number): boolean {
+  return status >= 500 || status === 429;
+}
+
 async function refreshTokenWithRetry(
   refreshToken: string,
   maxRetries: number = 3
@@ -54,15 +63,31 @@ async function refreshTokenWithRetry(
       });
 
       if (!response.ok) {
+        const status = response.status;
         const errorText = await response.text();
+
+        // Don't retry permanent OAuth errors (4xx except 429)
+        if (!isTransientError(status)) {
+          throw new Error(
+            `Permanent OAuth error ${status}: ${errorText}`
+          );
+        }
+
+        // Transient error - will be retried
         throw new Error(
-          `Token refresh failed: ${response.status} - ${errorText}`
+          `Transient error ${status}: ${errorText}`
         );
       }
 
       return (await response.json()) as TokenResponse;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
+
+      // Don't retry permanent errors
+      if (lastError.message.startsWith("Permanent OAuth error")) {
+        throw lastError;
+      }
+
       console.warn(
         `[CodexTokenRefresh] Attempt ${attempt}/${maxRetries} failed: ${lastError.message}`
       );
@@ -121,6 +146,7 @@ export const refreshExpiring = internalAction({
               keyId: key._id,
               newValue: key.value,
               tokenExpiresAt: expiresAtMs,
+              isActualRefresh: false, // Bootstrap only - no OAuth refresh performed
             }
           );
         }
