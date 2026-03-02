@@ -451,7 +451,8 @@ async function handleCreateCloudWorkspace(
       // Spawn sandbox via www API
       const { getWwwClient } = await import("./utils/wwwClient");
       const { getWwwOpenApiModule } = await import("./utils/wwwOpenApiModule");
-      const { postApiSandboxesStart } = await getWwwOpenApiModule();
+      const { postApiSandboxesStart, postApiSandboxesByIdPublishDevcontainer } =
+        await getWwwOpenApiModule();
 
       serverLogger.info(
         environmentId
@@ -521,6 +522,22 @@ async function handleCreateCloudWorkspace(
         id: taskRunId,
         status: "running",
       });
+
+      try {
+        await postApiSandboxesByIdPublishDevcontainer({
+          client: getWwwClient(),
+          path: { id: sandboxId },
+          body: { teamSlugOrId, taskRunId },
+        });
+        serverLogger.info(
+          `[create-cloud-workspace] Published forwarded ports for taskRun ${taskRunId}`
+        );
+      } catch (publishError) {
+        serverLogger.warn(
+          `[create-cloud-workspace] Failed to publish forwarded ports for taskRun ${taskRunId} (non-fatal)`,
+          publishError
+        );
+      }
 
       serverLogger.info("[http-api] create-cloud-workspace completed", {
         taskId,

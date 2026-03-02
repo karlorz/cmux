@@ -55,6 +55,8 @@ export function applyCodexApiKeys(
 
 // Keys to filter from user's config.toml (controlled by cmux CLI args)
 const FILTERED_CONFIG_KEYS = ["model", "model_reasoning_effort"] as const;
+const CODEX_NOTIFY_LINE = `notify = ["/root/lifecycle/codex-notify.sh"]`;
+const CODEX_SANDBOX_MODE_LINE = `sandbox_mode = "danger-full-access"`;
 
 // Strip top-level keys that are controlled by cmux CLI args
 // Matches: key = "value" or key = 'value' or key = bareword (entire line)
@@ -67,6 +69,24 @@ export function stripFilteredConfigKeys(toml: string): string {
   }
   // Clean up multiple blank lines
   return result.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function ensureCodexDefaults(toml: string): string {
+  const hasNotify = /(^|\n)\s*notify\s*=/.test(toml);
+  const hasSandboxMode = /(^|\n)\s*sandbox_mode\s*=/.test(toml);
+  if (hasNotify && hasSandboxMode) {
+    return toml;
+  }
+
+  const defaults: string[] = [];
+  if (!hasNotify) {
+    defaults.push(CODEX_NOTIFY_LINE);
+  }
+  if (!hasSandboxMode) {
+    defaults.push(CODEX_SANDBOX_MODE_LINE);
+  }
+
+  return toml ? `${defaults.join("\n")}\n${toml}` : defaults.join("\n");
 }
 
 // Target model for migrations - change this when a new latest model is released
@@ -213,10 +233,7 @@ args = ["-y", "devsh-memory-mcp@latest"]
       const rawToml = await readFile(`${homeDir}/.codex/config.toml`, "utf-8");
       // Filter out keys controlled by cmux CLI args (model, model_reasoning_effort)
       const filteredToml = stripFilteredConfigKeys(rawToml);
-      const hasNotify = /(^|\n)\s*notify\s*=/.test(filteredToml);
-      toml = hasNotify
-        ? filteredToml
-        : `notify = ["/root/lifecycle/codex-notify.sh"]\n` + filteredToml;
+      toml = ensureCodexDefaults(filteredToml);
       // Strip existing model_migrations and append managed ones
       toml = stripModelMigrations(toml) + generateModelMigrations();
       // Add memory MCP server if not already present
@@ -225,17 +242,11 @@ args = ["-y", "devsh-memory-mcp@latest"]
       }
     } catch (_error) {
       // No host config.toml; create minimal one
-      toml =
-        `notify = ["/root/lifecycle/codex-notify.sh"]\n` +
-        generateModelMigrations() +
-        memoryMcpServerConfig;
+      toml = ensureCodexDefaults("") + generateModelMigrations() + memoryMcpServerConfig;
     }
   } else {
     // Server mode: generate clean config without host-specific settings
-    toml =
-      `notify = ["/root/lifecycle/codex-notify.sh"]\n` +
-      generateModelMigrations() +
-      memoryMcpServerConfig;
+    toml = ensureCodexDefaults("") + generateModelMigrations() + memoryMcpServerConfig;
   }
   files.push({
     destinationPath: `$HOME/.codex/config.toml`,

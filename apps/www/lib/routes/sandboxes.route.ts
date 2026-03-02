@@ -333,6 +333,8 @@ async function setupProviderAuth(
     taskRunId?: string;
     taskRunJwt?: string;
     callbackUrl: string;
+    previousKnowledge?: string | null;
+    previousMailbox?: string | null;
   },
 ): Promise<{ providers: string[] }> {
   const configuredProviders: string[] = [];
@@ -401,6 +403,8 @@ async function setupProviderAuth(
         prompt: "",
         apiKeys,
         callbackUrl: options.callbackUrl,
+        previousKnowledge: options.previousKnowledge ?? undefined,
+        previousMailbox: options.previousMailbox ?? undefined,
         workspaceSettings: {
           bypassAnthropicProxy: shouldBypassProxy,
         },
@@ -1100,11 +1104,37 @@ sandboxesRouter.openapi(
         try {
           const callbackUrl =
             env.NEXT_PUBLIC_CONVEX_URL || "http://localhost:9779";
+          const [previousKnowledge, previousMailbox] = await Promise.all([
+            convex
+              .query(api.agentMemoryQueries.getLatestTeamKnowledge, {
+                teamSlugOrId: body.teamSlugOrId,
+              })
+              .catch((err: unknown) => {
+                console.error(
+                  "[sandboxes.start] Failed to fetch previous team knowledge (non-fatal):",
+                  err,
+                );
+                return null;
+              }),
+            convex
+              .query(api.agentMemoryQueries.getLatestTeamMailbox, {
+                teamSlugOrId: body.teamSlugOrId,
+              })
+              .catch((err: unknown) => {
+                console.error(
+                  "[sandboxes.start] Failed to fetch previous team mailbox (non-fatal):",
+                  err,
+                );
+                return null;
+              }),
+          ]);
           const result = await setupProviderAuth(instance, convex, {
             teamSlugOrId: body.teamSlugOrId,
             taskRunId: body.taskRunId || undefined,
             taskRunJwt: body.taskRunJwt || undefined,
             callbackUrl,
+            previousKnowledge,
+            previousMailbox,
           });
           if (result.providers.length > 0) {
             console.log(
@@ -1610,11 +1640,37 @@ sandboxesRouter.openapi(
 
       const callbackUrl =
         env.NEXT_PUBLIC_CONVEX_URL || "http://localhost:9779";
+      const [previousKnowledge, previousMailbox] = await Promise.all([
+        convex
+          .query(api.agentMemoryQueries.getLatestTeamKnowledge, {
+            teamSlugOrId: body.teamSlugOrId,
+          })
+          .catch((err: unknown) => {
+            console.error(
+              "[setup-providers] Failed to fetch previous team knowledge (non-fatal):",
+              err,
+            );
+            return null;
+          }),
+        convex
+          .query(api.agentMemoryQueries.getLatestTeamMailbox, {
+            teamSlugOrId: body.teamSlugOrId,
+          })
+          .catch((err: unknown) => {
+            console.error(
+              "[setup-providers] Failed to fetch previous team mailbox (non-fatal):",
+              err,
+            );
+            return null;
+          }),
+      ]);
       const result = await setupProviderAuth(instance, convex, {
         teamSlugOrId: body.teamSlugOrId,
         taskRunId: body.taskRunId,
         taskRunJwt: body.taskRunJwt,
         callbackUrl,
+        previousKnowledge,
+        previousMailbox,
       });
 
       return c.json({
