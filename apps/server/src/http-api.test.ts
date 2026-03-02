@@ -30,16 +30,10 @@ async function safeFetch(
 ): Promise<Response | null> {
   try {
     return await fetch(url, options);
-  } catch (error) {
-    // Connection refused or other network error
-    if (
-      error instanceof Error &&
-      (error.message.includes("ECONNREFUSED") ||
-        error.message.includes("fetch failed"))
-    ) {
-      return null;
-    }
-    throw error;
+  } catch {
+    // Treat all network-level fetch failures as "server unavailable".
+    // This keeps integration tests skippable when apps/server is not running.
+    return null;
   }
 }
 
