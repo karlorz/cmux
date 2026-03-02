@@ -152,26 +152,26 @@ export const dispatchSpawn = internalAction({
           internal.codexTokenRefreshQueries.getTokenStatus,
           { teamId: args.teamId, userId: task.userId }
         );
-        if (tokenStatus === "expired") {
-          throw new Error(
-            "Codex OAuth token has expired. Please run `codex auth` locally " +
-              "and update CODEX_AUTH_JSON in settings."
-          );
-        }
-        if (tokenStatus === "missing") {
-          // Check if OPENAI_API_KEY is set as fallback (Codex supports both auth methods)
+	        if (tokenStatus === "expired") {
+	          throw new Error(
+	            "Codex OAuth token has expired. Please run `codex login` locally " +
+	              "and update CODEX_AUTH_JSON in settings."
+	          );
+	        }
+	        if (tokenStatus === "missing") {
+	          // Check if OPENAI_API_KEY is set as fallback (Codex supports both auth methods)
           const hasOpenAIKey = await ctx.runQuery(
             internal.codexTokenRefreshQueries.hasOpenAIApiKey,
             { teamId: args.teamId, userId: task.userId }
           );
-          if (!hasOpenAIKey) {
-            throw new Error(
-              "No CODEX_AUTH_JSON or OPENAI_API_KEY found. Please run `codex auth` locally " +
-                "and set CODEX_AUTH_JSON in settings, or set OPENAI_API_KEY."
-            );
-          }
-          // Has OPENAI_API_KEY fallback, allow orchestration to proceed
-        }
+	          if (!hasOpenAIKey) {
+	            throw new Error(
+	              "No CODEX_AUTH_JSON or OPENAI_API_KEY found. Please run `codex login` locally " +
+	                "and set CODEX_AUTH_JSON in settings, or set OPENAI_API_KEY."
+	            );
+	          }
+	          // Has OPENAI_API_KEY fallback, allow orchestration to proceed
+	        }
       }
 
       // Get JWT for the task run (needed for spawn to authenticate)

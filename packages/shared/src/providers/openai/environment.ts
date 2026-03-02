@@ -12,7 +12,7 @@ import {
  * Apply API keys for OpenAI Codex.
  *
  * Priority order:
- * 1. CODEX_AUTH_JSON - If provided, inject as ~/.codex/auth.json (OAuth tokens from `codex auth`)
+ * 1. CODEX_AUTH_JSON - If provided, inject as ~/.codex/auth.json (OAuth tokens from `codex login`)
  * 2. OPENAI_API_KEY - Fallback if no auth.json, injected as environment variable
  *
  * When CODEX_AUTH_JSON is provided, OPENAI_API_KEY is ignored since auth.json
