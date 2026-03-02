@@ -123,11 +123,17 @@ function stripModelMigrations(toml: string): string {
 }
 
 function stripManagedMemoryMcpBlock(toml: string): string {
-  const withoutManagedBlock = toml.replace(
+  // First, strip any nested subtables under devsh-memory (e.g., [mcp_servers.devsh-memory.env])
+  let result = toml.replace(
+    /\n?\[mcp_servers(?:\.devsh-memory|\."devsh-memory")\.[^\]]+\][\s\S]*?(?=\n\[|$)/g,
+    ""
+  );
+  // Then strip the main devsh-memory block
+  result = result.replace(
     /\n?\[mcp_servers(?:\.devsh-memory|\."devsh-memory")\][\s\S]*?(?=\n\[|$)/g,
     ""
   );
-  return withoutManagedBlock.replace(/\n{3,}/g, "\n\n").trim();
+  return result.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function getMemoryMcpServerConfig(agentName?: string): string {

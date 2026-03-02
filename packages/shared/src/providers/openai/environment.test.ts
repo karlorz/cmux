@@ -345,4 +345,63 @@ foo = "bar"
     // Memory protocol should be included
     expect(instructions).toContain("memory");
   });
+
+  it("strips nested devsh-memory subtables from host config", async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), "cmux-openai-home-"));
+    const previousHome = process.env.HOME;
+    process.env.HOME = homeDir;
+
+    try {
+      await mkdir(join(homeDir, ".codex"), { recursive: true });
+      // Host config has nested subtables under devsh-memory (e.g., [mcp_servers.devsh-memory.env])
+      await writeFile(
+        join(homeDir, ".codex/config.toml"),
+        `notify = ["/root/lifecycle/codex-notify.sh"]
+approval_mode = "full"
+
+[mcp_servers.devsh-memory]
+type = "stdio"
+command = "npx"
+args = ["-y", "devsh-memory-mcp@latest"]
+
+[mcp_servers.devsh-memory.env]
+CUSTOM_VAR = "should-be-stripped"
+
+[mcp_servers."devsh-memory".settings]
+debug = true
+
+[some_section]
+foo = "bar"
+`,
+        "utf-8"
+      );
+
+      const result = await getOpenAIEnvironment({
+        useHostConfig: true,
+        agentName: "codex/gpt-5.1-codex-mini",
+      } as never);
+
+      const toml = decodeConfigToml(result);
+      // User's other settings should be preserved
+      expect(toml).toContain('approval_mode = "full"');
+      expect(toml).toContain('[some_section]');
+      expect(toml).toContain('foo = "bar"');
+      // Managed block should be present with correct args
+      expect(toml).toContain('[mcp_servers.devsh-memory]');
+      expect(toml).toContain(
+        'args = ["-y","devsh-memory-mcp@latest","--agent","codex/gpt-5.1-codex-mini"]'
+      );
+      // Nested subtables should be stripped
+      expect(toml).not.toContain('[mcp_servers.devsh-memory.env]');
+      expect(toml).not.toContain('CUSTOM_VAR');
+      expect(toml).not.toContain('[mcp_servers."devsh-memory".settings]');
+      expect(toml).not.toContain('debug = true');
+      // Only one devsh-memory block should exist
+      const managedBlockMatches = toml.match(/\[mcp_servers(?:\.|\."|")devsh-memory/g) ?? [];
+      expect(managedBlockMatches).toHaveLength(1);
+    } finally {
+      process.env.HOME = previousHome;
+      await rm(homeDir, { recursive: true, force: true });
+    }
+  });
 });
