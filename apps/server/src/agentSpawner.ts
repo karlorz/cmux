@@ -622,6 +622,7 @@ export async function spawnAgent(
     if (agent.environment) {
       const envResult = await agent.environment({
         taskRunId: taskRunId,
+        agentName: agent.name,
         prompt: processedTaskDescription,
         taskRunJwt,
         apiKeys,
