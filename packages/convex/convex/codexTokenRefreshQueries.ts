@@ -86,10 +86,12 @@ export const updateRefreshedToken = internalMutation({
     tokenExpiresAt: v.number(),
   },
   handler: async (ctx, args) => {
+    const now = Date.now();
     await ctx.db.patch(args.keyId, {
       value: args.newValue,
       tokenExpiresAt: args.tokenExpiresAt,
-      updatedAt: Date.now(),
+      updatedAt: now,
+      lastSuccessfulRefreshAt: now,
       refreshFailureCount: 0,
       lastRefreshError: undefined,
     });
