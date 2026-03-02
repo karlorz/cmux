@@ -656,7 +656,7 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
       return panelWrapper(
         <Brain className="size-3" aria-hidden />,
         PANEL_LABELS.memory,
-        <div className="relative flex-1 min-h-0 overflow-auto">
+        <div className="relative flex-1 min-h-0 overflow-hidden">
           <TaskRunMemoryPanel
             key={selectedRun?._id}
             teamSlugOrId={teamSlugOrId}

@@ -36,6 +36,9 @@ export async function getClaudeEnvironment(
   const claudeLifecycleDir = "/root/lifecycle/claude";
   const claudeSecretsDir = `${claudeLifecycleDir}/secrets`;
   const claudeApiKeyHelperPath = `${claudeSecretsDir}/anthropic_key_helper.sh`;
+  const memoryMcpArgs = ctx.agentName
+    ? ["-y", "devsh-memory-mcp@latest", "--agent", ctx.agentName]
+    : ["-y", "devsh-memory-mcp@latest"];
 
   // Prepare .claude.json
   try {
@@ -63,7 +66,7 @@ export async function getClaudeEnvironment(
         ...existingMcpServers,
         "devsh-memory": {
           command: "npx",
-          args: ["-y", "devsh-memory-mcp@latest"],
+          args: memoryMcpArgs,
         },
       },
       projects: {
