@@ -4,6 +4,14 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getOpenAIEnvironment, stripFilteredConfigKeys } from "./environment";
 
+function decodeConfigToml(result: Awaited<ReturnType<typeof getOpenAIEnvironment>>): string {
+  const configFile = result.files?.find(
+    (file) => file.destinationPath === "$HOME/.codex/config.toml"
+  );
+  expect(configFile).toBeDefined();
+  return Buffer.from(configFile!.contentBase64, "base64").toString("utf-8");
+}
+
 describe("stripFilteredConfigKeys", () => {
   it("removes model key from config", () => {
     const input = `model = "gpt-5.2"
@@ -100,6 +108,26 @@ approval_mode = "full"`);
 });
 
 describe("getOpenAIEnvironment", () => {
+  it("includes --agent in managed devsh-memory MCP args when agentName is provided", async () => {
+    const result = await getOpenAIEnvironment({
+      agentName: "codex/gpt-5.1-codex-mini",
+    } as never);
+
+    const toml = decodeConfigToml(result);
+    expect(toml).toContain('[mcp_servers.devsh-memory]');
+    expect(toml).toContain(
+      'args = ["-y","devsh-memory-mcp@latest","--agent","codex/gpt-5.1-codex-mini"]'
+    );
+  });
+
+  it("keeps fallback devsh-memory MCP args when agentName is not provided", async () => {
+    const result = await getOpenAIEnvironment({} as never);
+
+    const toml = decodeConfigToml(result);
+    expect(toml).toContain('args = ["-y","devsh-memory-mcp@latest"]');
+    expect(toml).not.toContain('"--agent"');
+  });
+
   it("generates managed model migrations targeting gpt-5.3-codex (server mode)", async () => {
     // Server mode (useHostConfig: false) generates a clean config.toml
     const result = await getOpenAIEnvironment({} as never);
@@ -253,6 +281,51 @@ foo = "bar"
       expect(toml).not.toContain('model_reasoning_effort = "high"');
       // Model migrations should be replaced with managed ones
       expect(toml).toContain('"o3" = "gpt-5.3-codex"');
+    } finally {
+      process.env.HOME = previousHome;
+      await rm(homeDir, { recursive: true, force: true });
+    }
+  });
+
+  it("replaces stale devsh-memory block from host config with managed block", async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), "cmux-openai-home-"));
+    const previousHome = process.env.HOME;
+    process.env.HOME = homeDir;
+
+    try {
+      await mkdir(join(homeDir, ".codex"), { recursive: true });
+      await writeFile(
+        join(homeDir, ".codex/config.toml"),
+        `notify = ["/root/lifecycle/codex-notify.sh"]
+approval_mode = "full"
+
+[mcp_servers.devsh-memory]
+type = "stdio"
+command = "npx"
+args = ["-y", "devsh-memory-mcp@latest"]
+
+[some_section]
+foo = "bar"
+`,
+        "utf-8"
+      );
+
+      const result = await getOpenAIEnvironment({
+        useHostConfig: true,
+        agentName: "codex/gpt-5.1-codex-mini",
+      } as never);
+
+      const toml = decodeConfigToml(result);
+      expect(toml).toContain('approval_mode = "full"');
+      expect(toml).toContain('[some_section]');
+      expect(toml).toContain('foo = "bar"');
+      expect(toml).toContain(
+        'args = ["-y","devsh-memory-mcp@latest","--agent","codex/gpt-5.1-codex-mini"]'
+      );
+      expect(toml).not.toContain('args = ["-y", "devsh-memory-mcp@latest"]');
+
+      const managedBlockMatches = toml.match(/\[mcp_servers\.devsh-memory\]/g) ?? [];
+      expect(managedBlockMatches).toHaveLength(1);
     } finally {
       process.env.HOME = previousHome;
       await rm(homeDir, { recursive: true, force: true });

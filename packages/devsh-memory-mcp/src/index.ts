@@ -26,7 +26,15 @@ const DEFAULT_MEMORY_DIR = "/root/lifecycle/memory";
 
 export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
   const memoryDir = config?.memoryDir ?? DEFAULT_MEMORY_DIR;
-  const agentName = config?.agentName ?? process.env.CMUX_AGENT_NAME ?? "external-client";
+  const resolvedAgentName = config?.agentName ?? process.env.CMUX_AGENT_NAME;
+  const agentName = resolvedAgentName ?? "external-client";
+
+  if (!resolvedAgentName) {
+    console.error(
+      '[devsh-memory-mcp] Warning: no agent identity provided; falling back to "external-client". ' +
+        "Pass --agent <name> or set CMUX_AGENT_NAME to preserve mailbox sender identity."
+    );
+  }
 
   const knowledgeDir = path.join(memoryDir, "knowledge");
   const dailyDir = path.join(memoryDir, "daily");

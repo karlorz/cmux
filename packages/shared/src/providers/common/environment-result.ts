@@ -26,6 +26,8 @@ export interface PostStartCommand {
 
 export type EnvironmentContext = {
   taskRunId: string;
+  /** Agent identity used by tooling (e.g. memory MCP sender identity). */
+  agentName?: string;
   prompt: string;
   taskRunJwt: string;
   apiKeys?: Record<string, string>;

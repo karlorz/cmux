@@ -122,6 +122,36 @@ function stripModelMigrations(toml: string): string {
   return toml.replace(/\[notice\.model_migrations\][\s\S]*?(?=\n\[|$)/g, "");
 }
 
+function stripManagedMemoryMcpBlock(toml: string): string {
+  const withoutManagedBlock = toml.replace(
+    /\n?\[mcp_servers(?:\.devsh-memory|\."devsh-memory")\][\s\S]*?(?=\n\[|$)/g,
+    ""
+  );
+  return withoutManagedBlock.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function getMemoryMcpServerConfig(agentName?: string): string {
+  const args = agentName
+    ? ["-y", "devsh-memory-mcp@latest", "--agent", agentName]
+    : ["-y", "devsh-memory-mcp@latest"];
+
+  return `[mcp_servers.devsh-memory]
+type = "stdio"
+command = "npx"
+args = ${JSON.stringify(args)}`;
+}
+
+function ensureManagedMemoryMcpServerConfig(toml: string, agentName?: string): string {
+  const normalizedToml = stripManagedMemoryMcpBlock(toml);
+  const managedMemoryBlock = getMemoryMcpServerConfig(agentName);
+
+  if (!normalizedToml) {
+    return `${managedMemoryBlock}\n`;
+  }
+
+  return `${normalizedToml}\n\n${managedMemoryBlock}\n`;
+}
+
 export async function getOpenAIEnvironment(
   ctx: EnvironmentContext
 ): Promise<EnvironmentResult> {
@@ -219,12 +249,7 @@ touch /root/lifecycle/codex-done.txt /root/lifecycle/done.txt
   // Memory MCP server configuration for Codex
   // Uses npm package for latest version without snapshot rebuild
   // -y auto-confirms install, @latest ensures fresh version
-  const memoryMcpServerConfig = `
-[mcp_servers.devsh-memory]
-type = "stdio"
-command = "npx"
-args = ["-y", "devsh-memory-mcp@latest"]
-`;
+  const memoryMcpServerConfig = getMemoryMcpServerConfig(ctx.agentName);
 
   // Build config.toml - merge with host config in desktop mode, or generate clean in server mode
   let toml: string;
@@ -236,17 +261,15 @@ args = ["-y", "devsh-memory-mcp@latest"]
       toml = ensureCodexDefaults(filteredToml);
       // Strip existing model_migrations and append managed ones
       toml = stripModelMigrations(toml) + generateModelMigrations();
-      // Add memory MCP server if not already present
-      if (!toml.includes("[mcp_servers.devsh-memory]")) {
-        toml += memoryMcpServerConfig;
-      }
+      // Always normalize and replace the managed memory MCP block.
+      toml = ensureManagedMemoryMcpServerConfig(toml, ctx.agentName);
     } catch (_error) {
       // No host config.toml; create minimal one
-      toml = ensureCodexDefaults("") + generateModelMigrations() + memoryMcpServerConfig;
+      toml = `${ensureCodexDefaults("")}${generateModelMigrations()}${memoryMcpServerConfig}\n`;
     }
   } else {
     // Server mode: generate clean config without host-specific settings
-    toml = ensureCodexDefaults("") + generateModelMigrations() + memoryMcpServerConfig;
+    toml = `${ensureCodexDefaults("")}${generateModelMigrations()}${memoryMcpServerConfig}\n`;
   }
   files.push({
     destinationPath: `$HOME/.codex/config.toml`,
