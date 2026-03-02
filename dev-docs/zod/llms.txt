@@ -1,12 +1,18 @@
 # Zod
 
-Zod is a TypeScript-first schema validation library with static type inference. It allows you to define schemas that validate data at runtime while automatically inferring TypeScript types, eliminating the need to write types and runtime validation separately. Zod works in Node.js and all modern browsers, has zero external dependencies, and features a tiny 2kb core bundle (gzipped).
+Zod is a TypeScript-first schema validation library that enables you to define schemas for validating data, from simple strings to complex nested objects. It features zero external dependencies, works in Node.js and all modern browsers, and provides static type inference so your validated data is automatically typed. Zod 4 is the current stable version with major performance improvements (14x faster string parsing, 7x faster arrays, 6.5x faster objects) and a 2x reduction in core bundle size.
 
-Zod 4 is the current stable release, offering significant performance improvements (up to 14x faster string parsing, 7x faster array parsing, 6.5x faster object parsing), 100x reduction in TypeScript compiler instantiations, and 2x smaller bundle size. It introduces native JSON Schema conversion, a tree-shakable Zod Mini variant for bundle-critical applications, and first-class metadata support via registries.
+The library's immutable API means every method returns a new schema instance, making it safe to compose and reuse schemas. Key features include built-in JSON Schema conversion, first-party internationalization support with 40+ locales, and an extensive ecosystem of integrations including tRPC, React Hook Form, and many more. Zod also provides Zod Mini, a tree-shakable variant with a functional API that achieves 6.6x smaller bundle sizes for performance-critical applications.
+
+## Installation
+
+```bash
+npm install zod
+```
 
 ## Basic Schema Definition and Parsing
 
-Define schemas to validate data structures and use parse methods to validate inputs with automatic type inference.
+Define schemas to validate data and get strongly-typed results with automatic type inference.
 
 ```typescript
 import * as z from "zod";
@@ -15,340 +21,351 @@ import * as z from "zod";
 const User = z.object({
   name: z.string(),
   email: z.email(),
-  age: z.number().min(0).max(120),
-  isActive: z.boolean().default(true),
+  age: z.number().min(0).max(150),
+  role: z.enum(["admin", "user", "guest"]),
 });
 
 // Infer TypeScript type from schema
 type User = z.infer<typeof User>;
-// { name: string; email: string; age: number; isActive: boolean }
+// { name: string; email: string; age: number; role: "admin" | "user" | "guest" }
 
-// Parse data - throws ZodError on failure
-const user = User.parse({
+// Parse and validate data - throws ZodError on failure
+const validUser = User.parse({
   name: "Alice",
   email: "alice@example.com",
   age: 30,
+  role: "admin",
 });
-// => { name: "Alice", email: "alice@example.com", age: 30, isActive: true }
+// => { name: "Alice", email: "alice@example.com", age: 30, role: "admin" }
 
-// Safe parse - returns result object instead of throwing
-const result = User.safeParse({ name: "Bob", email: "invalid", age: -5 });
+// Safe parsing - returns result object instead of throwing
+const result = User.safeParse({ name: 123, email: "invalid" });
 if (!result.success) {
   console.log(result.error.issues);
   // [
-  //   { code: "invalid_format", format: "email", path: ["email"], message: "Invalid email" },
-  //   { code: "too_small", minimum: 0, path: ["age"], message: "Number must be >= 0" }
+  //   { code: "invalid_type", expected: "string", path: ["name"], message: "..." },
+  //   { code: "invalid_format", format: "email", path: ["email"], message: "..." },
+  //   { code: "invalid_type", expected: "number", path: ["age"], message: "..." },
+  //   { code: "invalid_value", path: ["role"], message: "..." }
   // ]
 } else {
-  console.log(result.data); // Typed as User
+  console.log(result.data); // typed User
 }
 ```
 
-## Primitive Types and Coercion
+## Primitive Types
 
-Validate and coerce primitive types including strings, numbers, booleans, and bigints.
+Validate primitive JavaScript types with built-in coercion support.
 
 ```typescript
 import * as z from "zod";
 
-// Primitive schemas
-const stringSchema = z.string();
-const numberSchema = z.number();
-const booleanSchema = z.boolean();
-const bigintSchema = z.bigint();
+// Basic primitives
+z.string().parse("hello");        // => "hello"
+z.number().parse(42);             // => 42
+z.bigint().parse(100n);           // => 100n
+z.boolean().parse(true);          // => true
+z.null().parse(null);             // => null
+z.undefined().parse(undefined);   // => undefined
 
-// Coercion - automatically convert input to target type
-const coercedNumber = z.coerce.number();
-coercedNumber.parse("42");     // => 42
-coercedNumber.parse(true);     // => 1
+// Coercion - convert input to target type
+z.coerce.string().parse(42);      // => "42"
+z.coerce.number().parse("42");    // => 42
+z.coerce.boolean().parse(1);      // => true
+z.coerce.bigint().parse("100");   // => 100n
+z.coerce.date().parse("2024-01-01"); // => Date object
 
-const coercedString = z.coerce.string();
-coercedString.parse(123);      // => "123"
-coercedString.parse(null);     // => "null"
+// Literals
+z.literal("hello").parse("hello"); // => "hello"
+z.literal(42).parse(42);           // => 42
+z.literal(["a", "b", "c"]).parse("b"); // => "b" (multiple literals)
 
-const coercedBoolean = z.coerce.boolean();
-coercedBoolean.parse("true");  // => true (truthy)
-coercedBoolean.parse(0);       // => false (falsy)
-
-// Stringbool for env-style boolean parsing
-const envBool = z.stringbool();
-envBool.parse("true");     // => true
-envBool.parse("yes");      // => true
-envBool.parse("1");        // => true
-envBool.parse("false");    // => false
-envBool.parse("no");       // => false
-envBool.parse("0");        // => false
+// Any and unknown
+z.any().parse(anything);           // allows anything
+z.unknown().parse(anything);       // allows anything, typed as unknown
 ```
 
-## String Validations and Formats
+## String Validation
 
-Validate strings with length constraints, patterns, and built-in formats like email, URL, UUID, and ISO dates.
+Comprehensive string validation including length constraints, patterns, and built-in formats.
 
 ```typescript
 import * as z from "zod";
 
-// String validations
+// String constraints
 const username = z.string()
   .min(3, "Username must be at least 3 characters")
   .max(20, "Username must be at most 20 characters")
-  .regex(/^[a-z0-9_]+$/, "Username can only contain lowercase letters, numbers, and underscores");
+  .regex(/^[a-zA-Z0-9_]+$/, "Only alphanumeric characters and underscores");
 
-username.parse("alice_123");  // => "alice_123"
+username.parse("valid_user");  // => "valid_user"
+username.parse("ab");          // throws: "Username must be at least 3 characters"
 
-// String transforms
-const normalizedString = z.string().trim().toLowerCase();
-normalizedString.parse("  HELLO  ");  // => "hello"
+// String transformations
+z.string().trim().parse("  hello  ");           // => "hello"
+z.string().toLowerCase().parse("HELLO");        // => "hello"
+z.string().toUpperCase().parse("hello");        // => "HELLO"
 
-// Built-in string formats
-const email = z.email();
-const url = z.url();
-const uuid = z.uuid();
-const uuidV4 = z.uuidv4();
-const ipv4 = z.ipv4();
-const ipv6 = z.ipv6();
-const jwt = z.jwt();
-const base64 = z.base64();
+// Built-in string formats (top-level functions in Zod 4)
+z.email().parse("user@example.com");            // validates email
+z.uuid().parse("550e8400-e29b-41d4-a716-446655440000");
+z.uuidv4().parse("...");                        // specific UUID version
+z.url().parse("https://example.com");
+z.ipv4().parse("192.168.1.1");
+z.ipv6().parse("::1");
+z.base64().parse("SGVsbG8gV29ybGQ=");
+z.jwt().parse("eyJhbGciOiJIUzI1NiIs...");
 
 // ISO date/time formats
-const isoDate = z.iso.date();
-isoDate.parse("2024-01-15");  // => "2024-01-15"
+z.iso.date().parse("2024-01-15");               // YYYY-MM-DD
+z.iso.time().parse("14:30:00");                 // HH:MM:SS
+z.iso.datetime().parse("2024-01-15T14:30:00Z"); // ISO 8601
+z.iso.datetime({ offset: true }).parse("2024-01-15T14:30:00+05:00");
 
-const isoDatetime = z.iso.datetime();
-isoDatetime.parse("2024-01-15T10:30:00Z");  // => "2024-01-15T10:30:00Z"
-
-const isoDatetimeWithOffset = z.iso.datetime({ offset: true });
-isoDatetimeWithOffset.parse("2024-01-15T10:30:00+02:00");  // => valid
-
-const isoTime = z.iso.time();
-isoTime.parse("10:30:00");  // => "10:30:00"
-
-// Custom email regex options
-const gmailStyle = z.email();  // Default strict regex
-const html5Email = z.email({ pattern: z.regexes.html5Email });
-const unicodeEmail = z.email({ pattern: z.regexes.unicodeEmail });
+// Custom email regex patterns
+z.email({ pattern: z.regexes.html5Email });     // browser-style validation
+z.email({ pattern: z.regexes.rfc5322Email });   // RFC 5322 compliant
+z.email({ pattern: z.regexes.unicodeEmail });   // international emails
 ```
 
-## Number and Integer Validations
+## Number Validation
 
-Validate numbers with range constraints, integer checks, and specialized numeric formats.
+Number validation with range constraints, integer types, and numeric formats.
 
 ```typescript
 import * as z from "zod";
-
-// Number validations
-const score = z.number()
-  .min(0, "Score must be positive")
-  .max(100, "Score cannot exceed 100");
-
-score.parse(85);   // => 85
-score.parse(150);  // throws ZodError
 
 // Number constraints
-const positiveNum = z.number().positive();
-const negativeNum = z.number().negative();
-const nonNegative = z.number().nonnegative();
-const multipleOf5 = z.number().multipleOf(5);
+const age = z.number()
+  .min(0, "Age cannot be negative")
+  .max(150, "Age seems unrealistic")
+  .int("Age must be a whole number");
 
-// Integer validation
-const safeInt = z.int();  // Safe integer range
-safeInt.parse(42);        // => 42
-safeInt.parse(3.14);      // throws ZodError
+age.parse(25);    // => 25
+age.parse(-5);    // throws: "Age cannot be negative"
+age.parse(25.5);  // throws: "Age must be a whole number"
 
-// Fixed-width numeric types
-const int32 = z.int32();     // [-2147483648, 2147483647]
-const uint32 = z.uint32();   // [0, 4294967295]
-const float32 = z.float32();
-const float64 = z.float64();
+// Number comparisons
+z.number().gt(5).parse(10);       // greater than 5
+z.number().gte(5).parse(5);       // greater than or equal (alias: .min())
+z.number().lt(10).parse(5);       // less than 10
+z.number().lte(10).parse(10);     // less than or equal (alias: .max())
+z.number().positive().parse(1);   // > 0
+z.number().negative().parse(-1);  // < 0
+z.number().nonnegative().parse(0); // >= 0
+z.number().multipleOf(5).parse(15); // divisible by 5
 
-// BigInt validations
-const bigintSchema = z.bigint().positive().multipleOf(10n);
-bigintSchema.parse(100n);  // => 100n
+// Integer types with safe ranges
+z.int().parse(42);                // safe integer range
+z.int32().parse(2147483647);      // 32-bit signed integer
+z.uint32().parse(4294967295);     // 32-bit unsigned integer
 
-// BigInt fixed-width types
-const int64 = z.int64();
-const uint64 = z.uint64();
+// Floating point types
+z.float32().parse(3.14);          // 32-bit float range
+z.float64().parse(1.7976931348623157e308); // 64-bit float range
+
+// BigInt
+z.bigint().parse(9007199254740991n);
+z.int64().parse(9223372036854775807n);   // 64-bit signed
+z.uint64().parse(18446744073709551615n); // 64-bit unsigned
 ```
 
-## Object Schemas
+## Objects
 
-Define object schemas with required, optional, and nested properties, plus schema manipulation methods.
+Define object schemas with optional fields, strict/loose modes, and object manipulation methods.
 
 ```typescript
 import * as z from "zod";
 
-// Basic object schema
+// Basic object schema - strips unknown keys by default
 const Person = z.object({
   name: z.string(),
-  age: z.number(),
-  email: z.string().email().optional(),
+  age: z.number().optional(),  // optional field
+  email: z.email(),
 });
 
-type Person = z.infer<typeof Person>;
-// { name: string; age: number; email?: string }
+Person.parse({ name: "Alice", email: "a@b.com", extra: "ignored" });
+// => { name: "Alice", email: "a@b.com" } - extra key stripped
 
 // Strict object - throws on unknown keys
 const StrictPerson = z.strictObject({
   name: z.string(),
-  age: z.number(),
+  email: z.email(),
 });
-StrictPerson.parse({ name: "Alice", age: 30, extra: true });  // throws ZodError
+StrictPerson.parse({ name: "Alice", email: "a@b.com", extra: "oops" });
+// throws: Unrecognized key: "extra"
 
 // Loose object - passes through unknown keys
 const LoosePerson = z.looseObject({
   name: z.string(),
 });
-LoosePerson.parse({ name: "Alice", extra: true });  // => { name: "Alice", extra: true }
+LoosePerson.parse({ name: "Alice", extra: "kept" });
+// => { name: "Alice", extra: "kept" }
 
-// Extend schemas
-const Employee = Person.extend({
-  employeeId: z.string(),
-  department: z.string(),
+// Catchall for unknown keys
+const WithCatchall = z.object({ id: z.number() }).catchall(z.string());
+WithCatchall.parse({ id: 1, foo: "bar", baz: "qux" }); // all extra keys must be strings
+
+// Object manipulation
+const User = z.object({
+  id: z.number(),
+  name: z.string(),
+  email: z.email(),
+  password: z.string(),
 });
 
-// Pick and omit
-const NameOnly = Person.pick({ name: true });
-const PersonWithoutEmail = Person.omit({ email: true });
+// Pick specific keys
+const PublicUser = User.pick({ id: true, name: true });
+// { id: number; name: string }
 
-// Partial and required
-const PartialPerson = Person.partial();  // All fields optional
-const RequiredPerson = Person.required();  // All fields required
-const PartialAge = Person.partial({ age: true });  // Only age is optional
+// Omit specific keys
+const UserWithoutPassword = User.omit({ password: true });
+// { id: number; name: string; email: string }
+
+// Make all fields optional
+const PartialUser = User.partial();
+// { id?: number; name?: string; email?: string; password?: string }
+
+// Make specific fields optional
+const UserOptionalEmail = User.partial({ email: true });
+
+// Make all fields required
+const RequiredUser = PartialUser.required();
+
+// Extend an object
+const UserWithRole = User.extend({ role: z.enum(["admin", "user"]) });
 
 // Access shape
-Person.shape.name;  // ZodString
-Person.shape.age;   // ZodNumber
-
-// Get keys as enum
-const PersonKeys = Person.keyof();  // ZodEnum<["name", "age", "email"]>
+User.shape.name;  // => ZodString
+User.keyof();     // => ZodEnum<["id", "name", "email", "password"]>
 ```
 
 ## Arrays and Tuples
 
-Validate arrays with element types, length constraints, and fixed-length tuples.
+Validate arrays and fixed-length tuples with element type checking.
 
 ```typescript
 import * as z from "zod";
 
-// Array schema
-const stringArray = z.array(z.string());
-stringArray.parse(["a", "b", "c"]);  // => ["a", "b", "c"]
+// Array of strings
+const tags = z.array(z.string());
+tags.parse(["typescript", "zod", "validation"]); // => ["typescript", "zod", "validation"]
 
-// Array with constraints
-const limitedArray = z.array(z.number())
-  .min(1, "Array must have at least 1 element")
-  .max(10, "Array cannot have more than 10 elements");
+// Array constraints
+const nonEmptyTags = z.array(z.string())
+  .min(1, "At least one tag required")
+  .max(10, "Maximum 10 tags allowed")
+  .length(5); // exactly 5 items
 
-const exactArray = z.array(z.string()).length(3);
+// Access element type
+tags.unwrap(); // => ZodString
 
-// Access element schema
-stringArray.unwrap();  // => ZodString
-
-// Tuple - fixed length with specific types per position
+// Tuples - fixed length with specific types per position
 const coordinate = z.tuple([z.number(), z.number()]);
-type Coordinate = z.infer<typeof coordinate>;  // [number, number]
-
-coordinate.parse([10, 20]);  // => [10, 20]
-coordinate.parse([10]);      // throws ZodError
+coordinate.parse([10, 20]); // => [10, 20]
+coordinate.parse([10, 20, 30]); // throws: too many items
 
 // Tuple with rest element
-const atLeastTwo = z.tuple([z.string(), z.string()], z.string());
-type AtLeastTwo = z.infer<typeof atLeastTwo>;  // [string, string, ...string[]]
+const atLeastTwoNumbers = z.tuple([z.number(), z.number()], z.number());
+// [number, number, ...number[]]
+atLeastTwoNumbers.parse([1, 2]);       // => [1, 2]
+atLeastTwoNumbers.parse([1, 2, 3, 4]); // => [1, 2, 3, 4]
 
-atLeastTwo.parse(["a", "b"]);        // => ["a", "b"]
-atLeastTwo.parse(["a", "b", "c"]);   // => ["a", "b", "c"]
+// Mixed type tuple
+const mixedTuple = z.tuple([z.string(), z.number(), z.boolean()]);
+mixedTuple.parse(["hello", 42, true]); // => ["hello", 42, true]
 ```
 
 ## Unions and Discriminated Unions
 
-Create union types for values that can be one of several types, with optimized discriminated unions.
+Create union types for values that can be one of several types.
 
 ```typescript
 import * as z from "zod";
 
-// Basic union
+// Simple union
 const stringOrNumber = z.union([z.string(), z.number()]);
-stringOrNumber.parse("hello");  // => "hello"
-stringOrNumber.parse(42);       // => 42
+stringOrNumber.parse("hello"); // => "hello"
+stringOrNumber.parse(42);      // => 42
+stringOrNumber.parse(true);    // throws
 
-// Discriminated union - more efficient for objects with shared discriminator
+// Discriminated union - more efficient for object unions
 const Result = z.discriminatedUnion("status", [
   z.object({ status: z.literal("success"), data: z.string() }),
-  z.object({ status: z.literal("error"), error: z.string() }),
+  z.object({ status: z.literal("error"), error: z.string(), code: z.number() }),
 ]);
 
-type Result = z.infer<typeof Result>;
-// { status: "success"; data: string } | { status: "error"; error: string }
+Result.parse({ status: "success", data: "Hello!" });
+// => { status: "success", data: "Hello!" }
 
-const success = Result.parse({ status: "success", data: "Hello" });
-const error = Result.parse({ status: "error", error: "Something went wrong" });
+Result.parse({ status: "error", error: "Not found", code: 404 });
+// => { status: "error", error: "Not found", code: 404 }
 
 // Nested discriminated unions
 const ApiResponse = z.discriminatedUnion("type", [
   z.object({ type: z.literal("user"), user: z.object({ name: z.string() }) }),
   z.discriminatedUnion("errorType", [
     z.object({ type: z.literal("error"), errorType: z.literal("validation"), fields: z.array(z.string()) }),
-    z.object({ type: z.literal("error"), errorType: z.literal("auth"), message: z.string() }),
+    z.object({ type: z.literal("error"), errorType: z.literal("server"), message: z.string() }),
   ]),
 ]);
 
 // Exclusive union (XOR) - exactly one must match
 const exclusiveUnion = z.xor([
-  z.object({ type: z.literal("card"), cardNumber: z.string() }),
-  z.object({ type: z.literal("bank"), accountNumber: z.string() }),
+  z.object({ type: z.literal("a"), value: z.string() }),
+  z.object({ type: z.literal("b"), count: z.number() }),
 ]);
 ```
 
-## Enums and Literals
+## Enums
 
-Define schemas for exact literal values and enumerated types.
+Define enums from string arrays or TypeScript enums.
 
 ```typescript
 import * as z from "zod";
 
-// Literal values
-const tuna = z.literal("tuna");
-tuna.parse("tuna");     // => "tuna"
-tuna.parse("salmon");   // throws ZodError
-
-// Multiple literals
-const fishTypes = z.literal(["salmon", "tuna", "trout"]);
-fishTypes.parse("salmon");  // => "salmon"
-
 // String enum
-const Status = z.enum(["pending", "active", "inactive"]);
-type Status = z.infer<typeof Status>;  // "pending" | "active" | "inactive"
+const Status = z.enum(["pending", "active", "archived"]);
+type Status = z.infer<typeof Status>; // "pending" | "active" | "archived"
 
-Status.parse("active");    // => "active"
-Status.enum.active;        // => "active"
+Status.parse("active");  // => "active"
+Status.parse("invalid"); // throws
 
-// Enum from TypeScript enum
+// Access enum values
+Status.enum;             // { pending: "pending", active: "active", archived: "archived" }
+Status.options;          // ["pending", "active", "archived"]
+
+// Extract/exclude values
+const ActiveOrArchived = Status.extract(["active", "archived"]);
+const NotArchived = Status.exclude(["archived"]);
+
+// From const array
+const ROLES = ["admin", "user", "guest"] as const;
+const Role = z.enum(ROLES);
+
+// Numeric enum (object-style)
+const Priority = z.enum({
+  Low: 0,
+  Medium: 1,
+  High: 2,
+} as const);
+
+Priority.parse(0);         // => 0
+Priority.parse("High");    // throws (use value, not key)
+
+// TypeScript enum support
 enum Color {
   Red = "red",
   Green = "green",
   Blue = "blue",
 }
 const ColorSchema = z.enum(Color);
-ColorSchema.parse(Color.Red);  // => "red"
-ColorSchema.parse("red");      // => "red"
-
-// Numeric enum
-const Priority = {
-  Low: 1,
-  Medium: 2,
-  High: 3,
-} as const;
-const PrioritySchema = z.enum(Priority);
-PrioritySchema.parse(Priority.High);  // => 3
-PrioritySchema.parse(2);               // => 2
-
-// Extract/exclude enum values
-const ActiveOrPending = Status.extract(["active", "pending"]);
-const NotPending = Status.exclude(["pending"]);
+ColorSchema.parse(Color.Red); // => "red"
 ```
 
 ## Optional, Nullable, and Default Values
 
-Handle optional fields, nullable values, and default value assignment.
+Handle optional values, nullability, and default values.
 
 ```typescript
 import * as z from "zod";
@@ -362,83 +379,91 @@ optionalString.parse(undefined);  // => undefined
 // Nullable - allows null
 const nullableString = z.nullable(z.string());
 // or: z.string().nullable()
-nullableString.parse("hello");  // => "hello"
-nullableString.parse(null);     // => null
+nullableString.parse("hello"); // => "hello"
+nullableString.parse(null);    // => null
 
 // Nullish - allows both null and undefined
 const nullishString = z.nullish(z.string());
-nullishString.parse(undefined);  // => undefined
+nullishString.parse("hello");    // => "hello"
 nullishString.parse(null);       // => null
+nullishString.parse(undefined);  // => undefined
 
 // Default values
-const withDefault = z.string().default("default value");
-withDefault.parse(undefined);  // => "default value"
-withDefault.parse("hello");    // => "hello"
+const withDefault = z.string().default("anonymous");
+withDefault.parse("Alice");     // => "Alice"
+withDefault.parse(undefined);   // => "anonymous"
 
 // Dynamic default
-const randomId = z.string().default(() => crypto.randomUUID());
-
-// Prefault - pre-parse default (value is still parsed)
-const trimmedDefault = z.string().trim().prefault("  hello  ");
-trimmedDefault.parse(undefined);  // => "hello" (trimmed)
+const withDynamicDefault = z.number().default(() => Math.random());
+withDynamicDefault.parse(undefined); // => 0.7234...
 
 // Catch - fallback on validation error
-const safeNumber = z.number().catch(0);
-safeNumber.parse(42);      // => 42
-safeNumber.parse("bad");   // => 0 (fallback)
+const withCatch = z.number().catch(0);
+withCatch.parse(42);       // => 42
+withCatch.parse("invalid"); // => 0 (fallback)
+
+// Prefault - pre-parse default (runs through transforms)
+const trimmedDefault = z.string().trim().prefault("  untrimmed  ");
+trimmedDefault.parse(undefined); // => "untrimmed" (trimmed!)
 ```
 
 ## Refinements and Custom Validation
 
-Add custom validation logic with refinements and superRefine for complex validation scenarios.
+Add custom validation logic with refinements and superRefine.
 
 ```typescript
 import * as z from "zod";
 
 // Simple refinement
-const positiveEvenNumber = z.number()
-  .refine(n => n > 0, "Must be positive")
-  .refine(n => n % 2 === 0, "Must be even");
+const positiveNumber = z.number().refine(
+  (n) => n > 0,
+  { message: "Must be positive" }
+);
 
-positiveEvenNumber.parse(4);   // => 4
-positiveEvenNumber.parse(-2);  // throws ZodError: "Must be positive"
+positiveNumber.parse(5);   // => 5
+positiveNumber.parse(-1);  // throws: "Must be positive"
 
-// Refinement with custom error path (useful for objects)
+// Refinement with custom path (for objects)
 const passwordForm = z.object({
   password: z.string().min(8),
   confirmPassword: z.string(),
-}).refine(data => data.password === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"],
-});
+}).refine(
+  (data) => data.password === data.confirmPassword,
+  {
+    message: "Passwords don't match",
+    path: ["confirmPassword"], // error appears on this field
+  }
+);
 
 // Async refinement
-const uniqueUsername = z.string().refine(
-  async (username) => {
-    const exists = await checkUsernameExists(username);
+const uniqueEmail = z.email().refine(
+  async (email) => {
+    const exists = await checkEmailExists(email);
     return !exists;
   },
-  "Username already taken"
+  { message: "Email already registered" }
 );
-// Must use parseAsync with async refinements
-await uniqueUsername.parseAsync("alice");
+// Must use parseAsync for async refinements
+await uniqueEmail.parseAsync("new@example.com");
 
-// SuperRefine for multiple issues
+// superRefine for multiple issues
 const complexValidation = z.array(z.string()).superRefine((val, ctx) => {
-  if (val.length > 5) {
+  if (val.length > 10) {
     ctx.addIssue({
       code: "too_big",
-      maximum: 5,
+      maximum: 10,
       origin: "array",
       inclusive: true,
       message: "Too many items",
       input: val,
     });
   }
-  if (new Set(val).size !== val.length) {
+
+  const duplicates = val.filter((item, i) => val.indexOf(item) !== i);
+  if (duplicates.length > 0) {
     ctx.addIssue({
       code: "custom",
-      message: "No duplicates allowed",
+      message: `Duplicate values: ${duplicates.join(", ")}`,
       input: val,
     });
   }
@@ -447,101 +472,98 @@ const complexValidation = z.array(z.string()).superRefine((val, ctx) => {
 
 ## Transforms and Pipes
 
-Transform data during parsing and chain schemas together with pipes.
+Transform parsed data and chain schemas together.
 
 ```typescript
 import * as z from "zod";
 
-// Transform - change the output type
-const stringToLength = z.string().transform(s => s.length);
-type StringToLength = z.infer<typeof stringToLength>;  // number
+// Basic transform
+const stringToLength = z.string().transform((s) => s.length);
+stringToLength.parse("hello"); // => 5
 
-stringToLength.parse("hello");  // => 5
-
-// Transform with validation
-const parseJson = z.string().transform((str, ctx) => {
-  try {
-    return JSON.parse(str);
-  } catch {
+// Transform with validation context
+const safeParseInt = z.string().transform((val, ctx) => {
+  const parsed = parseInt(val, 10);
+  if (isNaN(parsed)) {
     ctx.issues.push({
       code: "custom",
-      message: "Invalid JSON",
-      input: str,
+      message: "Not a valid integer",
+      input: val,
     });
-    return z.NEVER;
+    return z.NEVER; // exit without affecting return type
   }
+  return parsed;
 });
 
-// Pipe - chain schemas
+// Pipes - chain schemas together
 const stringToNumber = z.string()
-  .pipe(z.transform(s => parseInt(s, 10)))
+  .pipe(z.transform((s) => parseInt(s, 10)))
   .pipe(z.number().min(0));
 
 stringToNumber.parse("42");   // => 42
-stringToNumber.parse("-5");   // throws (min 0)
+stringToNumber.parse("-5");   // throws: must be >= 0
+stringToNumber.parse("abc");  // throws: NaN is not a number
 
 // Preprocess - transform before validation
 const trimmedString = z.preprocess(
-  val => typeof val === "string" ? val.trim() : val,
-  z.string()
+  (val) => typeof val === "string" ? val.trim() : val,
+  z.string().min(1)
 );
+trimmedString.parse("  hello  "); // => "hello"
 
-// Input/output types can differ
-const schema = z.string().transform(val => val.length);
-type Input = z.input<typeof schema>;   // string
-type Output = z.output<typeof schema>; // number
+// Coerce + transform combo
+const dateFromString = z.coerce.date()
+  .transform((date) => date.toISOString());
+dateFromString.parse("2024-01-15"); // => "2024-01-15T00:00:00.000Z"
 ```
 
 ## Records and Maps
 
-Validate dictionary-like objects and Map/Set collections.
+Validate dictionary-like structures with dynamic keys.
 
 ```typescript
 import * as z from "zod";
 
 // Record with string keys
-const StringRecord = z.record(z.string(), z.number());
-type StringRecord = z.infer<typeof StringRecord>;  // Record<string, number>
+const stringRecord = z.record(z.string(), z.number());
+stringRecord.parse({ a: 1, b: 2, c: 3 }); // => { a: 1, b: 2, c: 3 }
 
-StringRecord.parse({ a: 1, b: 2 });  // => { a: 1, b: 2 }
-
-// Record with enum keys (exhaustive by default in Zod 4)
+// Record with enum keys (exhaustive)
 const StatusCounts = z.record(
-  z.enum(["pending", "active", "done"]),
+  z.enum(["pending", "active", "archived"]),
   z.number()
 );
-// Requires all enum keys to be present
-StatusCounts.parse({ pending: 1, active: 2, done: 3 });
+StatusCounts.parse({ pending: 5, active: 10, archived: 2 }); // all keys required
 
-// Partial record - doesn't require all keys
+// Partial record - not all keys required
 const PartialStatusCounts = z.partialRecord(
-  z.enum(["pending", "active", "done"]),
+  z.enum(["pending", "active", "archived"]),
   z.number()
 );
-PartialStatusCounts.parse({ pending: 1 });  // valid
+PartialStatusCounts.parse({ pending: 5 }); // OK, missing keys allowed
 
-// Map schema
-const userCache = z.map(z.string(), z.object({ name: z.string() }));
-type UserCache = z.infer<typeof userCache>;  // Map<string, { name: string }>
+// Loose record - unknown keys pass through
+const looseRecord = z.looseRecord(z.string().regex(/^id_/), z.number());
+// Only validates keys matching pattern
 
-const cache = new Map([["1", { name: "Alice" }]]);
-userCache.parse(cache);
+// Map validation
+const userMap = z.map(z.string(), z.object({ name: z.string() }));
+const map = new Map([["user1", { name: "Alice" }]]);
+userMap.parse(map); // => Map { "user1" => { name: "Alice" } }
 
-// Set schema
-const uniqueIds = z.set(z.string()).min(1).max(100);
-type UniqueIds = z.infer<typeof uniqueIds>;  // Set<string>
-
-uniqueIds.parse(new Set(["a", "b"]));
+// Set validation
+const tagSet = z.set(z.string()).min(1).max(10);
+tagSet.parse(new Set(["a", "b", "c"])); // => Set { "a", "b", "c" }
 ```
 
-## Recursive and Mutually Recursive Types
+## Recursive Types
 
-Define self-referencing schemas for tree structures and linked data.
+Define self-referential and mutually recursive schemas.
 
 ```typescript
 import * as z from "zod";
 
-// Recursive type using getter
+// Self-referential type using getter
 const Category = z.object({
   name: z.string(),
   get subcategories() {
@@ -552,16 +574,15 @@ const Category = z.object({
 type Category = z.infer<typeof Category>;
 // { name: string; subcategories: Category[] }
 
-const tree: Category = {
-  name: "Root",
+Category.parse({
+  name: "Electronics",
   subcategories: [
-    { name: "Child 1", subcategories: [] },
-    { name: "Child 2", subcategories: [
-      { name: "Grandchild", subcategories: [] }
-    ]},
-  ],
-};
-Category.parse(tree);
+    { name: "Phones", subcategories: [] },
+    { name: "Computers", subcategories: [
+      { name: "Laptops", subcategories: [] }
+    ]}
+  ]
+});
 
 // Mutually recursive types
 const User = z.object({
@@ -578,52 +599,100 @@ const Post = z.object({
   },
 });
 
-// All object methods work with recursive schemas
-const UserWithoutPosts = User.omit({ posts: true });
-const PartialUser = User.partial();
+// JSON type (recursive by nature)
+const JsonValue = z.json();
+JsonValue.parse({ nested: { array: [1, "two", true, null] } });
 ```
 
-## JSON Schema Conversion
+## Error Handling and Customization
 
-Convert Zod schemas to and from JSON Schema format for API documentation and interoperability.
+Customize error messages and handle validation errors.
 
 ```typescript
 import * as z from "zod";
 
-// Convert Zod schema to JSON Schema
-const Person = z.object({
-  name: z.string(),
-  age: z.number().int().min(0),
-  email: z.email().optional(),
+// Inline error messages
+z.string("Expected a string");
+z.string().min(5, "Too short!");
+z.string().min(5, { error: "Minimum 5 characters required" });
+
+// Dynamic error messages
+z.string({
+  error: (issue) => issue.input === undefined
+    ? "This field is required"
+    : "Invalid input"
 });
 
-const jsonSchema = z.toJSONSchema(Person);
+// Per-parse error customization
+const schema = z.string().min(5);
+schema.parse("hi", {
+  error: (issue) => {
+    if (issue.code === "too_small") {
+      return `Need at least ${issue.minimum} characters`;
+    }
+    return undefined; // use default message
+  }
+});
+
+// Global error customization
+z.config({
+  customError: (issue) => {
+    if (issue.code === "invalid_type") {
+      return `Expected ${issue.expected}, got ${typeof issue.input}`;
+    }
+  }
+});
+
+// Internationalization
+import { fr } from "zod/locales";
+z.config(fr()); // French error messages
+
+// Pretty print errors
+const result = z.object({ name: z.string() }).safeParse({ name: 123 });
+if (!result.success) {
+  console.log(z.prettifyError(result.error));
+  // ✖ Invalid input: expected string, received number
+  //   → at name
+}
+
+// Include input in issues (opt-in for security)
+z.string().parse(123, { reportInput: true });
+// Issue includes: input: 123
+```
+
+## JSON Schema Conversion
+
+Convert Zod schemas to and from JSON Schema.
+
+```typescript
+import * as z from "zod";
+
+// Convert Zod to JSON Schema
+const User = z.object({
+  name: z.string().meta({ description: "User's full name" }),
+  email: z.email(),
+  age: z.number().int().min(0).max(150),
+});
+
+const jsonSchema = z.toJSONSchema(User);
 // {
 //   type: "object",
 //   properties: {
-//     name: { type: "string" },
-//     age: { type: "integer", minimum: 0 },
-//     email: { type: "string", format: "email" }
+//     name: { type: "string", description: "User's full name" },
+//     email: { type: "string", format: "email" },
+//     age: { type: "integer", minimum: 0, maximum: 150 }
 //   },
-//   required: ["name", "age"],
+//   required: ["name", "email", "age"],
 //   additionalProperties: false
 // }
 
-// With metadata
-const UserWithMeta = z.object({
-  id: z.string().meta({ title: "User ID", description: "Unique identifier" }),
-  email: z.email().meta({ examples: ["user@example.com"] }),
-});
-
-z.toJSONSchema(UserWithMeta);
-// Includes title, description, examples in output
-
-// Conversion options
-z.toJSONSchema(Person, {
-  target: "openapi-3.0",      // Target format
-  io: "input",               // Use input type instead of output
-  unrepresentable: "any",    // Handle unrepresentable types as {}
-  cycles: "ref",             // Handle cycles with $ref
+// Options for JSON Schema conversion
+z.toJSONSchema(User, {
+  target: "openapi-3.0",      // or "draft-07", "draft-2020-12"
+  io: "input",               // "input" or "output" type
+  unrepresentable: "any",    // handle unsupported types
+  cycles: "ref",             // handle recursive schemas
+  reused: "ref",             // extract repeated schemas to $defs
 });
 
 // Convert JSON Schema to Zod (experimental)
@@ -631,181 +700,177 @@ const zodSchema = z.fromJSONSchema({
   type: "object",
   properties: {
     name: { type: "string" },
-    age: { type: "number" },
+    count: { type: "integer", minimum: 0 }
   },
-  required: ["name", "age"],
+  required: ["name"]
 });
 ```
 
 ## Metadata and Registries
 
-Attach metadata to schemas for documentation, form generation, and code generation.
+Attach metadata to schemas for documentation and code generation.
 
 ```typescript
 import * as z from "zod";
 
 // Add metadata with .meta()
-const UserSchema = z.object({
-  name: z.string().meta({
-    title: "Full Name",
-    description: "User's full name",
-    examples: ["John Doe"],
-  }),
-  email: z.email().meta({
-    title: "Email Address",
-    description: "Primary email for notifications",
-  }),
+const Email = z.email().meta({
+  id: "user_email",
+  title: "Email Address",
+  description: "A valid email address",
+  examples: ["user@example.com"],
 });
 
 // Retrieve metadata
-UserSchema.shape.name.meta();
-// { title: "Full Name", description: "User's full name", examples: ["John Doe"] }
+Email.meta(); // => { id: "user_email", title: "Email Address", ... }
 
-// Create custom registry with typed metadata
+// Custom registry with typed metadata
 const formRegistry = z.registry<{
   label: string;
   placeholder?: string;
   helpText?: string;
 }>();
 
-const FormField = z.string().register(formRegistry, {
-  label: "Username",
-  placeholder: "Enter username",
-  helpText: "Must be unique",
+const nameField = z.string()
+  .min(1)
+  .register(formRegistry, {
+    label: "Full Name",
+    placeholder: "Enter your name",
+    helpText: "As it appears on your ID",
+  });
+
+// Retrieve from registry
+formRegistry.get(nameField); // => { label: "Full Name", ... }
+
+// Registry with constrained schema types
+const stringRegistry = z.registry<{ pattern: string }, z.ZodString>();
+stringRegistry.add(z.string(), { pattern: "text" }); // OK
+stringRegistry.add(z.number(), { pattern: "num" });  // Type error!
+
+// Global registry for JSON Schema metadata
+z.globalRegistry.add(Email, {
+  id: "email",
+  title: "Email",
+  description: "Contact email",
 });
-
-formRegistry.get(FormField);
-// { label: "Username", placeholder: "Enter username", helpText: "Must be unique" }
-
-// Registry with type-aware metadata
-type MetaWithExamples = { examples: z.$output[] };
-const examplesRegistry = z.registry<MetaWithExamples>();
-
-examplesRegistry.add(z.string(), { examples: ["hello", "world"] });
-examplesRegistry.add(z.number(), { examples: [1, 2, 3] });
-```
-
-## Error Handling and Customization
-
-Customize error messages globally, per-schema, or per-parse with support for internationalization.
-
-```typescript
-import * as z from "zod";
-import { fr } from "zod/locales";
-
-// Custom error messages per schema
-const username = z.string({
-  error: "Username must be a string",
-}).min(3, {
-  error: "Username must be at least 3 characters",
-}).max(20, {
-  error: "Username cannot exceed 20 characters",
-});
-
-// Dynamic error messages
-const age = z.number({
-  error: (issue) => {
-    if (issue.input === undefined) return "Age is required";
-    return "Age must be a number";
-  },
-}).min(0, {
-  error: (issue) => `Age must be at least ${issue.minimum}`,
-});
-
-// Per-parse error customization
-const result = z.string().safeParse(123, {
-  error: (issue) => `Custom error: expected string, got ${typeof issue.input}`,
-});
-
-// Global error customization
-z.config({
-  customError: (issue) => {
-    if (issue.code === "invalid_type") {
-      return `Expected ${issue.expected}, received ${typeof issue.input}`;
-    }
-    return undefined; // Fall back to default
-  },
-});
-
-// Internationalization
-z.config(fr()); // Use French locale
-
-// Pretty print errors
-const error = new z.ZodError([
-  { code: "invalid_type", expected: "string", path: ["name"], message: "Invalid" },
-]);
-console.log(z.prettifyError(error));
-// ✖ Invalid
-//   → at name
-```
-
-## File Validation
-
-Validate File instances with size and MIME type constraints.
-
-```typescript
-import * as z from "zod";
-
-// Basic file validation
-const fileSchema = z.file();
-
-// File with constraints
-const imageFile = z.file()
-  .min(1024, "File must be at least 1KB")
-  .max(5 * 1024 * 1024, "File must be at most 5MB")
-  .mime(["image/png", "image/jpeg", "image/gif"]);
-
-// Validate file upload
-const uploadSchema = z.object({
-  avatar: imageFile.optional(),
-  documents: z.array(z.file().max(10 * 1024 * 1024)).max(5),
-});
-
-// Example usage with FormData (in browser/Node.js)
-const formData = new FormData();
-// formData.append("avatar", file);
-
-const files = {
-  avatar: formData.get("avatar"),
-  documents: formData.getAll("documents"),
-};
-uploadSchema.parse(files);
 ```
 
 ## Branded Types
 
-Create nominal types for type-safe distinctions between structurally identical types.
+Create nominal types for type-safe domain modeling.
 
 ```typescript
 import * as z from "zod";
 
-// Create branded types
+// Branded user ID
 const UserId = z.string().uuid().brand<"UserId">();
-const PostId = z.string().uuid().brand<"PostId">();
+type UserId = z.infer<typeof UserId>;
+// string & z.$brand<"UserId">
 
-type UserId = z.infer<typeof UserId>;  // string & z.$brand<"UserId">
-type PostId = z.infer<typeof PostId>;  // string & z.$brand<"PostId">
-
-// Parse to get branded value
 const userId = UserId.parse("550e8400-e29b-41d4-a716-446655440000");
-const postId = PostId.parse("550e8400-e29b-41d4-a716-446655440001");
 
-// Type-safe usage
+// Cannot accidentally mix branded types
+const OrderId = z.string().uuid().brand<"OrderId">();
+type OrderId = z.infer<typeof OrderId>;
+
 function getUser(id: UserId) { /* ... */ }
-function getPost(id: PostId) { /* ... */ }
+const orderId = OrderId.parse("...");
+getUser(orderId); // Type error! OrderId is not assignable to UserId
 
-getUser(userId);  // OK
-getUser(postId);  // Type error! PostId not assignable to UserId
-
-// Brand direction options
-const InputBranded = z.string().brand<"Token", "in">();   // Input branded
-const OutputBranded = z.string().brand<"Token", "out">(); // Output branded (default)
-const BothBranded = z.string().brand<"Token", "inout">(); // Both branded
+// Brand direction control
+z.string().brand<"Token", "out">();   // output branded (default)
+z.string().brand<"Token", "in">();    // input branded
+z.string().brand<"Token", "inout">(); // both branded
 ```
 
-## Zod Mini (Tree-shakable Variant)
+## Codecs (Bidirectional Transforms)
 
-Use Zod Mini for bundle-critical applications with a functional, tree-shakable API.
+Define reversible transformations between types.
+
+```typescript
+import * as z from "zod";
+
+// Define a codec for string <-> Date conversion
+const dateCodec = z.codec(
+  z.iso.datetime(),  // input schema
+  z.date(),          // output schema
+  {
+    decode: (str) => new Date(str),    // string -> Date
+    encode: (date) => date.toISOString(), // Date -> string
+  }
+);
+
+// Decode (parse): string -> Date
+const date = dateCodec.parse("2024-01-15T10:30:00.000Z");
+// => Date object
+
+// Also available as z.decode()
+z.decode(dateCodec, "2024-01-15T10:30:00.000Z"); // => Date
+
+// Encode: Date -> string
+z.encode(dateCodec, new Date("2024-01-15"));
+// => "2024-01-15T00:00:00.000Z"
+
+// Number to string codec
+const numberCodec = z.codec(
+  z.string().regex(/^\d+$/),
+  z.number().int(),
+  {
+    decode: (s) => parseInt(s, 10),
+    encode: (n) => n.toString(),
+  }
+);
+
+z.decode(numberCodec, "42");  // => 42
+z.encode(numberCodec, 42);    // => "42"
+```
+
+## Functions Schema
+
+Define and implement validated functions.
+
+```typescript
+import * as z from "zod";
+
+// Define function signature
+const addNumbers = z.function({
+  input: [z.number(), z.number()],
+  output: z.number(),
+});
+
+type AddNumbers = z.infer<typeof addNumbers>;
+// (arg0: number, arg1: number) => number
+
+// Implement with automatic validation
+const add = addNumbers.implement((a, b) => a + b);
+
+add(2, 3);        // => 5
+add("2", 3);      // throws: invalid input type
+add(2, 3).toFixed(); // TypeScript knows result is number
+
+// Async function
+const fetchUser = z.function({
+  input: [z.string().uuid()],
+  output: z.object({ id: z.string(), name: z.string() }),
+});
+
+const getUser = fetchUser.implementAsync(async (id) => {
+  const response = await fetch(`/api/users/${id}`);
+  return response.json();
+});
+
+// Input-only validation (no output check)
+const logMessage = z.function({
+  input: [z.string()],
+}).implement((msg) => {
+  console.log(msg);
+  return undefined; // return type is inferred
+});
+```
+
+## Zod Mini (Tree-Shakable API)
+
+Use Zod Mini for minimal bundle sizes with a functional API.
 
 ```typescript
 import * as z from "zod/mini";
@@ -814,36 +879,35 @@ import * as z from "zod/mini";
 const User = z.object({
   name: z.string(),
   age: z.optional(z.number()),
+  tags: z.array(z.string()),
 });
 
-// Validations use .check() with functions
-const password = z.string().check(
-  z.minLength(8),
+// Checks use wrapper functions
+const validatedString = z.string().check(
+  z.minLength(5),
   z.maxLength(100),
-  z.regex(/[A-Z]/, { error: "Must contain uppercase" }),
-  z.regex(/[0-9]/, { error: "Must contain number" })
+  z.refine((s) => s.includes("@")),
 );
 
-// Object manipulation uses functions
-const UserWithEmail = z.extend(User, { email: z.email() });
+// Parsing works the same
+User.parse({ name: "Alice", tags: ["admin"] });
+User.safeParse({ name: 123 });
+
+// Object operations are functions
 const PartialUser = z.partial(User);
 const PickedUser = z.pick(User, { name: true });
+const ExtendedUser = z.extend(User, { role: z.string() });
 
-// Refinements
-const evenNumber = z.number().check(
-  z.refine(n => n % 2 === 0, { error: "Must be even" })
+// Metadata via check
+const email = z.email().check(
+  z.meta({ description: "User email" })
 );
 
-// Parsing
-z.parse(User, { name: "Alice", age: 30 });
-const result = z.safeParse(User, { name: "Alice" });
-
-// Bundle size comparison:
-// - Zod 3: 12.47kb (gzipped core)
-// - Zod 4: 5.36kb (gzipped core)
-// - Zod Mini: 1.88kb (gzipped core)
+// Core bundle size: ~1.88kb gzipped (vs ~5.36kb for regular Zod)
 ```
 
-Zod is widely used in the TypeScript ecosystem for runtime validation with compile-time type safety. Common integration patterns include form validation with React Hook Form, API request/response validation in tRPC and Express/Fastify, environment variable validation, and structured output schemas for AI applications. The library's zero-dependency design and small bundle size make it suitable for both server and client applications.
+## Summary
 
-The Zod ecosystem includes integrations with popular libraries: tRPC for end-to-end type-safe APIs, React Hook Form with @hookform/resolvers for form validation, drizzle-orm for database schema definitions, and @hono/zod-validator for Hono framework validation. JSON Schema conversion enables compatibility with OpenAPI documentation generators and AI structured output systems like OpenAI's function calling.
+Zod is a comprehensive TypeScript-first validation library that provides type-safe schema definitions with automatic type inference. Its primary use cases include API input validation, form validation, configuration parsing, and data transformation pipelines. The library excels at runtime type checking while maintaining full TypeScript integration, ensuring your validated data matches your type definitions.
+
+Key integration patterns include combining Zod with API frameworks like tRPC for end-to-end type safety, using the JSON Schema conversion for OpenAPI documentation and AI structured outputs, and leveraging registries for metadata management in code generation tools. For performance-critical applications, Zod Mini offers a tree-shakable alternative with significantly smaller bundle sizes. The extensive locale support and customizable error handling make Zod suitable for international applications with complex validation requirements.
