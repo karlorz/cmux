@@ -169,7 +169,7 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
     const { content, truncated, agentName, createdAt } = selectedContent;
 
     return (
-      <div className="flex h-full flex-col">
+      <div className="flex h-full min-h-0 flex-col">
         {/* Metadata bar */}
         <div className="flex items-center gap-3 border-b border-neutral-200 bg-neutral-50 px-3 py-1.5 text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
           {agentName && (
@@ -193,7 +193,7 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-auto p-3">
+        <div className="flex-1 min-h-0 overflow-y-auto p-3">
           {selectedType === "mailbox" ? (
             // Mailbox - render messages in friendly format, fallback to JSON
             (() => {
@@ -227,7 +227,7 @@ export function TaskRunMemoryPanel({ teamSlugOrId, taskRunId }: TaskRunMemoryPan
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       {/* Tab bar */}
       <div className="flex items-center gap-1 border-b border-neutral-200 px-2 py-1.5 dark:border-neutral-800">
         {(["knowledge", "daily", "tasks", "mailbox"] as MemoryType[]).map(renderTabButton)}
