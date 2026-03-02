@@ -456,6 +456,8 @@ async function setupProviderAuth(
         prompt: "",
         apiKeys,
         callbackUrl: options.callbackUrl,
+        previousKnowledge: options.previousKnowledge ?? undefined,
+        previousMailbox: options.previousMailbox ?? undefined,
         providerConfig: resolvedOpenAI?.isOverridden
           ? {
               baseUrl: resolvedOpenAI.baseUrl,
