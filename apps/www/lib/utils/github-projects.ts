@@ -277,6 +277,32 @@ export interface ProjectV2Item {
   fieldValues: Record<string, string | number | null>;
 }
 
+// Raw GraphQL response types (before flattening)
+
+interface RawProjectV2ItemFieldValue {
+  text?: string;
+  number?: number;
+  date?: string;
+  name?: string; // SingleSelectValue
+  title?: string; // IterationValue
+  field?: { name?: string };
+}
+
+interface RawProjectV2ItemContent {
+  id?: string;
+  title?: string;
+  number?: number;
+  state?: string;
+  url?: string;
+  body?: string;
+}
+
+interface RawProjectV2ItemNode {
+  id: string;
+  content: RawProjectV2ItemContent | null;
+  fieldValues: { nodes: RawProjectV2ItemFieldValue[] };
+}
+
 // Client functions
 
 /**
@@ -355,6 +381,68 @@ export async function getProjectFields(
   }>(PROJECT_QUERIES.getProjectFields, { projectId });
 
   return result.node?.fields?.nodes ?? [];
+}
+
+/**
+ * Get project items with pagination
+ */
+export async function getProjectItems(
+  projectId: string,
+  installationId: number,
+  options?: { first?: number; after?: string; userOAuthToken?: string }
+): Promise<{ items: ProjectV2Item[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } }> {
+  const first = options?.first ?? 50;
+
+  const octokit = options?.userOAuthToken
+    ? createUserOctokit(options.userOAuthToken)
+    : createGitHubAppOctokit(installationId);
+
+  const result = await octokit.graphql<{
+    node: {
+      items: {
+        nodes: RawProjectV2ItemNode[];
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+      };
+    };
+  }>(PROJECT_QUERIES.getProjectItems, {
+    projectId,
+    first,
+    after: options?.after ?? null,
+  });
+
+  const rawItems: RawProjectV2ItemNode[] = result.node?.items?.nodes ?? [];
+  const items: ProjectV2Item[] = rawItems.map((raw) => {
+    const fieldValues: Record<string, string | number | null> = {};
+    for (const fv of raw.fieldValues.nodes) {
+      const fieldName = fv.field?.name;
+      if (!fieldName) continue;
+      if (fv.text !== undefined) fieldValues[fieldName] = fv.text;
+      else if (fv.number !== undefined) fieldValues[fieldName] = fv.number;
+      else if (fv.date !== undefined) fieldValues[fieldName] = fv.date;
+      else if (fv.name !== undefined) fieldValues[fieldName] = fv.name; // SingleSelect
+      else if (fv.title !== undefined) fieldValues[fieldName] = fv.title; // Iteration
+    }
+
+    return {
+      id: raw.id,
+      content: raw.content
+        ? {
+            id: raw.content.id ?? "",
+            title: raw.content.title ?? "",
+            number: raw.content.number,
+            state: raw.content.state,
+            url: raw.content.url,
+            body: raw.content.body,
+          }
+        : null,
+      fieldValues,
+    };
+  });
+
+  return {
+    items,
+    pageInfo: result.node?.items?.pageInfo ?? { hasNextPage: false, endCursor: null },
+  };
 }
 
 /**

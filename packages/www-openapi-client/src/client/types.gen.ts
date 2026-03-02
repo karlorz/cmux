@@ -202,6 +202,33 @@ export type ProjectFieldsResponse = {
     fields: Array<ProjectField>;
 };
 
+export type ProjectItemContent = {
+    id: string;
+    title: string;
+    number?: number;
+    state?: string;
+    url?: string;
+    body?: string;
+} | null;
+
+export type ProjectItemFieldValues = {
+    [key: string]: string | number | unknown;
+};
+
+export type ProjectItem = {
+    id: string;
+    content: ProjectItemContent;
+    fieldValues: ProjectItemFieldValues;
+};
+
+export type ProjectItemsResponse = {
+    items: Array<ProjectItem>;
+    pageInfo: {
+        hasNextPage: boolean;
+        endCursor: string | null;
+    };
+};
+
 export type ItemResponse = {
     itemId: string | null;
 };
@@ -1927,6 +1954,54 @@ export type GetApiIntegrationsGithubProjectsFieldsResponses = {
 };
 
 export type GetApiIntegrationsGithubProjectsFieldsResponse = GetApiIntegrationsGithubProjectsFieldsResponses[keyof GetApiIntegrationsGithubProjectsFieldsResponses];
+
+export type GetApiIntegrationsGithubProjectsItemsData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Team slug or UUID
+         */
+        team: string;
+        /**
+         * GitHub App installation ID
+         */
+        installationId?: number | null;
+        /**
+         * GitHub Project node ID
+         */
+        projectId: string;
+        /**
+         * Number of items to fetch
+         */
+        first?: number | null;
+        /**
+         * Pagination cursor
+         */
+        after?: string;
+    };
+    url: '/api/integrations/github/projects/items';
+};
+
+export type GetApiIntegrationsGithubProjectsItemsErrors = {
+    /**
+     * Bad request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiIntegrationsGithubProjectsItemsResponses = {
+    /**
+     * OK
+     */
+    200: ProjectItemsResponse;
+};
+
+export type GetApiIntegrationsGithubProjectsItemsResponse = GetApiIntegrationsGithubProjectsItemsResponses[keyof GetApiIntegrationsGithubProjectsItemsResponses];
 
 export type PostApiIntegrationsGithubProjectsItemsData = {
     body: AddItemBody;

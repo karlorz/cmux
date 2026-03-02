@@ -19,6 +19,7 @@ import { getConvex } from "../utils/get-convex";
 import {
   listProjects,
   getProjectFields,
+  getProjectItems,
   addItemToProject,
   createDraftIssue,
   updateItemField,
@@ -206,6 +207,94 @@ async function getProjectFieldsViaGhCli(
   }
 }
 
+async function getProjectItemsViaGhCli(
+  projectId: string,
+  first = 50,
+  after?: string,
+): Promise<{
+  items: Array<{
+    id: string;
+    contentType: string;
+    title: string;
+    status: string | null;
+    url: string | null;
+    fieldValues: Record<string, string | number | null>;
+  }>;
+  hasNextPage: boolean;
+  endCursor: string | null;
+}> {
+  if (!isGhCliFallbackEnabled()) return { items: [], hasNextPage: false, endCursor: null };
+
+  const query = `query($projectId:ID!,$first:Int!,$after:String){node(id:$projectId){... on ProjectV2{items(first:$first,after:$after){nodes{id content{... on Issue{id title number state url} ... on PullRequest{id title number state url} ... on DraftIssue{id title body}} fieldValues(first:20){nodes{... on ProjectV2ItemFieldTextValue{text field{... on ProjectV2Field{name}}} ... on ProjectV2ItemFieldNumberValue{number field{... on ProjectV2Field{name}}} ... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2Field{name}}} ... on ProjectV2ItemFieldSingleSelectValue{name field{... on ProjectV2SingleSelectField{name}}} ... on ProjectV2ItemFieldIterationValue{title field{... on ProjectV2IterationField{name}}}}}} pageInfo{hasNextPage endCursor}}}}}`;
+
+  try {
+    const data = await runGhGraphql(query, { projectId, first, after });
+    const node = data.node as
+      | {
+          items?: {
+            nodes?: Array<Record<string, unknown> | null>;
+            pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
+          };
+        }
+      | undefined;
+    const rawNodes = node?.items?.nodes;
+    const pageInfo = node?.items?.pageInfo;
+    if (!Array.isArray(rawNodes)) return { items: [], hasNextPage: false, endCursor: null };
+
+    const items = rawNodes
+      .filter((n): n is Record<string, unknown> => Boolean(n))
+      .map((n) => {
+        const content = n.content as Record<string, unknown> | null;
+        const fieldValuesObj = n.fieldValues as { nodes?: Array<Record<string, unknown> | null> } | undefined;
+
+        // Determine content type
+        let contentType = "DraftIssue";
+        if (content) {
+          if ("state" in content && "url" in content) {
+            const urlStr = String(content.url ?? "");
+            contentType = urlStr.includes("/pull/") ? "PullRequest" : "Issue";
+          }
+        }
+
+        // Flatten field values
+        const fieldValues: Record<string, string | number | null> = {};
+        for (const fv of fieldValuesObj?.nodes ?? []) {
+          if (!fv) continue;
+          const field = fv.field as { name?: string } | undefined;
+          const fieldName = field?.name;
+          if (!fieldName) continue;
+          if (typeof fv.text === "string") fieldValues[fieldName] = fv.text;
+          else if (typeof fv.number === "number") fieldValues[fieldName] = fv.number;
+          else if (typeof fv.date === "string") fieldValues[fieldName] = fv.date;
+          else if (typeof fv.name === "string") fieldValues[fieldName] = fv.name;
+          else if (typeof fv.title === "string") fieldValues[fieldName] = fv.title;
+        }
+
+        return {
+          id: String(n.id ?? ""),
+          contentType,
+          title: content ? String((content.title as string) ?? "") : "",
+          status: typeof fieldValues.Status === "string" ? fieldValues.Status : null,
+          url: content && typeof content.url === "string" ? content.url : null,
+          fieldValues,
+        };
+      })
+      .filter((item) => item.id && item.title);
+
+    return {
+      items,
+      hasNextPage: pageInfo?.hasNextPage ?? false,
+      endCursor: pageInfo?.endCursor ?? null,
+    };
+  } catch (err) {
+    console.warn(
+      `[github.projects] gh CLI items fallback failed for ${projectId}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return { items: [], hasNextPage: false, endCursor: null };
+  }
+}
+
 async function createDraftIssueViaGhCli(
   projectId: string,
   title: string,
@@ -353,6 +442,50 @@ const DraftBatchResponse = z
     results: z.array(DraftBatchResultSchema),
   })
   .openapi("DraftBatchResponse");
+
+const ProjectItemContentSchema = z
+  .object({
+    id: z.string(),
+    title: z.string(),
+    number: z.number().optional(),
+    state: z.string().optional(),
+    url: z.string().optional(),
+    body: z.string().optional(),
+  })
+  .nullable()
+  .openapi("ProjectItemContent");
+
+const ProjectItemFieldValueSchema = z
+  .record(z.string(), z.union([z.string(), z.number()]).nullable())
+  .openapi("ProjectItemFieldValues");
+
+const ProjectItemSchema = z
+  .object({
+    id: z.string(),
+    content: ProjectItemContentSchema,
+    fieldValues: ProjectItemFieldValueSchema,
+  })
+  .openapi("ProjectItem");
+
+const ProjectItemsQuery = z
+  .object({
+    team: z.string().min(1).openapi({ description: "Team slug or UUID" }),
+    installationId: z.coerce.number().openapi({ description: "GitHub App installation ID" }),
+    projectId: z.string().min(1).openapi({ description: "GitHub Project node ID" }),
+    first: z.coerce.number().optional().default(50).openapi({ description: "Number of items to fetch" }),
+    after: z.string().optional().openapi({ description: "Pagination cursor" }),
+  })
+  .openapi("ProjectItemsQuery");
+
+const ProjectItemsResponse = z
+  .object({
+    items: z.array(ProjectItemSchema),
+    pageInfo: z.object({
+      hasNextPage: z.boolean(),
+      endCursor: z.string().nullable(),
+    }),
+  })
+  .openapi("ProjectItemsResponse");
 
 // Routes
 
@@ -659,6 +792,114 @@ githubProjectsRouter.openapi(
         errMsg,
       );
       return c.json({ fields: [] });
+    }
+  },
+);
+
+// GET /integrations/github/projects/items - List project items
+githubProjectsRouter.openapi(
+  createRoute({
+    method: "get" as const,
+    path: "/integrations/github/projects/items",
+    tags: ["Integrations"],
+    summary: "List items in a GitHub Project",
+    request: { query: ProjectItemsQuery },
+    responses: {
+      200: {
+        description: "OK",
+        content: { "application/json": { schema: ProjectItemsResponse } },
+      },
+      401: { description: "Unauthorized" },
+      400: { description: "Bad request" },
+    },
+  }),
+  async (c) => {
+    const accessToken = await getAccessTokenFromRequest(c.req.raw);
+    if (!accessToken) return c.text("Unauthorized", 401);
+
+    const { team, installationId, projectId, first, after } = c.req.valid("query");
+
+    // Verify team membership
+    const convex = getConvex({ accessToken });
+    const connections = await convex.query(api.github.listProviderConnections, {
+      teamSlugOrId: team,
+    });
+
+    const target = connections.find(
+      (co) => co.isActive && co.installationId === installationId,
+    );
+
+    if (!target) {
+      return c.json({ items: [], pageInfo: { hasNextPage: false, endCursor: null } });
+    }
+
+    try {
+      const userOAuthToken =
+        target.accountType === "User"
+          ? await getGitHubUserOAuthToken(c.req.raw, {
+              scopes: [...GITHUB_PROJECT_SCOPES],
+            })
+          : undefined;
+
+      if (target.accountType === "User" && !userOAuthToken) {
+        const fallback = await getProjectItemsViaGhCli(projectId, first, after);
+        if (fallback.items.length > 0) {
+          // Transform CLI fallback items to match ProjectV2Item shape
+          return c.json({
+            items: fallback.items.map((item) => ({
+              id: item.id,
+              content: {
+                id: item.id,
+                title: item.title,
+                url: item.url ?? undefined,
+              },
+              fieldValues: item.fieldValues,
+            })),
+            pageInfo: {
+              hasNextPage: fallback.hasNextPage,
+              endCursor: fallback.endCursor,
+            },
+          });
+        }
+        return c.json({ items: [], pageInfo: { hasNextPage: false, endCursor: null } });
+      }
+
+      const result = await getProjectItems(projectId, installationId, {
+        first,
+        after,
+        userOAuthToken,
+      });
+      return c.json(result);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (target.accountType === "User") {
+        const fallback = await getProjectItemsViaGhCli(projectId, first, after);
+        if (fallback.items.length > 0) {
+          console.warn(
+            `[github.projects] Primary project-items API failed for ${projectId}, served via gh CLI fallback`,
+          );
+          return c.json({
+            items: fallback.items.map((item) => ({
+              id: item.id,
+              content: {
+                id: item.id,
+                title: item.title,
+                url: item.url ?? undefined,
+              },
+              fieldValues: item.fieldValues,
+            })),
+            pageInfo: {
+              hasNextPage: fallback.hasNextPage,
+              endCursor: fallback.endCursor,
+            },
+          });
+        }
+      }
+      console.error(
+        `[github.projects] Failed to get items for project ${projectId}:`,
+        errMsg,
+      );
+      return c.json({ items: [], pageInfo: { hasNextPage: false, endCursor: null } });
     }
   },
 );

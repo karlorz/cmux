@@ -1221,6 +1221,88 @@ func (c *Client) GetProjectFields(ctx context.Context, opts GetProjectFieldsOpti
 	return &result, nil
 }
 
+// ProjectItemContent represents the content of a project item (issue, PR, or draft).
+type ProjectItemContent struct {
+	ID     string  `json:"id"`
+	Title  string  `json:"title"`
+	Number *int    `json:"number,omitempty"`
+	State  *string `json:"state,omitempty"`
+	URL    *string `json:"url,omitempty"`
+	Body   *string `json:"body,omitempty"`
+}
+
+// ProjectItemFieldValues is a map of field name to value.
+type ProjectItemFieldValues map[string]interface{}
+
+// ProjectItem represents an item in a GitHub Project.
+type ProjectItem struct {
+	ID          string                `json:"id"`
+	Content     *ProjectItemContent   `json:"content"`
+	FieldValues ProjectItemFieldValues `json:"fieldValues"`
+}
+
+// GetProjectItemsOptions controls project item retrieval.
+type GetProjectItemsOptions struct {
+	ProjectID      string
+	InstallationID int
+	First          int
+	After          string
+}
+
+// GetProjectItemsResult contains project items with pagination info.
+type GetProjectItemsResult struct {
+	Items    []ProjectItem `json:"items"`
+	PageInfo struct {
+		HasNextPage bool    `json:"hasNextPage"`
+		EndCursor   *string `json:"endCursor"`
+	} `json:"pageInfo"`
+}
+
+// GetProjectItems calls GET /api/integrations/github/projects/items.
+func (c *Client) GetProjectItems(ctx context.Context, opts GetProjectItemsOptions) (*GetProjectItemsResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+	if opts.ProjectID == "" {
+		return nil, fmt.Errorf("project ID is required")
+	}
+	if opts.InstallationID <= 0 {
+		return nil, fmt.Errorf("installation ID is required")
+	}
+
+	first := opts.First
+	if first <= 0 {
+		first = 50
+	}
+
+	query := url.Values{}
+	query.Set("team", c.teamSlug)
+	query.Set("installationId", fmt.Sprintf("%d", opts.InstallationID))
+	query.Set("projectId", opts.ProjectID)
+	query.Set("first", fmt.Sprintf("%d", first))
+	if after := strings.TrimSpace(opts.After); after != "" {
+		query.Set("after", after)
+	}
+
+	path := "/api/integrations/github/projects/items?" + query.Encode()
+	resp, err := c.doWwwRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("project items fetch failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result GetProjectItemsResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
 // ProjectDraftItem represents a draft issue to create in a GitHub Project.
 type ProjectDraftItem struct {
 	Title string `json:"title"`
