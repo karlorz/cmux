@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
-import { MessageSquare, Code2, TerminalSquare, Globe2, GitCompare, Brain } from "lucide-react";
+import { MessageSquare, Code2, TerminalSquare, Globe2, GitCompare, Brain, FileText } from "lucide-react";
 
-export type PanelType = "chat" | "workspace" | "terminal" | "browser" | "gitDiff" | "memory";
+export type PanelType = "chat" | "workspace" | "terminal" | "browser" | "gitDiff" | "memory" | "summary";
 
 /**
  * All available panel types. When adding a new panel:
@@ -11,7 +11,7 @@ export type PanelType = "chat" | "workspace" | "terminal" | "browser" | "gitDiff
  * 4. Add to PANEL_ICON_COMPONENTS
  * 5. Handle in TaskPanelFactory.tsx switch statement
  */
-export const ALL_PANEL_TYPES: PanelType[] = ["chat", "workspace", "terminal", "browser", "gitDiff", "memory"];
+export const ALL_PANEL_TYPES: PanelType[] = ["chat", "workspace", "terminal", "browser", "gitDiff", "memory", "summary"];
 
 export type LayoutMode =
   | "single-panel"    // Single full-width panel
@@ -65,6 +65,7 @@ export const PANEL_LABELS: Record<PanelType, string> = {
   browser: "Browser",
   gitDiff: "Git Diff",
   memory: "Memory",
+  summary: "Summary",
 };
 
 /** @deprecated Use PANEL_ICON_COMPONENTS instead */
@@ -75,6 +76,7 @@ export const PANEL_ICONS: Record<PanelType, string> = {
   browser: "Globe2",
   gitDiff: "GitCompare",
   memory: "Brain",
+  summary: "FileText",
 };
 
 /**
@@ -88,6 +90,7 @@ export const PANEL_ICON_COMPONENTS: Record<PanelType, LucideIcon> = {
   browser: Globe2,
   gitDiff: GitCompare,
   memory: Brain,
+  summary: FileText,
 };
 
 export const LAYOUT_LABELS: Record<LayoutMode, string> = {

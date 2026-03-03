@@ -6,6 +6,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery as useConvexQuery, useMutation } from "convex/react";
 import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import z from "zod";
+import type { TaskRunWithChildren } from "@/types/task";
 import { TaskRunTerminalSession } from "@/components/task-run-terminal-session";
 import { toMorphXtermBaseUrl } from "@/lib/toProxyWorkspaceUrl";
 import {
@@ -18,6 +19,7 @@ import { useQuery } from "@tanstack/react-query";
 import { convexQuery } from "@convex-dev/react-query";
 import { isElectron } from "@/lib/electron";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
+import { usePublishForwardedPorts } from "@/hooks/usePublishForwardedPorts";
 
 const paramsSchema = z.object({
   taskId: typedZid("tasks"),
@@ -356,31 +358,78 @@ function PreviewPage() {
         </>
       ) : (
         <div className="flex h-full items-center justify-center">
-          <div className="text-center">
-            <p className="mb-2 text-sm text-neutral-500 dark:text-neutral-400">
-              {selectedRun
-                ? `Preview ${previewId} is not available for this run`
-                : "Loading..."}
-            </p>
-            {selectedRun?.networking && selectedRun.networking.length > 0 && (
-              <div className="mt-4">
-                <p className="mb-2 text-xs text-neutral-400 dark:text-neutral-500">
-                  Available ports:
-                </p>
-                <div className="flex justify-center gap-2">
-                  {selectedRun.networking
-                    .filter((s) => s.status === "running")
-                    .map((service) => (
-                      <span
-                        key={service.port}
-                        className="rounded px-2 py-1 text-xs bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"
-                      >
-                        {service.port}
-                      </span>
-                    ))}
-                </div>
-              </div>
-            )}
+          <PreviewEmptyState
+            selectedRun={selectedRun}
+            previewId={previewId}
+            teamSlugOrId={teamSlugOrId}
+            runId={runId}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PreviewEmptyState({
+  selectedRun,
+  previewId,
+  teamSlugOrId,
+  runId,
+}: {
+  selectedRun: TaskRunWithChildren | undefined;
+  previewId: string;
+  teamSlugOrId: string;
+  runId: string;
+}) {
+  const sandboxId = selectedRun?.vscode?.containerName ?? null;
+  const refreshPorts = usePublishForwardedPorts({
+    taskRunId: runId as import("@cmux/convex/dataModel").Id<"taskRuns">,
+    sandboxId,
+    teamSlugOrId,
+  });
+
+  const hasRunningPorts = selectedRun?.networking?.some(
+    (s) => s.status === "running"
+  );
+
+  return (
+    <div className="text-center max-w-sm">
+      <p className="mb-2 text-sm text-neutral-500 dark:text-neutral-400">
+        {selectedRun
+          ? `Preview ${previewId} is not available for this run`
+          : "Loading..."}
+      </p>
+      {selectedRun && !hasRunningPorts && (
+        <p className="mb-3 text-xs text-neutral-400 dark:text-neutral-500">
+          Dev server may not have started yet, or ports have not been detected.
+        </p>
+      )}
+      {selectedRun && sandboxId && (
+        <button
+          type="button"
+          onClick={() => refreshPorts.mutate()}
+          disabled={refreshPorts.isPending}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 disabled:cursor-not-allowed dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+        >
+          {refreshPorts.isPending ? "Detecting..." : "Detect preview ports"}
+        </button>
+      )}
+      {hasRunningPorts && selectedRun?.networking && (
+        <div className="mt-4">
+          <p className="mb-2 text-xs text-neutral-400 dark:text-neutral-500">
+            Available ports:
+          </p>
+          <div className="flex justify-center gap-2">
+            {selectedRun.networking
+              .filter((s) => s.status === "running")
+              .map((service) => (
+                <span
+                  key={service.port}
+                  className="rounded px-2 py-1 text-xs bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"
+                >
+                  {service.port}
+                </span>
+              ))}
           </div>
         </div>
       )}
