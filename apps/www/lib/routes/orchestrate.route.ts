@@ -7,6 +7,7 @@ import { verifyTeamAccess } from "@/lib/utils/team-verification";
 import { api } from "@cmux/convex/api";
 import type { Id } from "@cmux/convex/dataModel";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { streamSSE } from "hono/streaming";
 
 // ============================================================================
 // Schemas
@@ -685,3 +686,148 @@ orchestrateRouter.openapi(
     }
   }
 );
+
+// ============================================================================
+// Orchestration Events SSE Endpoint (for real-time watch mode)
+// ============================================================================
+
+/**
+ * GET /api/orchestrate/events/:orchestrationId
+ * Server-Sent Events endpoint for real-time orchestration updates.
+ * Polls Convex every 3 seconds and sends events when status changes.
+ */
+orchestrateRouter.get("/orchestrate/events/:orchestrationId", async (c) => {
+  const accessToken = await getAccessTokenFromRequest(c.req.raw);
+  if (!accessToken) {
+    return c.text("Unauthorized", 401);
+  }
+
+  const orchestrationId = c.req.param("orchestrationId");
+  const teamSlugOrId = c.req.query("teamSlugOrId");
+
+  if (!teamSlugOrId) {
+    return c.text("teamSlugOrId query parameter required", 400);
+  }
+
+  try {
+    await verifyTeamAccess({ req: c.req.raw, teamSlugOrId });
+  } catch {
+    return c.text("Unauthorized", 401);
+  }
+
+  const convex = getConvex({ accessToken });
+
+  return streamSSE(c, async (stream) => {
+    const lastStatusMap = new Map<string, string>();
+    let isConnected = true;
+
+    // Send connected event
+    await stream.writeSSE({
+      event: "connected",
+      data: JSON.stringify({
+        orchestrationId,
+        timestamp: new Date().toISOString(),
+      }),
+    });
+
+    // Poll for updates
+    while (isConnected) {
+      try {
+        const allTasks = await convex.query(api.orchestrationQueries.listTasksByTeam, {
+          teamSlugOrId,
+          limit: 100,
+        });
+
+        // Filter tasks by orchestrationId
+        const tasks = allTasks.filter((t) => {
+          const meta = t.metadata as { orchestrationId?: string } | undefined;
+          return meta?.orchestrationId === orchestrationId;
+        });
+
+        // Check for status changes
+        for (const task of tasks) {
+          const prevStatus = lastStatusMap.get(task._id);
+          if (prevStatus !== task.status) {
+            await stream.writeSSE({
+              event: "task_status",
+              data: JSON.stringify({
+                taskId: task._id,
+                status: task.status,
+                previousStatus: prevStatus ?? null,
+                prompt: task.prompt,
+                agentName: task.assignedAgentName ?? null,
+                result: task.result ?? null,
+                errorMessage: task.errorMessage ?? null,
+                timestamp: new Date().toISOString(),
+              }),
+            });
+            lastStatusMap.set(task._id, task.status);
+
+            // Send task_completed event for terminal states
+            if (task.status === "completed" || task.status === "failed" || task.status === "cancelled") {
+              await stream.writeSSE({
+                event: "task_completed",
+                data: JSON.stringify({
+                  taskId: task._id,
+                  status: task.status,
+                  result: task.result ?? null,
+                  errorMessage: task.errorMessage ?? null,
+                  timestamp: new Date().toISOString(),
+                }),
+              });
+            }
+          }
+        }
+
+        // Calculate aggregated status
+        const statusCounts = {
+          total: tasks.length,
+          completed: tasks.filter((t) => t.status === "completed").length,
+          running: tasks.filter((t) => t.status === "running").length,
+          failed: tasks.filter((t) => t.status === "failed").length,
+          pending: tasks.filter((t) => t.status === "pending" || t.status === "assigned").length,
+        };
+
+        // Check if all tasks are in terminal state
+        const allTerminal = tasks.length > 0 &&
+          tasks.every((t) => t.status === "completed" || t.status === "failed" || t.status === "cancelled");
+
+        if (allTerminal) {
+          await stream.writeSSE({
+            event: "orchestration_completed",
+            data: JSON.stringify({
+              orchestrationId,
+              aggregatedStatus: statusCounts,
+              timestamp: new Date().toISOString(),
+            }),
+          });
+          isConnected = false;
+          break;
+        }
+
+        // Send heartbeat
+        await stream.writeSSE({
+          event: "heartbeat",
+          data: JSON.stringify({
+            aggregatedStatus: statusCounts,
+            timestamp: new Date().toISOString(),
+          }),
+        });
+
+        // Wait 3 seconds before next poll
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      } catch (error) {
+        console.error("[orchestrate] SSE poll error:", error);
+        await stream.writeSSE({
+          event: "error",
+          data: JSON.stringify({
+            message: error instanceof Error ? error.message : "Unknown error",
+            timestamp: new Date().toISOString(),
+          }),
+        });
+        // Wait before retrying
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+    }
+  });
+});
