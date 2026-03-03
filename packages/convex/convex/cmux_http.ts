@@ -2559,10 +2559,10 @@ async function handleListChildRuns(ctx: ActionCtx, req: Request): Promise<Respon
   const url = new URL(req.url);
   const pathParts = url.pathname.split("/").filter(Boolean);
   const runId = pathParts[4]; // ["api", "v1", "cmux", "task-runs", "{id}", "children"]
-  const teamSlugOrId = url.searchParams.get("team");
+  const teamSlugOrId = url.searchParams.get("teamSlugOrId");
 
   if (!teamSlugOrId) {
-    return jsonResponse({ code: 400, message: "team query param required" }, 400);
+    return jsonResponse({ code: 400, message: "teamSlugOrId query param required" }, 400);
   }
 
   try {
@@ -2602,10 +2602,10 @@ async function handleGetParentRun(ctx: ActionCtx, req: Request): Promise<Respons
   const url = new URL(req.url);
   const pathParts = url.pathname.split("/").filter(Boolean);
   const runId = pathParts[4]; // ["api", "v1", "cmux", "task-runs", "{id}", "parent"]
-  const teamSlugOrId = url.searchParams.get("team");
+  const teamSlugOrId = url.searchParams.get("teamSlugOrId");
 
   if (!teamSlugOrId) {
-    return jsonResponse({ code: 400, message: "team query param required" }, 400);
+    return jsonResponse({ code: 400, message: "teamSlugOrId query param required" }, 400);
   }
 
   try {
@@ -2646,10 +2646,10 @@ async function handleGetChildRunsStatus(ctx: ActionCtx, req: Request): Promise<R
   const url = new URL(req.url);
   const pathParts = url.pathname.split("/").filter(Boolean);
   const runId = pathParts[4]; // ["api", "v1", "cmux", "task-runs", "{id}", "children", "status"]
-  const teamSlugOrId = url.searchParams.get("team");
+  const teamSlugOrId = url.searchParams.get("teamSlugOrId");
 
   if (!teamSlugOrId) {
-    return jsonResponse({ code: 400, message: "team query param required" }, 400);
+    return jsonResponse({ code: 400, message: "teamSlugOrId query param required" }, 400);
   }
 
   try {

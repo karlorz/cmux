@@ -505,10 +505,10 @@ export const createInternal = internalMutation({
         throw new Error("Environment not found");
       }
     }
-    // Validate parent run if specified
+    // Validate parent run if specified (must belong to same team AND user)
     if (args.parentRunId) {
       const parentRun = await ctx.db.get(args.parentRunId);
-      if (!parentRun || parentRun.teamId !== args.teamId) {
+      if (!parentRun || parentRun.teamId !== args.teamId || parentRun.userId !== args.userId) {
         throw new Error("Parent task run not found or unauthorized");
       }
     }
@@ -758,6 +758,12 @@ export const updateStatus = internalMutation({
     // After updating to a terminal status, check if we should update the task status
     if (args.status === "completed" || args.status === "failed") {
       await updateTaskStatusFromRuns(ctx, run.taskId, run.teamId, run.userId);
+
+      // D4.3: Update parent run if this is a child run
+      const updatedRun = await ctx.db.get(args.id);
+      if (updatedRun) {
+        await updateParentRunOnChildComplete(ctx, updatedRun);
+      }
 
       // Create a notification for the user (also marks as unread)
       console.log("[taskNotifications] Creating notification", {
@@ -1761,6 +1767,12 @@ export const workerComplete = internalMutation({
 
     // After marking this run as completed, check if we should update the task status
     await updateTaskStatusFromRuns(ctx, run.taskId, run.teamId, run.userId);
+
+    // D4.3: Update parent run if this is a child run
+    const updatedRun = await ctx.db.get(args.taskRunId);
+    if (updatedRun) {
+      await updateParentRunOnChildComplete(ctx, updatedRun);
+    }
 
     // Notify orchestration worker of completion (handles orchestration-managed tasks)
     await ctx.scheduler.runAfter(
