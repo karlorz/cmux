@@ -553,6 +553,69 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
           },
         },
       },
+      {
+        name: "spawn_agent",
+        description: "Spawn a sub-agent to work on a task. Requires CMUX_TASK_RUN_JWT for authentication. The sub-agent runs in a new sandbox and works on the specified prompt.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            prompt: {
+              type: "string",
+              description: "The task prompt for the sub-agent",
+            },
+            agentName: {
+              type: "string",
+              description: "Agent to use (e.g., 'claude/haiku-4.5', 'codex/gpt-5.1-codex-mini')",
+            },
+            repo: {
+              type: "string",
+              description: "GitHub repository in owner/repo format (optional)",
+            },
+            branch: {
+              type: "string",
+              description: "Base branch to checkout (optional, defaults to main)",
+            },
+            dependsOn: {
+              type: "array",
+              items: { type: "string" },
+              description: "Array of orchestration task IDs this task depends on (optional)",
+            },
+            priority: {
+              type: "number",
+              description: "Task priority (0=highest, 10=lowest, default 5)",
+            },
+          },
+          required: ["prompt", "agentName"],
+        },
+      },
+      {
+        name: "get_agent_status",
+        description: "Get the status of a spawned sub-agent by orchestration task ID. Returns current status, result, and linked task run info.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            orchestrationTaskId: {
+              type: "string",
+              description: "The orchestration task ID returned from spawn_agent",
+            },
+          },
+          required: ["orchestrationTaskId"],
+        },
+      },
+      {
+        name: "list_spawned_agents",
+        description: "List all sub-agents spawned by this orchestration. Returns status summary of all tasks.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            status: {
+              type: "string",
+              enum: ["pending", "assigned", "running", "completed", "failed", "cancelled"],
+              description: "Filter by status (optional)",
+            },
+          },
+        },
+      },
     ],
   }));
 
@@ -969,6 +1032,240 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
             content: [{
               type: "text",
               text: `Error syncing orchestration updates: ${errorMsg}`,
+            }],
+          };
+        }
+      }
+
+      case "spawn_agent": {
+        const { prompt, agentName: spawnAgentName, repo, branch, dependsOn, priority } = args as {
+          prompt: string;
+          agentName: string;
+          repo?: string;
+          branch?: string;
+          dependsOn?: string[];
+          priority?: number;
+        };
+
+        const jwt = process.env.CMUX_TASK_RUN_JWT;
+        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux.sh";
+        const orchestrationId = process.env.CMUX_ORCHESTRATION_ID;
+
+        if (!jwt) {
+          return {
+            content: [{
+              type: "text",
+              text: "CMUX_TASK_RUN_JWT environment variable not set. This tool requires JWT authentication.",
+            }],
+          };
+        }
+
+        try {
+          const url = `${apiBaseUrl}/api/v1/cmux/orchestration/spawn`;
+          const response = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${jwt}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              prompt,
+              agent: spawnAgentName,
+              repo,
+              branch,
+              dependsOn,
+              priority: priority ?? 5,
+              orchestrationId,
+            }),
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            return {
+              content: [{
+                type: "text",
+                text: `Failed to spawn agent: ${response.status} ${errorText}`,
+              }],
+            };
+          }
+
+          const result = await response.json() as {
+            orchestrationTaskId: string;
+            taskId: string;
+            taskRunId: string;
+            agentName: string;
+            status: string;
+          };
+
+          // Update local PLAN.json
+          let plan = readPlan();
+          if (!plan && orchestrationId) {
+            plan = {
+              version: 1,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              status: "running",
+              headAgent: agentName,
+              orchestrationId,
+              tasks: [],
+            };
+          }
+
+          if (plan) {
+            plan.tasks.push({
+              id: result.orchestrationTaskId,
+              prompt,
+              agentName: spawnAgentName,
+              status: result.status,
+              taskRunId: result.taskRunId,
+              dependsOn,
+              priority: priority ?? 5,
+              createdAt: new Date().toISOString(),
+            });
+            writePlan(plan);
+          }
+
+          // Append spawn event
+          appendEvent({
+            timestamp: new Date().toISOString(),
+            event: "agent_spawned",
+            message: `Spawned ${spawnAgentName} for: ${prompt.slice(0, 50)}...`,
+            agentName: spawnAgentName,
+            taskRunId: result.taskRunId,
+          });
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify(result, null, 2),
+            }],
+          };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          return {
+            content: [{
+              type: "text",
+              text: `Error spawning agent: ${errorMsg}`,
+            }],
+          };
+        }
+      }
+
+      case "get_agent_status": {
+        const { orchestrationTaskId } = args as { orchestrationTaskId: string };
+
+        const jwt = process.env.CMUX_TASK_RUN_JWT;
+        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux.sh";
+
+        if (!jwt) {
+          return {
+            content: [{
+              type: "text",
+              text: "CMUX_TASK_RUN_JWT environment variable not set. This tool requires JWT authentication.",
+            }],
+          };
+        }
+
+        try {
+          const url = `${apiBaseUrl}/api/v1/cmux/orchestration/tasks/${orchestrationTaskId}`;
+          const response = await fetch(url, {
+            method: "GET",
+            headers: {
+              "Authorization": `Bearer ${jwt}`,
+              "Content-Type": "application/json",
+            },
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            return {
+              content: [{
+                type: "text",
+                text: `Failed to get agent status: ${response.status} ${errorText}`,
+              }],
+            };
+          }
+
+          const result = await response.json();
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify(result, null, 2),
+            }],
+          };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          return {
+            content: [{
+              type: "text",
+              text: `Error getting agent status: ${errorMsg}`,
+            }],
+          };
+        }
+      }
+
+      case "list_spawned_agents": {
+        const { status: filterStatus } = args as { status?: string };
+
+        const jwt = process.env.CMUX_TASK_RUN_JWT;
+        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux.sh";
+        const orchestrationId = process.env.CMUX_ORCHESTRATION_ID;
+
+        if (!jwt) {
+          return {
+            content: [{
+              type: "text",
+              text: "CMUX_TASK_RUN_JWT environment variable not set. This tool requires JWT authentication.",
+            }],
+          };
+        }
+
+        if (!orchestrationId) {
+          return {
+            content: [{
+              type: "text",
+              text: "CMUX_ORCHESTRATION_ID environment variable not set.",
+            }],
+          };
+        }
+
+        try {
+          let url = `${apiBaseUrl}/api/v1/cmux/orchestration/${orchestrationId}/tasks`;
+          if (filterStatus) {
+            url += `?status=${filterStatus}`;
+          }
+
+          const response = await fetch(url, {
+            method: "GET",
+            headers: {
+              "Authorization": `Bearer ${jwt}`,
+              "Content-Type": "application/json",
+            },
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            return {
+              content: [{
+                type: "text",
+                text: `Failed to list agents: ${response.status} ${errorText}`,
+              }],
+            };
+          }
+
+          const result = await response.json();
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify(result, null, 2),
+            }],
+          };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          return {
+            content: [{
+              type: "text",
+              text: `Error listing agents: ${errorMsg}`,
             }],
           };
         }
