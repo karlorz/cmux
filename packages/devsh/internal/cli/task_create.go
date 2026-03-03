@@ -33,6 +33,8 @@ var (
 	taskCreateGHProjectOwner          string
 	taskCreateGHProjectOwnerType      string
 	taskCreateFromProjectItem         string // convenience: auto-fetch item content as prompt
+	// Agent Teams (D4) - parent-child task relationships
+	taskCreateParentTaskRun string
 )
 
 var taskCreateCmd = &cobra.Command{
@@ -48,6 +50,7 @@ Use --local to create a local workspace with codex-style worktrees (requires loc
 Use --env to specify a custom environment (if omitted, auto-selects latest for repo).
 Use --cloud-workspace to create a cloud workspace (prompt is optional, defaults to empty).
 Use --from-project-item to create a task from a GitHub Project item (auto-fetches title+body as prompt).
+Use --parent-task-run to create a child task linked to a parent task run (for agent teams).
 
 Examples:
   devsh task create "Add unit tests for auth module"
@@ -237,6 +240,7 @@ Examples:
 			GithubProjectInstallationId: taskCreateGHProjectInstallationId,
 			GithubProjectOwner:          taskCreateGHProjectOwner,
 			GithubProjectOwnerType:      taskCreateGHProjectOwnerType,
+			ParentTaskRunID:             taskCreateParentTaskRun,
 		}
 
 		// Create task and task runs (with JWTs)
@@ -525,5 +529,7 @@ func init() {
 	taskCreateCmd.Flags().StringVar(&taskCreateGHProjectOwner, "gh-project-owner", "", "GitHub Project owner login (org or user)")
 	taskCreateCmd.Flags().StringVar(&taskCreateGHProjectOwnerType, "gh-project-owner-type", "", "GitHub Project owner type (organization or user)")
 	taskCreateCmd.Flags().StringVar(&taskCreateFromProjectItem, "from-project-item", "", "Create task from a GitHub Project item (auto-fetches title+body as prompt; requires --gh-project-id and --gh-project-installation-id)")
+	// Agent Teams (D4) - parent-child task relationships
+	taskCreateCmd.Flags().StringVar(&taskCreateParentTaskRun, "parent-task-run", "", "Parent task run ID (creates child task for agent teams)")
 	taskCmd.AddCommand(taskCreateCmd)
 }

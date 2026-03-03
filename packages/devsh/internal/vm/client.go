@@ -816,6 +816,8 @@ type CreateTaskOptions struct {
 	GithubProjectInstallationId int
 	GithubProjectOwner          string
 	GithubProjectOwnerType      string
+	// Agent Teams (D4) - parent-child task relationships
+	ParentTaskRunID string
 }
 
 // TaskRunWithJWT represents a task run with its JWT for sandbox auth
@@ -971,6 +973,9 @@ func (c *Client) CreateTask(ctx context.Context, opts CreateTaskOptions) (*Creat
 	}
 	if opts.GithubProjectOwnerType != "" {
 		body["githubProjectOwnerType"] = opts.GithubProjectOwnerType
+	}
+	if opts.ParentTaskRunID != "" {
+		body["parentTaskRunId"] = opts.ParentTaskRunID
 	}
 
 	resp, err := c.doRequest(ctx, "POST", "/api/v1/cmux/tasks", body)

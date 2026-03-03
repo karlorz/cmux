@@ -1951,6 +1951,8 @@ export const createTask = httpAction(async (ctx, req) => {
     githubProjectInstallationId?: number;
     githubProjectOwner?: string;
     githubProjectOwnerType?: string;
+    // Agent Teams (D4) - parent-child task relationships
+    parentTaskRunId?: string;
   };
 
   try {
@@ -2047,6 +2049,11 @@ export const createTask = httpAction(async (ctx, req) => {
 
     // Create task runs for each agent (with JWTs for sandbox auth)
     const taskRuns: Array<{ taskRunId: string; jwt: string; agentName: string }> = [];
+    // Validate parent task run ID if provided
+    let parentRunId: Id<"taskRuns"> | undefined;
+    if (body.parentTaskRunId) {
+      parentRunId = body.parentTaskRunId as Id<"taskRuns">;
+    }
     if (body.agents && body.agents.length > 0) {
       for (const agentName of body.agents) {
         const runResult = await ctx.runMutation(internal.taskRuns.createInternal, {
@@ -2056,6 +2063,7 @@ export const createTask = httpAction(async (ctx, req) => {
           prompt: body.prompt,
           agentName,
           environmentId,
+          parentRunId,
         }) as { taskRunId: Id<"taskRuns">; jwt: string };
 
         taskRuns.push({
@@ -2407,9 +2415,37 @@ export const taskActionRouter = httpAction(async (ctx, req) => {
 });
 
 // ============================================================================
-// GET /api/v1/cmux/task-runs/{taskRunId}/memory - Get memory for a task run
+// GET /api/v1/cmux/task-runs/{id}/* - Unified task run GET router
+// Handles: /memory, /children, /parent, /children/status
 // ============================================================================
-export const getTaskRunMemory = httpAction(async (ctx, req) => {
+export const taskRunGetRouter = httpAction(async (ctx, req) => {
+  const url = new URL(req.url);
+  const pathParts = url.pathname.split("/").filter(Boolean);
+  // pathParts: ["api", "v1", "cmux", "task-runs", "{id}", "{action}", ...]
+
+  if (pathParts.length < 6) {
+    return jsonResponse({ code: 400, message: "Invalid path" }, 400);
+  }
+
+  const action = pathParts[5]; // memory, children, parent
+  const subAction = pathParts[6]; // status (for children/status)
+
+  // Route to appropriate handler
+  if (action === "memory") {
+    return handleGetTaskRunMemory(ctx, req);
+  } else if (action === "children" && subAction === "status") {
+    return handleGetChildRunsStatus(ctx, req);
+  } else if (action === "children") {
+    return handleListChildRuns(ctx, req);
+  } else if (action === "parent") {
+    return handleGetParentRun(ctx, req);
+  }
+
+  return jsonResponse({ code: 404, message: "Unknown action" }, 404);
+});
+
+// GET /api/v1/cmux/task-runs/{taskRunId}/memory - Get memory for a task run
+async function handleGetTaskRunMemory(ctx: ActionCtx, req: Request): Promise<Response> {
   const { identity, error } = await getAuthenticatedUser(ctx);
   if (error) return error;
 
@@ -2509,4 +2545,126 @@ export const getTaskRunMemory = httpAction(async (ctx, req) => {
       500
     );
   }
-});
+}
+
+// ============================================================================
+// D4.2: Agent Teams - Parent-Child Task Relationship Handlers
+// ============================================================================
+
+// GET /api/v1/cmux/task-runs/{id}/children - List child task runs
+async function handleListChildRuns(ctx: ActionCtx, req: Request): Promise<Response> {
+  const { error } = await getAuthenticatedUser(ctx);
+  if (error) return error;
+
+  const url = new URL(req.url);
+  const pathParts = url.pathname.split("/").filter(Boolean);
+  const runId = pathParts[4]; // ["api", "v1", "cmux", "task-runs", "{id}", "children"]
+  const teamSlugOrId = url.searchParams.get("teamSlugOrId");
+
+  if (!teamSlugOrId) {
+    return jsonResponse({ code: 400, message: "teamSlugOrId query param required" }, 400);
+  }
+
+  try {
+    const children = await ctx.runQuery(api.taskRuns.listChildRuns, {
+      teamSlugOrId,
+      parentRunId: runId as Id<"taskRuns">,
+    });
+
+    return jsonResponse({
+      children: children.map((c) => ({
+        id: c._id,
+        taskId: c.taskId,
+        agentName: c.agentName,
+        status: c.status,
+        createdAt: c.createdAt,
+        completedAt: c.completedAt,
+        exitCode: c.exitCode,
+        pullRequestUrl: c.pullRequestUrl,
+        summary: c.summary,
+      })),
+    });
+  } catch (err) {
+    console.error("[cmux.taskRuns.listChildren] Error:", err);
+    const message = err instanceof Error ? err.message : "Failed to list child runs";
+    if (message.includes("not found") || message.includes("unauthorized")) {
+      return jsonResponse({ code: 404, message: "Task run not found" }, 404);
+    }
+    return jsonResponse({ code: 500, message }, 500);
+  }
+}
+
+// GET /api/v1/cmux/task-runs/{id}/parent - Get parent task run
+async function handleGetParentRun(ctx: ActionCtx, req: Request): Promise<Response> {
+  const { error } = await getAuthenticatedUser(ctx);
+  if (error) return error;
+
+  const url = new URL(req.url);
+  const pathParts = url.pathname.split("/").filter(Boolean);
+  const runId = pathParts[4]; // ["api", "v1", "cmux", "task-runs", "{id}", "parent"]
+  const teamSlugOrId = url.searchParams.get("teamSlugOrId");
+
+  if (!teamSlugOrId) {
+    return jsonResponse({ code: 400, message: "teamSlugOrId query param required" }, 400);
+  }
+
+  try {
+    const parent = await ctx.runQuery(api.taskRuns.getParentRun, {
+      teamSlugOrId,
+      runId: runId as Id<"taskRuns">,
+    });
+
+    if (!parent) {
+      return jsonResponse({ parent: null });
+    }
+
+    return jsonResponse({
+      parent: {
+        id: parent._id,
+        taskId: parent.taskId,
+        agentName: parent.agentName,
+        status: parent.status,
+        createdAt: parent.createdAt,
+        completedAt: parent.completedAt,
+      },
+    });
+  } catch (err) {
+    console.error("[cmux.taskRuns.getParent] Error:", err);
+    const message = err instanceof Error ? err.message : "Failed to get parent run";
+    if (message.includes("not found") || message.includes("unauthorized")) {
+      return jsonResponse({ code: 404, message: "Task run not found" }, 404);
+    }
+    return jsonResponse({ code: 500, message }, 500);
+  }
+}
+
+// GET /api/v1/cmux/task-runs/{id}/children/status - Get aggregated child status
+async function handleGetChildRunsStatus(ctx: ActionCtx, req: Request): Promise<Response> {
+  const { error } = await getAuthenticatedUser(ctx);
+  if (error) return error;
+
+  const url = new URL(req.url);
+  const pathParts = url.pathname.split("/").filter(Boolean);
+  const runId = pathParts[4]; // ["api", "v1", "cmux", "task-runs", "{id}", "children", "status"]
+  const teamSlugOrId = url.searchParams.get("teamSlugOrId");
+
+  if (!teamSlugOrId) {
+    return jsonResponse({ code: 400, message: "teamSlugOrId query param required" }, 400);
+  }
+
+  try {
+    const status = await ctx.runQuery(api.taskRuns.getChildRunsStatus, {
+      teamSlugOrId,
+      parentRunId: runId as Id<"taskRuns">,
+    });
+
+    return jsonResponse(status);
+  } catch (err) {
+    console.error("[cmux.taskRuns.getChildStatus] Error:", err);
+    const message = err instanceof Error ? err.message : "Failed to get child status";
+    if (message.includes("not found") || message.includes("unauthorized")) {
+      return jsonResponse({ code: 404, message: "Task run not found" }, 404);
+    }
+    return jsonResponse({ code: 500, message }, 500);
+  }
+}
