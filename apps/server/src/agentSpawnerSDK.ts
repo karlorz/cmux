@@ -184,6 +184,7 @@ export async function spawnAgentWithSDK(
       CMUX_AGENT_NAME: options.agentName,
       CMUX_TASK_RUN_JWT: options.taskRunJwt,
       CMUX_CALLBACK_URL: getWwwBaseUrl(),
+      CMUX_SERVER_URL: getWwwBaseUrl(), // Alias for devsh CLI compatibility
     },
     hooks: {
       PreToolUse: [{ hooks: [preToolUseHook] }],
