@@ -603,6 +603,24 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
         },
       },
       {
+        name: "wait_for_agent",
+        description: "Wait for a spawned sub-agent to reach a terminal state (completed, failed, or cancelled). Polls every 5 seconds until the agent finishes or timeout.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            orchestrationTaskId: {
+              type: "string",
+              description: "The orchestration task ID to wait for",
+            },
+            timeout: {
+              type: "number",
+              description: "Maximum wait time in milliseconds (default: 300000 = 5 minutes)",
+            },
+          },
+          required: ["orchestrationTaskId"],
+        },
+      },
+      {
         name: "list_spawned_agents",
         description: "List all sub-agents spawned by this orchestration. Returns status summary of all tasks.",
         inputSchema: {
@@ -1199,6 +1217,110 @@ export function createMemoryMcpServer(config?: Partial<MemoryMcpConfig>) {
             content: [{
               type: "text",
               text: `Error getting agent status: ${errorMsg}`,
+            }],
+          };
+        }
+      }
+
+      case "wait_for_agent": {
+        const { orchestrationTaskId, timeout = 300000 } = args as {
+          orchestrationTaskId: string;
+          timeout?: number;
+        };
+
+        const jwt = process.env.CMUX_TASK_RUN_JWT;
+        const apiBaseUrl = process.env.CMUX_API_BASE_URL ?? "https://cmux.sh";
+
+        if (!jwt) {
+          return {
+            content: [{
+              type: "text",
+              text: "CMUX_TASK_RUN_JWT environment variable not set. This tool requires JWT authentication.",
+            }],
+          };
+        }
+
+        const startTime = Date.now();
+        const pollInterval = 5000; // 5 seconds
+
+        try {
+          while (Date.now() - startTime < timeout) {
+            const url = `${apiBaseUrl}/api/orchestrate/status/${orchestrationTaskId}`;
+            const response = await fetch(url, {
+              method: "GET",
+              headers: {
+                "X-Task-Run-JWT": jwt,
+                "Content-Type": "application/json",
+              },
+            });
+
+            if (!response.ok) {
+              const errorText = await response.text();
+              return {
+                content: [{
+                  type: "text",
+                  text: `Failed to get agent status: ${response.status} ${errorText}`,
+                }],
+              };
+            }
+
+            const result = await response.json() as {
+              task: {
+                status: string;
+                result?: string;
+                errorMessage?: string;
+                prompt?: string;
+              };
+            };
+
+            const status = result.task.status;
+
+            // Check for terminal states
+            if (status === "completed" || status === "failed" || status === "cancelled") {
+              appendEvent({
+                timestamp: new Date().toISOString(),
+                event: "agent_wait_completed",
+                message: `Agent ${orchestrationTaskId} reached terminal state: ${status}`,
+                taskRunId: orchestrationTaskId,
+                status,
+              });
+
+              return {
+                content: [{
+                  type: "text",
+                  text: JSON.stringify({
+                    orchestrationTaskId,
+                    status,
+                    result: result.task.result ?? null,
+                    errorMessage: result.task.errorMessage ?? null,
+                    waitDuration: Date.now() - startTime,
+                  }, null, 2),
+                }],
+              };
+            }
+
+            // Wait before next poll
+            await new Promise((resolve) => setTimeout(resolve, pollInterval));
+          }
+
+          // Timeout reached
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                orchestrationTaskId,
+                status: "timeout",
+                message: `Timed out waiting for agent after ${timeout}ms`,
+                waitDuration: Date.now() - startTime,
+              }, null, 2),
+            }],
+          };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          return {
+            content: [{
+              type: "text",
+              text: `Error waiting for agent: ${errorMsg}`,
             }],
           };
         }
