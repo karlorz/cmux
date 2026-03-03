@@ -750,6 +750,18 @@ export const create = authMutation({
         throw new Error("Environment not found");
       }
     }
+    // Validate GitHub project linkage belongs to this team
+    if (args.githubProjectInstallationId != null) {
+      const connection = await ctx.db
+        .query("providerConnections")
+        .withIndex("by_installationId", (q) =>
+          q.eq("installationId", args.githubProjectInstallationId as number),
+        )
+        .first();
+      if (!connection || connection.teamId !== teamId) {
+        throw new Error("GitHub installation not found or does not belong to team");
+      }
+    }
     const now = Date.now();
     const taskId = await ctx.db.insert("tasks", {
       text: args.text,
@@ -1822,6 +1834,18 @@ export const createInternal = internalMutation({
     githubProjectOwnerType: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    // Validate GitHub project linkage belongs to this team
+    if (args.githubProjectInstallationId != null) {
+      const connection = await ctx.db
+        .query("providerConnections")
+        .withIndex("by_installationId", (q) =>
+          q.eq("installationId", args.githubProjectInstallationId as number),
+        )
+        .first();
+      if (!connection || connection.teamId !== args.teamId) {
+        throw new Error("GitHub installation not found or does not belong to team");
+      }
+    }
     const now = Date.now();
     const taskId = await ctx.db.insert("tasks", {
       text: args.text,
