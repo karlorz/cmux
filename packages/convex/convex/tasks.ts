@@ -1784,6 +1784,19 @@ export const getByGithubProjectItem = internalQuery({
 });
 
 /**
+ * Get a task by ID (internal, no auth).
+ * Used by githubProjectSync action to read project linkage fields.
+ */
+export const getInternal = internalQuery({
+  args: {
+    id: v.id("tasks"),
+  },
+  handler: async (ctx, args) => {
+    return ctx.db.get(args.id);
+  },
+});
+
+/**
  * Internal mutation to create a task (without task runs).
  * Task runs are created separately via taskRuns.createInternal to get JWTs.
  * Used by CLI HTTP API for task create endpoint.
