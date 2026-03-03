@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { log } from "../logger";
 import { execAsync, WORKSPACE_ROOT } from "./utils";
 import { getDefaultBaseBranch } from "./git";
@@ -9,6 +11,35 @@ import type {
   WorkerRunContext,
 } from "./types";
 
+const MEMORY_DAILY_DIR = "/root/lifecycle/memory/daily";
+
+/**
+ * Extract execution summary from agent daily logs.
+ * Reads all daily/*.md files and returns the content under "## Execution Summary".
+ */
+export function extractExecutionSummary(): string | undefined {
+  if (!existsSync(MEMORY_DAILY_DIR)) {
+    return undefined;
+  }
+
+  const files = readdirSync(MEMORY_DAILY_DIR)
+    .filter((f) => f.endsWith(".md"))
+    .sort()
+    .reverse(); // newest first
+
+  for (const file of files) {
+    const content = readFileSync(join(MEMORY_DAILY_DIR, file), "utf-8");
+    const match = content.match(
+      /## Execution Summary\n([\s\S]*?)(?=\n## |\n---\s*$|$)/
+    );
+    if (match?.[1]?.trim()) {
+      return match[1].trim();
+    }
+  }
+
+  return undefined;
+}
+
 export function buildPullRequestTitle(prompt: string): string {
   const base = prompt.trim() || "manaflow changes";
   const title = `[Crown] ${base}`;
@@ -17,6 +48,7 @@ export function buildPullRequestTitle(prompt: string): string {
 
 export function buildPullRequestBody({
   summary,
+  executionSummary,
   prompt,
   agentName,
   branch,
@@ -24,6 +56,7 @@ export function buildPullRequestBody({
   runId,
 }: {
   summary?: string;
+  executionSummary?: string;
   prompt: string;
   agentName: string;
   branch: string;
@@ -31,13 +64,16 @@ export function buildPullRequestBody({
   runId: string;
 }): string {
   const bodySummary = summary?.trim() || "Summary not available.";
+  const execSummarySection = executionSummary?.trim()
+    ? `\n\n### Execution Summary\n${executionSummary.trim()}`
+    : "";
   return `## 🏆 Crown Winner: ${agentName}
 
 ### Task Description
 ${prompt}
 
 ### Summary
-${bodySummary}
+${bodySummary}${execSummarySection}
 
 ### Implementation Details
 - **Agent**: ${agentName}
@@ -111,8 +147,10 @@ export async function createPullRequest(options: {
   // Auto-detect base branch if not set (for repos using master instead of main)
   const baseBranch = check.task.baseBranch || await getDefaultBaseBranch();
   const prTitle = buildPullRequestTitle(check.task.text);
+  const executionSummary = extractExecutionSummary();
   const prBody = buildPullRequestBody({
     summary,
+    executionSummary,
     prompt: check.task.text,
     agentName: winner.agentName,
     branch,

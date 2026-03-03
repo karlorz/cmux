@@ -18,6 +18,7 @@ import {
   buildPullRequestBody,
   buildPullRequestTitle,
   createPullRequest,
+  extractExecutionSummary,
 } from "./pullRequest";
 import {
   type CandidateData,
@@ -637,8 +638,10 @@ async function startCrownEvaluation({
 
     // Generate PR title/description for manual creation even if auto-PR disabled
     const pullRequestTitle = buildPullRequestTitle(crownData.task?.text || "");
+    const executionSummary = extractExecutionSummary();
     const pullRequestDescription = buildPullRequestBody({
       summary,
+      executionSummary,
       prompt: crownData.task?.text || "",
       agentName: candidate.agentName,
       branch: candidate.newBranch || "",
@@ -874,8 +877,10 @@ async function startCrownEvaluation({
 
   // Always generate PR title and description (for manual draft PRs even if auto-PR is disabled)
   const pullRequestTitle = buildPullRequestTitle(promptText);
+  const executionSummary = extractExecutionSummary();
   const pullRequestDescription = buildPullRequestBody({
     summary,
+    executionSummary,
     prompt: promptText,
     agentName: winnerCandidate.agentName,
     branch: winnerCandidate.newBranch || "",

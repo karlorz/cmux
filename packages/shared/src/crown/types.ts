@@ -140,6 +140,7 @@ export type CrownEvaluationResponse = z.infer<
 
 export const CrownSummarizationResponseSchema = z.object({
   summary: z.string(),
+  executionSummary: z.string().optional(),
 });
 export type CrownSummarizationResponse = z.infer<
   typeof CrownSummarizationResponseSchema
