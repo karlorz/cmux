@@ -805,8 +805,10 @@ function TaskDetailHeaderErrorFallback() {
 }
 
 export function TaskDetailHeader(props: TaskDetailHeaderProps) {
+  // Key the ErrorBoundary by task/run ID so it resets when context changes
+  const resetKey = `${props.task?._id ?? "no-task"}-${props.selectedRun?._id ?? "no-run"}`;
   return (
-    <ErrorBoundary fallback={<TaskDetailHeaderErrorFallback />}>
+    <ErrorBoundary key={resetKey} fallback={<TaskDetailHeaderErrorFallback />}>
       <TaskDetailHeaderContent {...props} />
     </ErrorBoundary>
   );

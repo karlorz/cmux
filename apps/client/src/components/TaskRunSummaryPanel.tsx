@@ -132,8 +132,10 @@ function TaskRunSummaryPanelContent({
 }
 
 export function TaskRunSummaryPanel(props: TaskRunSummaryPanelProps) {
+  // Key the ErrorBoundary by task/run ID so it resets when context changes
+  const resetKey = `${props.task?._id ?? "no-task"}-${props.selectedRun?._id ?? "no-run"}`;
   return (
-    <ErrorBoundary fallback={<TaskRunSummaryPanelErrorFallback />}>
+    <ErrorBoundary key={resetKey} fallback={<TaskRunSummaryPanelErrorFallback />}>
       <TaskRunSummaryPanelContent {...props} />
     </ErrorBoundary>
   );
