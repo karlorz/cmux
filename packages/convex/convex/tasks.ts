@@ -1766,6 +1766,24 @@ export const listInternal = internalQuery({
 });
 
 /**
+ * Look up a task by its linked GitHub Project item ID.
+ * Used by Phase 4 (bi-directional status sync) and head agent task dispatch.
+ */
+export const getByGithubProjectItem = internalQuery({
+  args: {
+    githubProjectItemId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return ctx.db
+      .query("tasks")
+      .withIndex("by_github_project_item", (q) =>
+        q.eq("githubProjectItemId", args.githubProjectItemId),
+      )
+      .first();
+  },
+});
+
+/**
  * Internal mutation to create a task (without task runs).
  * Task runs are created separately via taskRuns.createInternal to get JWTs.
  * Used by CLI HTTP API for task create endpoint.

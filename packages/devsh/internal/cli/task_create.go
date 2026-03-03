@@ -26,6 +26,12 @@ var (
 	taskCreatePRTitle        string
 	taskCreateEnv            string
 	taskCreateCloudWorkspace bool
+	// GitHub Projects v2 linkage
+	taskCreateGHProjectId             string
+	taskCreateGHProjectItemId         string
+	taskCreateGHProjectInstallationId int
+	taskCreateGHProjectOwner          string
+	taskCreateGHProjectOwnerType      string
 )
 
 var taskCreateCmd = &cobra.Command{
@@ -52,7 +58,8 @@ Examples:
   devsh task create --repo owner/repo --agent claude-code --local "Local worktree mode"
   devsh task create --repo owner/repo --env env_abc123 --agent claude-code "With custom environment"
   devsh task create --repo owner/repo --cloud-workspace --agent claude-code "Create as cloud workspace"
-  devsh task create --repo owner/repo --cloud-workspace  # No prompt (interactive TUI session)`,
+  devsh task create --repo owner/repo --cloud-workspace  # No prompt (interactive TUI session)
+  devsh task create --repo owner/repo --agent claude-code --gh-project-id PVT_xxx --gh-project-item-id PVTI_xxx --gh-project-installation-id 12345 --gh-project-owner my-org --gh-project-owner-type organization "From project item"`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var prompt string
@@ -146,14 +153,19 @@ Examples:
 		}
 
 		opts := vm.CreateTaskOptions{
-			Prompt:           prompt,
-			Repository:       taskCreateRepo,
-			BaseBranch:       taskCreateBranch,
-			Agents:           taskCreateAgents,
-			Images:           uploadedImages,
-			PRTitle:          taskCreatePRTitle,
-			EnvironmentID:    environmentID,
-			IsCloudWorkspace: taskCreateCloudWorkspace,
+			Prompt:                      prompt,
+			Repository:                  taskCreateRepo,
+			BaseBranch:                  taskCreateBranch,
+			Agents:                      taskCreateAgents,
+			Images:                      uploadedImages,
+			PRTitle:                     taskCreatePRTitle,
+			EnvironmentID:               environmentID,
+			IsCloudWorkspace:            taskCreateCloudWorkspace,
+			GithubProjectId:             taskCreateGHProjectId,
+			GithubProjectItemId:         taskCreateGHProjectItemId,
+			GithubProjectInstallationId: taskCreateGHProjectInstallationId,
+			GithubProjectOwner:          taskCreateGHProjectOwner,
+			GithubProjectOwnerType:      taskCreateGHProjectOwnerType,
 		}
 
 		// Create task and task runs (with JWTs)
@@ -435,5 +447,11 @@ func init() {
 	taskCreateCmd.Flags().BoolVar(&taskCreateLocal, "local", false, "Use local workspace mode (codex-style worktrees)")
 	taskCreateCmd.Flags().StringVar(&taskCreatePRTitle, "pr-title", "", "Optional pull request title to save on the task")
 	taskCreateCmd.Flags().BoolVar(&taskCreateCloudWorkspace, "cloud-workspace", false, "Create as a cloud workspace (appears in Workspaces section)")
+	// GitHub Projects v2 linkage flags
+	taskCreateCmd.Flags().StringVar(&taskCreateGHProjectId, "gh-project-id", "", "GitHub Project node ID (PVT_xxx)")
+	taskCreateCmd.Flags().StringVar(&taskCreateGHProjectItemId, "gh-project-item-id", "", "GitHub Project item node ID (PVTI_xxx)")
+	taskCreateCmd.Flags().IntVar(&taskCreateGHProjectInstallationId, "gh-project-installation-id", 0, "GitHub App installation ID for the project")
+	taskCreateCmd.Flags().StringVar(&taskCreateGHProjectOwner, "gh-project-owner", "", "GitHub Project owner login (org or user)")
+	taskCreateCmd.Flags().StringVar(&taskCreateGHProjectOwnerType, "gh-project-owner-type", "", "GitHub Project owner type (organization or user)")
 	taskCmd.AddCommand(taskCreateCmd)
 }
