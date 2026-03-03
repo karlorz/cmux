@@ -404,6 +404,7 @@ export const createInternal = internalMutation({
     agentName: v.optional(v.string()),
     newBranch: v.optional(v.string()),
     environmentId: v.optional(v.id("environments")),
+    parentRunId: v.optional(v.id("taskRuns")), // Agent Teams (D4) - parent-child relationships
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -417,8 +418,16 @@ export const createInternal = internalMutation({
         throw new Error("Environment not found");
       }
     }
+    // Validate parent run if specified
+    if (args.parentRunId) {
+      const parentRun = await ctx.db.get(args.parentRunId);
+      if (!parentRun || parentRun.teamId !== args.teamId) {
+        throw new Error("Parent task run not found or unauthorized");
+      }
+    }
     const taskRunId = await ctx.db.insert("taskRuns", {
       taskId: args.taskId,
+      parentRunId: args.parentRunId,
       prompt: args.prompt,
       agentName: args.agentName,
       newBranch: args.newBranch,
@@ -2520,5 +2529,129 @@ export const updateStartingCommitSha = authMutation({
       startingCommitSha: args.startingCommitSha,
       updatedAt: Date.now(),
     });
+  },
+});
+
+// ============================================================================
+// D4.2: Agent Teams - Parent-Child Task Relationship Queries
+// ============================================================================
+
+/**
+ * Get all child task runs for a given parent task run.
+ * Returns immediate children only (not recursive).
+ */
+export const listChildRuns = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    parentRunId: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    // Verify parent run exists and user has access
+    const parentRun = await ctx.db.get(args.parentRunId);
+    if (!parentRun || parentRun.teamId !== teamId || parentRun.userId !== userId) {
+      throw new Error("Parent task run not found or unauthorized");
+    }
+
+    const children = await ctx.db
+      .query("taskRuns")
+      .withIndex("by_parent", (q) => q.eq("parentRunId", args.parentRunId))
+      .collect();
+
+    // Filter by team/user access
+    return children.filter(
+      (run) => run.teamId === teamId && run.userId === userId
+    );
+  },
+});
+
+/**
+ * Get parent task run info for a given child task run.
+ * Returns null if the run has no parent.
+ */
+export const getParentRun = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    runId: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    const run = await ctx.db.get(args.runId);
+    if (!run || run.teamId !== teamId || run.userId !== userId) {
+      throw new Error("Task run not found or unauthorized");
+    }
+
+    if (!run.parentRunId) {
+      return null;
+    }
+
+    const parentRun = await ctx.db.get(run.parentRunId);
+    if (!parentRun || parentRun.teamId !== teamId || parentRun.userId !== userId) {
+      return null; // Parent exists but user doesn't have access
+    }
+
+    return parentRun;
+  },
+});
+
+/**
+ * Get aggregated status of all child runs for a parent.
+ * Returns counts by status and overall completion state.
+ */
+export const getChildRunsStatus = authQuery({
+  args: {
+    teamSlugOrId: v.string(),
+    parentRunId: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+
+    // Verify parent run exists and user has access
+    const parentRun = await ctx.db.get(args.parentRunId);
+    if (!parentRun || parentRun.teamId !== teamId || parentRun.userId !== userId) {
+      throw new Error("Parent task run not found or unauthorized");
+    }
+
+    const children = await ctx.db
+      .query("taskRuns")
+      .withIndex("by_parent", (q) => q.eq("parentRunId", args.parentRunId))
+      .collect();
+
+    // Filter by team/user access and count by status
+    const accessibleChildren = children.filter(
+      (run) => run.teamId === teamId && run.userId === userId
+    );
+
+    const statusCounts: Record<string, number> = {
+      pending: 0,
+      running: 0,
+      completed: 0,
+      failed: 0,
+      skipped: 0,
+    };
+
+    for (const child of accessibleChildren) {
+      statusCounts[child.status] = (statusCounts[child.status] || 0) + 1;
+    }
+
+    const total = accessibleChildren.length;
+    const terminal = statusCounts.completed + statusCounts.failed + statusCounts.skipped;
+    const allComplete = total > 0 && terminal === total;
+    const anyFailed = statusCounts.failed > 0;
+    const allSucceeded = total > 0 && statusCounts.completed === total;
+
+    return {
+      total,
+      statusCounts,
+      allComplete,
+      anyFailed,
+      allSucceeded,
+      childRunIds: accessibleChildren.map((c) => c._id),
+    };
   },
 });
