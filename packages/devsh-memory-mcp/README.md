@@ -1,6 +1,6 @@
 # devsh-memory-mcp
 
-MCP server for devsh/cmux agent memory - enables Claude Desktop, Cursor, and other MCP clients to access sandbox agent memory.
+MCP server for devsh/cmux agent memory - enables Claude Desktop, Cursor, and other MCP clients to access sandbox agent memory and orchestrate multi-agent workflows.
 
 ## Installation
 
@@ -81,13 +81,28 @@ With custom options:
 | `add_task` | Add a new task to TASKS.json |
 | `update_task` | Update the status of a task |
 
-### Orchestration Tools
+### Orchestration Tools (Head Agent)
 
 | Tool | Description |
 |------|-------------|
+| `spawn_agent` | Spawn a sub-agent to work on a task |
+| `get_agent_status` | Get status of a spawned agent |
+| `list_spawned_agents` | List all agents in current orchestration |
+| `wait_for_agent` | Wait for agent to complete (blocking) |
+| `cancel_agent` | Cancel a running/pending agent |
+| `get_orchestration_summary` | Get dashboard-style orchestration summary |
+| `pull_orchestration_updates` | Sync local PLAN.json with server |
 | `read_orchestration` | Read PLAN.json, AGENTS.json, or EVENTS.jsonl |
 | `append_event` | Append an orchestration event to EVENTS.jsonl |
 | `update_plan_task` | Update task status in PLAN.json |
+
+### Environment Variables (Orchestration)
+
+| Variable | Description |
+|----------|-------------|
+| `CMUX_TASK_RUN_JWT` | JWT for authenticating orchestration API calls |
+| `CMUX_ORCHESTRATION_ID` | Current orchestration session ID |
+| `CMUX_API_BASE_URL` | API base URL (default: https://cmux.sh) |
 
 ## Memory Directory Structure
 
