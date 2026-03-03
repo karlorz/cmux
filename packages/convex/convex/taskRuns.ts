@@ -346,7 +346,10 @@ async function updateParentRunOnChildComplete(
 
   // Build aggregated summary
   const summaryParts: string[] = [];
-  summaryParts.push(`## Agent Team Status`);
+  const statusEmoji = allComplete
+    ? (statusCounts.failed > 0 ? "Warning" : "Complete")
+    : "In Progress";
+  summaryParts.push(`## Agent Team Status (${statusEmoji})`);
   summaryParts.push(`- Total children: ${total}`);
   summaryParts.push(`- Completed: ${statusCounts.completed}`);
   summaryParts.push(`- Failed: ${statusCounts.failed}`);

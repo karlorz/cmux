@@ -2553,7 +2553,7 @@ async function handleGetTaskRunMemory(ctx: ActionCtx, req: Request): Promise<Res
 
 // GET /api/v1/cmux/task-runs/{id}/children - List child task runs
 async function handleListChildRuns(ctx: ActionCtx, req: Request): Promise<Response> {
-  const { identity, error } = await getAuthenticatedUser(ctx);
+  const { error } = await getAuthenticatedUser(ctx);
   if (error) return error;
 
   const url = new URL(req.url);
@@ -2596,7 +2596,7 @@ async function handleListChildRuns(ctx: ActionCtx, req: Request): Promise<Respon
 
 // GET /api/v1/cmux/task-runs/{id}/parent - Get parent task run
 async function handleGetParentRun(ctx: ActionCtx, req: Request): Promise<Response> {
-  const { identity, error } = await getAuthenticatedUser(ctx);
+  const { error } = await getAuthenticatedUser(ctx);
   if (error) return error;
 
   const url = new URL(req.url);
@@ -2640,7 +2640,7 @@ async function handleGetParentRun(ctx: ActionCtx, req: Request): Promise<Respons
 
 // GET /api/v1/cmux/task-runs/{id}/children/status - Get aggregated child status
 async function handleGetChildRunsStatus(ctx: ActionCtx, req: Request): Promise<Response> {
-  const { identity, error } = await getAuthenticatedUser(ctx);
+  const { error } = await getAuthenticatedUser(ctx);
   if (error) return error;
 
   const url = new URL(req.url);
