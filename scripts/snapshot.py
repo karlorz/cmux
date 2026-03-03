@@ -1638,6 +1638,24 @@ async def task_setup_claude_oauth_wrappers(ctx: TaskContext) -> None:
 
 
 @registry.task(
+    name="install-devsh-skill",
+    deps=("install-global-cli",),
+    description="Install devsh Claude Code skill from GitHub",
+)
+async def task_install_devsh_skill(ctx: TaskContext) -> None:
+    skill_url = "https://raw.githubusercontent.com/karlorz/devsh/main/.agents/skills/devsh/SKILL.md"
+    cmd = textwrap.dedent(f"""\
+        set -e
+        SKILL_DIR="/root/.claude/skills/devsh"
+        mkdir -p "$SKILL_DIR"
+        curl -fsSL "{skill_url}" -o "$SKILL_DIR/SKILL.md"
+        echo "Installed devsh skill to $SKILL_DIR/SKILL.md"
+        head -5 "$SKILL_DIR/SKILL.md"
+    """)
+    await ctx.run("install-devsh-skill", cmd)
+
+
+@registry.task(
     name="configure-zsh",
     deps=("upload-repo", "install-base-packages"),
     description="Install zsh configuration and default prompt",
@@ -2151,6 +2169,7 @@ PROFILE
         "install-tmux-conf",
         "install-collect-scripts",
         "setup-claude-oauth-wrappers",
+        "install-devsh-skill",
     ),
     description="Remove repository upload and toolchain caches prior to final validation",
 )
