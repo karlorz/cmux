@@ -109,21 +109,33 @@ Examples:
 				fmt.Printf("Fetching project item %s...\n", taskCreateFromProjectItem)
 			}
 
-			items, err := client.GetProjectItems(ctx, vm.GetProjectItemsOptions{
-				ProjectID:      taskCreateGHProjectId,
-				InstallationID: taskCreateGHProjectInstallationId,
-				First:          100,
-			})
-			if err != nil {
-				return fmt.Errorf("failed to fetch project items: %w", err)
-			}
-
+			// Paginate through all project items to find the target
 			var found *vm.ProjectItem
-			for i := range items.Items {
-				if items.Items[i].ID == taskCreateFromProjectItem {
-					found = &items.Items[i]
+			var after string
+			for {
+				items, err := client.GetProjectItems(ctx, vm.GetProjectItemsOptions{
+					ProjectID:      taskCreateGHProjectId,
+					InstallationID: taskCreateGHProjectInstallationId,
+					First:          100,
+					After:          after,
+				})
+				if err != nil {
+					return fmt.Errorf("failed to fetch project items: %w", err)
+				}
+
+				for i := range items.Items {
+					if items.Items[i].ID == taskCreateFromProjectItem {
+						found = &items.Items[i]
+						break
+					}
+				}
+				if found != nil {
 					break
 				}
+				if !items.PageInfo.HasNextPage || items.PageInfo.EndCursor == nil {
+					break
+				}
+				after = *items.PageInfo.EndCursor
 			}
 			if found == nil {
 				return fmt.Errorf("project item %s not found in project %s", taskCreateFromProjectItem, taskCreateGHProjectId)
