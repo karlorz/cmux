@@ -439,7 +439,12 @@ foo = "bar"
       "base64"
     ).toString("utf-8");
 
-    expect(notifyScript).toContain("THREAD_ID=$(echo \"$1\" | jq -r '.thread_id // .\"thread-id\" // empty'");
+    expect(notifyScript).toContain(
+      "THREAD_ID=$(printf '%s' \"$1\" | jq -r '.thread_id // .\"thread-id\" // empty'"
+    );
+    expect(notifyScript).toContain(
+      "THREAD_ID=$(printf '%s' \"$1\" | grep -oE '\"thread-id\":\"[^\"]+\"|\"thread_id\":\"[^\"]+\"'"
+    );
     expect(notifyScript).toContain("codex-session-id.txt");
   });
 
