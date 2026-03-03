@@ -300,6 +300,90 @@ async function updateTaskStatusFromRuns(
   }
 }
 
+/**
+ * D4.3: Update parent run summary when a child run completes.
+ * Aggregates child statuses and PRs into parent's summary.
+ */
+async function updateParentRunOnChildComplete(
+  ctx: MutationCtx,
+  childRun: Doc<"taskRuns">,
+): Promise<void> {
+  if (!childRun.parentRunId) {
+    return; // No parent to update
+  }
+
+  const parentRun = await ctx.db.get(childRun.parentRunId);
+  if (!parentRun) {
+    return;
+  }
+
+  // Get all children of this parent
+  const children = await ctx.db
+    .query("taskRuns")
+    .withIndex("by_parent", (q) => q.eq("parentRunId", childRun.parentRunId))
+    .collect();
+
+  // Count statuses
+  const statusCounts: Record<string, number> = {
+    pending: 0,
+    running: 0,
+    completed: 0,
+    failed: 0,
+    skipped: 0,
+  };
+  const childPRs: string[] = [];
+
+  for (const child of children) {
+    statusCounts[child.status] = (statusCounts[child.status] || 0) + 1;
+    if (child.pullRequestUrl) {
+      childPRs.push(child.pullRequestUrl);
+    }
+  }
+
+  const total = children.length;
+  const terminal = statusCounts.completed + statusCounts.failed + statusCounts.skipped;
+  const allComplete = total > 0 && terminal === total;
+
+  // Build aggregated summary
+  const summaryParts: string[] = [];
+  summaryParts.push(`## Agent Team Status`);
+  summaryParts.push(`- Total children: ${total}`);
+  summaryParts.push(`- Completed: ${statusCounts.completed}`);
+  summaryParts.push(`- Failed: ${statusCounts.failed}`);
+  summaryParts.push(`- Running: ${statusCounts.running}`);
+  summaryParts.push(`- Pending: ${statusCounts.pending}`);
+
+  if (childPRs.length > 0) {
+    summaryParts.push(`\n## Child PRs`);
+    for (const pr of childPRs) {
+      summaryParts.push(`- ${pr}`);
+    }
+  }
+
+  const aggregatedSummary = summaryParts.join("\n");
+
+  // Update parent with aggregated info
+  const updates: Partial<Doc<"taskRuns">> = {
+    updatedAt: Date.now(),
+  };
+
+  // Append to existing summary or create new
+  if (parentRun.summary) {
+    // Check if we already have an Agent Team Status section
+    if (parentRun.summary.includes("## Agent Team Status")) {
+      // Replace the section
+      const beforeSection = parentRun.summary.split("## Agent Team Status")[0];
+      updates.summary = beforeSection.trim() + "\n\n" + aggregatedSummary;
+    } else {
+      updates.summary = parentRun.summary + "\n\n" + aggregatedSummary;
+    }
+  } else {
+    updates.summary = aggregatedSummary;
+  }
+
+  await ctx.db.patch(childRun.parentRunId, updates);
+}
+
 async function fetchTaskRunsForTask(
   ctx: QueryCtx,
   teamId: string,
@@ -1192,6 +1276,12 @@ export const updateStatusPublic = authMutation({
     // After updating to a terminal status, check if we should update the task status
     if (args.status === "completed" || args.status === "failed") {
       await updateTaskStatusFromRuns(ctx, doc.taskId, teamId, userId);
+
+      // D4.3: Update parent run if this is a child run
+      const updatedDoc = await ctx.db.get(args.id);
+      if (updatedDoc) {
+        await updateParentRunOnChildComplete(ctx, updatedDoc);
+      }
 
       // Create a notification for the user (also marks as unread)
       console.log("[taskNotifications] Creating notification (crown)", {
