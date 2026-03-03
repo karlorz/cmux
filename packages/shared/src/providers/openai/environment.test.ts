@@ -427,7 +427,7 @@ foo = "bar"
     )).toBe(true);
   });
 
-  it("persists Codex thread_id from notify payload for explicit resume", async () => {
+  it("persists Codex thread id from notify payload for explicit resume", async () => {
     const result = await getOpenAIEnvironment({} as never);
     const notifyFile = result.files?.find(
       (file) => file.destinationPath === "/root/lifecycle/codex-notify.sh"
@@ -439,7 +439,7 @@ foo = "bar"
       "base64"
     ).toString("utf-8");
 
-    expect(notifyScript).toContain("THREAD_ID=$(echo \"$1\" | jq -r '.thread_id // empty'");
+    expect(notifyScript).toContain("THREAD_ID=$(echo \"$1\" | jq -r '.thread_id // .\"thread-id\" // empty'");
     expect(notifyScript).toContain("codex-session-id.txt");
   });
 

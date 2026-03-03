@@ -204,8 +204,9 @@ export async function getOpenAIEnvironment(
   const notifyScript = `#!/usr/bin/env sh
 set -eu
 echo "$1" >> /root/lifecycle/codex-turns.jsonl
-# Extract thread_id from Codex JSON payload and persist for explicit resume.
-THREAD_ID=$(echo "$1" | jq -r '.thread_id // empty' 2>/dev/null || true)
+# Extract thread id from Codex JSON payload and persist for explicit resume.
+# Codex emits "thread-id" in TUI payloads; keep backward compatibility for "thread_id".
+THREAD_ID=$(echo "$1" | jq -r '.thread_id // ."thread-id" // empty' 2>/dev/null || true)
 if [ -n "$THREAD_ID" ]; then
   echo "$THREAD_ID" > /root/lifecycle/codex-session-id.txt
 fi
