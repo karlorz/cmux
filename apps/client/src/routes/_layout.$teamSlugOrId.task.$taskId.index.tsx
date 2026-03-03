@@ -1,6 +1,7 @@
 import { TaskRunChatPane } from "@/components/TaskRunChatPane";
 import { TaskRunTerminalPane } from "@/components/TaskRunTerminalPane";
 import { TaskRunMemoryPanel } from "@/components/TaskRunMemoryPanel";
+import { TaskRunSummaryPanel } from "@/components/TaskRunSummaryPanel";
 import { FloatingPane } from "@/components/floating-pane";
 import { TaskDetailHeader } from "@/components/task-detail-header";
 import { AgentTeamPanel } from "@/components/dashboard/AgentTeamPanel";
@@ -878,6 +879,7 @@ function TaskDetailPage() {
       TaskRunTerminalPane,
       TaskRunGitDiffPanel,
       TaskRunMemoryPanel,
+      TaskRunSummaryPanel,
       TASK_RUN_IFRAME_ALLOW,
       TASK_RUN_IFRAME_SANDBOX,
       onClose: handlePanelClose,

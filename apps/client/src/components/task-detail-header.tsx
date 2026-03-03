@@ -36,6 +36,7 @@ import {
   Copy,
   Crown,
   ExternalLink,
+  FolderKanban,
   FolderOpen,
   GitBranch,
   GitMerge,
@@ -630,6 +631,23 @@ export function TaskDetailHeader({
             <span className="font-mono text-neutral-600 dark:text-neutral-300 truncate min-w-0 max-w-[40%] whitespace-nowrap select-none text-[11px]">
               {task.projectFullName}
             </span>
+          )}
+
+          {task?.githubProjectOwner && (
+            <a
+              href={
+                task.githubProjectOwnerType === "organization"
+                  ? `https://github.com/orgs/${task.githubProjectOwner}/projects`
+                  : `https://github.com/users/${task.githubProjectOwner}/projects`
+              }
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-400 dark:hover:bg-violet-900/50 transition-colors select-none shrink-0"
+              title={`GitHub Project: ${task.githubProjectOwner}`}
+            >
+              <FolderKanban className="w-3 h-3" />
+              {task.githubProjectOwner}
+            </a>
           )}
 
           {taskRuns && taskRuns.length > 0 && selectedRun && (

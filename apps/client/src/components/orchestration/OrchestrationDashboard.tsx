@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Users, Plus } from "lucide-react";
+import { Users, Plus, List, GitBranch } from "lucide-react";
 import { OrchestrationSummaryCards } from "./OrchestrationSummaryCards";
 import { OrchestrationTaskList } from "./OrchestrationTaskList";
 import { OrchestrationSpawnDialog } from "./OrchestrationSpawnDialog";
+import { OrchestrationDependencyGraph } from "./OrchestrationDependencyGraph";
 import { STATUS_CONFIG, type TaskStatus } from "./status-config";
 import type { Doc, Id } from "@cmux/convex/dataModel";
 
@@ -59,6 +60,7 @@ export function OrchestrationDashboard({
 }: OrchestrationDashboardProps) {
   const navigate = useNavigate();
   const [spawnDialogOpen, setSpawnDialogOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"list" | "graph">("list");
 
   const handleStatusFilterChange = (status: string) => {
     void navigate({
@@ -127,31 +129,68 @@ export function OrchestrationDashboard({
             </div>
           )}
 
-          {/* Task List */}
+          {/* Task List / Graph */}
           <div className="rounded-lg border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
             <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
               <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
                 Tasks
               </h3>
-              <select
-                value={statusFilter}
-                onChange={(e) => handleStatusFilterChange(e.target.value)}
-                className="rounded border border-neutral-200 bg-white px-2 py-1 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
-              >
-                <option value="all">All statuses</option>
-                {(Object.keys(STATUS_CONFIG) as TaskStatus[]).map((status) => (
-                  <option key={status} value={status}>
-                    {STATUS_CONFIG[status].label}
-                    {summary ? ` (${summary.statusCounts[status] || 0})` : ""}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center gap-2">
+                <div className="flex rounded-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("list")}
+                    className={`flex items-center gap-1 px-2 py-1 text-xs font-medium transition-colors ${
+                      viewMode === "list"
+                        ? "bg-neutral-100 text-neutral-900 dark:bg-neutral-700 dark:text-neutral-100"
+                        : "text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
+                    }`}
+                    title="List view"
+                  >
+                    <List className="size-3.5" />
+                    List
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("graph")}
+                    className={`flex items-center gap-1 px-2 py-1 text-xs font-medium transition-colors ${
+                      viewMode === "graph"
+                        ? "bg-neutral-100 text-neutral-900 dark:bg-neutral-700 dark:text-neutral-100"
+                        : "text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
+                    }`}
+                    title="Dependency graph"
+                  >
+                    <GitBranch className="size-3.5" />
+                    Graph
+                  </button>
+                </div>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => handleStatusFilterChange(e.target.value)}
+                  className="rounded border border-neutral-200 bg-white px-2 py-1 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+                >
+                  <option value="all">All statuses</option>
+                  {(Object.keys(STATUS_CONFIG) as TaskStatus[]).map((status) => (
+                    <option key={status} value={status}>
+                      {STATUS_CONFIG[status].label}
+                      {summary ? ` (${summary.statusCounts[status] || 0})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <OrchestrationTaskList
-              teamSlugOrId={teamSlugOrId}
-              tasks={tasks}
-              loading={tasksLoading}
-            />
+            {viewMode === "list" ? (
+              <OrchestrationTaskList
+                teamSlugOrId={teamSlugOrId}
+                tasks={tasks}
+                loading={tasksLoading}
+              />
+            ) : (
+              <OrchestrationDependencyGraph
+                tasks={tasks}
+                loading={tasksLoading}
+              />
+            )}
           </div>
         </div>
       </div>
