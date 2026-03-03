@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getClaudeEnvironment } from "./environment";
+import { getCrossToolSymlinkCommands } from "../../agent-memory-protocol";
 
 const BASE_CONTEXT = {
   taskRunId: "run_test",
@@ -74,6 +75,53 @@ describe("getClaudeEnvironment", () => {
         "-y",
         "devsh-memory-mcp@latest",
       ]);
+    } finally {
+      process.env.HOME = previousHome;
+      await rm(homeDir, { recursive: true, force: true });
+    }
+  });
+
+  it("includes cross-tool symlink commands in startupCommands", async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), "cmux-claude-home-"));
+    const previousHome = process.env.HOME;
+    process.env.HOME = homeDir;
+
+    try {
+      await mkdir(join(homeDir, ".claude"), { recursive: true });
+
+      const result = await getClaudeEnvironment(BASE_CONTEXT);
+
+      // Should include all symlink commands from getCrossToolSymlinkCommands
+      const symlinkCommands = getCrossToolSymlinkCommands();
+      for (const cmd of symlinkCommands) {
+        expect(result.startupCommands).toContain(cmd);
+      }
+    } finally {
+      process.env.HOME = previousHome;
+      await rm(homeDir, { recursive: true, force: true });
+    }
+  });
+
+  it("includes CLAUDE.md at user-level path", async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), "cmux-claude-home-"));
+    const previousHome = process.env.HOME;
+    process.env.HOME = homeDir;
+
+    try {
+      await mkdir(join(homeDir, ".claude"), { recursive: true });
+
+      const result = await getClaudeEnvironment(BASE_CONTEXT);
+
+      // Should include CLAUDE.md file at ~/.claude/CLAUDE.md
+      const claudeMdFile = result.files.find(
+        (file) => file.destinationPath === "$HOME/.claude/CLAUDE.md"
+      );
+      expect(claudeMdFile).toBeDefined();
+
+      // Decode and verify content includes memory protocol
+      const content = Buffer.from(claudeMdFile!.contentBase64, "base64").toString("utf-8");
+      expect(content).toContain("Agent Memory Protocol");
+      expect(content).toContain("/root/lifecycle/memory");
     } finally {
       process.env.HOME = previousHome;
       await rm(homeDir, { recursive: true, force: true });

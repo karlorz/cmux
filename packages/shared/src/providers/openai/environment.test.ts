@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getOpenAIEnvironment, stripFilteredConfigKeys } from "./environment";
+import { getCrossToolSymlinkCommands } from "../../agent-memory-protocol";
 
 function decodeConfigToml(result: Awaited<ReturnType<typeof getOpenAIEnvironment>>): string {
   const configFile = result.files?.find(
@@ -403,5 +404,24 @@ foo = "bar"
       process.env.HOME = previousHome;
       await rm(homeDir, { recursive: true, force: true });
     }
+  });
+
+  it("includes cross-tool symlink commands in startupCommands", async () => {
+    const result = await getOpenAIEnvironment({} as never);
+
+    // Should include all symlink commands from getCrossToolSymlinkCommands
+    const symlinkCommands = getCrossToolSymlinkCommands();
+    for (const cmd of symlinkCommands) {
+      expect(result.startupCommands).toContain(cmd);
+    }
+  });
+
+  it("includes memory startup command", async () => {
+    const result = await getOpenAIEnvironment({} as never);
+
+    // Should include mkdir command for memory directories
+    expect(result.startupCommands?.some((cmd) =>
+      cmd.includes("mkdir -p") && cmd.includes("/root/lifecycle/memory")
+    )).toBe(true);
   });
 });
