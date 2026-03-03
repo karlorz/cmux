@@ -437,27 +437,132 @@ Append-only log of orchestration events.
 
 ## Integration with MCP
 
-When running as a head agent with MCP, you can use these tools programmatically:
+When running as a head agent with MCP, you can use these tools programmatically via the `devsh-memory-mcp` server:
+
+### Available MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `spawn_agent` | Spawn a sub-agent to work on a task |
+| `get_agent_status` | Get status of a spawned agent by task ID |
+| `list_spawned_agents` | List all agents in current orchestration |
+| `wait_for_agent` | Wait for an agent to reach terminal state |
+| `pull_orchestration_updates` | Sync local PLAN.json with server |
+| `send_message` | Send message to another agent |
+| `get_my_messages` | Get messages addressed to this agent |
+
+### spawn_agent
+
+Spawn a sub-agent to work on a specific task.
 
 ```typescript
-// Example MCP tool calls
-await spawn_agent({
+const result = await spawn_agent({
+  prompt: "Implement user authentication",
   agentName: "claude/haiku-4.5",
-  repo: "owner/repo",
-  prompt: "Fix the bug"
+  repo: "owner/repo",           // optional
+  branch: "main",               // optional
+  dependsOn: ["task_id_1"],     // optional - wait for these tasks first
+  priority: 5                   // optional - 0=highest, 10=lowest
 });
+// Returns: { orchestrationTaskId, taskId, taskRunId, agentName, status }
+```
 
-const status = await get_agent_status({ orchestrationTaskId: "ns7abc123" });
+### get_agent_status
 
-await send_message({
-  to: "ns7abc123",
-  message: "Please also check the edge cases",
-  type: "request"
+Get the current status of a spawned agent.
+
+```typescript
+const status = await get_agent_status({
+  orchestrationTaskId: "ns7abc123"
 });
+// Returns: { status, prompt, result, errorMessage, ... }
+```
 
-// Head agent: pull updates from server
+### list_spawned_agents
+
+List all agents spawned in the current orchestration.
+
+```typescript
+const agents = await list_spawned_agents({
+  status: "running"  // optional filter: pending, running, completed, failed
+});
+// Returns: [{ id, prompt, status, agentName, ... }]
+```
+
+### wait_for_agent
+
+Wait for an agent to complete (blocks until terminal state).
+
+```typescript
+const result = await wait_for_agent({
+  orchestrationTaskId: "ns7abc123",
+  timeout: 300000  // optional - max wait in ms (default: 5 minutes)
+});
+// Returns: { status, result, errorMessage }
+```
+
+### pull_orchestration_updates
+
+Sync local PLAN.json with server state. Call periodically to get latest status.
+
+```typescript
 const updates = await pull_orchestration_updates({
-  orchestrationId: "orch_abc123"
+  orchestrationId: "orch_abc123"  // optional - uses CMUX_ORCHESTRATION_ID env var
+});
+// Returns: { synced, tasks, messages, aggregatedStatus }
+```
+
+### Example: Parallel Task Execution
+
+```typescript
+// Spawn multiple agents in parallel
+const task1 = await spawn_agent({
+  prompt: "Implement auth endpoints",
+  agentName: "claude/sonnet-4.5"
+});
+
+const task2 = await spawn_agent({
+  prompt: "Write database migrations",
+  agentName: "claude/haiku-4.5"
+});
+
+// Wait for both to complete
+const [result1, result2] = await Promise.all([
+  wait_for_agent({ orchestrationTaskId: task1.orchestrationTaskId }),
+  wait_for_agent({ orchestrationTaskId: task2.orchestrationTaskId })
+]);
+
+// Spawn dependent task
+const task3 = await spawn_agent({
+  prompt: "Write integration tests",
+  agentName: "codex/gpt-5.1-codex-mini",
+  dependsOn: [task1.orchestrationTaskId, task2.orchestrationTaskId]
+});
+```
+
+### Example: Sequential Pipeline
+
+```typescript
+// Step 1: Implement feature
+const impl = await spawn_agent({
+  prompt: "Implement user roles feature",
+  agentName: "claude/sonnet-4.5"
+});
+await wait_for_agent({ orchestrationTaskId: impl.orchestrationTaskId });
+
+// Step 2: Write tests (after implementation)
+const tests = await spawn_agent({
+  prompt: "Write tests for user roles",
+  agentName: "codex/gpt-5.1-codex-mini",
+  dependsOn: [impl.orchestrationTaskId]
+});
+await wait_for_agent({ orchestrationTaskId: tests.orchestrationTaskId });
+
+// Step 3: Review
+const review = await spawn_agent({
+  prompt: "Review the implementation and tests",
+  agentName: "claude/opus-4.5",
+  dependsOn: [tests.orchestrationTaskId]
 });
 ```
 
