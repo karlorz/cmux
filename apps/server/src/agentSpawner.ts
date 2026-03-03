@@ -353,6 +353,10 @@ export async function spawnAgent(
     // For Convex Cloud, transform api URL to site URL
     const callbackUrl = env.CONVEX_SITE_URL
       ?? env.NEXT_PUBLIC_CONVEX_URL.replace('.convex.cloud', '.convex.site');
+    const cmuxServerUrl =
+      env.CMUX_SERVER_URL
+      ?? process.env.BASE_APP_URL
+      ?? "http://localhost:9776";
 
     // Start loading workspace config early so it runs in parallel with other setup work.
     const workspaceConfigPromise = (async (): Promise<WorkspaceConfigLayer[]> => {
@@ -429,6 +433,7 @@ export async function spawnAgent(
       CMUX_TASK_RUN_ID: taskRunId,
       CMUX_TASK_RUN_JWT: taskRunJwt,
       CMUX_CALLBACK_URL: callbackUrl,
+      CMUX_SERVER_URL: cmuxServerUrl, // devsh CLI target (apps/server HTTP API)
       CMUX_AGENT_NAME: agent.name,
       PROMPT: processedTaskDescription,
     };

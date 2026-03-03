@@ -367,6 +367,7 @@ INSTRUCTIONS
 OUTPUT FORMAT (Markdown)
 ## PR Review Summary
 - What Changed: bullet list
+- Changes Flowchart: A mermaid \`flowchart TD\` diagram showing what changed and how components connect. 5-15 nodes, grouped by area in subgraphs, new/modified components highlighted with fill colors (#d4edda for new, #fff3cd for modified). Wrap in a \`\`\`mermaid code block.
 - Review Focus: bullet list (risks/edge cases)
 - Test Plan: bullet list of practical steps
 - Follow-ups: optional bullets if applicable

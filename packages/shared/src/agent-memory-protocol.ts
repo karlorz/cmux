@@ -309,6 +309,68 @@ You have access to persistent memory at \`${MEMORY_PROTOCOL_DIR}/\`:
 - **Knowledge**: Promote KEY learnings to \`knowledge/MEMORY.md\` (only permanent insights)
 - Update TASKS.json with final statuses
 
+### Execution Summary (Required on Completion)
+
+Before finishing, write an execution summary to \`daily/{today}.md\` under an \`## Execution Summary\` heading. This is the primary review artifact — it lets developers understand your work at a glance without reading code diffs.
+
+**Format (all 4 sections required):**
+
+1. **What was done** — 3-5 bullet points describing changes
+2. **Changes flowchart** — Mermaid \`flowchart TD\` diagram showing what changed and how components connect
+3. **Files changed** — Grouped by area (backend, frontend, CLI, etc.)
+4. **Test results** — Pass/fail with details
+
+**Mermaid diagram guidelines:**
+- Use \`flowchart TD\` (top-down)
+- 5-15 nodes maximum
+- Group related nodes in subgraphs by area
+- Use fill colors for new/modified components: \`style NodeId fill:#d4edda\` (new), \`style NodeId fill:#fff3cd\` (modified)
+- Show data flow with labeled arrows
+
+**Example:**
+
+\`\`\`markdown
+## Execution Summary
+
+### What was done
+- Added JWT authentication middleware for agent endpoints
+- Created task creation endpoint at /api/v1/agent/task/create
+- Wired sandbox spawn to use existing provider infrastructure
+- Added integration test for agent auth flow
+
+### Changes Flowchart
+\\\`\\\`\\\`mermaid
+flowchart TD
+    subgraph "Agent in Sandbox"
+        A[devsh CLI] -->|JWT auth| B[POST /api/v1/agent/task/create]
+    end
+    subgraph "apps/server"
+        B --> C[JWT Middleware]
+        C --> D[Task Handler]
+        D --> E[Convex Mutation]
+    end
+    subgraph "Convex Backend"
+        E --> F[tasks.createInternal]
+        F --> G[agentSpawner]
+    end
+    style B fill:#d4edda
+    style C fill:#d4edda
+    style D fill:#d4edda
+\\\`\\\`\\\`
+
+### Files changed
+**Backend (apps/server)**
+- \\\`lib/routes/agent.route.ts\\\` — NEW: JWT-auth agent endpoints
+- \\\`lib/middleware/jwt-auth.ts\\\` — NEW: JWT verification middleware
+
+**Shared (packages/shared)**
+- \\\`src/agent-auth.ts\\\` — MODIFIED: Added token validation helper
+
+### Test results
+- \\\`bun check\\\`: PASS
+- \\\`vitest agent.route.test.ts\\\`: PASS (3/3)
+\`\`\`
+
 ### What Goes Where?
 
 | Type | Location | Priority | Example |
