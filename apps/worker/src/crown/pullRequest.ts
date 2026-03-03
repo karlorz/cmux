@@ -29,11 +29,12 @@ export function extractExecutionSummary(): string | undefined {
 
   for (const file of files) {
     const content = readFileSync(join(MEMORY_DAILY_DIR, file), "utf-8");
-    const match = content.match(
-      /## Execution Summary\n([\s\S]*?)(?=\n## |\n---\s*$|$)/
-    );
-    if (match?.[1]?.trim()) {
-      return match[1].trim();
+    const matches = [...content.matchAll(
+      /## Execution Summary\n([\s\S]*?)(?=\n## |\n---\s*$|$)/g
+    )];
+    const lastMatch = matches[matches.length - 1];
+    if (lastMatch?.[1]?.trim()) {
+      return lastMatch[1].trim();
     }
   }
 
