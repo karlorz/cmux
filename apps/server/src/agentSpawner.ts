@@ -1713,6 +1713,12 @@ export async function spawnAllAgents(
       altText: string;
     }>;
     theme?: "dark" | "light" | "system";
+    autopilotOptions?: {
+      enabled: boolean;
+      totalMinutes: number;
+      turnMinutes: number;
+      wrapUpMinutes: number;
+    };
   },
   teamSlugOrId: string
 ): Promise<AgentSpawnResult[]> {

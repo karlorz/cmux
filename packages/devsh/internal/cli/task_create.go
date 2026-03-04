@@ -364,15 +364,19 @@ Examples:
 				// Use StartTaskAgents to spawn agents via apps/server HTTP API
 				// This uses the same code path as web app's socket.io "start-task"
 				agentResult, err := client.StartTaskAgents(ctx, vm.StartTaskAgentsOptions{
-					TaskID:          result.TaskID,
-					TaskDescription: prompt,
-					ProjectFullName: taskCreateRepo,
-					RepoURL:         repoURL,
-					Branch:          taskCreateBranch,
-					TaskRunIDs:      taskRunIDs,
-					SelectedAgents:  selectedAgents,
-					IsCloudMode:     !taskCreateLocal,
-					PRTitle:         taskCreatePRTitle,
+					TaskID:               result.TaskID,
+					TaskDescription:      prompt,
+					ProjectFullName:      taskCreateRepo,
+					RepoURL:              repoURL,
+					Branch:               taskCreateBranch,
+					TaskRunIDs:           taskRunIDs,
+					SelectedAgents:       selectedAgents,
+					IsCloudMode:          !taskCreateLocal,
+					PRTitle:              taskCreatePRTitle,
+					Autopilot:            taskCreateAutopilot,
+					AutopilotMinutes:     taskCreateAutopilotMinutes,
+					AutopilotTurnMinutes: taskCreateAutopilotTurnMinutes,
+					AutopilotWrapUp:      taskCreateAutopilotWrapUp,
 				})
 
 				if err != nil {

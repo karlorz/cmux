@@ -61,6 +61,11 @@ interface StartTaskRequest {
         altText?: string;
       }
   >;
+  // Autopilot mode (Phase 6: Long-Running Sessions)
+  autopilot?: boolean;
+  autopilotMinutes?: number;
+  autopilotTurnMinutes?: number;
+  autopilotWrapUp?: number;
 }
 
 interface StartTaskResponse {
@@ -148,6 +153,10 @@ async function handleStartTask(
     teamSlugOrId,
     prTitle,
     images,
+    autopilot,
+    autopilotMinutes,
+    autopilotTurnMinutes,
+    autopilotWrapUp,
   } = body;
 
   // taskDescription can be empty string for cloud workspaces (interactive TUI session)
@@ -312,6 +321,14 @@ async function handleStartTask(
           environmentId: environmentId as Id<"environments"> | undefined,
           images: imagesForSpawner,
           theme,
+          autopilotOptions: autopilot
+            ? {
+                enabled: true,
+                totalMinutes: autopilotMinutes ?? 30,
+                turnMinutes: autopilotTurnMinutes ?? 5,
+                wrapUpMinutes: autopilotWrapUp ?? 3,
+              }
+            : undefined,
         },
         teamSlugOrId
       );

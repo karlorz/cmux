@@ -1601,6 +1601,11 @@ type StartTaskAgentsOptions struct {
 	EnvironmentID   string
 	Theme           string
 	PRTitle         string
+	// Autopilot mode (Phase 6)
+	Autopilot            bool
+	AutopilotMinutes     int
+	AutopilotTurnMinutes int
+	AutopilotWrapUp      int
 }
 
 // StartTaskAgentsResult represents the result of starting task agents
@@ -1710,6 +1715,13 @@ func (c *Client) StartTaskAgents(ctx context.Context, opts StartTaskAgentsOption
 	}
 	if opts.PRTitle != "" {
 		body["prTitle"] = opts.PRTitle
+	}
+	// Autopilot mode (Phase 6)
+	if opts.Autopilot {
+		body["autopilot"] = true
+		body["autopilotMinutes"] = opts.AutopilotMinutes
+		body["autopilotTurnMinutes"] = opts.AutopilotTurnMinutes
+		body["autopilotWrapUp"] = opts.AutopilotWrapUp
 	}
 
 	resp, err := c.doServerRequest(ctx, "POST", "/api/start-task", body)
