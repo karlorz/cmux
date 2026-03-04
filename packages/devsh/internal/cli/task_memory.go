@@ -56,21 +56,22 @@ Examples:
 		}
 		client.SetTeamSlug(teamSlug)
 
-		// Determine if this is a task ID or task run ID
-		// Task IDs start with "p" (from tasks table), task run IDs have other prefixes
 		taskRunID := id
-		if strings.HasPrefix(id, "p") {
-			// This is a task ID - fetch the task and get the latest run
-			task, err := client.GetTask(ctx, id)
-			if err != nil {
-				return fmt.Errorf("failed to get task: %w", err)
-			}
+
+		// Try task ID resolution first.
+		// Tasks endpoint returns 404 for non-task IDs, which we then treat as task run IDs.
+		task, err := client.GetTask(ctx, id)
+		if err == nil {
 			if len(task.TaskRuns) == 0 {
 				return fmt.Errorf("task has no runs yet")
 			}
 			// Use the first run (most recent)
 			taskRunID = task.TaskRuns[0].ID
-			fmt.Printf("Using latest run: %s (%s)\n\n", taskRunID, task.TaskRuns[0].Agent)
+			if !flagJSON {
+				fmt.Printf("Using latest run: %s (%s)\n\n", taskRunID, task.TaskRuns[0].Agent)
+			}
+		} else if !isNotFoundError(err) {
+			return fmt.Errorf("failed to resolve ID: %w", err)
 		}
 
 		result, err := client.GetTaskRunMemory(ctx, taskRunID, flagMemoryType)
@@ -152,4 +153,9 @@ Examples:
 func init() {
 	taskCmd.AddCommand(taskMemoryCmd)
 	taskMemoryCmd.Flags().StringVarP(&flagMemoryType, "type", "t", "", "Filter by memory type (knowledge, daily, tasks, mailbox)")
+}
+
+// isNotFoundError checks if the error is a 404 response.
+func isNotFoundError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "(404)")
 }
