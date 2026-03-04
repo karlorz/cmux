@@ -200,9 +200,17 @@ export function Sidebar({ tasks, teamSlugOrId, onToggleHidden }: SidebarProps) {
     );
   }, [pinnedData, workspacePreferences.showFilter, workspacePreferences.sortBy]);
 
+  // Only show actual workspace tasks in the sidebar "Workspaces" section
+  // (tasks with isCloudWorkspace or isLocalWorkspace flag set)
+  // Other tasks appear only in the dashboard categorized view
   const visibleWorkspaceTasks = useMemo(() => {
     const relevanceCutoff = Date.now() - RELEVANT_WINDOW_MS;
-    const list = (tasks ?? []).filter((task) => !task.pinned && !task.isArchived);
+    const list = (tasks ?? []).filter(
+      (task) =>
+        !task.pinned &&
+        !task.isArchived &&
+        (task.isCloudWorkspace || task.isLocalWorkspace)
+    );
     const filtered = filterRelevant(list, workspacePreferences.showFilter, (task) => {
       if (task.hasUnread) return true;
       const activityAt = task.lastActivityAt ?? task.updatedAt ?? task.createdAt ?? 0;

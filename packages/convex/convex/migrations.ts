@@ -450,3 +450,14 @@ export const backfillTasksSelectedTaskRunId = migrations.define({
     return;
   },
 });
+
+// Revert isCloudWorkspace flag - clear it from all tasks
+// Run with: bunx convex run migrations:run '{fn: "migrations:revertTasksIsCloudWorkspace"}'
+export const revertTasksIsCloudWorkspace = migrations.define({
+  table: "tasks",
+  migrateOne: (_ctx, doc) => {
+    if (doc.isCloudWorkspace === true) {
+      return { isCloudWorkspace: undefined };
+    }
+  },
+});
