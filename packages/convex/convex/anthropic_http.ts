@@ -1,6 +1,7 @@
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { getWorkerAuth } from "./users/utils/getWorkerAuth";
+import { jsonResponse } from "../_shared/http-utils";
 import {
   BEDROCK_BASE_URL,
   toBedrockModelId,
@@ -17,14 +18,6 @@ const hardCodedApiKey = CMUX_ANTHROPIC_PROXY_PLACEHOLDER_API_KEY;
 
 export const CLOUDFLARE_ANTHROPIC_BASE_URL =
   SHARED_CLOUDFLARE_ANTHROPIC_BASE_URL;
-
-const JSON_HEADERS = {
-  "Content-Type": "application/json",
-};
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
-}
 
 type RoleCounts = Record<string, number>;
 type BlockCounts = Record<string, number>;

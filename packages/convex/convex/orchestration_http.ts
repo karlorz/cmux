@@ -7,6 +7,7 @@
 
 import { verifyTaskRunToken } from "../../shared/src/convex-safe";
 import { env } from "../_shared/convex-env";
+import { jsonResponse, extractBearerToken } from "../_shared/http-utils";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { httpAction } from "./_generated/server";
@@ -32,27 +33,6 @@ export interface SpawnConfigData {
   }>;
   previousKnowledge: string | null;
   previousMailbox: string | null;
-}
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
-}
-
-function extractBearerToken(header: string | null): string | null {
-  if (!header) {
-    return null;
-  }
-  const match = header.match(/^Bearer\s+(.+)$/i);
-  if (!match) {
-    return null;
-  }
-  const token = match[1]?.trim();
-  return token && token.length > 0 ? token : null;
 }
 
 const CreateTaskAndRunSchema = z.object({

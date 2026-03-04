@@ -2,18 +2,11 @@ import {
   PreviewScreenshotUploadPayloadSchema,
   ScreenshotUploadUrlRequestSchema,
 } from "@cmux/shared/convex-safe";
+import { jsonResponse } from "../_shared/http-utils";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { httpAction } from "./_generated/server";
 import { getWorkerAuth } from "./users/utils/getWorkerAuth";
-
-const JSON_HEADERS = {
-  "Content-Type": "application/json",
-};
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
-}
 
 async function ensureJsonRequest(
   req: Request,

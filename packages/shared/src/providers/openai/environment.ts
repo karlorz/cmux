@@ -257,6 +257,156 @@ exit 1
     mode: "755",
   });
 
+  // Autopilot wrapper script for long-running sessions (Phase 6)
+  // Sends heartbeats to Convex and runs Codex in a loop until timeout
+  const autopilotScript = `#!/usr/bin/env sh
+set -eu
+
+# Configuration from environment variables
+CMUX_AUTOPILOT_MINUTES="\${CMUX_AUTOPILOT_MINUTES:-30}"
+CMUX_AUTOPILOT_TURN_MINUTES="\${CMUX_AUTOPILOT_TURN_MINUTES:-5}"
+CMUX_AUTOPILOT_WRAPUP_MINUTES="\${CMUX_AUTOPILOT_WRAPUP_MINUTES:-3}"
+CMUX_CALLBACK_URL="\${CMUX_CALLBACK_URL:-}"
+CMUX_TASK_RUN_JWT="\${CMUX_TASK_RUN_JWT:-}"
+CMUX_PROMPT="\${CMUX_PROMPT:-}"
+
+# Derived values
+START_EPOCH=\$(date +%s)
+DEADLINE_EPOCH=\$((START_EPOCH + (CMUX_AUTOPILOT_MINUTES * 60)))
+WRAPUP_THRESHOLD=\$((CMUX_AUTOPILOT_WRAPUP_MINUTES * 60))
+LOG_DIR="/root/lifecycle/autopilot"
+STOP_FILE="/root/lifecycle/autopilot-stop"
+
+mkdir -p "\$LOG_DIR"
+
+log() {
+  echo "[\$(date '+%Y-%m-%d %H:%M:%S')] \$*" | tee -a "\$LOG_DIR/run.log"
+}
+
+send_heartbeat() {
+  if [ -n "\$CMUX_CALLBACK_URL" ] && [ -n "\$CMUX_TASK_RUN_JWT" ]; then
+    curl -sS -X POST "\$CMUX_CALLBACK_URL/api/autopilot/heartbeat" \\
+      -H "Content-Type: application/json" \\
+      -H "Authorization: Bearer \$CMUX_TASK_RUN_JWT" \\
+      -d '{}' >> "\$LOG_DIR/heartbeat.log" 2>&1 || true
+  fi
+}
+
+update_status() {
+  local status="\$1"
+  if [ -n "\$CMUX_CALLBACK_URL" ] && [ -n "\$CMUX_TASK_RUN_JWT" ]; then
+    curl -sS -X POST "\$CMUX_CALLBACK_URL/api/autopilot/status" \\
+      -H "Content-Type: application/json" \\
+      -H "Authorization: Bearer \$CMUX_TASK_RUN_JWT" \\
+      -d "{\\"status\\":\\"\$status\\"}" >> "\$LOG_DIR/status.log" 2>&1 || true
+  fi
+}
+
+# Start heartbeat loop in background
+(
+  while true; do
+    sleep 30
+    send_heartbeat
+  done
+) &
+HEARTBEAT_PID=\$!
+
+AUTOPILOT_COMPLETED=0
+
+cleanup() {
+  kill \$HEARTBEAT_PID 2>/dev/null || true
+  # Only set stopped if we didn't complete normally
+  if [ "\$AUTOPILOT_COMPLETED" -eq 0 ]; then
+    update_status "stopped"
+  fi
+}
+trap cleanup EXIT
+
+log "Autopilot starting"
+log "  Duration: \$CMUX_AUTOPILOT_MINUTES minutes"
+log "  Turn: \$CMUX_AUTOPILOT_TURN_MINUTES minutes"
+log "  Wrap-up: \$CMUX_AUTOPILOT_WRAPUP_MINUTES minutes"
+log "  Deadline: \$DEADLINE_EPOCH"
+
+update_status "running"
+send_heartbeat
+
+ITER=0
+DID_WRAPUP=0
+
+while true; do
+  NOW_EPOCH=\$(date +%s)
+  if [ "\$NOW_EPOCH" -ge "\$DEADLINE_EPOCH" ]; then
+    log "Deadline reached"
+    break
+  fi
+
+  ITER=\$((ITER + 1))
+  TIME_LEFT=\$((DEADLINE_EPOCH - NOW_EPOCH))
+
+  # Check for stop file
+  if [ -f "\$STOP_FILE" ]; then
+    log "Stop file detected, initiating wrap-up"
+  fi
+
+  # Build prompt based on turn
+  if [ "\$DID_WRAPUP" -eq 0 ] && { [ "\$TIME_LEFT" -le "\$WRAPUP_THRESHOLD" ] || [ -f "\$STOP_FILE" ]; }; then
+    log "Turn \$ITER: wrap-up (time_left=\${TIME_LEFT}s)"
+    update_status "wrap-up"
+    PROMPT="Final turn (wrap up). Time left: \${TIME_LEFT}s. Stop starting large new work. Stabilize and write a summary."
+    DID_WRAPUP=1
+  elif [ "\$ITER" -eq 1 ]; then
+    log "Turn \$ITER: start"
+    PROMPT="\$CMUX_PROMPT
+
+You are running in unattended autopilot mode. Do not ask for confirmation.
+Timebox: \$CMUX_AUTOPILOT_TURN_MINUTES minutes per turn.
+End every turn with: Progress, Commands run, Files changed, Next."
+  else
+    log "Turn \$ITER: continue (time_left=\${TIME_LEFT}s)"
+    PROMPT="Autopilot continuation. Time left: \${TIME_LEFT}s. Timebox: \$CMUX_AUTOPILOT_TURN_MINUTES minutes.
+Continue from where you left off."
+  fi
+
+  # Run Codex
+  TURN_FILE="\$LOG_DIR/turn-\$(printf '%03d' \$ITER).log"
+  log "Running codex (turn \$ITER)..."
+
+  # Check if there's a session to resume
+  SESSION_FILE="/root/lifecycle/codex-session-id.txt"
+  if [ "\$ITER" -gt 1 ] && [ -f "\$SESSION_FILE" ]; then
+    THREAD_ID=\$(cat "\$SESSION_FILE")
+    if [ -n "\$THREAD_ID" ]; then
+      log "Resuming session: \$THREAD_ID"
+      codex exec resume --last "\$PROMPT" 2>&1 | tee -a "\$TURN_FILE" || true
+    else
+      codex exec "\$PROMPT" 2>&1 | tee -a "\$TURN_FILE" || true
+    fi
+  else
+    codex exec "\$PROMPT" 2>&1 | tee -a "\$TURN_FILE" || true
+  fi
+
+  send_heartbeat
+
+  if [ "\$DID_WRAPUP" -eq 1 ]; then
+    log "Wrap-up complete"
+    break
+  fi
+
+  # Brief pause between turns
+  sleep 2
+done
+
+AUTOPILOT_COMPLETED=1
+update_status "completed"
+log "Autopilot completed after \$ITER turns"
+`;
+  files.push({
+    destinationPath: "/root/lifecycle/codex-autopilot.sh",
+    contentBase64: Buffer.from(autopilotScript).toString("base64"),
+    mode: "755",
+  });
+
   // Copy auth.json from host .codex directory (desktop mode only)
   // For server mode, auth.json is injected separately via applyCodexApiKeys()
   // using credentials from the user's data vault (CODEX_AUTH_JSON or OPENAI_API_KEY).

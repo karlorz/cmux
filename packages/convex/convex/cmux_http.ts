@@ -7,6 +7,7 @@
 import { httpAction, type ActionCtx } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { env } from "../_shared/convex-env";
+import { jsonResponse } from "../_shared/http-utils";
 import type { DevboxProvider } from "@cmux/shared/provider-types";
 import type { FunctionReference } from "convex/server";
 import type { Id } from "./_generated/dataModel";
@@ -59,10 +60,6 @@ const MORPH_API_BASE_URL = "https://cloud.morph.so/api";
 // Default snapshot ID for manaflow devbox CLI instances
 const DEFAULT_CMUX_SNAPSHOT_ID = "snapshot_b74x626y";
 
-const JSON_HEADERS = {
-  "Content-Type": "application/json",
-};
-
 // Security: Validate instance ID format to prevent injection attacks
 // IDs should be manaflow_, cmux_, or cr_ followed by 8+ alphanumeric characters
 // - manaflow_/cmux_: Morph provider instances
@@ -71,10 +68,6 @@ const INSTANCE_ID_REGEX = /^(?:manaflow|cmux|cr)_[a-zA-Z0-9]{8,}$/;
 
 function isValidInstanceId(id: string): boolean {
   return INSTANCE_ID_REGEX.test(id);
-}
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
 }
 
 /**

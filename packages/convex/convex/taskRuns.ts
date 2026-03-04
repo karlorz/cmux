@@ -2816,3 +2816,157 @@ export const getRunningWithPty = authQuery({
       }));
   },
 });
+
+// ============================================================================
+// Autopilot Mutations (Phase 6: Long-Running Sessions)
+// ============================================================================
+
+/**
+ * Update autopilot heartbeat timestamp.
+ * Called periodically by autopilot wrapper script in sandbox.
+ */
+export const updateAutopilotHeartbeat = internalMutation({
+  args: {
+    id: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.id);
+    if (!doc) {
+      throw new Error("Task run not found");
+    }
+    if (!doc.autopilotConfig) {
+      throw new Error("Task run is not in autopilot mode");
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(args.id, {
+      autopilotConfig: {
+        ...doc.autopilotConfig,
+        lastHeartbeat: now,
+      },
+      updatedAt: now,
+    });
+
+    return { ok: true, lastHeartbeat: now };
+  },
+});
+
+/**
+ * Update autopilot status (running/paused/wrap-up/completed/stopped).
+ * Called by autopilot wrapper script when status changes.
+ */
+export const updateAutopilotStatus = internalMutation({
+  args: {
+    id: v.id("taskRuns"),
+    status: v.union(
+      v.literal("running"),
+      v.literal("paused"),
+      v.literal("wrap-up"),
+      v.literal("completed"),
+      v.literal("stopped")
+    ),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.id);
+    if (!doc) {
+      throw new Error("Task run not found");
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(args.id, {
+      autopilotStatus: args.status,
+      updatedAt: now,
+    });
+
+    return { ok: true, status: args.status };
+  },
+});
+
+/**
+ * Store Codex thread-id for session resume.
+ * Called by sandbox when codex notify hook receives thread_id.
+ */
+export const updateCodexThreadId = internalMutation({
+  args: {
+    id: v.id("taskRuns"),
+    threadId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.id);
+    if (!doc) {
+      throw new Error("Task run not found");
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(args.id, {
+      codexThreadId: args.threadId,
+      updatedAt: now,
+    });
+
+    return { ok: true, threadId: args.threadId };
+  },
+});
+
+/**
+ * Initialize autopilot config when starting an autopilot session.
+ * Called by agentSpawner when task is created with --autopilot flag.
+ */
+export const initializeAutopilot = authMutation({
+  args: {
+    teamSlugOrId: v.string(),
+    id: v.id("taskRuns"),
+    totalMinutes: v.number(),
+    turnMinutes: v.number(),
+    wrapUpMinutes: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const userId = ctx.identity.subject;
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const doc = await ctx.db.get(args.id);
+    if (!doc || doc.teamId !== teamId || doc.userId !== userId) {
+      throw new Error("Task run not found or unauthorized");
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(args.id, {
+      autopilotConfig: {
+        enabled: true,
+        totalMinutes: args.totalMinutes,
+        turnMinutes: args.turnMinutes,
+        wrapUpMinutes: args.wrapUpMinutes,
+        startedAt: now,
+        lastHeartbeat: now,
+      },
+      autopilotStatus: "running",
+      updatedAt: now,
+    });
+
+    return { ok: true, startedAt: now };
+  },
+});
+
+/**
+ * Get autopilot info for resume.
+ * Returns thread-id and config for resuming an autopilot session.
+ */
+export const getAutopilotInfo = internalQuery({
+  args: {
+    id: v.id("taskRuns"),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.id);
+    if (!doc) {
+      return null;
+    }
+
+    return {
+      taskRunId: doc._id,
+      taskId: doc.taskId,
+      status: doc.status,
+      autopilotConfig: doc.autopilotConfig,
+      autopilotStatus: doc.autopilotStatus,
+      codexThreadId: doc.codexThreadId,
+      vscode: doc.vscode,
+    };
+  },
+});

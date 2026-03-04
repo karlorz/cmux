@@ -353,6 +353,27 @@ const convexSchema = defineSchema({
     // PTY session tracking for terminal attachment/reconnection
     ptySessionId: v.optional(v.string()), // cmux-pty session ID or tmux session name
     ptyBackend: v.optional(v.union(v.literal("cmux-pty"), v.literal("tmux"))), // Which backend manages the terminal
+    // Autopilot mode (Phase 6: Long-Running Sessions)
+    autopilotConfig: v.optional(
+      v.object({
+        enabled: v.boolean(),
+        totalMinutes: v.number(), // Total autopilot duration in minutes
+        turnMinutes: v.number(), // Minutes per turn
+        wrapUpMinutes: v.number(), // Time before deadline to wrap up
+        startedAt: v.number(), // When autopilot started (epoch ms)
+        lastHeartbeat: v.optional(v.number()), // Last heartbeat timestamp (epoch ms)
+      })
+    ),
+    autopilotStatus: v.optional(
+      v.union(
+        v.literal("running"),
+        v.literal("paused"),
+        v.literal("wrap-up"),
+        v.literal("completed"),
+        v.literal("stopped")
+      )
+    ),
+    codexThreadId: v.optional(v.string()), // Codex CLI thread-id for session resume
   })
     .index("by_task", ["taskId", "createdAt"])
     .index("by_parent", ["parentRunId"])
