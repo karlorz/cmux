@@ -13,30 +13,49 @@
 
 import { verifyTaskRunToken } from "../../shared/src/convex-safe";
 import { env } from "../_shared/convex-env";
+import { jsonResponse, extractBearerToken } from "../_shared/http-utils";
+import { AUTOPILOT_STATUSES } from "../_shared/autopilot-types";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { httpAction } from "./_generated/server";
 import { z } from "zod";
 
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
+/**
+ * Verify JWT from Authorization header, returning taskRunId or an error Response.
+ */
+async function authenticateRequest(
+  req: Request
+): Promise<{ taskRunId: string } | Response> {
+  const authHeader = req.headers.get("authorization");
+  const token = extractBearerToken(authHeader);
+  if (!token) {
+    return jsonResponse({ code: 401, message: "Missing authorization token" }, 401);
+  }
+
+  try {
+    const tokenPayload = await verifyTaskRunToken(
+      token,
+      env.CMUX_TASK_RUN_JWT_SECRET
+    );
+    return { taskRunId: tokenPayload.taskRunId };
+  } catch (error) {
+    console.error("[autopilot_http] Failed to verify JWT", error);
+    return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
+  }
 }
 
-function extractBearerToken(header: string | null): string | null {
-  if (!header) {
-    return null;
+/**
+ * Verify Content-Type is application/json. Returns error Response or null.
+ */
+function requireJsonContentType(req: Request): Response | null {
+  const contentType = req.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    return jsonResponse(
+      { code: 415, message: "Content-Type must be application/json" },
+      415
+    );
   }
-  const match = header.match(/^Bearer\s+(.+)$/i);
-  if (!match) {
-    return null;
-  }
-  const token = match[1]?.trim();
-  return token && token.length > 0 ? token : null;
+  return null;
 }
 
 /**
@@ -46,34 +65,12 @@ function extractBearerToken(header: string | null): string | null {
  * Called periodically by the autopilot wrapper script in the sandbox.
  */
 export const autopilotHeartbeat = httpAction(async (ctx, req) => {
-  // Verify content type
-  const contentType = req.headers.get("content-type") ?? "";
-  if (!contentType.toLowerCase().includes("application/json")) {
-    return jsonResponse(
-      { code: 415, message: "Content-Type must be application/json" },
-      415
-    );
-  }
+  const contentTypeError = requireJsonContentType(req);
+  if (contentTypeError) return contentTypeError;
 
-  // Extract and verify JWT
-  const authHeader = req.headers.get("authorization");
-  const token = extractBearerToken(authHeader);
-  if (!token) {
-    return jsonResponse({ code: 401, message: "Missing authorization token" }, 401);
-  }
-
-  let taskRunId: string;
-
-  try {
-    const tokenPayload = await verifyTaskRunToken(
-      token,
-      env.CMUX_TASK_RUN_JWT_SECRET
-    );
-    taskRunId = tokenPayload.taskRunId;
-  } catch (error) {
-    console.error("[autopilot_http] Failed to verify JWT", error);
-    return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
-  }
+  const authResult = await authenticateRequest(req);
+  if (authResult instanceof Response) return authResult;
+  const { taskRunId } = authResult;
 
   try {
     const result = await ctx.runMutation(internal.taskRuns.updateAutopilotHeartbeat, {
@@ -98,34 +95,12 @@ export const autopilotHeartbeat = httpAction(async (ctx, req) => {
  * Called by the sandbox when codex notify hook receives thread_id.
  */
 export const autopilotThreadId = httpAction(async (ctx, req) => {
-  // Verify content type
-  const contentType = req.headers.get("content-type") ?? "";
-  if (!contentType.toLowerCase().includes("application/json")) {
-    return jsonResponse(
-      { code: 415, message: "Content-Type must be application/json" },
-      415
-    );
-  }
+  const contentTypeError = requireJsonContentType(req);
+  if (contentTypeError) return contentTypeError;
 
-  // Extract and verify JWT
-  const authHeader = req.headers.get("authorization");
-  const token = extractBearerToken(authHeader);
-  if (!token) {
-    return jsonResponse({ code: 401, message: "Missing authorization token" }, 401);
-  }
-
-  let taskRunId: string;
-
-  try {
-    const tokenPayload = await verifyTaskRunToken(
-      token,
-      env.CMUX_TASK_RUN_JWT_SECRET
-    );
-    taskRunId = tokenPayload.taskRunId;
-  } catch (error) {
-    console.error("[autopilot_http] Failed to verify JWT", error);
-    return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
-  }
+  const authResult = await authenticateRequest(req);
+  if (authResult instanceof Response) return authResult;
+  const { taskRunId } = authResult;
 
   // Parse and validate body
   const ThreadIdSchema = z.object({
@@ -168,38 +143,16 @@ export const autopilotThreadId = httpAction(async (ctx, req) => {
  * Called by the autopilot wrapper script when status changes.
  */
 export const autopilotStatus = httpAction(async (ctx, req) => {
-  // Verify content type
-  const contentType = req.headers.get("content-type") ?? "";
-  if (!contentType.toLowerCase().includes("application/json")) {
-    return jsonResponse(
-      { code: 415, message: "Content-Type must be application/json" },
-      415
-    );
-  }
+  const contentTypeError = requireJsonContentType(req);
+  if (contentTypeError) return contentTypeError;
 
-  // Extract and verify JWT
-  const authHeader = req.headers.get("authorization");
-  const token = extractBearerToken(authHeader);
-  if (!token) {
-    return jsonResponse({ code: 401, message: "Missing authorization token" }, 401);
-  }
-
-  let taskRunId: string;
-
-  try {
-    const tokenPayload = await verifyTaskRunToken(
-      token,
-      env.CMUX_TASK_RUN_JWT_SECRET
-    );
-    taskRunId = tokenPayload.taskRunId;
-  } catch (error) {
-    console.error("[autopilot_http] Failed to verify JWT", error);
-    return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
-  }
+  const authResult = await authenticateRequest(req);
+  if (authResult instanceof Response) return authResult;
+  const { taskRunId } = authResult;
 
   // Parse and validate body
   const StatusSchema = z.object({
-    status: z.enum(["running", "paused", "wrap-up", "completed", "stopped"]),
+    status: z.enum(AUTOPILOT_STATUSES),
   });
 
   let payload: z.infer<typeof StatusSchema>;
@@ -241,25 +194,9 @@ export const autopilotStatus = httpAction(async (ctx, req) => {
  * Returns thread-id and config for resuming an autopilot session.
  */
 export const autopilotInfo = httpAction(async (ctx, req) => {
-  // Extract and verify JWT
-  const authHeader = req.headers.get("authorization");
-  const token = extractBearerToken(authHeader);
-  if (!token) {
-    return jsonResponse({ code: 401, message: "Missing authorization token" }, 401);
-  }
-
-  let taskRunId: string;
-
-  try {
-    const tokenPayload = await verifyTaskRunToken(
-      token,
-      env.CMUX_TASK_RUN_JWT_SECRET
-    );
-    taskRunId = tokenPayload.taskRunId;
-  } catch (error) {
-    console.error("[autopilot_http] Failed to verify JWT", error);
-    return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
-  }
+  const authResult = await authenticateRequest(req);
+  if (authResult instanceof Response) return authResult;
+  const { taskRunId } = authResult;
 
   try {
     const info = await ctx.runQuery(internal.taskRuns.getAutopilotInfo, {
