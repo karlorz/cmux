@@ -57,21 +57,22 @@ Examples:
 		client.SetTeamSlug(teamSlug)
 
 		// Determine if this is a task ID or task run ID
-		// Task IDs start with "p" (from tasks table), task run IDs have other prefixes
+		// Try to resolve as taskId first (tasks endpoint returns 404 for non-task IDs)
+		// This is robust because Convex generates random ID prefixes
 		taskRunID := id
-		if strings.HasPrefix(id, "p") {
-			// This is a task ID - fetch the task and get the latest run
-			task, err := client.GetTask(ctx, id)
-			if err != nil {
-				return fmt.Errorf("failed to get task: %w", err)
-			}
+		task, err := client.GetTask(ctx, id)
+		if err == nil {
+			// Found as task - get latest run
 			if len(task.TaskRuns) == 0 {
 				return fmt.Errorf("task has no runs yet")
 			}
-			// Use the first run (most recent)
 			taskRunID = task.TaskRuns[0].ID
 			fmt.Printf("Using latest run: %s (%s)\n\n", taskRunID, task.TaskRuns[0].Agent)
+		} else if !isNotFoundError(err) {
+			// Real error (auth, network, etc.) - don't fall back
+			return fmt.Errorf("failed to resolve ID: %w", err)
 		}
+		// else: 404 means it's not a taskId - use id as taskRunId directly
 
 		result, err := client.GetTaskRunMemory(ctx, taskRunID, flagMemoryType)
 		if err != nil {
@@ -152,4 +153,9 @@ Examples:
 func init() {
 	taskCmd.AddCommand(taskMemoryCmd)
 	taskMemoryCmd.Flags().StringVarP(&flagMemoryType, "type", "t", "", "Filter by memory type (knowledge, daily, tasks, mailbox)")
+}
+
+// isNotFoundError checks if the error indicates a 404 response
+func isNotFoundError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "(404)")
 }

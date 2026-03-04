@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -207,26 +208,25 @@ func TestTaskMemoryMetadataDisplay(t *testing.T) {
 	}
 }
 
-// TestTaskIDParsing tests task ID vs task run ID detection
+// TestTaskIDParsing tests the isNotFoundError helper for ID resolution fallback
 func TestTaskIDParsing(t *testing.T) {
 	tests := []struct {
-		id           string
-		isTaskID     bool
-		description  string
+		err         error
+		want404     bool
+		description string
 	}{
-		{"p17abc123def456", true, "task ID starts with p"},
-		{"ns7abc123def456", false, "task run ID starts with ns"},
-		{"jn7abc123def456", false, "task run ID starts with jn"},
-		{"abc123def456789", false, "unknown prefix is not task ID"},
+		{fmt.Errorf("API error (404): Task not found"), true, "404 error"},
+		{fmt.Errorf("API error (500): Internal error"), false, "500 error"},
+		{fmt.Errorf("API error (401): Unauthorized"), false, "401 error"},
+		{nil, false, "nil error"},
+		{fmt.Errorf("network error: connection refused"), false, "network error"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.description, func(t *testing.T) {
-			// Same logic as task_memory.go
-			isTaskID := strings.HasPrefix(tt.id, "p")
-
-			if isTaskID != tt.isTaskID {
-				t.Errorf("ID %q: isTaskID = %v, want %v", tt.id, isTaskID, tt.isTaskID)
+			got := isNotFoundError(tt.err)
+			if got != tt.want404 {
+				t.Errorf("isNotFoundError(%v) = %v, want %v", tt.err, got, tt.want404)
 			}
 		})
 	}
