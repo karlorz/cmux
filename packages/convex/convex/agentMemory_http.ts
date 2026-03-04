@@ -1,18 +1,11 @@
 import { v } from "convex/values";
 import { z } from "zod";
+import { jsonResponse } from "../_shared/http-utils";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { httpAction, internalMutation } from "./_generated/server";
 import { getWorkerAuth } from "./users/utils/getWorkerAuth";
 import { typedZid } from "@cmux/shared/utils/typed-zid";
-
-const JSON_HEADERS = {
-  "Content-Type": "application/json",
-};
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
-}
 
 // Date format validation: YYYY-MM-DD
 const dateRegex = /^\d{4}-\d{2}-\d{2}$/;

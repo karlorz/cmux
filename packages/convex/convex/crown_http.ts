@@ -12,6 +12,7 @@ import {
   type WorkerTaskRunResponse,
 } from "@cmux/shared/convex-safe";
 import { env } from "../_shared/convex-env";
+import { jsonResponse } from "../_shared/http-utils";
 import { fetchInstallationAccessToken } from "../_shared/githubApp";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -26,14 +27,6 @@ import {
 
 type TaskRunDoc = Doc<"taskRuns">;
 type TeamMembershipDoc = Doc<"teamMemberships">;
-
-const JSON_HEADERS = {
-  "Content-Type": "application/json",
-};
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
-}
 
 async function ensureJsonRequest(
   req: Request

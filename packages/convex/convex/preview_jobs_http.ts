@@ -1,17 +1,11 @@
 import { env } from "../_shared/convex-env";
+import { jsonResponse } from "../_shared/http-utils";
 import { capturePosthogEvent, drainPosthogEvents } from "../_shared/posthog";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { httpAction, type ActionCtx } from "./_generated/server";
 import { runPreviewJob } from "./preview_jobs_worker";
 import { getWorkerAuth } from "./users/utils/getWorkerAuth";
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
 
 async function markPreviewTaskCompleted(
   ctx: ActionCtx,

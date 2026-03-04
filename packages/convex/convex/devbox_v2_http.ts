@@ -9,6 +9,7 @@
 import { httpAction, type ActionCtx } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import type { FunctionReference } from "convex/server";
+import { jsonResponse } from "../_shared/http-utils";
 import {
   DEFAULT_E2B_TEMPLATE_ID,
   E2B_TEMPLATE_PRESETS,
@@ -26,14 +27,6 @@ import {
 import { DEFAULT_SANDBOX_PROVIDER, type DevboxProvider } from "@cmux/shared/provider-types";
 
 type SandboxProvider = Extract<DevboxProvider, "e2b" | "modal" | "pve-lxc">;
-
-const JSON_HEADERS = {
-  "Content-Type": "application/json",
-};
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
-}
 
 /**
  * Verify content type is JSON for non-GET requests
