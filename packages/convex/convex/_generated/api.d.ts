@@ -14,6 +14,7 @@ import type * as agentMemory_http from "../agentMemory_http.js";
 import type * as analytics from "../analytics.js";
 import type * as anthropic_http from "../anthropic_http.js";
 import type * as apiKeys from "../apiKeys.js";
+import type * as autopilot_http from "../autopilot_http.js";
 import type * as backfill from "../backfill.js";
 import type * as bedrock_utils from "../bedrock_utils.js";
 import type * as cmux_http from "../cmux_http.js";
@@ -121,6 +122,7 @@ declare const fullApi: ApiFromModules<{
   analytics: typeof analytics;
   anthropic_http: typeof anthropic_http;
   apiKeys: typeof apiKeys;
+  autopilot_http: typeof autopilot_http;
   backfill: typeof backfill;
   bedrock_utils: typeof bedrock_utils;
   cmux_http: typeof cmux_http;
