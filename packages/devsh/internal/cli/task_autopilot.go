@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/karlorz/devsh/internal/auth"
@@ -43,6 +44,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		taskRunID := args[0]
 
+		// Use short timeout for initial API calls
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
@@ -78,7 +80,11 @@ Examples:
 		}
 		prompt := args[1]
 
-		return handleAutopilotStart(ctx, client, taskRun, prompt)
+		// Use longer timeout for autopilot start (script triggers async execution)
+		startCtx, startCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer startCancel()
+
+		return handleAutopilotStart(startCtx, client, taskRun, prompt)
 	},
 }
 
@@ -149,9 +155,13 @@ func handleAutopilotStart(ctx context.Context, client *vm.Client, taskRun *vm.Ta
 		return fmt.Errorf("sandbox worker URL not available")
 	}
 
+	// Shell-escape the prompt for safe inclusion in command
+	escapedPrompt := strings.ReplaceAll(prompt, "'", "'\"'\"'")
+
 	// Build the autopilot command to execute in the sandbox
 	autopilotCmd := fmt.Sprintf(
-		"CMUX_AUTOPILOT_MINUTES=%d CMUX_AUTOPILOT_TURN_MINUTES=%d CMUX_AUTOPILOT_WRAPUP_MINUTES=%d /root/lifecycle/codex-autopilot.sh",
+		"CMUX_PROMPT='%s' CMUX_AUTOPILOT_MINUTES=%d CMUX_AUTOPILOT_TURN_MINUTES=%d CMUX_AUTOPILOT_WRAPUP_MINUTES=%d /root/lifecycle/codex-autopilot.sh",
+		escapedPrompt,
 		taskAutopilotMinutes,
 		taskAutopilotTurnMinutes,
 		taskAutopilotWrapUpMinutes,

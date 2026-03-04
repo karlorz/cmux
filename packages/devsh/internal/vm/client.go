@@ -1001,6 +1001,13 @@ func (c *Client) CreateTask(ctx context.Context, opts CreateTaskOptions) (*Creat
 	if opts.ParentTaskRunID != "" {
 		body["parentTaskRunId"] = opts.ParentTaskRunID
 	}
+	// Autopilot mode (Phase 6)
+	if opts.Autopilot {
+		body["autopilot"] = true
+		body["autopilotMinutes"] = opts.AutopilotMinutes
+		body["autopilotTurnMinutes"] = opts.AutopilotTurnMinutes
+		body["autopilotWrapUp"] = opts.AutopilotWrapUp
+	}
 
 	resp, err := c.doRequest(ctx, "POST", "/api/v1/cmux/tasks", body)
 	if err != nil {

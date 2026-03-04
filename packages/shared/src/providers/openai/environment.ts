@@ -311,9 +311,14 @@ update_status() {
 ) &
 HEARTBEAT_PID=\$!
 
+AUTOPILOT_COMPLETED=0
+
 cleanup() {
   kill \$HEARTBEAT_PID 2>/dev/null || true
-  update_status "stopped"
+  # Only set stopped if we didn't complete normally
+  if [ "\$AUTOPILOT_COMPLETED" -eq 0 ]; then
+    update_status "stopped"
+  fi
 }
 trap cleanup EXIT
 
@@ -392,6 +397,7 @@ Continue from where you left off."
   sleep 2
 done
 
+AUTOPILOT_COMPLETED=1
 update_status "completed"
 log "Autopilot completed after \$ITER turns"
 `;
