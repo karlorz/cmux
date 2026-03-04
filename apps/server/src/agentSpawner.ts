@@ -126,6 +126,14 @@ export interface PreFetchedSpawnConfig {
   previousMailbox: string | null;
 }
 
+/** Autopilot mode configuration for long-running agent sessions (Phase 6) */
+interface AutopilotOptions {
+  enabled: boolean;
+  totalMinutes: number;
+  turnMinutes: number;
+  wrapUpMinutes: number;
+}
+
 export async function spawnAgent(
   agent: AgentConfig,
   taskId: Id<"tasks">,
@@ -154,12 +162,7 @@ export async function spawnAgent(
     /** Pre-fetched spawn config (for JWT auth paths that can't call Convex directly) */
     preFetchedConfig?: PreFetchedSpawnConfig;
     /** Autopilot mode options (Phase 6: Long-Running Sessions) */
-    autopilotOptions?: {
-      enabled: boolean;
-      totalMinutes: number;
-      turnMinutes: number;
-      wrapUpMinutes: number;
-    };
+    autopilotOptions?: AutopilotOptions;
   },
   teamSlugOrId: string,
   /** Optional pre-provided JWT (for JWT-based auth when Stack Auth is not available) */
@@ -1609,14 +1612,15 @@ exit $EXIT_CODE
             // Initialize autopilot config if enabled (Phase 6: Long-Running Sessions)
             if (options.autopilotOptions?.enabled) {
               const capturedTaskRunId = taskRunId;
+              const { totalMinutes, turnMinutes, wrapUpMinutes } = options.autopilotOptions;
               runWithAuth(capturedAuthToken, capturedAuthHeaderJson, async () => {
                 await getConvex()
                   .mutation(api.taskRuns.initializeAutopilot, {
                     teamSlugOrId,
                     id: capturedTaskRunId,
-                    totalMinutes: options.autopilotOptions!.totalMinutes,
-                    turnMinutes: options.autopilotOptions!.turnMinutes,
-                    wrapUpMinutes: options.autopilotOptions!.wrapUpMinutes,
+                    totalMinutes,
+                    turnMinutes,
+                    wrapUpMinutes,
                   });
                 serverLogger.info(
                   `[AgentSpawner] Initialized autopilot config for task run ${capturedTaskRunId}`
@@ -1713,12 +1717,7 @@ export async function spawnAllAgents(
       altText: string;
     }>;
     theme?: "dark" | "light" | "system";
-    autopilotOptions?: {
-      enabled: boolean;
-      totalMinutes: number;
-      turnMinutes: number;
-      wrapUpMinutes: number;
-    };
+    autopilotOptions?: AutopilotOptions;
   },
   teamSlugOrId: string
 ): Promise<AgentSpawnResult[]> {
