@@ -34,9 +34,9 @@ export function generateRandomId(): string {
   return result;
 }
 
-import { DEFAULT_BRANCH_PREFIX as _DEFAULT_BRANCH_PREFIX } from "@cmux/shared";
+import { DEFAULT_BRANCH_PREFIX as _DEFAULT_BRANCH_PREFIX, MAX_BRANCH_NAME_LENGTH as _MAX_BRANCH_NAME_LENGTH } from "@cmux/shared";
 export const DEFAULT_BRANCH_PREFIX = _DEFAULT_BRANCH_PREFIX;
-export const MAX_BRANCH_NAME_LENGTH = 60;
+export const MAX_BRANCH_NAME_LENGTH = _MAX_BRANCH_NAME_LENGTH;
 
 function truncateBaseBranchName(baseBranchName: string): string {
   const maxBaseLength = MAX_BRANCH_NAME_LENGTH - 1 - 5;
