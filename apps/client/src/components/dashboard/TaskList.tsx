@@ -27,9 +27,10 @@ function useInfiniteScroll(
       while (current) {
         const style = window.getComputedStyle(current);
         const overflowY = style.overflowY;
-        const isScrollable =
+        const hasOverflowStyle =
           overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay";
-        if (isScrollable) {
+        // Must have overflow style AND actually be scrollable (content exceeds viewport)
+        if (hasOverflowStyle && current.scrollHeight > current.clientHeight) {
           return current;
         }
         current = current.parentElement;
