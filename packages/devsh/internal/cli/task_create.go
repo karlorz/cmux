@@ -35,6 +35,11 @@ var (
 	taskCreateFromProjectItem         string // convenience: auto-fetch item content as prompt
 	// Agent Teams (D4) - parent-child task relationships
 	taskCreateParentTaskRun string
+	// Autopilot mode (Phase 6)
+	taskCreateAutopilot            bool
+	taskCreateAutopilotMinutes     int
+	taskCreateAutopilotTurnMinutes int
+	taskCreateAutopilotWrapUp      int
 )
 
 var taskCreateCmd = &cobra.Command{
@@ -51,6 +56,7 @@ Use --env to specify a custom environment (if omitted, auto-selects latest for r
 Use --cloud-workspace to create a cloud workspace (prompt is optional, defaults to empty).
 Use --from-project-item to create a task from a GitHub Project item (auto-fetches title+body as prompt).
 Use --parent-task-run to create a child task linked to a parent task run (for agent teams).
+Use --autopilot to run the agent in long-running autopilot mode with heartbeat-based timeout.
 
 Examples:
   devsh task create "Add unit tests for auth module"
@@ -241,6 +247,10 @@ Examples:
 			GithubProjectOwner:          taskCreateGHProjectOwner,
 			GithubProjectOwnerType:      taskCreateGHProjectOwnerType,
 			ParentTaskRunID:             taskCreateParentTaskRun,
+			Autopilot:                   taskCreateAutopilot,
+			AutopilotMinutes:            taskCreateAutopilotMinutes,
+			AutopilotTurnMinutes:        taskCreateAutopilotTurnMinutes,
+			AutopilotWrapUp:             taskCreateAutopilotWrapUp,
 		}
 
 		// Create task and task runs (with JWTs)
@@ -531,5 +541,10 @@ func init() {
 	taskCreateCmd.Flags().StringVar(&taskCreateFromProjectItem, "from-project-item", "", "Create task from a GitHub Project item (auto-fetches title+body as prompt; requires --gh-project-id and --gh-project-installation-id)")
 	// Agent Teams (D4) - parent-child task relationships
 	taskCreateCmd.Flags().StringVar(&taskCreateParentTaskRun, "parent-task-run", "", "Parent task run ID (creates child task for agent teams)")
+	// Autopilot mode (Phase 6)
+	taskCreateCmd.Flags().BoolVar(&taskCreateAutopilot, "autopilot", false, "Run agent in long-running autopilot mode with heartbeat-based timeout")
+	taskCreateCmd.Flags().IntVar(&taskCreateAutopilotMinutes, "autopilot-minutes", 30, "Total autopilot duration in minutes (default: 30)")
+	taskCreateCmd.Flags().IntVar(&taskCreateAutopilotTurnMinutes, "autopilot-turn-minutes", 5, "Minutes per turn in autopilot mode (default: 5)")
+	taskCreateCmd.Flags().IntVar(&taskCreateAutopilotWrapUp, "autopilot-wrap-up", 3, "Minutes before deadline to wrap up in autopilot mode (default: 3)")
 	taskCmd.AddCommand(taskCreateCmd)
 }

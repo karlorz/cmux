@@ -153,6 +153,13 @@ export async function spawnAgent(
     };
     /** Pre-fetched spawn config (for JWT auth paths that can't call Convex directly) */
     preFetchedConfig?: PreFetchedSpawnConfig;
+    /** Autopilot mode options (Phase 6: Long-Running Sessions) */
+    autopilotOptions?: {
+      enabled: boolean;
+      totalMinutes: number;
+      turnMinutes: number;
+      wrapUpMinutes: number;
+    };
   },
   teamSlugOrId: string,
   /** Optional pre-provided JWT (for JWT-based auth when Stack Auth is not available) */
@@ -438,6 +445,18 @@ export async function spawnAgent(
       CMUX_AGENT_NAME: agent.name,
       PROMPT: processedTaskDescription,
     };
+
+    // Add autopilot environment variables if autopilot is enabled (Phase 6)
+    if (options.autopilotOptions?.enabled) {
+      systemEnvVars.CMUX_AUTOPILOT_ENABLED = "1";
+      systemEnvVars.CMUX_AUTOPILOT_MINUTES = String(options.autopilotOptions.totalMinutes);
+      systemEnvVars.CMUX_AUTOPILOT_TURN_MINUTES = String(options.autopilotOptions.turnMinutes);
+      systemEnvVars.CMUX_AUTOPILOT_WRAPUP_MINUTES = String(options.autopilotOptions.wrapUpMinutes);
+      serverLogger.info(
+        `[AgentSpawner] Autopilot mode enabled: ${options.autopilotOptions.totalMinutes}min total, ${options.autopilotOptions.turnMinutes}min/turn`
+      );
+    }
+
     let envVars: Record<string, string> = { ...systemEnvVars };
 
     const workspaceConfigs = await workspaceConfigPromise;
@@ -1585,6 +1604,29 @@ exit $EXIT_CODE
               serverLogger.info(
                 `[AgentSpawner] Worker did not report PTY session info, skipping persistence`
               );
+            }
+
+            // Initialize autopilot config if enabled (Phase 6: Long-Running Sessions)
+            if (options.autopilotOptions?.enabled) {
+              const capturedTaskRunId = taskRunId;
+              runWithAuth(capturedAuthToken, capturedAuthHeaderJson, async () => {
+                await getConvex()
+                  .mutation(api.taskRuns.initializeAutopilot, {
+                    teamSlugOrId,
+                    id: capturedTaskRunId,
+                    totalMinutes: options.autopilotOptions!.totalMinutes,
+                    turnMinutes: options.autopilotOptions!.turnMinutes,
+                    wrapUpMinutes: options.autopilotOptions!.wrapUpMinutes,
+                  });
+                serverLogger.info(
+                  `[AgentSpawner] Initialized autopilot config for task run ${capturedTaskRunId}`
+                );
+              }).catch((err) => {
+                serverLogger.warn(
+                  `[AgentSpawner] Failed to initialize autopilot config:`,
+                  err
+                );
+              });
             }
           }
 

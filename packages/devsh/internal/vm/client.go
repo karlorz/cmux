@@ -761,6 +761,20 @@ type TaskRun struct {
 	PtySessionID string `json:"ptySessionId,omitempty"`
 	PtyBackend   string `json:"ptyBackend,omitempty"` // "cmux-pty" or "tmux"
 	SandboxID    string `json:"sandboxId,omitempty"`
+	// Autopilot config
+	AutopilotConfig *AutopilotConfig `json:"autopilotConfig,omitempty"`
+	AutopilotStatus string           `json:"autopilotStatus,omitempty"` // running/paused/wrap-up/completed/stopped
+	CodexThreadID   string           `json:"codexThreadId,omitempty"`
+}
+
+// AutopilotConfig represents autopilot configuration for long-running sessions
+type AutopilotConfig struct {
+	Enabled       bool  `json:"enabled"`
+	TotalMinutes  int   `json:"totalMinutes"`
+	TurnMinutes   int   `json:"turnMinutes"`
+	WrapUpMinutes int   `json:"wrapUpMinutes"`
+	StartedAt     int64 `json:"startedAt"`
+	LastHeartbeat int64 `json:"lastHeartbeat,omitempty"`
 }
 
 // TaskImage represents a task image stored in Convex.
@@ -823,6 +837,11 @@ type CreateTaskOptions struct {
 	GithubProjectOwnerType      string
 	// Agent Teams (D4) - parent-child task relationships
 	ParentTaskRunID string
+	// Autopilot mode (Phase 6)
+	Autopilot            bool
+	AutopilotMinutes     int
+	AutopilotTurnMinutes int
+	AutopilotWrapUp      int
 }
 
 // TaskRunWithJWT represents a task run with its JWT for sandbox auth
@@ -2325,6 +2344,56 @@ func (c *Client) OrchestrationMetrics(ctx context.Context) (*OrchestrationMetric
 	}
 
 	var result OrchestrationMetricsResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// ============================================================================
+// Autopilot API
+// ============================================================================
+
+// AutopilotInfo represents autopilot session information
+type AutopilotInfo struct {
+	TaskRunID       string           `json:"taskRunId"`
+	TaskID          string           `json:"taskId"`
+	Status          string           `json:"status"`
+	AutopilotConfig *AutopilotConfig `json:"autopilotConfig,omitempty"`
+	AutopilotStatus string           `json:"autopilotStatus,omitempty"`
+	CodexThreadID   string           `json:"codexThreadId,omitempty"`
+	VSCode          *struct {
+		URL    string `json:"url,omitempty"`
+		Status string `json:"status,omitempty"`
+	} `json:"vscode,omitempty"`
+}
+
+// GetAutopilotInfo gets autopilot session info for a task run using JWT authentication
+// This is for sandbox scripts that don't have user auth, only task run JWT
+func (c *Client) GetAutopilotInfo(ctx context.Context, jwt string) (*AutopilotInfo, error) {
+	cfg := auth.GetConfig()
+	url := cfg.ConvexSiteURL + "/api/autopilot/info"
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result AutopilotInfo
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}

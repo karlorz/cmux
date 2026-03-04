@@ -76,6 +76,12 @@ import {
   pullOrchestrationState,
   getOrchestrationResults,
 } from "./orchestration_http";
+import {
+  autopilotHeartbeat,
+  autopilotThreadId,
+  autopilotStatus,
+  autopilotInfo,
+} from "./autopilot_http";
 
 const http = httpRouter();
 
@@ -462,6 +468,34 @@ http.route({
   path: "/api/orchestration/results",
   method: "GET",
   handler: getOrchestrationResults,
+});
+
+// =============================================================================
+// Autopilot API - JWT-authenticated endpoints for long-running sessions
+// =============================================================================
+
+http.route({
+  path: "/api/autopilot/heartbeat",
+  method: "POST",
+  handler: autopilotHeartbeat,
+});
+
+http.route({
+  path: "/api/autopilot/thread-id",
+  method: "POST",
+  handler: autopilotThreadId,
+});
+
+http.route({
+  path: "/api/autopilot/status",
+  method: "POST",
+  handler: autopilotStatus,
+});
+
+http.route({
+  path: "/api/autopilot/info",
+  method: "GET",
+  handler: autopilotInfo,
 });
 
 export default http;
