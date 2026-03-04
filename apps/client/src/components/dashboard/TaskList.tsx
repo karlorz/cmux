@@ -17,11 +17,40 @@ function useInfiniteScroll(
   useEffect(() => {
     if (!enabled || !canLoadMore) return;
 
-    // Track if user has scrolled
+    const trigger = triggerRef.current;
+    if (!trigger) {
+      return;
+    }
+
+    const findScrollParent = (element: HTMLElement | null): HTMLElement | null => {
+      let current: HTMLElement | null = element;
+      while (current) {
+        const style = window.getComputedStyle(current);
+        const overflowY = style.overflowY;
+        const hasOverflowStyle =
+          overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay";
+        // Must have overflow style AND actually be scrollable (content exceeds viewport)
+        if (hasOverflowStyle && current.scrollHeight > current.clientHeight) {
+          return current;
+        }
+        current = current.parentElement;
+      }
+      return null;
+    };
+
+    // FloatingPane (and other routes) use an internal overflow container, not window scroll.
+    // If we only listen to window scroll, this will never fire and we'll stay stuck on page 1.
+    const scrollParent = findScrollParent(trigger.parentElement);
+
     const handleScroll = () => {
       hasScrolledRef.current = true;
     };
-    window.addEventListener("scroll", handleScroll, { passive: true });
+
+    if (scrollParent) {
+      scrollParent.addEventListener("scroll", handleScroll, { passive: true });
+    } else {
+      window.addEventListener("scroll", handleScroll, { passive: true });
+    }
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -30,19 +59,18 @@ function useInfiniteScroll(
           onLoadMore();
         }
       },
-      { threshold: 0.1 }
+      { threshold: 0.1, root: scrollParent ?? null }
     );
 
-    const trigger = triggerRef.current;
-    if (trigger) {
-      observer.observe(trigger);
-    }
+    observer.observe(trigger);
 
     return () => {
-      window.removeEventListener("scroll", handleScroll);
-      if (trigger) {
-        observer.unobserve(trigger);
+      if (scrollParent) {
+        scrollParent.removeEventListener("scroll", handleScroll);
+      } else {
+        window.removeEventListener("scroll", handleScroll);
       }
+      observer.unobserve(trigger);
     };
   }, [triggerRef, onLoadMore, canLoadMore, enabled]);
 }
