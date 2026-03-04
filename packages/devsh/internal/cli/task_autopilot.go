@@ -162,7 +162,7 @@ func handleAutopilotStart(ctx context.Context, client *vm.Client, taskRun *vm.Ta
 	fmt.Println()
 
 	// Execute the autopilot script in the sandbox
-	result, err := client.ExecCommand(ctx, sandboxID, autopilotCmd)
+	stdout, stderr, exitCode, err := client.ExecCommand(ctx, sandboxID, autopilotCmd)
 	if err != nil {
 		return fmt.Errorf("failed to start autopilot: %w", err)
 	}
@@ -182,9 +182,12 @@ func handleAutopilotStart(ctx context.Context, client *vm.Client, taskRun *vm.Ta
 	}
 
 	fmt.Println("Autopilot started successfully!")
-	fmt.Printf("  Exit Code: %d\n", result.ExitCode)
-	if result.Stdout != "" {
-		fmt.Printf("  Output: %s\n", result.Stdout)
+	fmt.Printf("  Exit Code: %d\n", exitCode)
+	if stdout != "" {
+		fmt.Printf("  Output: %s\n", stdout)
+	}
+	if stderr != "" {
+		fmt.Printf("  Stderr: %s\n", stderr)
 	}
 	fmt.Println()
 	fmt.Println("To monitor the session:")
