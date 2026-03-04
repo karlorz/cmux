@@ -68,11 +68,11 @@ Examples:
 			}
 			taskRunID = task.TaskRuns[0].ID
 			fmt.Printf("Using latest run: %s (%s)\n\n", taskRunID, task.TaskRuns[0].Agent)
-		} else if !isNotFoundError(err) {
-			// Real error (auth, network, etc.) - don't fall back
+		} else if isFatalAPIError(err) {
+			// Auth/network errors - don't fall back
 			return fmt.Errorf("failed to resolve ID: %w", err)
 		}
-		// else: 404 means it's not a taskId - use id as taskRunId directly
+		// else: 404/500 means it's not a taskId (or invalid format) - use id as taskRunId directly
 
 		result, err := client.GetTaskRunMemory(ctx, taskRunID, flagMemoryType)
 		if err != nil {
@@ -155,7 +155,23 @@ func init() {
 	taskMemoryCmd.Flags().StringVarP(&flagMemoryType, "type", "t", "", "Filter by memory type (knowledge, daily, tasks, mailbox)")
 }
 
-// isNotFoundError checks if the error indicates a 404 response
-func isNotFoundError(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "(404)")
+// isFatalAPIError returns true for errors that should NOT fall back to task-run ID lookup.
+// Only auth and network errors are fatal; 404/500 from GetTask just means the ID isn't a task ID.
+func isFatalAPIError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	// Auth errors - user needs to re-authenticate
+	if strings.Contains(errStr, "(401)") || strings.Contains(errStr, "(403)") {
+		return true
+	}
+	// Network errors - can't reach server
+	if strings.Contains(errStr, "connection refused") ||
+		strings.Contains(errStr, "no such host") ||
+		strings.Contains(errStr, "network is unreachable") ||
+		strings.Contains(errStr, "context deadline exceeded") {
+		return true
+	}
+	return false
 }
