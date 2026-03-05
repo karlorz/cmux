@@ -209,6 +209,7 @@ export type ProjectItemContent = {
     state?: string;
     url?: string;
     body?: string;
+    labels?: Array<string>;
 } | null;
 
 export type ProjectItemFieldValues = {

@@ -218,6 +218,7 @@ async function getProjectItemsViaGhCli(
     title: string;
     status: string | null;
     url: string | null;
+    labels: string[];
     fieldValues: Record<string, string | number | null>;
   }>;
   hasNextPage: boolean;
@@ -225,7 +226,7 @@ async function getProjectItemsViaGhCli(
 }> {
   if (!isGhCliFallbackEnabled()) return { items: [], hasNextPage: false, endCursor: null };
 
-  const query = `query($projectId:ID!,$first:Int!,$after:String){node(id:$projectId){... on ProjectV2{items(first:$first,after:$after){nodes{id content{... on Issue{id title number state url} ... on PullRequest{id title number state url} ... on DraftIssue{id title body}} fieldValues(first:20){nodes{... on ProjectV2ItemFieldTextValue{text field{... on ProjectV2Field{name}}} ... on ProjectV2ItemFieldNumberValue{number field{... on ProjectV2Field{name}}} ... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2Field{name}}} ... on ProjectV2ItemFieldSingleSelectValue{name field{... on ProjectV2SingleSelectField{name}}} ... on ProjectV2ItemFieldIterationValue{title field{... on ProjectV2IterationField{name}}}}}} pageInfo{hasNextPage endCursor}}}}}`;
+  const query = `query($projectId:ID!,$first:Int!,$after:String){node(id:$projectId){... on ProjectV2{items(first:$first,after:$after){nodes{id content{... on Issue{id title number state url labels(first:20){nodes{name}}} ... on PullRequest{id title number state url labels(first:20){nodes{name}}} ... on DraftIssue{id title body}} fieldValues(first:20){nodes{... on ProjectV2ItemFieldTextValue{text field{... on ProjectV2Field{name}}} ... on ProjectV2ItemFieldNumberValue{number field{... on ProjectV2Field{name}}} ... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2Field{name}}} ... on ProjectV2ItemFieldSingleSelectValue{name field{... on ProjectV2SingleSelectField{name}}} ... on ProjectV2ItemFieldIterationValue{title field{... on ProjectV2IterationField{name}}}}}} pageInfo{hasNextPage endCursor}}}}}`;
 
   try {
     const data = await runGhGraphql(query, { projectId, first, after });
@@ -270,12 +271,23 @@ async function getProjectItemsViaGhCli(
           else if (typeof fv.title === "string") fieldValues[fieldName] = fv.title;
         }
 
+        const labelsObj = content?.labels as
+          | { nodes?: Array<Record<string, unknown> | null> }
+          | undefined;
+        const labels = Array.isArray(labelsObj?.nodes)
+          ? labelsObj.nodes
+              .filter((label): label is Record<string, unknown> => Boolean(label))
+              .map((label) => String(label.name ?? "").trim())
+              .filter((label) => label.length > 0)
+          : [];
+
         return {
           id: String(n.id ?? ""),
           contentType,
           title: content ? String((content.title as string) ?? "") : "",
           status: typeof fieldValues.Status === "string" ? fieldValues.Status : null,
           url: content && typeof content.url === "string" ? content.url : null,
+          labels,
           fieldValues,
         };
       })
@@ -451,6 +463,7 @@ const ProjectItemContentSchema = z
     state: z.string().optional(),
     url: z.string().optional(),
     body: z.string().optional(),
+    labels: z.array(z.string()).optional(),
   })
   .nullable()
   .openapi("ProjectItemContent");
@@ -881,6 +894,7 @@ githubProjectsRouter.openapi(
               id: item.id,
               title: item.title,
               url: item.url ?? undefined,
+              ...(item.labels.length > 0 ? { labels: item.labels } : {}),
             },
             fieldValues: item.fieldValues,
           }));
@@ -920,6 +934,7 @@ githubProjectsRouter.openapi(
               id: item.id,
               title: item.title,
               url: item.url ?? undefined,
+              ...(item.labels.length > 0 ? { labels: item.labels } : {}),
             },
             fieldValues: item.fieldValues,
           }));
