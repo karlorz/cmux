@@ -1900,6 +1900,7 @@ export const listTasks = httpAction(async (ctx, req) => {
           exitCode: selectedRun?.exitCode,
           pullRequestUrl: selectedRun?.pullRequestUrl,
           mergeStatus: task.mergeStatus,
+          githubProjectItemId: task.githubProjectItemId,
         };
       })
     );
