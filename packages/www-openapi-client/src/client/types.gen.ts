@@ -769,6 +769,305 @@ export type OrchestrationSyncResponse = {
     };
 };
 
+export type ProjectGoal = {
+    /**
+     * Goal ID
+     */
+    id: string;
+    /**
+     * Goal title
+     */
+    title: string;
+    /**
+     * Whether goal is completed
+     */
+    completed: boolean;
+};
+
+export type ProjectStatus = 'planning' | 'active' | 'paused' | 'completed' | 'archived';
+
+export type PlanTask = {
+    /**
+     * Task ID
+     */
+    id: string;
+    /**
+     * Task prompt
+     */
+    prompt: string;
+    /**
+     * Agent name
+     */
+    agentName: string;
+    /**
+     * Task status
+     */
+    status: string;
+    /**
+     * Task IDs this depends on
+     */
+    dependsOn?: Array<string>;
+    /**
+     * Task priority
+     */
+    priority?: number;
+};
+
+/**
+ * Embedded orchestration plan
+ */
+export type ProjectPlan = {
+    /**
+     * Orchestration ID
+     */
+    orchestrationId: string;
+    /**
+     * Head agent name
+     */
+    headAgent: string;
+    /**
+     * Plan description
+     */
+    description?: string;
+    /**
+     * Plan tasks
+     */
+    tasks: Array<PlanTask>;
+    /**
+     * Last update timestamp (ISO)
+     */
+    updatedAt: string;
+};
+
+export type Project = {
+    /**
+     * Project ID (Convex document ID)
+     */
+    _id: string;
+    /**
+     * Team ID
+     */
+    teamId: string;
+    /**
+     * User ID who created the project
+     */
+    userId: string;
+    /**
+     * Project name
+     */
+    name: string;
+    /**
+     * Project description
+     */
+    description?: string;
+    /**
+     * Project goals
+     */
+    goals?: Array<ProjectGoal>;
+    status: ProjectStatus;
+    /**
+     * Total task count
+     */
+    totalTasks?: number;
+    /**
+     * Completed task count
+     */
+    completedTasks?: number;
+    /**
+     * Failed task count
+     */
+    failedTasks?: number;
+    /**
+     * Path to linked Obsidian note
+     */
+    obsidianNotePath?: string;
+    /**
+     * GitHub Projects v2 node ID
+     */
+    githubProjectId?: string;
+    plan?: ProjectPlan;
+    /**
+     * Creation timestamp
+     */
+    createdAt: number;
+    /**
+     * Last update timestamp
+     */
+    updatedAt: number;
+};
+
+export type CreateProjectRequest = {
+    /**
+     * Team slug or ID
+     */
+    teamSlugOrId: string;
+    /**
+     * Project name
+     */
+    name: string;
+    /**
+     * Project description
+     */
+    description?: string;
+    /**
+     * Initial goals
+     */
+    goals?: Array<ProjectGoal>;
+    status?: ProjectStatus & unknown;
+    /**
+     * Path to Obsidian note
+     */
+    obsidianNotePath?: string;
+    /**
+     * GitHub Projects node ID
+     */
+    githubProjectId?: string;
+};
+
+export type UpdateProjectRequest = {
+    /**
+     * Project name
+     */
+    name?: string;
+    /**
+     * Project description
+     */
+    description?: string;
+    /**
+     * Project goals
+     */
+    goals?: Array<ProjectGoal>;
+    status?: ProjectStatus & unknown;
+    /**
+     * Path to Obsidian note
+     */
+    obsidianNotePath?: string;
+    /**
+     * GitHub Projects node ID
+     */
+    githubProjectId?: string;
+};
+
+export type UpsertPlanRequest = {
+    /**
+     * Orchestration ID
+     */
+    orchestrationId: string;
+    /**
+     * Head agent name
+     */
+    headAgent: string;
+    /**
+     * Plan description
+     */
+    description?: string;
+    /**
+     * Plan tasks
+     */
+    tasks: Array<PlanTask>;
+};
+
+export type ProjectProgress = {
+    /**
+     * Total tasks
+     */
+    total: number;
+    /**
+     * Completed tasks
+     */
+    completed: number;
+    /**
+     * Running tasks
+     */
+    running: number;
+    /**
+     * Failed tasks
+     */
+    failed: number;
+    /**
+     * Pending tasks
+     */
+    pending: number;
+    /**
+     * Cancelled tasks
+     */
+    cancelled: number;
+    /**
+     * Progress percentage (0-100)
+     */
+    progressPercent: number;
+    /**
+     * Last update timestamp (ISO)
+     */
+    lastUpdated: string;
+};
+
+export type RecommendedAction = {
+    /**
+     * Type of recommended action
+     */
+    type: 'todo' | 'stale_note' | 'missing_docs' | 'broken_link';
+    /**
+     * Source note path
+     */
+    source: string;
+    /**
+     * Action description
+     */
+    description: string;
+    /**
+     * Priority level
+     */
+    priority: 'high' | 'medium' | 'low';
+    /**
+     * Suggested prompt for agent
+     */
+    suggestedPrompt?: string;
+};
+
+export type ObsidianNote = {
+    /**
+     * Note path relative to vault
+     */
+    path: string;
+    /**
+     * Note title
+     */
+    title: string;
+    /**
+     * Last modified timestamp (ISO)
+     */
+    modifiedAt: string;
+    /**
+     * Note status
+     */
+    status?: 'active' | 'archive' | 'stale';
+    /**
+     * Number of incomplete TODOs
+     */
+    todoCount: number;
+    /**
+     * Note tags
+     */
+    tags: Array<string>;
+};
+
+export type DispatchRequest = {
+    /**
+     * Team slug or ID
+     */
+    teamSlugOrId: string;
+    recommendation: RecommendedAction;
+    /**
+     * Agent to use (default: claude/sonnet-4.5)
+     */
+    agentName?: string;
+    /**
+     * Repository full name
+     */
+    repoFullName?: string;
+};
+
 export type PveLxcResumeTaskRunResponse = {
     resumed: true;
 };
@@ -3205,6 +3504,393 @@ export type GetApiV1CmuxOrchestrationByOrchestrationIdSyncResponses = {
 };
 
 export type GetApiV1CmuxOrchestrationByOrchestrationIdSyncResponse = GetApiV1CmuxOrchestrationByOrchestrationIdSyncResponses[keyof GetApiV1CmuxOrchestrationByOrchestrationIdSyncResponses];
+
+export type GetApiProjectsData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Team slug or ID
+         */
+        teamSlugOrId: string;
+        /**
+         * Filter by status
+         */
+        status?: ProjectStatus & unknown;
+        /**
+         * Maximum number of projects
+         */
+        limit?: number | null;
+    };
+    url: '/api/projects';
+};
+
+export type GetApiProjectsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiProjectsResponses = {
+    /**
+     * Projects retrieved successfully
+     */
+    200: Array<Project>;
+};
+
+export type GetApiProjectsResponse = GetApiProjectsResponses[keyof GetApiProjectsResponses];
+
+export type PostApiProjectsData = {
+    body: CreateProjectRequest;
+    path?: never;
+    query?: never;
+    url: '/api/projects';
+};
+
+export type PostApiProjectsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Validation error
+     */
+    422: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiProjectsResponses = {
+    /**
+     * Project created successfully
+     */
+    201: {
+        /**
+         * Created project ID
+         */
+        id: string;
+    };
+};
+
+export type PostApiProjectsResponse = PostApiProjectsResponses[keyof PostApiProjectsResponses];
+
+export type GetApiProjectsByProjectIdData = {
+    body?: never;
+    path: {
+        /**
+         * Project ID
+         */
+        projectId: string;
+    };
+    query: {
+        /**
+         * Team slug or ID
+         */
+        teamSlugOrId: string;
+    };
+    url: '/api/projects/{projectId}';
+};
+
+export type GetApiProjectsByProjectIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Project not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiProjectsByProjectIdResponses = {
+    /**
+     * Project retrieved successfully
+     */
+    200: Project;
+};
+
+export type GetApiProjectsByProjectIdResponse = GetApiProjectsByProjectIdResponses[keyof GetApiProjectsByProjectIdResponses];
+
+export type PatchApiProjectsByProjectIdData = {
+    body: UpdateProjectRequest;
+    path: {
+        /**
+         * Project ID
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/projects/{projectId}';
+};
+
+export type PatchApiProjectsByProjectIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Project not found
+     */
+    404: unknown;
+    /**
+     * Validation error
+     */
+    422: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PatchApiProjectsByProjectIdResponses = {
+    /**
+     * Project updated successfully
+     */
+    200: {
+        /**
+         * Updated project ID
+         */
+        id: string;
+    };
+};
+
+export type PatchApiProjectsByProjectIdResponse = PatchApiProjectsByProjectIdResponses[keyof PatchApiProjectsByProjectIdResponses];
+
+export type PutApiProjectsByProjectIdPlanData = {
+    body: UpsertPlanRequest;
+    path: {
+        /**
+         * Project ID
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/projects/{projectId}/plan';
+};
+
+export type PutApiProjectsByProjectIdPlanErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Project not found
+     */
+    404: unknown;
+    /**
+     * Validation error
+     */
+    422: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PutApiProjectsByProjectIdPlanResponses = {
+    /**
+     * Plan upserted successfully
+     */
+    200: {
+        /**
+         * Updated project ID
+         */
+        id: string;
+    };
+};
+
+export type PutApiProjectsByProjectIdPlanResponse = PutApiProjectsByProjectIdPlanResponses[keyof PutApiProjectsByProjectIdPlanResponses];
+
+export type GetApiProjectsByProjectIdProgressData = {
+    body?: never;
+    path: {
+        /**
+         * Project ID
+         */
+        projectId: string;
+    };
+    query: {
+        /**
+         * Team slug or ID
+         */
+        teamSlugOrId: string;
+    };
+    url: '/api/projects/{projectId}/progress';
+};
+
+export type GetApiProjectsByProjectIdProgressErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Project not found
+     */
+    404: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiProjectsByProjectIdProgressResponses = {
+    /**
+     * Progress retrieved successfully
+     */
+    200: ProjectProgress;
+};
+
+export type GetApiProjectsByProjectIdProgressResponse = GetApiProjectsByProjectIdProgressResponses[keyof GetApiProjectsByProjectIdProgressResponses];
+
+export type GetApiVaultRecommendationsData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Team slug or ID
+         */
+        teamSlugOrId: string;
+        /**
+         * Maximum recommendations
+         */
+        limit?: number | null;
+        /**
+         * Filter by priority
+         */
+        priority?: 'high' | 'medium' | 'low';
+        /**
+         * Filter by type
+         */
+        type?: 'todo' | 'stale_note' | 'missing_docs' | 'broken_link';
+    };
+    url: '/api/vault/recommendations';
+};
+
+export type GetApiVaultRecommendationsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiVaultRecommendationsResponses = {
+    /**
+     * Recommendations retrieved successfully
+     */
+    200: {
+        recommendations: Array<RecommendedAction>;
+        vaultConfigured: boolean;
+    };
+};
+
+export type GetApiVaultRecommendationsResponse = GetApiVaultRecommendationsResponses[keyof GetApiVaultRecommendationsResponses];
+
+export type GetApiVaultNotesData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Team slug or ID
+         */
+        teamSlugOrId: string;
+        /**
+         * Search query
+         */
+        search?: string;
+        /**
+         * Filter by folder path
+         */
+        folder?: string;
+        /**
+         * Filter by status
+         */
+        status?: 'active' | 'archive' | 'stale';
+        /**
+         * Maximum notes to return
+         */
+        limit?: number | null;
+    };
+    url: '/api/vault/notes';
+};
+
+export type GetApiVaultNotesErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type GetApiVaultNotesResponses = {
+    /**
+     * Notes retrieved successfully
+     */
+    200: {
+        notes: Array<ObsidianNote>;
+        tags: Array<string>;
+        vaultConfigured: boolean;
+    };
+};
+
+export type GetApiVaultNotesResponse = GetApiVaultNotesResponses[keyof GetApiVaultNotesResponses];
+
+export type PostApiVaultDispatchData = {
+    body: DispatchRequest;
+    path?: never;
+    query?: never;
+    url: '/api/vault/dispatch';
+};
+
+export type PostApiVaultDispatchErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Validation error
+     */
+    422: unknown;
+    /**
+     * Server error
+     */
+    500: unknown;
+};
+
+export type PostApiVaultDispatchResponses = {
+    /**
+     * Task created successfully
+     */
+    201: {
+        /**
+         * Created task ID
+         */
+        taskId: string;
+        /**
+         * Created task run ID
+         */
+        taskRunId?: string;
+    };
+};
+
+export type PostApiVaultDispatchResponse = PostApiVaultDispatchResponses[keyof PostApiVaultDispatchResponses];
 
 export type PostApiPveLxcTaskRunsByTaskRunIdResumeData = {
     body: PveLxcResumeTaskRunBody;

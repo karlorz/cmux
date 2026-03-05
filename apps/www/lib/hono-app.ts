@@ -32,6 +32,7 @@ import {
   modelsRouter,
   morphRouter,
   orchestrateRouter,
+  projectRouter,
   providersRouter,
   providersStatusRouter,
   apiKeysRouter,
@@ -39,6 +40,7 @@ import {
   sandboxesRouter,
   teamsRouter,
   usersRouter,
+  vaultRouter,
   iframePreflightRouter,
   workspaceConfigsRouter,
   previewRouter,
@@ -176,6 +178,8 @@ app.route("/", githubOAuthTokenRouter);
 app.route("/", githubBranchesRouter);
 app.route("/", morphRouter);
 app.route("/", orchestrateRouter);
+app.route("/", projectRouter);
+app.route("/", vaultRouter);
 app.route("/", pveLxcRouter);
 app.route("/", iframePreflightRouter);
 app.route("/", environmentsRouter);
