@@ -118,6 +118,7 @@ fi
 
 # Hard stop after 5 failures to prevent excessive loops (per session)
 FAIL_COUNT_FILE="/tmp/codex-review-fails-${SESSION_ID}"
+SIMPLIFY_SUGGESTED_FILE="/tmp/codex-review-simplify-suggested-${SESSION_ID}"
 FAIL_COUNT=0
 if [ -f "$FAIL_COUNT_FILE" ]; then
   FAIL_COUNT=$(cat "$FAIL_COUNT_FILE")
@@ -166,13 +167,31 @@ If the output indicates code review passed with no issues, return exactly 'lgtm'
 if echo "$VERDICT" | grep -qi "lgtm"; then
   rm -f "$FAIL_COUNT_FILE"  # Reset counter on success
   debug_log "Review PASSED (lgtm)"
-  exit 0  # Review passed, don't bother Claude
+
+  # Even on pass, suggest /simplify once if significant changes were made
+  # Check if there are multiple files changed (worth a simplify pass)
+  CHANGED_FILES=$(git diff --name-only main...HEAD 2>/dev/null | wc -l)
+  if [ "$CHANGED_FILES" -gt 2 ] && [ ! -f "$SIMPLIFY_SUGGESTED_FILE" ]; then
+    touch "$SIMPLIFY_SUGGESTED_FILE"
+    debug_log "Suggesting /simplify for $CHANGED_FILES changed files"
+    echo "Codex review passed. Consider running /simplify to check for code quality improvements across the $CHANGED_FILES changed files." >&2
+    exit 2
+  fi
+
+  exit 0  # Review passed, few changes or already suggested, don't bother Claude
 fi
 
 # Has issues - increment counter and show to Claude
 echo $((FAIL_COUNT + 1)) > "$FAIL_COUNT_FILE"
 debug_log "Review has ISSUES, showing to Claude"
-echo "## Codex Code Review Findings (attempt $((FAIL_COUNT + 1))/5)" >&2
-echo "" >&2
-echo "$FINDINGS" >&2
+
+# Build feedback message with codex findings + simplify instruction
+FEEDBACK="## Codex Code Review Findings (attempt $((FAIL_COUNT + 1))/5)
+
+$FINDINGS
+
+---
+After addressing the above issues, run /simplify to check for code quality improvements (reuse, efficiency, clarity)."
+
+echo "$FEEDBACK" >&2
 exit 2
