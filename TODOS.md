@@ -41,14 +41,14 @@
 [ ] remove containerMappings from @apps/server/src/vscode/DockerVSCodeInstance.ts and just use convex and/or docker daemon as source of truth.
 [ ] authentication with stack auth (or somehow collect user emails) when user tries to enable cloud mode
 [ ] clear local storage if we change name of models in model selector multiselect
-[ ] renamed branch name (eg. cmux-claude-opus-4-extract-sidebar-into-its-own-jn73r96s46gfyx860q7qaj9a1n7mnefz) is too long. fix the code so branch names are always adskfjlaksdjf
+[x] renamed branch name (eg. cmux-claude-opus-4-extract-sidebar-into-its-own-jn73r96s46gfyx860q7qaj9a1n7mnefz) is too long. fix the code so branch names are always adskfjlaksdjf - PR #443: MAX_BRANCH_NAME_LENGTH=60 enforced
 [ ] fix the
 [ ] copy VS Code extensions and copy
 [ ] copy vs code settings/theme: make it so that when we launch the cli for the first time, it will prompt the user if they want to copy their themes and extensions from either vscode, windsurf, or cursor. the user will have to choose from the cli which one they want. then we must copy the themes/extensions to the right place in all the remote machines.
 [ ] make green checkbox timing more reliable
 [ ] archive tasks button in sidebar
 [ ] edit prompt after seeing what it did -- try multiple prompts at same time -- if click on main one, show page that has prompt, edit prompt, and recontinue execution. less tasks, but more so like linear. instead of task, convert it to a linear timeline flow thing. just want to add tasks. dont have to switch apps -- put backlog and tasks in execution
-[ ] notifications for when tasks are done
+[x] notifications for when tasks are done - PR #444: unhide notification bell (infra was 95% built, just hidden)
 [ ] zach: very good prompt that includes specific fields and context. plan mode first? take linear tickets and take what it wrote and expand it on codebase. and then edit the plan... create a plan. - zach uses porter to set up preview environments
 [ ] zach2: because of conductor's quirks, it can't use github cli -- bugbot + greptile (just cancelded?) -- bugbot makes good comments. would be nice to just @claude to fix it. tell claude to look at PR comments using gh cli and fix it.
 [ ] native swift mobile app!
@@ -65,7 +65,7 @@
 [ ] use gh webhook cli to update all git sync states faster
 [ ] select multiple tasks on frontend and do bulk actions on them
 [ ] notifications queue
-[ ] if no agents selected, error! dont spawn all at the same time
+[x] if no agents selected, error! dont spawn all at the same time - Already implemented: dashboard.tsx lines 920-927 + canSubmit check at line 1377
 [x] GitHub Projects integration: add GraphQL sync to GitHub App, add "Projects" tab to dashboard (PR #398). Templates pending: cmux-dev-roadmap, cmux-feature-board at https://github.com/users/karlorz/projects
 
 SKIP_CONVEX=true SKIP_DOCKER_BUILD=true ./scripts/dev.sh
