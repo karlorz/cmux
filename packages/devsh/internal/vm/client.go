@@ -2397,6 +2397,51 @@ type AutopilotInfo struct {
 	} `json:"vscode,omitempty"`
 }
 
+// DispatchProjectOptions configures project dispatch.
+type DispatchProjectOptions struct {
+	ProjectID string // Convex project document ID
+}
+
+// DispatchProjectResult contains the dispatch result.
+type DispatchProjectResult struct {
+	Dispatched int `json:"dispatched"`
+}
+
+// DispatchProject calls POST /api/projects/:projectId/dispatch.
+// This dispatches a project plan, creating orchestration tasks for each plan task.
+func (c *Client) DispatchProject(ctx context.Context, opts DispatchProjectOptions) (*DispatchProjectResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+	if opts.ProjectID == "" {
+		return nil, fmt.Errorf("project ID is required")
+	}
+
+	path := fmt.Sprintf("/api/projects/%s/dispatch", opts.ProjectID)
+	resp, err := c.doWwwRequest(ctx, "POST", path, map[string]interface{}{})
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("project not found")
+	}
+	if resp.StatusCode == http.StatusUnprocessableEntity {
+		return nil, fmt.Errorf("no plan tasks to dispatch")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("dispatch failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result DispatchProjectResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
 // GetAutopilotInfo gets autopilot session info for a task run using JWT authentication
 // This is for sandbox scripts that don't have user auth, only task run JWT
 func (c *Client) GetAutopilotInfo(ctx context.Context, jwt string) (*AutopilotInfo, error) {
