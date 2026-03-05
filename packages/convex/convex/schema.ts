@@ -1575,7 +1575,6 @@ const convexSchema = defineSchema({
     lastRetryAt: v.optional(v.number()), // Timestamp of last retry
     nextRetryAfter: v.optional(v.number()), // When to retry next (ms since epoch)
   })
-    .index("by_team_priority", ["teamId", "priority", "status"])
     .index("by_team_status", ["teamId", "status", "updatedAt"])
     .index("by_team_status_priority", ["teamId", "status", "priority"])
     .index("by_assigned_agent", ["assignedAgentName", "status"])
