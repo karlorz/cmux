@@ -589,6 +589,13 @@ export const create = authMutation({
         throw new Error("Environment not found");
       }
     }
+    // Validate parent run if specified (must belong to same team AND user)
+    if (args.parentRunId) {
+      const parentRun = await ctx.db.get(args.parentRunId);
+      if (!parentRun || parentRun.teamId !== teamId || parentRun.userId !== userId) {
+        throw new Error("Parent task run not found or unauthorized");
+      }
+    }
     const taskRunId = await ctx.db.insert("taskRuns", {
       taskId: args.taskId,
       parentRunId: args.parentRunId,
