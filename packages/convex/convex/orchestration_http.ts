@@ -160,6 +160,7 @@ const CreateOrchestrationTaskSchema = z.object({
   taskRunId: z.string().min(1),
   priority: z.number().optional(),
   dependencies: z.array(z.string()).optional(),
+  orchestrationId: z.string().optional(),
 });
 
 type CreateOrchestrationTaskInput = z.infer<
@@ -237,6 +238,9 @@ export const createOrchestrationTask = httpAction(async (ctx, req) => {
         dependencies: payload.dependencies?.map(
           (id) => id as Id<"orchestrationTasks">
         ),
+        metadata: payload.orchestrationId
+          ? { orchestrationId: payload.orchestrationId }
+          : undefined,
       }
     );
 

@@ -615,6 +615,7 @@ interface OrchestrationSpawnRequest {
   isCloudMode?: boolean;
   dependsOn?: string[];  // Orchestration task IDs this task depends on
   priority?: number;     // Task priority (1=highest, 10=lowest, default 5)
+  orchestrationId?: string; // Orchestration ID for grouping tasks
 }
 
 interface OrchestrationSpawnResponse {
@@ -648,7 +649,7 @@ async function handleOrchestrationSpawn(
     return;
   }
 
-  const { teamSlugOrId, prompt, agent, repo, branch, prTitle, environmentId, isCloudMode = true, dependsOn, priority } = body;
+  const { teamSlugOrId, prompt, agent, repo, branch, prTitle, environmentId, isCloudMode = true, dependsOn, priority, orchestrationId } = body;
 
   if (!teamSlugOrId || !prompt || !agent) {
     jsonResponse(res, 400, { error: "Missing required fields: teamSlugOrId, prompt, agent" });
@@ -722,6 +723,7 @@ async function handleOrchestrationSpawn(
           taskRunId,
           priority: priority ?? 5,
           dependencies: dependsOn,
+          orchestrationId,
         }),
       });
 

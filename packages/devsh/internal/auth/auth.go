@@ -313,13 +313,21 @@ func getConfigDir() (string, error) {
 	return filepath.Join(home, ".config", ConfigDirName), nil
 }
 
-// getCredentialsPath returns the path to the credentials file
+// getCredentialsPath returns the path to the credentials file.
+// Uses separate files for dev and prod to prevent credential mixing.
 func getCredentialsPath() (string, error) {
 	configDir, err := getConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(configDir, "credentials.json"), nil
+
+	cfg := GetConfig()
+	filename := "credentials_prod.json"
+	if cfg.IsDev {
+		filename = "credentials_dev.json"
+	}
+
+	return filepath.Join(configDir, filename), nil
 }
 
 // getAccessTokenCachePath returns the path to the access token cache file
@@ -344,6 +352,26 @@ type Credentials struct {
 	MorphAPIKey       string `json:"morph_api_key,omitempty"`
 }
 
+// ValidateRefreshTokenFormat performs basic validation on refresh tokens.
+// Stack Auth refresh tokens are opaque strings, not JWTs, so we just check:
+// - Non-empty
+// - Reasonable length (at least 20 chars for any real token)
+// - No obvious placeholder values
+func ValidateRefreshTokenFormat(token string) error {
+	if len(token) < 20 {
+		return fmt.Errorf("token too short: expected at least 20 characters, got %d", len(token))
+	}
+	// Check for common placeholder values
+	placeholders := []string{"xxx", "your-token-here", "REPLACE_ME", "placeholder", "TODO"}
+	tokenLower := strings.ToLower(token)
+	for _, ph := range placeholders {
+		if strings.Contains(tokenLower, ph) {
+			return fmt.Errorf("token appears to be a placeholder value")
+		}
+	}
+	return nil
+}
+
 // StoreRefreshToken stores the Stack Auth refresh token
 func StoreRefreshToken(token string) error {
 	if runtime.GOOS == "darwin" {
@@ -359,10 +387,20 @@ func GetRefreshToken() (string, error) {
 	// Dev mode bypass: check environment variable first
 	// Support both new (DEVSH_) and legacy (DEVBOX_) env var names
 	if devToken := os.Getenv("DEVSH_REFRESH_TOKEN"); devToken != "" {
-		return devToken, nil
+		if err := ValidateRefreshTokenFormat(devToken); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: DEVSH_REFRESH_TOKEN may be invalid: %v\n", err)
+			// Fall through to try stored credentials
+		} else {
+			return devToken, nil
+		}
 	}
 	if devToken := os.Getenv("DEVBOX_REFRESH_TOKEN"); devToken != "" {
-		return devToken, nil
+		if err := ValidateRefreshTokenFormat(devToken); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: DEVBOX_REFRESH_TOKEN may be invalid: %v\n", err)
+			// Fall through to try stored credentials
+		} else {
+			return devToken, nil
+		}
 	}
 
 	if runtime.GOOS == "darwin" {
