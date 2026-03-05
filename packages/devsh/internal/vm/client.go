@@ -1605,12 +1605,15 @@ type StartTaskAgentsOptions struct {
 	ProjectFullName string
 	RepoURL         string
 	Branch          string
-	TaskRunIDs      []string
-	SelectedAgents  []string
-	IsCloudMode     bool
-	EnvironmentID   string
-	Theme           string
-	PRTitle         string
+	// Optional branch name overrides (one per agent).
+	// When provided, apps/server will use these branch names instead of generating new ones.
+	BranchNames    []string
+	TaskRunIDs     []string
+	SelectedAgents []string
+	IsCloudMode    bool
+	EnvironmentID  string
+	Theme          string
+	PRTitle        string
 	// Autopilot mode (Phase 6)
 	Autopilot            bool
 	AutopilotMinutes     int
@@ -1711,6 +1714,9 @@ func (c *Client) StartTaskAgents(ctx context.Context, opts StartTaskAgentsOption
 	if opts.Branch != "" {
 		body["branch"] = opts.Branch
 	}
+	if len(opts.BranchNames) > 0 {
+		body["branchNames"] = opts.BranchNames
+	}
 	if len(opts.TaskRunIDs) > 0 {
 		body["taskRunIds"] = opts.TaskRunIDs
 	}
@@ -1749,6 +1755,96 @@ func (c *Client) StartTaskAgents(ctx context.Context, opts StartTaskAgentsOption
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
+	return &result, nil
+}
+
+// TaskQualityGateCheck describes a single workflow/check/deployment/status entry.
+type TaskQualityGateCheck struct {
+	Type       string `json:"type"`
+	Name       string `json:"name"`
+	Status     string `json:"status,omitempty"`
+	Conclusion string `json:"conclusion,omitempty"`
+	URL        string `json:"url,omitempty"`
+}
+
+type TaskQualityGateInfo struct {
+	Status        string                 `json:"status"`
+	HasAnyRunning bool                   `json:"hasAnyRunning"`
+	HasAnyFailure bool                   `json:"hasAnyFailure"`
+	AllPassed     bool                   `json:"allPassed"`
+	Total         int                    `json:"total"`
+	Failures      []TaskQualityGateCheck `json:"failures"`
+}
+
+type TaskQualityGatePullRequest struct {
+	RepoFullName string `json:"repoFullName"`
+	Number       int    `json:"number"`
+	URL          string `json:"url,omitempty"`
+	HeadRef      string `json:"headRef,omitempty"`
+	HeadSha      string `json:"headSha,omitempty"`
+}
+
+type TaskQualityGateCrown struct {
+	EvaluationStatus string `json:"evaluationStatus,omitempty"`
+	EvaluationError  string `json:"evaluationError,omitempty"`
+	CrownedRunReason string `json:"crownedRunReason,omitempty"`
+}
+
+type TaskQualityGateRetry struct {
+	MaxRetries     int    `json:"maxRetries"`
+	Attempted      int    `json:"attempted"`
+	ShouldRetry    bool   `json:"shouldRetry"`
+	RetryBranch    string `json:"retryBranch,omitempty"`
+	HasInFlightRun bool   `json:"hasInFlightRun"`
+	Context        string `json:"context"`
+}
+
+type TaskQualityGateResponse struct {
+	Ok          bool                        `json:"ok"`
+	TaskID      string                      `json:"taskId"`
+	TaskRunID   *string                     `json:"taskRunId"`
+	Repository  *string                     `json:"repository"`
+	BaseBranch  *string                     `json:"baseBranch"`
+	MergeStatus string                      `json:"mergeStatus,omitempty"`
+	PullRequest *TaskQualityGatePullRequest `json:"pullRequest"`
+	Crown       TaskQualityGateCrown        `json:"crown"`
+	QualityGate TaskQualityGateInfo         `json:"qualityGate"`
+	Retry       TaskQualityGateRetry        `json:"retry"`
+}
+
+// GetTaskQualityGate fetches quality gate status and retry context for a task.
+func (c *Client) GetTaskQualityGate(ctx context.Context, taskID string, maxRetries int, limit int) (*TaskQualityGateResponse, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+	if maxRetries < 0 {
+		maxRetries = 0
+	}
+	if maxRetries > 10 {
+		maxRetries = 10
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	path := fmt.Sprintf("/api/v1/cmux/tasks/%s/quality-gate?teamSlugOrId=%s&maxRetries=%d&limit=%d", taskID, c.teamSlug, maxRetries, limit)
+	resp, err := c.doRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result TaskQualityGateResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
 	return &result, nil
 }
 
