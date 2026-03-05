@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/karlorz/devsh/internal/auth"
@@ -16,6 +17,8 @@ var (
 	projectItemsInstallationID int
 	projectItemsFirst          int
 	projectItemsAfter          string
+	projectItemsStatus         string
+	projectItemsNoLinkedTask   bool
 )
 
 var projectItemsCmd = &cobra.Command{
@@ -26,6 +29,8 @@ var projectItemsCmd = &cobra.Command{
 Examples:
   devsh project items --project-id PVT_xxx --installation-id 12345
   devsh project items --project-id PVT_xxx --installation-id 12345 --first 20
+  devsh project items --project-id PVT_xxx --installation-id 12345 --status "Backlog"
+  devsh project items --project-id PVT_xxx --installation-id 12345 --no-linked-task
   devsh project items --project-id PVT_xxx --installation-id 12345 --json`,
 	RunE: runProjectItems,
 }
@@ -62,13 +67,65 @@ func runProjectItems(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get project items: %w", err)
 	}
 
+	// Build set of linked project item IDs if --no-linked-task is set
+	var linkedItemIds map[string]bool
+	if projectItemsNoLinkedTask {
+		linkedItemIds = make(map[string]bool)
+		// Fetch tasks to get their githubProjectItemId values
+		tasksResult, err := client.ListTasks(ctx, false)
+		if err != nil {
+			return fmt.Errorf("failed to list tasks for linked-task filter: %w", err)
+		}
+		for _, task := range tasksResult.Tasks {
+			if task.GithubProjectItemId != "" {
+				linkedItemIds[task.GithubProjectItemId] = true
+			}
+		}
+	}
+
+	// Apply filters
+	var filteredItems []vm.ProjectItem
+	for _, item := range result.Items {
+		// --status filter: case-insensitive match on Status field
+		if projectItemsStatus != "" {
+			itemStatus := ""
+			if sv, ok := item.FieldValues["Status"]; ok {
+				if s, ok := sv.(string); ok {
+					itemStatus = s
+				}
+			}
+			if !strings.EqualFold(itemStatus, projectItemsStatus) {
+				continue
+			}
+		}
+
+		// --no-linked-task filter: exclude items that have a linked cmux task
+		if projectItemsNoLinkedTask && linkedItemIds[item.ID] {
+			continue
+		}
+
+		filteredItems = append(filteredItems, item)
+	}
+
+	// For JSON output, return filtered items
 	if flagJSON {
-		data, _ := json.MarshalIndent(result, "", "  ")
+		output := struct {
+			Items    []vm.ProjectItem `json:"items"`
+			PageInfo struct {
+				HasNextPage bool    `json:"hasNextPage"`
+				EndCursor   *string `json:"endCursor"`
+			} `json:"pageInfo"`
+		}{
+			Items: filteredItems,
+		}
+		output.PageInfo.HasNextPage = result.PageInfo.HasNextPage
+		output.PageInfo.EndCursor = result.PageInfo.EndCursor
+		data, _ := json.MarshalIndent(output, "", "  ")
 		fmt.Println(string(data))
 		return nil
 	}
 
-	if len(result.Items) == 0 {
+	if len(filteredItems) == 0 {
 		fmt.Println("No items found.")
 		return nil
 	}
@@ -76,7 +133,7 @@ func runProjectItems(cmd *cobra.Command, args []string) error {
 	fmt.Printf("%-28s %-10s %-60s %-14s %s\n", "ID", "TYPE", "TITLE", "STATUS", "URL")
 	fmt.Println("----------------------------", "----------", "------------------------------------------------------------", "--------------", "------------------------------------------------------------")
 
-	for _, item := range result.Items {
+	for _, item := range filteredItems {
 		itemType := "Draft"
 		title := "(untitled)"
 		url := "-"
@@ -149,5 +206,7 @@ func init() {
 	projectItemsCmd.Flags().IntVar(&projectItemsInstallationID, "installation-id", 0, "GitHub App installation ID (required)")
 	projectItemsCmd.Flags().IntVar(&projectItemsFirst, "first", 50, "Number of items to fetch (default 50)")
 	projectItemsCmd.Flags().StringVar(&projectItemsAfter, "after", "", "Pagination cursor")
+	projectItemsCmd.Flags().StringVar(&projectItemsStatus, "status", "", "Filter by status field (e.g., Backlog, In Progress, Done)")
+	projectItemsCmd.Flags().BoolVar(&projectItemsNoLinkedTask, "no-linked-task", false, "Exclude items that already have a linked cmux task")
 	projectCmd.AddCommand(projectItemsCmd)
 }
