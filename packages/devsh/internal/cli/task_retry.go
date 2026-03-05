@@ -100,7 +100,7 @@ Examples:
 				reason = "No failing checks detected"
 			case qg.Retry.Attempted >= qg.Retry.MaxRetries:
 				reason = "Max retries reached"
-			case strings.TrimSpace(qg.Retry.RetryBranch) == "":
+			case qg.Retry.RetryBranch == nil || strings.TrimSpace(*qg.Retry.RetryBranch) == "":
 				reason = "Missing retry branch (no PR head ref)"
 			default:
 				reason = "Not eligible"
@@ -115,7 +115,7 @@ Examples:
 					"eligible":          eligible,
 					"reason":            reason,
 					"resolvedAgentName": agentName,
-					"retryBranch":       qg.Retry.RetryBranch,
+					"retryBranch":       derefString(qg.Retry.RetryBranch, ""),
 					"qualityGate":       qg,
 				}
 				data, _ := json.MarshalIndent(output, "", "  ")
@@ -127,7 +127,7 @@ Examples:
 				fmt.Println("Retry eligible (dry-run).")
 				fmt.Printf("  Task: %s\n", taskID)
 				fmt.Printf("  Agent: %s\n", agentName)
-				fmt.Printf("  Retry branch: %s\n", qg.Retry.RetryBranch)
+				fmt.Printf("  Retry branch: %s\n", derefString(qg.Retry.RetryBranch, "(none)"))
 				fmt.Println()
 				fmt.Println(qg.Retry.Context)
 				return nil
@@ -167,7 +167,7 @@ Examples:
 			ProjectFullName: projectFullName,
 			RepoURL:         repoURL,
 			Branch:          baseBranch,
-			BranchNames:     []string{qg.Retry.RetryBranch},
+			BranchNames:     []string{derefString(qg.Retry.RetryBranch, "")},
 			SelectedAgents:  []string{agentName},
 			IsCloudMode:     true,
 		})
@@ -181,7 +181,7 @@ Examples:
 				"eligible":          true,
 				"dispatched":        true,
 				"resolvedAgentName": agentName,
-				"retryBranch":       qg.Retry.RetryBranch,
+				"retryBranch":       derefString(qg.Retry.RetryBranch, ""),
 				"qualityGate":       qg,
 				"startTaskResult":   agentResult,
 			}

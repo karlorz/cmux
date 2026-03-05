@@ -1785,18 +1785,18 @@ type TaskQualityGatePullRequest struct {
 }
 
 type TaskQualityGateCrown struct {
-	EvaluationStatus string `json:"evaluationStatus,omitempty"`
-	EvaluationError  string `json:"evaluationError,omitempty"`
-	CrownedRunReason string `json:"crownedRunReason,omitempty"`
+	EvaluationStatus *string `json:"evaluationStatus"`
+	EvaluationError  *string `json:"evaluationError"`
+	CrownedRunReason *string `json:"crownedRunReason"`
 }
 
 type TaskQualityGateRetry struct {
-	MaxRetries     int    `json:"maxRetries"`
-	Attempted      int    `json:"attempted"`
-	ShouldRetry    bool   `json:"shouldRetry"`
-	RetryBranch    string `json:"retryBranch,omitempty"`
-	HasInFlightRun bool   `json:"hasInFlightRun"`
-	Context        string `json:"context"`
+	MaxRetries     int     `json:"maxRetries"`
+	Attempted      int     `json:"attempted"`
+	ShouldRetry    bool    `json:"shouldRetry"`
+	RetryBranch    *string `json:"retryBranch"`
+	HasInFlightRun bool    `json:"hasInFlightRun"`
+	Context        string  `json:"context"`
 }
 
 type TaskQualityGateResponse struct {
