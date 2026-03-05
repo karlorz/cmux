@@ -395,9 +395,11 @@ function ProjectCard({
     ? Math.round(((project.completedTasks ?? 0) / project.totalTasks) * 100)
     : 0;
 
+  const runningTasks = project.runningTasks ?? 0;
+
   return (
     <a
-      href={`/${teamSlugOrId}/orchestration`}
+      href={`/${teamSlugOrId}/projects/detail/${project._id}`}
       className="block"
     >
       <Card className="hover:border-neutral-400 dark:hover:border-neutral-600 transition-colors cursor-pointer">
@@ -423,9 +425,9 @@ function ProjectCard({
           <div className="space-y-2">
             <ProjectProgressBar
               completed={project.completedTasks ?? 0}
-              running={0}
+              running={runningTasks}
               failed={project.failedTasks ?? 0}
-              pending={(project.totalTasks ?? 0) - (project.completedTasks ?? 0) - (project.failedTasks ?? 0)}
+              pending={Math.max(0, (project.totalTasks ?? 0) - (project.completedTasks ?? 0) - (project.failedTasks ?? 0) - runningTasks)}
               total={project.totalTasks ?? 0}
             />
             <div className="flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">

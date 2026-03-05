@@ -585,6 +585,15 @@ export const failTaskInternal = internalMutation({
       completedAt: now,
       updatedAt: now,
     });
+
+    // Sync project plan status if this task is linked to a project
+    const task = await ctx.db.get(taskId);
+    const metadata = task?.metadata as Record<string, unknown> | undefined;
+    if (metadata?.projectId) {
+      await ctx.scheduler.runAfter(0, internal.projectQueries.syncPlanStatusFromOrchestration, {
+        orchestrationTaskId: taskId,
+      });
+    }
   },
 });
 
@@ -609,6 +618,15 @@ export const completeTaskInternal = internalMutation({
     await ctx.scheduler.runAfter(0, internal.orchestrationQueries.triggerDependentTasks, {
       completedTaskId: taskId,
     });
+
+    // Sync project plan status if this task is linked to a project
+    const task = await ctx.db.get(taskId);
+    const metadata = task?.metadata as Record<string, unknown> | undefined;
+    if (metadata?.projectId) {
+      await ctx.scheduler.runAfter(0, internal.projectQueries.syncPlanStatusFromOrchestration, {
+        orchestrationTaskId: taskId,
+      });
+    }
   },
 });
 
@@ -1115,6 +1133,15 @@ export const startTaskInternal = internalMutation({
       startedAt: now,
       updatedAt: now,
     });
+
+    // Sync project plan status if this task is linked to a project
+    const task = await ctx.db.get(taskId);
+    const metadata = task?.metadata as Record<string, unknown> | undefined;
+    if (metadata?.projectId) {
+      await ctx.scheduler.runAfter(0, internal.projectQueries.syncPlanStatusFromOrchestration, {
+        orchestrationTaskId: taskId,
+      });
+    }
   },
 });
 
