@@ -26,7 +26,7 @@ Test repos (use for `devsh task create --repo`):
 - gh repo set-default karlorz/cmux
 ✓ Set karlorz/cmux as the default repository for the current directory
 - **NEVER use `--delete-branch` when merging PRs** - The web app needs branches for git diff calculations on merged tasks. Deleting branches causes +0-0 display.
-- Correct merge: `gh pr merge <number> --squash`
+- Correct merge: `gh pr merge <number> --squash --auto` to merge once checks pass
 - Do NOT use: `--delete-branch` or `--admin` unless explicitly requested
 
 # Logs
