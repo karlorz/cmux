@@ -202,8 +202,13 @@ retry_failed_tasks() {
     [[ -z "$task_id" ]] && continue
     log "Quality gate check: task $task_id"
 
+    # Only pass --agent if not "auto" (let devsh default to previous run's agent)
+    agent_flag=""
+    if [[ "$AGENT" != "auto" ]]; then
+      agent_flag="--agent $AGENT"
+    fi
     result=$(devsh task retry "$task_id" \
-      --agent "$AGENT" \
+      $agent_flag \
       --max-retries "$MAX_RETRIES" \
       --checks-limit 50 \
       --json 2>/dev/null || true)

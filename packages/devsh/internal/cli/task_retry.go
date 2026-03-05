@@ -69,17 +69,29 @@ Examples:
 		if agentName == "" {
 			if qg.TaskRunID != nil {
 				for _, run := range task.TaskRuns {
-					if run.ID == *qg.TaskRunID && strings.TrimSpace(run.Agent) != "" {
-						agentName = strings.TrimSpace(run.Agent)
-						break
+					if run.ID == *qg.TaskRunID {
+						// Check both Agent and AgentName (API returns agentName)
+						if strings.TrimSpace(run.Agent) != "" {
+							agentName = strings.TrimSpace(run.Agent)
+							break
+						}
+						if strings.TrimSpace(run.AgentName) != "" {
+							agentName = strings.TrimSpace(run.AgentName)
+							break
+						}
 					}
 				}
 			}
 		}
 		if agentName == "" {
 			for _, run := range task.TaskRuns {
+				// Check both Agent and AgentName (API returns agentName)
 				if strings.TrimSpace(run.Agent) != "" {
 					agentName = strings.TrimSpace(run.Agent)
+					break
+				}
+				if strings.TrimSpace(run.AgentName) != "" {
+					agentName = strings.TrimSpace(run.AgentName)
 					break
 				}
 			}
