@@ -9,14 +9,15 @@
  */
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { convexQuery } from "@convex-dev/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   Plus,
   RefreshCw,
   FolderKanban,
   Search,
+  X,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -81,6 +82,9 @@ function ProjectsDashboardPage() {
   const { teamSlugOrId } = Route.useParams();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | "all">("all");
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [newProjectDescription, setNewProjectDescription] = useState("");
 
   // Fetch projects
   const {
@@ -95,6 +99,26 @@ function ProjectsDashboardPage() {
       limit: 100,
     })
   );
+
+  // Create project mutation
+  const createProjectMutation = useMutation({
+    mutationFn: useConvexMutation(api.projectQueries.createProject),
+    onSuccess: () => {
+      setShowCreateDialog(false);
+      setNewProjectName("");
+      setNewProjectDescription("");
+      refetch();
+    },
+  });
+
+  const handleCreateProject = () => {
+    if (!newProjectName.trim()) return;
+    createProjectMutation.mutate({
+      teamSlugOrId,
+      name: newProjectName.trim(),
+      description: newProjectDescription.trim() || undefined,
+    });
+  };
 
   // Filter projects by search query
   const filteredProjects = projects?.filter((p) =>
@@ -137,11 +161,9 @@ function ProjectsDashboardPage() {
               />
               Refresh
             </Button>
-            <Button asChild size="sm">
-              <a href={`/${teamSlugOrId}/projects`}>
-                <Plus className="h-4 w-4 mr-2" />
-                New Project
-              </a>
+            <Button size="sm" onClick={() => setShowCreateDialog(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              New Project
             </Button>
           </div>
         </div>
@@ -227,11 +249,9 @@ function ProjectsDashboardPage() {
                       : "Create your first project to start tracking work."}
                   </p>
                   {!searchQuery && statusFilter === "all" && (
-                    <Button asChild>
-                      <a href={`/${teamSlugOrId}/projects`}>
-                        <Plus className="h-4 w-4 mr-2" />
-                        Create Project
-                      </a>
+                    <Button onClick={() => setShowCreateDialog(true)}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Create Project
                     </Button>
                   )}
                 </CardContent>
@@ -259,6 +279,64 @@ function ProjectsDashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Create Project Dialog */}
+      {showCreateDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl dark:bg-neutral-900">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">Create Project</h2>
+              <button
+                onClick={() => setShowCreateDialog(false)}
+                className="rounded p-1 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Project Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newProjectName}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewProjectName(e.target.value)}
+                  placeholder="My Project"
+                  className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-800"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Description
+                </label>
+                <textarea
+                  value={newProjectDescription}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNewProjectDescription(e.target.value)}
+                  placeholder="Optional description..."
+                  rows={3}
+                  className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-800"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowCreateDialog(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleCreateProject}
+                  disabled={!newProjectName.trim() || createProjectMutation.isPending}
+                >
+                  {createProjectMutation.isPending ? "Creating..." : "Create Project"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </FloatingPane>
   );
 }
