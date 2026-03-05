@@ -848,6 +848,676 @@ flowchart TD
     style M fill:#f8d7da
 ```
 
+## Auto Agent Selection
+
+The head agent can automatically select the optimal agent based on GitHub Project item metadata (labels, fields, and content analysis). This ensures the right agent handles each task.
+
+### Agent Selection Rules
+
+| Criteria | Agent | Reasoning |
+|----------|-------|-----------|
+| Label: `frontend`, `ui`, `react` | `codex/gpt-5.2-xhigh` | Codex excels at frontend/UI work |
+| Label: `backend`, `api`, `server` | `claude/opus-4.5` | Claude excels at backend architecture |
+| Label: `bug`, `fix`, `hotfix` | `claude/haiku-4.5` | Quick fixes benefit from fast agent |
+| Label: `docs`, `documentation` | `claude/haiku-4.5` | Documentation is straightforward |
+| Label: `complex`, `architecture` | `claude/opus-4.5` | Complex tasks need powerful reasoning |
+| Label: `test`, `testing` | `codex/gpt-5.2-xhigh` | Codex is strong at test generation |
+| Title contains "refactor" | `claude/opus-4.5` | Refactoring needs deep understanding |
+| Estimate field > 8 hours | `claude/opus-4.5` | Large tasks need powerful agent |
+| Estimate field < 2 hours | `claude/haiku-4.5` | Small tasks use fast agent |
+| Default (no match) | `claude/haiku-4.5` | Conservative default for cost |
+
+### Shell Script Implementation
+
+```bash
+#!/usr/bin/env bash
+# agent-selector.sh - Select optimal agent based on item metadata
+
+select_agent() {
+  local item_json="$1"
+  local default_agent="${2:-claude/haiku-4.5}"
+
+  # Extract item metadata
+  local title=$(echo "$item_json" | jq -r '.content.title // ""' | tr '[:upper:]' '[:lower:]')
+  local labels=$(echo "$item_json" | jq -r '.content.labels // [] | .[].name' 2>/dev/null | tr '[:upper:]' '[:lower:]')
+  local estimate=$(echo "$item_json" | jq -r '.fieldValues.Estimate // 0')
+
+  # Check labels first (highest priority)
+  if echo "$labels" | grep -qE '^(frontend|ui|react|vue|css|styling)$'; then
+    echo "codex/gpt-5.2-xhigh"
+    return
+  fi
+
+  if echo "$labels" | grep -qE '^(backend|api|server|database|auth)$'; then
+    echo "claude/opus-4.5"
+    return
+  fi
+
+  if echo "$labels" | grep -qE '^(bug|fix|hotfix|patch)$'; then
+    echo "claude/haiku-4.5"
+    return
+  fi
+
+  if echo "$labels" | grep -qE '^(docs|documentation|readme)$'; then
+    echo "claude/haiku-4.5"
+    return
+  fi
+
+  if echo "$labels" | grep -qE '^(complex|architecture|design|refactor)$'; then
+    echo "claude/opus-4.5"
+    return
+  fi
+
+  if echo "$labels" | grep -qE '^(test|testing|e2e|unit-test)$'; then
+    echo "codex/gpt-5.2-xhigh"
+    return
+  fi
+
+  # Check title keywords (second priority)
+  if echo "$title" | grep -qE '(refactor|architect|redesign|migrate)'; then
+    echo "claude/opus-4.5"
+    return
+  fi
+
+  if echo "$title" | grep -qE '(fix|bug|patch|typo)'; then
+    echo "claude/haiku-4.5"
+    return
+  fi
+
+  # Check estimate field (third priority)
+  if [[ "$estimate" =~ ^[0-9]+$ ]]; then
+    if [[ "$estimate" -gt 8 ]]; then
+      echo "claude/opus-4.5"
+      return
+    fi
+    if [[ "$estimate" -lt 2 ]]; then
+      echo "claude/haiku-4.5"
+      return
+    fi
+  fi
+
+  # Default agent
+  echo "$default_agent"
+}
+
+# Usage in head agent loop
+dispatch_with_auto_agent() {
+  local item_json="$1"
+  local item_id=$(echo "$item_json" | jq -r '.id')
+
+  # Auto-select agent based on item metadata
+  local agent=$(select_agent "$item_json")
+  log "Auto-selected agent: $agent for item $item_id"
+
+  # Dispatch with selected agent
+  devsh task create \
+    --from-project-item "$item_id" \
+    --gh-project-id "$PROJECT_ID" \
+    --gh-project-installation-id "$INSTALLATION_ID" \
+    --repo "$REPO" \
+    --agent "$agent" \
+    --json
+}
+```
+
+### Agent Selection Configuration
+
+Override default selection rules via environment variables:
+
+```bash
+# Force a specific agent (disables auto-selection)
+export HEAD_AGENT_AGENT="claude/opus-4.5"
+
+# Enable auto-selection with custom defaults
+export HEAD_AGENT_AUTO_SELECT="true"
+export HEAD_AGENT_DEFAULT_AGENT="claude/haiku-4.5"
+export HEAD_AGENT_FRONTEND_AGENT="codex/gpt-5.2-xhigh"
+export HEAD_AGENT_BACKEND_AGENT="claude/opus-4.5"
+export HEAD_AGENT_BUG_AGENT="claude/haiku-4.5"
+export HEAD_AGENT_COMPLEX_AGENT="claude/opus-4.5"
+```
+
+### Using MCP Tools for Agent Selection
+
+```typescript
+// Agent selection using MCP tools
+interface AgentSelection {
+  agent: string;
+  reason: string;
+}
+
+function selectAgent(item: ProjectItem): AgentSelection {
+  const title = (item.content?.title || "").toLowerCase();
+  const labels = item.content?.labels?.map(l => l.name.toLowerCase()) || [];
+  const estimate = parseInt(item.fieldValues?.Estimate || "0");
+
+  // Check labels
+  if (labels.some(l => ["frontend", "ui", "react", "vue", "css"].includes(l))) {
+    return { agent: "codex/gpt-5.2-xhigh", reason: "Frontend label detected" };
+  }
+
+  if (labels.some(l => ["backend", "api", "server", "database", "auth"].includes(l))) {
+    return { agent: "claude/opus-4.5", reason: "Backend label detected" };
+  }
+
+  if (labels.some(l => ["bug", "fix", "hotfix", "patch"].includes(l))) {
+    return { agent: "claude/haiku-4.5", reason: "Bug fix label detected" };
+  }
+
+  if (labels.some(l => ["complex", "architecture", "design", "refactor"].includes(l))) {
+    return { agent: "claude/opus-4.5", reason: "Complex task label detected" };
+  }
+
+  if (labels.some(l => ["test", "testing", "e2e", "unit-test"].includes(l))) {
+    return { agent: "codex/gpt-5.2-xhigh", reason: "Testing label detected" };
+  }
+
+  // Check title keywords
+  if (/refactor|architect|redesign|migrate/.test(title)) {
+    return { agent: "claude/opus-4.5", reason: "Complex keyword in title" };
+  }
+
+  if (/fix|bug|patch|typo/.test(title)) {
+    return { agent: "claude/haiku-4.5", reason: "Quick fix keyword in title" };
+  }
+
+  // Check estimate
+  if (estimate > 8) {
+    return { agent: "claude/opus-4.5", reason: `Large estimate: ${estimate}h` };
+  }
+
+  if (estimate < 2 && estimate > 0) {
+    return { agent: "claude/haiku-4.5", reason: `Small estimate: ${estimate}h` };
+  }
+
+  // Default
+  return { agent: "claude/haiku-4.5", reason: "Default selection" };
+}
+
+// Example usage
+async function pollWithAutoSelect() {
+  const items = await getBacklogItems();
+
+  for (const item of items) {
+    const { agent, reason } = selectAgent(item);
+    console.log(`Item ${item.id}: Selected ${agent} (${reason})`);
+
+    await spawn_agent({
+      prompt: buildPromptFromItem(item),
+      agentName: agent,
+      repo: REPO,
+    });
+  }
+}
+```
+
+### Agent Selection Flowchart
+
+```mermaid
+flowchart TD
+    A[Project Item] --> B{Has Labels?}
+    B -->|Yes| C{Label Type}
+    B -->|No| D{Check Title}
+
+    C -->|frontend/ui/react| E[codex/gpt-5.2-xhigh]
+    C -->|backend/api/server| F[claude/opus-4.5]
+    C -->|bug/fix/hotfix| G[claude/haiku-4.5]
+    C -->|complex/architecture| F
+    C -->|test/testing| E
+    C -->|docs/documentation| G
+    C -->|Other| D
+
+    D -->|refactor/architect| F
+    D -->|fix/bug/patch| G
+    D -->|Other| H{Check Estimate}
+
+    H -->|> 8 hours| F
+    H -->|< 2 hours| G
+    H -->|2-8 hours or unset| I[Default Agent]
+
+    I --> G
+
+    style E fill:#e1f5fe
+    style F fill:#f3e5f5
+    style G fill:#e8f5e9
+```
+
+## Retry Logic with Error Context
+
+When an agent fails the quality gate, the head agent can automatically retry with error context injected into the prompt. This helps the next agent avoid the same mistakes.
+
+### Retry Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HEAD_AGENT_MAX_RETRIES` | `2` | Maximum retry attempts per item |
+| `HEAD_AGENT_RETRY_DELAY` | `60` | Seconds between retries |
+| `HEAD_AGENT_INJECT_ERROR_CONTEXT` | `true` | Include error context in retry prompt |
+| `HEAD_AGENT_ESCALATE_ON_FAILURE` | `true` | Use more powerful agent on retry |
+
+### Shell Script Implementation
+
+```bash
+#!/usr/bin/env bash
+# head-agent-retry.sh - Retry logic with error context injection
+
+MAX_RETRIES="${HEAD_AGENT_MAX_RETRIES:-2}"
+RETRY_DELAY="${HEAD_AGENT_RETRY_DELAY:-60}"
+INJECT_ERROR_CONTEXT="${HEAD_AGENT_INJECT_ERROR_CONTEXT:-true}"
+ESCALATE_ON_FAILURE="${HEAD_AGENT_ESCALATE_ON_FAILURE:-true}"
+
+# Track retry counts (stored in memory file)
+RETRY_STATE_FILE="${HEAD_AGENT_RETRY_STATE:-/tmp/head-agent-retries.json}"
+
+get_retry_count() {
+  local item_id="$1"
+  if [[ -f "$RETRY_STATE_FILE" ]]; then
+    jq -r ".\"$item_id\" // 0" "$RETRY_STATE_FILE"
+  else
+    echo "0"
+  fi
+}
+
+increment_retry_count() {
+  local item_id="$1"
+  local current=$(get_retry_count "$item_id")
+  local new=$((current + 1))
+
+  if [[ -f "$RETRY_STATE_FILE" ]]; then
+    jq ".\"$item_id\" = $new" "$RETRY_STATE_FILE" > "${RETRY_STATE_FILE}.tmp"
+    mv "${RETRY_STATE_FILE}.tmp" "$RETRY_STATE_FILE"
+  else
+    echo "{\"$item_id\": $new}" > "$RETRY_STATE_FILE"
+  fi
+
+  echo "$new"
+}
+
+reset_retry_count() {
+  local item_id="$1"
+  if [[ -f "$RETRY_STATE_FILE" ]]; then
+    jq "del(.\"$item_id\")" "$RETRY_STATE_FILE" > "${RETRY_STATE_FILE}.tmp"
+    mv "${RETRY_STATE_FILE}.tmp" "$RETRY_STATE_FILE"
+  fi
+}
+
+# Extract error context from failed task
+get_error_context() {
+  local task_id="$1"
+
+  local task_json=$(devsh task show "$task_id" --json 2>/dev/null || echo '{}')
+
+  local crown_error=$(echo "$task_json" | jq -r '.crownEvaluationError // ""')
+  local crown_reason=$(echo "$task_json" | jq -r '.crownReason // ""')
+  local exit_code=$(echo "$task_json" | jq -r '.taskRuns[0].exitCode // ""')
+  local pr_url=$(echo "$task_json" | jq -r '.taskRuns[0].pullRequestUrl // ""')
+
+  # Get PR check failures if available
+  local check_failures=""
+  if [[ -n "$pr_url" && "$pr_url" != "null" && "$pr_url" != "pending" ]]; then
+    check_failures=$(gh pr checks "$pr_url" --json name,conclusion 2>/dev/null | \
+      jq -r '.[] | select(.conclusion == "FAILURE") | "- \(.name): FAILED"' 2>/dev/null || echo "")
+  fi
+
+  # Build error context string
+  local context=""
+
+  if [[ -n "$crown_error" && "$crown_error" != "null" ]]; then
+    context+="Crown Evaluation Error:\n$crown_error\n\n"
+  fi
+
+  if [[ -n "$crown_reason" && "$crown_reason" != "null" ]]; then
+    context+="Crown Evaluation Reason:\n$crown_reason\n\n"
+  fi
+
+  if [[ -n "$exit_code" && "$exit_code" != "0" && "$exit_code" != "null" ]]; then
+    context+="Previous Exit Code: $exit_code\n\n"
+  fi
+
+  if [[ -n "$check_failures" ]]; then
+    context+="Failed PR Checks:\n$check_failures\n\n"
+  fi
+
+  echo -e "$context"
+}
+
+# Escalate to more powerful agent
+escalate_agent() {
+  local current_agent="$1"
+
+  case "$current_agent" in
+    "claude/haiku-4.5")
+      echo "claude/sonnet-4.5"
+      ;;
+    "claude/sonnet-4.5")
+      echo "claude/opus-4.5"
+      ;;
+    "codex/gpt-5.1-codex-mini")
+      echo "codex/gpt-5.2-xhigh"
+      ;;
+    *)
+      # Already at max, return same
+      echo "$current_agent"
+      ;;
+  esac
+}
+
+# Retry a failed task with error context
+retry_task() {
+  local item_id="$1"
+  local failed_task_id="$2"
+  local original_prompt="$3"
+  local original_agent="$4"
+
+  local retry_count=$(get_retry_count "$item_id")
+
+  if [[ "$retry_count" -ge "$MAX_RETRIES" ]]; then
+    log "ERROR: Max retries ($MAX_RETRIES) exceeded for item $item_id"
+    return 1
+  fi
+
+  # Increment retry count
+  retry_count=$(increment_retry_count "$item_id")
+  log "Retry attempt $retry_count/$MAX_RETRIES for item $item_id"
+
+  # Get error context from failed task
+  local error_context=""
+  if [[ "$INJECT_ERROR_CONTEXT" == "true" ]]; then
+    error_context=$(get_error_context "$failed_task_id")
+  fi
+
+  # Build retry prompt with error context
+  local retry_prompt="$original_prompt"
+  if [[ -n "$error_context" ]]; then
+    retry_prompt="RETRY ATTEMPT $retry_count/$MAX_RETRIES
+
+IMPORTANT: A previous attempt at this task failed. Please review the error context below and avoid the same mistakes.
+
+=== ERROR CONTEXT FROM PREVIOUS ATTEMPT ===
+$error_context
+=== END ERROR CONTEXT ===
+
+ORIGINAL TASK:
+$original_prompt"
+  fi
+
+  # Escalate agent if configured
+  local retry_agent="$original_agent"
+  if [[ "$ESCALATE_ON_FAILURE" == "true" ]]; then
+    retry_agent=$(escalate_agent "$original_agent")
+    if [[ "$retry_agent" != "$original_agent" ]]; then
+      log "Escalating from $original_agent to $retry_agent"
+    fi
+  fi
+
+  # Wait before retry
+  log "Waiting ${RETRY_DELAY}s before retry..."
+  sleep "$RETRY_DELAY"
+
+  # Dispatch retry
+  local result=$(devsh task create \
+    --from-project-item "$item_id" \
+    --gh-project-id "$PROJECT_ID" \
+    --gh-project-installation-id "$INSTALLATION_ID" \
+    --repo "$REPO" \
+    --agent "$retry_agent" \
+    --prompt "$retry_prompt" \
+    --json 2>&1) || true
+
+  if echo "$result" | jq -e '.taskId' >/dev/null 2>&1; then
+    local new_task_id=$(echo "$result" | jq -r '.taskId')
+    log "SUCCESS: Created retry task $new_task_id for item $item_id (attempt $retry_count)"
+    return 0
+  else
+    log "ERROR: Failed to create retry task: $result"
+    return 1
+  fi
+}
+
+# Extended dispatch with retry support
+dispatch_with_retry() {
+  local item_id="$1"
+  local item_json="$2"
+
+  # Select agent
+  local agent=$(select_agent "$item_json")
+
+  # Get original prompt
+  local title=$(echo "$item_json" | jq -r '.content.title // "Untitled"')
+  local body=$(echo "$item_json" | jq -r '.content.body // ""')
+  local prompt="Work on: $title
+
+$body"
+
+  log "Dispatching agent $agent for item $item_id"
+
+  # Initial dispatch
+  local result=$(devsh task create \
+    --from-project-item "$item_id" \
+    --gh-project-id "$PROJECT_ID" \
+    --gh-project-installation-id "$INSTALLATION_ID" \
+    --repo "$REPO" \
+    --agent "$agent" \
+    --json 2>&1) || true
+
+  if echo "$result" | jq -e '.taskId' >/dev/null 2>&1; then
+    local task_id=$(echo "$result" | jq -r '.taskId')
+    log "SUCCESS: Created task $task_id for item $item_id"
+
+    # Queue quality gate check with retry support
+    (
+      sleep 60  # Initial wait
+
+      # Poll for task completion
+      for i in {1..60}; do
+        task_status=$(devsh task show "$task_id" --json 2>/dev/null | jq -r '.isCompleted // false')
+        if [[ "$task_status" == "true" ]]; then
+          log "Task $task_id completed, running quality gate..."
+
+          if run_quality_gate "$task_id"; then
+            # Success - reset retry counter and notify
+            reset_retry_count "$item_id"
+            notify_developer "$task_id" "success"
+          else
+            # Failed - attempt retry
+            log "Quality gate failed for task $task_id, attempting retry..."
+            if retry_task "$item_id" "$task_id" "$prompt" "$agent"; then
+              log "Retry dispatched for item $item_id"
+            else
+              log "Retry failed or max retries exceeded for item $item_id"
+              notify_developer "$task_id" "failure"
+            fi
+          fi
+          break
+        fi
+        sleep 10
+      done
+    ) &
+  else
+    log "ERROR: Failed to dispatch for $item_id: $result"
+  fi
+}
+```
+
+### Retry Flowchart
+
+```mermaid
+flowchart TD
+    A[Quality Gate Failed] --> B{Retry Count < Max?}
+    B -->|No| C[Mark Item Failed]
+    B -->|Yes| D[Extract Error Context]
+
+    D --> E{Error Type}
+    E -->|Crown Error| F[Include crown feedback]
+    E -->|PR Check Failure| G[Include check names]
+    E -->|Exit Code != 0| H[Include exit code]
+
+    F --> I[Build Retry Prompt]
+    G --> I
+    H --> I
+
+    I --> J{Escalate Agent?}
+    J -->|Yes| K[Select More Powerful Agent]
+    J -->|No| L[Use Same Agent]
+
+    K --> M[Inject Error Context]
+    L --> M
+
+    M --> N[Wait Retry Delay]
+    N --> O[Dispatch Retry Task]
+    O --> P[Monitor New Task]
+
+    P --> Q{Quality Gate}
+    Q -->|Pass| R[Success - Reset Counter]
+    Q -->|Fail| A
+
+    C --> S[Notify Developer]
+    R --> S
+
+    style R fill:#d4edda
+    style C fill:#f8d7da
+```
+
+### Agent Escalation Path
+
+```
+claude/haiku-4.5 → claude/sonnet-4.5 → claude/opus-4.5
+codex/gpt-5.1-codex-mini → codex/gpt-5.2-xhigh → codex/gpt-5.3-codex-xhigh
+```
+
+### Using MCP Tools for Retry
+
+```typescript
+// Retry with error context using MCP tools
+async function retryWithContext(
+  itemId: string,
+  failedTaskId: string,
+  originalPrompt: string,
+  originalAgent: string,
+  retryCount: number,
+  maxRetries: number
+): Promise<string | null> {
+  if (retryCount >= maxRetries) {
+    console.log(`Max retries (${maxRetries}) exceeded for item ${itemId}`);
+    return null;
+  }
+
+  // Get error context from failed task
+  const taskJson = await execAsync(`devsh task show ${failedTaskId} --json`);
+  const task = JSON.parse(taskJson.stdout);
+
+  let errorContext = "";
+
+  if (task.crownEvaluationError) {
+    errorContext += `Crown Evaluation Error:\n${task.crownEvaluationError}\n\n`;
+  }
+
+  if (task.crownReason) {
+    errorContext += `Crown Reason:\n${task.crownReason}\n\n`;
+  }
+
+  const exitCode = task.taskRuns?.[0]?.exitCode;
+  if (exitCode && exitCode !== 0) {
+    errorContext += `Previous Exit Code: ${exitCode}\n\n`;
+  }
+
+  // Get PR check failures
+  const prUrl = task.taskRuns?.[0]?.pullRequestUrl;
+  if (prUrl && prUrl !== "pending") {
+    try {
+      const checksJson = await execAsync(`gh pr checks ${prUrl} --json name,conclusion`);
+      const checks = JSON.parse(checksJson.stdout);
+      const failed = checks.filter(c => c.conclusion === "FAILURE");
+      if (failed.length > 0) {
+        errorContext += "Failed PR Checks:\n";
+        for (const check of failed) {
+          errorContext += `- ${check.name}: FAILED\n`;
+        }
+        errorContext += "\n";
+      }
+    } catch (e) {
+      // Ignore PR check errors
+    }
+  }
+
+  // Build retry prompt
+  const retryPrompt = `RETRY ATTEMPT ${retryCount + 1}/${maxRetries}
+
+IMPORTANT: A previous attempt at this task failed. Please review the error context below and avoid the same mistakes.
+
+=== ERROR CONTEXT FROM PREVIOUS ATTEMPT ===
+${errorContext}
+=== END ERROR CONTEXT ===
+
+ORIGINAL TASK:
+${originalPrompt}`;
+
+  // Escalate agent
+  const agentMap = {
+    "claude/haiku-4.5": "claude/sonnet-4.5",
+    "claude/sonnet-4.5": "claude/opus-4.5",
+    "codex/gpt-5.1-codex-mini": "codex/gpt-5.2-xhigh",
+  };
+  const escalatedAgent = agentMap[originalAgent] || originalAgent;
+
+  console.log(`Retry ${retryCount + 1}/${maxRetries}: escalating ${originalAgent} → ${escalatedAgent}`);
+
+  // Spawn retry agent
+  const result = await spawn_agent({
+    prompt: retryPrompt,
+    agentName: escalatedAgent,
+    repo: REPO,
+  });
+
+  return result.orchestrationTaskId;
+}
+
+// Example: Full retry loop
+async function dispatchWithRetry(item: ProjectItem, maxRetries = 2) {
+  const { agent } = selectAgent(item);
+  const prompt = buildPromptFromItem(item);
+
+  let currentTaskId = await dispatch(item, agent, prompt);
+  let retryCount = 0;
+  let currentAgent = agent;
+
+  while (currentTaskId && retryCount <= maxRetries) {
+    // Wait for task completion
+    await wait_for_agent({ orchestrationTaskId: currentTaskId, timeout: 1800000 });
+
+    // Run quality gate
+    const passed = await runQualityGate(currentTaskId);
+
+    if (passed) {
+      console.log(`Task ${currentTaskId} passed quality gate on attempt ${retryCount + 1}`);
+      await send_message({
+        to: "*",
+        message: `Item ${item.id} completed successfully`,
+        type: "status",
+      });
+      return true;
+    }
+
+    // Quality gate failed - retry
+    retryCount++;
+    currentTaskId = await retryWithContext(
+      item.id,
+      currentTaskId,
+      prompt,
+      currentAgent,
+      retryCount,
+      maxRetries
+    );
+
+    // Update agent for next iteration
+    currentAgent = agentMap[currentAgent] || currentAgent;
+  }
+
+  console.log(`Item ${item.id} failed after ${maxRetries} retries`);
+  return false;
+}
+```
+
 ## Related Skills
 
 - **devsh-orchestrator**: For coordinating multiple agents on complex tasks
