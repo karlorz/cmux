@@ -16,6 +16,8 @@ var (
 	projectItemsInstallationID int
 	projectItemsFirst          int
 	projectItemsAfter          string
+	projectItemsStatus         string
+	projectItemsNoLinkedTask   bool
 )
 
 var projectItemsCmd = &cobra.Command{
@@ -26,6 +28,8 @@ var projectItemsCmd = &cobra.Command{
 Examples:
   devsh project items --project-id PVT_xxx --installation-id 12345
   devsh project items --project-id PVT_xxx --installation-id 12345 --first 20
+  devsh project items --project-id PVT_xxx --installation-id 12345 --status Backlog
+  devsh project items --project-id PVT_xxx --installation-id 12345 --status Backlog --no-linked-task
   devsh project items --project-id PVT_xxx --installation-id 12345 --json`,
 	RunE: runProjectItems,
 }
@@ -57,6 +61,8 @@ func runProjectItems(cmd *cobra.Command, args []string) error {
 		InstallationID: projectItemsInstallationID,
 		First:          projectItemsFirst,
 		After:          projectItemsAfter,
+		Status:         projectItemsStatus,
+		NoLinkedTask:   projectItemsNoLinkedTask,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to get project items: %w", err)
@@ -149,5 +155,7 @@ func init() {
 	projectItemsCmd.Flags().IntVar(&projectItemsInstallationID, "installation-id", 0, "GitHub App installation ID (required)")
 	projectItemsCmd.Flags().IntVar(&projectItemsFirst, "first", 50, "Number of items to fetch (default 50)")
 	projectItemsCmd.Flags().StringVar(&projectItemsAfter, "after", "", "Pagination cursor")
+	projectItemsCmd.Flags().StringVar(&projectItemsStatus, "status", "", "Filter by Status field value (e.g., 'Backlog', 'In Progress')")
+	projectItemsCmd.Flags().BoolVar(&projectItemsNoLinkedTask, "no-linked-task", false, "Only show items without a linked task")
 	projectCmd.AddCommand(projectItemsCmd)
 }
