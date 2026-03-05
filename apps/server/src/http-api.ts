@@ -1953,21 +1953,11 @@ async function handleOrchestrationMetrics(
         throw new Error("Team not found or not a member");
       }
 
-      // Get orchestration tasks by status (using count query for accurate totals)
-      const statusList = ["pending", "assigned", "running", "completed", "failed", "cancelled"] as const;
-      const tasksByStatus: Record<string, number> = {};
-      let activeOrchestrations = 0;
-
-      for (const status of statusList) {
-        const count = await getConvex().query(api.orchestrationQueries.countTasksByStatus, {
-          teamSlugOrId: membership.team.teamId,
-          status,
-        });
-        tasksByStatus[status] = count;
-        if (status === "running" || status === "assigned") {
-          activeOrchestrations += count;
-        }
-      }
+      // Get orchestration task counts in a single Convex query instead of 6 sequential ones
+      const { tasksByStatus, activeOrchestrations } = await getConvex().query(
+        api.orchestrationQueries.getTaskStatusCounts,
+        { teamSlugOrId: membership.team.teamId }
+      );
 
       // Get provider health metrics
       const healthMonitor = getProviderHealthMonitor();
