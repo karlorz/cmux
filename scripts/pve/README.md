@@ -243,6 +243,43 @@ systemctl status caddy-cmux
 curl -v https://port-39378-pvelxc-abc123.example.com
 ```
 
+### Snapshot Runtime Validation (systemd-networkd DHCP)
+
+The snapshot build pipeline enforces DHCP hostname + DNS behavior via a systemd-networkd drop-in:
+
+- `SendHostname=yes`
+- `UseDNS=no`
+
+Quick triage on a running sandbox:
+
+```bash
+./scripts/pve/pve-lxc-networkd-verify.sh pvelxc-abc123
+./scripts/pve/pve-lxc-networkd-diag.sh pvelxc-abc123
+```
+
+Build + validate a new snapshot locally (requires PVE credentials):
+
+```bash
+uv run --env-file .env ./scripts/snapshot-pvelxc.py --template-vmid 9000 --results-json logs/pve-lxc-snapshot/results.json
+make install-devsh-dev
+export PATH="$HOME/.local/bin:$PATH"
+./scripts/pve/pve-lxc-snapshot-runtime-smoke.sh logs/pve-lxc-snapshot/results.json
+```
+
+Artifacts are saved under `logs/pve-lxc-networkd/` with timestamped filenames for diffing:
+
+- `diag.build-pre-template.*` (captured before template conversion)
+- `diag.runtime.*` (captured from a sandbox started from the new snapshot ID)
+
+Rollback/disable strategy (inside a container):
+
+1. Identify the active network file:
+   - `networkctl status eth0`
+2. Remove the cmux drop-in:
+   - `rm -f /etc/systemd/network/<basename>.network.d/99-cmux-dhcp.conf`
+3. Restart networkd:
+   - `systemctl restart systemd-networkd`
+
 ### Common Errors
 
 - **401 Unauthorized**: Check API token format and permissions

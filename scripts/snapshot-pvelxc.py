@@ -1193,6 +1193,48 @@ class TemplateRunResult:
     node: str
 
 
+def _resolve_repo_relative_path(repo_root: Path, path: str) -> Path:
+    out = Path(path).expanduser()
+    if not out.is_absolute():
+        out = (repo_root / out)
+    return out.resolve()
+
+
+def _serialize_template_result(result: TemplateRunResult) -> dict[str, t.Any]:
+    return {
+        "presetId": result.preset.preset_id,
+        "label": result.preset.label,
+        "snapshotId": result.snapshot_id,
+        "templateVmid": result.template_vmid,
+        "capturedAt": result.captured_at,
+        "node": result.node,
+        "vcpus": result.preset.vcpus,
+        "memoryMib": result.preset.memory_mib,
+        "diskSizeMib": result.preset.disk_size_mib,
+    }
+
+
+def _write_results_json(
+    *,
+    out_path: Path,
+    mode: str,
+    base_template_vmid: int,
+    ide_provider: str,
+    results_payload: list[dict[str, t.Any]],
+) -> None:
+    payload = {
+        "schemaVersion": 1,
+        "mode": mode,
+        "baseTemplateVmid": base_template_vmid,
+        "ideProvider": ide_provider,
+        "manifestPath": str(PVE_SNAPSHOT_MANIFEST_PATH),
+        "generatedAt": _iso_timestamp(),
+        "results": results_payload,
+    }
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def _iso_timestamp() -> str:
     return (
         datetime.now(tz=timezone.utc)
@@ -2052,23 +2094,58 @@ async def task_install_base_packages(ctx: PveTaskContext) -> None:
         rm -f chrome.deb
 
         rm -rf /var/lib/apt/lists/*
-
-        # Configure systemd-networkd to send hostname in DHCP requests
-        # This enables router DNS to resolve container hostnames
-        # UseDNS=no prevents overwriting our custom DNS config (PVE host)
-        if [ -f /etc/systemd/network/eth0.network ]; then
-            if ! grep -q 'SendHostname' /etc/systemd/network/eth0.network; then
-                cat >> /etc/systemd/network/eth0.network << 'NETEOF'
-
-[DHCPv4]
-SendHostname = yes
-UseDNS = no
-NETEOF
-            fi
-        fi
         """
     )
     await ctx.run("install-base-packages", cmd)
+
+
+@registry.task(
+    name="configure-networkd-dhcp",
+    deps=("install-base-packages",),
+    description="Ensure systemd-networkd DHCP settings (SendHostname=yes, UseDNS=no)",
+)
+@update_registry.task(
+    name="configure-networkd-dhcp",
+    deps=(),  # Safe to run anytime in update mode
+    description="Ensure systemd-networkd DHCP settings (SendHostname=yes, UseDNS=no)",
+)
+async def task_configure_networkd_dhcp(ctx: PveTaskContext) -> None:
+    cmd = textwrap.dedent(
+        """
+        set -euo pipefail
+
+        iface="eth0"
+        net_file="$(
+          networkctl status "${iface}" --no-pager 2>/dev/null \
+            | awk -F': ' '/Network File/ {print $2; exit}' \
+            | tr -d '\\r'
+        )"
+        if [ -z "${net_file}" ] && [ -f /etc/systemd/network/eth0.network ]; then
+          net_file="/etc/systemd/network/eth0.network"
+        fi
+        if [ -z "${net_file}" ]; then
+          echo "[networkd] ERROR: could not determine Network File for ${iface}" >&2
+          networkctl status "${iface}" --no-pager 2>/dev/null || true
+          ls -la /etc/systemd/network 2>/dev/null || true
+          exit 1
+        fi
+
+        base="$(basename "${net_file}")"
+        drop_dir="/etc/systemd/network/${base}.d"
+        drop_file="${drop_dir}/99-cmux-dhcp.conf"
+        install -d -m 0755 "${drop_dir}"
+        cat > "${drop_file}" <<'EOF'
+# Managed by cmux snapshot-pvelxc.py
+# Ensures router DNS can resolve container hostnames and preserves custom DNS.
+[DHCPv4]
+SendHostname=yes
+UseDNS=no
+EOF
+
+        echo "[networkd] Installed ${drop_file} (base: ${net_file})"
+        """
+    )
+    await ctx.run("configure-networkd-dhcp", cmd)
 
 
 @registry.task(
@@ -3961,7 +4038,7 @@ async def update_existing_template(
     console: Console,
     client: PveLxcClient,
     repo_root: Path,
-) -> int:
+) -> dict[str, t.Any]:
     """Update an existing template container by cloning, updating, and converting to new template.
 
     This skips heavy dependency installation (apt, rust, go, node, etc.) and only
@@ -3974,7 +4051,7 @@ async def update_existing_template(
     4. Stop and convert to new template
     5. Return new template VMID
 
-    Returns the new template VMID (or original VMID if it was a regular container).
+    Returns a result payload suitable for --results-json output.
     """
     source_vmid = args.update_vmid
     console.always(f"\n=== Update mode: source container {source_vmid} ===")
@@ -4083,9 +4160,29 @@ async def update_existing_template(
         for line in summary:
             console.always(line)
 
+    # Capture diagnostics before template conversion for diffing with runtime sandboxes.
+    diag_path = await _capture_networkd_diagnostics(
+        vmid=work_vmid,
+        client=client,
+        console=console,
+        repo_root=repo_root,
+        stage="update-pre-template",
+        preset_id="update",
+    )
+
     # Verify critical artifacts exist before converting to template
     console.info("Verifying critical build artifacts...")
     await _verify_template_artifacts(work_vmid, client, console)
+
+    # Hard fail if required systemd-networkd DHCP behavior regresses.
+    console.info("Verifying systemd-networkd DHCP configuration...")
+    await _verify_networkd_dhcp_config(
+        vmid=work_vmid,
+        client=client,
+        console=console,
+        repo_root=repo_root,
+        diag_path=diag_path,
+    )
 
     # Gracefully shutdown container before converting to template
     console.info(f"Shutting down container {work_vmid} for template conversion...")
@@ -4142,7 +4239,15 @@ async def update_existing_template(
     else:
         console.always(f"\nContainer {work_vmid} converted to template")
 
-    return work_vmid
+    return {
+        "presetId": preset_id or "unknown",
+        "label": preset_entry.get("label") if preset_entry else "unknown",
+        "snapshotId": snapshot_id,
+        "templateVmid": work_vmid,
+        "capturedAt": captured_at,
+        "node": node,
+        "sourceVmid": source_vmid,
+    }
 
 
 async def _verify_template_artifacts(
@@ -4229,6 +4334,100 @@ async def _verify_template_artifacts(
         raise RuntimeError(error_msg)
 
     console.info("[verify] All critical artifacts verified successfully")
+
+
+def _wrap_bash(command: str) -> str:
+    """Wrap a multi-line command to run via /bin/bash -c with safe quoting."""
+    escaped = command.replace("'", "'\"'\"'")
+    return f"/bin/bash -c '{escaped}'"
+
+
+def _read_repo_script(repo_root: Path, relative_path: str) -> str:
+    path = (repo_root / relative_path).resolve()
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise RuntimeError(f"Missing script: {relative_path} (resolved: {path})") from exc
+
+
+def _networkd_artifact_dir(repo_root: Path) -> Path:
+    return (repo_root / "logs" / "pve-lxc-networkd").resolve()
+
+
+async def _capture_networkd_diagnostics(
+    *,
+    vmid: int,
+    client: PveLxcClient,
+    console: Console,
+    repo_root: Path,
+    stage: str,
+    preset_id: str | None = None,
+) -> Path:
+    """Capture networkd diagnostics from inside a container and save under logs/."""
+    artifact_dir = _networkd_artifact_dir(repo_root)
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    preset_label = preset_id or "unknown"
+    out_path = artifact_dir / f"diag.{stage}.{preset_label}.vmid-{vmid}.{timestamp}.txt"
+
+    diag_script = _read_repo_script(repo_root, "scripts/pve/pve-lxc-networkd-diag-inner.sh")
+    content_parts: list[str] = []
+    try:
+        result = await client.aexec_in_container(
+            vmid,
+            _wrap_bash(diag_script),
+            timeout=60,
+            check=False,
+        )
+        if result.stdout:
+            content_parts.append(result.stdout.rstrip("\n"))
+        if result.stderr:
+            content_parts.append("=== STDERR ===")
+            content_parts.append(result.stderr.rstrip("\n"))
+    except Exception as exc:
+        content_parts.append("=== ERROR ===")
+        content_parts.append(str(exc))
+
+    out_path.write_text("\n".join(content_parts) + "\n", encoding="utf-8")
+    console.info(f"[diag] Saved networkd diagnostics: {out_path}")
+    return out_path
+
+
+async def _verify_networkd_dhcp_config(
+    *,
+    vmid: int,
+    client: PveLxcClient,
+    console: Console,
+    repo_root: Path,
+    diag_path: Path | None = None,
+) -> None:
+    """Fail the build unless effective networkd config includes required DHCP keys."""
+    verify_script = _read_repo_script(repo_root, "scripts/pve/pve-lxc-networkd-verify-inner.sh")
+    result = await client.aexec_in_container(
+        vmid,
+        _wrap_bash(verify_script),
+        timeout=60,
+        check=False,
+    )
+    if result.returncode != 0:
+        hint = f"\nDiagnostics: {diag_path}" if diag_path else ""
+        error_msg = (
+            "Networkd DHCP verification failed.\n"
+            "Expected effective config to contain:\n"
+            "  - SendHostname=yes\n"
+            "  - UseDNS=no\n\n"
+            f"Exit code: {result.returncode}\n"
+        )
+        if result.stdout.strip():
+            error_msg += f"\nstdout:\n{result.stdout.rstrip()}\n"
+        if result.stderr.strip():
+            error_msg += f"\nstderr:\n{result.stderr.rstrip()}\n"
+        error_msg += hint
+        raise RuntimeError(error_msg)
+
+    if result.stdout.strip():
+        console.info(f"[verify-networkd] {result.stdout.strip()}")
 
 
 async def provision_and_create_template(
@@ -4361,9 +4560,29 @@ async def provision_and_create_template(
             for line in summary:
                 console.always(line)
 
+        # Capture diagnostics before template conversion for diffing with runtime sandboxes.
+        diag_path = await _capture_networkd_diagnostics(
+            vmid=new_vmid,
+            client=client,
+            console=console,
+            repo_root=repo_root,
+            stage="build-pre-template",
+            preset_id=preset.preset_id,
+        )
+
         # Verify critical artifacts exist before converting to template
         console.info("Verifying critical build artifacts...")
         await _verify_template_artifacts(new_vmid, client, console)
+
+        # Hard fail if required systemd-networkd DHCP behavior regresses.
+        console.info("Verifying systemd-networkd DHCP configuration...")
+        await _verify_networkd_dhcp_config(
+            vmid=new_vmid,
+            client=client,
+            console=console,
+            repo_root=repo_root,
+            diag_path=diag_path,
+        )
 
         # Gracefully shutdown container before converting to template
         console.info(f"Shutting down container {new_vmid} for template conversion...")
@@ -4605,6 +4824,18 @@ async def provision_and_snapshot(args: argparse.Namespace) -> None:
     console.always("  2. Start clone: pct start <new-vmid>")
     console.always("  3. Enter clone: pct enter <new-vmid>")
 
+    results_json = getattr(args, "results_json", None)
+    if results_json:
+        out_path = _resolve_repo_relative_path(repo_root, results_json)
+        _write_results_json(
+            out_path=out_path,
+            mode="snapshot",
+            base_template_vmid=args.template_vmid,
+            ide_provider=args.ide_provider,
+            results_payload=[_serialize_template_result(r) for r in results],
+        )
+        console.always(f"Results JSON written: {out_path}")
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -4620,6 +4851,12 @@ def parse_args() -> argparse.Namespace:
         "--repo-root",
         default=".",
         help="Repository root (default: current directory)",
+    )
+    parser.add_argument(
+        "--results-json",
+        dest="results_json",
+        default="",
+        help="Write snapshot results to a JSON file (path is relative to --repo-root unless absolute)",
     )
     parser.add_argument(
         "--standard-vcpus",
@@ -4834,12 +5071,23 @@ async def run_update_mode(args: argparse.Namespace) -> None:
         client.start_ssh_control_master()
 
     try:
-        await update_existing_template(
+        result = await update_existing_template(
             args,
             console=console,
             client=client,
             repo_root=repo_root,
         )
+        results_json = getattr(args, "results_json", None)
+        if results_json:
+            out_path = _resolve_repo_relative_path(repo_root, results_json)
+            _write_results_json(
+                out_path=out_path,
+                mode="update",
+                base_template_vmid=args.update_vmid,
+                ide_provider=args.ide_provider,
+                results_payload=[result],
+            )
+            console.always(f"Results JSON written: {out_path}")
     finally:
         if client._ssh_host_explicit:
             client.stop_ssh_control_master()
