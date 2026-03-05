@@ -97,13 +97,14 @@ export const getUnreadCount = authQuery({
     const userId = ctx.identity.subject;
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
 
-    // Count unread runs for this user in this team (capped for safety)
+    // Count unread runs for this user in this team
+    // Naturally bounded by per-user unread count (unread rows are deleted on read)
     const unreadRuns = await ctx.db
       .query("unreadTaskRuns")
       .withIndex("by_team_user", (q) =>
         q.eq("teamId", teamId).eq("userId", userId),
       )
-      .take(1000);
+      .collect();
 
     return unreadRuns.length;
   },
@@ -117,13 +118,14 @@ export const getTasksWithUnread = authQuery({
     const userId = ctx.identity.subject;
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
 
-    // Get all unread runs for this user in this team (capped for safety)
+    // Get all unread runs for this user in this team
+    // Naturally bounded by per-user unread count (unread rows are deleted on read)
     const unreadRuns = await ctx.db
       .query("unreadTaskRuns")
       .withIndex("by_team_user", (q) =>
         q.eq("teamId", teamId).eq("userId", userId),
       )
-      .take(1000);
+      .collect();
 
     if (unreadRuns.length === 0) {
       return [];
