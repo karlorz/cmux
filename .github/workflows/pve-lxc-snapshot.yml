@@ -99,6 +99,51 @@ jobs:
           echo "All $max_attempts attempts failed"
           exit 1
 
+      - name: Smoke test new snapshots
+        if: success()
+        env:
+          PVE_API_URL: ${{ secrets.PVE_API_URL }}
+          PVE_API_TOKEN: ${{ secrets.PVE_API_TOKEN }}
+          PVE_NODE: ${{ secrets.PVE_NODE }}
+        run: |
+          MANIFEST="packages/shared/src/pve-lxc-snapshots.json"
+          if [ ! -f "$MANIFEST" ]; then
+            echo "Snapshot manifest not found, skipping smoke test"
+            exit 0
+          fi
+
+          # Extract latest templateVmid for each preset (last version entry)
+          STANDARD_VMID=$(jq -r '.presets[0].versions[-1].templateVmid // empty' "$MANIFEST")
+          BOOSTED_VMID=$(jq -r '.presets[1].versions[-1].templateVmid // empty' "$MANIFEST")
+
+          failed=0
+
+          if [ -n "$STANDARD_VMID" ]; then
+            echo "Validating standard preset (VMID: ${STANDARD_VMID})..."
+            if ! ./scripts/pve/pve-validate-snapshot.sh "$STANDARD_VMID"; then
+              echo "Standard preset validation FAILED"
+              failed=1
+            fi
+          else
+            echo "No standard preset VMID found, skipping"
+          fi
+
+          if [ -n "$BOOSTED_VMID" ]; then
+            echo "Validating boosted preset (VMID: ${BOOSTED_VMID})..."
+            if ! ./scripts/pve/pve-validate-snapshot.sh "$BOOSTED_VMID"; then
+              echo "Boosted preset validation FAILED"
+              failed=1
+            fi
+          else
+            echo "No boosted preset VMID found, skipping"
+          fi
+
+          if [ $failed -ne 0 ]; then
+            echo "Smoke test failed - snapshots will NOT be promoted"
+            exit 1
+          fi
+          echo "All smoke tests passed"
+
       - name: Check for changes
         id: changes
         run: |

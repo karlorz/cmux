@@ -220,6 +220,64 @@ These scripts support the PVE LXC provider implementation:
 
 The provider auto-detects based on environment variables. Set `SANDBOX_PROVIDER=pve-lxc` to force PVE.
 
+## Network Configuration
+
+### How It Works
+
+Container DHCP hostname resolution uses a **systemd-networkd drop-in file** rather than appending to the main `eth0.network` config. The drop-in at `/etc/systemd/network/eth0.network.d/50-cmux-dhcp.conf` configures:
+
+- `SendHostname=yes` - Router DNS can resolve the container's hostname
+- `UseDNS=no` - Prevents DHCP from overwriting the PVE host's DNS config
+
+This approach is idempotent (file is overwritten, not appended) and survives network file regeneration. The `configure-network-dhcp` task runs in both full builds and `--update` mode.
+
+### Validation
+
+The snapshot build automatically verifies the drop-in at two levels:
+
+1. **Build-time** (`_verify_template_artifacts`): Checks file exists and contains expected directives before converting to template
+2. **CI runtime** (`pve-validate-snapshot.sh`): Clones the template, starts it, and verifies config is applied in a running container
+
+### Validation Scripts
+
+```bash
+# Validate a template snapshot (clone -> start -> verify -> cleanup)
+./scripts/pve/pve-validate-snapshot.sh <template-vmid>
+
+# Capture full network diagnostics from a running container
+./scripts/pve/pve-diagnose-network.sh <vmid>
+```
+
+### Troubleshooting
+
+**Hostname not resolving via router DNS:**
+```bash
+# Check if drop-in exists and has correct content
+./scripts/pve/pve-diagnose-network.sh <vmid>
+
+# Verify networkd loaded the drop-in
+ssh root@pve "pct exec <vmid> -- networkctl status eth0"
+# Look for "DHCP4 Hostname" in the output
+```
+
+**Drop-in file missing after build:**
+```bash
+# Re-apply via --update mode (configure-network-dhcp runs independently)
+uv run --env-file .env ./scripts/snapshot-pvelxc.py --update --update-vmid <vmid>
+```
+
+**Drop-in exists but config not effective:**
+```bash
+# Reload networkd to pick up changes
+ssh root@pve "pct exec <vmid> -- networkctl reload"
+
+# Or restart the service
+ssh root@pve "pct exec <vmid> -- systemctl restart systemd-networkd"
+
+# Verify DHCP lease renewed with hostname
+ssh root@pve "pct exec <vmid> -- cat /run/systemd/netif/leases/*"
+```
+
 ## Troubleshooting
 
 ### Connection Issues

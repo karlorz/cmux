@@ -2052,23 +2052,41 @@ async def task_install_base_packages(ctx: PveTaskContext) -> None:
         rm -f chrome.deb
 
         rm -rf /var/lib/apt/lists/*
-
-        # Configure systemd-networkd to send hostname in DHCP requests
-        # This enables router DNS to resolve container hostnames
-        # UseDNS=no prevents overwriting our custom DNS config (PVE host)
-        if [ -f /etc/systemd/network/eth0.network ]; then
-            if ! grep -q 'SendHostname' /etc/systemd/network/eth0.network; then
-                cat >> /etc/systemd/network/eth0.network << 'NETEOF'
-
-[DHCPv4]
-SendHostname = yes
-UseDNS = no
-NETEOF
-            fi
-        fi
         """
     )
     await ctx.run("install-base-packages", cmd)
+
+
+@registry.task(
+    name="configure-network-dhcp",
+    deps=("install-base-packages",),
+    description="Configure systemd-networkd DHCPv4 drop-in for hostname resolution",
+)
+@update_registry.task(
+    name="configure-network-dhcp",
+    deps=(),  # No deps in update mode - base packages already installed
+    description="Configure systemd-networkd DHCPv4 drop-in for hostname resolution",
+)
+async def task_configure_network_dhcp(ctx: PveTaskContext) -> None:
+    cmd = textwrap.dedent(
+        """
+        set -euo pipefail
+
+        # Write a deterministic drop-in file (overwrite, not append) for idempotency.
+        # SendHostname=yes enables router DNS to resolve container hostnames.
+        # UseDNS=no prevents DHCP from overwriting our custom DNS config (PVE host).
+        install -d /etc/systemd/network/eth0.network.d
+        cat > /etc/systemd/network/eth0.network.d/50-cmux-dhcp.conf << 'DROPIN'
+[DHCPv4]
+SendHostname=yes
+UseDNS=no
+DROPIN
+
+        # Apply immediately without full restart
+        networkctl reload || systemctl restart systemd-networkd
+        """
+    )
+    await ctx.run("configure-network-dhcp", cmd)
 
 
 @registry.task(
@@ -3565,6 +3583,7 @@ PROFILE
     deps=(
         "configure-envctl",
         "configure-openbox",
+        "configure-network-dhcp",
         "install-prompt-wrapper",
         "install-tmux-conf",
         "install-collect-scripts",
@@ -3578,6 +3597,7 @@ PROFILE
     name="cleanup-build-artifacts",
     deps=(
         "configure-envctl",
+        "configure-network-dhcp",
         "install-prompt-wrapper",
         "install-tmux-conf",
         "install-collect-scripts",
@@ -4218,6 +4238,37 @@ async def _verify_template_artifacts(
     except Exception as e:
         missing.append(f"  - cmux VS Code extension: check failed ({e})")
         console.info(f"[verify] ERROR checking cmux extension: {e}")
+
+    # Verify systemd-networkd DHCPv4 drop-in file
+    dropin_path = "/etc/systemd/network/eth0.network.d/50-cmux-dhcp.conf"
+    dropin_check_cmd = f"test -f {shlex.quote(dropin_path)} && echo exists || echo missing"
+    try:
+        result = await client.aexec_in_container(vmid, dropin_check_cmd, timeout=30, check=False)
+        if result.returncode != 0 or "missing" in result.stdout:
+            missing.append(f"  - systemd-networkd DHCPv4 drop-in: {dropin_path}")
+            console.info(f"[verify] MISSING: systemd-networkd DHCPv4 drop-in at {dropin_path}")
+        else:
+            console.info("[verify] OK: systemd-networkd DHCPv4 drop-in")
+    except Exception as e:
+        missing.append(f"  - systemd-networkd DHCPv4 drop-in: {dropin_path} (check failed: {e})")
+        console.info(f"[verify] ERROR checking DHCPv4 drop-in: {e}")
+
+    # Verify drop-in content contains expected directives
+    content_check_cmd = (
+        f"grep -q 'SendHostname=yes' {shlex.quote(dropin_path)} 2>/dev/null"
+        f" && grep -q 'UseDNS=no' {shlex.quote(dropin_path)} 2>/dev/null"
+        " && echo verified || echo incomplete"
+    )
+    try:
+        result = await client.aexec_in_container(vmid, content_check_cmd, timeout=30, check=False)
+        if "incomplete" in result.stdout or result.returncode != 0:
+            missing.append(f"  - Network DHCPv4 drop-in content: missing SendHostname=yes or UseDNS=no")
+            console.info(f"[verify] MISSING: Network DHCPv4 drop-in content invalid")
+        else:
+            console.info("[verify] OK: Network DHCPv4 drop-in content verified")
+    except Exception as e:
+        missing.append(f"  - Network DHCPv4 drop-in content: check failed ({e})")
+        console.info(f"[verify] ERROR checking DHCPv4 drop-in content: {e}")
 
     if missing:
         error_msg = (
