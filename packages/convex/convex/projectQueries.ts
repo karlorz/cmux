@@ -520,6 +520,58 @@ export const updateProgressInternal = internalMutation({
   },
 });
 
+/**
+ * Create a project (internal).
+ * Used by CLI/scripts to seed projects without auth.
+ */
+export const createProjectInternal = internalMutation({
+  args: {
+    teamId: v.string(),
+    userId: v.optional(v.string()),
+    name: v.string(),
+    description: v.optional(v.string()),
+    status: v.optional(projectStatusValidator),
+    plan: v.optional(
+      v.object({
+        orchestrationId: v.string(),
+        headAgent: v.string(),
+        description: v.optional(v.string()),
+        tasks: v.array(
+          v.object({
+            id: v.string(),
+            prompt: v.string(),
+            agentName: v.string(),
+            status: v.string(),
+            dependsOn: v.optional(v.array(v.string())),
+            priority: v.optional(v.number()),
+            orchestrationTaskId: v.optional(v.string()),
+          })
+        ),
+        updatedAt: v.string(),
+      })
+    ),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+
+    const projectId = await ctx.db.insert("projects", {
+      teamId: args.teamId,
+      userId: args.userId ?? "system",
+      name: args.name,
+      description: args.description,
+      status: args.status ?? "planning",
+      plan: args.plan,
+      totalTasks: args.plan?.tasks.length ?? 0,
+      completedTasks: 0,
+      failedTasks: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    return projectId;
+  },
+});
+
 // ============================================================================
 // Dispatch & Live Tracking
 // ============================================================================
