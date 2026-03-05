@@ -1281,12 +1281,13 @@ func (c *Client) GetProjectFields(ctx context.Context, opts GetProjectFieldsOpti
 
 // ProjectItemContent represents the content of a project item (issue, PR, or draft).
 type ProjectItemContent struct {
-	ID     string  `json:"id"`
-	Title  string  `json:"title"`
-	Number *int    `json:"number,omitempty"`
-	State  *string `json:"state,omitempty"`
-	URL    *string `json:"url,omitempty"`
-	Body   *string `json:"body,omitempty"`
+	ID     string   `json:"id"`
+	Title  string   `json:"title"`
+	Number *int     `json:"number,omitempty"`
+	State  *string  `json:"state,omitempty"`
+	URL    *string  `json:"url,omitempty"`
+	Body   *string  `json:"body,omitempty"`
+	Labels []string `json:"labels,omitempty"`
 }
 
 // ProjectItemFieldValues is a map of field name to value.
@@ -1294,8 +1295,8 @@ type ProjectItemFieldValues map[string]interface{}
 
 // ProjectItem represents an item in a GitHub Project.
 type ProjectItem struct {
-	ID          string                `json:"id"`
-	Content     *ProjectItemContent   `json:"content"`
+	ID          string                 `json:"id"`
+	Content     *ProjectItemContent    `json:"content"`
 	FieldValues ProjectItemFieldValues `json:"fieldValues"`
 }
 

@@ -17,19 +17,19 @@ description: Background polling loop skill that monitors GitHub Projects for new
 ## Quick Start
 
 ```bash
-# Start a head agent polling loop (polls every 5 minutes by default)
+# Start a head agent polling loop with auto agent selection (recommended)
 devsh head-agent start \
   --project-id PVT_xxx \
   --installation-id 12345 \
   --repo owner/repo \
-  --agent claude/haiku-4.5
+  --agent auto
 
 # Poll once and dispatch (no loop)
 devsh head-agent poll-once \
   --project-id PVT_xxx \
   --installation-id 12345 \
   --repo owner/repo \
-  --agent claude/haiku-4.5
+  --agent auto
 
 # Check items that would be dispatched (dry run)
 devsh project items \
@@ -53,7 +53,7 @@ devsh project items \
 |                                                   |
 |  2. For each new item:                            |
 |     devsh task create --from-project-item PVTI_   |
-|                       --agent <configured-agent>  |
+|                       --agent <selected-agent>    |
 |                                                   |
 |  3. Sleep for poll interval                       |
 |                                                   |
@@ -86,7 +86,10 @@ set -euo pipefail
 PROJECT_ID="${HEAD_AGENT_PROJECT_ID:-}"
 INSTALLATION_ID="${HEAD_AGENT_INSTALLATION_ID:-}"
 REPO="${HEAD_AGENT_REPO:-}"
-AGENT="${HEAD_AGENT_AGENT:-claude/haiku-4.5}"
+AGENT="${HEAD_AGENT_AGENT:-auto}" # "auto" (recommended) or a fixed agent name
+AGENT_DEFAULT="${HEAD_AGENT_AGENT_DEFAULT:-claude/haiku-4.5}"
+AGENT_FRONTEND="${HEAD_AGENT_AGENT_FRONTEND:-codex/gpt-5.2-xhigh}"
+AGENT_BACKEND="${HEAD_AGENT_AGENT_BACKEND:-claude/opus-4.6}"
 POLL_INTERVAL="${HEAD_AGENT_POLL_INTERVAL:-300}"  # 5 minutes default
 STATUS="${HEAD_AGENT_STATUS:-Backlog}"
 MAX_ITEMS_PER_POLL="${HEAD_AGENT_MAX_ITEMS:-5}"
@@ -101,6 +104,38 @@ fi
 
 log() {
   echo "[$(date -Iseconds)] $*" | tee -a "$LOG_FILE"
+}
+
+select_agent_for_item() {
+  local item_json="$1"
+
+  # Selection priority (highest first):
+  # 1) Project field override: fieldValues.Agent (text field containing an agent name)
+  # 2) GitHub labels: "frontend" / "backend"
+  # 3) Project fields: Area/Component = frontend/backend
+  # 4) Default: HEAD_AGENT_AGENT_DEFAULT
+  echo "$item_json" | jq -r \
+    --arg default "$AGENT_DEFAULT" \
+    --arg frontend "$AGENT_FRONTEND" \
+    --arg backend "$AGENT_BACKEND" '
+      def labels: (.content.labels // []) | map(ascii_downcase);
+      def field(name): (.fieldValues[name] // null);
+      def fieldStr(name): (field(name) // "") | tostring | ascii_downcase;
+
+      if (field("Agent") != null and (field("Agent") | tostring | length) > 0) then
+        field("Agent") | tostring
+      elif (labels | index("frontend")) then
+        $frontend
+      elif (labels | index("backend")) then
+        $backend
+      elif (fieldStr("Area") == "frontend" or fieldStr("Component") == "frontend") then
+        $frontend
+      elif (fieldStr("Area") == "backend" or fieldStr("Component") == "backend") then
+        $backend
+      else
+        $default
+      end
+    '
 }
 
 poll_and_dispatch() {
@@ -123,15 +158,20 @@ poll_and_dispatch() {
   fi
 
   # Dispatch agents for each item
-  echo "$items" | jq -r '.items[].id' | while read -r item_id; do
-    log "Dispatching agent for item: $item_id"
+  echo "$items" | jq -c '.items[]' | while read -r item; do
+    item_id=$(echo "$item" | jq -r '.id')
+    agent_for_item="$AGENT"
+    if [[ "$AGENT" == "auto" ]]; then
+      agent_for_item=$(select_agent_for_item "$item")
+    fi
+    log "Dispatching agent ($agent_for_item) for item: $item_id"
 
     result=$(devsh task create \
       --from-project-item "$item_id" \
       --gh-project-id "$PROJECT_ID" \
       --gh-project-installation-id "$INSTALLATION_ID" \
       --repo "$REPO" \
-      --agent "$AGENT" \
+      --agent "$agent_for_item" \
       --json 2>&1) || true
 
     if echo "$result" | jq -e '.taskId' >/dev/null 2>&1; then
@@ -152,6 +192,12 @@ main_loop() {
   log "  Installation ID: $INSTALLATION_ID"
   log "  Repo: $REPO"
   log "  Agent: $AGENT"
+  if [[ "$AGENT" == "auto" ]]; then
+    log "  Auto selection:"
+    log "    default=$AGENT_DEFAULT"
+    log "    frontend=$AGENT_FRONTEND"
+    log "    backend=$AGENT_BACKEND"
+  fi
   log "  Poll Interval: ${POLL_INTERVAL}s"
   log "  Status Filter: $STATUS"
 
@@ -184,7 +230,10 @@ esac
 export HEAD_AGENT_PROJECT_ID="PVT_xxx"
 export HEAD_AGENT_INSTALLATION_ID="12345"
 export HEAD_AGENT_REPO="owner/repo"
-export HEAD_AGENT_AGENT="claude/haiku-4.5"
+export HEAD_AGENT_AGENT="auto"
+export HEAD_AGENT_AGENT_DEFAULT="claude/haiku-4.5"
+export HEAD_AGENT_AGENT_FRONTEND="codex/gpt-5.2-xhigh"
+export HEAD_AGENT_AGENT_BACKEND="claude/opus-4.6"
 export HEAD_AGENT_POLL_INTERVAL="300"  # 5 minutes
 
 # Start the polling loop
@@ -207,7 +256,10 @@ Type=simple
 Environment=HEAD_AGENT_PROJECT_ID=PVT_xxx
 Environment=HEAD_AGENT_INSTALLATION_ID=12345
 Environment=HEAD_AGENT_REPO=owner/repo
-Environment=HEAD_AGENT_AGENT=claude/haiku-4.5
+Environment=HEAD_AGENT_AGENT=auto
+Environment=HEAD_AGENT_AGENT_DEFAULT=claude/haiku-4.5
+Environment=HEAD_AGENT_AGENT_FRONTEND=codex/gpt-5.2-xhigh
+Environment=HEAD_AGENT_AGENT_BACKEND=claude/opus-4.6
 ExecStart=/usr/local/bin/head-agent-loop.sh loop
 Restart=always
 RestartSec=60
@@ -226,6 +278,26 @@ sudo systemctl start head-agent
 When running as a head agent in a cloud workspace, you can use MCP tools for orchestration:
 
 ```typescript
+function selectAgent(item: any): string {
+  // Priority:
+  // 1) Project field override: fieldValues.Agent
+  // 2) Labels: frontend/backend
+  // 3) Fields: Area/Component
+  // 4) Default
+  const override = String(item?.fieldValues?.Agent ?? "").trim();
+  if (override) return override;
+
+  const labels = (item?.content?.labels ?? []).map((l: string) => l.toLowerCase());
+  if (labels.includes("frontend")) return "codex/gpt-5.2-xhigh";
+  if (labels.includes("backend")) return "claude/opus-4.6";
+
+  const area = String(item?.fieldValues?.Area ?? item?.fieldValues?.Component ?? "").toLowerCase();
+  if (area === "frontend") return "codex/gpt-5.2-xhigh";
+  if (area === "backend") return "claude/opus-4.6";
+
+  return "claude/haiku-4.5";
+}
+
 // Poll for new items programmatically
 async function pollForNewItems() {
   // Use devsh CLI to get items
@@ -242,7 +314,7 @@ async function pollForNewItems() {
     // Spawn agent for each item
     await spawn_agent({
       prompt: `Work on project item: ${item.content?.title}\n\n${item.content?.body || ''}`,
-      agentName: "claude/haiku-4.5",
+      agentName: selectAgent(item),
       repo: "owner/repo",
     });
   }
@@ -268,7 +340,10 @@ async function headAgentLoop(pollIntervalMs = 300000) {
 | `HEAD_AGENT_PROJECT_ID` | `--project-id` | (required) | GitHub Project node ID (PVT_xxx) |
 | `HEAD_AGENT_INSTALLATION_ID` | `--installation-id` | (required) | GitHub App installation ID |
 | `HEAD_AGENT_REPO` | `--repo` | (required) | Repository in owner/repo format |
-| `HEAD_AGENT_AGENT` | `--agent` | `claude/haiku-4.5` | Agent to dispatch |
+| `HEAD_AGENT_AGENT` | `--agent` | `auto` | `auto` (recommended) or a fixed agent to dispatch |
+| `HEAD_AGENT_AGENT_DEFAULT` | - | `claude/haiku-4.5` | Default agent when `HEAD_AGENT_AGENT=auto` |
+| `HEAD_AGENT_AGENT_FRONTEND` | - | `codex/gpt-5.2-xhigh` | Agent for `frontend` label/field matches |
+| `HEAD_AGENT_AGENT_BACKEND` | - | `claude/opus-4.6` | Agent for `backend` label/field matches |
 | `HEAD_AGENT_POLL_INTERVAL` | `--poll-interval` | `300` | Seconds between polls |
 | `HEAD_AGENT_STATUS` | `--status` | `Backlog` | Project status to filter by |
 | `HEAD_AGENT_MAX_ITEMS` | `--max-items` | `5` | Max items to dispatch per poll |
@@ -302,15 +377,20 @@ When agents complete work, the status field is automatically updated:
    - `claude/sonnet-4.5` - Medium complexity features
    - `claude/opus-4.5` - Complex architectural changes
 
-3. **Monitor Logs**: Watch the log file for errors and dispatch success rates.
+3. **Route Work with Metadata** (recommended):
+   - Add GitHub labels like `frontend` / `backend` to issues/PRs
+   - Add a project text field named `Agent` to hard-pin specific items to an agent
+   - Optionally add project fields like `Area` or `Component` with values `frontend` / `backend`
 
-4. **Set Reasonable Poll Intervals**: 5-15 minutes is usually sufficient. Too frequent polling wastes API calls.
+4. **Monitor Logs**: Watch the log file for errors and dispatch success rates.
 
-5. **Use Dry Runs First**: Test with `devsh project items --status Backlog --no-linked-task` to see what would be dispatched.
+5. **Set Reasonable Poll Intervals**: 5-15 minutes is usually sufficient. Too frequent polling wastes API calls.
 
-6. **Configure Auto-PR**: Enable Auto-PR in settings so completed work automatically creates pull requests.
+6. **Use Dry Runs First**: Test with `devsh project items --status Backlog --no-linked-task` to see what would be dispatched.
 
-7. **Handle Failures**: If a task fails, the item won't be re-dispatched (it has a linked task). Review failed tasks manually.
+7. **Configure Auto-PR**: Enable Auto-PR in settings so completed work automatically creates pull requests.
+
+8. **Handle Failures**: If a task fails, the item won't be re-dispatched (it has a linked task). Review failed tasks manually.
 
 ## Troubleshooting
 

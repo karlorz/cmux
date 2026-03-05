@@ -126,6 +126,11 @@ export const PROJECT_QUERIES = {
                   number
                   state
                   url
+                  labels(first: 20) {
+                    nodes {
+                      name
+                    }
+                  }
                 }
                 ... on PullRequest {
                   id
@@ -133,6 +138,11 @@ export const PROJECT_QUERIES = {
                   number
                   state
                   url
+                  labels(first: 20) {
+                    nodes {
+                      name
+                    }
+                  }
                 }
                 ... on DraftIssue {
                   id
@@ -273,6 +283,7 @@ export interface ProjectV2Item {
     state?: string;
     url?: string;
     body?: string;
+    labels?: string[];
   } | null;
   fieldValues: Record<string, string | number | null>;
 }
@@ -295,6 +306,7 @@ interface RawProjectV2ItemContent {
   state?: string;
   url?: string;
   body?: string;
+  labels?: { nodes?: Array<{ name?: string } | null> };
 }
 
 interface RawProjectV2ItemNode {
@@ -424,6 +436,11 @@ export async function getProjectItems(
       else if (fv.title !== undefined) fieldValues[fieldName] = fv.title; // Iteration
     }
 
+    const labels =
+      raw.content?.labels?.nodes
+        ?.map((label) => label?.name?.trim())
+        .filter((label): label is string => Boolean(label)) ?? [];
+
     return {
       id: raw.id,
       content: raw.content
@@ -434,6 +451,7 @@ export async function getProjectItems(
             state: raw.content.state,
             url: raw.content.url,
             body: raw.content.body,
+            ...(labels.length > 0 ? { labels } : {}),
           }
         : null,
       fieldValues,
