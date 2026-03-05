@@ -22,7 +22,7 @@
 [ ] figure out intricacies of deploying the Dockerfile to daytona
 [ ] make it easy to provide context to claude code by using cmd + p to open a ton of editors
 [ ] make it easy to create a new task from scratch without any existing directory or git repo
-[ ] figure out how to get git working, rn worktrees are intermittently broken
+[x] figure out how to get git working, rn worktrees are intermittently broken - PR #448: origin fetch locks, path normalization fix; PR #449: 655 lines of worktree tests
 [ ] make MorphVSCodeInstance actually work
 [ ] vercel previews but devcontainer and docker and docker compose
 [ ] vercel comments but it actually just pipes it to claude code and it auto makes a PR!
