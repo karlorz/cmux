@@ -2233,6 +2233,12 @@ async function handleGetTaskQualityGate(
   limit: number,
 ): Promise<Response> {
   try {
+    // Validate taskId format - Convex IDs are alphanumeric without underscores
+    const isValidConvexIdFormat = /^[a-z][a-z0-9]*$/i.test(taskId);
+    if (!isValidConvexIdFormat) {
+      return jsonResponse({ code: 404, message: "Task not found" }, 404);
+    }
+
     const teamId = await resolveTeamIdForHttp(ctx, teamSlugOrId);
 
     if (!teamId) {
