@@ -147,6 +147,7 @@ describe("PluginLoader", () => {
         "amp",
         "cursor",
         "qwen",
+        "grok",
       ];
 
       const loadedIds = loader.getPluginIds();
