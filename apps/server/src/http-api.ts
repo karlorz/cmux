@@ -220,7 +220,8 @@ async function handleStartTask(
     const results = await runWithAuth(authToken, authHeaderJson, async () => {
       // Determine which agents to spawn
       // Default to claude/opus-4.5 if no agent specified (matches CLI default)
-      const agentsToSpawn = selectedAgents || ["claude/opus-4.5"];
+      // Must align with branchNames validation which also treats empty array as "unspecified"
+      const agentsToSpawn = selectedAgents && selectedAgents.length > 0 ? selectedAgents : ["claude/opus-4.5"];
       const agentCount = agentsToSpawn.length;
 
       // Fetch workspace settings for branchPrefix (same as socket.io handler)
