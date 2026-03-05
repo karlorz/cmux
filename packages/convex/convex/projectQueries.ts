@@ -594,16 +594,18 @@ export const dispatchPlan = authMutation({
           updatedAt: now,
         });
 
-        // Update dependents on each dependency
-        for (const depId of depIds) {
-          const dep = await ctx.db.get(depId);
-          if (dep) {
-            await ctx.db.patch(depId, {
+        // Batch-fetch all dependencies and update dependents in parallel
+        const deps = await Promise.all(depIds.map((id) => ctx.db.get(id)));
+        await Promise.all(
+          depIds.map((depId, i) => {
+            const dep = deps[i];
+            if (!dep) return;
+            return ctx.db.patch(depId, {
               dependents: [...(dep.dependents ?? []), orchTaskId],
               updatedAt: now,
             });
-          }
-        }
+          })
+        );
       }
     }
 

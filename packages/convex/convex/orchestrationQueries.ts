@@ -570,6 +570,14 @@ export const failTask = authMutation({
 });
 
 /**
+ * Check if an orchestration task is linked to a project via metadata.
+ */
+function isLinkedToProject(task: Doc<"orchestrationTasks"> | null): boolean {
+  const metadata = task?.metadata as Record<string, unknown> | undefined;
+  return !!metadata?.projectId;
+}
+
+/**
  * Internal mutation to fail task without auth.
  */
 export const failTaskInternal = internalMutation({
@@ -578,6 +586,10 @@ export const failTaskInternal = internalMutation({
     errorMessage: v.string(),
   },
   handler: async (ctx, { taskId, errorMessage }) => {
+    // Read before patch to check project linkage without redundant re-read
+    const task = await ctx.db.get(taskId);
+    const linked = isLinkedToProject(task);
+
     const now = Date.now();
     await ctx.db.patch(taskId, {
       status: "failed",
@@ -586,10 +598,7 @@ export const failTaskInternal = internalMutation({
       updatedAt: now,
     });
 
-    // Sync project plan status if this task is linked to a project
-    const task = await ctx.db.get(taskId);
-    const metadata = task?.metadata as Record<string, unknown> | undefined;
-    if (metadata?.projectId) {
+    if (linked) {
       await ctx.scheduler.runAfter(0, internal.projectQueries.syncPlanStatusFromOrchestration, {
         orchestrationTaskId: taskId,
       });
@@ -606,6 +615,10 @@ export const completeTaskInternal = internalMutation({
     result: v.optional(v.string()),
   },
   handler: async (ctx, { taskId, result }) => {
+    // Read before patch to check project linkage without redundant re-read
+    const task = await ctx.db.get(taskId);
+    const linked = isLinkedToProject(task);
+
     const now = Date.now();
     await ctx.db.patch(taskId, {
       status: "completed",
@@ -619,10 +632,7 @@ export const completeTaskInternal = internalMutation({
       completedTaskId: taskId,
     });
 
-    // Sync project plan status if this task is linked to a project
-    const task = await ctx.db.get(taskId);
-    const metadata = task?.metadata as Record<string, unknown> | undefined;
-    if (metadata?.projectId) {
+    if (linked) {
       await ctx.scheduler.runAfter(0, internal.projectQueries.syncPlanStatusFromOrchestration, {
         orchestrationTaskId: taskId,
       });
@@ -1127,6 +1137,10 @@ export const startTaskInternal = internalMutation({
     taskId: v.id("orchestrationTasks"),
   },
   handler: async (ctx, { taskId }) => {
+    // Read before patch to check project linkage without redundant re-read
+    const task = await ctx.db.get(taskId);
+    const linked = isLinkedToProject(task);
+
     const now = Date.now();
     await ctx.db.patch(taskId, {
       status: "running",
@@ -1134,10 +1148,7 @@ export const startTaskInternal = internalMutation({
       updatedAt: now,
     });
 
-    // Sync project plan status if this task is linked to a project
-    const task = await ctx.db.get(taskId);
-    const metadata = task?.metadata as Record<string, unknown> | undefined;
-    if (metadata?.projectId) {
+    if (linked) {
       await ctx.scheduler.runAfter(0, internal.projectQueries.syncPlanStatusFromOrchestration, {
         orchestrationTaskId: taskId,
       });

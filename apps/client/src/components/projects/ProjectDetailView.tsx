@@ -14,14 +14,13 @@ import { Link } from "@tanstack/react-router";
 import {
   ArrowLeft,
   Play,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  Loader2,
 } from "lucide-react";
 import clsx from "clsx";
 
 import { Button } from "@/components/ui/button";
+import { STATUS_CONFIG as TASK_STATUS_CONFIG } from "@/components/orchestration/status-config";
+import type { TaskStatus } from "@/components/orchestration/status-config";
+import { PROJECT_STATUS_CONFIG } from "./project-status-config";
 import { ProjectProgress, ProjectProgressBar } from "./ProjectProgress";
 import { PlanEditor } from "./PlanEditor";
 import { DispatchPlanDialog } from "./DispatchPlanDialog";
@@ -38,46 +37,23 @@ interface ProjectDetailViewProps {
   onDispatchComplete?: () => void;
 }
 
-const STATUS_CONFIG: Record<string, { label: string; color: string; bgColor: string }> = {
-  planning: {
-    label: "Planning",
-    color: "text-purple-600 dark:text-purple-400",
-    bgColor: "bg-purple-100 dark:bg-purple-900/30",
-  },
-  active: {
-    label: "Active",
-    color: "text-blue-600 dark:text-blue-400",
-    bgColor: "bg-blue-100 dark:bg-blue-900/30",
-  },
-  paused: {
-    label: "Paused",
-    color: "text-amber-600 dark:text-amber-400",
-    bgColor: "bg-amber-100 dark:bg-amber-900/30",
-  },
-  completed: {
-    label: "Completed",
-    color: "text-green-600 dark:text-green-400",
-    bgColor: "bg-green-100 dark:bg-green-900/30",
-  },
-  archived: {
-    label: "Archived",
-    color: "text-neutral-600 dark:text-neutral-400",
-    bgColor: "bg-neutral-100 dark:bg-neutral-900/30",
-  },
-};
-
 function OrchTaskStatusIcon({ status }: { status: string }) {
-  switch (status) {
-    case "completed":
-      return <CheckCircle2 className="size-4 text-green-500" />;
-    case "running":
-    case "assigned":
-      return <Loader2 className="size-4 text-blue-500 animate-spin" />;
-    case "failed":
-      return <XCircle className="size-4 text-red-500" />;
-    default:
-      return <Clock className="size-4 text-amber-500" />;
+  const config = TASK_STATUS_CONFIG[status as TaskStatus];
+  if (!config) {
+    const fallback = TASK_STATUS_CONFIG.pending;
+    const Icon = fallback.icon;
+    return <Icon className={clsx("size-4", fallback.color)} />;
   }
+  const Icon = config.icon;
+  return (
+    <Icon
+      className={clsx(
+        "size-4",
+        config.color,
+        (status === "running" || status === "assigned") && "animate-spin",
+      )}
+    />
+  );
 }
 
 export function ProjectDetailView({
@@ -132,7 +108,7 @@ export function ProjectDetailView({
     ? Math.round((completedTasks / totalTasks) * 100)
     : 0;
 
-  const statusConfig = STATUS_CONFIG[project.status] ?? STATUS_CONFIG.planning;
+  const statusConfig = PROJECT_STATUS_CONFIG[project.status] ?? PROJECT_STATUS_CONFIG.planning;
 
   return (
     <div className="space-y-6">

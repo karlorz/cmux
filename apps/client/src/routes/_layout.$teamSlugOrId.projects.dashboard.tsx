@@ -35,6 +35,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   ProjectProgressBar,
 } from "@/components/projects/ProjectProgress";
+import { PROJECT_STATUS_CONFIG } from "@/components/projects/project-status-config";
+import type { ProjectStatus } from "@/components/projects/project-status-config";
 import { RecommendedActions } from "@/components/projects/RecommendedActions";
 import { api } from "@cmux/convex/api";
 import type { Doc } from "@cmux/convex/dataModel";
@@ -44,39 +46,6 @@ export const Route = createFileRoute(
 )({
   component: ProjectsDashboardPage,
 });
-
-type ProjectStatus = "planning" | "active" | "paused" | "completed" | "archived";
-
-const STATUS_CONFIG: Record<
-  ProjectStatus,
-  { label: string; color: string; bgColor: string }
-> = {
-  planning: {
-    label: "Planning",
-    color: "text-purple-600 dark:text-purple-400",
-    bgColor: "bg-purple-100 dark:bg-purple-900/30",
-  },
-  active: {
-    label: "Active",
-    color: "text-blue-600 dark:text-blue-400",
-    bgColor: "bg-blue-100 dark:bg-blue-900/30",
-  },
-  paused: {
-    label: "Paused",
-    color: "text-amber-600 dark:text-amber-400",
-    bgColor: "bg-amber-100 dark:bg-amber-900/30",
-  },
-  completed: {
-    label: "Completed",
-    color: "text-green-600 dark:text-green-400",
-    bgColor: "bg-green-100 dark:bg-green-900/30",
-  },
-  archived: {
-    label: "Archived",
-    color: "text-neutral-600 dark:text-neutral-400",
-    bgColor: "bg-neutral-100 dark:bg-neutral-900/30",
-  },
-};
 
 function ProjectsDashboardPage() {
   const { teamSlugOrId } = Route.useParams();
@@ -390,7 +359,7 @@ function ProjectCard({
   project: Doc<"projects">;
   teamSlugOrId: string;
 }) {
-  const statusConfig = STATUS_CONFIG[project.status];
+  const statusConfig = PROJECT_STATUS_CONFIG[project.status];
   const progressPercent = project.totalTasks && project.totalTasks > 0
     ? Math.round(((project.completedTasks ?? 0) / project.totalTasks) * 100)
     : 0;
