@@ -17,6 +17,65 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { authMutation, authQuery } from "./users/utils";
 import { getTeamId } from "../_shared/team";
 
+const ORCHESTRATION_STATUSES = ["pending", "assigned", "running", "completed", "failed", "cancelled"] as const;
+
+/**
+ * Batch-fetch dependency statuses and filter pending tasks to those ready to execute.
+ * Shared between getReadyTasks (authenticated) and getReadyTasksInternal (internal).
+ */
+async function filterReadyTasks(
+  ctx: { db: { get: (id: Id<"orchestrationTasks">) => Promise<Doc<"orchestrationTasks"> | null> } },
+  pendingTasks: Doc<"orchestrationTasks">[],
+  limit: number,
+): Promise<Doc<"orchestrationTasks">[]> {
+  const noDeps = pendingTasks.filter(
+    (t) => !t.dependencies || t.dependencies.length === 0
+  );
+  const withDeps = pendingTasks.filter(
+    (t) => t.dependencies && t.dependencies.length > 0
+  );
+
+  // If no-dep tasks already fill the limit, skip dependency fetching entirely
+  if (noDeps.length >= limit) {
+    return noDeps.slice(0, limit);
+  }
+
+  // Batch fetch unique dependency IDs only from tasks that have dependencies
+  const allDepIds = new Set<Id<"orchestrationTasks">>();
+  for (const task of withDeps) {
+    for (const depId of task.dependencies!) {
+      allDepIds.add(depId);
+    }
+  }
+
+  const allDepIdsArray = Array.from(allDepIds);
+  const allDeps = await Promise.all(
+    allDepIdsArray.map((id) => ctx.db.get(id))
+  );
+  const depStatusMap = new Map(
+    allDepIdsArray.map((id, i) => [id, allDeps[i]?.status])
+  );
+
+  // Filter preserving original priority order from pendingTasks
+  const readyTasks = [];
+  for (const task of pendingTasks) {
+    if (!task.dependencies || task.dependencies.length === 0) {
+      readyTasks.push(task);
+    } else {
+      const allCompleted = task.dependencies.every(
+        (depId) => depStatusMap.get(depId) === "completed"
+      );
+      if (allCompleted) {
+        readyTasks.push(task);
+      }
+    }
+
+    if (readyTasks.length >= limit) break;
+  }
+
+  return readyTasks;
+}
+
 // ============================================================================
 // Orchestration Task Queries (Authenticated)
 // ============================================================================
@@ -82,7 +141,7 @@ export const listTasksByTeam = authQuery({
 
     // Without status filter, query each status in parallel with limit per status,
     // then merge and sort. Loads at most 6*limit rows instead of all rows.
-    const statusList = ["pending", "assigned", "running", "completed", "failed", "cancelled"] as const;
+    const statusList = ORCHESTRATION_STATUSES;
     const perStatusResults = await Promise.all(
       statusList.map((s) =>
         ctx.db
@@ -202,7 +261,6 @@ export const getReadyTasks = authQuery({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, { teamSlugOrId, limit = 10 }) => {
-    // Verify team membership and get canonical teamId
     const teamId = await getTeamId(ctx, teamSlugOrId);
 
     const pendingTasks = await ctx.db
@@ -213,56 +271,13 @@ export const getReadyTasks = authQuery({
       .order("asc")
       .take(100);
 
-    // Separate tasks with and without dependencies
-    const noDeps = pendingTasks.filter(
-      (t) => !t.dependencies || t.dependencies.length === 0
-    );
-    const withDeps = pendingTasks.filter(
-      (t) => t.dependencies && t.dependencies.length > 0
-    );
-
-    // If no-dep tasks already fill the limit, skip dependency fetching entirely
-    if (noDeps.length >= limit) {
-      return noDeps.slice(0, limit);
-    }
-
-    // Batch fetch unique dependency IDs only from tasks that have dependencies
-    const allDepIds = new Set<Id<"orchestrationTasks">>();
-    for (const task of withDeps) {
-      for (const depId of task.dependencies!) {
-        allDepIds.add(depId);
-      }
-    }
-
-    const allDepIdsArray = Array.from(allDepIds);
-    const allDeps = await Promise.all(
-      allDepIdsArray.map((id) => ctx.db.get(id))
-    );
-    const depStatusMap = new Map(
-      allDepIdsArray.map((id, i) => [id, allDeps[i]?.status])
-    );
-
-    // Filter to tasks with no dependencies or all dependencies completed
-    // Preserve original order from pendingTasks (priority order)
-    const readyTasks = [];
-    for (const task of pendingTasks) {
-      if (!task.dependencies || task.dependencies.length === 0) {
-        readyTasks.push(task);
-      } else {
-        const allCompleted = task.dependencies.every(
-          (depId) => depStatusMap.get(depId) === "completed"
-        );
-        if (allCompleted) {
-          readyTasks.push(task);
-        }
-      }
-
-      if (readyTasks.length >= limit) break;
-    }
-
-    return readyTasks;
+    return filterReadyTasks(ctx, pendingTasks, limit);
   },
 });
+
+// ============================================================================
+// Orchestration Task Mutations (Authenticated)
+// ============================================================================
 
 /**
  * Update dependents for each dependency task.
@@ -1131,54 +1146,7 @@ export const getReadyTasksInternal = internalQuery({
       .order("asc")
       .take(100);
 
-    // Separate tasks with and without dependencies
-    const noDeps = pendingTasks.filter(
-      (t) => !t.dependencies || t.dependencies.length === 0
-    );
-    const withDeps = pendingTasks.filter(
-      (t) => t.dependencies && t.dependencies.length > 0
-    );
-
-    // If no-dep tasks already fill the limit, skip dependency fetching entirely
-    if (noDeps.length >= limit) {
-      return noDeps.slice(0, limit);
-    }
-
-    // Batch fetch unique dependency IDs only from tasks that have dependencies
-    const allDepIds = new Set<Id<"orchestrationTasks">>();
-    for (const task of withDeps) {
-      for (const depId of task.dependencies!) {
-        allDepIds.add(depId);
-      }
-    }
-
-    const allDepIdsArray = Array.from(allDepIds);
-    const allDeps = await Promise.all(
-      allDepIdsArray.map((id) => ctx.db.get(id))
-    );
-    const depStatusMap = new Map(
-      allDepIdsArray.map((id, i) => [id, allDeps[i]?.status])
-    );
-
-    // Filter to tasks with no dependencies or all dependencies completed
-    // Preserve original order from pendingTasks (priority order)
-    const readyTasks = [];
-    for (const task of pendingTasks) {
-      if (!task.dependencies || task.dependencies.length === 0) {
-        readyTasks.push(task);
-      } else {
-        const allCompleted = task.dependencies.every(
-          (depId) => depStatusMap.get(depId) === "completed"
-        );
-        if (allCompleted) {
-          readyTasks.push(task);
-        }
-      }
-
-      if (readyTasks.length >= limit) break;
-    }
-
-    return readyTasks;
+    return filterReadyTasks(ctx, pendingTasks, limit);
   },
 });
 
@@ -1254,7 +1222,7 @@ export const getTaskStatusCounts = authQuery({
   handler: async (ctx, args) => {
     const teamId = await getTeamId(ctx, args.teamSlugOrId);
 
-    const statusList = ["pending", "assigned", "running", "completed", "failed", "cancelled"] as const;
+    const statusList = ORCHESTRATION_STATUSES;
     const tasksByStatus: Record<string, number> = {};
     let activeOrchestrations = 0;
 
@@ -1293,7 +1261,7 @@ export const getOrchestrationSummary = authQuery({
     const teamId = await getTeamId(ctx, args.teamSlugOrId);
 
     // Query each status in parallel instead of .collect() on all tasks
-    const statusList = ["pending", "assigned", "running", "completed", "failed", "cancelled"] as const;
+    const statusList = ORCHESTRATION_STATUSES;
     const perStatusResults = await Promise.all(
       statusList.map((s) =>
         ctx.db
@@ -1305,26 +1273,27 @@ export const getOrchestrationSummary = authQuery({
       )
     );
 
-    // Build status counts from parallel results
+    // Build keyed map for type-safe access (avoids fragile indexOf)
+    const byStatus = new Map(
+      statusList.map((s, i) => [s, perStatusResults[i]] as const)
+    );
+
+    // Build status counts
     const statusCounts: Record<string, number> = {};
-    for (let i = 0; i < statusList.length; i++) {
-      statusCounts[statusList[i]] = perStatusResults[i].length;
+    for (const s of statusList) {
+      statusCounts[s] = byStatus.get(s)!.length;
     }
 
     // Extract active agents from running + assigned results
-    const runningIdx = statusList.indexOf("running");
-    const assignedIdx = statusList.indexOf("assigned");
     const activeAgents = new Set<string>();
-    for (const task of [...perStatusResults[runningIdx], ...perStatusResults[assignedIdx]]) {
+    for (const task of [...byStatus.get("running")!, ...byStatus.get("assigned")!]) {
       if (task.assignedAgentName) {
         activeAgents.add(task.assignedAgentName);
       }
     }
 
     // Get recent activity from completed + failed results (already fetched)
-    const completedIdx = statusList.indexOf("completed");
-    const failedIdx = statusList.indexOf("failed");
-    const recentTasks = [...perStatusResults[completedIdx], ...perStatusResults[failedIdx]]
+    const recentTasks = [...byStatus.get("completed")!, ...byStatus.get("failed")!]
       .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0))
       .slice(0, 5);
 
@@ -1384,7 +1353,7 @@ export const listTasksWithDependencyInfo = authQuery({
         .take(limit);
     } else {
       // Without status filter, query each status in parallel then merge
-      const statusList = ["pending", "assigned", "running", "completed", "failed", "cancelled"] as const;
+      const statusList = ORCHESTRATION_STATUSES;
       const perStatusResults = await Promise.all(
         statusList.map((s) =>
           ctx.db
@@ -1403,11 +1372,16 @@ export const listTasksWithDependencyInfo = authQuery({
     }
 
     // Batch fetch all unique dependency IDs across all tasks
+    // Build lookup of already-fetched tasks to avoid redundant db.get calls
+    const taskMap = new Map(tasks.map((t) => [t._id, t]));
+
     const allDepIds = new Set<Id<"orchestrationTasks">>();
     for (const task of tasks) {
       if (task.dependencies) {
         for (const depId of task.dependencies) {
-          allDepIds.add(depId);
+          if (!taskMap.has(depId)) {
+            allDepIds.add(depId);
+          }
         }
       }
     }
@@ -1416,9 +1390,10 @@ export const listTasksWithDependencyInfo = authQuery({
     const allDeps = await Promise.all(
       allDepIdsArray.map((id) => ctx.db.get(id))
     );
-    const depMap = new Map(
-      allDepIdsArray.map((id, i) => [id, allDeps[i]])
-    );
+    const depMap = new Map<Id<"orchestrationTasks">, Doc<"orchestrationTasks"> | null>([
+      ...tasks.map((t) => [t._id, t] as const),
+      ...allDepIdsArray.map((id, i) => [id, allDeps[i]] as const),
+    ]);
 
     // Enrich each task with dependency information using the pre-fetched map
     const enrichedTasks = tasks.map((task) => {
