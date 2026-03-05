@@ -190,6 +190,29 @@ describe("HTTP API - apps/server", () => {
       const data = await response!.json();
       expect(data.error).toContain("teamSlugOrId");
     });
+
+    itWhenServer("POST /api/start-task rejects invalid branchNames length", async () => {
+      const response = await safeFetch(`${SERVER_URL}/api/start-task`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer fake_token",
+        },
+        body: JSON.stringify({
+          taskId: "test_task_123",
+          taskDescription: "Test task",
+          projectFullName: "test/repo",
+          teamSlugOrId: "dev",
+          selectedAgents: ["claude/haiku-4.5", "claude/haiku-4.5"],
+          branchNames: ["only-one-branch"],
+        }),
+      });
+
+      expect(response).not.toBeNull();
+      expect(response!.status).toBe(400);
+      const data = await response!.json();
+      expect(String(data.error)).toContain("branchNames length");
+    });
   });
 
   describe("CORS", () => {

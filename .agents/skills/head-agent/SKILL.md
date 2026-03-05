@@ -93,6 +93,7 @@ AGENT_BACKEND="${HEAD_AGENT_AGENT_BACKEND:-claude/opus-4.6}"
 POLL_INTERVAL="${HEAD_AGENT_POLL_INTERVAL:-300}"  # 5 minutes default
 STATUS="${HEAD_AGENT_STATUS:-Backlog}"
 MAX_ITEMS_PER_POLL="${HEAD_AGENT_MAX_ITEMS:-5}"
+MAX_RETRIES="${HEAD_AGENT_MAX_RETRIES:-2}"
 LOG_FILE="${HEAD_AGENT_LOG_FILE:-/tmp/head-agent.log}"
 
 # Validate configuration
@@ -186,6 +187,41 @@ poll_and_dispatch() {
   done
 }
 
+retry_failed_tasks() {
+  log "Scanning for linked tasks failing quality gate (checks)..."
+
+  tasks=$(devsh task list --json 2>/dev/null || echo '{"tasks":[]}')
+
+  echo "$tasks" | jq -r '
+    .tasks[]
+    | select(.githubProjectItemId != null and .githubProjectItemId != "")
+    | select(.pullRequestUrl != null and .pullRequestUrl != "")
+    | select(.mergeStatus != "pr_merged" and .mergeStatus != "pr_closed")
+    | .id
+  ' | while read -r task_id; do
+    [[ -z "$task_id" ]] && continue
+    log "Quality gate check: task $task_id"
+
+    # Only pass --agent if not "auto" (let devsh default to previous run's agent)
+    agent_flag=""
+    if [[ "$AGENT" != "auto" ]]; then
+      agent_flag="--agent $AGENT"
+    fi
+    result=$(devsh task retry "$task_id" \
+      $agent_flag \
+      --max-retries "$MAX_RETRIES" \
+      --checks-limit 50 \
+      --json 2>/dev/null || true)
+
+    dispatched=$(echo "$result" | jq -r '.dispatched // false' 2>/dev/null || echo "false")
+    if [[ "$dispatched" == "true" ]]; then
+      log "RETRY: Dispatched retry run for task $task_id"
+      # Small delay to avoid rapid re-triggers
+      sleep 2
+    fi
+  done
+}
+
 main_loop() {
   log "Starting head agent loop"
   log "  Project ID: $PROJECT_ID"
@@ -200,9 +236,11 @@ main_loop() {
   fi
   log "  Poll Interval: ${POLL_INTERVAL}s"
   log "  Status Filter: $STATUS"
+  log "  Max Retries: $MAX_RETRIES"
 
   while true; do
     poll_and_dispatch
+    retry_failed_tasks
     log "Sleeping for ${POLL_INTERVAL}s..."
     sleep "$POLL_INTERVAL"
   done
@@ -215,6 +253,7 @@ case "${1:-loop}" in
     ;;
   once|poll-once)
     poll_and_dispatch
+    retry_failed_tasks
     ;;
   *)
     echo "Usage: $0 [loop|once]"
@@ -347,7 +386,27 @@ async function headAgentLoop(pollIntervalMs = 300000) {
 | `HEAD_AGENT_POLL_INTERVAL` | `--poll-interval` | `300` | Seconds between polls |
 | `HEAD_AGENT_STATUS` | `--status` | `Backlog` | Project status to filter by |
 | `HEAD_AGENT_MAX_ITEMS` | `--max-items` | `5` | Max items to dispatch per poll |
+| `HEAD_AGENT_MAX_RETRIES` | - | `2` | Max quality-gate retries per task |
 | `HEAD_AGENT_LOG_FILE` | `--log-file` | `/tmp/head-agent.log` | Log file path |
+
+## Retry (Quality Gate)
+
+When a dispatched task produces a PR but fails checks, the head agent can automatically
+re-dispatch a retry run with error context injected from the previous attempt.
+
+The retry uses:
+- **Crown feedback** (crownEvaluationStatus/error + crowned run reason when available)
+- **Check failures** (GitHub Actions workflows + check_run apps + deployments + legacy statuses)
+
+The retry run is started on the PR's existing branch (so it updates the same PR) and includes
+a `cmux-head-agent-retry` marker so the system can enforce retry limits.
+
+### Manual Retry
+
+```bash
+devsh task retry <task-id> --max-retries 2
+devsh task retry <task-id> --dry-run
+```
 
 ## Workflow Integration
 
@@ -390,7 +449,7 @@ When agents complete work, the status field is automatically updated:
 
 7. **Configure Auto-PR**: Enable Auto-PR in settings so completed work automatically creates pull requests.
 
-8. **Handle Failures**: If a task fails, the item won't be re-dispatched (it has a linked task). Review failed tasks manually.
+8. **Handle Failures**: Use quality-gate retries (`devsh task retry`) with a max retry limit before escalating to manual review.
 
 ## Troubleshooting
 

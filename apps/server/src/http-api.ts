@@ -23,6 +23,7 @@ import {
   generateBranchNamesFromDescription,
   generatePRInfoAndBranchNames,
 } from "./utils/branchNameGenerator";
+import { validateBranchName } from "./utils/gitUrl";
 import { getConvex } from "./utils/convexClient";
 import { serverLogger } from "./utils/fileLogger";
 import { extractTaskRunJwt } from "./utils/jwt-helper";
@@ -41,6 +42,7 @@ interface StartTaskRequest {
   // Optional fields
   repoUrl?: string;
   branch?: string;
+  branchNames?: string[];
   taskRunIds?: string[];
   selectedAgents?: string[];
   isCloudMode?: boolean;
@@ -145,6 +147,7 @@ async function handleStartTask(
     projectFullName,
     repoUrl,
     branch,
+    branchNames: branchNamesOverride,
     taskRunIds,
     selectedAgents,
     isCloudMode = true, // Default to cloud mode for CLI
@@ -181,11 +184,44 @@ async function handleStartTask(
   });
 
   try {
+    // Validate branchNames override early so we can return 400 (not 500)
+    const agentsToSpawnPreview = selectedAgents && selectedAgents.length > 0
+      ? selectedAgents
+      : ["claude/opus-4.5"];
+    // Validate whenever branchNames is present (not just when length > 0)
+    // to reject non-array truthy values like `123` or `true`
+    if (branchNamesOverride !== undefined && branchNamesOverride !== null) {
+      if (!Array.isArray(branchNamesOverride)) {
+        jsonResponse(res, 400, { error: "branchNames must be an array of strings" });
+        return;
+      }
+      if (branchNamesOverride.length > 0 && branchNamesOverride.length !== agentsToSpawnPreview.length) {
+        jsonResponse(res, 400, {
+          error: `branchNames length (${branchNamesOverride.length}) must match selectedAgents length (${agentsToSpawnPreview.length})`,
+        });
+        return;
+      }
+      for (const name of branchNamesOverride) {
+        if (typeof name !== "string") {
+          jsonResponse(res, 400, { error: "branchNames must be an array of strings" });
+          return;
+        }
+        try {
+          validateBranchName(name);
+        } catch (e) {
+          const message = e instanceof Error ? e.message : "Invalid branch name";
+          jsonResponse(res, 400, { error: message });
+          return;
+        }
+      }
+    }
+
     // Run with auth context (both token and authHeaderJson needed for www API calls)
     const results = await runWithAuth(authToken, authHeaderJson, async () => {
       // Determine which agents to spawn
       // Default to claude/opus-4.5 if no agent specified (matches CLI default)
-      const agentsToSpawn = selectedAgents || ["claude/opus-4.5"];
+      // Must align with branchNames validation which also treats empty array as "unspecified"
+      const agentsToSpawn = selectedAgents && selectedAgents.length > 0 ? selectedAgents : ["claude/opus-4.5"];
       const agentCount = agentsToSpawn.length;
 
       // Fetch workspace settings for branchPrefix (same as socket.io handler)
@@ -202,7 +238,9 @@ async function handleStartTask(
 
       // Generate branch names for agents
       let branchNames: string[] | undefined;
-      if (agentsToSpawn.length > 0) {
+      if (branchNamesOverride && branchNamesOverride.length > 0) {
+        branchNames = branchNamesOverride;
+      } else if (agentsToSpawn.length > 0) {
         branchNames = generateBranchNamesFromDescription(
           taskDescription,
           agentsToSpawn.length,

@@ -10,7 +10,7 @@ import { env } from "../_shared/convex-env";
 import { jsonResponse } from "../_shared/http-utils";
 import type { DevboxProvider } from "@cmux/shared/provider-types";
 import type { FunctionReference } from "convex/server";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 
 type SandboxProvider = DevboxProvider;
 
@@ -2169,6 +2169,388 @@ async function handleGetTask(
 }
 
 // ============================================================================
+// GET /api/v1/cmux/tasks/{id}/quality-gate - Get quality gate status + retry context
+// ============================================================================
+
+type QualityGateCheckType = "workflow" | "check" | "deployment" | "status";
+
+type QualityGateCheck = {
+  type: QualityGateCheckType;
+  name: string;
+  status?: string;
+  conclusion?: string;
+  url?: string;
+};
+
+type QualityGateStatus = "unknown" | "running" | "pass" | "fail";
+
+const HEAD_AGENT_RETRY_MARKER = "cmux-head-agent-retry";
+
+function truncateString(value: string, maxLen: number): string {
+  if (value.length <= maxLen) return value;
+  return value.slice(0, Math.max(0, maxLen - 1)) + "…";
+}
+
+function isQualityGateRunningStatus(status: string | undefined): boolean {
+  if (!status) return false;
+  const s = status.toLowerCase();
+  return s === "in_progress" || s === "queued" || s === "waiting" || s === "pending";
+}
+
+function isQualityGateFailureConclusion(conclusion: string | undefined): boolean {
+  if (!conclusion) return false;
+  const c = conclusion.toLowerCase();
+  return c === "failure" || c === "timed_out" || c === "action_required";
+}
+
+function isQualityGatePassing(check: QualityGateCheck): boolean {
+  const conclusion = check.conclusion?.toLowerCase();
+  if (conclusion === "success" || conclusion === "neutral" || conclusion === "skipped") {
+    return true;
+  }
+  // Completed runs without explicit conclusion are treated as passing
+  if (check.status?.toLowerCase() === "completed" && !check.conclusion) {
+    return true;
+  }
+  return false;
+}
+
+function parsePullRequestFromUrl(url: string): { repoFullName: string; number: number } | null {
+  const match = url.match(/^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/);
+  if (!match) return null;
+  const repoFullName = match[1];
+  const number = Number(match[2]);
+  if (!repoFullName || !Number.isFinite(number) || number <= 0) return null;
+  return { repoFullName, number };
+}
+
+async function handleGetTaskQualityGate(
+  ctx: ActionCtx,
+  taskId: string,
+  teamSlugOrId: string,
+  userId: string,
+  maxRetries: number,
+  limit: number,
+): Promise<Response> {
+  try {
+    // Validate taskId format - Convex IDs are alphanumeric without underscores
+    const isValidConvexIdFormat = /^[a-z][a-z0-9]*$/i.test(taskId);
+    if (!isValidConvexIdFormat) {
+      return jsonResponse({ code: 404, message: "Task not found" }, 404);
+    }
+
+    const teamId = await resolveTeamIdForHttp(ctx, teamSlugOrId);
+
+    if (!teamId) {
+      return jsonResponse(
+        { code: 404, message: `Team not found: ${teamSlugOrId}` },
+        404
+      );
+    }
+
+    const task = await ctx.runQuery(internal.tasks.getByIdInternal, {
+      id: taskId as Id<"tasks">,
+    });
+
+    if (!task || task.teamId !== teamId || task.userId !== userId) {
+      return jsonResponse({ code: 404, message: "Task not found" }, 404);
+    }
+
+    const runs = await ctx.runQuery(internal.taskRuns.listByTaskAndTeamInternal, {
+      taskId: task._id,
+      teamId,
+      userId,
+    }) as Doc<"taskRuns">[];
+
+    const crownedRun = runs.find((r) => r.isCrowned === true && r.isArchived !== true) ?? null;
+    const selectedRun = task.selectedTaskRunId
+      ? runs.find((r) => r._id === task.selectedTaskRunId) ?? null
+      : null;
+
+    // Fallback: pick the newest by createdAt
+    let newestRun: Doc<"taskRuns"> | null = null;
+    for (const run of runs) {
+      if (!newestRun || (run.createdAt ?? 0) > (newestRun.createdAt ?? 0)) {
+        newestRun = run;
+      }
+    }
+
+    const primaryRun = crownedRun ?? selectedRun ?? newestRun;
+
+    // Retry attempt count derived from persisted run prompts (no schema changes)
+    const retryAttemptCount = runs.filter((r) => (r.prompt ?? "").includes(HEAD_AGENT_RETRY_MARKER)).length;
+
+    const hasInFlightRun = runs.some((r) => r.status === "pending" || r.status === "running");
+
+    // Determine PR coordinates (prefer structured pullRequests array)
+    let repoFullName: string | null = null;
+    let prNumber: number | null = null;
+    let prUrl: string | undefined;
+    if (primaryRun?.pullRequests && primaryRun.pullRequests.length > 0) {
+      const pr = primaryRun.pullRequests.find((p) => p.repoFullName && typeof p.number === "number" && p.number > 0)
+        ?? primaryRun.pullRequests[0];
+      if (pr.repoFullName) repoFullName = pr.repoFullName;
+      if (typeof pr.number === "number" && pr.number > 0) prNumber = pr.number;
+      if (typeof pr.url === "string" && pr.url.trim().length > 0) prUrl = pr.url;
+    }
+    if ((!repoFullName || !prNumber) && typeof primaryRun?.pullRequestUrl === "string" && primaryRun.pullRequestUrl) {
+      const parsed = parsePullRequestFromUrl(primaryRun.pullRequestUrl);
+      if (parsed) {
+        repoFullName = repoFullName ?? parsed.repoFullName;
+        prNumber = prNumber ?? parsed.number;
+      }
+      prUrl = prUrl ?? primaryRun.pullRequestUrl;
+    }
+    if ((!repoFullName || !prNumber) && task.projectFullName && typeof primaryRun?.pullRequestNumber === "number") {
+      repoFullName = repoFullName ?? task.projectFullName;
+      prNumber = prNumber ?? primaryRun.pullRequestNumber;
+    }
+
+    const prCoordinates = repoFullName && prNumber ? { repoFullName, prNumber } : null;
+
+    let prRecord: Doc<"pullRequests"> | null = null;
+    if (prCoordinates) {
+      prRecord = await ctx.runQuery(api.github_prs.getPullRequest, {
+        teamSlugOrId,
+        repoFullName: prCoordinates.repoFullName,
+        number: prCoordinates.prNumber,
+      }) as Doc<"pullRequests"> | null;
+    }
+
+    const headSha = prRecord?.headSha;
+    const headRef = prRecord?.headRef ?? primaryRun?.newBranch;
+
+    // Fetch check / workflow status for the PR (best-effort)
+    const [workflowRuns, checkRuns, deployments, commitStatuses] = prCoordinates
+      ? await Promise.all([
+          ctx.runQuery(api.github_workflows.getWorkflowRunsForPr, {
+            teamSlugOrId,
+            repoFullName: prCoordinates.repoFullName,
+            prNumber: prCoordinates.prNumber,
+            headSha,
+            limit,
+          }) as Promise<Doc<"githubWorkflowRuns">[]>,
+          ctx.runQuery(api.github_check_runs.getCheckRunsForPr, {
+            teamSlugOrId,
+            repoFullName: prCoordinates.repoFullName,
+            prNumber: prCoordinates.prNumber,
+            headSha,
+            limit,
+          }) as Promise<Doc<"githubCheckRuns">[]>,
+          ctx.runQuery(api.github_deployments.getDeploymentsForPr, {
+            teamSlugOrId,
+            repoFullName: prCoordinates.repoFullName,
+            prNumber: prCoordinates.prNumber,
+            headSha,
+            limit,
+          }) as Promise<Doc<"githubDeployments">[]>,
+          ctx.runQuery(api.github_commit_statuses.getCommitStatusesForPr, {
+            teamSlugOrId,
+            repoFullName: prCoordinates.repoFullName,
+            prNumber: prCoordinates.prNumber,
+            headSha,
+            limit,
+          }) as Promise<Doc<"githubCommitStatuses">[]>,
+        ])
+      : [[], [], [], []];
+
+    const checks: QualityGateCheck[] = [];
+
+    for (const run of workflowRuns) {
+      checks.push({
+        type: "workflow",
+        name: run.workflowName,
+        status: run.status,
+        conclusion: run.conclusion,
+        url: run.htmlUrl,
+      });
+    }
+
+    for (const run of checkRuns) {
+      const app = run.appSlug ?? run.appName ?? undefined;
+      const name = app ? `${app}: ${run.name}` : run.name;
+      const url = run.htmlUrl || (prCoordinates
+        ? `https://github.com/${prCoordinates.repoFullName}/pull/${prCoordinates.prNumber}/checks?check_run_id=${run.checkRunId}`
+        : undefined);
+      checks.push({
+        type: "check",
+        name,
+        status: run.status,
+        conclusion: run.conclusion,
+        url,
+      });
+    }
+
+    for (const dep of deployments) {
+      // Match UI logic: ignore "Preview" environment deployments
+      if (dep.environment === "Preview") continue;
+      const mappedStatus =
+        dep.state === "pending" || dep.state === "queued" || dep.state === "in_progress"
+          ? "in_progress"
+          : "completed";
+      const mappedConclusion =
+        dep.state === "success"
+          ? "success"
+          : dep.state === "failure" || dep.state === "error"
+            ? "failure"
+            : undefined;
+      checks.push({
+        type: "deployment",
+        name: dep.description || dep.environment || "Deployment",
+        status: mappedStatus,
+        conclusion: mappedConclusion,
+        url: dep.targetUrl,
+      });
+    }
+
+    for (const status of commitStatuses) {
+      const mappedStatus = status.state === "pending" ? "in_progress" : "completed";
+      const mappedConclusion =
+        status.state === "success"
+          ? "success"
+          : status.state === "failure" || status.state === "error"
+            ? "failure"
+            : undefined;
+      checks.push({
+        type: "status",
+        name: status.context,
+        status: mappedStatus,
+        conclusion: mappedConclusion,
+        url: status.targetUrl,
+      });
+    }
+
+    const hasAnyRunning = checks.some((c) => isQualityGateRunningStatus(c.status));
+    const failures = checks.filter((c) => isQualityGateFailureConclusion(c.conclusion));
+    const hasAnyFailure = failures.length > 0;
+    const allPassed = checks.length > 0 && checks.every((c) => isQualityGatePassing(c));
+
+    let qualityGateStatus: QualityGateStatus = "unknown";
+    if (checks.length === 0) {
+      qualityGateStatus = "unknown";
+    } else if (hasAnyRunning) {
+      qualityGateStatus = "running";
+    } else if (hasAnyFailure) {
+      qualityGateStatus = "fail";
+    } else if (allPassed) {
+      qualityGateStatus = "pass";
+    }
+
+    const mergeStatus = task.mergeStatus ?? "none";
+    const isFinalizedMergeStatus = mergeStatus === "pr_merged" || mergeStatus === "pr_closed";
+
+    const retryBranch = headRef ?? null;
+    const shouldRetry =
+      task.isCompleted === true &&
+      qualityGateStatus === "fail" &&
+      !hasAnyRunning &&
+      !hasInFlightRun &&
+      !isFinalizedMergeStatus &&
+      retryAttemptCount < maxRetries &&
+      typeof retryBranch === "string" &&
+      retryBranch.trim().length > 0;
+
+    const crownReason = primaryRun?.crownReason ? truncateString(primaryRun.crownReason, 2000) : null;
+    const crownError = task.crownEvaluationError ? truncateString(task.crownEvaluationError, 1000) : null;
+
+    const contextLines: string[] = [];
+    contextLines.push("## Quality Gate Failure Context");
+    contextLines.push("");
+    contextLines.push(`Task: ${String(task._id)}`);
+    if (primaryRun) {
+      const exitCode = typeof primaryRun.exitCode === "number" ? primaryRun.exitCode : null;
+      contextLines.push(
+        `Previous run: ${String(primaryRun._id)} (agent: ${primaryRun.agentName ?? "unknown"}, status: ${primaryRun.status}${exitCode !== null ? `, exit: ${exitCode}` : ""})`,
+      );
+    }
+    if (prUrl) {
+      contextLines.push(`PR: ${prUrl}`);
+    } else if (prCoordinates) {
+      contextLines.push(`PR: https://github.com/${prCoordinates.repoFullName}/pull/${prCoordinates.prNumber}`);
+    }
+    if (retryBranch) {
+      contextLines.push(`Target branch: \`${retryBranch}\``);
+    }
+    contextLines.push("");
+    contextLines.push("### Crown feedback");
+    contextLines.push(`- crownEvaluationStatus: ${task.crownEvaluationStatus ?? "(none)"}`);
+    if (crownError) {
+      contextLines.push(`- crownEvaluationError: ${crownError}`);
+    }
+    if (crownReason) {
+      contextLines.push(`- crownedRunReason: ${crownReason}`);
+    }
+    contextLines.push("");
+    contextLines.push("### Failing checks");
+    if (failures.length === 0) {
+      contextLines.push("- (none detected)");
+    } else {
+      for (const failure of failures.slice(0, 15)) {
+        const label = `[${failure.type}] ${failure.name}`;
+        const statusSuffix = failure.conclusion ? ` (${failure.conclusion})` : "";
+        const urlSuffix = failure.url ? ` - ${failure.url}` : "";
+        contextLines.push(`- ${label}${statusSuffix}${urlSuffix}`);
+      }
+      if (failures.length > 15) {
+        contextLines.push(`- …and ${failures.length - 15} more`);
+      }
+    }
+    contextLines.push("");
+    contextLines.push("### Instructions");
+    contextLines.push("- Fix the failing checks above.");
+    contextLines.push("- Keep scope focused on making CI pass.");
+    if (retryBranch) {
+      contextLines.push(`- Push commits to branch \`${retryBranch}\` so the existing PR updates (do not create a new PR).`);
+    }
+
+    return jsonResponse({
+      ok: true,
+      taskId: task._id,
+      taskRunId: primaryRun?._id ?? null,
+      repository: task.projectFullName ?? null,
+      baseBranch: task.baseBranch ?? null,
+      mergeStatus,
+      pullRequest: prCoordinates
+        ? {
+            repoFullName: prCoordinates.repoFullName,
+            number: prCoordinates.prNumber,
+            url: prUrl ?? undefined,
+            headRef: prRecord?.headRef ?? undefined,
+            headSha: prRecord?.headSha ?? undefined,
+          }
+        : null,
+      crown: {
+        evaluationStatus: task.crownEvaluationStatus ?? null,
+        evaluationError: crownError,
+        crownedRunReason: crownReason,
+      },
+      qualityGate: {
+        status: qualityGateStatus,
+        hasAnyRunning,
+        hasAnyFailure,
+        allPassed,
+        total: checks.length,
+        failures,
+      },
+      retry: {
+        maxRetries,
+        attempted: retryAttemptCount,
+        shouldRetry,
+        retryBranch,
+        hasInFlightRun,
+        context: contextLines.join("\n"),
+      },
+    });
+  } catch (err) {
+    console.error("[cmux.tasks.quality-gate] Error:", err);
+    return jsonResponse(
+      { code: 500, message: "Failed to get task quality gate status" },
+      500
+    );
+  }
+}
+
+// ============================================================================
 // POST /api/v1/cmux/tasks/{id}/pin - Toggle pinned state
 // ============================================================================
 async function handleTogglePinTask(
@@ -2341,6 +2723,8 @@ export const taskGetRouter = httpAction(async (ctx, req) => {
   const url = new URL(req.url);
   const path = url.pathname;
   const teamSlugOrId = url.searchParams.get("teamSlugOrId");
+  const maxRetriesParam = url.searchParams.get("maxRetries");
+  const limitParam = url.searchParams.get("limit");
 
   if (!teamSlugOrId) {
     return jsonResponse(
@@ -2353,9 +2737,28 @@ export const taskGetRouter = httpAction(async (ctx, req) => {
   const pathParts = path.split("/").filter(Boolean);
   // pathParts: ["api", "v1", "cmux", "tasks", "{id}"]
   const taskId = pathParts[4];
+  const action = pathParts[5];
 
   if (!taskId) {
     return jsonResponse({ code: 400, message: "Task ID is required" }, 400);
+  }
+
+  if (action === "quality-gate") {
+    const parsedMaxRetries = maxRetriesParam ? parseInt(maxRetriesParam, 10) : undefined;
+    const maxRetries = parsedMaxRetries !== undefined && Number.isFinite(parsedMaxRetries) && parsedMaxRetries >= 0
+      ? Math.min(parsedMaxRetries, 10)
+      : 2;
+
+    const parsedLimit = limitParam ? parseInt(limitParam, 10) : undefined;
+    const limit = parsedLimit !== undefined && Number.isFinite(parsedLimit) && parsedLimit > 0
+      ? Math.min(parsedLimit, 100)
+      : 50;
+
+    return handleGetTaskQualityGate(ctx, taskId, teamSlugOrId, identity!.subject, maxRetries, limit);
+  }
+
+  if (action) {
+    return jsonResponse({ code: 404, message: "Not found" }, 404);
   }
 
   return handleGetTask(ctx, taskId, teamSlugOrId, identity!.subject);
