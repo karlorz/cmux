@@ -188,12 +188,14 @@ async function handleStartTask(
     const agentsToSpawnPreview = selectedAgents && selectedAgents.length > 0
       ? selectedAgents
       : ["claude/opus-4.5"];
-    if (branchNamesOverride && branchNamesOverride.length > 0) {
+    // Validate whenever branchNames is present (not just when length > 0)
+    // to reject non-array truthy values like `123` or `true`
+    if (branchNamesOverride !== undefined && branchNamesOverride !== null) {
       if (!Array.isArray(branchNamesOverride)) {
         jsonResponse(res, 400, { error: "branchNames must be an array of strings" });
         return;
       }
-      if (branchNamesOverride.length !== agentsToSpawnPreview.length) {
+      if (branchNamesOverride.length > 0 && branchNamesOverride.length !== agentsToSpawnPreview.length) {
         jsonResponse(res, 400, {
           error: `branchNames length (${branchNamesOverride.length}) must match selectedAgents length (${agentsToSpawnPreview.length})`,
         });
