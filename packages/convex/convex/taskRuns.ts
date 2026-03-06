@@ -303,6 +303,9 @@ async function updateTaskStatusFromRuns(
 /**
  * D4.3: Update parent run summary when a child run completes.
  * Aggregates child statuses and PRs into parent's summary.
+ *
+ * Also schedules result aggregation to notify the parent agent's sandbox
+ * via MAILBOX.json so the parent can react to child completion.
  */
 async function updateParentRunOnChildComplete(
   ctx: MutationCtx,
@@ -385,6 +388,34 @@ async function updateParentRunOnChildComplete(
   }
 
   await ctx.db.patch(childRun.parentRunId, updates);
+
+  // Schedule result aggregation to notify parent agent's sandbox via MAILBOX.json
+  // This allows the parent agent to react to child completion in real-time
+  if (parentRun.vscode?.status === "running" && parentRun.vscode?.containerName) {
+    await ctx.scheduler.runAfter(
+      0,
+      internal.resultAggregation.notifyParentOnChildComplete,
+      {
+        parentRunId: childRun.parentRunId,
+        childRunId: childRun._id,
+        childAgentName: childRun.agentName,
+        childStatus: childRun.status,
+        childSummary: childRun.summary,
+        childPullRequestUrl: childRun.pullRequestUrl,
+        childExitCode: childRun.exitCode,
+        statusCounts: {
+          pending: statusCounts.pending,
+          running: statusCounts.running,
+          completed: statusCounts.completed,
+          failed: statusCounts.failed,
+          skipped: statusCounts.skipped,
+        },
+        totalChildren: total,
+        parentProvider: parentRun.vscode.provider,
+        parentContainerName: parentRun.vscode.containerName,
+      }
+    );
+  }
 }
 
 async function fetchTaskRunsForTask(
@@ -587,6 +618,13 @@ export const create = authMutation({
       const environment = await ctx.db.get(args.environmentId);
       if (!environment || environment.teamId !== teamId) {
         throw new Error("Environment not found");
+      }
+    }
+    // Validate parent run if specified (must belong to same team AND user)
+    if (args.parentRunId) {
+      const parentRun = await ctx.db.get(args.parentRunId);
+      if (!parentRun || parentRun.teamId !== teamId || parentRun.userId !== userId) {
+        throw new Error("Parent task run not found or unauthorized");
       }
     }
     const taskRunId = await ctx.db.insert("taskRuns", {

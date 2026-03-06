@@ -8,6 +8,7 @@ import { AMP_AGENT_CONFIGS } from "./providers/amp/configs";
 import { CLAUDE_AGENT_CONFIGS } from "./providers/anthropic/configs";
 import { CURSOR_AGENT_CONFIGS } from "./providers/cursor/configs";
 import { GEMINI_AGENT_CONFIGS } from "./providers/gemini/configs";
+import { GROK_AGENT_CONFIGS } from "./providers/grok/configs";
 import { CODEX_AGENT_CONFIGS } from "./providers/openai/configs";
 import { OPENCODE_AGENT_CONFIGS } from "./providers/opencode/configs";
 import { QWEN_AGENT_CONFIGS } from "./providers/qwen/configs";
@@ -68,6 +69,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
   ...OPENCODE_AGENT_CONFIGS,
   ...GEMINI_AGENT_CONFIGS,
   ...QWEN_AGENT_CONFIGS,
+  ...GROK_AGENT_CONFIGS,
   ...CURSOR_AGENT_CONFIGS,
 ];
 

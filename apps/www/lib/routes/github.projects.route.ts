@@ -218,6 +218,7 @@ async function getProjectItemsViaGhCli(
     title: string;
     status: string | null;
     url: string | null;
+    labels: string[];
     fieldValues: Record<string, string | number | null>;
   }>;
   hasNextPage: boolean;
@@ -225,7 +226,7 @@ async function getProjectItemsViaGhCli(
 }> {
   if (!isGhCliFallbackEnabled()) return { items: [], hasNextPage: false, endCursor: null };
 
-  const query = `query($projectId:ID!,$first:Int!,$after:String){node(id:$projectId){... on ProjectV2{items(first:$first,after:$after){nodes{id content{... on Issue{id title number state url} ... on PullRequest{id title number state url} ... on DraftIssue{id title body}} fieldValues(first:20){nodes{... on ProjectV2ItemFieldTextValue{text field{... on ProjectV2Field{name}}} ... on ProjectV2ItemFieldNumberValue{number field{... on ProjectV2Field{name}}} ... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2Field{name}}} ... on ProjectV2ItemFieldSingleSelectValue{name field{... on ProjectV2SingleSelectField{name}}} ... on ProjectV2ItemFieldIterationValue{title field{... on ProjectV2IterationField{name}}}}}} pageInfo{hasNextPage endCursor}}}}}`;
+  const query = `query($projectId:ID!,$first:Int!,$after:String){node(id:$projectId){... on ProjectV2{items(first:$first,after:$after){nodes{id content{... on Issue{id title number state url labels(first:20){nodes{name}}} ... on PullRequest{id title number state url labels(first:20){nodes{name}}} ... on DraftIssue{id title body}} fieldValues(first:20){nodes{... on ProjectV2ItemFieldTextValue{text field{... on ProjectV2Field{name}}} ... on ProjectV2ItemFieldNumberValue{number field{... on ProjectV2Field{name}}} ... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2Field{name}}} ... on ProjectV2ItemFieldSingleSelectValue{name field{... on ProjectV2SingleSelectField{name}}} ... on ProjectV2ItemFieldIterationValue{title field{... on ProjectV2IterationField{name}}}}}} pageInfo{hasNextPage endCursor}}}}}`;
 
   try {
     const data = await runGhGraphql(query, { projectId, first, after });
@@ -270,12 +271,23 @@ async function getProjectItemsViaGhCli(
           else if (typeof fv.title === "string") fieldValues[fieldName] = fv.title;
         }
 
+        const labelsObj = content?.labels as
+          | { nodes?: Array<Record<string, unknown> | null> }
+          | undefined;
+        const labels = Array.isArray(labelsObj?.nodes)
+          ? labelsObj.nodes
+              .filter((label): label is Record<string, unknown> => Boolean(label))
+              .map((label) => String(label.name ?? "").trim())
+              .filter((label) => label.length > 0)
+          : [];
+
         return {
           id: String(n.id ?? ""),
           contentType,
           title: content ? String((content.title as string) ?? "") : "",
           status: typeof fieldValues.Status === "string" ? fieldValues.Status : null,
           url: content && typeof content.url === "string" ? content.url : null,
+          labels,
           fieldValues,
         };
       })
@@ -451,6 +463,7 @@ const ProjectItemContentSchema = z
     state: z.string().optional(),
     url: z.string().optional(),
     body: z.string().optional(),
+    labels: z.array(z.string()).optional(),
   })
   .nullable()
   .openapi("ProjectItemContent");
@@ -474,6 +487,8 @@ const ProjectItemsQuery = z
     projectId: z.string().min(1).openapi({ description: "GitHub Project node ID" }),
     first: z.coerce.number().optional().default(50).openapi({ description: "Number of items to fetch" }),
     after: z.string().optional().openapi({ description: "Pagination cursor" }),
+    status: z.string().optional().openapi({ description: "Filter by Status field value (e.g., 'Backlog', 'In Progress')" }),
+    noLinkedTask: z.coerce.boolean().optional().openapi({ description: "Only return items without a linked task" }),
   })
   .openapi("ProjectItemsQuery");
 
@@ -817,7 +832,7 @@ githubProjectsRouter.openapi(
     const accessToken = await getAccessTokenFromRequest(c.req.raw);
     if (!accessToken) return c.text("Unauthorized", 401);
 
-    const { team, installationId, projectId, first, after } = c.req.valid("query");
+    const { team, installationId, projectId, first, after, status, noLinkedTask } = c.req.valid("query");
 
     // Verify team membership
     const convex = getConvex({ accessToken });
@@ -833,6 +848,34 @@ githubProjectsRouter.openapi(
       return c.json({ items: [], pageInfo: { hasNextPage: false, endCursor: null } });
     }
 
+    // Helper to filter items by status and linked task
+    const filterItems = async <T extends { id: string; fieldValues: Record<string, unknown> }>(
+      items: T[],
+    ): Promise<T[]> => {
+      let filtered = items;
+
+      // Filter by status if specified
+      if (status) {
+        filtered = filtered.filter((item) => {
+          const itemStatus = item.fieldValues?.Status;
+          return typeof itemStatus === "string" && itemStatus === status;
+        });
+      }
+
+      // Filter out items with linked tasks if requested
+      if (noLinkedTask && filtered.length > 0) {
+        const itemIds = filtered.map((item) => item.id);
+        const linkedTaskResults = await Promise.all(
+          itemIds.map((itemId) =>
+            convex.query(api.tasks.hasLinkedTask, { githubProjectItemId: itemId }),
+          ),
+        );
+        filtered = filtered.filter((_, index) => !linkedTaskResults[index]);
+      }
+
+      return filtered;
+    };
+
     try {
       const userOAuthToken =
         target.accountType === "User"
@@ -845,16 +888,19 @@ githubProjectsRouter.openapi(
         const fallback = await getProjectItemsViaGhCli(projectId, first, after);
         if (fallback.items.length > 0) {
           // Transform CLI fallback items to match ProjectV2Item shape
-          return c.json({
-            items: fallback.items.map((item) => ({
+          const transformedItems = fallback.items.map((item) => ({
+            id: item.id,
+            content: {
               id: item.id,
-              content: {
-                id: item.id,
-                title: item.title,
-                url: item.url ?? undefined,
-              },
-              fieldValues: item.fieldValues,
-            })),
+              title: item.title,
+              url: item.url ?? undefined,
+              ...(item.labels.length > 0 ? { labels: item.labels } : {}),
+            },
+            fieldValues: item.fieldValues,
+          }));
+          const filteredItems = await filterItems(transformedItems);
+          return c.json({
+            items: filteredItems,
             pageInfo: {
               hasNextPage: fallback.hasNextPage,
               endCursor: fallback.endCursor,
@@ -869,7 +915,11 @@ githubProjectsRouter.openapi(
         after,
         userOAuthToken,
       });
-      return c.json(result);
+      const filteredItems = await filterItems(result.items);
+      return c.json({
+        items: filteredItems,
+        pageInfo: result.pageInfo,
+      });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       if (target.accountType === "User") {
@@ -878,16 +928,19 @@ githubProjectsRouter.openapi(
           console.warn(
             `[github.projects] Primary project-items API failed for ${projectId}, served via gh CLI fallback`,
           );
-          return c.json({
-            items: fallback.items.map((item) => ({
+          const transformedItems = fallback.items.map((item) => ({
+            id: item.id,
+            content: {
               id: item.id,
-              content: {
-                id: item.id,
-                title: item.title,
-                url: item.url ?? undefined,
-              },
-              fieldValues: item.fieldValues,
-            })),
+              title: item.title,
+              url: item.url ?? undefined,
+              ...(item.labels.length > 0 ? { labels: item.labels } : {}),
+            },
+            fieldValues: item.fieldValues,
+          }));
+          const filteredItems = await filterItems(transformedItems);
+          return c.json({
+            items: filteredItems,
             pageInfo: {
               hasNextPage: fallback.hasNextPage,
               endCursor: fallback.endCursor,
@@ -1156,3 +1209,134 @@ githubProjectsRouter.openapi(
 
 // Export status mapping for use in sync logic
 export { mapCmuxStatusToProjectStatus };
+
+// Schema for plan-sync endpoint (called from Claude Code plan hook)
+const PlanSyncBody = z.object({
+  planContent: z.string().min(1).max(100000),
+  planFile: z.string().optional(),
+});
+
+const PlanSyncResponse = z.object({
+  success: z.boolean(),
+  itemsCreated: z.number(),
+  projectId: z.string().nullable(),
+  error: z.string().optional(),
+});
+
+/**
+ * Simple plan markdown parser - extracts ## headings as items
+ * Similar to apps/client/src/lib/parse-plan-markdown.ts
+ */
+function parsePlanMarkdown(markdown: string): Array<{ title: string; body: string }> {
+  const normalized = markdown.replace(/\r\n?/g, "\n");
+  if (normalized.trim().length === 0) return [];
+
+  const lines = normalized.split("\n");
+  const items: Array<{ title: string; body: string }> = [];
+  let currentTitle: string | null = null;
+  let currentBodyLines: string[] = [];
+
+  for (const line of lines) {
+    // Check for ## heading
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith("## ") && !trimmed.startsWith("### ")) {
+      // Save previous item
+      if (currentTitle !== null) {
+        items.push({
+          title: currentTitle,
+          body: currentBodyLines.join("\n").trim(),
+        });
+      }
+      currentTitle = trimmed.slice(3).trim();
+      currentBodyLines = [];
+      continue;
+    }
+
+    if (currentTitle !== null) {
+      currentBodyLines.push(line);
+    }
+  }
+
+  // Save last item
+  if (currentTitle !== null) {
+    items.push({
+      title: currentTitle,
+      body: currentBodyLines.join("\n").trim(),
+    });
+  }
+
+  return items;
+}
+
+// POST /integrations/github/projects/plan-sync - Sync plan from Claude Code hook
+// Called by the plan-hook.sh script when ExitPlanMode is used
+githubProjectsRouter.openapi(
+  createRoute({
+    method: "post" as const,
+    path: "/integrations/github/projects/plan-sync",
+    tags: ["Integrations"],
+    summary: "Sync a plan from Claude Code to GitHub Projects",
+    description:
+      "Called by the Claude Code plan hook when ExitPlanMode is used. " +
+      "Parses the plan markdown and creates draft issues in the linked project.",
+    request: {
+      body: {
+        content: { "application/json": { schema: PlanSyncBody } },
+        required: true,
+      },
+    },
+    responses: {
+      200: {
+        description: "OK",
+        content: { "application/json": { schema: PlanSyncResponse } },
+      },
+      401: { description: "Unauthorized" },
+    },
+  }),
+  async (c) => {
+    // This endpoint uses task run JWT auth (from x-cmux-token header)
+    const cmuxToken = c.req.header("x-cmux-token");
+    if (!cmuxToken) {
+      return c.json({
+        success: false,
+        itemsCreated: 0,
+        projectId: null,
+        error: "Missing x-cmux-token header",
+      });
+    }
+
+    const { planContent, planFile } = c.req.valid("json");
+
+    // Parse plan into items
+    const items = parsePlanMarkdown(planContent);
+    if (items.length === 0) {
+      return c.json({
+        success: true,
+        itemsCreated: 0,
+        projectId: null,
+        error: "No items found in plan",
+      });
+    }
+
+    // TODO: Get linked project from task run context
+    // For now, we just log and return success without creating items
+    // Full implementation would:
+    // 1. Decode JWT to get taskRunId
+    // 2. Query Convex for taskRun -> session -> team -> linked project
+    // 3. Create draft issues in the project
+    console.log(
+      `[github.projects] Plan sync received: ${items.length} items from ${planFile || "unknown"}`,
+    );
+    console.log(
+      `[github.projects] Items:`,
+      items.map((i) => i.title),
+    );
+
+    return c.json({
+      success: true,
+      itemsCreated: 0, // Would be items.length after full implementation
+      projectId: null,
+      error: "Plan sync endpoint ready - full implementation pending project linking",
+    });
+  },
+);

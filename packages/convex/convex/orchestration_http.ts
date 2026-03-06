@@ -160,6 +160,7 @@ const CreateOrchestrationTaskSchema = z.object({
   taskRunId: z.string().min(1),
   priority: z.number().optional(),
   dependencies: z.array(z.string()).optional(),
+  orchestrationId: z.string().optional(),
 });
 
 type CreateOrchestrationTaskInput = z.infer<
@@ -237,6 +238,9 @@ export const createOrchestrationTask = httpAction(async (ctx, req) => {
         dependencies: payload.dependencies?.map(
           (id) => id as Id<"orchestrationTasks">
         ),
+        metadata: payload.orchestrationId
+          ? { orchestrationId: payload.orchestrationId }
+          : undefined,
       }
     );
 
@@ -674,8 +678,10 @@ export const getOrchestrationResults = httpAction(async (ctx, req) => {
       status = "completed";
     } else if (completedTasks === totalTasks) {
       status = "completed";
-    } else if (failedTasks > 0 && completedTasks + failedTasks === totalTasks) {
+    } else if (failedTasks === totalTasks) {
       status = "failed";
+    } else if (completedTasks + failedTasks === totalTasks) {
+      status = "partial"; // All terminal but mixed completed/failed
     } else if (completedTasks > 0 || failedTasks > 0) {
       status = "partial";
     } else {

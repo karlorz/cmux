@@ -68,7 +68,10 @@ Examples:
 		}
 
 		if flagJSON {
-			data, _ := json.MarshalIndent(result, "", "  ")
+			data, err := json.MarshalIndent(result, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal result to JSON: %w", err)
+			}
 			fmt.Println(string(data))
 			return nil
 		}
@@ -83,7 +86,12 @@ Examples:
 		fmt.Println()
 
 		if len(result.Results) == 0 {
-			fmt.Println("No tasks found.")
+			fmt.Println("No tasks found for this orchestration.")
+			if result.Status == "completed" {
+				fmt.Println("\nNote: If you expected tasks, the orchestrationId may not have been")
+				fmt.Println("properly linked during task creation. Ensure the spawn command")
+				fmt.Println("passes --orchestration-id or that the MCP spawn_agent tool includes it.")
+			}
 			return nil
 		}
 

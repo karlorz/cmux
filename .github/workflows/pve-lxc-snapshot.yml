@@ -79,6 +79,7 @@ jobs:
             echo "Attempt $attempt of $max_attempts"
             if uv run ./scripts/snapshot-pvelxc.py \
               --template-vmid "$TEMPLATE_VMID" \
+              --results-json "logs/pve-lxc-snapshot/results.json" \
               --standard-vcpus "$STANDARD_VCPUS" \
               --standard-memory "$STANDARD_MEMORY" \
               --standard-disk-size "$STANDARD_DISK_SIZE" \
@@ -98,6 +99,30 @@ jobs:
           done
           echo "All $max_attempts attempts failed"
           exit 1
+
+      - name: Build devsh (for runtime validation)
+        run: |
+          make install-devsh-dev
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Runtime smoke test (new snapshots)
+        env:
+          PVE_API_URL: ${{ secrets.PVE_API_URL }}
+          PVE_API_TOKEN: ${{ secrets.PVE_API_TOKEN }}
+          PVE_PUBLIC_DOMAIN: ${{ secrets.PVE_PUBLIC_DOMAIN }}
+          PVE_NODE: ${{ secrets.PVE_NODE }}
+        run: |
+          ./scripts/pve/pve-lxc-snapshot-runtime-smoke.sh logs/pve-lxc-snapshot/results.json
+
+      - name: Upload diagnostics (networkd)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pve-lxc-networkd-diag
+          path: |
+            logs/pve-lxc-snapshot/results.json
+            logs/pve-lxc-networkd/*.txt
+          if-no-files-found: warn
 
       - name: Check for changes
         id: changes

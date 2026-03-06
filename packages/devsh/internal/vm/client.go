@@ -729,21 +729,22 @@ func (c *Client) SwitchTeam(ctx context.Context, teamSlugOrId string) (*SwitchTe
 
 // Task represents a task from the web app
 type Task struct {
-	ID             string `json:"id"`
-	Prompt         string `json:"prompt"`
-	Repository     string `json:"repository"`
-	BaseBranch     string `json:"baseBranch"`
-	Status         string `json:"status"`
-	Agent          string `json:"agent"`
-	VSCodeURL      string `json:"vscodeUrl"`
-	IsCompleted    bool   `json:"isCompleted"`
-	IsArchived     bool   `json:"isArchived"`
-	CreatedAt      int64  `json:"createdAt"`
-	UpdatedAt      int64  `json:"updatedAt"`
-	TaskRunID      string `json:"taskRunId"`
-	ExitCode       *int   `json:"exitCode,omitempty"`
-	PullRequestURL string `json:"pullRequestUrl,omitempty"`
-	MergeStatus    string `json:"mergeStatus,omitempty"`
+	ID                  string `json:"id"`
+	Prompt              string `json:"prompt"`
+	Repository          string `json:"repository"`
+	BaseBranch          string `json:"baseBranch"`
+	Status              string `json:"status"`
+	Agent               string `json:"agent"`
+	VSCodeURL           string `json:"vscodeUrl"`
+	IsCompleted         bool   `json:"isCompleted"`
+	IsArchived          bool   `json:"isArchived"`
+	CreatedAt           int64  `json:"createdAt"`
+	UpdatedAt           int64  `json:"updatedAt"`
+	TaskRunID           string `json:"taskRunId"`
+	ExitCode            *int   `json:"exitCode,omitempty"`
+	PullRequestURL      string `json:"pullRequestUrl,omitempty"`
+	MergeStatus         string `json:"mergeStatus,omitempty"`
+	GithubProjectItemId string `json:"githubProjectItemId,omitempty"`
 }
 
 // TaskRun represents a run within a task
@@ -1280,12 +1281,13 @@ func (c *Client) GetProjectFields(ctx context.Context, opts GetProjectFieldsOpti
 
 // ProjectItemContent represents the content of a project item (issue, PR, or draft).
 type ProjectItemContent struct {
-	ID     string  `json:"id"`
-	Title  string  `json:"title"`
-	Number *int    `json:"number,omitempty"`
-	State  *string `json:"state,omitempty"`
-	URL    *string `json:"url,omitempty"`
-	Body   *string `json:"body,omitempty"`
+	ID     string   `json:"id"`
+	Title  string   `json:"title"`
+	Number *int     `json:"number,omitempty"`
+	State  *string  `json:"state,omitempty"`
+	URL    *string  `json:"url,omitempty"`
+	Body   *string  `json:"body,omitempty"`
+	Labels []string `json:"labels,omitempty"`
 }
 
 // ProjectItemFieldValues is a map of field name to value.
@@ -1293,8 +1295,8 @@ type ProjectItemFieldValues map[string]interface{}
 
 // ProjectItem represents an item in a GitHub Project.
 type ProjectItem struct {
-	ID          string                `json:"id"`
-	Content     *ProjectItemContent   `json:"content"`
+	ID          string                 `json:"id"`
+	Content     *ProjectItemContent    `json:"content"`
 	FieldValues ProjectItemFieldValues `json:"fieldValues"`
 }
 
@@ -1304,6 +1306,8 @@ type GetProjectItemsOptions struct {
 	InstallationID int
 	First          int
 	After          string
+	Status         string // Filter by Status field value (e.g., "Backlog", "In Progress")
+	NoLinkedTask   bool   // Only return items without a linked task
 }
 
 // GetProjectItemsResult contains project items with pagination info.
@@ -1339,6 +1343,12 @@ func (c *Client) GetProjectItems(ctx context.Context, opts GetProjectItemsOption
 	query.Set("first", fmt.Sprintf("%d", first))
 	if after := strings.TrimSpace(opts.After); after != "" {
 		query.Set("after", after)
+	}
+	if status := strings.TrimSpace(opts.Status); status != "" {
+		query.Set("status", status)
+	}
+	if opts.NoLinkedTask {
+		query.Set("noLinkedTask", "true")
 	}
 
 	path := "/api/integrations/github/projects/items?" + query.Encode()
@@ -1595,12 +1605,15 @@ type StartTaskAgentsOptions struct {
 	ProjectFullName string
 	RepoURL         string
 	Branch          string
-	TaskRunIDs      []string
-	SelectedAgents  []string
-	IsCloudMode     bool
-	EnvironmentID   string
-	Theme           string
-	PRTitle         string
+	// Optional branch name overrides (one per agent).
+	// When provided, apps/server will use these branch names instead of generating new ones.
+	BranchNames    []string
+	TaskRunIDs     []string
+	SelectedAgents []string
+	IsCloudMode    bool
+	EnvironmentID  string
+	Theme          string
+	PRTitle        string
 	// Autopilot mode (Phase 6)
 	Autopilot            bool
 	AutopilotMinutes     int
@@ -1701,6 +1714,9 @@ func (c *Client) StartTaskAgents(ctx context.Context, opts StartTaskAgentsOption
 	if opts.Branch != "" {
 		body["branch"] = opts.Branch
 	}
+	if len(opts.BranchNames) > 0 {
+		body["branchNames"] = opts.BranchNames
+	}
 	if len(opts.TaskRunIDs) > 0 {
 		body["taskRunIds"] = opts.TaskRunIDs
 	}
@@ -1739,6 +1755,96 @@ func (c *Client) StartTaskAgents(ctx context.Context, opts StartTaskAgentsOption
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
+	return &result, nil
+}
+
+// TaskQualityGateCheck describes a single workflow/check/deployment/status entry.
+type TaskQualityGateCheck struct {
+	Type       string `json:"type"`
+	Name       string `json:"name"`
+	Status     string `json:"status,omitempty"`
+	Conclusion string `json:"conclusion,omitempty"`
+	URL        string `json:"url,omitempty"`
+}
+
+type TaskQualityGateInfo struct {
+	Status        string                 `json:"status"`
+	HasAnyRunning bool                   `json:"hasAnyRunning"`
+	HasAnyFailure bool                   `json:"hasAnyFailure"`
+	AllPassed     bool                   `json:"allPassed"`
+	Total         int                    `json:"total"`
+	Failures      []TaskQualityGateCheck `json:"failures"`
+}
+
+type TaskQualityGatePullRequest struct {
+	RepoFullName string `json:"repoFullName"`
+	Number       int    `json:"number"`
+	URL          string `json:"url,omitempty"`
+	HeadRef      string `json:"headRef,omitempty"`
+	HeadSha      string `json:"headSha,omitempty"`
+}
+
+type TaskQualityGateCrown struct {
+	EvaluationStatus *string `json:"evaluationStatus"`
+	EvaluationError  *string `json:"evaluationError"`
+	CrownedRunReason *string `json:"crownedRunReason"`
+}
+
+type TaskQualityGateRetry struct {
+	MaxRetries     int     `json:"maxRetries"`
+	Attempted      int     `json:"attempted"`
+	ShouldRetry    bool    `json:"shouldRetry"`
+	RetryBranch    *string `json:"retryBranch"`
+	HasInFlightRun bool    `json:"hasInFlightRun"`
+	Context        string  `json:"context"`
+}
+
+type TaskQualityGateResponse struct {
+	Ok          bool                        `json:"ok"`
+	TaskID      string                      `json:"taskId"`
+	TaskRunID   *string                     `json:"taskRunId"`
+	Repository  *string                     `json:"repository"`
+	BaseBranch  *string                     `json:"baseBranch"`
+	MergeStatus string                      `json:"mergeStatus,omitempty"`
+	PullRequest *TaskQualityGatePullRequest `json:"pullRequest"`
+	Crown       TaskQualityGateCrown        `json:"crown"`
+	QualityGate TaskQualityGateInfo         `json:"qualityGate"`
+	Retry       TaskQualityGateRetry        `json:"retry"`
+}
+
+// GetTaskQualityGate fetches quality gate status and retry context for a task.
+func (c *Client) GetTaskQualityGate(ctx context.Context, taskID string, maxRetries int, limit int) (*TaskQualityGateResponse, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+	if maxRetries < 0 {
+		maxRetries = 0
+	}
+	if maxRetries > 10 {
+		maxRetries = 10
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	path := fmt.Sprintf("/api/v1/cmux/tasks/%s/quality-gate?teamSlugOrId=%s&maxRetries=%d&limit=%d", taskID, c.teamSlug, maxRetries, limit)
+	resp, err := c.doRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result TaskQualityGateResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
 	return &result, nil
 }
 
@@ -2386,6 +2492,51 @@ type AutopilotInfo struct {
 		URL    string `json:"url,omitempty"`
 		Status string `json:"status,omitempty"`
 	} `json:"vscode,omitempty"`
+}
+
+// DispatchProjectOptions configures project dispatch.
+type DispatchProjectOptions struct {
+	ProjectID string // Convex project document ID
+}
+
+// DispatchProjectResult contains the dispatch result.
+type DispatchProjectResult struct {
+	Dispatched int `json:"dispatched"`
+}
+
+// DispatchProject calls POST /api/projects/:projectId/dispatch.
+// This dispatches a project plan, creating orchestration tasks for each plan task.
+func (c *Client) DispatchProject(ctx context.Context, opts DispatchProjectOptions) (*DispatchProjectResult, error) {
+	if c.teamSlug == "" {
+		return nil, fmt.Errorf("team slug not set")
+	}
+	if opts.ProjectID == "" {
+		return nil, fmt.Errorf("project ID is required")
+	}
+
+	path := fmt.Sprintf("/api/projects/%s/dispatch", opts.ProjectID)
+	resp, err := c.doWwwRequest(ctx, "POST", path, map[string]interface{}{})
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("project not found")
+	}
+	if resp.StatusCode == http.StatusUnprocessableEntity {
+		return nil, fmt.Errorf("no plan tasks to dispatch")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("dispatch failed (%d): %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	var result DispatchProjectResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
 }
 
 // GetAutopilotInfo gets autopilot session info for a task run using JWT authentication

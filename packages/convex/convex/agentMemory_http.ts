@@ -11,7 +11,7 @@ import { typedZid } from "@cmux/shared/utils/typed-zid";
 const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 
 const MemoryFileSchema = z.object({
-  memoryType: z.enum(["knowledge", "daily", "tasks", "mailbox", "events"]),
+  memoryType: z.enum(["knowledge", "daily", "tasks", "mailbox", "events", "plan"]),
   content: z.string(),
   fileName: z.string().optional(),
   date: z
@@ -22,6 +22,7 @@ const MemoryFileSchema = z.object({
 
 const SyncMemoryRequestSchema = z.object({
   taskRunId: typedZid("taskRuns").optional(),
+  projectId: z.string().optional(), // Optional project linkage for plan sync
   files: z.array(MemoryFileSchema).max(50, "Maximum 50 files per request"),
 });
 
@@ -35,6 +36,23 @@ const memoryTypeValidator = v.union(
   v.literal("mailbox"),
   v.literal("events")
 );
+
+// Schema for parsing PLAN.json content
+const PlanTaskSchema = z.object({
+  id: z.string(),
+  prompt: z.string(),
+  agentName: z.string(),
+  status: z.string(),
+  dependsOn: z.array(z.string()).optional(),
+  priority: z.number().optional(),
+});
+
+const PlanContentSchema = z.object({
+  orchestrationId: z.string().optional(),
+  headAgent: z.string().optional(),
+  description: z.string().optional(),
+  tasks: z.array(PlanTaskSchema).optional(),
+});
 
 /**
  * Internal mutation to sync memory files from a sandbox to Convex.
@@ -231,7 +249,78 @@ export const syncMemory = httpAction(async (ctx, req) => {
     return jsonResponse({ ok: true, insertedCount: 0 });
   }
 
-  // Sync memory files
+  // Check if there's a plan file to sync to project
+  const planFile = validation.data.files.find((f) => f.memoryType === "plan");
+  if (planFile && planFile.content) {
+    try {
+      const planContent = JSON.parse(planFile.content);
+      const planValidation = PlanContentSchema.safeParse(planContent);
+
+      if (planValidation.success && planValidation.data.tasks && planValidation.data.tasks.length > 0) {
+        // Try to find linked project by orchestrationId
+        const orchestrationId = planValidation.data.orchestrationId ||
+          (taskRun.orchestrationId ? taskRun.orchestrationId : undefined);
+
+        if (orchestrationId) {
+          // Look up project by orchestrationId
+          const project = await ctx.runQuery(
+            internal.projectQueries.getProjectByOrchestrationId,
+            {
+              orchestrationId,
+              teamId: taskRun.teamId,
+            }
+          );
+
+          if (project) {
+            // Sync plan tasks to project
+            await ctx.runMutation(internal.projectQueries.updatePlanInternal, {
+              projectId: project._id,
+              tasks: planValidation.data.tasks,
+            });
+
+            console.log("[convex.agentMemory] Synced plan to project", {
+              projectId: project._id,
+              orchestrationId,
+              taskCount: planValidation.data.tasks.length,
+            });
+          }
+        }
+
+        // Also check if projectId was explicitly provided
+        const explicitProjectId = validation.data.projectId;
+        if (explicitProjectId && !orchestrationId) {
+          try {
+            await ctx.runMutation(internal.projectQueries.updatePlanInternal, {
+              projectId: explicitProjectId as Id<"projects">,
+              tasks: planValidation.data.tasks,
+            });
+
+            console.log("[convex.agentMemory] Synced plan to explicit project", {
+              projectId: explicitProjectId,
+              taskCount: planValidation.data.tasks.length,
+            });
+          } catch (error) {
+            console.warn("[convex.agentMemory] Failed to sync to explicit project:", error);
+            // Don't fail the whole sync, just log the warning
+          }
+        }
+      }
+    } catch (error) {
+      console.warn("[convex.agentMemory] Failed to parse plan content:", error);
+      // Don't fail the whole sync, just log the warning
+    }
+  }
+
+  // Sync memory files (filter out plan type as it's stored separately)
+  const nonPlanFiles = validation.data.files
+    .filter((f) => f.memoryType !== "plan")
+    .map((f) => ({
+      memoryType: f.memoryType as "knowledge" | "daily" | "tasks" | "mailbox" | "events",
+      content: f.content,
+      fileName: f.fileName,
+      date: f.date,
+    }));
+
   const result = await ctx.runMutation(
     internal.agentMemory_http.syncMemoryFiles,
     {
@@ -239,7 +328,7 @@ export const syncMemory = httpAction(async (ctx, req) => {
       teamId: taskRun.teamId,
       userId: taskRun.userId,
       agentName: taskRun.agentName,
-      files: validation.data.files,
+      files: nonPlanFiles,
     }
   );
 

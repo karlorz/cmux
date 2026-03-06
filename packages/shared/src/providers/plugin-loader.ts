@@ -26,6 +26,7 @@ const BUILTIN_PLUGINS = [
   "amp",
   "cursor",
   "qwen",
+  "grok",
 ] as const;
 
 export type BuiltinPluginId = (typeof BUILTIN_PLUGINS)[number];
@@ -153,7 +154,7 @@ export class PluginLoader {
 
   /**
    * Get aggregated agent configs from all loaded plugins.
-   * Maintains order: anthropic, openai, amp, opencode, gemini, qwen, cursor
+   * Maintains order: anthropic, openai, amp, opencode, gemini, qwen, grok, cursor
    */
   getAllConfigs(): AgentConfig[] {
     const configs: AgentConfig[] = [];
@@ -165,6 +166,7 @@ export class PluginLoader {
       "opencode",
       "gemini",
       "qwen",
+      "grok",
       "cursor",
     ];
 
@@ -198,6 +200,7 @@ export class PluginLoader {
       "opencode",
       "gemini",
       "qwen",
+      "grok",
       "cursor",
     ];
 

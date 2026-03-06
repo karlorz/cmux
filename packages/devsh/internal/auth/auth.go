@@ -313,13 +313,21 @@ func getConfigDir() (string, error) {
 	return filepath.Join(home, ".config", ConfigDirName), nil
 }
 
-// getCredentialsPath returns the path to the credentials file
+// getCredentialsPath returns the path to the credentials file.
+// Uses separate files for dev and prod to prevent credential mixing.
 func getCredentialsPath() (string, error) {
 	configDir, err := getConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(configDir, "credentials.json"), nil
+
+	cfg := GetConfig()
+	filename := "credentials_prod.json"
+	if cfg.IsDev {
+		filename = "credentials_dev.json"
+	}
+
+	return filepath.Join(configDir, filename), nil
 }
 
 // getAccessTokenCachePath returns the path to the access token cache file
@@ -344,6 +352,26 @@ type Credentials struct {
 	MorphAPIKey       string `json:"morph_api_key,omitempty"`
 }
 
+// ValidateRefreshTokenFormat performs basic validation on refresh tokens.
+// Stack Auth refresh tokens are opaque strings, not JWTs, so we just check:
+// - Non-empty
+// - Reasonable length (at least 20 chars for any real token)
+// - No obvious placeholder values
+func ValidateRefreshTokenFormat(token string) error {
+	if len(token) < 20 {
+		return fmt.Errorf("token too short: expected at least 20 characters, got %d", len(token))
+	}
+	// Check for common placeholder values
+	placeholders := []string{"xxx", "your-token-here", "REPLACE_ME", "placeholder", "TODO"}
+	tokenLower := strings.ToLower(token)
+	for _, ph := range placeholders {
+		if strings.Contains(tokenLower, ph) {
+			return fmt.Errorf("token appears to be a placeholder value")
+		}
+	}
+	return nil
+}
+
 // StoreRefreshToken stores the Stack Auth refresh token
 func StoreRefreshToken(token string) error {
 	if runtime.GOOS == "darwin" {
@@ -353,18 +381,46 @@ func StoreRefreshToken(token string) error {
 }
 
 // GetRefreshToken retrieves the Stack Auth refresh token.
-// In dev mode, it first checks for DEVSH_REFRESH_TOKEN environment variable
-// to allow bypassing the browser-based auth flow.
+// Priority order:
+// 1. Mode-specific env var (DEVSH_DEV_REFRESH_TOKEN or DEVSH_PROD_REFRESH_TOKEN)
+// 2. Generic env var (DEVSH_REFRESH_TOKEN, DEVBOX_REFRESH_TOKEN)
+// 3. File-based credentials (credentials_dev.json or credentials_prod.json)
 func GetRefreshToken() (string, error) {
-	// Dev mode bypass: check environment variable first
-	// Support both new (DEVSH_) and legacy (DEVBOX_) env var names
-	if devToken := os.Getenv("DEVSH_REFRESH_TOKEN"); devToken != "" {
-		return devToken, nil
+	cfg := GetConfig()
+
+	// 1. Check mode-specific env var first (preferred for CI)
+	modeEnvVar := "DEVSH_PROD_REFRESH_TOKEN"
+	if cfg.IsDev {
+		modeEnvVar = "DEVSH_DEV_REFRESH_TOKEN"
 	}
-	if devToken := os.Getenv("DEVBOX_REFRESH_TOKEN"); devToken != "" {
-		return devToken, nil
+	if modeToken := os.Getenv(modeEnvVar); modeToken != "" {
+		if err := ValidateRefreshTokenFormat(modeToken); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: %s may be invalid: %v\n", modeEnvVar, err)
+			// Fall through to try other sources
+		} else {
+			return modeToken, nil
+		}
 	}
 
+	// 2. Check generic env vars (legacy support)
+	if devToken := os.Getenv("DEVSH_REFRESH_TOKEN"); devToken != "" {
+		if err := ValidateRefreshTokenFormat(devToken); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: DEVSH_REFRESH_TOKEN may be invalid: %v\n", err)
+			// Fall through to try stored credentials
+		} else {
+			return devToken, nil
+		}
+	}
+	if devToken := os.Getenv("DEVBOX_REFRESH_TOKEN"); devToken != "" {
+		if err := ValidateRefreshTokenFormat(devToken); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: DEVBOX_REFRESH_TOKEN may be invalid: %v\n", err)
+			// Fall through to try stored credentials
+		} else {
+			return devToken, nil
+		}
+	}
+
+	// 3. File-based credentials
 	if runtime.GOOS == "darwin" {
 		return getFromKeychain()
 	}

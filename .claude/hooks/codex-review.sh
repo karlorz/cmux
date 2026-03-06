@@ -118,6 +118,7 @@ fi
 
 # Hard stop after 5 failures to prevent excessive loops (per session)
 FAIL_COUNT_FILE="/tmp/codex-review-fails-${SESSION_ID}"
+SIMPLIFY_SUGGESTED_FILE="/tmp/codex-review-simplify-suggested-${SESSION_ID}"
 FAIL_COUNT=0
 if [ -f "$FAIL_COUNT_FILE" ]; then
   FAIL_COUNT=$(cat "$FAIL_COUNT_FILE")
@@ -132,14 +133,22 @@ trap 'rm -f "$TMPFILE" "$COMPLETED_FILE"' EXIT
 
 # REVIEW.md guidelines are loaded via AGENTS.md (codex reads it automatically).
 # --base and [PROMPT] are mutually exclusive, so we cannot pass a custom prompt here.
-# --enable use_linux_sandbox_bwrap avoids Landlock restrictions in containerized environments.
+# --sandbox danger-full-access disables sandboxing entirely (safe in isolated LXC/container).
+# Previous --enable use_linux_sandbox_bwrap caused node sandbox-check errors in containers.
 debug_log "Running codex review..."
-unbuffer codex \
-  --dangerously-bypass-approvals-and-sandbox \
-  --enable use_linux_sandbox_bwrap \
-  --model gpt-5.3-codex \
-  -c model_reasoning_effort="low" \
-  review --base main > "$TMPFILE" 2>&1 || true
+if command -v unbuffer >/dev/null 2>&1; then
+  unbuffer codex \
+    --sandbox danger-full-access \
+    --model gpt-5.3-codex \
+    -c model_reasoning_effort="high" \
+    review --base main > "$TMPFILE" 2>&1 || true
+else
+  codex \
+    --sandbox danger-full-access \
+    --model gpt-5.3-codex \
+    -c model_reasoning_effort="high" \
+    review --base main > "$TMPFILE" 2>&1 || true
+fi
 debug_log "Codex review finished"
 
 # Strip ANSI codes first, then extract final codex response
@@ -166,13 +175,45 @@ If the output indicates code review passed with no issues, return exactly 'lgtm'
 if echo "$VERDICT" | grep -qi "lgtm"; then
   rm -f "$FAIL_COUNT_FILE"  # Reset counter on success
   debug_log "Review PASSED (lgtm)"
-  exit 0  # Review passed, don't bother Claude
+
+  # Even on pass, suggest /simplify once if significant changes were made
+  # Check if there are multiple files changed (worth a simplify pass)
+  CHANGED_FILES=$(git diff --name-only main...HEAD 2>/dev/null | wc -l)
+  if [ "$CHANGED_FILES" -gt 2 ] && [ ! -f "$SIMPLIFY_SUGGESTED_FILE" ]; then
+    touch "$SIMPLIFY_SUGGESTED_FILE"
+    debug_log "Suggesting /simplify for $CHANGED_FILES changed files"
+    echo "Codex review passed. Consider running /simplify to check for code quality improvements across the $CHANGED_FILES changed files." >&2
+    exit 2
+  fi
+
+  exit 0  # Review passed, few changes or already suggested, don't bother Claude
 fi
 
 # Has issues - increment counter and show to Claude
 echo $((FAIL_COUNT + 1)) > "$FAIL_COUNT_FILE"
 debug_log "Review has ISSUES, showing to Claude"
-echo "## Codex Code Review Findings (attempt $((FAIL_COUNT + 1))/5)" >&2
-echo "" >&2
-echo "$FINDINGS" >&2
+
+# Check if this is a mid-autopilot review (n-2 trigger) and include remaining turns
+REMAINING_INFO=""
+if [ "$AUTOPILOT_ACTIVE" = "1" ]; then
+  TURN_FILE_CHECK="/tmp/claude-autopilot-turns-${SESSION_ID}"
+  if [ -f "$TURN_FILE_CHECK" ]; then
+    CURRENT_TURN=$(cat "$TURN_FILE_CHECK" 2>/dev/null || echo "0")
+    AP_MAX="${CLAUDE_AUTOPILOT_MAX_TURNS:-20}"
+    REMAINING=$((AP_MAX - CURRENT_TURN))
+    if [ "$REMAINING" -gt 0 ]; then
+      REMAINING_INFO=" You have $REMAINING autopilot turns remaining to address these."
+    fi
+  fi
+fi
+
+# Build feedback message with codex findings + simplify instruction
+FEEDBACK="## Codex Code Review Findings (attempt $((FAIL_COUNT + 1))/5)
+
+$FINDINGS
+
+---
+After addressing the above issues, run /simplify to check for code quality improvements (reuse, efficiency, clarity).${REMAINING_INFO}"
+
+echo "$FEEDBACK" >&2
 exit 2

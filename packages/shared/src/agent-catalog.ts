@@ -99,6 +99,7 @@ import { AMP_CATALOG } from "./providers/amp/catalog";
 import { CLAUDE_CATALOG } from "./providers/anthropic/catalog";
 import { CURSOR_CATALOG } from "./providers/cursor/catalog";
 import { GEMINI_CATALOG } from "./providers/gemini/catalog";
+import { GROK_CATALOG } from "./providers/grok/catalog";
 import { CODEX_CATALOG } from "./providers/openai/catalog";
 import { OPENCODE_CATALOG } from "./providers/opencode/catalog";
 import { QWEN_CATALOG } from "./providers/qwen/catalog";
@@ -123,6 +124,7 @@ export const AGENT_CATALOG: AgentCatalogEntry[] = [
   ...OPENCODE_CATALOG,
   ...GEMINI_CATALOG,
   ...QWEN_CATALOG,
+  ...GROK_CATALOG,
   ...CURSOR_CATALOG,
 ];
 
@@ -155,6 +157,7 @@ export {
   CODEX_CATALOG,
   CURSOR_CATALOG,
   GEMINI_CATALOG,
+  GROK_CATALOG,
   OPENCODE_CATALOG,
   QWEN_CATALOG,
 };

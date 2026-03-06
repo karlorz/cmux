@@ -85,7 +85,6 @@ const navItems: SidebarNavItemWithBadge[] = [
     exact: true,
     icon: Bell,
     showBadge: true,
-    hidden: true,
   },
   {
     label: "Environments",

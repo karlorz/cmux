@@ -23,6 +23,7 @@ import {
   generateBranchNamesFromDescription,
   generatePRInfoAndBranchNames,
 } from "./utils/branchNameGenerator";
+import { validateBranchName } from "./utils/gitUrl";
 import { getConvex } from "./utils/convexClient";
 import { serverLogger } from "./utils/fileLogger";
 import { extractTaskRunJwt } from "./utils/jwt-helper";
@@ -41,6 +42,7 @@ interface StartTaskRequest {
   // Optional fields
   repoUrl?: string;
   branch?: string;
+  branchNames?: string[];
   taskRunIds?: string[];
   selectedAgents?: string[];
   isCloudMode?: boolean;
@@ -145,6 +147,7 @@ async function handleStartTask(
     projectFullName,
     repoUrl,
     branch,
+    branchNames: branchNamesOverride,
     taskRunIds,
     selectedAgents,
     isCloudMode = true, // Default to cloud mode for CLI
@@ -181,11 +184,44 @@ async function handleStartTask(
   });
 
   try {
+    // Validate branchNames override early so we can return 400 (not 500)
+    const agentsToSpawnPreview = selectedAgents && selectedAgents.length > 0
+      ? selectedAgents
+      : ["claude/opus-4.5"];
+    // Validate whenever branchNames is present (not just when length > 0)
+    // to reject non-array truthy values like `123` or `true`
+    if (branchNamesOverride !== undefined && branchNamesOverride !== null) {
+      if (!Array.isArray(branchNamesOverride)) {
+        jsonResponse(res, 400, { error: "branchNames must be an array of strings" });
+        return;
+      }
+      if (branchNamesOverride.length > 0 && branchNamesOverride.length !== agentsToSpawnPreview.length) {
+        jsonResponse(res, 400, {
+          error: `branchNames length (${branchNamesOverride.length}) must match selectedAgents length (${agentsToSpawnPreview.length})`,
+        });
+        return;
+      }
+      for (const name of branchNamesOverride) {
+        if (typeof name !== "string") {
+          jsonResponse(res, 400, { error: "branchNames must be an array of strings" });
+          return;
+        }
+        try {
+          validateBranchName(name);
+        } catch (e) {
+          const message = e instanceof Error ? e.message : "Invalid branch name";
+          jsonResponse(res, 400, { error: message });
+          return;
+        }
+      }
+    }
+
     // Run with auth context (both token and authHeaderJson needed for www API calls)
     const results = await runWithAuth(authToken, authHeaderJson, async () => {
       // Determine which agents to spawn
       // Default to claude/opus-4.5 if no agent specified (matches CLI default)
-      const agentsToSpawn = selectedAgents || ["claude/opus-4.5"];
+      // Must align with branchNames validation which also treats empty array as "unspecified"
+      const agentsToSpawn = selectedAgents && selectedAgents.length > 0 ? selectedAgents : ["claude/opus-4.5"];
       const agentCount = agentsToSpawn.length;
 
       // Fetch workspace settings for branchPrefix (same as socket.io handler)
@@ -202,7 +238,9 @@ async function handleStartTask(
 
       // Generate branch names for agents
       let branchNames: string[] | undefined;
-      if (agentsToSpawn.length > 0) {
+      if (branchNamesOverride && branchNamesOverride.length > 0) {
+        branchNames = branchNamesOverride;
+      } else if (agentsToSpawn.length > 0) {
         branchNames = generateBranchNamesFromDescription(
           taskDescription,
           agentsToSpawn.length,
@@ -615,6 +653,7 @@ interface OrchestrationSpawnRequest {
   isCloudMode?: boolean;
   dependsOn?: string[];  // Orchestration task IDs this task depends on
   priority?: number;     // Task priority (1=highest, 10=lowest, default 5)
+  orchestrationId?: string; // Orchestration ID for grouping tasks
 }
 
 interface OrchestrationSpawnResponse {
@@ -648,7 +687,7 @@ async function handleOrchestrationSpawn(
     return;
   }
 
-  const { teamSlugOrId, prompt, agent, repo, branch, prTitle, environmentId, isCloudMode = true, dependsOn, priority } = body;
+  const { teamSlugOrId, prompt, agent, repo, branch, prTitle, environmentId, isCloudMode = true, dependsOn, priority, orchestrationId } = body;
 
   if (!teamSlugOrId || !prompt || !agent) {
     jsonResponse(res, 400, { error: "Missing required fields: teamSlugOrId, prompt, agent" });
@@ -722,6 +761,7 @@ async function handleOrchestrationSpawn(
           taskRunId,
           priority: priority ?? 5,
           dependencies: dependsOn,
+          orchestrationId,
         }),
       });
 
@@ -1119,8 +1159,16 @@ async function handleOrchestrationResults(
         limit: 100,
       });
 
-      // Filter by orchestrationId (stored in metadata)
+      // Filter by orchestrationId
+      // Check both:
+      // 1. Task's own _id (for CLI-spawned tasks where _id is the orchestrationId)
+      // 2. metadata.orchestrationId (for MCP-spawned tasks grouped by parent orchestrationId)
       const filteredTasks = tasks.filter((task) => {
+        // Match if orchestrationId is the task's own ID
+        if (task._id === orchestrationId) {
+          return true;
+        }
+        // Match if orchestrationId is stored in metadata (for grouped tasks)
         const metadata = task.metadata as Record<string, unknown> | undefined;
         return metadata?.orchestrationId === orchestrationId;
       });
@@ -1823,21 +1871,7 @@ async function handleOrchestrationInternalSpawn(
       taskRunJwt
     );
 
-    // Update orchestration task status via Convex HTTP endpoint
-    fetch(`${convexSiteUrl}/api/orchestration/tasks/update`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Task-Run-JWT": taskRunJwt,
-      },
-      body: JSON.stringify(spawnResult.success
-        ? { orchestrationTaskId, status: "running", agentName }
-        : { orchestrationTaskId, status: "failed", errorMessage: spawnResult.error ?? "Spawn failed" }
-      ),
-    }).catch((err) => {
-      serverLogger.error("[http-api] Failed to update orchestration task status", err);
-    });
-
+    // Send response immediately — don't block on best-effort status update
     jsonResponse(res, 200, {
       success: spawnResult.success,
       taskId,
@@ -1845,6 +1879,34 @@ async function handleOrchestrationInternalSpawn(
       vscodeUrl: spawnResult.vscodeUrl,
       error: spawnResult.error,
     });
+
+    // Update orchestration task status via Convex HTTP endpoint (best-effort, non-blocking)
+    // Wrapped in try-catch to prevent synchronous fetch errors from reaching the outer
+    // catch block which would attempt a second jsonResponse after 200 was already sent.
+    try {
+      fetch(`${convexSiteUrl}/api/orchestration/tasks/update`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Task-Run-JWT": taskRunJwt,
+        },
+        body: JSON.stringify(spawnResult.success
+          ? { orchestrationTaskId, status: "running", agentName }
+          : { orchestrationTaskId, status: "failed", errorMessage: spawnResult.error ?? "Spawn failed" }
+        ),
+      }).then((updateRes) => {
+        if (!updateRes.ok) {
+          serverLogger.error("[http-api] orchestration status update failed", {
+            status: updateRes.status,
+            orchestrationTaskId,
+          });
+        }
+      }).catch((err) => {
+        serverLogger.error("[http-api] Failed to update orchestration task status", err);
+      });
+    } catch (err) {
+      serverLogger.error("[http-api] Failed to initiate orchestration status update", err);
+    }
   } catch (error) {
     serverLogger.error("[http-api] orchestrate/internal/spawn failed", error);
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -1905,21 +1967,11 @@ async function handleOrchestrationMetrics(
         throw new Error("Team not found or not a member");
       }
 
-      // Get orchestration tasks by status (using count query for accurate totals)
-      const statusList = ["pending", "assigned", "running", "completed", "failed", "cancelled"] as const;
-      const tasksByStatus: Record<string, number> = {};
-      let activeOrchestrations = 0;
-
-      for (const status of statusList) {
-        const count = await getConvex().query(api.orchestrationQueries.countTasksByStatus, {
-          teamSlugOrId: membership.team.teamId,
-          status,
-        });
-        tasksByStatus[status] = count;
-        if (status === "running" || status === "assigned") {
-          activeOrchestrations += count;
-        }
-      }
+      // Get orchestration task counts in a single Convex query instead of 6 sequential ones
+      const { tasksByStatus, activeOrchestrations } = await getConvex().query(
+        api.orchestrationQueries.getTaskStatusCounts,
+        { teamSlugOrId: membership.team.teamId }
+      );
 
       // Get provider health metrics
       const healthMonitor = getProviderHealthMonitor();

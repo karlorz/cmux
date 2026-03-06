@@ -1575,11 +1575,13 @@ const convexSchema = defineSchema({
     lastRetryAt: v.optional(v.number()), // Timestamp of last retry
     nextRetryAfter: v.optional(v.number()), // When to retry next (ms since epoch)
   })
-    .index("by_team_priority", ["teamId", "priority", "status"])
     .index("by_team_status", ["teamId", "status", "updatedAt"])
+    .index("by_team_status_priority", ["teamId", "status", "priority"])
     .index("by_assigned_agent", ["assignedAgentName", "status"])
     .index("by_parent", ["parentTaskId", "createdAt"])
-    .index("by_task_run", ["taskRunId"]),
+    .index("by_task_run", ["taskRunId"])
+    .index("by_status_started", ["status", "startedAt"])
+    .index("by_status", ["status", "createdAt"]),
 
   // Agent orchestration messages for inter-agent communication
   // Messages sent via orchestrate sendMessage mutation are stored here
@@ -1605,6 +1607,68 @@ const convexSchema = defineSchema({
     .index("by_task_run_unread", ["taskRunId", "read", "createdAt"])
     .index("by_team", ["teamId", "createdAt"])
     .index("by_recipient", ["recipientName", "read", "createdAt"]),
+
+  // Projects for grouping related tasks and tracking aggregate progress
+  // Supports plan storage, Obsidian integration, and progress metrics
+  projects: defineTable({
+    teamId: v.string(),
+    userId: v.string(),
+    name: v.string(),
+    description: v.optional(v.string()),
+    // Project goals (high-level objectives)
+    goals: v.optional(
+      v.array(
+        v.object({
+          id: v.string(),
+          title: v.string(),
+          completed: v.boolean(),
+        })
+      )
+    ),
+    // Project status
+    status: v.union(
+      v.literal("planning"),
+      v.literal("active"),
+      v.literal("paused"),
+      v.literal("completed"),
+      v.literal("archived")
+    ),
+    // Progress metrics (denormalized for efficient queries)
+    totalTasks: v.optional(v.number()),
+    completedTasks: v.optional(v.number()),
+    failedTasks: v.optional(v.number()),
+    // External linkages
+    obsidianNotePath: v.optional(v.string()), // Path to linked Obsidian note
+    githubProjectId: v.optional(v.string()), // GitHub Projects v2 node ID
+    // Orchestration plan (stored inline for fast access)
+    plan: v.optional(
+      v.object({
+        orchestrationId: v.string(),
+        headAgent: v.string(),
+        description: v.optional(v.string()),
+        tasks: v.array(
+          v.object({
+            id: v.string(),
+            prompt: v.string(),
+            agentName: v.string(),
+            status: v.string(),
+            dependsOn: v.optional(v.array(v.string())),
+            priority: v.optional(v.number()),
+            orchestrationTaskId: v.optional(v.string()),
+          })
+        ),
+        updatedAt: v.string(), // ISO timestamp
+      })
+    ),
+    // Count of currently running/assigned orchestration tasks
+    runningTasks: v.optional(v.number()),
+    // Timestamps
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_team", ["teamId", "updatedAt"])
+    .index("by_team_status", ["teamId", "status", "updatedAt"])
+    .index("by_team_user", ["teamId", "userId", "updatedAt"]),
 });
 
 export default convexSchema;

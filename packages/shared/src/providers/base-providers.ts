@@ -167,6 +167,7 @@ export function getProviderIdFromAgentName(agentName: string): string | undefine
     claude: "anthropic",
     codex: "openai",
     gemini: "gemini",
+    grok: "xai",
     opencode: "openrouter", // OpenCode uses OpenRouter by default
     amp: "amp",
     cursor: "cursor",
