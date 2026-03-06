@@ -1622,6 +1622,7 @@ export type Model = {
     tier: 'free' | 'paid';
     tags: Array<string>;
     enabled: boolean;
+    hiddenForTeam?: boolean;
     sortOrder: number;
     disabled?: boolean;
     disabledReason?: string;

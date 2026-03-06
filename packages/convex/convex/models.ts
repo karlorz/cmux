@@ -25,11 +25,25 @@ export const list = query({
 export const listAll = authQuery({
   args: { teamSlugOrId: v.string() },
   handler: async (ctx, args) => {
-    // Verify user has access to the team
-    await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    // Verify user has access to the team and get canonical team id
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
 
-    const models = await ctx.db.query("models").collect();
-    return models.sort((a, b) => a.sortOrder - b.sortOrder);
+    const [models, teamVisibility] = await Promise.all([
+      ctx.db.query("models").collect(),
+      ctx.db
+        .query("teamModelVisibility")
+        .withIndex("by_team", (q) => q.eq("teamId", teamId))
+        .first(),
+    ]);
+
+    const hiddenModels = new Set(teamVisibility?.hiddenModels ?? []);
+
+    return models
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((model) => ({
+        ...model,
+        hiddenForTeam: hiddenModels.has(model.name),
+      }));
   },
 });
 
@@ -48,16 +62,25 @@ export const listAvailable = authQuery({
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
     console.log(`[listAvailable] teamSlugOrId=${args.teamSlugOrId}, resolved teamId=${teamId}`);
 
-    // Get enabled models from database
-    const models = await ctx.db
-      .query("models")
-      .withIndex("by_enabled", (q) => q.eq("enabled", true))
-      .collect();
+    // Get globally enabled models and team visibility overrides
+    const [models, teamVisibility] = await Promise.all([
+      ctx.db
+        .query("models")
+        .withIndex("by_enabled", (q) => q.eq("enabled", true))
+        .collect(),
+      ctx.db
+        .query("teamModelVisibility")
+        .withIndex("by_team", (q) => q.eq("teamId", teamId))
+        .first(),
+    ]);
     console.log(`[listAvailable] Found ${models.length} enabled models`);
 
-    // If showAll is true, return all enabled models without filtering
+    const hiddenModels = new Set(teamVisibility?.hiddenModels ?? []);
+    const teamVisibleModels = models.filter((model) => !hiddenModels.has(model.name));
+
+    // If showAll is true, return all enabled models that are visible for this team
     if (args.showAll) {
-      return models.sort((a, b) => a.sortOrder - b.sortOrder);
+      return teamVisibleModels.sort((a, b) => a.sortOrder - b.sortOrder);
     }
 
     // Get team's configured API keys
@@ -69,7 +92,7 @@ export const listAvailable = authQuery({
     const configuredKeyEnvVars = new Set(apiKeys.map((k) => k.envVar));
 
     // Filter models by availability
-    const availableModels = models.filter((model) => {
+    const availableModels = teamVisibleModels.filter((model) => {
       // Free tier models are always available
       if (model.tier === "free") return true;
       // Models with no required keys are available
@@ -80,7 +103,7 @@ export const listAvailable = authQuery({
     });
 
     // Log Claude models filtering for debugging
-    const claudeModels = models.filter((m) => m.name.startsWith("claude/"));
+    const claudeModels = teamVisibleModels.filter((m) => m.name.startsWith("claude/"));
     console.log(`[listAvailable] Claude models in DB: ${claudeModels.map(m => `${m.name}(keys: ${m.requiredApiKeys?.join(",") || "none"})`).join(", ")}`);
     const claudeAvailable = availableModels.filter((m) => m.name.startsWith("claude/"));
     console.log(`[listAvailable] Claude models available after filtering: ${claudeAvailable.length}`);

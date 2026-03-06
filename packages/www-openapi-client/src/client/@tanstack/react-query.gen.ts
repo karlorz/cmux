@@ -2319,7 +2319,7 @@ export const getApiModelsOptions = (options: Options<GetApiModelsData>) => {
 };
 
 /**
- * Toggle model enabled state
+ * Toggle model visibility for current team
  */
 export const patchApiModelsByNameEnabledMutation = (options?: Partial<Options<PatchApiModelsByNameEnabledData>>): UseMutationOptions<PatchApiModelsByNameEnabledResponse, DefaultError, Options<PatchApiModelsByNameEnabledData>> => {
     const mutationOptions: UseMutationOptions<PatchApiModelsByNameEnabledResponse, DefaultError, Options<PatchApiModelsByNameEnabledData>> = {

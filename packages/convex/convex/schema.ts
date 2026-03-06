@@ -701,6 +701,16 @@ const convexSchema = defineSchema({
     teamId: v.string(),
   }).index("by_team_user", ["teamId", "userId"]),
 
+  // Team-scoped model visibility overrides
+  // Hidden models are excluded from listAvailable while keeping global model state unchanged
+  teamModelVisibility: defineTable({
+    teamId: v.string(),
+    hiddenModels: v.array(v.string()), // Model names hidden for this team
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    updatedBy: v.optional(v.string()),
+  }).index("by_team", ["teamId"]),
+
   // Source repo mappings for Codex-style worktrees
   // Maps projects to local repo paths per user
   sourceRepoMappings: defineTable({

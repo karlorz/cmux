@@ -29,6 +29,7 @@ interface Model {
   tier: "free" | "paid";
   tags: string[];
   enabled: boolean;
+  hiddenForTeam?: boolean;
   sortOrder: number;
   disabled?: boolean;
   disabledReason?: string;
@@ -123,19 +124,19 @@ export function ModelCatalogSection({
     [configuredApiKeys]
   );
 
-  // Mutation to toggle model enabled state
+  // Mutation to toggle model visibility for the current team
   const toggleEnabledMutation = useMutation({
     mutationFn: async ({
       modelName,
-      enabled,
+      visibleForTeam,
     }: {
       modelName: string;
-      enabled: boolean;
+      visibleForTeam: boolean;
     }) => {
-      return await convex.mutation(api.models.setEnabled, {
+      return await convex.mutation(api.teamModelVisibility.toggleModel, {
         teamSlugOrId,
         modelName,
-        enabled,
+        hidden: !visibleForTeam,
       });
     },
     onSuccess: () => {
@@ -166,8 +167,8 @@ export function ModelCatalogSection({
   });
 
   const handleToggleEnabled = useCallback(
-    (modelName: string, enabled: boolean) => {
-      toggleEnabledMutation.mutate({ modelName, enabled });
+    (modelName: string, visibleForTeam: boolean) => {
+      toggleEnabledMutation.mutate({ modelName, visibleForTeam });
     },
     [toggleEnabledMutation]
   );
@@ -333,8 +334,9 @@ export function ModelCatalogSection({
         return false;
       }
 
-      // Apply disabled-only filter
-      if (showDisabledOnly && entry.enabled) {
+      // Apply hidden-only filter (system-disabled OR hidden for this team)
+      const visibleForTeam = entry.enabled && !entry.hiddenForTeam;
+      if (showDisabledOnly && visibleForTeam) {
         return false;
       }
 
@@ -355,7 +357,8 @@ export function ModelCatalogSection({
     return grouped;
   }, [models, searchQuery, sourceFilter, showDisabledOnly, isModelAvailable]);
 
-  const enabledCount = models?.filter((m) => m.enabled).length ?? 0;
+  const enabledCount =
+    models?.filter((m) => m.enabled && !m.hiddenForTeam).length ?? 0;
   const totalCount = models?.length ?? 0;
   const curatedCount = models?.filter((m) => m.source === "curated").length ?? 0;
   const discoveredCount = models?.filter((m) => m.source === "discovered").length ?? 0;
@@ -412,7 +415,7 @@ export function ModelCatalogSection({
     <div className="space-y-4">
       <SettingSection
         title="Model Catalog"
-        description={`${enabledCount} of ${totalCount} models enabled (${curatedCount} curated, ${discoveredCount} discovered)`}
+        description={`${enabledCount} of ${totalCount} models visible for this team (${curatedCount} curated, ${discoveredCount} discovered)`}
       >
         <div className="p-4 space-y-4">
           {/* Controls */}
@@ -452,7 +455,7 @@ export function ModelCatalogSection({
                   onChange={(e) => setShowDisabledOnly(e.target.checked)}
                   className="h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 dark:border-neutral-600 dark:bg-neutral-800"
                 />
-                Disabled only
+                Hidden only
               </label>
 
               <Button
@@ -480,6 +483,9 @@ export function ModelCatalogSection({
                   {/* Model rows */}
                   <div className="rounded-lg border border-neutral-200 divide-y divide-neutral-200 dark:border-neutral-800 dark:divide-neutral-800">
                     {entries.map((entry) => {
+                      const isSystemDisabled = !entry.enabled;
+                      const isTeamHidden = !!entry.hiddenForTeam;
+                      const isVisibleForTeam = !isSystemDisabled && !isTeamHidden;
                       const isToggling =
                         toggleEnabledMutation.isPending &&
                         toggleEnabledMutation.variables?.modelName === entry.name;
@@ -560,17 +566,27 @@ export function ModelCatalogSection({
                                   N/A
                                 </span>
                               )}
+                              {isSystemDisabled && (
+                                <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                                  System disabled
+                                </span>
+                              )}
+                              {!isSystemDisabled && isTeamHidden && (
+                                <span className="inline-flex items-center rounded-full bg-neutral-200 px-2 py-0.5 text-[10px] font-medium text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">
+                                  Hidden for team
+                                </span>
+                              )}
                             </div>
 
                             {/* Enable/Disable toggle */}
                             <Switch
-                              aria-label={`Enable ${entry.displayName} globally`}
+                              aria-label={`Show ${entry.displayName} for this team`}
                               size="sm"
                               color="primary"
-                              isSelected={entry.enabled}
-                              isDisabled={isToggling}
-                              onValueChange={(enabled) =>
-                                handleToggleEnabled(entry.name, enabled)
+                              isSelected={isVisibleForTeam}
+                              isDisabled={isToggling || isSystemDisabled}
+                              onValueChange={(visibleForTeam) =>
+                                handleToggleEnabled(entry.name, visibleForTeam)
                               }
                             />
                           </div>

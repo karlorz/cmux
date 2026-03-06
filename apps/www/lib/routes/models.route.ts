@@ -19,6 +19,7 @@ const ModelSchema = z
     tier: z.enum(["free", "paid"]),
     tags: z.array(z.string()),
     enabled: z.boolean(),
+    hiddenForTeam: z.boolean().optional(),
     sortOrder: z.number(),
     disabled: z.boolean().optional(),
     disabledReason: z.string().optional(),
@@ -127,14 +128,14 @@ modelsRouter.openapi(
 );
 
 /**
- * PATCH /models/:name/enabled - Toggle model enabled state
+ * PATCH /models/:name/enabled - Toggle model visibility for current team
  */
 modelsRouter.openapi(
   createRoute({
     method: "patch",
     path: "/models/{name}/enabled",
     tags: ["Models"],
-    summary: "Toggle model enabled state",
+    summary: "Toggle model visibility for current team",
     request: {
       params: z.object({
         name: z.string().describe("Model name (URL-encoded)"),
@@ -184,14 +185,14 @@ modelsRouter.openapi(
     const convex = getConvex({ accessToken });
 
     try {
-      await convex.mutation(api.models.setEnabled, {
+      await convex.mutation(api.teamModelVisibility.toggleModel, {
         teamSlugOrId,
         modelName,
-        enabled,
+        hidden: !enabled,
       });
       return c.json({ success: true });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to update model enabled state";
+      const message = error instanceof Error ? error.message : "Failed to update model visibility";
       if (message.includes("not found")) {
         return c.json({ error: message }, 404);
       }
