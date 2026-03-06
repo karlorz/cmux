@@ -121,6 +121,8 @@ REVIEW_TURN=$((MAX_TURNS - 2))
 REVIEW_ENABLED=0
 if [ "$TURN_COUNT" -eq "$REVIEW_TURN" ] && [ "$MAX_TURNS" -gt 2 ]; then
   REVIEW_ENABLED=1
+  # Remove stale blocked flag so codex-review can run
+  rm -f "$AUTOPILOT_BLOCKED_FILE"
   echo "[Autopilot] Code review enabled at turn $TURN_COUNT/$MAX_TURNS (n-2)" >&2
 else
   # Signal to downstream hooks (codex-review) that autopilot is blocking this stop
