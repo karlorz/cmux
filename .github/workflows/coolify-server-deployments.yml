@@ -346,9 +346,50 @@ jobs:
             echo "::endgroup::"
           }
 
+          # Trigger a deployment via Coolify API when webhook didn't fire
+          trigger_deployment() {
+            local resp="$tmp_dir/trigger_resp.json"
+            local code
+            echo "Triggering deployment via Coolify API for commit ${sha7}..." >&2
+
+            # Try the deploy endpoint with force=true
+            code="$(curl -sS -o "$resp" -w '%{http_code}' \
+              --connect-timeout 10 --max-time 30 --retry 3 --retry-delay 1 \
+              -X POST \
+              -H "Accept: application/json" \
+              -H "Content-Type: application/json" \
+              -H "$auth_header" \
+              -d "{\"uuid\":\"${COOLIFY_APP_UUID}\",\"force\":true}" \
+              "${base_url}/api/v1/applications/${COOLIFY_APP_UUID}/deploy" || true)"
+
+            if [[ "$code" == "200" || "$code" == "201" ]]; then
+              echo "Successfully triggered deployment via API" >&2
+              # Wait a moment for the deployment to be created
+              sleep 5
+              return 0
+            fi
+
+            echo "Failed to trigger deployment (HTTP ${code})" >&2
+            cat "$resp" 2>/dev/null || true
+            return 1
+          }
+
           echo "Looking for Coolify deployment for commit ${sha7}..." >&2
           start_epoch="$(now_epoch)"
           deployment_uuid="$(find_deployment_uuid "$start_epoch" || true)"
+
+          # If no webhook-triggered deployment found, actively trigger one via API
+          if [[ -z "${deployment_uuid:-}" ]]; then
+            echo "No webhook-triggered deployment found. Attempting to trigger deployment via API..." >&2
+            if trigger_deployment; then
+              echo "Deployment triggered successfully. Searching for new deployment..." >&2
+              # Reset start epoch and search again with fresh timeout
+              start_epoch="$(now_epoch)"
+              deployment_uuid="$(find_deployment_uuid "$start_epoch" || true)"
+            else
+              echo "Failed to trigger deployment via API." >&2
+            fi
+          fi
 
           if [[ -z "${deployment_uuid:-}" ]]; then
             debug_no_deployment_found
@@ -359,7 +400,7 @@ jobs:
             echo "::error::No Coolify deployment found for SHA ${sha} (${sha7})"
             echo "This usually means one of the following:" >&2
             echo "  1. Coolify webhook did not trigger for this push." >&2
-            echo "  2. Deployment is still pending/not yet created." >&2
+            echo "  2. API-triggered deployment also failed or wasn't created." >&2
             echo "  3. Commit SHA mismatch between GitHub and Coolify." >&2
             echo "App UUID used: ${COOLIFY_APP_UUID}" >&2
             echo "Endpoints checked:" >&2
