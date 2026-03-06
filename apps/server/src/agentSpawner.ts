@@ -1057,6 +1057,16 @@ export async function spawnAgent(
       );
     }
 
+    // Update task run status to "running" now that sandbox is ready
+    // This matches the behavior of http-api.ts create-cloud-workspace endpoint
+    await retryOnOptimisticConcurrency(() =>
+      getConvex().mutation(api.taskRuns.updateStatusPublic, {
+        teamSlugOrId,
+        id: runId,
+        status: "running",
+      })
+    );
+
     // Use runId as terminal ID for compatibility
     const terminalId = runId;
 
