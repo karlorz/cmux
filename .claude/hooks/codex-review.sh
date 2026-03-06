@@ -136,11 +136,19 @@ trap 'rm -f "$TMPFILE" "$COMPLETED_FILE"' EXIT
 # --sandbox danger-full-access disables sandboxing entirely (safe in isolated LXC/container).
 # Previous --enable use_linux_sandbox_bwrap caused node sandbox-check errors in containers.
 debug_log "Running codex review..."
-unbuffer codex \
-  --sandbox danger-full-access \
-  --model gpt-5.3-codex \
-  -c model_reasoning_effort="low" \
-  review --base main > "$TMPFILE" 2>&1 || true
+if command -v unbuffer >/dev/null 2>&1; then
+  unbuffer codex \
+    --sandbox danger-full-access \
+    --model gpt-5.3-codex \
+    -c model_reasoning_effort="low" \
+    review --base main > "$TMPFILE" 2>&1 || true
+else
+  codex \
+    --sandbox danger-full-access \
+    --model gpt-5.3-codex \
+    -c model_reasoning_effort="low" \
+    review --base main > "$TMPFILE" 2>&1 || true
+fi
 debug_log "Codex review finished"
 
 # Strip ANSI codes first, then extract final codex response
