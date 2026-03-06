@@ -701,6 +701,17 @@ const convexSchema = defineSchema({
     teamId: v.string(),
   }).index("by_team_user", ["teamId", "userId"]),
 
+  // Per-team model visibility overrides
+  // Uses blacklist pattern: hiddenModels array lists globally enabled models hidden for a team
+  // Default behavior: all globally enabled models are visible (empty hiddenModels array)
+  teamModelVisibility: defineTable({
+    teamId: v.string(),
+    hiddenModels: v.array(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    updatedBy: v.optional(v.string()),
+  }).index("by_team", ["teamId"]),
+
   // Source repo mappings for Codex-style worktrees
   // Maps projects to local repo paths per user
   sourceRepoMappings: defineTable({
@@ -1467,7 +1478,7 @@ const convexSchema = defineSchema({
     requiredApiKeys: v.array(v.string()), // Environment variables required, e.g. ["ANTHROPIC_API_KEY"]
     tier: v.union(v.literal("free"), v.literal("paid")), // Pricing tier
     tags: v.array(v.string()), // Tags for filtering, e.g. ["reasoning", "free", "latest"]
-    enabled: v.boolean(), // Global enabled state (admins toggle this)
+    enabled: v.boolean(), // System-global enabled state for true deprecation/removal
     sortOrder: v.number(), // For drag-drop reordering
     disabled: v.optional(v.boolean()), // Model-level disabled flag (different from enabled)
     disabledReason: v.optional(v.string()), // Reason shown when disabled

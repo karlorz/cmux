@@ -65,6 +65,7 @@ describe("modelsRouter via SDK", () => {
             displayName: string;
             vendor: string;
             tier: string;
+            hiddenForTeam: boolean;
             source?: string;
             discoveredFrom?: string;
             discoveredAt?: number;
@@ -77,6 +78,7 @@ describe("modelsRouter via SDK", () => {
           expect(typeof model.displayName).toBe("string");
           expect(typeof model.vendor).toBe("string");
           expect(["free", "paid"]).toContain(model.tier);
+          expect(typeof model.hiddenForTeam).toBe("boolean");
         }
       }
     }
@@ -188,9 +190,9 @@ describe("modelsRouter via SDK", () => {
     }
   );
 
-  // 4. Enable/disable
+  // 4. Team visibility
   it(
-    "PATCH /models/:name/enabled toggles state",
+    "PATCH /models/:name/enabled toggles team visibility",
     { timeout: 60_000 },
     async () => {
       const tokens = await __TEST_INTERNAL_ONLY_GET_STACK_TOKENS();
@@ -208,13 +210,13 @@ describe("modelsRouter via SDK", () => {
       }
 
       const body = listRes.data as unknown as {
-        models: Array<{ name: string; enabled: boolean }>;
+        models: Array<{ name: string; enabled: boolean; hiddenForTeam: boolean }>;
       };
       if (body.models.length === 0) {
         return;
       }
 
-      const modelToToggle = body.models[0];
+      const modelToToggle = body.models.find((model) => model.enabled) ?? body.models[0];
       const encodedName = encodeURIComponent(modelToToggle.name);
 
       const res = await patchApiModelsByNameEnabled({
@@ -222,7 +224,7 @@ describe("modelsRouter via SDK", () => {
         path: { name: encodedName },
         query: { teamSlugOrId: TEST_TEAM },
         headers: { "x-stack-auth": JSON.stringify(tokens) },
-        body: { enabled: !modelToToggle.enabled },
+        body: { enabled: modelToToggle.hiddenForTeam },
       });
 
       expect([200, 401, 404, 500]).toContain(res.response.status);
