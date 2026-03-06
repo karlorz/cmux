@@ -45,7 +45,8 @@ const ModelListResponse = z
 
 const SetEnabledBody = z
   .object({
-    enabled: z.boolean(),
+    enabled: z.boolean().optional(),
+    hidden: z.boolean().optional(),
   })
   .openapi("SetEnabledBody");
 
@@ -127,14 +128,17 @@ modelsRouter.openapi(
 );
 
 /**
- * PATCH /models/:name/enabled - Toggle model enabled state
+ * PATCH /models/:name/enabled - Toggle model visibility for team
+ * Now toggles team-scoped visibility instead of global enabled state.
+ * The 'hidden' field controls team visibility (hidden=true means model won't appear for this team).
+ * For backwards compatibility, 'enabled' is mapped to 'hidden' (!enabled = hidden).
  */
 modelsRouter.openapi(
   createRoute({
     method: "patch",
     path: "/models/{name}/enabled",
     tags: ["Models"],
-    summary: "Toggle model enabled state",
+    summary: "Toggle model visibility for team",
     request: {
       params: z.object({
         name: z.string().describe("Model name (URL-encoded)"),
@@ -177,21 +181,29 @@ modelsRouter.openapi(
 
     const { name } = c.req.valid("param");
     const { teamSlugOrId } = c.req.valid("query");
-    const { enabled } = c.req.valid("json");
+    const body = c.req.valid("json");
+
+    // Support both 'hidden' (new) and 'enabled' (legacy) fields
+    // hidden=true means model is hidden for team, enabled=false means the same
+    const hidden = body.hidden !== undefined ? body.hidden : (body.enabled !== undefined ? !body.enabled : undefined);
+
+    if (hidden === undefined) {
+      return c.json({ error: "Either 'hidden' or 'enabled' must be provided" }, 400);
+    }
 
     // Decode URL-encoded model name (e.g., "claude%2Fopus-4.6" -> "claude/opus-4.6")
     const modelName = decodeURIComponent(name);
     const convex = getConvex({ accessToken });
 
     try {
-      await convex.mutation(api.models.setEnabled, {
+      await convex.mutation(api.teamModelVisibility.toggleModel, {
         teamSlugOrId,
         modelName,
-        enabled,
+        hidden,
       });
       return c.json({ success: true });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to update model enabled state";
+      const message = error instanceof Error ? error.message : "Failed to update model visibility";
       if (message.includes("not found")) {
         return c.json({ error: message }, 404);
       }

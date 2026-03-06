@@ -1644,7 +1644,8 @@ export type SuccessResponse = {
 };
 
 export type SetEnabledBody = {
-    enabled: boolean;
+    enabled?: boolean;
+    hidden?: boolean;
 };
 
 export type ReorderBody = {

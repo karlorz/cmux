@@ -15,7 +15,8 @@ type Model = {
   requiredApiKeys: string[];
   tier: "free" | "paid";
   tags: string[];
-  enabled: boolean;
+  enabled: boolean; // System-wide enabled (true deprecation)
+  hiddenForTeam?: boolean; // Team-scoped visibility
   sortOrder: number;
   disabled?: boolean;
   disabledReason?: string;
@@ -116,8 +117,8 @@ export function ModelsClient() {
     void fetchData();
   }, [fetchData]);
 
-  // Toggle model enabled state
-  const handleToggleModel = async (modelName: string, enabled: boolean) => {
+  // Toggle model visibility for team
+  const handleToggleModel = async (modelName: string, hidden: boolean) => {
     if (!teamSlugOrId) return;
 
     setTogglingModel(modelName);
@@ -127,20 +128,20 @@ export function ModelsClient() {
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ enabled }),
+          body: JSON.stringify({ hidden }),
         }
       );
 
       if (!res.ok) {
-        throw new Error("Failed to toggle model");
+        throw new Error("Failed to toggle model visibility");
       }
 
       // Update local state optimistically
       setModels((prev) =>
-        prev.map((m) => (m.name === modelName ? { ...m, enabled } : m))
+        prev.map((m) => (m.name === modelName ? { ...m, hiddenForTeam: hidden } : m))
       );
     } catch (err) {
-      console.error("Failed to toggle model:", err);
+      console.error("Failed to toggle model visibility:", err);
       // Revert on error
       await fetchData();
     } finally {
@@ -185,8 +186,8 @@ export function ModelsClient() {
         }
       }
 
-      // Disabled only filter
-      if (showDisabledOnly && model.enabled) {
+      // Disabled only filter (show hidden models)
+      if (showDisabledOnly && !model.hiddenForTeam) {
         return false;
       }
 
@@ -206,8 +207,8 @@ export function ModelsClient() {
     return groups;
   }, [filteredModels]);
 
-  // Count enabled models
-  const enabledCount = models.filter((m) => m.enabled).length;
+  // Count visible models (not hidden for team)
+  const visibleCount = models.filter((m) => !m.hiddenForTeam).length;
 
   if (!user) {
     return (
@@ -233,7 +234,7 @@ export function ModelsClient() {
           Model Management
         </h2>
         <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          {enabledCount} of {models.length} models enabled
+          {visibleCount} of {models.length} models visible for your team
         </p>
       </div>
 
@@ -335,23 +336,24 @@ export function ModelsClient() {
                       </p>
                     </div>
 
-                    {/* Toggle Switch */}
+                    {/* Toggle Switch - ON = visible, OFF = hidden */}
                     <button
                       type="button"
-                      onClick={() => void handleToggleModel(model.name, !model.enabled)}
-                      disabled={isToggling || model.disabled}
+                      onClick={() => void handleToggleModel(model.name, !model.hiddenForTeam)}
+                      disabled={isToggling || model.disabled || !model.enabled}
                       className={cn(
                         "relative h-6 w-11 rounded-full transition-colors flex-shrink-0",
-                        model.enabled
+                        !model.hiddenForTeam
                           ? "bg-blue-600"
                           : "bg-neutral-300 dark:bg-neutral-600",
-                        (isToggling || model.disabled) && "cursor-not-allowed opacity-50"
+                        (isToggling || model.disabled || !model.enabled) && "cursor-not-allowed opacity-50"
                       )}
+                      title={!model.enabled ? "Model is system-disabled" : model.hiddenForTeam ? "Hidden for your team" : "Visible for your team"}
                     >
                       <span
                         className={cn(
                           "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform",
-                          model.enabled ? "left-[22px]" : "left-0.5"
+                          !model.hiddenForTeam ? "left-[22px]" : "left-0.5"
                         )}
                       >
                         {isToggling && (

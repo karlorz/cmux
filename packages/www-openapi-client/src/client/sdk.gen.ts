@@ -1422,7 +1422,7 @@ export const getApiModels = <ThrowOnError extends boolean = false>(options: Opti
 };
 
 /**
- * Toggle model enabled state
+ * Toggle model visibility for team
  */
 export const patchApiModelsByNameEnabled = <ThrowOnError extends boolean = false>(options: Options<PatchApiModelsByNameEnabledData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).patch<PatchApiModelsByNameEnabledResponses, PatchApiModelsByNameEnabledErrors, ThrowOnError>({
