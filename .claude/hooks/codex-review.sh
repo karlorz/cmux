@@ -140,13 +140,13 @@ if command -v unbuffer >/dev/null 2>&1; then
   unbuffer codex \
     --sandbox danger-full-access \
     --model gpt-5.3-codex \
-    -c model_reasoning_effort="low" \
+    -c model_reasoning_effort="high" \
     review --base main > "$TMPFILE" 2>&1 || true
 else
   codex \
     --sandbox danger-full-access \
     --model gpt-5.3-codex \
-    -c model_reasoning_effort="low" \
+    -c model_reasoning_effort="high" \
     review --base main > "$TMPFILE" 2>&1 || true
 fi
 debug_log "Codex review finished"
