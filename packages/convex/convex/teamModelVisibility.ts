@@ -34,22 +34,29 @@ export const toggleModel = authMutation({
     const userId = ctx.identity.subject;
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
 
-    const model = await ctx.db
-      .query("models")
-      .withIndex("by_name", (q) => q.eq("name", args.modelName))
-      .first();
+    // Parallel fetch: validate model exists while fetching team visibility
+    const [model, existing] = await Promise.all([
+      ctx.db
+        .query("models")
+        .withIndex("by_name", (q) => q.eq("name", args.modelName))
+        .first(),
+      ctx.db
+        .query("teamModelVisibility")
+        .withIndex("by_team", (q) => q.eq("teamId", teamId))
+        .first(),
+    ]);
 
     if (!model) {
       throw new Error(`Model not found: ${args.modelName}`);
     }
 
-    const existing = await ctx.db
-      .query("teamModelVisibility")
-      .withIndex("by_team", (q) => q.eq("teamId", teamId))
-      .first();
-
     const hiddenModels = new Set(existing?.hiddenModels ?? []);
     const wasHidden = hiddenModels.has(args.modelName);
+
+    // Early return if no state change needed
+    if (wasHidden === args.hidden) {
+      return { success: true, hiddenModels: [...hiddenModels] };
+    }
 
     if (args.hidden) {
       hiddenModels.add(args.modelName);
@@ -60,14 +67,13 @@ export const toggleModel = authMutation({
     const nextHiddenModels = [...hiddenModels];
 
     if (existing) {
-      if (wasHidden !== args.hidden) {
-        await ctx.db.patch(existing._id, {
-          hiddenModels: nextHiddenModels,
-          updatedAt: Date.now(),
-          updatedBy: userId,
-        });
-      }
+      await ctx.db.patch(existing._id, {
+        hiddenModels: nextHiddenModels,
+        updatedAt: Date.now(),
+        updatedBy: userId,
+      });
     } else if (nextHiddenModels.length > 0) {
+      // Only create record if there are hidden models to store
       const now = Date.now();
       await ctx.db.insert("teamModelVisibility", {
         teamId,
