@@ -2020,6 +2020,17 @@ async def task_apt_bootstrap(ctx: PveTaskContext) -> None:
         """
         set -eux
 
+        # Stop unattended-upgrades to prevent apt lock conflicts
+        systemctl stop unattended-upgrades.service 2>/dev/null || true
+        systemctl disable unattended-upgrades.service 2>/dev/null || true
+
+        # Wait for any existing apt/dpkg locks to be released (up to 120s)
+        while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || \
+              fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do
+            echo "Waiting for apt/dpkg locks..."
+            sleep 5
+        done
+
         # Configure APT for parallel downloads
         cat > /etc/apt/apt.conf.d/99parallel << 'EOF'
         Acquire::Queue-Mode "host";
@@ -2028,11 +2039,11 @@ async def task_apt_bootstrap(ctx: PveTaskContext) -> None:
         Acquire::https::Pipeline-Depth "10";
         EOF
 
-        # Update and install core utilities
-        DEBIAN_FRONTEND=noninteractive apt-get update
-        DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        # Update and install core utilities (with lock timeout)
+        DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 update
+        DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 install -y \
             ca-certificates curl wget jq git gnupg lsb-release \
-            tar unzip xz-utils zip bzip2 gzip htop lsof
+            tar unzip xz-utils zip bzip2 gzip htop lsof psmisc
 
         # Setup GitHub CLI repository
         install -m 0755 -d /usr/share/keyrings
