@@ -19,6 +19,7 @@ type Model = {
   sortOrder: number;
   disabled?: boolean;
   disabledReason?: string;
+  hiddenForTeam: boolean;
 };
 
 type ApiKeyInfo = {
@@ -58,7 +59,7 @@ export function ModelsClient() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [showDisabledOnly, setShowDisabledOnly] = useState(false);
+  const [showHiddenOnly, setShowHiddenOnly] = useState(false);
   const [teamSlugOrId, setTeamSlugOrId] = useState<string | null>(null);
   const [togglingModel, setTogglingModel] = useState<string | null>(null);
 
@@ -116,8 +117,13 @@ export function ModelsClient() {
     void fetchData();
   }, [fetchData]);
 
-  // Toggle model enabled state
-  const handleToggleModel = async (modelName: string, enabled: boolean) => {
+  const isVisibleForTeam = useCallback(
+    (model: Model) => model.enabled && !model.hiddenForTeam,
+    []
+  );
+
+  // Toggle model visibility for the current team
+  const handleToggleModel = async (modelName: string, visible: boolean) => {
     if (!teamSlugOrId) return;
 
     setTogglingModel(modelName);
@@ -127,7 +133,7 @@ export function ModelsClient() {
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ enabled }),
+          body: JSON.stringify({ enabled: visible }),
         }
       );
 
@@ -137,7 +143,9 @@ export function ModelsClient() {
 
       // Update local state optimistically
       setModels((prev) =>
-        prev.map((m) => (m.name === modelName ? { ...m, enabled } : m))
+        prev.map((m) =>
+          m.name === modelName ? { ...m, hiddenForTeam: !visible } : m
+        )
       );
     } catch (err) {
       console.error("Failed to toggle model:", err);
@@ -185,14 +193,14 @@ export function ModelsClient() {
         }
       }
 
-      // Disabled only filter
-      if (showDisabledOnly && model.enabled) {
+      // Hidden only filter
+      if (showHiddenOnly && isVisibleForTeam(model)) {
         return false;
       }
 
       return true;
     });
-  }, [models, searchQuery, showDisabledOnly]);
+  }, [models, searchQuery, showHiddenOnly, isVisibleForTeam]);
 
   // Group models by vendor for display
   const groupedModels = useMemo(() => {
@@ -206,8 +214,7 @@ export function ModelsClient() {
     return groups;
   }, [filteredModels]);
 
-  // Count enabled models
-  const enabledCount = models.filter((m) => m.enabled).length;
+  const visibleCount = models.filter(isVisibleForTeam).length;
 
   if (!user) {
     return (
@@ -233,7 +240,7 @@ export function ModelsClient() {
           Model Management
         </h2>
         <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          {enabledCount} of {models.length} models enabled
+          {visibleCount} of {models.length} models visible for this team
         </p>
       </div>
 
@@ -260,11 +267,11 @@ export function ModelsClient() {
         <label className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400 cursor-pointer">
           <input
             type="checkbox"
-            checked={showDisabledOnly}
-            onChange={(e) => setShowDisabledOnly(e.target.checked)}
+            checked={showHiddenOnly}
+            onChange={(e) => setShowHiddenOnly(e.target.checked)}
             className="rounded border-neutral-300 dark:border-neutral-600 text-blue-600 focus:ring-blue-500"
           />
-          Show disabled only
+          Show hidden only
         </label>
       </div>
 
@@ -279,6 +286,8 @@ export function ModelsClient() {
               {vendorModels.map((model, idx) => {
                 const available = isModelAvailable(model);
                 const isToggling = togglingModel === model.name;
+                const visibleForTeam = isVisibleForTeam(model);
+                const systemDisabled = !model.enabled;
 
                 return (
                   <div
@@ -286,7 +295,7 @@ export function ModelsClient() {
                     className={cn(
                       "flex items-center gap-4 px-4 py-3",
                       idx !== vendorModels.length - 1 && "border-b border-neutral-100 dark:border-neutral-800",
-                      !available && "opacity-50"
+                      (!available || systemDisabled) && "opacity-50"
                     )}
                   >
                     {/* Provider Icon */}
@@ -328,30 +337,46 @@ export function ModelsClient() {
                             Free
                           </span>
                         )}
+                        {systemDisabled && (
+                          <span className="rounded bg-red-100 dark:bg-red-500/20 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:text-red-400 uppercase">
+                            System Disabled
+                          </span>
+                        )}
+                        {!systemDisabled && model.hiddenForTeam && (
+                          <span className="rounded bg-neutral-200 dark:bg-neutral-700 px-1.5 py-0.5 text-[10px] font-medium text-neutral-700 dark:text-neutral-300 uppercase">
+                            Hidden For Team
+                          </span>
+                        )}
                       </div>
                       <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400 truncate">
                         {model.name}
-                        {!available && " (provider not connected)"}
+                        {systemDisabled
+                          ? " (system disabled)"
+                          : !available
+                            ? " (provider not connected)"
+                            : model.hiddenForTeam
+                              ? " (hidden for this team)"
+                              : ""}
                       </p>
                     </div>
 
                     {/* Toggle Switch */}
                     <button
                       type="button"
-                      onClick={() => void handleToggleModel(model.name, !model.enabled)}
-                      disabled={isToggling || model.disabled}
+                      onClick={() => void handleToggleModel(model.name, !visibleForTeam)}
+                      disabled={isToggling || model.disabled || systemDisabled}
                       className={cn(
                         "relative h-6 w-11 rounded-full transition-colors flex-shrink-0",
-                        model.enabled
+                        visibleForTeam
                           ? "bg-blue-600"
                           : "bg-neutral-300 dark:bg-neutral-600",
-                        (isToggling || model.disabled) && "cursor-not-allowed opacity-50"
+                        (isToggling || model.disabled || systemDisabled) && "cursor-not-allowed opacity-50"
                       )}
                     >
                       <span
                         className={cn(
                           "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform",
-                          model.enabled ? "left-[22px]" : "left-0.5"
+                          visibleForTeam ? "left-[22px]" : "left-0.5"
                         )}
                       >
                         {isToggling && (
@@ -374,7 +399,7 @@ export function ModelsClient() {
             type="button"
             onClick={() => {
               setSearchQuery("");
-              setShowDisabledOnly(false);
+              setShowHiddenOnly(false);
             }}
             className="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:underline"
           >

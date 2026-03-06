@@ -20,16 +20,30 @@ export const list = query({
 
 /**
  * Admin query: list all models including disabled ones.
+ * Adds hiddenForTeam to distinguish team-level visibility from global enabled state.
  * Requires authentication.
  */
 export const listAll = authQuery({
   args: { teamSlugOrId: v.string() },
   handler: async (ctx, args) => {
-    // Verify user has access to the team
-    await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
 
-    const models = await ctx.db.query("models").collect();
-    return models.sort((a, b) => a.sortOrder - b.sortOrder);
+    const [models, teamVisibility] = await Promise.all([
+      ctx.db.query("models").collect(),
+      ctx.db
+        .query("teamModelVisibility")
+        .withIndex("by_team", (q) => q.eq("teamId", teamId))
+        .first(),
+    ]);
+
+    const hiddenModels = new Set(teamVisibility?.hiddenModels ?? []);
+
+    return models
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((model) => ({
+        ...model,
+        hiddenForTeam: hiddenModels.has(model.name),
+      }));
   },
 });
 
@@ -48,16 +62,26 @@ export const listAvailable = authQuery({
     const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
     console.log(`[listAvailable] teamSlugOrId=${args.teamSlugOrId}, resolved teamId=${teamId}`);
 
-    // Get enabled models from database
-    const models = await ctx.db
-      .query("models")
-      .withIndex("by_enabled", (q) => q.eq("enabled", true))
-      .collect();
-    console.log(`[listAvailable] Found ${models.length} enabled models`);
+    const [models, teamVisibility] = await Promise.all([
+      ctx.db
+        .query("models")
+        .withIndex("by_enabled", (q) => q.eq("enabled", true))
+        .collect(),
+      ctx.db
+        .query("teamModelVisibility")
+        .withIndex("by_team", (q) => q.eq("teamId", teamId))
+        .first(),
+    ]);
+    const hiddenModels = new Set(teamVisibility?.hiddenModels ?? []);
 
-    // If showAll is true, return all enabled models without filtering
+    console.log(`[listAvailable] Found ${models.length} enabled models`);
+    console.log(`[listAvailable] Found ${hiddenModels.size} team-hidden models`);
+
+    const visibleModels = models.filter((model) => !hiddenModels.has(model.name));
+
+    // If showAll is true, return all team-visible enabled models without credential filtering
     if (args.showAll) {
-      return models.sort((a, b) => a.sortOrder - b.sortOrder);
+      return visibleModels.sort((a, b) => a.sortOrder - b.sortOrder);
     }
 
     // Get team's configured API keys
@@ -69,7 +93,7 @@ export const listAvailable = authQuery({
     const configuredKeyEnvVars = new Set(apiKeys.map((k) => k.envVar));
 
     // Filter models by availability
-    const availableModels = models.filter((model) => {
+    const availableModels = visibleModels.filter((model) => {
       // Free tier models are always available
       if (model.tier === "free") return true;
       // Models with no required keys are available
@@ -80,7 +104,7 @@ export const listAvailable = authQuery({
     });
 
     // Log Claude models filtering for debugging
-    const claudeModels = models.filter((m) => m.name.startsWith("claude/"));
+    const claudeModels = visibleModels.filter((m) => m.name.startsWith("claude/"));
     console.log(`[listAvailable] Claude models in DB: ${claudeModels.map(m => `${m.name}(keys: ${m.requiredApiKeys?.join(",") || "none"})`).join(", ")}`);
     const claudeAvailable = availableModels.filter((m) => m.name.startsWith("claude/"));
     console.log(`[listAvailable] Claude models available after filtering: ${claudeAvailable.length}`);
@@ -91,7 +115,7 @@ export const listAvailable = authQuery({
 });
 
 /**
- * Admin mutation: toggle the global enabled state of a model.
+ * Admin mutation: toggle the system-global enabled state of a model.
  */
 export const setEnabled = authMutation({
   args: {

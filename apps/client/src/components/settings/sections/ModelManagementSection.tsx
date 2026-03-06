@@ -18,6 +18,7 @@ interface ModelEntry {
   vendor: string;
   tier: "free" | "paid";
   enabled: boolean;
+  hiddenForTeam: boolean;
   tags?: string[];
   requiredApiKeys: string[];
   disabled?: boolean;
@@ -45,7 +46,7 @@ export function ModelManagementSection({
 }: ModelManagementSectionProps) {
   const convex = useConvex();
   const [searchQuery, setSearchQuery] = useState("");
-  const [showDisabledOnly, setShowDisabledOnly] = useState(false);
+  const [showHiddenOnly, setShowHiddenOnly] = useState(false);
 
   // Query all models from Convex database (includes disabled and discovered models)
   const { data: convexModels, refetch: refetchModels, isLoading } = useQuery(
@@ -104,33 +105,37 @@ export function ModelManagementSection({
     [configuredApiKeys]
   );
 
-  // Mutation to toggle model enabled state via Convex
+  const isVisibleForTeam = useCallback((entry: ModelEntry) => {
+    return entry.enabled && !entry.hiddenForTeam;
+  }, []);
+
+  // Mutation to toggle model visibility via Convex
   const toggleModelMutation = useMutation({
     mutationFn: async ({
       modelName,
-      enabled,
+      hidden,
     }: {
       modelName: string;
-      enabled: boolean;
+      hidden: boolean;
     }) => {
-      return await convex.mutation(api.models.setEnabled, {
+      return await convex.mutation(api.teamModelVisibility.toggleModel, {
         teamSlugOrId,
         modelName,
-        enabled,
+        hidden,
       });
     },
     onSuccess: () => {
       void refetchModels();
     },
     onError: (error) => {
-      toast.error("Failed to update model");
+      toast.error("Failed to update team visibility");
       console.error("Toggle model error:", error);
     },
   });
 
-  const handleToggleModel = useCallback(
-    (modelName: string, enabled: boolean) => {
-      toggleModelMutation.mutate({ modelName, enabled });
+  const handleSetVisibility = useCallback(
+    (modelName: string, visible: boolean) => {
+      toggleModelMutation.mutate({ modelName, hidden: !visible });
     },
     [toggleModelMutation]
   );
@@ -154,8 +159,8 @@ export function ModelManagementSection({
         if (!matchesSearch) return false;
       }
 
-      // Apply disabled-only filter (enabled in DB means model is active)
-      if (showDisabledOnly && entry.enabled) {
+      // Apply hidden-only filter
+      if (showHiddenOnly && isVisibleForTeam(entry)) {
         return false;
       }
 
@@ -175,18 +180,18 @@ export function ModelManagementSection({
     }
 
     return grouped;
-  }, [convexModels, searchQuery, showDisabledOnly, isModelAvailable]);
+  }, [convexModels, searchQuery, showHiddenOnly, isModelAvailable, isVisibleForTeam]);
 
   // Count only available models (with API keys configured)
   const availableModels = convexModels?.filter(isModelAvailable) ?? [];
-  const enabledCount = availableModels.filter(m => m.enabled).length;
+  const visibleCount = availableModels.filter(isVisibleForTeam).length;
   const totalCount = availableModels.length;
 
   return (
     <div className="space-y-4">
       <SettingSection
         title="Model Management"
-        description={`${enabledCount} of ${totalCount} models enabled`}
+        description={`${visibleCount} of ${totalCount} models visible for this team`}
       >
         <div className="p-4 space-y-4">
           {/* Search and filter controls */}
@@ -205,11 +210,11 @@ export function ModelManagementSection({
             <label className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
               <input
                 type="checkbox"
-                checked={showDisabledOnly}
-                onChange={(e) => setShowDisabledOnly(e.target.checked)}
+                checked={showHiddenOnly}
+                onChange={(e) => setShowHiddenOnly(e.target.checked)}
                 className="h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 dark:border-neutral-600 dark:bg-neutral-800"
               />
-              Show disabled only
+              Show hidden only
             </label>
           </div>
 
@@ -226,7 +231,8 @@ export function ModelManagementSection({
                   {/* Model rows */}
                   <div className="rounded-lg border border-neutral-200 divide-y divide-neutral-200 dark:border-neutral-800 dark:divide-neutral-800">
                     {entries.map((entry) => {
-                      const isEnabled = entry.enabled;
+                      const isVisible = isVisibleForTeam(entry);
+                      const isSystemDisabled = !entry.enabled;
                       const isToggling =
                         toggleModelMutation.isPending &&
                         toggleModelMutation.variables?.modelName === entry.name;
@@ -248,6 +254,11 @@ export function ModelManagementSection({
                               </p>
                               <p className="text-xs text-neutral-500 dark:text-neutral-400 truncate">
                                 {entry.name}
+                                {isSystemDisabled
+                                  ? " (system disabled)"
+                                  : entry.hiddenForTeam
+                                    ? " (hidden for this team)"
+                                    : ""}
                               </p>
                             </div>
                           </div>
@@ -280,17 +291,27 @@ export function ModelManagementSection({
                                   N/A
                                 </span>
                               )}
+                              {isSystemDisabled && (
+                                <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                                  System disabled
+                                </span>
+                              )}
+                              {!isSystemDisabled && entry.hiddenForTeam && (
+                                <span className="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
+                                  Hidden for team
+                                </span>
+                              )}
                             </div>
 
-                            {/* Enable/Disable toggle */}
+                            {/* Team visibility toggle */}
                             <Switch
-                              aria-label={`Enable ${entry.displayName}`}
+                              aria-label={`Show ${entry.displayName} for this team`}
                               size="sm"
                               color="primary"
-                              isSelected={isEnabled}
-                              isDisabled={isToggling}
-                              onValueChange={(enabled) =>
-                                handleToggleModel(entry.name, enabled)
+                              isSelected={isVisible}
+                              isDisabled={isToggling || isSystemDisabled || entry.disabled}
+                              onValueChange={(visible) =>
+                                handleSetVisibility(entry.name, visible)
                               }
                             />
                           </div>
@@ -305,7 +326,7 @@ export function ModelManagementSection({
             {filteredAndGroupedModels.size === 0 && (
               <div className="rounded-lg border border-dashed border-neutral-300 px-4 py-8 text-center dark:border-neutral-700">
                 <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                  {searchQuery || showDisabledOnly
+                  {searchQuery || showHiddenOnly
                     ? "No models match your filters"
                     : "No models available"}
                 </p>

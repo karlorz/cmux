@@ -491,9 +491,8 @@ function DashboardComponent() {
     [reposByOrgQuery.data]
   );
 
-  // Note: modelPreferences was removed as Settings > Models now uses the global
-  // models.enabled field directly. Model filtering is done by:
-  // 1. models.listAvailable - returns only enabled models with required API keys
+  // Team/user visibility is not managed here. Model filtering is done by:
+  // 1. models.listAvailable - applies global models.enabled, teamModelVisibility, and API key checks
   // 2. entry.disabled - catalog-level disabled flag for deprecated models
   const disabledByUserModels = undefined;
 

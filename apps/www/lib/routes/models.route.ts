@@ -22,6 +22,7 @@ const ModelSchema = z
     sortOrder: z.number(),
     disabled: z.boolean().optional(),
     disabledReason: z.string().optional(),
+    hiddenForTeam: z.boolean(),
     variants: z
       .array(
         z.object({
@@ -122,19 +123,24 @@ modelsRouter.openapi(
 
     const models = await convex.query(api.models.listAll, { teamSlugOrId });
 
-    return c.json({ models });
+    return c.json({
+      models: models.map((model) => ({
+        ...model,
+        hiddenForTeam: model.hiddenForTeam ?? false,
+      })),
+    });
   }
 );
 
 /**
- * PATCH /models/:name/enabled - Toggle model enabled state
+ * PATCH /models/:name/enabled - Toggle model visibility for the current team
  */
 modelsRouter.openapi(
   createRoute({
     method: "patch",
     path: "/models/{name}/enabled",
     tags: ["Models"],
-    summary: "Toggle model enabled state",
+    summary: "Toggle model visibility for the current team",
     request: {
       params: z.object({
         name: z.string().describe("Model name (URL-encoded)"),
@@ -177,21 +183,21 @@ modelsRouter.openapi(
 
     const { name } = c.req.valid("param");
     const { teamSlugOrId } = c.req.valid("query");
-    const { enabled } = c.req.valid("json");
+    const { enabled: visible } = c.req.valid("json");
 
     // Decode URL-encoded model name (e.g., "claude%2Fopus-4.6" -> "claude/opus-4.6")
     const modelName = decodeURIComponent(name);
     const convex = getConvex({ accessToken });
 
     try {
-      await convex.mutation(api.models.setEnabled, {
+      await convex.mutation(api.teamModelVisibility.toggleModel, {
         teamSlugOrId,
         modelName,
-        enabled,
+        hidden: !visible,
       });
       return c.json({ success: true });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to update model enabled state";
+      const message = error instanceof Error ? error.message : "Failed to update model visibility";
       if (message.includes("not found")) {
         return c.json({ error: message }, 404);
       }
