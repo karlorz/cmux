@@ -1579,7 +1579,9 @@ const convexSchema = defineSchema({
     .index("by_team_status_priority", ["teamId", "status", "priority"])
     .index("by_assigned_agent", ["assignedAgentName", "status"])
     .index("by_parent", ["parentTaskId", "createdAt"])
-    .index("by_task_run", ["taskRunId"]),
+    .index("by_task_run", ["taskRunId"])
+    .index("by_status_started", ["status", "startedAt"])
+    .index("by_status", ["status", "createdAt"]),
 
   // Agent orchestration messages for inter-agent communication
   // Messages sent via orchestrate sendMessage mutation are stored here

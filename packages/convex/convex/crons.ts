@@ -105,4 +105,12 @@ crons.interval(
   internal.orchestrationWorker.pollReadyTasks
 );
 
+// Clean up orphan orchestration tasks (pending 7+ days with no activity)
+// Runs daily at 22:30 UTC (6:30 AM HKT)
+crons.daily(
+  "cleanup orphan orchestration tasks",
+  { hourUTC: 22, minuteUTC: 30 },
+  internal.orchestrationWorker.cleanupOrphanTasks
+);
+
 export default crons;

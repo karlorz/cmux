@@ -1872,19 +1872,27 @@ async function handleOrchestrationInternalSpawn(
     );
 
     // Update orchestration task status via Convex HTTP endpoint
-    fetch(`${convexSiteUrl}/api/orchestration/tasks/update`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Task-Run-JWT": taskRunJwt,
-      },
-      body: JSON.stringify(spawnResult.success
-        ? { orchestrationTaskId, status: "running", agentName }
-        : { orchestrationTaskId, status: "failed", errorMessage: spawnResult.error ?? "Spawn failed" }
-      ),
-    }).catch((err) => {
+    try {
+      const updateRes = await fetch(`${convexSiteUrl}/api/orchestration/tasks/update`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Task-Run-JWT": taskRunJwt,
+        },
+        body: JSON.stringify(spawnResult.success
+          ? { orchestrationTaskId, status: "running", agentName }
+          : { orchestrationTaskId, status: "failed", errorMessage: spawnResult.error ?? "Spawn failed" }
+        ),
+      });
+      if (!updateRes.ok) {
+        serverLogger.error("[http-api] orchestration status update failed", {
+          status: updateRes.status,
+          orchestrationTaskId,
+        });
+      }
+    } catch (err) {
       serverLogger.error("[http-api] Failed to update orchestration task status", err);
-    });
+    }
 
     jsonResponse(res, 200, {
       success: spawnResult.success,

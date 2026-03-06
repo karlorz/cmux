@@ -573,6 +573,16 @@ log() {
 sync_memory() {
   log "Starting memory sync"
 
+  # Rotate EVENTS.jsonl if it exceeds 1000 lines
+  EVENTS_FILE="$MEMORY_DIR/orchestration/EVENTS.jsonl"
+  if [ -f "$EVENTS_FILE" ]; then
+    lines=$(wc -l < "$EVENTS_FILE")
+    if [ "$lines" -gt 1000 ]; then
+      tail -n 1000 "$EVENTS_FILE" > "\${EVENTS_FILE}.tmp" && mv "\${EVENTS_FILE}.tmp" "$EVENTS_FILE"
+      log "Rotated EVENTS.jsonl from $lines to 1000 lines"
+    fi
+  fi
+
   # Fallback to reading Convex URL from .env if CMUX_CALLBACK_URL not set
   if [ -z "\${CMUX_CALLBACK_URL:-}" ]; then
     if [ -f "/root/workspace/.env" ]; then
@@ -673,7 +683,8 @@ sync_memory() {
 
 # Run sync with best-effort error handling
 sync_memory 2>>"$LOG_FILE" || {
-  echo "[$(date -Iseconds)] Memory sync failed but continuing" >> "$LOG_FILE"
+  exit_code=$?
+  echo "[$(date -Iseconds)] Memory sync failed with exit code $exit_code" >> "$LOG_FILE"
 }
 
 exit 0
@@ -1548,13 +1559,28 @@ function handleRequest(request) {
           if (orchestrationId) params.push('orchestrationId=' + encodeURIComponent(orchestrationId));
           if (params.length > 0) pullUrl += '?' + params.join('&');
 
-          // Make HTTP request to pull state
-          const https = require('https');
-          const http = require('http');
-          const url = require('url');
+          // Make HTTP request using curl via execSync
+          try {
+            const { execSync } = require('child_process');
+            const curlResult = execSync(
+              'curl -s -f -H "X-Task-Run-JWT: ' + taskRunJwt + '" "' + pullUrl + '"',
+              { encoding: 'utf-8', timeout: 15000 }
+            );
+            const data = JSON.parse(curlResult);
 
-          // Return instructions to use curl (MCP tools are synchronous, can't await here)
-          return sendResponse(id, { content: [{ type: 'text', text: 'To pull orchestration updates, run:\\ncurl -s -H "X-Task-Run-JWT: $CMUX_TASK_RUN_JWT" "' + pullUrl + '"\\n\\nOr use the sync.sh script which handles this automatically on shutdown.' }] });
+            // Optionally update local PLAN.json with remote state
+            if (data && data.tasks) {
+              const plan = readPlan() || { orchestrationId: orchestrationId || '', tasks: [] };
+              plan.tasks = data.tasks;
+              const planPath = MEMORY_DIR + '/orchestration/PLAN.json';
+              fs.writeFileSync(planPath, JSON.stringify(plan, null, 2));
+            }
+
+            return sendResponse(id, { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] });
+          } catch (pullErr) {
+            const errMsg = pullErr instanceof Error ? pullErr.message : String(pullErr);
+            return sendResponse(id, { content: [{ type: 'text', text: 'Failed to pull orchestration updates: ' + errMsg }] });
+          }
         }
 
         default:

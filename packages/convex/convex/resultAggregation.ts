@@ -197,16 +197,15 @@ async function writeMailboxMessage(
   const mailboxPath = `${MEMORY_PROTOCOL_DIR}/MAILBOX.json`;
 
   // Shell command to append message to MAILBOX.json
-  // This uses jq to safely append to the messages array
-  const messageJson = JSON.stringify(message).replace(/'/g, "'\\''"); // Escape single quotes for shell
+  // Uses base64 encoding to safely pass JSON through shell without injection risk
+  const messageBase64 = Buffer.from(JSON.stringify(message)).toString("base64");
   const appendCommand = `
+    decoded=$(printf '%s' '${messageBase64}' | base64 -d)
     if [ -f "${mailboxPath}" ]; then
-      # File exists - append to messages array
       tmp=$(mktemp)
-      jq --argjson msg '${messageJson}' '.messages += [$msg]' "${mailboxPath}" > "$tmp" && mv "$tmp" "${mailboxPath}"
+      jq --argjson msg "$decoded" '.messages += [$msg]' "${mailboxPath}" > "$tmp" && mv "$tmp" "${mailboxPath}"
     else
-      # File doesn't exist - create with initial message
-      echo '{"version":1,"messages":[${messageJson}]}' > "${mailboxPath}"
+      printf '{"version":1,"messages":[%s]}' "$decoded" > "${mailboxPath}"
     fi
   `.trim();
 
