@@ -578,7 +578,7 @@ sync_memory() {
   if [ -f "$EVENTS_FILE" ]; then
     lines=$(wc -l < "$EVENTS_FILE")
     if [ "$lines" -gt 1000 ]; then
-      tail -n 1000 "$EVENTS_FILE" > "\${EVENTS_FILE}.tmp" && mv "\${EVENTS_FILE}.tmp" "$EVENTS_FILE"
+      tail -n 1000 "$EVENTS_FILE" > "$EVENTS_FILE.tmp" && mv "$EVENTS_FILE.tmp" "$EVENTS_FILE"
       log "Rotated EVENTS.jsonl from $lines to 1000 lines"
     fi
   fi
@@ -1559,11 +1559,12 @@ function handleRequest(request) {
           if (orchestrationId) params.push('orchestrationId=' + encodeURIComponent(orchestrationId));
           if (params.length > 0) pullUrl += '?' + params.join('&');
 
-          // Make HTTP request using curl via execSync
+          // Make HTTP request using curl via execFileSync (no shell to avoid injection)
           try {
-            const { execSync } = require('child_process');
-            const curlResult = execSync(
-              'curl -s -f -H "X-Task-Run-JWT: ' + taskRunJwt + '" "' + pullUrl + '"',
+            const { execFileSync } = require('child_process');
+            const curlResult = execFileSync(
+              'curl',
+              ['-s', '-f', '-H', 'X-Task-Run-JWT: ' + taskRunJwt, pullUrl],
               { encoding: 'utf-8', timeout: 15000 }
             );
             const data = JSON.parse(curlResult);
