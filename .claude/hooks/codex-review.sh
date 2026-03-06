@@ -185,13 +185,27 @@ fi
 echo $((FAIL_COUNT + 1)) > "$FAIL_COUNT_FILE"
 debug_log "Review has ISSUES, showing to Claude"
 
+# Check if this is a mid-autopilot review (n-2 trigger) and include remaining turns
+REMAINING_INFO=""
+if [ "$AUTOPILOT_ACTIVE" = "1" ]; then
+  TURN_FILE_CHECK="/tmp/claude-autopilot-turns-${SESSION_ID}"
+  if [ -f "$TURN_FILE_CHECK" ]; then
+    CURRENT_TURN=$(cat "$TURN_FILE_CHECK" 2>/dev/null || echo "0")
+    AP_MAX="${CLAUDE_AUTOPILOT_MAX_TURNS:-20}"
+    REMAINING=$((AP_MAX - CURRENT_TURN))
+    if [ "$REMAINING" -gt 0 ]; then
+      REMAINING_INFO=" You have $REMAINING autopilot turns remaining to address these."
+    fi
+  fi
+fi
+
 # Build feedback message with codex findings + simplify instruction
 FEEDBACK="## Codex Code Review Findings (attempt $((FAIL_COUNT + 1))/5)
 
 $FINDINGS
 
 ---
-After addressing the above issues, run /simplify to check for code quality improvements (reuse, efficiency, clarity)."
+After addressing the above issues, run /simplify to check for code quality improvements (reuse, efficiency, clarity).${REMAINING_INFO}"
 
 echo "$FEEDBACK" >&2
 exit 2
