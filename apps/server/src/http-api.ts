@@ -1871,35 +1871,35 @@ async function handleOrchestrationInternalSpawn(
       taskRunJwt
     );
 
-    // Update orchestration task status via Convex HTTP endpoint
-    try {
-      const updateRes = await fetch(`${convexSiteUrl}/api/orchestration/tasks/update`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Task-Run-JWT": taskRunJwt,
-        },
-        body: JSON.stringify(spawnResult.success
-          ? { orchestrationTaskId, status: "running", agentName }
-          : { orchestrationTaskId, status: "failed", errorMessage: spawnResult.error ?? "Spawn failed" }
-        ),
-      });
-      if (!updateRes.ok) {
-        serverLogger.error("[http-api] orchestration status update failed", {
-          status: updateRes.status,
-          orchestrationTaskId,
-        });
-      }
-    } catch (err) {
-      serverLogger.error("[http-api] Failed to update orchestration task status", err);
-    }
-
+    // Send response immediately — don't block on best-effort status update
     jsonResponse(res, 200, {
       success: spawnResult.success,
       taskId,
       taskRunId,
       vscodeUrl: spawnResult.vscodeUrl,
       error: spawnResult.error,
+    });
+
+    // Update orchestration task status via Convex HTTP endpoint (best-effort, non-blocking)
+    fetch(`${convexSiteUrl}/api/orchestration/tasks/update`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Task-Run-JWT": taskRunJwt,
+      },
+      body: JSON.stringify(spawnResult.success
+        ? { orchestrationTaskId, status: "running", agentName }
+        : { orchestrationTaskId, status: "failed", errorMessage: spawnResult.error ?? "Spawn failed" }
+      ),
+    }).then((updateRes) => {
+      if (!updateRes.ok) {
+        serverLogger.error("[http-api] orchestration status update failed", {
+          status: updateRes.status,
+          orchestrationTaskId,
+        });
+      }
+    }).catch((err) => {
+      serverLogger.error("[http-api] Failed to update orchestration task status", err);
     });
   } catch (error) {
     serverLogger.error("[http-api] orchestrate/internal/spawn failed", error);

@@ -1562,6 +1562,14 @@ function handleRequest(request) {
           // Make HTTP request using curl via execFileSync (no shell to avoid injection)
           try {
             const { execFileSync } = require('child_process');
+
+            // Check curl availability before attempting
+            try {
+              execFileSync('which', ['curl'], { encoding: 'utf-8', timeout: 5000 });
+            } catch {
+              return sendResponse(id, { content: [{ type: 'text', text: 'curl is not available. To pull orchestration updates manually, install curl or run:\\nwget -qO- --header="X-Task-Run-JWT: $CMUX_TASK_RUN_JWT" "' + pullUrl + '"' }] });
+            }
+
             const curlResult = execFileSync(
               'curl',
               ['-s', '-f', '-H', 'X-Task-Run-JWT: ' + taskRunJwt, pullUrl],
