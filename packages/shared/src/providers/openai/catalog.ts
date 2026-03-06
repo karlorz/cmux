@@ -1,6 +1,46 @@
 import type { AgentCatalogEntry } from "../../agent-catalog";
 
 export const CODEX_CATALOG: AgentCatalogEntry[] = [
+  // GPT-5.4 variants (flagship frontier model)
+  {
+    name: "codex/gpt-5.4-xhigh",
+    displayName: "GPT-5.4 (XHigh)",
+    vendor: "openai",
+    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
+    tier: "paid",
+    tags: ["latest", "reasoning"],
+  },
+  {
+    name: "codex/gpt-5.4-high",
+    displayName: "GPT-5.4 (High)",
+    vendor: "openai",
+    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
+    tier: "paid",
+    tags: ["reasoning"],
+  },
+  {
+    name: "codex/gpt-5.4-medium",
+    displayName: "GPT-5.4 (Medium)",
+    vendor: "openai",
+    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
+    tier: "paid",
+    tags: ["reasoning"],
+  },
+  {
+    name: "codex/gpt-5.4-low",
+    displayName: "GPT-5.4 (Low)",
+    vendor: "openai",
+    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
+    tier: "paid",
+    tags: ["reasoning"],
+  },
+  {
+    name: "codex/gpt-5.4",
+    displayName: "GPT-5.4",
+    vendor: "openai",
+    requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
+    tier: "paid",
+  },
   // GPT-5.3-codex variants
   {
     name: "codex/gpt-5.3-codex-xhigh",
@@ -8,7 +48,7 @@ export const CODEX_CATALOG: AgentCatalogEntry[] = [
     vendor: "openai",
     requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
     tier: "paid",
-    tags: ["latest", "reasoning"],
+    tags: ["reasoning"],
   },
   {
     name: "codex/gpt-5.3-codex-high",
