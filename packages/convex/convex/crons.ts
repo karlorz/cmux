@@ -88,6 +88,22 @@ crons.weekly(
   internal.modelDiscovery.discoverOpenRouterModels
 );
 
+// Discover new models from OpenAI API weekly (Saturday 8:00 UTC)
+// Requires OPENAI_API_KEY env var, discovers Codex-relevant models
+crons.weekly(
+  "discover openai models",
+  { dayOfWeek: "saturday", hourUTC: 8, minuteUTC: 0 },
+  internal.modelDiscovery.discoverOpenAIModels
+);
+
+// Discover new models from Anthropic API weekly (Saturday 9:00 UTC)
+// Requires ANTHROPIC_API_KEY env var, discovers Claude Code relevant models
+crons.weekly(
+  "discover anthropic models",
+  { dayOfWeek: "saturday", hourUTC: 9, minuteUTC: 0 },
+  internal.modelDiscovery.discoverAnthropicModels
+);
+
 // Refresh expiring Codex OAuth tokens every 15 minutes
 // Centralizes token refresh to avoid stale refresh_token issues in sandboxes
 crons.interval(

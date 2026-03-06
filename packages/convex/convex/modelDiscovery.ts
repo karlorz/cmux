@@ -12,6 +12,8 @@ import { isOpencodeFreeModel } from "@cmux/shared/providers/opencode/free-models
 
 const OPENCODE_ZEN_MODELS_URL = "https://opencode.ai/zen/v1/models";
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
+const OPENAI_MODELS_URL = "https://api.openai.com/v1/models";
+const ANTHROPIC_MODELS_URL = "https://api.anthropic.com/v1/models";
 
 /**
  * Fetch model IDs from OpenCode Zen API
@@ -177,6 +179,213 @@ export const discoverOpenRouterModels = internalAction({
 });
 
 /**
+ * OpenAI model type from their API
+ */
+interface OpenAIModel {
+  id: string;
+  object: string;
+  created: number;
+  owned_by: string;
+}
+
+/**
+ * Fetch models from OpenAI API (requires OPENAI_API_KEY)
+ * Returns only models relevant for Codex CLI usage
+ */
+async function fetchOpenAIModels(apiKey: string): Promise<OpenAIModel[]> {
+  const response = await fetch(OPENAI_MODELS_URL, {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch OpenAI models: HTTP ${response.status} ${response.statusText}`
+    );
+  }
+  const payload = (await response.json()) as { data?: OpenAIModel[] };
+  return payload.data ?? [];
+}
+
+/**
+ * Filter OpenAI models to only include Codex-relevant models.
+ * We want GPT models that can be used with Codex CLI.
+ */
+function isCodexRelevantModel(modelId: string): boolean {
+  // Include GPT-5.x models (current generation)
+  if (modelId.startsWith("gpt-5")) return true;
+  // Include GPT-4.x models for backward compatibility
+  if (modelId.startsWith("gpt-4")) return true;
+  // Include codex-specific models
+  if (modelId.includes("codex")) return true;
+  return false;
+}
+
+/**
+ * Discover models from OpenAI API and upsert them into the models table.
+ * Requires OPENAI_API_KEY environment variable.
+ * Only discovers GPT/Codex models relevant for agent usage.
+ */
+export const discoverOpenAIModels = internalAction({
+  args: {},
+  handler: async (
+    ctx
+  ): Promise<{ discovered: number; codexRelevant: number }> => {
+    console.log("[modelDiscovery] Starting OpenAI model discovery...");
+
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      console.warn("[modelDiscovery] OPENAI_API_KEY not set, skipping OpenAI discovery");
+      return { discovered: 0, codexRelevant: 0 };
+    }
+
+    const allModels = await fetchOpenAIModels(apiKey);
+    console.log(`[modelDiscovery] Found ${allModels.length} total OpenAI models`);
+
+    // Filter to Codex-relevant models only
+    const relevantModels = allModels.filter((m) => isCodexRelevantModel(m.id));
+    console.log(`[modelDiscovery] ${relevantModels.length} Codex-relevant models`);
+
+    const now = Date.now();
+    const modelsToUpsert = relevantModels.map((model) => {
+      // Generate display name from model ID
+      const displayName = model.id
+        .replace(/-/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+
+      return {
+        name: `codex/${model.id}`,
+        displayName,
+        vendor: "openai",
+        source: "discovered" as const,
+        discoveredFrom: "openai-api",
+        discoveredAt: now,
+        requiredApiKeys: ["OPENAI_API_KEY", "CODEX_AUTH_JSON"],
+        tier: "paid" as const,
+        tags: ["discovered"],
+      };
+    });
+
+    if (modelsToUpsert.length > 0) {
+      const result = await ctx.runMutation(internal.models.bulkUpsert, {
+        models: modelsToUpsert,
+      });
+      console.log(
+        `[modelDiscovery] Upserted ${result.upsertedCount} OpenAI/Codex models`
+      );
+    }
+
+    return {
+      discovered: allModels.length,
+      codexRelevant: relevantModels.length,
+    };
+  },
+});
+
+/**
+ * Anthropic model type from their API
+ */
+interface AnthropicModel {
+  id: string;
+  display_name: string;
+  created_at: string;
+  type: "model";
+}
+
+/**
+ * Fetch models from Anthropic API (requires ANTHROPIC_API_KEY)
+ */
+async function fetchAnthropicModels(apiKey: string): Promise<AnthropicModel[]> {
+  const response = await fetch(ANTHROPIC_MODELS_URL, {
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch Anthropic models: HTTP ${response.status} ${response.statusText}`
+    );
+  }
+  const payload = (await response.json()) as { data?: AnthropicModel[] };
+  return payload.data ?? [];
+}
+
+/**
+ * Filter Anthropic models to only include Claude Code relevant models.
+ * We want Claude models suitable for agent/coding usage.
+ */
+function isClaudeCodeRelevantModel(modelId: string): boolean {
+  // Include Claude Opus, Sonnet, Haiku (main model families)
+  if (modelId.includes("opus")) return true;
+  if (modelId.includes("sonnet")) return true;
+  if (modelId.includes("haiku")) return true;
+  return false;
+}
+
+/**
+ * Discover models from Anthropic API and upsert them into the models table.
+ * Requires ANTHROPIC_API_KEY environment variable.
+ * Only discovers Claude models relevant for Claude Code usage.
+ */
+export const discoverAnthropicModels = internalAction({
+  args: {},
+  handler: async (
+    ctx
+  ): Promise<{ discovered: number; claudeRelevant: number }> => {
+    console.log("[modelDiscovery] Starting Anthropic model discovery...");
+
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      console.warn("[modelDiscovery] ANTHROPIC_API_KEY not set, skipping Anthropic discovery");
+      return { discovered: 0, claudeRelevant: 0 };
+    }
+
+    const allModels = await fetchAnthropicModels(apiKey);
+    console.log(`[modelDiscovery] Found ${allModels.length} total Anthropic models`);
+
+    // Filter to Claude Code relevant models only
+    const relevantModels = allModels.filter((m) => isClaudeCodeRelevantModel(m.id));
+    console.log(`[modelDiscovery] ${relevantModels.length} Claude Code relevant models`);
+
+    const now = Date.now();
+    const modelsToUpsert = relevantModels.map((model) => {
+      // Map Anthropic model ID to Claude Code naming convention
+      // e.g., claude-opus-4-6 -> claude/opus-4.6
+      const normalizedId = model.id
+        .replace("claude-", "")
+        .replace(/-(\d+)-(\d+)/, "-$1.$2"); // Convert claude-opus-4-6 to opus-4.6
+
+      return {
+        name: `claude/${normalizedId}`,
+        displayName: model.display_name || model.id,
+        vendor: "anthropic",
+        source: "discovered" as const,
+        discoveredFrom: "anthropic-api",
+        discoveredAt: now,
+        requiredApiKeys: ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
+        tier: "paid" as const,
+        tags: ["discovered"],
+      };
+    });
+
+    if (modelsToUpsert.length > 0) {
+      const result = await ctx.runMutation(internal.models.bulkUpsert, {
+        models: modelsToUpsert,
+      });
+      console.log(
+        `[modelDiscovery] Upserted ${result.upsertedCount} Anthropic/Claude models`
+      );
+    }
+
+    return {
+      discovered: allModels.length,
+      claudeRelevant: relevantModels.length,
+    };
+  },
+});
+
+/**
  * Seed the models table from the static AGENT_CATALOG.
  * This imports curated models that are defined in code.
  * Also cleans up stale curated models that are no longer in the catalog.
@@ -312,6 +521,8 @@ export const triggerRefresh = action({
     free: number;
     paid: number;
     openrouter?: { discovered: number; free: number; paid: number };
+    openai?: { discovered: number; codexRelevant: number };
+    anthropic?: { discovered: number; claudeRelevant: number };
   }> => {
     // Manual auth check for actions
     const identity = await ctx.auth.getUserIdentity();
@@ -344,13 +555,49 @@ export const triggerRefresh = action({
       console.error("[modelDiscovery] OpenRouter discovery failed:", error);
     }
 
+    // Discover from OpenAI (Codex models)
+    let openaiResult:
+      | { discovered: number; codexRelevant: number }
+      | undefined;
+    try {
+      openaiResult = await ctx.runAction(
+        internal.modelDiscovery.discoverOpenAIModels,
+        {}
+      );
+    } catch (error) {
+      console.error("[modelDiscovery] OpenAI discovery failed:", error);
+    }
+
+    // Discover from Anthropic (Claude models)
+    let anthropicResult:
+      | { discovered: number; claudeRelevant: number }
+      | undefined;
+    try {
+      anthropicResult = await ctx.runAction(
+        internal.modelDiscovery.discoverAnthropicModels,
+        {}
+      );
+    } catch (error) {
+      console.error("[modelDiscovery] Anthropic discovery failed:", error);
+    }
+
+    const totalDiscovered =
+      opcodeResult.discovered +
+      (openrouterResult?.discovered ?? 0) +
+      (openaiResult?.codexRelevant ?? 0) +
+      (anthropicResult?.claudeRelevant ?? 0);
+
     return {
       success: true,
       curated: seedResult.seededCount,
-      discovered: opcodeResult.discovered + (openrouterResult?.discovered ?? 0),
+      discovered: totalDiscovered,
       free: opcodeResult.free + (openrouterResult?.free ?? 0),
-      paid: opcodeResult.paid + (openrouterResult?.paid ?? 0),
+      paid: opcodeResult.paid + (openrouterResult?.paid ?? 0) +
+        (openaiResult?.codexRelevant ?? 0) +
+        (anthropicResult?.claudeRelevant ?? 0),
       openrouter: openrouterResult,
+      openai: openaiResult,
+      anthropic: anthropicResult,
     };
   },
 });
