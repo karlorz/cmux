@@ -37,7 +37,7 @@ log_dir="logs/pve-lxc-networkd"
 mkdir -p "${log_dir}"
 
 readarray -t snapshot_lines < <(
-  python3 - <<'PY'
+  python3 - "${results_json}" <<'PY'
 import json
 import sys
 path = sys.argv[1]
@@ -51,7 +51,6 @@ for r in results:
         continue
     print(f"{preset}\t{snap}")
 PY
-  "${results_json}"
 )
 
 if [[ ${#snapshot_lines[@]} -eq 0 ]]; then
