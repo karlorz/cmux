@@ -291,6 +291,12 @@ async function updateDependencyDependents(
   now: number,
   validateTeam: boolean
 ): Promise<void> {
+  // Check for circular dependencies before wiring
+  const wouldCycle = await wouldCreateCircularDependency(ctx, newTaskId, dependencies);
+  if (wouldCycle) {
+    throw new Error("Dependencies would create a circular dependency");
+  }
+
   // Batch fetch all dependencies
   const deps = await Promise.all(dependencies.map((id) => ctx.db.get(id)));
 
@@ -614,7 +620,7 @@ export const failTask = authMutation({
 /**
  * Check if an orchestration task is linked to a project via metadata.
  */
-function isLinkedToProject(task: Doc<"orchestrationTasks"> | null): boolean {
+export function isLinkedToProject(task: Doc<"orchestrationTasks"> | null): boolean {
   const metadata = task?.metadata as Record<string, unknown> | undefined;
   return !!metadata?.projectId;
 }
@@ -644,6 +650,53 @@ export const failTaskInternal = internalMutation({
       await ctx.scheduler.runAfter(0, internal.projectQueries.syncPlanStatusFromOrchestration, {
         orchestrationTaskId: taskId,
       });
+    }
+
+    // Cascade failure to dependent tasks
+    await ctx.scheduler.runAfter(0, internal.orchestrationQueries.cascadeFailureToDependent, {
+      failedTaskId: taskId,
+    });
+  },
+});
+
+/**
+ * Cascade failure to dependent tasks when a task fails.
+ * Any pending dependent whose dependency has failed gets auto-failed,
+ * cascading recursively through the dependency graph.
+ */
+export const cascadeFailureToDependent = internalMutation({
+  args: {
+    failedTaskId: v.id("orchestrationTasks"),
+  },
+  handler: async (ctx, { failedTaskId }) => {
+    const failedTask = await ctx.db.get(failedTaskId);
+    if (!failedTask?.dependents || failedTask.dependents.length === 0) return;
+
+    const now = Date.now();
+
+    for (const dependentId of failedTask.dependents) {
+      const dependent = await ctx.db.get(dependentId);
+      if (!dependent || dependent.status !== "pending") continue;
+
+      await ctx.db.patch(dependentId, {
+        status: "failed",
+        errorMessage: `Dependency ${failedTaskId} failed`,
+        completedAt: now,
+        updatedAt: now,
+      });
+
+      // Recursively cascade to this dependent's dependents
+      await ctx.scheduler.runAfter(0, internal.orchestrationQueries.cascadeFailureToDependent, {
+        failedTaskId: dependentId,
+      });
+
+      // Sync project status if linked
+      const linked = isLinkedToProject(dependent);
+      if (linked) {
+        await ctx.scheduler.runAfter(0, internal.projectQueries.syncPlanStatusFromOrchestration, {
+          orchestrationTaskId: dependentId,
+        });
+      }
     }
   },
 });

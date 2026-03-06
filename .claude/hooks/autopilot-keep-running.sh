@@ -114,11 +114,22 @@ else
   PHASE="monitoring-60s"
 fi
 
-# Signal to downstream hooks (codex-review) that autopilot is blocking this stop
-# IMPORTANT: Write this BEFORE the sleep to avoid race condition where parallel
-# hooks (codex-review) start before the flag exists.
+# At n-2 turns before max, allow codex-review to run by NOT writing the blocked file.
+# This gives Claude 2 remaining turns to address any code review findings.
 AUTOPILOT_BLOCKED_FILE="/tmp/claude-autopilot-blocked-${SESSION_ID}"
-echo "$TURN_COUNT" > "$AUTOPILOT_BLOCKED_FILE"
+REVIEW_TURN=$((MAX_TURNS - 2))
+REVIEW_ENABLED=0
+if [ "$TURN_COUNT" -eq "$REVIEW_TURN" ] && [ "$MAX_TURNS" -gt 2 ]; then
+  REVIEW_ENABLED=1
+  # Remove stale blocked flag so codex-review can run
+  rm -f "$AUTOPILOT_BLOCKED_FILE"
+  echo "[Autopilot] Code review enabled at turn $TURN_COUNT/$MAX_TURNS (n-2)" >&2
+else
+  # Signal to downstream hooks (codex-review) that autopilot is blocking this stop
+  # IMPORTANT: Write this BEFORE the sleep to avoid race condition where parallel
+  # hooks (codex-review) start before the flag exists.
+  echo "$TURN_COUNT" > "$AUTOPILOT_BLOCKED_FILE"
+fi
 
 if [ "$DELAY_SECONDS" -gt 0 ]; then
   sleep "$DELAY_SECONDS"
@@ -127,5 +138,9 @@ fi
 # Block stop - output JSON decision to stdout
 echo "[Autopilot] Turn $TURN_COUNT/$MAX_TURNS ($PHASE) - continuing..." >&2
 
-printf '{"decision":"block","reason":"%sContinue from where you left off. Do not ask whether to continue.\\nEnd with: Progress, Commands run, Files changed, Next."}\n' "$WAIT_INSTRUCTION"
+if [ "$REVIEW_ENABLED" = "1" ]; then
+  printf '{"decision":"block","reason":"%sCode review is running. After review feedback, address any issues found. You have 2 turns remaining.\\nEnd with: Progress, Commands run, Files changed, Next."}\n' "$WAIT_INSTRUCTION"
+else
+  printf '{"decision":"block","reason":"%sContinue from where you left off. Do not ask whether to continue.\\nEnd with: Progress, Commands run, Files changed, Next."}\n' "$WAIT_INSTRUCTION"
+fi
 exit 0

@@ -133,14 +133,22 @@ trap 'rm -f "$TMPFILE" "$COMPLETED_FILE"' EXIT
 
 # REVIEW.md guidelines are loaded via AGENTS.md (codex reads it automatically).
 # --base and [PROMPT] are mutually exclusive, so we cannot pass a custom prompt here.
-# --enable use_linux_sandbox_bwrap avoids Landlock restrictions in containerized environments.
+# --sandbox danger-full-access disables sandboxing entirely (safe in isolated LXC/container).
+# Previous --enable use_linux_sandbox_bwrap caused node sandbox-check errors in containers.
 debug_log "Running codex review..."
-unbuffer codex \
-  --dangerously-bypass-approvals-and-sandbox \
-  --enable use_linux_sandbox_bwrap \
-  --model gpt-5.3-codex \
-  -c model_reasoning_effort="low" \
-  review --base main > "$TMPFILE" 2>&1 || true
+if command -v unbuffer >/dev/null 2>&1; then
+  unbuffer codex \
+    --sandbox danger-full-access \
+    --model gpt-5.3-codex \
+    -c model_reasoning_effort="high" \
+    review --base main > "$TMPFILE" 2>&1 || true
+else
+  codex \
+    --sandbox danger-full-access \
+    --model gpt-5.3-codex \
+    -c model_reasoning_effort="high" \
+    review --base main > "$TMPFILE" 2>&1 || true
+fi
 debug_log "Codex review finished"
 
 # Strip ANSI codes first, then extract final codex response
@@ -185,13 +193,27 @@ fi
 echo $((FAIL_COUNT + 1)) > "$FAIL_COUNT_FILE"
 debug_log "Review has ISSUES, showing to Claude"
 
+# Check if this is a mid-autopilot review (n-2 trigger) and include remaining turns
+REMAINING_INFO=""
+if [ "$AUTOPILOT_ACTIVE" = "1" ]; then
+  TURN_FILE_CHECK="/tmp/claude-autopilot-turns-${SESSION_ID}"
+  if [ -f "$TURN_FILE_CHECK" ]; then
+    CURRENT_TURN=$(cat "$TURN_FILE_CHECK" 2>/dev/null || echo "0")
+    AP_MAX="${CLAUDE_AUTOPILOT_MAX_TURNS:-20}"
+    REMAINING=$((AP_MAX - CURRENT_TURN))
+    if [ "$REMAINING" -gt 0 ]; then
+      REMAINING_INFO=" You have $REMAINING autopilot turns remaining to address these."
+    fi
+  fi
+fi
+
 # Build feedback message with codex findings + simplify instruction
 FEEDBACK="## Codex Code Review Findings (attempt $((FAIL_COUNT + 1))/5)
 
 $FINDINGS
 
 ---
-After addressing the above issues, run /simplify to check for code quality improvements (reuse, efficiency, clarity)."
+After addressing the above issues, run /simplify to check for code quality improvements (reuse, efficiency, clarity).${REMAINING_INFO}"
 
 echo "$FEEDBACK" >&2
 exit 2
