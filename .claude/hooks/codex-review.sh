@@ -133,11 +133,11 @@ trap 'rm -f "$TMPFILE" "$COMPLETED_FILE"' EXIT
 
 # REVIEW.md guidelines are loaded via AGENTS.md (codex reads it automatically).
 # --base and [PROMPT] are mutually exclusive, so we cannot pass a custom prompt here.
-# --enable use_linux_sandbox_bwrap avoids Landlock restrictions in containerized environments.
+# --sandbox danger-full-access disables sandboxing entirely (safe in isolated LXC/container).
+# Previous --enable use_linux_sandbox_bwrap caused node sandbox-check errors in containers.
 debug_log "Running codex review..."
 unbuffer codex \
-  --dangerously-bypass-approvals-and-sandbox \
-  --enable use_linux_sandbox_bwrap \
+  --sandbox danger-full-access \
   --model gpt-5.3-codex \
   -c model_reasoning_effort="low" \
   review --base main > "$TMPFILE" 2>&1 || true
