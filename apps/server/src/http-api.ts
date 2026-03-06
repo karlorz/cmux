@@ -1881,26 +1881,32 @@ async function handleOrchestrationInternalSpawn(
     });
 
     // Update orchestration task status via Convex HTTP endpoint (best-effort, non-blocking)
-    fetch(`${convexSiteUrl}/api/orchestration/tasks/update`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Task-Run-JWT": taskRunJwt,
-      },
-      body: JSON.stringify(spawnResult.success
-        ? { orchestrationTaskId, status: "running", agentName }
-        : { orchestrationTaskId, status: "failed", errorMessage: spawnResult.error ?? "Spawn failed" }
-      ),
-    }).then((updateRes) => {
-      if (!updateRes.ok) {
-        serverLogger.error("[http-api] orchestration status update failed", {
-          status: updateRes.status,
-          orchestrationTaskId,
-        });
-      }
-    }).catch((err) => {
-      serverLogger.error("[http-api] Failed to update orchestration task status", err);
-    });
+    // Wrapped in try-catch to prevent synchronous fetch errors from reaching the outer
+    // catch block which would attempt a second jsonResponse after 200 was already sent.
+    try {
+      fetch(`${convexSiteUrl}/api/orchestration/tasks/update`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Task-Run-JWT": taskRunJwt,
+        },
+        body: JSON.stringify(spawnResult.success
+          ? { orchestrationTaskId, status: "running", agentName }
+          : { orchestrationTaskId, status: "failed", errorMessage: spawnResult.error ?? "Spawn failed" }
+        ),
+      }).then((updateRes) => {
+        if (!updateRes.ok) {
+          serverLogger.error("[http-api] orchestration status update failed", {
+            status: updateRes.status,
+            orchestrationTaskId,
+          });
+        }
+      }).catch((err) => {
+        serverLogger.error("[http-api] Failed to update orchestration task status", err);
+      });
+    } catch (err) {
+      serverLogger.error("[http-api] Failed to initiate orchestration status update", err);
+    }
   } catch (error) {
     serverLogger.error("[http-api] orchestrate/internal/spawn failed", error);
     const message = error instanceof Error ? error.message : "Unknown error";
