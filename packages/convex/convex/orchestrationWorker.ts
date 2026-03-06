@@ -38,6 +38,7 @@ import {
   internalMutation,
   internalQuery,
 } from "./_generated/server";
+import { isLinkedToProject } from "./orchestrationQueries";
 
 // Configuration
 const MAX_CONCURRENT_SPAWNS = 3; // Per-team concurrent spawn limit
@@ -111,7 +112,7 @@ export const getTeamsWithPendingTasks = internalQuery({
   handler: async (ctx) => {
     const pendingTasks = await ctx.db
       .query("orchestrationTasks")
-      .filter((q) => q.eq(q.field("status"), "pending"))
+      .withIndex("by_status", (q) => q.eq("status", "pending"))
       .collect();
 
     return [...new Set(pendingTasks.map((t) => t.teamId))];
@@ -275,12 +276,24 @@ export const handleTaskCompletion = internalMutation({
         completedAt: now,
         updatedAt: now,
       });
+
+      // Cascade failure to dependent tasks
+      await ctx.scheduler.runAfter(0, internal.orchestrationQueries.cascadeFailureToDependent, {
+        failedTaskId: orchTask._id,
+      });
     }
 
     // Trigger dependent tasks immediately (don't wait for poll cycle)
     await ctx.scheduler.runAfter(0, internal.orchestrationQueries.triggerDependentTasks, {
       completedTaskId: orchTask._id,
     });
+
+    // Sync project status if linked
+    if (isLinkedToProject(orchTask)) {
+      await ctx.scheduler.runAfter(0, internal.projectQueries.syncPlanStatusFromOrchestration, {
+        orchestrationTaskId: orchTask._id,
+      });
+    }
   },
 });
 
@@ -297,7 +310,9 @@ export const checkForTimedOutTasks = internalMutation({
     // Find running tasks that started before the timeout threshold
     const runningTasks = await ctx.db
       .query("orchestrationTasks")
-      .filter((q) => q.eq(q.field("status"), "running"))
+      .withIndex("by_status_started", (q) =>
+        q.eq("status", "running").lt("startedAt", timeoutThreshold)
+      )
       .collect();
 
     for (const task of runningTasks) {
@@ -308,7 +323,56 @@ export const checkForTimedOutTasks = internalMutation({
           completedAt: now,
           updatedAt: now,
         });
+
+        // Cascade failure to dependent tasks
+        await ctx.scheduler.runAfter(0, internal.orchestrationQueries.cascadeFailureToDependent, {
+          failedTaskId: task._id,
+        });
       }
+    }
+  },
+});
+
+const ORPHAN_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const ORPHAN_BATCH_SIZE = 100;
+
+/**
+ * Clean up orphan tasks that have been pending for 7+ days with no activity.
+ * Called by daily cron to prevent tasks from being stuck forever.
+ */
+export const cleanupOrphanTasks = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const orphanThreshold = now - ORPHAN_THRESHOLD_MS;
+
+    const pendingTasks = await ctx.db
+      .query("orchestrationTasks")
+      .withIndex("by_status", (q) => q.eq("status", "pending"))
+      .take(ORPHAN_BATCH_SIZE * 10); // Over-fetch to filter
+
+    let cancelled = 0;
+    for (const task of pendingTasks) {
+      if (cancelled >= ORPHAN_BATCH_SIZE) break;
+      if (task.updatedAt < orphanThreshold) {
+        await ctx.db.patch(task._id, {
+          status: "cancelled",
+          errorMessage: "Cancelled: pending for 7+ days with no activity",
+          completedAt: now,
+          updatedAt: now,
+        });
+
+        // Cascade failure to dependent tasks
+        await ctx.scheduler.runAfter(0, internal.orchestrationQueries.cascadeFailureToDependent, {
+          failedTaskId: task._id,
+        });
+
+        cancelled++;
+      }
+    }
+
+    if (cancelled > 0) {
+      console.log(`[orchestrationWorker] Cleaned up ${cancelled} orphan tasks`);
     }
   },
 });

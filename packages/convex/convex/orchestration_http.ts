@@ -678,8 +678,10 @@ export const getOrchestrationResults = httpAction(async (ctx, req) => {
       status = "completed";
     } else if (completedTasks === totalTasks) {
       status = "completed";
-    } else if (failedTasks > 0 && completedTasks + failedTasks === totalTasks) {
+    } else if (failedTasks === totalTasks) {
       status = "failed";
+    } else if (completedTasks + failedTasks === totalTasks) {
+      status = "partial"; // All terminal but mixed completed/failed
     } else if (completedTasks > 0 || failedTasks > 0) {
       status = "partial";
     } else {

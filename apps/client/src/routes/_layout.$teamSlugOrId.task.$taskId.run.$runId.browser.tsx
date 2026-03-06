@@ -116,8 +116,17 @@ function BrowserComponent() {
       if (runId !== taskRunId) return;
       const viewer = vncRef.current;
       if (!viewer) return;
+      const previousFocus = document.activeElement;
       viewer.disconnect();
       viewer.connect();
+      requestAnimationFrame(() => {
+        if (
+          previousFocus instanceof HTMLElement &&
+          document.activeElement !== previousFocus
+        ) {
+          previousFocus.focus({ preventScroll: true });
+        }
+      });
     });
   }, [taskRunId]);
 
