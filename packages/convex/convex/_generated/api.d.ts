@@ -100,6 +100,7 @@ import type * as taskRunLogChunks from "../taskRunLogChunks.js";
 import type * as taskRuns from "../taskRuns.js";
 import type * as taskRuns_http from "../taskRuns_http.js";
 import type * as tasks from "../tasks.js";
+import type * as teamModelVisibility from "../teamModelVisibility.js";
 import type * as teams from "../teams.js";
 import type * as userEditorSettings from "../userEditorSettings.js";
 import type * as users from "../users.js";
@@ -210,6 +211,7 @@ declare const fullApi: ApiFromModules<{
   taskRuns: typeof taskRuns;
   taskRuns_http: typeof taskRuns_http;
   tasks: typeof tasks;
+  teamModelVisibility: typeof teamModelVisibility;
   teams: typeof teams;
   userEditorSettings: typeof userEditorSettings;
   users: typeof users;

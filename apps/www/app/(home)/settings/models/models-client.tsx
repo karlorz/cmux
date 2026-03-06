@@ -15,7 +15,8 @@ type Model = {
   requiredApiKeys: string[];
   tier: "free" | "paid";
   tags: string[];
-  enabled: boolean;
+  enabled: boolean; // System-wide enabled state
+  hiddenForTeam?: boolean; // Team-scoped visibility (hidden = not visible)
   sortOrder: number;
   disabled?: boolean;
   disabledReason?: string;
@@ -116,8 +117,10 @@ export function ModelsClient() {
     void fetchData();
   }, [fetchData]);
 
-  // Toggle model enabled state
-  const handleToggleModel = async (modelName: string, enabled: boolean) => {
+  // Toggle model visibility for the team
+  // visible=true means the model should be shown (hidden=false)
+  // visible=false means the model should be hidden (hidden=true)
+  const handleToggleModel = async (modelName: string, visible: boolean) => {
     if (!teamSlugOrId) return;
 
     setTogglingModel(modelName);
@@ -127,7 +130,7 @@ export function ModelsClient() {
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ enabled }),
+          body: JSON.stringify({ enabled: visible }), // enabled=true means visible (not hidden)
         }
       );
 
@@ -137,7 +140,9 @@ export function ModelsClient() {
 
       // Update local state optimistically
       setModels((prev) =>
-        prev.map((m) => (m.name === modelName ? { ...m, enabled } : m))
+        prev.map((m) =>
+          m.name === modelName ? { ...m, hiddenForTeam: !visible } : m
+        )
       );
     } catch (err) {
       console.error("Failed to toggle model:", err);
@@ -170,6 +175,11 @@ export function ModelsClient() {
     [configuredApiKeys]
   );
 
+  // Compute visibility: visible if system-enabled AND not hidden for team
+  const isModelVisible = useCallback((model: Model) => {
+    return model.enabled && !model.hiddenForTeam;
+  }, []);
+
   // Filter models
   const filteredModels = useMemo(() => {
     return models.filter((model) => {
@@ -185,14 +195,14 @@ export function ModelsClient() {
         }
       }
 
-      // Disabled only filter
-      if (showDisabledOnly && model.enabled) {
+      // Disabled only filter - show models that are not visible
+      if (showDisabledOnly && isModelVisible(model)) {
         return false;
       }
 
       return true;
     });
-  }, [models, searchQuery, showDisabledOnly]);
+  }, [models, searchQuery, showDisabledOnly, isModelVisible]);
 
   // Group models by vendor for display
   const groupedModels = useMemo(() => {
@@ -206,8 +216,8 @@ export function ModelsClient() {
     return groups;
   }, [filteredModels]);
 
-  // Count enabled models
-  const enabledCount = models.filter((m) => m.enabled).length;
+  // Count visible models (system-enabled AND not hidden for team)
+  const visibleCount = models.filter((m) => m.enabled && !m.hiddenForTeam).length;
 
   if (!user) {
     return (
@@ -233,7 +243,7 @@ export function ModelsClient() {
           Model Management
         </h2>
         <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          {enabledCount} of {models.length} models enabled
+          {visibleCount} of {models.length} models visible for your team
         </p>
       </div>
 
@@ -264,7 +274,7 @@ export function ModelsClient() {
             onChange={(e) => setShowDisabledOnly(e.target.checked)}
             className="rounded border-neutral-300 dark:border-neutral-600 text-blue-600 focus:ring-blue-500"
           />
-          Show disabled only
+          Show hidden only
         </label>
       </div>
 
@@ -279,6 +289,8 @@ export function ModelsClient() {
               {vendorModels.map((model, idx) => {
                 const available = isModelAvailable(model);
                 const isToggling = togglingModel === model.name;
+                const visible = isModelVisible(model);
+                const isSystemDisabled = !model.enabled;
 
                 return (
                   <div
@@ -286,7 +298,7 @@ export function ModelsClient() {
                     className={cn(
                       "flex items-center gap-4 px-4 py-3",
                       idx !== vendorModels.length - 1 && "border-b border-neutral-100 dark:border-neutral-800",
-                      !available && "opacity-50"
+                      (!available || isSystemDisabled) && "opacity-50"
                     )}
                   >
                     {/* Provider Icon */}
@@ -328,30 +340,37 @@ export function ModelsClient() {
                             Free
                           </span>
                         )}
+                        {isSystemDisabled && (
+                          <span className="rounded bg-red-100 dark:bg-red-500/20 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:text-red-400 uppercase">
+                            System Disabled
+                          </span>
+                        )}
                       </div>
                       <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400 truncate">
                         {model.name}
                         {!available && " (provider not connected)"}
+                        {isSystemDisabled && " (unavailable system-wide)"}
                       </p>
                     </div>
 
-                    {/* Toggle Switch */}
+                    {/* Toggle Switch - disabled if model is system-disabled */}
                     <button
                       type="button"
-                      onClick={() => void handleToggleModel(model.name, !model.enabled)}
-                      disabled={isToggling || model.disabled}
+                      onClick={() => void handleToggleModel(model.name, !visible)}
+                      disabled={isToggling || model.disabled || isSystemDisabled}
+                      title={isSystemDisabled ? "This model is disabled system-wide" : undefined}
                       className={cn(
                         "relative h-6 w-11 rounded-full transition-colors flex-shrink-0",
-                        model.enabled
+                        visible
                           ? "bg-blue-600"
                           : "bg-neutral-300 dark:bg-neutral-600",
-                        (isToggling || model.disabled) && "cursor-not-allowed opacity-50"
+                        (isToggling || model.disabled || isSystemDisabled) && "cursor-not-allowed opacity-50"
                       )}
                     >
                       <span
                         className={cn(
                           "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform",
-                          model.enabled ? "left-[22px]" : "left-0.5"
+                          visible ? "left-[22px]" : "left-0.5"
                         )}
                       >
                         {isToggling && (

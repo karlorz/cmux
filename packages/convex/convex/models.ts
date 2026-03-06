@@ -20,22 +20,37 @@ export const list = query({
 
 /**
  * Admin query: list all models including disabled ones.
- * Requires authentication.
+ * Requires authentication. Annotates each model with hiddenForTeam boolean.
  */
 export const listAll = authQuery({
   args: { teamSlugOrId: v.string() },
   handler: async (ctx, args) => {
-    // Verify user has access to the team
-    await resolveTeamIdLoose(ctx, args.teamSlugOrId);
+    // Verify user has access to the team and get teamId
+    const teamId = await resolveTeamIdLoose(ctx, args.teamSlugOrId);
 
     const models = await ctx.db.query("models").collect();
-    return models.sort((a, b) => a.sortOrder - b.sortOrder);
+
+    // Get team's hidden models
+    const teamVisibility = await ctx.db
+      .query("teamModelVisibility")
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
+      .first();
+    const hiddenModels = new Set(teamVisibility?.hiddenModels ?? []);
+
+    // Annotate each model with hiddenForTeam
+    return models
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((model) => ({
+        ...model,
+        hiddenForTeam: hiddenModels.has(model.name),
+      }));
   },
 });
 
 /**
- * List available models filtered by team's configured API keys.
- * Returns only models the team can actually use (has required keys or free tier).
+ * List available models filtered by team's configured API keys and team visibility.
+ * Returns only models the team can actually use (has required keys or free tier)
+ * and that are not hidden by the team.
  * Requires authentication.
  */
 export const listAvailable = authQuery({
@@ -55,9 +70,18 @@ export const listAvailable = authQuery({
       .collect();
     console.log(`[listAvailable] Found ${models.length} enabled models`);
 
-    // If showAll is true, return all enabled models without filtering
+    // Get team's hidden models
+    const teamVisibility = await ctx.db
+      .query("teamModelVisibility")
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
+      .first();
+    const hiddenModels = new Set(teamVisibility?.hiddenModels ?? []);
+    console.log(`[listAvailable] Team has ${hiddenModels.size} hidden models`);
+
+    // If showAll is true, return all enabled models without filtering (but still exclude team-hidden)
     if (args.showAll) {
-      return models.sort((a, b) => a.sortOrder - b.sortOrder);
+      const visibleModels = models.filter((model) => !hiddenModels.has(model.name));
+      return visibleModels.sort((a, b) => a.sortOrder - b.sortOrder);
     }
 
     // Get team's configured API keys
@@ -68,8 +92,10 @@ export const listAvailable = authQuery({
 
     const configuredKeyEnvVars = new Set(apiKeys.map((k) => k.envVar));
 
-    // Filter models by availability
+    // Filter models by availability and team visibility
     const availableModels = models.filter((model) => {
+      // Check team-hidden first
+      if (hiddenModels.has(model.name)) return false;
       // Free tier models are always available
       if (model.tier === "free") return true;
       // Models with no required keys are available

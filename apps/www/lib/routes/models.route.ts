@@ -127,14 +127,16 @@ modelsRouter.openapi(
 );
 
 /**
- * PATCH /models/:name/enabled - Toggle model enabled state
+ * PATCH /models/:name/enabled - Toggle model visibility for a team
+ * Note: This now uses team-scoped visibility instead of global enabled state.
+ * enabled=true means visible (not hidden), enabled=false means hidden.
  */
 modelsRouter.openapi(
   createRoute({
     method: "patch",
     path: "/models/{name}/enabled",
     tags: ["Models"],
-    summary: "Toggle model enabled state",
+    summary: "Toggle model visibility for the team",
     request: {
       params: z.object({
         name: z.string().describe("Model name (URL-encoded)"),
@@ -184,14 +186,15 @@ modelsRouter.openapi(
     const convex = getConvex({ accessToken });
 
     try {
-      await convex.mutation(api.models.setEnabled, {
+      // Use team-scoped visibility: enabled=true means NOT hidden, enabled=false means hidden
+      await convex.mutation(api.teamModelVisibility.toggleModel, {
         teamSlugOrId,
         modelName,
-        enabled,
+        hidden: !enabled, // Invert: enabled=true -> hidden=false
       });
       return c.json({ success: true });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to update model enabled state";
+      const message = error instanceof Error ? error.message : "Failed to update model visibility";
       if (message.includes("not found")) {
         return c.json({ error: message }, 404);
       }

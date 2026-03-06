@@ -1489,6 +1489,17 @@ const convexSchema = defineSchema({
     .index("by_enabled", ["enabled", "sortOrder"])
     .index("by_source", ["source"]),
 
+  // Team-scoped model visibility settings
+  // Each team can hide specific models without affecting other teams
+  teamModelVisibility: defineTable({
+    teamId: v.string(),
+    hiddenModels: v.array(v.string()), // Model names hidden for this team
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    updatedBy: v.optional(v.string()), // userId who last updated
+  })
+    .index("by_team", ["teamId"]),
+
   // Agent memory snapshots - synced from sandbox memory files on agent completion
   // Stores knowledge, daily logs, tasks, and mailbox content for each task run
   agentMemorySnapshots: defineTable({
