@@ -3,7 +3,7 @@ This project is called cmux. cmux is a web app that spawns Claude Code, Codex CL
 # Repository Targets
 
 - Primary upstream for this workspace is `manaflow-ai/manaflow`, with fork target `karlorz/cmux`.
-- Terminal project is separate: upstream `manaflow-ai/cmux`, fork `karl-digi/cmux`, and should be handled in a separate workspace (for example `/Users/karlchow/Desktop/code/cmux-terminal`).
+- Terminal project is separate: upstream `manaflow-ai/cmux`, fork `karl-digi/cmux`, and should be handled in a separate workspace.
 
 # Git Policy (IMPORTANT)
 
