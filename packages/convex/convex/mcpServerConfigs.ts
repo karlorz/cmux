@@ -1,6 +1,7 @@
 import { v } from "convex/values";
-import { resolveTeamIdLoose } from "../_shared/team";
+import { internalQuery } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
+import { resolveTeamIdLoose } from "../_shared/team";
 import { authMutation, authQuery } from "./users/utils";
 
 const scopeValidator = v.union(v.literal("global"), v.literal("workspace"));
@@ -327,6 +328,61 @@ export const getForSandbox = authQuery({
               .query("mcpServerConfigs")
               .withIndex("by_team_project", (q) =>
                 q.eq("teamId", teamId).eq("projectFullName", projectFullName),
+              )
+              .collect()
+          ).filter((config) => config.scope === "workspace"),
+        )
+      : [];
+
+    const mergedConfigs = new Map<string, (typeof globalConfigs)[number]>();
+    for (const config of globalConfigs) {
+      mergedConfigs.set(config.name, config);
+    }
+    for (const config of workspaceConfigs) {
+      mergedConfigs.set(config.name, config);
+    }
+
+    return Array.from(mergedConfigs.values())
+      .filter((config) => config[enabledField])
+      .map((config) => ({
+        name: config.name,
+        command: config.command,
+        args: config.args,
+        envVars: config.envVars,
+      }));
+  },
+});
+
+/**
+ * Internal query for sandbox MCP config fetching (no auth required).
+ * Used by worker/orchestration paths that already have validated teamId.
+ */
+export const getForSandboxInternal = internalQuery({
+  args: {
+    teamId: v.string(),
+    agentType: agentTypeValidator,
+    projectFullName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const projectFullName = normalizeOptionalString(args.projectFullName);
+    const enabledField = getEnabledField(args.agentType);
+
+    const globalConfigs = dedupeConfigsByName(
+      await ctx.db
+        .query("mcpServerConfigs")
+        .withIndex("by_team_scope", (q) =>
+          q.eq("teamId", args.teamId).eq("scope", "global"),
+        )
+        .collect(),
+    );
+
+    const workspaceConfigs = projectFullName
+      ? dedupeConfigsByName(
+          (
+            await ctx.db
+              .query("mcpServerConfigs")
+              .withIndex("by_team_project", (q) =>
+                q.eq("teamId", args.teamId).eq("projectFullName", projectFullName),
               )
               .collect()
           ).filter((config) => config.scope === "workspace"),
