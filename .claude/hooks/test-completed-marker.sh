@@ -83,6 +83,7 @@ echo "[2] codex-review.sh: detects completed marker (dry-run)"
 # The completed marker from test 1 should still exist
 echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
   CLAUDE_AUTOPILOT=1 \
+  CODEX_REVIEW_DISABLED=0 \
   CODEX_REVIEW_DEBUG=1 \
   CODEX_REVIEW_DRY_RUN=1 \
   CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
@@ -132,6 +133,23 @@ echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
   bash "$SCRIPT_DIR/autopilot-keep-running.sh" >/dev/null 2>&1 || true
 
 assert_not "No marker when autopilot disabled" test -f "/tmp/claude-autopilot-completed-${TEST_SESSION}"
+
+# --- Test 6: max turns -1 keeps running without completed marker ---
+echo ""
+echo "[6] Infinite mode: no completed marker when CLAUDE_AUTOPILOT_MAX_TURNS=-1"
+cleanup
+echo "5" > "/tmp/claude-autopilot-turns-${TEST_SESSION}"
+
+echo "{\"session_id\":\"${TEST_SESSION}\"}" | \
+  CLAUDE_AUTOPILOT=1 \
+  CLAUDE_AUTOPILOT_MAX_TURNS=-1 \
+  CLAUDE_AUTOPILOT_DELAY=0 \
+  CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
+  bash "$SCRIPT_DIR/autopilot-keep-running.sh" >/dev/null 2>&1 || true
+
+assert_not "No completed marker in infinite mode" test -f "/tmp/claude-autopilot-completed-${TEST_SESSION}"
+assert "Turn file retained in infinite mode" test -f "/tmp/claude-autopilot-turns-${TEST_SESSION}"
+assert "Turn count increments in infinite mode" grep -q "6" "/tmp/claude-autopilot-turns-${TEST_SESSION}"
 
 # --- Summary ---
 echo ""

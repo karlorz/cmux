@@ -570,4 +570,27 @@ foo = "bar"
     expect(resumeScript).toContain('SESSION_ID_FILE="/root/lifecycle/codex-session-id.txt"');
     expect(resumeScript).toContain('exec codex resume "$THREAD_ID"');
   });
+
+  it("creates codex-autopilot script with aligned continuation and wrap-up prompts", async () => {
+    const result = await getOpenAIEnvironment({} as never);
+    const autopilotFile = result.files?.find(
+      (file) => file.destinationPath === "/root/lifecycle/codex-autopilot.sh"
+    );
+    expect(autopilotFile).toBeDefined();
+
+    const autopilotScript = Buffer.from(
+      autopilotFile!.contentBase64,
+      "base64"
+    ).toString("utf-8");
+
+    expect(autopilotScript).toContain(
+      "Continue from where you left off. Do not ask whether to continue."
+    );
+    expect(autopilotScript).toContain(
+      "Final turn (wrap up). Time left: ${TIME_LEFT}s. Stop starting large new work. Stabilize and write a summary."
+    );
+    expect(autopilotScript).toContain(
+      "End every turn with: Progress, Commands run, Files changed, Next."
+    );
+  });
 });
