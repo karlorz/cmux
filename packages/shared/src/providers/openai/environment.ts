@@ -541,7 +541,14 @@ log "Autopilot completed after \$ITER turns"
   // For Codex CLI, we need BOTH:
   // 1. OPENAI_BASE_URL env var (for compatibility and other tools)
   // 2. model_provider config in config.toml (required by Codex CLI for custom providers)
-  const customProviderConfig = ctx.providerConfig?.isOverridden && ctx.providerConfig.baseUrl
+  //
+  // IMPORTANT: Only use custom provider for API key auth, NOT OAuth.
+  // OAuth tokens work directly with official OpenAI API and don't need proxy routing.
+  // We detect OAuth by the presence of CODEX_AUTH_JSON (pre-configured auth.json).
+  const isOAuthMode = !!ctx.apiKeys?.CODEX_AUTH_JSON;
+  const customProviderConfig = !isOAuthMode &&
+    ctx.providerConfig?.isOverridden &&
+    ctx.providerConfig.baseUrl
     ? ctx.providerConfig.baseUrl
     : null;
   if (customProviderConfig) {
