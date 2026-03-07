@@ -61,6 +61,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function isSignedThinkingBlock(node: Record<string, unknown>): boolean {
+  const blockType = typeof node.type === "string" ? node.type : "unknown";
+  return (
+    blockType === "thinking" ||
+    blockType === "redacted_thinking" ||
+    typeof node.signature === "string"
+  );
+}
+
+function getBearerToken(header: string | null): string | null {
+  if (!header) {
+    return null;
+  }
+
+  const match = /^Bearer\s+(.+)$/i.exec(header);
+  if (!match) {
+    return null;
+  }
+
+  const token = match[1]?.trim();
+  return token ? token : null;
+}
+
 function incrementCount(target: Record<string, number>, key: string): void {
   target[key] = (target[key] ?? 0) + 1;
 }
@@ -306,6 +329,11 @@ function sanitizeCacheControl(body: Record<string, unknown>): void {
   function walk(node: unknown): void {
     if (!isRecord(node)) return;
 
+    // Anthropic requires replaying thinking blocks exactly as received.
+    if (isSignedThinkingBlock(node)) {
+      return;
+    }
+
     if (isRecord(node.cache_control)) {
       delete (node.cache_control as Record<string, unknown>).scope;
     }
@@ -315,6 +343,8 @@ function sanitizeCacheControl(body: Record<string, unknown>): void {
         for (const item of value) {
           walk(item);
         }
+      } else if (isRecord(value)) {
+        walk(value);
       }
     }
   }
@@ -356,7 +386,11 @@ export const anthropicProxy = httpAction(async (ctx, req) => {
   const startTime = Date.now();
   const source = getSource(req);
   const xApiKey = req.headers.get("x-api-key");
-  const isOAuthToken = getIsOAuthToken(xApiKey);
+  const authorizationHeader = req.headers.get("authorization");
+  const bearerToken = getBearerToken(authorizationHeader);
+  const providedApiKey =
+    xApiKey ?? (bearerToken && !getIsOAuthToken(bearerToken) ? bearerToken : null);
+  const isOAuthToken = getIsOAuthToken(providedApiKey ?? bearerToken);
 
   // Try to extract token payload for tracking
   const workerAuth = await getWorkerAuth(req, {
@@ -413,9 +447,11 @@ export const anthropicProxy = httpAction(async (ctx, req) => {
       }
     }
 
-    const hasOfficialAnthropicKey = hasUserApiKey(xApiKey);
+    const hasOfficialAnthropicKey = hasUserApiKey(providedApiKey);
     const hasCustomUrlWithAnyKey =
-      !!userCustomBaseUrl && xApiKey !== null && xApiKey !== hardCodedApiKey;
+      !!userCustomBaseUrl &&
+      providedApiKey !== null &&
+      providedApiKey !== hardCodedApiKey;
     const useUserPath = hasOfficialAnthropicKey || hasCustomUrlWithAnyKey;
 
     const body = await req.json();
@@ -441,6 +477,9 @@ export const anthropicProxy = httpAction(async (ctx, req) => {
           headers[key] = value;
         }
       });
+      if (providedApiKey && !headers["x-api-key"]) {
+        headers["x-api-key"] = providedApiKey;
+      }
 
       // When using custom base URL (not official Anthropic), convert auth header.
       // Many third-party proxies use OpenAI-style "Authorization: Bearer" instead of "x-api-key".
@@ -502,6 +541,9 @@ export const anthropicProxy = httpAction(async (ctx, req) => {
           headers[key] = value;
         }
       });
+      if (providedApiKey && !headers["x-api-key"]) {
+        headers["x-api-key"] = providedApiKey;
+      }
       headers["accept-encoding"] = "identity";
 
       console.log("[anthropic-proxy] Gateway request summary:", {
