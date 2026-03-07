@@ -7,6 +7,7 @@ import type { Doc } from "@cmux/convex/dataModel";
 import { MCP_SERVER_PRESETS, type McpServerPreset } from "@cmux/shared";
 import { convexQuery } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { parseGithubRepoUrl } from "@cmux/shared";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useConvex } from "convex/react";
 import {
@@ -161,7 +162,7 @@ function parseEnvVarsText(value: string): {
 }
 
 function isValidProjectFullName(value: string): boolean {
-  return /^[^/\s]+\/[^/\s]+$/.test(value.trim());
+  return parseGithubRepoUrl(value)?.fullName === value.trim();
 }
 
 function matchesTarget(

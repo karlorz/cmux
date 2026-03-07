@@ -137,25 +137,28 @@ mcpServersRouter.openapi(
     // Return hasEnvVars + envVarKeys so UI knows which vars exist without exposing values
     // Frontend should only send envVars in POST when user explicitly provides new values
     return c.json({
-      configs: configs.map((config) => ({
-        _id: config._id,
-        name: config.name,
-        displayName: config.displayName,
-        command: config.command,
-        args: config.args,
-        hasEnvVars: config.envVars && Object.keys(config.envVars).length > 0,
-        envVarKeys: config.envVars ? Object.keys(config.envVars) : [],
-        description: config.description,
-        tags: config.tags,
-        enabledClaude: config.enabledClaude,
-        enabledCodex: config.enabledCodex,
-        enabledGemini: config.enabledGemini,
-        enabledOpencode: config.enabledOpencode,
-        scope: config.scope,
-        projectFullName: config.projectFullName,
-        createdAt: config.createdAt,
-        updatedAt: config.updatedAt,
-      })),
+      configs: configs.map((config) => {
+        const envVarKeys = config.envVars ? Object.keys(config.envVars) : [];
+        return {
+          _id: config._id,
+          name: config.name,
+          displayName: config.displayName,
+          command: config.command,
+          args: config.args,
+          hasEnvVars: envVarKeys.length > 0,
+          envVarKeys,
+          description: config.description,
+          tags: config.tags,
+          enabledClaude: config.enabledClaude,
+          enabledCodex: config.enabledCodex,
+          enabledGemini: config.enabledGemini,
+          enabledOpencode: config.enabledOpencode,
+          scope: config.scope,
+          projectFullName: config.projectFullName,
+          createdAt: config.createdAt,
+          updatedAt: config.updatedAt,
+        };
+      }),
       presets: MCP_SERVER_PRESETS,
     });
   },

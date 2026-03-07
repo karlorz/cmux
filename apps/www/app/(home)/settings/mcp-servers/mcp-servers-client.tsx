@@ -20,6 +20,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { parseGithubRepoUrl } from "@cmux/shared/utils/parse-github-repo-url";
 import { cn } from "@/lib/utils";
 
 type Scope = "global" | "workspace";
@@ -256,7 +257,7 @@ async function getResponseError(
 }
 
 function isValidProjectFullName(value: string): boolean {
-  return /^[^/\s]+\/[^/\s]+$/.test(value.trim());
+  return parseGithubRepoUrl(value)?.fullName === value.trim();
 }
 
 function buildPayloadFromForm(form: FormState): {
