@@ -377,7 +377,6 @@ export function McpServersClient() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
-  const [editorMode, setEditorMode] = useState<"create" | "edit">("create");
   const [editorTab, setEditorTab] = useState<"preset" | "custom">("preset");
   const [editingConfig, setEditingConfig] = useState<McpServerConfig | null>(null);
   const [form, setForm] = useState<FormState>(buildEmptyForm("global"));
@@ -456,16 +455,22 @@ export function McpServersClient() {
   );
 
   const counts = useMemo(
-    () => ({
-      global: configs.filter((config) => config.scope === "global").length,
-      workspace: configs.filter((config) => config.scope === "workspace").length,
-    }),
+    () =>
+      configs.reduce(
+        (acc, config) => {
+          acc[config.scope]++;
+          return acc;
+        },
+        { global: 0, workspace: 0 }
+      ),
     [configs]
   );
 
+  // editorMode is derived from editingConfig - no separate state needed
+  const editorMode = editingConfig !== null ? "edit" : "create";
+
   const resetEditor = useCallback(() => {
     setEditorOpen(false);
-    setEditorMode("create");
     setEditorTab("preset");
     setEditingConfig(null);
     setForm(buildEmptyForm(activeScope));
@@ -473,7 +478,6 @@ export function McpServersClient() {
   }, [activeScope]);
 
   const openCreateModal = useCallback(() => {
-    setEditorMode("create");
     setEditorTab("preset");
     setEditingConfig(null);
     setForm(buildEmptyForm(activeScope));
@@ -482,7 +486,6 @@ export function McpServersClient() {
   }, [activeScope]);
 
   const openEditModal = useCallback((config: McpServerConfig) => {
-    setEditorMode("edit");
     setEditorTab("custom");
     setEditingConfig(config);
     setForm(buildFormFromConfig(config));
