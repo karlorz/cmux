@@ -57,6 +57,7 @@ import type * as hostScreenshotCollectorActions from "../hostScreenshotCollector
 import type * as hostScreenshotCollector_http from "../hostScreenshotCollector_http.js";
 import type * as http from "../http.js";
 import type * as localWorkspaces from "../localWorkspaces.js";
+import type * as mcpServerConfigs from "../mcpServerConfigs.js";
 import type * as media_proxy_http from "../media_proxy_http.js";
 import type * as migrations from "../migrations.js";
 import type * as modalInstances from "../modalInstances.js";
@@ -168,6 +169,7 @@ declare const fullApi: ApiFromModules<{
   hostScreenshotCollector_http: typeof hostScreenshotCollector_http;
   http: typeof http;
   localWorkspaces: typeof localWorkspaces;
+  mcpServerConfigs: typeof mcpServerConfigs;
   media_proxy_http: typeof media_proxy_http;
   migrations: typeof migrations;
   modalInstances: typeof modalInstances;

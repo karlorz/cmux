@@ -13,6 +13,7 @@ import {
   getProjectContextFile,
   getCrossToolSymlinkCommands,
 } from "../../agent-memory-protocol";
+import { buildClaudeMcpServers } from "../../mcp-injection";
 
 export const CLAUDE_KEY_ENV_VARS_TO_UNSET = [
   "ANTHROPIC_API_KEY",
@@ -66,6 +67,7 @@ export async function getClaudeEnvironment(
       // -y auto-confirms install, @latest ensures fresh version
       mcpServers: {
         ...existingMcpServers,
+        ...buildClaudeMcpServers(ctx.mcpServerConfigs ?? []),
         "devsh-memory": {
           command: "npx",
           args: memoryMcpArgs,

@@ -1,4 +1,5 @@
 import type { AuthFile } from "../../worker-schemas";
+import type { McpServerConfig } from "../../mcp-server-config";
 
 export interface EnvironmentResult {
   files: AuthFile[];
@@ -31,6 +32,7 @@ export type EnvironmentContext = {
   prompt: string;
   taskRunJwt: string;
   apiKeys?: Record<string, string>;
+  mcpServerConfigs?: McpServerConfig[];
   callbackUrl: string;
   workspaceSettings?: {
     bypassAnthropicProxy?: boolean;

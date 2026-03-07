@@ -105,4 +105,52 @@ describe("getGeminiEnvironment", () => {
       await rm(homeDir, { recursive: true, force: true });
     }
   });
+
+  it("includes MCP servers in settings.json when configured", async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), "cmux-gemini-home-"));
+    const previousHome = process.env.HOME;
+    process.env.HOME = homeDir;
+
+    try {
+      await mkdir(join(homeDir, ".gemini"), { recursive: true });
+
+      const result = await getGeminiEnvironment({
+        ...BASE_CONTEXT,
+        mcpServerConfigs: [
+          {
+            name: "context7",
+            command: "npx",
+            args: ["-y", "@upstash/context7-mcp@latest"],
+            envVars: {
+              CONTEXT7_API_KEY: "token",
+            },
+          },
+        ],
+      });
+
+      const settingsFile = result.files.find(
+        (file) => file.destinationPath === "$HOME/.gemini/settings.json"
+      );
+      expect(settingsFile).toBeDefined();
+
+      const settings = JSON.parse(
+        Buffer.from(settingsFile!.contentBase64, "base64").toString("utf-8")
+      ) as {
+        mcpServers?: Record<string, unknown>;
+      };
+
+      expect(settings.mcpServers).toEqual({
+        context7: {
+          command: "npx",
+          args: ["-y", "@upstash/context7-mcp@latest"],
+          env: {
+            CONTEXT7_API_KEY: "token",
+          },
+        },
+      });
+    } finally {
+      process.env.HOME = previousHome;
+      await rm(homeDir, { recursive: true, force: true });
+    }
+  });
 });

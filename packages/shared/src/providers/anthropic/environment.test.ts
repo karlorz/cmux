@@ -12,7 +12,15 @@ const BASE_CONTEXT = {
   callbackUrl: "http://localhost:9779",
 };
 
-async function decodeClaudeConfig(args?: { agentName?: string }) {
+async function decodeClaudeConfig(args?: {
+  agentName?: string;
+  mcpServerConfigs?: Array<{
+    name: string;
+    command: string;
+    args: string[];
+    envVars?: Record<string, string>;
+  }>;
+}) {
   const result = await getClaudeEnvironment({
     ...BASE_CONTEXT,
     ...args,
@@ -22,7 +30,14 @@ async function decodeClaudeConfig(args?: { agentName?: string }) {
   );
   expect(configFile).toBeDefined();
   return JSON.parse(Buffer.from(configFile!.contentBase64, "base64").toString("utf-8")) as {
-    mcpServers: Record<string, { args?: string[] }>;
+    mcpServers: Record<
+      string,
+      {
+        command?: string;
+        args?: string[];
+        env?: Record<string, string>;
+      }
+    >;
   };
 }
 
@@ -122,6 +137,41 @@ describe("getClaudeEnvironment", () => {
       const content = Buffer.from(claudeMdFile!.contentBase64, "base64").toString("utf-8");
       expect(content).toContain("Agent Memory Protocol");
       expect(content).toContain("/root/lifecycle/memory");
+    } finally {
+      process.env.HOME = previousHome;
+      await rm(homeDir, { recursive: true, force: true });
+    }
+  });
+
+  it("merges user MCP servers into .claude.json", async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), "cmux-claude-home-"));
+    const previousHome = process.env.HOME;
+    process.env.HOME = homeDir;
+
+    try {
+      await mkdir(join(homeDir, ".claude"), { recursive: true });
+
+      const config = await decodeClaudeConfig({
+        mcpServerConfigs: [
+          {
+            name: "context7",
+            command: "npx",
+            args: ["-y", "@upstash/context7-mcp@latest"],
+            envVars: {
+              CONTEXT7_API_KEY: "token",
+            },
+          },
+        ],
+      });
+
+      expect(config.mcpServers.context7).toEqual({
+        command: "npx",
+        args: ["-y", "@upstash/context7-mcp@latest"],
+        env: {
+          CONTEXT7_API_KEY: "token",
+        },
+      });
+      expect(config.mcpServers["devsh-memory"]).toBeDefined();
     } finally {
       process.env.HOME = previousHome;
       await rm(homeDir, { recursive: true, force: true });
