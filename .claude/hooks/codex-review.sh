@@ -96,8 +96,10 @@ If the output indicates code review passed with no issues, return exactly 'lgtm'
         CHANGED_FILES=$(git diff --name-only main...HEAD 2>/dev/null | wc -l)
         if [ "$CHANGED_FILES" -gt 2 ] && [ ! -f "$SIMPLIFY_SUGGESTED_FILE" ]; then
           touch "$SIMPLIFY_SUGGESTED_FILE"
-          echo "Codex review passed. Consider running /simplify to check for code quality improvements across the $CHANGED_FILES changed files." >&2
-          # Don't exit 2 here - we still want to check if new review needed
+          debug_log "Auto-running /simplify for $CHANGED_FILES changed files"
+          echo "Codex review passed. Auto-running /simplify to check code quality across $CHANGED_FILES changed files..." >&2
+          # Exit 2 to trigger /simplify skill - Claude will see this message and run it
+          exit 2
         fi
       else
         echo "$PREV_STATE" > "$REVIEWED_FILE"
