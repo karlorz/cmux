@@ -9,6 +9,7 @@ import {
   getProjectContextFile,
   getCrossToolSymlinkCommands,
 } from "../../agent-memory-protocol";
+import { buildCodexMcpToml } from "../../mcp-injection";
 
 /**
  * Apply API keys for OpenAI Codex.
@@ -153,6 +154,35 @@ function stripManagedMemoryMcpBlock(toml: string): string {
     /\n?\[mcp_servers(?:\.devsh-memory|\."devsh-memory")\][\s\S]*?(?=\n\[|$)/g,
     ""
   );
+  return result.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/**
+ * Strip MCP server blocks by name from TOML config.
+ * Used to remove existing blocks before appending new ones to avoid duplicate tables.
+ */
+function stripMcpServerBlocksByName(toml: string, names: string[]): string {
+  let result = toml;
+  for (const name of names) {
+    // Handle both quoted and unquoted keys
+    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // Strip nested subtables first (e.g., [mcp_servers.name.env])
+    result = result.replace(
+      new RegExp(
+        `\\n?\\[mcp_servers(?:\\.${escapedName}|\\."${escapedName}")\\.[^\\]]+\\][\\s\\S]*?(?=\\n\\[|$)`,
+        "g"
+      ),
+      ""
+    );
+    // Then strip the main section
+    result = result.replace(
+      new RegExp(
+        `\\n?\\[mcp_servers(?:\\.${escapedName}|\\."${escapedName}")\\][\\s\\S]*?(?=\\n\\[|$)`,
+        "g"
+      ),
+      ""
+    );
+  }
   return result.replace(/\n{3,}/g, "\n\n").trim();
 }
 
@@ -477,6 +507,15 @@ log "Autopilot completed after \$ITER turns"
     // Server mode: generate clean config without host-specific settings
     toml = `${ensureCodexDefaults("")}${generateModelMigrations()}${memoryMcpServerConfig}\n`;
   }
+
+  const userMcpToml = buildCodexMcpToml(ctx.mcpServerConfigs ?? []);
+  if (userMcpToml) {
+    // Strip any existing MCP server blocks with the same names to avoid duplicate TOML tables
+    const mcpNames = (ctx.mcpServerConfigs ?? []).map((c) => c.name);
+    toml = stripMcpServerBlocksByName(toml, mcpNames);
+    toml = `${toml.trimEnd()}\n\n${userMcpToml}\n`;
+  }
+
   files.push({
     destinationPath: `$HOME/.codex/config.toml`,
     contentBase64: Buffer.from(toml).toString("base64"),

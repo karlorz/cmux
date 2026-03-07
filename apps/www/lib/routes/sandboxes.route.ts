@@ -330,6 +330,7 @@ async function setupProviderAuth(
   convex: ReturnType<typeof getConvex>,
   options: {
     teamSlugOrId: string;
+    projectFullName?: string;
     taskRunId?: string;
     taskRunJwt?: string;
     callbackUrl: string;
@@ -339,8 +340,35 @@ async function setupProviderAuth(
 ): Promise<{ providers: string[] }> {
   const configuredProviders: string[] = [];
 
+  const getMcpConfigs = (
+    agentType: "claude" | "codex" | "gemini" | "opencode",
+  ) =>
+    convex
+      .query(api.mcpServerConfigs.getForSandbox, {
+        teamSlugOrId: options.teamSlugOrId,
+        agentType,
+        ...(options.projectFullName
+          ? { projectFullName: options.projectFullName }
+          : {}),
+      })
+      .catch((err: unknown) => {
+        console.error(
+          `[setupProviderAuth] Failed to fetch ${agentType} MCP configs`,
+          err,
+        );
+        return [];
+      });
+
   // Fetch API keys, provider overrides, and workspace settings in parallel
-  const [apiKeys, providerOverrides, workspaceSettings] = await Promise.all([
+  const [
+    apiKeys,
+    providerOverrides,
+    workspaceSettings,
+    claudeMcpConfigs,
+    codexMcpConfigs,
+    geminiMcpConfigs,
+    opencodeMcpConfigs,
+  ] = await Promise.all([
     convex.query(api.apiKeys.getAllForAgents, {
       teamSlugOrId: options.teamSlugOrId,
     }),
@@ -366,7 +394,21 @@ async function setupProviderAuth(
         );
         return null;
       }),
+    getMcpConfigs("claude"),
+    getMcpConfigs("codex"),
+    getMcpConfigs("gemini"),
+    getMcpConfigs("opencode"),
   ]);
+
+  const mcpConfigCounts = {
+    claude: claudeMcpConfigs.length,
+    codex: codexMcpConfigs.length,
+    gemini: geminiMcpConfigs.length,
+    opencode: opencodeMcpConfigs.length,
+  };
+  if (Object.values(mcpConfigCounts).some((count) => count > 0)) {
+    console.log("[setupProviderAuth] Loaded MCP configs", mcpConfigCounts);
+  }
 
   // Resolve provider overrides into the shape expected by environment functions
   const registry = getProviderRegistry();
@@ -402,6 +444,7 @@ async function setupProviderAuth(
         taskRunJwt: options.taskRunJwt || "",
         prompt: "",
         apiKeys,
+        mcpServerConfigs: claudeMcpConfigs,
         callbackUrl: options.callbackUrl,
         previousKnowledge: options.previousKnowledge ?? undefined,
         previousMailbox: options.previousMailbox ?? undefined,
@@ -455,6 +498,7 @@ async function setupProviderAuth(
         taskRunJwt: options.taskRunJwt || "",
         prompt: "",
         apiKeys,
+        mcpServerConfigs: codexMcpConfigs,
         callbackUrl: options.callbackUrl,
         previousKnowledge: options.previousKnowledge ?? undefined,
         previousMailbox: options.previousMailbox ?? undefined,
@@ -1132,6 +1176,7 @@ sandboxesRouter.openapi(
           ]);
           const result = await setupProviderAuth(instance, convex, {
             teamSlugOrId: body.teamSlugOrId,
+            projectFullName: parsedRepoUrl?.fullName,
             taskRunId: body.taskRunId || undefined,
             taskRunJwt: body.taskRunJwt || undefined,
             callbackUrl,
@@ -1538,6 +1583,7 @@ sandboxesRouter.openapi(
 const SetupProvidersBody = z
   .object({
     teamSlugOrId: z.string(),
+    repoUrl: z.string().optional(),
     taskRunId: z.string().optional(),
     taskRunJwt: z.string().optional(),
   })
@@ -1642,6 +1688,9 @@ sandboxesRouter.openapi(
 
       const callbackUrl =
         env.NEXT_PUBLIC_CONVEX_URL || "http://localhost:9779";
+      const parsedRepoUrl = body.repoUrl
+        ? parseGithubRepoUrl(body.repoUrl)
+        : null;
       const [previousKnowledge, previousMailbox] = await Promise.all([
         convex
           .query(api.agentMemoryQueries.getLatestTeamKnowledge, {
@@ -1668,6 +1717,7 @@ sandboxesRouter.openapi(
       ]);
       const result = await setupProviderAuth(instance, convex, {
         teamSlugOrId: body.teamSlugOrId,
+        projectFullName: parsedRepoUrl?.fullName,
         taskRunId: body.taskRunId,
         taskRunJwt: body.taskRunJwt,
         callbackUrl,

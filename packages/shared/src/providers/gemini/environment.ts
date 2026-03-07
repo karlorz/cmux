@@ -10,6 +10,7 @@ import {
   getProjectContextFile,
   getCrossToolSymlinkCommands,
 } from "../../agent-memory-protocol";
+import { buildGeminiMcpServers } from "../../mcp-injection";
 
 type GeminiModelSettings = {
   skipNextSpeakerCheck?: boolean;
@@ -28,6 +29,7 @@ type GeminiSettings = {
   selectedAuthType?: string;
   model?: GeminiModelSettings;
   telemetry?: GeminiTelemetrySettings;
+  mcpServers?: Record<string, unknown>;
   [key: string]: unknown;
 };
 
@@ -138,6 +140,17 @@ export async function getGeminiEnvironment(
     settings.model = {
       ...modelSettings,
       skipNextSpeakerCheck: false,
+    };
+
+    const existingMcpServers =
+      settings.mcpServers &&
+      typeof settings.mcpServers === "object" &&
+      !Array.isArray(settings.mcpServers)
+        ? settings.mcpServers
+        : {};
+    settings.mcpServers = {
+      ...existingMcpServers,
+      ...buildGeminiMcpServers(ctx.mcpServerConfigs ?? []),
     };
 
     const mergedContent = JSON.stringify(settings, null, 2) + "\n";

@@ -1278,6 +1278,7 @@ export type SetupProvidersResponse = {
 
 export type SetupProvidersBody = {
     teamSlugOrId: string;
+    repoUrl?: string;
     taskRunId?: string;
     taskRunJwt?: string;
 };
@@ -1625,6 +1626,7 @@ export type Model = {
     sortOrder: number;
     disabled?: boolean;
     disabledReason?: string;
+    hiddenForTeam: boolean;
     variants?: Array<{
         id: string;
         displayName: string;
