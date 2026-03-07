@@ -32,24 +32,25 @@ SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "default"' 2>/dev/null || ech
 SESSION_ID="${SESSION_ID:-default}"
 debug_log "SESSION_ID: $SESSION_ID"
 
-# Skip if autopilot specifically blocked this stop. We check the autopilot-specific
-# flag file instead of the generic stop_hook_active, because stop_hook_active can
-# be set by any previous hook (e.g. bun-check), which would incorrectly prevent
-# the review from running on the final stop.
-#
-# Guard: only honor the flag file when autopilot is actually active. This prevents
-# stale flag files from suppressing review after autopilot is toggled off or if
-# cleanup was missed (e.g. process crash).
+# Session-scoped file paths
+BASELINE_FILE="/tmp/codex-review-baseline-${SESSION_ID}"
+REVIEWED_FILE="/tmp/codex-review-reviewed-${SESSION_ID}"
+FAIL_COUNT_FILE="/tmp/codex-review-fails-${SESSION_ID}"
+SIMPLIFY_SUGGESTED_FILE="/tmp/codex-review-simplify-suggested-${SESSION_ID}"
 AUTOPILOT_BLOCKED_FILE="/tmp/claude-autopilot-blocked-${SESSION_ID}"
-# Autopilot is only truly active when enabled AND not disabled via override.
-# AUTOPILOT_KEEP_RUNNING_DISABLED=1 causes the autopilot hook to exit before
-# cleanup, so the blocked flag can persist even though autopilot is effectively off.
+COMPLETED_FILE="/tmp/claude-autopilot-completed-${SESSION_ID}"
+
+# Install trap to clean up completed marker on any exit
+trap 'rm -f "$COMPLETED_FILE"' EXIT
+
+# Autopilot is only truly active when enabled AND not disabled via override
 AUTOPILOT_ACTIVE="0"
 if [ "${CLAUDE_AUTOPILOT:-0}" = "1" ] && [ "${AUTOPILOT_KEEP_RUNNING_DISABLED:-0}" != "1" ]; then
   AUTOPILOT_ACTIVE="1"
 fi
-debug_log "AUTOPILOT_ACTIVE: $AUTOPILOT_ACTIVE, AUTOPILOT_BLOCKED_FILE exists: $([ -f "$AUTOPILOT_BLOCKED_FILE" ] && echo 'true' || echo 'false')"
+debug_log "AUTOPILOT_ACTIVE: $AUTOPILOT_ACTIVE"
 
+# Skip if autopilot specifically blocked this stop
 if [ "$AUTOPILOT_ACTIVE" = "1" ] && [ -f "$AUTOPILOT_BLOCKED_FILE" ]; then
   debug_log "Exiting: autopilot blocked this stop (flag file exists)"
   exit 0
@@ -61,62 +62,52 @@ if [ "$AUTOPILOT_ACTIVE" != "1" ] && [ -f "$AUTOPILOT_BLOCKED_FILE" ]; then
   debug_log "Cleaned up stale autopilot blocked flag"
 fi
 
-# Only run review if actual work was done. We check multiple sources:
-# 1. git status for uncommitted/staged changes (always checked first)
-# 2. git diff against main for committed changes on branch
-# 3. turn file existence (backup - indicates autopilot is mid-session)
-# 4. completed marker (backup - indicates autopilot reached max turns; turn file was deleted)
-WORK_DONE="0"
+# --- Session-based work detection ---
+# Instead of complex WORK_DONE checks, use simple session tracking:
+# 1. Track baseline commit at session start
+# 2. Work exists if: HEAD moved OR uncommitted changes exist
+# 3. Skip if already reviewed this exact state
 
-# Check 1: Uncommitted or staged changes (git status)
-if git status --porcelain 2>/dev/null | grep -q .; then
-  WORK_DONE="1"
-  debug_log "Work detected via git status (uncommitted/staged changes)"
-fi
-
-# Check 2: Committed changes vs main (git diff main...HEAD)
-# Only check if no uncommitted work found yet
-# Also skip if we already reviewed this exact commit (avoid re-reviewing on every stop)
-REVIEWED_COMMIT_FILE="/tmp/codex-review-last-commit-${SESSION_ID}"
 CURRENT_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
-if [ "$WORK_DONE" = "0" ]; then
-  # Check if we already reviewed this commit in this session
-  if [ -f "$REVIEWED_COMMIT_FILE" ] && [ "$(cat "$REVIEWED_COMMIT_FILE")" = "$CURRENT_HEAD" ]; then
-    debug_log "Skipping: already reviewed commit $CURRENT_HEAD in this session"
-    exit 0
-  fi
-  git diff --quiet main...HEAD 2>/dev/null && GIT_EXIT=0 || GIT_EXIT=$?
-  if [ "$GIT_EXIT" -eq 1 ]; then
-    WORK_DONE="1"
-    debug_log "Work detected via git diff main...HEAD (committed changes)"
-  elif [ "$GIT_EXIT" -gt 1 ]; then
-    debug_log "git diff main...HEAD failed ($GIT_EXIT), skipping commit diff check"
-  fi
-fi
+HAS_UNCOMMITTED=$(git status --porcelain 2>/dev/null | grep -q . && echo "1" || echo "0")
 
-# Check 3: Turn file as backup (indicates autopilot is mid-session, even if no git changes yet)
-TURN_FILE="/tmp/claude-autopilot-turns-${SESSION_ID}"
-if [ -f "$TURN_FILE" ] && [ "$WORK_DONE" = "0" ]; then
-  WORK_DONE="1"
-  debug_log "Work detected via turn file"
+# Set baseline on first stop of session
+if [ ! -f "$BASELINE_FILE" ]; then
+  echo "$CURRENT_HEAD" > "$BASELINE_FILE"
+  debug_log "Set session baseline: $CURRENT_HEAD"
 fi
+BASELINE_HEAD=$(cat "$BASELINE_FILE")
 
-# Check 4: Completed marker (indicates autopilot reached max turns; turn file was deleted before we ran)
-# Only honor the marker when autopilot is active to avoid false positives from stale markers
-COMPLETED_FILE="/tmp/claude-autopilot-completed-${SESSION_ID}"
-# Install early trap so any exit path after this point cleans up the marker
-trap 'rm -f "$COMPLETED_FILE"' EXIT
-if [ "$AUTOPILOT_ACTIVE" = "1" ] && [ -f "$COMPLETED_FILE" ] && [ "$WORK_DONE" = "0" ]; then
-  WORK_DONE="1"
-  debug_log "Work detected via autopilot completed marker"
-fi
+# Build current state fingerprint (commit + uncommitted indicator)
+STATE_FINGERPRINT="${CURRENT_HEAD}:${HAS_UNCOMMITTED}"
 
-if [ "$AUTOPILOT_ACTIVE" = "1" ] && [ "$WORK_DONE" = "0" ]; then
-  debug_log "Skipping review: autopilot enabled but no work done (no git diff, no turn file, no completed marker)"
+# Check if already reviewed this exact state
+if [ -f "$REVIEWED_FILE" ] && [ "$(cat "$REVIEWED_FILE")" = "$STATE_FINGERPRINT" ]; then
+  debug_log "Skipping: already reviewed state $STATE_FINGERPRINT"
   exit 0
 fi
 
-debug_log "Proceeding with codex review..."
+# Determine if there's work to review
+# Work = HEAD moved from baseline OR uncommitted changes exist
+HEAD_MOVED="0"
+if [ "$CURRENT_HEAD" != "$BASELINE_HEAD" ]; then
+  HEAD_MOVED="1"
+fi
+
+if [ "$HEAD_MOVED" = "0" ] && [ "$HAS_UNCOMMITTED" = "0" ]; then
+  # No work in this session - but check autopilot markers as backup
+  TURN_FILE="/tmp/claude-autopilot-turns-${SESSION_ID}"
+  if [ "$AUTOPILOT_ACTIVE" = "1" ] && [ -f "$COMPLETED_FILE" ]; then
+    debug_log "Work detected via autopilot completed marker"
+  elif [ -f "$TURN_FILE" ]; then
+    debug_log "Work detected via turn file"
+  else
+    debug_log "Skipping: no work in session (HEAD=$CURRENT_HEAD, baseline=$BASELINE_HEAD, uncommitted=$HAS_UNCOMMITTED)"
+    exit 0
+  fi
+fi
+
+debug_log "Proceeding with codex review (HEAD_MOVED=$HEAD_MOVED, HAS_UNCOMMITTED=$HAS_UNCOMMITTED)..."
 
 # Dry-run mode: exit after pre-flight checks (for testing hook logic without codex)
 if [ "${CODEX_REVIEW_DRY_RUN:-}" = "1" ]; then
@@ -125,8 +116,6 @@ if [ "${CODEX_REVIEW_DRY_RUN:-}" = "1" ]; then
 fi
 
 # Hard stop after 5 failures to prevent excessive loops (per session)
-FAIL_COUNT_FILE="/tmp/codex-review-fails-${SESSION_ID}"
-SIMPLIFY_SUGGESTED_FILE="/tmp/codex-review-simplify-suggested-${SESSION_ID}"
 FAIL_COUNT=0
 if [ -f "$FAIL_COUNT_FILE" ]; then
   FAIL_COUNT=$(cat "$FAIL_COUNT_FILE")
@@ -142,7 +131,6 @@ trap 'rm -f "$TMPFILE" "$COMPLETED_FILE"' EXIT
 # REVIEW.md guidelines are loaded via AGENTS.md (codex reads it automatically).
 # --base and [PROMPT] are mutually exclusive, so we cannot pass a custom prompt here.
 # --sandbox danger-full-access disables sandboxing entirely (safe in isolated LXC/container).
-# Previous --enable use_linux_sandbox_bwrap caused node sandbox-check errors in containers.
 # Timeout: 240s (4 min) to avoid blocking stop hooks too long. Uses perl for macOS compatibility.
 debug_log "Running codex review..."
 run_with_timeout() {
@@ -188,11 +176,10 @@ if echo "$VERDICT" | grep -qi "lgtm"; then
   rm -f "$FAIL_COUNT_FILE"  # Reset counter on success
   debug_log "Review PASSED (lgtm)"
 
-  # Mark this commit as reviewed to avoid re-reviewing on subsequent stops
-  echo "$CURRENT_HEAD" > "$REVIEWED_COMMIT_FILE"
+  # Mark this state as reviewed
+  echo "$STATE_FINGERPRINT" > "$REVIEWED_FILE"
 
   # Even on pass, suggest /simplify once if significant changes were made
-  # Check if there are multiple files changed (worth a simplify pass)
   CHANGED_FILES=$(git diff --name-only main...HEAD 2>/dev/null | wc -l)
   if [ "$CHANGED_FILES" -gt 2 ] && [ ! -f "$SIMPLIFY_SUGGESTED_FILE" ]; then
     touch "$SIMPLIFY_SUGGESTED_FILE"
@@ -205,17 +192,17 @@ if echo "$VERDICT" | grep -qi "lgtm"; then
 fi
 
 # Has issues - increment counter and show to Claude
-# Also mark as reviewed (will re-review if commit changes)
-echo "$CURRENT_HEAD" > "$REVIEWED_COMMIT_FILE"
+# Mark as reviewed (will re-review if state changes)
+echo "$STATE_FINGERPRINT" > "$REVIEWED_FILE"
 echo $((FAIL_COUNT + 1)) > "$FAIL_COUNT_FILE"
 debug_log "Review has ISSUES, showing to Claude"
 
-# Check if this is a mid-autopilot review (n-2 trigger) and include remaining turns
+# Check if this is a mid-autopilot review and include remaining turns
 REMAINING_INFO=""
 if [ "$AUTOPILOT_ACTIVE" = "1" ]; then
-  TURN_FILE_CHECK="/tmp/claude-autopilot-turns-${SESSION_ID}"
-  if [ -f "$TURN_FILE_CHECK" ]; then
-    CURRENT_TURN=$(cat "$TURN_FILE_CHECK" 2>/dev/null || echo "0")
+  TURN_FILE="/tmp/claude-autopilot-turns-${SESSION_ID}"
+  if [ -f "$TURN_FILE" ]; then
+    CURRENT_TURN=$(cat "$TURN_FILE" 2>/dev/null || echo "0")
     AP_MAX="${CLAUDE_AUTOPILOT_MAX_TURNS:-20}"
     REMAINING=$((AP_MAX - CURRENT_TURN))
     if [ "$REMAINING" -gt 0 ]; then
