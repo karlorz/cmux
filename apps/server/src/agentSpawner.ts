@@ -648,6 +648,30 @@ export async function spawnAgent(
 
     // Use environment property if available
     if (agent.environment) {
+      // Build provider config from providerOverrides OR apiKeys.OPENAI_BASE_URL fallback
+      // Settings UI saves base URLs to apiKeys table, so check both sources
+      let effectiveProviderConfig: {
+        baseUrl?: string;
+        customHeaders?: Record<string, string>;
+        apiFormat?: string;
+        isOverridden: boolean;
+      } | undefined;
+
+      if (resolvedProvider?.isOverridden) {
+        effectiveProviderConfig = {
+          baseUrl: resolvedProvider.baseUrl,
+          customHeaders: resolvedProvider.customHeaders,
+          apiFormat: resolvedProvider.apiFormat,
+          isOverridden: true,
+        };
+      } else if (apiKeys.OPENAI_BASE_URL && agent.name.toLowerCase().includes("codex")) {
+        // Fallback: use OPENAI_BASE_URL from apiKeys table (set via Settings UI) for Codex
+        effectiveProviderConfig = {
+          baseUrl: apiKeys.OPENAI_BASE_URL,
+          isOverridden: true,
+        };
+      }
+
       const envResult = await agent.environment({
         taskRunId: taskRunId,
         agentName: agent.name,
@@ -658,14 +682,7 @@ export async function spawnAgent(
         workspaceSettings: {
           bypassAnthropicProxy: workspaceSettings?.bypassAnthropicProxy ?? false,
         },
-        providerConfig: resolvedProvider?.isOverridden
-          ? {
-              baseUrl: resolvedProvider.baseUrl,
-              customHeaders: resolvedProvider.customHeaders,
-              apiFormat: resolvedProvider.apiFormat,
-              isOverridden: true,
-            }
-          : undefined,
+        providerConfig: effectiveProviderConfig,
         previousKnowledge: previousKnowledge ?? undefined,
         previousMailbox: previousMailbox ?? undefined,
         orchestrationOptions: options.orchestrationOptions,

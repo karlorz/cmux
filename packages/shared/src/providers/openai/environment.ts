@@ -76,7 +76,8 @@ export function applyCodexApiKeys(
 const FILTERED_CONFIG_KEYS = ["model", "model_reasoning_effort"] as const;
 const CODEX_NOTIFY_LINE = `notify = ["/root/lifecycle/codex-notify.sh"]`;
 const CODEX_SANDBOX_MODE_LINE = `sandbox_mode = "danger-full-access"`;
-const CODEX_ASK_FOR_APPROVAL_LINE = `ask_for_approval = "never"`;
+const CODEX_APPROVAL_POLICY_LINE = `approval_policy = "never"`;
+const CODEX_DISABLE_RESPONSE_STORAGE_LINE = `disable_response_storage = true`;
 const CODEX_AUTOPILOT_TURN_SUMMARY_LINE =
   "End every turn with: Progress, Commands run, Files changed, Next.";
 const CODEX_AUTOPILOT_CONTINUE_LINE =
@@ -98,21 +99,40 @@ export function stripFilteredConfigKeys(toml: string): string {
 function ensureCodexDefaults(toml: string): string {
   const hasNotify = /(^|\n)\s*notify\s*=/.test(toml);
   const hasSandboxMode = /(^|\n)\s*sandbox_mode\s*=/.test(toml);
-  const hasAskForApproval = /(^|\n)\s*ask_for_approval\s*=/.test(toml);
+  const hasApprovalPolicy = /(^|\n)\s*approval_policy\s*=/.test(toml);
+  const hasDisableResponseStorage = /(^|\n)\s*disable_response_storage\s*=/.test(toml);
+  // Also check for legacy ask_for_approval to replace it
+  const hasLegacyAskForApproval = /(^|\n)\s*ask_for_approval\s*=/.test(toml);
 
-  // Always force ask_for_approval to "never" for unattended runs
+  // Always force approval_policy to "never" for unattended runs
   // Even if user has a different value in their host config, we override it
+  // Also replace legacy ask_for_approval with approval_policy
   // Handles double-quoted, single-quoted, and bare TOML values
   let result = toml;
-  if (hasAskForApproval) {
-    // Replace the entire ask_for_approval line with our required value
+  if (hasApprovalPolicy) {
+    // Replace the entire approval_policy line with our required value
+    result = result.replace(
+      /(^|\n)\s*approval_policy\s*=\s*.*/g,
+      `$1${CODEX_APPROVAL_POLICY_LINE}`
+    );
+  }
+  if (hasLegacyAskForApproval) {
+    // Remove legacy ask_for_approval (we'll add approval_policy instead)
     result = result.replace(
       /(^|\n)\s*ask_for_approval\s*=\s*.*/g,
-      `$1${CODEX_ASK_FOR_APPROVAL_LINE}`
+      ""
     );
   }
 
-  if (hasNotify && hasSandboxMode && hasAskForApproval) {
+  // Check if all required defaults are present
+  const hasAllDefaults = hasNotify && hasSandboxMode && hasDisableResponseStorage &&
+    (hasApprovalPolicy || hasLegacyAskForApproval);
+
+  if (hasAllDefaults) {
+    // If we had legacy key, we need to add the new one
+    if (hasLegacyAskForApproval && !hasApprovalPolicy) {
+      return `${CODEX_APPROVAL_POLICY_LINE}\n${result.trim()}`;
+    }
     return result;
   }
 
@@ -123,8 +143,11 @@ function ensureCodexDefaults(toml: string): string {
   if (!hasSandboxMode) {
     defaults.push(CODEX_SANDBOX_MODE_LINE);
   }
-  if (!hasAskForApproval) {
-    defaults.push(CODEX_ASK_FOR_APPROVAL_LINE);
+  if (!hasApprovalPolicy && !hasLegacyAskForApproval) {
+    defaults.push(CODEX_APPROVAL_POLICY_LINE);
+  }
+  if (!hasDisableResponseStorage) {
+    defaults.push(CODEX_DISABLE_RESPONSE_STORAGE_LINE);
   }
 
   return result ? `${defaults.join("\n")}\n${result}` : defaults.join("\n");
@@ -142,9 +165,6 @@ const MODELS_TO_MIGRATE = [
   "gpt-5.1-codex",
   "gpt-5.1-codex-mini",
   "gpt-5",
-  "o3",
-  "o4-mini",
-  "gpt-4.1",
   "gpt-5-codex",
   "gpt-5-codex-mini",
 ];
@@ -226,6 +246,48 @@ function ensureManagedMemoryMcpServerConfig(toml: string, agentName?: string): s
   }
 
   return `${normalizedToml}\n\n${managedMemoryBlock}\n`;
+}
+
+// Custom provider name for cmux-managed proxy endpoints
+const CMUX_CUSTOM_PROVIDER_NAME = "cmux-proxy";
+
+/**
+ * Generate the model_provider top-level key for custom provider.
+ */
+function generateCustomProviderKey(): string {
+  return `model_provider = "${CMUX_CUSTOM_PROVIDER_NAME}"`;
+}
+
+/**
+ * Generate the [model_providers.cmux-proxy] section for custom provider.
+ * This section must appear AFTER all top-level keys in TOML.
+ *
+ * @param baseUrl - The custom API base URL
+ * @returns TOML string with [model_providers.cmux-proxy] section
+ */
+function generateCustomProviderSection(baseUrl: string): string {
+  return `[model_providers.${CMUX_CUSTOM_PROVIDER_NAME}]
+name = "cmux Proxy"
+base_url = "${baseUrl}"
+wire_api = "responses"
+requires_openai_auth = true
+`;
+}
+
+/**
+ * Strip existing model_provider and [model_providers.cmux-proxy] from TOML.
+ * Allows clean replacement when custom provider config changes.
+ */
+function stripCustomProviderConfig(toml: string): string {
+  let result = toml;
+  // Strip model_provider = "cmux-proxy" line
+  result = result.replace(/^model_provider\s*=\s*["']?cmux-proxy["']?\s*$/gm, "");
+  // Strip [model_providers.cmux-proxy] section
+  result = result.replace(
+    /\n?\[model_providers\.cmux-proxy\][\s\S]*?(?=\n\[|$)/g,
+    ""
+  );
+  return result.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 export async function getOpenAIEnvironment(
@@ -476,8 +538,27 @@ log "Autopilot completed after \$ITER turns"
   }
 
   // Apply provider override if present (custom proxy like AnyRouter)
-  if (ctx.providerConfig?.isOverridden && ctx.providerConfig.baseUrl) {
-    env.OPENAI_BASE_URL = ctx.providerConfig.baseUrl;
+  // For Codex CLI, we need BOTH:
+  // 1. OPENAI_BASE_URL env var (for compatibility and other tools)
+  // 2. model_provider config in config.toml (required by Codex CLI for custom providers)
+  //
+  // IMPORTANT: Only use custom provider for API key auth, NOT OAuth.
+  // OAuth tokens work directly with official OpenAI API and don't need proxy routing.
+  // We detect OAuth by the presence of CODEX_AUTH_JSON (pre-configured auth.json).
+  //
+  // Also skip custom provider if baseUrl is the default OpenAI URL - this happens when
+  // user clears their team's base URL setting but the override record still exists.
+  const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
+  const isOAuthMode = !!ctx.apiKeys?.CODEX_AUTH_JSON;
+  const isDefaultOpenAIUrl = ctx.providerConfig?.baseUrl === DEFAULT_OPENAI_BASE_URL;
+  const customProviderConfig = !isOAuthMode &&
+    !isDefaultOpenAIUrl &&
+    ctx.providerConfig?.isOverridden &&
+    ctx.providerConfig.baseUrl
+    ? ctx.providerConfig.baseUrl
+    : null;
+  if (customProviderConfig) {
+    env.OPENAI_BASE_URL = customProviderConfig;
   }
 
   // Copy instructions.md from host and append memory protocol instructions (desktop mode)
@@ -536,6 +617,17 @@ log "Autopilot completed after \$ITER turns"
     const mcpNames = (ctx.mcpServerConfigs ?? []).map((c) => c.name);
     toml = stripMcpServerBlocksByName(toml, mcpNames);
     toml = `${toml.trimEnd()}\n\n${userMcpToml}\n`;
+  }
+
+  // Inject custom provider config if user has a custom base URL
+  // TOML requires: top-level keys first, then sections
+  // So we put model_provider= at the TOP and [model_providers.xxx] at the END
+  if (customProviderConfig) {
+    toml = stripCustomProviderConfig(toml);
+    // Add model_provider key at the very top (before other top-level keys)
+    toml = `${generateCustomProviderKey()}\n${toml}`;
+    // Add [model_providers.cmux-proxy] section at the very end (after all other sections)
+    toml = `${toml.trimEnd()}\n\n${generateCustomProviderSection(customProviderConfig)}`;
   }
 
   files.push({
