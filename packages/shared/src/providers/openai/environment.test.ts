@@ -2,7 +2,11 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { getOpenAIEnvironment, stripFilteredConfigKeys } from "./environment";
+import {
+  applyCodexApiKeys,
+  getOpenAIEnvironment,
+  stripFilteredConfigKeys,
+} from "./environment";
 import { getCrossToolSymlinkCommands } from "../../agent-memory-protocol";
 
 function decodeConfigToml(result: Awaited<ReturnType<typeof getOpenAIEnvironment>>): string {
@@ -12,6 +16,58 @@ function decodeConfigToml(result: Awaited<ReturnType<typeof getOpenAIEnvironment
   expect(configFile).toBeDefined();
   return Buffer.from(configFile!.contentBase64, "base64").toString("utf-8");
 }
+
+function decodeAuthJson(
+  result: ReturnType<typeof applyCodexApiKeys>
+): string {
+  const authFile = result.files?.find(
+    (file) => file.destinationPath === "$HOME/.codex/auth.json"
+  );
+  expect(authFile).toBeDefined();
+  return Buffer.from(authFile!.contentBase64, "base64").toString("utf-8");
+}
+
+describe("applyCodexApiKeys", () => {
+  it("prefers CODEX_AUTH_JSON when provided", () => {
+    const result = applyCodexApiKeys({
+      CODEX_AUTH_JSON: '{"tokens":{"access_token":"token"}}',
+      OPENAI_API_KEY: "sk-ignored",
+    });
+
+    expect(result.env).toEqual({});
+    expect(result.files).toHaveLength(1);
+    expect(decodeAuthJson(result)).toBe('{"tokens":{"access_token":"token"}}');
+  });
+
+  it("creates auth.json from OPENAI_API_KEY fallback", () => {
+    const result = applyCodexApiKeys({
+      OPENAI_API_KEY: "sk-from-env",
+    });
+
+    expect(result.env).toEqual({
+      OPENAI_API_KEY: "sk-from-env",
+      CODEX_API_KEY: "sk-from-env",
+    });
+    expect(result.files).toHaveLength(1);
+    expect(JSON.parse(decodeAuthJson(result))).toEqual({
+      auth_mode: "apikey",
+      OPENAI_API_KEY: "sk-from-env",
+    });
+  });
+
+  it("falls back to OPENAI_API_KEY when CODEX_AUTH_JSON is invalid", () => {
+    const result = applyCodexApiKeys({
+      CODEX_AUTH_JSON: "{not-json",
+      OPENAI_API_KEY: "sk-fallback",
+    });
+
+    expect(result.files).toHaveLength(1);
+    expect(JSON.parse(decodeAuthJson(result))).toEqual({
+      auth_mode: "apikey",
+      OPENAI_API_KEY: "sk-fallback",
+    });
+  });
+});
 
 describe("stripFilteredConfigKeys", () => {
   it("removes model key from config", () => {

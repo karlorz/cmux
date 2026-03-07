@@ -15,11 +15,11 @@ import { buildCodexMcpToml } from "../../mcp-injection";
  * Apply API keys for OpenAI Codex.
  *
  * Priority order:
- * 1. CODEX_AUTH_JSON - If provided, inject as ~/.codex/auth.json (OAuth tokens from `codex login`)
- * 2. OPENAI_API_KEY - Fallback if no auth.json, injected as environment variable
+ * 1. CODEX_AUTH_JSON - If provided, inject as ~/.codex/auth.json
+ * 2. OPENAI_API_KEY - Fallback if no auth.json, synthesize ~/.codex/auth.json
  *
  * When CODEX_AUTH_JSON is provided, OPENAI_API_KEY is ignored since auth.json
- * contains OAuth tokens that Codex CLI prefers over API keys.
+ * is already the highest-priority auth source for Codex CLI.
  */
 export function applyCodexApiKeys(
   keys: Record<string, string>
@@ -44,11 +44,27 @@ export function applyCodexApiKeys(
     }
   }
 
-  // Fallback: inject OPENAI_API_KEY as environment variable
-  // Also set CODEX_API_KEY to the same value to skip the sign-in screen
-  // (OPENAI_API_KEY only pre-fills the input, CODEX_API_KEY bypasses it entirely)
+  // Fallback: synthesize auth.json from OPENAI_API_KEY.
+  // Codex 0.111.0 accepts API-key auth from auth.json, but env-only OPENAI_API_KEY
+  // is not sufficient for requests against either the default OpenAI provider or
+  // custom providers that require OpenAI auth.
+  //
+  // Keep the env vars as secondary compatibility signals for downstream tooling.
   const openaiKey = keys.OPENAI_API_KEY;
   if (openaiKey) {
+    const apiKeyAuthJson = JSON.stringify(
+      {
+        auth_mode: "apikey",
+        OPENAI_API_KEY: openaiKey,
+      },
+      null,
+      2
+    );
+    files.push({
+      destinationPath: "$HOME/.codex/auth.json",
+      contentBase64: Buffer.from(apiKeyAuthJson).toString("base64"),
+      mode: "600",
+    });
     env.OPENAI_API_KEY = openaiKey;
     env.CODEX_API_KEY = openaiKey;
   }
