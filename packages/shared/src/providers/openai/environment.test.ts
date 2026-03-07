@@ -486,13 +486,17 @@ foo = "bar"
       mcpServerConfigs: [
         {
           name: "context7",
+          type: "stdio",
           command: "npx",
           args: ["-y", "@upstash/context7-mcp@latest"],
         },
         {
           name: "my-server",
-          command: "bunx",
-          args: ["local-mcp"],
+          type: "http",
+          url: "https://mcp.example.com/http",
+          headers: {
+            Authorization: "Bearer secret",
+          },
           envVars: {
             API_TOKEN: "secret",
           },
@@ -503,6 +507,10 @@ foo = "bar"
     const toml = decodeConfigToml(result);
     expect(toml).toContain("[mcp_servers.context7]");
     expect(toml).toContain('[mcp_servers."my-server"]');
+    expect(toml).toContain('type = "http"');
+    expect(toml).toContain('url = "https://mcp.example.com/http"');
+    expect(toml).toContain('[mcp_servers."my-server".headers]');
+    expect(toml).toContain('Authorization = "Bearer secret"');
     expect(toml).toContain('[mcp_servers."my-server".env]');
     expect(toml).toContain('API_TOKEN = "secret"');
     expect(toml.indexOf("[mcp_servers.devsh-memory]")).toBeLessThan(

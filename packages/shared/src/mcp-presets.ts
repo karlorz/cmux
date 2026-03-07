@@ -1,4 +1,4 @@
-import type { McpServerConfig } from "./mcp-server-config";
+import type { McpStdioServerConfig } from "./mcp-server-config";
 
 export interface McpServerPresetSupportedAgents {
   claude: boolean;
@@ -7,16 +7,17 @@ export interface McpServerPresetSupportedAgents {
   opencode: boolean;
 }
 
-export interface McpServerPreset extends McpServerConfig {
+export type McpServerPreset = McpStdioServerConfig & {
   displayName: string;
   description: string;
   tags: string[];
   supportedAgents: McpServerPresetSupportedAgents;
-}
+};
 
 export const MCP_SERVER_PRESETS: readonly McpServerPreset[] = [
   {
     name: "context7",
+    type: "stdio",
     displayName: "Context7",
     description: "Library and framework documentation lookup via Context7.",
     command: "npx",
@@ -31,6 +32,7 @@ export const MCP_SERVER_PRESETS: readonly McpServerPreset[] = [
   },
   {
     name: "github",
+    type: "stdio",
     displayName: "GitHub",
     description: "GitHub repository, issue, and pull request operations.",
     command: "npx",
@@ -45,6 +47,7 @@ export const MCP_SERVER_PRESETS: readonly McpServerPreset[] = [
   },
   {
     name: "filesystem",
+    type: "stdio",
     displayName: "Filesystem",
     description: "Filesystem access scoped to the sandbox workspace.",
     command: "npx",

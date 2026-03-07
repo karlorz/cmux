@@ -1,26 +1,46 @@
-import type { McpServerConfig } from "./mcp-server-config";
+import { isRemoteMcpServerConfig, type McpServerConfig } from "./mcp-server-config";
 
-type JsonMcpServer = {
+type JsonStdioMcpServer = {
+  type?: "stdio";
   command: string;
   args: string[];
   env?: Record<string, string>;
 };
 
-type OpencodeMcpServer = {
-  type: "local";
-  command: string[];
-  enabled: true;
+type JsonRemoteMcpServer = {
+  type: "http" | "sse";
+  url: string;
+  headers?: Record<string, string>;
   env?: Record<string, string>;
 };
 
-function normalizeEnvVars(
-  envVars?: Record<string, string>,
+type JsonMcpServer = JsonStdioMcpServer | JsonRemoteMcpServer;
+
+type OpencodeLocalMcpServer = {
+  type: "local";
+  command: string[];
+  enabled: true;
+  environment?: Record<string, string>;
+};
+
+type OpencodeRemoteMcpServer = {
+  type: "remote";
+  url: string;
+  headers?: Record<string, string>;
+  enabled: true;
+  environment?: Record<string, string>;
+};
+
+type OpencodeMcpServer = OpencodeLocalMcpServer | OpencodeRemoteMcpServer;
+
+function normalizeStringRecord(
+  record?: Record<string, string>,
 ): Record<string, string> | undefined {
-  if (!envVars) {
+  if (!record) {
     return undefined;
   }
 
-  const entries = Object.entries(envVars);
+  const entries = Object.entries(record);
   if (entries.length === 0) {
     return undefined;
   }
@@ -44,17 +64,25 @@ function buildJsonMcpServers(
 ): Record<string, JsonMcpServer> {
   return getUniqueConfigs(configs).reduce<Record<string, JsonMcpServer>>(
     (servers, config) => {
-      const env = normalizeEnvVars(config.envVars);
-      servers[config.name] = env
-        ? {
-            command: config.command,
-            args: [...config.args],
-            env,
-          }
-        : {
-            command: config.command,
-            args: [...config.args],
-          };
+      const env = normalizeStringRecord(config.envVars);
+
+      if (isRemoteMcpServerConfig(config)) {
+        const headers = normalizeStringRecord(config.headers);
+        servers[config.name] = {
+          type: config.type,
+          url: config.url,
+          ...(headers ? { headers } : {}),
+          ...(env ? { env } : {}),
+        };
+        return servers;
+      }
+
+      servers[config.name] = {
+        command: config.command,
+        args: [...config.args],
+        ...(env ? { env } : {}),
+      };
+
       return servers;
     },
     {},
@@ -89,29 +117,41 @@ export function buildCodexMcpToml(configs: McpServerConfig[]): string {
   return getUniqueConfigs(configs)
     .map((config) => {
       const key = formatTomlKeySegment(config.name);
-      const lines = [
-        `[mcp_servers.${key}]`,
-        `type = "stdio"`,
-        `command = ${formatTomlString(config.command)}`,
-        `args = ${formatTomlStringArray(config.args)}`,
-      ];
+      const lines = [`[mcp_servers.${key}]`, `type = ${formatTomlString(config.type)}`];
 
-      const env = normalizeEnvVars(config.envVars);
-      if (!env) {
-        return lines.join("\n");
+      if (isRemoteMcpServerConfig(config)) {
+        lines.push(`url = ${formatTomlString(config.url)}`);
+      } else {
+        lines.push(`command = ${formatTomlString(config.command)}`);
+        lines.push(`args = ${formatTomlStringArray(config.args)}`);
       }
 
-      const envLines = Object.entries(env).map(
-        ([envKey, envValue]) =>
-          `${formatTomlKeySegment(envKey)} = ${formatTomlString(envValue)}`,
-      );
+      const headers = isRemoteMcpServerConfig(config)
+        ? normalizeStringRecord(config.headers)
+        : undefined;
+      const env = normalizeStringRecord(config.envVars);
 
-      return [
-        lines.join("\n"),
-        "",
-        `[mcp_servers.${key}.env]`,
-        ...envLines,
-      ].join("\n");
+      const sections = [lines.join("\n")];
+
+      if (headers) {
+        const headerLines = Object.entries(headers).map(
+          ([headerKey, headerValue]) =>
+            `${formatTomlKeySegment(headerKey)} = ${formatTomlString(headerValue)}`,
+        );
+        sections.push(
+          [`[mcp_servers.${key}.headers]`, ...headerLines].join("\n"),
+        );
+      }
+
+      if (env) {
+        const envLines = Object.entries(env).map(
+          ([envKey, envValue]) =>
+            `${formatTomlKeySegment(envKey)} = ${formatTomlString(envValue)}`,
+        );
+        sections.push([`[mcp_servers.${key}.env]`, ...envLines].join("\n"));
+      }
+
+      return sections.join("\n\n");
     })
     .join("\n\n");
 }
@@ -121,19 +161,26 @@ export function buildOpencodeMcpConfig(
 ): Record<string, OpencodeMcpServer> {
   return getUniqueConfigs(configs).reduce<Record<string, OpencodeMcpServer>>(
     (servers, config) => {
-      const env = normalizeEnvVars(config.envVars);
-      servers[config.name] = env
-        ? {
-            type: "local",
-            command: [config.command, ...config.args],
-            enabled: true,
-            env,
-          }
-        : {
-            type: "local",
-            command: [config.command, ...config.args],
-            enabled: true,
-          };
+      const environment = normalizeStringRecord(config.envVars);
+
+      if (isRemoteMcpServerConfig(config)) {
+        const headers = normalizeStringRecord(config.headers);
+        servers[config.name] = {
+          type: "remote",
+          url: config.url,
+          enabled: true,
+          ...(headers ? { headers } : {}),
+          ...(environment ? { environment } : {}),
+        };
+        return servers;
+      }
+
+      servers[config.name] = {
+        type: "local",
+        command: [config.command, ...config.args],
+        enabled: true,
+        ...(environment ? { environment } : {}),
+      };
       return servers;
     },
     {},
