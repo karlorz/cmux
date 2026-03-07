@@ -4,6 +4,7 @@ import { getConvex } from "@/lib/utils/get-convex";
 import { api } from "@cmux/convex/api";
 import { MCP_SERVER_PRESETS } from "@cmux/shared";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import type { Id } from "@cmux/convex/dataModel";
 
 export const mcpServersRouter = new OpenAPIHono();
 
@@ -269,7 +270,7 @@ mcpServersRouter.openapi(
     const convex = getConvex({ accessToken });
     await convex.mutation(api.mcpServerConfigs.remove, {
       teamSlugOrId: query.teamSlugOrId,
-      id: id as never,
+      id: id as Id<"mcpServerConfigs">,
     });
 
     return c.json({ success: true });
