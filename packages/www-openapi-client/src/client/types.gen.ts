@@ -1757,9 +1757,8 @@ export type McpServerConfig = {
     displayName: string;
     command: string;
     args: Array<string>;
-    envVars?: {
-        [key: string]: string;
-    };
+    hasEnvVars?: boolean;
+    envVarKeys?: Array<string>;
     description?: string;
     tags?: Array<string>;
     enabledClaude: boolean;
