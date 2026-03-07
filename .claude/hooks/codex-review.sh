@@ -192,9 +192,12 @@ fi
 
 debug_log "Starting background codex review for state $STATE_FINGERPRINT..."
 
-# Kill any existing background review
+# Kill any existing background review (and its children)
 if [ -f "$BG_PID_FILE" ]; then
   OLD_PID=$(cat "$BG_PID_FILE")
+  debug_log "Killing old background review (pid $OLD_PID)"
+  # Kill process tree: first children, then parent
+  pkill -P "$OLD_PID" 2>/dev/null || true
   kill "$OLD_PID" 2>/dev/null || true
   rm -f "$BG_PID_FILE" "$BG_STATE_FILE"
 fi
