@@ -25,7 +25,7 @@ import {
 import { API_KEY_MODELS_BY_ENV } from "@cmux/shared/model-usage";
 import { convexQuery } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Outlet, useLocation } from "@tanstack/react-router";
 import { useConvex } from "convex/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cachedGetUser } from "@/lib/cachedGetUser";
@@ -41,10 +41,21 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { DEFAULT_BRANCH_PREFIX } from "@cmux/shared";
 
+export const settingsSectionSchema = z.enum([
+  "general",
+  "ai-providers",
+  "models",
+  "model-catalog",
+  "mcp-servers",
+  "git",
+  "worktrees",
+  "archived",
+]);
+
 export const Route = createFileRoute("/_layout/$teamSlugOrId/settings")({
   component: SettingsComponent,
   validateSearch: z.object({
-    section: z.enum(["general", "ai-providers", "models", "model-catalog", "mcp-servers", "git", "worktrees", "archived"]).default("general"),
+    section: settingsSectionSchema.default("general"),
   }),
 });
 
@@ -103,6 +114,7 @@ const PROVIDER_INFO: Record<string, ProviderInfo> = {
 function SettingsComponent() {
   const { teamSlugOrId } = Route.useParams();
   const { section } = Route.useSearch();
+  const location = useLocation();
   const { resolvedTheme, setTheme } = useTheme();
   const convex = useConvex();
   const [apiKeyValues, setApiKeyValues] = useState<Record<string, string>>({});
@@ -805,6 +817,11 @@ function SettingsComponent() {
   // In web mode, worktrees section is not available - fall back to general
   const activeSection = (env.NEXT_PUBLIC_WEB_MODE && section === "worktrees") ? "general" : section;
   const selectedTheme = resolvedTheme;
+  const isChildSettingsRoute = location.pathname !== `/${teamSlugOrId}/settings` && location.pathname !== `/${teamSlugOrId}/settings/`;
+
+  if (isChildSettingsRoute) {
+    return <Outlet />;
+  }
 
   return (
     <FloatingPane header={<TitleBar title="Settings" />}>

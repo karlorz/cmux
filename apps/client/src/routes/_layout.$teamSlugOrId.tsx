@@ -99,11 +99,14 @@ function LayoutComponent() {
   );
   const settingsPath = `/${teamSlugOrId}/settings`;
   const isSettingsRoute =
-    location.pathname === settingsPath || location.pathname === `${settingsPath}/`;
+    location.pathname === settingsPath ||
+    location.pathname === `${settingsPath}/` ||
+    location.pathname.startsWith(`${settingsPath}/`);
   const sectionFromSearch = (location.search as { section?: unknown })?.section;
   const activeSettingsSection: SettingsSection =
     sectionFromSearch === "ai-providers" ? "ai-providers" :
     sectionFromSearch === "models" ? "models" :
+    sectionFromSearch === "model-catalog" ? "model-catalog" :
     sectionFromSearch === "mcp-servers" ? "mcp-servers" :
     sectionFromSearch === "git" ? "git" :
     sectionFromSearch === "worktrees" ? "worktrees" :

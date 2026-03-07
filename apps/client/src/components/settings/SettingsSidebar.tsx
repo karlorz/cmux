@@ -19,7 +19,15 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
-export type SettingsSection = "general" | "ai-providers" | "models" | "mcp-servers" | "git" | "worktrees" | "archived";
+export type SettingsSection =
+  | "general"
+  | "ai-providers"
+  | "models"
+  | "model-catalog"
+  | "mcp-servers"
+  | "git"
+  | "worktrees"
+  | "archived";
 
 interface SettingsSidebarProps {
   teamSlugOrId: string;
@@ -49,6 +57,11 @@ const allNavItems: SettingsSidebarNavItem[] = [
   {
     label: "Models",
     section: "models",
+    icon: Layers,
+  },
+  {
+    label: "Model Catalog",
+    section: "model-catalog",
     icon: Layers,
   },
   {
