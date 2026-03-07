@@ -38,7 +38,6 @@ RESULT_FILE="/tmp/codex-review-result-${SESSION_ID}"
 BG_PID_FILE="/tmp/codex-review-pid-${SESSION_ID}"
 BG_STATE_FILE="/tmp/codex-review-bg-state-${SESSION_ID}"
 FAIL_COUNT_FILE="/tmp/codex-review-fails-${SESSION_ID}"
-SIMPLIFY_SUGGESTED_FILE="/tmp/codex-review-simplify-suggested-${SESSION_ID}"
 AUTOPILOT_BLOCKED_FILE="/tmp/claude-autopilot-blocked-${SESSION_ID}"
 COMPLETED_FILE="/tmp/claude-autopilot-completed-${SESSION_ID}"
 
@@ -114,15 +113,7 @@ If the output indicates code review passed with no issues, return exactly 'lgtm'
         rm -f "$FAIL_COUNT_FILE"
         debug_log "Background review PASSED (lgtm)"
         echo "$PREV_STATE" > "$REVIEWED_FILE"
-
-        CHANGED_FILES=$(git diff --name-only main...HEAD 2>/dev/null | wc -l)
-        if [ "$CHANGED_FILES" -gt 2 ] && [ ! -f "$SIMPLIFY_SUGGESTED_FILE" ]; then
-          touch "$SIMPLIFY_SUGGESTED_FILE"
-          debug_log "Auto-running /simplify for $CHANGED_FILES changed files"
-          echo "Codex review passed. Auto-running /simplify to check code quality across $CHANGED_FILES changed files..." >&2
-          # Exit 2 to trigger /simplify skill - Claude will see this message and run it
-          exit 2
-        fi
+        # Review passed, no action needed
       else
         echo "$PREV_STATE" > "$REVIEWED_FILE"
         echo $((FAIL_COUNT + 1)) > "$FAIL_COUNT_FILE"
@@ -146,7 +137,7 @@ If the output indicates code review passed with no issues, return exactly 'lgtm'
 $FINDINGS
 
 ---
-After addressing the above issues, run /simplify to check for code quality improvements (reuse, efficiency, clarity).${REMAINING_INFO}" >&2
+Please address the above issues.${REMAINING_INFO}" >&2
         exit 2
       fi
     fi
