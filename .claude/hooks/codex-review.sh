@@ -1,10 +1,10 @@
 #!/bin/bash
-# Runs codex code review and outputs only the findings
+# Runs codex code review in background and shows results on next stop
+# This avoids blocking the stop hook while codex runs (which can take 5+ minutes)
 
 set -euo pipefail
 
-# Debug logging is opt-in via CODEX_REVIEW_DEBUG=1 to avoid writing
-# raw hook input (which may contain repo content) to world-readable /tmp.
+# Debug logging is opt-in via CODEX_REVIEW_DEBUG=1
 DEBUG_ENABLED="${CODEX_REVIEW_DEBUG:-0}"
 debug_log() {
   if [ "$DEBUG_ENABLED" = "1" ]; then
@@ -34,12 +34,15 @@ debug_log "SESSION_ID: $SESSION_ID"
 
 # Session-scoped file paths
 REVIEWED_FILE="/tmp/codex-review-reviewed-${SESSION_ID}"
+RESULT_FILE="/tmp/codex-review-result-${SESSION_ID}"
+BG_PID_FILE="/tmp/codex-review-pid-${SESSION_ID}"
+BG_STATE_FILE="/tmp/codex-review-bg-state-${SESSION_ID}"
 FAIL_COUNT_FILE="/tmp/codex-review-fails-${SESSION_ID}"
 SIMPLIFY_SUGGESTED_FILE="/tmp/codex-review-simplify-suggested-${SESSION_ID}"
 AUTOPILOT_BLOCKED_FILE="/tmp/claude-autopilot-blocked-${SESSION_ID}"
 COMPLETED_FILE="/tmp/claude-autopilot-completed-${SESSION_ID}"
 
-# Install trap to clean up completed marker on any exit
+# Clean up completed marker on exit
 trap 'rm -f "$COMPLETED_FILE"' EXIT
 
 # Autopilot is only truly active when enabled AND not disabled via override
@@ -61,23 +64,83 @@ if [ "$AUTOPILOT_ACTIVE" != "1" ] && [ -f "$AUTOPILOT_BLOCKED_FILE" ]; then
   debug_log "Cleaned up stale autopilot blocked flag"
 fi
 
-# --- Session-based work detection ---
-# 1. Baseline = merge-base with main (what we're reviewing against)
-# 2. Work exists if: commits ahead of main OR uncommitted changes
-# 3. Skip if already reviewed this exact state (fingerprint includes dirty tree hash)
+# --- Check for completed background review results ---
+# Show results from previous background review if available
+if [ -f "$RESULT_FILE" ]; then
+  PREV_STATE=$(cat "$BG_STATE_FILE" 2>/dev/null || echo "")
+  FINDINGS=$(cat "$RESULT_FILE")
+  rm -f "$RESULT_FILE" "$BG_PID_FILE" "$BG_STATE_FILE"
 
+  if [ -n "$FINDINGS" ]; then
+    debug_log "Found background review results for state: $PREV_STATE"
+
+    # Check fail count
+    FAIL_COUNT=0
+    if [ -f "$FAIL_COUNT_FILE" ]; then
+      FAIL_COUNT=$(cat "$FAIL_COUNT_FILE")
+    fi
+
+    if [ "$FAIL_COUNT" -ge 5 ]; then
+      debug_log "Hit fail limit, not showing results"
+    else
+      # Use opencode to check if review passed
+      VERDICT=$(opencode run "Output: $FINDINGS
+
+If the output indicates code review passed with no issues, return exactly 'lgtm'. Otherwise return 'issues'." --model opencode/big-pickle 2>/dev/null || echo "issues")
+
+      if echo "$VERDICT" | grep -qi "lgtm"; then
+        rm -f "$FAIL_COUNT_FILE"
+        debug_log "Background review PASSED (lgtm)"
+        echo "$PREV_STATE" > "$REVIEWED_FILE"
+
+        CHANGED_FILES=$(git diff --name-only main...HEAD 2>/dev/null | wc -l)
+        if [ "$CHANGED_FILES" -gt 2 ] && [ ! -f "$SIMPLIFY_SUGGESTED_FILE" ]; then
+          touch "$SIMPLIFY_SUGGESTED_FILE"
+          echo "Codex review passed. Consider running /simplify to check for code quality improvements across the $CHANGED_FILES changed files." >&2
+          # Don't exit 2 here - we still want to check if new review needed
+        fi
+      else
+        echo "$PREV_STATE" > "$REVIEWED_FILE"
+        echo $((FAIL_COUNT + 1)) > "$FAIL_COUNT_FILE"
+        debug_log "Background review has ISSUES"
+
+        REMAINING_INFO=""
+        if [ "$AUTOPILOT_ACTIVE" = "1" ]; then
+          TURN_FILE="/tmp/claude-autopilot-turns-${SESSION_ID}"
+          if [ -f "$TURN_FILE" ]; then
+            CURRENT_TURN=$(cat "$TURN_FILE" 2>/dev/null || echo "0")
+            AP_MAX="${CLAUDE_AUTOPILOT_MAX_TURNS:-20}"
+            REMAINING=$((AP_MAX - CURRENT_TURN))
+            if [ "$REMAINING" -gt 0 ]; then
+              REMAINING_INFO=" You have $REMAINING autopilot turns remaining to address these."
+            fi
+          fi
+        fi
+
+        echo "## Codex Code Review Findings (attempt $((FAIL_COUNT + 1))/5)
+
+$FINDINGS
+
+---
+After addressing the above issues, run /simplify to check for code quality improvements (reuse, efficiency, clarity).${REMAINING_INFO}" >&2
+        exit 2
+      fi
+    fi
+  fi
+fi
+
+# --- Session-based work detection ---
 CURRENT_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
 MAIN_BASE=$(git merge-base main HEAD 2>/dev/null || echo "unknown")
 HAS_UNCOMMITTED=$(git status --porcelain 2>/dev/null | grep -q . && echo "1" || echo "0")
 
-# For dirty tree, include hash of actual changes (not just "1")
+# For dirty tree, include hash of actual changes
 if [ "$HAS_UNCOMMITTED" = "1" ]; then
   DIRTY_HASH=$(git diff 2>/dev/null | shasum -a 256 | cut -c1-16)
 else
   DIRTY_HASH="clean"
 fi
 
-# Build state fingerprint: commit + dirty tree hash
 STATE_FINGERPRINT="${CURRENT_HEAD}:${DIRTY_HASH}"
 
 # Check if already reviewed this exact state
@@ -86,134 +149,92 @@ if [ -f "$REVIEWED_FILE" ] && [ "$(cat "$REVIEWED_FILE")" = "$STATE_FINGERPRINT"
   exit 0
 fi
 
+# Check if background review already running for this state
+if [ -f "$BG_PID_FILE" ] && [ -f "$BG_STATE_FILE" ]; then
+  BG_PID=$(cat "$BG_PID_FILE")
+  BG_STATE=$(cat "$BG_STATE_FILE")
+  if [ "$BG_STATE" = "$STATE_FINGERPRINT" ] && kill -0 "$BG_PID" 2>/dev/null; then
+    debug_log "Background review already running for state $STATE_FINGERPRINT (pid $BG_PID)"
+    exit 0
+  fi
+fi
+
 # Determine if there's work to review
-# Work = commits ahead of main OR uncommitted changes
 COMMITS_AHEAD=$(git rev-list --count "${MAIN_BASE}..HEAD" 2>/dev/null || echo "0")
 
 if [ "$COMMITS_AHEAD" = "0" ] && [ "$HAS_UNCOMMITTED" = "0" ]; then
-  # No work vs main - but check autopilot markers as backup
   TURN_FILE="/tmp/claude-autopilot-turns-${SESSION_ID}"
   if [ "$AUTOPILOT_ACTIVE" = "1" ] && [ -f "$COMPLETED_FILE" ]; then
     debug_log "Work detected via autopilot completed marker"
   elif [ -f "$TURN_FILE" ]; then
     debug_log "Work detected via turn file"
   else
-    debug_log "Skipping: no work vs main (commits_ahead=$COMMITS_AHEAD, uncommitted=$HAS_UNCOMMITTED)"
+    debug_log "Skipping: no work vs main"
     exit 0
   fi
 fi
 
-debug_log "Proceeding with codex review (COMMITS_AHEAD=$COMMITS_AHEAD, HAS_UNCOMMITTED=$HAS_UNCOMMITTED, DIRTY_HASH=$DIRTY_HASH)..."
-
-# Dry-run mode: exit after pre-flight checks (for testing hook logic without codex)
+# Dry-run mode
 if [ "${CODEX_REVIEW_DRY_RUN:-}" = "1" ]; then
-  debug_log "Dry-run mode, exiting after pre-flight"
+  debug_log "Dry-run mode, exiting"
   exit 0
 fi
 
-# Hard stop after 5 failures to prevent excessive loops (per session)
+# Check fail count before starting new review
 FAIL_COUNT=0
 if [ -f "$FAIL_COUNT_FILE" ]; then
   FAIL_COUNT=$(cat "$FAIL_COUNT_FILE")
 fi
 if [ "$FAIL_COUNT" -ge 5 ]; then
-  exit 0  # Hit limit, stop showing issues
+  debug_log "Hit fail limit, not starting new review"
+  exit 0
 fi
 
-# Create temp file for output; extend trap to also clean it
-TMPFILE=$(mktemp)
-trap 'rm -f "$TMPFILE" "$COMPLETED_FILE"' EXIT
+debug_log "Starting background codex review for state $STATE_FINGERPRINT..."
 
-# REVIEW.md guidelines are loaded via AGENTS.md (codex reads it automatically).
-# --base and [PROMPT] are mutually exclusive, so we cannot pass a custom prompt here.
-# --sandbox danger-full-access disables sandboxing entirely (safe in isolated LXC/container).
-# Timeout: 240s (4 min) to avoid blocking stop hooks too long. Uses perl for macOS compatibility.
-debug_log "Running codex review..."
-run_with_timeout() {
-  perl -e 'alarm shift; exec @ARGV' "$@"
-}
-if command -v unbuffer >/dev/null 2>&1; then
-  run_with_timeout 240 unbuffer codex \
-    --sandbox danger-full-access \
-    --model gpt-5.3-codex \
-    -c model_reasoning_effort="high" \
-    review --base main > "$TMPFILE" 2>&1 || true
-else
-  run_with_timeout 240 codex \
-    --sandbox danger-full-access \
-    --model gpt-5.3-codex \
-    -c model_reasoning_effort="high" \
-    review --base main > "$TMPFILE" 2>&1 || true
+# Kill any existing background review
+if [ -f "$BG_PID_FILE" ]; then
+  OLD_PID=$(cat "$BG_PID_FILE")
+  kill "$OLD_PID" 2>/dev/null || true
+  rm -f "$BG_PID_FILE" "$BG_STATE_FILE"
 fi
-debug_log "Codex review finished"
 
-# Strip ANSI codes first, then extract final codex response
-CLEAN=$(sed 's/\x1b\[[0-9;]*m//g' "$TMPFILE")
+# Start background review (no timeout - let it run as long as needed)
+(
+  TMPFILE=$(mktemp)
+  trap 'rm -f "$TMPFILE"' EXIT
 
-# Extract just the final codex response (after the last "codex" marker)
-FINDINGS=$(echo "$CLEAN" | awk '
-  /^codex$/ { found=1; content=""; next }
-  found { content = content $0 "\n" }
-  END { print content }
-' | sed '/^$/d' | grep -v '^tokens used' | head -50)
-
-if [ -z "$FINDINGS" ]; then
-  debug_log "No FINDINGS extracted, exiting"
-  exit 0  # No output from codex
-fi
-debug_log "FINDINGS extracted ($(echo "$FINDINGS" | wc -l) lines)"
-
-# Use opencode to check if review passed (lgtm) or has issues
-VERDICT=$(opencode run "Output: $FINDINGS
-
-If the output indicates code review passed with no issues, return exactly 'lgtm'. Otherwise return 'issues'." --model opencode/big-pickle 2>/dev/null || echo "issues")
-
-if echo "$VERDICT" | grep -qi "lgtm"; then
-  rm -f "$FAIL_COUNT_FILE"  # Reset counter on success
-  debug_log "Review PASSED (lgtm)"
-
-  # Mark this state as reviewed
-  echo "$STATE_FINGERPRINT" > "$REVIEWED_FILE"
-
-  # Even on pass, suggest /simplify once if significant changes were made
-  CHANGED_FILES=$(git diff --name-only main...HEAD 2>/dev/null | wc -l)
-  if [ "$CHANGED_FILES" -gt 2 ] && [ ! -f "$SIMPLIFY_SUGGESTED_FILE" ]; then
-    touch "$SIMPLIFY_SUGGESTED_FILE"
-    debug_log "Suggesting /simplify for $CHANGED_FILES changed files"
-    echo "Codex review passed. Consider running /simplify to check for code quality improvements across the $CHANGED_FILES changed files." >&2
-    exit 2
+  if command -v unbuffer >/dev/null 2>&1; then
+    unbuffer codex \
+      --sandbox danger-full-access \
+      --model gpt-5.4 \
+      -c model_reasoning_effort="high" \
+      review --base main > "$TMPFILE" 2>&1 || true
+  else
+    codex \
+      --sandbox danger-full-access \
+      --model gpt-5.4 \
+      -c model_reasoning_effort="high" \
+      review --base main > "$TMPFILE" 2>&1 || true
   fi
 
-  exit 0  # Review passed, few changes or already suggested, don't bother Claude
-fi
+  # Extract findings
+  CLEAN=$(sed 's/\x1b\[[0-9;]*m//g' "$TMPFILE")
+  FINDINGS=$(echo "$CLEAN" | awk '
+    /^codex$/ { found=1; content=""; next }
+    found { content = content $0 "\n" }
+    END { print content }
+  ' | sed '/^$/d' | grep -v '^tokens used' | head -50)
 
-# Has issues - increment counter and show to Claude
-# Mark as reviewed (will re-review if state changes)
-echo "$STATE_FINGERPRINT" > "$REVIEWED_FILE"
-echo $((FAIL_COUNT + 1)) > "$FAIL_COUNT_FILE"
-debug_log "Review has ISSUES, showing to Claude"
+  # Save results for next stop to pick up
+  echo "$FINDINGS" > "$RESULT_FILE"
+  rm -f "$BG_PID_FILE"
+) &
 
-# Check if this is a mid-autopilot review and include remaining turns
-REMAINING_INFO=""
-if [ "$AUTOPILOT_ACTIVE" = "1" ]; then
-  TURN_FILE="/tmp/claude-autopilot-turns-${SESSION_ID}"
-  if [ -f "$TURN_FILE" ]; then
-    CURRENT_TURN=$(cat "$TURN_FILE" 2>/dev/null || echo "0")
-    AP_MAX="${CLAUDE_AUTOPILOT_MAX_TURNS:-20}"
-    REMAINING=$((AP_MAX - CURRENT_TURN))
-    if [ "$REMAINING" -gt 0 ]; then
-      REMAINING_INFO=" You have $REMAINING autopilot turns remaining to address these."
-    fi
-  fi
-fi
+BG_PID=$!
+echo "$BG_PID" > "$BG_PID_FILE"
+echo "$STATE_FINGERPRINT" > "$BG_STATE_FILE"
+debug_log "Background review started (pid $BG_PID)"
 
-# Build feedback message with codex findings + simplify instruction
-FEEDBACK="## Codex Code Review Findings (attempt $((FAIL_COUNT + 1))/5)
-
-$FINDINGS
-
----
-After addressing the above issues, run /simplify to check for code quality improvements (reuse, efficiency, clarity).${REMAINING_INFO}"
-
-echo "$FEEDBACK" >&2
-exit 2
+# Exit immediately - don't block the stop hook
+exit 0
