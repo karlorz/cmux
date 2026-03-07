@@ -74,6 +74,12 @@ fi
 # Session-scoped turn counter
 TURN_FILE="/tmp/claude-autopilot-turns-${SESSION_ID}"
 MAX_TURNS="${CLAUDE_AUTOPILOT_MAX_TURNS:-20}"
+
+# Helper: check if running in infinite mode (MAX_TURNS=-1)
+# Note: We use -1 (not 0) as the sentinel because agent-autopilot.sh can produce
+# MAX_TURNS=0 for short sessions (MINUTES < TURN_MINUTES), which should stop immediately.
+is_infinite_mode() { [ "$MAX_TURNS" -eq -1 ]; }
+
 TURN_COUNT=0
 if [ -f "$TURN_FILE" ]; then
   TURN_COUNT=$(cat "$TURN_FILE" 2>/dev/null || echo "0")
@@ -82,7 +88,7 @@ TURN_COUNT=$((TURN_COUNT + 1))
 echo "$TURN_COUNT" > "$TURN_FILE"
 
 # Check turn limit
-if [ "$TURN_COUNT" -ge "$MAX_TURNS" ]; then
+if ! is_infinite_mode && [ "$TURN_COUNT" -ge "$MAX_TURNS" ]; then
   # Write completed marker before deleting turn file so codex-review can detect autopilot ran
   echo "$TURN_COUNT" > "/tmp/claude-autopilot-completed-${SESSION_ID}"
   rm -f "$TURN_FILE"
@@ -92,26 +98,34 @@ if [ "$TURN_COUNT" -ge "$MAX_TURNS" ]; then
 fi
 
 # Smart delay escalation: early turns are fast (active work), later turns slow down
-# (monitoring/polling phase). The hook delay stays within the 10s timeout; for longer
+# (monitoring/polling phase). Infinite mode (MAX_TURNS=-1) always stays in the
+# active work phase. The hook delay stays within the 10s timeout; for longer
 # waits, we instruct Claude to sleep in a bash command so the wait is visible to the user.
 MONITORING_THRESHOLD="${CLAUDE_AUTOPILOT_MONITORING_THRESHOLD:-10}"
+MONITORING_PHASE1_OFFSET=5
+MONITORING_PHASE1_WAIT=30
+MONITORING_PHASE2_WAIT=60
 BASE_DELAY="${CLAUDE_AUTOPILOT_DELAY:-2}"
+WAIT_PROMPT_PREFIX="Only if you are blocked on external work and are about to poll status, run: sleep"
+DELAY_SECONDS="$BASE_DELAY"
+WAIT_INSTRUCTION=""
+WAIT_SECONDS=""
+PHASE="work"
 
-if [ "$TURN_COUNT" -le "$MONITORING_THRESHOLD" ]; then
-  # Active work phase: short delay, standard continuation
-  DELAY_SECONDS="$BASE_DELAY"
-  WAIT_INSTRUCTION=""
-  PHASE="work"
-elif [ "$TURN_COUNT" -le $(( MONITORING_THRESHOLD + 5 )) ]; then
-  # Monitoring phase 1: medium polling
-  DELAY_SECONDS="$BASE_DELAY"
-  WAIT_INSTRUCTION="Before checking status, run: sleep 30\\n"
-  PHASE="monitoring-30s"
-else
-  # Monitoring phase 2: slow polling for long-running tasks
-  DELAY_SECONDS="$BASE_DELAY"
-  WAIT_INSTRUCTION="Before checking status, run: sleep 60\\n"
-  PHASE="monitoring-60s"
+if ! is_infinite_mode && [ "$TURN_COUNT" -gt "$MONITORING_THRESHOLD" ]; then
+  if [ "$TURN_COUNT" -le $(( MONITORING_THRESHOLD + MONITORING_PHASE1_OFFSET )) ]; then
+    # Monitoring phase 1: medium polling
+    WAIT_SECONDS="$MONITORING_PHASE1_WAIT"
+    PHASE="monitoring-${MONITORING_PHASE1_WAIT}s"
+  else
+    # Monitoring phase 2: slow polling for long-running tasks
+    WAIT_SECONDS="$MONITORING_PHASE2_WAIT"
+    PHASE="monitoring-${MONITORING_PHASE2_WAIT}s"
+  fi
+fi
+
+if [ -n "$WAIT_SECONDS" ]; then
+  WAIT_INSTRUCTION="$WAIT_PROMPT_PREFIX $WAIT_SECONDS"
 fi
 
 # At n-2 turns before max, allow codex-review to run by NOT writing the blocked file.
@@ -119,7 +133,7 @@ fi
 AUTOPILOT_BLOCKED_FILE="/tmp/claude-autopilot-blocked-${SESSION_ID}"
 REVIEW_TURN=$((MAX_TURNS - 2))
 REVIEW_ENABLED=0
-if [ "$TURN_COUNT" -eq "$REVIEW_TURN" ] && [ "$MAX_TURNS" -gt 2 ]; then
+if ! is_infinite_mode && [ "$TURN_COUNT" -eq "$REVIEW_TURN" ] && [ "$MAX_TURNS" -gt 2 ]; then
   REVIEW_ENABLED=1
   # Remove stale blocked flag so codex-review can run
   rm -f "$AUTOPILOT_BLOCKED_FILE"
@@ -136,11 +150,25 @@ if [ "$DELAY_SECONDS" -gt 0 ]; then
 fi
 
 # Block stop - output JSON decision to stdout
-echo "[Autopilot] Turn $TURN_COUNT/$MAX_TURNS ($PHASE) - continuing..." >&2
+if is_infinite_mode; then
+  TURN_STATUS="${TURN_COUNT}/∞"
+else
+  TURN_STATUS="${TURN_COUNT}/${MAX_TURNS}"
+fi
+
+echo "[Autopilot] Turn $TURN_STATUS ($PHASE) - continuing..." >&2
 
 if [ "$REVIEW_ENABLED" = "1" ]; then
-  printf '{"decision":"block","reason":"%sCode review is running. After review feedback, address any issues found. You have 2 turns remaining.\\nEnd with: Progress, Commands run, Files changed, Next."}\n' "$WAIT_INSTRUCTION"
+  REASON="Code review is running. After review feedback, address any issues found. You have 2 turns remaining."
 else
-  printf '{"decision":"block","reason":"%sContinue from where you left off. Do not ask whether to continue.\\nEnd with: Progress, Commands run, Files changed, Next."}\n' "$WAIT_INSTRUCTION"
+  REASON="Continue from where you left off. Do not ask whether to continue."
 fi
+
+if [ -n "$WAIT_INSTRUCTION" ]; then
+  REASON="${REASON}\\n${WAIT_INSTRUCTION}"
+fi
+
+REASON="${REASON}\\nEnd with: Progress, Commands run, Files changed, Next."
+
+printf '{"decision":"block","reason":"%s"}\n' "$REASON"
 exit 0

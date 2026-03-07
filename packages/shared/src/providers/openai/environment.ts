@@ -61,6 +61,10 @@ const FILTERED_CONFIG_KEYS = ["model", "model_reasoning_effort"] as const;
 const CODEX_NOTIFY_LINE = `notify = ["/root/lifecycle/codex-notify.sh"]`;
 const CODEX_SANDBOX_MODE_LINE = `sandbox_mode = "danger-full-access"`;
 const CODEX_ASK_FOR_APPROVAL_LINE = `ask_for_approval = "never"`;
+const CODEX_AUTOPILOT_TURN_SUMMARY_LINE =
+  "End every turn with: Progress, Commands run, Files changed, Next.";
+const CODEX_AUTOPILOT_CONTINUE_LINE =
+  "Continue from where you left off. Do not ask whether to continue.";
 
 // Strip top-level keys that are controlled by cmux CLI args
 // Matches: key = "value" or key = 'value' or key = bareword (entire line)
@@ -287,8 +291,8 @@ exit 1
     mode: "755",
   });
 
-  // Autopilot wrapper script for long-running sessions (Phase 6)
-  // Sends heartbeats to Convex and runs Codex in a loop until timeout
+  // Autopilot wrapper script for unattended OpenAI Codex sessions.
+  // Sends heartbeats/status updates and runs Codex in a loop until timeout.
   const autopilotScript = `#!/usr/bin/env sh
 set -eu
 
@@ -383,7 +387,8 @@ while true; do
   if [ "\$DID_WRAPUP" -eq 0 ] && { [ "\$TIME_LEFT" -le "\$WRAPUP_THRESHOLD" ] || [ -f "\$STOP_FILE" ]; }; then
     log "Turn \$ITER: wrap-up (time_left=\${TIME_LEFT}s)"
     update_status "wrap-up"
-    PROMPT="Final turn (wrap up). Time left: \${TIME_LEFT}s. Stop starting large new work. Stabilize and write a summary."
+    PROMPT="Final turn (wrap up). Time left: \${TIME_LEFT}s. Stop starting large new work. Stabilize and write a summary.
+${CODEX_AUTOPILOT_TURN_SUMMARY_LINE}"
     DID_WRAPUP=1
   elif [ "\$ITER" -eq 1 ]; then
     log "Turn \$ITER: start"
@@ -391,11 +396,12 @@ while true; do
 
 You are running in unattended autopilot mode. Do not ask for confirmation.
 Timebox: \$CMUX_AUTOPILOT_TURN_MINUTES minutes per turn.
-End every turn with: Progress, Commands run, Files changed, Next."
+${CODEX_AUTOPILOT_TURN_SUMMARY_LINE}"
   else
     log "Turn \$ITER: continue (time_left=\${TIME_LEFT}s)"
     PROMPT="Autopilot continuation. Time left: \${TIME_LEFT}s. Timebox: \$CMUX_AUTOPILOT_TURN_MINUTES minutes.
-Continue from where you left off."
+${CODEX_AUTOPILOT_CONTINUE_LINE}
+${CODEX_AUTOPILOT_TURN_SUMMARY_LINE}"
   fi
 
   # Run Codex
