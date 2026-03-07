@@ -8,8 +8,8 @@
 Production models (use for `--agent` on feature/fix tasks):
 - `claude/opus-4.6`
 - `claude/opus-4.5`
+- `codex/gpt-5.4-xhigh`
 - `codex/gpt-5.3-codex-xhigh`
-- `codex/gpt-5.2-xhigh`
 
 Test models (use for `--agent` only for testing/validation, NOT for real work):
 - `claude/haiku-4.5`

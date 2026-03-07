@@ -3,7 +3,7 @@ This project is called cmux. cmux is a web app that spawns Claude Code, Codex CL
 # Repository Targets
 
 - Primary upstream for this workspace is `manaflow-ai/manaflow`, with fork target `karlorz/cmux`.
-- Terminal project is separate: upstream `manaflow-ai/cmux`, fork `karl-digi/cmux`, and should be handled in a separate workspace (for example `/Users/karlchow/Desktop/code/cmux-terminal`).
+- Terminal project is separate: upstream `manaflow-ai/cmux`, fork `karl-digi/cmux`, and should be handled in a separate workspace.
 
 # Git Policy (IMPORTANT)
 
@@ -221,3 +221,79 @@ Message types: `handoff`, `request`, `status`
 - `packages/shared/src/agent-memory-protocol.ts` - Protocol implementation
 - `packages/convex/convex/agentMemory_http.ts` - Convex sync endpoint
 - `packages/convex/convex/agentMemoryQueries.ts` - Memory queries
+
+## Style
+
+- Do not use emojis in shell scripts or debug messages.
+
+## Agent Models
+
+- Production `--agent` models for feature and fix work: `claude/opus-4.6`, `claude/opus-4.5`, `codex/gpt-5.4-xhigh`, `codex/gpt-5.3-codex-xhigh`.
+- Validation-only `--agent` models: `claude/haiku-4.5`, `codex/gpt-5.1-codex-mini`, `opencode/big-pickle`.
+- Test repos for `devsh task create --repo`: `karlorz/testing-repo-1`, `karlorz/testing-repo-2`, `karlorz/testing-repo-3`.
+
+## Additional Git/PR Rules
+
+- If needed, set the default GitHub repo for this workspace with `gh repo set-default karlorz/cmux`.
+- Never use `gh pr merge --delete-branch`; the web app relies on preserved branches for merged-task git diffs.
+- Preferred merge command: `gh pr merge <number> --squash --auto`.
+- Do not use `--admin` unless explicitly requested.
+
+## Additional Logs
+
+- PVE snapshot helper output is written to `logs/snapshot-pvelxc.log`.
+
+## Cloudrouter Dev
+
+- `CLOUDROUTER_REFRESH_TOKEN` must be present in `.env`.
+- Standard setup: `bun install && make install-cloudrouter-dev && cloudrouter whoami`.
+- Typical local flow: run `make dev` in one terminal, then `cloudrouter start . -p e2b` in another.
+- Default dev template is `cmux-devbox-lite-dev`; force the production template with `CLOUDROUTER_DEV_MODE=0 cloudrouter start . -p e2b`.
+- Optional Convex sandbox provider override: `SANDBOX_PROVIDER=pve-lxc`, `morph`, `e2b`, or `modal`.
+
+## devsh Publishing
+
+- `make install-devsh-prod` builds and installs the production `devsh` binary locally using `.env.production`.
+- `cd packages/devsh && make npm-version VERSION=x.y.z` bumps the published package version.
+- `make devsh-npm-republish-prod-dry` runs the npm publish dry-run.
+- `make devsh-npm-republish-prod` publishes the package and requires browser 2FA.
+- The Go module path is `github.com/karlorz/devsh`; do not change it.
+
+## Host Machine Commands
+
+- `make convex-fresh` resets Convex locally and recreates the Docker Compose state.
+- `make convex-init` and `make convex-init-prod` initialize Convex with `.env` or `.env.production`.
+- `make convex-clear-prod` resets production Convex state and is destructive.
+- `bun run convex:deploy` and `bun run convex:deploy:prod` deploy Convex using `.env` or `.env.production`.
+- `make dev` starts `./scripts/dev.sh`; `make dev-electron` starts the Electron remote-debug workflow.
+
+## PVE LXC Notes
+
+- Reference docs: `https://pve.proxmox.com/pve-docs/api-viewer/`, `https://pve.proxmox.com/wiki/Proxmox_VE_API`, `https://github.com/proxmox/pve-docs`.
+- Required provider env vars: `PVE_API_URL` and `PVE_API_TOKEN`; set `PVE_PUBLIC_DOMAIN` when using Cloudflare Tunnel.
+- Update an existing snapshot with `uv run --env-file .env ./scripts/snapshot-pvelxc.py --update --update-vmid <vmid>`.
+- Create the base template on the PVE host with `curl -fsSL https://raw.githubusercontent.com/karlorz/cmux/main/scripts/pve/pve-lxc-setup.sh | bash -s -- 9000`.
+- Rebuild snapshots from the dev machine with `uv run --env-file .env ./scripts/snapshot-pvelxc.py --template-vmid 9000 --ide-deps-channel latest`.
+- Trigger the weekly snapshot workflow with `gh workflow run "Weekly PVE LXC Snapshot" --repo karlorz/cmux --ref main`.
+- Trigger the production Morph snapshot workflow with `gh workflow run "Daily Morph Snapshot" --repo karlorz/cmux --ref main`.
+
+## Provider Env Notes
+
+- Morph Cloud uses `MORPH_API_KEY`.
+- PVE LXC uses `PVE_API_URL`, `PVE_API_TOKEN`, and usually `PVE_PUBLIC_DOMAIN`.
+- Cloudflare Tunnel on the PVE host uses `CF_API_TOKEN`, `CF_ZONE_ID`, `CF_ACCOUNT_ID`, and `CF_DOMAIN`.
+
+## Edge Routers
+
+- `apps/edge-router/` is the main router for Morph sandboxes and deploys to `cmux.sh`.
+- `apps/edge-router-pvelxc/` is the PVE-LXC fork and deploys to `*.alphasolves.com`.
+- For PVE-LXC sandbox changes, work in `apps/edge-router-pvelxc/` and deploy with `cd apps/edge-router-pvelxc && bun run deploy`.
+
+## External Knowledge Sharing
+
+- Update shared Obsidian/GitHub notes for major architecture, governance, workflow, API, or workspace-isolation changes.
+- Use the local-first vault at `~/Documents/obsidian_vault`.
+- If the local vault is unavailable, use the `obsidian-gh-knowledge` fallback configured in the environment.
+- Include the date, a concise decision summary, affected repo-relative paths, and related PR or commit IDs.
+- Never include secrets or credentials in shared notes, and keep volatile TODOs out of long-lived knowledge documents.
+- Do not turn this file into a phase ledger, migration queue, mockup dump, or large architecture diagram.

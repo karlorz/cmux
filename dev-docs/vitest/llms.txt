@@ -228,6 +228,24 @@ export default defineConfig({
 
 --------------------------------
 
+### Build and Link Local Vitest Modifications with pnpm
+
+Source: https://main.vitest.dev/guide
+
+Build and locally link your own modifications to Vitest. This process involves cloning the repository, installing dependencies, building the Vitest package, and then globally linking it. Finally, link the globally linked Vitest package into your project. Requires pnpm.
+
+```bash
+git clone https://github.com/vitest-dev/vitest.git
+cd vitest
+pnpm install
+cd packages/vitest
+pnpm run build
+pnpm link --global
+pnpm link --global vitest
+```
+
+--------------------------------
+
 ### Install Vitest using Package Managers
 
 Source: https://main.vitest.dev/guide
@@ -248,24 +266,6 @@ pnpm add -D vitest
 
 ```bash
 bun add -D vitest
-```
-
---------------------------------
-
-### Build and Link Local Vitest Modifications with pnpm
-
-Source: https://main.vitest.dev/guide
-
-Build and locally link your own modifications to Vitest. This process involves cloning the repository, installing dependencies, building the Vitest package, and then globally linking it. Finally, link the globally linked Vitest package into your project. Requires pnpm.
-
-```bash
-git clone https://github.com/vitest-dev/vitest.git
-cd vitest
-pnpm install
-cd packages/vitest
-pnpm run build
-pnpm link --global
-pnpm link --global vitest
 ```
 
 --------------------------------
