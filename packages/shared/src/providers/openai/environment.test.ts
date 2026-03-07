@@ -649,4 +649,73 @@ foo = "bar"
       "End every turn with: Progress, Commands run, Files changed, Next."
     );
   });
+
+  it("injects custom provider config when providerConfig.baseUrl is set", async () => {
+    const result = await getOpenAIEnvironment({
+      providerConfig: {
+        isOverridden: true,
+        baseUrl: "https://cliapi.karldigi.dev/v1",
+      },
+    } as never);
+
+    const toml = decodeConfigToml(result);
+    // Should have model_provider set to cmux-proxy
+    expect(toml).toContain('model_provider = "cmux-proxy"');
+    // Should have custom provider section
+    expect(toml).toContain('[model_providers.cmux-proxy]');
+    expect(toml).toContain('name = "cmux Proxy"');
+    expect(toml).toContain('base_url = "https://cliapi.karldigi.dev/v1"');
+    expect(toml).toContain('wire_api = "responses"');
+    expect(toml).toContain('requires_openai_auth = true');
+    // Standard Codex defaults should still be present
+    expect(toml).toContain('sandbox_mode = "danger-full-access"');
+    expect(toml).toContain('ask_for_approval = "never"');
+  });
+
+  it("does not inject custom provider config when providerConfig is not overridden", async () => {
+    const result = await getOpenAIEnvironment({
+      providerConfig: {
+        isOverridden: false,
+        baseUrl: "https://api.openai.com/v1",
+      },
+    } as never);
+
+    const toml = decodeConfigToml(result);
+    expect(toml).not.toContain('model_provider = "cmux-proxy"');
+    expect(toml).not.toContain('[model_providers.cmux-proxy]');
+  });
+
+  it("does not inject custom provider config when baseUrl is empty", async () => {
+    const result = await getOpenAIEnvironment({
+      providerConfig: {
+        isOverridden: true,
+        baseUrl: "",
+      },
+    } as never);
+
+    const toml = decodeConfigToml(result);
+    expect(toml).not.toContain('model_provider = "cmux-proxy"');
+    expect(toml).not.toContain('[model_providers.cmux-proxy]');
+  });
+
+  it("custom provider config appears at the top of config.toml", async () => {
+    const result = await getOpenAIEnvironment({
+      providerConfig: {
+        isOverridden: true,
+        baseUrl: "https://custom.api.example.com/v1",
+      },
+    } as never);
+
+    const toml = decodeConfigToml(result);
+    // model_provider should be one of the first lines
+    const lines = toml.split("\n");
+    const modelProviderIndex = lines.findIndex((l) =>
+      l.includes('model_provider = "cmux-proxy"')
+    );
+    expect(modelProviderIndex).toBeLessThan(5);
+    // Custom provider section should come before other sections
+    const customProviderIndex = toml.indexOf("[model_providers.cmux-proxy]");
+    const mcpServersIndex = toml.indexOf("[mcp_servers.");
+    expect(customProviderIndex).toBeLessThan(mcpServersIndex);
+  });
 });

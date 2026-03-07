@@ -228,6 +228,44 @@ function ensureManagedMemoryMcpServerConfig(toml: string, agentName?: string): s
   return `${normalizedToml}\n\n${managedMemoryBlock}\n`;
 }
 
+// Custom provider name for cmux-managed proxy endpoints
+const CMUX_CUSTOM_PROVIDER_NAME = "cmux-proxy";
+
+/**
+ * Generate Codex config.toml section for custom provider.
+ * When user has a custom base URL (e.g., AnyRouter proxy), Codex CLI needs
+ * a model_provider configured in config.toml, not just OPENAI_BASE_URL env var.
+ *
+ * @param baseUrl - The custom API base URL
+ * @returns TOML string with model_provider and [model_providers.cmux-proxy] section
+ */
+function generateCustomProviderConfig(baseUrl: string): string {
+  return `model_provider = "${CMUX_CUSTOM_PROVIDER_NAME}"
+
+[model_providers.${CMUX_CUSTOM_PROVIDER_NAME}]
+name = "cmux Proxy"
+base_url = "${baseUrl}"
+wire_api = "responses"
+requires_openai_auth = true
+`;
+}
+
+/**
+ * Strip existing model_provider and [model_providers.cmux-proxy] from TOML.
+ * Allows clean replacement when custom provider config changes.
+ */
+function stripCustomProviderConfig(toml: string): string {
+  let result = toml;
+  // Strip model_provider = "cmux-proxy" line
+  result = result.replace(/^model_provider\s*=\s*["']?cmux-proxy["']?\s*$/gm, "");
+  // Strip [model_providers.cmux-proxy] section
+  result = result.replace(
+    /\n?\[model_providers\.cmux-proxy\][\s\S]*?(?=\n\[|$)/g,
+    ""
+  );
+  return result.replace(/\n{3,}/g, "\n\n").trim();
+}
+
 export async function getOpenAIEnvironment(
   ctx: EnvironmentContext
 ): Promise<EnvironmentResult> {
@@ -476,8 +514,14 @@ log "Autopilot completed after \$ITER turns"
   }
 
   // Apply provider override if present (custom proxy like AnyRouter)
-  if (ctx.providerConfig?.isOverridden && ctx.providerConfig.baseUrl) {
-    env.OPENAI_BASE_URL = ctx.providerConfig.baseUrl;
+  // For Codex CLI, we need BOTH:
+  // 1. OPENAI_BASE_URL env var (for compatibility and other tools)
+  // 2. model_provider config in config.toml (required by Codex CLI for custom providers)
+  const customProviderConfig = ctx.providerConfig?.isOverridden && ctx.providerConfig.baseUrl
+    ? ctx.providerConfig.baseUrl
+    : null;
+  if (customProviderConfig) {
+    env.OPENAI_BASE_URL = customProviderConfig;
   }
 
   // Copy instructions.md from host and append memory protocol instructions (desktop mode)
@@ -536,6 +580,13 @@ log "Autopilot completed after \$ITER turns"
     const mcpNames = (ctx.mcpServerConfigs ?? []).map((c) => c.name);
     toml = stripMcpServerBlocksByName(toml, mcpNames);
     toml = `${toml.trimEnd()}\n\n${userMcpToml}\n`;
+  }
+
+  // Inject custom provider config if user has a custom base URL
+  // This must be done AFTER other config processing to ensure it's at the top
+  if (customProviderConfig) {
+    toml = stripCustomProviderConfig(toml);
+    toml = `${generateCustomProviderConfig(customProviderConfig)}\n${toml}`;
   }
 
   files.push({
