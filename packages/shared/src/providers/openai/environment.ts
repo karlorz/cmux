@@ -232,17 +232,21 @@ function ensureManagedMemoryMcpServerConfig(toml: string, agentName?: string): s
 const CMUX_CUSTOM_PROVIDER_NAME = "cmux-proxy";
 
 /**
- * Generate Codex config.toml section for custom provider.
- * When user has a custom base URL (e.g., AnyRouter proxy), Codex CLI needs
- * a model_provider configured in config.toml, not just OPENAI_BASE_URL env var.
+ * Generate the model_provider top-level key for custom provider.
+ */
+function generateCustomProviderKey(): string {
+  return `model_provider = "${CMUX_CUSTOM_PROVIDER_NAME}"`;
+}
+
+/**
+ * Generate the [model_providers.cmux-proxy] section for custom provider.
+ * This section must appear AFTER all top-level keys in TOML.
  *
  * @param baseUrl - The custom API base URL
- * @returns TOML string with model_provider and [model_providers.cmux-proxy] section
+ * @returns TOML string with [model_providers.cmux-proxy] section
  */
-function generateCustomProviderConfig(baseUrl: string): string {
-  return `model_provider = "${CMUX_CUSTOM_PROVIDER_NAME}"
-
-[model_providers.${CMUX_CUSTOM_PROVIDER_NAME}]
+function generateCustomProviderSection(baseUrl: string): string {
+  return `[model_providers.${CMUX_CUSTOM_PROVIDER_NAME}]
 name = "cmux Proxy"
 base_url = "${baseUrl}"
 wire_api = "responses"
@@ -583,10 +587,14 @@ log "Autopilot completed after \$ITER turns"
   }
 
   // Inject custom provider config if user has a custom base URL
-  // This must be done AFTER other config processing to ensure it's at the top
+  // TOML requires: top-level keys first, then sections
+  // So we put model_provider= at the TOP and [model_providers.xxx] at the END
   if (customProviderConfig) {
     toml = stripCustomProviderConfig(toml);
-    toml = `${generateCustomProviderConfig(customProviderConfig)}\n${toml}`;
+    // Add model_provider key at the very top (before other top-level keys)
+    toml = `${generateCustomProviderKey()}\n${toml}`;
+    // Add [model_providers.cmux-proxy] section at the very end (after all other sections)
+    toml = `${toml.trimEnd()}\n\n${generateCustomProviderSection(customProviderConfig)}`;
   }
 
   files.push({

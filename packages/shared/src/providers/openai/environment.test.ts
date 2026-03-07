@@ -698,7 +698,7 @@ foo = "bar"
     expect(toml).not.toContain('[model_providers.cmux-proxy]');
   });
 
-  it("custom provider config appears at the top of config.toml", async () => {
+  it("custom provider config has correct TOML structure (top-level keys before sections)", async () => {
     const result = await getOpenAIEnvironment({
       providerConfig: {
         isOverridden: true,
@@ -707,15 +707,26 @@ foo = "bar"
     } as never);
 
     const toml = decodeConfigToml(result);
-    // model_provider should be one of the first lines
+    // model_provider should be one of the first lines (top-level key)
     const lines = toml.split("\n");
     const modelProviderIndex = lines.findIndex((l) =>
       l.includes('model_provider = "cmux-proxy"')
     );
     expect(modelProviderIndex).toBeLessThan(5);
-    // Custom provider section should come before other sections
-    const customProviderIndex = toml.indexOf("[model_providers.cmux-proxy]");
+
+    // Top-level keys (notify, sandbox_mode, ask_for_approval) must come BEFORE any section
+    const firstSectionIndex = toml.search(/^\[/m);
+    const notifyIndex = toml.indexOf("notify =");
+    const sandboxModeIndex = toml.indexOf("sandbox_mode =");
+    const askForApprovalIndex = toml.indexOf("ask_for_approval =");
+
+    expect(notifyIndex).toBeLessThan(firstSectionIndex);
+    expect(sandboxModeIndex).toBeLessThan(firstSectionIndex);
+    expect(askForApprovalIndex).toBeLessThan(firstSectionIndex);
+
+    // [model_providers.cmux-proxy] section should be at the END (after mcp_servers)
+    const customProviderSectionIndex = toml.indexOf("[model_providers.cmux-proxy]");
     const mcpServersIndex = toml.indexOf("[mcp_servers.");
-    expect(customProviderIndex).toBeLessThan(mcpServersIndex);
+    expect(customProviderSectionIndex).toBeGreaterThan(mcpServersIndex);
   });
 });
