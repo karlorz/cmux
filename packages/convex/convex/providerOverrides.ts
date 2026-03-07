@@ -10,7 +10,7 @@
 
 import { v } from "convex/values";
 import { resolveTeamIdLoose } from "../_shared/team";
-import { internalQuery } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { authMutation, authQuery } from "./users/utils";
 
 // Validator for API format enum
@@ -230,5 +230,31 @@ export const getAllEnabledForTeam = internalQuery({
       .collect();
 
     return overrides.filter((o) => o.enabled);
+  },
+});
+
+/**
+ * Internal mutation to remove a provider override by team ID.
+ * Used for cleanup/migration scripts.
+ */
+export const removeByTeamId = internalMutation({
+  args: {
+    teamId: v.string(),
+    providerId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("providerOverrides")
+      .withIndex("by_team_provider", (q) =>
+        q.eq("teamId", args.teamId).eq("providerId", args.providerId)
+      )
+      .first();
+
+    if (!existing) {
+      return { success: false, message: "Provider override not found" };
+    }
+
+    await ctx.db.delete(existing._id);
+    return { success: true };
   },
 });
