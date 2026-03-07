@@ -14,12 +14,22 @@ const BASE_CONTEXT = {
 
 async function decodeClaudeConfig(args?: {
   agentName?: string;
-  mcpServerConfigs?: Array<{
-    name: string;
-    command: string;
-    args: string[];
-    envVars?: Record<string, string>;
-  }>;
+  mcpServerConfigs?: Array<
+    | {
+        name: string;
+        type: "stdio";
+        command: string;
+        args: string[];
+        envVars?: Record<string, string>;
+      }
+    | {
+        name: string;
+        type: "http" | "sse";
+        url: string;
+        headers?: Record<string, string>;
+        envVars?: Record<string, string>;
+      }
+  >;
 }) {
   const result = await getClaudeEnvironment({
     ...BASE_CONTEXT,
@@ -33,8 +43,11 @@ async function decodeClaudeConfig(args?: {
     mcpServers: Record<
       string,
       {
+        type?: "stdio" | "http" | "sse";
         command?: string;
         args?: string[];
+        url?: string;
+        headers?: Record<string, string>;
         env?: Record<string, string>;
       }
     >;
@@ -155,10 +168,19 @@ describe("getClaudeEnvironment", () => {
         mcpServerConfigs: [
           {
             name: "context7",
+            type: "stdio",
             command: "npx",
             args: ["-y", "@upstash/context7-mcp@latest"],
             envVars: {
               CONTEXT7_API_KEY: "token",
+            },
+          },
+          {
+            name: "remote-api",
+            type: "http",
+            url: "https://example.com/mcp",
+            headers: {
+              Authorization: "Bearer secret",
             },
           },
         ],
@@ -169,6 +191,13 @@ describe("getClaudeEnvironment", () => {
         args: ["-y", "@upstash/context7-mcp@latest"],
         env: {
           CONTEXT7_API_KEY: "token",
+        },
+      });
+      expect(config.mcpServers["remote-api"]).toEqual({
+        type: "http",
+        url: "https://example.com/mcp",
+        headers: {
+          Authorization: "Bearer secret",
         },
       });
       expect(config.mcpServers["devsh-memory"]).toBeDefined();

@@ -2,6 +2,7 @@ import type { Doc } from "@cmux/convex/dataModel";
 import {
   parseGithubRepoUrl,
   type McpServerPreset,
+  type McpTransportType,
 } from "@cmux/shared";
 
 export type Scope = "global" | "workspace";
@@ -11,8 +12,11 @@ export type McpServerConfig = Doc<"mcpServerConfigs">;
 export type FormState = {
   name: string;
   displayName: string;
+  transportType: McpTransportType;
   command: string;
   argsText: string;
+  url: string;
+  headersText: string;
   envVarsText: string;
   description: string;
   enabledClaude: boolean;
@@ -21,6 +25,16 @@ export type FormState = {
   enabledOpencode: boolean;
   scope: Scope;
   projectFullName: string;
+};
+
+export type ParsedJsonConfig = {
+  transportType: McpTransportType;
+  command: string;
+  argsText: string;
+  url: string;
+  headersText: string;
+  envVarsText: string;
+  error?: string;
 };
 
 export type AgentField = keyof Pick<
@@ -56,8 +70,58 @@ export const EMPTY_AGENT_COUNTS: Record<AgentKey, number> = {
   opencode: 0,
 };
 
+export const MCP_TRANSPORT_OPTIONS: Array<{
+  value: McpTransportType;
+  label: string;
+}> = [
+  { value: "stdio", label: "stdio" },
+  { value: "http", label: "http" },
+  { value: "sse", label: "sse" },
+];
+
+const JSON_CONFIG_FIELDS = new Set<keyof FormState>([
+  "transportType",
+  "command",
+  "argsText",
+  "url",
+  "headersText",
+  "envVarsText",
+]);
+
+const MCP_TRANSPORT_COPY: Record<
+  McpTransportType,
+  {
+    placeholder: string;
+    description: string;
+    subtitle: string;
+    summary: string;
+  }
+> = {
+  stdio: {
+    placeholder:
+      '{\n  "type": "stdio",\n  "command": "npx",\n  "args": ["-y", "@my/mcp-server@latest"]\n}',
+    description: "Edit the raw MCP stdio configuration as JSON.",
+    subtitle: "Supported keys: type, command, args, env.",
+    summary: "stdio uses command, arguments, and environment variables.",
+  },
+  http: {
+    placeholder:
+      '{\n  "type": "http",\n  "url": "https://example.com/mcp",\n  "headers": {\n    "Authorization": "Bearer token"\n  }\n}',
+    description: "Edit the raw MCP http configuration as JSON.",
+    subtitle: "Supported keys: type, url, headers, env.",
+    summary: "HTTP uses a URL with optional headers and environment variables.",
+  },
+  sse: {
+    placeholder:
+      '{\n  "type": "sse",\n  "url": "https://example.com/sse",\n  "headers": {\n    "Authorization": "Bearer token"\n  }\n}',
+    description: "Edit the raw MCP sse configuration as JSON.",
+    subtitle: "Supported keys: type, url, headers, env.",
+    summary: "SSE uses a URL with optional headers and environment variables.",
+  },
+};
+
 export function shouldRebuildJsonConfig(field: keyof FormState): boolean {
-  return field === "command" || field === "argsText" || field === "envVarsText";
+  return JSON_CONFIG_FIELDS.has(field);
 }
 
 export function getScopeOptions(counts?: Record<Scope, number>) {
@@ -83,8 +147,11 @@ export function buildEmptyForm(scope: Scope): FormState {
   return {
     name: "",
     displayName: "",
+    transportType: "stdio",
     command: "",
     argsText: "",
+    url: "",
+    headersText: "",
     envVarsText: "",
     description: "",
     enabledClaude: true,
@@ -96,19 +163,47 @@ export function buildEmptyForm(scope: Scope): FormState {
   };
 }
 
+export function formatEnvVarsText(
+  envVars: Record<string, string> | undefined,
+  includeExistingSecretPlaceholder = false,
+): string {
+  if (!envVars) {
+    return "";
+  }
+
+  return Object.keys(envVars)
+    .map((key) =>
+      `${key}=${includeExistingSecretPlaceholder ? EXISTING_SECRET_PLACEHOLDER : envVars[key]}`,
+    )
+    .join("\n");
+}
+
+export function formatHeadersText(headers: Record<string, string> | undefined): string {
+  if (!headers) {
+    return "";
+  }
+
+  return Object.entries(headers)
+    .map(([key, value]) => `${key}: ${value}`)
+    .join("\n");
+}
+
+export function getTransportType(config: Pick<McpServerConfig, "type">): McpTransportType {
+  return config.type ?? "stdio";
+}
+
 export function buildFormFromConfig(config: McpServerConfig): FormState {
-  const envVarsText = config.envVars
-    ? Object.keys(config.envVars)
-        .map((key) => `${key}=${EXISTING_SECRET_PLACEHOLDER}`)
-        .join("\n")
-    : "";
+  const transportType = getTransportType(config);
 
   return {
     name: config.name,
     displayName: config.displayName,
-    command: config.command,
-    argsText: config.args.join("\n"),
-    envVarsText,
+    transportType,
+    command: transportType === "stdio" ? (config.command ?? "") : "",
+    argsText: transportType === "stdio" ? (config.args ?? []).join("\n") : "",
+    url: transportType === "stdio" ? "" : (config.url ?? ""),
+    headersText: transportType === "stdio" ? "" : formatHeadersText(config.headers),
+    envVarsText: formatEnvVarsText(config.envVars, true),
     description: config.description ?? "",
     enabledClaude: config.enabledClaude,
     enabledCodex: config.enabledCodex,
@@ -126,14 +221,89 @@ export function parseArgsText(value: string): string[] {
     .filter(Boolean);
 }
 
-export type McpJsonConfig = {
-  type: "stdio";
-  command: string;
-  args?: string[];
-  env?: Record<string, string>;
-};
+export function getJsonConfigUiCopy(transportType: McpTransportType) {
+  return MCP_TRANSPORT_COPY[transportType];
+}
 
-export function buildJsonConfigText(input: Pick<FormState, "command" | "argsText" | "envVarsText">): string {
+export function parseHeadersText(value: string): {
+  headers?: Record<string, string>;
+  error?: string;
+} {
+  const lines = value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) {
+    return {};
+  }
+
+  const headers: Array<[string, string]> = [];
+
+  for (const line of lines) {
+    const separatorIndex = line.includes(":") ? line.indexOf(":") : line.indexOf("=");
+    if (separatorIndex <= 0) {
+      return {
+        error: "Headers must use KEY: value or KEY=value format, one per line.",
+      };
+    }
+
+    const key = line.slice(0, separatorIndex).trim();
+    const headerValue = line.slice(separatorIndex + 1).trim();
+    if (!key) {
+      return {
+        error: "Headers must include a key before ':' or '='.",
+      };
+    }
+
+    headers.push([key, headerValue]);
+  }
+
+  return {
+    headers: Object.fromEntries(headers),
+  };
+}
+
+export type McpJsonConfig =
+  | {
+      type?: "stdio";
+      command: string;
+      args?: string[];
+      env?: Record<string, string>;
+    }
+  | {
+      type: "http" | "sse";
+      url: string;
+      headers?: Record<string, string>;
+      env?: Record<string, string>;
+    };
+
+export function buildJsonConfigText(
+  input: Pick<
+    FormState,
+    "transportType" | "command" | "argsText" | "url" | "headersText" | "envVarsText"
+  >,
+): string {
+  const parsedEnvVars = parseEnvVarsText(input.envVarsText);
+
+  if (input.transportType === "http" || input.transportType === "sse") {
+    const parsedHeaders = parseHeadersText(input.headersText);
+    const config: McpJsonConfig = {
+      type: input.transportType,
+      url: input.url.trim(),
+    };
+
+    if (parsedHeaders.headers && Object.keys(parsedHeaders.headers).length > 0) {
+      config.headers = parsedHeaders.headers;
+    }
+
+    if (parsedEnvVars.hasChanges && parsedEnvVars.envVars) {
+      config.env = parsedEnvVars.envVars;
+    }
+
+    return JSON.stringify(config, null, 2);
+  }
+
   const config: McpJsonConfig = {
     type: "stdio",
     command: input.command.trim(),
@@ -144,7 +314,6 @@ export function buildJsonConfigText(input: Pick<FormState, "command" | "argsText
     config.args = args;
   }
 
-  const parsedEnvVars = parseEnvVarsText(input.envVarsText);
   if (parsedEnvVars.hasChanges && parsedEnvVars.envVars) {
     config.env = parsedEnvVars.envVars;
   }
@@ -152,55 +321,26 @@ export function buildJsonConfigText(input: Pick<FormState, "command" | "argsText
   return JSON.stringify(config, null, 2);
 }
 
-export function parseJsonConfigText(value: string): {
-  command: string;
-  argsText: string;
-  envVarsText: string;
-  error?: string;
-} {
+export function parseJsonConfigText(value: string): ParsedJsonConfig {
   try {
     const parsed = JSON.parse(value) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return {
+        transportType: "stdio",
         command: "",
         argsText: "",
+        url: "",
+        headersText: "",
         envVarsText: "",
         error: "JSON configuration must be an object.",
       };
     }
 
     const config = parsed as Record<string, unknown>;
-    const type = config.type;
-    if (type !== undefined && type !== "stdio") {
-      return {
-        command: "",
-        argsText: "",
-        envVarsText: "",
-        error: "Only stdio MCP JSON configuration is currently supported.",
-      };
-    }
-
-    if (typeof config.command !== "string" || config.command.trim().length === 0) {
-      return {
-        command: "",
-        argsText: "",
-        envVarsText: "",
-        error: "JSON configuration requires a non-empty command string.",
-      };
-    }
-
-    let argsText = "";
-    if (config.args !== undefined) {
-      if (!Array.isArray(config.args) || config.args.some((entry) => typeof entry !== "string")) {
-        return {
-          command: "",
-          argsText: "",
-          envVarsText: "",
-          error: "JSON configuration args must be an array of strings.",
-        };
-      }
-      argsText = config.args.join("\n");
-    }
+    const transportType =
+      config.type === "http" || config.type === "sse" || config.type === "stdio"
+        ? config.type
+        : "stdio";
 
     let envVarsText = "";
     if (config.env !== undefined) {
@@ -211,27 +351,106 @@ export function parseJsonConfigText(value: string): {
         Object.values(config.env).some((entry) => typeof entry !== "string")
       ) {
         return {
+          transportType,
           command: "",
           argsText: "",
+          url: "",
+          headersText: "",
           envVarsText: "",
           error: "JSON configuration env must be an object of string values.",
         };
       }
-      envVarsText = Object.entries(config.env)
-        .map(([key, entry]) => `${key}=${entry}`)
-        .join("\n");
+      envVarsText = formatEnvVarsText(config.env as Record<string, string>);
+    }
+
+    if (transportType === "http" || transportType === "sse") {
+      if (typeof config.url !== "string" || config.url.trim().length === 0) {
+        return {
+          transportType,
+          command: "",
+          argsText: "",
+          url: "",
+          headersText: "",
+          envVarsText,
+          error: "JSON configuration requires a non-empty url string.",
+        };
+      }
+
+      let headersText = "";
+      if (config.headers !== undefined) {
+        if (
+          typeof config.headers !== "object" ||
+          config.headers === null ||
+          Array.isArray(config.headers) ||
+          Object.values(config.headers).some((entry) => typeof entry !== "string")
+        ) {
+          return {
+            transportType,
+            command: "",
+            argsText: "",
+            url: "",
+            headersText: "",
+            envVarsText,
+            error: "JSON configuration headers must be an object of string values.",
+          };
+        }
+        headersText = formatHeadersText(config.headers as Record<string, string>);
+      }
+
+      return {
+        transportType,
+        command: "",
+        argsText: "",
+        url: config.url,
+        headersText,
+        envVarsText,
+      };
+    }
+
+    if (typeof config.command !== "string" || config.command.trim().length === 0) {
+      return {
+        transportType: "stdio",
+        command: "",
+        argsText: "",
+        url: "",
+        headersText: "",
+        envVarsText,
+        error: "JSON configuration requires a non-empty command string.",
+      };
+    }
+
+    let argsText = "";
+    if (config.args !== undefined) {
+      if (!Array.isArray(config.args) || config.args.some((entry) => typeof entry !== "string")) {
+        return {
+          transportType: "stdio",
+          command: "",
+          argsText: "",
+          url: "",
+          headersText: "",
+          envVarsText,
+          error: "JSON configuration args must be an array of strings.",
+        };
+      }
+      argsText = config.args.join("\n");
     }
 
     return {
+      transportType: "stdio",
       command: config.command,
       argsText,
+      url: "",
+      headersText: "",
       envVarsText,
     };
   } catch (error) {
     console.error(error);
     return {
+      transportType: "stdio",
       command: "",
       argsText: "",
+      url: "",
+      headersText: "",
       envVarsText: "",
       error: "JSON configuration must be valid JSON.",
     };
@@ -347,6 +566,15 @@ export function matchesTarget(
   return (config.projectFullName ?? "") === projectFullName.trim();
 }
 
+export function validateUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url.trim());
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export function validateForm(form: FormState): string | null {
   if (!form.name.trim()) {
     return "Name is required.";
@@ -357,8 +585,12 @@ export function validateForm(form: FormState): string | null {
   if (!form.displayName.trim()) {
     return "Display name is required.";
   }
-  if (!form.command.trim()) {
-    return "Command is required.";
+  if (form.transportType === "stdio") {
+    if (!form.command.trim()) {
+      return "Command is required.";
+    }
+  } else if (!validateUrl(form.url)) {
+    return "A valid http or https URL is required.";
   }
   if (!AGENT_OPTIONS.some((agent) => form[agent.field])) {
     return "Enable at least one agent.";
@@ -370,12 +602,51 @@ export function validateForm(form: FormState): string | null {
     return "Workspace scope requires a repository in owner/repo format.";
   }
 
+  const parsedHeaders = parseHeadersText(form.headersText);
+  if (parsedHeaders.error) {
+    return parsedHeaders.error;
+  }
+
   const parsedEnvVars = parseEnvVarsText(form.envVarsText);
   if (parsedEnvVars.error) {
     return parsedEnvVars.error;
   }
 
   return null;
+}
+
+export function getTransportPayload(
+  input: Pick<
+    FormState,
+    "transportType" | "command" | "argsText" | "url" | "headersText"
+  >,
+) {
+  const parsedHeaders = parseHeadersText(input.headersText);
+
+  return {
+    type: input.transportType,
+    ...(input.transportType === "stdio"
+      ? {
+          command: input.command.trim(),
+          args: parseArgsText(input.argsText),
+        }
+      : {
+          url: input.url.trim(),
+          ...(parsedHeaders.headers ? { headers: parsedHeaders.headers } : {}),
+        }),
+  };
+}
+
+export function formatMcpServerTarget(config: Pick<McpServerConfig, "type" | "command" | "args" | "url">): string {
+  const transportType = getTransportType(config);
+
+  if (transportType !== "stdio") {
+    return config.url ?? "";
+  }
+
+  return (config.args ?? []).length > 0
+    ? `${config.command ?? ""} ${(config.args ?? []).join(" ")}`
+    : (config.command ?? "");
 }
 
 export function getPresetPayload(
@@ -390,6 +661,7 @@ export function getPresetPayload(
   return {
     name: preset.name,
     displayName: preset.displayName,
+    type: preset.type,
     command: preset.command,
     args: preset.args,
     description: preset.description,

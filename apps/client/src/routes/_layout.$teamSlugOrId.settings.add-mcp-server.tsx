@@ -14,9 +14,9 @@ import {
   getErrorMessage,
   getPresetPayload,
   getScopedProjectFullName,
+  getTransportPayload,
   isValidProjectFullName,
   matchesTarget,
-  parseArgsText,
   parseEnvVarsText,
   parseJsonConfigText,
   shouldRebuildJsonConfig,
@@ -121,8 +121,11 @@ function AddMcpServerRoute() {
 
       return {
         ...form,
+        transportType: parsedJson.transportType,
         command: parsedJson.command,
         argsText: parsedJson.argsText,
+        url: parsedJson.url,
+        headersText: parsedJson.headersText,
         envVarsText: parsedJson.envVarsText,
       } satisfies FormState;
     })();
@@ -148,8 +151,7 @@ function AddMcpServerRoute() {
         teamSlugOrId,
         name: nextForm.name.trim(),
         displayName: nextForm.displayName.trim(),
-        command: nextForm.command.trim(),
-        args: parseArgsText(nextForm.argsText),
+        ...getTransportPayload(nextForm),
         ...(parsedEnvVars.hasChanges ? { envVars: parsedEnvVars.envVars } : {}),
         description: nextForm.description.trim() || undefined,
         enabledClaude: nextForm.enabledClaude,
@@ -211,7 +213,7 @@ function AddMcpServerRoute() {
                   Add MCP Server
                 </h1>
                 <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-                  Choose a preset or configure a custom local MCP server.
+                  Choose a preset or configure a custom stdio, http, or sse MCP server.
                 </p>
               </div>
             </div>

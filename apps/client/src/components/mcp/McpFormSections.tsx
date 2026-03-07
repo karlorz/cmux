@@ -10,15 +10,19 @@ import {
   AGENT_OPTIONS,
   buildJsonConfigText,
   DEFAULT_SCOPE_OPTIONS,
+  getJsonConfigUiCopy,
   MCP_INPUT_CLASS_NAME,
   MCP_MONO_TEXTAREA_CLASS_NAME,
+  MCP_TRANSPORT_OPTIONS,
+  parseEnvVarsText,
+  parseHeadersText,
   type AgentOption,
   type FormState,
   type Scope,
 } from "@/lib/mcp-form-helpers";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export type UpdateFormField = <K extends keyof FormState>(
   field: K,
@@ -115,6 +119,98 @@ export function AgentToggleButton({
   );
 }
 
+function renderWizardTransportFields(
+  draft: FormState,
+  setDraft: (updater: (current: FormState) => FormState) => void,
+) {
+  if (draft.transportType === "stdio") {
+    return (
+      <>
+        <div>
+          <label
+            htmlFor="wizard-command"
+            className="text-sm font-medium text-neutral-900 dark:text-neutral-100"
+          >
+            Command
+          </label>
+          <input
+            id="wizard-command"
+            value={draft.command}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, command: event.target.value }))
+            }
+            placeholder="npx or uvx"
+            className={MCP_INPUT_CLASS_NAME}
+          />
+        </div>
+
+        <div>
+          <label
+            htmlFor="wizard-args"
+            className="text-sm font-medium text-neutral-900 dark:text-neutral-100"
+          >
+            Arguments
+          </label>
+          <textarea
+            id="wizard-args"
+            rows={5}
+            value={draft.argsText}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, argsText: event.target.value }))
+            }
+            placeholder={"arg1\narg2"}
+            className={MCP_MONO_TEXTAREA_CLASS_NAME}
+          />
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div>
+        <label
+          htmlFor="wizard-url"
+          className="text-sm font-medium text-neutral-900 dark:text-neutral-100"
+        >
+          URL
+        </label>
+        <input
+          id="wizard-url"
+          value={draft.url}
+          onChange={(event) =>
+            setDraft((current) => ({ ...current, url: event.target.value }))
+          }
+          placeholder="https://example.com/mcp"
+          className={MCP_INPUT_CLASS_NAME}
+        />
+      </div>
+
+      <div>
+        <label
+          htmlFor="wizard-headers"
+          className="text-sm font-medium text-neutral-900 dark:text-neutral-100"
+        >
+          Headers
+        </label>
+        <textarea
+          id="wizard-headers"
+          rows={4}
+          value={draft.headersText}
+          onChange={(event) =>
+            setDraft((current) => ({ ...current, headersText: event.target.value }))
+          }
+          placeholder={"Authorization: Bearer token\nX-API-Key: secret"}
+          className={MCP_MONO_TEXTAREA_CLASS_NAME}
+        />
+        <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+          Optional. Use KEY: value or KEY=value, one per line.
+        </p>
+      </div>
+    </>
+  );
+}
+
 export function McpCustomEditor({
   form,
   onFieldChange,
@@ -137,6 +233,16 @@ export function McpCustomEditor({
   scopeDescription?: string;
 }) {
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardDraft, setWizardDraft] = useState<FormState>(form);
+
+  useEffect(() => {
+    if (wizardOpen) {
+      setWizardDraft(form);
+    }
+  }, [form, wizardOpen]);
+
+  const jsonConfigUiCopy = getJsonConfigUiCopy(form.transportType);
+  const wizardPreview = useMemo(() => buildJsonConfigText(wizardDraft), [wizardDraft]);
 
   return (
     <>
@@ -169,20 +275,14 @@ export function McpCustomEditor({
                     Select MCP Type
                   </p>
                   <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                    This flow currently supports stdio servers only.
+                    Switch between local stdio servers and remote http or sse transports.
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <div className="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300">
-                    stdio
-                  </div>
-                  <div className="inline-flex items-center rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-400 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-500">
-                    http
-                  </div>
-                  <div className="inline-flex items-center rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-400 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-500">
-                    sse
-                  </div>
-                </div>
+                <SegmentedTabs
+                  value={form.transportType}
+                  onChange={(transportType) => onFieldChange("transportType", transportType)}
+                  options={MCP_TRANSPORT_OPTIONS}
+                />
               </div>
 
               <ScriptTextareaField
@@ -190,17 +290,17 @@ export function McpCustomEditor({
                 name="mcpJsonConfig"
                 value={jsonConfigText}
                 onChange={onJsonConfigChange}
-                placeholder={'{\n  "type": "stdio",\n  "command": "npx",\n  "args": ["-y", "@my/mcp-server@latest"]\n}'}
+                placeholder={jsonConfigUiCopy.placeholder}
                 minRows={14}
                 maxRows={24}
                 autosize={false}
-                description="Edit the raw MCP stdio configuration as JSON."
-                subtitle="Currently supported keys: type, command, args, env."
+                description={jsonConfigUiCopy.description}
+                subtitle={jsonConfigUiCopy.subtitle}
                 minHeightClassName="min-h-[320px] text-sm"
               />
 
               <div className="flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">
-                <span>Only stdio JSON configs are supported in this pass.</span>
+                <span>{jsonConfigUiCopy.summary}</span>
                 <button
                   type="button"
                   className="inline-flex items-center gap-1 rounded-md px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800"
@@ -340,12 +440,12 @@ export function McpCustomEditor({
       <Dialog.Root open={wizardOpen} onOpenChange={setWizardOpen}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-[var(--z-global-blocking)] bg-black/50 backdrop-blur-sm data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-[var(--z-global-blocking)] w-[min(720px,calc(100vw-2rem))] max-h-[calc(100vh-2rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-neutral-200 bg-white p-6 shadow-2xl focus:outline-none dark:border-neutral-800 dark:bg-neutral-900 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95">
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-[var(--z-global-blocking)] w-[min(760px,calc(100vw-2rem))] max-h-[calc(100vh-2rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-neutral-200 bg-white p-6 shadow-2xl focus:outline-none dark:border-neutral-800 dark:bg-neutral-900 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95">
             <Dialog.Title className="text-xl font-medium text-neutral-900 dark:text-neutral-100">
               MCP Configuration Wizard
             </Dialog.Title>
             <Dialog.Description className="mt-1 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-500 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-400">
-              Quickly configure MCP server and auto-generate JSON configuration.
+              Quickly configure stdio, http, or sse MCP servers and generate the matching JSON.
             </Dialog.Description>
 
             <div className="mt-6 space-y-5">
@@ -353,19 +453,14 @@ export function McpCustomEditor({
                 <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
                   Type
                 </p>
-                <div className="mt-3 flex items-center gap-4 text-sm text-neutral-700 dark:text-neutral-300">
-                  <label className="inline-flex items-center gap-2">
-                    <input name="wizardTransportType" type="radio" checked readOnly className="size-4" />
-                    stdio
-                  </label>
-                  <label className="inline-flex items-center gap-2 opacity-50">
-                    <input name="wizardTransportType" type="radio" disabled className="size-4" />
-                    http
-                  </label>
-                  <label className="inline-flex items-center gap-2 opacity-50">
-                    <input name="wizardTransportType" type="radio" disabled className="size-4" />
-                    sse
-                  </label>
+                <div className="mt-3">
+                  <SegmentedTabs
+                    value={wizardDraft.transportType}
+                    onChange={(transportType) =>
+                      setWizardDraft((current) => ({ ...current, transportType }))
+                    }
+                    options={MCP_TRANSPORT_OPTIONS}
+                  />
                 </div>
               </div>
 
@@ -378,46 +473,17 @@ export function McpCustomEditor({
                 </label>
                 <input
                   id="wizard-mcp-name"
-                  value={form.name}
-                  onChange={(event) => onFieldChange("name", event.target.value)}
+                  value={wizardDraft.name}
+                  onChange={(event) =>
+                    setWizardDraft((current) => ({ ...current, name: event.target.value }))
+                  }
                   disabled={disableName}
                   placeholder="my-mcp-server"
                   className={MCP_INPUT_CLASS_NAME}
                 />
               </div>
 
-              <div>
-                <label
-                  htmlFor="wizard-command"
-                  className="text-sm font-medium text-neutral-900 dark:text-neutral-100"
-                >
-                  Command
-                </label>
-                <input
-                  id="wizard-command"
-                  value={form.command}
-                  onChange={(event) => onFieldChange("command", event.target.value)}
-                  placeholder="npx or uvx"
-                  className={MCP_INPUT_CLASS_NAME}
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="wizard-args"
-                  className="text-sm font-medium text-neutral-900 dark:text-neutral-100"
-                >
-                  Arguments
-                </label>
-                <textarea
-                  id="wizard-args"
-                  rows={5}
-                  value={form.argsText}
-                  onChange={(event) => onFieldChange("argsText", event.target.value)}
-                  placeholder={"arg1\narg2"}
-                  className={MCP_MONO_TEXTAREA_CLASS_NAME}
-                />
-              </div>
+              {renderWizardTransportFields(wizardDraft, setWizardDraft)}
 
               <div>
                 <label
@@ -429,11 +495,22 @@ export function McpCustomEditor({
                 <textarea
                   id="wizard-env-vars"
                   rows={5}
-                  value={form.envVarsText}
-                  onChange={(event) => onFieldChange("envVarsText", event.target.value)}
+                  value={wizardDraft.envVarsText}
+                  onChange={(event) =>
+                    setWizardDraft((current) => ({ ...current, envVarsText: event.target.value }))
+                  }
                   placeholder={"KEY1=value1\nKEY2=value2"}
                   className={MCP_MONO_TEXTAREA_CLASS_NAME}
                 />
+              </div>
+
+              <div className="space-y-2 border-t border-neutral-200 pt-4 dark:border-neutral-800">
+                <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                  Preview
+                </h3>
+                <pre className="overflow-x-auto rounded-lg bg-neutral-100 p-3 text-xs font-mono text-neutral-700 dark:bg-neutral-950 dark:text-neutral-300">
+                  {wizardPreview}
+                </pre>
               </div>
             </div>
 
@@ -443,7 +520,26 @@ export function McpCustomEditor({
               </Button>
               <Button
                 onClick={() => {
-                  onJsonConfigChange(buildJsonConfigText(form));
+                  const parsedHeaders = parseHeadersText(wizardDraft.headersText);
+                  if (parsedHeaders.error) {
+                    onErrorChange?.(parsedHeaders.error);
+                    return;
+                  }
+
+                  const parsedEnvVars = parseEnvVarsText(wizardDraft.envVarsText);
+                  if (parsedEnvVars.error) {
+                    onErrorChange?.(parsedEnvVars.error);
+                    return;
+                  }
+
+                  onFieldChange("name", wizardDraft.name);
+                  onFieldChange("transportType", wizardDraft.transportType);
+                  onFieldChange("command", wizardDraft.command);
+                  onFieldChange("argsText", wizardDraft.argsText);
+                  onFieldChange("url", wizardDraft.url);
+                  onFieldChange("headersText", wizardDraft.headersText);
+                  onFieldChange("envVarsText", wizardDraft.envVarsText);
+                  onJsonConfigChange(buildJsonConfigText(wizardDraft));
                   onErrorChange?.(null);
                   setWizardOpen(false);
                 }}

@@ -9,18 +9,20 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   AGENT_OPTIONS,
+  buildEnabledAgentState,
   buildFormFromConfig,
   buildEmptyForm,
   buildJsonConfigText,
-  DEFAULT_SCOPE_OPTIONS,
   countEnabledAgents,
+  DEFAULT_SCOPE_OPTIONS,
+  formatMcpServerTarget,
   getErrorMessage,
   getScopeOptions,
   getScopedProjectFullName,
-  buildEnabledAgentState,
+  getTransportPayload,
+  getTransportType,
   type AgentField,
   type FormState,
-  parseArgsText,
   parseEnvVarsText,
   parseJsonConfigText,
   shouldRebuildJsonConfig,
@@ -158,8 +160,11 @@ export function McpServersSection({
 
       return {
         ...form,
+        transportType: parsedJson.transportType,
         command: parsedJson.command,
         argsText: parsedJson.argsText,
+        url: parsedJson.url,
+        headersText: parsedJson.headersText,
         envVarsText: parsedJson.envVarsText,
       } satisfies FormState;
     })();
@@ -185,8 +190,7 @@ export function McpServersSection({
         teamSlugOrId,
         name: nextForm.name.trim(),
         displayName: nextForm.displayName.trim(),
-        command: nextForm.command.trim(),
-        args: parseArgsText(nextForm.argsText),
+        ...getTransportPayload(nextForm),
         ...(parsedEnvVars.hasChanges ? { envVars: parsedEnvVars.envVars } : {}),
         description: nextForm.description.trim() || undefined,
         enabledClaude: nextForm.enabledClaude,
@@ -214,12 +218,24 @@ export function McpServersSection({
     nextValue: boolean,
   ) => {
     try {
+      const transportType = getTransportType(config);
+
       await upsertMutation.mutateAsync({
         teamSlugOrId,
         name: config.name,
         displayName: config.displayName,
-        command: config.command,
-        args: config.args,
+        ...getTransportPayload({
+          transportType,
+          command: config.command ?? "",
+          argsText: (config.args ?? []).join("\n"),
+          url: config.url ?? "",
+          headersText: config.headers
+            ? Object.entries(config.headers)
+                .map(([key, value]) => `${key}: ${value}`)
+                .join("\n")
+            : "",
+        }),
+        ...(config.envVars ? { envVars: config.envVars } : {}),
         description: config.description,
         tags: config.tags,
         ...buildEnabledAgentState(config, field, nextValue),
@@ -328,10 +344,8 @@ export function McpServersSection({
               {visibleConfigs.map((config, index) => {
                 const isPending =
                   pendingMutationKey === `${config.name}:${config.scope}`;
-                const commandLabel =
-                  config.args.length > 0
-                    ? `${config.command} ${config.args.join(" ")}`
-                    : config.command;
+                const transportType = getTransportType(config);
+                const commandLabel = formatMcpServerTarget(config);
                 return (
                   <div
                     key={config._id}
@@ -354,6 +368,9 @@ export function McpServersSection({
                             </h3>
                             <span className="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
                               {config.scope === "global" ? "Global" : "Workspace"}
+                            </span>
+                            <span className="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+                              {transportType.toUpperCase()}
                             </span>
                             {config.projectFullName ? (
                               <span className="truncate text-xs text-neutral-500 dark:text-neutral-400">
@@ -471,7 +488,7 @@ export function McpServersSection({
                       Edit {editingConfig?.displayName ?? "MCP Server"}
                     </Dialog.Title>
                     <Dialog.Description className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-                      Update command details, scope, secrets, and enabled agents.
+                      Update transport details, scope, secrets, and enabled agents.
                     </Dialog.Description>
                   </div>
                 </div>

@@ -9,6 +9,7 @@ import type { Id } from "@cmux/convex/dataModel";
 export const mcpServersRouter = new OpenAPIHono();
 
 const ScopeSchema = z.enum(["global", "workspace"]).openapi("McpServerScope");
+const HeaderRecordSchema = z.record(z.string(), z.string());
 
 const SupportedAgentsSchema = z
   .object({
@@ -24,6 +25,7 @@ const McpServerPresetSchema = z
     name: z.string(),
     displayName: z.string(),
     description: z.string(),
+    type: z.literal("stdio"),
     command: z.string(),
     args: z.array(z.string()),
     tags: z.array(z.string()),
@@ -31,26 +33,40 @@ const McpServerPresetSchema = z
   })
   .openapi("McpServerPreset");
 
+const McpServerBaseSchema = z.object({
+  _id: z.string(),
+  name: z.string(),
+  displayName: z.string(),
+  hasEnvVars: z.boolean().optional(),
+  envVarKeys: z.array(z.string()).optional(),
+  description: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  enabledClaude: z.boolean(),
+  enabledCodex: z.boolean(),
+  enabledGemini: z.boolean(),
+  enabledOpencode: z.boolean(),
+  scope: ScopeSchema,
+  projectFullName: z.string().optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+const McpServerStdioSchema = McpServerBaseSchema.extend({
+  type: z.literal("stdio"),
+  command: z.string(),
+  args: z.array(z.string()),
+})
+  .openapi("McpServerStdioConfig");
+
+const McpServerRemoteSchema = McpServerBaseSchema.extend({
+  type: z.union([z.literal("http"), z.literal("sse")]),
+  url: z.string(),
+  headers: HeaderRecordSchema.optional(),
+})
+  .openapi("McpServerRemoteConfig");
+
 const McpServerConfigSchema = z
-  .object({
-    _id: z.string(),
-    name: z.string(),
-    displayName: z.string(),
-    command: z.string(),
-    args: z.array(z.string()),
-    hasEnvVars: z.boolean().optional(),
-    envVarKeys: z.array(z.string()).optional(),
-    description: z.string().optional(),
-    tags: z.array(z.string()).optional(),
-    enabledClaude: z.boolean(),
-    enabledCodex: z.boolean(),
-    enabledGemini: z.boolean(),
-    enabledOpencode: z.boolean(),
-    scope: ScopeSchema,
-    projectFullName: z.string().optional(),
-    createdAt: z.number(),
-    updatedAt: z.number(),
-  })
+  .discriminatedUnion("type", [McpServerStdioSchema, McpServerRemoteSchema])
   .openapi("McpServerConfig");
 
 const McpServersListResponse = z
@@ -68,22 +84,42 @@ const McpServerListQuery = z
   })
   .openapi("McpServerListQuery");
 
+const UpsertMcpServerStdioBody = z.object({
+  name: z.string(),
+  displayName: z.string(),
+  type: z.literal("stdio").default("stdio"),
+  command: z.string(),
+  args: z.array(z.string()).default([]),
+  envVars: HeaderRecordSchema.optional(),
+  description: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  enabledClaude: z.boolean(),
+  enabledCodex: z.boolean(),
+  enabledGemini: z.boolean(),
+  enabledOpencode: z.boolean(),
+  scope: ScopeSchema,
+  projectFullName: z.string().optional(),
+});
+
+const UpsertMcpServerRemoteBody = z.object({
+  name: z.string(),
+  displayName: z.string(),
+  type: z.union([z.literal("http"), z.literal("sse")]),
+  url: z.string(),
+  headers: HeaderRecordSchema.optional(),
+  envVars: HeaderRecordSchema.optional(),
+  description: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  enabledClaude: z.boolean(),
+  enabledCodex: z.boolean(),
+  enabledGemini: z.boolean(),
+  enabledOpencode: z.boolean(),
+  scope: ScopeSchema,
+  projectFullName: z.string().optional(),
+});
+
 const UpsertMcpServerBody = z
-  .object({
-    name: z.string(),
-    displayName: z.string(),
-    command: z.string(),
-    args: z.array(z.string()),
-    envVars: z.record(z.string(), z.string()).optional(),
-    description: z.string().optional(),
-    tags: z.array(z.string()).optional(),
-    enabledClaude: z.boolean(),
-    enabledCodex: z.boolean(),
-    enabledGemini: z.boolean(),
-    enabledOpencode: z.boolean(),
-    scope: ScopeSchema,
-    projectFullName: z.string().optional(),
-  })
+  .union([UpsertMcpServerStdioBody, UpsertMcpServerRemoteBody])
   .openapi("UpsertMcpServerBody");
 
 const SuccessResponse = z
@@ -133,18 +169,13 @@ mcpServersRouter.openapi(
       ...(query.projectFullName ? { projectFullName: query.projectFullName } : {}),
     });
 
-    // Omit envVars entirely - they contain secrets
-    // Return hasEnvVars + envVarKeys so UI knows which vars exist without exposing values
-    // Frontend should only send envVars in POST when user explicitly provides new values
     return c.json({
       configs: configs.map((config) => {
         const envVarKeys = config.envVars ? Object.keys(config.envVars) : [];
-        return {
+        const commonFields = {
           _id: config._id,
           name: config.name,
           displayName: config.displayName,
-          command: config.command,
-          args: config.args,
           hasEnvVars: envVarKeys.length > 0,
           envVarKeys,
           description: config.description,
@@ -157,6 +188,22 @@ mcpServersRouter.openapi(
           projectFullName: config.projectFullName,
           createdAt: config.createdAt,
           updatedAt: config.updatedAt,
+        };
+
+        if (config.type === "http" || config.type === "sse") {
+          return {
+            ...commonFields,
+            type: config.type,
+            url: config.url,
+            headers: config.headers,
+          };
+        }
+
+        return {
+          ...commonFields,
+          type: "stdio" as const,
+          command: config.command,
+          args: config.args ?? [],
         };
       }),
       presets: MCP_SERVER_PRESETS,
@@ -214,9 +261,16 @@ mcpServersRouter.openapi(
       teamSlugOrId: query.teamSlugOrId,
       name: body.name,
       displayName: body.displayName,
-      command: body.command,
-      args: body.args,
-      // Only pass envVars if explicitly provided - undefined would clear existing secrets
+      type: body.type,
+      ...(body.type === "stdio"
+        ? {
+            command: body.command,
+            args: body.args,
+          }
+        : {
+            url: body.url,
+            ...(body.headers !== undefined ? { headers: body.headers } : {}),
+          }),
       ...(body.envVars !== undefined ? { envVars: body.envVars } : {}),
       description: body.description,
       tags: body.tags,

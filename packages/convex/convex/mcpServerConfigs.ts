@@ -1,3 +1,8 @@
+import {
+  isRemoteMcpServerConfig,
+  normalizeMcpServerConfig,
+  type McpServerConfig,
+} from "@cmux/shared";
 import { v } from "convex/values";
 import { internalQuery } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
@@ -5,6 +10,11 @@ import { resolveTeamIdLoose } from "../_shared/team";
 import { authMutation, authQuery } from "./users/utils";
 
 const scopeValidator = v.union(v.literal("global"), v.literal("workspace"));
+const transportTypeValidator = v.union(
+  v.literal("stdio"),
+  v.literal("http"),
+  v.literal("sse"),
+);
 const agentTypeValidator = v.union(
   v.literal("claude"),
   v.literal("codex"),
@@ -14,6 +24,16 @@ const agentTypeValidator = v.union(
 
 type McpConfigScope = "global" | "workspace";
 type SandboxAgentType = "claude" | "codex" | "gemini" | "opencode";
+
+type PersistedMcpServerConfig = {
+  name: string;
+  type?: "stdio" | "http" | "sse";
+  command?: string;
+  args?: string[];
+  url?: string;
+  headers?: Record<string, string>;
+  envVars?: Record<string, string>;
+};
 
 function normalizeRequiredString(fieldName: string, value: string): string {
   const trimmed = value.trim();
@@ -107,6 +127,49 @@ function dedupeConfigsByName<T extends { name: string; updatedAt: number; _creat
   return Array.from(deduped.values());
 }
 
+function normalizePersistedMcpConfig(
+  config: PersistedMcpServerConfig,
+): McpServerConfig {
+  return normalizeMcpServerConfig({
+    name: config.name,
+    type: config.type,
+    command: config.command,
+    args: config.args,
+    url: config.url,
+    headers: config.headers,
+    envVars: config.envVars,
+  });
+}
+
+function normalizeTransportFields(args: {
+  name: string;
+  type?: "stdio" | "http" | "sse";
+  command?: string;
+  args?: string[];
+  url?: string;
+  headers?: Record<string, string>;
+  envVars?: Record<string, string>;
+}): Pick<PersistedMcpServerConfig, "type" | "command" | "args" | "url" | "headers" | "envVars"> {
+  const type = args.type ?? "stdio";
+  const envVars = normalizeRecord(args.envVars, "envVars");
+
+  if (type === "http" || type === "sse") {
+    return {
+      type,
+      url: normalizeRequiredString("url", args.url ?? ""),
+      headers: normalizeRecord(args.headers, "headers"),
+      envVars,
+    };
+  }
+
+  return {
+    type: "stdio",
+    command: normalizeRequiredString("command", args.command ?? ""),
+    args: normalizeStringArray(args.args) ?? [],
+    envVars,
+  };
+}
+
 async function findExistingConfig(
   ctx: MutationCtx,
   args: {
@@ -186,6 +249,27 @@ export const list = authQuery({
         }
         return true;
       })
+      .map((config) => {
+        const normalizedConfig = normalizePersistedMcpConfig(config);
+
+        if (isRemoteMcpServerConfig(normalizedConfig)) {
+          return {
+            ...config,
+            type: normalizedConfig.type,
+            url: normalizedConfig.url,
+            headers: normalizedConfig.headers,
+            envVars: normalizedConfig.envVars,
+          };
+        }
+
+        return {
+          ...config,
+          type: "stdio" as const,
+          command: normalizedConfig.command,
+          args: normalizedConfig.args,
+          envVars: normalizedConfig.envVars,
+        };
+      })
       .sort((a, b) => {
         if (a.scope !== b.scope) {
           return a.scope.localeCompare(b.scope);
@@ -203,8 +287,11 @@ export const upsert = authMutation({
     teamSlugOrId: v.string(),
     name: v.string(),
     displayName: v.string(),
-    command: v.string(),
-    args: v.array(v.string()),
+    type: v.optional(transportTypeValidator),
+    command: v.optional(v.string()),
+    args: v.optional(v.array(v.string())),
+    url: v.optional(v.string()),
+    headers: v.optional(v.record(v.string(), v.string())),
     envVars: v.optional(v.record(v.string(), v.string())),
     description: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
@@ -222,9 +309,15 @@ export const upsert = authMutation({
     const scope = args.scope;
     const name = normalizeRequiredString("name", args.name);
     const displayName = normalizeRequiredString("displayName", args.displayName);
-    const command = normalizeRequiredString("command", args.command);
-    const normalizedArgs = normalizeStringArray(args.args) ?? [];
-    const envVars = normalizeRecord(args.envVars, "envVars");
+    const transportFields = normalizeTransportFields({
+      name,
+      type: args.type,
+      command: args.command,
+      args: args.args,
+      url: args.url,
+      headers: args.headers,
+      envVars: args.envVars,
+    });
     const description = normalizeOptionalString(args.description);
     const tags = normalizeStringArray(args.tags);
     const projectFullName = normalizeProjectFullNameForScope(
@@ -242,9 +335,7 @@ export const upsert = authMutation({
     if (existing) {
       await ctx.db.patch(existing._id, {
         displayName,
-        command,
-        args: normalizedArgs,
-        envVars,
+        ...transportFields,
         description,
         tags,
         enabledClaude: args.enabledClaude,
@@ -262,9 +353,7 @@ export const upsert = authMutation({
       userId,
       name,
       displayName,
-      command,
-      args: normalizedArgs,
-      envVars,
+      ...transportFields,
       description,
       tags,
       enabledClaude: args.enabledClaude,
@@ -344,12 +433,7 @@ export const getForSandbox = authQuery({
 
     return Array.from(mergedConfigs.values())
       .filter((config) => config[enabledField])
-      .map((config) => ({
-        name: config.name,
-        command: config.command,
-        args: config.args,
-        envVars: config.envVars,
-      }));
+      .map((config) => normalizePersistedMcpConfig(config));
   },
 });
 
@@ -399,11 +483,6 @@ export const getForSandboxInternal = internalQuery({
 
     return Array.from(mergedConfigs.values())
       .filter((config) => config[enabledField])
-      .map((config) => ({
-        name: config.name,
-        command: config.command,
-        args: config.args,
-        envVars: config.envVars,
-      }));
+      .map((config) => normalizePersistedMcpConfig(config));
   },
 });
