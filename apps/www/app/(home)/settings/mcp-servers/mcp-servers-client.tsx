@@ -31,7 +31,9 @@ type McpServerConfig = {
   displayName: string;
   command: string;
   args: string[];
-  envVars?: Record<string, string>;
+  // envVars are redacted from API - only hasEnvVars/envVarKeys returned
+  hasEnvVars?: boolean;
+  envVarKeys?: string[];
   description?: string;
   tags?: string[];
   enabledClaude: boolean;
@@ -127,12 +129,20 @@ function buildEmptyForm(scope: Scope): FormState {
 }
 
 function buildFormFromConfig(config: McpServerConfig): FormState {
+  // Show existing env var keys with placeholder values (secrets are redacted from API)
+  let envVarsText = "";
+  if (config.envVarKeys && config.envVarKeys.length > 0) {
+    envVarsText = config.envVarKeys
+      .map((key) => `${key}=<existing-secret>`)
+      .join("\n");
+  }
+
   return {
     name: config.name,
     displayName: config.displayName,
     command: config.command,
     argsText: config.args.join("\n"),
-    envVarsText: formatEnvVars(config.envVars),
+    envVarsText,
     description: config.description ?? "",
     enabledClaude: config.enabledClaude,
     enabledCodex: config.enabledCodex,
@@ -141,16 +151,6 @@ function buildFormFromConfig(config: McpServerConfig): FormState {
     scope: config.scope,
     projectFullName: config.projectFullName ?? "",
   };
-}
-
-function formatEnvVars(envVars?: Record<string, string>): string {
-  if (!envVars) {
-    return "";
-  }
-
-  return Object.entries(envVars)
-    .map(([key, value]) => `${key}=${value}`)
-    .join("\n");
 }
 
 function parseArgsText(value: string): string[] {
@@ -162,6 +162,7 @@ function parseArgsText(value: string): string[] {
 
 function parseEnvVarsText(value: string): {
   envVars?: Record<string, string>;
+  hasChanges: boolean;
   error?: string;
 } {
   const lines = value
@@ -170,14 +171,17 @@ function parseEnvVarsText(value: string): {
     .filter(Boolean);
 
   if (lines.length === 0) {
-    return {};
+    return { hasChanges: false };
   }
 
   const entries: Array<[string, string]> = [];
+  let hasChanges = false;
+
   for (const line of lines) {
     const separatorIndex = line.indexOf("=");
     if (separatorIndex <= 0) {
       return {
+        hasChanges: false,
         error: "Environment variables must use KEY=value format, one per line.",
       };
     }
@@ -186,14 +190,26 @@ function parseEnvVarsText(value: string): {
     const valuePart = line.slice(separatorIndex + 1);
     if (!key) {
       return {
+        hasChanges: false,
         error: "Environment variables must include a non-empty key before '='.",
       };
     }
 
+    // Skip placeholder values - these indicate existing secrets that weren't changed
+    if (valuePart === "<existing-secret>") {
+      continue;
+    }
+
+    hasChanges = true;
     entries.push([key, valuePart]);
   }
 
-  return { envVars: Object.fromEntries(entries) };
+  // Only return envVars if user actually provided new values
+  if (!hasChanges || entries.length === 0) {
+    return { hasChanges: false };
+  }
+
+  return { envVars: Object.fromEntries(entries), hasChanges: true };
 }
 
 function readErrorMessage(
@@ -292,7 +308,8 @@ function buildPayloadFromForm(form: FormState): {
       displayName,
       command,
       args: parseArgsText(form.argsText),
-      envVars: parsedEnvVars.envVars,
+      // Only include envVars if user provided new values (not placeholders)
+      ...(parsedEnvVars.hasChanges ? { envVars: parsedEnvVars.envVars } : {}),
       description: description || undefined,
       enabledClaude: form.enabledClaude,
       enabledCodex: form.enabledCodex,
@@ -561,7 +578,7 @@ export function McpServersClient() {
       displayName: config.displayName,
       command: config.command,
       args: config.args,
-      envVars: config.envVars,
+      // Don't send envVars on toggle - server preserves existing secrets
       description: config.description,
       tags: config.tags,
       enabledClaude:
