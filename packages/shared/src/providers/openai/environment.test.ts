@@ -727,4 +727,66 @@ foo = "bar"
     const mcpServersIndex = toml.indexOf("[mcp_servers.");
     expect(customProviderSectionIndex).toBeGreaterThan(mcpServersIndex);
   });
+
+  it("does not inject custom provider config when using OAuth (CODEX_AUTH_JSON)", async () => {
+    // OAuth tokens work directly with official OpenAI API, no proxy needed
+    const result = await getOpenAIEnvironment({
+      providerConfig: {
+        isOverridden: true,
+        baseUrl: "https://cliapi.karldigi.dev/v1",
+      },
+      apiKeys: {
+        CODEX_AUTH_JSON: '{"tokens":{"access_token":"oauth-token"}}',
+      },
+    } as never);
+
+    const toml = decodeConfigToml(result);
+    // Should NOT have custom provider when using OAuth
+    expect(toml).not.toContain('model_provider = "cmux-proxy"');
+    expect(toml).not.toContain('[model_providers.cmux-proxy]');
+    // Should NOT set OPENAI_BASE_URL when using OAuth
+    expect(result.env?.OPENAI_BASE_URL).toBeUndefined();
+  });
+
+  it("injects custom provider config when using API key auth (OPENAI_API_KEY)", async () => {
+    // API key auth with custom base URL should use proxy
+    const result = await getOpenAIEnvironment({
+      providerConfig: {
+        isOverridden: true,
+        baseUrl: "https://cliapi.karldigi.dev/v1",
+      },
+      apiKeys: {
+        OPENAI_API_KEY: "sk-test-key",
+      },
+    } as never);
+
+    const toml = decodeConfigToml(result);
+    // Should have custom provider when using API key
+    expect(toml).toContain('model_provider = "cmux-proxy"');
+    expect(toml).toContain('[model_providers.cmux-proxy]');
+    expect(toml).toContain('base_url = "https://cliapi.karldigi.dev/v1"');
+    // Should set OPENAI_BASE_URL
+    expect(result.env?.OPENAI_BASE_URL).toBe("https://cliapi.karldigi.dev/v1");
+  });
+
+  it("does not inject custom provider config when baseUrl is default OpenAI URL", async () => {
+    // When user clears team base URL setting, it falls back to default OpenAI URL
+    // but isOverridden may still be true - should NOT use custom provider
+    const result = await getOpenAIEnvironment({
+      providerConfig: {
+        isOverridden: true,
+        baseUrl: "https://api.openai.com/v1", // Default OpenAI URL
+      },
+      apiKeys: {
+        OPENAI_API_KEY: "sk-test-key",
+      },
+    } as never);
+
+    const toml = decodeConfigToml(result);
+    // Should NOT have custom provider when using default OpenAI URL
+    expect(toml).not.toContain('model_provider = "cmux-proxy"');
+    expect(toml).not.toContain('[model_providers.cmux-proxy]');
+    // Should NOT set OPENAI_BASE_URL
+    expect(result.env?.OPENAI_BASE_URL).toBeUndefined();
+  });
 });

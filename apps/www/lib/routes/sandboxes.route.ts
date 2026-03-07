@@ -492,6 +492,30 @@ async function setupProviderAuth(
         overrideMapped,
       );
 
+      // Build provider config from providerOverrides OR apiKeys.OPENAI_BASE_URL fallback
+      // Settings UI saves base URLs to apiKeys table, so check both sources
+      let openaiProviderConfig: {
+        baseUrl?: string;
+        customHeaders?: Record<string, string>;
+        apiFormat?: string;
+        isOverridden: boolean;
+      } | undefined;
+
+      if (resolvedOpenAI?.isOverridden) {
+        openaiProviderConfig = {
+          baseUrl: resolvedOpenAI.baseUrl,
+          customHeaders: resolvedOpenAI.customHeaders,
+          apiFormat: resolvedOpenAI.apiFormat,
+          isOverridden: true,
+        };
+      } else if (apiKeys.OPENAI_BASE_URL) {
+        // Fallback: use OPENAI_BASE_URL from apiKeys table (set via Settings UI)
+        openaiProviderConfig = {
+          baseUrl: apiKeys.OPENAI_BASE_URL,
+          isOverridden: true,
+        };
+      }
+
       // Run full environment setup (notify hooks, config.toml, memory, MCP)
       const codexEnvResult = await getOpenAIEnvironment({
         taskRunId: options.taskRunId || "",
@@ -502,14 +526,7 @@ async function setupProviderAuth(
         callbackUrl: options.callbackUrl,
         previousKnowledge: options.previousKnowledge ?? undefined,
         previousMailbox: options.previousMailbox ?? undefined,
-        providerConfig: resolvedOpenAI?.isOverridden
-          ? {
-              baseUrl: resolvedOpenAI.baseUrl,
-              customHeaders: resolvedOpenAI.customHeaders,
-              apiFormat: resolvedOpenAI.apiFormat,
-              isOverridden: true,
-            }
-          : undefined,
+        providerConfig: openaiProviderConfig,
       });
 
       await applyEnvironmentResult(
