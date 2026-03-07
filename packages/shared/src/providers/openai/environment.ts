@@ -76,7 +76,7 @@ export function applyCodexApiKeys(
 const FILTERED_CONFIG_KEYS = ["model", "model_reasoning_effort"] as const;
 const CODEX_NOTIFY_LINE = `notify = ["/root/lifecycle/codex-notify.sh"]`;
 const CODEX_SANDBOX_MODE_LINE = `sandbox_mode = "danger-full-access"`;
-const CODEX_ASK_FOR_APPROVAL_LINE = `ask_for_approval = "never"`;
+const CODEX_APPROVAL_POLICY_LINE = `approval_policy = "never"`;
 const CODEX_AUTOPILOT_TURN_SUMMARY_LINE =
   "End every turn with: Progress, Commands run, Files changed, Next.";
 const CODEX_AUTOPILOT_CONTINUE_LINE =
@@ -98,21 +98,35 @@ export function stripFilteredConfigKeys(toml: string): string {
 function ensureCodexDefaults(toml: string): string {
   const hasNotify = /(^|\n)\s*notify\s*=/.test(toml);
   const hasSandboxMode = /(^|\n)\s*sandbox_mode\s*=/.test(toml);
-  const hasAskForApproval = /(^|\n)\s*ask_for_approval\s*=/.test(toml);
+  const hasApprovalPolicy = /(^|\n)\s*approval_policy\s*=/.test(toml);
+  // Also check for legacy ask_for_approval to replace it
+  const hasLegacyAskForApproval = /(^|\n)\s*ask_for_approval\s*=/.test(toml);
 
-  // Always force ask_for_approval to "never" for unattended runs
+  // Always force approval_policy to "never" for unattended runs
   // Even if user has a different value in their host config, we override it
+  // Also replace legacy ask_for_approval with approval_policy
   // Handles double-quoted, single-quoted, and bare TOML values
   let result = toml;
-  if (hasAskForApproval) {
-    // Replace the entire ask_for_approval line with our required value
+  if (hasApprovalPolicy) {
+    // Replace the entire approval_policy line with our required value
+    result = result.replace(
+      /(^|\n)\s*approval_policy\s*=\s*.*/g,
+      `$1${CODEX_APPROVAL_POLICY_LINE}`
+    );
+  }
+  if (hasLegacyAskForApproval) {
+    // Remove legacy ask_for_approval (we'll add approval_policy instead)
     result = result.replace(
       /(^|\n)\s*ask_for_approval\s*=\s*.*/g,
-      `$1${CODEX_ASK_FOR_APPROVAL_LINE}`
+      ""
     );
   }
 
-  if (hasNotify && hasSandboxMode && hasAskForApproval) {
+  if (hasNotify && hasSandboxMode && (hasApprovalPolicy || hasLegacyAskForApproval)) {
+    // If we had legacy key, we need to add the new one
+    if (hasLegacyAskForApproval && !hasApprovalPolicy) {
+      return `${CODEX_APPROVAL_POLICY_LINE}\n${result.trim()}`;
+    }
     return result;
   }
 
@@ -123,8 +137,8 @@ function ensureCodexDefaults(toml: string): string {
   if (!hasSandboxMode) {
     defaults.push(CODEX_SANDBOX_MODE_LINE);
   }
-  if (!hasAskForApproval) {
-    defaults.push(CODEX_ASK_FOR_APPROVAL_LINE);
+  if (!hasApprovalPolicy && !hasLegacyAskForApproval) {
+    defaults.push(CODEX_APPROVAL_POLICY_LINE);
   }
 
   return result ? `${defaults.join("\n")}\n${result}` : defaults.join("\n");
