@@ -135,15 +135,19 @@ trap 'rm -f "$TMPFILE" "$COMPLETED_FILE"' EXIT
 # --base and [PROMPT] are mutually exclusive, so we cannot pass a custom prompt here.
 # --sandbox danger-full-access disables sandboxing entirely (safe in isolated LXC/container).
 # Previous --enable use_linux_sandbox_bwrap caused node sandbox-check errors in containers.
+# Timeout: 240s (4 min) to avoid blocking stop hooks too long. Uses perl for macOS compatibility.
 debug_log "Running codex review..."
+run_with_timeout() {
+  perl -e 'alarm shift; exec @ARGV' "$@"
+}
 if command -v unbuffer >/dev/null 2>&1; then
-  unbuffer codex \
+  run_with_timeout 240 unbuffer codex \
     --sandbox danger-full-access \
     --model gpt-5.3-codex \
     -c model_reasoning_effort="high" \
     review --base main > "$TMPFILE" 2>&1 || true
 else
-  codex \
+  run_with_timeout 240 codex \
     --sandbox danger-full-access \
     --model gpt-5.3-codex \
     -c model_reasoning_effort="high" \
