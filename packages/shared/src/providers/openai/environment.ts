@@ -77,6 +77,7 @@ const FILTERED_CONFIG_KEYS = ["model", "model_reasoning_effort"] as const;
 const CODEX_NOTIFY_LINE = `notify = ["/root/lifecycle/codex-notify.sh"]`;
 const CODEX_SANDBOX_MODE_LINE = `sandbox_mode = "danger-full-access"`;
 const CODEX_APPROVAL_POLICY_LINE = `approval_policy = "never"`;
+const CODEX_DISABLE_RESPONSE_STORAGE_LINE = `disable_response_storage = true`;
 const CODEX_AUTOPILOT_TURN_SUMMARY_LINE =
   "End every turn with: Progress, Commands run, Files changed, Next.";
 const CODEX_AUTOPILOT_CONTINUE_LINE =
@@ -99,6 +100,7 @@ function ensureCodexDefaults(toml: string): string {
   const hasNotify = /(^|\n)\s*notify\s*=/.test(toml);
   const hasSandboxMode = /(^|\n)\s*sandbox_mode\s*=/.test(toml);
   const hasApprovalPolicy = /(^|\n)\s*approval_policy\s*=/.test(toml);
+  const hasDisableResponseStorage = /(^|\n)\s*disable_response_storage\s*=/.test(toml);
   // Also check for legacy ask_for_approval to replace it
   const hasLegacyAskForApproval = /(^|\n)\s*ask_for_approval\s*=/.test(toml);
 
@@ -122,7 +124,11 @@ function ensureCodexDefaults(toml: string): string {
     );
   }
 
-  if (hasNotify && hasSandboxMode && (hasApprovalPolicy || hasLegacyAskForApproval)) {
+  // Check if all required defaults are present
+  const hasAllDefaults = hasNotify && hasSandboxMode && hasDisableResponseStorage &&
+    (hasApprovalPolicy || hasLegacyAskForApproval);
+
+  if (hasAllDefaults) {
     // If we had legacy key, we need to add the new one
     if (hasLegacyAskForApproval && !hasApprovalPolicy) {
       return `${CODEX_APPROVAL_POLICY_LINE}\n${result.trim()}`;
@@ -140,6 +146,9 @@ function ensureCodexDefaults(toml: string): string {
   if (!hasApprovalPolicy && !hasLegacyAskForApproval) {
     defaults.push(CODEX_APPROVAL_POLICY_LINE);
   }
+  if (!hasDisableResponseStorage) {
+    defaults.push(CODEX_DISABLE_RESPONSE_STORAGE_LINE);
+  }
 
   return result ? `${defaults.join("\n")}\n${result}` : defaults.join("\n");
 }
@@ -156,9 +165,6 @@ const MODELS_TO_MIGRATE = [
   "gpt-5.1-codex",
   "gpt-5.1-codex-mini",
   "gpt-5",
-  "o3",
-  "o4-mini",
-  "gpt-4.1",
   "gpt-5-codex",
   "gpt-5-codex-mini",
 ];

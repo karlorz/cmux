@@ -100,13 +100,13 @@ approval_mode = "full"
 model = "gpt-5.2"
 
 [notice.model_migrations]
-"o3" = "gpt-5.3-codex"`;
+"gpt-5.2-codex" = "gpt-5.3-codex"`;
     const result = stripFilteredConfigKeys(input);
     expect(result).toBe(`notify = ["/root/lifecycle/codex-notify.sh"]
 approval_mode = "full"
 
 [notice.model_migrations]
-"o3" = "gpt-5.3-codex"`);
+"gpt-5.2-codex" = "gpt-5.3-codex"`);
   });
 
   it("handles different value formats", () => {
@@ -199,12 +199,10 @@ describe("getOpenAIEnvironment", () => {
     expect(toml).toContain('notify = ["/root/lifecycle/codex-notify.sh"]');
     expect(toml).toContain('sandbox_mode = "danger-full-access"');
     expect(toml).toContain('approval_policy = "never"');
+    expect(toml).toContain('disable_response_storage = true');
     expect(toml).toContain("[notice.model_migrations]");
     expect(toml).toContain('"gpt-5-codex" = "gpt-5.3-codex"');
     expect(toml).toContain('"gpt-5" = "gpt-5.3-codex"');
-    expect(toml).toContain('"o3" = "gpt-5.3-codex"');
-    expect(toml).toContain('"o4-mini" = "gpt-5.3-codex"');
-    expect(toml).toContain('"gpt-4.1" = "gpt-5.3-codex"');
     expect(toml).toContain('"gpt-5-codex-mini" = "gpt-5.3-codex"');
     expect(toml).toContain('"gpt-5.2-codex" = "gpt-5.3-codex"');
   });
@@ -291,7 +289,7 @@ model = "gpt-5"
 model_reasoning_effort = "high"
 
 [notice.model_migrations]
-"o3" = "gpt-5.3-codex"
+"gpt-5.2-codex" = "gpt-5.3-codex"
 
 [some_section]
 foo = "bar"
@@ -339,7 +337,7 @@ foo = "bar"
       expect(toml).not.toContain('model = "gpt-5"');
       expect(toml).not.toContain('model_reasoning_effort = "high"');
       // Model migrations should be replaced with managed ones
-      expect(toml).toContain('"o3" = "gpt-5.3-codex"');
+      expect(toml).toContain('"gpt-5.2-codex" = "gpt-5.3-codex"');
     } finally {
       process.env.HOME = previousHome;
       await rm(homeDir, { recursive: true, force: true });
