@@ -768,4 +768,25 @@ foo = "bar"
     // Should set OPENAI_BASE_URL
     expect(result.env?.OPENAI_BASE_URL).toBe("https://cliapi.karldigi.dev/v1");
   });
+
+  it("does not inject custom provider config when baseUrl is default OpenAI URL", async () => {
+    // When user clears team base URL setting, it falls back to default OpenAI URL
+    // but isOverridden may still be true - should NOT use custom provider
+    const result = await getOpenAIEnvironment({
+      providerConfig: {
+        isOverridden: true,
+        baseUrl: "https://api.openai.com/v1", // Default OpenAI URL
+      },
+      apiKeys: {
+        OPENAI_API_KEY: "sk-test-key",
+      },
+    } as never);
+
+    const toml = decodeConfigToml(result);
+    // Should NOT have custom provider when using default OpenAI URL
+    expect(toml).not.toContain('model_provider = "cmux-proxy"');
+    expect(toml).not.toContain('[model_providers.cmux-proxy]');
+    // Should NOT set OPENAI_BASE_URL
+    expect(result.env?.OPENAI_BASE_URL).toBeUndefined();
+  });
 });

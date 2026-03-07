@@ -545,8 +545,14 @@ log "Autopilot completed after \$ITER turns"
   // IMPORTANT: Only use custom provider for API key auth, NOT OAuth.
   // OAuth tokens work directly with official OpenAI API and don't need proxy routing.
   // We detect OAuth by the presence of CODEX_AUTH_JSON (pre-configured auth.json).
+  //
+  // Also skip custom provider if baseUrl is the default OpenAI URL - this happens when
+  // user clears their team's base URL setting but the override record still exists.
+  const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
   const isOAuthMode = !!ctx.apiKeys?.CODEX_AUTH_JSON;
+  const isDefaultOpenAIUrl = ctx.providerConfig?.baseUrl === DEFAULT_OPENAI_BASE_URL;
   const customProviderConfig = !isOAuthMode &&
+    !isDefaultOpenAIUrl &&
     ctx.providerConfig?.isOverridden &&
     ctx.providerConfig.baseUrl
     ? ctx.providerConfig.baseUrl
