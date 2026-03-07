@@ -58,15 +58,25 @@ const McpServerStdioSchema = McpServerBaseSchema.extend({
 })
   .openapi("McpServerStdioConfig");
 
-const McpServerRemoteSchema = McpServerBaseSchema.extend({
-  type: z.union([z.literal("http"), z.literal("sse")]),
+const McpServerRemoteFieldsSchema = {
   url: z.string(),
   headers: HeaderRecordSchema.optional(),
+};
+
+const McpServerHttpSchema = McpServerBaseSchema.extend({
+  type: z.literal("http"),
+  ...McpServerRemoteFieldsSchema,
 })
-  .openapi("McpServerRemoteConfig");
+  .openapi("McpServerHttpConfig");
+
+const McpServerSseSchema = McpServerBaseSchema.extend({
+  type: z.literal("sse"),
+  ...McpServerRemoteFieldsSchema,
+})
+  .openapi("McpServerSseConfig");
 
 const McpServerConfigSchema = z
-  .discriminatedUnion("type", [McpServerStdioSchema, McpServerRemoteSchema])
+  .discriminatedUnion("type", [McpServerStdioSchema, McpServerHttpSchema, McpServerSseSchema])
   .openapi("McpServerConfig");
 
 const McpServersListResponse = z
@@ -101,10 +111,9 @@ const UpsertMcpServerStdioBody = z.object({
   projectFullName: z.string().optional(),
 });
 
-const UpsertMcpServerRemoteBody = z.object({
+const UpsertMcpServerRemoteFieldsSchema = {
   name: z.string(),
   displayName: z.string(),
-  type: z.union([z.literal("http"), z.literal("sse")]),
   url: z.string(),
   headers: HeaderRecordSchema.optional(),
   envVars: HeaderRecordSchema.optional(),
@@ -116,10 +125,24 @@ const UpsertMcpServerRemoteBody = z.object({
   enabledOpencode: z.boolean(),
   scope: ScopeSchema,
   projectFullName: z.string().optional(),
+};
+
+const UpsertMcpServerHttpBody = z.object({
+  type: z.literal("http"),
+  ...UpsertMcpServerRemoteFieldsSchema,
+});
+
+const UpsertMcpServerSseBody = z.object({
+  type: z.literal("sse"),
+  ...UpsertMcpServerRemoteFieldsSchema,
 });
 
 const UpsertMcpServerBody = z
-  .union([UpsertMcpServerStdioBody, UpsertMcpServerRemoteBody])
+  .union([
+    UpsertMcpServerStdioBody,
+    UpsertMcpServerHttpBody,
+    UpsertMcpServerSseBody,
+  ])
   .openapi("UpsertMcpServerBody");
 
 const SuccessResponse = z

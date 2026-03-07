@@ -1751,12 +1751,10 @@ export type UpsertApiKeyBody = {
 
 export type McpServerScope = 'global' | 'workspace';
 
-export type McpServerConfig = {
+export type McpServerStdioConfig = {
     _id: string;
     name: string;
     displayName: string;
-    command: string;
-    args: Array<string>;
     hasEnvVars?: boolean;
     envVarKeys?: Array<string>;
     description?: string;
@@ -1769,7 +1767,64 @@ export type McpServerConfig = {
     projectFullName?: string;
     createdAt: number;
     updatedAt: number;
+    type: 'stdio';
+    command: string;
+    args: Array<string>;
 };
+
+export type McpServerHttpConfig = {
+    _id: string;
+    name: string;
+    displayName: string;
+    hasEnvVars?: boolean;
+    envVarKeys?: Array<string>;
+    description?: string;
+    tags?: Array<string>;
+    enabledClaude: boolean;
+    enabledCodex: boolean;
+    enabledGemini: boolean;
+    enabledOpencode: boolean;
+    scope: McpServerScope;
+    projectFullName?: string;
+    createdAt: number;
+    updatedAt: number;
+    type: 'http';
+    url: string;
+    headers?: {
+        [key: string]: string;
+    };
+};
+
+export type McpServerSseConfig = {
+    _id: string;
+    name: string;
+    displayName: string;
+    hasEnvVars?: boolean;
+    envVarKeys?: Array<string>;
+    description?: string;
+    tags?: Array<string>;
+    enabledClaude: boolean;
+    enabledCodex: boolean;
+    enabledGemini: boolean;
+    enabledOpencode: boolean;
+    scope: McpServerScope;
+    projectFullName?: string;
+    createdAt: number;
+    updatedAt: number;
+    type: 'sse';
+    url: string;
+    headers?: {
+        [key: string]: string;
+    };
+};
+
+export type McpServerConfig = ({
+    type: 'stdio';
+} & McpServerStdioConfig) | ({
+    type: 'http';
+} & McpServerHttpConfig) | ({
+    type: 'sse';
+} & McpServerSseConfig);
 
 export type McpServerPresetSupportedAgents = {
     claude: boolean;
@@ -1782,6 +1837,7 @@ export type McpServerPreset = {
     name: string;
     displayName: string;
     description: string;
+    type: 'stdio';
     command: string;
     args: Array<string>;
     tags: Array<string>;
@@ -1801,8 +1857,47 @@ export type McpServerSuccessResponse = {
 export type UpsertMcpServerBody = {
     name: string;
     displayName: string;
+    type?: 'stdio';
     command: string;
-    args: Array<string>;
+    args?: Array<string>;
+    envVars?: {
+        [key: string]: string;
+    };
+    description?: string;
+    tags?: Array<string>;
+    enabledClaude: boolean;
+    enabledCodex: boolean;
+    enabledGemini: boolean;
+    enabledOpencode: boolean;
+    scope: McpServerScope;
+    projectFullName?: string;
+} | {
+    type: 'http';
+    name: string;
+    displayName: string;
+    url: string;
+    headers?: {
+        [key: string]: string;
+    };
+    envVars?: {
+        [key: string]: string;
+    };
+    description?: string;
+    tags?: Array<string>;
+    enabledClaude: boolean;
+    enabledCodex: boolean;
+    enabledGemini: boolean;
+    enabledOpencode: boolean;
+    scope: McpServerScope;
+    projectFullName?: string;
+} | {
+    type: 'sse';
+    name: string;
+    displayName: string;
+    url: string;
+    headers?: {
+        [key: string]: string;
+    };
     envVars?: {
         [key: string]: string;
     };

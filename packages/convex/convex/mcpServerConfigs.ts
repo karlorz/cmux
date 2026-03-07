@@ -1,8 +1,10 @@
+// Import directly from mcp-server-config to avoid pulling in Node-only providers
+// from the @cmux/shared barrel export (Convex bundler doesn't tree-shake properly)
 import {
   isRemoteMcpServerConfig,
   normalizeMcpServerConfig,
   type McpServerConfig,
-} from "@cmux/shared";
+} from "@cmux/shared/convex-safe";
 import { v } from "convex/values";
 import { internalQuery } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
