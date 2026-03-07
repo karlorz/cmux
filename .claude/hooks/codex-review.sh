@@ -76,7 +76,15 @@ fi
 
 # Check 2: Committed changes vs main (git diff main...HEAD)
 # Only check if no uncommitted work found yet
+# Also skip if we already reviewed this exact commit (avoid re-reviewing on every stop)
+REVIEWED_COMMIT_FILE="/tmp/codex-review-last-commit-${SESSION_ID}"
+CURRENT_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
 if [ "$WORK_DONE" = "0" ]; then
+  # Check if we already reviewed this commit in this session
+  if [ -f "$REVIEWED_COMMIT_FILE" ] && [ "$(cat "$REVIEWED_COMMIT_FILE")" = "$CURRENT_HEAD" ]; then
+    debug_log "Skipping: already reviewed commit $CURRENT_HEAD in this session"
+    exit 0
+  fi
   git diff --quiet main...HEAD 2>/dev/null && GIT_EXIT=0 || GIT_EXIT=$?
   if [ "$GIT_EXIT" -eq 1 ]; then
     WORK_DONE="1"
@@ -180,6 +188,9 @@ if echo "$VERDICT" | grep -qi "lgtm"; then
   rm -f "$FAIL_COUNT_FILE"  # Reset counter on success
   debug_log "Review PASSED (lgtm)"
 
+  # Mark this commit as reviewed to avoid re-reviewing on subsequent stops
+  echo "$CURRENT_HEAD" > "$REVIEWED_COMMIT_FILE"
+
   # Even on pass, suggest /simplify once if significant changes were made
   # Check if there are multiple files changed (worth a simplify pass)
   CHANGED_FILES=$(git diff --name-only main...HEAD 2>/dev/null | wc -l)
@@ -194,6 +205,8 @@ if echo "$VERDICT" | grep -qi "lgtm"; then
 fi
 
 # Has issues - increment counter and show to Claude
+# Also mark as reviewed (will re-review if commit changes)
+echo "$CURRENT_HEAD" > "$REVIEWED_COMMIT_FILE"
 echo $((FAIL_COUNT + 1)) > "$FAIL_COUNT_FILE"
 debug_log "Review has ISSUES, showing to Claude"
 
