@@ -34,6 +34,7 @@ Use bun to install dependencies and run the project.
 - `--force-docker-build`: Rebuild worker image even if cached.
 
 If you make code changes, run `bun check` and fix errors after completing a task.
+After `bun check`, run `/simplify` when there are code changes or codex review progress.
 
 # Backend
 
