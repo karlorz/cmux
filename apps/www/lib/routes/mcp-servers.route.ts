@@ -131,18 +131,9 @@ mcpServersRouter.openapi(
       ...(query.projectFullName ? { projectFullName: query.projectFullName } : {}),
     });
 
-    // Mask envVars - return only keys to indicate which vars are set, never expose values
-    const maskEnvVars = (
-      envVars: Record<string, string> | undefined
-    ): Record<string, string> | undefined => {
-      if (!envVars) return undefined;
-      const masked: Record<string, string> = {};
-      for (const key of Object.keys(envVars)) {
-        masked[key] = "********";
-      }
-      return masked;
-    };
-
+    // Omit envVars entirely - they contain secrets
+    // Return hasEnvVars + envVarKeys so UI knows which vars exist without exposing values
+    // Frontend should only send envVars in POST when user explicitly provides new values
     return c.json({
       configs: configs.map((config) => ({
         _id: config._id,
@@ -150,7 +141,8 @@ mcpServersRouter.openapi(
         displayName: config.displayName,
         command: config.command,
         args: config.args,
-        envVars: maskEnvVars(config.envVars),
+        hasEnvVars: config.envVars && Object.keys(config.envVars).length > 0,
+        envVarKeys: config.envVars ? Object.keys(config.envVars) : [],
         description: config.description,
         tags: config.tags,
         enabledClaude: config.enabledClaude,

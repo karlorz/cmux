@@ -33,7 +33,6 @@ SESSION_ID="${SESSION_ID:-default}"
 debug_log "SESSION_ID: $SESSION_ID"
 
 # Session-scoped file paths
-BASELINE_FILE="/tmp/codex-review-baseline-${SESSION_ID}"
 REVIEWED_FILE="/tmp/codex-review-reviewed-${SESSION_ID}"
 FAIL_COUNT_FILE="/tmp/codex-review-fails-${SESSION_ID}"
 SIMPLIFY_SUGGESTED_FILE="/tmp/codex-review-simplify-suggested-${SESSION_ID}"
@@ -63,23 +62,23 @@ if [ "$AUTOPILOT_ACTIVE" != "1" ] && [ -f "$AUTOPILOT_BLOCKED_FILE" ]; then
 fi
 
 # --- Session-based work detection ---
-# Instead of complex WORK_DONE checks, use simple session tracking:
-# 1. Track baseline commit at session start
-# 2. Work exists if: HEAD moved OR uncommitted changes exist
-# 3. Skip if already reviewed this exact state
+# 1. Baseline = merge-base with main (what we're reviewing against)
+# 2. Work exists if: commits ahead of main OR uncommitted changes
+# 3. Skip if already reviewed this exact state (fingerprint includes dirty tree hash)
 
 CURRENT_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+MAIN_BASE=$(git merge-base main HEAD 2>/dev/null || echo "unknown")
 HAS_UNCOMMITTED=$(git status --porcelain 2>/dev/null | grep -q . && echo "1" || echo "0")
 
-# Set baseline on first stop of session
-if [ ! -f "$BASELINE_FILE" ]; then
-  echo "$CURRENT_HEAD" > "$BASELINE_FILE"
-  debug_log "Set session baseline: $CURRENT_HEAD"
+# For dirty tree, include hash of actual changes (not just "1")
+if [ "$HAS_UNCOMMITTED" = "1" ]; then
+  DIRTY_HASH=$(git diff 2>/dev/null | shasum -a 256 | cut -c1-16)
+else
+  DIRTY_HASH="clean"
 fi
-BASELINE_HEAD=$(cat "$BASELINE_FILE")
 
-# Build current state fingerprint (commit + uncommitted indicator)
-STATE_FINGERPRINT="${CURRENT_HEAD}:${HAS_UNCOMMITTED}"
+# Build state fingerprint: commit + dirty tree hash
+STATE_FINGERPRINT="${CURRENT_HEAD}:${DIRTY_HASH}"
 
 # Check if already reviewed this exact state
 if [ -f "$REVIEWED_FILE" ] && [ "$(cat "$REVIEWED_FILE")" = "$STATE_FINGERPRINT" ]; then
@@ -88,26 +87,23 @@ if [ -f "$REVIEWED_FILE" ] && [ "$(cat "$REVIEWED_FILE")" = "$STATE_FINGERPRINT"
 fi
 
 # Determine if there's work to review
-# Work = HEAD moved from baseline OR uncommitted changes exist
-HEAD_MOVED="0"
-if [ "$CURRENT_HEAD" != "$BASELINE_HEAD" ]; then
-  HEAD_MOVED="1"
-fi
+# Work = commits ahead of main OR uncommitted changes
+COMMITS_AHEAD=$(git rev-list --count "${MAIN_BASE}..HEAD" 2>/dev/null || echo "0")
 
-if [ "$HEAD_MOVED" = "0" ] && [ "$HAS_UNCOMMITTED" = "0" ]; then
-  # No work in this session - but check autopilot markers as backup
+if [ "$COMMITS_AHEAD" = "0" ] && [ "$HAS_UNCOMMITTED" = "0" ]; then
+  # No work vs main - but check autopilot markers as backup
   TURN_FILE="/tmp/claude-autopilot-turns-${SESSION_ID}"
   if [ "$AUTOPILOT_ACTIVE" = "1" ] && [ -f "$COMPLETED_FILE" ]; then
     debug_log "Work detected via autopilot completed marker"
   elif [ -f "$TURN_FILE" ]; then
     debug_log "Work detected via turn file"
   else
-    debug_log "Skipping: no work in session (HEAD=$CURRENT_HEAD, baseline=$BASELINE_HEAD, uncommitted=$HAS_UNCOMMITTED)"
+    debug_log "Skipping: no work vs main (commits_ahead=$COMMITS_AHEAD, uncommitted=$HAS_UNCOMMITTED)"
     exit 0
   fi
 fi
 
-debug_log "Proceeding with codex review (HEAD_MOVED=$HEAD_MOVED, HAS_UNCOMMITTED=$HAS_UNCOMMITTED)..."
+debug_log "Proceeding with codex review (COMMITS_AHEAD=$COMMITS_AHEAD, HAS_UNCOMMITTED=$HAS_UNCOMMITTED, DIRTY_HASH=$DIRTY_HASH)..."
 
 # Dry-run mode: exit after pre-flight checks (for testing hook logic without codex)
 if [ "${CODEX_REVIEW_DRY_RUN:-}" = "1" ]; then
