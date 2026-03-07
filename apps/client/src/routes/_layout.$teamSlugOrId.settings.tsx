@@ -8,6 +8,7 @@ import {
 } from "@/components/settings/sections/AIProvidersSection";
 import { ArchivedTasksSection } from "@/components/settings/sections/ArchivedTasksSection";
 import { GitSection } from "@/components/settings/sections/GitSection";
+import { McpServersSection } from "@/components/settings/sections/McpServersSection";
 import { ModelCatalogSection } from "@/components/settings/sections/ModelCatalogSection";
 import { ModelManagementSection } from "@/components/settings/sections/ModelManagementSection";
 import { WorktreesSection } from "@/components/settings/sections/WorktreesSection";
@@ -43,7 +44,7 @@ import { DEFAULT_BRANCH_PREFIX } from "@cmux/shared";
 export const Route = createFileRoute("/_layout/$teamSlugOrId/settings")({
   component: SettingsComponent,
   validateSearch: z.object({
-    section: z.enum(["general", "ai-providers", "models", "model-catalog", "git", "worktrees", "archived"]).default("general"),
+    section: z.enum(["general", "ai-providers", "models", "model-catalog", "mcp-servers", "git", "worktrees", "archived"]).default("general"),
   }),
 });
 
@@ -858,6 +859,8 @@ function SettingsComponent() {
             <ModelManagementSection teamSlugOrId={teamSlugOrId} />
           ) : activeSection === "model-catalog" ? (
             <ModelCatalogSection teamSlugOrId={teamSlugOrId} />
+          ) : activeSection === "mcp-servers" ? (
+            <McpServersSection teamSlugOrId={teamSlugOrId} />
           ) : activeSection === "git" ? (
             <GitSection
               branchPrefix={branchPrefix}

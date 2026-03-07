@@ -104,6 +104,7 @@ function LayoutComponent() {
   const activeSettingsSection: SettingsSection =
     sectionFromSearch === "ai-providers" ? "ai-providers" :
     sectionFromSearch === "models" ? "models" :
+    sectionFromSearch === "mcp-servers" ? "mcp-servers" :
     sectionFromSearch === "git" ? "git" :
     sectionFromSearch === "worktrees" ? "worktrees" :
     sectionFromSearch === "archived" ? "archived" : "general";

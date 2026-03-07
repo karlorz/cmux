@@ -30,6 +30,7 @@ import {
   githubOAuthTokenRouter,
   healthRouter,
   modelsRouter,
+  mcpServersRouter,
   morphRouter,
   orchestrateRouter,
   projectRouter,
@@ -197,6 +198,7 @@ app.route("/", modelsRouter);
 app.route("/", providersRouter);
 app.route("/", providersStatusRouter);
 app.route("/", apiKeysRouter);
+app.route("/", mcpServersRouter);
 
 // OpenAPI documentation
 app.doc("/doc", {

@@ -7,7 +7,7 @@ import {
 import { isElectron } from "@/lib/electron";
 import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
-import { Archive, ArrowLeft, FolderGit2, GitBranch, KeyRound, Layers, Settings } from "lucide-react";
+import { Archive, ArrowLeft, FolderGit2, GitBranch, KeyRound, Layers, Plug, Settings } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -19,7 +19,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
-export type SettingsSection = "general" | "ai-providers" | "models" | "git" | "worktrees" | "archived";
+export type SettingsSection = "general" | "ai-providers" | "models" | "mcp-servers" | "git" | "worktrees" | "archived";
 
 interface SettingsSidebarProps {
   teamSlugOrId: string;
@@ -50,6 +50,11 @@ const allNavItems: SettingsSidebarNavItem[] = [
     label: "Models",
     section: "models",
     icon: Layers,
+  },
+  {
+    label: "MCP Servers",
+    section: "mcp-servers",
+    icon: Plug,
   },
   {
     label: "Git",
