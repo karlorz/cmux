@@ -17,6 +17,13 @@ import {
   type StoredPullRequestInfo,
 } from "@cmux/shared/pull-request-state";
 
+const CLOUD_WORKSPACE_JWT_TTL = "7d";
+const DEFAULT_JWT_TTL = "12h";
+
+function getJwtTtl(isCloudWorkspace?: boolean): string {
+  return isCloudWorkspace ? CLOUD_WORKSPACE_JWT_TTL : DEFAULT_JWT_TTL;
+}
+
 function rewriteMorphUrl(url: string): string {
   // do not rewrite ports 39375 39377 39378 39379 39380 39381 39383
   if (
@@ -588,7 +595,7 @@ export const createInternal = internalMutation({
     })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()
-      .setExpirationTime("12h")
+      .setExpirationTime(getJwtTtl(task.isCloudWorkspace))
       .sign(new TextEncoder().encode(env.CMUX_TASK_RUN_JWT_SECRET));
 
     return { taskRunId, jwt };
@@ -680,7 +687,7 @@ export const create = authMutation({
     })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()
-      .setExpirationTime("12h")
+      .setExpirationTime(getJwtTtl(task.isCloudWorkspace))
       .sign(new TextEncoder().encode(env.CMUX_TASK_RUN_JWT_SECRET));
 
     return { taskRunId, jwt };
@@ -1221,7 +1228,7 @@ export const getJwt = authMutation({
     })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()
-      .setExpirationTime("12h")
+      .setExpirationTime(getJwtTtl(doc.isCloudWorkspace))
       .sign(new TextEncoder().encode(env.CMUX_TASK_RUN_JWT_SECRET));
 
     return { jwt };
@@ -1247,7 +1254,7 @@ export const getJwtInternal = internalMutation({
     })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()
-      .setExpirationTime("12h")
+      .setExpirationTime(getJwtTtl(doc.isCloudWorkspace))
       .sign(new TextEncoder().encode(env.CMUX_TASK_RUN_JWT_SECRET));
 
     return { jwt, teamId: doc.teamId, userId: doc.userId };
@@ -2601,7 +2608,7 @@ export const createForPreview = internalMutation({
     })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()
-      .setExpirationTime("12h")
+      .setExpirationTime(getJwtTtl(task.isCloudWorkspace))
       .sign(new TextEncoder().encode(env.CMUX_TASK_RUN_JWT_SECRET));
 
     return { taskRunId, jwt };
