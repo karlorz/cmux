@@ -131,6 +131,18 @@ mcpServersRouter.openapi(
       ...(query.projectFullName ? { projectFullName: query.projectFullName } : {}),
     });
 
+    // Mask envVars - return only keys to indicate which vars are set, never expose values
+    const maskEnvVars = (
+      envVars: Record<string, string> | undefined
+    ): Record<string, string> | undefined => {
+      if (!envVars) return undefined;
+      const masked: Record<string, string> = {};
+      for (const key of Object.keys(envVars)) {
+        masked[key] = "********";
+      }
+      return masked;
+    };
+
     return c.json({
       configs: configs.map((config) => ({
         _id: config._id,
@@ -138,7 +150,7 @@ mcpServersRouter.openapi(
         displayName: config.displayName,
         command: config.command,
         args: config.args,
-        envVars: config.envVars,
+        envVars: maskEnvVars(config.envVars),
         description: config.description,
         tags: config.tags,
         enabledClaude: config.enabledClaude,
