@@ -100,13 +100,13 @@ approval_mode = "full"
 model = "gpt-5.2"
 
 [notice.model_migrations]
-"o3" = "gpt-5.3-codex"`;
+"gpt-5.2-codex" = "gpt-5.3-codex"`;
     const result = stripFilteredConfigKeys(input);
     expect(result).toBe(`notify = ["/root/lifecycle/codex-notify.sh"]
 approval_mode = "full"
 
 [notice.model_migrations]
-"o3" = "gpt-5.3-codex"`);
+"gpt-5.2-codex" = "gpt-5.3-codex"`);
   });
 
   it("handles different value formats", () => {
@@ -198,13 +198,11 @@ describe("getOpenAIEnvironment", () => {
     );
     expect(toml).toContain('notify = ["/root/lifecycle/codex-notify.sh"]');
     expect(toml).toContain('sandbox_mode = "danger-full-access"');
-    expect(toml).toContain('ask_for_approval = "never"');
+    expect(toml).toContain('approval_policy = "never"');
+    expect(toml).toContain('disable_response_storage = true');
     expect(toml).toContain("[notice.model_migrations]");
     expect(toml).toContain('"gpt-5-codex" = "gpt-5.3-codex"');
     expect(toml).toContain('"gpt-5" = "gpt-5.3-codex"');
-    expect(toml).toContain('"o3" = "gpt-5.3-codex"');
-    expect(toml).toContain('"o4-mini" = "gpt-5.3-codex"');
-    expect(toml).toContain('"gpt-4.1" = "gpt-5.3-codex"');
     expect(toml).toContain('"gpt-5-codex-mini" = "gpt-5.3-codex"');
     expect(toml).toContain('"gpt-5.2-codex" = "gpt-5.3-codex"');
   });
@@ -250,7 +248,7 @@ host_secret = "should-not-leak"
       expect(toml).not.toContain("host_secret");
       expect(toml).not.toContain("approval_mode");
       expect(toml).toContain('sandbox_mode = "danger-full-access"');
-      expect(toml).toContain('ask_for_approval = "never"');
+      expect(toml).toContain('approval_policy = "never"');
 
       // Verify instructions.md does NOT contain host instructions
       const instructionsFile = result.files?.find(
@@ -291,7 +289,7 @@ model = "gpt-5"
 model_reasoning_effort = "high"
 
 [notice.model_migrations]
-"o3" = "gpt-5.3-codex"
+"gpt-5.2-codex" = "gpt-5.3-codex"
 
 [some_section]
 foo = "bar"
@@ -339,7 +337,7 @@ foo = "bar"
       expect(toml).not.toContain('model = "gpt-5"');
       expect(toml).not.toContain('model_reasoning_effort = "high"');
       // Model migrations should be replaced with managed ones
-      expect(toml).toContain('"o3" = "gpt-5.3-codex"');
+      expect(toml).toContain('"gpt-5.2-codex" = "gpt-5.3-codex"');
     } finally {
       process.env.HOME = previousHome;
       await rm(homeDir, { recursive: true, force: true });
@@ -391,17 +389,17 @@ foo = "bar"
     }
   });
 
-  it("forces ask_for_approval to never even when host config has different value", async () => {
+  it("forces approval_policy to never even when host config has different value", async () => {
     const homeDir = await mkdtemp(join(tmpdir(), "cmux-openai-home-"));
     const previousHome = process.env.HOME;
     process.env.HOME = homeDir;
 
     try {
       await mkdir(join(homeDir, ".codex"), { recursive: true });
-      // Host config has ask_for_approval set to "on-request" which would block unattended runs
+      // Host config has approval_policy set to "on-request" which would block unattended runs
       await writeFile(
         join(homeDir, ".codex/config.toml"),
-        `ask_for_approval = "on-request"
+        `approval_policy = "on-request"
 approval_mode = "full"
 
 [some_section]
@@ -413,9 +411,9 @@ foo = "bar"
       const result = await getOpenAIEnvironment({ useHostConfig: true } as never);
 
       const toml = decodeConfigToml(result);
-      // ask_for_approval MUST be "never" for unattended runs, regardless of host config
-      expect(toml).toContain('ask_for_approval = "never"');
-      expect(toml).not.toContain('ask_for_approval = "on-request"');
+      // approval_policy MUST be "never" for unattended runs, regardless of host config
+      expect(toml).toContain('approval_policy = "never"');
+      expect(toml).not.toContain('approval_policy = "on-request"');
       // Other host settings should be preserved
       expect(toml).toContain('approval_mode = "full"');
       expect(toml).toContain("[some_section]");
@@ -425,7 +423,7 @@ foo = "bar"
     }
   });
 
-  it("forces ask_for_approval override for single-quoted and bare TOML values", async () => {
+  it("forces approval_policy override for single-quoted and bare TOML values", async () => {
     const homeDir = await mkdtemp(join(tmpdir(), "cmux-openai-home-"));
     const previousHome = process.env.HOME;
     process.env.HOME = homeDir;
@@ -435,7 +433,7 @@ foo = "bar"
       // Test single-quoted value
       await writeFile(
         join(homeDir, ".codex/config.toml"),
-        `ask_for_approval = 'on-request'
+        `approval_policy = 'on-request'
 
 [some_section]
 foo = "bar"
@@ -445,13 +443,13 @@ foo = "bar"
 
       let result = await getOpenAIEnvironment({ useHostConfig: true } as never);
       let toml = decodeConfigToml(result);
-      expect(toml).toContain('ask_for_approval = "never"');
+      expect(toml).toContain('approval_policy = "never"');
       expect(toml).not.toContain("'on-request'");
 
       // Test bare value
       await writeFile(
         join(homeDir, ".codex/config.toml"),
-        `ask_for_approval = unless-allow-listed
+        `approval_policy = unless-allow-listed
 
 [some_section]
 foo = "bar"
@@ -461,7 +459,7 @@ foo = "bar"
 
       result = await getOpenAIEnvironment({ useHostConfig: true } as never);
       toml = decodeConfigToml(result);
-      expect(toml).toContain('ask_for_approval = "never"');
+      expect(toml).toContain('approval_policy = "never"');
       expect(toml).not.toContain("unless-allow-listed");
     } finally {
       process.env.HOME = previousHome;
@@ -669,7 +667,7 @@ foo = "bar"
     expect(toml).toContain('requires_openai_auth = true');
     // Standard Codex defaults should still be present
     expect(toml).toContain('sandbox_mode = "danger-full-access"');
-    expect(toml).toContain('ask_for_approval = "never"');
+    expect(toml).toContain('approval_policy = "never"');
   });
 
   it("does not inject custom provider config when providerConfig is not overridden", async () => {
@@ -698,7 +696,7 @@ foo = "bar"
     expect(toml).not.toContain('[model_providers.cmux-proxy]');
   });
 
-  it("custom provider config appears at the top of config.toml", async () => {
+  it("custom provider config has correct TOML structure (top-level keys before sections)", async () => {
     const result = await getOpenAIEnvironment({
       providerConfig: {
         isOverridden: true,
@@ -707,15 +705,26 @@ foo = "bar"
     } as never);
 
     const toml = decodeConfigToml(result);
-    // model_provider should be one of the first lines
+    // model_provider should be one of the first lines (top-level key)
     const lines = toml.split("\n");
     const modelProviderIndex = lines.findIndex((l) =>
       l.includes('model_provider = "cmux-proxy"')
     );
     expect(modelProviderIndex).toBeLessThan(5);
-    // Custom provider section should come before other sections
-    const customProviderIndex = toml.indexOf("[model_providers.cmux-proxy]");
+
+    // Top-level keys (notify, sandbox_mode, approval_policy) must come BEFORE any section
+    const firstSectionIndex = toml.search(/^\[/m);
+    const notifyIndex = toml.indexOf("notify =");
+    const sandboxModeIndex = toml.indexOf("sandbox_mode =");
+    const approvalPolicyIndex = toml.indexOf("approval_policy =");
+
+    expect(notifyIndex).toBeLessThan(firstSectionIndex);
+    expect(sandboxModeIndex).toBeLessThan(firstSectionIndex);
+    expect(approvalPolicyIndex).toBeLessThan(firstSectionIndex);
+
+    // [model_providers.cmux-proxy] section should be at the END (after mcp_servers)
+    const customProviderSectionIndex = toml.indexOf("[model_providers.cmux-proxy]");
     const mcpServersIndex = toml.indexOf("[mcp_servers.");
-    expect(customProviderIndex).toBeLessThan(mcpServersIndex);
+    expect(customProviderSectionIndex).toBeGreaterThan(mcpServersIndex);
   });
 });
