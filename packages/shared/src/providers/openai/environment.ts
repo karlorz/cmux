@@ -514,11 +514,15 @@ log "Autopilot completed after \$ITER turns"
   }
 
   // Apply provider override if present (custom proxy like AnyRouter)
-  // For Codex CLI, we need to configure a custom model_provider in config.toml
-  // rather than just setting OPENAI_BASE_URL env var
+  // For Codex CLI, we need BOTH:
+  // 1. OPENAI_BASE_URL env var (for compatibility and other tools)
+  // 2. model_provider config in config.toml (required by Codex CLI for custom providers)
   const customProviderConfig = ctx.providerConfig?.isOverridden && ctx.providerConfig.baseUrl
     ? ctx.providerConfig.baseUrl
     : null;
+  if (customProviderConfig) {
+    env.OPENAI_BASE_URL = customProviderConfig;
+  }
 
   // Copy instructions.md from host and append memory protocol instructions (desktop mode)
   // For server mode, only include memory protocol instructions to avoid leaking host-specific content
