@@ -34,7 +34,9 @@ Use bun to install dependencies and run the project.
 - `--force-docker-build`: Rebuild worker image even if cached.
 
 If you make code changes, run `bun check` and fix errors after completing a task.
-After `bun check`, run `/simplify` when there are code changes or codex review progress.
+After `bun check`, if there are code changes or codex review progress, explicitly invoke a simplify tool/workflow rather than doing only an informal manual review:
+- First check whether the current agent/runtime supports the `/simplify` command; if it does, run `/simplify`.
+- Otherwise, run the portable `$simplify` skill or the agent's equivalent simplify workflow.
 
 # Backend
 

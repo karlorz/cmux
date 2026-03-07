@@ -26,6 +26,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 NC='\033[0m'
+CONDITIONAL_WAIT_TEXT="Only if you are blocked on external work and are about to poll status"
 
 assert_eq() {
   local desc="$1" expected="$2" actual="$3"
@@ -78,6 +79,7 @@ assert_log_contains() {
 cleanup_session() {
   local sid="$1"
   rm -f "/tmp/claude-autopilot-blocked-${sid}"
+  rm -f "/tmp/claude-autopilot-completed-${sid}"
   rm -f "/tmp/claude-autopilot-turns-${sid}"
   rm -f "/tmp/claude-autopilot-stop-${sid}"
   rm -f "/tmp/codex-review-fails-${sid}"
@@ -363,7 +365,9 @@ AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
 
 REASON=$(echo "$AUTOPILOT_OUTPUT" | jq -r '.reason' 2>/dev/null || echo "")
 HAS_SLEEP=$(echo "$REASON" | grep -c "sleep" || true)
+STARTS_WITH_CONTINUE=$(echo "$REASON" | grep -c "^Continue from where you left off" || true)
 assert_eq "turn 1 (work phase) has no sleep instruction" "0" "$HAS_SLEEP"
+assert_eq "turn 1 starts with continue guidance" "1" "$STARTS_WITH_CONTINUE"
 
 # Turn 4 (threshold=3, so turn 4 is monitoring phase 1): should include "sleep 30"
 echo "$INPUT_JSON" | \
@@ -391,7 +395,11 @@ AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
 
 REASON=$(echo "$AUTOPILOT_OUTPUT" | jq -r '.reason' 2>/dev/null || echo "")
 HAS_SLEEP_30=$(echo "$REASON" | grep -c "sleep 30" || true)
+HAS_CONDITIONAL_WAIT_30=$(echo "$REASON" | grep -c "$CONDITIONAL_WAIT_TEXT" || true)
+STARTS_WITH_CONTINUE=$(echo "$REASON" | grep -c "^Continue from where you left off" || true)
 assert_eq "turn 4 (monitoring phase 1) includes sleep 30" "1" "$HAS_SLEEP_30"
+assert_eq "turn 4 keeps main guidance first" "1" "$STARTS_WITH_CONTINUE"
+assert_eq "turn 4 sleep guidance is conditional" "1" "$HAS_CONDITIONAL_WAIT_30"
 
 # Turn 9 (threshold=3, so turn 9 = 3+5+1 is monitoring phase 2): should include "sleep 60"
 for i in $(seq 5 8); do
@@ -414,7 +422,75 @@ AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
 
 REASON=$(echo "$AUTOPILOT_OUTPUT" | jq -r '.reason' 2>/dev/null || echo "")
 HAS_SLEEP_60=$(echo "$REASON" | grep -c "sleep 60" || true)
+HAS_CONDITIONAL_WAIT_60=$(echo "$REASON" | grep -c "$CONDITIONAL_WAIT_TEXT" || true)
+STARTS_WITH_CONTINUE=$(echo "$REASON" | grep -c "^Continue from where you left off" || true)
 assert_eq "turn 9 (monitoring phase 2) includes sleep 60" "1" "$HAS_SLEEP_60"
+assert_eq "turn 9 keeps main guidance first" "1" "$STARTS_WITH_CONTINUE"
+assert_eq "turn 9 sleep guidance is conditional" "1" "$HAS_CONDITIONAL_WAIT_60"
+
+cleanup_session "$SID"
+
+# ============================================================================
+# Test 9: Infinite mode stays in work phase and never completes
+# ============================================================================
+echo ""
+echo -e "${YELLOW}Test 9: Infinite mode stays in work phase${NC}"
+
+SID="test-stop-hook-9"
+cleanup_session "$SID"
+
+INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":false}'
+
+for i in $(seq 1 8); do
+  AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
+    CLAUDE_AUTOPILOT=1 \
+    CLAUDE_AUTOPILOT_MAX_TURNS=-1 \
+    CLAUDE_AUTOPILOT_DELAY=0 \
+    CLAUDE_AUTOPILOT_MONITORING_THRESHOLD=3 \
+    CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
+    bash "$AUTOPILOT_HOOK" 2>/dev/null) || true
+done
+
+REASON=$(echo "$AUTOPILOT_OUTPUT" | jq -r '.reason' 2>/dev/null || echo "")
+HAS_SLEEP=$(echo "$REASON" | grep -c "sleep" || true)
+TURN_COUNT=$(cat "/tmp/claude-autopilot-turns-${SID}" 2>/dev/null || echo "")
+
+assert_eq "infinite mode has no sleep instruction after many turns" "0" "$HAS_SLEEP"
+assert_eq "infinite mode keeps incrementing turns" "8" "$TURN_COUNT"
+assert_file_exists "infinite mode keeps blocked flag set" "/tmp/claude-autopilot-blocked-${SID}"
+assert_file_not_exists "infinite mode does not write completed marker" "/tmp/claude-autopilot-completed-${SID}"
+
+cleanup_session "$SID"
+
+# ============================================================================
+# Test 10: Review-enabled prompt keeps review guidance first
+# ============================================================================
+echo ""
+echo -e "${YELLOW}Test 10: Review prompt keeps review guidance first${NC}"
+
+SID="test-stop-hook-10"
+cleanup_session "$SID"
+
+INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":false}'
+echo "7" > "/tmp/claude-autopilot-turns-${SID}"
+
+AUTOPILOT_OUTPUT=$(echo "$INPUT_JSON" | \
+  CLAUDE_AUTOPILOT=1 \
+  CLAUDE_AUTOPILOT_MAX_TURNS=10 \
+  CLAUDE_AUTOPILOT_DELAY=0 \
+  CLAUDE_AUTOPILOT_MONITORING_THRESHOLD=1 \
+  CLAUDE_PROJECT_DIR="$PROJECT_DIR" \
+  bash "$AUTOPILOT_HOOK" 2>/dev/null) || true
+
+REASON=$(echo "$AUTOPILOT_OUTPUT" | jq -r '.reason' 2>/dev/null || echo "")
+STARTS_WITH_REVIEW=$(echo "$REASON" | grep -c "^Code review is running" || true)
+HAS_SLEEP_60=$(echo "$REASON" | grep -c "sleep 60" || true)
+HAS_CONDITIONAL_WAIT=$(echo "$REASON" | grep -c "$CONDITIONAL_WAIT_TEXT" || true)
+
+assert_eq "review turn starts with review guidance" "1" "$STARTS_WITH_REVIEW"
+assert_eq "review turn keeps conditional sleep guidance" "1" "$HAS_CONDITIONAL_WAIT"
+assert_eq "review turn includes sleep 60 when monitoring" "1" "$HAS_SLEEP_60"
+assert_file_not_exists "review turn clears blocked flag" "/tmp/claude-autopilot-blocked-${SID}"
 
 cleanup_session "$SID"
 
