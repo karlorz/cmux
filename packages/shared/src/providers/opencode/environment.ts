@@ -8,6 +8,7 @@ import {
   getMemoryProtocolInstructions,
   getProjectContextFile,
 } from "../../agent-memory-protocol";
+import { buildOpencodeMcpConfig } from "../../mcp-injection";
 
 // Opencode HTTP API configuration
 export const OPENCODE_HTTP_HOST = "127.0.0.1";
@@ -446,6 +447,17 @@ ${getMemoryProtocolInstructions()}
   files.push({
     destinationPath: "/root/workspace/OPENCODE.md",
     contentBase64: Buffer.from(opencodeMdContent).toString("base64"),
+    mode: "644",
+  });
+
+  const opencodeConfig = {
+    mcp: buildOpencodeMcpConfig(ctx.mcpServerConfigs ?? []),
+  };
+  files.push({
+    destinationPath: "/root/workspace/opencode.json",
+    contentBase64: Buffer.from(
+      JSON.stringify(opencodeConfig, null, 2) + "\n",
+    ).toString("base64"),
     mode: "644",
   });
 

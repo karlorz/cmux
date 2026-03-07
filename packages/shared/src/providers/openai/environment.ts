@@ -9,6 +9,7 @@ import {
   getProjectContextFile,
   getCrossToolSymlinkCommands,
 } from "../../agent-memory-protocol";
+import { buildCodexMcpToml } from "../../mcp-injection";
 
 /**
  * Apply API keys for OpenAI Codex.
@@ -477,6 +478,12 @@ log "Autopilot completed after \$ITER turns"
     // Server mode: generate clean config without host-specific settings
     toml = `${ensureCodexDefaults("")}${generateModelMigrations()}${memoryMcpServerConfig}\n`;
   }
+
+  const userMcpToml = buildCodexMcpToml(ctx.mcpServerConfigs ?? []);
+  if (userMcpToml) {
+    toml = `${toml.trimEnd()}\n\n${userMcpToml}\n`;
+  }
+
   files.push({
     destinationPath: `$HOME/.codex/config.toml`,
     contentBase64: Buffer.from(toml).toString("base64"),

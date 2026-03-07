@@ -1680,6 +1680,40 @@ const convexSchema = defineSchema({
     .index("by_team", ["teamId", "updatedAt"])
     .index("by_team_status", ["teamId", "status", "updatedAt"])
     .index("by_team_user", ["teamId", "userId", "updatedAt"]),
+
+  // MCP server configurations (central, cloud-based MCP management)
+  // Users configure MCP servers in the web UI; these are injected into sandboxes
+  // at startup. Borrows the per-agent enable pattern from cc-switch.
+  mcpServerConfigs: defineTable({
+    // Human-readable name (used as key in agent config, e.g. "context7")
+    name: v.string(),
+    // Display name shown in UI (e.g. "Context7 Documentation")
+    displayName: v.string(),
+    // MCP server transport config (stdio)
+    command: v.string(),
+    args: v.array(v.string()),
+    // Optional environment variables for this MCP server
+    envVars: v.optional(v.record(v.string(), v.string())),
+    description: v.optional(v.string()),
+    tags: v.optional(v.array(v.string())),
+    // Per-agent enable flags (following cc-switch pattern)
+    enabledClaude: v.boolean(),
+    enabledCodex: v.boolean(),
+    enabledGemini: v.boolean(),
+    enabledOpencode: v.boolean(),
+    // Scope: global applies to all tasks, workspace scopes to a specific repo
+    scope: v.union(v.literal("global"), v.literal("workspace")),
+    // For workspace scope: the repo full name (e.g. "owner/repo")
+    projectFullName: v.optional(v.string()),
+    // Ownership
+    userId: v.string(),
+    teamId: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_team", ["teamId"])
+    .index("by_team_scope", ["teamId", "scope"])
+    .index("by_team_project", ["teamId", "projectFullName"]),
 });
 
 export default convexSchema;
