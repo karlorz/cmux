@@ -14,12 +14,23 @@ const BASE_CONTEXT = {
 
 async function decodeClaudeConfig(args?: {
   agentName?: string;
-  mcpServerConfigs?: Array<{
-    name: string;
-    command: string;
-    args: string[];
-    envVars?: Record<string, string>;
-  }>;
+  useHostConfig?: boolean;
+  mcpServerConfigs?: Array<
+    | {
+        name: string;
+        type: "stdio";
+        command: string;
+        args: string[];
+        envVars?: Record<string, string>;
+      }
+    | {
+        name: string;
+        type: "http" | "sse";
+        url: string;
+        headers?: Record<string, string>;
+        envVars?: Record<string, string>;
+      }
+  >;
 }) {
   const result = await getClaudeEnvironment({
     ...BASE_CONTEXT,
@@ -33,8 +44,11 @@ async function decodeClaudeConfig(args?: {
     mcpServers: Record<
       string,
       {
+        type?: "stdio" | "http" | "sse";
         command?: string;
         args?: string[];
+        url?: string;
+        headers?: Record<string, string>;
         env?: Record<string, string>;
       }
     >;
@@ -65,7 +79,7 @@ describe("getClaudeEnvironment", () => {
     }
   });
 
-  it("uses fallback devsh-memory MCP args when agentName is not provided", async () => {
+  it("does not read host config in server mode by default", async () => {
     const homeDir = await mkdtemp(join(tmpdir(), "cmux-claude-home-"));
     const previousHome = process.env.HOME;
     process.env.HOME = homeDir;
@@ -76,6 +90,10 @@ describe("getClaudeEnvironment", () => {
         join(homeDir, ".claude.json"),
         JSON.stringify({
           mcpServers: {
+            stale: {
+              command: "echo",
+              args: ["host-only"],
+            },
             "devsh-memory": {
               command: "npx",
               args: ["-y", "devsh-memory-mcp@latest", "--agent", "stale-agent"],
@@ -86,10 +104,44 @@ describe("getClaudeEnvironment", () => {
       );
 
       const config = await decodeClaudeConfig();
+      expect(config.mcpServers.stale).toBeUndefined();
       expect(config.mcpServers["devsh-memory"]?.args).toEqual([
         "-y",
         "devsh-memory-mcp@latest",
       ]);
+    } finally {
+      process.env.HOME = previousHome;
+      await rm(homeDir, { recursive: true, force: true });
+    }
+  });
+
+  it("reads host config in desktop mode when useHostConfig is true", async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), "cmux-claude-home-"));
+    const previousHome = process.env.HOME;
+    process.env.HOME = homeDir;
+
+    try {
+      await mkdir(join(homeDir, ".claude"), { recursive: true });
+      await writeFile(
+        join(homeDir, ".claude.json"),
+        JSON.stringify({
+          theme: "dark",
+          mcpServers: {
+            localtools: {
+              command: "node",
+              args: ["server.js"],
+            },
+          },
+        }),
+        "utf-8"
+      );
+
+      const config = await decodeClaudeConfig({ useHostConfig: true });
+      expect(config.mcpServers.localtools).toEqual({
+        command: "node",
+        args: ["server.js"],
+      });
+      expect(config.mcpServers["devsh-memory"]).toBeDefined();
     } finally {
       process.env.HOME = previousHome;
       await rm(homeDir, { recursive: true, force: true });
@@ -155,10 +207,19 @@ describe("getClaudeEnvironment", () => {
         mcpServerConfigs: [
           {
             name: "context7",
+            type: "stdio",
             command: "npx",
             args: ["-y", "@upstash/context7-mcp@latest"],
             envVars: {
               CONTEXT7_API_KEY: "token",
+            },
+          },
+          {
+            name: "remote-api",
+            type: "http",
+            url: "https://example.com/mcp",
+            headers: {
+              Authorization: "Bearer secret",
             },
           },
         ],
@@ -169,6 +230,13 @@ describe("getClaudeEnvironment", () => {
         args: ["-y", "@upstash/context7-mcp@latest"],
         env: {
           CONTEXT7_API_KEY: "token",
+        },
+      });
+      expect(config.mcpServers["remote-api"]).toEqual({
+        type: "http",
+        url: "https://example.com/mcp",
+        headers: {
+          Authorization: "Bearer secret",
         },
       });
       expect(config.mcpServers["devsh-memory"]).toBeDefined();

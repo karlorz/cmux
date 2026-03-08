@@ -36,3 +36,4 @@ export { modelsRouter } from "./models.route";
 export { providersRouter } from "./providers.route";
 export { providersStatusRouter } from "./providers.status.route";
 export { apiKeysRouter } from "./api-keys.route";
+export { mcpServersRouter } from "./mcp-servers.route";

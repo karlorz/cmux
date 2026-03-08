@@ -39,6 +39,7 @@ import { Route as LayoutTeamSlugOrIdConnectCompleteRouteImport } from './routes/
 import { Route as LayoutTeamSlugOrIdProjectsIndexRouteImport } from './routes/_layout.$teamSlugOrId.projects.index'
 import { Route as LayoutTeamSlugOrIdEnvironmentsIndexRouteImport } from './routes/_layout.$teamSlugOrId.environments.index'
 import { Route as LayoutTeamSlugOrIdTaskTaskIdRouteImport } from './routes/_layout.$teamSlugOrId.task.$taskId'
+import { Route as LayoutTeamSlugOrIdSettingsAddMcpServerRouteImport } from './routes/_layout.$teamSlugOrId.settings.add-mcp-server'
 import { Route as LayoutTeamSlugOrIdProjectsGithubRouteImport } from './routes/_layout.$teamSlugOrId.projects.github'
 import { Route as LayoutTeamSlugOrIdProjectsDashboardRouteImport } from './routes/_layout.$teamSlugOrId.projects.dashboard'
 import { Route as LayoutTeamSlugOrIdProjectsProjectIdRouteImport } from './routes/_layout.$teamSlugOrId.projects.$projectId'
@@ -220,6 +221,12 @@ const LayoutTeamSlugOrIdTaskTaskIdRoute =
     path: '/task/$taskId',
     getParentRoute: () => LayoutTeamSlugOrIdRoute,
   } as any)
+const LayoutTeamSlugOrIdSettingsAddMcpServerRoute =
+  LayoutTeamSlugOrIdSettingsAddMcpServerRouteImport.update({
+    id: '/add-mcp-server',
+    path: '/add-mcp-server',
+    getParentRoute: () => LayoutTeamSlugOrIdSettingsRoute,
+  } as any)
 const LayoutTeamSlugOrIdProjectsGithubRoute =
   LayoutTeamSlugOrIdProjectsGithubRouteImport.update({
     id: '/github',
@@ -360,7 +367,7 @@ export interface FileRoutesByFullPath {
   '/$teamSlugOrId/previews': typeof LayoutTeamSlugOrIdPreviewsRoute
   '/$teamSlugOrId/projects': typeof LayoutTeamSlugOrIdProjectsRouteWithChildren
   '/$teamSlugOrId/prs': typeof LayoutTeamSlugOrIdPrsRouteWithChildren
-  '/$teamSlugOrId/settings': typeof LayoutTeamSlugOrIdSettingsRoute
+  '/$teamSlugOrId/settings': typeof LayoutTeamSlugOrIdSettingsRouteWithChildren
   '/$teamSlugOrId/workspaces': typeof LayoutTeamSlugOrIdWorkspacesRoute
   '/$teamSlugOrId/environments/$environmentId': typeof LayoutTeamSlugOrIdEnvironmentsEnvironmentIdRoute
   '/$teamSlugOrId/environments/new': typeof LayoutTeamSlugOrIdEnvironmentsNewRoute
@@ -368,6 +375,7 @@ export interface FileRoutesByFullPath {
   '/$teamSlugOrId/projects/$projectId': typeof LayoutTeamSlugOrIdProjectsProjectIdRoute
   '/$teamSlugOrId/projects/dashboard': typeof LayoutTeamSlugOrIdProjectsDashboardRoute
   '/$teamSlugOrId/projects/github': typeof LayoutTeamSlugOrIdProjectsGithubRoute
+  '/$teamSlugOrId/settings/add-mcp-server': typeof LayoutTeamSlugOrIdSettingsAddMcpServerRoute
   '/$teamSlugOrId/task/$taskId': typeof LayoutTeamSlugOrIdTaskTaskIdRouteWithChildren
   '/$teamSlugOrId/environments/': typeof LayoutTeamSlugOrIdEnvironmentsIndexRoute
   '/$teamSlugOrId/projects/': typeof LayoutTeamSlugOrIdProjectsIndexRoute
@@ -408,7 +416,7 @@ export interface FileRoutesByTo {
   '/$teamSlugOrId/orchestration': typeof LayoutTeamSlugOrIdOrchestrationRoute
   '/$teamSlugOrId/previews': typeof LayoutTeamSlugOrIdPreviewsRoute
   '/$teamSlugOrId/prs': typeof LayoutTeamSlugOrIdPrsRouteWithChildren
-  '/$teamSlugOrId/settings': typeof LayoutTeamSlugOrIdSettingsRoute
+  '/$teamSlugOrId/settings': typeof LayoutTeamSlugOrIdSettingsRouteWithChildren
   '/$teamSlugOrId/workspaces': typeof LayoutTeamSlugOrIdWorkspacesRoute
   '/$teamSlugOrId/environments/$environmentId': typeof LayoutTeamSlugOrIdEnvironmentsEnvironmentIdRoute
   '/$teamSlugOrId/environments/new': typeof LayoutTeamSlugOrIdEnvironmentsNewRoute
@@ -416,6 +424,7 @@ export interface FileRoutesByTo {
   '/$teamSlugOrId/projects/$projectId': typeof LayoutTeamSlugOrIdProjectsProjectIdRoute
   '/$teamSlugOrId/projects/dashboard': typeof LayoutTeamSlugOrIdProjectsDashboardRoute
   '/$teamSlugOrId/projects/github': typeof LayoutTeamSlugOrIdProjectsGithubRoute
+  '/$teamSlugOrId/settings/add-mcp-server': typeof LayoutTeamSlugOrIdSettingsAddMcpServerRoute
   '/$teamSlugOrId/environments': typeof LayoutTeamSlugOrIdEnvironmentsIndexRoute
   '/$teamSlugOrId/projects': typeof LayoutTeamSlugOrIdProjectsIndexRoute
   '/$teamSlugOrId/projects/detail/$projectId': typeof LayoutTeamSlugOrIdProjectsDetailProjectIdRoute
@@ -459,7 +468,7 @@ export interface FileRoutesById {
   '/_layout/$teamSlugOrId/previews': typeof LayoutTeamSlugOrIdPreviewsRoute
   '/_layout/$teamSlugOrId/projects': typeof LayoutTeamSlugOrIdProjectsRouteWithChildren
   '/_layout/$teamSlugOrId/prs': typeof LayoutTeamSlugOrIdPrsRouteWithChildren
-  '/_layout/$teamSlugOrId/settings': typeof LayoutTeamSlugOrIdSettingsRoute
+  '/_layout/$teamSlugOrId/settings': typeof LayoutTeamSlugOrIdSettingsRouteWithChildren
   '/_layout/$teamSlugOrId/workspaces': typeof LayoutTeamSlugOrIdWorkspacesRoute
   '/_layout/$teamSlugOrId/environments/$environmentId': typeof LayoutTeamSlugOrIdEnvironmentsEnvironmentIdRoute
   '/_layout/$teamSlugOrId/environments/new': typeof LayoutTeamSlugOrIdEnvironmentsNewRoute
@@ -467,6 +476,7 @@ export interface FileRoutesById {
   '/_layout/$teamSlugOrId/projects/$projectId': typeof LayoutTeamSlugOrIdProjectsProjectIdRoute
   '/_layout/$teamSlugOrId/projects/dashboard': typeof LayoutTeamSlugOrIdProjectsDashboardRoute
   '/_layout/$teamSlugOrId/projects/github': typeof LayoutTeamSlugOrIdProjectsGithubRoute
+  '/_layout/$teamSlugOrId/settings/add-mcp-server': typeof LayoutTeamSlugOrIdSettingsAddMcpServerRoute
   '/_layout/$teamSlugOrId/task/$taskId': typeof LayoutTeamSlugOrIdTaskTaskIdRouteWithChildren
   '/_layout/$teamSlugOrId/environments/': typeof LayoutTeamSlugOrIdEnvironmentsIndexRoute
   '/_layout/$teamSlugOrId/projects/': typeof LayoutTeamSlugOrIdProjectsIndexRoute
@@ -519,6 +529,7 @@ export interface FileRouteTypes {
     | '/$teamSlugOrId/projects/$projectId'
     | '/$teamSlugOrId/projects/dashboard'
     | '/$teamSlugOrId/projects/github'
+    | '/$teamSlugOrId/settings/add-mcp-server'
     | '/$teamSlugOrId/task/$taskId'
     | '/$teamSlugOrId/environments/'
     | '/$teamSlugOrId/projects/'
@@ -567,6 +578,7 @@ export interface FileRouteTypes {
     | '/$teamSlugOrId/projects/$projectId'
     | '/$teamSlugOrId/projects/dashboard'
     | '/$teamSlugOrId/projects/github'
+    | '/$teamSlugOrId/settings/add-mcp-server'
     | '/$teamSlugOrId/environments'
     | '/$teamSlugOrId/projects'
     | '/$teamSlugOrId/projects/detail/$projectId'
@@ -617,6 +629,7 @@ export interface FileRouteTypes {
     | '/_layout/$teamSlugOrId/projects/$projectId'
     | '/_layout/$teamSlugOrId/projects/dashboard'
     | '/_layout/$teamSlugOrId/projects/github'
+    | '/_layout/$teamSlugOrId/settings/add-mcp-server'
     | '/_layout/$teamSlugOrId/task/$taskId'
     | '/_layout/$teamSlugOrId/environments/'
     | '/_layout/$teamSlugOrId/projects/'
@@ -861,6 +874,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutTeamSlugOrIdTaskTaskIdRouteImport
       parentRoute: typeof LayoutTeamSlugOrIdRoute
     }
+    '/_layout/$teamSlugOrId/settings/add-mcp-server': {
+      id: '/_layout/$teamSlugOrId/settings/add-mcp-server'
+      path: '/add-mcp-server'
+      fullPath: '/$teamSlugOrId/settings/add-mcp-server'
+      preLoaderRoute: typeof LayoutTeamSlugOrIdSettingsAddMcpServerRouteImport
+      parentRoute: typeof LayoutTeamSlugOrIdSettingsRoute
+    }
     '/_layout/$teamSlugOrId/projects/github': {
       id: '/_layout/$teamSlugOrId/projects/github'
       path: '/github'
@@ -1061,6 +1081,21 @@ const LayoutTeamSlugOrIdPrsRouteWithChildren =
     LayoutTeamSlugOrIdPrsRouteChildren,
   )
 
+interface LayoutTeamSlugOrIdSettingsRouteChildren {
+  LayoutTeamSlugOrIdSettingsAddMcpServerRoute: typeof LayoutTeamSlugOrIdSettingsAddMcpServerRoute
+}
+
+const LayoutTeamSlugOrIdSettingsRouteChildren: LayoutTeamSlugOrIdSettingsRouteChildren =
+  {
+    LayoutTeamSlugOrIdSettingsAddMcpServerRoute:
+      LayoutTeamSlugOrIdSettingsAddMcpServerRoute,
+  }
+
+const LayoutTeamSlugOrIdSettingsRouteWithChildren =
+  LayoutTeamSlugOrIdSettingsRoute._addFileChildren(
+    LayoutTeamSlugOrIdSettingsRouteChildren,
+  )
+
 interface LayoutTeamSlugOrIdTaskTaskIdRouteChildren {
   LayoutTeamSlugOrIdTaskTaskIdIndexRoute: typeof LayoutTeamSlugOrIdTaskTaskIdIndexRoute
   LayoutTeamSlugOrIdTaskTaskIdRunRunIdBrowserRoute: typeof LayoutTeamSlugOrIdTaskTaskIdRunRunIdBrowserRoute
@@ -1114,7 +1149,7 @@ interface LayoutTeamSlugOrIdRouteChildren {
   LayoutTeamSlugOrIdPreviewsRoute: typeof LayoutTeamSlugOrIdPreviewsRoute
   LayoutTeamSlugOrIdProjectsRoute: typeof LayoutTeamSlugOrIdProjectsRouteWithChildren
   LayoutTeamSlugOrIdPrsRoute: typeof LayoutTeamSlugOrIdPrsRouteWithChildren
-  LayoutTeamSlugOrIdSettingsRoute: typeof LayoutTeamSlugOrIdSettingsRoute
+  LayoutTeamSlugOrIdSettingsRoute: typeof LayoutTeamSlugOrIdSettingsRouteWithChildren
   LayoutTeamSlugOrIdWorkspacesRoute: typeof LayoutTeamSlugOrIdWorkspacesRoute
   LayoutTeamSlugOrIdTaskTaskIdRoute: typeof LayoutTeamSlugOrIdTaskTaskIdRouteWithChildren
   LayoutTeamSlugOrIdPrsOnlyOwnerRepoNumberRoute: typeof LayoutTeamSlugOrIdPrsOnlyOwnerRepoNumberRoute
@@ -1133,7 +1168,7 @@ const LayoutTeamSlugOrIdRouteChildren: LayoutTeamSlugOrIdRouteChildren = {
   LayoutTeamSlugOrIdPreviewsRoute: LayoutTeamSlugOrIdPreviewsRoute,
   LayoutTeamSlugOrIdProjectsRoute: LayoutTeamSlugOrIdProjectsRouteWithChildren,
   LayoutTeamSlugOrIdPrsRoute: LayoutTeamSlugOrIdPrsRouteWithChildren,
-  LayoutTeamSlugOrIdSettingsRoute: LayoutTeamSlugOrIdSettingsRoute,
+  LayoutTeamSlugOrIdSettingsRoute: LayoutTeamSlugOrIdSettingsRouteWithChildren,
   LayoutTeamSlugOrIdWorkspacesRoute: LayoutTeamSlugOrIdWorkspacesRoute,
   LayoutTeamSlugOrIdTaskTaskIdRoute:
     LayoutTeamSlugOrIdTaskTaskIdRouteWithChildren,
