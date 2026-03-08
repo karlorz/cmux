@@ -4,14 +4,14 @@
 
 set -euo pipefail
 
-# Master enable: opt-in via CLAUDE_AUTOPILOT=1 or CLAUDE_AUTOPILOT_MAX_TURNS=-1
-# Setting MAX_TURNS=-1 (infinite mode) implicitly enables autopilot
-if [ "${CLAUDE_AUTOPILOT:-}" != "1" ] && [ "${CLAUDE_AUTOPILOT_MAX_TURNS:-}" != "-1" ]; then
+# Disable override: AUTOPILOT_KEEP_RUNNING_DISABLED=1 disables autopilot
+if [ "${AUTOPILOT_KEEP_RUNNING_DISABLED:-}" = "1" ]; then
   exit 0
 fi
 
-# Disable override (follows existing convention)
-if [ "${AUTOPILOT_KEEP_RUNNING_DISABLED:-}" = "1" ]; then
+# Autopilot is enabled by default when this hook is installed
+# CLAUDE_AUTOPILOT=0 explicitly disables it (for testing/debugging)
+if [ "${CLAUDE_AUTOPILOT:-1}" = "0" ]; then
   exit 0
 fi
 
