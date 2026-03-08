@@ -10,6 +10,10 @@ if (SENTRY_ELECTRON_DSN) {
 
 import { electronAPI } from "@electron-toolkit/preload";
 import { contextBridge, ipcRenderer } from "electron";
+import {
+  MCP_HOST_CONFIG_IPC_CHANNELS,
+  type HostMcpFileResult,
+} from "../main/mcp-host-config";
 import type {
   ElectronDevToolsMode,
   ElectronWebContentsEvent,
@@ -219,6 +223,14 @@ const cmuxAPI = {
           }
         | { ok: false; error: string }
       >,
+  },
+  mcpHostConfig: {
+    readClaudeJson: () =>
+      ipcRenderer.invoke(MCP_HOST_CONFIG_IPC_CHANNELS.readClaudeJson) as Promise<HostMcpFileResult>,
+    readCodexToml: () =>
+      ipcRenderer.invoke(MCP_HOST_CONFIG_IPC_CHANNELS.readCodexToml) as Promise<HostMcpFileResult>,
+    readOpencodeJson: () =>
+      ipcRenderer.invoke(MCP_HOST_CONFIG_IPC_CHANNELS.readOpencodeJson) as Promise<HostMcpFileResult>,
   },
   webContentsView: {
     create: (options: {

@@ -130,6 +130,10 @@
       "import": "./src/providers/openai/environment.ts",
       "types": "./src/providers/openai/environment.ts"
     },
+    "./providers/opencode/environment": {
+      "import": "./src/providers/opencode/environment.ts",
+      "types": "./src/providers/opencode/environment.ts"
+    },
     "./screenshots/sanitize-markdown": {
       "import": "./src/screenshots/sanitize-markdown.ts",
       "types": "./src/screenshots/sanitize-markdown.ts"

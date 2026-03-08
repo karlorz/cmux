@@ -486,13 +486,17 @@ foo = "bar"
       mcpServerConfigs: [
         {
           name: "context7",
+          type: "stdio",
           command: "npx",
           args: ["-y", "@upstash/context7-mcp@latest"],
         },
         {
           name: "my-server",
-          command: "bunx",
-          args: ["local-mcp"],
+          type: "http",
+          url: "https://mcp.example.com/http",
+          headers: {
+            Authorization: "Bearer secret",
+          },
           envVars: {
             API_TOKEN: "secret",
           },
@@ -503,6 +507,10 @@ foo = "bar"
     const toml = decodeConfigToml(result);
     expect(toml).toContain("[mcp_servers.context7]");
     expect(toml).toContain('[mcp_servers."my-server"]');
+    expect(toml).toContain('type = "http"');
+    expect(toml).toContain('url = "https://mcp.example.com/http"');
+    expect(toml).toContain('[mcp_servers."my-server".headers]');
+    expect(toml).toContain('Authorization = "Bearer secret"');
     expect(toml).toContain('[mcp_servers."my-server".env]');
     expect(toml).toContain('API_TOKEN = "secret"');
     expect(toml.indexOf("[mcp_servers.devsh-memory]")).toBeLessThan(
@@ -668,6 +676,37 @@ foo = "bar"
     // Standard Codex defaults should still be present
     expect(toml).toContain('sandbox_mode = "danger-full-access"');
     expect(toml).toContain('approval_policy = "never"');
+  });
+
+  it("preserves managed MCP blocks when injecting custom provider config", async () => {
+    const result = await getOpenAIEnvironment({
+      agentName: "codex/gpt-5.3-codex-xhigh",
+      mcpServerConfigs: [
+        {
+          name: "context7",
+          type: "stdio",
+          command: "npx",
+          args: ["-y", "@upstash/context7-mcp@latest"],
+          envVars: { CONTEXT7_API_KEY: "token" },
+        },
+      ],
+      providerConfig: {
+        isOverridden: true,
+        baseUrl: "https://cliapi.karldigi.dev/v1",
+      },
+    } as never);
+
+    const toml = decodeConfigToml(result);
+    expect(toml).toContain('[mcp_servers.context7]');
+    expect(toml).toContain('command = "npx"');
+    expect(toml).toContain('args = ["-y","@upstash/context7-mcp@latest"]');
+    expect(toml).toContain('[mcp_servers.context7.env]');
+    expect(toml).toContain('CONTEXT7_API_KEY = "token"');
+    expect(toml).toContain('[mcp_servers.devsh-memory]');
+    expect(toml).toContain(
+      'args = ["-y","devsh-memory-mcp@latest","--agent","codex/gpt-5.3-codex-xhigh"]',
+    );
+    expect(toml).toContain('[model_providers.cmux-proxy]');
   });
 
   it("does not inject custom provider config when providerConfig is not overridden", async () => {

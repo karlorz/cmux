@@ -119,10 +119,19 @@ describe("getGeminiEnvironment", () => {
         mcpServerConfigs: [
           {
             name: "context7",
+            type: "stdio",
             command: "npx",
             args: ["-y", "@upstash/context7-mcp@latest"],
             envVars: {
               CONTEXT7_API_KEY: "token",
+            },
+          },
+          {
+            name: "remote-api",
+            type: "sse",
+            url: "https://example.com/sse",
+            headers: {
+              Authorization: "Bearer token",
             },
           },
         ],
@@ -145,6 +154,13 @@ describe("getGeminiEnvironment", () => {
           args: ["-y", "@upstash/context7-mcp@latest"],
           env: {
             CONTEXT7_API_KEY: "token",
+          },
+        },
+        "remote-api": {
+          type: "sse",
+          url: "https://example.com/sse",
+          headers: {
+            Authorization: "Bearer token",
           },
         },
       });

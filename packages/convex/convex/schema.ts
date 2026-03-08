@@ -1689,9 +1689,12 @@ const convexSchema = defineSchema({
     name: v.string(),
     // Display name shown in UI (e.g. "Context7 Documentation")
     displayName: v.string(),
-    // MCP server transport config (stdio)
-    command: v.string(),
-    args: v.array(v.string()),
+    // MCP server transport config. Older records may omit type and should be treated as stdio.
+    type: v.optional(v.union(v.literal("stdio"), v.literal("http"), v.literal("sse"))),
+    command: v.optional(v.string()),
+    args: v.optional(v.array(v.string())),
+    url: v.optional(v.string()),
+    headers: v.optional(v.record(v.string(), v.string())),
     // Optional environment variables for this MCP server
     envVars: v.optional(v.record(v.string(), v.string())),
     description: v.optional(v.string()),

@@ -1749,6 +1749,168 @@ export type UpsertApiKeyBody = {
     description?: string;
 };
 
+export type McpServerScope = 'global' | 'workspace';
+
+export type McpServerStdioConfig = {
+    _id: string;
+    name: string;
+    displayName: string;
+    hasEnvVars?: boolean;
+    envVarKeys?: Array<string>;
+    description?: string;
+    tags?: Array<string>;
+    enabledClaude: boolean;
+    enabledCodex: boolean;
+    enabledGemini: boolean;
+    enabledOpencode: boolean;
+    scope: McpServerScope;
+    projectFullName?: string;
+    createdAt: number;
+    updatedAt: number;
+    type: 'stdio';
+    command: string;
+    args: Array<string>;
+};
+
+export type McpServerHttpConfig = {
+    _id: string;
+    name: string;
+    displayName: string;
+    hasEnvVars?: boolean;
+    envVarKeys?: Array<string>;
+    description?: string;
+    tags?: Array<string>;
+    enabledClaude: boolean;
+    enabledCodex: boolean;
+    enabledGemini: boolean;
+    enabledOpencode: boolean;
+    scope: McpServerScope;
+    projectFullName?: string;
+    createdAt: number;
+    updatedAt: number;
+    type: 'http';
+    url: string;
+    headers?: {
+        [key: string]: string;
+    };
+};
+
+export type McpServerSseConfig = {
+    _id: string;
+    name: string;
+    displayName: string;
+    hasEnvVars?: boolean;
+    envVarKeys?: Array<string>;
+    description?: string;
+    tags?: Array<string>;
+    enabledClaude: boolean;
+    enabledCodex: boolean;
+    enabledGemini: boolean;
+    enabledOpencode: boolean;
+    scope: McpServerScope;
+    projectFullName?: string;
+    createdAt: number;
+    updatedAt: number;
+    type: 'sse';
+    url: string;
+    headers?: {
+        [key: string]: string;
+    };
+};
+
+export type McpServerConfig = ({
+    type: 'stdio';
+} & McpServerStdioConfig) | ({
+    type: 'http';
+} & McpServerHttpConfig) | ({
+    type: 'sse';
+} & McpServerSseConfig);
+
+export type McpServerPresetSupportedAgents = {
+    claude: boolean;
+    codex: boolean;
+    gemini: boolean;
+    opencode: boolean;
+};
+
+export type McpServerPreset = {
+    name: string;
+    displayName: string;
+    description: string;
+    type: 'stdio';
+    command: string;
+    args: Array<string>;
+    tags: Array<string>;
+    supportedAgents: McpServerPresetSupportedAgents;
+};
+
+export type McpServersListResponse = {
+    configs: Array<McpServerConfig>;
+    presets: Array<McpServerPreset>;
+};
+
+export type McpServerSuccessResponse = {
+    success: boolean;
+    id?: string;
+};
+
+export type UpsertMcpServerBody = {
+    name: string;
+    displayName: string;
+    type?: 'stdio';
+    command: string;
+    args?: Array<string>;
+    envVars?: {
+        [key: string]: string;
+    };
+    description?: string;
+    tags?: Array<string>;
+    enabledClaude: boolean;
+    enabledCodex: boolean;
+    enabledGemini: boolean;
+    enabledOpencode: boolean;
+    scope: McpServerScope;
+    projectFullName?: string;
+} | {
+    type: 'http';
+    name: string;
+    displayName: string;
+    url: string;
+    headers?: {
+        [key: string]: string;
+    };
+    envVars?: {
+        [key: string]: string;
+    };
+    description?: string;
+    tags?: Array<string>;
+    enabledClaude: boolean;
+    enabledCodex: boolean;
+    enabledGemini: boolean;
+    enabledOpencode: boolean;
+    scope: McpServerScope;
+    projectFullName?: string;
+} | {
+    type: 'sse';
+    name: string;
+    displayName: string;
+    url: string;
+    headers?: {
+        [key: string]: string;
+    };
+    envVars?: {
+        [key: string]: string;
+    };
+    description?: string;
+    tags?: Array<string>;
+    enabledClaude: boolean;
+    enabledCodex: boolean;
+    enabledGemini: boolean;
+    enabledOpencode: boolean;
+    scope: McpServerScope;
+    projectFullName?: string;
+};
+
 export type GetApiHealthData = {
     body?: never;
     path?: never;
@@ -6223,6 +6385,88 @@ export type DeleteApiApiKeysByEnvVarResponses = {
 };
 
 export type DeleteApiApiKeysByEnvVarResponse = DeleteApiApiKeysByEnvVarResponses[keyof DeleteApiApiKeysByEnvVarResponses];
+
+export type GetApiMcpServersData = {
+    body?: never;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+        scope?: McpServerScope;
+        projectFullName?: string;
+    };
+    url: '/api/mcp-servers';
+};
+
+export type GetApiMcpServersErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetApiMcpServersResponses = {
+    /**
+     * List of MCP server configs and presets
+     */
+    200: McpServersListResponse;
+};
+
+export type GetApiMcpServersResponse = GetApiMcpServersResponses[keyof GetApiMcpServersResponses];
+
+export type PostApiMcpServersData = {
+    body: UpsertMcpServerBody;
+    path?: never;
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/mcp-servers';
+};
+
+export type PostApiMcpServersErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostApiMcpServersResponses = {
+    /**
+     * Configuration saved
+     */
+    200: McpServerSuccessResponse;
+};
+
+export type PostApiMcpServersResponse = PostApiMcpServersResponses[keyof PostApiMcpServersResponses];
+
+export type DeleteApiMcpServersByIdData = {
+    body?: never;
+    path: {
+        /**
+         * MCP server config document ID
+         */
+        id: string;
+    };
+    query: {
+        teamSlugOrId: string;
+    };
+    url: '/api/mcp-servers/{id}';
+};
+
+export type DeleteApiMcpServersByIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type DeleteApiMcpServersByIdResponses = {
+    /**
+     * Configuration deleted
+     */
+    200: McpServerSuccessResponse;
+};
+
+export type DeleteApiMcpServersByIdResponse = DeleteApiMcpServersByIdResponses[keyof DeleteApiMcpServersByIdResponses];
 
 export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});

@@ -12,12 +12,18 @@ User focus (optional): $ARGUMENTS
 
 ## Auto-collected context
 
-### Codex review (mandatory - run via Bash tool)
+### Codex review (mandatory - run via Bash tool with background polling)
 
-You MUST run these codex reviews using the Bash tool with timeout=120000. Do NOT skip this step.
+You MUST run these codex reviews. Do NOT skip this step.
 
-Step 1 - Committed changes: run .claude/scripts/codex-review-extract.sh --base main
-Step 2 - Uncommitted changes: first check git status --porcelain. If non-empty, run .claude/scripts/codex-review-extract.sh --uncommitted. If clean, skip.
+**Step 1 - Committed changes:**
+1. Run in background: `.claude/scripts/codex-review-extract.sh --base main` using Bash with `run_in_background: true`
+2. Use TaskOutput with `block: true, timeout: 300000` (5 minutes) to wait for completion
+3. If timeout occurs, use TaskStop to kill the task and report timeout
+
+**Step 2 - Uncommitted changes:**
+1. First check `git status --porcelain`. If empty, skip this step.
+2. If non-empty, run `.claude/scripts/codex-review-extract.sh --uncommitted` same way as Step 1
 
 ### Current branch changed files
 !`cd "$CLAUDE_PROJECT_DIR" && git diff --name-only main...HEAD`
