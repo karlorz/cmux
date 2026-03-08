@@ -65,6 +65,7 @@ import {
   MCP_HOST_CONFIG_IPC_CHANNELS,
   readClaudeJsonConfig,
   readCodexTomlConfig,
+  readOpencodeJsonConfig,
   type HostMcpFileResult,
 } from "./mcp-host-config";
 
@@ -591,6 +592,10 @@ function registerMcpHostConfigIpcHandlers(): void {
   ipcMain.handle(
     MCP_HOST_CONFIG_IPC_CHANNELS.readCodexToml,
     (): Promise<HostMcpFileResult> => readCodexTomlConfig(),
+  );
+  ipcMain.handle(
+    MCP_HOST_CONFIG_IPC_CHANNELS.readOpencodeJson,
+    (): Promise<HostMcpFileResult> => readOpencodeJsonConfig(),
   );
 }
 

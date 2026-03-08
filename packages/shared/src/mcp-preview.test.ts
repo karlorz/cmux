@@ -4,6 +4,7 @@ import {
   buildMergedClaudePreview,
   buildMergedCodexConfigToml,
   buildMergedCodexPreview,
+  buildMergedOpencodePreview,
   previewOpencodeMcpServers,
 } from "./mcp-preview";
 import type { McpServerConfig } from "./mcp-server-config";
@@ -265,6 +266,65 @@ Authorization = "Bearer host-secret"
     expect(toml).toContain('[mcp_servers.devsh-memory]');
     expect(toml).not.toContain('notify = ["/root/lifecycle/codex-notify.sh"]');
     expect(toml).not.toContain('approval_policy = "never"');
+  });
+});
+
+describe("buildMergedOpencodePreview", () => {
+  it("preserves host OpenCode MCP entries when cloud config uses the same name", () => {
+    const preview = buildMergedOpencodePreview({
+      hostConfigText: JSON.stringify({
+        theme: "dark",
+        mcp: {
+          context7: {
+            type: "local",
+            command: ["echo", "host"],
+            enabled: true,
+          },
+        },
+      }),
+      mcpServerConfigs: [STDIO_CONFIG],
+      agentName: "opencode/sonnet-4",
+    });
+
+    expect(JSON.parse(preview)).toEqual({
+      mcp: {
+        context7: {
+          type: "local",
+          command: ["echo", "host"],
+          enabled: true,
+        },
+        "devsh-memory": {
+          type: "local",
+          command: ["npx", "-y", "devsh-memory-mcp@latest", "--agent", "opencode/sonnet-4"],
+          enabled: true,
+        },
+      },
+    });
+  });
+
+  it("falls back cleanly when the OpenCode host file is missing", () => {
+    expect(
+      JSON.parse(
+        buildMergedOpencodePreview({
+          hostConfigText: undefined,
+          mcpServerConfigs: [STDIO_CONFIG],
+        }),
+      ),
+    ).toEqual({
+      mcp: {
+        context7: {
+          type: "local",
+          command: ["npx", "-y", "@upstash/context7-mcp@latest"],
+          enabled: true,
+          environment: { CONTEXT7_API_KEY: "[REDACTED]" },
+        },
+        "devsh-memory": {
+          type: "local",
+          command: ["npx", "-y", "devsh-memory-mcp@latest"],
+          enabled: true,
+        },
+      },
+    });
   });
 });
 

@@ -51,13 +51,7 @@ type JsonValue =
 
 type JsonObject = { [key: string]: JsonValue };
 
-export type BuildMergedClaudePreviewOptions = {
-  hostConfigText?: string;
-  mcpServerConfigs: McpServerConfig[];
-  agentName?: string;
-};
-
-export type BuildMergedCodexPreviewOptions = {
+export type BuildMergedPreviewOptions = {
   hostConfigText?: string;
   mcpServerConfigs: McpServerConfig[];
   agentName?: string;
@@ -102,6 +96,11 @@ function parseHostClaudeConfig(hostConfigText?: string): JsonObject {
   } catch {
     return {};
   }
+}
+
+function getExistingOpencodeMcpServers(config: JsonObject): JsonObject {
+  const mcpServers = config.mcp;
+  return isJsonObject(mcpServers) ? mcpServers : {};
 }
 
 function getExistingClaudeMcpServers(config: JsonObject): JsonObject {
@@ -188,7 +187,7 @@ function redactJsonValue(
 
   if (Array.isArray(value)) {
     const currentKey = path[path.length - 1];
-    if (currentKey === "args" && isStringArray(value)) {
+    if ((currentKey === "args" || currentKey === "command") && isStringArray(value)) {
       return redactArgsArray(value);
     }
 
@@ -204,7 +203,11 @@ function redactJsonValue(
   return Object.fromEntries(
     Object.entries(value).map(([key, childValue]) => {
       const nextForceRedactStrings =
-        forceRedactStrings || key === "env" || key === "headers" || isSensitiveKey(key);
+        forceRedactStrings ||
+        key === "env" ||
+        key === "environment" ||
+        key === "headers" ||
+        isSensitiveKey(key);
       return [key, redactJsonValue(childValue, [...path, key], nextForceRedactStrings)];
     }),
   );
@@ -341,7 +344,7 @@ function redactCodexPreviewToml(toml: string): string {
 }
 
 export function buildMergedClaudeConfig(
-  options: BuildMergedClaudePreviewOptions,
+  options: BuildMergedPreviewOptions,
 ): JsonObject {
   const existingConfig = parseHostClaudeConfig(options.hostConfigText);
   const existingMcpServers = getExistingClaudeMcpServers(existingConfig);
@@ -357,7 +360,7 @@ export function buildMergedClaudeConfig(
 }
 
 export function buildMergedClaudePreview(
-  options: BuildMergedClaudePreviewOptions,
+  options: BuildMergedPreviewOptions,
 ): string {
   const mergedConfig = buildMergedClaudeConfig(options);
   const previewConfig = {
@@ -460,7 +463,7 @@ export function ensureManagedMemoryMcpServerConfig(
 }
 
 export function buildMergedCodexConfigToml(
-  options: BuildMergedCodexPreviewOptions,
+  options: BuildMergedPreviewOptions,
 ): string {
   const filteredToml = stripFilteredConfigKeys(options.hostConfigText ?? "");
   let toml = ensureCodexDefaults(filteredToml);
@@ -493,11 +496,30 @@ export function buildMergedCodexConfigToml(
 }
 
 export function buildMergedCodexPreview(
-  options: BuildMergedCodexPreviewOptions,
+  options: BuildMergedPreviewOptions,
 ): string {
   const mergedToml = buildMergedCodexConfigToml(options);
   const mcpSections = extractMcpServerSections(mergedToml);
   return redactCodexPreviewToml(mcpSections);
+}
+
+export function buildMergedOpencodePreview(
+  options: BuildMergedPreviewOptions,
+): string {
+  const existingConfig = parseHostClaudeConfig(options.hostConfigText);
+  const existingMcpServers = getExistingOpencodeMcpServers(existingConfig);
+  const mergedConfig = {
+    ...existingConfig,
+    mcp: {
+      ...buildOpencodeMcpConfig(options.mcpServerConfigs, options.agentName),
+      ...existingMcpServers,
+    },
+  } satisfies JsonObject;
+  const previewConfig = {
+    mcp: redactJsonObject(getExistingOpencodeMcpServers(mergedConfig)),
+  };
+
+  return JSON.stringify(previewConfig, null, 2);
 }
 
 export function previewOpencodeMcpServers(

@@ -4,6 +4,7 @@
  * Exposes narrow, read-only access to:
  *   - ~/.claude.json   (Claude Code global config, JSON)
  *   - ~/.codex/config.toml  (Codex CLI config, TOML)
+ *   - ~/.config/opencode/opencode.json (OpenCode config, JSON)
  *
  * Returns raw file contents so that the renderer/shared layer can parse and
  * merge them without pulling Node fs APIs across the context bridge.
@@ -16,6 +17,7 @@ import path from "node:path";
 export const MCP_HOST_CONFIG_IPC_CHANNELS = {
   readClaudeJson: "cmux:mcp-host-config:read-claude-json",
   readCodexToml: "cmux:mcp-host-config:read-codex-toml",
+  readOpencodeJson: "cmux:mcp-host-config:read-opencode-json",
 } as const;
 
 export interface HostMcpFileResult {
@@ -52,4 +54,11 @@ export function readClaudeJsonConfig(): Promise<HostMcpFileResult> {
  */
 export function readCodexTomlConfig(): Promise<HostMcpFileResult> {
   return safeReadFile(path.join(homedir(), ".codex", "config.toml"));
+}
+
+/**
+ * Read ~/.config/opencode/opencode.json (OpenCode config).
+ */
+export function readOpencodeJsonConfig(): Promise<HostMcpFileResult> {
+  return safeReadFile(path.join(homedir(), ".config", "opencode", "opencode.json"));
 }

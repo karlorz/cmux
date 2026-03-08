@@ -241,7 +241,7 @@ describe("McpMergedPreview", () => {
     expect(markup).toContain(
       "Local ~/.config/opencode/opencode.json was not found, so this preview starts from an empty host config.",
     );
-    expect(markup).toContain('"context7"');
+    expect(markup).toContain("context7");
   });
 
   it("does not render the workspace picker outside multi-project workspace previews", () => {

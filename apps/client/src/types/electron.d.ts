@@ -96,6 +96,7 @@ export interface HostMcpFileResult {
 interface CmuxMcpHostConfigAPI {
   readClaudeJson: () => Promise<HostMcpFileResult>;
   readCodexToml: () => Promise<HostMcpFileResult>;
+  readOpencodeJson: () => Promise<HostMcpFileResult>;
 }
 
 export interface CmuxAPI {

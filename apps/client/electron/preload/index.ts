@@ -229,6 +229,8 @@ const cmuxAPI = {
       ipcRenderer.invoke(MCP_HOST_CONFIG_IPC_CHANNELS.readClaudeJson) as Promise<HostMcpFileResult>,
     readCodexToml: () =>
       ipcRenderer.invoke(MCP_HOST_CONFIG_IPC_CHANNELS.readCodexToml) as Promise<HostMcpFileResult>,
+    readOpencodeJson: () =>
+      ipcRenderer.invoke(MCP_HOST_CONFIG_IPC_CHANNELS.readOpencodeJson) as Promise<HostMcpFileResult>,
   },
   webContentsView: {
     create: (options: {

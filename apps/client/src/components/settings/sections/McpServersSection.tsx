@@ -41,7 +41,7 @@ import { api } from "@cmux/convex/api";
 import {
   buildMergedClaudePreview,
   buildMergedCodexPreview,
-  previewOpencodeMcpServers,
+  buildMergedOpencodePreview,
 } from "@cmux/shared";
 import { convexQuery } from "@convex-dev/react-query";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -91,6 +91,15 @@ export function McpServersSection({
     queryFn: async () => {
       const bridge = getElectronBridge();
       return bridge?.mcpHostConfig?.readCodexToml() ?? null;
+    },
+  });
+
+  const { data: opencodeHostConfig } = useQuery({
+    queryKey: ["mcp-host-config", "opencode"],
+    enabled: isElectron,
+    queryFn: async () => {
+      const bridge = getElectronBridge();
+      return bridge?.mcpHostConfig?.readOpencodeJson() ?? null;
     },
   });
 
@@ -193,8 +202,11 @@ export function McpServersSection({
 
   const opencodeMergedPreview = useMemo(
     () =>
-      JSON.stringify(previewOpencodeMcpServers(opencodePreviewConfigs), null, 2),
-    [opencodePreviewConfigs],
+      buildMergedOpencodePreview({
+        hostConfigText: opencodeHostConfig?.ok ? opencodeHostConfig.content : undefined,
+        mcpServerConfigs: opencodePreviewConfigs,
+      }),
+    [opencodeHostConfig, opencodePreviewConfigs],
   );
 
   const scopeOptions = useMemo(() => getScopeOptions(counts), [counts]);
@@ -430,6 +442,7 @@ export function McpServersSection({
               opencodePreview={opencodeMergedPreview}
               claudeHostConfig={claudeHostConfig ?? null}
               codexHostConfig={codexHostConfig ?? null}
+              opencodeHostConfig={opencodeHostConfig ?? null}
               scope={activeScope}
               workspaceProjectFullName={
                 activeScope === "workspace" ? effectiveWorkspacePreviewProject : undefined
