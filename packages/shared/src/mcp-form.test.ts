@@ -64,6 +64,19 @@ describe("mcp-form", () => {
     });
   });
 
+  it("parses indented env vars without trimming trailing value whitespace", () => {
+    expect(
+      parseMcpEnvVarsText("  RAW=  padded value  ", {
+        trimValue: false,
+      }),
+    ).toEqual({
+      entries: {
+        RAW: "  padded value  ",
+      },
+      hasChanges: true,
+    });
+  });
+
   it("parses headers with colon or equals separators", () => {
     expect(parseMcpHeadersText("Authorization: Bearer token\nX-Test=test")).toEqual({
       entries: {

@@ -105,10 +105,7 @@ export function parseMcpKeyValueText(
     trimValue?: boolean;
   },
 ): ParsedMcpKeyValueText {
-  const lines = value
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
+  const lines = value.split("\n").filter((line) => line.trim().length > 0);
 
   if (lines.length === 0) {
     return { hasChanges: false };
@@ -118,8 +115,9 @@ export function parseMcpKeyValueText(
   let hasChanges = false;
 
   for (const line of lines) {
-    const equalsIndex = line.indexOf("=");
-    const colonIndex = options.allowColonSeparator ? line.indexOf(":") : -1;
+    const trimmedLine = line.trimStart();
+    const equalsIndex = trimmedLine.indexOf("=");
+    const colonIndex = options.allowColonSeparator ? trimmedLine.indexOf(":") : -1;
     const separatorIndex = colonIndex > 0 && (equalsIndex < 0 || colonIndex < equalsIndex)
       ? colonIndex
       : equalsIndex;
@@ -133,8 +131,8 @@ export function parseMcpKeyValueText(
       };
     }
 
-    const key = line.slice(0, separatorIndex).trim();
-    const rawValue = line.slice(separatorIndex + 1);
+    const key = trimmedLine.slice(0, separatorIndex).trim();
+    const rawValue = trimmedLine.slice(separatorIndex + 1);
     const parsedValue = options.trimValue === false ? rawValue : rawValue.trim();
 
     if (!key) {
