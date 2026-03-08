@@ -143,8 +143,12 @@ function redactArgsArray(args: string[]): string[] {
     }
 
     const inlineAssignmentMatch = arg.match(/^(-{1,2}[^=]+)=(.*)$/);
-    if (inlineAssignmentMatch && isSensitiveFlag(inlineAssignmentMatch[1])) {
-      return `${inlineAssignmentMatch[1]}=${redactSensitiveString(inlineAssignmentMatch[2])}`;
+    if (inlineAssignmentMatch) {
+      const inlineFlag = inlineAssignmentMatch[1];
+      const inlineValue = inlineAssignmentMatch[2];
+      if (inlineFlag && inlineValue !== undefined && isSensitiveFlag(inlineFlag)) {
+        return `${inlineFlag}=${redactSensitiveString(inlineValue)}`;
+      }
     }
 
     if (/^Bearer\s+/i.test(arg) || /^Authorization\s*:\s*Bearer\s+/i.test(arg)) {
@@ -292,7 +296,13 @@ function redactCodexPreviewToml(toml: string): string {
         return line;
       }
 
-      const [, prefix, rawKey, rawValue] = keyValueMatch;
+      const prefix = keyValueMatch[1];
+      const rawKey = keyValueMatch[2];
+      const rawValue = keyValueMatch[3];
+      if (!prefix || !rawKey || rawValue === undefined) {
+        return line;
+      }
+
       const normalizedKey = rawKey.replace(/^['"]|['"]$/g, "");
 
       if (normalizedKey === "args") {
