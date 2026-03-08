@@ -28,7 +28,7 @@ ls -la .claude/plans/*.md 2>/dev/null || echo "No plans found"
 ```bash
 # Configuration
 PLAN_FILE="${1:-.claude/plans/$(ls -t .claude/plans/*.md 2>/dev/null | head -1 | xargs basename)}"
-REPO=$(git remote get-url origin 2>/dev/null | sed 's/.*github.com[:/]\(.*\)\.git/\1/' | sed 's/\.git$//')
+REPO=$(git remote get-url origin 2>/dev/null | sed -E 's|.*github.com[:/]([^/]+/[^/]+?)(\.git)?$|\1|')
 BRANCH=$(git branch --show-current)
 AGENT="${CMUX_CODING_AGENT:-codex/gpt-5.1-codex-mini}"
 
