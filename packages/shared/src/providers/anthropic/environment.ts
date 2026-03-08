@@ -13,7 +13,7 @@ import {
   getProjectContextFile,
   getCrossToolSymlinkCommands,
 } from "../../agent-memory-protocol";
-import { buildClaudeMcpServers } from "../../mcp-injection";
+import { buildMergedClaudeConfig } from "../../mcp-preview";
 
 export const CLAUDE_KEY_ENV_VARS_TO_UNSET = [
   "ANTHROPIC_API_KEY",
@@ -39,10 +39,6 @@ export async function getClaudeEnvironment(
   const claudeLifecycleDir = "/root/lifecycle/claude";
   const claudeSecretsDir = `${claudeLifecycleDir}/secrets`;
   const claudeApiKeyHelperPath = `${claudeSecretsDir}/anthropic_key_helper.sh`;
-  const memoryMcpArgs = ctx.agentName
-    ? ["-y", "devsh-memory-mcp@latest", "--agent", ctx.agentName]
-    : ["-y", "devsh-memory-mcp@latest"];
-
   // Prepare .claude.json
   try {
     // Try to read existing .claude.json, or create a new one
@@ -54,25 +50,12 @@ export async function getClaudeEnvironment(
       // File doesn't exist or is invalid, start fresh
     }
 
-    // Type assertion for existing config to safely access mcpServers
-    const existingMcpServers =
-      (existingConfig as { mcpServers?: Record<string, unknown> }).mcpServers ||
-      {};
-
     const config = {
-      ...existingConfig,
-      // Add devsh-memory to global mcpServers, merged with existing user MCP servers
-      // This ensures the memory MCP server is always available regardless of project context
-      // Uses npm package for latest version without snapshot rebuild
-      // -y auto-confirms install, @latest ensures fresh version
-      mcpServers: {
-        ...existingMcpServers,
-        ...buildClaudeMcpServers(ctx.mcpServerConfigs ?? []),
-        "devsh-memory": {
-          command: "npx",
-          args: memoryMcpArgs,
-        },
-      },
+      ...buildMergedClaudeConfig({
+        hostConfigText: JSON.stringify(existingConfig),
+        mcpServerConfigs: ctx.mcpServerConfigs ?? [],
+        agentName: ctx.agentName,
+      }),
       projects: {
         "/root/workspace": {
           allowedTools: [],

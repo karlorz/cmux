@@ -7,6 +7,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { getElectronBridge, isElectron } from "@/lib/electron";
+import { McpMergedPreview } from "./McpMergedPreview";
+import {
+  deriveEffectiveMcpConfigs,
+  getWorkspacePreviewProjects,
+  type McpPreviewAgent,
+} from "./mcp-preview-helpers";
 import {
   AGENT_OPTIONS,
   buildEnabledAgentState,
@@ -31,6 +38,7 @@ import {
   validateForm,
 } from "@/lib/mcp-form-helpers";
 import { api } from "@cmux/convex/api";
+import { buildMergedClaudePreview, buildMergedCodexPreview } from "@cmux/shared";
 import { convexQuery } from "@convex-dev/react-query";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -57,10 +65,30 @@ export function McpServersSection({
   );
   const [formError, setFormError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<McpServerConfig | null>(null);
+  const [activePreviewAgent, setActivePreviewAgent] = useState<McpPreviewAgent>("claude");
+  const [workspacePreviewProject, setWorkspacePreviewProject] = useState<string>("");
 
   const { data: configs, refetch, isLoading } = useQuery(
     convexQuery(api.mcpServerConfigs.list, { teamSlugOrId }),
   );
+
+  const { data: claudeHostConfig } = useQuery({
+    queryKey: ["mcp-host-config", "claude"],
+    enabled: isElectron,
+    queryFn: async () => {
+      const bridge = getElectronBridge();
+      return bridge?.mcpHostConfig?.readClaudeJson() ?? null;
+    },
+  });
+
+  const { data: codexHostConfig } = useQuery({
+    queryKey: ["mcp-host-config", "codex"],
+    enabled: isElectron,
+    queryFn: async () => {
+      const bridge = getElectronBridge();
+      return bridge?.mcpHostConfig?.readCodexToml() ?? null;
+    },
+  });
 
   const upsertMutation = useMutation({
     mutationFn: async (
@@ -100,7 +128,65 @@ export function McpServersSection({
     return nextCounts;
   }, [configs]);
 
+  const workspacePreviewProjects = useMemo(
+    () => getWorkspacePreviewProjects(configs ?? []),
+    [configs],
+  );
+
+  const effectiveWorkspacePreviewProject =
+    workspacePreviewProject || workspacePreviewProjects[0] || "";
+
+  const claudePreviewConfigs = useMemo(
+    () =>
+      deriveEffectiveMcpConfigs(
+        configs ?? [],
+        activeScope,
+        "claude",
+        effectiveWorkspacePreviewProject,
+      ),
+    [activeScope, configs, effectiveWorkspacePreviewProject],
+  );
+
+  const codexPreviewConfigs = useMemo(
+    () =>
+      deriveEffectiveMcpConfigs(
+        configs ?? [],
+        activeScope,
+        "codex",
+        effectiveWorkspacePreviewProject,
+      ),
+    [activeScope, configs, effectiveWorkspacePreviewProject],
+  );
+
+  const claudeMergedPreview = useMemo(
+    () =>
+      buildMergedClaudePreview({
+        hostConfigText: claudeHostConfig?.ok ? claudeHostConfig.content : undefined,
+        mcpServerConfigs: claudePreviewConfigs,
+      }),
+    [claudeHostConfig, claudePreviewConfigs],
+  );
+
+  const codexMergedPreview = useMemo(
+    () =>
+      buildMergedCodexPreview({
+        hostConfigText: codexHostConfig?.ok ? codexHostConfig.content : undefined,
+        mcpServerConfigs: codexPreviewConfigs,
+      }),
+    [codexHostConfig, codexPreviewConfigs],
+  );
+
   const scopeOptions = useMemo(() => getScopeOptions(counts), [counts]);
+
+  const handleScopeChange = useCallback((scope: Scope) => {
+    setActiveScope(scope);
+    if (scope === "global") {
+      setWorkspacePreviewProject("");
+      return;
+    }
+
+    setWorkspacePreviewProject((current) => current || workspacePreviewProjects[0] || "");
+  }, [workspacePreviewProjects]);
 
   const enabledCounts = useMemo(
     () => countEnabledAgents(visibleConfigs),
@@ -308,11 +394,29 @@ export function McpServersSection({
 
               <SegmentedTabs
                 value={activeScope}
-                onChange={setActiveScope}
+                onChange={handleScopeChange}
                 options={scopeOptions}
               />
             </div>
           </div>
+
+          {isElectron ? (
+            <McpMergedPreview
+              activeAgent={activePreviewAgent}
+              onActiveAgentChange={setActivePreviewAgent}
+              claudePreview={claudeMergedPreview}
+              codexPreview={codexMergedPreview}
+              claudeHostConfig={claudeHostConfig ?? null}
+              codexHostConfig={codexHostConfig ?? null}
+              scope={activeScope}
+              workspaceProjectFullName={
+                activeScope === "workspace" ? effectiveWorkspacePreviewProject : undefined
+              }
+              workspaceProjects={workspacePreviewProjects}
+              selectedWorkspaceProject={effectiveWorkspacePreviewProject}
+              onWorkspaceProjectChange={setWorkspacePreviewProject}
+            />
+          ) : null}
 
           {isLoading ? (
             <div className="flex items-center justify-center py-12 text-neutral-500 dark:text-neutral-400">

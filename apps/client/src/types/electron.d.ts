@@ -86,6 +86,18 @@ interface CmuxWebContentsViewAPI {
   ) => Promise<{ ok: boolean; focused: boolean }>;
 }
 
+export interface HostMcpFileResult {
+  ok: boolean;
+  content?: string;
+  path: string;
+  error?: string;
+}
+
+interface CmuxMcpHostConfigAPI {
+  readClaudeJson: () => Promise<HostMcpFileResult>;
+  readCodexToml: () => Promise<HostMcpFileResult>;
+}
+
 export interface CmuxAPI {
   getCurrentWebContentsId?: () => number | undefined;
   register: (meta: {
@@ -128,6 +140,7 @@ export interface CmuxAPI {
       }>;
     install: () => Promise<{ ok: boolean; reason?: string }>;
   };
+  mcpHostConfig?: CmuxMcpHostConfigAPI;
 }
 
 declare global {

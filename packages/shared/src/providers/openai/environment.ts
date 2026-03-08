@@ -9,7 +9,8 @@ import {
   getProjectContextFile,
   getCrossToolSymlinkCommands,
 } from "../../agent-memory-protocol";
-import { buildCodexMcpToml } from "../../mcp-injection";
+import { buildMergedCodexConfigToml } from "../../mcp-preview";
+export { stripFilteredConfigKeys } from "../../mcp-preview";
 
 /**
  * Apply API keys for OpenAI Codex.
@@ -72,181 +73,10 @@ export function applyCodexApiKeys(
   return { files, env };
 }
 
-// Keys to filter from user's config.toml (controlled by cmux CLI args)
-const FILTERED_CONFIG_KEYS = ["model", "model_reasoning_effort"] as const;
-const CODEX_NOTIFY_LINE = `notify = ["/root/lifecycle/codex-notify.sh"]`;
-const CODEX_SANDBOX_MODE_LINE = `sandbox_mode = "danger-full-access"`;
-const CODEX_APPROVAL_POLICY_LINE = `approval_policy = "never"`;
-const CODEX_DISABLE_RESPONSE_STORAGE_LINE = `disable_response_storage = true`;
 const CODEX_AUTOPILOT_TURN_SUMMARY_LINE =
   "End every turn with: Progress, Commands run, Files changed, Next.";
 const CODEX_AUTOPILOT_CONTINUE_LINE =
   "Continue from where you left off. Do not ask whether to continue.";
-
-// Strip top-level keys that are controlled by cmux CLI args
-// Matches: key = "value" or key = 'value' or key = bareword (entire line)
-export function stripFilteredConfigKeys(toml: string): string {
-  let result = toml;
-  for (const key of FILTERED_CONFIG_KEYS) {
-    // Match key at start of line (not in a section), with any value format
-    // Handles: model = "gpt-5.2", model_reasoning_effort = "high", etc.
-    result = result.replace(new RegExp(`^${key}\\s*=\\s*.*$`, "gm"), "");
-  }
-  // Clean up multiple blank lines
-  return result.replace(/\n{3,}/g, "\n\n").trim();
-}
-
-function ensureCodexDefaults(toml: string): string {
-  const hasNotify = /(^|\n)\s*notify\s*=/.test(toml);
-  const hasSandboxMode = /(^|\n)\s*sandbox_mode\s*=/.test(toml);
-  const hasApprovalPolicy = /(^|\n)\s*approval_policy\s*=/.test(toml);
-  const hasDisableResponseStorage = /(^|\n)\s*disable_response_storage\s*=/.test(toml);
-  // Also check for legacy ask_for_approval to replace it
-  const hasLegacyAskForApproval = /(^|\n)\s*ask_for_approval\s*=/.test(toml);
-
-  // Always force approval_policy to "never" for unattended runs
-  // Even if user has a different value in their host config, we override it
-  // Also replace legacy ask_for_approval with approval_policy
-  // Handles double-quoted, single-quoted, and bare TOML values
-  let result = toml;
-  if (hasApprovalPolicy) {
-    // Replace the entire approval_policy line with our required value
-    result = result.replace(
-      /(^|\n)\s*approval_policy\s*=\s*.*/g,
-      `$1${CODEX_APPROVAL_POLICY_LINE}`
-    );
-  }
-  if (hasLegacyAskForApproval) {
-    // Remove legacy ask_for_approval (we'll add approval_policy instead)
-    result = result.replace(
-      /(^|\n)\s*ask_for_approval\s*=\s*.*/g,
-      ""
-    );
-  }
-
-  // Check if all required defaults are present
-  const hasAllDefaults = hasNotify && hasSandboxMode && hasDisableResponseStorage &&
-    (hasApprovalPolicy || hasLegacyAskForApproval);
-
-  if (hasAllDefaults) {
-    // If we had legacy key, we need to add the new one
-    if (hasLegacyAskForApproval && !hasApprovalPolicy) {
-      return `${CODEX_APPROVAL_POLICY_LINE}\n${result.trim()}`;
-    }
-    return result;
-  }
-
-  const defaults: string[] = [];
-  if (!hasNotify) {
-    defaults.push(CODEX_NOTIFY_LINE);
-  }
-  if (!hasSandboxMode) {
-    defaults.push(CODEX_SANDBOX_MODE_LINE);
-  }
-  if (!hasApprovalPolicy && !hasLegacyAskForApproval) {
-    defaults.push(CODEX_APPROVAL_POLICY_LINE);
-  }
-  if (!hasDisableResponseStorage) {
-    defaults.push(CODEX_DISABLE_RESPONSE_STORAGE_LINE);
-  }
-
-  return result ? `${defaults.join("\n")}\n${result}` : defaults.join("\n");
-}
-
-// Target model for migrations - change this when a new latest model is released
-const MIGRATION_TARGET_MODEL = "gpt-5.3-codex";
-
-// Models to migrate (legacy models and models without model_reasoning_effort support)
-const MODELS_TO_MIGRATE = [
-  "gpt-5.2-codex",
-  "gpt-5.1-codex-max",
-  "gpt-5.2",
-  "gpt-5.1",
-  "gpt-5.1-codex",
-  "gpt-5.1-codex-mini",
-  "gpt-5",
-  "gpt-5-codex",
-  "gpt-5-codex-mini",
-];
-
-// Generate model_migrations TOML section
-function generateModelMigrations(): string {
-  const migrations = MODELS_TO_MIGRATE.map(
-    (model) => `"${model}" = "${MIGRATION_TARGET_MODEL}"`
-  ).join("\n");
-  return `\n[notice.model_migrations]\n${migrations}\n`;
-}
-
-// Strip existing [notice.model_migrations] section from TOML
-// Regex matches from [notice.model_migrations] to next section header or EOF
-function stripModelMigrations(toml: string): string {
-  return toml.replace(/\[notice\.model_migrations\][\s\S]*?(?=\n\[|$)/g, "");
-}
-
-function stripManagedMemoryMcpBlock(toml: string): string {
-  // First, strip any nested subtables under devsh-memory (e.g., [mcp_servers.devsh-memory.env])
-  let result = toml.replace(
-    /\n?\[mcp_servers(?:\.devsh-memory|\."devsh-memory")\.[^\]]+\][\s\S]*?(?=\n\[|$)/g,
-    ""
-  );
-  // Then strip the main devsh-memory block
-  result = result.replace(
-    /\n?\[mcp_servers(?:\.devsh-memory|\."devsh-memory")\][\s\S]*?(?=\n\[|$)/g,
-    ""
-  );
-  return result.replace(/\n{3,}/g, "\n\n").trim();
-}
-
-/**
- * Strip MCP server blocks by name from TOML config.
- * Used to remove existing blocks before appending new ones to avoid duplicate tables.
- */
-function stripMcpServerBlocksByName(toml: string, names: string[]): string {
-  let result = toml;
-  for (const name of names) {
-    // Handle both quoted and unquoted keys
-    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    // Strip nested subtables first (e.g., [mcp_servers.name.env])
-    result = result.replace(
-      new RegExp(
-        `\\n?\\[mcp_servers(?:\\.${escapedName}|\\."${escapedName}")\\.[^\\]]+\\][\\s\\S]*?(?=\\n\\[|$)`,
-        "g"
-      ),
-      ""
-    );
-    // Then strip the main section
-    result = result.replace(
-      new RegExp(
-        `\\n?\\[mcp_servers(?:\\.${escapedName}|\\."${escapedName}")\\][\\s\\S]*?(?=\\n\\[|$)`,
-        "g"
-      ),
-      ""
-    );
-  }
-  return result.replace(/\n{3,}/g, "\n\n").trim();
-}
-
-function getMemoryMcpServerConfig(agentName?: string): string {
-  const args = agentName
-    ? ["-y", "devsh-memory-mcp@latest", "--agent", agentName]
-    : ["-y", "devsh-memory-mcp@latest"];
-
-  return `[mcp_servers.devsh-memory]
-type = "stdio"
-command = "npx"
-args = ${JSON.stringify(args)}`;
-}
-
-function ensureManagedMemoryMcpServerConfig(toml: string, agentName?: string): string {
-  const normalizedToml = stripManagedMemoryMcpBlock(toml);
-  const managedMemoryBlock = getMemoryMcpServerConfig(agentName);
-
-  if (!normalizedToml) {
-    return `${managedMemoryBlock}\n`;
-  }
-
-  return `${normalizedToml}\n\n${managedMemoryBlock}\n`;
-}
 
 // Custom provider name for cmux-managed proxy endpoints
 const CMUX_CUSTOM_PROVIDER_NAME = "cmux-proxy";
@@ -585,39 +415,21 @@ log "Autopilot completed after \$ITER turns"
     mode: "644",
   });
 
-  // Memory MCP server configuration for Codex
-  // Uses npm package for latest version without snapshot rebuild
-  // -y auto-confirms install, @latest ensures fresh version
-  const memoryMcpServerConfig = getMemoryMcpServerConfig(ctx.agentName);
-
   // Build config.toml - merge with host config in desktop mode, or generate clean in server mode
-  let toml: string;
+  let hostConfigToml = "";
   if (useHostConfig && readFile && homeDir) {
     try {
-      const rawToml = await readFile(`${homeDir}/.codex/config.toml`, "utf-8");
-      // Filter out keys controlled by cmux CLI args (model, model_reasoning_effort)
-      const filteredToml = stripFilteredConfigKeys(rawToml);
-      toml = ensureCodexDefaults(filteredToml);
-      // Strip existing model_migrations and append managed ones
-      toml = stripModelMigrations(toml) + generateModelMigrations();
-      // Always normalize and replace the managed memory MCP block.
-      toml = ensureManagedMemoryMcpServerConfig(toml, ctx.agentName);
+      hostConfigToml = await readFile(`${homeDir}/.codex/config.toml`, "utf-8");
     } catch (_error) {
-      // No host config.toml; create minimal one
-      toml = `${ensureCodexDefaults("")}${generateModelMigrations()}${memoryMcpServerConfig}\n`;
+      hostConfigToml = "";
     }
-  } else {
-    // Server mode: generate clean config without host-specific settings
-    toml = `${ensureCodexDefaults("")}${generateModelMigrations()}${memoryMcpServerConfig}\n`;
   }
 
-  const userMcpToml = buildCodexMcpToml(ctx.mcpServerConfigs ?? []);
-  if (userMcpToml) {
-    // Strip any existing MCP server blocks with the same names to avoid duplicate TOML tables
-    const mcpNames = (ctx.mcpServerConfigs ?? []).map((c) => c.name);
-    toml = stripMcpServerBlocksByName(toml, mcpNames);
-    toml = `${toml.trimEnd()}\n\n${userMcpToml}\n`;
-  }
+  let toml = buildMergedCodexConfigToml({
+    hostConfigText: hostConfigToml,
+    mcpServerConfigs: ctx.mcpServerConfigs ?? [],
+    agentName: ctx.agentName,
+  });
 
   // Inject custom provider config if user has a custom base URL
   // TOML requires: top-level keys first, then sections

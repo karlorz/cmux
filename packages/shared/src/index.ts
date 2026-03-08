@@ -38,6 +38,7 @@ export * from "./git-constants";
 export * from "./mcp-server-config";
 export * from "./mcp-presets";
 export * from "./mcp-injection";
+export * from "./mcp-preview";
 // Note: useNetwork hook is NOT exported here to avoid SSR issues.
 // Import directly from "@cmux/shared/hooks/use-network" in client components.
 // Note: Environment component utilities are NOT exported here.

@@ -61,6 +61,12 @@ import {
   isStackAuthCookieName,
 } from "./stack-auth-cookies";
 import { computeSetAsDefaultProtocolClientCall } from "./protocol-registration";
+import {
+  MCP_HOST_CONFIG_IPC_CHANNELS,
+  readClaudeJsonConfig,
+  readCodexTomlConfig,
+  type HostMcpFileResult,
+} from "./mcp-host-config";
 
 // Use a cookieable HTTPS origin intercepted locally instead of a custom scheme.
 const PARTITION = "persist:cmux";
@@ -577,6 +583,16 @@ function registerAppIpcHandlers(): void {
   });
 }
 
+function registerMcpHostConfigIpcHandlers(): void {
+  ipcMain.handle(
+    MCP_HOST_CONFIG_IPC_CHANNELS.readClaudeJson,
+    (): Promise<HostMcpFileResult> => readClaudeJsonConfig(),
+  );
+  ipcMain.handle(
+    MCP_HOST_CONFIG_IPC_CHANNELS.readCodexToml,
+    (): Promise<HostMcpFileResult> => readCodexTomlConfig(),
+  );
+}
 
 function setupAutoUpdates(): void {
   if (!app.isPackaged) {
@@ -864,6 +880,7 @@ app.whenReady().then(async () => {
   registerLogIpcHandlers();
   registerAutoUpdateIpcHandlers();
   registerAppIpcHandlers();
+  registerMcpHostConfigIpcHandlers();
   initCmdK({
     getMainWindow: () => mainWindow,
     logger: {

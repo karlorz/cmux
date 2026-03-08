@@ -49,6 +49,10 @@ declare global {
             | { ok: false; error: string }
           >;
       };
+      mcpHostConfig: {
+        readClaudeJson: () => Promise<import("../../src/types/electron").HostMcpFileResult>;
+        readCodexToml: () => Promise<import("../../src/types/electron").HostMcpFileResult>;
+      };
     };
   }
 }
