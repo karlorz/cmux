@@ -4,16 +4,13 @@
 
 set -euo pipefail
 
-# Master enable: opt-in via CLAUDE_AUTOPILOT=1 or CLAUDE_AUTOPILOT_MAX_TURNS=-1
-# Setting MAX_TURNS=-1 (infinite mode) implicitly enables autopilot
-if [ "${CLAUDE_AUTOPILOT:-}" != "1" ] && [ "${CLAUDE_AUTOPILOT_MAX_TURNS:-}" != "-1" ]; then
-  exit 0
-fi
-
-# Disable override (follows existing convention)
+# Disable override: AUTOPILOT_KEEP_RUNNING_DISABLED=1 disables autopilot
 if [ "${AUTOPILOT_KEEP_RUNNING_DISABLED:-}" = "1" ]; then
   exit 0
 fi
+
+# Autopilot is enabled by default when this hook is installed
+# Note: CLAUDE_AUTOPILOT is set internally by Claude Code, don't use it
 
 # Read hook stdin JSON
 INPUT=$(cat)

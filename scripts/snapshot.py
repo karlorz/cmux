@@ -1717,10 +1717,11 @@ if [ -f "${autosuggestions}" ]; then
 fi
 EOF
         fi
-        cat >> /root/.zshrc <<'EOF'
-HISTFILE=~/.zsh_history
-setopt HIST_IGNORE_DUPS HIST_VERIFY
-EOF
+        """
+    )
+    # Install cmux-env.sh and zsh-history.sh from repo (separate command to allow f-string substitution)
+    install_cmd = f"""
+        cat {repo}/configs/zsh-history.sh >> /root/.zshrc
         cat > /root/.zprofile <<'EOF'
 [[ -f ~/.zshrc ]] && source ~/.zshrc
 EOF
@@ -1733,10 +1734,8 @@ EOF
         if ! grep -q "alias g='git'" /root/.bashrc 2>/dev/null; then
           echo "alias g='git'" >> /root/.bashrc
         fi
-        """
-    )
-    # Install cmux-env.sh from repo (separate command to allow f-string substitution)
-    install_cmd = f"install -Dm0644 {repo}/configs/profile.d/cmux-env.sh /etc/profile.d/cmux-env.sh"
+        install -Dm0644 {repo}/configs/profile.d/cmux-env.sh /etc/profile.d/cmux-env.sh
+    """
     await ctx.run("configure-zsh", cmd + "\n" + install_cmd)
 
 

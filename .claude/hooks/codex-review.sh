@@ -44,12 +44,13 @@ COMPLETED_FILE="/tmp/claude-autopilot-completed-${SESSION_ID}"
 # Clean up completed marker on exit
 trap 'rm -f "$COMPLETED_FILE"' EXIT
 
-# Autopilot is only truly active when enabled AND not disabled via override
+# Autopilot is only active when Claude set it for this run and it has not been
+# explicitly disabled via AUTOPILOT_KEEP_RUNNING_DISABLED=1.
 AUTOPILOT_ACTIVE="0"
 if [ "${CLAUDE_AUTOPILOT:-0}" = "1" ] && [ "${AUTOPILOT_KEEP_RUNNING_DISABLED:-0}" != "1" ]; then
   AUTOPILOT_ACTIVE="1"
 fi
-debug_log "AUTOPILOT_ACTIVE: $AUTOPILOT_ACTIVE"
+debug_log "AUTOPILOT_ACTIVE: $AUTOPILOT_ACTIVE, AUTOPILOT_BLOCKED_FILE exists: $([ -f "$AUTOPILOT_BLOCKED_FILE" ] && echo 'true' || echo 'false')"
 
 # Skip if autopilot specifically blocked this stop
 if [ "$AUTOPILOT_ACTIVE" = "1" ] && [ -f "$AUTOPILOT_BLOCKED_FILE" ]; then
@@ -176,6 +177,8 @@ if [ "$COMMITS_AHEAD" = "0" ] && [ "$HAS_UNCOMMITTED" = "0" ]; then
     exit 0
   fi
 fi
+
+debug_log "Proceeding with codex review..."
 
 # Dry-run mode
 if [ "${CODEX_REVIEW_DRY_RUN:-}" = "1" ]; then
