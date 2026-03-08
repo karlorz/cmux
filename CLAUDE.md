@@ -274,7 +274,7 @@ Message types: `handoff`, `request`, `status`
 - Reference docs: `https://pve.proxmox.com/pve-docs/api-viewer/`, `https://pve.proxmox.com/wiki/Proxmox_VE_API`, `https://github.com/proxmox/pve-docs`.
 - Required provider env vars: `PVE_API_URL` and `PVE_API_TOKEN`; set `PVE_PUBLIC_DOMAIN` when using Cloudflare Tunnel.
 - Update an existing snapshot with `uv run --env-file .env ./scripts/snapshot-pvelxc.py --update --update-vmid <vmid>`.
-- Create the base template on the PVE host with `curl -fsSL https://raw.githubusercontent.com/karlorz/cmux/main/scripts/pve/pve-lxc-setup.sh | bash -s -- 9000`.
+- Create the base template on the PVE host by fetching the setup script from `scripts/pve/pve-lxc-setup.sh` in the `karlorz/cmux` repo's raw view, then pipe it to `bash -s -- 9000`.
 - Rebuild snapshots from the dev machine with `uv run --env-file .env ./scripts/snapshot-pvelxc.py --template-vmid 9000 --ide-deps-channel latest`.
 - Trigger the weekly snapshot workflow with `gh workflow run "Weekly PVE LXC Snapshot" --repo karlorz/cmux --ref main`.
 - Trigger the production Morph snapshot workflow with `gh workflow run "Daily Morph Snapshot" --repo karlorz/cmux --ref main`.
