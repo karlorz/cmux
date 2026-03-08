@@ -10,10 +10,7 @@ if [ "${AUTOPILOT_KEEP_RUNNING_DISABLED:-}" = "1" ]; then
 fi
 
 # Autopilot is enabled by default when this hook is installed
-# CLAUDE_AUTOPILOT=0 explicitly disables it (for testing/debugging)
-if [ "${CLAUDE_AUTOPILOT:-1}" = "0" ]; then
-  exit 0
-fi
+# Note: CLAUDE_AUTOPILOT is set internally by Claude Code, don't use it
 
 # Read hook stdin JSON
 INPUT=$(cat)
