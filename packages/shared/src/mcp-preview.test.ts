@@ -548,8 +548,8 @@ describe("deriveEffectiveMcpPreviewConfigs", () => {
       {
         name: "context7",
         type: "stdio",
-        command: "bunx",
-        args: ["-y", "@upstash/context7-mcp", "--api-key", "[REDACTED]"],
+        command: "npx",
+        args: ["-y", "context7"],
       },
     ]);
   });
