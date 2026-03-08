@@ -1717,17 +1717,7 @@ if [ -f "${autosuggestions}" ]; then
 fi
 EOF
         fi
-        cat >> /root/.zshrc <<'EOF'
-# History settings - persist and share across terminals
-HISTFILE=~/.zsh_history
-HISTSIZE=50000
-SAVEHIST=50000
-setopt INC_APPEND_HISTORY    # Write history after each command
-setopt SHARE_HISTORY         # Share history between terminals
-setopt HIST_IGNORE_DUPS      # Ignore duplicate commands
-setopt HIST_VERIFY           # Show command before executing from history
-setopt HIST_REDUCE_BLANKS    # Remove extra blanks from commands
-EOF
+        cat {repo}/configs/zsh-history.sh >> /root/.zshrc
         cat > /root/.zprofile <<'EOF'
 [[ -f ~/.zshrc ]] && source ~/.zshrc
 EOF
