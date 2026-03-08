@@ -425,9 +425,11 @@ log "Autopilot completed after \$ITER turns"
     }
   }
 
+  const codexMcpConfigs = ctx.mcpServerConfigs ?? [];
+
   let toml = buildMergedCodexConfigToml({
     hostConfigText: hostConfigToml,
-    mcpServerConfigs: ctx.mcpServerConfigs ?? [],
+    mcpServerConfigs: codexMcpConfigs,
     agentName: ctx.agentName,
   });
 

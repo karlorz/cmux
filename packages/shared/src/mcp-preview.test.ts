@@ -50,20 +50,19 @@ describe("buildMergedClaudeConfig", () => {
 
     expect(result.theme).toBe("dark");
     expect(result.mcpServers).toEqual({
-      localtools: {
-        command: "node",
-        args: ["server.js"],
-      },
       context7: {
-        command: "npx",
-        args: ["-y", "@upstash/context7-mcp@latest"],
-        env: { CONTEXT7_API_KEY: "token" },
+        command: "old",
+        args: ["stale"],
       },
       "remote-api": {
         type: "http",
         url: "https://example.com/mcp",
         headers: { Authorization: "Bearer secret" },
         env: { MCP_SESSION: "session-token" },
+      },
+      localtools: {
+        command: "node",
+        args: ["server.js"],
       },
       "devsh-memory": {
         command: "npx",
@@ -189,7 +188,9 @@ TOKEN = "stale"
     expect(toml).not.toContain('stale-memory');
     expect(toml).not.toContain('TOKEN = "stale"');
     expect(toml).toContain('[mcp_servers.context7]');
-    expect(toml).toContain('command = "npx"');
+    expect(toml).toContain('command = "echo"');
+    expect(toml).toContain('args = ["stale"]');
+    expect(toml).not.toContain('@upstash/context7-mcp@latest');
     expect(toml).toContain('[mcp_servers."remote-api"]');
     expect(toml).toContain('[mcp_servers."remote-api".headers]');
     expect(toml.match(/\[mcp_servers\.context7\]/g)).toHaveLength(1);
@@ -197,6 +198,23 @@ TOKEN = "stale"
 });
 
 describe("buildMergedCodexPreview", () => {
+  it("keeps host Codex MCP blocks when cloud config uses the same name", () => {
+    const toml = buildMergedCodexPreview({
+      hostConfigText: `[mcp_servers.context7]
+ type = "stdio"
+ command = "echo"
+ args = ["host"]
+`,
+      mcpServerConfigs: [STDIO_CONFIG],
+      agentName: "codex/gpt-5.3-codex-xhigh",
+    });
+
+    expect(toml).toContain('[mcp_servers.context7]');
+    expect(toml).toContain('command = "echo"');
+    expect(toml).toContain('args = ["host"]');
+    expect(toml).not.toContain('@upstash/context7-mcp@latest');
+  });
+
   it("redacts sensitive Codex preview values and limits output to MCP sections", () => {
     const toml = buildMergedCodexPreview({
       hostConfigText: `approval_policy = "on-request"
@@ -228,10 +246,12 @@ Authorization = "Bearer host-secret"
       'args = ["-y","devsh-memory-mcp@latest","--agent","codex/gpt-5.3-codex-xhigh"]',
     );
     expect(toml).toContain('[mcp_servers.context7]');
-    expect(toml).toContain('command = "npx"');
+    expect(toml).toContain('command = "echo"');
+    expect(toml).toContain('args = ["stale","--api-key=[REDACTED]"]');
+    expect(toml).not.toContain('@upstash/context7-mcp@latest');
     expect(toml).toContain('[mcp_servers."remote-api".headers]');
     expect(toml).toContain('Authorization = "Bearer [REDACTED]"');
-    expect(toml).toContain('MCP_SESSION = "[REDACTED]"');
+    expect(toml).not.toContain('session-token');
     expect(toml).not.toContain('host-secret');
     expect(toml).not.toContain('session-token');
   });
@@ -249,12 +269,21 @@ Authorization = "Bearer host-secret"
 });
 
 describe("previewOpencodeMcpServers", () => {
-  it("returns empty object for empty configs", () => {
-    expect(previewOpencodeMcpServers([])).toEqual({});
+  it("includes managed devsh-memory when configs are empty", () => {
+    expect(previewOpencodeMcpServers([])).toEqual({
+      "devsh-memory": {
+        type: "local",
+        command: ["npx", "-y", "devsh-memory-mcp@latest"],
+        enabled: true,
+      },
+    });
   });
 
   it("converts stdio to local and remote to remote", () => {
-    const result = previewOpencodeMcpServers([STDIO_CONFIG, REMOTE_CONFIG]);
+    const result = previewOpencodeMcpServers(
+      [STDIO_CONFIG, REMOTE_CONFIG],
+      "opencode/sonnet-4",
+    );
     expect(result.context7).toEqual({
       type: "local",
       command: ["npx", "-y", "@upstash/context7-mcp@latest"],
@@ -267,6 +296,11 @@ describe("previewOpencodeMcpServers", () => {
       headers: { Authorization: "Bearer secret" },
       enabled: true,
       environment: { MCP_SESSION: "session-token" },
+    });
+    expect(result["devsh-memory"]).toEqual({
+      type: "local",
+      command: ["npx", "-y", "devsh-memory-mcp@latest", "--agent", "opencode/sonnet-4"],
+      enabled: true,
     });
   });
 });

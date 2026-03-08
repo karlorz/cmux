@@ -27,6 +27,12 @@ const presentCodexHostConfig: HostMcpFileResult = {
   content: 'model = "gpt-5"',
 };
 
+const missingOpencodeHostConfig: HostMcpFileResult = {
+  ok: false,
+  path: "/Users/test/.config/opencode/opencode.json",
+  error: "ENOENT",
+};
+
 function createConfig(
   config: Omit<McpServerConfig, "_id" | "_creationTime" | "createdAt" | "updatedAt" | "teamId" | "userId">,
 ): McpServerConfig {
@@ -49,8 +55,10 @@ function renderPreviewMarkup(
     onActiveAgentChange: () => {},
     claudePreview: '{"mcpServers":{"context7":{}}}',
     codexPreview: '[mcp_servers.context7]\ncommand = "npx"\n',
+    opencodePreview: '{"context7":{"type":"local"}}',
     claudeHostConfig: presentClaudeHostConfig,
     codexHostConfig: presentCodexHostConfig,
+    opencodeHostConfig: missingOpencodeHostConfig,
     scope: "global",
     workspaceProjects: [],
     selectedWorkspaceProject: undefined,
@@ -71,7 +79,7 @@ const configs: McpServerConfig[] = [
     enabledClaude: true,
     enabledCodex: true,
     enabledGemini: false,
-    enabledOpencode: false,
+    enabledOpencode: true,
     scope: "global",
   }),
   createConfig({
@@ -82,7 +90,7 @@ const configs: McpServerConfig[] = [
     enabledClaude: false,
     enabledCodex: true,
     enabledGemini: false,
-    enabledOpencode: false,
+    enabledOpencode: true,
     scope: "global",
   }),
   createConfig({
@@ -94,7 +102,7 @@ const configs: McpServerConfig[] = [
     enabledClaude: true,
     enabledCodex: false,
     enabledGemini: false,
-    enabledOpencode: false,
+    enabledOpencode: true,
     scope: "workspace",
     projectFullName: "owner/repo-a",
   }),
@@ -107,7 +115,7 @@ const configs: McpServerConfig[] = [
     enabledClaude: true,
     enabledCodex: true,
     enabledGemini: false,
-    enabledOpencode: false,
+    enabledOpencode: true,
     scope: "workspace",
     projectFullName: "owner/repo-a",
   }),
@@ -120,7 +128,7 @@ const configs: McpServerConfig[] = [
     enabledClaude: true,
     enabledCodex: true,
     enabledGemini: false,
-    enabledOpencode: false,
+    enabledOpencode: true,
     scope: "workspace",
     projectFullName: "owner/repo-b",
   }),
@@ -143,6 +151,10 @@ describe("deriveEffectiveMcpConfigs", () => {
 
     expect(
       deriveEffectiveMcpConfigs(configs, "global", "codex").map((config) => config.name),
+    ).toEqual(["context7", "docs"]);
+
+    expect(
+      deriveEffectiveMcpConfigs(configs, "global", "opencode").map((config) => config.name),
     ).toEqual(["context7", "docs"]);
   });
 
@@ -218,6 +230,18 @@ describe("McpMergedPreview", () => {
       "Local ~/.codex/config.toml was not found, so this preview starts from an empty host config.",
     );
     expect(markup).toContain('[mcp_servers.context7]');
+  });
+
+  it("renders OpenCode fallback text when the host config is missing", () => {
+    const markup = renderPreviewMarkup({
+      activeAgent: "opencode",
+    });
+
+    expect(markup).toContain("OpenCode effective config");
+    expect(markup).toContain(
+      "Local ~/.config/opencode/opencode.json was not found, so this preview starts from an empty host config.",
+    );
+    expect(markup).toContain('"context7"');
   });
 
   it("does not render the workspace picker outside multi-project workspace previews", () => {

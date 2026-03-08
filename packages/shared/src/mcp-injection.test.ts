@@ -8,11 +8,17 @@ import {
 import type { McpServerConfig } from "./mcp-server-config";
 
 describe("mcp-injection", () => {
-  it("returns empty outputs for empty config arrays", () => {
+  it("returns empty outputs for empty config arrays except managed OpenCode memory", () => {
     expect(buildClaudeMcpServers([])).toEqual({});
     expect(buildGeminiMcpServers([])).toEqual({});
     expect(buildCodexMcpToml([])).toBe("");
-    expect(buildOpencodeMcpConfig([])).toEqual({});
+    expect(buildOpencodeMcpConfig([])).toEqual({
+      "devsh-memory": {
+        type: "local",
+        command: ["npx", "-y", "devsh-memory-mcp@latest"],
+        enabled: true,
+      },
+    });
   });
 
   it("builds Claude and Gemini MCP server maps for stdio and remote servers", () => {
@@ -123,7 +129,7 @@ describe("mcp-injection", () => {
       },
     ];
 
-    expect(buildOpencodeMcpConfig(configs)).toEqual({
+    expect(buildOpencodeMcpConfig(configs, "opencode/sonnet-4")).toEqual({
       github: {
         type: "local",
         command: ["npx", "-y", "@modelcontextprotocol/server-github@latest"],
@@ -142,6 +148,11 @@ describe("mcp-injection", () => {
         environment: {
           MCP_API_KEY: "mcp-secret",
         },
+      },
+      "devsh-memory": {
+        type: "local",
+        command: ["npx", "-y", "devsh-memory-mcp@latest", "--agent", "opencode/sonnet-4"],
+        enabled: true,
       },
     });
   });

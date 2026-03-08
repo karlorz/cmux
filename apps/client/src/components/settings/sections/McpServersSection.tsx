@@ -38,7 +38,11 @@ import {
   validateForm,
 } from "@/lib/mcp-form-helpers";
 import { api } from "@cmux/convex/api";
-import { buildMergedClaudePreview, buildMergedCodexPreview } from "@cmux/shared";
+import {
+  buildMergedClaudePreview,
+  buildMergedCodexPreview,
+  previewOpencodeMcpServers,
+} from "@cmux/shared";
 import { convexQuery } from "@convex-dev/react-query";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -158,6 +162,17 @@ export function McpServersSection({
     [activeScope, configs, effectiveWorkspacePreviewProject],
   );
 
+  const opencodePreviewConfigs = useMemo(
+    () =>
+      deriveEffectiveMcpConfigs(
+        configs ?? [],
+        activeScope,
+        "opencode",
+        effectiveWorkspacePreviewProject,
+      ),
+    [activeScope, configs, effectiveWorkspacePreviewProject],
+  );
+
   const claudeMergedPreview = useMemo(
     () =>
       buildMergedClaudePreview({
@@ -174,6 +189,12 @@ export function McpServersSection({
         mcpServerConfigs: codexPreviewConfigs,
       }),
     [codexHostConfig, codexPreviewConfigs],
+  );
+
+  const opencodeMergedPreview = useMemo(
+    () =>
+      JSON.stringify(previewOpencodeMcpServers(opencodePreviewConfigs), null, 2),
+    [opencodePreviewConfigs],
   );
 
   const scopeOptions = useMemo(() => getScopeOptions(counts), [counts]);
@@ -406,6 +427,7 @@ export function McpServersSection({
               onActiveAgentChange={setActivePreviewAgent}
               claudePreview={claudeMergedPreview}
               codexPreview={codexMergedPreview}
+              opencodePreview={opencodeMergedPreview}
               claudeHostConfig={claudeHostConfig ?? null}
               codexHostConfig={codexHostConfig ?? null}
               scope={activeScope}

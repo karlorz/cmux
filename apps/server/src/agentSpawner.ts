@@ -5,7 +5,9 @@ import {
   type AgentConfig,
   type EnvironmentResult,
 } from "@cmux/shared/agentConfig";
+import type { McpServerConfig } from "@cmux/shared";
 import {
+  getProviderIdFromAgentName,
   getProviderRegistry,
   type ApiFormat,
   type ProviderOverride,
@@ -122,6 +124,12 @@ export interface PreFetchedSpawnConfig {
     fallbacks?: Array<{ modelName: string; priority: number }>;
     enabled: boolean;
   }>;
+  mcpServerConfigs?: {
+    claude: McpServerConfig[];
+    codex: McpServerConfig[];
+    gemini: McpServerConfig[];
+    opencode: McpServerConfig[];
+  };
   previousKnowledge: string | null;
   previousMailbox: string | null;
 }
@@ -543,6 +551,14 @@ export async function spawnAgent(
       fallbacks?: Array<{ modelName: string; priority: number }>;
       enabled: boolean;
     }>;
+    let mcpServerConfigs:
+      | {
+        claude: McpServerConfig[];
+        codex: McpServerConfig[];
+        gemini: McpServerConfig[];
+        opencode: McpServerConfig[];
+      }
+      | undefined;
     let previousKnowledge: string | null;
     let previousMailbox: string | null;
 
@@ -552,6 +568,7 @@ export async function spawnAgent(
       userApiKeys = options.preFetchedConfig.apiKeys;
       workspaceSettings = options.preFetchedConfig.workspaceSettings;
       providerOverrides = options.preFetchedConfig.providerOverrides;
+      mcpServerConfigs = options.preFetchedConfig.mcpServerConfigs;
       previousKnowledge = options.preFetchedConfig.previousKnowledge;
       previousMailbox = options.preFetchedConfig.previousMailbox;
     } else {
@@ -564,6 +581,35 @@ export async function spawnAgent(
             console.error("[AgentSpawner] Failed to fetch provider overrides", err);
             return [];
           }),
+        getProviderIdFromAgentName(agent.name)
+          ? Promise.all([
+            getConvex().query(api.mcpServerConfigs.getForSandbox, {
+              teamSlugOrId,
+              agentType: "claude",
+              ...(task?.projectFullName ? { projectFullName: task.projectFullName } : {}),
+            }),
+            getConvex().query(api.mcpServerConfigs.getForSandbox, {
+              teamSlugOrId,
+              agentType: "codex",
+              ...(task?.projectFullName ? { projectFullName: task.projectFullName } : {}),
+            }),
+            getConvex().query(api.mcpServerConfigs.getForSandbox, {
+              teamSlugOrId,
+              agentType: "gemini",
+              ...(task?.projectFullName ? { projectFullName: task.projectFullName } : {}),
+            }),
+            getConvex().query(api.mcpServerConfigs.getForSandbox, {
+              teamSlugOrId,
+              agentType: "opencode",
+              ...(task?.projectFullName ? { projectFullName: task.projectFullName } : {}),
+            }),
+          ]).then(([claude, codex, gemini, opencode]) => ({
+            claude,
+            codex,
+            gemini,
+            opencode,
+          }))
+          : Promise.resolve(undefined),
         // Query previous knowledge for cross-run memory seeding (S5b)
         getConvex()
           .query(api.agentMemoryQueries.getLatestTeamKnowledge, {
@@ -592,8 +638,9 @@ export async function spawnAgent(
       userApiKeys = results[0];
       workspaceSettings = results[1];
       providerOverrides = results[2];
-      previousKnowledge = results[3];
-      previousMailbox = results[4];
+      mcpServerConfigs = results[3];
+      previousKnowledge = results[4];
+      previousMailbox = results[5];
     }
 
     if (previousKnowledge) {
@@ -672,12 +719,24 @@ export async function spawnAgent(
         };
       }
 
+      const providerId = getProviderIdFromAgentName(agent.name);
+      const agentMcpServerConfigs = providerId === "anthropic"
+        ? mcpServerConfigs?.claude
+        : providerId === "openai"
+          ? mcpServerConfigs?.codex
+          : providerId === "gemini"
+            ? mcpServerConfigs?.gemini
+            : providerId === "openrouter"
+              ? mcpServerConfigs?.opencode
+              : undefined;
+
       const envResult = await agent.environment({
         taskRunId: taskRunId,
         agentName: agent.name,
         prompt: processedTaskDescription,
         taskRunJwt,
         apiKeys,
+        mcpServerConfigs: agentMcpServerConfigs,
         callbackUrl,
         workspaceSettings: {
           bypassAnthropicProxy: workspaceSettings?.bypassAnthropicProxy ?? false,

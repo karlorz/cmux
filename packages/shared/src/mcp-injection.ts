@@ -33,6 +33,14 @@ type OpencodeRemoteMcpServer = {
 
 type OpencodeMcpServer = OpencodeLocalMcpServer | OpencodeRemoteMcpServer;
 
+const MANAGED_MEMORY_SERVER_NAME = "devsh-memory";
+
+function getManagedMemoryArgs(agentName?: string): string[] {
+  return agentName
+    ? ["npx", "-y", "devsh-memory-mcp@latest", "--agent", agentName]
+    : ["npx", "-y", "devsh-memory-mcp@latest"];
+}
+
 function normalizeStringRecord(
   record?: Record<string, string>,
 ): Record<string, string> | undefined {
@@ -158,31 +166,40 @@ export function buildCodexMcpToml(configs: McpServerConfig[]): string {
 
 export function buildOpencodeMcpConfig(
   configs: McpServerConfig[],
+  agentName?: string,
 ): Record<string, OpencodeMcpServer> {
-  return getUniqueConfigs(configs).reduce<Record<string, OpencodeMcpServer>>(
-    (servers, config) => {
+  const servers = getUniqueConfigs(configs).reduce<Record<string, OpencodeMcpServer>>(
+    (acc, config) => {
       const environment = normalizeStringRecord(config.envVars);
 
       if (isRemoteMcpServerConfig(config)) {
         const headers = normalizeStringRecord(config.headers);
-        servers[config.name] = {
+        acc[config.name] = {
           type: "remote",
           url: config.url,
           enabled: true,
           ...(headers ? { headers } : {}),
           ...(environment ? { environment } : {}),
         };
-        return servers;
+        return acc;
       }
 
-      servers[config.name] = {
+      acc[config.name] = {
         type: "local",
         command: [config.command, ...config.args],
         enabled: true,
         ...(environment ? { environment } : {}),
       };
-      return servers;
+      return acc;
     },
     {},
   );
+
+  servers[MANAGED_MEMORY_SERVER_NAME] = {
+    type: "local",
+    command: getManagedMemoryArgs(agentName),
+    enabled: true,
+  };
+
+  return servers;
 }

@@ -1,12 +1,16 @@
 import type { McpServerConfig as PreviewMcpServerConfig } from "@cmux/shared";
 import type { McpServerConfig as StoredMcpServerConfig, Scope } from "@/lib/mcp-form-helpers";
 
-export type McpPreviewAgent = "claude" | "codex";
+export type McpPreviewAgent = "claude" | "codex" | "opencode";
 
 const AGENT_ENABLED_FIELDS = {
   claude: "enabledClaude",
   codex: "enabledCodex",
-} satisfies Record<McpPreviewAgent, "enabledClaude" | "enabledCodex">;
+  opencode: "enabledOpencode",
+} satisfies Record<
+  McpPreviewAgent,
+  "enabledClaude" | "enabledCodex" | "enabledOpencode"
+>;
 
 function dedupeConfigsByName(
   configs: StoredMcpServerConfig[],

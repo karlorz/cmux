@@ -7,13 +7,18 @@ import type { McpPreviewAgent } from "./mcp-preview-helpers";
 const PREVIEW_AGENT_LABELS: Record<McpPreviewAgent, string> = {
   claude: "Claude",
   codex: "Codex",
+  opencode: "OpenCode",
 };
 
 function getHostConfigDescription(
   agent: McpPreviewAgent,
   hostConfig: HostMcpFileResult | null,
 ): string {
-  const fileName = agent === "claude" ? "~/.claude.json" : "~/.codex/config.toml";
+  const fileName = agent === "claude"
+    ? "~/.claude.json"
+    : agent === "codex"
+      ? "~/.codex/config.toml"
+      : "~/.config/opencode/opencode.json";
 
   if (hostConfig?.ok) {
     return `Using local ${fileName} as the base host config.`;
@@ -42,8 +47,10 @@ export interface McpMergedPreviewProps {
   onActiveAgentChange: (agent: McpPreviewAgent) => void;
   claudePreview: string;
   codexPreview: string;
+  opencodePreview: string;
   claudeHostConfig: HostMcpFileResult | null;
   codexHostConfig: HostMcpFileResult | null;
+  opencodeHostConfig?: HostMcpFileResult | null;
   scope: Scope;
   workspaceProjectFullName?: string;
   workspaceProjects?: string[];
@@ -56,16 +63,26 @@ export function McpMergedPreview({
   onActiveAgentChange,
   claudePreview,
   codexPreview,
+  opencodePreview,
   claudeHostConfig,
   codexHostConfig,
+  opencodeHostConfig = null,
   scope,
   workspaceProjectFullName,
   workspaceProjects = [],
   selectedWorkspaceProject,
   onWorkspaceProjectChange,
 }: McpMergedPreviewProps) {
-  const previewText = activeAgent === "claude" ? claudePreview : codexPreview;
-  const hostConfig = activeAgent === "claude" ? claudeHostConfig : codexHostConfig;
+  const previewText = activeAgent === "claude"
+    ? claudePreview
+    : activeAgent === "codex"
+      ? codexPreview
+      : opencodePreview;
+  const hostConfig = activeAgent === "claude"
+    ? claudeHostConfig
+    : activeAgent === "codex"
+      ? codexHostConfig
+      : opencodeHostConfig;
 
   return (
     <SettingSection
@@ -78,6 +95,7 @@ export function McpMergedPreview({
           options={[
             { value: "claude", label: "Claude" },
             { value: "codex", label: "Codex" },
+            { value: "opencode", label: "OpenCode" },
           ]}
         />
       }

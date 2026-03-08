@@ -17,6 +17,8 @@ import { z } from "zod";
  * Pre-fetched spawn configuration data type.
  * This is returned by the getSpawnConfig endpoint and passed to spawnAgent.
  */
+import type { McpServerConfig } from "../../shared/src/mcp-server-config";
+
 export interface SpawnConfigData {
   apiKeys: Record<string, string>;
   workspaceSettings: {
@@ -31,6 +33,12 @@ export interface SpawnConfigData {
     fallbacks?: Array<{ modelName: string; priority: number }>;
     enabled: boolean;
   }>;
+  mcpServerConfigs?: {
+    claude: McpServerConfig[];
+    codex: McpServerConfig[];
+    gemini: McpServerConfig[];
+    opencode: McpServerConfig[];
+  };
   previousKnowledge: string | null;
   previousMailbox: string | null;
 }
@@ -396,6 +404,7 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
   // Verify the JWT
   let teamId: string;
   let userId: string;
+  let taskRunId: Id<"taskRuns">;
 
   try {
     const tokenPayload = await verifyTaskRunToken(
@@ -404,21 +413,61 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
     );
     teamId = tokenPayload.teamId;
     userId = tokenPayload.userId;
+    taskRunId = tokenPayload.taskRunId as Id<"taskRuns">;
   } catch (error) {
     console.error("[orchestration_http] Failed to verify JWT", error);
     return jsonResponse({ code: 401, message: "Unauthorized" }, 401);
   }
 
   try {
+    const taskRun = await ctx.runQuery(internal.taskRuns.getById, {
+      id: taskRunId,
+    });
+    const task = taskRun
+      ? await ctx.runQuery(internal.tasks.getByIdInternal, {
+        id: taskRun.taskId,
+      })
+      : null;
+    const projectFullName = task?.projectFullName || undefined;
+
     // Fetch all spawn configuration data in parallel
-    const [apiKeys, workspaceSettings, providerOverrides, previousKnowledge, previousMailbox] =
-      await Promise.all([
-        ctx.runQuery(internal.apiKeys.getAllForAgentsInternal, { teamId, userId }),
-        ctx.runQuery(internal.workspaceSettings.getByTeamAndUserInternal, { teamId, userId }),
-        ctx.runQuery(internal.providerOverrides.getAllEnabledForTeam, { teamId }),
-        ctx.runQuery(internal.agentMemoryQueries.getLatestTeamKnowledgeInternal, { teamId }),
-        ctx.runQuery(internal.agentMemoryQueries.getLatestTeamMailboxInternal, { teamId }),
-      ]);
+    const [
+      apiKeys,
+      workspaceSettings,
+      providerOverrides,
+      claudeMcpConfigs,
+      codexMcpConfigs,
+      geminiMcpConfigs,
+      opencodeMcpConfigs,
+      previousKnowledge,
+      previousMailbox,
+    ] = await Promise.all([
+      ctx.runQuery(internal.apiKeys.getAllForAgentsInternal, { teamId, userId }),
+      ctx.runQuery(internal.workspaceSettings.getByTeamAndUserInternal, { teamId, userId }),
+      ctx.runQuery(internal.providerOverrides.getAllEnabledForTeam, { teamId }),
+      ctx.runQuery(internal.mcpServerConfigs.getForSandboxInternal, {
+        teamId,
+        agentType: "claude",
+        ...(projectFullName ? { projectFullName } : {}),
+      }),
+      ctx.runQuery(internal.mcpServerConfigs.getForSandboxInternal, {
+        teamId,
+        agentType: "codex",
+        ...(projectFullName ? { projectFullName } : {}),
+      }),
+      ctx.runQuery(internal.mcpServerConfigs.getForSandboxInternal, {
+        teamId,
+        agentType: "gemini",
+        ...(projectFullName ? { projectFullName } : {}),
+      }),
+      ctx.runQuery(internal.mcpServerConfigs.getForSandboxInternal, {
+        teamId,
+        agentType: "opencode",
+        ...(projectFullName ? { projectFullName } : {}),
+      }),
+      ctx.runQuery(internal.agentMemoryQueries.getLatestTeamKnowledgeInternal, { teamId }),
+      ctx.runQuery(internal.agentMemoryQueries.getLatestTeamMailboxInternal, { teamId }),
+    ]);
 
     const config: SpawnConfigData = {
       apiKeys,
@@ -434,6 +483,12 @@ export const getSpawnConfig = httpAction(async (ctx, req) => {
         fallbacks: o.fallbacks,
         enabled: o.enabled,
       })),
+      mcpServerConfigs: {
+        claude: claudeMcpConfigs,
+        codex: codexMcpConfigs,
+        gemini: geminiMcpConfigs,
+        opencode: opencodeMcpConfigs,
+      },
       previousKnowledge,
       previousMailbox,
     };

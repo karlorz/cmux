@@ -47,6 +47,7 @@ import {
   encodeEnvContentForEnvctl,
   envctlLoadCommand,
 } from "./utils/ensure-env-vars";
+import type { McpServerConfig } from "@cmux/shared";
 import { AGENT_CONFIGS, type EnvironmentResult } from "@cmux/shared/agentConfig";
 import { getClaudeEnvironment } from "@cmux/shared/providers/anthropic/environment";
 import { createApplyClaudeApiKeys } from "@cmux/shared/providers/anthropic/configs";
@@ -56,8 +57,10 @@ import {
 } from "@cmux/shared/providers/openai/environment";
 import { getOpencodeEnvironment } from "@cmux/shared/providers/opencode/environment";
 import {
+  getProviderIdFromAgentName,
   getProviderRegistry,
   type ProviderOverride,
+  type ResolvedProvider,
 } from "@cmux/shared/provider-registry";
 
 /**
@@ -326,21 +329,80 @@ async function applyEnvironmentResult(
  *
  * This is non-fatal: failures are logged but do not block sandbox creation.
  */
-async function setupProviderAuth(
-  instance: SandboxInstance,
+function mapProviderOverrides(
+  providerOverrides: Array<{
+    teamId: string;
+    providerId: string;
+    baseUrl?: string;
+    apiFormat?: ProviderOverride["apiFormat"];
+    apiKeyEnvVar?: string;
+    customHeaders?: Record<string, string>;
+    fallbacks?: ProviderOverride["fallbacks"];
+    enabled: boolean;
+  }>,
+): ProviderOverride[] {
+  return providerOverrides.map((override): ProviderOverride => ({
+    teamId: String(override.teamId),
+    providerId: override.providerId,
+    baseUrl: override.baseUrl,
+    apiFormat: override.apiFormat,
+    apiKeyEnvVar: override.apiKeyEnvVar,
+    customHeaders: override.customHeaders,
+    fallbacks: override.fallbacks,
+    enabled: override.enabled,
+  }));
+}
+
+type EnvironmentProviderConfig = NonNullable<
+  Pick<
+    Parameters<NonNullable<(typeof AGENT_CONFIGS)[number]["environment"]>>[0],
+    "providerConfig"
+  >["providerConfig"]
+>;
+
+function buildProviderConfig(
+  resolvedProvider: ResolvedProvider | undefined,
+): EnvironmentProviderConfig | undefined {
+  if (!resolvedProvider?.isOverridden) {
+    return undefined;
+  }
+
+  return {
+    baseUrl: resolvedProvider.baseUrl,
+    customHeaders: resolvedProvider.customHeaders,
+    apiFormat: resolvedProvider.apiFormat,
+    isOverridden: true,
+  };
+}
+
+function buildOpenAiProviderConfig(
+  resolvedProvider: ResolvedProvider | undefined,
+  openAiBaseUrl: string | undefined,
+): EnvironmentProviderConfig | undefined {
+  return (
+    buildProviderConfig(resolvedProvider) ??
+    (openAiBaseUrl
+      ? {
+          baseUrl: openAiBaseUrl,
+          isOverridden: true,
+        }
+      : undefined)
+  );
+}
+
+async function getSandboxMcpConfigs(
   convex: ReturnType<typeof getConvex>,
   options: {
     teamSlugOrId: string;
     projectFullName?: string;
-    taskRunId?: string;
-    taskRunJwt?: string;
-    callbackUrl: string;
-    previousKnowledge?: string | null;
-    previousMailbox?: string | null;
+    logPrefix: string;
   },
-): Promise<{ providers: string[] }> {
-  const configuredProviders: string[] = [];
-
+): Promise<{
+  claude: McpServerConfig[];
+  codex: McpServerConfig[];
+  gemini: McpServerConfig[];
+  opencode: McpServerConfig[];
+}> {
   const getMcpConfigs = (
     agentType: "claude" | "codex" | "gemini" | "opencode",
   ) =>
@@ -354,22 +416,95 @@ async function setupProviderAuth(
       })
       .catch((err: unknown) => {
         console.error(
-          `[setupProviderAuth] Failed to fetch ${agentType} MCP configs`,
+          `[${options.logPrefix}] Failed to fetch ${agentType} MCP configs`,
           err,
         );
         return [];
       });
 
+  const [claude, codex, gemini, opencode] = await Promise.all([
+    getMcpConfigs("claude"),
+    getMcpConfigs("codex"),
+    getMcpConfigs("gemini"),
+    getMcpConfigs("opencode"),
+  ]);
+
+  return { claude, codex, gemini, opencode };
+}
+
+function getEnvironmentOverridesForAgent(
+  agentName: string,
+  options: {
+    mcpConfigs: {
+      claude: McpServerConfig[];
+      codex: McpServerConfig[];
+      gemini: McpServerConfig[];
+      opencode: McpServerConfig[];
+    };
+    workspaceSettings: {
+      bypassAnthropicProxy?: boolean;
+    } | null;
+    taskRunJwt?: string;
+    resolvedProvider: ResolvedProvider | undefined;
+    openAiBaseUrl?: string;
+  },
+): Pick<
+  Parameters<NonNullable<(typeof AGENT_CONFIGS)[number]["environment"]>>[0],
+  "mcpServerConfigs" | "workspaceSettings" | "providerConfig"
+> {
+  const providerId = getProviderIdFromAgentName(agentName);
+
+  switch (providerId) {
+    case "anthropic":
+      return {
+        mcpServerConfigs: options.mcpConfigs.claude,
+        workspaceSettings: {
+          bypassAnthropicProxy:
+            options.workspaceSettings?.bypassAnthropicProxy ?? !options.taskRunJwt,
+        },
+        providerConfig: buildProviderConfig(options.resolvedProvider),
+      };
+    case "openai":
+      return {
+        mcpServerConfigs: options.mcpConfigs.codex,
+        providerConfig: buildOpenAiProviderConfig(
+          options.resolvedProvider,
+          options.openAiBaseUrl,
+        ),
+      };
+    case "openrouter":
+      return {
+        mcpServerConfigs: options.mcpConfigs.opencode,
+      };
+    case "gemini":
+      return {
+        mcpServerConfigs: options.mcpConfigs.gemini,
+      };
+    default:
+      return {
+        mcpServerConfigs: [],
+      };
+  }
+}
+
+async function setupProviderAuth(
+  instance: SandboxInstance,
+  convex: ReturnType<typeof getConvex>,
+  options: {
+    teamSlugOrId: string;
+    projectFullName?: string;
+    taskRunId?: string;
+    taskRunJwt?: string;
+    callbackUrl: string;
+    previousKnowledge?: string | null;
+    previousMailbox?: string | null;
+    agentName?: string;
+  },
+): Promise<{ providers: string[] }> {
+  const configuredProviders: string[] = [];
+
   // Fetch API keys, provider overrides, and workspace settings in parallel
-  const [
-    apiKeys,
-    providerOverrides,
-    workspaceSettings,
-    claudeMcpConfigs,
-    codexMcpConfigs,
-    geminiMcpConfigs,
-    opencodeMcpConfigs,
-  ] = await Promise.all([
+  const [apiKeys, providerOverrides, workspaceSettings, mcpConfigs] = await Promise.all([
     convex.query(api.apiKeys.getAllForAgents, {
       teamSlugOrId: options.teamSlugOrId,
     }),
@@ -395,17 +530,18 @@ async function setupProviderAuth(
         );
         return null;
       }),
-    getMcpConfigs("claude"),
-    getMcpConfigs("codex"),
-    getMcpConfigs("gemini"),
-    getMcpConfigs("opencode"),
+    getSandboxMcpConfigs(convex, {
+      teamSlugOrId: options.teamSlugOrId,
+      projectFullName: options.projectFullName,
+      logPrefix: "setupProviderAuth",
+    }),
   ]);
 
   const mcpConfigCounts = {
-    claude: claudeMcpConfigs.length,
-    codex: codexMcpConfigs.length,
-    gemini: geminiMcpConfigs.length,
-    opencode: opencodeMcpConfigs.length,
+    claude: mcpConfigs.claude.length,
+    codex: mcpConfigs.codex.length,
+    gemini: mcpConfigs.gemini.length,
+    opencode: mcpConfigs.opencode.length,
   };
   if (Object.values(mcpConfigCounts).some((count) => count > 0)) {
     console.log("[setupProviderAuth] Loaded MCP configs", mcpConfigCounts);
@@ -413,18 +549,7 @@ async function setupProviderAuth(
 
   // Resolve provider overrides into the shape expected by environment functions
   const registry = getProviderRegistry();
-  const overrideMapped: ProviderOverride[] = providerOverrides.map(
-    (o): ProviderOverride => ({
-      teamId: String(o.teamId),
-      providerId: o.providerId,
-      baseUrl: o.baseUrl,
-      apiFormat: o.apiFormat,
-      apiKeyEnvVar: o.apiKeyEnvVar,
-      customHeaders: o.customHeaders,
-      fallbacks: o.fallbacks,
-      enabled: o.enabled,
-    }),
-  );
+  const overrideMapped = mapProviderOverrides(providerOverrides);
 
   // --- Claude (Anthropic) auth ---
   try {
@@ -443,9 +568,10 @@ async function setupProviderAuth(
       const claudeEnvResult = await getClaudeEnvironment({
         taskRunId: options.taskRunId || "",
         taskRunJwt: options.taskRunJwt || "",
+        agentName: options.agentName,
         prompt: "",
         apiKeys,
-        mcpServerConfigs: claudeMcpConfigs,
+        mcpServerConfigs: mcpConfigs.claude,
         callbackUrl: options.callbackUrl,
         previousKnowledge: options.previousKnowledge ?? undefined,
         previousMailbox: options.previousMailbox ?? undefined,
@@ -495,35 +621,19 @@ async function setupProviderAuth(
 
       // Build provider config from providerOverrides OR apiKeys.OPENAI_BASE_URL fallback
       // Settings UI saves base URLs to apiKeys table, so check both sources
-      let openaiProviderConfig: {
-        baseUrl?: string;
-        customHeaders?: Record<string, string>;
-        apiFormat?: string;
-        isOverridden: boolean;
-      } | undefined;
-
-      if (resolvedOpenAI?.isOverridden) {
-        openaiProviderConfig = {
-          baseUrl: resolvedOpenAI.baseUrl,
-          customHeaders: resolvedOpenAI.customHeaders,
-          apiFormat: resolvedOpenAI.apiFormat,
-          isOverridden: true,
-        };
-      } else if (apiKeys.OPENAI_BASE_URL) {
-        // Fallback: use OPENAI_BASE_URL from apiKeys table (set via Settings UI)
-        openaiProviderConfig = {
-          baseUrl: apiKeys.OPENAI_BASE_URL,
-          isOverridden: true,
-        };
-      }
+      const openaiProviderConfig = buildOpenAiProviderConfig(
+        resolvedOpenAI,
+        apiKeys.OPENAI_BASE_URL,
+      );
 
       // Run full environment setup (notify hooks, config.toml, memory, MCP)
       const codexEnvResult = await getOpenAIEnvironment({
         taskRunId: options.taskRunId || "",
         taskRunJwt: options.taskRunJwt || "",
+        agentName: options.agentName,
         prompt: "",
         apiKeys,
-        mcpServerConfigs: codexMcpConfigs,
+        mcpServerConfigs: mcpConfigs.codex,
         callbackUrl: options.callbackUrl,
         previousKnowledge: options.previousKnowledge ?? undefined,
         previousMailbox: options.previousMailbox ?? undefined,
@@ -562,9 +672,10 @@ async function setupProviderAuth(
       const opencodeEnvResult = await getOpencodeEnvironment({
         taskRunId: options.taskRunId || "",
         taskRunJwt: options.taskRunJwt || "",
+        agentName: options.agentName,
         prompt: "",
         apiKeys,
-        mcpServerConfigs: opencodeMcpConfigs,
+        mcpServerConfigs: mcpConfigs.opencode,
         callbackUrl: options.callbackUrl,
         previousKnowledge: options.previousKnowledge ?? undefined,
         previousMailbox: options.previousMailbox ?? undefined,
@@ -1232,6 +1343,7 @@ sandboxesRouter.openapi(
             callbackUrl,
             previousKnowledge,
             previousMailbox,
+            agentName: body.agentName,
           });
           if (result.providers.length > 0) {
             console.log(
@@ -1503,13 +1615,90 @@ sandboxesRouter.openapi(
           if (agentConfig.environment) {
             try {
               const callbackUrl = env.NEXT_PUBLIC_CONVEX_URL || "http://localhost:9779";
-              const resolvedApiKeys = await userApiKeysPromise;
+              const [resolvedApiKeys, previousKnowledge, previousMailbox] = await Promise.all([
+                userApiKeysPromise,
+                convex
+                  .query(api.agentMemoryQueries.getLatestTeamKnowledge, {
+                    teamSlugOrId: body.teamSlugOrId,
+                  })
+                  .catch((err: unknown) => {
+                    console.error(
+                      "[sandboxes.start] Failed to fetch previous team knowledge for agent environment (non-fatal):",
+                      err,
+                    );
+                    return null;
+                  }),
+                convex
+                  .query(api.agentMemoryQueries.getLatestTeamMailbox, {
+                    teamSlugOrId: body.teamSlugOrId,
+                  })
+                  .catch((err: unknown) => {
+                    console.error(
+                      "[sandboxes.start] Failed to fetch previous team mailbox for agent environment (non-fatal):",
+                      err,
+                    );
+                    return null;
+                  }),
+              ]);
+              const [workspaceSettings, providerOverrides, mcpConfigs] =
+                await Promise.all([
+                  convex
+                    .query(api.workspaceSettings.get, {
+                      teamSlugOrId: body.teamSlugOrId,
+                    })
+                    .catch((err: unknown) => {
+                      console.error(
+                        "[sandboxes.start] Failed to fetch workspace settings for agent environment (non-fatal):",
+                        err,
+                      );
+                      return null;
+                    }),
+                  convex
+                    .query(api.providerOverrides.getForTeam, {
+                      teamSlugOrId: body.teamSlugOrId,
+                    })
+                    .catch((err: unknown) => {
+                      console.error(
+                        "[sandboxes.start] Failed to fetch provider overrides for agent environment (non-fatal):",
+                        err,
+                      );
+                      return [];
+                    }),
+                  getSandboxMcpConfigs(convex, {
+                    teamSlugOrId: body.teamSlugOrId,
+                    projectFullName: parsedRepoUrl?.fullName,
+                    logPrefix: "sandboxes.start",
+                  }),
+                ]);
+              const registry = getProviderRegistry();
+              const overrideMapped = mapProviderOverrides(providerOverrides);
+              const resolvedProvider = registry.resolveForAgent(
+                body.agentName,
+                overrideMapped,
+              );
+              const envOverrides = getEnvironmentOverridesForAgent(body.agentName, {
+                mcpConfigs,
+                workspaceSettings,
+                taskRunJwt: body.taskRunJwt,
+                resolvedProvider,
+                openAiBaseUrl: resolvedApiKeys.OPENAI_BASE_URL,
+              });
+              console.log("[sandboxes.start] Agent environment overrides", {
+                agentName: body.agentName,
+                mcpServerConfigCount: envOverrides.mcpServerConfigs?.length ?? 0,
+                hasWorkspaceSettings: !!envOverrides.workspaceSettings,
+                hasProviderConfig: !!envOverrides.providerConfig,
+              });
               const envResult = await agentConfig.environment({
                 taskRunId: body.taskRunId || "",
                 taskRunJwt: body.taskRunJwt || "",
+                agentName: body.agentName,
                 prompt: body.prompt,
                 apiKeys: resolvedApiKeys,
                 callbackUrl,
+                previousKnowledge: previousKnowledge ?? undefined,
+                previousMailbox: previousMailbox ?? undefined,
+                ...envOverrides,
               });
 
               await applyEnvironmentResult(

@@ -109,6 +109,24 @@ function getExistingClaudeMcpServers(config: JsonObject): JsonObject {
   return isJsonObject(mcpServers) ? mcpServers : {};
 }
 
+const MCP_SERVER_SECTION_NAME_RE =
+  /^\[mcp_servers(?:\.([^\]."]+)|\."([^"]+)")(?:\.[^\]]+)?\]$/;
+
+function getHostCodexMcpServerNames(toml: string): string[] {
+  const names = new Set<string>();
+
+  for (const line of toml.split("\n")) {
+    const trimmedLine = line.trim();
+    const match = trimmedLine.match(MCP_SERVER_SECTION_NAME_RE);
+    const name = match?.[1] ?? match?.[2];
+    if (name) {
+      names.add(name);
+    }
+  }
+
+  return Array.from(names);
+}
+
 function normalizeSensitiveKey(key: string): string {
   return key.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -331,8 +349,8 @@ export function buildMergedClaudeConfig(
   return {
     ...existingConfig,
     mcpServers: {
-      ...existingMcpServers,
       ...buildClaudeMcpServers(options.mcpServerConfigs),
+      ...existingMcpServers,
       [MANAGED_MEMORY_SERVER_NAME]: getManagedClaudeMemoryServer(options.agentName),
     },
   };
@@ -452,16 +470,26 @@ export function buildMergedCodexConfigToml(
   const managedConfigs = options.mcpServerConfigs.filter(
     (config) => config.name !== MANAGED_MEMORY_SERVER_NAME,
   );
-  const userMcpToml = buildCodexMcpToml(managedConfigs);
-  if (!userMcpToml) {
+  const hostMcpServerNames = new Set(getHostCodexMcpServerNames(options.hostConfigText ?? ""));
+  toml = stripMcpServerBlocksByName(
+    toml,
+    managedConfigs
+      .map((config) => config.name)
+      .filter((name) => !hostMcpServerNames.has(name)),
+  );
+  const cloudManagedConfigs = managedConfigs.filter(
+    (config) => !hostMcpServerNames.has(config.name),
+  );
+  if (cloudManagedConfigs.length === 0) {
     return toml;
   }
 
-  toml = stripMcpServerBlocksByName(
-    toml,
-    managedConfigs.map((config) => config.name),
-  );
-  return `${toml.trimEnd()}\n\n${userMcpToml}\n`;
+  const cloudMcpToml = buildCodexMcpToml(cloudManagedConfigs);
+  if (!cloudMcpToml) {
+    return toml;
+  }
+
+  return `${toml.trimEnd()}\n\n${cloudMcpToml}\n`;
 }
 
 export function buildMergedCodexPreview(
@@ -474,6 +502,7 @@ export function buildMergedCodexPreview(
 
 export function previewOpencodeMcpServers(
   configs: McpServerConfig[],
+  agentName?: string,
 ): Record<string, unknown> {
-  return buildOpencodeMcpConfig(configs);
+  return buildOpencodeMcpConfig(configs, agentName);
 }

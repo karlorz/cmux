@@ -451,7 +451,7 @@ ${getMemoryProtocolInstructions()}
   });
 
   const opencodeConfig = {
-    mcp: buildOpencodeMcpConfig(ctx.mcpServerConfigs ?? []),
+    mcp: buildOpencodeMcpConfig(ctx.mcpServerConfigs ?? [], ctx.agentName),
   };
   files.push({
     destinationPath: "$HOME/.config/opencode/opencode.json",

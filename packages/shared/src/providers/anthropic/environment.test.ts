@@ -187,11 +187,14 @@ describe("getClaudeEnvironment", () => {
       });
 
       expect(config.mcpServers.context7).toEqual({
-        command: "npx",
-        args: ["-y", "@upstash/context7-mcp@latest"],
-        env: {
-          CONTEXT7_API_KEY: "token",
-        },
+        type: "stdio",
+        command: "bunx",
+        args: [
+          "-y",
+          "@upstash/context7-mcp",
+          "--api-key",
+          "ctx7sk-7312b444-8bdb-4b03-9a49-1a1c00b8b022",
+        ],
       });
       expect(config.mcpServers["remote-api"]).toEqual({
         type: "http",
