@@ -1,6 +1,10 @@
 #!/bin/bash
 # Runs codex code review in background and shows results on next stop
 # This avoids blocking the stop hook while codex runs (which can take 5+ minutes)
+#
+# Transport failures (Cloudflare/timeout/exec) are tracked separately from
+# code review findings. Repeated transport failures trigger a cooldown to
+# avoid wasting resources.
 
 set -euo pipefail
 
@@ -35,11 +39,18 @@ debug_log "SESSION_ID: $SESSION_ID"
 # Session-scoped file paths
 REVIEWED_FILE="/tmp/codex-review-reviewed-${SESSION_ID}"
 RESULT_FILE="/tmp/codex-review-result-${SESSION_ID}"
+RESULT_TYPE_FILE="/tmp/codex-review-result-type-${SESSION_ID}"
 BG_PID_FILE="/tmp/codex-review-pid-${SESSION_ID}"
 BG_STATE_FILE="/tmp/codex-review-bg-state-${SESSION_ID}"
 FAIL_COUNT_FILE="/tmp/codex-review-fails-${SESSION_ID}"
+TRANSPORT_FAIL_FILE="/tmp/codex-review-transport-fails-${SESSION_ID}"
+TRANSPORT_COOLDOWN_FILE="/tmp/codex-review-transport-cooldown-${SESSION_ID}"
 AUTOPILOT_BLOCKED_FILE="/tmp/claude-autopilot-blocked-${SESSION_ID}"
 COMPLETED_FILE="/tmp/claude-autopilot-completed-${SESSION_ID}"
+
+# Cooldown settings
+TRANSPORT_FAIL_THRESHOLD="${CODEX_REVIEW_TRANSPORT_FAIL_THRESHOLD:-3}"
+TRANSPORT_COOLDOWN_SECONDS="${CODEX_REVIEW_TRANSPORT_COOLDOWN_SECONDS:-300}"
 
 # Clean up completed marker on exit
 trap 'rm -f "$COMPLETED_FILE"' EXIT
@@ -85,18 +96,50 @@ debug_log "Current state fingerprint: $STATE_FINGERPRINT"
 if [ -f "$RESULT_FILE" ]; then
   PREV_STATE=$(cat "$BG_STATE_FILE" 2>/dev/null || echo "")
   FINDINGS=$(cat "$RESULT_FILE")
-  rm -f "$RESULT_FILE" "$BG_PID_FILE" "$BG_STATE_FILE"
+  RESULT_TYPE=$(cat "$RESULT_TYPE_FILE" 2>/dev/null || echo "findings")
+  rm -f "$RESULT_FILE" "$RESULT_TYPE_FILE" "$BG_PID_FILE" "$BG_STATE_FILE"
 
   # Discard stale results if repo state changed since review started
   if [ "$PREV_STATE" != "$STATE_FINGERPRINT" ]; then
     debug_log "Discarding stale results for $PREV_STATE (current: $STATE_FINGERPRINT)"
     FINDINGS=""
+    RESULT_TYPE=""
   fi
 
   if [ -n "$FINDINGS" ]; then
-    debug_log "Found background review results for state: $PREV_STATE"
+    debug_log "Found background review results for state: $PREV_STATE (type: $RESULT_TYPE)"
 
-    # Check fail count
+    # Handle transport failures separately - do NOT feed into opencode verdict
+    if [ "$RESULT_TYPE" = "transport_failure" ]; then
+      debug_log "Background review had transport failure (not incrementing issue fail counter)"
+
+      # Track consecutive transport failures for cooldown
+      TRANSPORT_FAILS=0
+      if [ -f "$TRANSPORT_FAIL_FILE" ]; then
+        TRANSPORT_FAILS=$(cat "$TRANSPORT_FAIL_FILE")
+      fi
+      TRANSPORT_FAILS=$((TRANSPORT_FAILS + 1))
+      echo "$TRANSPORT_FAILS" > "$TRANSPORT_FAIL_FILE"
+      debug_log "Consecutive transport failures: $TRANSPORT_FAILS"
+
+      # If threshold reached, set cooldown timestamp
+      if [ "$TRANSPORT_FAILS" -ge "$TRANSPORT_FAIL_THRESHOLD" ]; then
+        COOLDOWN_UNTIL=$(($(date +%s) + TRANSPORT_COOLDOWN_SECONDS))
+        echo "$COOLDOWN_UNTIL" > "$TRANSPORT_COOLDOWN_FILE"
+        debug_log "Transport failure threshold reached ($TRANSPORT_FAILS >= $TRANSPORT_FAIL_THRESHOLD), cooldown until $(date -d "@$COOLDOWN_UNTIL" 2>/dev/null || echo "$COOLDOWN_UNTIL")"
+      fi
+
+      # Report transport failure to the agent but do NOT increment issue fail counter
+      echo "## Codex Review Transport Failure
+
+$FINDINGS
+
+---
+Codex review could not complete due to transport/connectivity issues. This is NOT a code review finding." >&2
+      exit 2
+    fi
+
+    # Normal code review findings path
     FAIL_COUNT=0
     if [ -f "$FAIL_COUNT_FILE" ]; then
       FAIL_COUNT=$(cat "$FAIL_COUNT_FILE")
@@ -112,6 +155,8 @@ If the output indicates code review passed with no issues, return exactly 'lgtm'
 
       if echo "$VERDICT" | grep -qi "lgtm"; then
         rm -f "$FAIL_COUNT_FILE"
+        # Reset transport failure counter on successful review
+        rm -f "$TRANSPORT_FAIL_FILE" "$TRANSPORT_COOLDOWN_FILE"
         debug_log "Background review PASSED (lgtm)"
         echo "$PREV_STATE" > "$REVIEWED_FILE"
         # Review passed, no action needed
@@ -180,6 +225,20 @@ fi
 
 debug_log "Proceeding with codex review..."
 
+# Check transport failure cooldown before starting new review
+if [ -f "$TRANSPORT_COOLDOWN_FILE" ]; then
+  COOLDOWN_UNTIL=$(cat "$TRANSPORT_COOLDOWN_FILE")
+  NOW=$(date +%s)
+  if [ "$NOW" -lt "$COOLDOWN_UNTIL" ]; then
+    REMAINING=$((COOLDOWN_UNTIL - NOW))
+    debug_log "Skipping: transport failure cooldown active (${REMAINING}s remaining)"
+    exit 0
+  else
+    debug_log "Transport failure cooldown expired, resuming reviews"
+    rm -f "$TRANSPORT_COOLDOWN_FILE"
+  fi
+fi
+
 # Dry-run mode
 if [ "${CODEX_REVIEW_DRY_RUN:-}" = "1" ]; then
   debug_log "Dry-run mode, exiting"
@@ -208,35 +267,27 @@ if [ -f "$BG_PID_FILE" ]; then
   rm -f "$BG_PID_FILE" "$BG_STATE_FILE"
 fi
 
-# Start background review (no timeout - let it run as long as needed)
+# Start background review using the extractor script
+EXTRACTOR_SCRIPT="$CLAUDE_PROJECT_DIR/.claude/scripts/codex-review-extract.sh"
 (
   TMPFILE=$(mktemp)
   trap 'rm -f "$TMPFILE"' EXIT
 
-  if command -v unbuffer >/dev/null 2>&1; then
-    unbuffer codex \
-      --sandbox danger-full-access \
-      --model gpt-5.4 \
-      -c model_reasoning_effort="high" \
-      review --base main > "$TMPFILE" 2>&1 || true
+  EXTRACTOR_EXIT=0
+  CLAUDE_PROJECT_DIR="$CLAUDE_PROJECT_DIR" "$EXTRACTOR_SCRIPT" --base main > "$TMPFILE" 2>&1 || EXTRACTOR_EXIT=$?
+
+  FINDINGS=$(cat "$TMPFILE")
+
+  if [ "$EXTRACTOR_EXIT" -ne 0 ]; then
+    # Extractor exited non-zero -> transport/batch failure
+    echo "$FINDINGS" > "$RESULT_FILE"
+    echo "transport_failure" > "$RESULT_TYPE_FILE"
   else
-    codex \
-      --sandbox danger-full-access \
-      --model gpt-5.4 \
-      -c model_reasoning_effort="high" \
-      review --base main > "$TMPFILE" 2>&1 || true
+    # Extractor succeeded -> code review findings or clean
+    echo "$FINDINGS" > "$RESULT_FILE"
+    echo "findings" > "$RESULT_TYPE_FILE"
   fi
 
-  # Extract findings
-  CLEAN=$(sed 's/\x1b\[[0-9;]*m//g' "$TMPFILE")
-  FINDINGS=$(echo "$CLEAN" | awk '
-    /^codex$/ { found=1; content=""; next }
-    found { content = content $0 "\n" }
-    END { print content }
-  ' | sed '/^$/d' | grep -v '^tokens used' | head -50)
-
-  # Save results for next stop to pick up
-  echo "$FINDINGS" > "$RESULT_FILE"
   rm -f "$BG_PID_FILE"
 ) &
 

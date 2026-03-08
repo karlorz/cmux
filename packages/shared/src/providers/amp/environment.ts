@@ -17,9 +17,22 @@ export async function getAmpEnvironment(
   ctx: EnvironmentContext
 ): Promise<EnvironmentResult> {
   // These must be lazy since configs are imported into the browser
-  const { readFile } = await import("node:fs/promises");
-  const { homedir } = await import("node:os");
   const { Buffer } = await import("node:buffer");
+
+  // useHostConfig is safe for desktop/Electron apps where the host IS the user's machine.
+  // For server deployments, this should be false to prevent credential leakage.
+  const useHostConfig = ctx.useHostConfig ?? false;
+
+  let homeDir: string | undefined;
+  let readFile:
+    | ((path: string, encoding: "utf-8") => Promise<string>)
+    | undefined;
+  if (useHostConfig) {
+    const fs = await import("node:fs/promises");
+    const os = await import("node:os");
+    readFile = fs.readFile;
+    homeDir = process.env.HOME || process.env.USERPROFILE || os.homedir();
+  }
 
   const files: EnvironmentResult["files"] = [];
   const env: Record<string, string> = {};
@@ -29,22 +42,28 @@ export async function getAmpEnvironment(
   startupCommands.push("mkdir -p ~/.config/amp");
   startupCommands.push("mkdir -p ~/.local/share/amp");
 
-  // Transfer settings.json
-  try {
-    const settingsPath = `${homedir()}/.config/amp/settings.json`;
-    const settingsContent = await readFile(settingsPath, "utf-8");
+  // Transfer settings.json from host (desktop mode only)
+  let settingsAdded = false;
+  if (useHostConfig && readFile && homeDir) {
+    try {
+      const settingsPath = `${homeDir}/.config/amp/settings.json`;
+      const settingsContent = await readFile(settingsPath, "utf-8");
 
-    // Validate that it's valid JSON
-    JSON.parse(settingsContent);
+      // Validate that it's valid JSON
+      JSON.parse(settingsContent);
 
-    files.push({
-      destinationPath: "$HOME/.config/amp/settings.json",
-      contentBase64: Buffer.from(settingsContent).toString("base64"),
-      mode: "644",
-    });
-  } catch (error) {
-    console.warn("Failed to read amp settings.json:", error);
-    // Create default settings if none exist
+      files.push({
+        destinationPath: "$HOME/.config/amp/settings.json",
+        contentBase64: Buffer.from(settingsContent).toString("base64"),
+        mode: "644",
+      });
+      settingsAdded = true;
+    } catch (error) {
+      console.warn("Failed to read amp settings.json:", error);
+    }
+  }
+  if (!settingsAdded) {
+    // Create default settings when host config is unavailable
     const defaultSettings = {
       model: "anthropic/claude-3-5-sonnet-20241022",
       theme: "dark",
@@ -58,21 +77,23 @@ export async function getAmpEnvironment(
     });
   }
 
-  // Transfer secrets.json
-  try {
-    const secretsPath = `${homedir()}/.local/share/amp/secrets.json`;
-    const secretsContent = await readFile(secretsPath, "utf-8");
+  // Transfer secrets.json from host (desktop mode only)
+  if (useHostConfig && readFile && homeDir) {
+    try {
+      const secretsPath = `${homeDir}/.local/share/amp/secrets.json`;
+      const secretsContent = await readFile(secretsPath, "utf-8");
 
-    // Validate that it's valid JSON
-    JSON.parse(secretsContent);
+      // Validate that it's valid JSON
+      JSON.parse(secretsContent);
 
-    files.push({
-      destinationPath: "$HOME/.local/share/amp/secrets.json",
-      contentBase64: Buffer.from(secretsContent).toString("base64"),
-      mode: "600", // More restrictive permissions for secrets
-    });
-  } catch (error) {
-    console.warn("Failed to read amp secrets.json:", error);
+      files.push({
+        destinationPath: "$HOME/.local/share/amp/secrets.json",
+        contentBase64: Buffer.from(secretsContent).toString("base64"),
+        mode: "600", // More restrictive permissions for secrets
+      });
+    } catch (error) {
+      console.warn("Failed to read amp secrets.json:", error);
+    }
   }
 
   // The local proxy that Amp CLI should talk to

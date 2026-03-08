@@ -2,6 +2,10 @@
 # Runs codex review and extracts only the final findings.
 # Usage: codex-review-extract.sh [--base main | --uncommitted]
 # Exit: outputs extracted review text to stdout, empty if codex finds nothing.
+#
+# Batch statuses: ok, no_findings, cloudflare_blocked, timeout, exec_error
+# Exit 0 when all batches succeed. Non-zero with synthesized blocker summary
+# when any batch fails (Cloudflare/timeout/exec error).
 set -euo pipefail
 
 cd "${CLAUDE_PROJECT_DIR:-$(pwd)}"
@@ -48,6 +52,8 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 FINAL_OUT="$TMP_DIR/final.txt"
 FILES_JSON="$TMP_DIR/files.json"
 BATCH_LIST_FILE="$TMP_DIR/batches.txt"
+BATCH_STATUS_DIR="$TMP_DIR/status"
+mkdir -p "$BATCH_STATUS_DIR"
 : > "$FINAL_OUT"
 
 python3 - "$MODE" "$BASE_BRANCH" "$FILES_JSON" <<'PY'
@@ -126,7 +132,8 @@ run_batch() {
   local batch_file="$1"
   local output_file="$2"
   local log_file="$3"
-  python3 - "$batch_file" "$output_file" "$log_file" "$MODE" "$BASE_BRANCH" "$CODEX_REVIEW_TIMEOUT_SECONDS" "$CODEX_REVIEW_MODEL" <<'PY'
+  local status_file="$4"
+  python3 - "$batch_file" "$output_file" "$log_file" "$MODE" "$BASE_BRANCH" "$CODEX_REVIEW_TIMEOUT_SECONDS" "$CODEX_REVIEW_MODEL" "$status_file" <<'PY'
 import json
 import pathlib
 import subprocess
@@ -139,6 +146,7 @@ mode = sys.argv[4]
 base_branch = sys.argv[5]
 timeout_seconds = int(sys.argv[6])
 model = sys.argv[7]
+status_path = pathlib.Path(sys.argv[8])
 files = json.loads(batch_file.read_text(encoding="utf-8"))
 serialized_files = json.dumps(files)
 if mode == "base":
@@ -182,11 +190,13 @@ with log_path.open("wb") as log_file:
         output_path.write_text(
             f"[codex-review-extract] timed out after {timeout_seconds}s while running batch for: {serialized_files}\n"
         )
+        status_path.write_text("timeout")
         raise SystemExit(0)
     except Exception as exc:
         output_path.write_text(
             f"[codex-review-extract] failed while reviewing batch for {serialized_files}: {exc}\n"
         )
+        status_path.write_text("exec_error")
         raise SystemExit(0)
 
 if completed.returncode != 0:
@@ -196,21 +206,31 @@ if completed.returncode != 0:
             "[codex-review-extract] codex connectivity blocked by Cloudflare while reviewing batch: "
             f"{serialized_files}\n"
         )
+        status_path.write_text("cloudflare_blocked")
         raise SystemExit(0)
     output_path.write_text(
         f"[codex-review-extract] codex exec exited with status {completed.returncode} for batch: {serialized_files}\n"
     )
+    status_path.write_text("exec_error")
     raise SystemExit(0)
 
 if not output_path.exists():
     output_path.write_text(
         f"[codex-review-extract] missing Codex output for batch: {serialized_files}\n"
     )
+    status_path.write_text("exec_error")
     raise SystemExit(0)
 
 content = output_path.read_text(errors="replace").strip()
 if not content:
     output_path.write_text("No findings.\n")
+    status_path.write_text("no_findings")
+else:
+    # Check if the output looks like "No findings" even with slight variations
+    if content.lower().replace(".", "").strip() == "no findings":
+        status_path.write_text("no_findings")
+    else:
+        status_path.write_text("ok")
 PY
 }
 
@@ -218,6 +238,7 @@ if [ ! -s "$BATCH_LIST_FILE" ]; then
   exit 0
 fi
 
+# Accumulate per-batch results instead of failing immediately
 process_output() {
   local output_file="$1"
   if [ ! -f "$output_file" ]; then
@@ -247,44 +268,130 @@ PY
 
 active_pids=()
 active_outputs=()
+active_statuses=()
+active_batches=()
 active_count=0
+
+# Global trackers for batch outcomes
+total_batches=0
+successful_batches=0
+failed_batches=0
+failed_reasons=()
+failed_scopes=()
 
 wait_for_group() {
   local pid
   local output
+  local status_file
+  local batch_file
+  local i
   for pid in "${active_pids[@]}"; do
     wait "$pid" || true
   done
-  for output in "${active_outputs[@]}"; do
-    if ! process_output "$output"; then
-      return 1
+  for i in "${!active_outputs[@]}"; do
+    output="${active_outputs[$i]}"
+    status_file="${active_statuses[$i]}"
+    batch_file="${active_batches[$i]}"
+    total_batches=$((total_batches + 1))
+
+    local batch_status="exec_error"
+    if [ -f "$status_file" ]; then
+      batch_status=$(cat "$status_file")
     fi
+
+    case "$batch_status" in
+      ok|no_findings)
+        successful_batches=$((successful_batches + 1))
+        # Process output normally for successful batches
+        process_output "$output" || true
+        ;;
+      cloudflare_blocked|timeout|exec_error)
+        failed_batches=$((failed_batches + 1))
+        failed_reasons+=("$batch_status")
+        # Read batch scope for the summary (truncate to avoid unbounded growth)
+        local scope=""
+        if [ -f "$batch_file" ]; then
+          scope=$(head -c 200 "$batch_file" 2>/dev/null || echo "unknown")
+        fi
+        failed_scopes+=("$scope")
+        ;;
+      *)
+        # Unknown status - treat as error
+        failed_batches=$((failed_batches + 1))
+        failed_reasons+=("exec_error")
+        failed_scopes+=("unknown")
+        ;;
+    esac
   done
   active_pids=()
   active_outputs=()
+  active_statuses=()
+  active_batches=()
   active_count=0
   return 0
 }
 
+batch_index=0
 while IFS= read -r batch; do
   [ -z "$batch" ] && continue
   batch_output="$batch.out"
   batch_log="$batch.log"
-  run_batch "$batch" "$batch_output" "$batch_log" &
+  batch_status_file="$BATCH_STATUS_DIR/batch-${batch_index}.status"
+  run_batch "$batch" "$batch_output" "$batch_log" "$batch_status_file" &
   active_pids+=("$!")
   active_outputs+=("$batch_output")
+  active_statuses+=("$batch_status_file")
+  active_batches+=("$batch")
   active_count=$((active_count + 1))
+  batch_index=$((batch_index + 1))
   if [ "$active_count" -ge "$CODEX_REVIEW_MAX_PARALLEL" ]; then
-    if ! wait_for_group; then
-      exit 1
-    fi
+    wait_for_group
   fi
 done < "$BATCH_LIST_FILE"
 
 if [ "$active_count" -gt 0 ]; then
-  if ! wait_for_group; then
-    exit 1
+  wait_for_group
+fi
+
+# If any batches failed, emit synthesized blocker summary and exit non-zero
+if [ "$failed_batches" -gt 0 ]; then
+  # Determine dominant failure reason
+  dominant_reason="exec_error"
+  cloudflare_count=0
+  timeout_count=0
+  exec_error_count=0
+  for reason in "${failed_reasons[@]}"; do
+    case "$reason" in
+      cloudflare_blocked) cloudflare_count=$((cloudflare_count + 1)) ;;
+      timeout) timeout_count=$((timeout_count + 1)) ;;
+      exec_error) exec_error_count=$((exec_error_count + 1)) ;;
+    esac
+  done
+  if [ "$cloudflare_count" -ge "$timeout_count" ] && [ "$cloudflare_count" -ge "$exec_error_count" ]; then
+    dominant_reason="cloudflare_blocked"
+  elif [ "$timeout_count" -ge "$exec_error_count" ]; then
+    dominant_reason="timeout"
   fi
+
+  # Build affected scopes list
+  affected_scopes=""
+  for scope in "${failed_scopes[@]}"; do
+    if [ -n "$affected_scopes" ]; then
+      affected_scopes="$affected_scopes; $scope"
+    else
+      affected_scopes="$scope"
+    fi
+  done
+
+  cat <<EOF
+[codex-review-extract] incomplete review: ${failed_batches}/${total_batches} batches failed
+  dominant failure: ${dominant_reason}
+  successful: ${successful_batches}/${total_batches}
+  failed: ${failed_batches}/${total_batches}
+  cloudflare_blocked: ${cloudflare_count}, timeout: ${timeout_count}, exec_error: ${exec_error_count}
+  affected scopes: ${affected_scopes}
+EOF
+  exit 1
 fi
 
 python3 - "$FINAL_OUT" "$CODEX_REVIEW_OUTPUT_LINE_LIMIT" <<'PY'

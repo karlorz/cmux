@@ -14,10 +14,11 @@ async function makeGrokEnvironment(
   defaultBaseUrl: string | null,
   defaultModel: string | null
 ): Promise<EnvironmentResult> {
-  const { readFile } = await import("node:fs/promises");
-  const { homedir } = await import("node:os");
-  const { join } = await import("node:path");
   const { Buffer } = await import("node:buffer");
+
+  // useHostConfig is safe for desktop/Electron apps where the host IS the user's machine.
+  // For server deployments, this should be false to prevent credential leakage.
+  const useHostConfig = ctx.useHostConfig ?? false;
 
   const files: EnvironmentResult["files"] = [];
   const env: Record<string, string> = {};
@@ -26,9 +27,6 @@ async function makeGrokEnvironment(
   startupCommands.push("mkdir -p ~/.grok");
   startupCommands.push("rm -f /tmp/grok-telemetry-*.log 2>/dev/null || true");
 
-  const grokDir = join(homedir(), ".grok");
-  const settingsPath = join(grokDir, "settings.json");
-
   type GrokSettings = {
     selectedAuthType?: string;
     useExternalAuth?: boolean;
@@ -36,18 +34,25 @@ async function makeGrokEnvironment(
   };
 
   let settings: GrokSettings = {};
-  try {
-    const content = await readFile(settingsPath, "utf-8");
+  if (useHostConfig) {
+    const { readFile } = await import("node:fs/promises");
+    const { homedir } = await import("node:os");
+    const { join } = await import("node:path");
+    const grokDir = join(homedir(), ".grok");
+    const settingsPath = join(grokDir, "settings.json");
     try {
-      const parsed = JSON.parse(content) as unknown;
-      if (parsed && typeof parsed === "object") {
-        settings = parsed as GrokSettings;
+      const content = await readFile(settingsPath, "utf-8");
+      try {
+        const parsed = JSON.parse(content) as unknown;
+        if (parsed && typeof parsed === "object") {
+          settings = parsed as GrokSettings;
+        }
+      } catch {
+        // Ignore invalid JSON and recreate with defaults
       }
     } catch {
-      // Ignore invalid JSON and recreate with defaults
+      // File might not exist; we'll create it
     }
-  } catch {
-    // File might not exist; we'll create it
   }
 
   settings.selectedAuthType = "openai";
