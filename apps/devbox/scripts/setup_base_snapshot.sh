@@ -1453,12 +1453,15 @@ export TERM=xterm-256color
 export EDITOR=nano
 export PATH="$HOME/.local/bin:$PATH"
 
-# History
-HISTSIZE=10000
-SAVEHIST=10000
+# History - persist and share across terminals
 HISTFILE=~/.zsh_history
-setopt SHARE_HISTORY
-setopt HIST_IGNORE_DUPS
+HISTSIZE=50000
+SAVEHIST=50000
+setopt INC_APPEND_HISTORY    # Write history after each command
+setopt SHARE_HISTORY         # Share history between terminals
+setopt HIST_IGNORE_DUPS      # Ignore duplicate commands
+setopt HIST_VERIFY           # Show command before executing from history
+setopt HIST_REDUCE_BLANKS    # Remove extra blanks from commands
 
 # Prompt
 PS1='%F{green}%n@%m%f:%F{blue}%~%f$ '
