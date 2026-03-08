@@ -54,6 +54,7 @@ import {
   getOpenAIEnvironment,
   applyCodexApiKeys,
 } from "@cmux/shared/providers/openai/environment";
+import { getOpencodeEnvironment } from "@cmux/shared/providers/opencode/environment";
 import {
   getProviderRegistry,
   type ProviderOverride,
@@ -548,6 +549,38 @@ async function setupProviderAuth(
     }
   } catch (error) {
     console.error("[setupProviderAuth] Failed to set up Codex auth:", error);
+  }
+
+  // --- OpenCode auth ---
+  try {
+    const hasOpencodeKeys =
+      apiKeys.XAI_API_KEY ||
+      apiKeys.ANTHROPIC_API_KEY ||
+      apiKeys.OPENAI_API_KEY ||
+      apiKeys.OPENROUTER_API_KEY;
+    if (hasOpencodeKeys) {
+      const opencodeEnvResult = await getOpencodeEnvironment({
+        taskRunId: options.taskRunId || "",
+        taskRunJwt: options.taskRunJwt || "",
+        prompt: "",
+        apiKeys,
+        mcpServerConfigs: opencodeMcpConfigs,
+        callbackUrl: options.callbackUrl,
+        previousKnowledge: options.previousKnowledge ?? undefined,
+        previousMailbox: options.previousMailbox ?? undefined,
+      });
+
+      await applyEnvironmentResult(
+        instance,
+        opencodeEnvResult,
+        "setupProviderAuth:opencode",
+      );
+
+      configuredProviders.push("opencode");
+      console.log("[setupProviderAuth] OpenCode provider auth configured");
+    }
+  } catch (error) {
+    console.error("[setupProviderAuth] Failed to set up OpenCode auth:", error);
   }
 
   return { providers: configuredProviders };

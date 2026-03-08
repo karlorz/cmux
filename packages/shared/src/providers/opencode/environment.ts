@@ -454,7 +454,7 @@ ${getMemoryProtocolInstructions()}
     mcp: buildOpencodeMcpConfig(ctx.mcpServerConfigs ?? []),
   };
   files.push({
-    destinationPath: "/root/workspace/opencode.json",
+    destinationPath: "$HOME/.config/opencode/opencode.json",
     contentBase64: Buffer.from(
       JSON.stringify(opencodeConfig, null, 2) + "\n",
     ).toString("base64"),
