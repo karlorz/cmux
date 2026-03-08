@@ -1,6 +1,15 @@
 import type { Doc } from "@cmux/convex/dataModel";
 import {
-  parseGithubRepoUrl,
+  buildEmptyMcpFormState,
+  buildMcpTransportPayload,
+  formatMcpEnvVarsText,
+  formatMcpHeadersText,
+  getScopedMcpProjectFullName,
+  isValidMcpProjectFullName,
+  parseMcpArgsText,
+  parseMcpEnvVarsText,
+  parseMcpHeadersText,
+  type McpFormState,
   type McpServerPreset,
   type McpTransportType,
 } from "@cmux/shared";
@@ -9,23 +18,7 @@ export type Scope = "global" | "workspace";
 export type AgentKey = "claude" | "codex" | "gemini" | "opencode";
 export type McpServerConfig = Doc<"mcpServerConfigs">;
 
-export type FormState = {
-  name: string;
-  displayName: string;
-  transportType: McpTransportType;
-  command: string;
-  argsText: string;
-  url: string;
-  headersText: string;
-  envVarsText: string;
-  description: string;
-  enabledClaude: boolean;
-  enabledCodex: boolean;
-  enabledGemini: boolean;
-  enabledOpencode: boolean;
-  scope: Scope;
-  projectFullName: string;
-};
+export type FormState = McpFormState;
 
 export type ParsedJsonConfig = {
   transportType: McpTransportType;
@@ -144,48 +137,18 @@ export function getErrorMessage(error: unknown, fallback: string): string {
 }
 
 export function buildEmptyForm(scope: Scope): FormState {
-  return {
-    name: "",
-    displayName: "",
-    transportType: "stdio",
-    command: "",
-    argsText: "",
-    url: "",
-    headersText: "",
-    envVarsText: "",
-    description: "",
-    enabledClaude: true,
-    enabledCodex: true,
-    enabledGemini: true,
-    enabledOpencode: true,
-    scope,
-    projectFullName: "",
-  };
+  return buildEmptyMcpFormState(scope);
 }
 
 export function formatEnvVarsText(
   envVars: Record<string, string> | undefined,
   includeExistingSecretPlaceholder = false,
 ): string {
-  if (!envVars) {
-    return "";
-  }
-
-  return Object.keys(envVars)
-    .map((key) =>
-      `${key}=${includeExistingSecretPlaceholder ? EXISTING_SECRET_PLACEHOLDER : envVars[key]}`,
-    )
-    .join("\n");
+  return formatMcpEnvVarsText(envVars, includeExistingSecretPlaceholder);
 }
 
 export function formatHeadersText(headers: Record<string, string> | undefined): string {
-  if (!headers) {
-    return "";
-  }
-
-  return Object.entries(headers)
-    .map(([key, value]) => `${key}: ${value}`)
-    .join("\n");
+  return formatMcpHeadersText(headers);
 }
 
 export function getTransportType(config: Pick<McpServerConfig, "type">): McpTransportType {
@@ -215,10 +178,7 @@ export function buildFormFromConfig(config: McpServerConfig): FormState {
 }
 
 export function parseArgsText(value: string): string[] {
-  return value
-    .split("\n")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
+  return parseMcpArgsText(value);
 }
 
 export function getJsonConfigUiCopy(transportType: McpTransportType) {
@@ -229,38 +189,10 @@ export function parseHeadersText(value: string): {
   headers?: Record<string, string>;
   error?: string;
 } {
-  const lines = value
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  if (lines.length === 0) {
-    return {};
-  }
-
-  const headers: Array<[string, string]> = [];
-
-  for (const line of lines) {
-    const separatorIndex = line.includes(":") ? line.indexOf(":") : line.indexOf("=");
-    if (separatorIndex <= 0) {
-      return {
-        error: "Headers must use KEY: value or KEY=value format, one per line.",
-      };
-    }
-
-    const key = line.slice(0, separatorIndex).trim();
-    const headerValue = line.slice(separatorIndex + 1).trim();
-    if (!key) {
-      return {
-        error: "Headers must include a key before ':' or '='.",
-      };
-    }
-
-    headers.push([key, headerValue]);
-  }
-
+  const parsed = parseMcpHeadersText(value);
   return {
-    headers: Object.fromEntries(headers),
+    headers: parsed.entries,
+    error: parsed.error,
   };
 }
 
@@ -462,60 +394,27 @@ export function parseEnvVarsText(value: string): {
   hasChanges: boolean;
   error?: string;
 } {
-  const lines = value
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
+  const parsed = parseMcpEnvVarsText(value, {
+    placeholderValue: EXISTING_SECRET_PLACEHOLDER,
+    trimValue: false,
+  });
 
-  if (lines.length === 0) {
-    return { hasChanges: false };
-  }
-
-  const entries: Array<[string, string]> = [];
-  let hasChanges = false;
-
-  for (const line of lines) {
-    const separatorIndex = line.indexOf("=");
-    if (separatorIndex <= 0) {
-      return {
-        hasChanges: false,
-        error: "Environment variables must use KEY=value format, one per line.",
-      };
-    }
-
-    const key = line.slice(0, separatorIndex).trim();
-    const envValue = line.slice(separatorIndex + 1);
-    if (!key) {
-      return {
-        hasChanges: false,
-        error: "Environment variables must include a key before '='.",
-      };
-    }
-
-    if (envValue === EXISTING_SECRET_PLACEHOLDER) {
-      continue;
-    }
-
-    hasChanges = true;
-    entries.push([key, envValue]);
-  }
-
-  if (!hasChanges || entries.length === 0) {
-    return { hasChanges: false };
-  }
-
-  return { envVars: Object.fromEntries(entries), hasChanges: true };
+  return {
+    envVars: parsed.entries,
+    hasChanges: parsed.hasChanges,
+    error: parsed.error,
+  };
 }
 
 export function isValidProjectFullName(value: string): boolean {
-  return parseGithubRepoUrl(value)?.fullName === value.trim();
+  return isValidMcpProjectFullName(value);
 }
 
 export function getScopedProjectFullName(
   scope: Scope,
   projectFullName: string,
 ): string | undefined {
-  return scope === "workspace" ? projectFullName.trim() : undefined;
+  return getScopedMcpProjectFullName(scope, projectFullName);
 }
 
 export function buildEnabledAgentState(
@@ -621,20 +520,7 @@ export function getTransportPayload(
     "transportType" | "command" | "argsText" | "url" | "headersText"
   >,
 ) {
-  const parsedHeaders = parseHeadersText(input.headersText);
-
-  return {
-    type: input.transportType,
-    ...(input.transportType === "stdio"
-      ? {
-          command: input.command.trim(),
-          args: parseArgsText(input.argsText),
-        }
-      : {
-          url: input.url.trim(),
-          ...(parsedHeaders.headers ? { headers: parsedHeaders.headers } : {}),
-        }),
-  };
+  return buildMcpTransportPayload(input);
 }
 
 export function formatMcpServerTarget(config: Pick<McpServerConfig, "type" | "command" | "args" | "url">): string {

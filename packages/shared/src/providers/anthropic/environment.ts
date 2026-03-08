@@ -28,10 +28,24 @@ export async function getClaudeEnvironment(
   // These must be lazy since configs are imported into the browser
   // const { exec } = await import("node:child_process");
   // const { promisify } = await import("node:util");
-  const { readFile } = await import("node:fs/promises");
-  const { homedir } = await import("node:os");
   const { Buffer } = await import("node:buffer");
   // const execAsync = promisify(exec);
+
+  // useHostConfig is safe for desktop/Electron apps where the host IS the user's machine.
+  // For server deployments, this should be false to prevent credential leakage.
+  const useHostConfig = ctx.useHostConfig ?? false;
+
+  let hostConfigText: string | undefined;
+  if (useHostConfig) {
+    const { readFile } = await import("node:fs/promises");
+
+    try {
+      const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? "";
+      hostConfigText = await readFile(`${homeDir}/.claude.json`, "utf-8");
+    } catch {
+      hostConfigText = undefined;
+    }
+  }
 
   const files: EnvironmentResult["files"] = [];
   const env: Record<string, string> = {};
@@ -41,18 +55,9 @@ export async function getClaudeEnvironment(
   const claudeApiKeyHelperPath = `${claudeSecretsDir}/anthropic_key_helper.sh`;
   // Prepare .claude.json
   try {
-    // Try to read existing .claude.json, or create a new one
-    let existingConfig = {};
-    try {
-      const content = await readFile(`${homedir()}/.claude.json`, "utf-8");
-      existingConfig = JSON.parse(content);
-    } catch {
-      // File doesn't exist or is invalid, start fresh
-    }
-
     const config = {
       ...buildMergedClaudeConfig({
-        hostConfigText: JSON.stringify(existingConfig),
+        hostConfigText,
         mcpServerConfigs: ctx.mcpServerConfigs ?? [],
         agentName: ctx.agentName,
       }),

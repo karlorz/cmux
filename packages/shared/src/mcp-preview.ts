@@ -1,4 +1,7 @@
-import type { McpServerConfig } from "./mcp-server-config";
+import {
+  normalizeMcpServerConfig,
+  type McpServerConfig,
+} from "./mcp-server-config";
 import {
   buildClaudeMcpServers,
   buildCodexMcpToml,
@@ -11,6 +14,18 @@ const CODEX_SANDBOX_MODE_LINE = 'sandbox_mode = "danger-full-access"';
 const CODEX_APPROVAL_POLICY_LINE = 'approval_policy = "never"';
 const CODEX_DISABLE_RESPONSE_STORAGE_LINE = "disable_response_storage = true";
 const MANAGED_MEMORY_SERVER_NAME = "devsh-memory";
+const WEB_PREVIEW_AGENT_BUILTINS = {
+  claude: [
+    normalizeMcpServerConfig({
+      name: "context7",
+      type: "stdio",
+      command: "bunx",
+      args: ["-y", "@upstash/context7-mcp", "--api-key", "[REDACTED]"],
+    }),
+  ],
+  codex: [],
+  opencode: [],
+} satisfies Record<"claude" | "codex" | "opencode", McpServerConfig[]>;
 const MIGRATION_TARGET_MODEL = "gpt-5.3-codex";
 const REDACTED_VALUE = "[REDACTED]";
 const REDACTED_BEARER_VALUE = "Bearer [REDACTED]";
@@ -57,6 +72,248 @@ export type BuildMergedPreviewOptions = {
   agentName?: string;
 };
 
+export type WebPreviewAgent = "claude" | "codex" | "opencode";
+export type WebPreviewScope = "global" | "workspace";
+
+type PreviewSourceConfigBase = {
+  name: string;
+  scope: WebPreviewScope;
+  projectFullName?: string;
+  enabledClaude: boolean;
+  enabledCodex: boolean;
+  enabledOpencode: boolean;
+};
+
+const WEB_PREVIEW_AGENTS = ["claude", "codex", "opencode"] as const;
+const WEB_PREVIEW_AGENT_ENABLED_FIELDS = {
+  claude: "enabledClaude",
+  codex: "enabledCodex",
+  opencode: "enabledOpencode",
+} satisfies Record<
+  WebPreviewAgent,
+  keyof Pick<PreviewSourceConfigBase, "enabledClaude" | "enabledCodex" | "enabledOpencode">
+>;
+
+function cloneMcpServerConfig(config: McpServerConfig): McpServerConfig {
+  if (config.type === "stdio") {
+    return {
+      ...config,
+      args: [...config.args],
+      ...(config.envVars ? { envVars: { ...config.envVars } } : {}),
+    };
+  }
+
+  return {
+    ...config,
+    ...(config.headers ? { headers: { ...config.headers } } : {}),
+    ...(config.envVars ? { envVars: { ...config.envVars } } : {}),
+  };
+}
+
+function dedupeConfigsByName<T extends { name: string }>(configs: T[]): T[] {
+  const deduped = new Map<string, T>();
+
+  for (const config of configs) {
+    deduped.delete(config.name);
+    deduped.set(config.name, config);
+  }
+
+  return Array.from(deduped.values());
+}
+
+function getScopedPreviewConfigs<T extends PreviewSourceConfigBase>(
+  configs: T[],
+  scope: WebPreviewScope,
+  workspaceProjectFullName?: string,
+): T[] {
+  const globalConfigs = dedupeConfigsByName(
+    configs.filter((config) => config.scope === "global"),
+  );
+
+  if (scope !== "workspace" || !workspaceProjectFullName) {
+    return globalConfigs;
+  }
+
+  const workspaceConfigs = dedupeConfigsByName(
+    configs.filter(
+      (config) =>
+        config.scope === "workspace" &&
+        config.projectFullName === workspaceProjectFullName,
+    ),
+  );
+
+  const mergedConfigs = new Map<string, T>();
+  for (const config of globalConfigs) {
+    mergedConfigs.set(config.name, config);
+  }
+  for (const config of workspaceConfigs) {
+    mergedConfigs.set(config.name, config);
+  }
+
+  return Array.from(mergedConfigs.values());
+}
+
+export function getWebPreviewBuiltinMcpServers(agent: WebPreviewAgent): McpServerConfig[] {
+  return WEB_PREVIEW_AGENT_BUILTINS[agent].map(cloneMcpServerConfig);
+}
+
+export function getWorkspacePreviewProjectNames<
+  T extends { scope: WebPreviewScope; projectFullName?: string },
+>(configs: T[]): string[] {
+  return Array.from(
+    new Set(
+      configs
+        .filter(
+          (config): config is T & { projectFullName: string } =>
+            config.scope === "workspace" && typeof config.projectFullName === "string",
+        )
+        .map((config) => config.projectFullName),
+    ),
+  ).sort((left, right) => left.localeCompare(right));
+}
+
+export function formatPreviewNameList(names: string[]): string {
+  if (names.length <= 1) {
+    return names[0] ?? "";
+  }
+
+  const leadingNames = names.slice(0, -1);
+  const trailingName = names[names.length - 1];
+  return `${leadingNames.join(", ")} and ${trailingName}`;
+}
+
+export function getMcpPreviewScopeDescription(
+  scope: WebPreviewScope,
+  workspaceProjectFullName?: string,
+): string {
+  if (scope === "workspace" && workspaceProjectFullName) {
+    return `Workspace preview for ${workspaceProjectFullName} layered over global MCP settings.`;
+  }
+
+  if (scope === "workspace") {
+    return "Workspace preview layered over global MCP settings.";
+  }
+
+  return "Global MCP settings preview.";
+}
+
+export function getWebPreviewInjectedServerNames(
+  agent: WebPreviewAgent,
+  options?: { includeBuiltins?: boolean },
+): string[] {
+  const includeBuiltins = options?.includeBuiltins ?? false;
+  const injectedServerNames = [MANAGED_MEMORY_SERVER_NAME];
+
+  if (!includeBuiltins) {
+    return injectedServerNames;
+  }
+
+  return [
+    ...new Set([
+      ...WEB_PREVIEW_AGENT_BUILTINS[agent].map((config) => config.name),
+      ...injectedServerNames,
+    ]),
+  ];
+}
+
+export function getWebPreviewInjectedServersDescription(
+  agent: WebPreviewAgent,
+  options?: { includeBuiltins?: boolean },
+): string {
+  const names = getWebPreviewInjectedServerNames(agent, options);
+  const formattedNames = formatPreviewNameList(names);
+
+  return names.length === 1
+    ? `${formattedNames} is included.`
+    : `${formattedNames} are included.`;
+}
+
+export function deriveEffectiveMcpPreviewConfigsByAgent<T extends PreviewSourceConfigBase>(
+  configs: T[],
+  scope: WebPreviewScope,
+  normalizeConfig: (config: T) => McpServerConfig,
+  options?: {
+    workspaceProjectFullName?: string;
+    includeBuiltins?: boolean;
+  },
+): Record<WebPreviewAgent, McpServerConfig[]> {
+  const includeBuiltins = options?.includeBuiltins ?? false;
+  const scopedConfigs = getScopedPreviewConfigs(
+    configs,
+    scope,
+    options?.workspaceProjectFullName,
+  );
+  const previewConfigsByAgent = {
+    claude: new Map<string, McpServerConfig>(),
+    codex: new Map<string, McpServerConfig>(),
+    opencode: new Map<string, McpServerConfig>(),
+  } satisfies Record<WebPreviewAgent, Map<string, McpServerConfig>>;
+
+  if (includeBuiltins) {
+    for (const agent of WEB_PREVIEW_AGENTS) {
+      for (const config of getWebPreviewBuiltinMcpServers(agent)) {
+        previewConfigsByAgent[agent].set(config.name, config);
+      }
+    }
+  }
+
+  for (const config of scopedConfigs) {
+    const enabledAgents = WEB_PREVIEW_AGENTS.filter(
+      (agent) => config[WEB_PREVIEW_AGENT_ENABLED_FIELDS[agent]],
+    );
+    if (enabledAgents.length === 0) {
+      continue;
+    }
+
+    const normalizedConfig = normalizeConfig(config);
+    for (const agent of enabledAgents) {
+      previewConfigsByAgent[agent].set(normalizedConfig.name, normalizedConfig);
+    }
+  }
+
+  return {
+    claude: Array.from(previewConfigsByAgent.claude.values()),
+    codex: Array.from(previewConfigsByAgent.codex.values()),
+    opencode: Array.from(previewConfigsByAgent.opencode.values()),
+  };
+}
+
+export function deriveEffectiveMcpPreviewConfigs<T extends PreviewSourceConfigBase>(
+  configs: T[],
+  scope: WebPreviewScope,
+  agent: WebPreviewAgent,
+  normalizeConfig: (config: T) => McpServerConfig,
+  options?: {
+    workspaceProjectFullName?: string;
+    includeBuiltins?: boolean;
+  },
+): McpServerConfig[] {
+  const includeBuiltins = options?.includeBuiltins ?? false;
+  const scopedConfigs = getScopedPreviewConfigs(
+    configs,
+    scope,
+    options?.workspaceProjectFullName,
+  );
+  const previewConfigs = new Map<string, McpServerConfig>();
+
+  if (includeBuiltins) {
+    for (const config of getWebPreviewBuiltinMcpServers(agent)) {
+      previewConfigs.set(config.name, config);
+    }
+  }
+
+  for (const config of scopedConfigs) {
+    if (!config[WEB_PREVIEW_AGENT_ENABLED_FIELDS[agent]]) {
+      continue;
+    }
+
+    const normalizedConfig = normalizeConfig(config);
+    previewConfigs.set(normalizedConfig.name, normalizedConfig);
+  }
+
+  return Array.from(previewConfigs.values());
+}
+
 function isJsonObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -85,7 +342,7 @@ command = "npx"
 args = ${JSON.stringify(getManagedMemoryArgs(agentName))}`;
 }
 
-function parseHostClaudeConfig(hostConfigText?: string): JsonObject {
+function parseHostJsonConfig(hostConfigText?: string): JsonObject {
   if (!hostConfigText?.trim()) {
     return {};
   }
@@ -346,7 +603,7 @@ function redactCodexPreviewToml(toml: string): string {
 export function buildMergedClaudeConfig(
   options: BuildMergedPreviewOptions,
 ): JsonObject {
-  const existingConfig = parseHostClaudeConfig(options.hostConfigText);
+  const existingConfig = parseHostJsonConfig(options.hostConfigText);
   const existingMcpServers = getExistingClaudeMcpServers(existingConfig);
 
   return {
@@ -506,7 +763,7 @@ export function buildMergedCodexPreview(
 export function buildMergedOpencodePreview(
   options: BuildMergedPreviewOptions,
 ): string {
-  const existingConfig = parseHostClaudeConfig(options.hostConfigText);
+  const existingConfig = parseHostJsonConfig(options.hostConfigText);
   const existingMcpServers = getExistingOpencodeMcpServers(existingConfig);
   const mergedConfig = {
     ...existingConfig,

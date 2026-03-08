@@ -1,3 +1,7 @@
+import {
+  getMcpPreviewScopeDescription,
+  getWebPreviewInjectedServersDescription,
+} from "@cmux/shared";
 import { SegmentedTabs } from "@/components/mcp/McpFormSections";
 import { SettingSection } from "@/components/settings/SettingSection";
 import type { Scope } from "@/lib/mcp-form-helpers";
@@ -9,6 +13,7 @@ const PREVIEW_AGENT_LABELS: Record<McpPreviewAgent, string> = {
   codex: "Codex",
   opencode: "OpenCode",
 };
+
 
 function getHostConfigDescription(
   agent: McpPreviewAgent,
@@ -27,27 +32,11 @@ function getHostConfigDescription(
   return `Local ${fileName} was not found, so this preview starts from an empty host config.`;
 }
 
-function getScopeDescription(
-  scope: Scope,
-  workspaceProjectFullName?: string,
-): string {
-  if (scope === "workspace" && workspaceProjectFullName) {
-    return `Workspace preview for ${workspaceProjectFullName} layered over global MCP settings.`;
-  }
-
-  if (scope === "workspace") {
-    return "Workspace preview layered over global MCP settings.";
-  }
-
-  return "Global MCP settings preview.";
-}
 
 export interface McpMergedPreviewProps {
   activeAgent: McpPreviewAgent;
   onActiveAgentChange: (agent: McpPreviewAgent) => void;
-  claudePreview: string;
-  codexPreview: string;
-  opencodePreview: string;
+  previewText: string;
   claudeHostConfig: HostMcpFileResult | null;
   codexHostConfig: HostMcpFileResult | null;
   opencodeHostConfig?: HostMcpFileResult | null;
@@ -56,14 +45,13 @@ export interface McpMergedPreviewProps {
   workspaceProjects?: string[];
   selectedWorkspaceProject?: string;
   onWorkspaceProjectChange?: (projectFullName: string) => void;
+  webMode?: boolean;
 }
 
 export function McpMergedPreview({
   activeAgent,
   onActiveAgentChange,
-  claudePreview,
-  codexPreview,
-  opencodePreview,
+  previewText,
   claudeHostConfig,
   codexHostConfig,
   opencodeHostConfig = null,
@@ -72,12 +60,8 @@ export function McpMergedPreview({
   workspaceProjects = [],
   selectedWorkspaceProject,
   onWorkspaceProjectChange,
+  webMode = false,
 }: McpMergedPreviewProps) {
-  const previewText = activeAgent === "claude"
-    ? claudePreview
-    : activeAgent === "codex"
-      ? codexPreview
-      : opencodePreview;
   const hostConfig = activeAgent === "claude"
     ? claudeHostConfig
     : activeAgent === "codex"
@@ -86,8 +70,10 @@ export function McpMergedPreview({
 
   return (
     <SettingSection
-      title="Merged preview"
-      description="Desktop only. This preview combines your local host config with the MCP settings that will be uploaded into remote sandboxes."
+      title={webMode ? "Effective preview" : "Merged preview"}
+      description={webMode
+        ? "This preview shows only the MCP config cmux will upload for each agent in web mode. It does not fetch or merge any local agent config files. Sensitive values are redacted, and built-in injected MCP servers are included."
+        : "Desktop only. This preview combines your local host config with the MCP settings that will be uploaded into remote sandboxes."}
       headerAction={
         <SegmentedTabs
           value={activeAgent}
@@ -125,9 +111,19 @@ export function McpMergedPreview({
         ) : null}
 
         <div className="rounded-lg border border-neutral-200 bg-neutral-50/80 px-3 py-2 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
-          <p>{getScopeDescription(scope, workspaceProjectFullName)}</p>
-          <p className="mt-1">{getHostConfigDescription(activeAgent, hostConfig)}</p>
+          <p>{getMcpPreviewScopeDescription(scope, workspaceProjectFullName)}</p>
+          {webMode ? (
+            <p className="mt-1">Local agent config files are not fetched or merged in web mode.</p>
+          ) : <p className="mt-1">{getHostConfigDescription(activeAgent, hostConfig)}</p>}
           <p className="mt-1">Sensitive values are redacted in this preview.</p>
+          {webMode && activeAgent === "claude" ? (
+            <p className="mt-1">
+              Claude previews also include the built-in observed live web-mode MCP entries. {getWebPreviewInjectedServersDescription(
+                "claude",
+                { includeBuiltins: true },
+              )}
+            </p>
+          ) : null}
         </div>
 
         <div className="rounded-lg border border-neutral-200 bg-neutral-950 dark:border-neutral-800">

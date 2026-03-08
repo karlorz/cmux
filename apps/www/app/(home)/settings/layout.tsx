@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { ArrowLeft, Settings, Key, Cpu, Plug } from "lucide-react";
+import { ArrowLeft, Settings, Key, Cpu } from "lucide-react";
 
 const navItems = [
   {
@@ -21,11 +21,6 @@ const navItems = [
     name: "Models",
     href: "/settings/models",
     icon: Cpu,
-  },
-  {
-    name: "MCP Servers",
-    href: "/settings/mcp-servers",
-    icon: Plug,
   },
 ];
 

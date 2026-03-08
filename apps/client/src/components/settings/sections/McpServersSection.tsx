@@ -10,7 +10,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { getElectronBridge, isElectron } from "@/lib/electron";
 import { McpMergedPreview } from "./McpMergedPreview";
 import {
-  deriveEffectiveMcpConfigs,
+  deriveEffectiveMcpConfigsByAgent,
   getWorkspacePreviewProjects,
   type McpPreviewAgent,
 } from "./mcp-preview-helpers";
@@ -44,6 +44,7 @@ import {
   buildMergedOpencodePreview,
 } from "@cmux/shared";
 import { convexQuery } from "@convex-dev/react-query";
+import { env } from "@/client-env";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -147,67 +148,65 @@ export function McpServersSection({
   );
 
   const effectiveWorkspacePreviewProject =
-    workspacePreviewProject || workspacePreviewProjects[0] || "";
+    activeScope !== "workspace"
+      ? ""
+      : workspacePreviewProject && workspacePreviewProjects.includes(workspacePreviewProject)
+        ? workspacePreviewProject
+        : workspacePreviewProjects[0] || "";
 
-  const claudePreviewConfigs = useMemo(
+  const previewConfigsByAgent = useMemo(
     () =>
-      deriveEffectiveMcpConfigs(
+      deriveEffectiveMcpConfigsByAgent(
         configs ?? [],
         activeScope,
-        "claude",
         effectiveWorkspacePreviewProject,
+        { includeBuiltins: env.NEXT_PUBLIC_WEB_MODE },
       ),
     [activeScope, configs, effectiveWorkspacePreviewProject],
   );
 
-  const codexPreviewConfigs = useMemo(
-    () =>
-      deriveEffectiveMcpConfigs(
-        configs ?? [],
-        activeScope,
-        "codex",
-        effectiveWorkspacePreviewProject,
-      ),
-    [activeScope, configs, effectiveWorkspacePreviewProject],
-  );
+  const claudePreviewConfigs = previewConfigsByAgent.claude;
+  const codexPreviewConfigs = previewConfigsByAgent.codex;
+  const opencodePreviewConfigs = previewConfigsByAgent.opencode;
 
-  const opencodePreviewConfigs = useMemo(
-    () =>
-      deriveEffectiveMcpConfigs(
-        configs ?? [],
-        activeScope,
-        "opencode",
-        effectiveWorkspacePreviewProject,
-      ),
-    [activeScope, configs, effectiveWorkspacePreviewProject],
-  );
+  const activePreviewText = useMemo(() => {
+    const claudePreviewHostConfigText = !env.NEXT_PUBLIC_WEB_MODE && claudeHostConfig?.ok
+      ? claudeHostConfig.content
+      : undefined;
+    const codexPreviewHostConfigText = !env.NEXT_PUBLIC_WEB_MODE && codexHostConfig?.ok
+      ? codexHostConfig.content
+      : undefined;
+    const opencodePreviewHostConfigText = !env.NEXT_PUBLIC_WEB_MODE && opencodeHostConfig?.ok
+      ? opencodeHostConfig.content
+      : undefined;
 
-  const claudeMergedPreview = useMemo(
-    () =>
-      buildMergedClaudePreview({
-        hostConfigText: claudeHostConfig?.ok ? claudeHostConfig.content : undefined,
+    if (activePreviewAgent === "claude") {
+      return buildMergedClaudePreview({
+        hostConfigText: claudePreviewHostConfigText,
         mcpServerConfigs: claudePreviewConfigs,
-      }),
-    [claudeHostConfig, claudePreviewConfigs],
-  );
+      });
+    }
 
-  const codexMergedPreview = useMemo(
-    () =>
-      buildMergedCodexPreview({
-        hostConfigText: codexHostConfig?.ok ? codexHostConfig.content : undefined,
+    if (activePreviewAgent === "codex") {
+      return buildMergedCodexPreview({
+        hostConfigText: codexPreviewHostConfigText,
         mcpServerConfigs: codexPreviewConfigs,
-      }),
-    [codexHostConfig, codexPreviewConfigs],
-  );
+      });
+    }
 
-  const opencodeMergedPreview = useMemo(
-    () =>
-      buildMergedOpencodePreview({
-        hostConfigText: opencodeHostConfig?.ok ? opencodeHostConfig.content : undefined,
-        mcpServerConfigs: opencodePreviewConfigs,
-      }),
-    [opencodeHostConfig, opencodePreviewConfigs],
-  );
+    return buildMergedOpencodePreview({
+      hostConfigText: opencodePreviewHostConfigText,
+      mcpServerConfigs: opencodePreviewConfigs,
+    });
+  }, [
+    activePreviewAgent,
+    claudeHostConfig,
+    claudePreviewConfigs,
+    codexHostConfig,
+    codexPreviewConfigs,
+    opencodeHostConfig,
+    opencodePreviewConfigs,
+  ]);
 
   const scopeOptions = useMemo(() => getScopeOptions(counts), [counts]);
 
@@ -433,13 +432,11 @@ export function McpServersSection({
             </div>
           </div>
 
-          {isElectron ? (
+          {isElectron || env.NEXT_PUBLIC_WEB_MODE ? (
             <McpMergedPreview
               activeAgent={activePreviewAgent}
               onActiveAgentChange={setActivePreviewAgent}
-              claudePreview={claudeMergedPreview}
-              codexPreview={codexMergedPreview}
-              opencodePreview={opencodeMergedPreview}
+              previewText={activePreviewText}
               claudeHostConfig={claudeHostConfig ?? null}
               codexHostConfig={codexHostConfig ?? null}
               opencodeHostConfig={opencodeHostConfig ?? null}
@@ -450,6 +447,7 @@ export function McpServersSection({
               workspaceProjects={workspacePreviewProjects}
               selectedWorkspaceProject={effectiveWorkspacePreviewProject}
               onWorkspaceProjectChange={setWorkspacePreviewProject}
+              webMode={env.NEXT_PUBLIC_WEB_MODE}
             />
           ) : null}
 

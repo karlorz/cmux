@@ -78,6 +78,15 @@ describe("mcp-form-helpers", () => {
     });
   });
 
+  it("preserves colons inside header values when equals is the separator", () => {
+    expect(parseHeadersText("Authorization=Bearer token:with:colon\nX-Test=test")).toEqual({
+      headers: {
+        Authorization: "Bearer token:with:colon",
+        "X-Test": "test",
+      },
+    });
+  });
+
   it("validates transport-specific required fields", () => {
     const stdioForm = {
       ...buildEmptyForm("global"),

@@ -53,9 +53,7 @@ function renderPreviewMarkup(
   const props: McpMergedPreviewProps = {
     activeAgent: "claude",
     onActiveAgentChange: () => {},
-    claudePreview: '{"mcpServers":{"context7":{}}}',
-    codexPreview: '[mcp_servers.context7]\ncommand = "npx"\n',
-    opencodePreview: '{"context7":{"type":"local"}}',
+    previewText: '{"mcpServers":{"context7":{}}}',
     claudeHostConfig: presentClaudeHostConfig,
     codexHostConfig: presentCodexHostConfig,
     opencodeHostConfig: missingOpencodeHostConfig,
@@ -144,17 +142,23 @@ describe("getWorkspacePreviewProjects", () => {
 });
 
 describe("deriveEffectiveMcpConfigs", () => {
-  it("returns only enabled global configs for global scope", () => {
+  it("returns built-ins plus enabled global configs for global scope", () => {
     expect(
-      deriveEffectiveMcpConfigs(configs, "global", "claude").map((config) => config.name),
+      deriveEffectiveMcpConfigs(configs, "global", "claude", undefined, {
+        includeBuiltins: true,
+      }).map((config) => config.name),
     ).toEqual(["context7"]);
 
     expect(
-      deriveEffectiveMcpConfigs(configs, "global", "codex").map((config) => config.name),
+      deriveEffectiveMcpConfigs(configs, "global", "codex", undefined, {
+        includeBuiltins: true,
+      }).map((config) => config.name),
     ).toEqual(["context7", "docs"]);
 
     expect(
-      deriveEffectiveMcpConfigs(configs, "global", "opencode").map((config) => config.name),
+      deriveEffectiveMcpConfigs(configs, "global", "opencode", undefined, {
+        includeBuiltins: true,
+      }).map((config) => config.name),
     ).toEqual(["context7", "docs"]);
   });
 
@@ -164,6 +168,7 @@ describe("deriveEffectiveMcpConfigs", () => {
       "workspace",
       "claude",
       "owner/repo-a",
+      { includeBuiltins: true },
     );
 
     expect(workspaceClaudeConfigs.map((config) => config.name)).toEqual([
@@ -180,7 +185,9 @@ describe("deriveEffectiveMcpConfigs", () => {
 
   it("falls back cleanly when no workspace project is selected", () => {
     expect(
-      deriveEffectiveMcpConfigs(configs, "workspace", "claude").map((config) => config.name),
+      deriveEffectiveMcpConfigs(configs, "workspace", "claude", undefined, {
+        includeBuiltins: true,
+      }).map((config) => config.name),
     ).toEqual(["context7"]);
   });
 
@@ -219,6 +226,7 @@ describe("McpMergedPreview", () => {
   it("renders Codex fallback text when the host config is missing", () => {
     const markup = renderPreviewMarkup({
       activeAgent: "codex",
+      previewText: '[mcp_servers.context7]\ncommand = "npx"\n',
       codexHostConfig: {
         ...missingHostConfig,
         path: "/Users/test/.codex/config.toml",
@@ -235,6 +243,7 @@ describe("McpMergedPreview", () => {
   it("renders OpenCode fallback text when the host config is missing", () => {
     const markup = renderPreviewMarkup({
       activeAgent: "opencode",
+      previewText: '{"context7":{"type":"local"}}',
     });
 
     expect(markup).toContain("OpenCode effective config");
@@ -242,6 +251,21 @@ describe("McpMergedPreview", () => {
       "Local ~/.config/opencode/opencode.json was not found, so this preview starts from an empty host config.",
     );
     expect(markup).toContain("context7");
+  });
+
+  it("renders web-mode effective preview copy", () => {
+    const markup = renderPreviewMarkup({
+      activeAgent: "claude",
+      webMode: true,
+    });
+
+    expect(markup).toContain("Effective preview");
+    expect(markup).toContain("This preview shows only the MCP config cmux will upload for each agent in web mode.");
+    expect(markup).toContain("It does not fetch or merge any local agent config files.");
+    expect(markup).toContain("Local agent config files are not fetched or merged in web mode.");
+    expect(markup).not.toContain("Using local ~/.claude.json as the base host config.");
+    expect(markup).toContain("Claude previews also include the built-in observed live web-mode MCP entries.");
+    expect(markup).toContain("context7 and devsh-memory are included.");
   });
 
   it("does not render the workspace picker outside multi-project workspace previews", () => {

@@ -5,9 +5,17 @@ import {
   buildMergedCodexConfigToml,
   buildMergedCodexPreview,
   buildMergedOpencodePreview,
+  deriveEffectiveMcpPreviewConfigs,
+  deriveEffectiveMcpPreviewConfigsByAgent,
+  formatPreviewNameList,
+  getMcpPreviewScopeDescription,
+  getWebPreviewBuiltinMcpServers,
+  getWebPreviewInjectedServerNames,
+  getWebPreviewInjectedServersDescription,
+  getWorkspacePreviewProjectNames,
   previewOpencodeMcpServers,
 } from "./mcp-preview";
-import type { McpServerConfig } from "./mcp-server-config";
+import { normalizeMcpServerConfig, type McpServerConfig, type McpServerConfigInput } from "./mcp-server-config";
 
 const STDIO_CONFIG: McpServerConfig = {
   name: "context7",
@@ -24,6 +32,90 @@ const REMOTE_CONFIG: McpServerConfig = {
   headers: { Authorization: "Bearer secret" },
   envVars: { MCP_SESSION: "session-token" },
 };
+
+type PreviewSourceConfig = {
+  name: string;
+  scope: "global" | "workspace";
+  projectFullName?: string;
+  enabledClaude: boolean;
+  enabledCodex: boolean;
+  enabledOpencode: boolean;
+  preview: McpServerConfigInput;
+};
+
+const PREVIEW_SOURCE_CONFIGS: PreviewSourceConfig[] = [
+  {
+    name: "context7",
+    scope: "global",
+    enabledClaude: true,
+    enabledCodex: true,
+    enabledOpencode: true,
+    preview: {
+      name: "context7",
+      type: "stdio",
+      command: "npx",
+      args: ["-y", "context7"],
+    },
+  },
+  {
+    name: "docs",
+    scope: "global",
+    enabledClaude: false,
+    enabledCodex: true,
+    enabledOpencode: true,
+    preview: {
+      name: "docs",
+      type: "http",
+      url: "https://example.com/mcp",
+    },
+  },
+  {
+    name: "context7",
+    scope: "workspace",
+    projectFullName: "owner/repo-a",
+    enabledClaude: true,
+    enabledCodex: false,
+    enabledOpencode: true,
+    preview: {
+      name: "context7",
+      type: "stdio",
+      command: "bunx",
+      args: ["workspace-context7"],
+    },
+  },
+  {
+    name: "search",
+    scope: "workspace",
+    projectFullName: "owner/repo-a",
+    enabledClaude: true,
+    enabledCodex: true,
+    enabledOpencode: true,
+    preview: {
+      name: "search",
+      type: "stdio",
+      command: "npx",
+      args: ["search"],
+    },
+  },
+  {
+    name: "zeta",
+    scope: "workspace",
+    projectFullName: "owner/repo-b",
+    enabledClaude: true,
+    enabledCodex: true,
+    enabledOpencode: true,
+    preview: {
+      name: "zeta",
+      type: "stdio",
+      command: "npx",
+      args: ["zeta"],
+    },
+  },
+];
+
+function normalizePreviewSourceConfig(config: PreviewSourceConfig): McpServerConfig {
+  return normalizeMcpServerConfig(config.preview);
+}
 
 describe("buildMergedClaudeConfig", () => {
   it("preserves unrelated host config and merges managed MCP servers", () => {
@@ -325,6 +417,180 @@ describe("buildMergedOpencodePreview", () => {
         },
       },
     });
+  });
+});
+
+describe("formatPreviewNameList", () => {
+  it("formats one or many preview names for UI copy", () => {
+    expect(formatPreviewNameList([])).toBe("");
+    expect(formatPreviewNameList(["context7"])).toBe("context7");
+    expect(formatPreviewNameList(["context7", "devsh-memory"])).toBe(
+      "context7 and devsh-memory",
+    );
+    expect(formatPreviewNameList(["context7", "devsh-memory", "search"])).toBe(
+      "context7, devsh-memory and search",
+    );
+  });
+});
+
+describe("getMcpPreviewScopeDescription", () => {
+  it("describes global and workspace MCP previews", () => {
+    expect(getMcpPreviewScopeDescription("global")).toBe("Global MCP settings preview.");
+    expect(getMcpPreviewScopeDescription("workspace")).toBe(
+      "Workspace preview layered over global MCP settings.",
+    );
+    expect(getMcpPreviewScopeDescription("workspace", "owner/repo-a")).toBe(
+      "Workspace preview for owner/repo-a layered over global MCP settings.",
+    );
+  });
+});
+
+describe("getWebPreviewInjectedServerNames", () => {
+  it("returns injected server names with optional built-ins", () => {
+    expect(getWebPreviewInjectedServerNames("claude")).toEqual(["devsh-memory"]);
+    expect(getWebPreviewInjectedServerNames("claude", { includeBuiltins: true })).toEqual([
+      "context7",
+      "devsh-memory",
+    ]);
+  });
+});
+
+describe("getWebPreviewInjectedServersDescription", () => {
+  it("formats injected server copy from shared state", () => {
+    expect(getWebPreviewInjectedServersDescription("claude")).toBe("devsh-memory is included.");
+    expect(getWebPreviewInjectedServersDescription("claude", { includeBuiltins: true })).toBe(
+      "context7 and devsh-memory are included.",
+    );
+  });
+});
+
+describe("getWorkspacePreviewProjectNames", () => {
+  it("returns sorted unique workspace project names", () => {
+    expect(getWorkspacePreviewProjectNames(PREVIEW_SOURCE_CONFIGS)).toEqual([
+      "owner/repo-a",
+      "owner/repo-b",
+    ]);
+  });
+});
+
+describe("deriveEffectiveMcpPreviewConfigsByAgent", () => {
+  it("derives preview configs for all agents in a single pass", () => {
+    const previewConfigs = deriveEffectiveMcpPreviewConfigsByAgent(
+      PREVIEW_SOURCE_CONFIGS,
+      "workspace",
+      normalizePreviewSourceConfig,
+      {
+        workspaceProjectFullName: "owner/repo-a",
+        includeBuiltins: true,
+      },
+    );
+
+    expect(previewConfigs.claude).toEqual([
+      {
+        name: "context7",
+        type: "stdio",
+        command: "bunx",
+        args: ["workspace-context7"],
+      },
+      {
+        name: "search",
+        type: "stdio",
+        command: "npx",
+        args: ["search"],
+      },
+    ]);
+    expect(previewConfigs.codex).toEqual([
+      {
+        name: "docs",
+        type: "http",
+        url: "https://example.com/mcp",
+      },
+      {
+        name: "search",
+        type: "stdio",
+        command: "npx",
+        args: ["search"],
+      },
+    ]);
+    expect(previewConfigs.opencode).toEqual([
+      {
+        name: "context7",
+        type: "stdio",
+        command: "bunx",
+        args: ["workspace-context7"],
+      },
+      {
+        name: "docs",
+        type: "http",
+        url: "https://example.com/mcp",
+      },
+      {
+        name: "search",
+        type: "stdio",
+        command: "npx",
+        args: ["search"],
+      },
+    ]);
+  });
+});
+
+describe("deriveEffectiveMcpPreviewConfigs", () => {
+  it("returns global configs when no workspace project is selected", () => {
+    expect(
+      deriveEffectiveMcpPreviewConfigs(
+        PREVIEW_SOURCE_CONFIGS,
+        "workspace",
+        "claude",
+        normalizePreviewSourceConfig,
+        { includeBuiltins: true },
+      ),
+    ).toEqual([
+      {
+        name: "context7",
+        type: "stdio",
+        command: "bunx",
+        args: ["-y", "@upstash/context7-mcp", "--api-key", "[REDACTED]"],
+      },
+    ]);
+  });
+});
+
+describe("getWebPreviewBuiltinMcpServers", () => {
+  it("returns the built-in Claude web preview MCP servers", () => {
+    expect(getWebPreviewBuiltinMcpServers("claude")).toEqual([
+      {
+        name: "context7",
+        type: "stdio",
+        command: "bunx",
+        args: ["-y", "@upstash/context7-mcp", "--api-key", "[REDACTED]"],
+      },
+    ]);
+  });
+
+  it("returns cloned built-in configs", () => {
+    const firstRead = getWebPreviewBuiltinMcpServers("claude");
+    const secondRead = getWebPreviewBuiltinMcpServers("claude");
+    const firstConfig = firstRead[0];
+    const secondConfig = secondRead[0];
+
+    expect(firstConfig?.type).toBe("stdio");
+    expect(secondConfig?.type).toBe("stdio");
+
+    if (firstConfig?.type === "stdio") {
+      firstConfig.args.push("--mutated");
+    }
+
+    expect(secondConfig?.type === "stdio" ? secondConfig.args : undefined).toEqual([
+      "-y",
+      "@upstash/context7-mcp",
+      "--api-key",
+      "[REDACTED]",
+    ]);
+  });
+
+  it("returns no extra web preview MCP servers for Codex or OpenCode", () => {
+    expect(getWebPreviewBuiltinMcpServers("codex")).toEqual([]);
+    expect(getWebPreviewBuiltinMcpServers("opencode")).toEqual([]);
   });
 });
 
