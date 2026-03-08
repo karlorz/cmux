@@ -261,7 +261,7 @@ wrap_up_threshold="$((WRAP_UP_MINUTES * 60))"
 
 # For Claude tool: export env vars for autopilot-keep-running hook integration
 if [[ "$TOOL" = "claude" ]]; then
-  export CLAUDE_AUTOPILOT=1
+  # CLAUDE_AUTOPILOT is now enabled by default in the hook, no need to set it
   export CLAUDE_AUTOPILOT_STOP_FILE="$STOP_FILE"
   # Calculate max turns based on session duration (3 turns per TURN_MINUTES period)
   export CLAUDE_AUTOPILOT_MAX_TURNS=$(( (MINUTES / TURN_MINUTES) * 3 ))

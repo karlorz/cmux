@@ -41,11 +41,11 @@ debug_log "SESSION_ID: $SESSION_ID"
 # stale flag files from suppressing review after autopilot is toggled off or if
 # cleanup was missed (e.g. process crash).
 AUTOPILOT_BLOCKED_FILE="/tmp/claude-autopilot-blocked-${SESSION_ID}"
-# Autopilot is only truly active when enabled AND not disabled via override.
-# AUTOPILOT_KEEP_RUNNING_DISABLED=1 causes the autopilot hook to exit before
-# cleanup, so the blocked flag can persist even though autopilot is effectively off.
+# Autopilot is enabled by default when the hook is installed (in project settings).
+# It's only disabled when AUTOPILOT_KEEP_RUNNING_DISABLED=1.
+# Note: CLAUDE_AUTOPILOT is set internally by Claude Code and should not be used.
 AUTOPILOT_ACTIVE="0"
-if [ "${CLAUDE_AUTOPILOT:-0}" = "1" ] && [ "${AUTOPILOT_KEEP_RUNNING_DISABLED:-0}" != "1" ]; then
+if [ "${AUTOPILOT_KEEP_RUNNING_DISABLED:-0}" != "1" ]; then
   AUTOPILOT_ACTIVE="1"
 fi
 debug_log "AUTOPILOT_ACTIVE: $AUTOPILOT_ACTIVE, AUTOPILOT_BLOCKED_FILE exists: $([ -f "$AUTOPILOT_BLOCKED_FILE" ] && echo 'true' || echo 'false')"

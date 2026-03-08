@@ -19,17 +19,14 @@ You MUST run these codex reviews using the Bash tool with timeout=120000. Do NOT
 Step 1 - Committed changes: run .claude/scripts/codex-review-extract.sh --base main
 Step 2 - Uncommitted changes: first check git status --porcelain. If non-empty, run .claude/scripts/codex-review-extract.sh --uncommitted. If clean, skip.
 
-### Divergence vs upstream/main
-!`cd "$CLAUDE_PROJECT_DIR" && git fetch origin --prune >/dev/null 2>&1 && git fetch upstream --prune >/dev/null 2>&1 && git rev-list --left-right --count main...upstream/main | awk '{print "ahead=" $1 " behind=" $2}'`
-
-### Upstream commits behind (latest 120)
-!`cd "$CLAUDE_PROJECT_DIR" && git log --no-merges --date=short --pretty=format:'%h %ad %s' main..upstream/main | head -120`
-
 ### Current branch changed files
 !`cd "$CLAUDE_PROJECT_DIR" && git diff --name-only main...HEAD`
 
-### Upstream commits touching changed files (latest 120)
-!`cd "$CLAUDE_PROJECT_DIR" && CHANGED_FILES=$(git diff --name-only main...HEAD); if [ -n "$CHANGED_FILES" ]; then git log --no-merges --date=short --pretty=format:'%h %ad %s' main..upstream/main -- $CHANGED_FILES | head -120; else echo "(none)"; fi`
+### Upstream gap analysis (if upstream remote exists)
+!`cd "$CLAUDE_PROJECT_DIR" && if git remote get-url upstream >/dev/null 2>&1; then git fetch origin --prune >/dev/null 2>&1 && git fetch upstream --prune >/dev/null 2>&1 && echo "Divergence vs upstream/main:" && git rev-list --left-right --count main...upstream/main | awk '{print "ahead=" $1 " behind=" $2}' && echo "" && echo "Upstream commits behind (latest 120):" && git log --no-merges --date=short --pretty=format:'%h %ad %s' main..upstream/main | head -120; else echo "(upstream remote not configured - skipping gap analysis)"; fi`
+
+### Upstream commits touching changed files (if upstream exists)
+!`cd "$CLAUDE_PROJECT_DIR" && if git remote get-url upstream >/dev/null 2>&1; then CHANGED_FILES=$(git diff --name-only main...HEAD); if [ -n "$CHANGED_FILES" ]; then git log --no-merges --date=short --pretty=format:'%h %ad %s' main..upstream/main -- $CHANGED_FILES | head -120; else echo "(none)"; fi; else echo "(upstream remote not configured - skipping)"; fi`
 
 ## Output requirements
 
@@ -49,16 +46,16 @@ Step 2 - Uncommitted changes: first check git status --porcelain. If non-empty, 
 ### Findings
 - Prioritize Codex findings by severity with file/line and fix recommendation.
 
-### Already Fixed Upstream?
+### Already Fixed Upstream? (skip if no upstream)
 - For each finding, map to matching commit(s) from `main..upstream/main` when applicable.
 - Include commit hash and rationale for each mapping.
 
 ### Best Recommendation
 - Choose one for each finding:
-  - `cherry-pick upstream commit`
-  - `manual backport`
+  - `cherry-pick upstream commit` (if upstream exists)
+  - `manual backport` (if upstream exists)
   - `fix locally first`
 
-### Gap Reduction Plan
+### Gap Reduction Plan (skip if no upstream)
 - Provide concrete steps to reduce drift vs `manaflow-ai/manaflow:main`:
   - quick wins (safe cherry-picks now)
