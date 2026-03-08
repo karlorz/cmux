@@ -4,8 +4,9 @@
 
 set -euo pipefail
 
-# Master enable: must be explicitly set to opt-in
-if [ "${CLAUDE_AUTOPILOT:-}" != "1" ]; then
+# Master enable: opt-in via CLAUDE_AUTOPILOT=1 or CLAUDE_AUTOPILOT_MAX_TURNS=-1
+# Setting MAX_TURNS=-1 (infinite mode) implicitly enables autopilot
+if [ "${CLAUDE_AUTOPILOT:-}" != "1" ] && [ "${CLAUDE_AUTOPILOT_MAX_TURNS:-}" != "-1" ]; then
   exit 0
 fi
 
