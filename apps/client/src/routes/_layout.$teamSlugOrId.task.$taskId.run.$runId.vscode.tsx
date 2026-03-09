@@ -23,8 +23,6 @@ import {
 } from "@/queries/local-vscode-serve-web";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { ResumeWorkspaceOverlay } from "@/components/resume-workspace-overlay";
-import { useElectronWindowFocus } from "@/hooks/useElectronWindowFocus";
-import { useWebviewActions } from "@/hooks/useWebviewActions";
 
 const paramsSchema = z.object({
   taskId: typedZid("tasks"),
@@ -166,7 +164,6 @@ function VSCodeComponent() {
   const persistKey = getTaskRunPersistKey(taskRunId);
   const hasWorkspace = workspaceUrl !== null;
   const isLocalWorkspace = vsCodeProvider === "other";
-  const webviewActions = useWebviewActions({ persistKey });
 
   // Track iframe status - use state for rendering but with stable callback
   const [iframeStatus, setIframeStatus] =
@@ -196,8 +193,7 @@ function VSCodeComponent() {
 
   const onLoad = useCallback(() => {
     console.log(`Workspace view loaded for task run ${taskRunId}`);
-    void webviewActions.focus();
-  }, [taskRunId, webviewActions]);
+  }, [taskRunId]);
 
   const onError = useCallback(
     (error: Error) => {
@@ -226,38 +222,6 @@ function VSCodeComponent() {
   );
 
   const isEditorBusy = !hasWorkspace || iframeStatus !== "loaded";
-
-  const focusWebviewIfReady = useCallback(() => {
-    if (!workspaceUrl) return;
-    if (iframeStatus !== "loaded") return;
-    void webviewActions.focus();
-  }, [iframeStatus, webviewActions, workspaceUrl]);
-
-  // Only auto-focus on initial load, not every iframeStatus change (RC-8)
-  const hasInitiallyFocusedRef = useRef(false);
-  useEffect(() => {
-    if (iframeStatus === "loaded" && !hasInitiallyFocusedRef.current) {
-      hasInitiallyFocusedRef.current = true;
-      focusWebviewIfReady();
-    }
-  }, [focusWebviewIfReady, iframeStatus]);
-
-  // Reset initial focus tracking when workspace URL genuinely changes
-  useEffect(() => {
-    hasInitiallyFocusedRef.current = false;
-  }, [workspaceUrl]);
-
-  const handleElectronWindowFocus = useCallback(() => {
-    void (async () => {
-      const alreadyFocused = await webviewActions.isFocused();
-      if (alreadyFocused) {
-        return;
-      }
-      focusWebviewIfReady();
-    })();
-  }, [focusWebviewIfReady, webviewActions]);
-
-  useElectronWindowFocus(handleElectronWindowFocus);
 
   return (
     <div className="flex flex-col grow bg-neutral-50 dark:bg-black">

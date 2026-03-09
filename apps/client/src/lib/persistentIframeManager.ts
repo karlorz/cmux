@@ -1,12 +1,17 @@
-import { ensureIframeFocusGuard } from "./iframeFocusGuard";
+import {
+  ensureIframeFocusGuard,
+  setIframeFocusAllowedChecker,
+} from "./iframeFocusGuard";
 
 type IframeEntry = {
+  key: string;
   iframe: HTMLIFrameElement;
   wrapper: HTMLDivElement;
   url: string;
   lastUsed: number;
   isVisible: boolean;
   pinned: boolean;
+  focusEligible: boolean;
   allow?: string;
   sandbox?: string;
 };
@@ -71,6 +76,7 @@ const UNITLESS_CSS_PROPERTIES = new Set<string>([
  */
 class PersistentIframeManager {
   private iframes = new Map<string, IframeEntry>();
+  private iframeKeys = new WeakMap<HTMLIFrameElement, string>();
   private maxIframes = 10;
   private container: HTMLDivElement | null = null;
   private resizeObserver: ResizeObserver;
@@ -97,6 +103,7 @@ class PersistentIframeManager {
   private initializeContainer() {
     if (typeof document === "undefined") return;
 
+    setIframeFocusAllowedChecker((iframe) => this.isIframeFocusAllowed(iframe));
     ensureIframeFocusGuard();
 
     const init = () => {
@@ -201,17 +208,20 @@ class PersistentIframeManager {
     }
 
     const entry: IframeEntry = {
+      key,
       iframe,
       wrapper,
       url,
       lastUsed: Date.now(),
       isVisible: false,
       pinned: false,
+      focusEligible: true,
       allow: options?.allow,
       sandbox: options?.sandbox,
     };
 
     this.iframes.set(key, entry);
+    this.iframeKeys.set(iframe, key);
     this.moveIframeOffscreen(entry);
     this.cleanupOldIframes();
 
@@ -480,6 +490,7 @@ class PersistentIframeManager {
       entry.wrapper.parentElement.removeChild(entry.wrapper);
     }
 
+    this.iframeKeys.delete(entry.iframe);
     this.iframes.delete(key);
   }
 
@@ -596,15 +607,44 @@ class PersistentIframeManager {
     return document.activeElement === entry.iframe;
   }
 
+  setFocusEligible(key: string, eligible: boolean): void {
+    const entry = this.iframes.get(key);
+    if (!entry) {
+      return;
+    }
+
+    entry.focusEligible = eligible;
+  }
+
+  canIframeReceiveFocus(key: string): boolean {
+    const entry = this.iframes.get(key);
+    if (!entry) {
+      return false;
+    }
+
+    const isHidden =
+      !entry.isVisible ||
+      entry.wrapper.style.visibility === "hidden" ||
+      entry.wrapper.style.pointerEvents === "none";
+
+    return !isHidden && entry.focusEligible;
+  }
+
+  isIframeFocusAllowed(iframe: HTMLIFrameElement): boolean {
+    const key = this.iframeKeys.get(iframe);
+
+    if (!key) {
+      return true;
+    }
+
+    return this.canIframeReceiveFocus(key);
+  }
+
   focusIframe(key: string): boolean {
     const entry = this.iframes.get(key);
     if (!entry) return false;
 
-    const isHidden =
-      entry.wrapper.style.visibility === "hidden" ||
-      entry.wrapper.style.pointerEvents === "none";
-
-    if (isHidden) {
+    if (!this.canIframeReceiveFocus(key)) {
       return false;
     }
 

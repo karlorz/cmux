@@ -54,6 +54,7 @@ interface PersistentIframeProps {
   preflight?: boolean;
   isExpanded?: boolean;
   isAnyPanelExpanded?: boolean;
+  isFocusEligible?: boolean;
 }
 
 type ScrollTarget = HTMLElement | Window;
@@ -106,6 +107,7 @@ export function PersistentIframe({
   preflight = true,
   isExpanded = false,
   isAnyPanelExpanded = false,
+  isFocusEligible = true,
 }: PersistentIframeProps) {
   const [status, setStatus] = useState<PersistentIframeStatus>("loading");
   const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -310,6 +312,14 @@ export function PersistentIframe({
   }, [persistKey, isExpanded, isAnyPanelExpanded]);
 
   const effectiveStatus = forcedStatus ?? status;
+
+  useEffect(() => {
+    persistentIframeManager.setFocusEligible(persistKey, isFocusEligible);
+
+    return () => {
+      persistentIframeManager.setFocusEligible(persistKey, true);
+    };
+  }, [isFocusEligible, persistKey]);
 
   const focusIframe = useCallback(() => {
     return persistentIframeManager.focusIframe(persistKey);

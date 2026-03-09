@@ -1,5 +1,7 @@
 let focusGuardInitialized = false;
 let lastActiveElement: Element | null = null;
+let iframeFocusAllowedChecker: (iframe: HTMLIFrameElement) => boolean = () => true;
+let focusInHandler: ((event: FocusEvent) => void) | null = null;
 
 const isFocusableElement = (
   element: Element | null
@@ -74,6 +76,12 @@ const isIframeVisibleOnScreen = (iframe: HTMLIFrameElement): boolean => {
   return horizontallyVisible && verticallyVisible;
 };
 
+export const setIframeFocusAllowedChecker = (
+  checker: (iframe: HTMLIFrameElement) => boolean
+): void => {
+  iframeFocusAllowedChecker = checker;
+};
+
 export const ensureIframeFocusGuard = (): void => {
   if (focusGuardInitialized || typeof document === "undefined") {
     return;
@@ -90,9 +98,11 @@ export const ensureIframeFocusGuard = (): void => {
     }
 
     if (target instanceof HTMLIFrameElement) {
-      if (!isIframeVisibleOnScreen(target)) {
-        const previousElement = lastActiveElement;
+      const previousElement = lastActiveElement;
+      const shouldBlockFocus =
+        !iframeFocusAllowedChecker(target) || !isIframeVisibleOnScreen(target);
 
+      if (shouldBlockFocus) {
         if (isFocusableElement(previousElement)) {
           try {
             previousElement.focus({ preventScroll: true });
@@ -119,5 +129,17 @@ export const ensureIframeFocusGuard = (): void => {
     lastActiveElement = target;
   };
 
+  focusInHandler = handleFocusIn;
   document.addEventListener("focusin", handleFocusIn, true);
+};
+
+export const resetIframeFocusGuardForTests = (): void => {
+  if (typeof document !== "undefined" && focusInHandler) {
+    document.removeEventListener("focusin", focusInHandler, true);
+  }
+
+  focusGuardInitialized = false;
+  focusInHandler = null;
+  lastActiveElement = null;
+  iframeFocusAllowedChecker = () => true;
 };
