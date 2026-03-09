@@ -195,6 +195,8 @@ export function ElectronWebContentsView({
   // Store callback props in refs to prevent effect re-runs when parent re-renders
   const onNativeViewReadyRef = useRef(onNativeViewReady);
   const onNativeViewDestroyedRef = useRef(onNativeViewDestroyed);
+  const isFocusEligibleRef = useRef(isFocusEligible);
+  const onActivateRef = useRef(onActivate);
 
   useEffect(() => {
     latestSrcRef.current = src;
@@ -220,6 +222,14 @@ export function ElectronWebContentsView({
   useEffect(() => {
     onNativeViewDestroyedRef.current = onNativeViewDestroyed;
   }, [onNativeViewDestroyed]);
+
+  useEffect(() => {
+    isFocusEligibleRef.current = isFocusEligible;
+  }, [isFocusEligible]);
+
+  useEffect(() => {
+    onActivateRef.current = onActivate;
+  }, [onActivate]);
 
   const cancelScheduledSync = useCallback(() => {
     if (rafRef.current !== null) {
@@ -355,12 +365,12 @@ export function ElectronWebContentsView({
       const actions: WebviewActions = {
         focus: async () => {
           if (typeof window === "undefined") return false;
-          if (!isFocusEligible) return false;
+          if (!isFocusEligibleRef.current) return false;
 
           const targetId = webContentsIdRef.current;
           if (targetId === null) return false;
 
-          onActivate?.();
+          onActivateRef.current?.();
 
           try {
             const restore = window.cmux?.ui?.restoreLastFocusInWebContents;
@@ -403,7 +413,7 @@ export function ElectronWebContentsView({
       registeredActionsRef.current = actions;
       registerWebviewActions(key, actions);
     },
-    [isFocusEligible, onActivate],
+    [],
   );
 
   useEffect(() => {

@@ -209,7 +209,7 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
     onActivate,
     isExpanded = false,
     isAnyPanelExpanded = false,
-    isActivePanel = false,
+    isActivePanel = true,
   } = props;
   const [isDragOver, setIsDragOver] = useState(false);
   const [isDraggingSelf, setIsDraggingSelf] = useState(false);

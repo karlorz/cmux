@@ -614,6 +614,20 @@ class PersistentIframeManager {
     }
 
     entry.focusEligible = eligible;
+
+    if (
+      !eligible &&
+      typeof document !== "undefined" &&
+      document.activeElement === entry.iframe
+    ) {
+      try {
+        if (document.body instanceof HTMLElement) {
+          document.body.focus({ preventScroll: true });
+        }
+      } catch (error) {
+        console.error(`Failed to revoke focus for iframe "${key}"`, error);
+      }
+    }
   }
 
   canIframeReceiveFocus(key: string): boolean {
