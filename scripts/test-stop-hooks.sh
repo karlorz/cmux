@@ -85,11 +85,16 @@ cleanup_session() {
   rm -f "/tmp/codex-review-fails-${sid}"
   rm -f "/tmp/codex-review-transport-fails-${sid}"
   rm -f "/tmp/codex-review-transport-cooldown-${sid}"
-  rm -f "/tmp/codex-review-result-${sid}"
-  rm -f "/tmp/codex-review-result-type-${sid}"
-  rm -f "/tmp/codex-review-reviewed-${sid}"
-  rm -f "/tmp/codex-review-pid-${sid}"
-  rm -f "/tmp/codex-review-bg-state-${sid}"
+  rm -f "/tmp/codex-review-result-base-${sid}"
+  rm -f "/tmp/codex-review-result-uncommitted-${sid}"
+  rm -f "/tmp/codex-review-result-type-base-${sid}"
+  rm -f "/tmp/codex-review-result-type-uncommitted-${sid}"
+  rm -f "/tmp/codex-review-reviewed-base-${sid}"
+  rm -f "/tmp/codex-review-reviewed-uncommitted-${sid}"
+  rm -f "/tmp/codex-review-pid-base-${sid}"
+  rm -f "/tmp/codex-review-pid-uncommitted-${sid}"
+  rm -f "/tmp/codex-review-bg-state-base-${sid}"
+  rm -f "/tmp/codex-review-bg-state-uncommitted-${sid}"
   rm -f "/tmp/codex-review-debug.log"
 }
 
@@ -512,15 +517,15 @@ cleanup_session "$SID"
 
 INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":false}'
 
-# Compute the current state fingerprint to match the hook's logic
+# Compute the current committed-review fingerprint to match the hook's logic
 T11_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
-T11_DIRTY=$(git status --porcelain 2>/dev/null | grep -q . && { git diff 2>/dev/null; git diff --cached 2>/dev/null; } | shasum -a 256 | cut -c1-16 || echo "clean")
-T11_FP="${T11_HEAD}:${T11_DIRTY}"
+T11_MAIN_BASE=$(git merge-base main HEAD 2>/dev/null || echo "unknown")
+T11_FP="${T11_MAIN_BASE}:${T11_HEAD}"
 
-# Pre-seed a transport failure result with matching fingerprint
-echo "[codex-review-extract] incomplete review: 1/1 batches failed" > "/tmp/codex-review-result-${SID}"
-echo "transport_failure" > "/tmp/codex-review-result-type-${SID}"
-echo "$T11_FP" > "/tmp/codex-review-bg-state-${SID}"
+# Pre-seed a committed-scope transport failure result with matching fingerprint
+echo "[codex-review-extract] incomplete review: 1/1 batches failed" > "/tmp/codex-review-result-base-${SID}"
+echo "transport_failure" > "/tmp/codex-review-result-type-base-${SID}"
+echo "$T11_FP" > "/tmp/codex-review-bg-state-base-${SID}"
 
 REVIEW_EXIT=0
 echo "$INPUT_JSON" | \
@@ -552,18 +557,18 @@ cleanup_session "$SID"
 
 INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":false}'
 
-# Compute the current state fingerprint to match the hook's logic
+# Compute the current committed-review fingerprint to match the hook's logic
 T12_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
-T12_DIRTY=$(git status --porcelain 2>/dev/null | grep -q . && { git diff 2>/dev/null; git diff --cached 2>/dev/null; } | shasum -a 256 | cut -c1-16 || echo "clean")
-T12_FP="${T12_HEAD}:${T12_DIRTY}"
+T12_MAIN_BASE=$(git merge-base main HEAD 2>/dev/null || echo "unknown")
+T12_FP="${T12_MAIN_BASE}:${T12_HEAD}"
 
 # Pre-seed transport failure count at threshold - 1
 echo "2" > "/tmp/codex-review-transport-fails-${SID}"
 
-# Pre-seed a transport failure result to push count over threshold
-echo "[codex-review-extract] incomplete review: 1/1 batches failed" > "/tmp/codex-review-result-${SID}"
-echo "transport_failure" > "/tmp/codex-review-result-type-${SID}"
-echo "$T12_FP" > "/tmp/codex-review-bg-state-${SID}"
+# Pre-seed a committed-scope transport failure result to push count over threshold
+echo "[codex-review-extract] incomplete review: 1/1 batches failed" > "/tmp/codex-review-result-base-${SID}"
+echo "transport_failure" > "/tmp/codex-review-result-type-base-${SID}"
+echo "$T12_FP" > "/tmp/codex-review-bg-state-base-${SID}"
 
 REVIEW_EXIT=0
 echo "$INPUT_JSON" | \
@@ -579,8 +584,9 @@ assert_file_exists "cooldown file created after threshold" "/tmp/codex-review-tr
 assert_log_contains "debug log shows threshold reached" "/tmp/codex-review-debug.log" "Transport failure threshold reached"
 
 # Now verify that next review is skipped due to cooldown
-# Clear the reviewed-file so the hook doesn't short-circuit
-rm -f "/tmp/codex-review-reviewed-${SID}"
+# Clear reviewed markers so the hook doesn't short-circuit
+rm -f "/tmp/codex-review-reviewed-base-${SID}"
+rm -f "/tmp/codex-review-reviewed-uncommitted-${SID}"
 rm -f "/tmp/codex-review-debug.log"
 REVIEW_EXIT=0
 echo "$INPUT_JSON" | \
@@ -611,16 +617,14 @@ INPUT_JSON='{"session_id":"'"$SID"'","stop_hook_active":false}'
 echo "2" > "/tmp/codex-review-transport-fails-${SID}"
 echo "$(($(date +%s) + 300))" > "/tmp/codex-review-transport-cooldown-${SID}"
 
-# Pre-seed a successful review result (the opencode verdict will be mocked by
-# having an empty findings output that causes LGTM)
-echo "" > "/tmp/codex-review-result-${SID}"
-echo "findings" > "/tmp/codex-review-result-type-${SID}"
-echo "${SID}:fake" > "/tmp/codex-review-bg-state-${SID}"
+# Pre-seed a successful committed-scope review result fixture for future
+# integration coverage of transport-state reset behavior.
+echo "" > "/tmp/codex-review-result-base-${SID}"
+echo "findings" > "/tmp/codex-review-result-type-base-${SID}"
+echo "${SID}:fake" > "/tmp/codex-review-bg-state-base-${SID}"
 
-# The review result is empty so it gets discarded (empty FINDINGS).
-# Since it's discarded, transport files remain. We verify the cleanup
-# happens in the LGTM code path by checking the mechanism exists.
-# (Full integration test requires a real opencode binary.)
+# This test only verifies the fixture/setup shape for the split result files.
+# Full transport reset integration coverage still requires a real review pass.
 
 # Verify files exist before the attempt
 assert_file_exists "transport fail file exists before test" "/tmp/codex-review-transport-fails-${SID}"
