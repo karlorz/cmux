@@ -30,7 +30,7 @@ LDFLAGS := -s -w \
            -X '$(AUTH_PKG).ConvexSiteURL=$(CONVEX_SITE_URL)' \
            -X '$(AUTH_PKG).ServerURL=$(CMUX_SERVER_URL)'
 
-.PHONY: help build clean test install install-dev install-prod fmt lint run deps build-all build-npm \
+.PHONY: help build clean test install install-dev install-prod post-install-check fmt lint run deps build-all build-npm \
         npm-version npm-publish npm-publish-dry npm-publish-devsh npm-publish-devsh-dry
 
 help:
@@ -149,6 +149,58 @@ npm-publish-dry: build-npm
 # Path to .env file (searches up from current dir, defaults to repo root)
 ENV_FILE := $(shell for d in . .. ../.. ../../..; do [ -f "$$d/.env" ] && echo "$$d/.env" && break; done)
 
+# Shared post-install verification for local devsh installs
+# Runs after copying the binary to ~/.local/bin/devsh.
+define run_post_install_check
+set -eu; \
+canonical_path="$$HOME/.local/bin/devsh"; \
+resolved_path="$$(command -v devsh 2>/dev/null || true)"; \
+all_paths="$$(which -a devsh 2>/dev/null | awk '!seen[$$0]++' || true)"; \
+if [ -z "$$all_paths" ]; then \
+	all_paths="$$canonical_path"; \
+fi; \
+other_paths="$$(printf '%s\n' "$$all_paths" | grep -Fxv "$$canonical_path" || true)"; \
+echo "Installed binary: $$canonical_path"; \
+echo "Installed version:"; \
+"$$canonical_path" --version; \
+case ":$$PATH:" in \
+	*":$$HOME/.local/bin:"*) path_has_local_bin=1 ;; \
+	*) path_has_local_bin=0 ;; \
+esac; \
+if [ "$$path_has_local_bin" -ne 1 ]; then \
+	echo ""; \
+	echo "Warning: $$HOME/.local/bin is not in PATH, so your shell may resolve a different devsh binary."; \
+	echo "Add to your shell profile (~/.zshrc or ~/.bashrc):"; \
+	echo '  export PATH="$$HOME/.local/bin:$$PATH"'; \
+	echo ""; \
+	echo "Discovered devsh binaries:"; \
+	printf '%s\n' "$$all_paths" | awk '{print "  " $$0}'; \
+	exit 0; \
+fi; \
+if [ "$$resolved_path" = "$$canonical_path" ]; then \
+	echo ""; \
+	echo "devsh resolves to the canonical install location."; \
+	echo "Resolved path: $$resolved_path"; \
+	if [ -n "$$other_paths" ]; then \
+		echo "Other devsh binaries on PATH:"; \
+		printf '%s\n' "$$other_paths" | awk '{print "  " $$0}'; \
+	fi; \
+	exit 0; \
+fi; \
+echo ""; \
+echo "Warning: another devsh binary is shadowing the freshly installed one."; \
+echo "Resolved path: $$resolved_path"; \
+echo "Installed path: $$canonical_path"; \
+echo "Discovered devsh binaries:"; \
+printf '%s\n' "$$all_paths" | awk '{print "  " $$0}'; \
+echo ""; \
+echo "To use the newly installed binary, either:"; \
+echo '  1. Move $$HOME/.local/bin earlier in PATH: export PATH="$$HOME/.local/bin:$$PATH"'; \
+echo "  2. Remove the older devsh binary at $$resolved_path if you no longer need it"; \
+echo ""; \
+echo "No conflicting binaries were removed automatically."
+endef
+
 # Dev build - reads config from .env file and bakes values into binary
 # Values from .env take priority over hardcoded defaults
 # Runtime env vars can still override baked-in values
@@ -178,20 +230,16 @@ build-dev:
 		-o bin/devsh ./cmd/devsh
 	@echo "Dev build complete: bin/devsh"
 
+post-install-check:
+	@$(run_post_install_check)
+
 # Install dev build to user directory (matches install-cloudrouter-dev pattern)
 install-dev: build-dev
 	@mkdir -p ~/.local/bin
 	@cp bin/devsh ~/.local/bin/devsh
 	@# Clear macOS extended attributes (com.apple.provenance can cause hangs)
 	@xattr -c ~/.local/bin/devsh 2>/dev/null || true
-	@echo "Installed to ~/.local/bin/devsh"
-	@if ! echo "$$PATH" | grep -q "$$HOME/.local/bin"; then \
-		echo ""; \
-		echo "Add to your shell profile (~/.zshrc or ~/.bashrc):"; \
-		echo '  export PATH="$$HOME/.local/bin:$$PATH"'; \
-	else \
-		echo "Run 'devsh --version' to verify."; \
-	fi
+	@$(MAKE) post-install-check
 
 # Staging build - bakes in staging config
 # REQUIRED: STAGING_CONVEX_URL must be explicitly set to prevent fallback to prod
@@ -242,9 +290,7 @@ install-prod: build-prod
 	@cp bin/devsh ~/.local/bin/devsh
 	@# Clear macOS extended attributes (com.apple.provenance can cause hangs)
 	@xattr -c ~/.local/bin/devsh 2>/dev/null || true
-	@echo "Installed to ~/.local/bin/devsh (production mode)"
-	@# Show version to confirm prod build
-	@~/.local/bin/devsh --version
+	@$(MAKE) post-install-check
 
 # Aliases (for root Makefile delegation)
 npm-publish-devsh: npm-publish
