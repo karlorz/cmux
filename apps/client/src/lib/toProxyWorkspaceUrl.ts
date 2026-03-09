@@ -106,6 +106,23 @@ function createMorphPortUrl(
   return url;
 }
 
+const NO_VNC_VIEWER_DEFAULT_PARAMS: ReadonlyArray<readonly [string, string]> = [
+  ["autoconnect", "1"],
+  ["resize", "scale"],
+];
+
+function applyNoVncViewerDefaults(
+  url: URL,
+  preserveExistingSearchParams = true
+): void {
+  for (const [key, value] of NO_VNC_VIEWER_DEFAULT_PARAMS) {
+    if (preserveExistingSearchParams && url.searchParams.has(key)) {
+      continue;
+    }
+    url.searchParams.set(key, value);
+  }
+}
+
 export function toProxyWorkspaceUrl(
   workspaceUrl: string,
   preferredOrigin?: string | null
@@ -122,12 +139,8 @@ export function toMorphVncUrl(sourceUrl: string): string | null {
 
   const vncUrl = createMorphPortUrl(components, 39380);
   vncUrl.pathname = "/vnc.html";
-
-  const searchParams = new URLSearchParams();
-  searchParams.set("autoconnect", "1");
-  searchParams.set("resize", "scale");
-  searchParams.set("reconnect", "0");
-  vncUrl.search = `?${searchParams.toString()}`;
+  vncUrl.search = "";
+  applyNoVncViewerDefaults(vncUrl, false);
   vncUrl.hash = "";
 
   return vncUrl.toString();
@@ -174,16 +187,10 @@ export function toVncViewerUrl(vncBaseUrl: string): string | null {
 
     if (!isViewerUrl) {
       url.pathname = "/vnc.html";
-      url.searchParams.set("reconnect", "0");
       url.hash = "";
     }
 
-    if (!url.searchParams.has("autoconnect")) {
-      url.searchParams.set("autoconnect", "1");
-    }
-    if (!url.searchParams.has("resize")) {
-      url.searchParams.set("resize", "scale");
-    }
+    applyNoVncViewerDefaults(url);
 
     return url.toString();
   } catch (error) {
@@ -234,12 +241,8 @@ export function toGenericVncUrl(sourceUrl: string): string | null {
     // Replace the port in hostname with VNC port (39380)
     url.hostname = `port-39380-${hostId}.${domain}`;
     url.pathname = "/vnc.html";
-
-    const searchParams = new URLSearchParams();
-    searchParams.set("autoconnect", "1");
-    searchParams.set("resize", "scale");
-    searchParams.set("reconnect", "0");
-    url.search = `?${searchParams.toString()}`;
+    url.search = "";
+    applyNoVncViewerDefaults(url, false);
     url.hash = "";
 
     return url.toString();
