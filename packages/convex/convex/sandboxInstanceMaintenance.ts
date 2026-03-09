@@ -24,6 +24,12 @@ import {
 } from "@cmux/morphcloud-openapi-client";
 import type { SandboxProvider } from "./sandboxInstances";
 import { PveLxcClient } from "@cmux/pve-lxc-client";
+import {
+  buildCloudWorkspaceProtectionMap,
+  getContainerNamesNeedingCloudWorkspaceFallback,
+  isPveInstanceStaleForPause,
+  type MaintenanceActivityRecord,
+} from "./sandboxInstanceMaintenanceHelpers";
 
 // ============================================================================
 // Configuration
@@ -37,6 +43,40 @@ const STOP_DAYS_THRESHOLD = 7;
 const ORPHAN_MIN_AGE_DAYS = 5;
 const MILLISECONDS_PER_HOUR = 60 * 60 * 1000;
 const BATCH_SIZE = 5;
+
+type ActivityByInstanceId = Record<
+  string,
+  (MaintenanceActivityRecord & {
+    lastPausedAt?: number;
+    stoppedAt?: number;
+  }) | undefined
+>;
+
+async function resolveCloudWorkspaceProtectionByInstance(params: {
+  activitiesByInstanceId: ActivityByInstanceId;
+  fetchTaskRunCloudWorkspaceFlags: (
+    containerNames: string[],
+  ) => Promise<Record<string, boolean>>;
+  instanceIds: string[];
+}): Promise<Record<string, boolean>> {
+  const fallbackContainerNames = getContainerNamesNeedingCloudWorkspaceFallback(
+    {
+      activitiesByInstanceId: params.activitiesByInstanceId,
+      instanceIds: params.instanceIds,
+    },
+  );
+
+  const taskRunCloudWorkspaceFlags =
+    fallbackContainerNames.length > 0
+      ? await params.fetchTaskRunCloudWorkspaceFlags(fallbackContainerNames)
+      : {};
+
+  return buildCloudWorkspaceProtectionMap({
+    activitiesByInstanceId: params.activitiesByInstanceId,
+    instanceIds: params.instanceIds,
+    taskRunCloudWorkspaceFlags,
+  });
+}
 
 // ============================================================================
 // Provider Client Interfaces
@@ -391,19 +431,22 @@ export const pauseOldSandboxInstances = internalAction({
           continue;
         }
 
-        // For PVE, we need to check activity table for creation time
-        if (config.provider === "pve-lxc") {
-          const instanceIds = staleInstances.map((i) => i.id);
-          const activities = await ctx.runQuery(
-            internal.sandboxInstances.getActivitiesByInstanceIdsInternal,
-            { instanceIds }
-          );
+        const initialInstanceIds = staleInstances.map((i) => i.id);
+        const activities: ActivityByInstanceId = await ctx.runQuery(
+          internal.sandboxInstances.getActivitiesByInstanceIdsInternal,
+          { instanceIds: initialInstanceIds },
+        );
 
-          // Filter based on activity creation time
+        // For PVE, use last resume/activity timestamps to decide staleness.
+        if (config.provider === "pve-lxc") {
           const filteredStale = staleInstances.filter((inst) => {
             const activity = activities[inst.id];
-            if (!activity?.createdAt) return true; // No record, assume old
-            return now - activity.createdAt > thresholdMs;
+            return isPveInstanceStaleForPause({
+              activity,
+              nowMs: now,
+              providerCreatedAtSeconds: inst.created,
+              thresholdMs,
+            });
           });
 
           if (filteredStale.length === 0) {
@@ -416,6 +459,17 @@ export const pauseOldSandboxInstances = internalAction({
           staleInstances = filteredStale;
         }
 
+        const cloudWorkspaceProtectionByInstance =
+          await resolveCloudWorkspaceProtectionByInstance({
+            activitiesByInstanceId: activities,
+            fetchTaskRunCloudWorkspaceFlags: (containerNames) =>
+              ctx.runQuery(
+                internal.taskRuns.getCloudWorkspaceFlagsByContainerNamesInternal,
+                { containerNames },
+              ),
+            instanceIds: staleInstances.map((instance) => instance.id),
+          });
+
         console.log(
           `[sandboxMaintenance:pause] Found ${staleInstances.length} stale ${config.provider} instances`
         );
@@ -426,11 +480,7 @@ export const pauseOldSandboxInstances = internalAction({
 
           const results = await Promise.allSettled(
             batch.map(async (instance) => {
-              const devboxRecord = await ctx.runQuery(
-                internal.devboxInstances.getByProviderInstanceIdInternal,
-                { providerInstanceId: instance.id }
-              );
-              if (devboxRecord) {
+              if (cloudWorkspaceProtectionByInstance[instance.id]) {
                 console.log(
                   `[sandboxMaintenance:pause] Skipping cloud workspace: ${instance.id}`
                 );
@@ -553,10 +603,21 @@ export const stopOldSandboxInstances = internalAction({
 
         // Get activity records for all instances
         const instanceIds = pausedInstances.map((i) => i.id);
-        const activities = await ctx.runQuery(
+        const activities: ActivityByInstanceId = await ctx.runQuery(
           internal.sandboxInstances.getActivitiesByInstanceIdsInternal,
           { instanceIds }
         );
+
+        const cloudWorkspaceProtectionByInstance =
+          await resolveCloudWorkspaceProtectionByInstance({
+            activitiesByInstanceId: activities,
+            fetchTaskRunCloudWorkspaceFlags: (containerNames) =>
+              ctx.runQuery(
+                internal.taskRuns.getCloudWorkspaceFlagsByContainerNamesInternal,
+                { containerNames },
+              ),
+            instanceIds,
+          });
 
         // Process in batches
         for (let i = 0; i < pausedInstances.length; i += BATCH_SIZE) {
@@ -564,11 +625,7 @@ export const stopOldSandboxInstances = internalAction({
 
           const results = await Promise.allSettled(
             batch.map(async (instance) => {
-              const devboxRecord = await ctx.runQuery(
-                internal.devboxInstances.getByProviderInstanceIdInternal,
-                { providerInstanceId: instance.id }
-              );
-              if (devboxRecord) {
+              if (cloudWorkspaceProtectionByInstance[instance.id]) {
                 console.log(
                   `[sandboxMaintenance:stop] Skipping cloud workspace: ${instance.id}`
                 );

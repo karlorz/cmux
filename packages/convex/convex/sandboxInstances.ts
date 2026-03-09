@@ -21,6 +21,10 @@ import {
   runtimeProviderValidator,
   snapshotProviderValidator,
 } from "../_shared/provider-validators";
+import {
+  buildRecordCreateActivityMetadata,
+  buildRecordCreateInternalActivityMetadata,
+} from "./sandboxInstanceActivityCreateHelpers";
 
 /**
  * Sandbox provider types - keep in sync with schema.ts
@@ -220,8 +224,20 @@ export const recordCreateInternal = internalMutation({
     templateVmid: v.optional(v.number()),
     teamId: v.optional(v.string()),
     userId: v.optional(v.string()),
+    isCloudWorkspace: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    const activityMetadata = buildRecordCreateInternalActivityMetadata({
+      teamId: args.teamId,
+      userId: args.userId,
+      vmid: args.vmid,
+      hostname: args.hostname,
+      snapshotId: args.snapshotId,
+      snapshotProvider: args.snapshotProvider,
+      templateVmid: args.templateVmid,
+      isCloudWorkspace: args.isCloudWorkspace,
+    });
+
     const existing = await ctx.db
       .query("sandboxInstanceActivity")
       .withIndex("by_instanceId", (q) => q.eq("instanceId", args.instanceId))
@@ -229,26 +245,12 @@ export const recordCreateInternal = internalMutation({
 
     if (existing) {
       // Update existing record (shouldn't normally happen)
-      await ctx.db.patch(existing._id, {
-        teamId: args.teamId,
-        userId: args.userId,
-        vmid: args.vmid,
-        hostname: args.hostname,
-        snapshotId: args.snapshotId,
-        snapshotProvider: args.snapshotProvider,
-        templateVmid: args.templateVmid,
-      });
+      await ctx.db.patch(existing._id, activityMetadata);
     } else {
       await ctx.db.insert("sandboxInstanceActivity", {
         instanceId: args.instanceId,
         provider: args.provider,
-        vmid: args.vmid,
-        hostname: args.hostname,
-        snapshotId: args.snapshotId,
-        snapshotProvider: args.snapshotProvider,
-        templateVmid: args.templateVmid,
-        teamId: args.teamId,
-        userId: args.userId,
+        ...activityMetadata,
         createdAt: Date.now(),
       });
     }
@@ -270,12 +272,23 @@ export const recordCreate = authMutation({
     snapshotProvider: v.optional(snapshotProviderValidator),
     templateVmid: v.optional(v.number()),
     teamSlugOrId: v.string(),
+    isCloudWorkspace: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     // Verify user belongs to this team and get team ID
     const teamId = await getTeamId(ctx, args.teamSlugOrId);
     // Get user ID from identity subject (Stack Auth user ID)
     const userId = ctx.identity.subject;
+    const activityMetadata = buildRecordCreateActivityMetadata({
+      teamId,
+      userId,
+      vmid: args.vmid,
+      hostname: args.hostname,
+      snapshotId: args.snapshotId,
+      snapshotProvider: args.snapshotProvider,
+      templateVmid: args.templateVmid,
+      isCloudWorkspace: args.isCloudWorkspace,
+    });
 
     const existing = await ctx.db
       .query("sandboxInstanceActivity")
@@ -284,26 +297,12 @@ export const recordCreate = authMutation({
 
     if (existing) {
       // Update existing record (shouldn't normally happen)
-      await ctx.db.patch(existing._id, {
-        teamId,
-        userId,
-        vmid: args.vmid,
-        hostname: args.hostname,
-        snapshotId: args.snapshotId,
-        snapshotProvider: args.snapshotProvider,
-        templateVmid: args.templateVmid,
-      });
+      await ctx.db.patch(existing._id, activityMetadata);
     } else {
       await ctx.db.insert("sandboxInstanceActivity", {
         instanceId: args.instanceId,
         provider: args.provider,
-        vmid: args.vmid,
-        hostname: args.hostname,
-        snapshotId: args.snapshotId,
-        snapshotProvider: args.snapshotProvider,
-        templateVmid: args.templateVmid,
-        teamId,
-        userId,
+        ...activityMetadata,
         createdAt: Date.now(),
       });
     }
@@ -342,6 +341,7 @@ export const getActivitiesByInstanceIdsInternal = internalQuery({
         lastPausedAt?: number;
         lastResumedAt?: number;
         stoppedAt?: number;
+        isCloudWorkspace?: boolean;
         teamId?: string;
         userId?: string;
         createdAt?: number;
@@ -362,6 +362,7 @@ export const getActivitiesByInstanceIdsInternal = internalQuery({
           lastPausedAt: activity.lastPausedAt,
           lastResumedAt: activity.lastResumedAt,
           stoppedAt: activity.stoppedAt,
+          isCloudWorkspace: activity.isCloudWorkspace,
           teamId: activity.teamId,
           userId: activity.userId,
           createdAt: activity.createdAt,
