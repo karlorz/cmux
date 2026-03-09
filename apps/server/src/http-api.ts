@@ -1135,8 +1135,8 @@ async function handleOrchestrationResults(
       );
 
       if (!convexResponse.ok) {
-        const errorText = await convexResponse.text();
-        jsonResponse(res, convexResponse.status, { error: errorText });
+        const errorMessage = await getResponseErrorMessage(convexResponse);
+        jsonResponse(res, convexResponse.status, { error: errorMessage });
         return;
       }
 

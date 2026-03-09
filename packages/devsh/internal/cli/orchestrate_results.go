@@ -87,7 +87,7 @@ Examples:
 
 		if len(result.Results) == 0 {
 			fmt.Println("No tasks found for this orchestration.")
-			fmt.Println("\nNote: This command requires an orchestration session ID, not an orchestration task ID.")
+			fmt.Println("\nOne possible cause is using an orchestration task ID instead of an orchestration session ID.")
 			fmt.Println("If you only have an orchestration task ID, use `devsh orchestrate status`")
 			fmt.Println("or `devsh orchestrate wait` for that task instead.")
 			fmt.Println("Use an orchestration ID from a workflow that creates one, such as")
