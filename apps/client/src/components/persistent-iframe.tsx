@@ -55,6 +55,7 @@ interface PersistentIframeProps {
   isExpanded?: boolean;
   isAnyPanelExpanded?: boolean;
   isFocusEligible?: boolean;
+  onActivate?: () => void;
 }
 
 type ScrollTarget = HTMLElement | Window;
@@ -108,6 +109,7 @@ export function PersistentIframe({
   isExpanded = false,
   isAnyPanelExpanded = false,
   isFocusEligible = true,
+  onActivate,
 }: PersistentIframeProps) {
   const [status, setStatus] = useState<PersistentIframeStatus>("loading");
   const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -474,10 +476,16 @@ export function PersistentIframe({
         ref={containerRef}
         className={cn("relative", className)}
         style={style}
+        onPointerDownCapture={onActivate}
+        onFocusCapture={onActivate}
       />
       {overlayElement && overlayContent && shouldShowOverlay
         ? createPortal(
-            <div className={overlayContent.className}>
+            <div
+              className={overlayContent.className}
+              onPointerDownCapture={onActivate}
+              onFocusCapture={onActivate}
+            >
               <div className="pointer-events-auto flex flex-col items-center gap-3 text-center">
                 {overlayContent.node}
                 {resumeMessage ? (

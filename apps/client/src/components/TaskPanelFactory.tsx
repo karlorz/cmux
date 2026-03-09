@@ -510,6 +510,7 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
               isExpanded={isExpanded}
               isAnyPanelExpanded={isAnyPanelExpanded}
               isFocusEligible={isActivePanel}
+              onActivate={handleActivate}
             />
           ) : shouldShowWorkspaceLoader ? (
             <div className="flex h-full items-center justify-center">
@@ -596,6 +597,7 @@ const RenderPanelComponent = (props: PanelFactoryProps): ReactNode => {
               isExpanded={isExpanded}
               isAnyPanelExpanded={isAnyPanelExpanded}
               isFocusEligible={isActivePanel}
+              onActivate={handleActivate}
             />
           ) : shouldShowBrowserLoader ? (
             <div className="flex h-full items-center justify-center">

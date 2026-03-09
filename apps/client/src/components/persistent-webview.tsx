@@ -46,6 +46,7 @@ export interface PersistentWebViewProps {
   isExpanded?: boolean;
   isAnyPanelExpanded?: boolean;
   isFocusEligible?: boolean;
+  onActivate?: () => void;
 }
 
 const DISABLE_WEBCONTENTSVIEW = true;
@@ -83,6 +84,7 @@ export function PersistentWebView({
   isExpanded,
   isAnyPanelExpanded,
   isFocusEligible,
+  onActivate,
 }: PersistentWebViewProps) {
   const resolvedRetain = retainOnUnmount ?? true;
 
@@ -104,6 +106,8 @@ export function PersistentWebView({
         fallback={fallback}
         onNativeViewReady={onElectronViewReady}
         onNativeViewDestroyed={onElectronViewDestroyed}
+        isFocusEligible={isFocusEligible}
+        onActivate={onActivate}
       />
     );
   }
@@ -134,6 +138,7 @@ export function PersistentWebView({
       isExpanded={isExpanded}
       isAnyPanelExpanded={isAnyPanelExpanded}
       isFocusEligible={isFocusEligible}
+      onActivate={onActivate}
     />
   );
 }

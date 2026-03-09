@@ -32,6 +32,8 @@ interface ElectronWebContentsViewProps {
     restored: boolean;
   }) => void;
   onNativeViewDestroyed?: () => void;
+  isFocusEligible?: boolean;
+  onActivate?: () => void;
 }
 
 function getWebContentsBridge() {
@@ -160,6 +162,8 @@ export function ElectronWebContentsView({
   retainOnUnmount,
   onNativeViewReady,
   onNativeViewDestroyed,
+  isFocusEligible = true,
+  onActivate,
 }: ElectronWebContentsViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewIdRef = useRef<number | null>(null);
@@ -351,9 +355,12 @@ export function ElectronWebContentsView({
       const actions: WebviewActions = {
         focus: async () => {
           if (typeof window === "undefined") return false;
+          if (!isFocusEligible) return false;
 
           const targetId = webContentsIdRef.current;
           if (targetId === null) return false;
+
+          onActivate?.();
 
           try {
             const restore = window.cmux?.ui?.restoreLastFocusInWebContents;
@@ -396,7 +403,7 @@ export function ElectronWebContentsView({
       registeredActionsRef.current = actions;
       registerWebviewActions(key, actions);
     },
-    [],
+    [isFocusEligible, onActivate],
   );
 
   useEffect(() => {
@@ -827,6 +834,8 @@ export function ElectronWebContentsView({
       data-role="electron-web-contents-view"
       data-suspended={suspended ? "true" : "false"}
       data-drag-disable-pointer
+      onPointerDownCapture={onActivate}
+      onFocusCapture={onActivate}
     >
       {shouldShowFallback ? (
         <div className="flex h-full w-full items-center justify-center rounded-md border border-dashed border-neutral-300 bg-white/80 text-sm text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900/80 dark:text-neutral-300">
