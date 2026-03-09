@@ -139,7 +139,9 @@ Codex review could not complete due to transport/connectivity issues. This is NO
       exit 2
     fi
 
-    # Normal code review findings path
+    # Normal code review findings path — successful Codex run resets transport state
+    rm -f "$TRANSPORT_FAIL_FILE" "$TRANSPORT_COOLDOWN_FILE"
+
     FAIL_COUNT=0
     if [ -f "$FAIL_COUNT_FILE" ]; then
       FAIL_COUNT=$(cat "$FAIL_COUNT_FILE")
@@ -155,8 +157,6 @@ If the output indicates code review passed with no issues, return exactly 'lgtm'
 
       if echo "$VERDICT" | grep -qi "lgtm"; then
         rm -f "$FAIL_COUNT_FILE"
-        # Reset transport failure counter on successful review
-        rm -f "$TRANSPORT_FAIL_FILE" "$TRANSPORT_COOLDOWN_FILE"
         debug_log "Background review PASSED (lgtm)"
         echo "$PREV_STATE" > "$REVIEWED_FILE"
         # Review passed, no action needed
