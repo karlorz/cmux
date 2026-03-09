@@ -37,10 +37,31 @@ export async function getGeminiEnvironment(
   ctx: EnvironmentContext
 ): Promise<EnvironmentResult> {
   // These must be lazy since configs are imported into the browser
-  const { readFile, stat } = await import("node:fs/promises");
-  const { homedir } = await import("node:os");
   const { Buffer } = await import("node:buffer");
-  const { join } = await import("node:path");
+
+  // useHostConfig is safe for desktop/Electron apps where the host IS the user's machine.
+  // For server deployments, this should be false to prevent credential leakage.
+  const useHostConfig = ctx.useHostConfig ?? false;
+
+  let homeDir: string | undefined;
+  let readFile:
+    | ((path: string, encoding: "utf-8") => Promise<string>)
+    | undefined;
+  let statFn:
+    | ((path: string) => Promise<{ isDirectory(): boolean }>)
+    | undefined;
+  let joinFn: ((...paths: string[]) => string) | undefined;
+  let geminiDir: string | undefined;
+  if (useHostConfig) {
+    const fs = await import("node:fs/promises");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    readFile = fs.readFile;
+    statFn = fs.stat;
+    joinFn = path.join;
+    homeDir = process.env.HOME || process.env.USERPROFILE || os.homedir();
+    geminiDir = path.join(homeDir, ".gemini");
+  }
 
   const files: EnvironmentResult["files"] = [];
   const env: Record<string, string> = {};
@@ -55,16 +76,15 @@ export async function getGeminiEnvironment(
   // The actual telemetry path will be set by the agent spawner with the task ID
   startupCommands.push("rm -f /tmp/gemini-telemetry-*.log 2>/dev/null || true");
 
-  const geminiDir = join(homedir(), ".gemini");
-
-  // Helper function to safely copy file
+  // Helper function to safely copy file from host (only when useHostConfig is true)
   async function copyFile(
     filename: string,
     destinationPath: string,
     mode: string = "644"
   ) {
+    if (!useHostConfig || !readFile || !geminiDir || !joinFn) return false;
     try {
-      const content = await readFile(join(geminiDir, filename), "utf-8");
+      const content = await readFile(joinFn(geminiDir, filename), "utf-8");
       files.push({
         destinationPath,
         contentBase64: Buffer.from(content).toString("base64"),
@@ -86,18 +106,20 @@ export async function getGeminiEnvironment(
 
   // 1. Settings file (required) — ensure selectedAuthType is set
   try {
-    const settingsPath = join(geminiDir, "settings.json");
     let settingsContent: string | undefined;
-    try {
-      settingsContent = await readFile(settingsPath, "utf-8");
-    } catch (error) {
-      // If missing, we'll create a new one
-      const isNodeErr = (err: unknown): err is { code?: string } =>
-        typeof err === "object" && err !== null && "code" in err;
-      if (
-        !(error instanceof Error && isNodeErr(error) && error.code === "ENOENT")
-      ) {
-        console.warn("Failed to read settings.json:", error);
+    if (useHostConfig && readFile && geminiDir && joinFn) {
+      const settingsPath = joinFn(geminiDir, "settings.json");
+      try {
+        settingsContent = await readFile(settingsPath, "utf-8");
+      } catch (error) {
+        // If missing, we'll create a new one
+        const isNodeErr = (err: unknown): err is { code?: string } =>
+          typeof err === "object" && err !== null && "code" in err;
+        if (
+          !(error instanceof Error && isNodeErr(error) && error.code === "ENOENT")
+        ) {
+          console.warn("Failed to read settings.json:", error);
+        }
       }
     }
 
@@ -183,37 +205,39 @@ export async function getGeminiEnvironment(
   await copyFile("installation_id", "$HOME/.gemini/installation_id");
   await copyFile("user_id", "$HOME/.gemini/user_id");
 
-  // 5. Check for .env files
-  const envPaths = [join(geminiDir, ".env"), join(homedir(), ".env")];
+  // 5. Check for .env files (host only)
+  if (useHostConfig && readFile && homeDir && joinFn) {
+    const envPaths = [joinFn(homeDir, ".gemini", ".env"), joinFn(homeDir, ".env")];
 
-  for (const envPath of envPaths) {
-    try {
-      const content = await readFile(envPath, "utf-8");
-      const filename =
-        envPath === join(geminiDir, ".env") ? ".gemini/.env" : ".env";
-      files.push({
-        destinationPath: `$HOME/${filename}`,
-        contentBase64: Buffer.from(content).toString("base64"),
-        mode: "600",
-      });
-      break; // Use first found .env file
-    } catch {
-      // Continue to next path
+    for (const envPath of envPaths) {
+      try {
+        const content = await readFile(envPath, "utf-8");
+        const filename =
+          envPath === joinFn(homeDir, ".gemini", ".env") ? ".gemini/.env" : ".env";
+        files.push({
+          destinationPath: `$HOME/${filename}`,
+          contentBase64: Buffer.from(content).toString("base64"),
+          mode: "600",
+        });
+        break; // Use first found .env file
+      } catch {
+        // Continue to next path
+      }
     }
   }
 
-  // 6. Check for commands directory
-  try {
-    const commandsDir = join(geminiDir, "commands");
-    const stats = await stat(commandsDir);
-    if (stats.isDirectory()) {
-      // Create commands directory in destination
-      startupCommands.push("mkdir -p ~/.gemini/commands");
-      // Note: We're not copying the contents of commands directory
-      // as it may contain many files and we don't know what's needed
+  // 6. Check for commands directory (host only)
+  if (useHostConfig && statFn && geminiDir && joinFn) {
+    try {
+      const commandsDir = joinFn(geminiDir, "commands");
+      const stats = await statFn(commandsDir);
+      if (stats.isDirectory()) {
+        // Create commands directory in destination
+        startupCommands.push("mkdir -p ~/.gemini/commands");
+      }
+    } catch {
+      // Commands directory doesn't exist
     }
-  } catch {
-    // Commands directory doesn't exist
   }
 
   // Add agent memory protocol support

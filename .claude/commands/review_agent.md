@@ -40,12 +40,14 @@ You MUST run these codex reviews. Do NOT skip this step.
 - `Codex review executed: yes`
 - `Codex review executed: no`
 
-2. If Codex output is missing/empty or clearly failed (for example timeout, command-not-found, permission denied):
+2. If Codex output is missing/empty or clearly failed (for example timeout, command-not-found, permission denied, Cloudflare blocking):
 - set first line to `Codex review executed: no`
 - output only a short `Blocker` section with the exact failed command and reason
+- if the extractor output contains `[codex-review-extract] incomplete review`, include the synthesized batch summary verbatim
 - stop; do not produce findings from manual review
+- partial/incomplete Codex coverage MUST be treated as a blocker, not a successful review
 
-3. If Codex output exists:
+3. If Codex output exists and the extractor exited successfully (exit 0):
 - set first line to `Codex review executed: yes`
 - produce this report:
 
