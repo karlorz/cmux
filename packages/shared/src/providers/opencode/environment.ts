@@ -445,14 +445,14 @@ log "Post-start script end"
     );
   }
 
-  // Add OPENCODE.md with memory protocol instructions for the project
-  const opencodeMdContent = `# cmux Project Instructions
+  // Add AGENTS.md with memory protocol instructions at the user-level OpenCode path
+  const opencodeAgentsContent = `# cmux Project Instructions
 
 ${getMemoryProtocolInstructions()}
 `;
   files.push({
-    destinationPath: "/root/workspace/OPENCODE.md",
-    contentBase64: Buffer.from(opencodeMdContent).toString("base64"),
+    destinationPath: "$HOME/.config/opencode/AGENTS.md",
+    contentBase64: Buffer.from(opencodeAgentsContent).toString("base64"),
     mode: "644",
   });
 

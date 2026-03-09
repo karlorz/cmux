@@ -55,6 +55,27 @@ async function decodeOpencodeConfig(args?: {
 }
 
 describe("getOpencodeEnvironment", () => {
+  it("writes memory instructions to the user-level AGENTS path only", async () => {
+    const result = await getOpencodeEnvironment(BASE_CONTEXT);
+    const agentsFile = result.files.find(
+      (file) => file.destinationPath === "$HOME/.config/opencode/AGENTS.md",
+    );
+
+    expect(agentsFile).toBeDefined();
+    expect(
+      result.files.some(
+        (file) => file.destinationPath === "/root/workspace/OPENCODE.md",
+      ),
+    ).toBe(false);
+
+    const instructions = Buffer.from(
+      agentsFile!.contentBase64,
+      "base64",
+    ).toString("utf-8");
+    expect(instructions).toContain("Agent Memory Protocol");
+    expect(instructions).toContain("/root/lifecycle/memory");
+  });
+
   it("includes managed devsh-memory MCP when no custom servers are configured", async () => {
     const config = await decodeOpencodeConfig();
 
