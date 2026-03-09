@@ -21,6 +21,10 @@ import {
   runtimeProviderValidator,
   snapshotProviderValidator,
 } from "../_shared/provider-validators";
+import {
+  buildSandboxInstanceActivityInsert,
+  buildSandboxInstanceActivityMetadata,
+} from "./sandboxInstances.helpers";
 
 /**
  * Sandbox provider types - keep in sync with schema.ts
@@ -220,6 +224,7 @@ export const recordCreateInternal = internalMutation({
     templateVmid: v.optional(v.number()),
     teamId: v.optional(v.string()),
     userId: v.optional(v.string()),
+    isCloudWorkspace: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -229,28 +234,12 @@ export const recordCreateInternal = internalMutation({
 
     if (existing) {
       // Update existing record (shouldn't normally happen)
-      await ctx.db.patch(existing._id, {
-        teamId: args.teamId,
-        userId: args.userId,
-        vmid: args.vmid,
-        hostname: args.hostname,
-        snapshotId: args.snapshotId,
-        snapshotProvider: args.snapshotProvider,
-        templateVmid: args.templateVmid,
-      });
+      await ctx.db.patch(existing._id, buildSandboxInstanceActivityMetadata(args));
     } else {
-      await ctx.db.insert("sandboxInstanceActivity", {
-        instanceId: args.instanceId,
-        provider: args.provider,
-        vmid: args.vmid,
-        hostname: args.hostname,
-        snapshotId: args.snapshotId,
-        snapshotProvider: args.snapshotProvider,
-        templateVmid: args.templateVmid,
-        teamId: args.teamId,
-        userId: args.userId,
-        createdAt: Date.now(),
-      });
+      await ctx.db.insert(
+        "sandboxInstanceActivity",
+        buildSandboxInstanceActivityInsert(args, Date.now())
+      );
     }
   },
 });
@@ -270,6 +259,7 @@ export const recordCreate = authMutation({
     snapshotProvider: v.optional(snapshotProviderValidator),
     templateVmid: v.optional(v.number()),
     teamSlugOrId: v.string(),
+    isCloudWorkspace: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     // Verify user belongs to this team and get team ID
@@ -284,28 +274,38 @@ export const recordCreate = authMutation({
 
     if (existing) {
       // Update existing record (shouldn't normally happen)
-      await ctx.db.patch(existing._id, {
-        teamId,
-        userId,
-        vmid: args.vmid,
-        hostname: args.hostname,
-        snapshotId: args.snapshotId,
-        snapshotProvider: args.snapshotProvider,
-        templateVmid: args.templateVmid,
-      });
+      await ctx.db.patch(
+        existing._id,
+        buildSandboxInstanceActivityMetadata({
+          teamId,
+          userId,
+          vmid: args.vmid,
+          hostname: args.hostname,
+          snapshotId: args.snapshotId,
+          snapshotProvider: args.snapshotProvider,
+          templateVmid: args.templateVmid,
+          isCloudWorkspace: args.isCloudWorkspace,
+        })
+      );
     } else {
-      await ctx.db.insert("sandboxInstanceActivity", {
-        instanceId: args.instanceId,
-        provider: args.provider,
-        vmid: args.vmid,
-        hostname: args.hostname,
-        snapshotId: args.snapshotId,
-        snapshotProvider: args.snapshotProvider,
-        templateVmid: args.templateVmid,
-        teamId,
-        userId,
-        createdAt: Date.now(),
-      });
+      await ctx.db.insert(
+        "sandboxInstanceActivity",
+        buildSandboxInstanceActivityInsert(
+          {
+            instanceId: args.instanceId,
+            provider: args.provider,
+            vmid: args.vmid,
+            hostname: args.hostname,
+            snapshotId: args.snapshotId,
+            snapshotProvider: args.snapshotProvider,
+            templateVmid: args.templateVmid,
+            teamId,
+            userId,
+            isCloudWorkspace: args.isCloudWorkspace,
+          },
+          Date.now()
+        )
+      );
     }
   },
 });
@@ -344,6 +344,7 @@ export const getActivitiesByInstanceIdsInternal = internalQuery({
         stoppedAt?: number;
         teamId?: string;
         userId?: string;
+        isCloudWorkspace?: boolean;
         createdAt?: number;
       }
     > = {};
@@ -364,6 +365,7 @@ export const getActivitiesByInstanceIdsInternal = internalQuery({
           stoppedAt: activity.stoppedAt,
           teamId: activity.teamId,
           userId: activity.userId,
+          isCloudWorkspace: activity.isCloudWorkspace,
           createdAt: activity.createdAt,
         };
       }

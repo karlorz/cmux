@@ -24,6 +24,11 @@ import {
 } from "@cmux/morphcloud-openapi-client";
 import type { SandboxProvider } from "./sandboxInstances";
 import { PveLxcClient } from "@cmux/pve-lxc-client";
+import {
+  getLastActivityTimeMs,
+  isPastPauseThreshold,
+  resolveCloudWorkspaceProtectionMap,
+} from "./sandboxInstanceMaintenance.helpers";
 
 // ============================================================================
 // Configuration
@@ -391,19 +396,20 @@ export const pauseOldSandboxInstances = internalAction({
           continue;
         }
 
+        const activities = await ctx.runQuery(
+          internal.sandboxInstances.getActivitiesByInstanceIdsInternal,
+          { instanceIds: staleInstances.map((instance) => instance.id) }
+        );
+
         // For PVE, we need to check activity table for creation time
         if (config.provider === "pve-lxc") {
-          const instanceIds = staleInstances.map((i) => i.id);
-          const activities = await ctx.runQuery(
-            internal.sandboxInstances.getActivitiesByInstanceIdsInternal,
-            { instanceIds }
-          );
-
-          // Filter based on activity creation time
           const filteredStale = staleInstances.filter((inst) => {
-            const activity = activities[inst.id];
-            if (!activity?.createdAt) return true; // No record, assume old
-            return now - activity.createdAt > thresholdMs;
+            return isPastPauseThreshold({
+              now,
+              thresholdMs,
+              activity: activities[inst.id],
+              providerCreatedAtSeconds: inst.created,
+            });
           });
 
           if (filteredStale.length === 0) {
@@ -416,6 +422,16 @@ export const pauseOldSandboxInstances = internalAction({
           staleInstances = filteredStale;
         }
 
+        const cloudWorkspaceProtection = await resolveCloudWorkspaceProtectionMap({
+          instanceIds: staleInstances.map((instance) => instance.id),
+          activitiesByInstanceId: activities,
+          fetchTaskRunCloudWorkspaceFlags: (containerNames) =>
+            ctx.runQuery(
+              internal.taskRuns.getCloudWorkspaceFlagsByContainerNamesInternal,
+              { containerNames }
+            ),
+        });
+
         console.log(
           `[sandboxMaintenance:pause] Found ${staleInstances.length} stale ${config.provider} instances`
         );
@@ -426,11 +442,7 @@ export const pauseOldSandboxInstances = internalAction({
 
           const results = await Promise.allSettled(
             batch.map(async (instance) => {
-              const devboxRecord = await ctx.runQuery(
-                internal.devboxInstances.getByProviderInstanceIdInternal,
-                { providerInstanceId: instance.id }
-              );
-              if (devboxRecord) {
+              if (cloudWorkspaceProtection[instance.id]) {
                 console.log(
                   `[sandboxMaintenance:pause] Skipping cloud workspace: ${instance.id}`
                 );
@@ -558,17 +570,23 @@ export const stopOldSandboxInstances = internalAction({
           { instanceIds }
         );
 
+        const cloudWorkspaceProtection = await resolveCloudWorkspaceProtectionMap({
+          instanceIds,
+          activitiesByInstanceId: activities,
+          fetchTaskRunCloudWorkspaceFlags: (containerNames) =>
+            ctx.runQuery(
+              internal.taskRuns.getCloudWorkspaceFlagsByContainerNamesInternal,
+              { containerNames }
+            ),
+        });
+
         // Process in batches
         for (let i = 0; i < pausedInstances.length; i += BATCH_SIZE) {
           const batch = pausedInstances.slice(i, i + BATCH_SIZE);
 
           const results = await Promise.allSettled(
             batch.map(async (instance) => {
-              const devboxRecord = await ctx.runQuery(
-                internal.devboxInstances.getByProviderInstanceIdInternal,
-                { providerInstanceId: instance.id }
-              );
-              if (devboxRecord) {
+              if (cloudWorkspaceProtection[instance.id]) {
                 console.log(
                   `[sandboxMaintenance:stop] Skipping cloud workspace: ${instance.id}`
                 );
@@ -595,11 +613,17 @@ export const stopOldSandboxInstances = internalAction({
               }
 
               // Determine last activity time
-              const lastActivityAt =
-                activity?.lastResumedAt ??
-                activity?.lastPausedAt ??
-                activity?.createdAt ??
-                instance.created * 1000;
+              const lastActivityAt = getLastActivityTimeMs({
+                activity,
+                providerCreatedAtSeconds: instance.created,
+              });
+
+              if (lastActivityAt === null) {
+                console.warn(
+                  `[sandboxMaintenance:stop] Skipping ${instance.id} - unknown last activity time`
+                );
+                return { skipped: true, reason: "unknown_creation_time" };
+              }
 
               const inactiveDuration = now - lastActivityAt;
               const inactiveDays = Math.floor(
