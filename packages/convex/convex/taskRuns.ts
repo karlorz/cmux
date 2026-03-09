@@ -1555,6 +1555,32 @@ export const getByContainerName = authQuery({
   },
 });
 
+export const getCloudWorkspaceFlagsByContainerNamesInternal = internalQuery({
+  args: {
+    containerNames: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const containerNames = Array.from(
+      new Set(args.containerNames.filter((containerName) => containerName.length > 0))
+    );
+
+    const flags = await Promise.all(
+      containerNames.map(async (containerName) => {
+        const runs = await ctx.db
+          .query("taskRuns")
+          .withIndex("by_vscode_container_name", (q) =>
+            q.eq("vscode.containerName", containerName)
+          )
+          .collect();
+
+        return [containerName, runs.some((run) => run.isCloudWorkspace === true)] as const;
+      })
+    );
+
+    return Object.fromEntries(flags);
+  },
+});
+
 /**
  * Check if the task associated with a container name is archived.
  * Used by iframe-preflight to prevent waking VMs for archived tasks.
