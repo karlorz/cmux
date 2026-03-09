@@ -64,6 +64,28 @@ type IframeStatusEntry = {
   url: string | null;
 };
 
+function getPreferredActivePanelPosition(
+  activePositions: PanelPosition[],
+  layout: Partial<Record<PanelPosition, PanelType | null>>,
+  preferredPosition: PanelPosition | null
+): PanelPosition | null {
+  if (
+    preferredPosition &&
+    activePositions.includes(preferredPosition) &&
+    layout[preferredPosition]
+  ) {
+    return preferredPosition;
+  }
+
+  for (const position of activePositions) {
+    if (layout[position]) {
+      return position;
+    }
+  }
+
+  return null;
+}
+
 const paramsSchema = z.object({
   taskId: typedZid("tasks"),
 });
@@ -345,15 +367,29 @@ function TaskDetailPage() {
       setPanelConfig((prev) => {
         const currentLayout = getCurrentLayoutPanels(prev);
         const temp = currentLayout[fromPosition];
+        const nextLayout = {
+          ...currentLayout,
+          [fromPosition]: currentLayout[toPosition],
+          [toPosition]: temp,
+        };
+        setActivePanelPosition((current) => {
+          if (current === fromPosition) {
+            return toPosition;
+          }
+          if (current === toPosition) {
+            return fromPosition;
+          }
+          return getPreferredActivePanelPosition(
+            getActivePanelPositions(prev.layoutMode),
+            nextLayout,
+            current
+          );
+        });
         const newConfig = {
           ...prev,
           layouts: {
             ...prev.layouts,
-            [prev.layoutMode]: {
-              ...currentLayout,
-              [fromPosition]: currentLayout[toPosition],
-              [toPosition]: temp,
-            },
+            [prev.layoutMode]: nextLayout,
           },
         };
         savePanelConfig(newConfig);
@@ -381,34 +417,44 @@ function TaskDetailPage() {
     );
   }, []);
 
-  const handlePanelClose = useCallback((position: PanelPosition) => {
-    setExpandedPanel((current) => (current === position ? null : current));
-    setActivePanelPosition((current) => (current === position ? null : current));
-    setPanelConfig((prev) => {
-      const currentLayout = getCurrentLayoutPanels(prev);
-      const newConfig = {
-        ...prev,
-        layouts: {
-          ...prev.layouts,
-          [prev.layoutMode]: {
-            ...currentLayout,
-            [position]: null,
+  const handlePanelClose = useCallback(
+    (position: PanelPosition) => {
+      setExpandedPanel((current) => (current === position ? null : current));
+      setPanelConfig((prev) => {
+        const currentLayout = getCurrentLayoutPanels(prev);
+        const nextLayout = {
+          ...currentLayout,
+          [position]: null,
+        };
+        setActivePanelPosition((current) =>
+          getPreferredActivePanelPosition(
+            getActivePanelPositions(prev.layoutMode),
+            nextLayout,
+            current === position ? null : current
+          )
+        );
+        const newConfig = {
+          ...prev,
+          layouts: {
+            ...prev.layouts,
+            [prev.layoutMode]: nextLayout,
           },
-        },
-      };
-      savePanelConfig(newConfig);
-      return newConfig;
-    });
-    // Trigger resize event to help iframes reposition correctly
-    // Use requestAnimationFrame to ensure React has finished re-rendering
-    requestAnimationFrame(() => {
-      window.dispatchEvent(new Event("resize"));
-      // Double RAF to ensure layout is complete
+        };
+        savePanelConfig(newConfig);
+        return newConfig;
+      });
+      // Trigger resize event to help iframes reposition correctly
+      // Use requestAnimationFrame to ensure React has finished re-rendering
       requestAnimationFrame(() => {
         window.dispatchEvent(new Event("resize"));
+        // Double RAF to ensure layout is complete
+        requestAnimationFrame(() => {
+          window.dispatchEvent(new Event("resize"));
+        });
       });
-    });
-  }, []);
+    },
+    []
+  );
 
   const handleAddPanel = useCallback(
     (position: PanelPosition, panelType: PanelType) => {
@@ -859,6 +905,12 @@ function TaskDetailPage() {
     () => getActivePanelPositions(effectiveLayoutMode),
     [effectiveLayoutMode]
   );
+
+  useEffect(() => {
+    setActivePanelPosition((current) =>
+      getPreferredActivePanelPosition(activePanelPositions, currentLayout, current)
+    );
+  }, [activePanelPositions, currentLayout]);
 
   const effectiveActivePanelPosition = expandedPanel ?? activePanelPosition;
 

@@ -7,13 +7,44 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PersistentWebViewProps } from "./persistent-webview";
 import { RenderPanel } from "./TaskPanelFactory";
 
+const hasDomEnvironment =
+  typeof document !== "undefined" && typeof window !== "undefined";
+let reactActEnvironmentDescriptor: PropertyDescriptor | undefined;
+function setReactActEnvironmentForTest() {
+  Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", {
+    configurable: true,
+    value: true,
+  });
+}
+
+function restoreReactActEnvironmentForTest() {
+  if (reactActEnvironmentDescriptor) {
+    Object.defineProperty(
+      globalThis,
+      "IS_REACT_ACT_ENVIRONMENT",
+      reactActEnvironmentDescriptor
+    );
+    return;
+  }
+
+  Reflect.deleteProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT");
+}
+
 beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  expect(hasDomEnvironment).toBe(true);
+  reactActEnvironmentDescriptor = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "IS_REACT_ACT_ENVIRONMENT"
+  );
+  setReactActEnvironmentForTest();
 });
 
 afterEach(() => {
-  document.body.innerHTML = "";
+  if (hasDomEnvironment) {
+    document.body.innerHTML = "";
+  }
   vi.restoreAllMocks();
+  restoreReactActEnvironmentForTest();
 });
 
 describe("TaskPanelFactory", () => {
@@ -28,6 +59,7 @@ describe("TaskPanelFactory", () => {
         <RenderPanel
           type="terminal"
           position="topLeft"
+          isActivePanel={false}
           onActivate={onActivate}
           TaskRunTerminalPane={() => <div tabIndex={0}>Terminal</div>}
         />
@@ -35,10 +67,14 @@ describe("TaskPanelFactory", () => {
     });
 
     const panel = container.querySelector('[data-panel-position="topLeft"]');
+    const focusTarget = container.querySelector("[tabindex='0']") as HTMLElement | null;
     expect(panel).not.toBeNull();
+    expect(focusTarget).not.toBeNull();
 
-    panel?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
-    panel?.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await act(async () => {
+      panel?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      focusTarget?.focus();
+    });
 
     expect(onActivate).toHaveBeenCalledTimes(2);
     expect(onActivate).toHaveBeenNthCalledWith(1, "topLeft");
@@ -91,5 +127,22 @@ describe("TaskPanelFactory", () => {
     await act(async () => {
       root.unmount();
     });
+  });
+
+  it("restores a missing React act environment global after cleanup", () => {
+    restoreReactActEnvironmentForTest();
+    expect(
+      Object.prototype.hasOwnProperty.call(globalThis, "IS_REACT_ACT_ENVIRONMENT")
+    ).toBe(false);
+
+    setReactActEnvironmentForTest();
+    expect(
+      Object.prototype.hasOwnProperty.call(globalThis, "IS_REACT_ACT_ENVIRONMENT")
+    ).toBe(true);
+
+    restoreReactActEnvironmentForTest();
+    expect(
+      Object.prototype.hasOwnProperty.call(globalThis, "IS_REACT_ACT_ENVIRONMENT")
+    ).toBe(false);
   });
 });

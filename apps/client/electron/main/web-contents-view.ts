@@ -13,6 +13,7 @@ import type {
   ElectronDevToolsMode,
   ElectronWebContentsEvent,
   ElectronWebContentsState,
+  ElectronWebContentsStateReason,
   ElectronWebContentsSnapshot,
 } from "../../src/types/electron-webcontents";
 import type { WebContentsLayoutActualState } from "../../src/types/webcontents-debug";
@@ -465,7 +466,11 @@ function buildState(entry: Entry): ElectronWebContentsState | null {
   }
 }
 
-function sendState(entry: Entry, logger: Logger, reason: string) {
+function sendState(
+  entry: Entry,
+  logger: Logger,
+  reason: ElectronWebContentsStateReason,
+) {
   const state = buildState(entry);
   if (!state) return;
   const payload: ElectronWebContentsEvent = {
@@ -592,6 +597,22 @@ function setupEventForwarders(entry: Entry, logger: Logger) {
   webContents.on("did-fail-load", onDidFailLoad);
   cleanup.push(() => {
     webContents.removeListener("did-fail-load", onDidFailLoad);
+  });
+
+  const onFocus = () => {
+    sendState(entry, logger, "native-focus");
+  };
+  webContents.on("focus", onFocus);
+  cleanup.push(() => {
+    webContents.removeListener("focus", onFocus);
+  });
+
+  const onBlur = () => {
+    sendState(entry, logger, "native-blur");
+  };
+  webContents.on("blur", onBlur);
+  cleanup.push(() => {
+    webContents.removeListener("blur", onBlur);
   });
 
   entry.eventCleanup = cleanup;

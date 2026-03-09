@@ -293,13 +293,13 @@ export function PersistentIframe({
     style: wrapperStyle,
     onLoad: handleLoad,
     onError: handleError,
+    onActivate,
+    isFocusEligible,
   });
 
   // Hide non-expanded iframes when another panel is expanded
   useEffect(() => {
-    const wrapper = document.querySelector(
-      `[data-iframe-key="${persistKey}"]`
-    ) as HTMLElement;
+    const wrapper = persistentIframeManager.getIframeWrapperElement(persistKey);
     if (!wrapper) return;
 
     if (isAnyPanelExpanded && !isExpanded) {
@@ -316,12 +316,10 @@ export function PersistentIframe({
   const effectiveStatus = forcedStatus ?? status;
 
   useEffect(() => {
-    persistentIframeManager.setFocusEligible(persistKey, isFocusEligible);
-
     return () => {
       persistentIframeManager.setFocusEligible(persistKey, true);
     };
-  }, [isFocusEligible, persistKey]);
+  }, [persistKey]);
 
   const focusIframe = useCallback(() => {
     return persistentIframeManager.focusIframe(persistKey);

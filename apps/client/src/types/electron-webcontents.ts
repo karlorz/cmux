@@ -28,10 +28,30 @@ export interface ElectronWebContentsSnapshot {
   state: ElectronWebContentsState | null;
 }
 
+export type ElectronWebContentsStateReason =
+  | "initialized"
+  | "did-start-loading"
+  | "did-stop-loading"
+  | "did-navigate"
+  | "did-navigate-in-page"
+  | "page-title-updated"
+  | "devtools-opened"
+  | "devtools-closed"
+  | "did-fail-load"
+  | "created"
+  | "reattached"
+  | "go-back-command"
+  | "go-forward-command"
+  | "reload-command"
+  | "open-devtools-command"
+  | "close-devtools-command"
+  | "native-focus"
+  | "native-blur";
+
 export interface ElectronWebContentsStateEvent {
   type: "state";
   state: ElectronWebContentsState;
-  reason?: string;
+  reason?: ElectronWebContentsStateReason;
 }
 
 export interface ElectronWebContentsLoadFailedEvent {

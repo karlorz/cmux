@@ -46,7 +46,13 @@ const restoreBrowserGlobals = () => {
 };
 
 describe("persistentIframeManager focus eligibility", () => {
+  let originalActiveElementDescriptor: PropertyDescriptor | undefined;
+
   beforeEach(() => {
+    originalActiveElementDescriptor = Object.getOwnPropertyDescriptor(
+      document,
+      "activeElement",
+    );
     document.body.innerHTML = "";
     stubBrowserGlobals();
   });
@@ -56,6 +62,11 @@ describe("persistentIframeManager focus eligibility", () => {
     persistentIframeManager.clear();
     restoreBrowserGlobals();
     vi.restoreAllMocks();
+    if (originalActiveElementDescriptor) {
+      Object.defineProperty(document, "activeElement", originalActiveElementDescriptor);
+    } else {
+      Reflect.deleteProperty(document, "activeElement");
+    }
   });
 
   it("blocks focus when iframe is not focus-eligible", async () => {
@@ -93,6 +104,42 @@ describe("persistentIframeManager focus eligibility", () => {
     cleanup();
   });
 
+  it("moves focus away from an iframe when eligibility is revoked", async () => {
+    const { persistentIframeManager } = await import("./persistentIframeManager");
+
+    const iframe = persistentIframeManager.getOrCreateIframe("revoked", "https://example.com/revoked");
+    let simulatedActiveElement: Element | null = iframe;
+    const blurSpy = vi.spyOn(iframe, "blur").mockImplementation(() => {
+      simulatedActiveElement = iframe;
+    });
+    const elementFocusSpy = vi
+      .spyOn(HTMLElement.prototype, "focus")
+      .mockImplementation(function focus(this: HTMLElement) {
+        if (
+          this.getAttribute("aria-hidden") === "true" &&
+          this.tabIndex === -1 &&
+          this !== iframe
+        ) {
+          simulatedActiveElement = document.querySelector(
+            "[aria-hidden='true'][tabindex='-1']"
+          );
+        }
+      });
+
+    Object.defineProperty(document, "activeElement", {
+      configurable: true,
+      get: () => simulatedActiveElement,
+    });
+
+    persistentIframeManager.setFocusEligible("revoked", false);
+
+    const fallbackElement = document.querySelector("[aria-hidden='true'][tabindex='-1']");
+    expect(blurSpy).toHaveBeenCalled();
+    expect(elementFocusSpy).toHaveBeenCalled();
+    expect(fallbackElement).not.toBeNull();
+    expect(document.activeElement).toBe(fallbackElement);
+  });
+
   it("blocks focus when iframe wrapper is hidden", async () => {
     const { persistentIframeManager } = await import("./persistentIframeManager");
 
@@ -123,6 +170,61 @@ describe("persistentIframeManager focus eligibility", () => {
     expect(persistentIframeManager.canIframeReceiveFocus("browser")).toBe(false);
     expect(persistentIframeManager.focusIframe("browser")).toBe(false);
     expect(focusSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not re-show an iframe after unmounting before the mount frame runs", async () => {
+    restoreBrowserGlobals();
+
+    const rafCallbacks = new Map<number, FrameRequestCallback>();
+    let nextRafId = 1;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: FrameRequestCallback) => {
+        const rafId = nextRafId++;
+        rafCallbacks.set(rafId, callback);
+        return rafId;
+      },
+    });
+    Object.defineProperty(globalThis, "cancelAnimationFrame", {
+      configurable: true,
+      value: (rafId: number) => {
+        rafCallbacks.delete(rafId);
+      },
+    });
+
+    const { persistentIframeManager } = await import("./persistentIframeManager");
+    const iframe = persistentIframeManager.getOrCreateIframe(
+      "pending-mount",
+      "https://example.com/pending"
+    );
+    const wrapper = iframe.parentElement as HTMLDivElement;
+
+    const target = document.createElement("div");
+    target.getBoundingClientRect = () => ({
+      x: 0,
+      y: 0,
+      width: 120,
+      height: 90,
+      top: 0,
+      left: 0,
+      right: 120,
+      bottom: 90,
+      toJSON: () => ({}),
+    });
+    document.body.appendChild(target);
+
+    const cleanup = persistentIframeManager.mountIframe("pending-mount", target);
+    cleanup();
+
+    for (const callback of rafCallbacks.values()) {
+      callback(0);
+    }
+
+    expect(wrapper.style.visibility).toBe("hidden");
+    expect(wrapper.style.pointerEvents).toBe("none");
+    expect(persistentIframeManager.canIframeReceiveFocus("pending-mount")).toBe(false);
+
+    stubBrowserGlobals();
   });
 
   it("focuses visible eligible iframes", async () => {

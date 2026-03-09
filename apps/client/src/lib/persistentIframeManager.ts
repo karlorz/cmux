@@ -1,5 +1,7 @@
 import {
   ensureIframeFocusGuard,
+  getFocusGuardFallbackElement,
+  restoreFocusFromIframe,
   setIframeFocusAllowedChecker,
 } from "./iframeFocusGuard";
 
@@ -14,6 +16,7 @@ type IframeEntry = {
   focusEligible: boolean;
   allow?: string;
   sandbox?: string;
+  activationCleanup?: () => void;
 };
 
 interface MountOptions {
@@ -21,6 +24,8 @@ interface MountOptions {
   style?: React.CSSProperties;
   allow?: string;
   sandbox?: string;
+  focusEligible?: boolean;
+  onActivate?: () => void;
 }
 
 const UNITLESS_CSS_PROPERTIES = new Set<string>([
@@ -82,7 +87,7 @@ class PersistentIframeManager {
   private resizeObserver: ResizeObserver;
   private debugMode = false;
   private syncTimeouts = new Map<string, number>();
-
+  private mountAnimationFrames = new Map<string, number>();
   constructor() {
     // Create resize observer for syncing positions
     this.resizeObserver = new ResizeObserver((entries) => {
@@ -120,6 +125,7 @@ class PersistentIframeManager {
         isolation: isolate;
       `;
       document.body.appendChild(this.container);
+      getFocusGuardFallbackElement();
     };
 
     if (document.body) {
@@ -135,7 +141,7 @@ class PersistentIframeManager {
   getOrCreateIframe(
     key: string,
     url: string,
-    options?: { allow?: string; sandbox?: string }
+    options?: { allow?: string; sandbox?: string; focusEligible?: boolean }
   ): HTMLIFrameElement {
     const existing = this.iframes.get(key);
 
@@ -155,6 +161,12 @@ class PersistentIframeManager {
       if (existing.url !== url) {
         existing.iframe.src = url;
         existing.url = url;
+      }
+      if (
+        options?.focusEligible !== undefined &&
+        existing.focusEligible !== options.focusEligible
+      ) {
+        this.setFocusEligible(key, options.focusEligible);
       }
       return existing.iframe;
     }
@@ -215,7 +227,7 @@ class PersistentIframeManager {
       lastUsed: Date.now(),
       isVisible: false,
       pinned: false,
-      focusEligible: true,
+      focusEligible: options?.focusEligible ?? true,
       allow: options?.allow,
       sandbox: options?.sandbox,
     };
@@ -243,6 +255,10 @@ class PersistentIframeManager {
       throw new Error(`Iframe with key "${key}" not found`);
     }
 
+    if (options?.focusEligible !== undefined) {
+      this.setFocusEligible(key, options.focusEligible);
+    }
+
     // Mark target element
     targetElement.setAttribute("data-iframe-target", key);
 
@@ -251,11 +267,43 @@ class PersistentIframeManager {
       entry.wrapper.className = options.className;
     }
 
+    entry.activationCleanup?.();
+
+    const activate = () => {
+      options?.onActivate?.();
+    };
+
+    const cleanupActivation = () => {
+      entry.wrapper.removeEventListener("pointerdown", activate, true);
+      entry.wrapper.removeEventListener("focusin", activate, true);
+    };
+
+    entry.wrapper.addEventListener("pointerdown", activate, true);
+    entry.wrapper.addEventListener("focusin", activate, true);
+    entry.activationCleanup = cleanupActivation;
+
     // First sync position while hidden
     this.syncIframePosition(key);
 
+    const existingMountAnimationFrame = this.mountAnimationFrames.get(key);
+    if (existingMountAnimationFrame !== undefined) {
+      cancelAnimationFrame(existingMountAnimationFrame);
+      this.mountAnimationFrames.delete(key);
+    }
+
     // Then make visible after a microtask to ensure position is set
-    requestAnimationFrame(() => {
+    const mountAnimationFrame = requestAnimationFrame(() => {
+      this.mountAnimationFrames.delete(key);
+
+      const currentEntry = this.iframes.get(key);
+      if (
+        currentEntry !== entry ||
+        !targetElement.isConnected ||
+        targetElement.getAttribute("data-iframe-target") !== key
+      ) {
+        return;
+      }
+
       // Apply base styles without clobbering layout-related properties (width/height/transform)
       entry.wrapper.style.position = "fixed";
       entry.wrapper.style.top = "0";
@@ -299,6 +347,7 @@ class PersistentIframeManager {
       entry.isVisible = true;
       if (this.debugMode) console.log(`[Mount] Iframe ${key} is now visible`);
     });
+    this.mountAnimationFrames.set(key, mountAnimationFrame);
 
     entry.lastUsed = Date.now();
 
@@ -323,6 +372,11 @@ class PersistentIframeManager {
       if (this.debugMode) console.log(`[Unmount] Starting unmount for ${key}`);
 
       targetElement.removeAttribute("data-iframe-target");
+      const mountAnimationFrame = this.mountAnimationFrames.get(key);
+      if (mountAnimationFrame !== undefined) {
+        cancelAnimationFrame(mountAnimationFrame);
+        this.mountAnimationFrames.delete(key);
+      }
       entry.wrapper.style.visibility = "hidden";
       entry.wrapper.style.pointerEvents = "none";
       entry.isVisible = false;
@@ -332,6 +386,10 @@ class PersistentIframeManager {
         parent.removeEventListener("scroll", scrollHandler);
       });
       window.removeEventListener("resize", scrollHandler);
+      if (entry.activationCleanup === cleanupActivation) {
+        cleanupActivation();
+        entry.activationCleanup = undefined;
+      }
     };
   }
 
@@ -425,8 +483,16 @@ class PersistentIframeManager {
       this.syncTimeouts.delete(key);
     }
 
+    const mountAnimationFrame = this.mountAnimationFrames.get(key);
+    if (mountAnimationFrame !== undefined) {
+      cancelAnimationFrame(mountAnimationFrame);
+      this.mountAnimationFrames.delete(key);
+    }
+
     entry.wrapper.style.visibility = "hidden";
     entry.wrapper.style.pointerEvents = "none";
+    entry.activationCleanup?.();
+    entry.activationCleanup = undefined;
     this.moveIframeOffscreen(entry);
     entry.isVisible = false;
   }
@@ -437,7 +503,7 @@ class PersistentIframeManager {
   preloadIframe(
     key: string,
     url: string,
-    options?: { allow?: string; sandbox?: string }
+    options?: { allow?: string; sandbox?: string; focusEligible?: boolean }
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       const iframe = this.getOrCreateIframe(key, url, options);
@@ -476,6 +542,12 @@ class PersistentIframeManager {
     if (syncTimeout !== undefined) {
       cancelAnimationFrame(syncTimeout);
       this.syncTimeouts.delete(key);
+    }
+
+    const mountAnimationFrame = this.mountAnimationFrames.get(key);
+    if (mountAnimationFrame !== undefined) {
+      cancelAnimationFrame(mountAnimationFrame);
+      this.mountAnimationFrames.delete(key);
     }
 
     // Clear iframe src to stop all internal network activity (prevents Wake on HTTP)
@@ -563,6 +635,11 @@ class PersistentIframeManager {
     }
     this.syncTimeouts.clear();
 
+    for (const rafId of this.mountAnimationFrames.values()) {
+      cancelAnimationFrame(rafId);
+    }
+    this.mountAnimationFrames.clear();
+
     for (const key of this.iframes.keys()) {
       this.removeIframe(key);
     }
@@ -596,6 +673,16 @@ class PersistentIframeManager {
     entry.wrapper.style.transform = `translate(-${viewportWidth}px, -${viewportHeight}px)`;
   }
 
+  getIframeElement(key: string): HTMLIFrameElement | null {
+    const entry = this.iframes.get(key);
+    return entry?.iframe ?? null;
+  }
+
+  getIframeWrapperElement(key: string): HTMLDivElement | null {
+    const entry = this.iframes.get(key);
+    return entry?.wrapper ?? null;
+  }
+
   isIframeFocused(key: string): boolean {
     if (typeof document === "undefined") {
       return false;
@@ -620,13 +707,7 @@ class PersistentIframeManager {
       typeof document !== "undefined" &&
       document.activeElement === entry.iframe
     ) {
-      try {
-        if (document.body instanceof HTMLElement) {
-          document.body.focus({ preventScroll: true });
-        }
-      } catch (error) {
-        console.error(`Failed to revoke focus for iframe "${key}"`, error);
-      }
+      restoreFocusFromIframe(entry.iframe, null);
     }
   }
 

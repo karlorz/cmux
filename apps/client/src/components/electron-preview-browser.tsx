@@ -18,6 +18,8 @@ import {
 } from "@/components/ui/tooltip";
 import { normalizeBrowserUrl } from "@cmux/shared";
 import { isElectron } from "@/lib/electron";
+import { isInteractiveFocusRetentionElement } from "@/lib/iframeFocusGuard";
+import { persistentIframeManager } from "@/lib/persistentIframeManager";
 import { cn } from "@/lib/utils";
 import type {
   ElectronDevToolsMode,
@@ -107,6 +109,7 @@ export function ElectronPreviewBrowser({
   const [canGoForward, setCanGoForward] = useState(false);
   const [isShowingErrorPage, setIsShowingErrorPage] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const previewHostRef = useRef<HTMLDivElement | null>(null);
   const committedUrlRef = useRef(src);
   const pendingNavigationUrlRef = useRef<string | null>(null);
   const pendingPreviousUrlRef = useRef<string | null>(null);
@@ -114,22 +117,66 @@ export function ElectronPreviewBrowser({
   const pendingRefocusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const pendingRefocusVerificationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const windowFocusPrecheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const windowFocusRefocusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const windowHasFocusRef = useRef(
     typeof document !== "undefined" ? document.hasFocus() : true,
   );
+  const shouldRestorePreviewFocusOnWindowRefocusRef = useRef(false);
+  const wasPreviewFocusedOnWindowBlurRef = useRef(false);
+  const nativeBlurTimeoutRef = useRef<number | null>(null);
 
   const { progress, visible } = useLoadingProgress(isLoading);
 
+  const clearPendingBlurRefocus = useCallback(() => {
+    if (pendingRefocusTimeoutRef.current !== null) {
+      clearTimeout(pendingRefocusTimeoutRef.current);
+      pendingRefocusTimeoutRef.current = null;
+    }
+    if (pendingRefocusVerificationTimeoutRef.current !== null) {
+      clearTimeout(pendingRefocusVerificationTimeoutRef.current);
+      pendingRefocusVerificationTimeoutRef.current = null;
+    }
+  }, []);
+
+  const clearPendingWindowFocusRefocus = useCallback(() => {
+    if (windowFocusPrecheckTimeoutRef.current !== null) {
+      clearTimeout(windowFocusPrecheckTimeoutRef.current);
+      windowFocusPrecheckTimeoutRef.current = null;
+    }
+    if (windowFocusRefocusTimeoutRef.current !== null) {
+      clearTimeout(windowFocusRefocusTimeoutRef.current);
+      windowFocusRefocusTimeoutRef.current = null;
+    }
+  }, []);
+
+  const clearPendingNativeBlur = useCallback(() => {
+    if (nativeBlurTimeoutRef.current !== null) {
+      clearTimeout(nativeBlurTimeoutRef.current);
+      nativeBlurTimeoutRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
+    clearPendingNativeBlur();
     setAddressValue(src);
     setCommittedUrl(src);
     committedUrlRef.current = src;
     setCanGoBack(false);
     setCanGoForward(false);
+    shouldRestorePreviewFocusOnWindowRefocusRef.current = false;
+    wasPreviewFocusedOnWindowBlurRef.current = false;
     pendingNavigationUrlRef.current = null;
     pendingPreviousUrlRef.current = null;
     isNavigatingRef.current = false;
-  }, [src]);
+  }, [clearPendingNativeBlur, src]);
 
   useEffect(() => {
     committedUrlRef.current = committedUrl;
@@ -216,6 +263,27 @@ export function ElectronPreviewBrowser({
       (event: ElectronWebContentsEvent) => {
         console.log("[ElectronPreviewBrowser] Event", event);
         if (event.type === "state") {
+          if (event.reason === "native-focus") {
+            clearPendingNativeBlur();
+            shouldRestorePreviewFocusOnWindowRefocusRef.current = true;
+            wasPreviewFocusedOnWindowBlurRef.current = true;
+          }
+          if (event.reason === "native-blur") {
+            clearPendingNativeBlur();
+            nativeBlurTimeoutRef.current = window.setTimeout(() => {
+              nativeBlurTimeoutRef.current = null;
+              if (
+                !windowHasFocusRef.current ||
+                typeof document === "undefined" ||
+                document.visibilityState !== "visible" ||
+                !document.hasFocus()
+              ) {
+                return;
+              }
+              shouldRestorePreviewFocusOnWindowRefocusRef.current = false;
+              wasPreviewFocusedOnWindowBlurRef.current = false;
+            }, 0);
+          }
           applyState(event.state, event.reason);
           return;
         }
@@ -223,20 +291,39 @@ export function ElectronPreviewBrowser({
     );
     return () => {
       unsubscribe?.();
+      clearPendingNativeBlur();
     };
-  }, [applyState, viewHandle]);
+  }, [applyState, clearPendingNativeBlur, viewHandle]);
 
   const handleViewReady = useCallback((info: NativeViewHandle) => {
     setViewHandle(info);
   }, []);
 
+  const handlePreviewActivate = useCallback(() => {
+    clearPendingNativeBlur();
+    shouldRestorePreviewFocusOnWindowRefocusRef.current = true;
+    wasPreviewFocusedOnWindowBlurRef.current = true;
+  }, [clearPendingNativeBlur]);
+
   const handleViewDestroyed = useCallback(() => {
+    clearPendingBlurRefocus();
+    clearPendingNativeBlur();
+    clearPendingWindowFocusRefocus();
+    shouldRestorePreviewFocusOnWindowRefocusRef.current = false;
+    wasPreviewFocusedOnWindowBlurRef.current = false;
+    pendingNavigationUrlRef.current = null;
+    pendingPreviousUrlRef.current = null;
+    isNavigatingRef.current = false;
     setViewHandle(null);
     setIsLoading(false);
     setDevtoolsOpen(false);
     setCanGoBack(false);
     setCanGoForward(false);
-  }, []);
+  }, [
+    clearPendingBlurRefocus,
+    clearPendingNativeBlur,
+    clearPendingWindowFocusRefocus,
+  ]);
 
   const navigateToAddress = useCallback(() => {
     const raw = addressValue.trim();
@@ -283,6 +370,7 @@ export function ElectronPreviewBrowser({
 
   const handleInputFocus = useCallback(
     (_event: React.FocusEvent<HTMLInputElement>) => {
+      shouldRestorePreviewFocusOnWindowRefocusRef.current = false;
       setIsEditing(true);
       inputFocused.current = true;
       // event.currentTarget.select();
@@ -317,11 +405,7 @@ export function ElectronPreviewBrowser({
       // 3. We're not in the middle of navigating (user just submitted URL)
       const focusGoingToUIElement = event.relatedTarget instanceof HTMLElement;
 
-      // Clear any existing pending refocus
-      if (pendingRefocusTimeoutRef.current !== null) {
-        clearTimeout(pendingRefocusTimeoutRef.current);
-        pendingRefocusTimeoutRef.current = null;
-      }
+      clearPendingBlurRefocus();
 
       if (viewHandle && !focusGoingToUIElement && !isNavigatingRef.current) {
         // Wait a tick to let focus settle, then check if window still has focus
@@ -339,7 +423,9 @@ export function ElectronPreviewBrowser({
 
           // Double-check after a small delay to ensure we're really focused
           // This handles the edge case where blur happens during alt-tab
-          setTimeout(() => {
+          pendingRefocusVerificationTimeoutRef.current = setTimeout(() => {
+            pendingRefocusVerificationTimeoutRef.current = null;
+
             // Recheck all conditions to avoid refocusing if user alt-tabbed
             if (
               !windowHasFocusRef.current ||
@@ -350,16 +436,7 @@ export function ElectronPreviewBrowser({
             }
 
             // Check if any interactive element gained focus in the meantime
-            const activeElement = document.activeElement;
-            const isInteractiveElementFocused =
-              activeElement instanceof HTMLInputElement ||
-              activeElement instanceof HTMLTextAreaElement ||
-              activeElement instanceof HTMLButtonElement ||
-              activeElement instanceof HTMLSelectElement ||
-              (activeElement instanceof HTMLElement &&
-                activeElement.isContentEditable);
-
-            if (!isInteractiveElementFocused) {
+            if (!isInteractiveFocusRetentionElement(document.activeElement)) {
               void window.cmux?.ui
                 ?.focusWebContents(viewHandle.webContentsId)
                 .catch((error: unknown) => {
@@ -369,11 +446,11 @@ export function ElectronPreviewBrowser({
                   );
                 });
             }
-          }, 100); // Wait 100ms to ensure focus state has settled
+          }, 100);
         }, 0);
       }
     },
-    [committedUrl, viewHandle],
+    [clearPendingBlurRefocus, committedUrl, viewHandle],
   );
 
   const handleInputMouseUp = useCallback(
@@ -404,6 +481,7 @@ export function ElectronPreviewBrowser({
   );
 
   const handleToggleDevTools = useCallback(() => {
+    shouldRestorePreviewFocusOnWindowRefocusRef.current = false;
     if (!viewHandle) return;
     if (devtoolsOpen) {
       void window.cmux?.webContentsView
@@ -421,6 +499,7 @@ export function ElectronPreviewBrowser({
   }, [devtoolsMode, devtoolsOpen, viewHandle]);
 
   const handleGoBack = useCallback(() => {
+    shouldRestorePreviewFocusOnWindowRefocusRef.current = false;
     if (!viewHandle) return;
     isNavigatingRef.current = true;
     void window.cmux?.webContentsView
@@ -437,10 +516,9 @@ export function ElectronPreviewBrowser({
       const isVisible = document.visibilityState === "visible";
       if (!isVisible) {
         windowHasFocusRef.current = false;
-        if (pendingRefocusTimeoutRef.current !== null) {
-          clearTimeout(pendingRefocusTimeoutRef.current);
-          pendingRefocusTimeoutRef.current = null;
-        }
+        clearPendingBlurRefocus();
+        clearPendingNativeBlur();
+        clearPendingWindowFocusRefocus();
         return;
       }
       windowHasFocusRef.current = document.hasFocus();
@@ -450,9 +528,14 @@ export function ElectronPreviewBrowser({
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, []);
+  }, [
+    clearPendingBlurRefocus,
+    clearPendingNativeBlur,
+    clearPendingWindowFocusRefocus,
+  ]);
 
   const handleGoForward = useCallback(() => {
+    shouldRestorePreviewFocusOnWindowRefocusRef.current = false;
     if (!viewHandle) return;
     isNavigatingRef.current = true;
     void window.cmux?.webContentsView
@@ -463,6 +546,7 @@ export function ElectronPreviewBrowser({
   }, [viewHandle]);
 
   const reloadCurrentView = useCallback(() => {
+    shouldRestorePreviewFocusOnWindowRefocusRef.current = false;
     if (viewHandle) {
       isNavigatingRef.current = true;
       // If showing error page, retry the original URL instead of reloading error page
@@ -486,13 +570,7 @@ export function ElectronPreviewBrowser({
       return;
     }
 
-    const escapedKey =
-      typeof CSS !== "undefined" && typeof CSS.escape === "function"
-        ? CSS.escape(persistKey)
-        : persistKey.replace(/"/g, '\\"');
-    const iframe = document.querySelector<HTMLIFrameElement>(
-      `[data-iframe-key="${escapedKey}"] iframe`,
-    );
+    const iframe = persistentIframeManager.getIframeElement(persistKey);
     if (!iframe?.contentWindow) {
       return;
     }
@@ -541,6 +619,7 @@ export function ElectronPreviewBrowser({
     const off = window.cmux?.on?.(
       "shortcut:preview-focus-address",
       async () => {
+        shouldRestorePreviewFocusOnWindowRefocusRef.current = false;
         // Clean up any pending focus operations
         if (rafId !== null) cancelAnimationFrame(rafId);
         if (timeoutId !== null) clearTimeout(timeoutId);
@@ -603,11 +682,48 @@ export function ElectronPreviewBrowser({
 
   // Track window focus/blur state and cancel pending refocus on blur
   useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const isInsidePreviewHost = (target: EventTarget | null) =>
+      target instanceof Node && previewHostRef.current?.contains(target);
+
+    const handleFocusIn = (event: FocusEvent) => {
+      if (isInsidePreviewHost(event.target)) {
+        return;
+      }
+      clearPendingNativeBlur();
+      shouldRestorePreviewFocusOnWindowRefocusRef.current = false;
+      wasPreviewFocusedOnWindowBlurRef.current = false;
+    };
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (isInsidePreviewHost(event.target)) {
+        return;
+      }
+      clearPendingNativeBlur();
+      shouldRestorePreviewFocusOnWindowRefocusRef.current = false;
+      wasPreviewFocusedOnWindowBlurRef.current = false;
+    };
+
+    document.addEventListener("focusin", handleFocusIn, true);
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    return () => {
+      document.removeEventListener("focusin", handleFocusIn, true);
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+    };
+  }, [clearPendingNativeBlur]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
 
     const handleWindowFocus = () => {
+      clearPendingWindowFocusRefocus();
+
       // Wait a moment to ensure focus state has stabilized
-      setTimeout(() => {
+      windowFocusPrecheckTimeoutRef.current = setTimeout(() => {
+        windowFocusPrecheckTimeoutRef.current = null;
         if (typeof document === "undefined") {
           return;
         }
@@ -616,9 +732,14 @@ export function ElectronPreviewBrowser({
         if (document.visibilityState === "visible" && document.hasFocus()) {
           windowHasFocusRef.current = true;
 
+          if (!wasPreviewFocusedOnWindowBlurRef.current) {
+            return;
+          }
+
           // Give the browser more time to restore natural focus
           // This prevents premature refocusing when switching between apps
-          setTimeout(() => {
+          windowFocusRefocusTimeoutRef.current = setTimeout(() => {
+            windowFocusRefocusTimeoutRef.current = null;
             if (typeof document === "undefined") {
               return;
             }
@@ -634,19 +755,11 @@ export function ElectronPreviewBrowser({
             }
 
             // If no input/button/etc has focus, refocus the WebContentsView
-            const activeElement = document.activeElement;
-            const isInteractiveElementFocused =
-              activeElement instanceof HTMLInputElement ||
-              activeElement instanceof HTMLTextAreaElement ||
-              activeElement instanceof HTMLButtonElement ||
-              activeElement instanceof HTMLSelectElement ||
-              (activeElement instanceof HTMLElement &&
-                activeElement.isContentEditable);
-
             if (
-              !isInteractiveElementFocused &&
+              !isInteractiveFocusRetentionElement(document.activeElement) &&
               viewHandle &&
-              windowHasFocusRef.current
+              windowHasFocusRef.current &&
+              wasPreviewFocusedOnWindowBlurRef.current
             ) {
               void window.cmux?.ui
                 ?.focusWebContents(viewHandle.webContentsId)
@@ -657,7 +770,7 @@ export function ElectronPreviewBrowser({
                   );
                 });
             }
-          }, 150); // Increased delay to ensure focus has settled
+          }, 150);
         } else {
           windowHasFocusRef.current = false;
         }
@@ -666,11 +779,11 @@ export function ElectronPreviewBrowser({
 
     const handleWindowBlur = () => {
       windowHasFocusRef.current = false;
-      // Cancel any pending refocus operations when window loses focus
-      if (pendingRefocusTimeoutRef.current !== null) {
-        clearTimeout(pendingRefocusTimeoutRef.current);
-        pendingRefocusTimeoutRef.current = null;
-      }
+      wasPreviewFocusedOnWindowBlurRef.current =
+        shouldRestorePreviewFocusOnWindowRefocusRef.current;
+      clearPendingBlurRefocus();
+      clearPendingNativeBlur();
+      clearPendingWindowFocusRefocus();
     };
 
     window.addEventListener("focus", handleWindowFocus);
@@ -678,13 +791,17 @@ export function ElectronPreviewBrowser({
     return () => {
       window.removeEventListener("focus", handleWindowFocus);
       window.removeEventListener("blur", handleWindowBlur);
-      // Clean up any pending refocus on unmount
-      if (pendingRefocusTimeoutRef.current !== null) {
-        clearTimeout(pendingRefocusTimeoutRef.current);
-        pendingRefocusTimeoutRef.current = null;
-      }
+      clearPendingBlurRefocus();
+      clearPendingNativeBlur();
+      clearPendingWindowFocusRefocus();
+      wasPreviewFocusedOnWindowBlurRef.current = false;
     };
-  }, [viewHandle]);
+  }, [
+    clearPendingBlurRefocus,
+    clearPendingNativeBlur,
+    clearPendingWindowFocusRefocus,
+    viewHandle,
+  ]);
 
   const devtoolsTooltipLabel = devtoolsOpen
     ? "Close DevTools"
@@ -833,7 +950,10 @@ export function ElectronPreviewBrowser({
         </form>
       </div>
       <div className="flex-1 min-h-0 flex">
-        <div className="flex-1 overflow-hidden bg-white dark:bg-neutral-950 border-l">
+        <div
+          ref={previewHostRef}
+          className="flex-1 overflow-hidden bg-white dark:bg-neutral-950 border-l"
+        >
             <PersistentWebView
               persistKey={persistKey}
               src={resolvedSrc}
@@ -844,6 +964,7 @@ export function ElectronPreviewBrowser({
               retainOnUnmount={false}
               onElectronViewReady={handleViewReady}
               onElectronViewDestroyed={handleViewDestroyed}
+              onActivate={handlePreviewActivate}
               forceWebContentsViewIfElectron
             />
         </div>

@@ -23,6 +23,10 @@ import {
 } from "@/queries/local-vscode-serve-web";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { ResumeWorkspaceOverlay } from "@/components/resume-workspace-overlay";
+import { useElectronWindowFocus } from "@/hooks/useElectronWindowFocus";
+import { isInteractiveFocusRetentionElement } from "@/lib/iframeFocusGuard";
+import { persistentIframeManager } from "@/lib/persistentIframeManager";
+import { focusWebview, isWebviewFocused } from "@/lib/webview-actions";
 
 const paramsSchema = z.object({
   taskId: typedZid("tasks"),
@@ -66,12 +70,14 @@ export const Route = createFileRoute(
           result.vscode?.provider,
           localServeWeb.baseUrl
         );
-        await preloadTaskRunIframes([
-          {
-            url: workspaceUrl ?? "",
-            taskRunId: opts.params.runId,
-          },
-        ]);
+        if (workspaceUrl) {
+          await preloadTaskRunIframes([
+            {
+              url: workspaceUrl,
+              taskRunId: opts.params.runId,
+            },
+          ]);
+        }
       }
     })();
   },
@@ -96,14 +102,6 @@ function VSCodeComponent() {
   const workspaceSettings = useQuery(api.workspaceSettings.get, { teamSlugOrId });
   const autoSyncEnabled = workspaceSettings?.autoSyncEnabled ?? true;
 
-  // Debug logging for sync trigger
-  console.log("[VSCode route] Sync debug:", {
-    autoSyncEnabled,
-    hasSocket: !!socket,
-    linkedLocalWorkspace: linkedLocalWorkspace === undefined ? "loading" : linkedLocalWorkspace,
-    worktreePath: linkedLocalWorkspace?.task?.worktreePath,
-  });
-
   // Trigger sync when viewing a cloud task that has a linked local workspace
   // This restores the sync session after page refresh or server restart
   useEffect(() => {
@@ -116,13 +114,6 @@ function VSCodeComponent() {
       return;
     }
 
-    console.log(
-      "[VSCode route] Triggering local-cloud sync:",
-      localWorkspacePath,
-      "->",
-      taskRunId
-    );
-
     socket.emit(
       "trigger-local-cloud-sync",
       {
@@ -132,8 +123,6 @@ function VSCodeComponent() {
       (response: { success: boolean; error?: string }) => {
         if (!response.success) {
           console.error("[VSCode route] Failed to trigger sync:", response.error);
-        } else {
-          console.log("[VSCode route] Sync triggered successfully");
         }
       }
     );
@@ -169,6 +158,59 @@ function VSCodeComponent() {
   const [iframeStatus, setIframeStatus] =
     useState<PersistentIframeStatus>("loading");
   const prevWorkspaceUrlRef = useRef<string | null>(null);
+  const persistKeyRef = useRef(persistKey);
+  const focusRestorePrecheckTimeoutRef = useRef<number | null>(null);
+  const focusRestoreTimeoutRef = useRef<number | null>(null);
+  const shouldRestoreWorkspaceFocusOnWindowRefocusRef = useRef(false);
+  const userInteractionCountRef = useRef(0);
+
+  const clearPendingFocusRestore = useCallback(() => {
+    if (focusRestorePrecheckTimeoutRef.current !== null) {
+      clearTimeout(focusRestorePrecheckTimeoutRef.current);
+      focusRestorePrecheckTimeoutRef.current = null;
+    }
+    if (focusRestoreTimeoutRef.current !== null) {
+      clearTimeout(focusRestoreTimeoutRef.current);
+      focusRestoreTimeoutRef.current = null;
+    }
+  }, []);
+
+  const tryRestoreWorkspaceFocus = useCallback(async (): Promise<boolean> => {
+    if (typeof document === "undefined" || !hasWorkspace || iframeStatus !== "loaded") {
+      return false;
+    }
+
+    const currentPersistKey = persistKeyRef.current;
+    if (
+      !currentPersistKey ||
+      isInteractiveFocusRetentionElement(document.activeElement)
+    ) {
+      return false;
+    }
+
+    const focused = await isWebviewFocused(currentPersistKey);
+    if (
+      focused ||
+      isInteractiveFocusRetentionElement(document.activeElement)
+    ) {
+      return focused;
+    }
+
+    return focusWebview(currentPersistKey);
+  }, [hasWorkspace, iframeStatus]);
+
+  useEffect(() => {
+    clearPendingFocusRestore();
+    persistKeyRef.current = persistKey;
+    shouldRestoreWorkspaceFocusOnWindowRefocusRef.current = false;
+  }, [clearPendingFocusRestore, persistKey]);
+
+  useEffect(() => {
+    clearPendingFocusRestore();
+    if (!hasWorkspace || iframeStatus !== "loaded") {
+      shouldRestoreWorkspaceFocusOnWindowRefocusRef.current = false;
+    }
+  }, [clearPendingFocusRestore, hasWorkspace, iframeStatus]);
 
   // Only reset to loading when the URL actually changes to a different value
   // This prevents flickering when the URL reference changes but the value is the same
@@ -191,6 +233,10 @@ function VSCodeComponent() {
     []
   );
 
+  const handleWorkspaceActivate = useCallback(() => {
+    shouldRestoreWorkspaceFocusOnWindowRefocusRef.current = true;
+  }, []);
+
   const onLoad = useCallback(() => {
     console.log(`Workspace view loaded for task run ${taskRunId}`);
   }, [taskRunId]);
@@ -203,6 +249,161 @@ function VSCodeComponent() {
       );
     },
     [taskRunId]
+  );
+
+  useEffect(() => {
+    return clearPendingFocusRestore;
+  }, [clearPendingFocusRestore]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const markUserInteraction = () => {
+      userInteractionCountRef.current += 1;
+    };
+
+    document.addEventListener("pointerdown", markUserInteraction, true);
+    document.addEventListener("keydown", markUserInteraction, true);
+
+    return () => {
+      document.removeEventListener("pointerdown", markUserInteraction, true);
+      document.removeEventListener("keydown", markUserInteraction, true);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const getWorkspaceIframe = (): HTMLIFrameElement | null => {
+      const currentPersistKey = persistKeyRef.current;
+      if (!currentPersistKey) {
+        return null;
+      }
+
+      return persistentIframeManager.getIframeElement(currentPersistKey);
+    };
+
+    const isWorkspaceTarget = (target: EventTarget | null) => {
+      const workspaceIframe = getWorkspaceIframe();
+      return workspaceIframe !== null && target === workspaceIframe;
+    };
+
+    const handleFocusIn = (event: FocusEvent) => {
+      if (isWorkspaceTarget(event.target)) {
+        return;
+      }
+      shouldRestoreWorkspaceFocusOnWindowRefocusRef.current = false;
+    };
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (isWorkspaceTarget(event.target)) {
+        return;
+      }
+      shouldRestoreWorkspaceFocusOnWindowRefocusRef.current = false;
+    };
+
+    document.addEventListener("focusin", handleFocusIn, true);
+    document.addEventListener("pointerdown", handlePointerDown, true);
+
+    return () => {
+      document.removeEventListener("focusin", handleFocusIn, true);
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") {
+      return;
+    }
+
+    const handleWindowBlur = () => {
+      clearPendingFocusRestore();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        return;
+      }
+      clearPendingFocusRestore();
+    };
+
+    window.addEventListener("blur", handleWindowBlur);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("blur", handleWindowBlur);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [clearPendingFocusRestore]);
+
+  useElectronWindowFocus(
+    useCallback(() => {
+      if (typeof document === "undefined") {
+        return;
+      }
+
+      if (!shouldRestoreWorkspaceFocusOnWindowRefocusRef.current) {
+        return;
+      }
+
+      clearPendingFocusRestore();
+
+      const currentPersistKey = persistKeyRef.current;
+      if (
+        !currentPersistKey ||
+        !hasWorkspace ||
+        iframeStatus !== "loaded" ||
+        !shouldRestoreWorkspaceFocusOnWindowRefocusRef.current
+      ) {
+        return;
+      }
+
+      const interactionCountAtWindowFocus = userInteractionCountRef.current;
+
+      focusRestorePrecheckTimeoutRef.current = window.setTimeout(() => {
+        focusRestorePrecheckTimeoutRef.current = null;
+
+        if (
+          typeof document === "undefined" ||
+          document.visibilityState !== "visible" ||
+          !document.hasFocus() ||
+          userInteractionCountRef.current !== interactionCountAtWindowFocus ||
+          !shouldRestoreWorkspaceFocusOnWindowRefocusRef.current
+        ) {
+          return;
+        }
+
+        if (isInteractiveFocusRetentionElement(document.activeElement)) {
+          return;
+        }
+
+        focusRestoreTimeoutRef.current = window.setTimeout(() => {
+          focusRestoreTimeoutRef.current = null;
+
+          if (
+            typeof document === "undefined" ||
+            document.visibilityState !== "visible" ||
+            !document.hasFocus() ||
+            userInteractionCountRef.current !== interactionCountAtWindowFocus ||
+            !shouldRestoreWorkspaceFocusOnWindowRefocusRef.current ||
+            isInteractiveFocusRetentionElement(document.activeElement)
+          ) {
+            return;
+          }
+
+          void tryRestoreWorkspaceFocus().catch((error) => {
+            console.warn(
+              `Failed to restore workspace webview focus for task run ${taskRunId}`,
+              error
+            );
+          });
+        }, 150);
+      }, 10);
+    }, [clearPendingFocusRestore, hasWorkspace, iframeStatus, taskRunId, tryRestoreWorkspaceFocus])
   );
 
   const loadingFallback = useMemo(
@@ -248,6 +449,7 @@ function VSCodeComponent() {
               errorFallback={errorFallback}
               errorFallbackClassName="bg-neutral-50/95 dark:bg-black/95"
               onStatusChange={handleStatusChange}
+              onActivate={handleWorkspaceActivate}
               loadTimeoutMs={60_000}
             />
           ) : (
