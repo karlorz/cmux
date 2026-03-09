@@ -103,7 +103,7 @@ export const Route = createFileRoute("/_layout/$teamSlugOrId/dashboard")({
 });
 
 // Default agents (not persisted to localStorage)
-const DEFAULT_AGENTS = ["claude/opus-4.6", "codex/gpt-5.3-codex-xhigh"];
+const DEFAULT_AGENTS = ["claude/opus-4.6", "codex/gpt-5.4-xhigh"];
 const AGENT_SELECTION_SCHEMA = z.array(z.string());
 
 const areAgentSelectionsEqual = (a: string[], b: string[]): boolean =>

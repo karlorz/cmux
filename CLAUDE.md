@@ -230,7 +230,7 @@ Message types: `handoff`, `request`, `status`
 
 ## Agent Models
 
-- Production `--agent` models for feature and fix work: `claude/opus-4.6`, `claude/opus-4.5`, `codex/gpt-5.4-xhigh`, `codex/gpt-5.3-codex-xhigh`.
+- Production `--agent` models for feature and fix work: `claude/opus-4.6`, `claude/opus-4.5`, `codex/gpt-5.4-xhigh`.
 - Validation-only `--agent` models: `claude/haiku-4.5`, `codex/gpt-5.1-codex-mini`, `opencode/big-pickle`.
 - Test repos for `devsh task create --repo`: `karlorz/testing-repo-1`, `karlorz/testing-repo-2`, `karlorz/testing-repo-3`.
 
