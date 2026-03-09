@@ -26,7 +26,7 @@ const WEB_PREVIEW_AGENT_BUILTINS = {
   codex: [],
   opencode: [],
 } satisfies Record<"claude" | "codex" | "opencode", McpServerConfig[]>;
-const MIGRATION_TARGET_MODEL = "gpt-5.3-codex";
+const MIGRATION_TARGET_MODEL = "gpt-5.4";
 const REDACTED_VALUE = "[REDACTED]";
 const REDACTED_BEARER_VALUE = "Bearer [REDACTED]";
 const SENSITIVE_KEY_SEGMENTS = new Set([
@@ -45,6 +45,7 @@ const SENSITIVE_KEY_SEGMENTS = new Set([
   "token",
 ]);
 const MODELS_TO_MIGRATE = [
+  "gpt-5.3-codex",
   "gpt-5.2-codex",
   "gpt-5.1-codex-max",
   "gpt-5.2",

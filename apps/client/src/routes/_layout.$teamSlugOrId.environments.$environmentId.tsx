@@ -8,6 +8,7 @@ import { WorkspaceSetupPanel } from "@/components/WorkspaceSetupPanel";
 import { queryClient } from "@/query-client";
 import { convexQueryClient } from "@/contexts/convex/convex-query-client";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Tooltip,
   TooltipContent,
@@ -96,6 +97,7 @@ function EnvironmentDetailsPage() {
   const { teamSlugOrId, environmentId } = Route.useParams();
   const navigate = useNavigate({ from: Route.fullPath });
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const environmentQuery = useSuspenseQuery(
     convexQuery(api.environments.get, {
       teamSlugOrId,
@@ -508,15 +510,11 @@ function EnvironmentDetailsPage() {
     );
   };
 
-  const handleDelete = async () => {
-    if (
-      !confirm(
-        "Are you sure you want to delete this environment? This action cannot be undone."
-      )
-    ) {
-      return;
-    }
+  const handleDelete = () => {
+    setIsDeleteDialogOpen(true);
+  };
 
+  const confirmDelete = async () => {
     setIsDeleting(true);
     try {
       await deleteEnvironmentMutation.mutateAsync({
@@ -541,6 +539,7 @@ function EnvironmentDetailsPage() {
       console.error(error);
     } finally {
       setIsDeleting(false);
+      setIsDeleteDialogOpen(false);
     }
   };
 
@@ -664,9 +663,21 @@ function EnvironmentDetailsPage() {
     "Starts a new VS Code instance where you can make changes before saving a snapshot.";
 
   return (
-    <FloatingPane
-      header={<TitleBar title={environment?.name || "Environment Details"} />}
-    >
+    <>
+      <ConfirmDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        title="Delete Environment"
+        description="Are you sure you want to delete this environment? This action cannot be undone."
+        confirmLabel={isDeleting ? "Deleting..." : "Delete"}
+        cancelLabel="Cancel"
+        onConfirm={() => {
+          void confirmDelete();
+        }}
+      />
+      <FloatingPane
+        header={<TitleBar title={environment?.name || "Environment Details"} />}
+      >
       <div className="p-6 max-w-5xl mx-auto w-full">
         {environment ? (
           <div className="space-y-6">
@@ -1369,5 +1380,6 @@ function EnvironmentDetailsPage() {
         )}
       </div>
     </FloatingPane>
+    </>
   );
 }

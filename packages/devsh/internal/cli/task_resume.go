@@ -111,7 +111,7 @@ Examples:
 				fmt.Printf("  devsh task attach %s\n", taskRun.ID)
 			} else {
 				fmt.Println("To start a new task:")
-				fmt.Println("  devsh task create --repo <owner/repo> --agent codex/gpt-5.3-codex \"Your prompt\"")
+				fmt.Println("  devsh task create --repo <owner/repo> --agent codex/gpt-5.4-xhigh \"Your prompt\"")
 			}
 		}
 

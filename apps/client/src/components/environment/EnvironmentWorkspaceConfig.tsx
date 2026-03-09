@@ -30,7 +30,6 @@ import {
   ALL_CONFIG_STEPS,
   MASKED_ENV_VALUE,
 } from "@cmux/shared/components/environment";
-import { VncViewer, type VncConnectionStatus } from "@cmux/shared/components/vnc-viewer";
 import clsx from "clsx";
 import {
   ArrowLeft,
@@ -61,7 +60,8 @@ interface EnvironmentWorkspaceConfigProps {
   envVars: EnvVar[];
   exposedPorts: string;
   vscodeUrl?: string;
-  vncWebsocketUrl?: string;
+  browserHtmlUrl?: string;
+  browserPersistKey?: string;
   isSaving: boolean;
   errorMessage?: string | null;
   initialConfigStep?: ConfigStep;
@@ -97,7 +97,8 @@ export function EnvironmentWorkspaceConfig({
   envVars,
   exposedPorts,
   vscodeUrl,
-  vncWebsocketUrl,
+  browserHtmlUrl,
+  browserPersistKey,
   isSaving,
   errorMessage,
   initialConfigStep,
@@ -157,9 +158,6 @@ export function EnvironmentWorkspaceConfig({
   const [activeEnvValueIndex, setActiveEnvValueIndex] = useState<number | null>(null);
   const [pendingFocusIndex, setPendingFocusIndex] = useState<number | null>(null);
   const keyInputRefs = useRef<Array<HTMLInputElement | null>>([]);
-
-  // VNC connection status
-  const [_vncStatus, setVncStatus] = useState<VncConnectionStatus>("disconnected");
 
   // Resizable sidebar state
   const MIN_SIDEBAR_WIDTH = 320;
@@ -381,14 +379,26 @@ export function EnvironmentWorkspaceConfig({
 
   const browserPlaceholder = useMemo(
     () =>
-      vncWebsocketUrl
+      browserHtmlUrl
         ? null
         : {
             title: "Waiting for browser",
             description: "We'll embed the browser session as soon as the environment exposes it.",
           },
-    [vncWebsocketUrl]
+    [browserHtmlUrl]
   );
+  const resolvedBrowserPersistKey = useMemo(() => {
+    if (browserPersistKey) {
+      return browserPersistKey;
+    }
+    if (browserHtmlUrl) {
+      return `env-workspace-config:browser:${browserHtmlUrl}`;
+    }
+    if (vscodeUrl) {
+      return `env-workspace-config:browser:${vscodeUrl}`;
+    }
+    return `env-workspace-config:browser:${teamSlugOrId}`;
+  }, [browserHtmlUrl, browserPersistKey, teamSlugOrId, vscodeUrl]);
 
   // Render scripts section
   const renderScriptsSection = (options?: {
@@ -857,21 +867,6 @@ export function EnvironmentWorkspaceConfig({
   const renderPreviewPanel = () => {
     const placeholder = showBrowser ? browserPlaceholder : workspacePlaceholder;
 
-    // Loading fallback for VNC viewer
-    const vncLoadingFallback = (
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-neutral-400 border-t-transparent" />
-        <span className="text-sm text-neutral-400">Connecting to browser preview...</span>
-      </div>
-    );
-
-    // Error fallback for VNC viewer
-    const vncErrorFallback = (
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center">
-        <span className="text-sm text-red-400">Failed to connect to browser preview</span>
-      </div>
-    );
-
     return (
       <div className="h-full flex flex-col overflow-hidden relative">
         {/* Placeholder for VS Code or browser when not available */}
@@ -910,21 +905,21 @@ export function EnvironmentWorkspaceConfig({
           </div>
         )}
 
-        {/* VNC Viewer for browser preview (shown for browser-setup step) */}
-        {showBrowser && vncWebsocketUrl && (
-          <VncViewer
-            url={vncWebsocketUrl}
-            className={clsx(
-              "absolute inset-0",
-              browserPlaceholder ? "opacity-0" : "opacity-100"
-            )}
-            background="#000000"
-            scaleViewport
-            autoConnect
-            focusOnClick
-            onStatusChange={setVncStatus}
-            loadingFallback={vncLoadingFallback}
-            errorFallback={vncErrorFallback}
+        {/* Browser preview (shown for browser-setup step) */}
+        {showBrowser && browserHtmlUrl && (
+          <PersistentWebView
+            persistKey={resolvedBrowserPersistKey}
+            src={browserHtmlUrl}
+            className="absolute inset-0 opacity-100"
+            iframeClassName="select-none"
+            allow={TASK_RUN_IFRAME_ALLOW}
+            sandbox={TASK_RUN_IFRAME_SANDBOX}
+            retainOnUnmount
+            fallback={<WorkspaceLoadingIndicator variant="browser" status="loading" />}
+            fallbackClassName="bg-neutral-50 dark:bg-black"
+            errorFallback={<WorkspaceLoadingIndicator variant="browser" status="error" />}
+            errorFallbackClassName="bg-neutral-50/95 dark:bg-black/95"
+            loadTimeoutMs={45_000}
           />
         )}
       </div>

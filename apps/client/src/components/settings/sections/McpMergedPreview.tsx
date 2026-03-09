@@ -8,28 +8,43 @@ import type { Scope } from "@/lib/mcp-form-helpers";
 import type { HostMcpFileResult } from "@/types/electron";
 import type { McpPreviewAgent } from "./mcp-preview-helpers";
 
-const PREVIEW_AGENT_LABELS: Record<McpPreviewAgent, string> = {
-  claude: "Claude",
-  codex: "Codex",
-  opencode: "OpenCode",
-};
+const PREVIEW_AGENT_METADATA = {
+  claude: {
+    label: "Claude",
+    hostConfigFileName: "~/.claude.json",
+  },
+  codex: {
+    label: "Codex",
+    hostConfigFileName: "~/.codex/config.toml",
+  },
+  opencode: {
+    label: "OpenCode",
+    hostConfigFileName: "~/.config/opencode/opencode.json",
+  },
+} satisfies Record<
+  McpPreviewAgent,
+  {
+    label: string;
+    hostConfigFileName: string;
+  }
+>;
 
+const PREVIEW_AGENT_OPTIONS = (["claude", "codex", "opencode"] as const).map((agent) => ({
+  value: agent,
+  label: PREVIEW_AGENT_METADATA[agent].label,
+}));
 
 function getHostConfigDescription(
   agent: McpPreviewAgent,
   hostConfig: HostMcpFileResult | null,
 ): string {
-  const fileName = agent === "claude"
-    ? "~/.claude.json"
-    : agent === "codex"
-      ? "~/.codex/config.toml"
-      : "~/.config/opencode/opencode.json";
+  const { hostConfigFileName } = PREVIEW_AGENT_METADATA[agent];
 
   if (hostConfig?.ok) {
-    return `Using local ${fileName} as the base host config.`;
+    return `Using local ${hostConfigFileName} as the base host config.`;
   }
 
-  return `Local ${fileName} was not found, so this preview starts from an empty host config.`;
+  return `Local ${hostConfigFileName} was not found, so this preview starts from an empty host config.`;
 }
 
 
@@ -62,11 +77,12 @@ export function McpMergedPreview({
   onWorkspaceProjectChange,
   webMode = false,
 }: McpMergedPreviewProps) {
-  const hostConfig = activeAgent === "claude"
-    ? claudeHostConfig
-    : activeAgent === "codex"
-      ? codexHostConfig
-      : opencodeHostConfig;
+  const hostConfigsByAgent = {
+    claude: claudeHostConfig,
+    codex: codexHostConfig,
+    opencode: opencodeHostConfig,
+  } satisfies Record<McpPreviewAgent, HostMcpFileResult | null>;
+  const hostConfig = hostConfigsByAgent[activeAgent];
 
   return (
     <SettingSection
@@ -78,11 +94,7 @@ export function McpMergedPreview({
         <SegmentedTabs
           value={activeAgent}
           onChange={onActiveAgentChange}
-          options={[
-            { value: "claude", label: "Claude" },
-            { value: "codex", label: "Codex" },
-            { value: "opencode", label: "OpenCode" },
-          ]}
+          options={PREVIEW_AGENT_OPTIONS}
         />
       }
     >
@@ -128,7 +140,7 @@ export function McpMergedPreview({
 
         <div className="rounded-lg border border-neutral-200 bg-neutral-950 dark:border-neutral-800">
           <div className="border-b border-neutral-800 px-3 py-2 text-xs font-medium uppercase tracking-wide text-neutral-400">
-            {PREVIEW_AGENT_LABELS[activeAgent]} effective config
+            {PREVIEW_AGENT_METADATA[activeAgent].label} effective config
           </div>
           <pre className="overflow-x-auto p-3 text-xs text-neutral-100">
             <code>{previewText}</code>

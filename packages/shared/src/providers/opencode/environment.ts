@@ -19,9 +19,12 @@ async function buildOpencodeEnvironment(
   opts: { skipAuth: boolean; xaiApiKey?: boolean }
 ): Promise<EnvironmentResult> {
   // These must be lazy since configs are imported into the browser
-  const { readFile } = await import("node:fs/promises");
-  const { homedir } = await import("node:os");
   const { Buffer } = await import("node:buffer");
+
+  // useHostConfig is safe for desktop/Electron apps where the host IS the user's machine.
+  // For server deployments, this should be false to prevent credential leakage.
+  const useHostConfig = ctx.useHostConfig ?? false;
+
   const files: EnvironmentResult["files"] = [];
   const env: Record<string, string> = {};
   const startupCommands: string[] = [];
@@ -36,7 +39,10 @@ async function buildOpencodeEnvironment(
   startupCommands.push("rm -f /root/lifecycle/opencode-complete-* 2>/dev/null || true");
 
   // Copy auth.json unless explicitly skipped (grok-code doesn't need it)
-  if (!opts.skipAuth) {
+  // Only read from host filesystem in desktop mode
+  if (!opts.skipAuth && useHostConfig) {
+    const { readFile } = await import("node:fs/promises");
+    const { homedir } = await import("node:os");
     try {
       const authContent = await readFile(
         `${homedir()}/.local/share/opencode/auth.json`,

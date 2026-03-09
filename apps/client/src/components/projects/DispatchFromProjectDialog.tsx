@@ -147,7 +147,7 @@ export function DispatchFromProjectDialog({
                 type="text"
                 value={agents}
                 onChange={(e) => setAgents(e.target.value)}
-                placeholder="claude/opus-4.6, codex/gpt-5.3-codex-xhigh"
+                placeholder="claude/opus-4.6, codex/gpt-5.4-xhigh"
                 className="w-full rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">

@@ -5044,6 +5044,7 @@ export type GetApiSandboxesByIdStatusResponses = {
     200: {
         running: boolean;
         vscodeUrl?: string;
+        vncUrl?: string;
         workerUrl?: string;
         provider?: 'morph' | 'pve-lxc';
     };
